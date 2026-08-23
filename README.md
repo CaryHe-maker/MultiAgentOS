@@ -48,6 +48,14 @@ Reviewer + Human Gate：高风险操作需批准
 
 - [初始设计方案](docs/InitialPlan.md)：架构、技术栈、阶段计划和借鉴项目。
 - [难点与实现路径](docs/Difficulty.md)：安全、冲突、token、恢复和性能方面的风险与验证方法。
+- [MVP 范围](docs/mvp-scope.md)：第一版要交付什么，以及明确不做什么。
+- [架构](docs/architecture.md)：组件职责和边界。
+- [开发流程](docs/workflow.md)：一次运行的状态、并行规则与质量门。
+- [协议规范](docs/protocols.md)：`Plan`、`TaskCard` 和目标接口约定。
+- [评测方案](docs/evaluation.md)：如何比较单 Agent、人工双窗口和系统模式。
+- [安全策略](docs/security.md)：权限边界和审批规则。
+- [协作规范](CONTRIBUTING.md)：分支、提交、PR 和三人分工。
+- [Agent 工作指南](AGENTS.md)：给 Coding Agent 和新贡献者的仓库规则。
 
 ## 设计原则
 
