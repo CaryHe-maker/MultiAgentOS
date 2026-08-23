@@ -1,0 +1,36 @@
+{
+  "goal": "Add JWT login to the Todo application with a frontend login form and API tests.",
+  "tasks": [
+    {
+      "id": "contract.auth",
+      "title": "Define the authentication API contract",
+      "role": "contract",
+      "owned_paths": ["contracts/auth.openapi.json"],
+      "acceptance": ["OpenAPI document validates"]
+    },
+    {
+      "id": "backend.auth",
+      "title": "Implement JWT login endpoint",
+      "role": "backend",
+      "dependencies": ["contract.auth"],
+      "owned_paths": ["server/**"],
+      "acceptance": ["pytest tests/auth"]
+    },
+    {
+      "id": "frontend.login",
+      "title": "Implement the login form",
+      "role": "frontend",
+      "dependencies": ["contract.auth"],
+      "owned_paths": ["web/src/**"],
+      "acceptance": ["npm test -- login"]
+    },
+    {
+      "id": "test.integration",
+      "title": "Run end-to-end authentication tests",
+      "role": "test",
+      "dependencies": ["backend.auth", "frontend.login"],
+      "owned_paths": ["tests/e2e/**"],
+      "acceptance": ["pytest tests/e2e"]
+    }
+  ]
+}

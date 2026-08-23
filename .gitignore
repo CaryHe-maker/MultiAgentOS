@@ -1,61 +1,8 @@
-# Secrets and local configuration
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-
-# Python
+.venv/
+.multiagentos/
 __pycache__/
 *.py[cod]
-*$py.class
-*.pyo
-.Python
-.venv/
-venv/
-env/
-ENV/
-pip-wheel-metadata/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-dist/
-build/
+.mypy_cache/
 *.egg-info/
-
-# Node / frontend
-node_modules/
-.npm/
-.pnpm-store/
-.yarn/
-.next/
-.nuxt/
-coverage/
-
-# IDE and OS files
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# MultiAgentOS runtime state and generated artifacts
-.multiagentos/
-runtime/
-artifacts/
-worktrees/
-*.sqlite
-*.sqlite3
-*.db
-*.log
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak

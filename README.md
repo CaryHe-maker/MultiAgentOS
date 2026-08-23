@@ -83,3 +83,18 @@ Reviewer + Human Gate：高风险操作需批准
 ## 下一步
 
 先实现一个可测的纵向切片：`plan` 生成任务图，`run` 并行执行两个 worktree，`integrate` 合并并运行测试，`report` 输出 token、延迟、失败和冲突指标。然后用同一组前后端样例与“手工两个窗口”基线比较，而不是凭感觉判断收益。
+
+## 本地开发（进行中）
+
+当前仓库已具备 Phase 1 的编排内核：稳定的 `TaskCard`/`Plan` schema、DAG 与文件 ownership 校验，以及 SQLite checkpoint。模型调用、worktree runtime 与集成器将在后续模块接入。
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+
+maos validate examples/todo-login-plan.json
+maos run examples/todo-login-plan.json
+maos report <run-id>
+pytest
+```
