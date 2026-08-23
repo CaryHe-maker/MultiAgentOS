@@ -1,15 +1,15 @@
-# Agent Working Guide
+# Agent 开发指南
 
-This repository is a local-first orchestration core for coding-agent workflows. Read this file before editing it.
+本仓库是面向 coding-agent 工作流的本地优先编排内核。修改前请先阅读本文件。
 
-## Start Here
+## 从这里开始
 
-1. Read `README.md` and `docs/mvp-scope.md` for the current product boundary.
-2. Read `docs/protocols.md` before changing data exchanged by planners, schedulers, or workers.
-3. Read `docs/workflow.md` before changing task lifecycle or state transitions.
-4. Run the checks below before handing work off.
+1. 阅读 `README.md` 和 `docs/mvp-scope.md`，了解当前产品边界。
+2. 修改 Planner、Scheduler 或 Worker 之间传递的数据前，先阅读 `docs/protocols.md`。
+3. 修改任务生命周期或状态流转前，先阅读 `docs/workflow.md`。
+4. 交付改动前，运行下方的检查命令。
 
-## Commands
+## 常用命令
 
 ```bash
 pip install -e '.[dev]'
@@ -19,15 +19,15 @@ mypy src
 maos validate examples/todo-login-plan.json
 ```
 
-## Repository Rules
+## 仓库规则
 
-- Keep cross-component data structured. `src/multi_agent_os/models.py` is the source of truth for implemented schemas.
-- Do not silently expand worker permissions, filesystem access, network access, or command execution.
-- Do not add an LLM framework, database service, Docker, or web UI unless the current MVP needs it.
-- Add focused tests for behavior changes in `tests/`.
-- Keep generated files out of Git: `.venv/`, `.multiagentos/`, `.idea/`, and `*.egg-info/`.
-- A task with an unclear acceptance condition is incomplete. Clarify it in the task card or issue before implementing.
+- 跨组件的数据必须保持结构化。已实现 Schema 的唯一事实来源是 `src/multi_agent_os/models.py`。
+- 不得悄悄扩大 Worker 权限、文件系统访问范围、网络访问范围或可执行命令范围。
+- 当前 MVP 不需要时，不要引入 LLM 框架、数据库服务、Docker 或 Web UI。
+- 修改行为时，在 `tests/` 中补充针对性的测试。
+- 不要提交生成文件：`.venv/`、`.multiagentos/`、`.idea/` 和 `*.egg-info/`。
+- 没有清晰验收条件的任务视为未完成。实现前应在任务卡或 Issue 中澄清。
 
-## Current Boundary
+## 当前边界
 
-The repository currently validates a task DAG and creates SQLite checkpoints. It does not yet call an LLM, execute a worker, create a Git worktree, or merge code. See `docs/mvp-scope.md`.
+仓库目前能够校验任务 DAG 并创建 SQLite checkpoint；尚未调用 LLM、执行 Worker、创建 Git worktree 或合并代码。详见 `docs/mvp-scope.md`。

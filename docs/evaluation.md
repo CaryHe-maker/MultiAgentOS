@@ -1,35 +1,35 @@
-# Evaluation Plan
+# 评测方案
 
-## Question
+## 核心问题
 
-Does this orchestration approach improve quality and wall-clock time enough to justify its additional token and coordination cost?
+这套编排方式带来的质量和墙钟时间改善，是否足以抵消额外的 token 和协调成本？
 
-## Fixed Task Set
+## 固定任务集
 
-Create 5-10 small, repeatable tasks against the same example application. Each task must define a starting commit, expected acceptance commands, maximum human intervention, and whether it is plausibly parallelizable.
+针对同一个示例应用，建立 5-10 个小而可重复的任务。每个任务必须定义起始 commit、验收命令、最大人工介入次数，以及是否理论上适合并行。
 
-The first task is JWT login for a Todo application. It includes an API contract, backend endpoint, frontend form, and end-to-end test.
+第一个任务为 Todo 应用 JWT 登录：包括 API contract、后端接口、前端表单和端到端测试。
 
-## Baselines
+## 对照组
 
-Run each task in three modes:
+每个任务运行以下三种模式：
 
-1. One coding agent working serially.
-2. A human manually coordinating two coding-agent windows.
-3. MultiAgentOS using the same model family, task target, and acceptance tests where practical.
+1. 一个 coding agent 串行工作。
+2. 人类手动协调两个 coding-agent 窗口。
+3. MultiAgentOS；条件允许时使用相同模型、同一任务目标和同一验收测试。
 
-Do not compare a powerful model in one mode with a weaker model in another without recording the difference.
+不要在未记录差异的情况下，用一个模式中的强模型与另一个模式中的弱模型比较。
 
-## Required Metrics
+## 必须记录的指标
 
-| Metric | Why record it |
+| 指标 | 记录原因 |
 |---|---|
-| success and test pass rate | quality outcome |
-| wall-clock and queue time | actual delivery speed |
-| input/output tokens and estimated cost | coordination overhead |
-| retry and rework count | plan and worker reliability |
-| merge conflict count | ownership effectiveness |
-| human intervention count | automation level |
-| approval and policy rejection count | safety behavior |
+| 成功率和测试通过率 | 衡量质量结果 |
+| 墙钟时间和排队时间 | 衡量真实交付速度 |
+| 输入/输出 token 和预估成本 | 衡量协调开销 |
+| retry 和返工次数 | 衡量 Plan 与 Worker 的可靠性 |
+| merge conflict 次数 | 衡量 ownership 是否有效 |
+| 人工介入次数 | 衡量自动化程度 |
+| 审批和策略拒绝次数 | 衡量安全行为 |
 
-Each run produces one machine-readable record and one human-readable summary. Report medians across repeated runs where possible; one successful demo is not evidence of a general improvement.
+每次 Run 产出一份机器可读记录和一份面向人的摘要。条件允许时，报告重复运行的中位数；一次成功 Demo 不能证明系统普遍更优。

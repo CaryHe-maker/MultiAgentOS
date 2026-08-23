@@ -1,19 +1,19 @@
-# ADR 0001: Start with a CLI and SQLite
+# ADR 0001：先使用 CLI 和 SQLite
 
-## Status
+## 状态
 
-Accepted for the MVP.
+MVP 已采纳。
 
-## Context
+## 背景
 
-The project needs to validate the orchestration loop before adding web deployment, multiple services, or distributed infrastructure. The first user is a developer running the system locally.
+在引入 Web 部署、多服务或分布式基础设施之前，项目需要先验证编排闭环。第一个用户是本地运行系统的开发者。
 
-## Decision
+## 决策
 
-Use a Typer CLI as the first interface and SQLite in WAL mode as the durable local state store. Keep the state store behind a small module boundary so a later Postgres implementation can replace it.
+第一版使用 Typer CLI 作为界面，并使用 WAL 模式的 SQLite 作为本地持久状态存储。State Store 应保持较小模块边界，以便后续用 Postgres 实现替换。
 
-## Consequences
+## 影响
 
-- The MVP is easy for three students to run, debug, test, and demo locally.
-- Restart recovery can be tested without operating Redis, Postgres, Docker, or a web service.
-- It is not a multi-user or distributed production architecture. Those requirements belong to a later phase after the task protocol and workflow are proven.
+- 三位学生可以在本地轻松运行、调试、测试和演示 MVP。
+- 不必先运维 Redis、Postgres、Docker 或 Web 服务，也能测试重启恢复。
+- 这不是多用户或分布式生产架构。这些需求应在任务协议和工作流被证明有效后，再进入下一阶段。

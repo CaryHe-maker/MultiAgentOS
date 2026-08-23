@@ -1,27 +1,27 @@
-# Security and Approval Policy
+# 安全与审批策略
 
-## MVP Default
+## MVP 默认规则
 
-Workers may only operate inside their assigned Git worktree and declared `owned_paths`. They receive no secrets by default and must not read outside the project directory.
+Worker 只能在自己被分配的 Git worktree 和声明的 `owned_paths` 内操作。默认不提供密钥，也不得读取项目目录之外的内容。
 
-## Approval Required
+## 必须人工审批的行为
 
-The MVP pauses for human approval before any of these actions:
+MVP 在执行下列行为前必须暂停并请求人工审批：
 
-- deletion or bulk overwrite of files;
-- `git push`, release, deployment, or external write operation;
-- changing permissions, credentials, or repository settings;
-- reading secret files, environment variables, `.ssh`, or credential directories;
-- installing arbitrary packages or using unrestricted network access.
+- 删除或批量覆盖文件；
+- `git push`、发布、部署或对外部系统的写操作；
+- 修改权限、凭据或仓库设置；
+- 读取密钥文件、环境变量、`.ssh` 或凭据目录；
+- 安装任意依赖，或进行不受限制的网络访问。
 
-## Command Policy
+## 命令策略
 
-Initial allowlisted commands should be narrow and project-specific: test runners, linters, type checkers, package installation from locked project dependencies, and Git inspection commands. Every command needs a timeout, captured output, and task association.
+初始 allowlist 应当小而且与项目相关：测试运行器、linter、类型检查、从已锁定项目依赖安装包，以及 Git 检查命令。每个命令都必须有超时、被捕获的输出和关联任务 ID。
 
-The policy is enforced by the runtime, not by asking an LLM to behave safely in a prompt.
+Policy 必须由 Runtime 强制执行，不能只在 Prompt 中要求 LLM 安全行事。
 
-## Secret Handling
+## 密钥处理
 
-- Never commit API keys, tokens, databases, logs containing secrets, or local IDE configuration.
-- Use environment variables or a local secret manager only at the process boundary that needs a model API key.
-- Store prompt hashes and redacted metadata in reports; do not persist unrestricted conversation content by default.
+- 不提交 API Key、token、数据库、包含密钥的日志或本地 IDE 配置。
+- 只有需要模型 API Key 的进程边界可以通过环境变量或本地 secret manager 获取密钥。
+- Report 保存 Prompt hash 和脱敏元数据；默认不持久化未经限制的完整对话内容。

@@ -1,45 +1,45 @@
-# Run Workflow
+# Run 工作流
 
-## Lifecycle
+## 生命周期
 
 ```text
 goal
   -> plan
-  -> static validation
-  -> approval (when needed)
-  -> schedule ready tasks
-  -> execute isolated workers
-  -> integrate
-  -> quality gates
+  -> 静态校验
+  -> 审批（需要时）
+  -> 调度 ready task
+  -> 执行隔离 Worker
+  -> 集成
+  -> 质量门
   -> report
 ```
 
-## State Model
+## 状态模型
 
-| State | Meaning | Next states |
+| 状态 | 含义 | 后续状态 |
 |---|---|---|
-| `pending` | waiting for dependencies | `ready`, `blocked`, `cancelled` |
-| `ready` | dependencies passed and resources are available | `running`, `cancelled` |
-| `running` | worker has an active lease | `succeeded`, `failed`, `blocked`, `cancelled` |
-| `succeeded` | acceptance evidence passed | no worker retry |
-| `failed` | worker or quality gate failed | `ready` when retry policy permits, otherwise `blocked` |
-| `blocked` | needs a decision, approval, or unrecoverable dependency fix | `ready`, `cancelled` |
-| `cancelled` | explicitly stopped | terminal |
+| `pending` | 等待依赖 | `ready`、`blocked`、`cancelled` |
+| `ready` | 依赖已通过，资源可用 | `running`、`cancelled` |
+| `running` | Worker 持有有效 lease | `succeeded`、`failed`、`blocked`、`cancelled` |
+| `succeeded` | 验收证据通过 | 不再执行 Worker retry |
+| `failed` | Worker 或质量门失败 | retry 允许时进入 `ready`，否则 `blocked` |
+| `blocked` | 需要决策、审批或修复不可恢复依赖 | `ready`、`cancelled` |
+| `cancelled` | 被明确停止 | 终止状态 |
 
-The current code persists initial `ready` and `pending` states. Later work must make every transition durable before starting the following side effect.
+当前代码只持久化初始 `ready` 和 `pending` 状态。后续实现必须在发起下一项副作用前，持久化每次状态变化。
 
-## Parallel Rule
+## 并行规则
 
-Two tasks may run in parallel only when all of these are true:
+两个任务只有同时满足以下条件，才可以并行：
 
-1. Both have no unsatisfied dependency.
-2. Their `owned_paths` do not overlap.
-3. Neither uses a declared serial resource such as a database migration or lockfile.
-4. The run has enough concurrency and token budget.
-5. Their commands are allowed by policy.
+1. 两者均不存在未满足依赖。
+2. 两者的 `owned_paths` 不重叠。
+3. 两者均不使用已声明的串行资源，例如数据库迁移或 lockfile。
+4. Run 有足够的并发和 token 预算。
+5. 两者的命令均被 Policy 允许。
 
-If any condition is uncertain, run tasks serially. Serial execution is a valid scheduler decision, not a failure.
+任何条件不明确时，使用串行执行。串行是正确的 Scheduler 决策，不是系统失败。
 
-## Quality Gates
+## 质量门
 
-An implementation task is not complete because a worker says it is complete. The integrator collects declared evidence such as lint, type check, unit test, contract test, and end-to-end test results. A failed gate creates a bounded repair task or requests human intervention.
+Worker 自称完成，并不表示实现任务完成。Integrator 收集 lint、类型检查、单测、contract test 和端到端测试等已声明的证据。质量门失败时，系统创建有次数上限的修复任务，或请求人工介入。
