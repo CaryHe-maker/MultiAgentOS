@@ -40,7 +40,7 @@ Workflow **不是用户界面、执行器、权限中心或资源调度器**。�
 Workflow 不得：
 
 1. 签发 CapabilityGrant、Lease、ExecutionPermit 或 Secret。
-2. 选择具体 Worker 进程或绕过 Kernel 指定执行位置。
+2. 选择具体 Executor Process 或绕过 Kernel 指定执行位置。
 3. 直接读取其他 Module schema、索引或运行内存。
 4. 在 DBOS 可重放 step 内执行模型、工具、Context、文件、网络或外部数据库副作用。
 5. 让 AgentRun 直接修改 TaskRun、MissionScope 或其他 AgentRun。
@@ -136,7 +136,7 @@ AgentRun 只能输出：`UnitIntent`、`Signal`、`SpawnProposal`、`GraphPatchP
 
 ### 3.7 ChangeSet 与 IntegrationAttempt
 
-coding 或脚本化 Worker 的结果必须包含不可变 `ChangeSet`，不得仅依靠 AgentResult 的自然语言声明。ChangeSet 至少包含 `changeSetId`、`taskAttemptId`、`baseRevision`、`patchOrCommitRef`、`changedPaths`、rename/delete/binary metadata、`workspaceRef`、`producerDefinitionVersion`、`workerTestEvidenceRefs`、`contentHash` 和 provenance。
+coding Agent 或脚本化 Executor 的结果必须包含不可变 `ChangeSet`，不得仅依靠 AgentResult 的自然语言声明。ChangeSet 至少包含 `changeSetId`、`taskAttemptId`、`baseRevision`、`patchOrCommitRef`、`changedPaths`、rename/delete/binary metadata、`workspaceRef`、`producerDefinitionVersion`、`executorTestEvidenceRefs`、`contentHash` 和 provenance。
 
 IntegrationAttempt 至少包含 `integrationAttemptId`、`workflowRunId`、`graphRevision`、`baseRevision`、`orderedChangeSetRefs`、`integrationPlanHash`、`workspaceRef`、`state`、`conflictRefs`、`qualityGateDefinitionRef`、`qualityGateResultRef`、`integratedRevisionRef`、`version` 和时间字段。IntegrationPlan 一旦开始物化即不可修改；变更顺序或输入必须创建新 IntegrationAttempt。
 
@@ -163,7 +163,7 @@ interface UnitIntent {
 }
 ```
 
-`inlineInput` 必须受 schema 和大小限制；大型输入使用 ArtifactRef。UnitIntent 不包含真实 Secret、长期 credential、Executor endpoint 或可绕过 Scheduler 的 workerId。
+`inlineInput` 必须受 schema 和大小限制；大型输入使用 ArtifactRef。UnitIntent 不包含真实 Secret、长期 credential、Executor endpoint 或可绕过 Scheduler 的 executorId。
 
 ### 3.9 三级 Checkpoint 领域模型
 
@@ -272,7 +272,7 @@ Replan Proposal 必须包含 baseRevision、targetMissionScopeId、impactClosure
 
 ### 4.9 Integration Coordinator
 
-Integration Coordinator 负责将已验收 TaskAttempt 的 ChangeSet 组织为确定性 IntegrationPlan，创建 IntegrationAttempt，通过 Kernel Unit 物化干净 workspace、按固定顺序应用变更、运行 QualityGate，并提交 IntegratedRevision 或 IntegrationFailed。它不直接调用 Git/文件系统、不修改 Worker workspace，也不把 Worker 自测作为集成验收的替代。
+Integration Coordinator 负责将已验收 TaskAttempt 的 ChangeSet 组织为确定性 IntegrationPlan，创建 IntegrationAttempt，通过 Kernel Unit 物化干净 workspace、按固定顺序应用变更、运行 QualityGate，并提交 IntegratedRevision 或 IntegrationFailed。它不直接调用 Git/文件系统、不修改 Executor workspace，也不把 Executor 自测作为集成验收的替代。
 
 ChangeSet 顺序依次使用 TaskGraph 拓扑序、显式 integrationOrder、Task logicalKey 和 changeSetId 决胜，Event 到达时间不参与排序。集成结果必须绑定 base revision、ordered ChangeSet hash、最终 diff/commit Artifact 和 QualityGateResult。推送、建 PR 和发布另行生成外部副作用 Unit，不是 IntegrationAttempt 的隐式步骤。
 
@@ -543,7 +543,7 @@ Workflow 只提交 UnitIntent、运行控制结果以及 WorkflowCheckpoint/Sess
 
 Workflow 需要人工参与时只提交 HumanReviewIntent；Kernel 负责创建 HumanReviewRequest、验证审查者、聚合多人响应并发布 HumanReviewDecision。Workflow 只持久化 reviewId、等待对象、恢复位置和决定引用，不复制 Kernel 请求正文，不把 UserInteraction ReviewResponse 直接作为授权。批准后仍由 Kernel 独立签发 Grant/ExecutionPermit。
 
-Workflow 通过领域事件向 Kernel 提供 SessionCheckpoint operation 与 availability；Kernel 将其与 Lease、UnitAttempt、成本、审批和 Worker 状态组合为脱敏 RuntimeProjection。Workflow 不向 UserInteraction 推送未经 Kernel 投影的底层运行细节。
+Workflow 通过领域事件向 Kernel 提供 SessionCheckpoint operation 与 availability；Kernel 将其与 Lease、UnitAttempt、成本、审批和 Executor Process 状态组合为脱敏 RuntimeProjection。Workflow 不向 UserInteraction 推送未经 Kernel 投影的底层运行细节。
 
 ### 10.2 ContextEngine
 
@@ -621,7 +621,7 @@ Readiness Evaluator
 
 ### 11.3 Git 集成与最终验收
 
-1. 每个需要产生文件变更的 TaskAttempt 通过 ChangeSet Contract 交付 base revision、patch/commit Artifact、变更路径和 worker 测试证据。TaskAttempt Manager 验证契约和 Artifact 完整性，但不因 Worker 自测成功就宣布整体完成。
+1. 每个需要产生文件变更的 TaskAttempt 通过 ChangeSet Contract 交付 base revision、patch/commit Artifact、变更路径和 Executor 测试证据。TaskAttempt Manager 验证契约和 Artifact 完整性，但不因 Executor 自测成功就宣布整体完成。
 2. required coding Task 的 ChangeSet 齐备后，Integration Coordinator 按拓扑序和稳定决胜键创建 IntegrationPlan/IntegrationAttempt，通过 Kernel 物化独立干净 workspace。
 3. 每次 apply、Git 检查、build 和 test 都是独立 Unit；Kernel 返回规范化 result/diagnostics/effect record，Workflow 不直接执行 Git 或 shell。
 4. 任一 ChangeSet 冲突时提交结构化 ConflictRef，IntegrationAttempt 进入 CONFLICTED。不得丢弃某个变更、改写原 ChangeSet 或隐式三方合并。
@@ -691,7 +691,7 @@ Kernel Cancel Command
 ```
 
 1. cancel Command 使 WorkflowRun 和目标 MissionScope 进入 CANCELLING，停止产生新 UnitIntent，并取消仍可取消的人工等待；已提交 HumanReviewDecision 保留为审计事实。
-2. Workflow 等待 Kernel 对相关 Lease、Grant 和 UnitAttempt 的撤销/终止 Event，不以 Worker 进程终止直接推断业务结果。
+2. Workflow 等待 Kernel 对相关 Lease、Grant 和 UnitAttempt 的撤销/终止 Event，不以 Executor Process 终止直接推断业务结果。
 3. Compensation Coordinator 根据 effect ledger 创建显式 Compensation Task；外部效果未知时请求 reconciliation，并可产生 UNKNOWN_EFFECT 类型的人类审核。
 4. Workflow 结算 Task/Agent 状态，在补偿完成后提交 CANCELLED；无法安全确认或补偿时提交 NEEDS_ATTENTION，不得伪报取消完成。
 
@@ -709,7 +709,7 @@ DBOS 恢复等待控制流
 1. Workflow 进程重启后，Durable Runtime Adapter 从 DBOS 恢复等待点，Repository 从领域表和 Event Journal 加载最新聚合版本。
 2. Outbox dispatcher 重发未确认消息，Inbox 保证重复 Command、Unit Event 和 HumanReviewDecision 不产生第二次状态变化。
 3. `human_review_waits` 中未完成请求继续等待相同 reviewId；已完成决定通过 decisionRef 幂等恢复，不重新请求用户审核。
-4. 若 Kernel 已回收 Lease，Workflow 等待规范化超时/废弃 Event，再按策略创建新 TaskAttempt 或 UnitIntent；不得依据 Worker 存活状态自行推断结果。
+4. 若 Kernel 已回收 Lease，Workflow 等待规范化超时/废弃 Event，再按策略创建新 TaskAttempt 或 UnitIntent；不得依据 Executor Process 存活状态自行推断结果。
 5. DBOS 历史不兼容时禁止同运行 resume，但完整 SessionCheckpoint 仍可用于创建新运行；恢复后仍需重新验证未决审核的 requestVersion、revision 与有效期。
 
 ## 12 控制操作语义
@@ -885,10 +885,10 @@ Workflow 只处理 CapabilityRef 和 SecretRef，不读取 Secret 值。Agent �
 
 ### 17.3 E2E 场景
 
-1. 静态 TaskGraph 驱动单个确定性 Worker，结构化结果通过 Contract 与 `ALL` Join 验收。
-2. 两个脚本 Worker 在隔离 workspace 交付 ChangeSet，按固定 IntegrationPlan 在干净 workspace 集成并通过 QualityGate。
+1. 静态 TaskGraph 驱动单个确定性 Executor Process，结构化结果通过 Contract 与 `ALL` Join 验收。
+2. 两个脚本化 Executor Process 在隔离 workspace 交付 ChangeSet，按固定 IntegrationPlan 在干净 workspace 集成并通过 QualityGate。
 3. 路径预检冲突、patch 应用冲突、base mismatch 和 QualityGate 失败均停止完成，且保留可定位 Evidence。
-4. Worker 崩溃、Lease 过期和新 Attempt 接管后，旧 fencing 结果被拒绝。
+4. Executor Process 崩溃、Lease 过期和新 Attempt 接管后，旧 fencing 结果被拒绝。
 5. Control Plane 在领域事务、Outbox 发布和 DBOS 等待点附近被 kill，重启后不丢状态也不重复提交结果。
 6. 高风险命令进入单人 APPROVAL；合法决定后重新准入，参数或 revision 变化使旧批准失效。
 7. cancel 与结果同时到达时，只有符合版本与 fencing 的一方按状态机生效；完成候选必须等待 Kernel drain。
@@ -932,11 +932,11 @@ V1 按以下顺序实现，不以真实 LLM/Agent 作为前置条件：
 1. 定义 ID、值对象、状态枚举、Error、Envelope、Command/Event/Result、TaskGraph、UnitIntent、ChangeSet、IntegrationPlan 和 RestorePlan schema，并建立 reducer/兼容测试。
 2. 建立 workflow schema、Kysely migration、Repository、Journal/Outbox/Inbox 事务模板，验证 DBOS transaction/checkpoint 与领域提交的原子或幂等桥接。
 3. 实现 WorkflowRun、TaskRun/Attempt、MissionScope、静态 GraphRevision、WorkflowCheckpoint，以及无副作用 Readiness/ALL Join/完成候选判定。
-4. 建立 DBOS Adapter 和 Kernel Unit Port，使用脚本化/确定性 Worker 完成单 Worker 闭环，验证重复 Event、迟到结果、cancel、有限 retry 和进程 kill 后 resume。
-5. 实现最多双 Worker 并行、独立 workspace 和 ChangeSet 交付；实现 Integration Coordinator，在干净 workspace 顺序应用 patch、分类冲突、运行固定 QualityGate 并提交 IntegratedRevision。
+4. 建立 DBOS Adapter 和 Kernel Unit Port，使用脚本化/确定性 Executor 完成单 Executor Process 闭环，验证重复 Event、迟到结果、cancel、有限 retry 和进程 kill 后 resume。
+5. 实现最多双 Executor Process 并行、独立 workspace 和 ChangeSet 交付；实现 Integration Coordinator，在干净 workspace 顺序应用 patch、分类冲突、运行固定 QualityGate 并提交 IntegratedRevision。
 6. 实现 FINALIZING 两阶段完成协议、最小 Lease/fencing、单人 APPROVAL 等待和高风险命令准入。
 7. 实现用户显式 SessionCheckpoint 的 dependency manifest、CheckpointParticipant prepare/commit/abort/query/release、RestoreOperation/RestorePlan 和 `FORK_NEW_RUN`；使用 fake 其他 Module 验证跨模块保留与恢复结果、新 Grant/Lease 要求、workspace 物化和失败清理。
-8. 实现 CLI 需要的投影、结构化报告和固定 fixture E2E，覆盖单 Worker、双 Worker、冲突、测试门失败、重复消息、崩溃恢复和 checkpoint fork。
+8. 实现 CLI 需要的投影、结构化报告和固定 fixture E2E，覆盖单/双 Executor Process、冲突、测试门失败、重复消息、崩溃恢复和 checkpoint fork。
 
 V1.1 再实现 AgentRun 的真实模型循环、Bootstrap Planner、Context 装配、token/成本结算和 coding-agent 评测。动态 replan、ANY/QUORUM Join、四类完整 HITL、自动 SessionCheckpoint 轮换、Artifact GC、通用 compensation 和 Web/SSE 属于后续 Beta。
 
@@ -946,22 +946,22 @@ V1.1 再实现 AgentRun 的真实模型循环、Bootstrap Planner、Context 装�
 
 Workflow Module 可进入 V1 发布必须满足：
 
-1. 输入静态 TaskGraph 后，创建、单/双确定性 Worker 执行、ALL Join、Git 集成、QualityGate、FINALIZING drain 和最终完成形成可恢复闭环。
+1. 输入静态 TaskGraph 后，创建、单/双确定性 Executor Process 执行、ALL Join、Git 集成、QualityGate、FINALIZING drain 和最终完成形成可恢复闭环。
 2. TaskGraph 与 MissionScope 语义分离，GraphRevision 发布原子且历史不可变。
 3. 所有副作用通过 UnitIntent；DBOS step 不直接运行外部操作。
 4. 重复、乱序、迟到 Event、版本冲突和旧 fencing 均有自动化测试且不能破坏当前状态。
 5. resume、cancel、retry 和 checkpoint fork 的身份与状态语义互不混淆；V1 不暴露动态 replan/rerun 语义。
-6. ChangeSet 必须绑定 base revision，IntegrationPlan 顺序确定，冲突不被静默解决，Worker 自测不替代集成 QualityGate。
+6. ChangeSet 必须绑定 base revision，IntegrationPlan 顺序确定，冲突不被静默解决，Executor 自测不替代集成 QualityGate。
 7. DeterministicResult/ChangeSet 必须通过 Contract 与 acceptance criteria；TaskAttempt 和 IntegrationAttempt 终态不可覆盖。
 8. Workflow 使用 CompletionProposed/ExecutionScopeDrained 两阶段协议，不存在 Workflow 与 Kernel 互相等待的完成死锁。
 9. 所有状态变化可由 Event Journal 审计，投影可重建，DBOS/Telemetry 不成为第二事实源。
 10. DBOS Checkpoint、WorkflowCheckpoint、SessionCheckpoint 的所有权和恢复路径分离；SessionCheckpoint 保存使用 CheckpointParticipant 和 ACTIVE retention token 保证 required dependency，fork 使用 RestoreOperation/RestorePlan，其他 Module 只保留或恢复自己的权威状态。
 11. UserInteraction 只能经 Kernel 请求 Checkpoint 操作，Workflow 不直接读取 interaction schema，数据库 role 能阻止跨模块写入。
-12. fixture 驱动的双 Worker E2E、patch 冲突、QualityGate 失败、进程 kill 恢复、跨 Module checkpoint 保存/fork、单人 APPROVAL 和数据库越权拒绝测试全部通过。
+12. fixture 驱动的双 Executor Process E2E、patch 冲突、QualityGate 失败、进程 kill 恢复、跨 Module checkpoint 保存/fork、单人 APPROVAL 和数据库越权拒绝测试全部通过。
 13. Workflow 不接管其他 Module 的身份、授权、审查者、资源、检索或定义权威；Restore Coordinator 只消费其他 Module 返回的版本化结果。
 
 ## 21 后续演进约束
 
-V1 完成后先进入 V1.1，在不改变 Task/Unit/ChangeSet/Integration/Restore 契约的前提下接入真实 Planner 和 coding Agent。随后才可增加动态 GraphPatch、ANY/QUORUM/自定义 Join、协作式多 Agent TaskAttempt、完整 HITL、远程 Worker 和 NATS，且必须通过新 schemaVersion 或显式能力标志演进。引入 LangGraph 仅可作为单 Agent 内部无副作用推理辅助，不得拥有外层 Task 状态或独立恢复语义。替换 DBOS 为 Restate/Temporal 时，领域对象、Event 和 Port 保持稳定，并以迁移演练证明现有运行可完成或安全封存。
+V1 完成后先进入 V1.1，在不改变 Task/Unit/ChangeSet/Integration/Restore 契约的前提下接入真实 Planner 和 coding Agent。随后才可增加动态 GraphPatch、ANY/QUORUM/自定义 Join、协作式多 Agent TaskAttempt、完整 HITL、远程 Executor Process 和 NATS，且必须通过新 schemaVersion 或显式能力标志演进。引入 LangGraph 仅可作为单 Agent 内部无副作用推理辅助，不得拥有外层 Task 状态或独立恢复语义。替换 DBOS 为 Restate/Temporal 时，领域对象、Event 和 Port 保持稳定，并以迁移演练证明现有运行可完成或安全封存。
 
 任何演进都不得改变三项基本结论：Workflow 决定业务可执行性，Kernel 决定执行准入与物理运行，DBOS/替代 runtime 只负责持久控制流恢复。

@@ -1,0 +1,14 @@
+{
+  "name": "@multiagentos/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@multiagentos/agent-tool-pool": "workspace:*",
+    "@multiagentos/context-engine": "workspace:*",
+    "@multiagentos/contracts": "workspace:*",
+    "@multiagentos/kernel": "workspace:*",
+    "@multiagentos/user-interaction": "workspace:*",
+    "@multiagentos/workflow": "workspace:*"
+  }
+}

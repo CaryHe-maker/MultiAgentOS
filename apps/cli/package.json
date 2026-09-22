@@ -1,0 +1,11 @@
+{
+  "name": "@multiagentos/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@multiagentos/contracts": "workspace:*",
+    "@multiagentos/user-interaction": "workspace:*",
+    "commander": "^15.0.0"
+  }
+}
