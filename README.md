@@ -1,108 +1,163 @@
 # MultiAgentOS
 
-MultiAgentOS 是一个面向全栈开发的 coding agent：用户只需描述目标，系统负责把目标拆成可验证的任务图，按依赖关系并行调用多个 coding agent/API，在隔离的工作区中执行，并通过契约、测试和人工审批完成集成。
+MultiAgentOS 是一个面向 coding-agent 工作流的本地优先编排内核。它尝试解决的不是“如何多开几个 Agent”，而是如何把多个 Agent 的不确定行为放进一个**可控制、可恢复、可审计**的执行系统。
 
-它不是简单地“打开多个聊天窗口”。核心目标是让并行工作可控、可恢复、可审计，同时尽量减少重复上下文和协调 token。
+给定一个软件开发目标，系统最终应能将目标拆成带依赖和验收条件的任务图，让可独立的任务在隔离工作区中并行执行，并保留每一次状态变化、代码改动、测试结果、权限决策和失败恢复的证据。
 
-## 可行性结论
+> 当前仓库仍处于 MVP 内核阶段：已实现结构化 Plan、DAG 与文件所有权校验，以及 SQLite checkpoint。尚未接入 LLM、真实 Worker、Git worktree、Docker 沙盒或代码集成。请以“当前已实现”一节为准，不要把目标架构当作现有功能。
 
-项目在工程上可实现，建议分阶段落地：
+## 为什么需要它
 
-1. **MVP**：单机 CLI + Python 调度器 + `asyncio` 并发 + Git worktree + LiteLLM + SQLite。先支持“规划 → 后端/前端并行 → 集成测试”。
-2. **Beta**：引入 LangGraph/Temporal 风格的持久化 DAG、Redis/Postgres、Docker 沙箱、OpenTelemetry、预算与速率控制。
-3. **Production**：多租户权限、远程 worker、故障恢复、策略引擎、gVisor/Firecracker 隔离、可观测性和评测集。
+单个 Agent 完成简单任务很直接；任务一旦跨越多个模块、需要多轮工具调用或允许并行，就会出现工程问题：
 
-开源项目已经分别验证了这条路线：MCO 验证了 CLI-first 的多 provider 并行与显式确认；Pane 验证了 worktree/终端会话管理；multi-agent-shogun 验证了层级式 manager-worker；Maestro 验证了分阶段工作流、持久状态和质量门；LangGraph 与 Temporal 验证了长任务的状态持久化和恢复；LiteLLM 验证了多模型统一网关。**但没有证据表明“并行必然比单 agent 更省 token”**，因此 MultiAgentOS 必须内置 token/延迟/质量基准，并根据收益动态决定是否并行。
+- 哪些任务可以并行，哪些必须等待前置结果？
+- 两个 worker 同时改代码时，如何避免覆盖和冲突？
+- 模型、工具、文件和网络操作由谁授权、如何限额？
+- worker 崩溃、重复回调、旧结果迟到或用户修改目标时，如何保证状态正确？
+- 怎样证明最终结果真的完成，而不是只得到一段自然语言回答？
 
-## 解决的问题
+MultiAgentOS 的答案是：以结构化任务图、隔离执行、可验证 Artifact 和明确的状态边界来管理这些问题；只有收益大于协调成本时才并行。
 
-- **安全性**：最小权限、工作区白名单、容器/沙箱、命令审批、密钥隔离、完整审计日志。
-- **并行冲突**：任务 DAG、文件/模块 ownership、每个 worker 独立 worktree、结构化接口契约、合并前测试和冲突回退。
-- **token 成本**：只传任务卡、接口契约、摘要和 diff；不广播完整对话；设置每任务 token/美元预算；按任务路由模型。
-- **完成速度**：只有无依赖节点并行；集成节点在前置任务完成后自动触发；失败任务可重试或降级为串行。
-- **上下文过长**：短期上下文、持久化摘要、文件索引和按需检索；每个阶段可新建会话而不丢失结构化状态。
-- **资源堵塞**：监控 CPU、内存、GPU、队列、API 延迟和速率限制；根据资源和预算动态限流。
+## 项目理念
 
-## 典型流程
+1. **工作流优先于自由对话**：Agent 可以提出计划、派生任务或工具调用建议，但系统状态只能由受控工作流推进。
+2. **默认隔离，显式共享**：每个 worker 最终应在独立 worktree/sandbox 中工作；跨任务传递契约、Artifact 引用和经验证的结果，而不是完整聊天记录。
+3. **数据优先于自然语言**：Plan、TaskCard、事件、权限和结果使用版本化的结构化契约；文本只承担解释作用。
+4. **恢复建立在已提交事实之上**：checkpoint 保存任务状态和不可变 Artifact 引用，而不是依赖进程内存。重复消息、失败重试和迟到结果都必须可安全处理。
+5. **权限、执行和审计分离**：Agent 无权自行扩大权限；高风险动作需要策略检查和人工批准。
+6. **证据优先于共识**：测试、类型检查、契约校验、diff 和审计记录决定完成度，不以多个模型“投票”代替验证。
+
+## 目标架构
+
+完整愿景将领域拆为四个并列模块，并以独立基础设施承载跨模块能力：
 
 ```text
 用户目标
   ↓
-Planner：生成架构、接口契约、任务 DAG、预算
-  ↓
-Scheduler：按依赖和资源选择并行度
-  ├─ Backend worker（独立 worktree/容器）
-  ├─ Frontend worker（独立 worktree/容器）
-  └─ Contract/Test worker（只读或低权限）
-  ↓
-Artifact Bus：传递契约、摘要、diff、测试报告
-  ↓
-Integrator：合并、解决冲突、运行端到端测试
-  ↓
-Reviewer + Human Gate：高风险操作需批准
-  ↓
-交付 PR/补丁/报告
+Workflow ── 任务图、依赖、重规划、恢复、验收
+  ↓ UnitIntent
+Kernel ──── 权限、资源、Lease、调度、执行准入
+  ↓ ExecutionPermit
+Model / Tool / Sandbox / Context Executor
+  ↓ AttemptResult + ArtifactRef
+Workflow ── 验收结果，推进、重试、补偿或完成
 ```
 
-## 当前文档
-
-- [初始设计方案](docs/InitialPlan.md)：架构、技术栈、阶段计划和借鉴项目。
-- [难点与实现路径](docs/Difficulty.md)：安全、冲突、token、恢复和性能方面的风险与验证方法。
-- [MVP 范围](docs/mvp-scope.md)：第一版要交付什么，以及明确不做什么。
-- [架构](docs/architecture.md)：组件职责和边界。
-- [开发流程](docs/workflow.md)：一次运行的状态、并行规则与质量门。
-- [协议规范](docs/protocols.md)：`Plan`、`TaskCard` 和目标接口约定。
-- [评测方案](docs/evaluation.md)：如何比较单 Agent、人工双窗口和系统模式。
-- [安全策略](docs/security.md)：权限边界和审批规则。
-- [协作规范](CONTRIBUTING.md)：分支、提交、PR 和三人分工。
-- [Agent 工作指南](AGENTS.md)：给 Coding Agent 和新贡献者的仓库规则。
-
-## 设计原则
-
-1. **Planner 不直接修改代码**：规划结果先落为版本化的 `TaskCard`、`Contract` 和 `Policy`。
-2. **默认隔离，显式共享**：worker 默认只能看到自己的 worktree；共享内容通过 artifact 引用传递。
-3. **数据优先于自然语言**：跨 agent 通信使用 JSON Schema/Pydantic 对象，文本仅用于解释。
-4. **可恢复而非一次性脚本**：每个节点有输入快照、输出摘要、重试策略和幂等键。
-5. **高风险动作必须停下来**：删除、发布、改权限、读取密钥、联网写操作等进入人工审批。
-6. **自调用权限集中管理**：只有 Orchestrator 能创建 worker/API 调用；worker 不能递归生成新 agent，所有调用受预算、并发和策略限制。
-
-## 调研依据（访问：2026-08-23）
-
-| 项目 | 可借鉴能力 | 对 MultiAgentOS 的启示 |
+| 模块 | 核心职责 | 不负责 |
 |---|---|---|
-| [openai/codex](https://github.com/openai/codex) | 本地终端 coding agent | 作为 CLI/会话和权限模型的参考基线 |
-| [mco-org/mco](https://github.com/mco-org/mco) | 多 provider 并行、原始答案留存、显式选择与确认 | 不隐式猜测 agent 团队；保留可审计证据 |
-| [dcouple/Pane](https://github.com/dcouple/Pane) | worktree、终端 pane、跨会话上下文 | 并行隔离和人机协作 UX |
-| [yohey-w/multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun) | tmux 层级 manager-worker、实时 dashboard | 层级调度可行，但要避免 shell/tmux 强耦合 |
-| [josstei/maestro-orchestrate](https://github.com/josstei/maestro-orchestrate) | Express/Standard 分流、39 个 specialist、质量门、持久 session | 采用“短任务快速路径 + 复杂任务标准路径” |
-| [OpenHands/OpenHands](https://github.com/All-Hands-AI/OpenHands) | 本地/远程/Docker/VM backend、自动化和 ACP | 执行后端可插拔；默认使用沙箱，避免直接暴露主机 |
-| [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) | durable execution、HITL、memory、trace | 用状态图表达 DAG、暂停/恢复和人工介入 |
-| [crewAIInc/crewAI](https://github.com/crewAIInc/crewAI) | role-based Crews、event-driven Flows | 角色协作与事件驱动可作为上层 API |
-| [temporalio/temporal](https://github.com/temporalio/temporal) | 重试、持久化、故障恢复 | 生产版可替换自研调度器的可靠性底座 |
-| [BerriAI/litellm](https://github.com/BerriAI/litellm) | 100+ provider 统一接口、预算、负载均衡、guardrails | 统一 API、成本控制和 provider 故障转移 |
-| [microsoft/autogen](https://github.com/microsoft/autogen) | 多 agent 对话模式 | 当前处于 maintenance mode，不作为核心依赖；关注其迁移到 Microsoft Agent Framework 的经验 |
+| Workflow | 用户目标、TaskGraph、任务尝试、并行 Join、重规划、补偿和最终验收 | 直接执行模型、工具或 shell |
+| Kernel | 身份、策略、资源、配额、Lease、fencing、sandbox 和执行准入 | 决定任务的业务含义 |
+| ContextEngine | 代码/文档检索、版本与 ACL 过滤、ContextPack 组装 | 绕过 Kernel 直接给 Agent 访问数据 |
+| AgentToolPool | Agent、模型、工具、Prompt 和 Contract 的版本化定义目录 | 保存运行中的 Agent、会话或密钥 |
 
-## 非目标（首版）
+基础设施包括 Module Host、Shared Contracts、Persistence Platform、Communication Fabric 和 Artifact Store。它们提供通用能力，但不拥有任务、权限或检索的业务决策。
 
-- 不承诺所有任务都并行；有写冲突或强顺序依赖的任务必须串行。
-- 不允许 agent 自行扩大文件系统、网络、云账号或发布权限。
-- 不把多个模型的回答简单拼接成“共识”；质量由测试、diff 和 reviewer 决定。
+### 核心对象
 
-## 下一步
+| 对象 | 含义 |
+|---|---|
+| `WorkflowRun` | 一次用户目标的完整运行 |
+| `TaskGraph` | 任务及依赖、Join 和版本修订 |
+| `ProcessScope` | 目标、预算、权限上限、工作区和取消范围组成的监督边界 |
+| `TaskRun` / `TaskAttempt` | 稳定的逻辑任务，以及该任务的一次执行尝试 |
+| `AgentRun` | 某个 Agent 的上下文、推理和工具循环 |
+| `Unit` / `UnitAttempt` | 一次独立受控的物理操作及其实际执行，例如模型调用、检索或命令运行 |
+| `ArtifactRef` | 指向不可变 diff、日志、测试报告、ContextPack 或快照的引用 |
 
-先实现一个可测的纵向切片：`plan` 生成任务图，`run` 并行执行两个 worktree，`integrate` 合并并运行测试，`report` 输出 token、延迟、失败和冲突指标。然后用同一组前后端样例与“手工两个窗口”基线比较，而不是凭感觉判断收益。
+这些对象不是同一个大状态机：Workflow 管理总体流程，Kernel 管理执行准入，TaskAttempt 管理任务重试，UnitAttempt 管理一次物理执行。这样才能让失败、取消和恢复保持可追踪。
 
-## 本地开发（进行中）
+## 当前已实现
 
-当前仓库已具备 Phase 1 的编排内核：稳定的 `TaskCard`/`Plan` schema、DAG 与文件 ownership 校验，以及 SQLite checkpoint。模型调用、worktree runtime 与集成器将在后续模块接入。
+当前实现是一个可验证的本地编排骨架：
+
+- `Plan` 与 `TaskCard` 的 Pydantic schema；
+- 任务 ID、依赖存在性、依赖环和无依赖任务之间文件 ownership 重叠校验；
+- 初始 `pending` / `ready` / `blocked` 状态计算；
+- 使用 SQLite WAL 的 Run 与任务 checkpoint 持久化；
+- `maos validate`、`maos run` 与 `maos report` 命令。
+
+未实现：Planner/LLM 调用、实际 worker 执行、Git worktree、沙盒、权限审批、Artifact Store、集成器、费用与遥测采集。
+
+## 快速开始
+
+需要 Python 3.12 或更高版本。
 
 ```bash
+cd MultiAgentOS
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 
+# 校验一个计划
 maos validate examples/todo-login-plan.json
+
+# 创建带 SQLite checkpoint 的运行
 maos run examples/todo-login-plan.json
+
+# 查看运行摘要；将 <run-id> 替换为上一命令输出的 ID
 maos report <run-id>
+
+# 运行质量检查
 pytest
+ruff check .
+mypy src
 ```
+
+默认状态数据库为 `.multiagentos/state.db`。可使用 `--database PATH` 指定其他位置。
+
+## 一个 Plan 示例
+
+```json
+{
+  "goal": "Add login to the Todo application",
+  "tasks": [
+    {
+      "id": "contract.auth",
+      "title": "Define the login API contract",
+      "role": "contract",
+      "owned_paths": ["contracts/**"],
+      "acceptance": ["Contract is reviewed"]
+    },
+    {
+      "id": "backend.auth",
+      "title": "Implement the login endpoint",
+      "role": "backend",
+      "owned_paths": ["server/**"],
+      "dependencies": ["contract.auth"],
+      "acceptance": ["pytest tests/auth"]
+    }
+  ]
+}
+```
+
+`role` 只描述任务职责，不授予权限。无依赖任务若声明重叠的 `owned_paths`，验证器会拒绝该 Plan，避免把潜在写冲突伪装成并行任务。
+
+## 演进路线
+
+V1 不追求一次实现企业级 AgentOS，而是逐层验证：
+
+1. **协议与 checkpoint**：完成并稳定 Plan、任务图、ownership 校验和状态持久化。
+2. **受控执行**：接入获批 subprocess、Git worktree 和结果采集。
+3. **隔离与证据**：加入 sandbox、Artifact Store、审批和测试质量门。
+4. **可恢复编排**：接入 durable workflow、结构化事件和恢复/补偿机制。
+5. **检索与观测**：增加代码检索、成本/延迟评测和 OpenTelemetry。
+
+每一阶段都应以固定任务集与单 Agent 基线比较质量、墙钟时间、token 成本、冲突率和恢复表现；并行不是默认目标。
+
+## 文档导航
+
+- [MVP 范围](docs/mvp-scope.md)：当前完成标准与明确不做的事。
+- [架构](docs/architecture.md)：当前仓库组件边界与实施状态。
+- [协议规范](docs/protocols.md)：`Plan`、`TaskCard` 和后续对象的契约约定。
+- [开发流程](docs/workflow.md)：运行状态、并行规则和质量门。
+- [安全策略](docs/security.md)：权限与审批边界。
+- [评测方案](docs/evaluation.md)：如何验证系统是否比单 Agent 更有价值。
+- [贡献指南](CONTRIBUTING.md)：协作约定。
+- [Agent 开发指南](AGENTS.md)：修改仓库前必须遵守的规则。
+
+## 非目标
+
+- 不保证所有任务并行，也不宣称并行必然更快或更省 token。
+- 不允许 Agent 自动发布、删除、修改权限、读取用户密钥或扩大网络/文件系统权限。
+- 不以多个模型的自由讨论替代结构化任务契约和质量验证。
+- 当前不实现生产多租户、远程 worker、Dashboard 或“通用自主软件公司”。
