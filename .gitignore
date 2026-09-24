@@ -45,9 +45,10 @@ Thumbs.db
 Desktop.ini
 
 # MultiAgentOS runtime state and generated artifacts
+.multiagent/
 .multiagentos/
 runtime/
-artifacts/
+/artifacts/
 worktrees/
 *.sqlite
 *.sqlite3

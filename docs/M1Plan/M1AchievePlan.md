@@ -3,11 +3,13 @@
 > 周期：4 周  
 > 团队：3 人，每人每周 20 小时  
 > 总容量：240 名义人时  
-> 目标设计：`docs/M1Plan/TargetM1.md`
+> 目标设计：`docs/M1Plan/TargetM1.md`<br>
+> 实时完成表：`docs/M1Plan/M1Process.md`
+> 产品版本：`0.1`；M1–M5 为里程碑，M5 完成后发布 V1.0
 
 ## 1 达成目标
 
-三人分别主责 Workflow、Kernel 和 ContextEngine，在四周内共同交付一个单 Agent coding MVP：它能够接收简单编码目标，理解陌生小型仓库，在隔离 worktree 中修改代码，运行测试并输出 diff 与执行报告。同时，M1 必须为总规划中的五个 Module 和五项 Infrastructure 建立真实、可编译、可测试的架构插槽；UserInteraction 与 AgentToolPool 可采用简单实现，Infrastructure 可采用本地/进程内 adapter，但不得省略边界。
+三人分别主责 Workflow、Kernel 和 ContextEngine，在四周内共同交付一个只读 Repository Analysis Agent：它能够接收仓库分析问题，理解陌生小型仓库，通过多轮 tree/search/read 形成带来源的结构化报告。M1 不实现 Coding Agent、文件写入、命令、测试或 worktree；这些能力从 M2 开始增加。同时，M1 必须为总规划中的五个 Module 和五项 Infrastructure 建立真实、可编译、可测试的架构插槽。
 
 M1 的完成标志不是三个主责模块分别“写完”，而是同一个真实任务能够稳定沿 `UserInteraction -> Kernel -> Workflow -> UnitIntent -> Kernel -> ContextEngine/Executor -> Kernel -> Workflow -> RuntimeProjection -> UserInteraction` 运行，并从 AgentToolPool 固定 DefinitionVersion。所有个人任务都必须最终连接到该端到端用例。
 
@@ -23,7 +25,7 @@ Shared Contracts、Persistence Port、Communication Port 与 Artifact Port 由�
 
 ### 2.1 全架构占位完成标准
 
-M1 第 1 周结束前必须出现并可独立构建：`user-interaction`、`workflow`、`kernel`、`context-engine`、`agent-tool-pool` 五个 Module 包，以及 Module Host、Shared Contracts、Persistence、Communication、Artifact Store 五项 Infrastructure 的 Port 与默认 adapter。每个插槽至少有 owner、公开入口、fake/disabled 实现和边界测试；暂不实现的操作统一返回结构化 `UNSUPPORTED_CAPABILITY`，不得留成跨模块直连的 TODO。
+M1 第 1 周结束前必须出现并可独立构建：`user-interaction`、`workflow`、`kernel`、`context-engine`、`agent-tool-pool` 五个 Module 包，以及 Module Host、Shared Contracts、Persistence、Communication、Artifact Store 五项 Infrastructure 的当前 Port 与默认 adapter。关键线路插槽至少有 owner、公开入口、fake/disabled 实现和边界测试；M2–M5 尚无真实用例的能力只预留协议族、owner、opaque Ref、capability 与结构化 `UNSUPPORTED_CAPABILITY`，不得提前冻结猜测性的完整 Port。
 
 ## 3 首先冻结的协作接口
 
@@ -38,7 +40,7 @@ M1 第 1 周结束前必须出现并可独立构建：`user-interaction`、`work
 7. `DefinitionQuery`、`DefinitionVersionRef` 与 `CatalogPort`。
 8. `ContextPort` 与 `KernelPort`；`CONTEXT` 必须是 Unit 类型，ContextPort 只由 Kernel adapter 使用。
 9. `PersistencePort/Repository`、`CommunicationPort/Router` 与 `ArtifactStorePort` 的最小契约。
-10. Protocol Registry：为 `platform.common`、`interaction`、`workflow`、`kernel.control`、`kernel.unit`、`context`、`catalog`、`checkpoint/restore`、`review`、`integration`、`platform.lifecycle/persistence/communication/artifact` 注册 schemaName、owner、版本、capability 和 handler。
+10. Protocol Registry：为 `platform.common`、`interaction`、`workflow`、`kernel.control`、`kernel.unit`、`context`、`catalog`、`checkpoint/restore`、`review`、`integration`、`platform.lifecycle/persistence/communication/artifact` 注册 schemaName、owner、版本和 capability；当前协议登记真实 handler，未来协议登记 reserved/unsupported resolution policy。
 
 五个 Module 的跨边界消息都必须使用 TypeBox/Ajv 或统一选择的 JSON Schema 工具进行运行时校验，不能只共享 TypeScript interface。M1 未实现的对象协议至少定义 opaque VersionedRef、Port 与 Unsupported result schema；不要用空对象、`any` 或永远返回 success 的 Noop 冒充兼容。
 
@@ -57,13 +59,15 @@ M1 第 1 周结束前必须出现并可独立构建：`user-interaction`、`work
 
 所有最小 Adapter 就绪
    -> 单轮真实 Agent
-   -> 多轮搜索/修改/测试
+   -> 多轮搜索/读取/证据补全
    -> 固定任务集
    -> 安全与失败场景
    -> M1 验收
 ```
 
 Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成循环。Kernel 与 ContextEngine 负责人不等待 Workflow：各自使用 contract test 和独立 harness 验证 adapter。CLI harness 必须通过 UserInteraction 和 KernelControlPort 发起运行，不得为了联调临时直调 Workflow；Workflow 的 Context 请求也必须先形成 UnitIntent 再由 Kernel 路由。
+
+工程依赖以 `docs/Requirements/M1DependencyBaseline.md` 为唯一 M1 版本基线。第 1 周开始实现前必须保证 `pnpm.cmd peers check`、`pnpm.cmd run build` 和 `pnpm.cmd run check` 通过；新增依赖必须归属到具体 workspace，不得为方便而安装到根目录或让领域包导入 adapter SDK。
 
 ## 5 四周执行计划
 
@@ -77,7 +81,7 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 2. 为每个边界建立 dependency rule；禁止 CLI 依赖 Workflow、Workflow 依赖 ContextEngine/Kernel 实现、UserInteraction 读取其他 Module 状态。
 3. 实现进程内 Router、文件 Persistence adapter、本地 Artifact adapter 和对应 fake；能力之外返回 `UNSUPPORTED_CAPABILITY`。
 4. 用一个架构 smoke test 验证 Module Host 启动顺序、五个 Module 注册和全部默认 adapter 可替换。
-5. 建立 Protocol Registry 与生成式/fixture contract tests；为 checkpoint/restore、review、integration、durable persistence/communication 等后续协议安装 Unsupported handler。
+5. 建立 Protocol Registry 与生成式/fixture contract tests；为 checkpoint/restore、review、integration、durable persistence/communication 等后续协议登记 opaque Ref、capability 与统一 Unsupported 结果，不冻结完整 Port。
 6. 统一 `Envelope`、typed Ref、capability negotiation 与 Unsupported result；检查 schemaName 唯一和未知 major 拒绝。
 
 #### A：Workflow
@@ -93,8 +97,8 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 
 1. 实现 `KernelPort` contract test harness。
 2. 建立 UnitIntent 准入顺序和结构化 UnitResult。
-3. 实现临时 workspace 与 Git worktree 创建/销毁。
-4. 实现 `FILE_READ`、`FILE_WRITE` 的 fake/local adapter。
+3. 实现只读 workspace revision 固定与运行前后不变检查。
+4. 实现 `FILE_READ` fake/local adapter；`FILE_WRITE/COMMAND/TEST` 返回 Unsupported。
 5. 明确路径 canonicalization、symlink/junction 和 workspace 边界策略。
 6. 实现最小 KernelControlPort、AdmittedCommand 路由和 RuntimeProjection 骨架。
 7. 实现 AgentToolPool 内置 DefinitionVersion、digest 与 CatalogPort fake，确保运行固定所用版本。
@@ -114,18 +118,18 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 - 五个 Module 与五项 Infrastructure 均有可编译插槽、默认/fake adapter 和 Module Host 注册；架构依赖测试通过。
 - Protocol Registry 覆盖 `TargetM1.md` 第 6.5 节全部协议族；每族至少有 schema fixture 和可解析 handler，未实现命令确定性返回 Unsupported。
 - 假任务从 UserInteraction 发起，经 Kernel 路由到 Workflow，从 AgentToolPool 固定定义，并以 RuntimeProjection 返回 UserInteraction。
-- Kernel 能在隔离 worktree 中安全读写指定文件。
+- Kernel 能在已授权 workspace 中安全读取指定文件并拒绝所有写入。
 - ContextEngine 能对 fixture 生成带来源的 ContextPack。
 
-### 第 2 周：真实模型和单轮真实执行
+### 第 2 周：真实模型和单轮只读分析
 
-本周共同目标：真实模型读取 ContextPack，产生结构化动作并完成一次受控修改。
+本周共同目标：真实模型读取 ContextPack，产生结构化 AnalysisAction 并完成一次带来源的只读分析。
 
 #### A：Workflow
 
-1. 实现 AgentAction reducer 和合法动作校验。
+1. 实现 AnalysisAction reducer 和 QUERY/SEARCH/READ/FINAL 合法动作校验。
 2. 将 ContextPack、Observation 和历史步骤组装为下一轮模型输入引用。
-3. 实现 FINAL、失败、步数上限、token 上限和时间上限。
+3. 实现带来源 FINAL、失败、步数上限、token 上限和时间上限。
 4. 为非法模型输出、空动作和重复动作建立失败策略。
 5. 输出初版 RunReport。
 6. 所有 Context 请求改为 `CONTEXT UnitIntent`，只消费 Kernel 返回的 Context UnitResult/ArtifactRef。
@@ -134,8 +138,8 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 
 1. 接入一个模型 Provider，完成 `MODEL` Unit。
 2. 使用 schema 校验结构化 AgentAction。
-3. 实现 `COMMAND` 和 `TEST` Unit、超时和输出截断。
-4. 实现允许命令集合与禁止外部路径/网络的开发期策略。
+3. 实现 `FILE_READ` Unit、超时和输出截断，并确定性拒绝写入/命令/测试。
+4. 实现禁止 workspace 外路径、网络和副作用的只读策略。
 5. 为每次模型与工具执行生成步骤审计记录。
 6. 按 Unit 类型把 CONTEXT 路由到 ContextEngine，并基于固定 DefinitionVersion 执行 MODEL/TOOL；生成最小 RuntimeProjection。
 
@@ -152,27 +156,27 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 - 真实模型基于 ContextPack 返回合法 AgentAction。
 - 真实运行严格经过 `UserInteraction -> Kernel -> Workflow`，且 Context/模型/工具均经过 Kernel Unit 准入。
 - AgentToolPool 返回的 DefinitionVersionRef/digest 写入运行记录，UserInteraction 只读 RuntimeProjection。
-- 文件修改只通过 Kernel 发生。
-- Agent 能完成至少一个“已知相关文件”的简单修改并运行测试。
+- 所有写入、命令和测试请求均被 Kernel 拒绝。
+- Agent 能完成至少一个“已知相关文件”的简单分析并引用 path/line/revision。
 - 达到预算或超时时能确定性停止并生成失败报告。
 
-### 第 3 周：多轮 Agent 与陌生仓库任务
+### 第 3 周：多轮 Agent 与陌生仓库分析
 
-本周共同目标：Agent 不知道目标文件时，能够搜索、观察、修改、测试并至少进行一次修复迭代。
+本周共同目标：Agent 不知道目标文件时，能够搜索、观察、补充查询并形成可复验结论。
 
 #### A：Workflow
 
 1. 完成多轮 Agent loop 和 Observation 历史压缩策略。
-2. 实现测试失败后的继续、成功后的验收和无进展检测。
-3. 验证最终 diff、测试证据和模型 FINAL 声明的一致性。
+2. 实现证据不足后的继续、来源满足后的验收和无进展检测。
+3. 验证最终结论、来源证据和模型 FINAL 声明的一致性。
 4. 记录每步 correlation/causation 和 ArtifactRef。
 5. 增加 cancel 的进程内语义。
-6. 确保运行内所有跨边界数据只经 Envelope/ArtifactRef 和进程内 Communication Port 传递。
+6. 确保同步同进程协作只经公开、运行时校验的 Port 与 BoundaryContext；Event、Signal、异步 Command、durable boundary 和跨进程数据经 Envelope/Communication Port；大对象只传 ArtifactRef。
 
 #### B：Kernel
 
-1. 完善 worktree 生命周期和原始 checkout 不变测试。
-2. 支持 patch/diff 获取和测试证据 Artifact。
+1. 完善只读 workspace、revision 固定和仓库不变测试。
+2. 支持来源片段、检索诊断和 AnalysisReport Artifact。
 3. 完成路径逃逸、symlink/junction、命令超时和进程树终止测试。
 4. 实现模型/命令输出大小限制及敏感字段脱敏。
 5. 建立本地 Executor 的已知安全限制说明。
@@ -187,9 +191,9 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 
 #### 第 3 周退出条件
 
-- Agent 能完成至少一个未知目标文件的 bug 修复。
-- 至少一次任务包含“第一次测试失败 → 再修改 → 测试成功”。
-- 原始 checkout 保持不变，最终产生可应用 diff。
+- Agent 能完成至少一个未知目标文件的实现、调用方与测试定位分析。
+- 至少一次任务包含“第一次证据不足 → 补充检索 → 结论可复验”。
+- 仓库保持不变，最终产生带来源的 AnalysisReport。
 - 每个步骤可追溯到 ContextPack、UnitIntent、UnitResult 和 Artifact。
 - 每个步骤可追溯到 WorkSession、PromptRevision、WorkflowRun、根 MissionScope、GraphRevision、DefinitionVersion、correlation/causation 和 UserInteraction 可见的 RuntimeProjection。
 
@@ -211,7 +215,7 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 1. 完成 Model/Tool adapter contract tests。
 2. 加固路径、命令、超时、输出和清理失败处理。
 3. 确保模型不能绕过 UnitIntent 直接调用工具。
-4. 输出 workspace diff、test evidence 和执行审计。
+4. 输出 AnalysisReport、source evidence 和执行审计。
 5. 整理 M2 durable execution 和幂等需求。
 
 #### C：ContextEngine
@@ -225,7 +229,7 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 #### 第 4 周退出条件
 
 - 五个固定任务可重复执行并生成统一报告。
-- 至少一种真实简单编码任务端到端成功。
+- 五个只读分析任务均到达可解释终态，至少一个真实模型完成其中一种任务；不得执行任何编码修改、命令或测试。
 - 五个 Module 和五项 Infrastructure 的 Port/adapter 均通过对应 contract/架构测试；主要执行 Port 通过共享 contract tests。
 - 原始 checkout、路径和命令边界测试通过。
 - M1 已知限制和 M2 backlog 明确记录。
@@ -253,7 +257,7 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 4. 每周退出条件未满足时，下一周首先补齐，不平行堆叠更多未来能力。
 5. 第 4 周冻结功能，只修复影响验收的问题。
 6. 模型 prompt、工具参数和原始输出不得散落在普通日志；大对象使用 ArtifactRef。
-7. 所有跨模块调用必须携带 correlationId，错误必须使用统一分类。
+7. 所有跨模块调用必须携带 BoundaryContext 或 Envelope 中的 correlation/causation；错误必须使用统一分类。
 8. 任何为赶进度而提出的直连只能通过修改本计划与 `TargetM1.md` 的架构评审决定；不得先合并再留待 M2 重构。
 9. 未实现协议只能补充 typed Ref、capability 与 Unsupported handler；没有真实用例前不得冻结臆测的完整 payload，也不得使用无约束扩展字段绕过版本治理。
 
@@ -261,13 +265,13 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 
 | 编号 | 任务 | 主要验证模块 |
 |---|---|---|
-| F1 | 已知相关文件，修复一个失败测试 | Workflow + Kernel 基本闭环 |
-| F2 | 未知目标文件，根据错误信息定位逻辑缺陷 | ContextEngine 检索 |
-| F3 | 修改两个相关文件以修复接口不一致 | 多轮 ContextPack 与编辑 |
-| F4 | 新增小功能并补充测试 | 结果验收与测试执行 |
-| F5 | 第一次修改后测试仍失败，再次观察和修复 | Workflow 多轮循环 |
+| F1 | 已知相关文件，解释一个函数的行为与边界 | Workflow + Kernel 基本闭环 |
+| F2 | 未知目标文件，根据业务描述定位实现与测试 | ContextEngine 检索 |
+| F3 | 跨两个以上文件解释接口调用约定和数据流 | 多轮 ContextPack |
+| F4 | 为拟议小功能识别实现、测试与配置位置 | 来源完整性验收 |
+| F5 | 首次证据不足，再次查询并形成可复验结论 | Workflow 多轮循环 |
 
-每个 fixture 必须包含初始 commit、用户目标、允许的测试命令、预期行为、禁止路径和验收断言。不能把正确文件名或修复答案直接写进 prompt。
+每个 fixture 必须包含固定 repository revision、分析问题、预期来源、禁止路径、禁止副作用和验收断言。不能把正确文件名或结论直接写进 prompt。
 
 ## 9 M1 发布门
 
@@ -279,24 +283,24 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 - Module Host、Shared Contracts、Persistence、Communication 或 Artifact Store 没有 Port、默认 adapter、装配位或边界测试；
 - Protocol Registry 未覆盖目标设计第 6.5 节任一协议族，存在未登记跨模块对象，或 Unsupported handler 会返回假成功/改变状态；
 - 模型可以直接执行文件或命令副作用；
-- Agent 修改原始 checkout 或 workspace 外文件；
+- Agent 成功执行任何写入、命令、测试或其他副作用；
 - 无步骤/token/时间上限；
-- 测试失败仍报告成功；
+- 关键结论缺少 revision/path/line/provenance 仍报告成功；
 - ContextPack 没有来源或 repository revision；
 - 模块接口只能通过解析异常字符串或日志协作；
-- 固定任务无法生成 diff、测试证据和统一报告；
+- 固定任务无法生成来源化结论、未确认项和统一报告；
 - 五个 Module 只能整体启动，无法使用 fake/disabled adapter 独立测试。
 
 ## 10 降级顺序
 
 工期不足时按以下顺序削减：
 
-1. 从 5 个 fixture 减为 3 个，但必须保留未知文件定位和失败后再修复。
-2. 减少命令类型，只保留项目测试必需命令。
+1. 从 5 个 fixture 减为 3 个，但必须保留未知文件定位和证据不足后的再次检索。
+2. 减少只读检索策略，只保留 tree、文本搜索和文件读取。
 3. 暂不实现进程内 cancel UI，只保留预算/超时终止。
 4. ContextEngine 暂不做复杂排序，只保留文件树、rg、分块和 token 裁剪。
 
-不得削减：五个 Module 与五项 Infrastructure 的架构插槽、UserInteraction/Kernel/Workflow 权威入口、Kernel Unit 路径、AgentToolPool DefinitionVersion、RuntimeProjection 回路、隔离 worktree、Context provenance、Workflow 步数预算、测试验收和边界 contract tests。可以削减的是这些插槽中的业务能力深度，而不是插槽本身。
+不得削减：五个 Module 与五项 Infrastructure 的架构插槽、UserInteraction/Kernel/Workflow 权威入口、Kernel Unit 路径、AgentToolPool DefinitionVersion、RuntimeProjection 回路、只读 workspace、Context provenance、Workflow 步数预算、来源验收和边界 contract tests。可以削减的是这些插槽中的业务能力深度，而不是插槽本身。
 
 ## 11 M1 结束时交付物
 
@@ -309,6 +313,6 @@ Workflow 负责人不等待真实 Kernel/ContextEngine：先使用 fake 完成�
 - 路径/rg ContextEngine；
 - 3–5 个固定 fixture repository；
 - 单元、contract、集成和端到端测试；
-- 每个任务的 diff、测试证据、用量和报告；
+- 每个任务的结论、来源、未确认项、用量和报告；
 - 已知限制、M2 backlog 和需要进入 ADR 的问题清单。
 - 一份关键数据线路的架构测试报告，证明后续升级可替换 adapter/放宽 capability，而不需要改写模块所有权或主调用方向。

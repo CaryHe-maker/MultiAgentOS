@@ -1,0 +1,47 @@
+﻿{
+  "files": [],
+  "references": [
+    {
+      "path": "apps/cli"
+    },
+    {
+      "path": "apps/control-plane"
+    },
+    {
+      "path": "apps/executor"
+    },
+    {
+      "path": "packages/agent-tool-pool"
+    },
+    {
+      "path": "packages/artifacts"
+    },
+    {
+      "path": "packages/communication"
+    },
+    {
+      "path": "packages/context-engine"
+    },
+    {
+      "path": "packages/contracts"
+    },
+    {
+      "path": "packages/kernel"
+    },
+    {
+      "path": "packages/module-host"
+    },
+    {
+      "path": "packages/persistence"
+    },
+    {
+      "path": "packages/testing"
+    },
+    {
+      "path": "packages/user-interaction"
+    },
+    {
+      "path": "packages/workflow"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+﻿{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "test"],
+  "references": [
+    {
+      "path": "../../packages/agent-tool-pool"
+    },
+    {
+      "path": "../../packages/artifacts"
+    },
+    {
+      "path": "../../packages/communication"
+    },
+    {
+      "path": "../../packages/context-engine"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../executor"
+    },
+    {
+      "path": "../../packages/kernel"
+    },
+    {
+      "path": "../../packages/module-host"
+    },
+    {
+      "path": "../../packages/persistence"
+    },
+    {
+      "path": "../../packages/user-interaction"
+    },
+    {
+      "path": "../../packages/workflow"
+    }
+  ]
+}

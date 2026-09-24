@@ -1,13 +1,28 @@
-{
+﻿{
   "name": "@multiagentos/kernel",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.58",
-    "@ai-sdk/openai": "^4.0.71",
+    "@ai-sdk/anthropic": "4.0.58",
+    "@ai-sdk/openai": "4.0.71",
     "@multiagentos/contracts": "workspace:*",
-    "ai": "^7.0.107",
-    "dotenv": "^18.0.1"
+    "ai": "7.0.107",
+    "dotenv": "18.0.1"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json --pretty false",
+    "check": "tsc -b tsconfig.json --pretty false"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   }
 }

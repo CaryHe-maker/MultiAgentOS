@@ -1,0 +1,7 @@
+﻿node_modules
+dist
+coverage
+.multiagent
+pnpm-lock.yaml
+docs
+README.md

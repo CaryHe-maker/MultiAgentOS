@@ -1,30 +1,33 @@
 # MultiAgentOS 目标架构报告
 
+> M1–M5 增量达成路线：`docs/DesignReport/AchievePlan.md`<br>
 > 文档类型：长期目标架构与演进约束  
 > 文档状态：目标设计，不直接构成当前版本完成定义  
-> 适用范围：V1.1、Beta 与 Production 演进  
+> 适用范围：M1–M5 演进；M5 完整兑现本文并发布 V1.0<br>
 > 技术栈约束：`docs/TechStack.md`  
-> 当前实现规范：`docs/DesignReport/TargetM1.md`  
-> 首月计划：`docs/DesignReport/M1AchievePlan.md`  
+> 当前实现规范：`docs/M1Plan/TargetM1.md`<br>
+> 首月计划：`docs/M1Plan/M1AchievePlan.md`<br>
+> M1 依赖基线：`docs/Requirements/M1DependencyBaseline.md`<br>
 > 配套详细设计：`docs/DesignReport/WorkflowModuleReport.md`
 
 > 权威说明：本文保存系统长期目标、完整领域边界和演进约束。本文未被当前文档明确引用的能力不得作为发布阻断项。
 
-## 0 迁移说明与阶段解释
+## 0 版本与阶段解释
 
-本文由原总体设计完整迁移而来，以避免在缩减 V1 时丢失已经形成的长期设计。正文中仍出现的“V1 范围”“V1 验收”“Phase 1–5”等表述代表原始全量方案的历史分期，不再定义当前 V1，也不得直接生成当前迭代任务。
+M1–M5 是开发里程碑，不是产品大版本。M1–M4 对应 0.x 预发布版本；M5 完整兑现本文并通过生产验收后首次发布 MultiAgentOS V1.0。旧总体设计曾把一个较小的本地 coding-agent 闭环称为“V1”，该命名现已废止；本文不再用旧 V1 定义当前或未来范围。
 
 当前阶段映射固定如下：
 
 | 本文内容 | 当前解释 |
 |---|---|
-| 单 Agent loop、受控 Model/Tool Unit、路径检索、隔离 worktree | 只有被 `TargetM1.md` 明确收录的子集属于当前 M1/V1 |
-| PostgreSQL、DBOS、静态多任务图、多 Executor Process、Lease/fencing | M2/M3 候选，由前一里程碑结果决定是否纳入 |
-| 跨 Module SessionCheckpoint、RestoreParticipant、完整数据库 role 隔离、单人 APPROVAL | M4 及后续候选 |
-| 动态 replan、四类 HITL、多人员审核、语义检索、远程 Executor Process、多租户 | V1.1/Beta/Production 目标 |
-| 本文第 19、20 章原实施计划和验收标准 | 历史设计参考，已由 `TargetM1.md` 与 `M1AchievePlan.md` 取代 |
+| 单 Agent loop、受控 Model/Tool Unit、路径检索、隔离 worktree | 只有被 `TargetM1.md` 明确收录的只读子集属于当前 M1/0.1 |
+| Coding Agent、worktree/write/command/test、PostgreSQL、DBOS | 按 `AchievePlan.md` 在 M2 实现 |
+| 静态多任务图、多 Executor Process、Lease/fencing | 按 `AchievePlan.md` 在 M3 实现 |
+| 跨 Module SessionCheckpoint、RestoreParticipant、完整数据库 role 隔离、单人 APPROVAL | 按 `AchievePlan.md` 在 M4 实现 |
+| 动态 replan、四类 HITL、多人员审核、语义检索、远程 Executor Process、多租户 | 按 `AchievePlan.md` 在 M5 实现 |
+| 本文第 19、20 章 | 当前 M1–M5 实施映射与 V1.0 总验收；当前 M1 仍以 `TargetM1.md` 和 `M1AchievePlan.md` 为准 |
 
-对当前开发作出范围判断时，必须先阅读 `TargetM1.md`；对首月排期作出判断时，必须阅读 `M1AchievePlan.md`。
+对里程碑归属作出判断时必须阅读 `AchievePlan.md`；对当前 M1 范围作出判断时必须阅读 `TargetM1.md`；对首月排期和完成状态作出判断时必须分别阅读 `M1AchievePlan.md` 与 `M1Process.md`。
 
 ## 1 文档目的与规范约定
 
@@ -54,25 +57,22 @@ AgentOS 面向持续数分钟至数天的软件工程和通用知识工作，将
 5. 支持用户以 WorkSession 为入口检查运行、暂停、恢复、取消、审批、重新规划、从长期保存点派生运行和生成报告。
 6. 以结构化结果、不可变 Artifact、代码差异、测试证据、用量成本、权限决策和未解决问题作为最终交付的一部分。
 
-### 2.2 V1 范围
+### 2.2 V1.0 范围
 
-V1 只交付一个可测、可恢复的本地 coding-agent 纵向闭环：
+V1.0 是 M5 完成后的首个完整平台版本：
 
-- 单用户、单项目、单 Control Plane 进程；以 CLI 为主要入口，HTTP API 只提供 CLI 需要的最小命令和查询集。
-- 创建 WorkflowRun，接收经 schema 校验的静态 TaskGraph 定义；V1 只支持 required Task 和 `ALL` Join，不使用模型自动规划或动态改图。
-- 先完成单个确定性 Executor Process 纵向闭环，再支持最多两个无显式路径冲突的脚本化 Executor Process 在独立 workspace 中并行执行。Executor 使用固定 fixture 或受控命令产生可预期的文件变更，用于验证编排而非 Agent 智能。
-- Executor 只交付结构化结果、patch/commit Artifact 和测试证据；Workflow 内的 Integration Coordinator 在干净集成 workspace 中按确定顺序应用变更、检测冲突并运行质量门。
-- 命令、文件写入和 workspace 操作均通过 Kernel Unit 准入；V1 实现本地路径白名单、资源/运行时间上限和高风险命令的单人 `APPROVAL`。
-- PostgreSQL 是领域事实源，DBOS 只恢复持久控制流；实现 transactional outbox、Inbox 去重和最小 Lease/fencing，验证进程崩溃后不会重复提交结果。
-- 支持有限次数的 retry、cancel、崩溃后 resume，以及用户显式创建的简化 SessionCheckpoint；从 SessionCheckpoint 恢复默认创建新 WorkflowRun 和新 DBOS execution。
-- Context 仅支持基于路径、`ripgrep` 和明确 ArtifactRef 的按需装配；不在 V1 建设 embedding、reranker、SCIP 或独立索引服务。
-- 生成最终 diff/patch、测试报告、失败原因和耗时报告，并用固定 fixture 验证单/双 Executor Process、冲突、崩溃恢复和重复消息场景。
+- 多租户、组织/项目、OIDC、RBAC/ABAC、RLS、配额、公平调度与成本治理。
+- Web、CLI 与 API 统一经过 UserInteraction 和 Kernel 控制面，用户看到同一 sourceVersion 的投影。
+- 单/多 Agent、静态与动态 TaskGraph、受控 replan、层级监督、handoff 与确定性结果验收。
+- 本地与远程 Executor、Lease/fencing、独立 workspace、ChangeSet、确定性集成和 QualityGate。
+- PostgreSQL 领域事实源、durable runtime、可靠通信、S3-compatible Artifact、PITR 和灾难恢复。
+- 完整 HITL、职责分离、长期 Checkpoint/Restore、Secret、生产级隔离、审计与可观测性。
+- 版本化 Agent/Model/Prompt/Tool/Contract Catalog、MCP/OpenAPI 工具治理和供应链证明。
+- keyword/vector/symbol/graph 混合检索、多级记忆、provenance、ACL、retention 与删除传播。
 
-V1.1 在不改变上述 Task、Unit、ChangeSet、IntegrationPlan 和 RestorePlan 契约的前提下，接入单模型 Provider、Bootstrap Planner 和真实 coding Agent，再建立单 Agent 与双 Agent 的质量/token/成本/延迟基线。
+### 2.3 V1.0 非目标
 
-### 2.3 非目标
-
-V1 不建设 Web UI、多租户、OIDC/RLS、多人审核、职责分离、`ANY`/`QUORUM`/自定义 Join、动态扩图、运行中局部 replan、自动 SessionCheckpoint 轮换、物理 Artifact GC、完整补偿引擎、通用 Kubernetes 调度器、独立消息集群、向量数据库、跨组织 A2A 或自研 durable workflow engine。这些能力保留为 Beta/Production 演进目标。V1 仍不把模型推理视为可信事实，不允许 Agent 自行扩大权限，不宣称任意外部副作用具备 exactly-once 语义。
+V1.0 不以自研基础设施为目标：不自研通用数据库、网络 broker、容器 runtime、模型 Provider 或 durable workflow engine；不承诺任意外部副作用 exactly-once；不把模型推理视为可信事实；不允许 Agent 自行扩大权限。跨组织 A2A、通用 Kubernetes 调度、microVM 和跨区域主动—主动部署仅在真实需求、威胁模型和基准证明必要时进入 V1.x。
 
 ## 3 设计原则与关键不变量
 
@@ -401,7 +401,7 @@ RestorePlan 中每个 RestoreAction 必须声明 owner、strategy、sourceRef、
 
 ### 6.2 统一 Envelope
 
-所有跨模块消息至少包含：
+Event、Signal、异步 Command、durable boundary 和跨进程消息至少包含：
 
 ```ts
 interface BaseEnvelope<T> {
@@ -425,7 +425,7 @@ interface BaseEnvelope<T> {
 }
 ```
 
-消费者必须拒绝未知 major schema、缺少租户上下文、载荷校验失败或资源归属不匹配的消息。Minor 兼容只允许新增可选字段。任何破坏性字段变更必须创建新 schemaVersion，并提供双读或升级迁移期。
+同步同进程协作可以直接使用公开、运行时校验的 Port，并通过 `BoundaryContext` 携带 correlation/causation、tenant/project、运行引用和 deadline；调用方不得感知本地或远程 transport。消息消费者必须拒绝未知 major schema、缺少租户上下文、载荷校验失败或资源归属不匹配的消息。Minor 兼容只允许新增可选字段。任何破坏性字段变更必须创建新 schemaVersion，并提供双读或升级迁移期。
 
 ### 6.3 错误模型
 
@@ -472,7 +472,7 @@ Module Host 启动依赖与五个 Module
   -> UserInteraction 展示可恢复保存点
 ```
 
-1. 用户显式保存时，UserInteraction 提交 sourceWorkflowRunId、期望 milestone/retentionClass、expectedVersion 和幂等键；Kernel 校验控制权限后向 Workflow 发送命令。策略触发的保存直接由 Workflow 产生意图，但仍只能在已定义的安全边界执行。V1 只要求用户显式保存。
+1. 用户显式保存时，UserInteraction 提交 sourceWorkflowRunId、期望 milestone/retentionClass、expectedVersion 和幂等键；Kernel 校验控制权限后向 Workflow 发送命令。策略触发的保存直接由 Workflow 产生意图，但仍只能在已定义的安全边界执行。M4 首先要求用户显式保存，自动策略在 M5 放开。
 2. Workflow 停止该边界继续产生新状态，等待已接受结果完成版本/fencing 校验，记录 effect ledger，并在一个本地事务提交一致 WorkflowCheckpoint、Event 和 Outbox。未知外部副作用未完成 reconciliation 时不得创建可恢复的 SessionCheckpoint。
 3. Checkpoint Manager 从 Workflow 状态生成候选 manifest，列出 Workflow 快照以及 PromptRevision、DefinitionVersion、Artifact、ContextPack/rebuild recipe、base commit/patch、workspace snapshot 和 effect ledger 等跨 Module dependency；SessionCheckpoint 进入 `PREPARING`。
 4. 对每个 owner 调用 `CheckpointParticipant.prepareRetention`。不可变数据返回版本/hash 和 retention token；可重建数据返回 source refs 与重建配方；要求精确重现的数据先通过 Kernel Unit 物化为 Artifact；Grant、Lease、Secret、Executor 会话和未完成审批只记录不得继承，不做保留。
@@ -538,7 +538,7 @@ TaskAttempt 交付 ChangeSet
 1. 写代码的 TaskAttempt 不得仅返回“完成”文本。它必须提交不可变 `ChangeSet`，至少包含 base revision、patch/commit ArtifactRef、变更路径、rename/delete/binary metadata、executorWorkspaceIdentity、已运行测试和预期输出 Contract。
 2. Workflow 内的 Integration Coordinator 以 GraphRevision、Task 依赖、base revision 和 ChangeSet hash 生成不可变 IntegrationPlan。顺序必须确定且可解释；同一输入不得因 Event 到达先后而改变集成顺序。
 3. 集成使用全新 workspace，不直接修改任一 Executor workspace 或用户原工作树。Workflow 生成 Workspace/Command UnitIntent，Kernel 重验路径、预算、revision 和权限后调用 Executor 物化 base、逐个应用 ChangeSet 并返回结构化结果。
-4. 冲突分为 `TEXTUAL`、`STRUCTURAL`、`SEMANTIC`、`BINARY`、`BASE_MISMATCH` 和 `POLICY`。系统不得静默选择任一 Executor 结果；V1 对非自动可解决冲突停止集成并返回 Evidence，后续版本可创建显式修复 Task 或人工审核。
+4. 冲突分为 `TEXTUAL`、`STRUCTURAL`、`SEMANTIC`、`BINARY`、`BASE_MISMATCH` 和 `POLICY`。系统不得静默选择任一 Executor 结果；M3 对非自动可解决冲突停止集成并返回 Evidence，M4/M5 可创建显式修复 Task 或人工审核。
 5. 全部 ChangeSet 应用后必须在同一干净 workspace 运行版本化 QualityGate，至少包含 patch 完整性、禁止路径、构建/测试命令和最终 diff 检查。Executor 自身测试只是 Evidence，不代替集成后测试。
 6. 所有门通过后，Workflow 提交 `IntegratedRevision`，绑定 base revision、ordered ChangeSet hash、最终 diff/commit Artifact、QualityGateResult 和 provenance，再解析集成 Task。失败则提交 `IntegrationFailed`，保留 workspace diagnostics，不得将 WorkflowRun 报告为成功。
 7. 集成 workspace 的提交、推送、建 PR 或发布是独立外部副作用，必须经过新的 Kernel 准入/人工审核；`IntegratedRevision` 本身不等于已推送或已发布。
@@ -646,7 +646,7 @@ Scheduler 输入为已由 Workflow 声明可执行且通过静态校验的 Unit�
 - 优雅取消期限；超时后终止 Sandbox 并将 Attempt 标记为 ABANDONED 或 CANCELLED。
 - Executor Process 失联、孤儿 Lease、stale Attempt 与资源泄漏的周期性 reconciliation。
 
-V1 只实现单项目、全局与每 WorkflowRun 的并发上限，确定性 Executor Process 的运行时间/资源上限，以及最小 Lease TTL、heartbeat、撤销和 fencing。租户公平性、Provider RPM/TPM、成本预算结算和复杂优先级在 V1.1/Beta 实现。
+M3 先实现单项目、全局与每 WorkflowRun 的并发上限，确定性 Executor Process 的运行时间/资源上限，以及最小 Lease TTL、heartbeat、撤销和 fencing。租户公平性、Provider RPM/TPM、成本预算结算和复杂优先级在 M5/V1.0 实现。
 
 ### 8.4 Executor 与 Sandbox
 
@@ -769,7 +769,7 @@ DefinitionVersion 发布后不可变，至少包含 schema、digest、来源、�
 
 ### 12.1 PostgreSQL schema 与模块数据库权限
 
-V1 使用单一 PostgreSQL 实例，但必须隔离 schema、数据库 role 与连接池：`interaction`、`workflow`、`kernel`、`context`、`catalog`、`platform`、`dbos`。迁移使用独立 migration role；应用运行 role 不得拥有 DDL、role 管理、`BYPASSRLS` 或其他 schema 的隐式 `PUBLIC` 权限。生产环境必须撤销 schema/table 的默认 `PUBLIC` 权限，并以 tenant/project RLS 或等价查询守卫实施纵深防御。
+M2 从单一 PostgreSQL 实例开始，但必须隔离 schema、数据库 role 与连接池：`interaction`、`workflow`、`kernel`、`context`、`catalog`、`platform`、`dbos`。迁移使用独立 migration role；应用运行 role 不得拥有 DDL、role 管理、`BYPASSRLS` 或其他 schema 的隐式 `PUBLIC` 权限。M5/V1.0 生产环境必须撤销 schema/table 的默认 `PUBLIC` 权限，并以 tenant/project RLS 或等价查询守卫实施纵深防御。
 
 权限记号：`RW` 表示该 Module 是领域写入所有者；`R*` 表示仅可读取专门发布、可撤销的稳定投影/view；`API` 表示不得直连，必须通过 Query/Event；`-` 表示无访问权。
 
@@ -827,7 +827,7 @@ Fastify API 以 `/v1` 版本化，TypeBox schema 同时生成 OpenAPI。最低�
 
 ### 13.2 CLI 与 Web
 
-V1 CLI 至少提供 `workflow create|run|inspect|cancel`、`review list|show|respond`、`checkpoint create|list|restore` 和 `report`；静态 TaskGraph 由文件输入，不提供 `plan`、动态 `replan` 或 `rerun`。完整产品可逐步增加 WorkSession/Prompt、pause/resume、fork、Web 和 IDE Adapter。所有操作面均属于 UserInteraction，不得直连领域数据库；V1 至少展示 WorkflowRun、GraphRevision、Task/Unit、Lease、审批、Artifact、diff、测试证据和因果链。
+CLI 能力随里程碑累积：M1 提供 `run|inspect|report`；M2 增加 `cancel`；M4 增加 `review` 与 `checkpoint`；M5/V1.0 增加动态 `plan/replan/rerun`、Web 和 IDE Adapter。所有操作面均属于 UserInteraction，不得直连领域数据库；V1.0 必须展示 WorkflowRun、GraphRevision、Task/Agent/Unit、Lease、审批、Artifact、diff、测试证据和因果链。
 
 ## 14 用户变更、取消、恢复与补偿
 
@@ -891,9 +891,9 @@ prompt、工具参数、源代码与模型原始输出默认不写入 span。日
 
 ## 17 部署与运行
 
-### 17.1 V1 部署单元
+### 17.1 里程碑部署单元
 
-V1 使用 pnpm workspace 和 TypeScript/Node.js LTS。单个 Control Plane 进程承载 Module Host、已实现的 Module、最小 Fastify API、Scheduler 与 Outbox dispatcher；PostgreSQL 同时承载领域 schema 和独立 `dbos` schema，本地 CAS 保存 Artifact。V1 的 `apps/executor` 使用受限本地 subprocess 或开发环境已有的 rootless container 运行确定性动作；subprocess 必须显式标记为非安全边界。LiteLLM、MCP、OTel Collector、Prometheus/Grafana、S3 和 Web 均不是 V1 运行必需依赖。逻辑并列不要求物理拆进程，但模块包、接口和测试边界必须独立。
+M1 使用 pnpm workspace、TypeScript/Node.js LTS、单 Control Plane 与只读 Executor。M2 加入 PostgreSQL/DBOS 和安全本地 Coding Executor；M3 增加多 Executor；M4 增加 rootless sandbox 与观测组件；M5/V1.0 增加远程 Executor、多 Control Plane、S3、Web 和高可用通信。逻辑并列不要求提前物理拆进程，但模块包、接口和测试边界必须独立。
 
 建议包边界：
 
@@ -918,21 +918,21 @@ apps/executor             确定性本地/容器 Executor Process
 
 ### 17.3 备份与灾难恢复
 
-V1 必须提供可脚本化的 PostgreSQL 与本地 CAS 备份/恢复演练，并证明恢复后可重建固定 fixture Workflow 因果链。PITR、对象存储版本化、季度灾备和正式 RPO/RTO 是 Beta/Production 要求；在实测前不声明生产目标。
+M2 必须提供可脚本化的 PostgreSQL 与本地 CAS 备份/恢复演练，并证明恢复后可重建固定 fixture Workflow 因果链。M5/V1.0 必须提供 PITR、对象存储版本化、定期灾备和正式 RPO/RTO；在实测前不声明生产目标。
 
 ## 18 测试与质量门
 
 ### 18.1 测试层级
 
-- V1 工具基线：Vitest 执行单元/集成测试，fast-check 执行状态机和 DAG 属性测试，Testcontainers 管理 PostgreSQL，固定 Executor/Kernel/其他 Module fake 提供可重现输入。测试不得绕过生产 schema 校验和 Adapter 边界。
+- M2/M3 工具基线：Vitest 执行单元/集成测试，fast-check 执行状态机和 DAG 属性测试，Testcontainers 管理 PostgreSQL，固定 Executor/Kernel/其他 Module fake 提供可重现输入。测试不得绕过生产 schema 校验和 Adapter 边界。
 - 单元测试：Reducer、状态转换、Policy、预算、Join、图校验、错误映射。
 - 属性测试：DAG 无环、版本单调、终态不可逆、重复 Event 幂等、fencing 单调、预算守恒。
 - 契约测试：所有 schema 正反例、兼容性、OpenAPI、跨模块 producer/consumer。
 - 集成测试：PostgreSQL、DBOS、Outbox/Inbox、本地 CAS、确定性 Executor、Git patch 应用、QualityGate，以及各 owner 的 CheckpointParticipant/RestoreParticipant 契约。
 - 故障注入：领域事务后崩溃、Outbox 发布前崩溃、重复/乱序消息、Executor Process kill、Lease 过期、Artifact 写入失败、集成中崩溃、prepare/commit retention 中崩溃和 restore action 中崩溃。
-- V1 E2E：静态图、单/双 Executor Process、ALL Join、ChangeSet、文本/base mismatch 冲突、集成测试门、单人 APPROVAL、cancel、崩溃 resume、跨 Module SessionCheckpoint 保存、fork 和最终报告。
+- M3/M4 E2E：静态图、单/双 Executor Process、ALL Join、ChangeSet、文本/base mismatch 冲突、集成测试门、单人 APPROVAL、cancel、崩溃 resume、跨 Module SessionCheckpoint 保存、fork 和最终报告。
 - 错误归属测试：每类统一错误只能由责任 Module 作出权威分类，跨模块传播不得丢失 correlation、retryable、detailsRef 与业务影响。
-- 安全测试：路径逃逸、symlink/junction、禁止路径、越权 Artifact 和命令审批绕过。MCP/OAuth/SSRF 和不可信模型输出属于 V1.1/Beta。
+- 安全测试：路径逃逸、symlink/junction、禁止路径、越权 Artifact 和命令审批绕过从首次相关能力进入时即建立；MCP/OAuth/SSRF、多租户和不可信远程工具在 M5/V1.0 完整验收。
 - 性能测试：10 个并发 Workflow 的队列、数据库争用、Outbox backlog、Git 集成延迟和崩溃恢复时间。
 
 ### 18.2 发布阻断条件
@@ -941,48 +941,44 @@ V1 必须提供可脚本化的 PostgreSQL 与本地 CAS 备份/恢复演练，�
 
 ## 19 实施计划与交付物
 
-### 19.1 Phase 1：工程、契约与事实源
+### 19.1 M1 / 0.1：只读 Repository Analysis MVP
 
-建立 pnpm workspace、严格 TypeScript、lint/测试；实现 Shared Contracts、ID/Clock/Error、Kysely migration、Module schema/role 隔离、本地 CAS、领域事务与 Outbox 原子提交。交付契约包、migration、兼容测试和本地开发环境。
+完成模块化单体边界、真实只读 Agent loop、Context/Model/FILE_READ Unit、来源化 AnalysisReport 和固定评测基线。M1 不写文件、不运行项目命令或测试。
 
-### 19.2 Phase 2：单 Executor Process 可恢复纵向闭环
+### 19.2 M2 / 0.2：安全且可恢复的单 Coding Agent
 
-接入 DBOS，实现静态 TaskGraph、WorkflowRun、TaskRun/TaskAttempt、确定性脚本 Executor、UnitIntent/UnitAttempt、最小 Lease/fencing、Inbox/Outbox 和 `ALL` Join。交付单 Executor Process 从创建到完成的闭环，并用进程中断验证恢复不会重复提交结果。
+按 `安全非持久 Coding → PostgreSQL 领域持久化 → DBOS durable execution → API/备份/故障验收` 顺序交付。第一次开放副作用时即具备本地确认、隔离 workspace、命令/网络/资源限制、进程树清理和未知 effect reconciliation。
 
-### 19.3 Phase 3：双 Executor Process 与 Git 结果集成
+### 19.3 M3 / 0.3：多任务并行与确定性集成
 
-增加最多两个隔离 workspace、路径 ownership 预检、ChangeSet、IntegrationPlan、IntegrationAttempt 和干净集成 workspace；按确定顺序应用 patch/commit，区分预检冲突、应用冲突和质量门失败。交付可复现的最终 IntegratedRevision、diff 与测试报告。
+交付静态 DAG、Readiness/ALL Join、多 Executor、Lease/fencing、ChangeSet、确定性 IntegrationPlan、干净集成 workspace 和 QualityGate。并行不得绕过 M2 的安全、持久化与恢复不变量。
 
-### 19.4 Phase 4：准入、完成与显式恢复
+### 19.4 M4 / 0.4：长期恢复、人类控制与生产安全基础
 
-实现本地路径白名单、资源/运行时间上限、单人 `APPROVAL`、完成候选与 Kernel drain 握手；实现简化 SessionCheckpoint 的 CheckpointParticipant 保留协调、RestoreOperation/RestorePlan，以及各 Module 的验证、重建、物化和失效响应。交付 cancel、retry、崩溃 resume、跨 Module 保存和从保存点派生新 WorkflowRun 的闭环。
+交付 SessionCheckpoint/Restore、持久 HITL、Secret、rootless sandbox、正式网络策略、审计与完整可观测性。M2 的本地确认和最小隔离在本阶段升级，不另起旁路协议。
 
-### 19.5 Phase 5：操作面与 V1 验收
+### 19.5 M5 / V1.0：完整平台
 
-实现 CLI 和其所需的最小 Fastify API、基于路径/`ripgrep`/ArtifactRef 的上下文装配、结构化日志与最终报告；完成固定 fixture、故障注入和小规模性能测试。V1 完成后才能把真实模型输出引入可靠性基线。
+交付多租户、远程 Executor、动态 TaskGraph、多 Agent、完整 HITL、Web/API、MCP、混合检索、S3、HA、PITR/DR 和生产运维。各能力必须设置独立子发布门；全部 V1.0 验收通过后才能发布 V1.0。
 
-### 19.6 V1.1 与后续阶段
+每个里程碑和子阶段的完成定义是：代码、schema、migration（如适用）、自动化测试、固定验收任务、指标、操作手册、兼容与回滚方案同时存在；仅完成业务代码或协议占位不视为交付。
 
-V1.1 接入单模型 Provider、Bootstrap Planner 和真实 coding Agent，并建立质量、token、成本和延迟基线。动态改图、更丰富的人类在环、语义检索、Web UI、多租户、独立消息系统、强 Sandbox 与生产供应链能力根据实测瓶颈和风险逐步进入 Beta/Production。
+## 20 V1.0 总体验收标准
 
-每个 Phase 的完成定义是：代码、migration、schema、测试、操作手册、指标和回滚方案同时合并；仅完成业务代码不视为交付。
+V1.0 发布必须同时满足：
 
-## 20 总体验收标准
-
-系统达到实现基线必须同时满足：
-
-1. 任意结果可追溯至 WorkflowRun、TaskAttempt、UnitAttempt、ChangeSet、IntegrationAttempt、Identity、Grant、Lease、DefinitionVersion 和 GraphRevision；尚未启用的 AgentRun 不作为 V1 前置条件。
-2. 任意 Module 或 Executor Process 崩溃后，已提交状态不丢失，恢复不会产生失控的重复副作用。
-3. 重复、乱序、迟到 Event 不破坏当前投影，旧 Lease、旧 fencing、失效 Grant 和 barrier 前 revision 均不能提交当前结果。
-4. 两个使用独立 workspace 的 Executor Process 可并行；路径 ownership 冲突在执行前阻止，非显式冲突由 IntegrationAttempt 检出，只有通过集成质量门的 IntegratedRevision 才可成为最终代码结果。
-5. V1 ContextPack 只使用路径、`ripgrep` 和明确 ArtifactRef；每项关键事实仍具有来源、版本和范围证据，语义检索质量不作为 V1 验收项。
-6. 用户可通过 CLI 创建运行、取消、提交审批、查看结果，并从 SessionCheckpoint 派生新 WorkflowRun；动态 replan 和运行中局部影响闭包留到后续阶段。
-7. 全局状态视图可从领域 Event 重建，AgentToolPool 升级不改变既有 DefinitionVersion，Artifact 可校验且不可变。
-8. DBOS Checkpoint、WorkflowCheckpoint 与 SessionCheckpoint 的所有权、保留和恢复语义不混淆；SessionCheckpoint 只有在全部 required dependency 获得 ACTIVE retention token 后才为 `AVAILABLE`，普通删除不能破坏这些引用；RestorePlan 获得各权威 Module 的显式结果，恢复分支不继承旧 Grant、Lease、Secret、审批或 Executor 会话。
-9. 五个 Module 的数据库 role 不能写入其他 Module schema，跨模块读取只限公开投影或 Query；越权 SQL 在集成测试中被数据库拒绝。
-10. V1 的安全、可靠性、小规模性能、备份恢复和 E2E 质量门通过，并保留可复现测试记录；生产容量与灾备指标不是 V1 完成条件。
-11. 静态图单/双 Executor Process、Git 集成、预检冲突、应用冲突、质量门失败、审批、取消、重复消息、进程崩溃和 Checkpoint 派生路径均有端到端测试。
-12. V1 只验收单人 `APPROVAL` 的持久等待与恢复；`INFORMATION`、`DECISION`、`ACCEPTANCE` 和多人审核保留稳定契约，但不作为 V1 实现完成条件。
+1. M1–M4 的固定任务集、安全边界、恢复与兼容回归全部通过。
+2. 任意结果可追溯至 WorkSession、WorkflowRun、MissionScope、GraphRevision、Task/Agent/Unit Attempt、DefinitionVersion、Identity、Policy/Grant/Lease 与 Artifact evidence。
+3. 任意 Module、Executor、Control Plane、消息、数据库或对象存储故障不产生双重成功、越权执行或接受旧 fencing 的结果。
+4. 动态图、多 Agent、远程执行、HITL、Checkpoint/Restore、compensation 与 deterministic integration 可组合工作，并保持唯一业务事实源。
+5. 多租户数据、Artifact、Secret、Context、审查者和资源不能跨界；越权测试和职责分离测试通过。
+6. 同进程 Port 与远程 adapter 共享 contract suite；异步和跨进程消息兼容、可迁移、可重放且未知 major 被拒绝。
+7. ContextEngine 达到公布的质量/成本基线，并通过 provenance、ACL、retention、删除传播和租户隔离测试。
+8. AgentToolPool 的签名、依赖求解、评测、灰度、撤销和回滚不破坏固定 DefinitionVersion 的既有运行。
+9. RuntimeProjection、审计与用户视图可从领域事实重建，Telemetry、durable runtime 与消息系统不成为第二事实源。
+10. PITR、对象版本化、故障转移、滚动升级和灾备达到公布的 SLO/RPO/RTO。
+11. Web、CLI 与 API 观察同一 sourceVersion，并能完成创建、观察、取消、审批、恢复、报告和诊断闭环。
+12. 安全审查、性能/成本基线、运维值班、备份恢复、升级和回滚演练齐备。
 
 ## 21 架构变更控制
 

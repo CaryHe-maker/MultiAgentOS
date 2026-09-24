@@ -1,8 +1,8 @@
-# MultiAgentOS M1 / V1 目标设计
+# MultiAgentOS M1 / 0.1 目标设计
 
 > 文档类型：当前首版的规范性目标设计  
 > 当前里程碑：M1  
-> 产品版本：V1 Agent MVP  
+> 产品版本：0.1 Repository Analysis MVP<br>
 > 达成计划：`docs/M1Plan/M1AchievePlan.md`
 > 长期架构：`docs/DesignReport/TargetArchitecture.md`  
 > Workflow 完整目标设计：`docs/DesignReport/WorkflowModuleReport.md`  
@@ -10,30 +10,30 @@
 
 ## 1 文档权威与版本定义
 
-本文定义 M1/V1 必须实现的系统边界、模块接口、执行路径和验收标准，是当前开发的范围权威。`TargetArchitecture.md` 和 `WorkflowModuleReport.md` 保存长期设计；其中未被本文明确引用的业务能力不得进入 M1 完成定义，但长期架构定义的五个一级 Module、五项 Infrastructure、所有权边界和关键数据传递线路必须从 M1 起完整占位，不得以“尚未实现后续能力”为由删除、绕过或合并这些边界。
+本文定义 M1/0.1 必须实现的系统边界、模块接口、执行路径和验收标准，是当前开发的范围权威。M1–M5 是开发里程碑；M5 完成并通过生产验收后发布 V1.0。`TargetArchitecture.md` 和 `WorkflowModuleReport.md` 保存长期设计；其中未被本文明确引用的业务能力不得进入 M1 完成定义，但长期架构定义的五个一级 Module、五项 Infrastructure、所有权边界和关键数据传递线路必须从 M1 起建立稳定边界。
 
-M1 对“预留”的定义不是只在文档中写一个名称，而是同时具备：独立包或明确目录、公开 Port、运行时可校验 Contract、Module Host 装配点、fake/disabled adapter，以及至少一个证明调用方向的架构测试。未纳入 M1 的能力可以返回明确的 `UNSUPPORTED_CAPABILITY`，但不得让调用方直连其他模块内部实现。这样后续里程碑是在既有插槽内增加实现，而不是改写入口、所有权和主数据流。
+M1 对当前关键线路“预留”的定义是：独立包或明确目录、当前需要的公开 Port、运行时可校验 Contract、Module Host 装配点、fake/disabled adapter，以及证明调用方向的架构测试。对尚未进入实现里程碑的 M2–M5 能力，M1 只冻结协议族名称、owner、opaque Ref、capability 和统一 Unsupported 结果；不得提前冻结未经真实用例验证的完整 Port 或 payload。这样后续里程碑可以增加实现，同时允许实验性 `v0` 契约基于证据演进。
 
 本文中的版本关系为：
 
 | 名称 | 含义 |
 |---|---|
-| M1 / V1 | 当前首版：单 Agent 完成简单真实编码任务 |
-| M2 | 持久化、幂等、取消和崩溃恢复 |
+| M1 / 0.1 | 本地只读 Repository Analysis Agent |
+| M2 / 0.2 | 安全的单 Coding Agent；再分阶段加入持久化、幂等、取消和崩溃恢复 |
 | M3 | 静态多任务图、多 Executor Process 与 Git 结果集成 |
 | M4 | Checkpoint、审批、强执行隔离和完整可观测性 |
-| M5 | 多租户、远程执行、生产运维和平台化扩展 |
+| M5 / V1.0 | 多租户、远程执行、生产运维和平台化扩展；完成后首次发布 V1.0 |
 
 公共契约在 M1 验收结束前使用 `v0/experimental`。只有经过固定任务集验证的字段和语义才能升级为稳定 `v1`。
 
 ## 2 M1 的目标
 
-M1 要交付一个真正可以运行的 coding Agent，而不是先交付完整的可靠性平台。用户提交一个简单软件工程目标后，系统能够理解项目、调用模型、执行受控工具、修改隔离 workspace、运行测试并生成结果报告。
+M1 要交付一个真正可以运行的只读 Repository Analysis Agent，而不是直接进入 coding 或先交付完整可靠性平台。用户提交一个仓库分析问题后，系统能够理解陌生项目、调用模型、执行受控的 tree/search/read 工具，并生成带 repository revision、路径、行范围和 provenance 的结构化分析报告。代码修改、命令、测试、diff 和 Git worktree 从 M2 开始实现。
 
 典型调用：
 
 ```bash
-multiagent run --repo ./example --prompt "修复当前失败的计算器测试"
+multiagent run --repo ./example --prompt "定位折扣边界逻辑、调用方和相关测试，并解释潜在错误"
 ```
 
 目标执行链（与总规划 `TargetArchitecture.md` 第 7.1、7.4 节一致；下图取代原有的三模块直连模型）：
@@ -49,7 +49,7 @@ CLI (UserInteraction adapter)
        -> Model/Tool/Workspace Executor 执行受控动作
   -> Kernel 校验 UnitResult 并形成运行事件/RuntimeProjection
   -> Workflow 消费结果，继续 AgentStep 或完成验收
-  -> UserInteraction 读取 RuntimeProjection，展示 diff、测试证据和报告
+  -> UserInteraction 读取 RuntimeProjection，展示来源化结论、步骤、用量和报告
 ```
 
 M1 的核心证明是：同一个 Task 必须沿上述权威线路完整经过五个 Module 的既定插槽。Workflow、Kernel、ContextEngine 提供主要运行能力；UserInteraction 和 AgentToolPool 允许采用最小实现，但必须拥有各自数据并真实参与调用链。五个 Module 在一个进程内运行不改变其逻辑边界。
@@ -61,19 +61,20 @@ M1 的核心证明是：同一个 Task 必须沿上述权威线路完整经过�
 1. 单用户、单项目、单进程、单 Agent、单活动 Task。
 2. UserInteraction 以最小 CLI adapter 创建单个 WorkSession、不可变 PromptRevision 和 UserIntent，并只展示 Kernel 发布的 RuntimeProjection。
 3. AgentToolPool 以只读内置目录提供一个 Agent、Model、Prompt 及允许工具的不可变 DefinitionVersion，运行开始后固定版本与 digest。
-4. 接入一个模型 Provider，支持结构化 AgentAction。
-5. Agent 可以请求搜索、读取文件、修改文件、执行允许的命令和运行测试。
+4. 接入一个模型 Provider，支持结构化 AnalysisAction。
+5. Agent 可以请求文件树、搜索和读取文件；FILE_WRITE、COMMAND、TEST 与其他副作用在 M1 明确 Unsupported。
 6. ContextEngine 能生成仓库文件图、执行文本/符号名称搜索、按 token 预算构造 ContextPack。
 7. Kernel 能校验用户控制意图及所有 UnitIntent，路由 Context Unit，执行 Model/Tool Unit，并返回结构化结果和最小 RuntimeProjection。
-8. Workflow 能控制 Agent 循环、最大步数、预算、终止条件、失败分类和最终验收。
-9. 所有修改发生在隔离 Git worktree，不直接修改用户原始 checkout。
-10. 最终输出 Git diff、测试结果、模型调用次数、token/耗时和失败原因。
-11. 使用至少 5 个固定小型仓库任务建立首版成功率基线。
+8. Workflow 能控制 Agent 循环、最大步数、预算、终止条件、失败分类和来源完整性验收。
+9. M1 对仓库严格只读；任何写入、命令或测试请求均被拒绝，并验证运行前后 repository revision 不变。
+10. 最终输出结构化结论、来源、未确认项、步骤、模型调用次数、token/耗时和失败原因。
+11. 使用至少 5 个固定小型仓库分析任务建立首版成功率基线。
 
 ### 3.2 M1 非目标
 
 M1 不实现：
 
+- Coding Agent、文件写入、命令执行、项目测试、Git diff 和隔离 worktree；
 - 多 Task 并行、复杂 DAG 或动态 replan；
 - 多 Agent 协作、双 Executor Process 集成和 ChangeSet 合并；
 - DBOS、Inbox/Outbox、Lease、fencing 和崩溃后自动续跑；
@@ -94,10 +95,10 @@ M1 不实现：
 | Module | 长期稳定所有权 | M1 必须落地 | M1 暂不实现 |
 |---|---|---|---|
 | UserInteraction | WorkSession、SessionTree、InteractionTurn、PromptRevision、用户意图与交互视图 | CLI adapter；单 WorkSession；不可变 PromptRevision；UserIntent；RuntimeProjection 展示 | Web/IDE、复杂 SessionTree、草稿同步、审核工作台 |
-| Workflow | WorkflowRun、TaskGraph、Task/Agent 状态、业务推进、验收与恢复语义 | 单 Task Agent loop、预算、终止、验收与报告 | 多 Task/DAG、动态 replan、Checkpoint/Restore/补偿 |
-| Kernel | 用户控制与 Unit 准入、执行监管、UnitAttempt、审计与 RuntimeProjection | 最小本地身份/策略校验；Context/Model/Tool Unit 路由；workspace/路径/命令准入；投影 | Lease/fencing、完整 Policy/HITL、远程调度、生产 Sandbox |
+| Workflow | WorkflowRun、TaskGraph、Task/Agent 状态、业务推进、验收与恢复语义 | 单 Task 只读分析 loop、预算、终止、来源完整性验收与报告 | Coding、多 Task/DAG、动态 replan、Checkpoint/Restore/补偿 |
+| Kernel | 用户控制与 Unit 准入、执行监管、UnitAttempt、审计与 RuntimeProjection | 最小本地身份/策略校验；Context/Model/FILE_READ 路由；workspace/路径准入；写入和命令拒绝；投影 | Coding Tool、Lease/fencing、完整 Policy/HITL、远程调度、生产 Sandbox |
 | ContextEngine | RepositorySnapshot、检索、ContextPack、provenance | 文件树、rg、分块、token 裁剪和不可变 ContextPack | 向量/SCIP/reranker、长期记忆和独立索引服务 |
-| AgentToolPool | Agent/Tool/Model/Prompt/Contract 的 DefinitionVersion 与兼容关系 | 内置只读定义目录；稳定 ID/version/digest；查询 Port；固定运行所用版本 | 动态发布、供应链治理、复杂兼容求解、管理 UI |
+| AgentToolPool | Agent/Tool/Model/Prompt/Contract 的 DefinitionVersion 与兼容关系 | 内置 Analysis Agent、Model、Prompt、tree/search/read Tool；稳定 ID/version/digest；固定运行版本 | Coding Agent/Tool bundle、动态发布、供应链治理、复杂兼容求解、管理 UI |
 
 M1 使用模块化单体：五个 Module 位于同一进程，通过 Port 和共享 Contract 通信，不拆成五个服务，不建立五套数据库，也不引入外部消息总线。模块包、所有权、装配和测试边界必须独立；禁止以“同进程”为由直接导入对方 Repository、Reducer 或内部类。
 
@@ -120,7 +121,7 @@ M1 使用模块化单体：五个 Module 位于同一进程，通过 Port 和共
 3. Kernel 根据 Unit 类型调用 ContextEngine 或 Model/Tool/Workspace Executor；模型与工具定义来自已固定的 AgentToolPool DefinitionVersion。
 4. 执行结果先由 Kernel 校验并形成结构化 UnitResult/Event，再由 Workflow 消费；Executor 不回调 Workflow。
 5. 用户可见运行状态固定走 `Workflow/Event + Kernel execution state -> Kernel RuntimeProjection -> UserInteraction`；UserInteraction 不读取其他 Module 内部状态。
-6. 跨边界的大对象只传 ArtifactRef；跨模块消息全部使用 Shared Contracts 和 Communication Port。
+6. 跨边界的大对象只传 ArtifactRef。同步同进程协作可以通过公开且运行时校验的 Port；Event、Signal、异步 Command、durable boundary 与跨进程调用必须使用统一 Envelope 和 Communication Port。调用方不得感知具体 transport。
 
 ## 5 最小领域模型
 
@@ -223,7 +224,7 @@ Workflow 不得直接调用 ContextEngine、模型 SDK、文件系统或 shell�
 
 ### 6.3 UserInteraction、控制准入与 Catalog Port
 
-M1 至少定义并运行时校验 `UserIntent`、`AdmittedCommand`、`RuntimeProjection`、`DefinitionQuery` 和 `DefinitionVersionRef`。调用方向固定为：
+M1 至少定义并运行时校验判别联合的 `RunIntent/InspectIntent/ReportIntent/CancelIntent`、`AdmittedCommand`、`RuntimeProjection`、`DefinitionQuery` 和 `DefinitionVersionRef`。每种 Intent 只携带自身操作所需字段；不得让查询或取消伪造 RUN 的 objective、PromptRevision 或 workspace。调用方向固定为：
 
 ```text
 UserInteraction --UserIntent--> KernelControlPort --AdmittedCommand--> Workflow
@@ -235,7 +236,7 @@ AgentToolPool 的 M1 内置目录也必须通过 `CatalogPort.resolve(query)` �
 
 ### 6.4 Envelope、Artifact 与错误
 
-所有跨模块请求和结果包含：
+所有异步、durable 或跨进程请求和结果使用以下 Envelope；同步本地 Port 使用相同 payload schema，并携带包含 correlation、causation、tenant/project、运行引用和 deadline 的 `BoundaryContext`：
 
 ```ts
 interface Envelope<T> {
@@ -284,9 +285,9 @@ M1 必须在 `packages/contracts` 建立版本化 Protocol Registry。下表的�
 | `kernel.unit.*` | `UnitIntent`、`UnitResult`、`UnitAttemptRef`、`ExecutionPermitRef`、`EffectRecordRef` | Permit/Effect 可为空引用，执行与结果校验真实完成 | Scheduler、Grant、Lease、fencing、retry 扩展现有 attempt 协议 |
 | `context.*` | `ContextRequest`、`ContextPackRef`、`ContextItem`、`Provenance`、`IndexRevisionRef` | 路径/rg 检索真实实现；IndexRevision 可为 M1 固定值 | 语义检索、ACL、重建协议追加 adapter/版本 |
 | `catalog.*` | `DefinitionQuery`、`DefinitionVersionRef`、`CapabilityRequirement`、`ContractRef` | 内置只读定义与 digest | 动态发布、兼容求解、供应链状态不改变引用方式 |
-| `checkpoint.*` / `restore.*` | `WorkflowCheckpointRef`、`SessionCheckpointRef`、`RestoreOperationRef`、`CheckpointParticipantPort`、`RestoreParticipantPort` | 仅注册协议名、opaque Ref、Port 与 Unsupported handler；不得创建可恢复假对象 | M4 在原 Port 中加入 prepare/commit/query/restore 的版本化 payload |
-| `review.*` | `HumanReviewRequestRef`、`HumanReviewDecisionRef`、`ReviewResponseRef`、`ReviewGatePort` | Unsupported handler；高风险动作直接按 M1 policy 拒绝 | 单人/多人审核、信息补充与结果验收沿 Kernel 控制面实现 |
-| `integration.*` | `ChangeSetRef`、`IntegrationPlanRef`、`QualityGateResultRef` | M1 最终 diff/test 映射到只读结果 Ref；复杂命令 Unsupported | M3 多 Executor Process 合并、冲突和质量门不改变 Artifact/结果方向 |
+| `checkpoint.*` / `restore.*` | `WorkflowCheckpointRef`、`SessionCheckpointRef`、`RestoreOperationRef` | 仅注册协议族、owner、opaque Ref、capability 与统一 Unsupported 结果 | M4 根据真实保存/恢复用例首次定义 participant Port 与版本化 payload |
+| `review.*` | `HumanReviewRequestRef`、`HumanReviewDecisionRef`、`ReviewResponseRef` | 仅注册协议族、owner、opaque Ref、capability 与统一 Unsupported 结果；高风险动作按当前 policy 拒绝 | M2 加入本地副作用确认；M4 定义持久单人/多人审核协议 |
+| `integration.*` | `ChangeSetRef`、`IntegrationPlanRef`、`QualityGateResultRef` | 仅注册 typed Ref、capability 与统一 Unsupported 结果 | M2 引入单任务 diff/test evidence，M3 根据确定性集成用例定义完整 Port |
 | `platform.lifecycle.*` | `ModuleManifest`、`ModuleCapabilitySet`、`HealthStatus`、`start/stop/health` | 五个 Module 与 adapter 均实现 | readiness、drain、远程 discovery 与独立部署 |
 | `platform.persistence.*` | `RepositoryPort`、`TransactionContext`、`MigrationStatus`、`JournalPositionRef` | 文件 adapter；事务/Journal 能力明确报 unsupported | PostgreSQL、migration、Journal、Outbox/Inbox |
 | `platform.communication.*` | `MessageRouterPort`、`DeliveryReceipt`、`ConsumerOffsetRef` | 进程内同步路由；可靠投递能力报 unsupported | 至少一次、去重、重试、DLQ、消费水位 |
@@ -308,28 +309,29 @@ M1 必须在 `packages/contracts` 建立版本化 Protocol Registry。下表的�
 4. Workflow 生成 CONTEXT UnitIntent；Kernel 准入后调用 ContextEngine，并返回带 ContextPackRef 的 UnitResult。
 5. Workflow 生成 MODEL UnitIntent，由 Kernel 按固定定义调用模型。
 6. Kernel 校验模型结构化输出并返回 AgentAction UnitResult。
-7. Workflow 根据 AgentAction：
-   - 再生成 CONTEXT UnitIntent 请求检索；或
-   - 请求 Kernel 读取、修改、执行命令或测试；或
-   - 接受 FINAL 提案。
+7. Workflow 根据 AnalysisAction：
+   - 再生成 CONTEXT UnitIntent 请求补充检索；或
+   - 请求 Kernel 读取文件；或
+   - 接受带来源的 FINAL 分析提案；
+   - 对写入、命令、测试或其他副作用请求返回结构化 Unsupported。
 8. Kernel 校验每个执行结果并形成 UnitResult/Event；Workflow 将 Observation 追加到 AgentRun，进入下一 AgentStep。
 9. 达到成功、失败、取消、步数或预算上限后终止。
-10. Workflow 验证测试证据和 workspace diff，生成最终报告；Kernel 汇总 RuntimeProjection，UserInteraction 向用户展示。
+10. Workflow 验证关键结论均有 repository revision、path/line 与 provenance，生成最终 AnalysisReport；Kernel 汇总 RuntimeProjection，UserInteraction 向用户展示。
 ```
 
 模型不能直接执行工具。模型输出只是提案，必须经过 Workflow 解释和 Kernel 准入。
 
 ## 8 执行与安全边界
 
-M1 可以使用本地 subprocess，但明确不构成生产安全沙箱。至少必须实现：
+M1 不运行项目 subprocess；Executor 只提供受限 FILE_READ。后续里程碑引入 subprocess 或容器时不得复用 M1 只读准入假定。M1 至少必须实现：
 
-- 工作目录固定在隔离 worktree；
+- workspace 固定为已授权仓库的只读 revision，运行前后验证 revision 与文件内容未改变；
 - 拒绝绝对路径、`..`、symlink/junction 逃逸；
-- 命令 allowlist/denylist 和参数长度限制；
-- 单次执行超时、输出大小上限和进程树终止；
+- FILE_WRITE、COMMAND、TEST、网络与所有外部副作用默认拒绝；
+- 单次读取超时和输出大小上限；
 - 默认禁止外部网络和用户目录访问；
 - 最大 AgentStep、模型调用数和 token 预算；
-- 不自动 commit、push、merge、部署或发送外部消息；
+- 不修改、commit、push、merge、部署或发送外部消息；
 - 所有模型调用和工具执行生成审计步骤记录。
 
 ## 9 工程框架
@@ -339,7 +341,7 @@ M1 可以使用本地 subprocess，但明确不构成生产安全沙箱。至少
 ```text
 apps/control-plane/         可执行 composition entry、配置与 adapter 选择
 apps/cli/                   UserInteraction 的 CLI adapter，不直接调用 Workflow
-apps/executor/              Kernel 管辖的物理执行进程与本地 subprocess adapter
+apps/executor/              Kernel 管辖的只读执行 adapter；M2 才引入受控 subprocess
 packages/contracts/         Envelope、Task、Context、Unit、Artifact、Error schema
 packages/user-interaction/  WorkSession、PromptRevision、UserIntent、CLI view model
 packages/workflow/          Run/Task/Agent 状态机、Agent loop、验收和报告
@@ -355,7 +357,9 @@ packages/testing/           fakes、contract tests、fixture repositories
 
 依赖方向固定为：五个领域 Module 只依赖 `contracts` 和自己声明/消费的 Port；`packages/module-host` 提供 Module 注册与生命周期机制，`apps/control-plane` 是唯一最终 composition root，只负责选择具体 Module/Adapter 并调用 Module Host；`apps/cli` 只依赖 UserInteraction 的公开入口；`apps/executor` 只实现 Shared Contracts 中的执行协议，不依赖 Kernel 内部实现。Workflow 不得导入 Kernel、ContextEngine 或 AgentToolPool 的内部类；UserInteraction 不得导入 Workflow 内部类。M1 可将 `packages/module-host`、`packages/persistence` 和 `packages/communication` 保持为小包，但这些包名、Port 与依赖方向属于验收项。
 
-M1 可以先将运行记录保存在 `.multiagent/runs/<run-id>/`，包括 `run.json`、`steps.jsonl`、`artifacts/`、`final.patch` 和 `report.json`。M2 再将 Repository Port 替换为 PostgreSQL 实现。
+M1 的精确 Node.js、pnpm、TypeScript、测试工具及各 workspace 第三方依赖由 `docs/Requirements/M1DependencyBaseline.md` 统一规定。直接外部依赖必须固定精确版本，内部 package 使用 `workspace:*`；长期技术栈中的 PostgreSQL、DBOS、Kysely、Fastify、MCP、容器和可观测性依赖不得在对应里程碑前进入当前 manifests。
+
+M1 可以先将运行记录保存在 `.multiagent/runs/<run-id>/`，包括 `run.json`、`steps.jsonl`、`artifacts/` 和 `report.json`。M1 不生成 patch；M2 再将 Repository Port 替换为 PostgreSQL 实现并引入代码变更 Artifact。
 
 ## 10 如何保证兼容后续升级
 
@@ -398,36 +402,38 @@ M1 可以先将运行记录保存在 `.multiagent/runs/<run-id>/`，包括 `run.
 
 ### 11.1 固定任务类型
 
-至少包含以下任务，不能只使用“修改已知文件中的常量”一类绕过 ContextEngine 的用例：
+至少包含以下只读分析任务，不能在问题中直接给出答案文件名来绕过 ContextEngine：
 
-1. 根据失败测试，在未知文件中定位并修复一个逻辑错误。
-2. 跨两个相关文件修复调用约定不一致。
-3. 新增一个小功能，同时修改实现和测试。
-4. 面对无关搜索结果，重新查询并找到正确实现。
-5. 测试失败后读取 Observation、再次修改并通过测试。
+1. 根据业务描述，在未知文件中定位实现、调用方和相关测试。
+2. 跨两个以上文件解释接口调用约定和数据流。
+3. 为一个拟议小功能识别需要修改的实现、测试和配置位置，但不执行修改。
+4. 面对无关搜索结果，重新查询并找到正确实现与来源证据。
+5. 首次证据不足时读取 Observation、再次检索并形成可复验结论。
 
 ### 11.2 完成定义
 
 M1 完成必须同时满足：
 
-1. 一个真实模型在固定任务集上完成至少一种简单编码任务。
+1. 五个固定任务都必须到达可解释的成功或结构化失败终态；至少一个真实模型在全部固定任务上运行并记录成功率、来源完整性、步骤、token、成本和延迟基线。
 2. 每个任务完整经过 `UserInteraction -> Kernel -> Workflow`，并由 Workflow 通过 Kernel 的 Unit 路径使用 ContextEngine 与执行器；DefinitionVersion 来自 AgentToolPool。
 3. Workflow 可限制步数、token 和时间，并能确定成功或失败。
 4. ContextPack 具有来源、repository revision 和 token 统计。
-5. 所有模型和工具副作用通过 Kernel Unit 执行。
-6. 原始 checkout 不被修改，最终结果以 diff 和测试证据交付。
+5. 所有模型与只读工具调用通过 Kernel Unit 执行；任何副作用请求确定性拒绝。
+6. 仓库不被修改，最终结果以 AnalysisReport 与来源证据交付。
 7. 五个 Module 均有独立包/目录、公开 Port、fake 或最小 adapter 与 contract test；Workflow、Kernel、ContextEngine 另有至少一个集成测试。
-8. 报告包含步骤、工具调用、模型用量、测试、diff、耗时和失败分类。
+8. 报告包含结论、来源、未确认项、步骤、工具调用、模型用量、耗时和失败分类。
 9. Module Host、Shared Contracts、Persistence、Communication 与 Artifact Store 均有默认 adapter、装配位和替换测试；领域模块不感知具体存储或 transport。
 10. 架构测试能阻止 CLI 直调 Workflow、Workflow 直调 ContextEngine/Provider/文件系统，以及 UserInteraction 读取领域内部状态。
+11. 写入、命令、测试、网络和 workspace 逃逸成功次数为零；任何成功报告中的无来源关键结论为零。
 
 ## 12 后续里程碑
 
-### M2：持久化与基础可靠性
+### M2：安全的单 Coding Agent、持久化与基础可靠性
 
-- PostgreSQL Repository、migration 和领域事务。
-- DBOS 包装 Agent/Workflow loop。
-- 幂等命令、有限 retry、cancel 和进程重启恢复。
+- M2-A：在一次性隔离 Git worktree 中加入 FILE_WRITE、COMMAND、TEST、diff、资源/网络限制与副作用前本地用户确认。
+- M2-B：PostgreSQL Repository、migration、领域事务与 Journal/Outbox/Inbox。
+- M2-C：DBOS 包装 Agent/Workflow loop，加入幂等命令、有限 retry、cancel、进程重启恢复与未知副作用 reconciliation。
+- M2-D：最小 API、投影重建、备份恢复和故障注入；各子阶段必须以前一阶段验收通过为入口。
 - 最小 Inbox/Outbox 或经 ADR 证明的 DBOS 原生替代方案。
 - Artifact CAS、运行审计和故障注入。
 - 明确 DBOS retry、Kernel retry 和 Workflow retry 的唯一责任。
@@ -445,8 +451,8 @@ M1 完成必须同时满足：
 
 - WorkflowCheckpoint 与用户可见 SessionCheckpoint。
 - RestorePlan、跨模块恢复参与者和长期 Artifact retention。
-- 单人 APPROVAL，再按需求扩展 INFORMATION/DECISION/ACCEPTANCE。
-- rootless container 或远程 Sandbox、网络策略和 Secret 管理。
+- 把 M2 的本地副作用确认升级为可持久等待、可失效和可审计的单人 APPROVAL，再按需求扩展 INFORMATION/DECISION/ACCEPTANCE。
+- 把 M2 的最小隔离升级为 rootless container 或远程 Sandbox，并加入正式网络策略和 Secret 管理。
 - OpenTelemetry、正式安全测试、备份恢复和性能基线。
 
 ### M5：平台化与生产能力

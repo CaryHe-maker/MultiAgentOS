@@ -4,7 +4,7 @@
 > 文档类型：Software Requirements Specification（SRS）  
 > 文档状态：M1 需求基线  
 > 需求版本：0.1.0  
-> 适用里程碑：M1 / V1 Agent MVP  
+> 适用里程碑：M1；产品版本 0.1 Repository Analysis MVP<br>
 > 范围权威：`docs/M1Plan/TargetM1.md`  
 > 达成计划：`docs/M1Plan/M1AchievePlan.md`  
 > 长期架构：`docs/DesignReport/TargetArchitecture.md`
@@ -33,7 +33,7 @@
 
 ### 3.1 M1 产品目标
 
-M1 必须交付一个本地、单用户、单项目、单进程、单 Agent、单活动 Task 的 coding Agent。用户提交简单软件工程目标后，系统必须能够理解小型陌生仓库、调用一个模型 Provider、执行受控工具、在隔离 Git worktree 中修改文件、运行测试，并输出 diff、测试证据和运行报告。
+M1 必须交付一个本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读 Repository Analysis Agent。用户提交仓库分析问题后，系统必须能够理解小型陌生仓库、调用一个模型 Provider、执行受控 tree/search/read 工具，并输出具有 repository revision、path/line、provenance、未确认项和运行证据的分析报告。Coding Agent、文件写入、命令、测试、diff 和 Git worktree 属于 M2。
 
 ### 3.2 M1 架构目标
 
@@ -57,7 +57,7 @@ Executor 是受 Kernel 管辖的独立执行面，不是第六个一级 Module�
 
 ### 3.3 M1 非目标
 
-M1 不要求实现：多 Task/DAG、动态 replan、多 Agent、多 Executor Process 合并、PostgreSQL、DBOS、可靠消息、Lease/fencing、崩溃续跑、Checkpoint/Restore、Human Review、Web UI、MCP、语义检索、生产容器隔离、多租户、远程执行和完整可观测平台。
+M1 不要求实现：Coding Agent、文件写入、命令、测试、diff、Git worktree、多 Task/DAG、动态 replan、多 Agent、多 Executor Process 合并、PostgreSQL、DBOS、可靠消息、Lease/fencing、崩溃续跑、Checkpoint/Restore、Human Review、Web UI、MCP、语义检索、生产容器隔离、多租户、远程执行和完整可观测平台。
 
 非目标能力可以具有协议占位和 Unsupported handler，但不得返回假成功或产生领域状态变化。
 
@@ -65,7 +65,7 @@ M1 不要求实现：多 Task/DAG、动态 replan、多 Agent、多 Executor Pro
 
 ### 4.1 主要用户
 
-M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Agent 的开发者。
+M1 的主要用户是通过本地 CLI 对已授权仓库发起只读分析任务的开发者。
 
 ### 4.2 主成功场景
 
@@ -74,11 +74,11 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 3. Kernel 完成最小控制准入并向 Workflow 路由命令。
 4. Workflow 创建 WorkflowRun、GraphRevision 0、根 MissionScope、TaskAttempt 和 AgentRun。
 5. Workflow 从 AgentToolPool 固定 DefinitionVersion。
-6. Workflow 通过 Kernel 请求 Context、模型、文件、命令和测试 Unit。
+6. Workflow 通过 Kernel 请求 Context、模型和 FILE_READ Unit；写入、命令和测试请求必须拒绝。
 7. Kernel 调度对应执行面并验证返回结果。
-8. Workflow 根据已提交结果继续循环或完成验收。
+8. Workflow 根据来源是否充分继续检索或完成分析验收。
 9. Kernel 生成 RuntimeProjection。
-10. UserInteraction 展示最终状态、diff、测试证据、用量和失败原因。
+10. UserInteraction 展示最终状态、来源化结论、未确认项、用量和失败原因。
 
 ## 5. 功能需求
 
@@ -88,7 +88,7 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 |---|---|---|
 | FR-UI-001 | UserInteraction 必须是所有 M1 用户输入的唯一产品边界。CLI 不得直接调用 Workflow。 | 架构依赖测试、E2E |
 | FR-UI-002 | UserInteraction 必须创建单个 WorkSession、首个 SessionTreeNode 和不可变 PromptRevision。 | 单元测试、集成测试 |
-| FR-UI-003 | UserInteraction 必须把用户操作转换为经 schema 校验的 UserIntent，并交给 KernelControlPort。 | Contract test |
+| FR-UI-003 | UserInteraction 必须把用户操作转换为经 schema 校验的判别联合 UserIntent，并连同 BoundaryContext 交给 KernelControlPort；INSPECT/REPORT/CANCEL 不得伪造 RUN 字段。 | Contract test |
 | FR-UI-004 | UserInteraction 必须只根据 RuntimeProjection 和公开 Query 结果展示运行状态。 | 架构测试、集成测试 |
 | FR-UI-005 | M1 未支持的交互命令必须返回结构化 `UNSUPPORTED_CAPABILITY`。 | 负向测试 |
 
@@ -100,7 +100,7 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 | FR-WF-002 | M1 TaskGraph 必须包含且只包含一个 Task，且不得包含 Edge。 | Schema/能力测试 |
 | FR-WF-003 | Workflow 必须控制 Context → Model → Action → Observation → Final 循环。 | Fake 纵向测试 |
 | FR-WF-004 | Workflow 必须执行步数、token、模型调用和时间预算限制。 | 边界测试 |
-| FR-WF-005 | Workflow 必须根据测试证据和 workspace diff 决定业务成功，不得仅信任模型 FINAL 文本。 | E2E、负向测试 |
+| FR-WF-005 | Workflow 必须验证 FINAL 的关键结论具有有效 repository revision、path/line 和 provenance，不得仅信任模型文本。 | E2E、负向测试 |
 | FR-WF-006 | Workflow 对 Context、模型、工具、文件和命令的所有请求必须形成不可变 UnitIntent 并交给 Kernel。 | 架构测试 |
 | FR-WF-007 | Workflow 不得直接导入或调用 ContextEngine、Provider、文件系统、shell 或 Executor 的实现。 | 依赖规则测试 |
 
@@ -113,7 +113,7 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 | FR-KER-003 | Kernel 必须根据 Unit 类型把 Context Unit 路由到 ContextEngine，把 Model/Tool/Workspace Unit 路由到对应执行面。 | Contract test、集成测试 |
 | FR-KER-004 | Kernel 必须创建和维护 UnitAttempt，并为每次执行生成审计记录。 | 单元测试、报告检查 |
 | FR-KER-005 | Kernel 必须验证 Executor 返回的 attempt identity、结果 schema、大小和 Artifact 完整性后才能发布 UnitResult/Event。 | Contract test、故障测试 |
-| FR-KER-006 | Kernel 必须汇总 Workflow Event 与执行状态，形成脱敏 RuntimeProjection。 | 集成测试 |
+| FR-KER-006 | Workflow 只发布 WorkflowRunView/Event；Kernel 必须汇总 Workflow 状态与执行状态，形成并拥有脱敏 RuntimeProjection。 | 集成测试 |
 | FR-KER-007 | Kernel 不得替代 Workflow 判断 Task 是否成功。 | 架构测试、负向测试 |
 
 ### 5.4 ContextEngine
@@ -143,7 +143,7 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 |---|---|---|
 | FR-EXE-001 | `apps/executor` 必须作为独立可执行应用与 Kernel 的领域实现分离，并实现 Shared Contracts 中的 kernel-unit 执行协议。 | 依赖规则测试 |
 | FR-EXE-002 | Executor 只能接受 Kernel 发出的执行请求，不得接受 Workflow、Agent 或 UserInteraction 的直接请求。 | 架构测试 |
-| FR-EXE-003 | Executor 必须在指定 workspace、超时、输出限制和命令约束内执行动作。 | 安全测试 |
+| FR-EXE-003 | Executor 必须在指定 workspace、超时和输出限制内执行 FILE_READ；FILE_WRITE/COMMAND/TEST 必须返回 Unsupported。 | 安全测试 |
 | FR-EXE-004 | Executor 必须只向 Kernel 返回结构化 ExecutionResult、usage、diagnosticsRef 和 ArtifactRef。 | Contract test |
 | FR-EXE-005 | Executor 不得判断 Task/Workflow 成功，不得自行扩大权限或执行范围。 | 负向测试 |
 
@@ -178,8 +178,8 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 
 | ID | 需求 | 验证方式 |
 |---|---|---|
-| FR-COM-001 | 所有跨 Module Command、Query、Event、Signal 和 Result 必须经过 Communication Port。 | 架构测试 |
-| FR-COM-002 | M1 必须提供进程内 Router，并保留与异步 transport 相同的 Envelope 和 handler 语义。 | Contract test |
+| FR-COM-001 | 同进程同步协作必须经过公开、运行时校验的 Port 与 BoundaryContext；Event、Signal、异步 Command、durable boundary 和跨进程调用必须经过 Communication Port 与 Envelope。 | 架构测试 |
+| FR-COM-002 | M1 必须提供进程内 Router，并验证异步消息的 Envelope/handler 语义；同步本地 Port 与未来远程 adapter 必须共享 payload contract test。 | Contract test |
 | FR-COM-003 | 可靠投递、去重和消费水位在 M1 未实现时必须明确报告 unsupported。 | Capability test |
 
 ### 6.5 Artifact Store
@@ -201,7 +201,7 @@ M1 的主要用户是通过本地 CLI 在已授权 Git 仓库中运行 coding Ag
 | FR-PRO-004 | Query result 必须携带 sourceVersion。 | Schema test |
 | FR-PRO-005 | 消费方必须拒绝未知 major schema 和不合法 payload。 | 兼容性测试 |
 | FR-PRO-006 | 向后兼容版本只能新增具有明确语义的可选字段；破坏性变化必须创建新 major schema。 | Fixture compatibility test |
-| FR-PRO-007 | 未实现协议必须提供 typed opaque Ref、Port、capability 与 Unsupported handler。 | Registry test |
+| FR-PRO-007 | 未实现协议必须提供 owner、typed opaque Ref、capability 与统一 Unsupported 结果；完整 Port/payload 在首次实现里程碑依据真实用例定义。 | Registry test |
 | FR-PRO-008 | 不得使用 `any`、无约束 metadata/extensions 或空成功响应规避协议版本治理。 | Schema lint |
 | FR-PRO-009 | Unsupported handler 不得产生领域状态、副作用或假成功 Event。 | 负向测试 |
 
@@ -229,12 +229,12 @@ multiagent report <run-id>
 
 CLI 必须返回非零退出码表示确定性失败，并不得在普通输出中打印 Secret、完整 prompt、未脱敏模型原始输出或 workspace 外绝对路径。
 
-### 9.2 Git workspace
+### 9.2 只读 repository workspace
 
-- 所有修改必须发生在隔离 worktree。
-- 原始 checkout 必须保持不变。
-- 系统不得自动 commit、push、merge、部署或创建外部变更请求。
-- 最终结果必须包含可验证 diff 和 base revision。
+- M1 只能读取已授权 repository root 内的文件，并固定 repository revision。
+- 运行前后 repository revision 和受检文件内容必须保持不变。
+- 路径逃逸、symlink/junction 逃逸、写入、命令和测试请求必须拒绝并记录。
+- 最终结果必须包含可验证的 revision、path/line 和 provenance。
 
 ### 9.3 模型 Provider
 
@@ -250,9 +250,9 @@ CLI 必须返回非零退出码表示确定性失败，并不得在普通输出�
 | ID | 需求 |
 |---|---|
 | NFR-SEC-001 | 必须拒绝绝对路径、`..`、symlink/junction 逃逸和 workspace 外访问。 |
-| NFR-SEC-002 | 命令必须受 allowlist/denylist、参数长度、执行时间和输出大小限制。 |
+| NFR-SEC-002 | FILE_WRITE、COMMAND、TEST、网络和其他副作用必须默认拒绝；FILE_READ 受路径、时间和输出大小限制。 |
 | NFR-SEC-003 | 默认禁止外部网络和用户目录访问。 |
-| NFR-SEC-004 | M1 subprocess 必须明确标记为非生产安全边界。 |
+| NFR-SEC-004 | M1 不运行项目 subprocess；未来 M2 subprocess/容器能力不得复用只读准入假定。 |
 | NFR-SEC-005 | Secret 不得进入 prompt、日志、Artifact、错误消息或持久化明文字段。 |
 
 ### 10.2 兼容性与可演进性
@@ -272,23 +272,23 @@ CLI 必须返回非零退出码表示确定性失败，并不得在普通输出�
 | NFR-REL-001 | M1 必须在步数、token、时间或模型调用预算达到上限时确定性停止。 |
 | NFR-REL-002 | 进程崩溃可以使当前运行失败，但不得宣称已自动恢复或 exactly-once。 |
 | NFR-REL-003 | 文件清理失败、工具超时和模型格式错误必须产生结构化失败报告。 |
-| NFR-REL-004 | 测试失败时不得将 WorkflowRun 报告为成功。 |
+| NFR-REL-004 | 关键结论缺少有效来源或仓库发生变化时不得将 WorkflowRun 报告为成功。 |
 
 ### 10.4 可观测性
 
 | ID | 需求 |
 |---|---|
 | NFR-OBS-001 | 每次模型和工具执行必须具有 correlationId、causationId、开始/结束时间和结构化状态。 |
-| NFR-OBS-002 | 报告必须包含步骤、工具调用、模型用量、测试、diff、耗时和失败分类。 |
+| NFR-OBS-002 | 报告必须包含结论、来源、未确认项、步骤、工具调用、模型用量、耗时和失败分类。 |
 | NFR-OBS-003 | 日志不得作为跨模块事实源；大诊断内容必须通过受控 ArtifactRef 表达。 |
 
 ### 10.5 工程与可移植性
 
 | ID | 需求 |
 |---|---|
-| NFR-ENG-001 | 项目必须使用 Node.js LTS、TypeScript strict 和 pnpm workspace。 |
-| NFR-ENG-002 | 根 lockfile 必须提交到版本控制，所有开发者和 CI 使用同一包管理器版本。 |
-| NFR-ENG-003 | Windows 路径、symlink/junction、进程树终止和 Git worktree 行为必须具有专项测试。 |
+| NFR-ENG-001 | 项目必须使用 `M1DependencyBaseline.md` 固定的 Node.js 24 LTS、TypeScript strict 和 pnpm workspace 基线。 |
+| NFR-ENG-002 | 根 lockfile 必须提交到版本控制；所有直接外部依赖使用精确版本，内部依赖使用 `workspace:*`，所有开发者和 CI 使用同一包管理器版本。 |
+| NFR-ENG-003 | Windows 路径、symlink/junction、只读边界、写入拒绝和 repository 不变性必须具有专项测试。 |
 | NFR-ENG-004 | M1 必须至少在受支持的 Windows 开发环境完成固定任务集验证。 |
 
 ## 11. 运行与开发依赖
@@ -297,19 +297,19 @@ CLI 必须返回非零退出码表示确定性失败，并不得在普通输出�
 
 | 依赖 | 最低/约束 | 用途 |
 |---|---|---|
-| Node.js | `>=22.13.0`，推荐当前 LTS | 主运行时 |
-| pnpm | 根 `packageManager` 固定版本 | Monorepo 与 lockfile |
-| Git | 支持 worktree 的受支持版本 | 隔离 workspace、diff |
+| Node.js | `24.19.0`；engine 允许 `>=24.19.0 <25` | 主运行时 |
+| pnpm | `11.25.0` | Monorepo 与 lockfile |
+| Git | 能读取 revision/status 的受支持版本 | 固定并验证 repository revision，不执行写操作 |
 | ripgrep | 支持 PCRE2 的受支持版本 | M1 文本检索 |
 
 ### 11.2 M1 npm 依赖类别
 
-- 工具链：TypeScript、tsx、Vitest、fast-check、ESLint、Prettier。
-- 契约：TypeBox、Ajv、ajv-formats。
-- CLI：Commander。
-- 模型：AI SDK、dotenv 和一个 Provider adapter。
+- 工具链：TypeScript `6.0.3`、tsx `4.23.15`、Vitest/coverage `5.0.1`、fast-check `4.10.2`、ESLint `10.11.0`、typescript-eslint `8.70.1`、Prettier `3.9.8`。
+- 契约：TypeBox `1.3.34`、Ajv `8.20.0`、ajv-formats `3.0.1`，只由 `packages/contracts` 拥有。
+- CLI：Commander `15.0.0`，只由 `apps/cli` 拥有。
+- 模型：AI SDK `7.0.107`、dotenv `18.0.1` 与 OpenAI/Anthropic Provider adapter，均只由 `packages/kernel` 拥有；每次 M1 运行只启用一个 Provider。
 
-PostgreSQL、DBOS、Kysely、Testcontainers、MCP、Playwright、OpenTelemetry、React 和容器 SDK 不属于 M1 初始依赖。
+完整精确版本、3 app/11 package 的依赖归属和升级规则见 `M1DependencyBaseline.md`。PostgreSQL、DBOS、Kysely、Fastify、Testcontainers、MCP、Playwright、OpenTelemetry、React 和容器 SDK 不属于 M1 初始依赖。
 
 ## 12. 固定任务集与验收
 
@@ -317,26 +317,27 @@ PostgreSQL、DBOS、Kysely、Testcontainers、MCP、Playwright、OpenTelemetry�
 
 | ID | 场景 | 主要验证 |
 |---|---|---|
-| F1 | 已知相关文件，修复失败测试 | 基本 Agent 闭环 |
-| F2 | 未知目标文件，根据错误定位缺陷 | Context 检索 |
-| F3 | 修改两个相关文件解决接口不一致 | 多轮上下文与编辑 |
-| F4 | 新增小功能并补充测试 | 结果验收 |
-| F5 | 首次修改失败，再次观察并修复 | 多轮循环与失败处理 |
+| F1 | 已知相关文件，解释函数行为和边界 | 基本 Agent 闭环 |
+| F2 | 未知目标文件，根据业务描述定位实现与测试 | Context 检索 |
+| F3 | 跨两个以上文件解释接口约定和数据流 | 多轮上下文 |
+| F4 | 为拟议小功能识别实现、测试和配置位置 | 来源完整性验收 |
+| F5 | 首次证据不足，再次查询并形成可复验结论 | 多轮循环 |
 
 ### 12.2 M1 接受标准
 
 | ID | 接受标准 |
 |---|---|
-| AC-001 | 至少一个真实模型完成至少一种固定简单编码任务。 |
+| AC-001 | 五个固定任务全部到达可解释终态；至少一个真实模型在全部任务上运行并记录成功率、来源完整性、步骤、token、成本和延迟基线。 |
 | AC-002 | 任务完整经过 UserInteraction → Kernel → Workflow，并通过 Kernel Unit 路径使用 ContextEngine/Executor。 |
 | AC-003 | 运行使用 AgentToolPool 返回并固定的 DefinitionVersionRef/digest。 |
 | AC-004 | 五个 Module、五项 Infrastructure 与 Executor 均具有公开边界和对应测试。 |
-| AC-005 | 原始 checkout 未改变，最终交付 diff 和测试证据。 |
+| AC-005 | 仓库未改变，最终交付带 revision/path/line/provenance 的 AnalysisReport。 |
 | AC-006 | ContextPack 包含来源、revision、token 统计和 provenance。 |
 | AC-007 | Protocol Registry 覆盖目标设计规定的全部协议族。 |
 | AC-008 | 架构测试可以阻止已定义的绕过路径和非法依赖。 |
 | AC-009 | 所有未实现协议确定性返回 Unsupported，且不产生状态变化。 |
-| AC-010 | 统一报告包含步骤、调用、用量、测试、diff、耗时和失败分类。 |
+| AC-010 | 统一报告包含结论、来源、未确认项、步骤、调用、用量、耗时和失败分类。 |
+| AC-011 | 写入、命令、测试、网络或 workspace 逃逸成功次数为零；任何成功报告中的无来源关键结论为零。 |
 
 ## 13. 发布阻断条件
 
@@ -348,8 +349,8 @@ PostgreSQL、DBOS、Kysely、Testcontainers、MCP、Playwright、OpenTelemetry�
 - Executor 接受非 Kernel 请求或直接向 Workflow 回调。
 - AgentToolPool 定义被散落常量绕过，或运行未固定 DefinitionVersion。
 - 模型可以直接执行工具副作用。
-- Agent 修改原始 checkout 或 workspace 外文件。
-- 测试失败但报告成功。
+- Agent 成功执行写入、命令、测试、网络或其他副作用。
+- 关键结论没有有效来源或仓库发生变化但仍报告成功。
 - ContextPack 缺少 provenance 或 repository revision。
 - Protocol Registry 存在未登记跨模块对象。
 - Unsupported handler 返回假成功或产生状态变化。
@@ -370,7 +371,7 @@ PostgreSQL、DBOS、Kysely、Testcontainers、MCP、Playwright、OpenTelemetry�
 | NFR-* | `TargetM1.md` 第 8–11 节 | Security/architecture/E2E |
 | AC-* | `TargetM1.md` 第 11 节 | M1 release report |
 
-每个自动化测试应在名称、tag 或测试 metadata 中引用至少一个需求 ID。每个 `AC-*` 在发布报告中必须链接到测试运行、Artifact、diff 或审查结论；仅写“通过”不构成验证证据。
+每个自动化测试应在名称、tag 或测试 metadata 中引用至少一个需求 ID。每个 `AC-*` 在发布报告中必须链接到测试运行、Artifact、AnalysisReport 或审查结论；仅写“通过”不构成验证证据。
 
 ## 15. 需求变更控制
 

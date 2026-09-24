@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "@multiagentos/testing",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "devDependencies": {
@@ -10,5 +10,20 @@
     "@multiagentos/kernel": "workspace:*",
     "@multiagentos/user-interaction": "workspace:*",
     "@multiagentos/workflow": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json --pretty false",
+    "check": "tsc -b tsconfig.json --pretty false"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   }
 }

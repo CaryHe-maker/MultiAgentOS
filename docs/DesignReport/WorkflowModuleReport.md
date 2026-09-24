@@ -1,13 +1,14 @@
 # Paralleling AgentOS Workflow 模块详细设计报告
 
 > 文档类型：Workflow Module 完整目标详细设计  
-> 文档状态：目标设计；当前版本只实现 V1 总体设计明确收录的子集  
-> 适用范围：V1 演进、V1.1 至 Beta  
+> 文档状态：M5/V1.0 目标设计；当前里程碑只实现其目标文档明确收录的子集<br>
+> 适用范围：M1–M5 演进，M5 完成后发布 V1.0<br>
 > 目标架构：`docs/DesignReport/TargetArchitecture.md`  
-> 当前 M1/V1 范围：`docs/DesignReport/TargetM1.md`  
+> 当前 M1/0.1 范围：`docs/M1Plan/TargetM1.md`<br>
+> M1 依赖基线：`docs/Requirements/M1DependencyBaseline.md`<br>
 > 技术栈约束：`docs/TechStack.md`
 
-> 范围说明：本文保留完整领域模型、Checkpoint/Restore、人类在环和后续演进设计。当前 M1/V1 的对象、状态机、接口和测试完成定义仅以 `TargetM1.md` 为准；本文中的额外能力不得成为当前发布阻断项。
+> 范围说明：本文保留 V1.0 完整领域模型、Checkpoint/Restore、人类在环和后续演进设计。当前 M1/0.1 的对象、状态机、接口和测试完成定义仅以 `TargetM1.md` 为准；本文中的额外能力不得成为当前发布阻断项。
 
 ## 1 文档目的与模块结论
 
@@ -405,7 +406,7 @@ Signal 必须持久化并具有接收确认；不能只依赖内存事件发射�
 - `graph_revisions(workflow_run_id, revision)` 唯一。
 - `task_runs(workflow_run_id, logical_key)` 唯一。
 - `task_attempts(task_run_id, attempt_no)` 唯一。
-- `agent_runs(task_attempt_id)` 对 V1 的 AGENT 策略唯一；未来多 Agent 协作需显式放宽并升级契约。
+- `agent_runs(task_attempt_id)` 对 M1/M2 的单 Agent 策略唯一；M3 以后多 Agent 协作需显式放宽并升级契约。
 - `change_sets(task_attempt_id, content_hash)` 唯一；同一 Attempt 重复交付返回原 ChangeSet。
 - `integration_attempts(workflow_run_id, integration_plan_hash, attempt_no)` 唯一；`integration_inputs` 保存确定顺序，不按 Event 到达时间重排。
 - `restore_operations(tenant_id, idempotency_key)` 唯一；`restore_actions(restore_operation_id, action_id)` 唯一，重放不得产生第二个目标运行或 workspace。
@@ -580,7 +581,7 @@ Persistence 提供事务和版本控制；Communication 提供至少一次投递
 
 ## 11 关键运行路径中的 Workflow 行为
 
-本章细化 `TargetArchitecture.md` 第 7 章定义的目标运行路径，只描述 Workflow 拥有的状态、组件调用和事务边界。当前 M1/V1 只实现 `TargetM1.md` 明确收录的单 Agent 子集。UserInteraction、Kernel、ContextEngine 与 AgentToolPool 的权威职责不在本模块内重复实现。
+本章细化 `TargetArchitecture.md` 第 7 章定义的目标运行路径，只描述 Workflow 拥有的状态、组件调用和事务边界。当前 M1/0.1 只实现 `TargetM1.md` 明确收录的单 Agent 子集。UserInteraction、Kernel、ContextEngine 与 AgentToolPool 的权威职责不在本模块内重复实现。
 
 ### 11.1 新 Session 与初始 WorkflowRun
 
@@ -743,7 +744,7 @@ Cancel 表示不再追求目标，不代表删除事实。Workflow 进入 CANCEL
 
 ### 13.1 领域边界
 
-本章落实 `TargetArchitecture.md` 第 10 章的人类在环目标模型。Workflow 的职责是提出业务需求、持久等待和解释决定，不是管理审查者或授权。Kernel 拥有 HumanReviewRequest、ReviewPolicy、审查者资格、多人数聚合和 HumanReviewDecision；UserInteraction 拥有用户提交的 ReviewResponse 与交互视图；Workflow 仅拥有 HumanReviewIntent、HumanReviewWait 以及决定对 TaskGraph、MissionScope、TaskAttempt 和 AgentRun 的业务影响。当前 M1/V1 不实现本章能力。
+本章落实 `TargetArchitecture.md` 第 10 章的人类在环目标模型。Workflow 的职责是提出业务需求、持久等待和解释决定，不是管理审查者或授权。Kernel 拥有 HumanReviewRequest、ReviewPolicy、审查者资格、多人数聚合和 HumanReviewDecision；UserInteraction 拥有用户提交的 ReviewResponse 与交互视图；Workflow 仅拥有 HumanReviewIntent、HumanReviewWait 以及决定对 TaskGraph、MissionScope、TaskAttempt 和 AgentRun 的业务影响。当前 M1/0.1 不实现本章能力；M2 先引入本地副作用确认，M4 再实现持久审核。
 
 Workflow 不得直接接收浏览器或 CLI 的批准，不得从 UserInteraction 查询“是否已点击”，不得自行将超时解释为批准，也不得把人工批准转换为 CapabilityGrant。所有决定必须以 Kernel 签名或可验证来源的 HumanReviewDecisionSignal 到达。
 
@@ -798,7 +799,7 @@ WorkflowCheckpoint manifest 必须包含未决 HumanReviewWait 的 reviewId、�
 
 ### 14.1 Workflow 的错误处理职责
 
-Workflow 只负责业务语义错误及外部错误对业务状态的影响。它必须识别非法状态转换、GraphPatch/Join/Contract 失败、revision 冲突、结果验收失败、Checkpoint 不一致、完成条件不满足和补偿失败；身份、Policy、Lease、Executor、Context 检索和 Definition 解析的原始错误分别由其权威 Module 分类，Workflow 仅消费规范化结果。目标系统错误责任矩阵见 `TargetArchitecture.md` 第 15 章；当前 M1/V1 只实现 `TargetM1.md` 列出的错误类别与发布门。
+Workflow 只负责业务语义错误及外部错误对业务状态的影响。它必须识别非法状态转换、GraphPatch/Join/Contract 失败、revision 冲突、结果验收失败、Checkpoint 不一致、完成条件不满足和补偿失败；身份、Policy、Lease、Executor、Context 检索和 Definition 解析的原始错误分别由其权威 Module 分类，Workflow 仅消费规范化结果。目标系统错误责任矩阵见 `TargetArchitecture.md` 第 15 章；当前 M1/0.1 只实现 `TargetM1.md` 列出的错误类别与发布门。
 
 错误处理必须在拥有目标聚合的事务中提交失败事实、projection、Event Journal 和 Outbox。处理失败不得覆盖已有终态，不得删除原始 Event，也不得因 DBOS 重放而重复创建 Attempt、GraphRevision、Checkpoint 或补偿任务。
 
@@ -895,11 +896,11 @@ Workflow 只处理 CapabilityRef 和 SecretRef，不读取 Secret 值。Agent �
 8. 创建 SessionCheckpoint 时，Kernel、ContextEngine、AgentToolPool、UserInteraction 与 Artifact Store fake 返回准备/提交结果；只有 required retention 全部 ACTIVE 后保存点才 AVAILABLE，WorkflowCheckpoint/DBOS 历史删除不破坏它。
 9. 从 SessionCheckpoint 创建 RestoreOperation，由上述 owner fake 返回版本化 RestoreActionResult，最终派生新 WorkflowRun。
 10. 恢复分支不继承旧 Grant、Lease、Secret、审批或 Executor 会话；任一必需 RestoreAction 失败时不得进入 READY。普通崩溃 resume、retry 和 replan 均不创建 RestoreOperation。
-11. 上述 V1 场景按第 11 章的事务与状态顺序完成；动态 replan、模型限流、自动 Checkpoint 轮换、四类完整 HITL 和多人审核属于后续阶段。
+11. 上述 M3/M4 场景按第 11 章的事务与状态顺序完成；动态 replan、模型限流、自动 Checkpoint 轮换、四类完整 HITL 和多人审核在 M5/V1.0 完整验收。
 
 ### 17.4 性能目标
 
-V1 不承诺大规模生产 SLO。在记录 CPU、内存、磁盘、PostgreSQL 和执行环境版本的固定开发环境中，基准至少覆盖 10 个并发 Workflow、每个 10 个 Task/不少于 100 个 Event：Command 接收 P95 小于 300 ms（不含执行）、readiness 批次计算 P95 小于 500 ms、Event 到 CLI 投影可见 P95 小于 2 s、崩溃后控制流恢复 P95 小于 30 s。更大并发、公平性和 SSE 连接基准属于 Beta。
+M3/M4 不承诺大规模生产 SLO。在记录 CPU、内存、磁盘、PostgreSQL 和执行环境版本的固定开发环境中，基准至少覆盖 10 个并发 Workflow、每个 10 个 Task/不少于 100 个 Event：Command 接收 P95 小于 300 ms（不含执行）、readiness 批次计算 P95 小于 500 ms、Event 到 CLI 投影可见 P95 小于 2 s、崩溃后控制流恢复 P95 小于 30 s。更大并发、公平性和 SSE 连接基准属于 M5/V1.0。
 
 ## 18 实现包结构与接口
 
@@ -927,30 +928,27 @@ packages/workflow/
 
 ## 19 实施顺序
 
-V1 按以下顺序实现，不以真实 LLM/Agent 作为前置条件：
+Workflow 按里程碑增量实现：
 
-1. 定义 ID、值对象、状态枚举、Error、Envelope、Command/Event/Result、TaskGraph、UnitIntent、ChangeSet、IntegrationPlan 和 RestorePlan schema，并建立 reducer/兼容测试。
-2. 建立 workflow schema、Kysely migration、Repository、Journal/Outbox/Inbox 事务模板，验证 DBOS transaction/checkpoint 与领域提交的原子或幂等桥接。
-3. 实现 WorkflowRun、TaskRun/Attempt、MissionScope、静态 GraphRevision、WorkflowCheckpoint，以及无副作用 Readiness/ALL Join/完成候选判定。
-4. 建立 DBOS Adapter 和 Kernel Unit Port，使用脚本化/确定性 Executor 完成单 Executor Process 闭环，验证重复 Event、迟到结果、cancel、有限 retry 和进程 kill 后 resume。
-5. 实现最多双 Executor Process 并行、独立 workspace 和 ChangeSet 交付；实现 Integration Coordinator，在干净 workspace 顺序应用 patch、分类冲突、运行固定 QualityGate 并提交 IntegratedRevision。
-6. 实现 FINALIZING 两阶段完成协议、最小 Lease/fencing、单人 APPROVAL 等待和高风险命令准入。
-7. 实现用户显式 SessionCheckpoint 的 dependency manifest、CheckpointParticipant prepare/commit/abort/query/release、RestoreOperation/RestorePlan 和 `FORK_NEW_RUN`；使用 fake 其他 Module 验证跨模块保留与恢复结果、新 Grant/Lease 要求、workspace 物化和失败清理。
-8. 实现 CLI 需要的投影、结构化报告和固定 fixture E2E，覆盖单/双 Executor Process、冲突、测试门失败、重复消息、崩溃恢复和 checkpoint fork。
+1. M1：单 Task、根 MissionScope、单 Agent 只读分析 loop、预算、来源验收和 WorkflowRunView；未来对象只保留 owner/opaque Ref/capability。
+2. M2-A：安全单 Coding Agent、Task/Agent attempt、diff/test 验收和本地副作用确认；不先接 durable runtime。
+3. M2-B：workflow schema、Kysely migration、Repository、Journal/Outbox/Inbox 与投影重建。
+4. M2-C：DBOS Adapter、cancel/retry/resume 和 crash recovery；验证 DBOS transaction/checkpoint 与领域提交的原子或幂等桥接。
+5. M3：静态 DAG、Readiness/ALL Join、双 Executor、Lease/fencing、ChangeSet、IntegrationPlan、QualityGate 和 FINALIZING drain。
+6. M4：持久 APPROVAL、Workflow/SessionCheckpoint、participant Saga、RestoreOperation/RestorePlan 和 `FORK_NEW_RUN`。
+7. M5/V1.0：动态 GraphPatch、ANY/QUORUM、多 Agent、完整 HITL、compensation、远程执行与生产扩缩容。
 
-V1.1 再实现 AgentRun 的真实模型循环、Bootstrap Planner、Context 装配、token/成本结算和 coding-agent 评测。动态 replan、ANY/QUORUM Join、四类完整 HITL、自动 SessionCheckpoint 轮换、Artifact GC、通用 compensation 和 Web/SSE 属于后续 Beta。
-
-每一步必须包含 schema、migration、自动化测试、指标和回滚/兼容策略。不得先实现 DBOS 流程再倒推领域模型。
+每一步必须包含 schema、migration（如适用）、自动化测试、指标和回滚/兼容策略。不得先实现 DBOS 流程再倒推领域模型，也不得在首次开放副作用后才补安全边界。
 
 ## 20 模块验收标准
 
-Workflow Module 可进入 V1 发布必须满足：
+Workflow Module 可进入 V1.0 发布必须满足：
 
 1. 输入静态 TaskGraph 后，创建、单/双确定性 Executor Process 执行、ALL Join、Git 集成、QualityGate、FINALIZING drain 和最终完成形成可恢复闭环。
 2. TaskGraph 与 MissionScope 语义分离，GraphRevision 发布原子且历史不可变。
 3. 所有副作用通过 UnitIntent；DBOS step 不直接运行外部操作。
 4. 重复、乱序、迟到 Event、版本冲突和旧 fencing 均有自动化测试且不能破坏当前状态。
-5. resume、cancel、retry 和 checkpoint fork 的身份与状态语义互不混淆；V1 不暴露动态 replan/rerun 语义。
+5. resume、cancel、retry、rerun、replan 和 checkpoint fork 的身份与状态语义互不混淆，并经过组合测试。
 6. ChangeSet 必须绑定 base revision，IntegrationPlan 顺序确定，冲突不被静默解决，Executor 自测不替代集成 QualityGate。
 7. DeterministicResult/ChangeSet 必须通过 Contract 与 acceptance criteria；TaskAttempt 和 IntegrationAttempt 终态不可覆盖。
 8. Workflow 使用 CompletionProposed/ExecutionScopeDrained 两阶段协议，不存在 Workflow 与 Kernel 互相等待的完成死锁。
@@ -962,6 +960,6 @@ Workflow Module 可进入 V1 发布必须满足：
 
 ## 21 后续演进约束
 
-V1 完成后先进入 V1.1，在不改变 Task/Unit/ChangeSet/Integration/Restore 契约的前提下接入真实 Planner 和 coding Agent。随后才可增加动态 GraphPatch、ANY/QUORUM/自定义 Join、协作式多 Agent TaskAttempt、完整 HITL、远程 Executor Process 和 NATS，且必须通过新 schemaVersion 或显式能力标志演进。引入 LangGraph 仅可作为单 Agent 内部无副作用推理辅助，不得拥有外层 Task 状态或独立恢复语义。替换 DBOS 为 Restate/Temporal 时，领域对象、Event 和 Port 保持稳定，并以迁移演练证明现有运行可完成或安全封存。
+M1–M4 的能力必须按第 19 章逐级回归，M5 才能完成动态 GraphPatch、ANY/QUORUM/自定义 Join、协作式多 Agent TaskAttempt、完整 HITL、远程 Executor Process 和高可用通信。引入 LangGraph 仅可作为单 Agent 内部无副作用推理辅助，不得拥有外层 Task 状态或独立恢复语义。替换 DBOS 为 Restate/Temporal 时，领域对象、Event 和 Port 保持稳定，并以迁移演练证明现有运行可完成或安全封存。
 
 任何演进都不得改变三项基本结论：Workflow 决定业务可执行性，Kernel 决定执行准入与物理运行，DBOS/替代 runtime 只负责持久控制流恢复。

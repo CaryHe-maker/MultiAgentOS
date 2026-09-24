@@ -1,10 +1,11 @@
 # AgentOS 技术栈报告
 
 > 文档状态：暂定技术基线，可随原型和基准结果调整  
-> 评估日期：2026-09-16  
+> 评估日期：2026-09-24<br>
 > 项目目标：构建一个以进程、线程、资源、权限、调度和检查点为核心抽象，支持多任务、多 Agent 并行执行，并且可恢复、可审计、可扩展的 AgentOS。
+> 版本规则：M1–M5 是开发里程碑；M1–M4 对应 0.x 预发布版本，M5 通过完整生产验收后发布 V1.0。
 
-> 范围说明：本文同时记录当前与目标技术选项。当前 M1/V1 依赖和实施范围以 `docs/DesignReport/TargetM1.md` 为准，首月顺序以 `docs/DesignReport/M1AchievePlan.md` 为准；本文列出的完整 Phase、依赖矩阵和候选技术不自动进入当前完成定义。
+> 范围说明：本文同时记录当前与目标技术选项。当前 M1 范围以 `docs/M1Plan/TargetM1.md` 为准，首月顺序以 `docs/M1Plan/M1AchievePlan.md` 为准，精确依赖以 `docs/Requirements/M1DependencyBaseline.md` 为准；本文列出的完整 Phase、依赖矩阵和候选技术不自动进入当前完成定义。
 
 ## 1. 暂定推荐组合
 
@@ -24,14 +25,14 @@ TypeScript + Node.js LTS
 + OpenTelemetry Collector + Prometheus/Grafana
 ```
 
-这是当前推荐的目标技术栈，不等于 V1 依赖清单。V1 只启用 TypeScript/Node.js、PostgreSQL、DBOS、Kysely、最小 Fastify API、本地 CAS、Git workspace 和结构化日志；模型 SDK/Gateway、MCP、容器沙箱、语义检索、对象存储、完整可观测平台与 Web UI 按 V1.1/Beta 的验证结果引入。DBOS 复用 PostgreSQL 提供持久控制流，AgentOS 自己保留任务图、资源准入、集成、恢复和 Artifact 等领域语义。
+这是长期推荐技术栈，不等于 M1 依赖清单。当前 M1/0.1 只启用固定版本的 TypeScript/Node.js/pnpm 工具链、TypeBox/Ajv 契约校验、Commander CLI、Vercel AI SDK 与本地开发配置；Persistence 使用 run-scoped 文件 adapter，Communication 使用进程内 Router，Artifact Store 使用本地实现，Executor 只允许受限只读文件访问。PostgreSQL、DBOS、Kysely、Fastify、MCP、容器 SDK、语义检索、对象存储、完整可观测平台与 Web UI 均不属于 M1 初始 manifests；精确清单见 `docs/Requirements/M1DependencyBaseline.md`。
 
 选择该组合的主要原因：
 
 - 基础设施数量较少，适合先完成端到端纵向切片；
 - PostgreSQL 同时承载领域状态、DBOS、outbox 和初期向量检索，降低早期运维成本；
 - AgentOS 的公共协议不绑定 DBOS，可在后期替换为 Restate 或 Temporal；
-- 不在 V1 过早部署 NATS、Redis、独立向量数据库、Kubernetes 或双重 Graph runtime；
+- 不因远期范围而提前部署 NATS、Redis、独立向量数据库、Kubernetes 或双重 Graph runtime；是否进入 V1.0 由 M5 的规模数据决定；
 - TypeScript 控制面可通过 Python sidecar 使用成熟的 embedding/rerank 推理生态。
 
 ### 1.2 总体架构
@@ -74,7 +75,7 @@ OpenTelemetry · Metrics · Traces · Logs · Audit · Evaluation
 | Git worktree | 为并行 coding Executor 提供独立代码工作区，降低写入冲突。 |
 | rootless Docker/Podman | 隔离 Executor Process 执行环境，限制文件、进程、网络和硬件资源。 |
 | S3-compatible storage | 保存不可变的大型 artifact，例如 diff、日志、测试报告、快照和模型原始输出。 |
-| ripgrep | V1 的路径、标识符和文本搜索。 |
+| ripgrep | M1 起的路径、标识符和文本搜索。 |
 | Tree-sitter | 增量语法解析、结构化分块和 AST/CST 信息提取。 |
 | SCIP | 提供跨文件 definition、reference 和 implementation 等精确符号关系。 |
 | PostgreSQL FTS + pgvector | 组合词法与语义召回；结果经过融合、ACL、版本和 token 预算过滤。 |
@@ -84,55 +85,38 @@ OpenTelemetry · Metrics · Traces · Logs · Audit · Evaluation
 
 ### 1.4 各技术栈实现顺序
 
-以下 Phase 仅表示技术实现顺序，不限定系统架构、服务划分或部署方式。
+技术引入与产品里程碑使用同一条主线，避免另一套 Phase 名称造成范围冲突：
 
-#### Phase 1：基础工程与数据契约
+#### M1 / 0.1：只读纵向切片
 
-- 建立 TypeScript、Node.js LTS 和 pnpm workspace。
-- 配置 lint、类型检查和基础测试。
-- 使用 TypeBox、Ajv 和 JSON Schema 定义核心数据契约。
-- 接入 PostgreSQL、数据访问层和 migration。
-- 实现本地内容寻址 Artifact Store。
+- 建立 TypeScript、Node.js LTS 和 pnpm workspace、lint、类型检查与测试门禁。
+- 使用 TypeBox/Ajv 定义运行时契约，以 `BoundaryContext` 贯穿同步 Port 调用。
+- 完成 CLI → Kernel → Workflow/Context/Catalog → 只读 Executor → inspect/report 闭环。
+- Persistence、Communication 和 Artifact Store 均使用本地 adapter；禁止写文件、命令、测试和其他外部副作用。
 
-#### Phase 2：单 Executor Process 持久执行
+#### M2 / 0.2：持久化安全单 Executor
 
-- 接入 DBOS，并明确 DBOS workflow 与领域事务/outbox 的桥接边界。
-- 实现静态 TaskGraph、确定性脚本 Executor、UnitIntent/UnitAttempt 和 `ALL` Join。
-- 实现 Inbox、transactional outbox、有限 retry/cancel、最小 Lease/fencing。
-- 通过 kill/restart 验证恢复不会重复提交结果。
+- 依次完成 PostgreSQL 事实源、DBOS/事务 outbox、受控写执行、cancel/retry/recovery；每一步有独立发布门。
+- 引入 workspace 根限制、symlink/junction 防逃逸、命令 allowlist、超时/资源上限、秘密脱敏与审计基线。
+- 只冻结实际进入实现的 Task、Unit、Event 和 Artifact 契约，不提前固化 M3–M5 的完整协议。
 
-#### Phase 3：双 Executor Process 与 Git 集成
+#### M3 / 0.3：双 Executor 与确定性集成
 
 - 为最多两个 Executor Process 创建隔离 Git workspace。
-- 实现路径 ownership 预检、ChangeSet、IntegrationPlan 和 IntegrationAttempt。
-- 在干净集成 workspace 中确定性应用 patch/commit，并运行测试质量门。
-- 输出 IntegratedRevision、diff、测试证据与冲突分类。
+- 实现 Lease/fencing、路径 ownership、ChangeSet、IntegrationPlan 和确定性质量门。
+- 验证重复/迟到消息、进程崩溃、冲突分类与恢复。
 
-#### Phase 4：准入、完成与恢复
+#### M4 / 0.4：审批、检查点与强化隔离
 
-- 实现本地路径白名单、资源/运行时间上限和单人 `APPROVAL`。
-- 实现完成候选、Kernel drain、Workflow 最终提交的两阶段完成协议。
-- 实现简化 SessionCheckpoint、RestoreOperation/RestorePlan 和跨 Module 恢复结果。
-- 恢复时创建新 WorkflowRun/DBOS execution，并重新签发 Grant、Lease 与执行许可。
+- 实现完成候选与 drain、审批、SessionCheckpoint/RestorePlan 和跨 Module 恢复。
+- 按威胁模型引入 rootless container、MCP 权限包装和完整 OTel 链路。
+- 恢复时创建新运行并重新签发 Grant、Lease 与执行许可。
 
-#### Phase 5：V1 操作面与验收
+#### M5 / V1.0：平台化与生产验收
 
-- 使用 Fastify 实现 CLI 所需的最小控制 API。
-- 实现 create/run/cancel/approve/checkpoint/restore/inspect/report CLI。
-- 使用路径、`ripgrep` 和 ArtifactRef 装配上下文。
-- 完成固定 fixture、崩溃、重复消息、Git 冲突、恢复和小规模性能测试。
-
-#### Phase 6：V1.1 真实 Agent
-
-- 接入 Vercel AI SDK 和单一模型 Provider；需要统一网关时再部署 LiteLLM。
-- 实现 Bootstrap Planner 与真实 coding Agent，但复用 V1 的 Task、Unit、ChangeSet、IntegrationPlan 和 RestorePlan 契约。
-- 建立单 Agent/双 Agent 的质量、token、成本、延迟和冲突基线。
-
-#### Phase 7：Beta/Production 增强
-
-- 按评测引入 MCP、rootless Docker/Podman、Tree-sitter、SCIP、FTS/pgvector 和 reranker。
-- 按运行规模引入 OTel Collector、Prometheus/Grafana、Web UI、对象存储或独立消息系统。
-- 完成多租户、安全供应链、容量、灾备和更强隔离。
+- 完成多租户、远程 Executor、动态协作、多 Agent、Web/API、对象存储、HA、PITR/DR。
+- 按检索评测引入 Tree-sitter、SCIP、FTS/pgvector 和 reranker；按规模数据决定是否引入独立 broker。
+- 全部安全、故障、升级、容量、审计与恢复门通过后，首次发布 V1.0。
 
 ### 1.5 核心设计边界
 
@@ -281,7 +265,7 @@ DBOS 以 PostgreSQL 为底座提供 workflow、step、queue、消息、事件和
 
 | 选择 | 优点 | 缺点或限制 | 适用情况 |
 |---|---|---|---|
-| [DBOS](https://docs.dbos.dev/) | TypeScript SDK；普通函数式 API；无需独立 workflow server；复用 PostgreSQL；支持通信与 streaming。 | 依赖 PostgreSQL；跨地域、超长历史和大规模版本迁移需要验证。 | **推荐 V1/Beta。** |
+| [DBOS](https://docs.dbos.dev/) | TypeScript SDK；普通函数式 API；无需独立 workflow server；复用 PostgreSQL；支持通信与 streaming。 | 依赖 PostgreSQL；跨地域、超长历史和大规模版本迁移需要验证。 | **推荐从 M2 开始验证。** |
 | [Restate](https://docs.restate.dev/) | durable execution、Virtual Object、强一致状态、可靠调用和并行组合完整。 | 需要 Restate Server；代码需遵守其 handler/context 原语。 | 服务化 Beta/Production。 |
 | [Temporal](https://docs.temporal.io/) | 长任务、信号、定时器、跨机器 Temporal Worker、恢复和版本演进成熟。 | 集群和心智成本最高；确定性重放约束严格。 | 高可靠生产阶段。 |
 | [Hatchet](https://docs.hatchet.run/) | 自托管；TypeScript SDK；队列、并发、速率限制、重放和 UI 完整。 | 与 AgentOS scheduler 职责重叠；需要验证生态与迁移成本。 | 备选或对照实验。 |
@@ -353,7 +337,7 @@ AgentOS 自研事件 schema、outbox、幂等消费和调度策略，不自研�
 
 | 选择 | 优点 | 缺点或限制 | 适用情况 |
 |---|---|---|---|
-| PG outbox + 进程内 emitter | 状态和事件同事务；组件最少；容易重放。 | 吞吐和多消费者能力有限；需自建 dispatcher。 | **推荐单机 V1。** |
+| PG outbox + 进程内 emitter | 状态和事件同事务；组件最少；容易重放。 | 吞吐和多消费者能力有限；需自建 dispatcher。 | **推荐 M2–M4 单机阶段。** |
 | DBOS Queue/Messaging | 与推荐 workflow 集成；支持 durable queue、消息和 stream。 | 与 DBOS 绑定；领域 audit 仍需单独保存。 | **推荐 DBOS 方案。** |
 | [NATS JetStream](https://docs.nats.io/nats-concepts/jetstream) | 持久 stream、durable consumer、ack、重投递、replay；运维较轻。 | 至少一次投递会产生重复；需要新集群。 | 团队 Beta/Production。 |
 | Redis Streams | consumer group、pending/claim 和 replay；已有 Redis 时方便。 | 单 stream 不自动跨实例分片；内存和持久策略需谨慎。 | 已有 Redis 基础设施。 |
@@ -380,7 +364,7 @@ Git revision / file watcher
 
 | 选择 | 优点 | 缺点或限制 | 适用情况 |
 |---|---|---|---|
-| ripgrep | 无服务、快速、精确，适合路径和文本检索。 | 不提供持久索引、语义或精确符号图。 | **推荐 V1 词法搜索。** |
+| ripgrep | 无服务、快速、精确，适合路径和文本检索。 | 不提供持久索引、语义或精确符号图。 | **推荐从 M1 开始的词法搜索。** |
 | [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) | 增量解析、容错好、语言覆盖广，适合结构化分块。 | 生成 concrete syntax tree，不等于跨文件语义分析。 | **推荐语法层。** |
 | [SCIP](https://github.com/scip-code/scip) | 语言无关，可表达 definition/reference/implementation。 | 依赖各语言 indexer；本身不是搜索引擎。 | **推荐精确符号层。** |
 | [Zoekt](https://github.com/sourcegraph/zoekt) | 面向源码的 trigram 索引，substring/regex 和多仓库性能好。 | 需要独立索引服务和同步。 | 多仓库或 `rg` 延迟不足时。 |
@@ -407,7 +391,7 @@ Rerank 只处理 top 20–50 候选，不是基础事实源：
 | Git worktree + 受限 subprocess | 启动快、开发简单、便于 diff 和合并。 | subprocess 不是安全边界，无法安全执行不可信代码。 | 可信开发者的本地原型。 |
 | rootless Docker/Podman | OCI 生态成熟；可限制用户、capability、seccomp、CPU、内存和挂载。 | 共享宿主内核；Windows/macOS 依赖 VM/WSL2。 | **推荐本地/Beta 默认。** |
 | [gVisor](https://gvisor.dev/docs/) | 用户态 application kernel，隔离强于普通容器，可接入 Docker/Kubernetes。 | syscall 兼容性和性能开销需验证。 | 不可信代码和生产 Executor Process。 |
-| [Firecracker](https://firecracker-microvm.github.io/) | 独立内核、microVM 隔离、启动快、资源开销低。 | 需要 Linux/KVM、镜像、网络、snapshot 和容量平台。 | 成熟生产平台，不建议 V1 直接自建。 |
+| [Firecracker](https://firecracker-microvm.github.io/) | 独立内核、microVM 隔离、启动快、资源开销低。 | 需要 Linux/KVM、镜像、网络、snapshot 和容量平台。 | 仅在 M5 威胁模型证明必要时采用，不作为 V1.0 默认前提。 |
 | [E2B](https://e2b.dev/docs) | 托管 microVM、TypeScript SDK、快速启动和弹性扩展。 | 成本、数据边界、外部依赖及部署条款需核验。 | 希望快速使用云端强隔离。 |
 
 所有后端实现统一 `SandboxProvider`：create、exec、upload/download、snapshot、pause/resume、network policy、metrics 和 destroy。默认无网络、无宿主密钥、只挂载授权路径，并限制 PID、CPU、内存、磁盘和执行时间。
@@ -420,7 +404,7 @@ Rerank 只处理 top 20–50 候选，不是基础事实源：
 |---|---|---|---|
 | OIDC/OAuth 2.1 | 标准身份和短期 token，可对接企业 IdP。 | 不能直接表达 Agent 的资源和工具权限。 | **推荐 AuthN。** |
 | AgentOS capability | 可绑定 tenant/project/run/process/tool/path、范围和过期时间。 | 令牌签发、吊销、委托和审计需自主实现。 | **推荐执行授权核心。** |
-| 类型化 allow/deny 规则 | 简单、低延迟、容易单元测试。 | 复杂策略会散落在代码中。 | **推荐 V1 Policy。** |
+| 类型化 allow/deny 规则 | 简单、低延迟、容易单元测试。 | 复杂策略会散落在代码中。 | **推荐从 M2 开始的 Policy。** |
 | [OPA](https://www.openpolicyagent.org/docs/) | 策略即代码、独立版本、测试和 decision log。 | 引入 Rego 和 sidecar；Policy Enforcement Point 仍需自己实现。 | 多租户和复杂属性策略。 |
 | OS keyring | 本地使用简单，避免明文配置。 | 不适合分布式 Executor Process 和统一轮换。 | **推荐本地开发。** |
 | Vault/云 Secret Manager | 集中管理、轮换、审计和短期凭据。 | 新的运维和云依赖。 | 团队和生产环境。 |
@@ -465,11 +449,11 @@ LLM/Agent 分析（可选） -> Langfuse
 
 ## 5. 推荐演进顺序
 
-1. **V1 协议与事实源**：冻结 Task、Unit、Event、Artifact、ChangeSet、IntegrationPlan、RestorePlan 和 Checkpoint schema，验证领域事务/outbox 原子性。
-2. **V1 确定性纵向闭环**：静态图、一个再到两个脚本 Executor Process、隔离 workspace、Git 集成、质量门、单人审批、崩溃恢复和报告；不接真实模型。
-3. **V1.1 Agent 能力**：接入单模型 Provider、Bootstrap Planner 和真实 coding Agent，用固定任务集比较单 Agent 与双 Agent 的质量、成本和延迟。
-4. **Beta 安全与检索**：按风险和评测加入 rootless container、MCP 权限包装、Tree-sitter、SCIP、pgvector 和检索回归集；依据策略复杂度决定是否接入 OPA。
-5. **服务化与生产强化**：出现远程 Executor Process、多控制面和多个独立消费者后再评估 NATS、对象存储、Restate/Temporal、强 Sandbox、企业 IdP、多租户与灾备。
+1. **M1 / 0.1 只读闭环**：冻结已实现的最小契约，建立统一上下文、边界校验、事实投影和零副作用验收。
+2. **M2 / 0.2 持久化安全执行**：按“事实源 → durable/outbox → 受控写 → 恢复”分段落地，每段必须先通过安全门。
+3. **M3 / 0.3 并行与集成**：从一个扩展到两个 Executor Process，以 Lease/fencing、隔离 workspace、确定性 Git 集成和冲突测试证明正确性。
+4. **M4 / 0.4 审批与恢复**：加入 HITL、Checkpoint/Restore、完成 drain 和强化隔离；用固定故障集验证跨 Module 恢复。
+5. **M5 / V1.0 平台化**：加入多租户、远程执行、Web/API、对象存储与生产运维；仅在指标证明需要时引入独立 broker、复杂检索或更重隔离。
 
 升级必须由数据触发：数据库 P95、队列积压、恢复率、检索质量、sandbox 启动时间、并行收益、token 成本、冲突率和人工介入率都应设置阈值。
 
@@ -480,7 +464,7 @@ LLM/Agent 分析（可选） -> Langfuse
 3. 两个隔离 workspace 的 patch/commit 交付、确定性集成顺序、冲突分类和质量门失败恢复。
 4. SessionCheckpoint 派生时 RestorePlan 的跨 Module 验证、物化、ID 映射和临时权限失效。
 5. 完成候选与 Kernel drain 的握手，确保“任务成功但仍有活跃副作用”不能误报完成。
-6. 真实 Agent 在 V1.1 固定任务集上的正确率、token、成本、延迟和并行收益。
+6. 真实 Agent 在 M2–M5 固定任务集上的正确率、token、成本、延迟和并行收益。
 7. MCP、容器隔离、语义检索、LiteLLM 和 OTel 平台能力在进入 Beta 前分别完成安全或收益验证。
 
 ## 7. 参考资料
