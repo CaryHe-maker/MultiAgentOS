@@ -114,3 +114,46 @@ ContextEngine 未来可负责将经授权的状态快照渲染到 ContextPack，
 注意：`python main.py --mode compare --metric keyword-recall` 是无需 API 的教学对照，但它对 `fixtures/system_responses.example.json` 中的预置回答计算关键词召回，**不实际运行四个记忆实现**。真实比较需要把各实现产出的回答交给 batch / LLM judge，并检查精确性、召回、推理、主动性和幻觉。
 
 对 MultiAgentOS V1 的可借鉴点是评测方法，而非用户记忆功能：为“只给 TaskCard、Contract、Artifact 摘要而不给完整历史”的场景建立用例，检验 Agent 是否取回正确证据、能否识别歧义并拒绝臆测。
+
+## 第 3 章实验 3-8：Agentic RAG 的最小循环
+
+阅读项目：`references/ai-agent-book/chapter3/agentic-rag/`。离线对照的 `compare_offline.py` 对本地法律库运行：以原问题检索一次，或以数据集预标注的子查询分别检索后去重取并集；指标是金标准法条的**证据召回率**，不是端到端回答质量。2026-09-23 本地运行在 288 个文档、21,372 个法条分块上得到总体 76% → 100%、复杂题 58% → 100%。该数字随语料与数据集版本变化，且预标注子查询不代表 LLM 的真实规划能力。
+
+真实 ReAct 路径在 `agent.py`：模型调用 `knowledge_base_search` / `get_document`，把结构化 tool result 追加到消息，再在 `max_iterations` 内决定继续检索或结束回答。`offline_retriever.py` 展示了最小检索后端：按法条语义边界切块、BM25、返回 `doc_id` / `chunk_id` / text / score。
+
+### 对 V1 的可借鉴点
+
+- 一个受控的 `search` 与 `read` 工具接口；每条结果带稳定 ID、来源、revision/scope、rank/score。
+- Agent 可在严格轮次、token、时间与权限预算内重复“检索—观察—细化查询”。
+- 运行事件应记录每个 query、结果引用、工具调用与最终采用的证据，便于评测而不必把全部结果塞回 prompt。
+- 先用 `rg` / Symbol / Artifact 的确定性检索后端；无需复制多后端、GraphRAG、外部知识库服务。
+
+### 不应直接照搬
+
+- 教学代码让一个 `AgenticRAG` 类同时拥有 LLM、工具、历史和策略；MultiAgentOS 应保持 Workflow、Kernel、ContextEngine 的边界。
+- 其截取最近对话的滑动窗口可能丢失证据；长任务应采用有来源的摘要/检索策略。
+- `get_document` 返回整篇文档会冲击 token 预算；代码场景应有文件/符号/行范围和 ContextPack 预算。
+
+## 学习地图：第 2–4 章到 MultiAgentOS 的映射
+
+本图只用于学习与早期范围判断；不替代主架构的最终接口设计。
+
+| 书中概念 | 在系统中回答的问题 | 主要归属 | 技术/机制 | V1 优先级 |
+|---|---|---|---|---|
+| Context Engineering、ContextPack、原生消息 | 本次模型调用到底看什么？ | ContextEngine | TypeScript 数据模型、token 预算、JSON Schema | 必须 |
+| 状态栏 | 模型如何看见可信的任务进度/上限？ | Workflow/Kernel 提供事实；ContextEngine 投影 | 结构化状态快照、事件/Artifact 引用 | 候选最小版 |
+| 上下文压缩 | 长任务怎样避免 token 爆炸和遗忘？ | ContextEngine | 摘要、Artifact 引用、阈值、来源链 | 必须有最小策略 |
+| 提示注入防御 | 不可信文档怎样不变成命令？ | ContextEngine + Kernel | provenance/trust label、角色隔离、最小权限/沙盒 | 必须 |
+| Trajectory / Artifact | 发生过什么、如何审计/恢复？ | Workflow + Persistence | PostgreSQL、DBOS checkpoint、Artifact Store、OpenTelemetry | 必须 |
+| 代码/Artifact RAG | 当前任务该读哪些代码与证据？ | ContextEngine | `rg`、路径/工作区 revision、ArtifactRef | 必须 |
+| Symbol 检索 | 怎样理解定义、引用、调用关系？ | ContextEngine 的检索适配 | tree-sitter、SCIP | 后接入 |
+| 向量检索、混合检索、rerank | 字面搜索不够时怎样找语义相关资料？ | ContextEngine | PostgreSQL + pgvector、embedding、reranker | 预留，非首切片 |
+| Tool definition / JSON Schema | Agent 可调用什么、参数是什么？ | AgentToolPool | JSON Schema、版本化工具注册表 | 必须 |
+| Tool call / result | 怎样执行并把观察结果返回模型？ | Kernel 执行；ContextEngine 消费结果 | 受控 runner、结构化 ToolResult、ArtifactRef | 必须 |
+| MCP | 怎样接入外部工具服务？ | ToolPool 的一种 adapter | MCP client/server | 后接入，不是内核 |
+| Skill | 怎样按需加载可信的领域流程？ | ToolPool + ContextEngine | 版本化 `SKILL.md`、渐进披露、审查 | 后接入 |
+| sandbox / worktree | 工具即使被诱导也不能越权做什么？ | Kernel | rootless Docker、Git worktree、capability policy | 必须 |
+
+### 一句话分工
+
+`Workflow` 决定任务是否该推进；`Kernel` 决定一个动作能否真的执行；`AgentToolPool` 定义可用动作；`ContextEngine` 决定模型为做出下一步判断能看到哪些可信证据与工具信息。
