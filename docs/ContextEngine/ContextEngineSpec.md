@@ -1,7 +1,6 @@
 # ContextEngine 模块规格（M1）
 
 > 读者：开发者与 AI 编码助手。本文是实现 ContextEngine 的直接依据，要求精确、可测试。  
-> 配套：`ContextEngineGuide.md`（面向 meti 的理解版，解释每个设计为什么这样做）  
 > 作者：Claude（Cowork），应 meti 的请求撰写；负责人 meti  
 > 依据：`feat/M1` 提交 `392a3b5` 的 `TargetM1.md`、`M1RequirementsSpecification.md`、`packages/contracts`、`packages/kernel`、`packages/context-engine`，以及 M1 修改提案 `M1ChangeProposal.md`（meti 已另行发给团队，下文简称“提案”）第 3–5 节  
 > 状态：v0 草案。其中标注【合约变更】的内容需要三人评审后才能改 `packages/contracts`
