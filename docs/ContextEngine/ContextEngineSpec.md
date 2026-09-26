@@ -45,6 +45,45 @@ ContextEngine 只接受 Kernel 调用（FR-CTX-005），不得导入其他模块
 
 ---
 
+### 1.5 M1 的 Unit 清单与执行位置（决定）
+
+**决定：CONTEXT 单元由 ContextEngine 模块内部执行，不放到外部执行器（`apps/executor`）；其余单元的执行器都在外部。** Kernel 仍然是所有单元的唯一入口，准入、审计都由 Kernel 完成；Kernel 准入 CONTEXT 单元后，直接调用 ContextEngine 的 `ContextPort` 执行。这与当前代码一致，也与总架构中“Context Unit 由 Kernel 授权给 ContextEngine 执行”的描述一致。
+
+| executionKind | 操作 | 执行者 | 位置 | M1 |
+|---|---|---|---|---|
+| `CONTEXT` | ORIENT / SEARCH / ASSEMBLE | ContextEngine | **模块内部**（`packages/context-engine`） | ✅ |
+| `MODEL` | 调用模型 | 模型适配器 | 外部执行器（`apps/executor`） | ✅ |
+| `FILE_READ` | 按行范围读文件 | 只读执行器 | 外部执行器（`apps/executor`） | ✅ |
+| `FILE_WRITE` / `COMMAND` / `TEST` | — | — | — | 拒绝，M2 起支持 |
+
+**为什么 CONTEXT 放在模块内部：**
+
+1. **只读、无副作用**：CONTEXT 单元只读取工作区与 Artifact，不写文件、不执行用户命令。外置执行器的主要价值是隔离副作用，这里用不上。
+2. **依赖模块内部状态**：SEARCH 需要本次运行的检索台账（去重），ASSEMBLE 需要稳定前缀和压缩状态。放到外部，就要把这些内部状态搬出模块，破坏 ContextEngine 的数据所有权。
+3. **调用频繁、要求低延迟**：每一步至少一次 ASSEMBLE。
+
+**边界条件（仍需遵守）：**
+
+- ContextEngine 只接受 Kernel 转交的单元，不接受其他模块直接调用（FR-CTX-005）。
+- ContextEngine 内部启动的 `rg` 子进程只读、使用参数数组、有超时，且只在工作区内搜索（§6.3）。
+- 路径安全检查与外部执行器共用同一套实现（§5.6）。
+- 以后如果出现**需要调用外部模型或重计算**的上下文操作（例如 embedding、rerank、为历史生成 LLM 摘要），这部分改为发起 `MODEL` 单元或交给外部执行器，不在 ContextEngine 内部直接调用模型服务。
+
+**一次运行会产生哪些单元：**
+
+```text
+运行开始   CONTEXT(ORIENT)                                   ×1
+每一步     CONTEXT(ASSEMBLE) → MODEL → 视动作而定：
+             SEARCH            → CONTEXT(SEARCH)            +1
+             READ              → FILE_READ                  +1
+             FINAL / ASK_USER / CANNOT_DETERMINE            +0（由 Workflow 处理，不产生单元）
+模型输出非法 同一步内重新 CONTEXT(ASSEMBLE) → MODEL，最多重试 2 次
+```
+
+因此每一步产生 2 到 3 个单元，一次运行的单元总数约为 `1 + 每步 2～3 个 × 步数`。
+
+**需要 Workflow 确认的一处预算定义：** 现有默认预算是 `maxSteps = 24`、`maxModelCalls = 12`。按上面的划分，每一步都包含一次模型调用，所以实际步数不会超过 12。建议明确定义：“一步 = 一次成功解析出动作的模型调用”，非法输出的重试计入 `maxModelCalls`，但不计入 `maxSteps`；然后按这个定义重新设定两个默认值。
+
 ## 2 三种操作
 
 Context Unit 按 `operation` 分为三种。【合约变更】
