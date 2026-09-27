@@ -9,7 +9,7 @@ export const CATALOG_ISSUE_CODES = [
   'SOURCE_LOCATION_INVALID',
   /** Content does not match the definition schema. */
   'DEFINITION_INVALID',
-  /** Draft without a digest; run `pnpm run catalog:seal`. */
+  /** Published (v1+) definition without a digest; run `pnpm run catalog:seal`. */
   'DEFINITION_UNSEALED',
   /** Declared digest differs from the content: a published definition was edited. */
   'DIGEST_MISMATCH',
@@ -19,6 +19,8 @@ export const CATALOG_ISSUE_CODES = [
   'REFERENCE_MISSING',
   /** A reference points to a definition that itself has issues. */
   'REFERENCE_INVALID',
+  /** A published (v1+) definition references a v0.x draft that may still change. */
+  'REFERENCE_UNSTABLE',
   /** Prompt template slots and declared variables differ. */
   'PROMPT_VARIABLES_MISMATCH',
   /** A unit's declared effect is weaker than the side effects of its tools. */

@@ -11,7 +11,7 @@ import { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
 describe('shipped definitions', () => {
   const load = async () => await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load();
 
-  it('load without issues and are all sealed', async () => {
+  it('load without issues and every published version is sealed', async () => {
     const snapshot = await load();
     const result = buildCatalogIndex(snapshot);
     expect(result.ok ? [] : result.issues).toEqual([]);

@@ -3,7 +3,6 @@ schemaVersion: v0
 kind: UNIT
 id: context-build
 version: v0.1.0
-digest: 59eca700902042184115652a5300a6130d98e02bb50f2a0f0668c7ba6be7e36c
 description: Build a ContextPack (ORIENT, SEARCH or ASSEMBLE) from the read-only workspace snapshot.
 executionKind: CONTEXT
 operations: [ORIENT, SEARCH, ASSEMBLE]

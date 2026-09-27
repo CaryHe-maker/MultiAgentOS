@@ -40,11 +40,21 @@ export interface SealPlan {
   readonly issues: readonly CatalogIssue[];
 }
 
-/** Builds the runtime index; fails on any issue, including unsealed drafts. */
+/**
+ * Versions below v1.0.0 are working drafts: they are edited in place, never carry a `digest`
+ * in the file, and get their digest computed at every load. From v1.0.0 on a definition is
+ * published: its file carries the digest written by `catalog:seal` and must never change.
+ * Runs are reproducible either way, because every run records the digests it pinned.
+ */
+export function isDraftVersion(version: string): boolean {
+  return version.startsWith('v0.');
+}
+
+/** Builds the runtime index; fails on any issue, including unsealed published versions. */
 export function buildCatalogIndex(snapshot: SourceSnapshot): CatalogBuildResult {
   const analysis = analyze(snapshot);
   const unsealed = analysis.entries
-    .filter((entry) => entry.declaredDigest === undefined)
+    .filter((entry) => entry.declaredDigest === undefined && !isDraftVersion(entry.body.version))
     .map((entry) =>
       issue(
         entry.origin,
@@ -64,14 +74,15 @@ export function buildCatalogIndex(snapshot: SourceSnapshot): CatalogBuildResult 
 }
 
 /**
- * Decides which drafts get a digest. Never touches a document that already has one: a
- * published definition is immutable, so a mismatch is reported, not "fixed".
+ * Decides which unsealed v1+ definitions get a digest. Never touches a document that already
+ * has one (a published definition is immutable, so a mismatch is reported, not "fixed") and
+ * never touches v0.x drafts, whose digests are computed at load.
  */
 export function planSeal(snapshot: SourceSnapshot): SealPlan {
   const analysis = analyze(snapshot);
   if (analysis.issues.length > 0) return { patches: [], issues: analysis.issues };
   const patches = analysis.entries
-    .filter((entry) => entry.declaredDigest === undefined)
+    .filter((entry) => entry.declaredDigest === undefined && !isDraftVersion(entry.body.version))
     .map((entry) => ({ origin: entry.origin, digest: entry.computedDigest }));
   return { patches, issues: [] };
 }
@@ -186,6 +197,16 @@ function parseDocuments(
     }
     seen.set(key, document.origin);
     const declaredDigest = 'digest' in value ? value.digest : undefined;
+    if (declaredDigest !== undefined && isDraftVersion(value.version)) {
+      issues.push(
+        issue(
+          document.origin,
+          'DEFINITION_INVALID',
+          `${value.version} is a draft version: remove \`digest\`, it is computed at load`,
+        ),
+      );
+      continue;
+    }
     parsed.push({ origin: document.origin, key, body: stripDigest(value), declaredDigest });
   }
   return parsed;
@@ -202,6 +223,14 @@ function checkReferences(
     const key = definitionKey(kind, ref.id, ref.version);
     if (!known.has(key))
       found.push(issue(document.origin, 'REFERENCE_MISSING', `${field} points to unknown ${key}`));
+    else if (!isDraftVersion(document.body.version) && isDraftVersion(ref.version))
+      found.push(
+        issue(
+          document.origin,
+          'REFERENCE_UNSTABLE',
+          `${field} points to draft ${key}; a published version may only reference published ones`,
+        ),
+      );
     else if (failed.has(key))
       found.push(
         issue(document.origin, 'REFERENCE_INVALID', `${field} points to ${key}, which has issues`),

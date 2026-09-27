@@ -3,10 +3,11 @@ import { Type, type Static, type TSchema } from 'typebox';
 /**
  * AgentToolPool definition protocol (catalog.*).
  *
- * A definition is an immutable, versioned, content-addressed document. Its `digest` is the
- * SHA-256 of the canonical JSON of the definition without the `digest` field, where every
- * reference is expanded with the digest of its target (a Merkle tree). Pinning an agent's
- * digest therefore pins the whole Agent -> Unit -> Tool / Model / Prompt closure.
+ * A definition is a versioned, content-addressed document. From v1.0.0 on it is immutable;
+ * v0.x versions are drafts edited in place during M1. Its `digest` is the SHA-256 of the
+ * canonical JSON of the definition without the `digest` field, where every reference is
+ * expanded with the digest of its target (a Merkle tree). Pinning an agent's digest therefore
+ * pins the whole Agent -> Unit -> Tool / Model / Prompt closure.
  *
  * This file must not import `../schemas.js`: `schemas.ts` imports the pinned reference schema
  * from here, and an import cycle between ES modules would read `const` bindings before they
@@ -342,8 +343,8 @@ export const DEFINITION_SCHEMAS: { readonly [K in DefinitionKind]: TSchema } = {
 };
 
 /**
- * The same shapes without `digest`: an authored definition before `pnpm run catalog:seal`
- * computes and writes its digest. Only the seal tool accepts drafts; loading requires digests.
+ * The same shapes without `digest`, as authored in files: v0.x draft versions never store a
+ * digest (it is computed at load), and v1+ versions lack one only until `catalog:seal` runs.
  */
 export const DEFINITION_DRAFT_SCHEMAS: { readonly [K in DefinitionKind]: TSchema } = {
   AGENT: Type.Omit(AgentDefinitionSchema, ['digest'], { additionalProperties: false }),

@@ -201,3 +201,41 @@ describe('planSeal', () => {
     expect(plan.issues.map((issue) => issue.code)).toContain('DEFINITION_INVALID');
   });
 });
+
+describe('draft versions (v0.x)', () => {
+  /** The fixture catalog with every version moved from v1.0.0 to v0.1.0. */
+  const drafts = (): SourceDocument[] =>
+    JSON.parse(JSON.stringify(draftDocuments()).replaceAll('v1.0.0', 'v0.1.0')) as SourceDocument[];
+  const agentDigest = (documents: readonly SourceDocument[]) => {
+    const result = buildCatalogIndex(snapshot(documents));
+    if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join('; '));
+    return result.index.definitions.get('AGENT:analysis-agent@v0.1.0')?.digest;
+  };
+
+  it('load without digests and get a computed digest', () => {
+    expect(agentDigest(drafts())).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it('can be edited in place; the change shows up in the agent digest', () => {
+    const edited = replace(drafts(), 'prompts/', { template: 'Explain {{repository}}.' });
+    expect(agentDigest(edited)).not.toBe(agentDigest(drafts()));
+  });
+
+  it('are never sealed', () => {
+    expect(planSeal(snapshot(drafts()))).toEqual({ patches: [], issues: [] });
+  });
+
+  it('must not carry a digest in the file', () => {
+    const withDigest = replace(drafts(), 'tools/', { digest: 'a'.repeat(64) });
+    expect(issueCodes(withDigest)).toContain('DEFINITION_INVALID');
+  });
+
+  it('cannot be referenced by a published version', () => {
+    const published = replace(drafts(), 'agents/', { version: 'v1.0.0' });
+    expect(planSeal(snapshot(published)).issues.map((issue) => issue.code)).toEqual([
+      'REFERENCE_UNSTABLE',
+      'REFERENCE_UNSTABLE',
+      'REFERENCE_UNSTABLE',
+    ]);
+  });
+});
