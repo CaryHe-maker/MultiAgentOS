@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint:fix": "eslint apps packages --fix"
+    "lint:fix": "eslint apps packages --fix",
+    "catalog:seal": "tsc -b packages/agent-tool-pool --pretty false && node packages/agent-tool-pool/dist/cli/seal-definitions.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
