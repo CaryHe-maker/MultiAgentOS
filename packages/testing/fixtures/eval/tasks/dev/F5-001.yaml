@@ -1,0 +1,59 @@
+schemaVersion: v0
+id: F5-001
+category: F5
+title: 一拆四之后的旧交易
+repository:
+  url: https://github.com/ghostfolio/ghostfolio
+  commit: '82cee20f2d4f7a653c088afbc1fd315adf25e9f6'
+question: |-
+  某只股票做了“一股变四股”的调整之后，用户在这之前录入的买入记录（比如 10 股、每股 400 元）在计算持仓时会被怎样对待？
+  同一只股票先后发生多次这种调整、或者录入的调整比例数据有问题时，又会怎样？请指出对应的实现和测试。
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 这类调整在代码里叫 split，按资产档案保存（AssetProfileSplit：date、numerator、denominator）；为组合计算取活动时（getActivitiesForPortfolioCalculator）会取出该用户相关资产的全部 split 并按资产分组
+    isRequired: true
+  - id: P2
+    text: adjustActivityBySplits 只调整 BUY、SELL、DIVIDEND，且只对日期（按日历日）早于 split 日期的活动生效
+    isRequired: true
+  - id: P3
+    text: 数量乘以 numerator/denominator、单价除以同一比例（例：10 股 × 400 → 40 股 × 100），总价值不变
+    isRequired: true
+  - id: P4
+    text: 多次 split 先分别累乘分子和分母、最后只除一次，保证累计系数精确；分子或分母 ≤ 0 的异常记录被跳过；原活动对象不被修改，返回新对象
+    isRequired: true
+  - id: P5
+    text: 测试在 split helper 的 spec 中（累计系数、只调整拆分日前的活动、UTC 日期比较）
+    isRequired: true
+  - id: P6
+    text: 保存 split 时日期归零到当天 0 点，同一资产同一天只有一条（upsert）
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: apps/api/src/services/asset-profile-split/asset-profile-split.helper.ts
+      lines: [9, 58]
+    - kind: CODE
+      path: apps/api/src/app/activities/activities.service.ts
+      lines: [776, 795]
+    - kind: CODE
+      path: apps/api/src/services/asset-profile-split/asset-profile-split.helper.spec.ts
+      lines: [14, 78]
+  optional:
+    - kind: CODE
+      path: libs/common/src/lib/config.ts
+      lines: [254, 258]
+    - kind: CODE
+      path: apps/api/src/services/asset-profile-split/asset-profile-split.service.ts
+      lines: [82, 113]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 20, maxModelCalls: 20, maxDurationMs: 300000 }
+retrievalProbes:
+  - {
+      query: split,
+      mode: AUTO,
+      k: 8,
+      expectPaths: [apps/api/src/services/asset-profile-split/asset-profile-split.helper.ts],
+    }
+provenance: { author: claude, method: MODEL_DRAFT }

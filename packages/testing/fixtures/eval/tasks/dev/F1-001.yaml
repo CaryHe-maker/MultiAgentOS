@@ -1,0 +1,47 @@
+schemaVersion: v0
+id: F1-001
+category: F1
+title: 心跳信号与运行耗时
+repository:
+  url: https://github.com/healthchecks/healthchecks
+  commit: '3731fc452b0ddca253e48d8ff7968b12539df125'
+question: |-
+  请解释 Check 模型的 ping 方法如何处理 start、success、fail 三类信号：什么时候记录“开始运行”，
+  什么时候计算这次运行的耗时？如果结束信号携带的 rid 与开始信号不一致，或者根本没有带 rid，
+  结果有什么不同？检查处于暂停状态时又会怎样？
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 检查处于 paused 且开启了 manual_resume 时，收到的任何信号都按 ign（忽略）处理
+    isRequired: true
+  - id: P2
+    text: start 信号只记录 last_start 和 last_start_rid，不更新 last_ping
+    isRequired: true
+  - id: P3
+    text: success/fail 会更新 last_ping 并先清空 last_duration；存在 last_start 且 rid 与 last_start_rid 相同时，last_duration = last_ping - last_start，并清除 last_start
+    isRequired: true
+  - id: P4
+    text: rid 不一致时：fail 信号或不带 rid 的 success 会清除 last_start 但不计算耗时；带着不同 rid 的 success 保留 last_start，检查仍视为运行中
+    isRequired: true
+  - id: P5
+    text: success 使状态变为 up、fail 使状态变为 down；状态发生变化时调用 create_flip，fail 的 reason 为 "fail"
+    isRequired: true
+  - id: P6
+    text: 整个更新放在数据库事务里并用 select_for_update 加锁，避免与发送告警的进程竞争或在 MariaDB 上死锁
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [508, 539]
+  optional:
+    - kind: CODE
+      path: hc/api/tests/test_ping.py
+      lines: [254, 292]
+      note: 测试名写的是 last_ping，实际断言的是 last_start
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 12, maxModelCalls: 12, maxDurationMs: 300000 }
+retrievalProbes:
+  - { query: last_start_rid, mode: TEXT, k: 5, expectPaths: [hc/api/models.py] }
+provenance: { author: claude, method: MODEL_DRAFT }

@@ -1,0 +1,52 @@
+schemaVersion: v0
+id: F5-002
+category: F5
+title: 什么时候算“挂了”
+repository:
+  url: https://github.com/healthchecks/healthchecks
+  commit: '3731fc452b0ddca253e48d8ff7968b12539df125'
+question: |-
+  一个按 cron 表达式调度的定时任务迟迟没有上报。系统到底在什么时刻把它判定为“挂了”？
+  在正式判定之前有没有一个“快要挂了”的中间阶段？这两个时刻分别怎么算？
+  夏令时切换会不会让时间算错？如果任务已经报告了“开始执行”却一直没有“执行结束”，判定逻辑有什么不同？
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 对 cron 类型，下一次应上报的时间 = 在检查所设时区里从 last_ping 起算的下一个 cron 时刻（CronSim），它就是宽限期（grace）开始的时间
+    isRequired: true
+  - id: P2
+    text: 宽限期开始时间 + grace 时长 = 判定为 down 的时间；当前时间介于两者之间时状态为 grace（中间阶段），超过则为 down
+    isRequired: true
+  - id: P3
+    text: 在本地时区计算下一个时刻后立即转换回 UTC，再加 timedelta，避免夏令时切换期间出错
+    isRequired: true
+  - id: P4
+    text: 如果存在 last_start（已开始未结束），只要当前时间超过 last_start + grace 就直接判定为 down；计算下次告警时间时取 cron 时刻与 last_start 中较早者
+    isRequired: true
+  - id: P5
+    text: new/paused/down 状态原样返回；下次时刻为“永不”时一直保持 up；oncalendar 类型用同样的方式处理
+    isRequired: false
+  - id: P6
+    text: going_down_after 的结果写入 alert_after，由后台 sendalerts 据此触发状态翻转
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [300, 337]
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [339, 349]
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [355, 380]
+  optional:
+    - kind: CODE
+      path: hc/api/management/commands/sendalerts.py
+      lines: [123, 156]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 20, maxModelCalls: 20, maxDurationMs: 300000 }
+retrievalProbes:
+  - { query: grace, mode: AUTO, k: 8, expectPaths: [hc/api/models.py] }
+provenance: { author: claude, method: MODEL_DRAFT }

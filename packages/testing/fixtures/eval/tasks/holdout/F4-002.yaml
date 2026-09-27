@@ -1,0 +1,74 @@
+schemaVersion: v0
+id: F4-002
+category: F4
+title: 新增可关闭的通知渠道
+repository:
+  url: https://github.com/healthchecks/healthchecks
+  commit: '3731fc452b0ddca253e48d8ff7968b12539df125'
+question: |-
+  我们想新增一种告警通知渠道：把消息推送到一个自建的 HTTP 消息服务（用户填写服务器地址和访问令牌），
+  并且允许自托管部署者用环境变量整体关闭这种渠道。请列出需要新增或修改的实现、测试和配置位置，
+  并说明每一处要做什么。可以参考仓库里已有的、同样能被环境变量关闭的渠道。
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 在 hc/integrations 下新建一个与现有渠道同构的包：transport（继承 HttpTransport，实现 notify，必要时 is_noop）、forms、views（添加表单）、urls、消息模板
+    isRequired: true
+  - id: P2
+    text: 在 TRANSPORTS 字典登记 kind → (显示名, transport 类路径)；Channel.kind 的 choices 由它派生
+    isRequired: true
+  - id: P3
+    text: 在 settings 的 INSTALLED_APPS 加入新 app，并新增 <NAME>_ENABLED 环境变量开关
+    isRequired: true
+  - id: P4
+    text: 开关要在三处生效：视图用 require_setting 装饰器、transport.notify 在关闭时抛 TransportError、集成列表页通过 enable_<name> 上下文变量隐藏卡片
+    isRequired: true
+  - id: P5
+    text: 在根 urls 中 include 新渠道的 urls，并在集成列表模板 channels.html 增加卡片
+    isRequired: true
+  - id: P6
+    text: 测试放在新包的 tests 下，至少包括添加表单（test_add）和发送通知（test_notify）
+    isRequired: true
+  - id: P7
+    text: 在自托管配置文档中说明新的 _ENABLED 变量；如需结构化配置，可在 Channel 上增加类似 GotifyConf 的解析属性
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [48, 84]
+    - kind: CODE
+      path: hc/settings.py
+      lines: [106, 135]
+    - kind: CODE
+      path: hc/urls.py
+      lines: [22, 51]
+    - kind: CODE
+      path: hc/integrations/zulip/views.py
+      lines: [16, 34]
+    - kind: CODE
+      path: hc/integrations/zulip/transport.py
+      lines: [28, 30]
+    - kind: CODE
+      path: hc/front/views.py
+      lines: [1237, 1273]
+    - kind: CODE
+      path: templates/front/channels.html
+      lines: [431, 440]
+  optional:
+    - kind: CODE
+      path: hc/settings.py
+      lines: [445, 446]
+    - kind: CODE
+      path: templates/docs/self_hosted_configuration.md
+      lines: [1295, 1299]
+    - kind: CODE
+      path: hc/integrations/zulip/tests/test_add.py
+      lines: [1, 30]
+    - kind: CODE
+      path: hc/integrations/zulip/tests/test_notify.py
+      lines: [1, 30]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 24, maxModelCalls: 24, maxDurationMs: 600000 }
+provenance: { author: claude, method: MODEL_DRAFT }

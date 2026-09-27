@@ -1,0 +1,62 @@
+schemaVersion: v0
+id: F3-002
+category: F3
+title: 体检报告中的手续费检查
+repository:
+  url: https://github.com/ghostfolio/ghostfolio
+  commit: '82cee20f2d4f7a653c088afbc1fd315adf25e9f6'
+question: |-
+  投资组合体检（X-Ray）报告里有一条“手续费占总投资额比例”的检查。请说明：从前端请求报告的 API 入口开始，
+  数据如何一路流到这条检查并得出“通过/不通过”；比例由哪些数字算出；默认阈值是多少，
+  用户自定义的阈值和“关闭这条检查”的设置从哪里读取；哪些情况下调用方拿不到检查结果。
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: GET portfolio/report → PortfolioController.getReport → PortfolioService.getReport，后者取组合明细 summary 并按类别构造规则
+    isRequired: true
+  - id: P2
+    text: 手续费规则用 summary.fees 与总投资额 summary.totalBuy + summary.totalSell 构造，比例 = fees / 总投资额（总投资额为 0 时为 0），超过 thresholdMax 为不通过
+    isRequired: true
+  - id: P3
+    text: RulesService.evaluate 对每条规则调用 getRuleSettings(key, userSettings)；isActive 为 false 时不评估，只返回 isActive=false
+    isRequired: true
+  - id: P4
+    text: 默认阈值来自 RULE_SETTINGS_CONFIGURATIONS 中 FeeRatioTotalInvestmentVolume 的 thresholdMax 0.01（1%）；用户在 settings.xRayRules 里配置的 isActive/thresholdMax 优先
+    isRequired: true
+  - id: P5
+    text: 控制器在调用方没有 portfolioReadValues 权限、处于受限视图、或启用订阅功能且用户为 Basic 订阅时，把各类别的 rules 置为 null 并把统计清零
+    isRequired: true
+  - id: P6
+    text: 规则按（可能被代理查看的）用户组合计算，但文案语言跟随当前登录用户
+    isRequired: false
+  - id: P7
+    text: 不通过分支传给文案的两个占位符与通过分支相反（feeRatio 与 thresholdMax 对调），显示的数字位置可能是错的
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: apps/api/src/app/portfolio/portfolio.controller.ts
+      lines: [600, 625]
+    - kind: CODE
+      path: apps/api/src/app/portfolio/portfolio.service.ts
+      lines: [1575, 1594]
+    - kind: CODE
+      path: apps/api/src/app/portfolio/rules.service.ts
+      lines: [13, 42]
+    - kind: CODE
+      path: apps/api/src/models/rules/fees/fee-ratio-total-investment-volume.ts
+      lines: [36, 66]
+    - kind: CODE
+      path: apps/api/src/models/rules/rule-settings.ts
+      lines: [57, 87]
+  optional:
+    - kind: CODE
+      path: apps/api/src/models/rules/rule-settings.ts
+      lines: [34, 34]
+    - kind: CODE
+      path: apps/api/src/app/portfolio/portfolio.service.ts
+      lines: [1301, 1324]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 24, maxModelCalls: 24, maxDurationMs: 600000 }
+provenance: { author: claude, method: MODEL_DRAFT }

@@ -1,0 +1,57 @@
+schemaVersion: v0
+id: F2-001
+category: F2
+title: 导入时识别重复交易
+repository:
+  url: https://github.com/ghostfolio/ghostfolio
+  commit: '82cee20f2d4f7a653c088afbc1fd315adf25e9f6'
+question: |-
+  用户上传一份交易流水文件做批量导入。如果其中某些交易之前已经录入过，系统是怎么认出它们的：
+  比较了哪些信息，日期比较到什么精度？这些重复记录最终会被怎样处理，会不会导致整次导入失败？
+  界面上给用户看到的提示文字在哪里定义？
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 与该用户已有的全部活动比较（包括草稿和被排除账户/活动），逐项比较 comment、currency（活动币种或资产币种任一相同）、dataSource、symbol、type、fee、quantity、unitPrice 和日期
+    isRequired: true
+  - id: P2
+    text: 日期用 isSameSecond 比较，精确到秒
+    isRequired: true
+  - id: P3
+    text: 重复记录不会让整次导入失败，只被标记 error = { code 'IS_DUPLICATE' }；正式导入时带 error 的活动被跳过（continue），试运行（dry run）时照常返回给前端预览
+    isRequired: true
+  - id: P4
+    text: 提示文字 “This activity already exists.” 定义在前端共享的 i18n 映射中（键 IMPORT_ACTIVITY_ERROR_IS_DUPLICATE）
+    isRequired: false
+  - id: P5
+    text: 只为没有 error 的活动创建新的资产档案，避免留下无人引用的档案
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: apps/api/src/app/import/import.service.ts
+      lines: [1053, 1094]
+    - kind: CODE
+      path: apps/api/src/app/import/import.service.ts
+      lines: [951, 954]
+  optional:
+    - kind: CODE
+      path: apps/api/src/app/import/import.service.ts
+      lines: [1173, 1195]
+    - kind: CODE
+      path: libs/ui/src/lib/i18n.ts
+      lines: [27, 27]
+    - kind: CODE
+      path: libs/common/src/lib/interfaces/activities.interface.ts
+      lines: [20, 23]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 16, maxModelCalls: 16, maxDurationMs: 300000 }
+retrievalProbes:
+  - {
+      query: IS_DUPLICATE,
+      mode: TEXT,
+      k: 8,
+      expectPaths: [apps/api/src/app/import/import.service.ts, libs/ui/src/lib/i18n.ts],
+    }
+provenance: { author: claude, method: MODEL_DRAFT }

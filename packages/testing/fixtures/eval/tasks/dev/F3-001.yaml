@@ -1,0 +1,59 @@
+schemaVersion: v0
+id: F3-001
+category: F3
+title: 告警从判定到发送
+repository:
+  url: https://github.com/healthchecks/healthchecks
+  commit: '3731fc452b0ddca253e48d8ff7968b12539df125'
+question: |-
+  某个检查因为超时没有上报被判定为异常之后，告警是怎么一路发到用户配置的各个通知渠道的？请沿着数据流说明：
+  谁负责发现并记录这次状态变化；多个后台进程同时运行时如何避免重复处理；哪些渠道会被跳过、渠道按什么顺序发送；
+  发送失败的结果记录在哪里，什么情况下渠道会被自动停用。
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 后台命令 sendalerts 循环查找 alert_after 已过且状态不是 down 的检查，重新计算状态；确实为 down 时原子更新 status=down，并创建 reason 为 timeout 的 Flip 记录；尚未 down 时只推后 alert_after
+    isRequired: true
+  - id: P2
+    text: 另一路循环取出 processed 为空的 Flip，用条件更新把 processed 标记为当前时间，只有更新到 1 行的进程继续，然后交给线程池执行 notify
+    isRequired: true
+  - id: P3
+    text: Flip.select_channels 在 new/paused→up 时不发任何通知，排除 disabled 渠道和 transport.is_noop 为真的渠道，并按 last_notify_duration 从短到长排序
+    isRequired: true
+  - id: P4
+    text: Channel.notify 先写一条 Notification（error 为 "Sending"），再调用具体 transport；捕获 TransportError 后把错误写回 Notification.error 和 Channel.last_error，permanent 错误会把渠道设为 disabled
+    isRequired: true
+  - id: P5
+    text: 具体 transport 类通过 TRANSPORTS 表按渠道 kind 延迟导入
+    isRequired: false
+  - id: P6
+    text: 状态变化也可能来自 ping 收到 fail/success 时直接创建的 Flip，同样由这条流水线发送
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: hc/api/management/commands/sendalerts.py
+      lines: [123, 177]
+    - kind: CODE
+      path: hc/api/management/commands/sendalerts.py
+      lines: [91, 121]
+    - kind: CODE
+      path: hc/api/management/commands/sendalerts.py
+      lines: [24, 55]
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [1390, 1408]
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [1151, 1186]
+  optional:
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [1138, 1149]
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [535, 539]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 24, maxModelCalls: 24, maxDurationMs: 600000 }
+provenance: { author: claude, method: MODEL_DRAFT }

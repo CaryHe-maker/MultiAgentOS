@@ -1,0 +1,53 @@
+schemaVersion: v0
+id: F1-002
+category: F1
+title: 按历史日期换算货币
+repository:
+  url: https://github.com/ghostfolio/ghostfolio
+  commit: '82cee20f2d4f7a653c088afbc1fd315adf25e9f6'
+question: |-
+  ExchangeRateDataService 的 toCurrencyAtDate 方法按某个历史日期把一笔金额换算成另一种货币。
+  它按什么顺序寻找汇率？找不到任何汇率时返回什么？与不带日期的 toCurrency 相比，两者在找不到汇率时的行为有什么不同？
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 金额为 0 时直接返回 0；日期是今天时直接改用 toCurrency（内存中的当前汇率）
+    isRequired: true
+  - id: P2
+    text: 同币种系数为 1；派生货币对（如 GBp/GBP，来自 DERIVED_CURRENCIES）使用初始化时算好的固定系数
+    isRequired: true
+  - id: P3
+    text: 否则按该日期查询汇率行情（symbol 为 from+to）；查不到时经由基础货币 USD 间接计算：(1 / USD→from) × (USD→to)，基础货币一侧取 1
+    isRequired: true
+  - id: P4
+    text: 得不到有效数字时记录错误日志并返回 undefined
+    isRequired: true
+  - id: P5
+    text: toCurrency 找不到汇率时同样记日志，但返回原始金额（等于不换算），两者失败语义不一致
+    isRequired: true
+evidence:
+  required:
+    - kind: CODE
+      path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
+      lines: [290, 378]
+    - kind: CODE
+      path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
+      lines: [252, 288]
+  optional:
+    - kind: CODE
+      path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
+      lines: [145, 151]
+    - kind: CODE
+      path: libs/common/src/lib/config.ts
+      lines: [187, 203]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 12, maxModelCalls: 12, maxDurationMs: 300000 }
+retrievalProbes:
+  - {
+      query: toCurrencyAtDate,
+      mode: SYMBOL,
+      k: 5,
+      expectPaths: [apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts],
+    }
+provenance: { author: claude, method: MODEL_DRAFT }

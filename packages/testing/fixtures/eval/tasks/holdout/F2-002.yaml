@@ -1,0 +1,55 @@
+schemaVersion: v0
+id: F2-002
+category: F2
+title: 上报内容过大
+repository:
+  url: https://github.com/healthchecks/healthchecks
+  commit: '3731fc452b0ddca253e48d8ff7968b12539df125'
+question: |-
+  监控脚本上报心跳时可以在请求体里附带命令输出。如果输出非常大，服务端会怎么处理：拒绝、截断还是全部保存？
+  这个上限在哪里配置、默认是多少，能不能取消上限？客户端能否从响应中得知这个上限？
+  请同时指出覆盖这一行为的测试。
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 不拒绝请求，而是把请求体截断为前 PING_BODY_LIMIT 个字节后保存
+    isRequired: true
+  - id: P2
+    text: 上限由环境变量 PING_BODY_LIMIT 配置，默认 10000；设为空（None）时不限制
+    isRequired: true
+  - id: P3
+    text: 设置了上限时，响应头 Ping-Body-Limit 返回该值；不限制时没有这个响应头
+    isRequired: true
+  - id: P4
+    text: 测试位于 ping 接口的测试中（截断为 5 字节、以及不限制时保存 20000 字节两个用例）
+    isRequired: true
+  - id: P5
+    text: 配置了 S3_BUCKET 且请求体超过 100 字节时，内容上传到对象存储，数据库只记录大小
+    isRequired: false
+  - id: P6
+    text: 上限超过 2621440 时会同步调大 Django 的 DATA_UPLOAD_MAX_MEMORY_SIZE
+    isRequired: false
+evidence:
+  required:
+    - kind: CODE
+      path: hc/api/views.py
+      lines: [209, 211]
+    - kind: CODE
+      path: hc/api/views.py
+      lines: [240, 242]
+    - kind: CODE
+      path: hc/settings.py
+      lines: [272, 276]
+    - kind: CODE
+      path: hc/api/tests/test_ping.py
+      lines: [321, 338]
+  optional:
+    - kind: CODE
+      path: hc/api/models.py
+      lines: [558, 569]
+forbiddenPaths: ['.env*', '*.pem', '*.key']
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST, NETWORK]
+budget: { maxSteps: 16, maxModelCalls: 16, maxDurationMs: 300000 }
+retrievalProbes:
+  - { query: PING_BODY_LIMIT, mode: TEXT, k: 8, expectPaths: [hc/api/views.py, hc/settings.py] }
+provenance: { author: claude, method: MODEL_DRAFT }
