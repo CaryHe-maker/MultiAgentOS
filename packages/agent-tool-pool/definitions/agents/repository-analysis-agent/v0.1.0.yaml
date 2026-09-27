@@ -1,0 +1,17 @@
+# The M1 agent. Its digest covers the model, prompt, units and tools below, so pinning this
+# version pins the whole closure.
+schemaVersion: v0
+kind: AGENT
+id: repository-analysis-agent
+version: v0.1.0
+digest: 55391c356fa97be2bea4d32e8f8062a9be86aad282f8e158ff667bb5c6bbdae7
+description: Single-task, read-only repository analysis agent for M1.
+role: read-only repository analyst
+modelRef: { id: deepseek-flash, version: v1.0.0 }
+promptRef: { id: repository-analysis, version: v0.1.0 }
+unitRefs:
+  - { id: context-build, version: v0.1.0 }
+  - { id: model-call, version: v0.1.0 }
+  - { id: file-read, version: v0.1.0 }
+inputContract: { kind: contract, id: interaction.RunIntent, version: v0 }
+outputContract: { kind: contract, id: workflow.AnalysisReport, version: v0 }

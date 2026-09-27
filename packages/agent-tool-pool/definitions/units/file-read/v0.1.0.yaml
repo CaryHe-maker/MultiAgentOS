@@ -1,0 +1,18 @@
+schemaVersion: v0
+kind: UNIT
+id: file-read
+version: v0.1.0
+digest: 7c52bc0e8e15aa7d920eefa26a0084d6a107c825d623474b043b6b7e55a6e817
+description: Read a line range of one workspace file through the read-only executor.
+executionKind: FILE_READ
+operations: [READ_RANGE]
+inputContract: { kind: contract, id: file.ReadRequest, version: v0 }
+outputContract: { kind: contract, id: file.ReadResult, version: v0 }
+requiredCapabilities: [file.read]
+toolRefs:
+  - { id: read-file, version: v0.1.0 }
+effect: READ_ONLY
+isIdempotent: true
+limits:
+  timeoutMs: 10000
+  maxOutputBytes: 262144

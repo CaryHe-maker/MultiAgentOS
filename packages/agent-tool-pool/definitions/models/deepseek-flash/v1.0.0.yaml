@@ -1,0 +1,44 @@
+# DeepSeek Flash. `deepseek-flash` is an unversioned alias on DeepSeek's side; when DeepSeek
+# moves it to a new model, publish a new version of this file instead of editing this one.
+schemaVersion: v0
+kind: MODEL
+id: deepseek-flash
+version: v1.0.0
+digest: ce123a019fe91ca93c39590dd2c619fa7e2788c24dc0aec5019d8fffaf9c7857
+description: DeepSeek V4.1 Flash via the OpenAI-compatible API; the default low-cost model for M1.
+provider: deepseek
+apiModelId: deepseek-flash
+providerModelLabel: DeepSeek-V4.1-Flash
+apiProtocol: OPENAI_CHAT_COMPLETIONS
+baseUrl: https://api.deepseek.com
+limits:
+  # The pricing page lists "1M" context and "384K" max output.
+  contextWindowTokens: 1000000
+  maxOutputTokens: 384000
+features:
+  hasJsonOutput: true
+  hasToolCalls: true
+  hasVision: true
+  thinking:
+    isSupported: true
+    isEnabledByDefault: true
+    effortLevels: [low, high, max]
+pricing:
+  currency: USD
+  # Integers: micro-USD per 1M tokens, i.e. 3000 = 0.003 USD per 1M tokens.
+  unit: MICRO_USD_PER_MILLION_TOKENS
+  offPeak:
+    inputCacheHit: 3000
+    inputCacheMiss: 150000
+    output: 600000
+  peak:
+    ratePercent: 200
+    timeZone: UTC
+    weekdays: [1, 2, 3, 4, 5]
+    windows:
+      - { start: '01:00', end: '04:00' }
+      - { start: '06:00', end: '10:00' }
+    excludedHolidayCalendar: CN_PUBLIC_HOLIDAYS
+  source:
+    url: https://api-docs.deepseek.com/quick_start/pricing
+    verifiedOn: '2026-09-28'
