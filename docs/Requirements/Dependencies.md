@@ -1,6 +1,6 @@
 # MultiAgentOS 当前依赖
 
-> 清单日期：2026-09-27。版本事实源为各 `package.json`；完整解析结果以 `pnpm-lock.yaml` 为准。
+> 清单日期：2026-09-28。版本事实源为各 `package.json`；完整解析结果以 `pnpm-lock.yaml` 为准。
 
 ## 1. 运行环境
 
@@ -39,6 +39,8 @@
 | `packages/kernel` | `@ai-sdk/anthropic` | `4.0.58` | Anthropic adapter |
 | `packages/kernel` | `dotenv` | `18.0.1` | 本地配置加载 |
 | `apps/cli` | `commander` | `15.0.0` | CLI 参数解析 |
+| `packages/testing`（dev） | `typebox` | `1.3.34` | 评测题目 Schema（与 contracts 同版本） |
+| `packages/testing`（dev） | `yaml` | `2.9.1` | 读取评测题目与网页快照清单 |
 
 其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。Provider SDK 只能由 Kernel 适配层导入；公共协议只使用 TypeBox/Ajv。
 
@@ -66,4 +68,5 @@ pnpm.cmd run test:coverage
 5. Provider SDK 变更必须验证结构化输出、tool call、usage 和错误映射。
 6. Vitest 与 coverage 插件保持相同版本；Node 与 `@types/node` 保持相同 major。
 7. `.env` 和 Secret 不得进入协议、日志、Artifact 或版本库。
-8. 搜索后端当前未声明额外 npm 依赖；使用系统 `rg` 前必须检测可用性，否则使用内置扫描适配器。
+8. `yaml` 由 `packages/testing` 的评测题目加载器以 devDependency 导入，用于读取评测题目和网页快照清单。选择它是因为零依赖、ISC 许可，按 YAML 1.2 core schema 解析（`on/off` 不会被当成布尔值），并能对重复键报错。替代方案为 JSON 题目文件，但不能写注释、多行问题可读性差；移除时把题目转为 JSON 并删除加载器中的 YAML 解析。`typebox` 与 contracts 同版本，校验复用 contracts 导出的 `validate`，不引入第二套 Schema 工具。
+9. 搜索后端当前未声明额外 npm 依赖；使用系统 `rg` 前必须检测可用性，否则使用内置扫描适配器。
