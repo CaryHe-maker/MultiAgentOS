@@ -46,7 +46,7 @@
 | C-03 | ASSEMBLE、稳定前缀、状态栏和历史压缩 | TODO | - | - | - |
 | C-04 | RetrievalLedger、去重和诊断 | TODO | - | - | - |
 | C-05 | ContextRequest/Pack 新契约与 PortResult | TODO | - | 以 ContextEngine 规范为准 | - |
-| C-06 | 检索 fixtures、Recall@k、MRR 与端到端评测 | TODO | - | - | - |
+| C-06 | 检索 fixtures、Recall@k、MRR 与端到端评测 | DOING | 2026-09-28 | 题目格式、校验器与首批 11 题（`packages/testing/fixtures/eval`，`pnpm run eval:fixtures`）；待人工核对题目，评测执行器待 Kernel 审计记录 | - |
 | C-07 | Artifact Store 完整性 | DONE | 2026-09-23 | `packages/artifacts/src/artifacts.test.ts` | - |
 | C-08 | File Repository 与进程内 Router | DONE | 2026-09-23 | persistence/communication tests | - |
 
