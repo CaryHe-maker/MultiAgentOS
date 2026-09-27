@@ -26,3 +26,18 @@ export class RecordingKernelUnitPort implements KernelUnitPort {
     return Promise.resolve(this.responder(intent));
   }
 }
+export * from './eval-fixtures/eval-task-schema.js';
+export {
+  checkTaskRules,
+  checkTaskSetRules,
+  isExcludedByContext,
+  type FixtureIssue,
+  type FixtureIssueSeverity,
+  type LoadedEvalTask,
+} from './eval-fixtures/eval-task-rules.js';
+export {
+  DEFAULT_EVAL_FIXTURES_DIRECTORY,
+  loadEvalFixtures,
+  type EvalFixtureSet,
+} from './eval-fixtures/load-eval-fixtures.js';
+export { type LoadedWebSnapshot } from './eval-fixtures/web-snapshot-rules.js';
