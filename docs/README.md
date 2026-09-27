@@ -9,6 +9,7 @@
 | [Requirements](Requirements/Dependencies.md) | 依赖基线 | 仓库实际声明的环境和直接依赖 |
 | [Meetings](Meetings/) | 讨论记录 | 原始背景，不作为规范性事实源 |
 | [Style](Style.md) | 工程治理 | 代码、文档、Git、Commit 和 Pull Request 规范 |
+| [cc](cc/) | Claude 编写的实现说明 | 记录实现决策与遗留事项；与 M1/Architecture 冲突时以后者为准 |
 
 ## 2. 推荐阅读顺序
 
