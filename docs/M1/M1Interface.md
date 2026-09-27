@@ -227,11 +227,11 @@ interface LifecyclePort {
 }
 ```
 
-M1 定义类型为 `AGENT | UNIT | TOOL | MODEL | PROMPT`，Schema 见 `packages/contracts/src/catalog/`。每个定义包含精确版本 `v<major>.<minor>.<patch>` 和内容 digest；digest 覆盖其引用目标的 digest，因此固定 Agent digest 即固定整个 Agent → Unit → Tool / Model / Prompt 闭包。定义发布后不可变，状态变化只写入 `status.yaml`。
+M1 定义类型为 `AGENT | UNIT | TOOL | MODEL | PROMPT`，Schema 见 `packages/contracts/src/catalog/`。每个定义包含精确版本 `v<major>.<minor>.<patch>` 和内容 digest；digest 覆盖其引用目标的 digest，因此固定 Agent digest 即固定整个 Agent → Unit → Tool / Model / Prompt 闭包。`v0.x` 版本是草稿，可以直接修改，digest 在启动时计算；从 `v1.0.0` 起定义发布后不可变，文件中的 digest 由 `pnpm run catalog:seal` 写入，已发布版本只能引用已发布版本。状态变化只写入 `status.yaml`。Agent 必须在 `modelSettings` 中显式声明是否开启思考模式及其档位。
 
 - `getDefinition` 只做精确查找；错误码为 `CATALOG_LOOKUP_INVALID`、`CATALOG_DEFINITION_NOT_FOUND`、`CATALOG_VERSION_NOT_FOUND` 和 `CATALOG_DEFINITION_UNAVAILABLE`（QUARANTINED/REVOKED）。
 - Workflow 在创建运行时调用一次 `pinAgent`，此后只读取返回的 `PinnedDefinitionSet`，不得再次查找。
-- 定义文件位于 `packages/agent-tool-pool/definitions/`，启动时全部校验；任何问题都阻止启动。设计说明见 [AgentToolPoolM1](../cc/AgentToolPoolM1.md)。
+- 定义文件位于 `packages/agent-tool-pool/definitions/`，启动时全部校验；任何问题都阻止启动。设计说明见 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
 
 ## 8. 协议注册表
 

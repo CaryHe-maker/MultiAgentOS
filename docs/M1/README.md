@@ -13,6 +13,8 @@
 3. [M1Interface](M1Interface.md)：M1 必须实现的 Port、Schema、Envelope 和错误协议。
 4. [M1Process](M1Process.md)：三位开发者并行维护的实时状态与验证证据。
 
+模块的 M1 实现说明放在 `docs/M1/<module>/` 下，例如 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
+
 理解系统边界时先阅读 [Architecture 指南](../Architecture/README.md)；依赖版本见 [Dependencies](../Requirements/Dependencies.md)；代码、Git 和 PR 规则见 [Style](../Style.md)。
 
 ## 3. 文档职责
