@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AgentPinRequest,
   BoundaryContext,
   CatalogPort,
-  DefinitionVersion,
+  PinnedDefinitionSet,
   PortResult,
   RunUserIntent,
   WorkflowRunView,
@@ -25,19 +26,20 @@ export const M1_BUDGETS: WorkflowBudgets = Object.freeze({
   timeoutMs: 30 * 60 * 1000,
 });
 const id = (prefix: string): string => `${prefix}_${randomUUID().replaceAll('-', '')}`;
-const queries = [
-  ['AGENT', 'repository-analysis-agent'],
-  ['MODEL', 'default-model'],
-  ['TOOL', 'repository-read-tools'],
-  ['PROMPT', 'repository-analysis-prompt'],
-  ['CONTRACT', 'analysis-action'],
-] as const;
+/** The agent version M1 runs. Changing it is a deliberate, reviewed change. */
+export const M1_AGENT: AgentPinRequest = Object.freeze({
+  id: 'repository-analysis-agent',
+  version: 'v0.1.0',
+});
 
 export class WorkflowService implements WorkflowControlPort {
   readonly #runs = new Map<string, WorkflowRunView>();
+  /** Definitions fixed at run creation; later steps read only from here. */
+  readonly #pinnedDefinitions = new Map<string, PinnedDefinitionSet>();
   public constructor(
     private readonly catalog: CatalogPort,
     public readonly budgets: WorkflowBudgets = M1_BUDGETS,
+    private readonly agent: AgentPinRequest = M1_AGENT,
   ) {
     if (
       budgets.maxSteps < 1 ||
@@ -51,15 +53,8 @@ export class WorkflowService implements WorkflowControlPort {
     _intent: RunUserIntent,
     context: BoundaryContext,
   ): Promise<PortResult<WorkflowRunView>> {
-    const definitions: DefinitionVersion[] = [];
-    for (const [kind, definitionId] of queries) {
-      const result = await this.catalog.resolve(
-        { kind, definitionId, requiredCapabilities: [] },
-        context,
-      );
-      if (!result.ok) return result;
-      definitions.push(result.value);
-    }
+    const pinned = await this.catalog.pinAgent(this.agent, context);
+    if (!pinned.ok) return pinned;
     const workflowRunId = id('wfr');
     const view: WorkflowRunView = Object.freeze({
       workflowRunId,
@@ -67,13 +62,18 @@ export class WorkflowService implements WorkflowControlPort {
       sourceVersion: 0,
       graphRevision: 0,
       currentStep: 'CONTEXT',
-      definitionVersions: definitions,
+      pinnedDefinitions: [...pinned.value.refs],
       usage: { inputTokens: 0, outputTokens: 0, durationMs: 0 },
       evidenceRefs: [],
       updatedAt: new Date().toISOString(),
     });
     this.#runs.set(workflowRunId, view);
+    this.#pinnedDefinitions.set(workflowRunId, pinned.value);
     return { ok: true, value: view };
+  }
+  /** The definition set pinned when the run was created; later steps must use only this. */
+  pinnedDefinitions(workflowRunId: string): PinnedDefinitionSet | undefined {
+    return this.#pinnedDefinitions.get(workflowRunId);
   }
   inspect(workflowRunId: string, context: BoundaryContext): Promise<PortResult<WorkflowRunView>> {
     const run = this.#runs.get(workflowRunId);
