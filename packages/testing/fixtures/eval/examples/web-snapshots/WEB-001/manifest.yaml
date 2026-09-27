@@ -1,0 +1,13 @@
+# 网页快照清单示例：由 curl 手工录制一次真实页面。M1 不接真实搜索，所以 queries 为空。
+schemaVersion: v0
+snapshotId: WEB-001
+recordedAt: '2026-09-27T16:34:12Z'
+recorder: { tool: curl, version: manual }
+queries: []
+pages:
+  - url: https://example.com/
+    fetchedAt: '2026-09-27T16:34:12Z'
+    httpStatus: 200
+    contentType: text/html
+    bodyFile: pages/0f115db062b7c0dd.html
+    sha256: ff67a9d764d6a2367a187734e697f6a53217db9a21c101d410a113ca871a299d

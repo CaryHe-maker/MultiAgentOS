@@ -5,3 +5,5 @@ coverage
 pnpm-lock.yaml
 docs
 README.md
+# Recorded web snapshots are hashed byte-for-byte; never reformat them.
+**/web-snapshots/**

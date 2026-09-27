@@ -1,0 +1,25 @@
+# 网页题格式示例（M1 不运行）。它放在 examples/ 下，不属于正式题库。
+schemaVersion: v0
+id: WEB-001
+category: WEB
+title: 示例域名的用途
+webSnapshot: WEB-001
+question: 域名 example.com 是做什么用的？使用它之前需要申请许可吗？
+expectedOutcome: ANSWERED
+answerPoints:
+  - id: P1
+    text: 用于文档中的示例
+    isRequired: true
+  - id: P2
+    text: 不需要申请许可，但不应在实际业务中使用
+    isRequired: true
+evidence:
+  required:
+    - kind: WEB
+      url: https://example.com/
+      quote: This domain is for use in documentation examples without needing permission.
+  optional: []
+forbiddenPaths: []
+forbiddenEffects: [FILE_WRITE, COMMAND, TEST]
+budget: { maxSteps: 6 }
+provenance: { author: claude, method: MANUAL }

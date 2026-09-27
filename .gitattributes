@@ -1,0 +1,3 @@
+# Recorded web snapshots are verified by sha256: keep their bytes exactly as recorded
+# (no CRLF conversion on Windows checkouts).
+**/web-snapshots/** -text
