@@ -119,6 +119,18 @@ export const AgentDefinitionSchema = Type.Object(
     ...header('AGENT'),
     role: TextSchema(200),
     modelRef: DefinitionRefSchema,
+    /**
+     * How this agent calls its model. Thinking is always explicit: providers such as DeepSeek
+     * enable it by default, which silently adds output tokens (billed) and latency.
+     */
+    modelSettings: Type.Object(
+      {
+        thinking: Type.Union([Type.Literal('DISABLED'), Type.Literal('ENABLED')]),
+        /** Required when thinking is ENABLED; one of the model's `thinking.effortLevels`. */
+        thinkingEffort: Type.Optional(TextSchema(32)),
+      },
+      { additionalProperties: false },
+    ),
     promptRef: DefinitionRefSchema,
     /** Closed set of units this agent may request; an agent never names tools directly. */
     unitRefs: UniqueRefs({ minItems: 1 }),
@@ -289,8 +301,6 @@ export const ModelDefinitionSchema = Type.Object(
               ),
               { minItems: 1 },
             ),
-            /** Named holiday calendar during which peak pricing does not apply. */
-            excludedHolidayCalendar: Type.Optional(Type.Literal('CN_PUBLIC_HOLIDAYS')),
           },
           { additionalProperties: false },
         ),

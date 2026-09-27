@@ -94,6 +94,7 @@ export function draftDocuments(): SourceDocument[] {
         id: 'analysis-agent',
         role: 'read-only analyst',
         modelRef: { id: 'test-model', version: 'v1.0.0' },
+        modelSettings: { thinking: 'DISABLED' },
         promptRef: { id: 'analysis', version: 'v1.0.0' },
         unitRefs: [{ id: 'file-read', version: 'v1.0.0' }],
         inputContract: contract('interaction.RunIntent'),

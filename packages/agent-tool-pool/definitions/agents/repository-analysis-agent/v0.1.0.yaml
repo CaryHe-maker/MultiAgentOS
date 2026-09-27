@@ -7,6 +7,9 @@ version: v0.1.0
 description: Single-task, read-only repository analysis agent for M1.
 role: read-only repository analyst
 modelRef: { id: deepseek-flash, version: v1.0.0 }
+# Thinking stays off for M1 development to keep cost and latency low; switch it on (with an
+# explicit effort) to compare in evaluation, and record the setting with the results.
+modelSettings: { thinking: DISABLED }
 promptRef: { id: repository-analysis, version: v0.1.0 }
 unitRefs:
   - { id: context-build, version: v0.1.0 }

@@ -27,6 +27,8 @@ export const CATALOG_ISSUE_CODES = [
   'EFFECT_MISMATCH',
   /** Two tools reachable from one agent share a model-facing name. */
   'TOOL_NAME_CONFLICT',
+  /** An agent's model settings are missing or not supported by its model. */
+  'MODEL_SETTINGS_INVALID',
   /** `status.yaml` is invalid or names a definition that does not exist. */
   'STATUS_INVALID',
 ] as const;

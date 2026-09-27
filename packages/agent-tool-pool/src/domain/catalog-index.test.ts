@@ -239,3 +239,55 @@ describe('draft versions (v0.x)', () => {
     ]);
   });
 });
+
+describe('agent model settings', () => {
+  const thinkingModel = {
+    isSupported: true,
+    isEnabledByDefault: true,
+    effortLevels: ['low', 'high'],
+  };
+  const withModelThinking = (documents: readonly SourceDocument[]) =>
+    documents.map((document) => {
+      if (!document.origin.startsWith('models/')) return document;
+      const content = document.content as { features: object };
+      return patchDocument(document, {
+        features: { ...content.features, thinking: thinkingModel },
+      });
+    });
+  const codesFor = (settings: object, documents = draftDocuments()) =>
+    planSeal(snapshot(replace(documents, 'agents/', { modelSettings: settings }))).issues.map(
+      (issue) => issue.code,
+    );
+
+  it('accepts explicit settings the model supports', () => {
+    expect(codesFor({ thinking: 'DISABLED' })).toEqual([]);
+    expect(
+      codesFor(
+        { thinking: 'ENABLED', thinkingEffort: 'high' },
+        withModelThinking(draftDocuments()),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['thinking on a model without it', { thinking: 'ENABLED', thinkingEffort: 'high' }, false],
+    ['an effort while thinking is off', { thinking: 'DISABLED', thinkingEffort: 'high' }, true],
+    ['thinking without an explicit effort', { thinking: 'ENABLED' }, true],
+    ['an effort the model does not offer', { thinking: 'ENABLED', thinkingEffort: 'max' }, true],
+  ])('rejects %s', (_label, settings, modelThinks) => {
+    const documents = modelThinks ? withModelThinking(draftDocuments()) : draftDocuments();
+    expect(codesFor(settings, documents)).toEqual(['MODEL_SETTINGS_INVALID']);
+  });
+
+  it('requires model settings on every agent', () => {
+    const documents = draftDocuments().map((document) => {
+      if (!document.origin.startsWith('agents/')) return document;
+      const content = { ...(document.content as Record<string, unknown>) };
+      delete content['modelSettings'];
+      return { origin: document.origin, content };
+    });
+    expect(planSeal(snapshot(documents)).issues.map((issue) => issue.code)).toEqual([
+      'DEFINITION_INVALID',
+    ]);
+  });
+});

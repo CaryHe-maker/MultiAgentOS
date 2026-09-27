@@ -4,7 +4,7 @@ schemaVersion: v0
 kind: MODEL
 id: deepseek-flash
 version: v1.0.0
-digest: ce123a019fe91ca93c39590dd2c619fa7e2788c24dc0aec5019d8fffaf9c7857
+digest: 8dea640ace3fd0fa6a6e74c1731e42a130c15c86a1442d838f6127ac32a83efa
 description: DeepSeek V4.1 Flash via the OpenAI-compatible API; the default low-cost model for M1.
 provider: deepseek
 apiModelId: deepseek-flash
@@ -31,6 +31,8 @@ pricing:
     inputCacheHit: 3000
     inputCacheMiss: 150000
     output: 600000
+  # DeepSeek also bills Chinese public holidays at off-peak rates. M1 has no holiday
+  # calendar, so costs computed from this rule are upper bounds on those days.
   peak:
     ratePercent: 200
     timeZone: UTC
@@ -38,7 +40,6 @@ pricing:
     windows:
       - { start: '01:00', end: '04:00' }
       - { start: '06:00', end: '10:00' }
-    excludedHolidayCalendar: CN_PUBLIC_HOLIDAYS
   source:
     url: https://api-docs.deepseek.com/quick_start/pricing
     verifiedOn: '2026-09-28'

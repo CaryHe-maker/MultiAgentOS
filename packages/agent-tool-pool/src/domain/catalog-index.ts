@@ -156,7 +156,7 @@ function analyze(snapshot: SourceSnapshot): Analysis {
 
   const bodies = new Map(entries.map((entry) => [entry.key, entry.body]));
   issues.push(...checkPromptVariables(entries), ...checkUnitEffects(entries, bodies));
-  issues.push(...checkToolNames(entries, bodies));
+  issues.push(...checkToolNames(entries, bodies), ...checkModelSettings(entries, bodies));
   const statuses = parseStatuses(snapshot.statusDocument, bodies, issues);
   return { entries, statuses, issues };
 }
@@ -313,6 +313,35 @@ function checkToolNames(
         owners.set(tool.modelName, owner);
       }
     }
+  }
+  return found;
+}
+
+/** Thinking settings must be explicit and supported by the referenced model. */
+function checkModelSettings(
+  entries: readonly AnalyzedEntry[],
+  bodies: ReadonlyMap<string, DefinitionBody>,
+): CatalogIssue[] {
+  const found: CatalogIssue[] = [];
+  for (const entry of entries) {
+    if (entry.body.kind !== 'AGENT') continue;
+    const { modelRef, modelSettings } = entry.body;
+    const model = bodies.get(definitionKey('MODEL', modelRef.id, modelRef.version));
+    if (model?.kind !== 'MODEL') continue;
+    const { isSupported, effortLevels } = model.features.thinking;
+    const effort = modelSettings.thinkingEffort;
+    const problems: string[] = [];
+    if (modelSettings.thinking === 'DISABLED' && effort !== undefined)
+      problems.push('thinkingEffort is set but thinking is DISABLED');
+    if (modelSettings.thinking === 'ENABLED') {
+      if (!isSupported) problems.push(`${model.id} does not support thinking`);
+      else if (effort === undefined)
+        problems.push(`thinkingEffort is required, one of ${effortLevels.join(', ')}`);
+      else if (!effortLevels.includes(effort))
+        problems.push(`thinkingEffort ${effort} is not one of ${effortLevels.join(', ')}`);
+    }
+    if (problems.length > 0)
+      found.push(issue(entry.origin, 'MODEL_SETTINGS_INVALID', problems.join('; ')));
   }
   return found;
 }

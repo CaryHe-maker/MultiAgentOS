@@ -29,6 +29,7 @@ const fixtures = {
     id: 'fixture-agent',
     role: 'analyst',
     modelRef: { id: 'fixture-model', version: 'v1.0.0' },
+    modelSettings: { thinking: 'DISABLED' },
     promptRef: { id: 'fixture-prompt', version: 'v1.0.0' },
     unitRefs: [{ id: 'fixture-unit', version: 'v1.0.0' }],
     inputContract: contract('interaction.RunIntent'),
