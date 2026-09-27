@@ -41,3 +41,11 @@ export {
   type EvalFixtureSet,
 } from './eval-fixtures/load-eval-fixtures.js';
 export { type LoadedWebSnapshot } from './eval-fixtures/web-snapshot-rules.js';
+export {
+  GitCliRepositoryReader,
+  MAX_EVIDENCE_FILE_BYTES,
+  checkRepositoryEvidence,
+  countLines,
+  type GitCliRepositoryReaderOptions,
+  type RepositoryReader,
+} from './eval-fixtures/check-repository-evidence.js';
