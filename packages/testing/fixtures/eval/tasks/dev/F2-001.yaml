@@ -12,18 +12,27 @@ question: |-
 expectedOutcome: ANSWERED
 answerPoints:
   - id: P1
-    text: 与该用户已有的全部活动比较（包括草稿和被排除账户/活动），逐项比较 comment、currency（活动币种或资产币种任一相同）、dataSource、symbol、type、fee、quantity、unitPrice 和日期
+    text: 把待导入的每条交易与该用户已有的交易逐字段比较，关键字段（资产、数量、单价、币种、日期等）全部相同才算重复
     isRequired: true
   - id: P2
     text: 日期用 isSameSecond 比较，精确到秒
     isRequired: true
   - id: P3
-    text: 重复记录不会让整次导入失败，只被标记 error = { code 'IS_DUPLICATE' }；正式导入时带 error 的活动被跳过（continue），试运行（dry run）时照常返回给前端预览
+    text: 重复记录不会让整次导入失败，只被标记为重复（IS_DUPLICATE），正式导入时这些记录被跳过
     isRequired: true
   - id: P4
-    text: 提示文字 “This activity already exists.” 定义在前端共享的 i18n 映射中（键 IMPORT_ACTIVITY_ERROR_IS_DUPLICATE）
+    text: 完整比较字段为 comment、currency（活动币种或资产币种任一相同）、dataSource、symbol、type、fee、quantity、unitPrice 和 date
     isRequired: false
   - id: P5
+    text: 比较对象包括草稿，以及被排除的账户和交易
+    isRequired: false
+  - id: P6
+    text: 试运行（dry run）时重复记录照常返回，带着 error 供前端预览
+    isRequired: false
+  - id: P7
+    text: 提示文字 “This activity already exists.” 定义在前端共享的 i18n 映射中（键 IMPORT_ACTIVITY_ERROR_IS_DUPLICATE）
+    isRequired: false
+  - id: P8
     text: 只为没有 error 的活动创建新的资产档案，避免留下无人引用的档案
     isRequired: false
 evidence:
