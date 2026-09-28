@@ -37,18 +37,23 @@ evidence:
     - kind: CODE
       path: apps/api/src/app/portfolio/portfolio.controller.ts
       lines: [600, 625]
+      anchor: 'category.rules = null;'
     - kind: CODE
       path: apps/api/src/app/portfolio/portfolio.service.ts
       lines: [1575, 1594]
+      anchor: 'summary.totalBuy + summary.totalSell'
     - kind: CODE
       path: apps/api/src/app/portfolio/rules.service.ts
       lines: [13, 42]
+      anchor: 'if (settings.isActive) {'
     - kind: CODE
       path: apps/api/src/models/rules/fees/fee-ratio-total-investment-volume.ts
       lines: [36, 66]
+      anchor: 'if (feeRatio > ruleSettings.thresholdMax) {'
     - kind: CODE
       path: apps/api/src/models/rules/rule-settings.ts
       lines: [57, 87]
+      anchor: 'isActive: configuredSettings?.isActive ?? true,'
   optional:
     - kind: CODE
       path: apps/api/src/models/rules/rule-settings.ts

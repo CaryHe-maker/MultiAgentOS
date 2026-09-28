@@ -30,9 +30,11 @@ evidence:
     - kind: CODE
       path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
       lines: [290, 378]
+      anchor: 'marketPriceBaseCurrencyFromCurrency = 1;'
     - kind: CODE
       path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts
       lines: [252, 288]
+      anchor: '// Fallback with error, if currencies are not available'
   optional:
     - kind: CODE
       path: apps/api/src/services/exchange-rate-data/exchange-rate-data.service.ts

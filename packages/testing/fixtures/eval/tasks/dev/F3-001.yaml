@@ -34,18 +34,23 @@ evidence:
     - kind: CODE
       path: hc/api/management/commands/sendalerts.py
       lines: [123, 177]
+      anchor: 'flip.reason = "timeout"'
     - kind: CODE
       path: hc/api/management/commands/sendalerts.py
       lines: [91, 121]
+      anchor: 'num_updated = q.update(processed=now())'
     - kind: CODE
       path: hc/api/management/commands/sendalerts.py
       lines: [24, 55]
+      anchor: 'channels = flip.select_channels()'
     - kind: CODE
       path: hc/api/models.py
       lines: [1390, 1408]
+      anchor: 'if self.new_status == "up" and self.old_status in ("new", "paused"):'
     - kind: CODE
       path: hc/api/models.py
       lines: [1151, 1186]
+      anchor: 'disabled = True if e.permanent else disabled'
   optional:
     - kind: CODE
       path: hc/api/models.py

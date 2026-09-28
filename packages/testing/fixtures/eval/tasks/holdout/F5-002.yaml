@@ -34,12 +34,15 @@ evidence:
     - kind: CODE
       path: hc/api/models.py
       lines: [300, 337]
+      anchor: 'result = next(CronSim(self.schedule, last_local))'
     - kind: CODE
       path: hc/api/models.py
       lines: [339, 349]
+      anchor: 'return grace_start + self.grace'
     - kind: CODE
       path: hc/api/models.py
       lines: [355, 380]
+      anchor: 'if frozen_now >= self.last_start + self.grace:'
   optional:
     - kind: CODE
       path: hc/api/management/commands/sendalerts.py

@@ -34,18 +34,23 @@ evidence:
     - kind: CODE
       path: apps/api/src/models/rule.ts
       lines: [15, 79]
+      anchor: 'public abstract evaluate(aRuleSettings: T): EvaluationResult;'
     - kind: CODE
       path: apps/api/src/models/rules/rule-settings.ts
       lines: [10, 55]
+      anchor: 'FeeRatioTotalInvestmentVolume: { thresholdMax: 0.01 },'
     - kind: CODE
       path: libs/common/src/lib/interfaces/x-ray-rules-settings.interface.ts
       lines: [1, 19]
+      anchor: 'FeeRatioTotalInvestmentVolume?: RuleSettings;'
     - kind: CODE
       path: apps/api/src/app/portfolio/portfolio.service.ts
       lines: [1575, 1595]
+      anchor: 'new FeeRatioTotalInvestmentVolume({'
     - kind: CODE
       path: apps/client/src/app/pages/i18n/i18n-page.html
       lines: [170, 178]
+      anchor: '<li i18n="@@rule.feeRatioTotalInvestmentVolume">Fee Ratio</li>'
   optional:
     - kind: CODE
       path: apps/api/src/models/rules/fees/fee-ratio-total-investment-volume.ts

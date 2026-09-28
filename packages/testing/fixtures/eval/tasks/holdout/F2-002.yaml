@@ -34,15 +34,19 @@ evidence:
     - kind: CODE
       path: hc/api/views.py
       lines: [209, 211]
+      anchor: 'body = request.body[: settings.PING_BODY_LIMIT]'
     - kind: CODE
       path: hc/api/views.py
       lines: [240, 242]
+      anchor: 'response["Ping-Body-Limit"] = str(settings.PING_BODY_LIMIT)'
     - kind: CODE
       path: hc/settings.py
       lines: [272, 276]
+      anchor: 'PING_BODY_LIMIT = envint("PING_BODY_LIMIT", "10000")'
     - kind: CODE
       path: hc/api/tests/test_ping.py
       lines: [321, 338]
+      anchor: 'def test_it_chops_long_body(self) -> None:'
   optional:
     - kind: CODE
       path: hc/api/models.py

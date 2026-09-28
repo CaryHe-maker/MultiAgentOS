@@ -34,6 +34,7 @@ evidence:
     - kind: CODE
       path: hc/api/models.py
       lines: [508, 539]
+      anchor: 'if self.last_start_rid == rid:'
   optional:
     - kind: CODE
       path: hc/api/tests/test_ping.py

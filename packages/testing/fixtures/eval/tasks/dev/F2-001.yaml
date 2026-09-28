@@ -31,9 +31,11 @@ evidence:
     - kind: CODE
       path: apps/api/src/app/import/import.service.ts
       lines: [1053, 1094]
+      anchor: 'isSameSecond(activity.date, date) &&'
     - kind: CODE
       path: apps/api/src/app/import/import.service.ts
       lines: [951, 954]
+      anchor: 'if (error) {'
   optional:
     - kind: CODE
       path: apps/api/src/app/import/import.service.ts

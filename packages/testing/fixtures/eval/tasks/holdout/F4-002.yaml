@@ -37,24 +37,31 @@ evidence:
     - kind: CODE
       path: hc/api/models.py
       lines: [48, 84]
+      anchor: 'CHANNEL_KINDS = [(kind, label_cls[0]) for kind, label_cls in TRANSPORTS.items()]'
     - kind: CODE
       path: hc/settings.py
       lines: [106, 135]
+      anchor: '"hc.integrations.zulip",'
     - kind: CODE
       path: hc/urls.py
       lines: [22, 51]
+      anchor: 'path(prefix, include("hc.integrations.zulip.urls")),'
     - kind: CODE
       path: hc/integrations/zulip/views.py
       lines: [16, 34]
+      anchor: '@require_setting("ZULIP_ENABLED")'
     - kind: CODE
       path: hc/integrations/zulip/transport.py
       lines: [28, 30]
+      anchor: 'if not settings.ZULIP_ENABLED:'
     - kind: CODE
       path: hc/front/views.py
       lines: [1237, 1273]
+      anchor: '"enable_zulip": settings.ZULIP_ENABLED is True,'
     - kind: CODE
       path: templates/front/channels.html
       lines: [431, 440]
+      anchor: '{% if enable_zulip %}'
   optional:
     - kind: CODE
       path: hc/settings.py

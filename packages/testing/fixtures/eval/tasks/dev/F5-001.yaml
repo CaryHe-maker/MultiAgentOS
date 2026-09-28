@@ -33,12 +33,15 @@ evidence:
     - kind: CODE
       path: apps/api/src/services/asset-profile-split/asset-profile-split.helper.ts
       lines: [9, 58]
+      anchor: 'denominator = denominator.mul(split.denominator);'
     - kind: CODE
       path: apps/api/src/app/activities/activities.service.ts
       lines: [776, 795]
+      anchor: 'this.assetProfileSplitService.getSplitsByUserId({ userId })'
     - kind: CODE
       path: apps/api/src/services/asset-profile-split/asset-profile-split.helper.spec.ts
       lines: [14, 78]
+      anchor: "it('only adjusts activities before the split calendar date', () => {"
   optional:
     - kind: CODE
       path: libs/common/src/lib/config.ts
