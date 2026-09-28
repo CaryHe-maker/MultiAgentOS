@@ -1,9 +1,9 @@
-import type { ExperimentInput, ExperimentOutput } from '../contracts.js';
+import type { ApiCallExecutorPort, ApiCallRequest, ApiCallResponse, Result } from '../contracts.js';
 import { NotImplementedError } from '../contracts.js';
 
-export class ApiCallExecutor {
-  public execute(_input: ExperimentInput): Promise<ExperimentOutput> {
-    void _input;
+export class ApiCallExecutor implements ApiCallExecutorPort {
+  public execute(_request: ApiCallRequest): Promise<Result<ApiCallResponse>> {
+    void _request;
     return Promise.reject(new NotImplementedError('ApiCallExecutor', 'execute'));
   }
 }

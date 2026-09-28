@@ -1,4 +1,4 @@
-import { AgentLoop } from './agent-loop.js';
+import { AgentToolPool } from './agent-tool-pool.js';
 import { MinimalContextEngine } from './context-engine.js';
 import { ApiCallExecutor } from './executors/api-call-executor.js';
 import { WebSearchExecutor } from './executors/web-search-executor.js';
@@ -6,7 +6,7 @@ import { MinimalKernel } from './kernel.js';
 import { MinimalWorkflow } from './workflow.js';
 
 export interface ExperimentRuntime {
-  readonly agentLoop: AgentLoop;
+  readonly agentToolPool: AgentToolPool;
   readonly workflow: MinimalWorkflow;
   readonly contextEngine: MinimalContextEngine;
   readonly kernel: MinimalKernel;
@@ -15,10 +15,12 @@ export interface ExperimentRuntime {
 }
 
 export function createExperimentRuntime(): ExperimentRuntime {
+  const agentToolPool = new AgentToolPool();
+  const contextEngine = new MinimalContextEngine(agentToolPool);
   return Object.freeze({
-    agentLoop: new AgentLoop(),
-    workflow: new MinimalWorkflow(),
-    contextEngine: new MinimalContextEngine(),
+    agentToolPool,
+    workflow: new MinimalWorkflow(agentToolPool, contextEngine),
+    contextEngine,
     kernel: new MinimalKernel(),
     apiCallExecutor: new ApiCallExecutor(),
     webSearchExecutor: new WebSearchExecutor(),

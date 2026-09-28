@@ -1,9 +1,14 @@
-import type { ExperimentInput, ExperimentOutput } from '../contracts.js';
+import type {
+  Result,
+  WebSearchExecutorPort,
+  WebSearchRequest,
+  WebSearchResponse,
+} from '../contracts.js';
 import { NotImplementedError } from '../contracts.js';
 
-export class WebSearchExecutor {
-  public execute(_input: ExperimentInput): Promise<ExperimentOutput> {
-    void _input;
+export class WebSearchExecutor implements WebSearchExecutorPort {
+  public execute(_request: WebSearchRequest): Promise<Result<WebSearchResponse>> {
+    void _request;
     return Promise.reject(new NotImplementedError('WebSearchExecutor', 'execute'));
   }
 }

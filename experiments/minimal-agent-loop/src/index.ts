@@ -1,4 +1,4 @@
-export * from './agent-loop.js';
+export * from './agent-tool-pool.js';
 export * from './context-engine.js';
 export * from './contracts.js';
 export * from './executors/api-call-executor.js';
