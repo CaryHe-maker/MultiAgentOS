@@ -106,6 +106,22 @@ describe('checkRepositoryEvidence', () => {
     expect(await codes(loaded([code('src/later.ts', [1, 1])], secondCommit))).toEqual([]);
   });
 
+  it('accepts an anchor that appears inside the line range', async () => {
+    const evidence = { ...code('src/fee.ts', [25, 30]), anchor: 'line 27' };
+    expect(await codes(loaded([evidence]))).toEqual([]);
+  });
+
+  it('reports an anchor outside the line range and where it really is', async () => {
+    const evidence = { ...code('src/fee.ts', [1, 5]), anchor: 'line 9' };
+    const issues = await checkRepositoryEvidence(loaded([evidence]), reader);
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: 'ANCHOR_NOT_IN_RANGE',
+        message: expect.stringContaining('found at line 9') as unknown,
+      }),
+    ]);
+  });
+
   it('reports line ranges past the end of the file', async () => {
     expect(await codes(loaded([code('src/fee.ts', [25, 31])]))).toEqual(['LINE_OUT_OF_RANGE']);
   });

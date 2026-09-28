@@ -57,6 +57,11 @@ export const CodeEvidenceSchema = Type.Object(
     kind: Type.Literal('CODE'),
     path: RelativePathSchema,
     lines: Type.Tuple([Type.Integer({ minimum: 1 }), Type.Integer({ minimum: 1 })]),
+    /**
+     * 行范围里的一句原文，用来确认行号指的确实是那段代码（行号偏几行时校验会失败）。
+     * 比较时忽略空白差异。
+     */
+    anchor: Type.Optional(Type.String({ minLength: 3, maxLength: 200 })),
     note: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
   },
   { additionalProperties: false },

@@ -55,8 +55,23 @@ export async function checkRepositoryEvidence(
           continue;
         }
         const lineCount = countLines(content);
-        if (item.lines[1] > lineCount)
+        if (item.lines[1] > lineCount) {
           report('LINE_OUT_OF_RANGE', `${item.path} has ${lineCount} lines, not ${item.lines[1]}`);
+          continue;
+        }
+        if (item.anchor !== undefined) {
+          const lines = new TextDecoder().decode(content).split('\n');
+          const range = collapse(lines.slice(item.lines[0] - 1, item.lines[1]).join('\n'));
+          const anchor = collapse(item.anchor);
+          if (!range.includes(anchor)) {
+            const actual = lines.findIndex((line) => collapse(line).includes(anchor));
+            const where = actual === -1 ? 'not found in the file' : `found at line ${actual + 1}`;
+            report(
+              'ANCHOR_NOT_IN_RANGE',
+              `${item.path} lines ${item.lines.join('-')}: anchor ${where}`,
+            );
+          }
+        }
       }
       const probePaths = new Set((task.retrievalProbes ?? []).flatMap((p) => p.expectPaths));
       for (const path of probePaths)
@@ -184,4 +199,8 @@ export class GitCliRepositoryReader implements RepositoryReader {
 
 async function exists(path: string): Promise<boolean> {
   return (await stat(path).catch(() => undefined)) !== undefined;
+}
+
+function collapse(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }

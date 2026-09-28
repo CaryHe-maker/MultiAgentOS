@@ -189,6 +189,11 @@ function checkEvidence(task: EvalTask): IssueDraft[] {
   const issues: IssueDraft[] = [];
   if (task.category !== 'TRAP' && task.evidence.required.length === 0)
     issues.push(error('MISSING_REQUIRED_EVIDENCE', 'answerable tasks need required evidence'));
+  for (const item of task.evidence.required)
+    if (item.kind === 'CODE' && item.anchor === undefined)
+      issues.push(
+        warning('EVIDENCE_WITHOUT_ANCHOR', `${item.path} has no anchor to confirm its lines`),
+      );
   for (const item of allEvidence(task)) {
     if (item.kind === 'CODE') {
       if (task.repository === undefined)

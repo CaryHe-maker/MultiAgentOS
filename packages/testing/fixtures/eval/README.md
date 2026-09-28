@@ -52,11 +52,14 @@ Schema 定义见 `src/eval-fixtures/eval-task-schema.ts`，不允许出现未定
 证据的两种形式：
 
 ```yaml
-- { kind: CODE, path: src/app/fee.ts, lines: [40, 72] }   # 仓库相对路径，行号从 1 开始、首尾都包含
+- { kind: CODE, path: src/app/fee.ts, lines: [40, 72], anchor: 'if (amount === 0)' }
 - { kind: WEB, url: https://example.com/, quote: 页面里能原样找到的一句话 }
 ```
 
-行号口径与 FILE_READ 的 `startLine/endLine` 一致，评测时直接拿 Kernel 审计记录中的读取范围去比对。
+- `path` 是仓库相对路径；`lines` 从 1 开始、首尾都包含，口径与 FILE_READ 的 `startLine/endLine` 一致，
+  评测时直接拿 Kernel 审计记录中的读取范围去比对。
+- `anchor` 是这几行里的一句原文（可选，比较时忽略空白差异）。`--repos` 会确认它确实落在 `lines` 范围内，
+  防止行号偏移。必需的代码证据没有锚点时给出警告。
 
 ## 3. 校验
 
@@ -85,7 +88,9 @@ pnpm run eval:fixtures --root packages/testing/fixtures/eval/examples
 | `CATEGORY_SPLIT_UNBALANCED` | 警告 | 某个 F 类在 dev 或 holdout 中缺题 |
 | `NOT_RUNNABLE_IN_M1` | 警告 | 网页题/混合题 |
 | `SNAPSHOT_*` / `WEB_EVIDENCE_*` | 错误 | 快照缺失、哈希漂移、URL 未录制、关键句不在页面里 |
+| `EVIDENCE_WITHOUT_ANCHOR` | 警告 | 必需的代码证据没有 `anchor` |
 | `COMMIT_NOT_FOUND` / `PATH_NOT_FOUND` / `LINE_OUT_OF_RANGE` | 错误 | `--repos`：固定 commit 下证据不存在或行号越界 |
+| `ANCHOR_NOT_IN_RANGE` | 错误 | `--repos`：锚点原文不在指定行范围内（提示实际所在行） |
 | `BINARY_FILE` / `FILE_TOO_LARGE` | 错误 | `--repos`：证据是二进制或超过 256 KiB（ContextEngine 不会展示） |
 | `REPOSITORY_UNAVAILABLE` / `SOURCE_COMMIT_NOT_FOUND` | 错误 | `--repos`：仓库克隆失败或来源提交不存在 |
 

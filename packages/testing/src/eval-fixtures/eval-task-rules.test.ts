@@ -15,7 +15,14 @@ function task(overrides: Partial<EvalTask> = {}): EvalTask {
     expectedOutcome: 'ANSWERED',
     answerPoints: [{ id: 'P1', text: '在上传中间件检查 Content-Length', isRequired: true }],
     evidence: {
-      required: [{ kind: 'CODE', path: 'src/middleware/upload-guard.ts', lines: [40, 72] }],
+      required: [
+        {
+          kind: 'CODE',
+          path: 'src/middleware/upload-guard.ts',
+          lines: [40, 72],
+          anchor: 'if (length > limit)',
+        },
+      ],
       optional: [],
     },
     forbiddenPaths: ['.env*', 'secrets/'],
@@ -127,7 +134,10 @@ describe('checkTaskRules', () => {
   it('ignores generic stems such as index or __init__', () => {
     const value = task({
       question: '入口 index 做了什么初始化？',
-      evidence: { required: [{ kind: 'CODE', path: 'src/index.ts', lines: [1, 5] }], optional: [] },
+      evidence: {
+        required: [{ kind: 'CODE', path: 'src/index.ts', lines: [1, 5], anchor: 'init()' }],
+        optional: [],
+      },
     });
     expect(codes(value)).toEqual([]);
   });
@@ -162,6 +172,15 @@ describe('checkTaskRules', () => {
     expect(codes(task({ provenance: { author: 'meti', method: 'GIT_HISTORY' } }))).toContain(
       'PROVENANCE_INCOMPLETE',
     );
+  });
+
+  it('warns when required code evidence has no anchor', () => {
+    const value = task({
+      evidence: { required: [{ kind: 'CODE', path: 'src/a.ts', lines: [1, 3] }], optional: [] },
+    });
+    expect(checkTaskRules(loaded(value))).toEqual([
+      expect.objectContaining({ code: 'EVIDENCE_WITHOUT_ANCHOR', severity: 'WARNING' }),
+    ]);
   });
 
   it('warns until a model-drafted task has been reviewed', () => {
