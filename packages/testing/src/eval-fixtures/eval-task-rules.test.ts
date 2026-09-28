@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { checkTaskRules, checkTaskSetRules, type LoadedEvalTask } from './eval-task-rules.js';
+import {
+  checkTaskRules,
+  checkTaskSetRules,
+  isReviewed,
+  type LoadedEvalTask,
+} from './eval-task-rules.js';
 import type { EvalTask } from './eval-task-schema.js';
 
 const COMMIT = 'a'.repeat(40);
@@ -215,5 +220,16 @@ describe('checkTaskSetRules', () => {
     expect(issues).toContainEqual(
       expect.objectContaining({ code: 'CATEGORY_SPLIT_UNBALANCED', severity: 'WARNING' }),
     );
+  });
+});
+
+describe('isReviewed', () => {
+  it('counts human-written tasks and reviewed model drafts only', () => {
+    expect(isReviewed(task())).toBe(true);
+    expect(isReviewed(task({ provenance: { author: 'claude', method: 'MODEL_DRAFT' } }))).toBe(
+      false,
+    );
+    const reviewed = { author: 'claude', method: 'MODEL_DRAFT', reviewedBy: 'meti' } as const;
+    expect(isReviewed(task({ provenance: reviewed }))).toBe(true);
   });
 });

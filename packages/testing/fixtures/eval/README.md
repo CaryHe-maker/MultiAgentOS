@@ -98,6 +98,9 @@ pnpm run eval:fixtures --root packages/testing/fixtures/eval/examples
 
 评测只读 Kernel 审计记录和运行状态（RuntimeProjection、UnitResult、Artifact），不读任何模块的内部数据。
 
+正式评测只计入 `isReviewed(task)` 为真的题：人工出的题，或已填写 `reviewedBy` 的模型初稿。
+未核对的题目本身可能有错，计入会把“题错”误算成 agent 答错；它们可以在开发时试跑，但不进入正式分数。
+
 | 层 | 怎么判 | 花不花钱 |
 |---|---|---|
 | 出处真实 | 报告引用的路径在固定 commit 下存在、行号在范围内 | 不花 |
@@ -133,6 +136,7 @@ web-snapshots/<snapshotId>/
 ## 7. 出题流程
 
 1. 在固定 commit 下读代码出题；问题用业务语言描述，不写答案文件名。
-2. 模型出的初稿写 `method: MODEL_DRAFT`，人工逐题核对答案要点和行号后填写 `reviewedBy`。
+2. 模型出的初稿写 `method: MODEL_DRAFT`，人工逐题核对答案要点、行号和锚点后填写 `reviewedBy`；
+   未填写前不计入正式评测。
 3. 运行 `pnpm run eval:fixtures --repos`，确保没有错误。
 4. 新题先放 dev；每个 F 类在 dev 和 holdout 中各保留至少一道。

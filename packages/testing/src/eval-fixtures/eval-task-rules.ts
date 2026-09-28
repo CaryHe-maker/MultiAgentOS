@@ -283,3 +283,11 @@ function checkProbes(task: EvalTask): IssueDraft[] {
       .map((path) => warning('PROBE_PATH_NOT_EVIDENCE', `probe expects ${path}, not in evidence`)),
   );
 }
+
+/**
+ * 正式评测只计入这些题：人工出的题，或已经有人核对过的模型初稿。
+ * 未核对的题目本身可能有错，计入会把“题错”误算成 agent 答错。
+ */
+export function isReviewed(task: EvalTask): boolean {
+  return task.provenance.method !== 'MODEL_DRAFT' || task.provenance.reviewedBy !== undefined;
+}

@@ -31,6 +31,7 @@ export {
   checkTaskRules,
   checkTaskSetRules,
   isExcludedByContext,
+  isReviewed,
   type FixtureIssue,
   type FixtureIssueSeverity,
   type LoadedEvalTask,
