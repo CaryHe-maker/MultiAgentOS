@@ -13,7 +13,7 @@
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
-    "lint": "eslint apps packages",
+    "lint": "eslint apps experiments packages",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:watch": "vitest",

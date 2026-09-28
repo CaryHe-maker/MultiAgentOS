@@ -93,6 +93,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  experiments/minimal-agent-loop: {}
+
   packages/agent-tool-pool:
     dependencies:
       '@multiagentos/contracts':

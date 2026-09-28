@@ -11,6 +11,9 @@
       "path": "apps/executor"
     },
     {
+      "path": "experiments/minimal-agent-loop"
+    },
+    {
       "path": "packages/agent-tool-pool"
     },
     {
