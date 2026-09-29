@@ -1,0 +1,23 @@
+# PLACEHOLDER parameters and result until AnalysisAction is designed.
+schemaVersion: v0
+kind: TOOL
+id: read-file
+version: v0.1.0
+description: Model-facing read of a line range inside the workspace, served by the read-only executor.
+modelName: read_file
+modelDescription: Read lines from a file in the repository.
+parametersSchema:
+  type: object
+  properties:
+    path: { type: string, minLength: 1 }
+    startLine: { type: integer, minimum: 1 }
+    endLine: { type: integer, minimum: 1 }
+  required: [path]
+  additionalProperties: false
+resultSchema:
+  type: object
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+canDryRun: false
+contentStatus: PLACEHOLDER

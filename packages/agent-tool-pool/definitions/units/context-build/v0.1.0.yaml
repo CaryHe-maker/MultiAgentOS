@@ -1,0 +1,18 @@
+# Executed inside ContextEngine after Kernel admission (see ContextEngine spec, section 1.5).
+schemaVersion: v0
+kind: UNIT
+id: context-build
+version: v0.1.0
+description: Build a ContextPack (ORIENT, SEARCH or ASSEMBLE) from the read-only workspace snapshot.
+executionKind: CONTEXT
+operations: [ORIENT, SEARCH, ASSEMBLE]
+inputContract: { kind: contract, id: context.ContextRequest, version: v0 }
+outputContract: { kind: contract, id: context.ContextPack, version: v0 }
+requiredCapabilities: [context.local]
+toolRefs:
+  - { id: search-repository, version: v0.1.0 }
+effect: READ_ONLY
+isIdempotent: true
+limits:
+  timeoutMs: 60000
+  maxOutputBytes: 1048576

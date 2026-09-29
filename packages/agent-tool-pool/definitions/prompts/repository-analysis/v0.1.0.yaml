@@ -1,0 +1,16 @@
+# PLACEHOLDER until the AnalysisAction protocol is designed. The body is the cache prefix of
+# every model call, so it must not contain timestamps, counters or other per-run values.
+schemaVersion: v0
+kind: PROMPT
+id: repository-analysis
+version: v0.1.0
+description: System prompt of the read-only repository analysis agent (placeholder).
+role: system
+template: |
+  PLACEHOLDER SYSTEM PROMPT.
+  You analyse the repository {{repositoryName}} without changing it.
+  Answer only from evidence you have read, and cite path and line range for every claim.
+variables:
+  - name: repositoryName
+    description: Display name of the analysed repository.
+contentStatus: PLACEHOLDER
