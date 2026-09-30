@@ -20,7 +20,6 @@ export interface RepositoryRef {
 
 export interface UserRequest {
   readonly prompt: string;
-  readonly repository: RepositoryRef;
 }
 
 export interface UserResponse {
@@ -29,13 +28,13 @@ export interface UserResponse {
 
 export interface WorkflowRequest {
   readonly objective: string;
-  readonly agentRef: DefinitionRef;
-  readonly repository: RepositoryRef;
+  readonly completedUnits: readonly UnitCompletion[];
 }
 
 export interface WorkflowOutput {
-  readonly answer: string;
-  readonly stepCount: number;
+  readonly agentRef: DefinitionRef;
+  readonly nextUnit: UnitIntent;
+  readonly stepNumber: number;
 }
 
 export type ToolName = 'file_read';
@@ -54,8 +53,18 @@ export interface PromptTemplate {
 
 export interface AgentDefinition {
   readonly ref: DefinitionRef;
-  readonly promptRef: DefinitionRef;
-  readonly toolRefs: readonly DefinitionRef[];
+  readonly name: string;
+  readonly promptPolicy: 'PASSTHROUGH';
+  readonly unitRefs: readonly DefinitionRef[];
+}
+
+export type UnitKind = 'MODEL_EXECUTOR' | 'RETURN_RESULT';
+
+export interface UnitDefinition {
+  readonly ref: DefinitionRef;
+  readonly name: string;
+  readonly kind: UnitKind;
+  readonly description: string;
 }
 
 export interface FileReadInput {
@@ -116,8 +125,7 @@ export interface ToolCallAction {
 export type AgentAction = FinalAction | ToolCallAction;
 
 export interface ModelRequest {
-  readonly context: ContextPack;
-  readonly tools: readonly ToolDefinition[];
+  readonly prompt: string;
 }
 
 export interface ModelUsage {
@@ -126,18 +134,28 @@ export interface ModelUsage {
 }
 
 export interface ModelResponse {
-  readonly action: AgentAction;
+  readonly answer: string;
   readonly usage: ModelUsage;
+}
+
+export type UnitInput = ModelRequest | UserResponse;
+
+export interface UnitIntent {
+  readonly unitRef: DefinitionRef;
+  readonly input: UnitInput;
+}
+
+export interface UnitCompletion {
+  readonly unitRef: DefinitionRef;
+  readonly output: ModelResponse;
 }
 
 export type ModuleRequest =
   | { readonly target: 'WORKFLOW'; readonly input: WorkflowRequest }
-  | { readonly target: 'MODEL_EXECUTOR'; readonly input: ModelRequest }
   | { readonly target: 'FILE_READ_EXECUTOR'; readonly input: FileReadRequest };
 
 export type ModuleResponse =
   | { readonly source: 'WORKFLOW'; readonly output: WorkflowOutput }
-  | { readonly source: 'MODEL_EXECUTOR'; readonly output: ModelResponse }
   | { readonly source: 'FILE_READ_EXECUTOR'; readonly output: FileReadResponse };
 
 export interface KernelChannel {
@@ -158,6 +176,13 @@ export interface ContextReader {
 
 export interface AgentDefinitionReader {
   getAgent(ref: DefinitionRef): Promise<Result<AgentDefinition>>;
+}
+
+export interface UnitDefinitionReader {
+  getUnit(ref: DefinitionRef): Promise<Result<UnitDefinition>>;
+}
+
+export interface ToolDefinitionReader {
   getTools(refs: readonly DefinitionRef[]): Promise<Result<readonly ToolDefinition[]>>;
 }
 
@@ -165,7 +190,10 @@ export interface PromptTemplateReader {
   getPrompt(ref: DefinitionRef): Promise<Result<PromptTemplate>>;
 }
 
-export type AgentToolPoolPort = AgentDefinitionReader & PromptTemplateReader;
+export type AgentToolPoolPort = AgentDefinitionReader &
+  UnitDefinitionReader &
+  ToolDefinitionReader &
+  PromptTemplateReader;
 
 export interface ModelExecutorPort {
   execute(request: ModelRequest): Promise<Result<ModelResponse>>;

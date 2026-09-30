@@ -166,3 +166,69 @@ UserRequest
 - Workflow 和 ContextEngine 不能直接访问 AgentToolPool 的存储，只能使用各自获准的 Reader。
 - 实验不提供文件写入、命令、测试、Git、网络或其他副作用能力；相关动作必须明确失败。
 - 在明确最小消息协议和验收场景前，不增加真实实现。
+
+## 当前已实现部分（阶段性补充）
+
+当前实验只实现一条最小主路径：
+
+```text
+prompt -> MinimalKernel -> MinimalWorkflow -> ModelExecutor -> DeepSeek V4.1 Flash
+```
+
+本阶段不实现 `FileReadExecutor`、`AgentToolPool` 和 `ContextEngine`。它们仍保留为后续阶段的边界，其中 `FILE_READ_EXECUTOR` 请求会明确返回 `CAPABILITY_NOT_IMPLEMENTED`，不会读取文件。
+
+## 已实现组件
+
+- `ModelExecutor`：调用 DeepSeek 官方 Chat Completions API，固定模型为 `deepseek-flash`（DeepSeek V4.1 Flash），返回回答和 token usage。
+- `MinimalWorkflow`：把收到的原始 prompt 原样交给 Kernel 调度 `ModelExecutor`，只执行一步。
+- `MinimalKernel`：接收用户 prompt，调度 Workflow，并将最终回答转换为用户响应。
+- `runPrompt`：对外的最简主路径函数，成功时直接返回回答字符串，失败时抛出带 `code` 和 `retryable` 的 `ExperimentRunError`。
+
+## 输入 prompt 并输出回答
+
+先设置 API Key：
+
+```powershell
+$env:DEEPSEEK_API_KEY = '你的 DeepSeek API Key'
+```
+
+然后从包入口调用 `runPrompt`：
+
+```ts
+import { runPrompt } from '@multiagentos/minimal-agent-loop-experiment';
+
+const answer = await runPrompt('请用一句话解释什么是 Agent Kernel。');
+console.log(answer);
+```
+
+在仓库内直接引用源码也可以：
+
+```ts
+import { runPrompt } from './experiments/minimal-agent-loop/src/index.js';
+
+const answer = await runPrompt('你好，请介绍一下你自己。');
+console.log(answer);
+```
+
+如需保留结构化错误而不是抛异常，可以直接使用 Kernel：
+
+```ts
+import { createExperimentRuntime } from '@multiagentos/minimal-agent-loop-experiment';
+
+const result = await createExperimentRuntime().kernel.run({ prompt: '你好' });
+
+if (result.ok) {
+  console.log(result.value.answer);
+} else {
+  console.error(result.error.code, result.error.message);
+}
+```
+
+## 配置
+
+- `DEEPSEEK_API_KEY`：必填。
+- API 地址固定为 `https://api.deepseek.com/chat/completions`。
+- 模型固定为 `deepseek-flash`。
+- 默认超时为 120 秒。
+
+`createExperimentRuntime` 和 `runPrompt` 允许注入 `fetch`、`apiKey` 和 `timeoutMs`，只用于测试或进程内配置；它们不提供切换模型或 Provider 的能力。
