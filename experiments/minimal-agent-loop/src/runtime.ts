@@ -1,7 +1,7 @@
 import { AgentToolPool } from './agent-tool-pool.js';
 import { MinimalContextEngine } from './context-engine.js';
-import { ApiCallExecutor } from './executors/api-call-executor.js';
-import { WebSearchExecutor } from './executors/web-search-executor.js';
+import { FileReadExecutor } from './executors/file-read-executor.js';
+import { ModelExecutor } from './executors/model-executor.js';
 import { MinimalKernel } from './kernel.js';
 import { MinimalWorkflow } from './workflow.js';
 
@@ -10,8 +10,8 @@ export interface ExperimentRuntime {
   readonly workflow: MinimalWorkflow;
   readonly contextEngine: MinimalContextEngine;
   readonly kernel: MinimalKernel;
-  readonly apiCallExecutor: ApiCallExecutor;
-  readonly webSearchExecutor: WebSearchExecutor;
+  readonly modelExecutor: ModelExecutor;
+  readonly fileReadExecutor: FileReadExecutor;
 }
 
 export function createExperimentRuntime(): ExperimentRuntime {
@@ -22,7 +22,7 @@ export function createExperimentRuntime(): ExperimentRuntime {
     workflow: new MinimalWorkflow(agentToolPool, contextEngine),
     contextEngine,
     kernel: new MinimalKernel(),
-    apiCallExecutor: new ApiCallExecutor(),
-    webSearchExecutor: new WebSearchExecutor(),
+    modelExecutor: new ModelExecutor(),
+    fileReadExecutor: new FileReadExecutor(),
   });
 }

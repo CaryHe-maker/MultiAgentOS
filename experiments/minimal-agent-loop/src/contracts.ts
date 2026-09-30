@@ -13,8 +13,14 @@ export interface DefinitionRef {
   readonly version: string;
 }
 
+export interface RepositoryRef {
+  readonly rootPath: string;
+  readonly revision: string;
+}
+
 export interface UserRequest {
   readonly prompt: string;
+  readonly repository: RepositoryRef;
 }
 
 export interface UserResponse {
@@ -24,6 +30,7 @@ export interface UserResponse {
 export interface WorkflowRequest {
   readonly objective: string;
   readonly agentRef: DefinitionRef;
+  readonly repository: RepositoryRef;
 }
 
 export interface WorkflowOutput {
@@ -31,7 +38,7 @@ export interface WorkflowOutput {
   readonly stepCount: number;
 }
 
-export type ToolName = 'web_search';
+export type ToolName = 'file_read';
 
 export interface ToolDefinition {
   readonly ref: DefinitionRef;
@@ -51,31 +58,38 @@ export interface AgentDefinition {
   readonly toolRefs: readonly DefinitionRef[];
 }
 
-export interface WebSearchRequest {
-  readonly query: string;
-  readonly maxResults: number;
+export interface FileReadInput {
+  readonly path: string;
+  readonly startLine?: number;
+  readonly endLine?: number;
 }
 
-export interface WebSearchItem {
-  readonly title: string;
-  readonly url: string;
-  readonly snippet: string;
+export interface FileReadRequest {
+  readonly repository: RepositoryRef;
+  readonly input: FileReadInput;
 }
 
-export interface WebSearchResponse {
-  readonly items: readonly WebSearchItem[];
+export interface FileReadResponse {
+  readonly path: string;
+  readonly revision: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly totalLines: number;
+  readonly content: string;
+  readonly truncated: boolean;
 }
 
 export interface ToolObservation {
   readonly callId: string;
   readonly toolName: ToolName;
-  readonly input: WebSearchRequest;
-  readonly output: WebSearchResponse;
+  readonly input: FileReadInput;
+  readonly output: FileReadResponse;
 }
 
 export interface ContextRequest {
   readonly objective: string;
   readonly promptRef: DefinitionRef;
+  readonly repository: RepositoryRef;
   readonly observations: readonly ToolObservation[];
 }
 
@@ -83,6 +97,7 @@ export interface ContextPack {
   readonly promptRef: DefinitionRef;
   readonly instructions: string;
   readonly objective: string;
+  readonly repository: RepositoryRef;
   readonly observations: readonly ToolObservation[];
 }
 
@@ -94,13 +109,13 @@ export interface FinalAction {
 export interface ToolCallAction {
   readonly kind: 'TOOL_CALL';
   readonly callId: string;
-  readonly toolName: 'web_search';
-  readonly input: WebSearchRequest;
+  readonly toolName: 'file_read';
+  readonly input: FileReadInput;
 }
 
 export type AgentAction = FinalAction | ToolCallAction;
 
-export interface ApiCallRequest {
+export interface ModelRequest {
   readonly context: ContextPack;
   readonly tools: readonly ToolDefinition[];
 }
@@ -110,20 +125,20 @@ export interface ModelUsage {
   readonly outputTokens: number;
 }
 
-export interface ApiCallResponse {
+export interface ModelResponse {
   readonly action: AgentAction;
   readonly usage: ModelUsage;
 }
 
 export type ModuleRequest =
   | { readonly target: 'WORKFLOW'; readonly input: WorkflowRequest }
-  | { readonly target: 'API_CALL_EXECUTOR'; readonly input: ApiCallRequest }
-  | { readonly target: 'WEB_SEARCH_EXECUTOR'; readonly input: WebSearchRequest };
+  | { readonly target: 'MODEL_EXECUTOR'; readonly input: ModelRequest }
+  | { readonly target: 'FILE_READ_EXECUTOR'; readonly input: FileReadRequest };
 
 export type ModuleResponse =
   | { readonly source: 'WORKFLOW'; readonly output: WorkflowOutput }
-  | { readonly source: 'API_CALL_EXECUTOR'; readonly output: ApiCallResponse }
-  | { readonly source: 'WEB_SEARCH_EXECUTOR'; readonly output: WebSearchResponse };
+  | { readonly source: 'MODEL_EXECUTOR'; readonly output: ModelResponse }
+  | { readonly source: 'FILE_READ_EXECUTOR'; readonly output: FileReadResponse };
 
 export interface KernelChannel {
   dispatch(request: ModuleRequest): Promise<Result<ModuleResponse>>;
@@ -152,12 +167,12 @@ export interface PromptTemplateReader {
 
 export type AgentToolPoolPort = AgentDefinitionReader & PromptTemplateReader;
 
-export interface ApiCallExecutorPort {
-  execute(request: ApiCallRequest): Promise<Result<ApiCallResponse>>;
+export interface ModelExecutorPort {
+  execute(request: ModelRequest): Promise<Result<ModelResponse>>;
 }
 
-export interface WebSearchExecutorPort {
-  execute(request: WebSearchRequest): Promise<Result<WebSearchResponse>>;
+export interface FileReadExecutorPort {
+  execute(request: FileReadRequest): Promise<Result<FileReadResponse>>;
 }
 
 export class NotImplementedError extends Error {
