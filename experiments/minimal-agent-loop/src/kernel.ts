@@ -1,165 +1,215 @@
 import type {
   AgentDefinitionReader,
+  ContextReader,
   DefinitionRef,
+  ExperimentError,
+  FileReadExecutorPort,
   KernelPort,
   ModelExecutorPort,
-  ModuleRequest,
-  ModuleResponse,
   Result,
+  UnitAttempt,
+  UnitAttemptStatus,
   UnitCompletion,
   UnitDefinitionReader,
   UnitIntent,
+  UnitOutput,
   UserRequest,
   UserResponse,
+  WorkflowDecision,
   WorkflowPort,
 } from './contracts.js';
 
 type KernelDefinitions = AgentDefinitionReader & UnitDefinitionReader;
 
-const MAX_UNIT_STEPS = 16;
+const MAX_UNIT_STEPS = 64;
 
 function referencesMatch(left: DefinitionRef, right: DefinitionRef): boolean {
   return left.id === right.id && left.version === right.version;
 }
 
-function failure(code: string, message: string): Result<never> {
-  return { ok: false, error: { code, message, retryable: false } };
+function failure(code: string, message: string, retryable = false): Result<never> {
+  return { ok: false, error: { code, message, retryable } };
 }
 
-function isModelInput(input: UnitIntent['input']): input is { readonly prompt: string } {
-  return 'prompt' in input && typeof input.prompt === 'string';
-}
-
-function isReturnInput(input: UnitIntent['input']): input is { readonly answer: string } {
-  return 'answer' in input && typeof input.answer === 'string';
+function unitIsAllowed(allowed: readonly DefinitionRef[], unitRef: DefinitionRef): boolean {
+  return allowed.some((ref) => referencesMatch(ref, unitRef));
 }
 
 export class MinimalKernel implements KernelPort {
+  private readonly attempts = new Map<string, UnitAttempt>();
+  private workflowRunSequence = 0;
+
   public constructor(
     private readonly workflow: WorkflowPort,
+    private readonly contextEngine: ContextReader,
     private readonly modelExecutor: ModelExecutorPort,
+    private readonly fileReadExecutor: FileReadExecutorPort,
     private readonly definitions: KernelDefinitions,
   ) {}
 
+  public getUnitAttempt(unitAttemptId: string): UnitAttempt | undefined {
+    return this.attempts.get(unitAttemptId);
+  }
+
   public async run(request: UserRequest): Promise<Result<UserResponse>> {
     if (request.prompt.trim().length === 0) {
-      return {
-        ok: false,
-        error: {
-          code: 'INVALID_PROMPT',
-          message: 'Prompt must not be empty.',
-          retryable: false,
-        },
-      };
+      return failure('INVALID_PROMPT', 'Prompt must not be empty.');
     }
 
-    const completedUnits: UnitCompletion[] = [];
-    let workflowAgentRef: DefinitionRef | undefined;
+    this.workflowRunSequence += 1;
+    const workflowRunId = `workflow-run-${this.workflowRunSequence}`;
+    let decisionResult = await this.workflow.start({
+      workflowRunId,
+      objective: request.prompt,
+      ...(request.repository === undefined ? {} : { repository: request.repository }),
+    });
 
-    for (let stepIndex = 0; stepIndex < MAX_UNIT_STEPS; stepIndex += 1) {
-      const workflowResult = await this.dispatch({
-        target: 'WORKFLOW',
-        input: {
-          objective: request.prompt,
-          completedUnits,
-        },
-      });
+    for (let step = 0; step < MAX_UNIT_STEPS; step += 1) {
+      if (!decisionResult.ok) return decisionResult;
+      const decision: WorkflowDecision = decisionResult.value;
+      if (decision.kind === 'COMPLETE') return { ok: true, value: decision.response };
+      if (decision.kind === 'FAILED') return { ok: false, error: decision.error };
 
-      if (!workflowResult.ok) return workflowResult;
-      if (workflowResult.value.source !== 'WORKFLOW') {
-        return failure(
-          'UNEXPECTED_MODULE_RESPONSE',
-          `Kernel expected WORKFLOW but received ${workflowResult.value.source}.`,
-        );
-      }
-
-      const workflowOutput = workflowResult.value.output;
-      if (workflowOutput.stepNumber !== stepIndex + 1) {
-        return failure(
-          'INVALID_UNIT_SEQUENCE',
-          `Workflow returned step ${workflowOutput.stepNumber}; Kernel expected ${stepIndex + 1}.`,
-        );
-      }
-
-      if (
-        workflowAgentRef !== undefined &&
-        !referencesMatch(workflowOutput.agentRef, workflowAgentRef)
-      ) {
-        return failure('INVALID_AGENT_SEQUENCE', 'Workflow changed Agent during an active run.');
-      }
-
-      const agentResult = await this.definitions.getAgent(workflowOutput.agentRef);
-      if (!agentResult.ok) return agentResult;
-      const agent = agentResult.value;
-      workflowAgentRef = agent.ref;
-
-      const intent = workflowOutput.nextUnit;
-      const expectedRef = agent.unitRefs[stepIndex];
-      if (expectedRef === undefined || !referencesMatch(intent.unitRef, expectedRef)) {
-        return failure(
-          'INVALID_UNIT_SEQUENCE',
-          `Workflow returned an unexpected Unit at step ${stepIndex + 1}.`,
-        );
-      }
-
-      const unitResult = await this.definitions.getUnit(intent.unitRef);
-      if (!unitResult.ok) return unitResult;
-
-      switch (unitResult.value.kind) {
-        case 'MODEL_EXECUTOR': {
-          if (completedUnits.length !== 0 || !isModelInput(intent.input)) {
-            return failure(
-              'INVALID_UNIT_INPUT',
-              'MODEL_EXECUTOR must be the first Unit and requires a prompt.',
-            );
-          }
-
-          const modelResult = await this.modelExecutor.execute({ prompt: intent.input.prompt });
-          if (!modelResult.ok) return modelResult;
-          completedUnits.push({ unitRef: intent.unitRef, output: modelResult.value });
-          break;
-        }
-        case 'RETURN_RESULT': {
-          const modelCompletion = completedUnits[0];
-          if (
-            completedUnits.length !== 1 ||
-            modelCompletion === undefined ||
-            !isReturnInput(intent.input) ||
-            intent.input.answer !== modelCompletion.output.answer
-          ) {
-            return failure(
-              'INVALID_UNIT_INPUT',
-              'RETURN_RESULT must return the preceding MODEL_EXECUTOR answer unchanged.',
-            );
-          }
-          return { ok: true, value: { answer: intent.input.answer } };
-        }
-      }
+      const completion = await this.executeUnit(decision.intent);
+      decisionResult = await this.workflow.resume(decision.state, completion);
     }
 
     return failure(
       'WORKFLOW_STEP_LIMIT',
-      `Workflow exceeded the ${MAX_UNIT_STEPS}-step Kernel limit without returning a result.`,
+      `Workflow exceeded the ${MAX_UNIT_STEPS}-step limit without returning a result.`,
     );
   }
 
-  public async dispatch(request: ModuleRequest): Promise<Result<ModuleResponse>> {
-    switch (request.target) {
-      case 'WORKFLOW': {
-        const result = await this.workflow.run(request.input);
+  private async executeUnit(intent: UnitIntent): Promise<UnitCompletion> {
+    const unitAttemptId = `${intent.unitIntentId}:attempt:1`;
+    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'CREATED');
+    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'ADMISSION_CHECKING');
+
+    const admission = await this.admit(intent);
+    if (!admission.ok) {
+      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'REJECTED');
+      return this.completion(intent, unitAttemptId, 'REJECTED', undefined, admission.error);
+    }
+
+    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'ADMITTED');
+    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'RUNNING');
+
+    try {
+      const execution = await this.route(intent);
+      if (!execution.ok) {
+        this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'FAILED');
+        return this.completion(intent, unitAttemptId, 'FAILED', undefined, execution.error);
+      }
+      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'SUCCEEDED');
+      return this.completion(intent, unitAttemptId, 'SUCCEEDED', execution.value);
+    } catch (error: unknown) {
+      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'FAILED');
+      const detail = error instanceof Error ? error.message : String(error);
+      return this.completion(intent, unitAttemptId, 'FAILED', undefined, {
+        code: 'UNIT_EXECUTION_EXCEPTION',
+        message: detail,
+        retryable: false,
+      });
+    }
+  }
+
+  private async admit(intent: UnitIntent): Promise<Result<void>> {
+    const agent = await this.definitions.getAgent(intent.agentRef);
+    if (!agent.ok) return agent;
+    if (!unitIsAllowed(agent.value.allowedUnitRefs, intent.unitRef)) {
+      return failure(
+        'UNIT_NOT_ALLOWED',
+        `${agent.value.name} is not allowed to use ${intent.unitRef.id}.`,
+      );
+    }
+    const unit = await this.definitions.getUnit(intent.unitRef);
+    if (!unit.ok) return unit;
+    if (unit.value.kind !== intent.input.kind) {
+      return failure(
+        'UNIT_INPUT_MISMATCH',
+        `${unit.value.kind} Unit received ${intent.input.kind} input.`,
+      );
+    }
+    return { ok: true, value: undefined };
+  }
+
+  private async route(intent: UnitIntent): Promise<Result<UnitOutput>> {
+    switch (intent.input.kind) {
+      case 'CONTEXT_BUILD': {
+        const result = await this.contextEngine.build(intent.input.request);
         return result.ok
-          ? { ok: true, value: { source: 'WORKFLOW', output: result.value } }
+          ? { ok: true, value: { kind: 'CONTEXT_BUILD', context: result.value } }
           : result;
       }
-      case 'FILE_READ_EXECUTOR':
+      case 'MODEL_CALL': {
+        const result = await this.modelExecutor.execute(intent.input.request);
+        return result.ok
+          ? { ok: true, value: { kind: 'MODEL_CALL', response: result.value } }
+          : result;
+      }
+      case 'REPOSITORY_VIEW': {
+        const result = await this.fileReadExecutor.view(intent.input.request);
+        return result.ok
+          ? { ok: true, value: { kind: 'REPOSITORY_VIEW', overview: result.value } }
+          : result;
+      }
+      case 'FILE_READ': {
+        const result = await this.fileReadExecutor.read(intent.input.request);
+        return result.ok
+          ? {
+              ok: true,
+              value: {
+                kind: 'FILE_READ',
+                observation: {
+                  callId: intent.input.callId,
+                  toolName: 'file_read',
+                  input: intent.input.request.input,
+                  output: result.value,
+                },
+              },
+            }
+          : result;
+      }
+      case 'RETURN_RESULT':
         return {
-          ok: false,
-          error: {
-            code: 'CAPABILITY_NOT_IMPLEMENTED',
-            message: 'FILE_READ_EXECUTOR is intentionally not implemented in this stage.',
-            retryable: false,
-          },
+          ok: true,
+          value: { kind: 'RETURN_RESULT', response: intent.input.response },
         };
     }
+  }
+
+  private completion(
+    intent: UnitIntent,
+    unitAttemptId: string,
+    outcome: UnitCompletion['outcome'],
+    output?: UnitOutput,
+    error?: ExperimentError,
+  ): UnitCompletion {
+    return {
+      unitIntentId: intent.unitIntentId,
+      unitAttemptId,
+      attemptNumber: 1,
+      agentRunId: intent.agentRunId,
+      unitRef: intent.unitRef,
+      outcome,
+      ...(output === undefined ? {} : { output }),
+      ...(error === undefined ? {} : { error }),
+    };
+  }
+
+  private transitionAttempt(
+    unitAttemptId: string,
+    unitIntentId: string,
+    status: UnitAttemptStatus,
+  ): void {
+    const current = this.attempts.get(unitAttemptId);
+    const history = current === undefined ? [status] : [...current.history, status];
+    this.attempts.set(unitAttemptId, {
+      unitAttemptId,
+      unitIntentId,
+      attemptNumber: 1,
+      status,
+      history,
+    });
   }
 }

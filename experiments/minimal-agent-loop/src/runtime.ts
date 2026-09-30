@@ -35,7 +35,14 @@ export function createExperimentRuntime(options: ExperimentRuntimeOptions = {}):
   const contextEngine = new MinimalContextEngine(agentToolPool);
   const modelExecutor = new ModelExecutor(options);
   const workflow = new MinimalWorkflow(agentToolPool);
-  const kernel = new MinimalKernel(workflow, modelExecutor, agentToolPool);
+  const fileReadExecutor = new FileReadExecutor();
+  const kernel = new MinimalKernel(
+    workflow,
+    contextEngine,
+    modelExecutor,
+    fileReadExecutor,
+    agentToolPool,
+  );
 
   return Object.freeze({
     agentToolPool,
@@ -43,7 +50,7 @@ export function createExperimentRuntime(options: ExperimentRuntimeOptions = {}):
     contextEngine,
     kernel,
     modelExecutor,
-    fileReadExecutor: new FileReadExecutor(),
+    fileReadExecutor,
   });
 }
 

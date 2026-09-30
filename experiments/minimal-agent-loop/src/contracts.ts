@@ -20,30 +20,21 @@ export interface RepositoryRef {
 
 export interface UserRequest {
   readonly prompt: string;
+  readonly repository?: RepositoryRef;
 }
 
 export interface UserResponse {
   readonly answer: string;
 }
 
-export interface WorkflowRequest {
-  readonly objective: string;
-  readonly completedUnits: readonly UnitCompletion[];
-}
+export type UnitKind =
+  'CONTEXT_BUILD' | 'MODEL_CALL' | 'REPOSITORY_VIEW' | 'FILE_READ' | 'RETURN_RESULT';
 
-export interface WorkflowOutput {
-  readonly agentRef: DefinitionRef;
-  readonly nextUnit: UnitIntent;
-  readonly stepNumber: number;
-}
-
-export type ToolName = 'file_read';
-
-export interface ToolDefinition {
+export interface UnitDefinition {
   readonly ref: DefinitionRef;
-  readonly name: ToolName;
+  readonly name: string;
+  readonly kind: UnitKind;
   readonly description: string;
-  readonly inputSchema: Readonly<Record<string, unknown>>;
 }
 
 export interface PromptTemplate {
@@ -54,17 +45,43 @@ export interface PromptTemplate {
 export interface AgentDefinition {
   readonly ref: DefinitionRef;
   readonly name: string;
-  readonly promptPolicy: 'PASSTHROUGH';
-  readonly unitRefs: readonly DefinitionRef[];
+  readonly description: string;
+  readonly acceptedTaskTypes: readonly string[];
+  readonly promptRef: DefinitionRef;
+  readonly allowedUnitRefs: readonly DefinitionRef[];
+  readonly allowedHandoffRefs: readonly DefinitionRef[];
 }
 
-export type UnitKind = 'MODEL_EXECUTOR' | 'RETURN_RESULT';
-
-export interface UnitDefinition {
+export interface AgentRoutingDescriptor {
   readonly ref: DefinitionRef;
   readonly name: string;
-  readonly kind: UnitKind;
   readonly description: string;
+  readonly acceptedTaskTypes: readonly string[];
+}
+
+export interface ReviewTask {
+  readonly taskType: 'CODE_REVIEW';
+  readonly objective: string;
+  readonly constraints: readonly string[];
+  readonly acceptanceCriteria: readonly string[];
+}
+
+export interface HandoffAction {
+  readonly kind: 'HANDOFF';
+  readonly targetAgentRef: DefinitionRef;
+  readonly task: ReviewTask;
+}
+
+export interface SourceCitation {
+  readonly path: string;
+  readonly startLine: number;
+  readonly endLine: number;
+}
+
+export interface FinalAction {
+  readonly kind: 'FINAL';
+  readonly answer: string;
+  readonly citations?: readonly SourceCitation[];
 }
 
 export interface FileReadInput {
@@ -72,6 +89,15 @@ export interface FileReadInput {
   readonly startLine?: number;
   readonly endLine?: number;
 }
+
+export interface ToolCallAction {
+  readonly kind: 'TOOL_CALL';
+  readonly callId: string;
+  readonly toolName: 'file_read';
+  readonly input: FileReadInput;
+}
+
+export type AgentAction = HandoffAction | FinalAction | ToolCallAction;
 
 export interface FileReadRequest {
   readonly repository: RepositoryRef;
@@ -88,44 +114,57 @@ export interface FileReadResponse {
   readonly truncated: boolean;
 }
 
+export interface RepositoryFileSummary {
+  readonly path: string;
+  readonly sizeBytes: number;
+  readonly totalLines: number;
+}
+
+export interface RepositoryOverview {
+  readonly revision: string;
+  readonly files: readonly RepositoryFileSummary[];
+  readonly truncated: boolean;
+}
+
+export interface RepositoryViewRequest {
+  readonly repository: RepositoryRef;
+  readonly maxDepth: number;
+  readonly includeExtensions: readonly string[];
+}
+
 export interface ToolObservation {
   readonly callId: string;
-  readonly toolName: ToolName;
+  readonly toolName: 'file_read';
   readonly input: FileReadInput;
   readonly output: FileReadResponse;
 }
 
+export interface ContextStatus {
+  readonly modelCallsRemaining: number;
+  readonly fileReadsRemaining: number;
+}
+
 export interface ContextRequest {
-  readonly objective: string;
+  readonly agentRef: DefinitionRef;
   readonly promptRef: DefinitionRef;
-  readonly repository: RepositoryRef;
+  readonly objective: string;
+  readonly repository?: RepositoryRef;
+  readonly routingCatalog: readonly AgentRoutingDescriptor[];
+  readonly handoff?: HandoffAction;
+  readonly repositoryOverview?: RepositoryOverview;
   readonly observations: readonly ToolObservation[];
+  readonly status: ContextStatus;
 }
 
 export interface ContextPack {
+  readonly agentRef: DefinitionRef;
   readonly promptRef: DefinitionRef;
   readonly instructions: string;
-  readonly objective: string;
-  readonly repository: RepositoryRef;
-  readonly observations: readonly ToolObservation[];
+  readonly input: string;
 }
-
-export interface FinalAction {
-  readonly kind: 'FINAL';
-  readonly answer: string;
-}
-
-export interface ToolCallAction {
-  readonly kind: 'TOOL_CALL';
-  readonly callId: string;
-  readonly toolName: 'file_read';
-  readonly input: FileReadInput;
-}
-
-export type AgentAction = FinalAction | ToolCallAction;
 
 export interface ModelRequest {
-  readonly prompt: string;
+  readonly context: ContextPack;
 }
 
 export interface ModelUsage {
@@ -134,40 +173,154 @@ export interface ModelUsage {
 }
 
 export interface ModelResponse {
-  readonly answer: string;
+  readonly action: AgentAction;
   readonly usage: ModelUsage;
 }
 
-export type UnitInput = ModelRequest | UserResponse;
+export interface ContextBuildUnitInput {
+  readonly kind: 'CONTEXT_BUILD';
+  readonly request: ContextRequest;
+}
+
+export interface ModelCallUnitInput {
+  readonly kind: 'MODEL_CALL';
+  readonly request: ModelRequest;
+}
+
+export interface RepositoryViewUnitInput {
+  readonly kind: 'REPOSITORY_VIEW';
+  readonly request: RepositoryViewRequest;
+}
+
+export interface FileReadUnitInput {
+  readonly kind: 'FILE_READ';
+  readonly request: FileReadRequest;
+  readonly callId: string;
+}
+
+export interface ReturnResultUnitInput {
+  readonly kind: 'RETURN_RESULT';
+  readonly response: UserResponse;
+}
+
+export type UnitInput =
+  | ContextBuildUnitInput
+  | ModelCallUnitInput
+  | RepositoryViewUnitInput
+  | FileReadUnitInput
+  | ReturnResultUnitInput;
 
 export interface UnitIntent {
+  readonly unitIntentId: string;
+  readonly workflowRunId: string;
+  readonly agentRunId: string;
+  readonly agentRef: DefinitionRef;
   readonly unitRef: DefinitionRef;
+  readonly stepNumber: number;
   readonly input: UnitInput;
 }
 
+export type UnitOutput =
+  | { readonly kind: 'CONTEXT_BUILD'; readonly context: ContextPack }
+  | { readonly kind: 'MODEL_CALL'; readonly response: ModelResponse }
+  | { readonly kind: 'REPOSITORY_VIEW'; readonly overview: RepositoryOverview }
+  | { readonly kind: 'FILE_READ'; readonly observation: ToolObservation }
+  | { readonly kind: 'RETURN_RESULT'; readonly response: UserResponse };
+
 export interface UnitCompletion {
+  readonly unitIntentId: string;
+  readonly unitAttemptId: string;
+  readonly attemptNumber: number;
+  readonly agentRunId: string;
   readonly unitRef: DefinitionRef;
-  readonly output: ModelResponse;
+  readonly outcome: 'SUCCEEDED' | 'FAILED' | 'REJECTED';
+  readonly output?: UnitOutput;
+  readonly error?: ExperimentError;
 }
 
-export type ModuleRequest =
-  | { readonly target: 'WORKFLOW'; readonly input: WorkflowRequest }
-  | { readonly target: 'FILE_READ_EXECUTOR'; readonly input: FileReadRequest };
+export type AgentRunStatus =
+  | 'WAITING_ACTIVATION'
+  | 'READY'
+  | 'RUNNING'
+  | 'WAITING_UNIT'
+  | 'APPLYING_RESULT'
+  | 'RESULT_SUBMITTED'
+  | 'FAILED';
 
-export type ModuleResponse =
-  | { readonly source: 'WORKFLOW'; readonly output: WorkflowOutput }
-  | { readonly source: 'FILE_READ_EXECUTOR'; readonly output: FileReadResponse };
-
-export interface KernelChannel {
-  dispatch(request: ModuleRequest): Promise<Result<ModuleResponse>>;
+export interface AgentRunState {
+  readonly agentRunId: string;
+  readonly agentRef: DefinitionRef;
+  readonly status: AgentRunStatus;
+  readonly modelCallCount: number;
+  readonly fileReadCount: number;
 }
 
-export interface KernelPort extends KernelChannel {
-  run(request: UserRequest): Promise<Result<UserResponse>>;
+export type UnitRunStatus = 'WAITING_EXECUTION' | 'EVALUATING_RESULT' | 'SUCCEEDED' | 'FAILED';
+
+export interface UnitRunState {
+  readonly unitRunId: string;
+  readonly unitIntentId: string;
+  readonly agentRunId: string;
+  readonly unitRef: DefinitionRef;
+  readonly status: UnitRunStatus;
+  readonly attemptCount: number;
+  readonly currentAttemptId?: string;
+}
+
+export type WorkflowPhase = 'ROUTING' | 'REVIEWING' | 'FINALIZING' | 'COMPLETED';
+
+export interface WorkflowState {
+  readonly workflowRunId: string;
+  readonly objective: string;
+  readonly repository?: RepositoryRef;
+  readonly phase: WorkflowPhase;
+  readonly activeAgentRunId: string;
+  readonly agentRuns: Readonly<Record<string, AgentRunState>>;
+  readonly unitRuns: Readonly<Record<string, UnitRunState>>;
+  readonly pendingUnitRunId?: string;
+  readonly nextStepNumber: number;
+  readonly handoff?: HandoffAction;
+  readonly repositoryOverview?: RepositoryOverview;
+  readonly observations: readonly ToolObservation[];
+}
+
+export interface WorkflowStartRequest {
+  readonly workflowRunId: string;
+  readonly objective: string;
+  readonly repository?: RepositoryRef;
+}
+
+export type WorkflowDecision =
+  | {
+      readonly kind: 'EXECUTE_UNIT';
+      readonly state: WorkflowState;
+      readonly intent: UnitIntent;
+    }
+  | {
+      readonly kind: 'COMPLETE';
+      readonly state: WorkflowState;
+      readonly response: UserResponse;
+    }
+  | {
+      readonly kind: 'FAILED';
+      readonly state: WorkflowState;
+      readonly error: ExperimentError;
+    };
+
+export type UnitAttemptStatus =
+  'CREATED' | 'ADMISSION_CHECKING' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'REJECTED';
+
+export interface UnitAttempt {
+  readonly unitAttemptId: string;
+  readonly unitIntentId: string;
+  readonly attemptNumber: number;
+  readonly status: UnitAttemptStatus;
+  readonly history: readonly UnitAttemptStatus[];
 }
 
 export interface WorkflowPort {
-  run(request: WorkflowRequest): Promise<Result<WorkflowOutput>>;
+  start(request: WorkflowStartRequest): Promise<Result<WorkflowDecision>>;
+  resume(state: WorkflowState, completion: UnitCompletion): Promise<Result<WorkflowDecision>>;
 }
 
 export interface ContextReader {
@@ -176,36 +329,29 @@ export interface ContextReader {
 
 export interface AgentDefinitionReader {
   getAgent(ref: DefinitionRef): Promise<Result<AgentDefinition>>;
+  listRoutingAgents(): Promise<Result<readonly AgentRoutingDescriptor[]>>;
 }
 
 export interface UnitDefinitionReader {
   getUnit(ref: DefinitionRef): Promise<Result<UnitDefinition>>;
 }
 
-export interface ToolDefinitionReader {
-  getTools(refs: readonly DefinitionRef[]): Promise<Result<readonly ToolDefinition[]>>;
-}
-
 export interface PromptTemplateReader {
   getPrompt(ref: DefinitionRef): Promise<Result<PromptTemplate>>;
 }
 
-export type AgentToolPoolPort = AgentDefinitionReader &
-  UnitDefinitionReader &
-  ToolDefinitionReader &
-  PromptTemplateReader;
+export type AgentToolPoolPort = AgentDefinitionReader & UnitDefinitionReader & PromptTemplateReader;
 
 export interface ModelExecutorPort {
   execute(request: ModelRequest): Promise<Result<ModelResponse>>;
 }
 
 export interface FileReadExecutorPort {
-  execute(request: FileReadRequest): Promise<Result<FileReadResponse>>;
+  read(request: FileReadRequest): Promise<Result<FileReadResponse>>;
+  view(request: RepositoryViewRequest): Promise<Result<RepositoryOverview>>;
 }
 
-export class NotImplementedError extends Error {
-  public constructor(component: string, operation: string) {
-    super(`${component}.${operation} is not implemented`);
-    this.name = 'NotImplementedError';
-  }
+export interface KernelPort {
+  run(request: UserRequest): Promise<Result<UserResponse>>;
+  getUnitAttempt(unitAttemptId: string): UnitAttempt | undefined;
 }

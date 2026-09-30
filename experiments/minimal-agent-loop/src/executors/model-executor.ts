@@ -1,4 +1,13 @@
-import type { ModelExecutorPort, ModelRequest, ModelResponse, Result } from '../contracts.js';
+import type {
+  AgentAction,
+  DefinitionRef,
+  FileReadInput,
+  ModelExecutorPort,
+  ModelRequest,
+  ModelResponse,
+  Result,
+  SourceCitation,
+} from '../contracts.js';
 
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 export const DEEPSEEK_MODEL = 'deepseek-flash';
@@ -9,6 +18,8 @@ export interface ModelExecutorOptions {
   readonly apiKey?: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly timeoutMs?: number;
+  readonly debugModelResponses?: boolean;
+  readonly modelResponseLogger?: (message: string) => void;
 }
 
 interface DeepSeekResponse {
@@ -29,6 +40,89 @@ function failure(code: string, message: string, retryable: boolean): Result<neve
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isDefinitionRef(value: unknown): value is DefinitionRef {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.version === 'string';
+}
+
+function isFileReadInput(value: unknown): value is FileReadInput {
+  if (!isRecord(value) || typeof value.path !== 'string') return false;
+  return (
+    (value.startLine === undefined || typeof value.startLine === 'number') &&
+    (value.endLine === undefined || typeof value.endLine === 'number')
+  );
+}
+
+function isCitation(value: unknown): value is SourceCitation {
+  return (
+    isRecord(value) &&
+    typeof value.path === 'string' &&
+    typeof value.startLine === 'number' &&
+    typeof value.endLine === 'number'
+  );
+}
+
+function parseAction(content: string): AgentAction | undefined {
+  const trimmed = content.trim();
+  const json = trimmed.startsWith('```')
+    ? trimmed.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '')
+    : trimmed;
+
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value) || typeof value.kind !== 'string') return undefined;
+
+  if (value.kind === 'FINAL' && typeof value.answer === 'string') {
+    if (value.citations !== undefined) {
+      if (!Array.isArray(value.citations) || !value.citations.every(isCitation)) return undefined;
+      return { kind: 'FINAL', answer: value.answer, citations: value.citations };
+    }
+    return { kind: 'FINAL', answer: value.answer };
+  }
+
+  if (
+    value.kind === 'TOOL_CALL' &&
+    typeof value.callId === 'string' &&
+    value.toolName === 'file_read' &&
+    isFileReadInput(value.input)
+  ) {
+    return {
+      kind: 'TOOL_CALL',
+      callId: value.callId,
+      toolName: 'file_read',
+      input: value.input,
+    };
+  }
+
+  if (
+    value.kind === 'HANDOFF' &&
+    isDefinitionRef(value.targetAgentRef) &&
+    isRecord(value.task) &&
+    value.task.taskType === 'CODE_REVIEW' &&
+    typeof value.task.objective === 'string' &&
+    Array.isArray(value.task.constraints) &&
+    value.task.constraints.every((item) => typeof item === 'string') &&
+    Array.isArray(value.task.acceptanceCriteria) &&
+    value.task.acceptanceCriteria.every((item) => typeof item === 'string')
+  ) {
+    return {
+      kind: 'HANDOFF',
+      targetAgentRef: value.targetAgentRef,
+      task: {
+        taskType: 'CODE_REVIEW',
+        objective: value.task.objective,
+        constraints: value.task.constraints,
+        acceptanceCriteria: value.task.acceptanceCriteria,
+      },
+    };
+  }
+
+  return undefined;
 }
 
 function readApiError(payload: unknown): string | undefined {
@@ -60,15 +154,24 @@ export class ModelExecutor implements ModelExecutorPort {
   private readonly apiKey: string;
   private readonly fetcher: typeof globalThis.fetch;
   private readonly timeoutMs: number;
+  private readonly debugModelResponses: boolean;
+  private readonly modelResponseLogger: (message: string) => void;
 
   public constructor(options: ModelExecutorOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.DEEPSEEK_API_KEY ?? '';
     this.fetcher = options.fetch ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.debugModelResponses =
+      options.debugModelResponses ?? process.env.MINIMAL_AGENT_LOOP_DEBUG_MODEL === '1';
+    this.modelResponseLogger =
+      options.modelResponseLogger ?? ((message) => process.stderr.write(`${message}\n`));
   }
 
   public async execute(request: ModelRequest): Promise<Result<ModelResponse>> {
-    if (request.prompt.trim().length === 0) {
+    if (
+      request.context.instructions.trim().length === 0 ||
+      request.context.input.trim().length === 0
+    ) {
       return failure('INVALID_PROMPT', 'Prompt must not be empty.', false);
     }
     if (this.apiKey.length === 0) {
@@ -94,15 +197,31 @@ export class ModelExecutor implements ModelExecutorPort {
         },
         body: JSON.stringify({
           model: DEEPSEEK_MODEL,
-          messages: [{ role: 'user', content: request.prompt }],
+          messages: [
+            { role: 'system', content: request.context.instructions },
+            { role: 'user', content: request.context.input },
+          ],
           stream: false,
         }),
         signal: controller.signal,
       });
 
+      let rawBody: string;
+      try {
+        rawBody = await response.text();
+      } catch {
+        return failure(
+          'INVALID_MODEL_RESPONSE',
+          `DeepSeek response body could not be read (HTTP ${response.status}).`,
+          response.status >= 500,
+        );
+      }
+
+      this.logRawResponse(request, response.status, rawBody);
+
       let payload: unknown;
       try {
-        payload = await response.json();
+        payload = JSON.parse(rawBody);
       } catch {
         return failure(
           'INVALID_MODEL_RESPONSE',
@@ -128,11 +247,22 @@ export class ModelExecutor implements ModelExecutorPort {
         return failure('INVALID_MODEL_RESPONSE', 'DeepSeek returned an invalid payload.', false);
       }
 
-      const answer = parsed.choices[0]?.message.content;
-      if (typeof answer !== 'string' || answer.length === 0) {
+      const content = parsed.choices[0]?.message.content;
+      if (typeof content !== 'string' || content.length === 0) {
         return failure(
           'INVALID_MODEL_RESPONSE',
-          'DeepSeek response did not contain an answer.',
+          'DeepSeek response did not contain an action.',
+          false,
+        );
+      }
+
+      this.logAssistantContent(request, content);
+
+      const action = parseAction(content);
+      if (action === undefined) {
+        return failure(
+          'INVALID_MODEL_ACTION',
+          'DeepSeek response was not a valid Planner or Review Agent action.',
           false,
         );
       }
@@ -140,7 +270,7 @@ export class ModelExecutor implements ModelExecutorPort {
       return {
         ok: true,
         value: {
-          answer,
+          action,
           usage: {
             inputTokens: parsed.usage?.prompt_tokens ?? 0,
             outputTokens: parsed.usage?.completion_tokens ?? 0,
@@ -161,5 +291,28 @@ export class ModelExecutor implements ModelExecutorPort {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private logRawResponse(request: ModelRequest, status: number, rawBody: string): void {
+    if (!this.debugModelResponses) return;
+    this.modelResponseLogger(
+      [
+        '[minimal-agent-loop] DeepSeek raw response',
+        `agent=${request.context.agentRef.id}@${request.context.agentRef.version}`,
+        `httpStatus=${status}`,
+        rawBody,
+      ].join('\n'),
+    );
+  }
+
+  private logAssistantContent(request: ModelRequest, content: string): void {
+    if (!this.debugModelResponses) return;
+    this.modelResponseLogger(
+      [
+        '[minimal-agent-loop] DeepSeek assistant content',
+        `agent=${request.context.agentRef.id}@${request.context.agentRef.version}`,
+        content,
+      ].join('\n'),
+    );
   }
 }

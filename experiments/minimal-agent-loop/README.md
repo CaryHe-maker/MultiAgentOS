@@ -1,234 +1,284 @@
 # Minimal Agent Loop Experiment
 
-这个目录用于独立验证面向本地代码仓库的最小只读 Agent 闭环，不属于当前 M1 的正式实现。
+这个目录实现一条独立于正式 M1 模块的最小双 Agent 闭环，用于验证 MultiAgentOS 的 Agent、Unit、Workflow、Kernel、ContextEngine 与 Executor 边界。
 
-实验目标是分析一个约 200 行的本地 C 语言代码仓库。用户提出代码审查问题后，Agent 根据初始仓库概览选择文件和行范围，通过受控的 `file_read` 工具获取证据，最终以文字报告说明问题、来源和建议修改方法。实验不直接修改代码，也不执行编译、测试、命令或网络访问。
+实验支持两条路径：
 
-## 当前状态
+1. `PlannerAgent` 判断 `hi`、问候或无需工具的简单问题并直接回答；
+2. `PlannerAgent` 把 C 仓库审查任务 handoff 给 `CRepositoryReviewAgent`，后者通过受控仓库概览和文件读取完成静态审查。
 
-当前只提供可编译的工程骨架。所有组件均为空实现，不会发起模型 API 请求、读取文件或产生其他副作用。
+实验只允许读取本地仓库，不修改文件，不执行命令、编译、测试、Git 或网络工具。模型调用使用 DeepSeek Chat Completions API。
 
-## 组件
+## 内置 C 审查仓库
 
-```text
-src/
-├── agent-tool-pool.ts
-├── context-engine.ts
-├── contracts.ts
-├── kernel.ts
-├── runtime.ts
-├── workflow.ts
-└── executors/
-    ├── file-read-executor.ts
-    └── model-executor.ts
-```
-
-- `AgentToolPool`：未来通过只读 Port 提供版本化的 Agent、Prompt 和 `file_read` 工具定义。
-- `MinimalWorkflow`：未来在内部承载 Agent Loop，通过只读 Port 使用静态定义和 ContextEngine。
-- `MinimalContextEngine`：未来通过只读 Port 获取已固定的 Prompt，生成仓库文件概览，并组装每轮上下文。
-- `MinimalKernel`：对外承接最简用户输入，对内转发 Workflow、ModelExecutor 和 FileReadExecutor 请求。
-- `ModelExecutor`：未来封装模型调用，返回结构化的 `TOOL_CALL` 或 `FINAL` 动作。
-- `FileReadExecutor`：未来在固定仓库根目录和 revision 下按路径、行范围执行受控只读访问。
-- `createExperimentRuntime`：组合上述组件的唯一入口。
-
-## 最小调用链
-
-```text
-调用方 / 集成测试
-       |
-       | UserRequest(prompt, repository)
-       v
-MinimalKernel.run()                 最简 UserInteraction
-       |
-       | ModuleRequest / ModuleResponse
-       v
-MinimalWorkflow                     内部运行 Agent Loop
-       |
-       +-- ContextReader -------> ContextEngine
-       +-- Kernel.dispatch() --> ModelExecutor
-       +-- Kernel.dispatch() --> FileReadExecutor
-
-MinimalWorkflow ---- AgentDefinitionReader ---> AgentToolPool
-ContextEngine ------ PromptTemplateReader ----> AgentToolPool
-                         只读、版本固定、不经过 Kernel
-```
-
-本实验不建立独立的 UserInteraction 模块。`MinimalKernel.run()` 直接接收用户的 `prompt` 和固定的 `repository`，将其转换为 Workflow 目标，并把最终报告转换为 `UserResponse`。除这层最简使用逻辑外，Kernel 不拥有 Agent 决策、上下文构建或具体执行行为。
-
-模型调用和文件读取统一经过 `KernelChannel.dispatch()`。模型只能提出 `file_read` 动作，不能指定或扩大仓库根目录；Workflow 将模型给出的相对路径和行范围与本次运行固定的 `RepositoryRef` 组合后，再交给 Kernel 和 FileReadExecutor。
-
-上下文构建不经过 Kernel：Workflow 通过只读 `ContextReader` 直接请求 ContextEngine。AgentToolPool 的不可变静态定义也不经过 Kernel：Workflow 通过 `AgentDefinitionReader` 读取并固定 Agent 与工具版本；ContextEngine 通过 `PromptTemplateReader` 解引用 Workflow 已选定的 `promptRef`。这些模块都不依赖彼此的内部存储或具体实现。
-
-Workflow 决定使用哪个 Agent 和 Prompt。ContextEngine 不允许按名称获取“最新 Prompt”，只能读取 `ContextRequest.promptRef` 指定的精确版本，避免同一次运行中出现定义漂移。
-
-## 使用方式
-
-当前阶段不需要 CLI。优先通过集成测试或一个 TypeScript 调用入口使用 Runtime：
-
-```ts
-const runtime = createExperimentRuntime();
-const result = await runtime.kernel.run({
-  prompt: '检查这个 C 语言仓库中可能导致崩溃、内存错误或错误结果的问题，并说明修改方法。',
-  repository: {
-    rootPath: './fixtures/c-review',
-    revision: 'fixture-c-review-v1',
-  },
-});
-```
-
-骨架尚未实现路由和执行，因此该调用当前会返回 `NotImplementedError`。完成最小闭环后，如果需要人工反复运行，再增加一个只负责读取命令行参数并调用 `kernel.run()` 的薄 CLI；CLI 不承载 Workflow 或 Agent 逻辑。
-
-## 运行示例：约 200 行 C 语言仓库代码审查
-
-示例仓库可以拆分为少量 `.c` 和 `.h` 文件，总代码量约 200 行：
+`fixtures/c-review` 提供一个精确 200 行的多文件 C 测试仓库：
 
 ```text
 fixtures/c-review/
-├── include/
-│   └── parser.h
+├── include/parser.h   20 lines
 └── src/
-    ├── main.c
-    ├── parser.c
-    └── util.c
+    ├── main.c         40 lines
+    ├── parser.c       93 lines
+    └── util.c         47 lines
 ```
 
-目标任务：
+代码中故意包含多个可以通过静态阅读发现的内存安全、边界、错误处理和资源生命周期问题。仓库中不保存预期答案，避免 Agent 通过读取答案文件完成审查。
+
+## 核心所有权
+
+### Workflow
+
+Workflow 是业务状态的唯一权威，维护：
+
+- `WorkflowState`；
+- `AgentRunState`；
+- `UnitRunState`；
+- 当前 active Agent；
+- Planner handoff；
+- 仓库概览与文件 Observation；
+- Unit 结果对业务流程的含义。
+
+Workflow 创建不可变 `UnitIntent`，但不直接调用 ContextEngine、模型、文件系统或其他 Executor。
+
+### Kernel
+
+Kernel 是物理执行状态的唯一权威，维护每次执行的 `UnitAttempt`：
 
 ```text
-检查这个 C 语言仓库中可能导致崩溃、内存错误或错误结果的问题。
-对每个问题给出文件路径、行范围、原因和建议修改方法，但不要直接修改代码。
+CREATED
+-> ADMISSION_CHECKING
+-> ADMITTED
+-> RUNNING
+-> SUCCEEDED | FAILED | REJECTED
 ```
 
-预期调用方式：
+Kernel 校验 Agent→Unit 成员关系和输入类型，然后路由到 ContextEngine、ModelExecutor 或 FileReadExecutor。Workflow 不复制这些中间状态，只等待带有 `unitIntentId` 和 `unitAttemptId` 的终态 `UnitCompletion`。
 
-```ts
-const runtime = createExperimentRuntime();
-const result = await runtime.kernel.run({
-  prompt:
-    '检查这个 C 语言仓库中可能导致崩溃、内存错误或错误结果的问题。' +
-    '对每个问题给出文件路径、行范围、原因和建议修改方法，但不要直接修改代码。',
-  repository: {
-    rootPath: './fixtures/c-review',
-    revision: 'fixture-c-review-v1',
-  },
-});
+当前实验中一次 `UnitRun` 只有一次 `UnitAttempt`。协议保留 `attemptNumber`，以后可以在 Kernel 中增加 Lease、Permit、fencing、Executor 选择和安全的执行级重试，而不改变 Workflow 的 Agent 编排模型。
 
-if (result.ok) console.log(result.value.answer);
-```
+## 双层状态机
 
-目标运行流程：
-
-1. 调用方把 Prompt 和 `RepositoryRef` 作为 `UserRequest` 交给 `MinimalKernel.run()`。
-2. Kernel 选择默认 Agent 版本，把输入转换为携带 `agentRef` 和固定仓库引用的 `WorkflowRequest`，再将请求路由到 Workflow。
-3. Workflow 通过 `AgentDefinitionReader` 直接只读 AgentToolPool，固定本次运行使用的 Agent、`promptRef` 和 `file_read` 工具版本。
-4. Workflow 通过 `ContextReader` 向 ContextEngine 发送目标、仓库引用、`promptRef` 和空 Observation 列表。
-5. ContextEngine 取得精确版本的 Prompt，生成只包含目录和候选源码文件的初始仓库概览，不一次性注入全部源码。
-6. Workflow 经 Kernel 调用 ModelExecutor；模型根据 ContextPack 和工具签名返回 `TOOL_CALL(file_read)`，指定相对路径和可选行范围。
-7. Workflow 把模型参数与固定 `RepositoryRef` 组合，经 Kernel 调用 FileReadExecutor，并把带路径、行范围、revision 和截断状态的结果保存为 `ToolObservation`。
-8. Workflow 再次调用 ContextEngine，使用相同 `promptRef` 将新的 Observation 组装进 ContextPack。
-9. Workflow 重复 Model → FileRead → Context，直到模型取得足够证据或到达步骤预算。
-10. 模型返回 `FINAL`；Workflow 验收报告引用的文件和行范围后返回 `WorkflowOutput`，Kernel 再将报告转换为 `UserResponse`。
+### Agent/Workflow 层
 
 ```text
-UserRequest
-    -> Kernel
-    -> Workflow
-       -> AgentToolPool                 只读 Agent 与 Tool 定义
-       -> ContextEngine -> AgentToolPool  只读 Context 与 Prompt
-       -> Kernel -> ModelExecutor
-       -> Kernel -> FileReadExecutor
-       -> ContextEngine
-       -> Kernel -> ModelExecutor
-       -> ...
-       -> FINAL
-    -> Kernel
-    -> UserResponse.answer
+PlannerAgent READY
+-> RUNNING
+-> WAITING_UNIT
+-> APPLYING_RESULT
+-> FINAL answer
+   or HANDOFF
+
+CRepositoryReviewAgent WAITING_ACTIVATION
+-> READY
+-> RUNNING
+-> WAITING_UNIT <-> APPLYING_RESULT
+-> RESULT_SUBMITTED
 ```
 
-示例问题应能通过纯源码静态阅读判断，例如越界访问、少分配一个终止字符、未初始化变量、遗漏资源释放或错误码被忽略。不要把答案文件名写进用户问题，也不要选择必须运行编译器或测试才能确认的问题。
+ReviewAgent 在运行开始时已经存在，但处于 `WAITING_ACTIVATION`。Planner 只能提出结构化 `HANDOFF`；Workflow 校验目标属于 Planner 的 `allowedHandoffRefs` 后，才原子地完成 Planner 并激活 ReviewAgent。
 
-## `file_read` 边界
-
-- 模型只提供相对 `path` 和可选的 `startLine`、`endLine`，不能提供仓库根目录或 revision。
-- Workflow 使用运行开始时固定的 `RepositoryRef` 构造 `FileReadRequest`。
-- Executor 应拒绝绝对路径、`..`、symlink/junction 逃逸和非普通文本文件。
-- 返回内容应包含实际路径、revision、起止行、总行数和 `truncated`。
-- 单次读取必须具有行数或字节上限；需要更多内容时由模型继续发起读取。
-
-## 边界
-
-- 不依赖 `apps/*` 或 `packages/*` 中的正式模块。
-- 不复用当前 M1 Shared Contracts，避免实验提前继承正式架构假设。
-- Agent Loop 当前是 Workflow 的内部实现细节，不建立独立模块边界。
-- 最简 UserInteraction 由 Kernel 的公开入口承担，不建立独立模块。
-- 模型与文件读取通过 KernelChannel；上下文和版本化静态定义通过窄只读 Port 直接查询。
-- Workflow 只能通过 ContextReader 使用 ContextEngine，不能访问其具体实现或内部状态。
-- Workflow 和 ContextEngine 不能直接访问 AgentToolPool 的存储，只能使用各自获准的 Reader。
-- 实验不提供文件写入、命令、测试、Git、网络或其他副作用能力；相关动作必须明确失败。
-- 在明确最小消息协议和验收场景前，不增加真实实现。
-
-## 当前已实现部分（阶段性补充）
-
-当前实验只实现一条最小主路径：
+### Unit 执行层
 
 ```text
-prompt -> MinimalKernel -> MinimalWorkflow -> ModelExecutor -> DeepSeek V4.1 Flash
+Workflow UnitRun: WAITING_EXECUTION
+        |
+        | UnitIntent
+        v
+Kernel UnitAttempt:
+CREATED -> ADMISSION_CHECKING -> ADMITTED -> RUNNING -> terminal
+        |
+        | UnitCompletion
+        v
+Workflow UnitRun: EVALUATING_RESULT -> SUCCEEDED | FAILED
 ```
 
-本阶段不实现 `FileReadExecutor`、`AgentToolPool` 和 `ContextEngine`。它们仍保留为后续阶段的边界，其中 `FILE_READ_EXECUTOR` 请求会明确返回 `CAPABILITY_NOT_IMPLEMENTED`，不会读取文件。
+Workflow 与 Kernel 不维护两份相同的 Unit 状态。`UnitRun` 表达逻辑动作是否满足业务流程，`UnitAttempt` 表达一次物理执行发生了什么。
 
-## 已实现组件
+## Agent
 
-- `ModelExecutor`：调用 DeepSeek 官方 Chat Completions API，固定模型为 `deepseek-flash`（DeepSeek V4.1 Flash），返回回答和 token usage。
-- `MinimalWorkflow`：把收到的原始 prompt 原样交给 Kernel 调度 `ModelExecutor`，只执行一步。
-- `MinimalKernel`：接收用户 prompt，调度 Workflow，并将最终回答转换为用户响应。
-- `runPrompt`：对外的最简主路径函数，成功时直接返回回答字符串，失败时抛出带 `code` 和 `retryable` 的 `ExperimentRunError`。
+### PlannerAgent
 
-## 输入 prompt 并输出回答
+职责：
 
-先设置 API Key：
+- 根据用户目标和可用 Agent Catalog 选择直接回答或专业 Agent；
+- 简单问题返回 `FINAL`；
+- C 仓库审查返回指向 `CRepositoryReviewAgent` 的 `HANDOFF`；
+- 不执行专业 Agent 的工作；
+- 不得选择 `allowedHandoffRefs` 以外的 Agent。
+
+允许的共享 Unit：
+
+```text
+ContextBuildUnit
+ModelCallUnit
+ReturnResultUnit
+```
+
+### CRepositoryReviewAgent
+
+职责：
+
+- 接受 Planner 的 `CODE_REVIEW` handoff；
+- 先取得事实性的仓库概览；
+- 根据 ContextPack 请求必要的文件范围；
+- 至少取得一条 FileRead Observation 后才能提交 FINAL；
+- 只报告由已读文件和行范围支持的问题；
+- 返回只读静态审查报告。
+
+允许的共享 Unit：
+
+```text
+RepositoryViewUnit
+ContextBuildUnit
+ModelCallUnit
+FileReadUnit
+ReturnResultUnit
+```
+
+Unit 是平台级通用定义，不为 Planner 或 ReviewAgent 创建专属 Unit。Agent 的差异来自固定的 Prompt、允许 Unit 集合、允许 handoff 集合和输出协议。
+
+## ContextEngine 与文件访问
+
+ContextEngine 只组织已经存在的信息，不访问代码仓库，也不调用模型。它把以下内容组装成不可变 `ContextPack`：
+
+- 固定版本的 Agent Prompt；
+- 用户目标；
+- 可用 Agent Catalog；
+- Planner handoff；
+- RepositoryRef 和仓库概览；
+- FileRead Observation；
+- 剩余模型与文件读取预算。
+
+仓库访问全部经过 Kernel：
+
+```text
+Workflow -> UnitIntent -> Kernel -> FileReadExecutor
+```
+
+`FileReadExecutor.view()` 生成事实性的 `.c/.h` 文件清单、大小和行数；`FileReadExecutor.read()` 读取带行号的受限源码范围。Executor 不判断文件重要性、不分析代码，也不构建 Prompt。
+
+每次模型调用前都必须先完成一次 ContextBuild：
+
+```text
+FILE_READ -> CONTEXT_BUILD -> MODEL_CALL
+```
+
+Workflow 不允许绕过 ContextEngine，把新的文件结果直接发送给模型。
+
+## 完整调用路径
+
+### 简单问题
+
+```text
+UserRequest("hi")
+-> Kernel
+-> Workflow starts PlannerAgent
+-> ContextBuildUnit
+-> Kernel -> ContextEngine
+-> ModelCallUnit
+-> Kernel -> ModelExecutor
+-> Planner FINAL
+-> ReturnResultUnit
+-> UserResponse
+```
+
+这条路径不会激活 ReviewAgent，也不会访问文件系统。
+
+### C 仓库审查
+
+```text
+UserRequest(prompt, repository)
+-> Planner ContextBuild
+-> Planner ModelCall
+-> Planner HANDOFF(CRepositoryReviewAgent)
+-> Workflow validates and activates ReviewAgent
+-> RepositoryViewUnit
+-> Kernel -> FileReadExecutor.view
+-> Review ContextBuild
+-> Review ModelCall
+-> FileReadUnit
+-> Kernel -> FileReadExecutor.read
+-> Review ContextBuild
+-> Review ModelCall
+-> ...
+-> Review FINAL
+-> Workflow validates citations against observations
+-> ReturnResultUnit
+-> UserResponse
+```
+
+## 文件访问边界
+
+- 模型只能提供相对 `path` 和可选 `startLine/endLine`；
+- RepositoryRef 由 Workflow 从运行输入绑定，模型不能指定仓库根目录或 revision；
+- 拒绝绝对路径、空路径和 `..`；
+- 拒绝 symlink/junction 和非普通文件；
+- `realpath` 后必须仍位于仓库根目录；
+- 单次读取最多 120 行、64 KiB；
+- 仓库概览最多 200 个匹配文件；
+- 返回内容包含 path、revision、实际行范围、总行数和 `truncated`。
+
+## 使用
+
+设置 API Key：
 
 ```powershell
 $env:DEEPSEEK_API_KEY = '你的 DeepSeek API Key'
 ```
 
-然后从包入口调用 `runPrompt`：
+简单问题：
 
 ```ts
 import { runPrompt } from '@multiagentos/minimal-agent-loop-experiment';
 
-const answer = await runPrompt('请用一句话解释什么是 Agent Kernel。');
+const answer = await runPrompt('hi');
 console.log(answer);
 ```
 
-在仓库内直接引用源码也可以：
-
-```ts
-import { runPrompt } from './experiments/minimal-agent-loop/src/index.js';
-
-const answer = await runPrompt('你好，请介绍一下你自己。');
-console.log(answer);
-```
-
-如需保留结构化错误而不是抛异常，可以直接使用 Kernel：
+C 仓库审查：
 
 ```ts
 import { createExperimentRuntime } from '@multiagentos/minimal-agent-loop-experiment';
 
-const result = await createExperimentRuntime().kernel.run({ prompt: '你好' });
+const runtime = createExperimentRuntime();
+const result = await runtime.kernel.run({
+  prompt: '检查这个 C 仓库中可能导致崩溃、内存错误或错误结果的问题。',
+  repository: {
+    rootPath: './experiments/minimal-agent-loop/fixtures/c-review',
+    revision: 'fixture-c-review-v1',
+  },
+});
 
-if (result.ok) {
-  console.log(result.value.answer);
-} else {
-  console.error(result.error.code, result.error.message);
-}
+if (result.ok) console.log(result.value.answer);
+else console.error(result.error.code, result.error.message);
 ```
 
 ## 配置
 
-- `DEEPSEEK_API_KEY`：必填。
-- API 地址固定为 `https://api.deepseek.com/chat/completions`。
-- 模型固定为 `deepseek-flash`。
-- 默认超时为 120 秒。
+- `DEEPSEEK_API_KEY`：必填；
+- `MINIMAL_AGENT_LOOP_DEBUG_MODEL=1`：把每次模型调用的原始响应和 assistant content 输出到标准错误；默认关闭；
+- API 地址：`https://api.deepseek.com/chat/completions`；
+- 模型：`deepseek-flash`；
+- 默认超时：120 秒；
+- 最大 Workflow Unit 步数：64；
+- Planner 最大模型调用：2；
+- ReviewAgent 最大模型调用：12；
+- ReviewAgent 最大文件读取：16。
 
-`createExperimentRuntime` 和 `runPrompt` 允许注入 `fetch`、`apiKey` 和 `timeoutMs`，只用于测试或进程内配置；它们不提供切换模型或 Provider 的能力。
+`createExperimentRuntime` 和 `runPrompt` 允许注入 `fetch`、`apiKey`、`timeoutMs`、`debugModelResponses` 和 `modelResponseLogger`，用于测试、诊断或进程内配置。调试输出可能包含模型生成的代码分析结果，不应在包含敏感仓库内容的共享终端或日志系统中长期启用。
+
+## 当前边界与后续升级
+
+当前实现是进程内、同步、单线依赖：
+
+```text
+PlannerAgent -> CRepositoryReviewAgent
+```
+
+当前不实现持久化、Lease、Permit、fencing、自动 retry、并行 Agent、TaskGraph 或人工审核。长期升级时：
+
+- Workflow 继续拥有 WorkflowRun、AgentRun 和 UnitRun；
+- Kernel 继续拥有 UnitAttempt、准入、Lease、Permit 和执行级重试；
+- 审核授权应独立为可限定重用范围的 ApprovalGrant；
+- 每个物理 Attempt 使用独立 Lease 和 fencing token；
+- Planner 的单个 handoff 可以扩展为多个 Agent 节点和依赖关系，而无需改变 Unit 执行协议。

@@ -5,14 +5,32 @@ import type {
   PromptTemplateReader,
   Result,
 } from './contracts.js';
-import { NotImplementedError } from './contracts.js';
 
 export class MinimalContextEngine implements ContextReader {
   public constructor(private readonly prompts: PromptTemplateReader) {}
 
-  public build(_request: ContextRequest): Promise<Result<ContextPack>> {
-    void this.prompts;
-    void _request;
-    return Promise.reject(new NotImplementedError('MinimalContextEngine', 'build'));
+  public async build(request: ContextRequest): Promise<Result<ContextPack>> {
+    const prompt = await this.prompts.getPrompt(request.promptRef);
+    if (!prompt.ok) return prompt;
+
+    const dynamicInput = {
+      objective: request.objective,
+      repository: request.repository,
+      availableAgents: request.routingCatalog,
+      handoff: request.handoff,
+      repositoryOverview: request.repositoryOverview,
+      observations: request.observations,
+      status: request.status,
+    };
+
+    return {
+      ok: true,
+      value: {
+        agentRef: request.agentRef,
+        promptRef: request.promptRef,
+        instructions: prompt.value.template,
+        input: JSON.stringify(dynamicInput, null, 2),
+      },
+    };
   }
 }
