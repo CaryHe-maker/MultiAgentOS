@@ -15,7 +15,7 @@ import {
   REPOSITORY_VIEW_UNIT_REF,
   RETURN_RESULT_UNIT_REF,
 } from '../src/agent-tool-pool.js';
-import type { MinimalContextEngine } from '../src/context-engine.js';
+import { MinimalContextEngine } from '../src/context-engine.js';
 import type { FileReadExecutorPort, ModelExecutorPort } from '../src/contracts.js';
 import { FileReadExecutor } from '../src/executors/file-read-executor.js';
 import {
@@ -339,6 +339,20 @@ describe('FileReadExecutor', () => {
     if (read.ok) expect(read.value.content).toContain('   3 |   return input[0];');
   });
 
+  it('marks a read without endLine as truncated when the file is longer than the limit', async () => {
+    const root = await makeRepository();
+    const lines = Array.from({ length: 150 }, (_, index) => `int line${index + 1};`);
+    await writeFile(join(root, 'src', 'long.c'), `${lines.join('\n')}\n`, 'utf8');
+    const result = await new FileReadExecutor().read({
+      repository: { rootPath: root, revision: 'fixture-v1' },
+      input: { path: 'src/long.c' },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { startLine: 1, endLine: 120, totalLines: 150, truncated: true },
+    });
+  });
+
   it('rejects repository escapes', async () => {
     const root = await makeRepository();
     const executor = new FileReadExecutor();
@@ -347,5 +361,26 @@ describe('FileReadExecutor', () => {
       input: { path: '../secret.txt' },
     });
     expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_FILE_PATH' } });
+  });
+});
+
+describe('MinimalContextEngine', () => {
+  it('does not expose the local repository root path to the model', async () => {
+    const pool = new AgentToolPool();
+    const agent = await pool.getAgent(C_REVIEW_AGENT_REF);
+    if (!agent.ok) throw new Error('Review Agent definition missing.');
+    const context = await new MinimalContextEngine(pool).build({
+      agentRef: agent.value.ref,
+      promptRef: agent.value.promptRef,
+      objective: 'review',
+      repository: { rootPath: '/Users/someone/private/repo', revision: 'fixture-v1' },
+      routingCatalog: [],
+      observations: [],
+      status: { modelCallsRemaining: 1, fileReadsRemaining: 1 },
+    });
+    expect(context.ok).toBe(true);
+    if (!context.ok) return;
+    expect(context.value.input).not.toContain('/Users/someone');
+    expect(context.value.input).toContain('fixture-v1');
   });
 });

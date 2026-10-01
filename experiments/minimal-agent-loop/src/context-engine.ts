@@ -15,7 +15,9 @@ export class MinimalContextEngine implements ContextReader {
 
     const dynamicInput = {
       objective: request.objective,
-      repository: request.repository,
+      // The root path is a local detail bound by Workflow; the model only needs the revision.
+      repository:
+        request.repository === undefined ? undefined : { revision: request.repository.revision },
       availableAgents: request.routingCatalog,
       handoff: request.handoff,
       repositoryOverview: request.repositoryOverview,

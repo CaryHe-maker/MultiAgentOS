@@ -86,7 +86,8 @@ export class FileReadExecutor implements FileReadExecutorPort {
       if (lines.at(-1) === '') lines.pop();
       const totalLines = lines.length;
       const startLine = request.input.startLine ?? 1;
-      const requestedEndLine = request.input.endLine ?? Math.min(totalLines, startLine + 119);
+      // Omitting endLine requests the rest of the file, so a capped read reports truncated.
+      const requestedEndLine = request.input.endLine ?? totalLines;
 
       if (
         !Number.isInteger(startLine) ||
