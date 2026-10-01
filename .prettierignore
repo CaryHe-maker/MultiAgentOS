@@ -5,3 +5,4 @@ coverage
 pnpm-lock.yaml
 docs
 README.md
+experiments/*/runs/
