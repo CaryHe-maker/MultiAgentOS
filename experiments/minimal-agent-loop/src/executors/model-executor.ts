@@ -1,10 +1,12 @@
 import type {
   AgentAction,
-  DefinitionRef,
+  ChatMessage,
   FileReadInput,
   ModelExecutorPort,
   ModelRequest,
   ModelResponse,
+  ModelToolCall,
+  ModelUsage,
   Result,
   SourceCitation,
 } from '../contracts.js';
@@ -23,15 +25,38 @@ export interface ModelExecutorOptions {
 }
 
 interface DeepSeekResponse {
-  readonly choices: readonly {
-    readonly message: {
-      readonly content: string | null;
-    };
-  }[];
-  readonly usage?: {
-    readonly prompt_tokens?: number;
-    readonly completion_tokens?: number;
-  };
+  readonly content: string | null;
+  readonly toolCalls: readonly ModelToolCall[];
+  readonly usage: ModelUsage;
+}
+
+/** Map internal messages to the Chat Completions wire format. */
+function toWireMessage(message: ChatMessage): Record<string, unknown> {
+  switch (message.role) {
+    case 'system':
+    case 'user':
+      return { role: message.role, content: message.content };
+    case 'assistant':
+      return {
+        role: 'assistant',
+        content: message.content,
+        ...(message.toolCalls.length === 0
+          ? {}
+          : {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: 'function',
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            }),
+      };
+    case 'tool':
+      return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
+  }
+}
+
+function hasTextMessage(messages: readonly ChatMessage[], role: 'system' | 'user'): boolean {
+  return messages.some((message) => message.role === role && message.content.trim().length > 0);
 }
 
 function failure(code: string, message: string, retryable: boolean): Result<never> {
@@ -42,16 +67,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isDefinitionRef(value: unknown): value is DefinitionRef {
-  return isRecord(value) && typeof value.id === 'string' && typeof value.version === 'string';
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
-function isFileReadInput(value: unknown): value is FileReadInput {
-  if (!isRecord(value) || typeof value.path !== 'string') return false;
-  return (
-    (value.startLine === undefined || typeof value.startLine === 'number') &&
-    (value.endLine === undefined || typeof value.endLine === 'number')
-  );
+function isOptionalNumber(value: unknown): boolean {
+  return value === undefined || typeof value === 'number';
 }
 
 function isCitation(value: unknown): value is SourceCitation {
@@ -63,66 +84,75 @@ function isCitation(value: unknown): value is SourceCitation {
   );
 }
 
-function parseAction(content: string): AgentAction | undefined {
-  const trimmed = content.trim();
-  const json = trimmed.startsWith('```')
-    ? trimmed.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '')
-    : trimmed;
+function numberField(record: Record<string, unknown> | undefined, key: string): number {
+  const value = record?.[key];
+  return typeof value === 'number' ? value : 0;
+}
 
-  let value: unknown;
+/** Map one native tool call to an AgentAction; undefined means unknown tool or bad arguments. */
+function toAction(call: ModelToolCall): AgentAction | undefined {
+  let args: unknown;
   try {
-    value = JSON.parse(json);
+    args = JSON.parse(call.arguments);
   } catch {
     return undefined;
   }
-  if (!isRecord(value) || typeof value.kind !== 'string') return undefined;
+  if (!isRecord(args)) return undefined;
 
-  if (value.kind === 'FINAL' && typeof value.answer === 'string') {
-    if (value.citations !== undefined) {
-      if (!Array.isArray(value.citations) || !value.citations.every(isCitation)) return undefined;
-      return { kind: 'FINAL', answer: value.answer, citations: value.citations };
+  switch (call.name) {
+    case 'file_read': {
+      if (typeof args.path !== 'string') return undefined;
+      if (!isOptionalNumber(args.startLine) || !isOptionalNumber(args.endLine)) return undefined;
+      const input: FileReadInput = {
+        path: args.path,
+        ...(typeof args.startLine === 'number' ? { startLine: args.startLine } : {}),
+        ...(typeof args.endLine === 'number' ? { endLine: args.endLine } : {}),
+      };
+      return { kind: 'TOOL_CALL', callId: call.id, toolName: 'file_read', input };
     }
-    return { kind: 'FINAL', answer: value.answer };
+    case 'submit_review': {
+      if (typeof args.answer !== 'string') return undefined;
+      if (!Array.isArray(args.citations) || !args.citations.every(isCitation)) return undefined;
+      return { kind: 'FINAL', answer: args.answer, citations: args.citations, callId: call.id };
+    }
+    case 'handoff': {
+      if (
+        typeof args.targetAgentId !== 'string' ||
+        typeof args.objective !== 'string' ||
+        !isStringArray(args.constraints) ||
+        !isStringArray(args.acceptanceCriteria)
+      ) {
+        return undefined;
+      }
+      return {
+        kind: 'HANDOFF',
+        targetAgentId: args.targetAgentId,
+        task: {
+          taskType: 'CODE_REVIEW',
+          objective: args.objective,
+          constraints: args.constraints,
+          acceptanceCriteria: args.acceptanceCriteria,
+        },
+      };
+    }
+    default:
+      return undefined;
   }
+}
 
-  if (
-    value.kind === 'TOOL_CALL' &&
-    typeof value.callId === 'string' &&
-    value.toolName === 'file_read' &&
-    isFileReadInput(value.input)
-  ) {
-    return {
-      kind: 'TOOL_CALL',
-      callId: value.callId,
-      toolName: 'file_read',
-      input: value.input,
-    };
+/** Tool calls become one action each; a plain-text reply without tool calls is FINAL. */
+function toActions(response: DeepSeekResponse): AgentAction[] | undefined {
+  if (response.toolCalls.length === 0) {
+    const text = response.content?.trim() ?? '';
+    return text.length === 0 ? undefined : [{ kind: 'FINAL', answer: text }];
   }
-
-  if (
-    value.kind === 'HANDOFF' &&
-    isDefinitionRef(value.targetAgentRef) &&
-    isRecord(value.task) &&
-    value.task.taskType === 'CODE_REVIEW' &&
-    typeof value.task.objective === 'string' &&
-    Array.isArray(value.task.constraints) &&
-    value.task.constraints.every((item) => typeof item === 'string') &&
-    Array.isArray(value.task.acceptanceCriteria) &&
-    value.task.acceptanceCriteria.every((item) => typeof item === 'string')
-  ) {
-    return {
-      kind: 'HANDOFF',
-      targetAgentRef: value.targetAgentRef,
-      task: {
-        taskType: 'CODE_REVIEW',
-        objective: value.task.objective,
-        constraints: value.task.constraints,
-        acceptanceCriteria: value.task.acceptanceCriteria,
-      },
-    };
+  const actions: AgentAction[] = [];
+  for (const call of response.toolCalls) {
+    const action = toAction(call);
+    if (action === undefined) return undefined;
+    actions.push(action);
   }
-
-  return undefined;
+  return actions;
 }
 
 function readApiError(payload: unknown): string | undefined {
@@ -130,23 +160,40 @@ function readApiError(payload: unknown): string | undefined {
   return typeof payload.error.message === 'string' ? payload.error.message : undefined;
 }
 
+function parseToolCalls(value: unknown): ModelToolCall[] | undefined {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return undefined;
+  const calls: ModelToolCall[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.id !== 'string' || !isRecord(item.function))
+      return undefined;
+    const { name, arguments: args } = item.function;
+    if (typeof name !== 'string' || typeof args !== 'string') return undefined;
+    calls.push({ id: item.id, name, arguments: args });
+  }
+  return calls;
+}
+
 function parseResponse(payload: unknown): DeepSeekResponse | undefined {
   if (!isRecord(payload) || !Array.isArray(payload.choices)) return undefined;
 
   const firstChoice: unknown = payload.choices[0];
   if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) return undefined;
-  const content = firstChoice.message.content;
+  const content = firstChoice.message.content ?? null;
   if (content !== null && typeof content !== 'string') return undefined;
+  const toolCalls = parseToolCalls(firstChoice.message.tool_calls);
+  if (toolCalls === undefined) return undefined;
 
   const usage = isRecord(payload.usage) ? payload.usage : undefined;
-  const promptTokens = usage?.prompt_tokens;
-  const completionTokens = usage?.completion_tokens;
-
   return {
-    choices: [{ message: { content } }],
-    ...(typeof promptTokens === 'number' && typeof completionTokens === 'number'
-      ? { usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens } }
-      : {}),
+    content,
+    toolCalls,
+    usage: {
+      inputTokens: numberField(usage, 'prompt_tokens'),
+      outputTokens: numberField(usage, 'completion_tokens'),
+      cacheHitTokens: numberField(usage, 'prompt_cache_hit_tokens'),
+      cacheMissTokens: numberField(usage, 'prompt_cache_miss_tokens'),
+    },
   };
 }
 
@@ -168,10 +215,8 @@ export class ModelExecutor implements ModelExecutorPort {
   }
 
   public async execute(request: ModelRequest): Promise<Result<ModelResponse>> {
-    if (
-      request.context.instructions.trim().length === 0 ||
-      request.context.input.trim().length === 0
-    ) {
+    const { messages } = request.context;
+    if (!hasTextMessage(messages, 'system') || !hasTextMessage(messages, 'user')) {
       return failure('INVALID_PROMPT', 'Prompt must not be empty.', false);
     }
     if (this.apiKey.length === 0) {
@@ -197,10 +242,17 @@ export class ModelExecutor implements ModelExecutorPort {
         },
         body: JSON.stringify({
           model: DEEPSEEK_MODEL,
-          messages: [
-            { role: 'system', content: request.context.instructions },
-            { role: 'user', content: request.context.input },
-          ],
+          messages: messages.map(toWireMessage),
+          ...(request.context.tools.length === 0
+            ? {}
+            : {
+                tools: request.context.tools.map((tool) => ({ type: 'function', function: tool })),
+                tool_choice:
+                  request.context.toolChoice === undefined
+                    ? 'auto'
+                    : { type: 'function', function: { name: request.context.toolChoice } },
+              }),
+          thinking: { type: 'disabled' },
           stream: false,
         }),
         signal: controller.signal,
@@ -247,19 +299,10 @@ export class ModelExecutor implements ModelExecutorPort {
         return failure('INVALID_MODEL_RESPONSE', 'DeepSeek returned an invalid payload.', false);
       }
 
-      const content = parsed.choices[0]?.message.content;
-      if (typeof content !== 'string' || content.length === 0) {
-        return failure(
-          'INVALID_MODEL_RESPONSE',
-          'DeepSeek response did not contain an action.',
-          false,
-        );
-      }
+      this.logAssistantMessage(request, parsed);
 
-      this.logAssistantContent(request, content);
-
-      const action = parseAction(content);
-      if (action === undefined) {
+      const actions = toActions(parsed);
+      if (actions === undefined) {
         return failure(
           'INVALID_MODEL_ACTION',
           'DeepSeek response was not a valid Planner or Review Agent action.',
@@ -270,11 +313,9 @@ export class ModelExecutor implements ModelExecutorPort {
       return {
         ok: true,
         value: {
-          action,
-          usage: {
-            inputTokens: parsed.usage?.prompt_tokens ?? 0,
-            outputTokens: parsed.usage?.completion_tokens ?? 0,
-          },
+          actions,
+          turn: { content: parsed.content, toolCalls: parsed.toolCalls },
+          usage: parsed.usage,
         },
       };
     } catch (error: unknown) {
@@ -305,13 +346,14 @@ export class ModelExecutor implements ModelExecutorPort {
     );
   }
 
-  private logAssistantContent(request: ModelRequest, content: string): void {
+  private logAssistantMessage(request: ModelRequest, response: DeepSeekResponse): void {
     if (!this.debugModelResponses) return;
     this.modelResponseLogger(
       [
-        '[minimal-agent-loop] DeepSeek assistant content',
+        '[minimal-agent-loop] DeepSeek assistant message',
         `agent=${request.context.agentRef.id}@${request.context.agentRef.version}`,
-        content,
+        `content=${response.content ?? ''}`,
+        ...response.toolCalls.map((call) => `tool_call ${call.name} ${call.arguments}`),
       ].join('\n'),
     );
   }

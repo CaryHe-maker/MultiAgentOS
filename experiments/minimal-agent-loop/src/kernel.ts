@@ -22,6 +22,15 @@ import type {
 type KernelDefinitions = AgentDefinitionReader & UnitDefinitionReader;
 
 const MAX_UNIT_STEPS = 64;
+const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY_MS = 1_000;
+
+export interface KernelOptions {
+  /** Attempts per Unit, including the first; only retryable failures are retried. */
+  readonly maxAttempts?: number;
+  /** Base delay before a retry; attempt n waits n times this long. */
+  readonly retryDelayMs?: number;
+}
 
 function referencesMatch(left: DefinitionRef, right: DefinitionRef): boolean {
   return left.id === right.id && left.version === right.version;
@@ -38,6 +47,8 @@ function unitIsAllowed(allowed: readonly DefinitionRef[], unitRef: DefinitionRef
 export class MinimalKernel implements KernelPort {
   private readonly attempts = new Map<string, UnitAttempt>();
   private workflowRunSequence = 0;
+  private readonly maxAttempts: number;
+  private readonly retryDelayMs: number;
 
   public constructor(
     private readonly workflow: WorkflowPort,
@@ -45,7 +56,11 @@ export class MinimalKernel implements KernelPort {
     private readonly modelExecutor: ModelExecutorPort,
     private readonly fileReadExecutor: FileReadExecutorPort,
     private readonly definitions: KernelDefinitions,
-  ) {}
+    options: KernelOptions = {},
+  ) {
+    this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+    this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  }
 
   public getUnitAttempt(unitAttemptId: string): UnitAttempt | undefined {
     return this.attempts.get(unitAttemptId);
@@ -80,32 +95,63 @@ export class MinimalKernel implements KernelPort {
     );
   }
 
+  /** Run one Unit, retrying retryable failures (timeouts, 429, 5xx) as new attempts. */
   private async executeUnit(intent: UnitIntent): Promise<UnitCompletion> {
-    const unitAttemptId = `${intent.unitIntentId}:attempt:1`;
-    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'CREATED');
-    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'ADMISSION_CHECKING');
+    let completion = await this.executeAttempt(intent, 1);
+    while (
+      completion.outcome === 'FAILED' &&
+      completion.error?.retryable === true &&
+      completion.attemptNumber < this.maxAttempts
+    ) {
+      const nextAttempt = completion.attemptNumber + 1;
+      await sleep(this.retryDelayMs * completion.attemptNumber);
+      completion = await this.executeAttempt(intent, nextAttempt);
+    }
+    return completion;
+  }
+
+  private async executeAttempt(intent: UnitIntent, attemptNumber: number): Promise<UnitCompletion> {
+    const unitAttemptId = `${intent.unitIntentId}:attempt:${attemptNumber}`;
+    const transition = (status: UnitAttemptStatus): void =>
+      this.transitionAttempt(unitAttemptId, intent.unitIntentId, attemptNumber, status);
+    transition('CREATED');
+    transition('ADMISSION_CHECKING');
 
     const admission = await this.admit(intent);
     if (!admission.ok) {
-      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'REJECTED');
-      return this.completion(intent, unitAttemptId, 'REJECTED', undefined, admission.error);
+      transition('REJECTED');
+      return this.completion(
+        intent,
+        unitAttemptId,
+        attemptNumber,
+        'REJECTED',
+        undefined,
+        admission.error,
+      );
     }
 
-    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'ADMITTED');
-    this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'RUNNING');
+    transition('ADMITTED');
+    transition('RUNNING');
 
     try {
       const execution = await this.route(intent);
       if (!execution.ok) {
-        this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'FAILED');
-        return this.completion(intent, unitAttemptId, 'FAILED', undefined, execution.error);
+        transition('FAILED');
+        return this.completion(
+          intent,
+          unitAttemptId,
+          attemptNumber,
+          'FAILED',
+          undefined,
+          execution.error,
+        );
       }
-      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'SUCCEEDED');
-      return this.completion(intent, unitAttemptId, 'SUCCEEDED', execution.value);
+      transition('SUCCEEDED');
+      return this.completion(intent, unitAttemptId, attemptNumber, 'SUCCEEDED', execution.value);
     } catch (error: unknown) {
-      this.transitionAttempt(unitAttemptId, intent.unitIntentId, 'FAILED');
+      transition('FAILED');
       const detail = error instanceof Error ? error.message : String(error);
-      return this.completion(intent, unitAttemptId, 'FAILED', undefined, {
+      return this.completion(intent, unitAttemptId, attemptNumber, 'FAILED', undefined, {
         code: 'UNIT_EXECUTION_EXCEPTION',
         message: detail,
         retryable: false,
@@ -163,8 +209,7 @@ export class MinimalKernel implements KernelPort {
                 observation: {
                   callId: intent.input.callId,
                   toolName: 'file_read',
-                  input: intent.input.request.input,
-                  output: result.value,
+                  result: { ok: true, value: result.value },
                 },
               },
             }
@@ -181,6 +226,7 @@ export class MinimalKernel implements KernelPort {
   private completion(
     intent: UnitIntent,
     unitAttemptId: string,
+    attemptNumber: number,
     outcome: UnitCompletion['outcome'],
     output?: UnitOutput,
     error?: ExperimentError,
@@ -188,7 +234,7 @@ export class MinimalKernel implements KernelPort {
     return {
       unitIntentId: intent.unitIntentId,
       unitAttemptId,
-      attemptNumber: 1,
+      attemptNumber,
       agentRunId: intent.agentRunId,
       unitRef: intent.unitRef,
       outcome,
@@ -200,6 +246,7 @@ export class MinimalKernel implements KernelPort {
   private transitionAttempt(
     unitAttemptId: string,
     unitIntentId: string,
+    attemptNumber: number,
     status: UnitAttemptStatus,
   ): void {
     const current = this.attempts.get(unitAttemptId);
@@ -207,9 +254,13 @@ export class MinimalKernel implements KernelPort {
     this.attempts.set(unitAttemptId, {
       unitAttemptId,
       unitIntentId,
-      attemptNumber: 1,
+      attemptNumber,
       status,
       history,
     });
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 }

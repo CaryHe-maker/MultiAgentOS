@@ -42,6 +42,13 @@ export interface PromptTemplate {
   readonly template: string;
 }
 
+/** A function the model may call natively; parameters is a JSON Schema object. */
+export interface ToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
+}
+
 export interface AgentDefinition {
   readonly ref: DefinitionRef;
   readonly name: string;
@@ -50,6 +57,9 @@ export interface AgentDefinition {
   readonly promptRef: DefinitionRef;
   readonly allowedUnitRefs: readonly DefinitionRef[];
   readonly allowedHandoffRefs: readonly DefinitionRef[];
+  readonly tools: readonly ToolDefinition[];
+  /** Tool that ends the Agent's work; forced on the last allowed model call. */
+  readonly finishToolName?: string;
 }
 
 export interface AgentRoutingDescriptor {
@@ -68,7 +78,8 @@ export interface ReviewTask {
 
 export interface HandoffAction {
   readonly kind: 'HANDOFF';
-  readonly targetAgentRef: DefinitionRef;
+  /** Workflow resolves the id against the Planner's allowedHandoffRefs. */
+  readonly targetAgentId: string;
   readonly task: ReviewTask;
 }
 
@@ -82,6 +93,8 @@ export interface FinalAction {
   readonly kind: 'FINAL';
   readonly answer: string;
   readonly citations?: readonly SourceCitation[];
+  /** Set when the answer came from a finish tool call; absent for a plain-text reply. */
+  readonly callId?: string;
 }
 
 export interface FileReadInput {
@@ -132,17 +145,43 @@ export interface RepositoryViewRequest {
   readonly includeExtensions: readonly string[];
 }
 
+/** The result of one tool call as the model will see it; errors are returned, not thrown. */
 export interface ToolObservation {
   readonly callId: string;
-  readonly toolName: 'file_read';
-  readonly input: FileReadInput;
-  readonly output: FileReadResponse;
+  readonly toolName: string;
+  readonly result: Result<FileReadResponse>;
 }
 
-export interface ContextStatus {
-  readonly modelCallsRemaining: number;
-  readonly fileReadsRemaining: number;
+/** Fixed per-Agent limits, stated once so the context prefix never changes between calls. */
+export interface ContextLimits {
+  readonly maxModelCalls: number;
+  readonly maxFileReads: number;
 }
+
+/** A native tool call exactly as the model emitted it. */
+export interface ModelToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: string;
+}
+
+/** One assistant reply, kept so later calls can replay the conversation. */
+export interface AssistantTurn {
+  readonly content: string | null;
+  readonly toolCalls: readonly ModelToolCall[];
+  /** Workflow feedback for a turn without tool calls, replayed as a user message. */
+  readonly notice?: string;
+}
+
+export type ChatMessage =
+  | { readonly role: 'system'; readonly content: string }
+  | { readonly role: 'user'; readonly content: string }
+  | {
+      readonly role: 'assistant';
+      readonly content: string | null;
+      readonly toolCalls: readonly ModelToolCall[];
+    }
+  | { readonly role: 'tool'; readonly toolCallId: string; readonly content: string };
 
 export interface ContextRequest {
   readonly agentRef: DefinitionRef;
@@ -152,15 +191,20 @@ export interface ContextRequest {
   readonly routingCatalog: readonly AgentRoutingDescriptor[];
   readonly handoff?: HandoffAction;
   readonly repositoryOverview?: RepositoryOverview;
+  readonly turns: readonly AssistantTurn[];
   readonly observations: readonly ToolObservation[];
-  readonly status: ContextStatus;
+  readonly limits: ContextLimits;
+  /** True when this context is for the Agent's last allowed model call. */
+  readonly finalCall: boolean;
 }
 
 export interface ContextPack {
   readonly agentRef: DefinitionRef;
   readonly promptRef: DefinitionRef;
-  readonly instructions: string;
-  readonly input: string;
+  readonly messages: readonly ChatMessage[];
+  readonly tools: readonly ToolDefinition[];
+  /** Name of a tool the model must call, or undefined to let the model choose. */
+  readonly toolChoice?: string;
 }
 
 export interface ModelRequest {
@@ -170,10 +214,14 @@ export interface ModelRequest {
 export interface ModelUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly cacheHitTokens: number;
+  readonly cacheMissTokens: number;
 }
 
 export interface ModelResponse {
-  readonly action: AgentAction;
+  /** One entry per native tool call, or a single FINAL for a plain-text reply. */
+  readonly actions: readonly AgentAction[];
+  readonly turn: AssistantTurn;
   readonly usage: ModelUsage;
 }
 
@@ -253,6 +301,7 @@ export interface AgentRunState {
   readonly status: AgentRunStatus;
   readonly modelCallCount: number;
   readonly fileReadCount: number;
+  readonly turns: readonly AssistantTurn[];
 }
 
 export type UnitRunStatus = 'WAITING_EXECUTION' | 'EVALUATING_RESULT' | 'SUCCEEDED' | 'FAILED';
@@ -264,6 +313,8 @@ export interface UnitRunState {
   readonly unitRef: DefinitionRef;
   readonly status: UnitRunStatus;
   readonly attemptCount: number;
+  /** Model tool call this Unit serves, so a failed read can be reported back to it. */
+  readonly toolCallId?: string;
   readonly currentAttemptId?: string;
 }
 
@@ -282,6 +333,8 @@ export interface WorkflowState {
   readonly handoff?: HandoffAction;
   readonly repositoryOverview?: RepositoryOverview;
   readonly observations: readonly ToolObservation[];
+  /** File reads requested in one model turn that still wait for execution. */
+  readonly queuedToolCalls: readonly ToolCallAction[];
 }
 
 export interface WorkflowStartRequest {

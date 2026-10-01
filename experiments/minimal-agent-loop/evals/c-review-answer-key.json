@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "fixture": "fixtures/c-review",
+  "revision": "fixture-c-review-v1",
+  "notes": [
+    "Kept outside fixtures/c-review so FileReadExecutor (bounded to the fixture root) cannot read it.",
+    "Each issue is found when any one of its patterns matches the report (case-insensitive, dot matches newline).",
+    "core: visible from one function in isolation. subtle: needs reading order, data flow, or library semantics.",
+    "Every issue was verified by hand against the fixture source.",
+    "Bare line-number patterns are only used for lines that belong to a single issue; shared lines (e.g. main.c:11-12, main.c:19) need a semantic pattern."
+  ],
+  "issues": [
+    {
+      "id": "double-free",
+      "tier": "core",
+      "location": "src/parser.c:88-89",
+      "summary": "config_destroy frees entries twice",
+      "patterns": [
+        "double.?free",
+        "重复释放",
+        "二次释放",
+        "释放两次",
+        "两次.{0,10}free",
+        "free.{0,40}两次"
+      ]
+    },
+    {
+      "id": "read-file-nul-overflow",
+      "tier": "core",
+      "location": "src/util.c:16,25",
+      "summary": "malloc(file_size) then buffer[file_size] = '\\0' writes one byte past the buffer",
+      "patterns": ["buffer\\[file_size\\]", "malloc\\(\\(size_t\\)\\s*file_size\\)"]
+    },
+    {
+      "id": "duplicate-slice-nul-overflow",
+      "tier": "core",
+      "location": "src/util.c:31,36",
+      "summary": "malloc(length) then copy[length] = '\\0' writes one byte past the buffer",
+      "patterns": ["copy\\[length\\]", "malloc\\(length\\)"]
+    },
+    {
+      "id": "find-off-by-one",
+      "tier": "core",
+      "location": "src/parser.c:75",
+      "summary": "config_find loops with index <= count and reads entries[count]",
+      "patterns": ["<=\\s*config->count", "index\\s*<=", "parser\\.c:75\\b"]
+    },
+    {
+      "id": "print-entry-null-deref",
+      "tier": "core",
+      "location": "src/main.c:5-6",
+      "summary": "print_entry dereferences a NULL result from config_find",
+      "patterns": ["print_entry.{0,200}(NULL|空指针)", "main\\.c:[56]\\b"]
+    },
+    {
+      "id": "strcpy-key-overflow",
+      "tier": "core",
+      "location": "src/parser.c:38,47",
+      "summary": "strcpy into char key[16] overflows the stack for long keys",
+      "patterns": ["strcpy", "key\\[16\\]"]
+    },
+    {
+      "id": "realloc-unchecked",
+      "tier": "core",
+      "location": "src/parser.c:26-29",
+      "summary": "realloc result assigned directly: NULL deref and leak on failure",
+      "patterns": ["realloc"]
+    },
+    {
+      "id": "trim-line-underflow",
+      "tier": "core",
+      "location": "src/util.c:40-43",
+      "summary": "strlen(text) - 1 underflows on an empty string; the loop can run before the buffer",
+      "patterns": ["strlen\\(text\\)\\s*-\\s*1", "trim_line.{0,200}(下溢|underflow|空字符串|empty)"]
+    },
+    {
+      "id": "document-null-unchecked",
+      "tier": "core",
+      "location": "src/main.c:11",
+      "summary": "load_config does not check read_entire_file for NULL",
+      "patterns": ["read_entire_file.{0,150}NULL", "document.{0,80}NULL"]
+    },
+    {
+      "id": "document-size-uninit",
+      "tier": "subtle",
+      "location": "src/main.c:10-12",
+      "summary": "document_size is read uninitialized when read_entire_file fails early",
+      "patterns": [
+        "document_size.{0,120}(未初始化|uninit|不确定|垃圾)",
+        "(未初始化|uninit).{0,120}document_size"
+      ]
+    },
+    {
+      "id": "path-uninit",
+      "tier": "subtle",
+      "location": "src/main.c:28-32",
+      "summary": "path is uninitialized when no argument is given",
+      "patterns": [
+        "path.{0,80}(未初始化|uninit)",
+        "(未初始化|uninit).{0,80}path",
+        "argc\\s*(<=\\s*1|==\\s*1|<\\s*2)"
+      ]
+    },
+    {
+      "id": "parse-error-ignored",
+      "tier": "subtle",
+      "location": "src/main.c:19-23",
+      "summary": "load_config reports success even when config_parse fails",
+      "patterns": [
+        "config_parse.{0,150}(忽略|仍返回|仍然返回|return 0|返回 ?0)",
+        "(config_parse|解析失败|无效行|invalid lines|非法).{0,150}(仅|只)(打印|输出)",
+        "main\\.c:19-2[1-3].{0,80}(仅|只)(打印|输出)",
+        "load_config.{0,120}(仍|依然|照样)(返回|报告).{0,10}(0|成功)"
+      ]
+    },
+    {
+      "id": "status-uninit-or-last-only",
+      "tier": "subtle",
+      "location": "src/parser.c:63-70",
+      "summary": "status is uninitialized with no data lines and only reflects the last line",
+      "patterns": [
+        "status.{0,120}(未初始化|uninit|最后一行|覆盖|last)",
+        "(未初始化|uninit).{0,60}status"
+      ]
+    },
+    {
+      "id": "append-name-unchecked",
+      "tier": "subtle",
+      "location": "src/parser.c:32",
+      "summary": "append_entry does not check duplicate_slice for NULL",
+      "patterns": [
+        "entry->name\\s*=\\s*duplicate_slice.{0,150}(NULL|未检查|不检查|分配失败)",
+        "append_entry.{0,150}duplicate_slice.{0,80}(未检查|不检查|返回 ?NULL|分配失败)"
+      ]
+    },
+    {
+      "id": "parse-integer-use-after-free",
+      "tier": "subtle",
+      "location": "src/parser.c:15-16",
+      "summary": "*end is read after free(copy); end points into the freed buffer",
+      "patterns": [
+        "use.after.free",
+        "\\bUAF\\b",
+        "释放后(使用|读|访问|解引用)",
+        "(读|访问).{0,4}已释放",
+        "free\\(copy\\).{0,120}\\*end"
+      ]
+    },
+    {
+      "id": "empty-value-accepted",
+      "tier": "subtle",
+      "location": "src/parser.c:14-16",
+      "summary": "an empty value parses as 0 because end == copy is not rejected",
+      "patterns": [
+        "空(字符串|值).{0,80}(解析为 ?0|当作 ?0|视为 ?0|接受|成功)",
+        "没有数字",
+        "no digits",
+        "end\\s*==\\s*copy"
+      ]
+    },
+    {
+      "id": "fread-short-leak",
+      "tier": "subtle",
+      "location": "src/util.c:22-23",
+      "summary": "a short fread returns NULL without freeing buffer or closing the file",
+      "patterns": [
+        "fread.{0,200}(泄漏|泄露|leak|fclose|未释放)",
+        "短读.{0,150}(未释放|泄漏|泄露|fclose)",
+        "util\\.c:2[23]\\b"
+      ]
+    },
+    {
+      "id": "ftell-unchecked",
+      "tier": "subtle",
+      "location": "src/util.c:13-16",
+      "summary": "fseek/ftell failures are unchecked; ftell returning -1 becomes a huge malloc",
+      "patterns": ["ftell.{0,150}(-1|失败|错误|检查)", "fseek.{0,100}(检查|失败)"]
+    }
+  ]
+}

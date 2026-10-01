@@ -2,7 +2,7 @@ import { AgentToolPool } from './agent-tool-pool.js';
 import { MinimalContextEngine } from './context-engine.js';
 import { FileReadExecutor } from './executors/file-read-executor.js';
 import { ModelExecutor } from './executors/model-executor.js';
-import { MinimalKernel } from './kernel.js';
+import { MinimalKernel, type KernelOptions } from './kernel.js';
 import { MinimalWorkflow } from './workflow.js';
 import type { ExperimentError, Result, UserResponse } from './contracts.js';
 import type { ModelExecutorOptions } from './executors/model-executor.js';
@@ -16,7 +16,7 @@ export interface ExperimentRuntime {
   readonly fileReadExecutor: FileReadExecutor;
 }
 
-export type ExperimentRuntimeOptions = ModelExecutorOptions;
+export type ExperimentRuntimeOptions = ModelExecutorOptions & KernelOptions;
 
 export class ExperimentRunError extends Error {
   public readonly code: string;
@@ -42,6 +42,7 @@ export function createExperimentRuntime(options: ExperimentRuntimeOptions = {}):
     modelExecutor,
     fileReadExecutor,
     agentToolPool,
+    options,
   );
 
   return Object.freeze({

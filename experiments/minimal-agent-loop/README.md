@@ -54,7 +54,17 @@ CREATED
 
 Kernel 校验 Agent→Unit 成员关系和输入类型，然后路由到 ContextEngine、ModelExecutor 或 FileReadExecutor。Workflow 不复制这些中间状态，只等待带有 `unitIntentId` 和 `unitAttemptId` 的终态 `UnitCompletion`。
 
-当前实验中一次 `UnitRun` 只有一次 `UnitAttempt`。协议保留 `attemptNumber`，以后可以在 Kernel 中增加 Lease、Permit、fencing、Executor 选择和安全的执行级重试，而不改变 Workflow 的 Agent 编排模型。
+Kernel 只重试 `retryable` 的失败（模型超时、网络错误、HTTP 408/429/5xx）：每次重试是同一 `UnitIntent` 下新的 `UnitAttempt`（`attemptNumber` 递增），最多 3 次，第 n 次重试前等待 n 秒。其他失败不重试，直接以终态 `UnitCompletion` 交给 Workflow。以后可以在 Kernel 中继续增加 Lease、Permit、fencing 和 Executor 选择，而不改变 Workflow 的 Agent 编排模型。
+
+## 错误处理
+
+| 类别 | 例子 | 处理 |
+|---|---|---|
+| 暂时性失败 | 模型超时、429、5xx | Kernel 按上文重试；重试用完仍失败则运行失败 |
+| 模型可以自己纠正的错误 | 读不存在的文件、行号越界、读取次数用完；`submit_review` 缺证据、缺引用或引用未读过的行；一轮里混用 `file_read` 和 `submit_review`；ReviewAgent 用纯文本作答 | Workflow 把错误作为该 tool call 的结果（无 tool call 时作为一条 user 消息）交还给模型，再给它一次调用 |
+| 协议错误 | 准入被拒、未知工具名、工具参数不是合法 JSON、Planner 越权 handoff | 运行失败 |
+
+ReviewAgent 的最后一次允许调用会强制 `tool_choice` 为 `submit_review`，并在消息末尾说明这是最后一次调用，避免额度用完后整个运行失败。
 
 ## 双层状态机
 
@@ -121,7 +131,7 @@ ReturnResultUnit
 - 接受 Planner 的 `CODE_REVIEW` handoff；
 - 先取得事实性的仓库概览；
 - 根据 ContextPack 请求必要的文件范围；
-- 至少取得一条 FileRead Observation 后才能提交 FINAL；
+- 至少成功读取一次文件、并通过 `submit_review` 提交带引用的报告后才能结束；纯文本回复不会被当作结论；
 - 只报告由已读文件和行范围支持的问题；
 - 返回只读静态审查报告。
 
@@ -139,15 +149,18 @@ Unit 是平台级通用定义，不为 Planner 或 ReviewAgent 创建专属 Unit
 
 ## ContextEngine 与文件访问
 
-ContextEngine 只组织已经存在的信息，不访问代码仓库，也不调用模型。它把以下内容组装成不可变 `ContextPack`：
+ContextEngine 只组织已经存在的信息，不访问代码仓库，也不调用模型。它把以下内容组装成不可变 `ContextPack`，形式是只追加的消息列表加上当前 Agent 的工具定义：
 
-- 固定版本的 Agent Prompt；
-- 用户目标；
-- 可用 Agent Catalog；
-- Planner handoff；
-- RepositoryRef 和仓库概览；
-- FileRead Observation；
-- 剩余模型与文件读取预算。
+```text
+system     固定版本的 Agent Prompt
+user       固定的任务消息：用户目标、可用 Agent Catalog、Planner handoff、
+           仓库 revision 和仓库概览、模型调用与文件读取的总上限
+assistant  第 1 轮回复（含 tool_calls）
+tool       每个 tool_call 对应一条 FileRead Observation
+assistant  第 2 轮回复 ...
+```
+
+前面的消息在后续调用中保持不变，每次调用只在末尾追加新的回复和工具结果，因此后一次请求总以前一次请求为前缀。上限只在任务消息中写一次，不在每次调用时更新剩余次数。Workflow 在 AgentRun 中保存每一轮回复，供 ContextEngine 重放。
 
 仓库访问全部经过 Kernel：
 
@@ -258,7 +271,8 @@ else console.error(result.error.code, result.error.message);
 - `DEEPSEEK_API_KEY`：必填；
 - `MINIMAL_AGENT_LOOP_DEBUG_MODEL=1`：把每次模型调用的原始响应和 assistant content 输出到标准错误；默认关闭；
 - API 地址：`https://api.deepseek.com/chat/completions`；
-- 模型：`deepseek-flash`；
+- 模型：`deepseek-flash`，显式关闭思考模式（`thinking: disabled`）；
+- 动作协议：原生工具调用（`tools` / `tool_calls`，`tool_choice: auto`）。工具定义在 AgentToolPool 中按 Agent 配置：Planner 只有 `handoff`，ReviewAgent 有 `file_read` 和 `submit_review`；不调用工具的纯文本回复视为 FINAL。ReviewAgent 一次回复中的多个 `file_read` 按顺序排队执行，全部完成后才构建下一次上下文；
 - 默认超时：120 秒；
 - 最大 Workflow Unit 步数：64；
 - Planner 最大模型调用：2；
@@ -275,7 +289,7 @@ else console.error(result.error.code, result.error.message);
 PlannerAgent -> CRepositoryReviewAgent
 ```
 
-当前不实现持久化、Lease、Permit、fencing、自动 retry、并行 Agent、TaskGraph 或人工审核。长期升级时：
+当前不实现持久化、Lease、Permit、fencing、并行 Agent、TaskGraph 或人工审核。长期升级时：
 
 - Workflow 继续拥有 WorkflowRun、AgentRun 和 UnitRun；
 - Kernel 继续拥有 UnitAttempt、准入、Lease、Permit 和执行级重试；

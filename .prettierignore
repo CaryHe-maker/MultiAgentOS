@@ -1,7 +1,8 @@
-﻿node_modules
+node_modules
 dist
 coverage
 .multiagent
 pnpm-lock.yaml
 docs
 README.md
+experiments/*/runs/
