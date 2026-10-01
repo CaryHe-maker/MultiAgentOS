@@ -15,7 +15,7 @@ import {
   REPOSITORY_VIEW_UNIT_REF,
   RETURN_RESULT_UNIT_REF,
 } from '../src/agent-tool-pool.js';
-import { MinimalContextEngine } from '../src/context-engine.js';
+import { formatFileRead, MinimalContextEngine } from '../src/context-engine.js';
 import type { FileReadExecutorPort, ModelExecutorPort } from '../src/contracts.js';
 import { FileReadExecutor } from '../src/executors/file-read-executor.js';
 import {
@@ -634,6 +634,26 @@ describe('MinimalContextEngine', () => {
     const task = context.value.messages[1]?.content ?? '';
     expect(JSON.parse(task)).toMatchObject({ limits: { maxModelCalls: 12, maxFileReads: 16 } });
     expect(task).not.toContain('Remaining');
+  });
+
+  it('renders a file read as plain line-numbered text', () => {
+    const text = formatFileRead({
+      path: 'src/parser.c',
+      revision: 'fixture-v1',
+      startLine: 2,
+      endLine: 3,
+      totalLines: 150,
+      content: '   2 | int parse(const char *input) {\n   3 |   return input[0];',
+      truncated: true,
+    });
+    expect(text).toBe(
+      [
+        'src/parser.c (lines 2-3 of 150)',
+        '   2 | int parse(const char *input) {',
+        '   3 |   return input[0];',
+        '[truncated: read from line 4 to continue]',
+      ].join('\n'),
+    );
   });
 
   it('rejects a replayed tool call that has no observation', async () => {

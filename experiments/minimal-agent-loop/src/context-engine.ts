@@ -4,11 +4,25 @@ import type {
   ContextPack,
   ContextReader,
   ContextRequest,
+  FileReadResponse,
   PromptTemplateReader,
   Result,
 } from './contracts.js';
 
 type ContextDefinitions = PromptTemplateReader & AgentDefinitionReader;
+
+/**
+ * Render a file read as plain text: one header line, then the line-numbered source as-is,
+ * so the model reads real lines instead of a JSON string full of escaped newlines.
+ */
+export function formatFileRead(output: FileReadResponse): string {
+  const header = `${output.path} (lines ${output.startLine}-${output.endLine} of ${output.totalLines})`;
+  const lines = [header, output.content];
+  if (output.truncated) {
+    lines.push(`[truncated: read from line ${output.endLine + 1} to continue]`);
+  }
+  return lines.join('\n');
+}
 
 export class MinimalContextEngine implements ContextReader {
   public constructor(private readonly definitions: ContextDefinitions) {}
@@ -56,7 +70,7 @@ export class MinimalContextEngine implements ContextReader {
         messages.push({
           role: 'tool',
           toolCallId: call.id,
-          content: JSON.stringify(observation, null, 2),
+          content: formatFileRead(observation.output),
         });
       }
     }
