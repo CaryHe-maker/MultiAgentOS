@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countFileReads, gradeReview, loadAnswerKey } from './grade.js';
+import { countFileReads, gradeReview, loadAnswerKey, loadComparableRuns } from './grade.js';
 
 describe('c-review answer key', () => {
   const issues = loadAnswerKey();
@@ -49,5 +49,44 @@ describe('countFileReads', () => {
       [read('src/a.c', 10, 20), read('src/b.c', 15, 30)],
     ]);
     expect(result).toEqual({ total: 4, duplicates: 1 });
+  });
+});
+
+describe('loadComparableRuns', () => {
+  it('reads mini-agent ablation records and keeps failed runs without an answer', () => {
+    const runs = loadComparableRuns({
+      records: [
+        {
+          config: 'full',
+          repeat: 0,
+          answer: 'double free',
+          model_calls: 3,
+          input_tokens: 900,
+          output_tokens: 300,
+          cost_usd: 0.001,
+          seconds: 4.2,
+        },
+        { config: 'full', repeat: 1, error: 'HTTP 500' },
+      ],
+    });
+    expect(runs).toEqual([
+      {
+        label: 'full#1',
+        answer: 'double free',
+        modelCalls: 3,
+        inputTokens: 900,
+        outputTokens: 300,
+        costUsd: 0.001,
+        seconds: 4.2,
+      },
+      {
+        label: 'full#2',
+        modelCalls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        seconds: 0,
+      },
+    ]);
   });
 });

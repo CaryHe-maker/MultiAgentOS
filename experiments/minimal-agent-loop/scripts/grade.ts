@@ -1,8 +1,9 @@
 // Grades a C review report against evals/c-review-answer-key.json.
 // An issue counts as found when any one of its patterns matches the report.
 //
-// Regrade saved runs (from repo root):
-//   pnpm exec tsx experiments/minimal-agent-loop/scripts/grade.ts <runs/file.json>...
+// Regrade saved runs (from repo root). Accepts this experiment's runs/*.json and
+// mini-agent's runs/ablation-*.json, so both projects are scored by the same key:
+//   pnpm exec tsx experiments/minimal-agent-loop/scripts/grade.ts <file.json>...
 
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -104,25 +105,105 @@ export function countFileReads(turns: readonly (readonly string[])[]): {
   return { total, duplicates };
 }
 
+/** One run from either project, reduced to the fields both record. */
+export interface ComparableRun {
+  readonly label: string;
+  readonly answer?: string;
+  readonly modelCalls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costUsd: number;
+  readonly seconds: number;
+  readonly fileReads?: { total: number; duplicates: number };
+}
+
+interface M0Run {
+  caseId: string;
+  repeat: number;
+  answer?: string;
+  modelCalls: number;
+  inputTokens: number;
+  output: number;
+  costUsd: number;
+  wallMs: number;
+  calls?: { toolCalls?: string[] }[];
+}
+
+interface MiniAgentRecord {
+  config: string;
+  repeat: number;
+  answer?: string;
+  error?: string;
+  model_calls?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+  seconds?: number;
+}
+
+export function loadComparableRuns(data: unknown): ComparableRun[] {
+  if (Array.isArray(data)) {
+    return (data as M0Run[])
+      .filter((run) => run.caseId === 'c-review')
+      .map((run) => ({
+        label: `#${run.repeat}`,
+        ...(run.answer === undefined ? {} : { answer: run.answer }),
+        modelCalls: run.modelCalls,
+        inputTokens: run.inputTokens,
+        outputTokens: run.output,
+        costUsd: run.costUsd,
+        seconds: run.wallMs / 1000,
+        fileReads: countFileReads((run.calls ?? []).map((call) => call.toolCalls ?? [])),
+      }));
+  }
+  const records = (data as { records?: MiniAgentRecord[] }).records ?? [];
+  return records.map((record) => ({
+    label: `${record.config}#${record.repeat + 1}`,
+    ...(record.error === undefined && record.answer !== undefined ? { answer: record.answer } : {}),
+    modelCalls: record.model_calls ?? 0,
+    inputTokens: record.input_tokens ?? 0,
+    outputTokens: record.output_tokens ?? 0,
+    costUsd: record.cost_usd ?? 0,
+    seconds: record.seconds ?? 0,
+  }));
+}
+
 function regrade(files: readonly string[]): void {
   const issues = loadAnswerKey();
   for (const file of files) {
-    const runs = JSON.parse(readFileSync(file, 'utf8')) as {
-      caseId: string;
-      repeat: number;
-      answer?: string;
-      calls?: { toolCalls?: string[] }[];
-    }[];
+    const runs = loadComparableRuns(JSON.parse(readFileSync(file, 'utf8')));
     console.log(file);
+    const grades: Grade[] = [];
     for (const run of runs) {
-      if (run.caseId !== 'c-review' || run.answer === undefined) continue;
+      if (run.answer === undefined) {
+        console.log(`  ${run.label}  FAILED`);
+        continue;
+      }
       const grade = gradeReview(run.answer, issues);
-      const reads = countFileReads((run.calls ?? []).map((call) => call.toolCalls ?? []));
+      grades.push(grade);
+      const reads =
+        run.fileReads === undefined
+          ? ''
+          : `  reads=${run.fileReads.total}(dup ${run.fileReads.duplicates})`;
       console.log(
-        `  #${run.repeat}  ${formatGrade(grade)}  reads=${reads.total}(dup ${reads.duplicates})` +
-          `  missed: ${grade.missed.join(', ')}`,
+        `  ${run.label}  ${formatGrade(grade)}${reads}  missed: ${grade.missed.join(', ')}`,
       );
     }
+    const mean = (values: readonly number[]): number =>
+      values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+    const [first] = grades;
+    console.log(
+      [
+        `  summary: ok=${grades.length}/${runs.length}`,
+        `calls=${mean(runs.map((run) => run.modelCalls)).toFixed(1)}`,
+        `in=${mean(runs.map((run) => run.inputTokens)).toFixed(0)}`,
+        `out=${mean(runs.map((run) => run.outputTokens)).toFixed(0)}`,
+        `$${mean(runs.map((run) => run.costUsd)).toFixed(4)}`,
+        `${mean(runs.map((run) => run.seconds)).toFixed(1)}s`,
+        `core=${mean(grades.map((grade) => grade.coreFound)).toFixed(1)}/${first?.coreTotal ?? 0}`,
+        `subtle=${mean(grades.map((grade) => grade.subtleFound)).toFixed(1)}/${first?.subtleTotal ?? 0}`,
+      ].join('  '),
+    );
   }
 }
 
