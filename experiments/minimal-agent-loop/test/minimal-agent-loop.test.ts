@@ -85,6 +85,22 @@ function requestMessages(init: RequestInit | undefined): WireMessage[] {
   return (JSON.parse(requestBody(init)) as { messages: WireMessage[] }).messages;
 }
 
+const VALID_REVIEW = {
+  answer: 'input 未检查 NULL 就被解引用。',
+  citations: [{ path: 'src/parser.c', startLine: 2, endLine: 3 }],
+};
+
+function runReview(root: string, fetchMock: typeof fetch) {
+  return createExperimentRuntime({
+    apiKey: 'test-key',
+    fetch: fetchMock,
+    retryDelayMs: 0,
+  }).kernel.run({
+    prompt: '审查这个 C 仓库',
+    repository: { rootPath: root, revision: 'fixture-v1' },
+  });
+}
+
 function requestBody(init: RequestInit | undefined): string {
   if (typeof init?.body !== 'string') throw new Error('Expected a string request body.');
   return init.body;
@@ -449,18 +465,190 @@ describe('minimal full loop', () => {
         ['submit_review', { answer: 'y', citations: [] }],
       ],
     ],
-  ])('rejects a review turn with %s', async (_label, calls) => {
+  ])('returns a review turn with %s to the model as tool errors', async (_label, calls) => {
     const root = await makeRepository();
-    const responses = [toolCallResponse([['handoff', HANDOFF_ARGS]]), toolCallResponse(calls)];
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse(calls),
+      toolCallResponse([['file_read', { path: 'src/parser.c' }]]),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const result = await runReview(root, fetchMock);
+
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+    const errors = requestMessages(fetchMock.mock.calls[2]?.[1]).filter(
+      (message) => message.role === 'tool',
+    );
+    expect(errors).toHaveLength(2);
+    for (const message of errors) expect(message.content).toContain('INVALID_REVIEW_ACTION');
+  });
+
+  it('returns a failed file read to the model instead of ending the run', async () => {
+    const root = await makeRepository();
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([['file_read', { path: 'src/missing.c' }]]),
+      toolCallResponse([['file_read', { path: 'src/parser.c' }]]),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const result = await runReview(root, fetchMock);
+
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+    const toolMessage = requestMessages(fetchMock.mock.calls[2]?.[1]).at(-1);
+    expect(toolMessage).toMatchObject({ role: 'tool', tool_call_id: 'call-1' });
+    expect(toolMessage?.content).toContain('Error FILE_READ_FAILED');
+  });
+
+  it.each<[string, unknown, string]>([
+    [
+      'cites a range it never read',
+      { answer: 'x', citations: [{ path: 'src/parser.c', startLine: 1, endLine: 99 }] },
+      'UNSUPPORTED_REVIEW_CITATION',
+    ],
+    ['has no citations', { answer: 'x', citations: [] }, 'REVIEW_CITATIONS_REQUIRED'],
+  ])(
+    'rejects a submit_review that %s and lets the model resubmit',
+    async (_label, review, code) => {
+      const root = await makeRepository();
+      const responses = [
+        toolCallResponse([['handoff', HANDOFF_ARGS]]),
+        toolCallResponse([['file_read', { path: 'src/parser.c', startLine: 1, endLine: 4 }]]),
+        toolCallResponse([['submit_review', review]]),
+        toolCallResponse([['submit_review', VALID_REVIEW]]),
+      ];
+      const fetchMock = vi.fn<typeof fetch>(() =>
+        Promise.resolve(responses.shift() ?? textResponse('')),
+      );
+      const result = await runReview(root, fetchMock);
+
+      expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+      expect(requestMessages(fetchMock.mock.calls[3]?.[1]).at(-1)?.content).toContain(code);
+    },
+  );
+
+  it('does not accept a plain-text review and asks for submit_review', async () => {
+    const root = await makeRepository();
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([['file_read', { path: 'src/parser.c' }]]),
+      textResponse('Looks fine to me.'),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const result = await runReview(root, fetchMock);
+
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+    const lastTwo = requestMessages(fetchMock.mock.calls[3]?.[1]).slice(-2);
+    expect(lastTwo[0]).toMatchObject({ role: 'assistant', content: 'Looks fine to me.' });
+    expect(lastTwo[1]).toMatchObject({ role: 'user' });
+    expect(lastTwo[1]?.content).toContain('REVIEW_TOOL_REQUIRED');
+  });
+
+  it('answers reads beyond the file-read limit with an error instead of failing', async () => {
+    const root = await makeRepository();
+    const reads: ToolCallSpec[] = Array.from({ length: 17 }, () => [
+      'file_read',
+      { path: 'src/parser.c' },
+    ]);
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse(reads),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const result = await runReview(root, fetchMock);
+
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+    const toolMessages = requestMessages(fetchMock.mock.calls[2]?.[1]).filter(
+      (message) => message.role === 'tool',
+    );
+    expect(toolMessages).toHaveLength(17);
+    expect(
+      toolMessages.filter((message) => message.content?.includes('FILE_READ_LIMIT')),
+    ).toHaveLength(1);
+  });
+
+  it('forces submit_review on the last allowed model call', async () => {
+    const root = await makeRepository();
+    let call = 0;
+    const fetchMock = vi.fn<typeof fetch>((_url, init) => {
+      call += 1;
+      if (call === 1) return Promise.resolve(toolCallResponse([['handoff', HANDOFF_ARGS]]));
+      const body = JSON.parse(requestBody(init)) as { tool_choice: unknown };
+      return Promise.resolve(
+        body.tool_choice === 'auto'
+          ? toolCallResponse([['file_read', { path: 'src/parser.c', startLine: 1, endLine: 4 }]])
+          : toolCallResponse([['submit_review', VALID_REVIEW]]),
+      );
+    });
+    const result = await runReview(root, fetchMock);
+
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+    // 1 Planner call plus the Review Agent's 12 allowed calls; only the last one is forced.
+    expect(fetchMock).toHaveBeenCalledTimes(13);
+    const lastBody = JSON.parse(requestBody(fetchMock.mock.calls[12]?.[1])) as {
+      tool_choice: unknown;
+      messages: WireMessage[];
+    };
+    expect(lastBody.tool_choice).toEqual({
+      type: 'function',
+      function: { name: 'submit_review' },
+    });
+    expect(lastBody.messages.at(-1)?.content).toContain('final call');
+  });
+
+  it('retries a retryable model failure as a new Unit attempt', async () => {
+    const responses = [
+      jsonResponse({ error: { message: 'rate limited' } }, 429),
+      textResponse('hi!'),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
     const runtime = createExperimentRuntime({
       apiKey: 'test-key',
-      fetch: () => Promise.resolve(responses.shift() ?? textResponse('')),
+      fetch: fetchMock,
+      retryDelayMs: 0,
     });
-    const result = await runtime.kernel.run({
-      prompt: '审查这个 C 仓库',
-      repository: { rootPath: root, revision: 'fixture-v1' },
+
+    await expect(runtime.kernel.run({ prompt: 'hi' })).resolves.toEqual({
+      ok: true,
+      value: { answer: 'hi!' },
     });
-    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_REVIEW_ACTION' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(runtime.kernel.getUnitAttempt('workflow-run-1:intent:2:attempt:1')?.status).toBe(
+      'FAILED',
+    );
+    expect(runtime.kernel.getUnitAttempt('workflow-run-1:intent:2:attempt:2')?.status).toBe(
+      'SUCCEEDED',
+    );
+  });
+
+  it('does not retry a non-retryable model failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(jsonResponse({ error: { message: 'bad request' } }, 400)),
+    );
+    const runtime = createExperimentRuntime({
+      apiKey: 'test-key',
+      fetch: fetchMock,
+      retryDelayMs: 0,
+    });
+
+    await expect(runtime.kernel.run({ prompt: 'hi' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'DEEPSEEK_API_ERROR' },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('rejects a handoff to an Agent outside the Planner handoff set', async () => {
@@ -611,6 +799,7 @@ describe('MinimalContextEngine', () => {
       turns: [],
       observations: [],
       limits: { maxModelCalls: 12, maxFileReads: 16 },
+      finalCall: false,
     });
     expect(context.ok).toBe(true);
     if (!context.ok) return;
@@ -629,6 +818,7 @@ describe('MinimalContextEngine', () => {
       turns: [],
       observations: [],
       limits: { maxModelCalls: 12, maxFileReads: 16 },
+      finalCall: false,
     });
     if (!context.ok) throw new Error(context.error.message);
     const task = context.value.messages[1]?.content ?? '';
@@ -656,6 +846,31 @@ describe('MinimalContextEngine', () => {
     );
   });
 
+  it('pairs a tool-call id reused across turns with its own result', async () => {
+    const pool = new AgentToolPool();
+    const error = (message: string) =>
+      ({ ok: false, error: { code: 'E', message, retryable: false } }) as const;
+    const context = await new MinimalContextEngine(pool).build({
+      agentRef: C_REVIEW_AGENT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
+      objective: 'review',
+      routingCatalog: [],
+      turns: [
+        { content: null, toolCalls: [{ id: 'call-1', name: 'file_read', arguments: '{}' }] },
+        { content: null, toolCalls: [{ id: 'call-1', name: 'submit_review', arguments: '{}' }] },
+      ],
+      observations: [
+        { callId: 'call-1', toolName: 'file_read', result: error('first') },
+        { callId: 'call-1', toolName: 'submit_review', result: error('second') },
+      ],
+      limits: { maxModelCalls: 12, maxFileReads: 16 },
+      finalCall: false,
+    });
+    if (!context.ok) throw new Error(context.error.message);
+    const tools = context.value.messages.filter((message) => message.role === 'tool');
+    expect(tools.map((message) => message.content)).toEqual(['Error E: first', 'Error E: second']);
+  });
+
   it('rejects a replayed tool call that has no observation', async () => {
     const pool = new AgentToolPool();
     const context = await new MinimalContextEngine(pool).build({
@@ -666,6 +881,7 @@ describe('MinimalContextEngine', () => {
       turns: [{ content: null, toolCalls: [{ id: 'lost', name: 'file_read', arguments: '{}' }] }],
       observations: [],
       limits: { maxModelCalls: 12, maxFileReads: 16 },
+      finalCall: false,
     });
     expect(context).toMatchObject({ ok: false, error: { code: 'CONTEXT_MISSING_OBSERVATION' } });
   });

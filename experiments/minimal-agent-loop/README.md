@@ -54,7 +54,17 @@ CREATED
 
 Kernel 校验 Agent→Unit 成员关系和输入类型，然后路由到 ContextEngine、ModelExecutor 或 FileReadExecutor。Workflow 不复制这些中间状态，只等待带有 `unitIntentId` 和 `unitAttemptId` 的终态 `UnitCompletion`。
 
-当前实验中一次 `UnitRun` 只有一次 `UnitAttempt`。协议保留 `attemptNumber`，以后可以在 Kernel 中增加 Lease、Permit、fencing、Executor 选择和安全的执行级重试，而不改变 Workflow 的 Agent 编排模型。
+Kernel 只重试 `retryable` 的失败（模型超时、网络错误、HTTP 408/429/5xx）：每次重试是同一 `UnitIntent` 下新的 `UnitAttempt`（`attemptNumber` 递增），最多 3 次，第 n 次重试前等待 n 秒。其他失败不重试，直接以终态 `UnitCompletion` 交给 Workflow。以后可以在 Kernel 中继续增加 Lease、Permit、fencing 和 Executor 选择，而不改变 Workflow 的 Agent 编排模型。
+
+## 错误处理
+
+| 类别 | 例子 | 处理 |
+|---|---|---|
+| 暂时性失败 | 模型超时、429、5xx | Kernel 按上文重试；重试用完仍失败则运行失败 |
+| 模型可以自己纠正的错误 | 读不存在的文件、行号越界、读取次数用完；`submit_review` 缺证据、缺引用或引用未读过的行；一轮里混用 `file_read` 和 `submit_review`；ReviewAgent 用纯文本作答 | Workflow 把错误作为该 tool call 的结果（无 tool call 时作为一条 user 消息）交还给模型，再给它一次调用 |
+| 协议错误 | 准入被拒、未知工具名、工具参数不是合法 JSON、Planner 越权 handoff | 运行失败 |
+
+ReviewAgent 的最后一次允许调用会强制 `tool_choice` 为 `submit_review`，并在消息末尾说明这是最后一次调用，避免额度用完后整个运行失败。
 
 ## 双层状态机
 
@@ -121,7 +131,7 @@ ReturnResultUnit
 - 接受 Planner 的 `CODE_REVIEW` handoff；
 - 先取得事实性的仓库概览；
 - 根据 ContextPack 请求必要的文件范围；
-- 至少取得一条 FileRead Observation 后才能提交 FINAL；
+- 至少成功读取一次文件、并通过 `submit_review` 提交带引用的报告后才能结束；纯文本回复不会被当作结论；
 - 只报告由已读文件和行范围支持的问题；
 - 返回只读静态审查报告。
 
@@ -279,7 +289,7 @@ else console.error(result.error.code, result.error.message);
 PlannerAgent -> CRepositoryReviewAgent
 ```
 
-当前不实现持久化、Lease、Permit、fencing、自动 retry、并行 Agent、TaskGraph 或人工审核。长期升级时：
+当前不实现持久化、Lease、Permit、fencing、并行 Agent、TaskGraph 或人工审核。长期升级时：
 
 - Workflow 继续拥有 WorkflowRun、AgentRun 和 UnitRun；
 - Kernel 继续拥有 UnitAttempt、准入、Lease、Permit 和执行级重试；

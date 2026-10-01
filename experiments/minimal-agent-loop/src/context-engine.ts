@@ -7,6 +7,7 @@ import type {
   FileReadResponse,
   PromptTemplateReader,
   Result,
+  ToolObservation,
 } from './contracts.js';
 
 type ContextDefinitions = PromptTemplateReader & AgentDefinitionReader;
@@ -22,6 +23,12 @@ export function formatFileRead(output: FileReadResponse): string {
     lines.push(`[truncated: read from line ${output.endLine + 1} to continue]`);
   }
   return lines.join('\n');
+}
+
+function formatObservation(observation: ToolObservation): string {
+  if (observation.result.ok) return formatFileRead(observation.result.value);
+  const { code, message } = observation.result.error;
+  return `Error ${code}: ${message}`;
 }
 
 export class MinimalContextEngine implements ContextReader {
@@ -53,10 +60,17 @@ export class MinimalContextEngine implements ContextReader {
       { role: 'user', content: JSON.stringify(task, null, 2) },
     ];
 
+    // Observations are stored in call order; each one answers exactly one tool call, so a
+    // tool-call id reused in a later turn still pairs with its own result.
+    const used = new Set<number>();
     for (const turn of request.turns) {
       messages.push({ role: 'assistant', content: turn.content, toolCalls: turn.toolCalls });
       for (const call of turn.toolCalls) {
-        const observation = request.observations.find((item) => item.callId === call.id);
+        const index = request.observations.findIndex(
+          (item, position) => item.callId === call.id && !used.has(position),
+        );
+        const observation = request.observations[index];
+        used.add(index);
         if (observation === undefined) {
           return {
             ok: false,
@@ -70,9 +84,22 @@ export class MinimalContextEngine implements ContextReader {
         messages.push({
           role: 'tool',
           toolCallId: call.id,
-          content: formatFileRead(observation.output),
+          content: formatObservation(observation),
         });
       }
+      if (turn.notice !== undefined) messages.push({ role: 'user', content: turn.notice });
+    }
+
+    const finishTool = agent.value.finishToolName;
+    if (request.finalCall) {
+      // Appended last so the cached prefix stays intact on the final call.
+      messages.push({
+        role: 'user',
+        content:
+          finishTool === undefined
+            ? 'Model-call limit reached: this is your final call. Answer now.'
+            : `Model-call limit reached: this is your final call. Call ${finishTool} now using only the evidence already read.`,
+      });
     }
 
     return {
@@ -82,6 +109,7 @@ export class MinimalContextEngine implements ContextReader {
         promptRef: request.promptRef,
         messages,
         tools: agent.value.tools,
+        ...(request.finalCall && finishTool !== undefined ? { toolChoice: finishTool } : {}),
       },
     };
   }

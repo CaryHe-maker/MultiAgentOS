@@ -113,7 +113,7 @@ function toAction(call: ModelToolCall): AgentAction | undefined {
     case 'submit_review': {
       if (typeof args.answer !== 'string') return undefined;
       if (!Array.isArray(args.citations) || !args.citations.every(isCitation)) return undefined;
-      return { kind: 'FINAL', answer: args.answer, citations: args.citations };
+      return { kind: 'FINAL', answer: args.answer, citations: args.citations, callId: call.id };
     }
     case 'handoff': {
       if (
@@ -247,7 +247,10 @@ export class ModelExecutor implements ModelExecutorPort {
             ? {}
             : {
                 tools: request.context.tools.map((tool) => ({ type: 'function', function: tool })),
-                tool_choice: 'auto',
+                tool_choice:
+                  request.context.toolChoice === undefined
+                    ? 'auto'
+                    : { type: 'function', function: { name: request.context.toolChoice } },
               }),
           thinking: { type: 'disabled' },
           stream: false,

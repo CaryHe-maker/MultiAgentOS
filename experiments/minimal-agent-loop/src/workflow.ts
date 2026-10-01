@@ -17,6 +17,7 @@ import type {
   Result,
   SourceCitation,
   ToolCallAction,
+  ToolObservation,
   UnitCompletion,
   UnitDefinitionReader,
   UnitInput,
@@ -70,12 +71,17 @@ function clearPendingUnit(state: WorkflowState): WorkflowState {
 
 function citationWasObserved(citation: SourceCitation, state: WorkflowState): boolean {
   return state.observations.some(
-    (observation) =>
-      observation.output.path === citation.path &&
-      citation.startLine >= observation.output.startLine &&
-      citation.endLine <= observation.output.endLine &&
+    ({ result }) =>
+      result.ok &&
+      result.value.path === citation.path &&
+      citation.startLine >= result.value.startLine &&
+      citation.endLine <= result.value.endLine &&
       citation.startLine <= citation.endLine,
   );
+}
+
+function formatCitation(citation: SourceCitation): string {
+  return `${citation.path}:${citation.startLine}-${citation.endLine}`;
 }
 
 export class MinimalWorkflow implements WorkflowPort {
@@ -166,6 +172,24 @@ export class MinimalWorkflow implements WorkflowPort {
       },
     };
 
+    // A failed read is the model's to handle: report it back instead of ending the run.
+    // Admission rejections and failures of other Units stay fatal.
+    if (
+      completion.outcome === 'FAILED' &&
+      pending.toolCallId !== undefined &&
+      completion.error !== undefined
+    ) {
+      const failedRead: WorkflowState = {
+        ...nextState,
+        unitRuns: { ...nextState.unitRuns, [pendingId]: { ...evaluatingUnit, status: 'FAILED' } },
+      };
+      return this.recordObservation(failedRead, activeAgent.agentRunId, {
+        callId: pending.toolCallId,
+        toolName: 'file_read',
+        result: { ok: false, error: completion.error },
+      });
+    }
+
     if (completion.outcome !== 'SUCCEEDED' || completion.output === undefined) {
       nextState = {
         ...nextState,
@@ -215,22 +239,12 @@ export class MinimalWorkflow implements WorkflowPort {
         if (!definition.ok) return definition;
         return this.issueContext(withOverview, definition.value, activeAgent.agentRunId);
       }
-      case 'FILE_READ': {
-        const [nextCall, ...remainingCalls] = nextState.queuedToolCalls;
-        const withObservation: WorkflowState = {
-          ...nextState,
-          observations: [...nextState.observations, completion.output.observation],
-          queuedToolCalls: remainingCalls,
-        };
-        // Run every read from the same model turn before building the next context.
-        if (nextCall !== undefined) {
-          const agentRun = withObservation.agentRuns[activeAgent.agentRunId] ?? activeAgent;
-          return this.issueFileRead(withObservation, agentRun, nextCall);
-        }
-        const definition = await this.definitions.getAgent(activeAgent.agentRef);
-        if (!definition.ok) return definition;
-        return this.issueContext(withObservation, definition.value, activeAgent.agentRunId);
-      }
+      case 'FILE_READ':
+        return this.recordObservation(
+          nextState,
+          activeAgent.agentRunId,
+          completion.output.observation,
+        );
       case 'RETURN_RESULT': {
         const completed = updateAgent(
           {
@@ -258,6 +272,9 @@ export class MinimalWorkflow implements WorkflowPort {
     const run = state.agentRuns[agentRunId];
     if (run === undefined)
       return failure('AGENT_RUN_NOT_FOUND', `AgentRun ${agentRunId} was not found.`);
+    const maxModelCalls = referencesMatch(agent.ref, PLANNER_AGENT_REF)
+      ? MAX_PLANNER_MODEL_CALLS
+      : MAX_REVIEW_MODEL_CALLS;
 
     return this.issueUnit(state, agent, agentRunId, CONTEXT_BUILD_UNIT_REF, {
       kind: 'CONTEXT_BUILD',
@@ -273,12 +290,8 @@ export class MinimalWorkflow implements WorkflowPort {
           : { repositoryOverview: state.repositoryOverview }),
         turns: run.turns,
         observations: state.observations,
-        limits: {
-          maxModelCalls: referencesMatch(agent.ref, PLANNER_AGENT_REF)
-            ? MAX_PLANNER_MODEL_CALLS
-            : MAX_REVIEW_MODEL_CALLS,
-          maxFileReads: MAX_FILE_READS,
-        },
+        limits: { maxModelCalls, maxFileReads: MAX_FILE_READS },
+        finalCall: run.modelCallCount >= maxModelCalls - 1,
       },
     });
   }
@@ -390,17 +403,39 @@ export class MinimalWorkflow implements WorkflowPort {
     }
     const [action] = actions;
     if (action?.kind === 'FINAL' && actions.length === 1) {
-      if (state.observations.length === 0) {
-        return failure(
+      // Validation failures go back to the model, which may fix them on its next call.
+      if (action.callId === undefined) {
+        return this.rejectTurn(
+          state,
+          agentRun,
+          'REVIEW_TOOL_REQUIRED',
+          'Plain-text replies are not accepted. Call submit_review with the report and its citations.',
+        );
+      }
+      if (!state.observations.some(({ result }) => result.ok)) {
+        return this.rejectTurn(
+          state,
+          agentRun,
           'REVIEW_EVIDENCE_REQUIRED',
-          'Review Agent must read repository evidence before returning FINAL.',
+          'Read repository files before submitting the review.',
         );
       }
       const citations = action.citations ?? [];
-      if (!citations.every((citation) => citationWasObserved(citation, state))) {
-        return failure(
+      if (citations.length === 0) {
+        return this.rejectTurn(
+          state,
+          agentRun,
+          'REVIEW_CITATIONS_REQUIRED',
+          'Cite at least one line range you have already read.',
+        );
+      }
+      const unsupported = citations.filter((citation) => !citationWasObserved(citation, state));
+      if (unsupported.length > 0) {
+        return this.rejectTurn(
+          state,
+          agentRun,
           'UNSUPPORTED_REVIEW_CITATION',
-          'Review report cited a file range that was not observed.',
+          `These ranges were not read: ${unsupported.map(formatCitation).join(', ')}. Read them or remove them, then submit again.`,
         );
       }
       const finalizing: WorkflowState = { ...state, phase: 'FINALIZING' };
@@ -409,10 +444,68 @@ export class MinimalWorkflow implements WorkflowPort {
         response: { answer: action.answer },
       });
     }
-    return failure(
+    return this.rejectTurn(
+      state,
+      agentRun,
       'INVALID_REVIEW_ACTION',
-      'Review Agent must return file reads only, or a single FINAL.',
+      'Call file_read one or more times, or call submit_review alone.',
     );
+  }
+
+  /**
+   * Answer every tool call of the Agent's latest turn with the same error, or attach it as a
+   * notice when the turn had no tool calls, then give the model another call.
+   */
+  private async rejectTurn(
+    state: WorkflowState,
+    agentRun: AgentRunState,
+    code: string,
+    message: string,
+  ): Promise<Result<WorkflowDecision>> {
+    const turn = agentRun.turns.at(-1);
+    if (turn === undefined) return failure(code, message);
+    const agent = await this.definitions.getAgent(agentRun.agentRef);
+    if (!agent.ok) return agent;
+
+    const rejected: WorkflowState =
+      turn.toolCalls.length === 0
+        ? updateAgent(state, agentRun.agentRunId, {
+            turns: [...agentRun.turns.slice(0, -1), { ...turn, notice: `${code}: ${message}` }],
+          })
+        : {
+            ...state,
+            observations: [
+              ...state.observations,
+              ...turn.toolCalls.map((call) => ({
+                callId: call.id,
+                toolName: call.name,
+                result: failure(code, message),
+              })),
+            ],
+          };
+    return this.issueContext(rejected, agent.value, agentRun.agentRunId);
+  }
+
+  /** Store a tool result, then run the next queued read or build the next context. */
+  private async recordObservation(
+    state: WorkflowState,
+    agentRunId: string,
+    observation: ToolObservation,
+  ): Promise<Result<WorkflowDecision>> {
+    const [nextCall, ...remainingCalls] = state.queuedToolCalls;
+    const next: WorkflowState = {
+      ...state,
+      observations: [...state.observations, observation],
+      queuedToolCalls: remainingCalls,
+    };
+    const agentRun = next.agentRuns[agentRunId];
+    if (agentRun === undefined)
+      return failure('AGENT_RUN_NOT_FOUND', `AgentRun ${agentRunId} was not found.`);
+    // Run every read from the same model turn before building the next context.
+    if (nextCall !== undefined) return this.issueFileRead(next, agentRun, nextCall);
+    const agent = await this.definitions.getAgent(agentRun.agentRef);
+    if (!agent.ok) return agent;
+    return this.issueContext(next, agent.value, agentRunId);
   }
 
   private async issueFileRead(
@@ -421,7 +514,14 @@ export class MinimalWorkflow implements WorkflowPort {
     call: ToolCallAction,
   ): Promise<Result<WorkflowDecision>> {
     if (agentRun.fileReadCount >= MAX_FILE_READS) {
-      return failure('FILE_READ_LIMIT', 'Review Agent exceeded its file-read limit.');
+      return this.recordObservation(state, agentRun.agentRunId, {
+        callId: call.callId,
+        toolName: 'file_read',
+        result: failure(
+          'FILE_READ_LIMIT',
+          `The ${MAX_FILE_READS}-read limit is reached. Submit the review with the evidence already read.`,
+        ),
+      });
     }
     if (state.repository === undefined) {
       return failure('REPOSITORY_REQUIRED', 'Review Agent requires a repository.');
@@ -476,6 +576,7 @@ export class MinimalWorkflow implements WorkflowPort {
       unitRef,
       status: 'WAITING_EXECUTION',
       attemptCount: 0,
+      ...(input.kind === 'FILE_READ' ? { toolCallId: input.callId } : {}),
     };
     const updatedAgent: AgentRunState = {
       ...agentRun,

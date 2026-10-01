@@ -58,6 +58,8 @@ export interface AgentDefinition {
   readonly allowedUnitRefs: readonly DefinitionRef[];
   readonly allowedHandoffRefs: readonly DefinitionRef[];
   readonly tools: readonly ToolDefinition[];
+  /** Tool that ends the Agent's work; forced on the last allowed model call. */
+  readonly finishToolName?: string;
 }
 
 export interface AgentRoutingDescriptor {
@@ -91,6 +93,8 @@ export interface FinalAction {
   readonly kind: 'FINAL';
   readonly answer: string;
   readonly citations?: readonly SourceCitation[];
+  /** Set when the answer came from a finish tool call; absent for a plain-text reply. */
+  readonly callId?: string;
 }
 
 export interface FileReadInput {
@@ -141,11 +145,11 @@ export interface RepositoryViewRequest {
   readonly includeExtensions: readonly string[];
 }
 
+/** The result of one tool call as the model will see it; errors are returned, not thrown. */
 export interface ToolObservation {
   readonly callId: string;
-  readonly toolName: 'file_read';
-  readonly input: FileReadInput;
-  readonly output: FileReadResponse;
+  readonly toolName: string;
+  readonly result: Result<FileReadResponse>;
 }
 
 /** Fixed per-Agent limits, stated once so the context prefix never changes between calls. */
@@ -165,6 +169,8 @@ export interface ModelToolCall {
 export interface AssistantTurn {
   readonly content: string | null;
   readonly toolCalls: readonly ModelToolCall[];
+  /** Workflow feedback for a turn without tool calls, replayed as a user message. */
+  readonly notice?: string;
 }
 
 export type ChatMessage =
@@ -188,6 +194,8 @@ export interface ContextRequest {
   readonly turns: readonly AssistantTurn[];
   readonly observations: readonly ToolObservation[];
   readonly limits: ContextLimits;
+  /** True when this context is for the Agent's last allowed model call. */
+  readonly finalCall: boolean;
 }
 
 export interface ContextPack {
@@ -195,6 +203,8 @@ export interface ContextPack {
   readonly promptRef: DefinitionRef;
   readonly messages: readonly ChatMessage[];
   readonly tools: readonly ToolDefinition[];
+  /** Name of a tool the model must call, or undefined to let the model choose. */
+  readonly toolChoice?: string;
 }
 
 export interface ModelRequest {
@@ -303,6 +313,8 @@ export interface UnitRunState {
   readonly unitRef: DefinitionRef;
   readonly status: UnitRunStatus;
   readonly attemptCount: number;
+  /** Model tool call this Unit serves, so a failed read can be reported back to it. */
+  readonly toolCallId?: string;
   readonly currentAttemptId?: string;
 }
 

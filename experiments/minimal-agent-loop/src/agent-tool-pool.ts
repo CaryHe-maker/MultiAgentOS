@@ -189,6 +189,7 @@ const AGENTS: readonly AgentDefinition[] = Object.freeze([
     ],
     allowedHandoffRefs: [],
     tools: [FILE_READ_TOOL, SUBMIT_REVIEW_TOOL],
+    finishToolName: SUBMIT_REVIEW_TOOL.name,
   },
 ]);
 
