@@ -29,7 +29,9 @@ CheckpointParticipant 使用 `prepareRetention`、`commitRetention`、`abortRete
 
 ## 6. 访问控制与数据保护
 
-- 每次读取依据当前身份、tenant/project、数据等级和用途重新授权；持有 Ref 不等于有读取权。
+- 每次读取核对身份、数据范围及适用租约；持有 Ref 不等于有读取权。
+- 稳定只读能力可以预先签发长期租约，通过受控访问边界验证，不必每次进入 Core。
+- 租约内容完整不代表仍有权限；撤销、版本和来源 ACL 的失效规则必须由 MVP 明确。
 - 使用传输和静态加密；密钥轮换不改变内容 hash 语义。
 - Secret、短期 credential 和未脱敏个人数据不得因调试自动写入 Artifact。
 - 下载使用短期、最小范围许可；URL 不得作为长期 ArtifactRef。

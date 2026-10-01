@@ -2,9 +2,13 @@
 
 ## 1. 职责
 
-Module Host 是进程组合与生命周期基础设施，负责配置解析、依赖注入、Module/Adapter 注册、启动排序、健康检查、readiness、drain 和关闭协调。`apps/control-plane` 是唯一最终 composition root。
+Module Host 是 Kernel Supervisor 管辖的模块组合与生命周期基础设施，负责配置解析、依赖注入、Module/Adapter 注册、启动排序、健康检查、readiness、drain 和关闭协调。当前 `apps/control-plane` 是最终 composition root。多进程入口由相应 MVP 明确，不改变装配职责。
 
-Module Host 只拥有进程生命周期事实，不解释 Workflow、Policy、Context 或 Artifact 的业务语义。
+Module Host 拥有逻辑模块的装配、就绪和关闭事实；Supervisor 拥有 OS 进程与执行域的监管、终止和回收事实。Module Host 不解释 Workflow、Policy、Context 或 Artifact 的业务语义。
+
+最小引导入口先建立 Kernel 控制基础，再由 Supervisor/ModuleHost 装配受管模块。
+Kernel 不能依赖尚未启动的自身服务完成引导。ModuleHost 留在基础设施层实现，
+不因归属 Kernel 就导入业务状态或承担 UnitAttempt 调度。
 
 ## 2. Manifest 与注册
 
@@ -15,6 +19,9 @@ Module Host 只拥有进程生命周期事实，不解释 Workflow、Policy、Co
 3. 构建无环依赖图；
 4. 按拓扑序启动，按逆序停止；
 5. 在对外 readiness 前完成 Schema、Migration 和 Adapter 自检。
+
+Manifest 注册不自动授予系统权限。Core 负责授权，Gateway 使用可信身份与租约处理请求。
+运行时相互调用不等于双向启动依赖；可先装配接口再启用服务，启动依赖图仍必须无环。
 
 ## 3. 生命周期
 
@@ -28,6 +35,9 @@ STARTING / DRAINING -> FAILED
 - DRAINING 后不接收新运行或 Unit，但必须允许已接收操作到达安全边界。
 - shutdown 超时必须记录未完成资源和 correlation，不得伪造正常关闭。
 - 组件启动失败时，只停止已启动的依赖闭包，不修改领域状态。
+
+正常关闭由 ModuleHost 协调，超时后的物理处置由 Supervisor 执行。
+停止普通工作时保留有界控制与收尾通道，不把模块退出直接视为业务取消完成。
 
 ## 4. 配置与 Secret
 

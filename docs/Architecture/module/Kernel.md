@@ -1,95 +1,311 @@
 # MultiAgentOS Kernel
 
-## 1. 定义与边界
+## 1. 定位
 
-Kernel 是身份、Policy、执行准入、运行时调度、Grant、Lease、fencing、HumanReviewDecision、审计和 RuntimeProjection 的唯一权威。它决定一个 UnitIntent 能否执行、由哪一个运行时 Executor 执行，以及执行结果能否提交；它不创建 AgentRun、不决定业务下一步、不修改静态定义，也不把物理成功解释为 Task 成功。
+Kernel 是 AgentOS 的受保护控制核心，负责授权、调度、资源监控和执行监管。
+目标平台为 **Ubuntu LTS**，具体发行版本及技术机制由各 MVP 选择。
+本文定义长期概念与责任，不冻结接口字段、算法、表结构、进程数量或 M1 实施方案。
 
-Workflow 创建 AgentRun 和 UnitIntent；Kernel 创建 UnitAttempt。AgentToolPool 保存不可变定义；Kernel 仅以只读方式解析并校验这些定义。
+Workflow 负责业务推进，Execution 负责实际执行过程。
+Kernel 控制这些操作的资格与资源，不接管业务图或 Tool 执行序列。
+历史方案见 [早期草稿](../../DesignReport/KernelModuleReport_Draft.md)，当前协同差异统一见
+[架构指南](../README.md#6-文档衔接清单)。
 
-## 2. 权威对象
+## 2. 概念基础
 
-| 对象 | 语义 |
+| 概念 | 含义与归属 |
 |---|---|
-| AdmissionDecision | 对一个 UnitIntent 的版本化准入结论及理由 |
-| UnitAttempt | 一次具体执行尝试，绑定 UnitIntent、定义版本、运行时 Executor、Lease 与 fencing |
-| ExecutionPermit | 对最小 capability、workspace、资源、网络、Secret 和期限的短期许可 |
-| ExecutorInstance | 运行时执行目标的身份、健康度、负载和可用 capability 投影 |
-| Grant / Lease | 限定权限和时间的执行资格；不表示业务所有权 |
-| EffectRecord | 已发生、未发生或未知副作用的权威执行事实 |
-| AuditRecord | 身份、意图、定义、Policy、准入、调度和结果校验记录 |
-| RuntimeProjection | 面向 UserInteraction 的版本化运行视图 |
+| Module | 逻辑职责与状态所有权边界，不等于进程 |
+| AgentRun | Workflow 维护的行动主体运行归属 |
+| Unit / UnitIntent | 一个 Tool 粒度的操作及其请求，由 Workflow 提出 |
+| Tool | 权限需求、输入输出和 Executor 执行序列的封装 |
+| Executor | 开发者定义的最小组合操作，由 Execution 承载 |
+| UnitAttempt | Execution 维护的实际执行尝试 |
+| Process | 执行实例的 OS 承载，由 Supervisor 监管 |
+| Lease | Core 签发的有范围、主体及生效条件的使用资格 |
 
-Kernel 不拥有 AgentDefinitionVersion、UnitDefinitionVersion、ToolDefinitionVersion 或 ExecutorDefinitionVersion 的内容；这些对象由 AgentToolPool 发布。
+定义关系为 Unit → Tool → Executor 序列，运行时形成 Attempt、步骤实例和 Processes。
+“原子 Executor”描述组合粒度，不保证效果可回滚或操作不可中断。
+静态定义由 AgentToolPool 发布，注册或声明权限不产生授权。
 
-## 3. Unit 准入
+系统权限约束 Module 能使用哪些系统服务；Agent 行为权限约束其运行中的资源与效果。
+代办必须同时保留 Module 身份、AgentRun 归属和工作范围。
+服务自身权限不能自动转授调用者；系统自主维护活动需有独立职责授权。
 
-Kernel 按以下固定顺序处理 UnitIntent：
+## 3. 五个主组件
+
+| 组件 | 核心职责 | 权威状态 |
+|---|---|---|
+| Gateway | 统一接入、身份与租约验证、入口限流、受控分派 | 连接关联、验证视图及入口记录 |
+| Core | 授权裁决、租约管理、审核裁决、控制分派、结果接收决定 | 授权依据、Lease、控制操作和接收记录 |
+| Scheduler | 决定获准执行何时、在哪个目标推进，管理 API 调用机会 | 就绪队列、调度与容量分配关系 |
+| Monitor | 指标监测、资源与预算记账、超限检测和观测窗口 | 额度、预留、结算及指标 |
+| Supervisor | 模块和执行域的启动、健康、停止、隔离及回收 | 进程、执行域与监管事实 |
+
+这五项是逻辑组件，不要求各自独立部署。
+不另设能修改所有状态的“状态与审计组件”；各 Owner 记录事实并提供查询或事件，
+公共存储和审计机制负责保存、关联和检索，不产生第二个权威。
+
+### 3.1 Gateway 与 Core
+
+Gateway 是调用者访问受保护服务的统一入口。它验证已有资格，不能自行扩大权限。
+Core 是授权和租约的权威。缺少租约只意味着需要裁决，不意味着必须签发。
+
+有效租约允许 Gateway 跳过 Core 的重复鉴权，将请求转交指定服务或调度入口。
+内部转交必须保护目的端点，不能返回一个任意调用者可绕过 Gateway 使用的开放地址。
+Executor 不各自实现一套权限政策，可信入口和执行基础设施统一落实约束。
+
+### 3.2 Scheduler
+
+Scheduler 区分两个调度层次：
+
+- UnitAttempt 层：安排尝试开始或继续，处理优先级、公平性及整体资源条件。
+- 就绪步骤层：为某个 Executor 调用分配 API 等实际资源机会。
+
+Execution 负责判断 Tool 序列的步骤依赖，Scheduler 不重写业务图或解释模型下一步。
+租约合法不代表资源一定可用；排队后启动仍需确认当前资格与预算。
+不能在尚未需要某个 API 时长期占据其调用槽位。
+
+API 管理池位于 Kernel，作为 Scheduler 管理的资源目录及分配机制。
+它组织端点、能力、健康、速率、并发容量和调用机会。
+Monitor 提供消费与额度事实；Execution 内的模型网关处理 Provider 协议和实际请求。
+多个 API 的并行分配与单个 API 的并发、排队分别管理，不照搬 CPU 时间片机制。
+
+### 3.3 Monitor
+
+Monitor 合并资源与预算职责，并区分权威账本和观测指标：
+
+| 数据 | 规则 |
+|---|---|
+| 配额、预留、已消费和待核对消耗 | 不能靠采样或丢失遥测近似维护 |
+| 延迟、错误率、队列、负载等指标 | 可以按明确策略聚合，不能反向覆盖账本 |
+| 对外观测窗口 | 按权限查询或订阅，不开放任意写入 |
+
+Scheduler 申请资源机会，Monitor 完成额度确认、预留和结算，避免重复扣减。
+Workflow 管业务步数与收尾，Monitor 管实际资源事实。
+取消、超时或失联不等于零消耗，未知费用必须保留待核对状态。
+
+可以参考拥塞控制思想调节并发、排队和重试节奏。
+反馈调节只能在硬约束内运行，不能自行提高权限或预算。
+Monitor 可触发异常及控制请求，不直接修改 Workflow 业务状态。
+
+### 3.4 Supervisor 与基础设施
+
+Supervisor 管理执行域、进程与模块健康，执行超时监管和资源回收。
+ModuleHost 是其管辖的装配与模块生命周期子组件，负责依赖、配置、readiness 和正常关闭。
+Supervisor 负责物理监管，ModuleHost 不成为任务调度器。
+
+Communication Fabric 由 Kernel 管辖，保留独立的传输基础设施边界。
+各进程可以有通信端点，不要求所有消息经过 Core。
+最小引导入口先建立 Kernel，再装配受管模块，避免尚未启动的 Kernel 启动自己的循环。
+
+## 4. 租约管理
+
+### 4.1 申请与范围
+
+执行主体可以申请系统服务权限或面向执行面的租约。
+租约必须能够说明持有者、工作或系统职责归属、Tool 版本、资源与参数范围、
+期限、次数或额度约束，以及允许的代办和再委派范围。
+租约范围不得大于主体授权及当前工作约束。
+
+### 4.2 保存与使用
+
+| 位置 | 保存内容与责任 |
+|---|---|
+| Core | 权威租约记录，负责签发、变更和撤销 |
+| Gateway | 验证所需的可信视图或缓存，不自行修改权威范围 |
+| Workflow / 其他持有者 | 凭证或引用，可以提交、查询和申请续期 |
+| Execution | 本次执行关联及受限范围，不默认持有主体全部租约 |
+
+Workflow 持有租约不等于维护租约权威。Module 的系统租约也不必属于某个 Workflow。
+实际存储介质、复制和密码机制由 MVP 决定。
+
+### 4.3 长期、永久与失效
+
+可以发放长期租约，以及不设预定到期日的永久租约。
+永久不表示不可撤销、可任意复制、跨运行通用或定义更新后自动有效。
+静态只读访问可预先授权，但 ArtifactRef 不等于数据访问权。
+
+内容完整性只解决防伪造和防篡改，还需持有者绑定、范围匹配、版本与撤销检查。
+Gateway 必须明确有效性依据与失效传播，无法确认时不能无条件放行。
+完全离线验证不能同时承诺即时撤销；具体延迟和失败行为由 MVP 验收。
+
+Lease 是可复用资格，本次执行凭证是其受限投影。
+旧 Grant、Lease、ExecutionPermit 的字段不能未经迁移直接套用新含义。
+
+## 5. 统一执行路径与结果
+
+### 5.1 执行闭环
 
 ```text
-校验 Schema、身份链、幂等键与 deadline
--> 读取 AgentRun 固定的 AgentDefinitionVersionRef
--> 按 digest 读取 Agent/Unit/Tool 定义闭包
--> 验证 Unit 属于 Agent.allowedUnitRefs
--> 验证 Tool 属于 Unit.toolRefs
--> 校验输入输出 Contract 与 graphRevision
--> 校验 MissionScope capability ceiling、Policy、预算和 workspace
--> 按 Unit.requiredCapabilities 筛选运行时 Executor
--> 创建 UnitAttempt、Grant、Lease、fencing 与 ExecutionPermit
--> 调度并提交审计事实
+Workflow 提交 UnitIntent → Gateway
+  ├─ 有效适用租约 → 获准执行路径
+  └─ 无适用租约 → Core 裁决 → 拒绝 / 等待 / 签发
+→ Execution 幂等建立 UnitAttempt
+→ 就绪步骤申请调度 → Scheduler + Monitor
+→ Supervisor 提供受控环境 → Execution 执行
+→ 候选结果、效果及用量 → Kernel 确认与结算
+→ Workflow 消费确认事实
 ```
 
-任一步失败均不得创建可执行 Permit。定义未知、未固定、被隔离或撤销、digest 不匹配、Agent→Unit 或 Unit→Tool 成员关系无效、capability 不足时默认拒绝。目录中的风险和 capability 声明是准入输入，不是授权结论。
+快速路径不免除请求校验、执行关联、资源限制和结果确认。
+分发、创建、启动和返回可能分别失败，必须保留关联并支持核对，不能盲目重复执行。
 
-## 4. Executor 选择
+Core 维护结果是否被接受的决定；Execution 维护实际执行过程；
+Supervisor 提供进程事实，Monitor 提供消耗事实。
+结果确认核对身份、Attempt、版本、适用权限、契约、完整性和效果。
+某次执行已经完成但结果被拒绝是合法可表达的状态，不能抹掉已发生效果。
 
-AgentToolPool 的 ExecutorDefinitionVersion 描述静态执行器类别；Kernel 维护运行时 ExecutorInstance 投影。选择流程必须同时满足：
+### 5.2 准入依据与 Executor 选择
 
-1. ExecutorInstance 引用一个有效且已固定的 ExecutorDefinitionVersion；
-2. 提供 UnitDefinitionVersion 要求的全部 capability；
-3. 支持对应输入输出 Contract、Tool、数据等级和隔离级别；
-4. 满足 workspace、Secret、网络、资源、地域和 deadline 约束；
-5. 处于可接收新工作的健康状态。
+Gateway 的快速路径与 Core 的裁决路径必须保留相同的授权边界：
 
-多个候选同时满足时使用版本化、可审计的确定性策略或显式调度策略。UnitIntent 不得指定物理 executorId；调用方只能声明 UnitDefinitionVersion 和允许的约束。ContextEngine 可以作为 CONTEXT capability 的执行目标，Model/Tool/Workspace/Sandbox Adapter 由 Execution 执行面承载，但两者都必须接收 Kernel 创建的 UnitAttempt 与 Permit。
+1. 校验 Schema、可信身份及代办关系、逻辑幂等键和 deadline。
+2. 根据 AgentRun 固定引用解析 Agent、Unit、Tool 和 Executor 定义，不以当前默认版本替换。
+3. 验证 Agent 允许该 Unit、Unit 对应该 Tool，Tool 的执行步骤属于固定序列。
+4. 校验输入输出 Contract、MissionScope 能力上限、workspace、Policy 和 graphRevision。
+5. 确认适用租约、审核绑定和当前资源条件；缺少资格时不得创建可执行凭证。
 
-## 5. Tool 调用约束
+未知、未固定、被隔离或撤销、digest 不匹配的定义默认拒绝。
+目录中的 capability 和风险声明只是准入输入，不是授权结论。
+验证结果可以按明确有效条件复用，但缓存不得绕过定义、策略或租约失效。
 
-Tool 没有独立准入路径。所有 Tool 调用必须封装为 Unit，并满足以下条件：
+Scheduler 选择运行时实例时必须同时满足：固定 ExecutorDefinition 有效、所需 capability
+齐全、输入输出 Contract 兼容、数据等级及隔离要求匹配，以及 workspace、Secret、网络、
+资源和 deadline 约束。实例还必须处于可接收工作的健康状态。
+多个候选满足条件时使用版本化、可审计的确定性策略或明确调度策略。
+UnitIntent 不能指定绕过调度的物理端点；Execution 报告步骤就绪，不自行扩大资源范围。
 
-- AgentDefinitionVersion 允许该 UnitDefinitionVersion；
-- UnitDefinitionVersion 明确允许该 ToolDefinitionVersion；
-- UnitIntent 的输入通过 Unit 和 Tool 的 Contract 校验；
-- Kernel 完成新的准入并创建 UnitAttempt；
-- Executor 只能获得 Permit 投影出的最小 Tool、Secret 与网络能力。
+### 5.3 结果、fencing 与审计
 
-模型产生的 tool call 只是动作提案。Model Adapter、Workflow、ContextEngine 或 Tool Adapter 均不得直接执行它，也不得复用其他 UnitAttempt 的 Permit。
+结果接收检查 Attempt、Executor 来源、Lease/Permit、fencing、graphRevision、deadline、
+输出 Contract、Artifact 完整性和效果状态。旧代次、旧 revision 或终态后的结果只作 Evidence，
+不能覆盖当前状态。重复提交应返回既有接收结论，不重复结算或触发业务推进。
 
-## 6. 结果提交
+Scheduler 维护受控调度范围的执行代次，资源使用与提交边界拒绝旧 fencing。
+长期 Lease 仍有效不能使被替代的执行实例重新获得提交权。
+Core 的接收决定、审计与对外事件保持本地一致提交；Execution 的执行记录和 Monitor 的
+账本通过幂等关联交接，不假定跨模块全局事务。
 
-Executor 将 UnitResult、ArtifactRef、EffectRecord 和 usage 提交给 Kernel，不回调 Workflow。Kernel 依次校验 attempt identity、Lease、fencing、graphRevision、deadline、Executor 身份、输出 Contract、Artifact 完整性和副作用状态，再原子提交结果、审计和 Outbox Event。
+审计至少关联主体、AgentRun、UnitIntent/Attempt、定义版本、适用租约、Policy/Review、
+调度候选与选中实例、workspace、预算、fencing、接收结论、效果和错误。
+Secret、完整 Prompt、源代码与工具正文不得写入普通审计，使用受控 Artifact 引用。
 
-重复结果按幂等键返回原结论。旧 fencing、过期 Lease、旧 revision 或终态后的结果只可保存为 Evidence。未知副作用进入 reconciliation；不得自动创建重复执行。Kernel 发布已校验事实后，Workflow 才能更新 AgentStep、继续循环或进行业务验收。
+### 5.4 人工审核
 
-## 7. 生命周期、取消与恢复
+Core 拥有 HumanReviewRequest 与 HumanReviewDecision 的权威裁决；UserInteraction
+收集原始响应，Workflow 维护业务等待。APPROVAL、INFORMATION、DECISION、ACCEPTANCE
+的类型和处理语义以 Protocol 为准。
+审核绑定身份、角色、职责分离、目标、参数 hash、定义、策略版本、graphRevision 和有效期。
+绑定变化使旧决定失效；批准不能跳过后续资格与资源检查，超时不自动批准。
 
-- Retry 创建新的 UnitAttempt，并递增 fencing；不得覆盖原 Attempt。
-- Pause 或 revision barrier 停止受影响范围的新准入。
-- Cancel 停止签发 Permit，并请求运行中 Executor 协作终止；物理终止不等于业务取消完成。
-- 完成前 Kernel 停止新准入、drain 有效 Lease、核对 Grant、EffectRecord 和审计，再发布 ExecutionScopeDrained。
-- 恢复不继承旧 Grant、Lease、Permit、Secret materialization 或运行时 Executor 会话；所有动态权限重新签发。
+## 6. AgentOS 调用、中断信号与故障异常
 
-## 8. 安全与审计
+### 6.1 公共控制职责
 
-Kernel 在准入和结果提交两个边界重验 tenant/project、identity、Policy、definition digest、graphRevision 和 MissionScope。Grant、Lease、Permit 和审核决定必须短期、范围明确、可撤销且可审计。
+Core 内设置控制分派职责（Control Dispatcher），管理控制类型、处理者、
+控制操作记录、因果关联和升级规则，不升格为新的顶层组件。
+服务分派不必同步进入 Core 的权限裁决路径，Gateway 可以使用受保护的服务映射。
 
-审计至少记录主体、AgentRun、UnitIntent/UnitAttempt、Agent/Unit/Tool/Executor 定义引用、候选与选中 Executor、Policy/Review 引用、预算、workspace、准入结论、fencing、效果和错误。Secret、完整 Prompt、源代码和 Tool 结果正文不得进入审计记录。
+| 机制 | 定义 | 示例 |
+|---|---|---|
+| AgentOS 调用 | 主体主动请求系统服务 | 申请租约、提交 Unit、查询状态、请求取消 |
+| 中断信号 | 要求活动响应控制变化 | 暂停、停止、唤醒 |
+| 故障异常 | 执行或检查发现不能正常继续 | 超时、进程失联、资源耗尽、状态损坏 |
 
-## 9. 禁止行为
+三者是软件控制语义，不等于 CPU 特权切换或 Ubuntu 的 OS signal。
+一次调用可以产生中断，中断处理失败可以产生异常，必须保留关联。
 
-Kernel 不得修改 AgentToolPool 定义、替 Workflow 选择业务动作、绕过 Agent→Unit→Tool 成员校验、允许裸 Tool 调用、让 Executor 回调 Workflow、以运行时健康状态回写 ExecutorDefinitionVersion，或把 UnitResult 直接提升为 Task/Workflow 成功。
+### 6.2 AgentOS 调用
 
-## 10. 验证
+Gateway 验证来源和资格，按服务规则分派给 Core、Scheduler、Monitor 或 Supervisor。
+处理组件拥有自身状态；分派器只维护控制过程，不越权改写组件内部数据。
+调用者不得自选内部处理器以绕过入口。
 
-测试必须覆盖 Agent→Unit 与 Unit→Tool 合法/非法成员关系、定义 digest 与撤销状态、capability 匹配、无候选 Executor、确定性选择、Policy/预算/workspace 拒绝、幂等准入、重复与迟到结果、Lease 过期、旧 fencing、revision barrier、Tool 脱离 Unit 调用、未知副作用、取消竞态、恢复重签发和最终 drain。
+短调用可直接返回，长调用需区分接受与完成。
+重复请求必须返回既有处理关联或明确冲突，不能重复执行敏感控制动作。
+具体服务目录、返回类型及错误由各 MVP 冻结。
 
-通用对象与 Schema 见 [SharedContracts](../infrastructure/SharedContracts.md)，跨模块消息与版本规则见 [Protocol](../Protocol.md)，物理执行机制见 [Execution](Execution.md)。
+### 6.3 中断信号
+
+Kernel 维护中断来源、目标范围、处理者及处理状态。
+请求收到、送达、接受和实际生效必须区分，不能收到暂停请求就报告已暂停。
+
+Scheduler 阻止新步骤；Execution 在安全点停止推进并汇报；
+Supervisor 监管响应期限，必要时对受影响执行域采取物理措施。
+共享进程不能因一个 Attempt 的中断无依据地终止无关工作。
+
+控制消息不能被普通任务队列无限饿死，也不能无限免限流。
+优先级、队列、合并及超时规则由 MVP 决定。
+不要求每次权限或额度变化广播给 Workflow，但在途长操作不能只依赖下一次被动检查。
+
+### 6.4 故障异常
+
+异常可由 Execution、Monitor、Supervisor 或 Core 发现。
+发现者记录事实；紧急保护可以先执行，再向控制分派器补齐关联。
+控制分派器按类型和影响范围选择处理者，并跟踪局部处理或升级结果。
+
+```text
+发现故障 → 必要的即时保护 → 记录异常及影响范围
+→ 责任组件处理 → 汇总已知/未知效果 → 主动通知 Workflow
+```
+
+Execution 处理执行现场，Supervisor 管回收，Monitor 核对消耗。
+Workflow 决定业务重试、重新规划、补偿或结束。
+普通无权限结果可以正常返回，不必全部升级为系统异常。
+可重试的错误分类不等于授权立即重试。
+
+### 6.5 panic 与安全停机
+
+panic 只用于可信基础或关键安全不变量已无法维持的情况。
+Core 的可信处理逻辑发起安全停机，Scheduler 冻结新调度，
+Supervisor 回收受管执行域，各 Owner 尽力保存必要事实。
+用户 Executor 无权仅凭一条消息触发全局 panic。
+
+Kernel 已崩溃时不能依赖其发出最后通知，基础设施必须具有相应失联处置。
+停机范围、故障升级和恢复检查由 MVP 明确。
+
+## 7. 生命周期、恢复与观测
+
+Kernel 提供启动就绪、停止准入、取消、执行范围收敛和资源回收机制。
+取消针对当前执行资格及其后续调度，不自动撤销主体在其他工作中有效的长期租约。
+物理停止不等于业务取消完成；已发生、未发生和未知效果必须区分。
+
+Workflow 拥有三级 checkpoint 的业务语义。Kernel 提供租约重验和资源事实，
+Execution 提供 Attempt、步骤与效果核对。恢复不从 checkpoint 复活旧租约或执行会话。
+普通日志不能作为重新授权依据。
+
+新实际尝试由 Execution 创建并保留历史关系；Scheduler 重新安排代次和资源。
+未知效果先核对，不因 Lease 到期或进程消失就自动重跑。
+完成前停止本次范围的新调度，收敛在途步骤、资源持有和执行凭证，核对效果与账本，
+再形成 ExecutionScopeDrained。长期租约在其他工作仍有效，不应单独阻止本次完成。
+
+各组件保存自己的状态和审计记录，不提供可被任意修改的全局“AgentOS 内存”。
+Kernel 的运行视图组合各 Owner 的版本化事实，UI 不直读内部存储。
+Executor 的进度及输出通过受控逻辑通道提供，标明暂态与确认状态。
+模型推理展示仅限供应商提供且允许展示的内容或摘要。
+
+## 8. 平台约束与 MVP 细化空间
+
+Ubuntu LTS 是目标平台。通过已有 OS 能力落实身份、进程、资源和文件网络约束，
+不要求修改宿主内核。租约与 Gateway 本身不能阻止拥有宿主权限的恶意代码直接访问资源。
+不可信 Executor 必须受实际隔离，不能因平台能力不足静默退回无限制执行。
+
+各 MVP 应明确以下事项并提供对应证据：
+
+1. 可信边界、支持的 Tool、具体 Ubuntu LTS 和进程映射。
+2. 身份建立、Lease 载体、撤销、缓存、长期资格和恢复语义。
+3. Scheduler 与 Execution 的创建、排队、派发和重复处理协议。
+4. Monitor 账本、API 池、预算及硬限制与反馈调节。
+5. 调用目录、中断处理状态、异常升级、panic 和失联回收。
+6. 结果接收、持久化、checkpoint 参与、流式通道与隐私。
+7. 越权、重放、并发超发、部分失败、取消竞争及未知效果验证。
+
+具体交付文档选择所实现的能力子集，不将全部长期能力自动纳入 M1。
+
+### 8.1 重点验证场景
+
+验证应覆盖非法成员关系、定义 digest 与撤销状态、无合适 Executor、capability 或隔离不匹配、
+Policy/预算/workspace 拒绝、重复准入、跨主体租约转用、撤销竞争、旧 fencing、迟到结果、
+revision barrier、Tool 脱离 Unit 或越出固定序列、未知效果、取消未生效、恢复重签发与最终 drain。
+Monitor 还需验证并发超发和未知消耗；Supervisor 需验证进程树、孤儿执行域与失联回收。
