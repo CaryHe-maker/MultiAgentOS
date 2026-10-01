@@ -1,4 +1,5 @@
 import type {
+  AgentDefinitionReader,
   ContextPack,
   ContextReader,
   ContextRequest,
@@ -6,12 +7,16 @@ import type {
   Result,
 } from './contracts.js';
 
+type ContextDefinitions = PromptTemplateReader & AgentDefinitionReader;
+
 export class MinimalContextEngine implements ContextReader {
-  public constructor(private readonly prompts: PromptTemplateReader) {}
+  public constructor(private readonly definitions: ContextDefinitions) {}
 
   public async build(request: ContextRequest): Promise<Result<ContextPack>> {
-    const prompt = await this.prompts.getPrompt(request.promptRef);
+    const prompt = await this.definitions.getPrompt(request.promptRef);
     if (!prompt.ok) return prompt;
+    const agent = await this.definitions.getAgent(request.agentRef);
+    if (!agent.ok) return agent;
 
     const dynamicInput = {
       objective: request.objective,
@@ -32,6 +37,7 @@ export class MinimalContextEngine implements ContextReader {
         promptRef: request.promptRef,
         instructions: prompt.value.template,
         input: JSON.stringify(dynamicInput, null, 2),
+        tools: agent.value.tools,
       },
     };
   }

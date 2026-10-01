@@ -41,6 +41,7 @@ interface CallRecord {
   readonly output: number;
   readonly reasoning: number;
   readonly content: string | null;
+  readonly toolCalls: readonly string[];
 }
 
 interface RunRecord {
@@ -77,6 +78,12 @@ function toCallRecord(httpStatus: number, latencyMs: number, body: string): Call
   const message = ((choices[0] ?? {}) as Record<string, unknown>).message as
     Record<string, unknown> | undefined;
   const content = typeof message?.content === 'string' ? message.content : null;
+  const rawToolCalls = Array.isArray(message?.tool_calls) ? (message.tool_calls as unknown[]) : [];
+  const toolCalls = rawToolCalls.map((call) => {
+    const fn = ((call ?? {}) as Record<string, unknown>).function as
+      Record<string, unknown> | undefined;
+    return `${String(fn?.name)} ${String(fn?.arguments)}`;
+  });
   return {
     httpStatus,
     latencyMs,
@@ -85,6 +92,7 @@ function toCallRecord(httpStatus: number, latencyMs: number, body: string): Call
     output: num(usage.completion_tokens),
     reasoning: num(details.reasoning_tokens),
     content,
+    toolCalls,
   };
 }
 

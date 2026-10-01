@@ -44,6 +44,36 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+type ToolCallSpec = readonly [name: string, args: unknown];
+
+function toolCallResponse(calls: readonly ToolCallSpec[]): Response {
+  return jsonResponse({
+    choices: [
+      {
+        message: {
+          content: null,
+          tool_calls: calls.map(([name, args], index) => ({
+            id: `call-${index + 1}`,
+            type: 'function',
+            function: { name, arguments: typeof args === 'string' ? args : JSON.stringify(args) },
+          })),
+        },
+      },
+    ],
+  });
+}
+
+function textResponse(content: string): Response {
+  return jsonResponse({ choices: [{ message: { content } }] });
+}
+
+const HANDOFF_ARGS = {
+  targetAgentId: 'c-repository-review-agent',
+  objective: '检查可能导致错误结果的问题',
+  constraints: ['read-only'],
+  acceptanceCriteria: ['findings cite files and line ranges'],
+};
+
 function requestBody(init: RequestInit | undefined): string {
   if (typeof init?.body !== 'string') throw new Error('Expected a string request body.');
   return init.body;
@@ -65,32 +95,38 @@ async function makeRepository(): Promise<string> {
   return root;
 }
 
+const PLANNER_CONTEXT = {
+  agentRef: PLANNER_AGENT_REF,
+  promptRef: { id: 'prompt', version: '1.0.0' },
+  instructions: 'system instructions',
+  input: '{"objective":"hi"}',
+  tools: [{ name: 'handoff', description: 'hand off', parameters: { type: 'object' } }],
+};
+
 describe('ModelExecutor', () => {
-  it('sends separate instructions and input and parses a structured action', async () => {
+  it('sends native tools with thinking disabled and maps a plain-text reply to FINAL', async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         jsonResponse({
-          choices: [{ message: { content: '{"kind":"FINAL","answer":"你好！"}' } }],
-          usage: { prompt_tokens: 11, completion_tokens: 7 },
+          choices: [{ message: { content: '你好！' } }],
+          usage: {
+            prompt_tokens: 11,
+            completion_tokens: 7,
+            prompt_cache_hit_tokens: 8,
+            prompt_cache_miss_tokens: 3,
+          },
         }),
       ),
     );
     const executor = new ModelExecutor({ apiKey: 'test-key', fetch: fetchMock });
 
-    const result = await executor.execute({
-      context: {
-        agentRef: PLANNER_AGENT_REF,
-        promptRef: { id: 'prompt', version: '1.0.0' },
-        instructions: 'system instructions',
-        input: '{"objective":"hi"}',
-      },
-    });
+    const result = await executor.execute({ context: PLANNER_CONTEXT });
 
     expect(result).toEqual({
       ok: true,
       value: {
-        action: { kind: 'FINAL', answer: '你好！' },
-        usage: { inputTokens: 11, outputTokens: 7 },
+        actions: [{ kind: 'FINAL', answer: '你好！' }],
+        usage: { inputTokens: 11, outputTokens: 7, cacheHitTokens: 8, cacheMissTokens: 3 },
       },
     });
     const [url, init] = fetchMock.mock.calls[0] ?? [];
@@ -101,31 +137,102 @@ describe('ModelExecutor', () => {
         { role: 'system', content: 'system instructions' },
         { role: 'user', content: '{"objective":"hi"}' },
       ],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'handoff', description: 'hand off', parameters: { type: 'object' } },
+        },
+      ],
+      tool_choice: 'auto',
+      thinking: { type: 'disabled' },
       stream: false,
     });
   });
 
-  it('rejects an unstructured model response', async () => {
+  it('maps each native tool call to one action', async () => {
+    const executor = new ModelExecutor({
+      apiKey: 'test-key',
+      fetch: () =>
+        Promise.resolve(
+          toolCallResponse([
+            ['file_read', { path: 'src/a.c', startLine: 1, endLine: 9 }],
+            ['file_read', { path: 'src/b.c' }],
+          ]),
+        ),
+    });
+    const result = await executor.execute({ context: PLANNER_CONTEXT });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        actions: [
+          {
+            kind: 'TOOL_CALL',
+            callId: 'call-1',
+            toolName: 'file_read',
+            input: { path: 'src/a.c', startLine: 1, endLine: 9 },
+          },
+          {
+            kind: 'TOOL_CALL',
+            callId: 'call-2',
+            toolName: 'file_read',
+            input: { path: 'src/b.c' },
+          },
+        ],
+      },
+    });
+  });
+
+  it('maps handoff and submit_review tool calls', async () => {
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([
+        ['submit_review', { answer: 'ok', citations: [{ path: 'a.c', startLine: 1, endLine: 2 }] }],
+      ]),
+    ];
+    const executor = new ModelExecutor({
+      apiKey: 'test-key',
+      fetch: () => Promise.resolve(responses.shift() ?? textResponse('')),
+    });
+    await expect(executor.execute({ context: PLANNER_CONTEXT })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        actions: [
+          {
+            kind: 'HANDOFF',
+            targetAgentId: 'c-repository-review-agent',
+            task: { taskType: 'CODE_REVIEW', objective: HANDOFF_ARGS.objective },
+          },
+        ],
+      },
+    });
+    await expect(executor.execute({ context: PLANNER_CONTEXT })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        actions: [
+          { kind: 'FINAL', answer: 'ok', citations: [{ path: 'a.c', startLine: 1, endLine: 2 }] },
+        ],
+      },
+    });
+  });
+
+  it.each<[string, Response]>([
+    ['unknown tool', toolCallResponse([['run_shell', { command: 'ls' }]])],
+    ['non-JSON arguments', toolCallResponse([['file_read', '{"path":']])],
+    ['missing required argument', toolCallResponse([['file_read', { startLine: 1 }]])],
+    ['empty reply', textResponse('')],
+  ])('rejects a response with %s', async (_label, response) => {
     const messages: string[] = [];
     const executor = new ModelExecutor({
       apiKey: 'test-key',
-      fetch: () => Promise.resolve(jsonResponse({ choices: [{ message: { content: 'hello' } }] })),
+      fetch: () => Promise.resolve(response),
       debugModelResponses: true,
       modelResponseLogger: (message) => messages.push(message),
     });
-    const result = await executor.execute({
-      context: {
-        agentRef: PLANNER_AGENT_REF,
-        promptRef: { id: 'prompt', version: '1.0.0' },
-        instructions: 'instructions',
-        input: 'input',
-      },
-    });
+    const result = await executor.execute({ context: PLANNER_CONTEXT });
     expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_MODEL_ACTION' } });
     expect(messages.join('\n')).toContain('DeepSeek raw response');
     expect(messages.join('\n')).toContain('planner-agent@1.0.0');
-    expect(messages.join('\n')).toContain('DeepSeek assistant content');
-    expect(messages.join('\n')).toContain('hello');
+    expect(messages.join('\n')).toContain('DeepSeek assistant message');
   });
 });
 
@@ -140,6 +247,7 @@ describe('Agent and Unit definitions', () => {
       value: {
         allowedUnitRefs: [CONTEXT_BUILD_UNIT_REF, MODEL_CALL_UNIT_REF, RETURN_RESULT_UNIT_REF],
         allowedHandoffRefs: [C_REVIEW_AGENT_REF],
+        tools: [{ name: 'handoff' }],
       },
     });
     expect(reviewer).toMatchObject({
@@ -152,6 +260,7 @@ describe('Agent and Unit definitions', () => {
           FILE_READ_UNIT_REF,
           RETURN_RESULT_UNIT_REF,
         ],
+        tools: [{ name: 'file_read' }, { name: 'submit_review' }],
       },
     });
   });
@@ -180,11 +289,7 @@ describe('Agent and Unit definitions', () => {
 
 describe('minimal full loop', () => {
   it('lets Planner answer a greeting without activating Review Agent or reading files', async () => {
-    const fetchMock = vi.fn<typeof fetch>(() =>
-      Promise.resolve(
-        jsonResponse({ choices: [{ message: { content: '{"kind":"FINAL","answer":"你好！"}' } }] }),
-      ),
-    );
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(textResponse('你好！')));
 
     await expect(runPrompt('hi', { apiKey: 'test-key', fetch: fetchMock })).resolves.toBe('你好！');
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -193,34 +298,21 @@ describe('minimal full loop', () => {
   it('runs Planner handoff, repository view, Context, file read and Review final', async () => {
     const root = await makeRepository();
     const responses = [
-      {
-        kind: 'HANDOFF',
-        targetAgentRef: C_REVIEW_AGENT_REF,
-        task: {
-          taskType: 'CODE_REVIEW',
-          objective: '检查可能导致错误结果的问题',
-          constraints: ['read-only'],
-          acceptanceCriteria: ['findings cite files and line ranges'],
-        },
-      },
-      {
-        kind: 'TOOL_CALL',
-        callId: 'read-parser',
-        toolName: 'file_read',
-        input: { path: 'src/parser.c', startLine: 1, endLine: 4 },
-      },
-      {
-        kind: 'FINAL',
-        answer: '发现 input 未检查 NULL 就被解引用。',
-        citations: [{ path: 'src/parser.c', startLine: 2, endLine: 3 }],
-      },
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([['file_read', { path: 'src/parser.c', startLine: 1, endLine: 4 }]]),
+      toolCallResponse([
+        [
+          'submit_review',
+          {
+            answer: '发现 input 未检查 NULL 就被解引用。',
+            citations: [{ path: 'src/parser.c', startLine: 2, endLine: 3 }],
+          },
+        ],
+      ]),
     ];
-    const fetchMock = vi.fn<typeof fetch>(() => {
-      const action = responses.shift();
-      return Promise.resolve(
-        jsonResponse({ choices: [{ message: { content: JSON.stringify(action) } }] }),
-      );
-    });
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
     const runtime = createExperimentRuntime({ apiKey: 'test-key', fetch: fetchMock });
 
     const result = await runtime.kernel.run({
@@ -250,6 +342,86 @@ describe('minimal full loop', () => {
     expect(reviewerInput).toContain('return input[0]');
   });
 
+  it('queues parallel file reads and calls the model once after all of them', async () => {
+    const root = await makeRepository();
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([
+        ['file_read', { path: 'include/parser.h' }],
+        ['file_read', { path: 'src/parser.c' }],
+      ]),
+      toolCallResponse([
+        [
+          'submit_review',
+          { answer: 'done', citations: [{ path: 'src/parser.c', startLine: 3, endLine: 3 }] },
+        ],
+      ]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const runtime = createExperimentRuntime({ apiKey: 'test-key', fetch: fetchMock });
+
+    const result = await runtime.kernel.run({
+      prompt: '审查这个 C 仓库',
+      repository: { rootPath: root, revision: 'fixture-v1' },
+    });
+
+    expect(result).toEqual({ ok: true, value: { answer: 'done' } });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const finalBody = JSON.parse(requestBody(fetchMock.mock.calls[2]?.[1])) as {
+      messages: { role: string; content: string }[];
+    };
+    const finalInput = finalBody.messages[1]?.content ?? '';
+    expect(finalInput).toContain('int parse(const char *input);');
+    expect(finalInput).toContain('return input[0]');
+  });
+
+  it.each<[string, readonly ToolCallSpec[]]>([
+    [
+      'submit_review mixed with file_read',
+      [
+        ['file_read', { path: 'src/parser.c' }],
+        ['submit_review', { answer: 'x', citations: [] }],
+      ],
+    ],
+    [
+      'two submit_review calls',
+      [
+        ['submit_review', { answer: 'x', citations: [] }],
+        ['submit_review', { answer: 'y', citations: [] }],
+      ],
+    ],
+  ])('rejects a review turn with %s', async (_label, calls) => {
+    const root = await makeRepository();
+    const responses = [toolCallResponse([['handoff', HANDOFF_ARGS]]), toolCallResponse(calls)];
+    const runtime = createExperimentRuntime({
+      apiKey: 'test-key',
+      fetch: () => Promise.resolve(responses.shift() ?? textResponse('')),
+    });
+    const result = await runtime.kernel.run({
+      prompt: '审查这个 C 仓库',
+      repository: { rootPath: root, revision: 'fixture-v1' },
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'INVALID_REVIEW_ACTION' } });
+  });
+
+  it('rejects a handoff to an Agent outside the Planner handoff set', async () => {
+    const root = await makeRepository();
+    const runtime = createExperimentRuntime({
+      apiKey: 'test-key',
+      fetch: () =>
+        Promise.resolve(
+          toolCallResponse([['handoff', { ...HANDOFF_ARGS, targetAgentId: 'planner-agent' }]]),
+        ),
+    });
+    const result = await runtime.kernel.run({
+      prompt: '审查这个 C 仓库',
+      repository: { rootPath: root, revision: 'fixture-v1' },
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'HANDOFF_NOT_ALLOWED' } });
+  });
+
   it('routes every Context build through Kernel', async () => {
     const pool = new AgentToolPool();
     const workflow = new MinimalWorkflow(pool);
@@ -261,6 +433,7 @@ describe('minimal full loop', () => {
           promptRef: { id: 'test', version: '1.0.0' },
           instructions: 'planner',
           input: 'hi',
+          tools: [],
         },
       }),
     );
@@ -269,8 +442,8 @@ describe('minimal full loop', () => {
         Promise.resolve({
           ok: true,
           value: {
-            action: { kind: 'FINAL', answer: 'hello' },
-            usage: { inputTokens: 0, outputTokens: 0 },
+            actions: [{ kind: 'FINAL', answer: 'hello' }],
+            usage: { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
           },
         }),
     };

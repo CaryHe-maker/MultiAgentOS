@@ -258,7 +258,8 @@ else console.error(result.error.code, result.error.message);
 - `DEEPSEEK_API_KEY`：必填；
 - `MINIMAL_AGENT_LOOP_DEBUG_MODEL=1`：把每次模型调用的原始响应和 assistant content 输出到标准错误；默认关闭；
 - API 地址：`https://api.deepseek.com/chat/completions`；
-- 模型：`deepseek-flash`；
+- 模型：`deepseek-flash`，显式关闭思考模式（`thinking: disabled`）；
+- 动作协议：原生工具调用（`tools` / `tool_calls`，`tool_choice: auto`）。工具定义在 AgentToolPool 中按 Agent 配置：Planner 只有 `handoff`，ReviewAgent 有 `file_read` 和 `submit_review`；不调用工具的纯文本回复视为 FINAL。ReviewAgent 一次回复中的多个 `file_read` 按顺序排队执行，全部完成后才构建下一次上下文；
 - 默认超时：120 秒；
 - 最大 Workflow Unit 步数：64；
 - Planner 最大模型调用：2；

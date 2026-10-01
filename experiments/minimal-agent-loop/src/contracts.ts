@@ -42,6 +42,13 @@ export interface PromptTemplate {
   readonly template: string;
 }
 
+/** A function the model may call natively; parameters is a JSON Schema object. */
+export interface ToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
+}
+
 export interface AgentDefinition {
   readonly ref: DefinitionRef;
   readonly name: string;
@@ -50,6 +57,7 @@ export interface AgentDefinition {
   readonly promptRef: DefinitionRef;
   readonly allowedUnitRefs: readonly DefinitionRef[];
   readonly allowedHandoffRefs: readonly DefinitionRef[];
+  readonly tools: readonly ToolDefinition[];
 }
 
 export interface AgentRoutingDescriptor {
@@ -68,7 +76,8 @@ export interface ReviewTask {
 
 export interface HandoffAction {
   readonly kind: 'HANDOFF';
-  readonly targetAgentRef: DefinitionRef;
+  /** Workflow resolves the id against the Planner's allowedHandoffRefs. */
+  readonly targetAgentId: string;
   readonly task: ReviewTask;
 }
 
@@ -161,6 +170,7 @@ export interface ContextPack {
   readonly promptRef: DefinitionRef;
   readonly instructions: string;
   readonly input: string;
+  readonly tools: readonly ToolDefinition[];
 }
 
 export interface ModelRequest {
@@ -170,10 +180,13 @@ export interface ModelRequest {
 export interface ModelUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly cacheHitTokens: number;
+  readonly cacheMissTokens: number;
 }
 
 export interface ModelResponse {
-  readonly action: AgentAction;
+  /** One entry per native tool call, or a single FINAL for a plain-text reply. */
+  readonly actions: readonly AgentAction[];
   readonly usage: ModelUsage;
 }
 
@@ -282,6 +295,8 @@ export interface WorkflowState {
   readonly handoff?: HandoffAction;
   readonly repositoryOverview?: RepositoryOverview;
   readonly observations: readonly ToolObservation[];
+  /** File reads requested in one model turn that still wait for execution. */
+  readonly queuedToolCalls: readonly ToolCallAction[];
 }
 
 export interface WorkflowStartRequest {
