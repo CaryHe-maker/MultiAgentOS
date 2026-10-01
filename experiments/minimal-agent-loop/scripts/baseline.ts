@@ -3,7 +3,8 @@
 // It only wraps fetch to observe responses; it does not modify the agent loop.
 //
 // Usage (from repo root, DEEPSEEK_API_KEY in env):
-//   pnpm exec tsx experiments/minimal-agent-loop/scripts/baseline.ts [repeats] [label]
+//   pnpm exec tsx experiments/minimal-agent-loop/scripts/baseline.ts [repeats] [label] [caseId]
+// c-review answers are graded against evals/c-review-answer-key.json (see grade.ts).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -11,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createExperimentRuntime } from '../src/index.js';
 import type { UserRequest } from '../src/contracts.js';
+import { countFileReads, formatGrade, gradeReview, loadAnswerKey, type Grade } from './grade.js';
 
 // Same prices as ../mini-agent/src/llm.ts (USD per 1M tokens, off-peak).
 const PRICE_CACHE_HIT = 0.003;
@@ -58,6 +60,10 @@ interface RunRecord {
   readonly reasoning: number;
   readonly costUsd: number;
   readonly wallMs: number;
+  readonly fileReads: number;
+  /** file_read calls whose range was already fully covered by an earlier read. */
+  readonly duplicateReads: number;
+  readonly grade?: Grade;
   readonly calls: readonly CallRecord[];
 }
 
@@ -96,6 +102,8 @@ function toCallRecord(httpStatus: number, latencyMs: number, body: string): Call
   };
 }
 
+const answerKey = loadAnswerKey();
+
 async function runOnce(caseId: string, request: UserRequest, repeat: number): Promise<RunRecord> {
   const calls: CallRecord[] = [];
   const recordingFetch: typeof globalThis.fetch = async (input, init) => {
@@ -116,6 +124,9 @@ async function runOnce(caseId: string, request: UserRequest, repeat: number): Pr
   const reasoning = calls.reduce((sum, call) => sum + call.reasoning, 0);
   const costUsd =
     (cacheHit * PRICE_CACHE_HIT + cacheMiss * PRICE_CACHE_MISS + output * PRICE_OUTPUT) / 1_000_000;
+  const reads = countFileReads(calls.map((call) => call.toolCalls));
+  const grade =
+    result.ok && caseId === 'c-review' ? gradeReview(result.value.answer, answerKey) : undefined;
 
   return {
     caseId,
@@ -131,16 +142,48 @@ async function runOnce(caseId: string, request: UserRequest, repeat: number): Pr
     reasoning,
     costUsd,
     wallMs,
+    fileReads: reads.total,
+    duplicateReads: reads.duplicates,
+    ...(grade === undefined ? {} : { grade }),
     calls,
   };
+}
+
+function mean(values: readonly number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function summarize(caseId: string, runs: readonly RunRecord[]): string {
+  const passed = runs.filter((run) => run.ok);
+  const graded = passed.flatMap((run) => (run.grade === undefined ? [] : [run.grade]));
+  const parts = [
+    `${caseId}: ok=${passed.length}/${runs.length}`,
+    `calls=${mean(runs.map((run) => run.modelCalls)).toFixed(1)}`,
+    `in=${mean(runs.map((run) => run.inputTokens)).toFixed(0)}`,
+    `out=${mean(runs.map((run) => run.output)).toFixed(0)}`,
+    `$${mean(runs.map((run) => run.costUsd)).toFixed(4)}`,
+    `${(mean(runs.map((run) => run.wallMs)) / 1000).toFixed(1)}s`,
+  ];
+  if (graded.length > 0) {
+    const core = mean(graded.map((grade) => grade.coreFound)).toFixed(1);
+    const subtle = mean(graded.map((grade) => grade.subtleFound)).toFixed(1);
+    const [first] = graded;
+    parts.push(`core=${core}/${first?.coreTotal}`, `subtle=${subtle}/${first?.subtleTotal}`);
+    const rereads = runs.filter((run) => run.duplicateReads > 0).length;
+    parts.push(`runs-with-rereads=${rereads}/${runs.length}`);
+  }
+  return parts.join('  ');
 }
 
 async function main(): Promise<void> {
   const repeats = Number(process.argv[2] ?? '3');
   const label = process.argv[3] ?? 'baseline';
+  const onlyCase = process.argv[4];
   const records: RunRecord[] = [];
+  const cases = CASES.filter(({ id }) => onlyCase === undefined || id === onlyCase);
+  if (cases.length === 0) throw new Error(`Unknown case: ${String(onlyCase)}`);
 
-  for (const { id, request } of CASES) {
+  for (const { id, request } of cases) {
     for (let repeat = 1; repeat <= repeats; repeat += 1) {
       const record = await runOnce(id, request, repeat);
       records.push(record);
@@ -156,9 +199,23 @@ async function main(): Promise<void> {
           `reasoning=${record.reasoning}`,
           `$${record.costUsd.toFixed(4)}`,
           `${(record.wallMs / 1000).toFixed(1)}s`,
+          ...(record.fileReads > 0
+            ? [`reads=${record.fileReads}(dup ${record.duplicateReads})`]
+            : []),
+          ...(record.grade === undefined ? [] : [formatGrade(record.grade)]),
         ].join('  '),
       );
     }
+  }
+
+  console.log('');
+  for (const { id } of cases) {
+    console.log(
+      summarize(
+        id,
+        records.filter((record) => record.caseId === id),
+      ),
+    );
   }
 
   const outDir = join(experimentDir, 'runs');
