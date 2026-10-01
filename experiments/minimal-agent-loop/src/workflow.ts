@@ -102,6 +102,7 @@ export class MinimalWorkflow implements WorkflowPort {
           status: 'READY',
           modelCallCount: 0,
           fileReadCount: 0,
+          turns: [],
         },
         [reviewRunId]: {
           agentRunId: reviewRunId,
@@ -109,6 +110,7 @@ export class MinimalWorkflow implements WorkflowPort {
           status: 'WAITING_ACTIVATION',
           modelCallCount: 0,
           fileReadCount: 0,
+          turns: [],
         },
       },
       unitRuns: {},
@@ -195,8 +197,15 @@ export class MinimalWorkflow implements WorkflowPort {
     switch (completion.output.kind) {
       case 'CONTEXT_BUILD':
         return this.issueModelCall(nextState, activeAgent, completion.output.context);
-      case 'MODEL_CALL':
-        return this.applyAgentActions(nextState, activeAgent, completion.output.response.actions);
+      case 'MODEL_CALL': {
+        const { response } = completion.output;
+        // Record the reply so the next context can replay it before its tool results.
+        const withTurn = updateAgent(nextState, activeAgent.agentRunId, {
+          turns: [...activeAgent.turns, response.turn],
+        });
+        const agentRun = withTurn.agentRuns[activeAgent.agentRunId] ?? activeAgent;
+        return this.applyAgentActions(withTurn, agentRun, response.actions);
+      }
       case 'REPOSITORY_VIEW': {
         const withOverview: WorkflowState = {
           ...nextState,
@@ -262,12 +271,13 @@ export class MinimalWorkflow implements WorkflowPort {
         ...(state.repositoryOverview === undefined
           ? {}
           : { repositoryOverview: state.repositoryOverview }),
+        turns: run.turns,
         observations: state.observations,
-        status: {
-          modelCallsRemaining: referencesMatch(agent.ref, PLANNER_AGENT_REF)
-            ? MAX_PLANNER_MODEL_CALLS - run.modelCallCount
-            : MAX_REVIEW_MODEL_CALLS - run.modelCallCount,
-          fileReadsRemaining: MAX_FILE_READS - run.fileReadCount,
+        limits: {
+          maxModelCalls: referencesMatch(agent.ref, PLANNER_AGENT_REF)
+            ? MAX_PLANNER_MODEL_CALLS
+            : MAX_REVIEW_MODEL_CALLS,
+          maxFileReads: MAX_FILE_READS,
         },
       },
     });

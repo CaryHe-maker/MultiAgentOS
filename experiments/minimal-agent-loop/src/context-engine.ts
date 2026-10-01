@@ -1,5 +1,6 @@
 import type {
   AgentDefinitionReader,
+  ChatMessage,
   ContextPack,
   ContextReader,
   ContextRequest,
@@ -12,13 +13,18 @@ type ContextDefinitions = PromptTemplateReader & AgentDefinitionReader;
 export class MinimalContextEngine implements ContextReader {
   public constructor(private readonly definitions: ContextDefinitions) {}
 
+  /**
+   * Builds an append-only conversation: system prompt, one fixed task message, then each
+   * assistant turn followed by one tool message per tool call. Earlier messages never
+   * change between calls, so every call extends the previous call's prefix.
+   */
   public async build(request: ContextRequest): Promise<Result<ContextPack>> {
     const prompt = await this.definitions.getPrompt(request.promptRef);
     if (!prompt.ok) return prompt;
     const agent = await this.definitions.getAgent(request.agentRef);
     if (!agent.ok) return agent;
 
-    const dynamicInput = {
+    const task = {
       objective: request.objective,
       // The root path is a local detail bound by Workflow; the model only needs the revision.
       repository:
@@ -26,17 +32,41 @@ export class MinimalContextEngine implements ContextReader {
       availableAgents: request.routingCatalog,
       handoff: request.handoff,
       repositoryOverview: request.repositoryOverview,
-      observations: request.observations,
-      status: request.status,
+      limits: request.limits,
     };
+    const messages: ChatMessage[] = [
+      { role: 'system', content: prompt.value.template },
+      { role: 'user', content: JSON.stringify(task, null, 2) },
+    ];
+
+    for (const turn of request.turns) {
+      messages.push({ role: 'assistant', content: turn.content, toolCalls: turn.toolCalls });
+      for (const call of turn.toolCalls) {
+        const observation = request.observations.find((item) => item.callId === call.id);
+        if (observation === undefined) {
+          return {
+            ok: false,
+            error: {
+              code: 'CONTEXT_MISSING_OBSERVATION',
+              message: `Tool call ${call.id} has no observation to replay.`,
+              retryable: false,
+            },
+          };
+        }
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: JSON.stringify(observation, null, 2),
+        });
+      }
+    }
 
     return {
       ok: true,
       value: {
         agentRef: request.agentRef,
         promptRef: request.promptRef,
-        instructions: prompt.value.template,
-        input: JSON.stringify(dynamicInput, null, 2),
+        messages,
         tools: agent.value.tools,
       },
     };

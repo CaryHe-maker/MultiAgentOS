@@ -148,10 +148,34 @@ export interface ToolObservation {
   readonly output: FileReadResponse;
 }
 
-export interface ContextStatus {
-  readonly modelCallsRemaining: number;
-  readonly fileReadsRemaining: number;
+/** Fixed per-Agent limits, stated once so the context prefix never changes between calls. */
+export interface ContextLimits {
+  readonly maxModelCalls: number;
+  readonly maxFileReads: number;
 }
+
+/** A native tool call exactly as the model emitted it. */
+export interface ModelToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: string;
+}
+
+/** One assistant reply, kept so later calls can replay the conversation. */
+export interface AssistantTurn {
+  readonly content: string | null;
+  readonly toolCalls: readonly ModelToolCall[];
+}
+
+export type ChatMessage =
+  | { readonly role: 'system'; readonly content: string }
+  | { readonly role: 'user'; readonly content: string }
+  | {
+      readonly role: 'assistant';
+      readonly content: string | null;
+      readonly toolCalls: readonly ModelToolCall[];
+    }
+  | { readonly role: 'tool'; readonly toolCallId: string; readonly content: string };
 
 export interface ContextRequest {
   readonly agentRef: DefinitionRef;
@@ -161,15 +185,15 @@ export interface ContextRequest {
   readonly routingCatalog: readonly AgentRoutingDescriptor[];
   readonly handoff?: HandoffAction;
   readonly repositoryOverview?: RepositoryOverview;
+  readonly turns: readonly AssistantTurn[];
   readonly observations: readonly ToolObservation[];
-  readonly status: ContextStatus;
+  readonly limits: ContextLimits;
 }
 
 export interface ContextPack {
   readonly agentRef: DefinitionRef;
   readonly promptRef: DefinitionRef;
-  readonly instructions: string;
-  readonly input: string;
+  readonly messages: readonly ChatMessage[];
   readonly tools: readonly ToolDefinition[];
 }
 
@@ -187,6 +211,7 @@ export interface ModelUsage {
 export interface ModelResponse {
   /** One entry per native tool call, or a single FINAL for a plain-text reply. */
   readonly actions: readonly AgentAction[];
+  readonly turn: AssistantTurn;
   readonly usage: ModelUsage;
 }
 
@@ -266,6 +291,7 @@ export interface AgentRunState {
   readonly status: AgentRunStatus;
   readonly modelCallCount: number;
   readonly fileReadCount: number;
+  readonly turns: readonly AssistantTurn[];
 }
 
 export type UnitRunStatus = 'WAITING_EXECUTION' | 'EVALUATING_RESULT' | 'SUCCEEDED' | 'FAILED';

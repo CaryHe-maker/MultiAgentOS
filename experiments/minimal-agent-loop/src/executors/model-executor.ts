@@ -1,9 +1,11 @@
 import type {
   AgentAction,
+  ChatMessage,
   FileReadInput,
   ModelExecutorPort,
   ModelRequest,
   ModelResponse,
+  ModelToolCall,
   ModelUsage,
   Result,
   SourceCitation,
@@ -22,16 +24,39 @@ export interface ModelExecutorOptions {
   readonly modelResponseLogger?: (message: string) => void;
 }
 
-interface DeepSeekToolCall {
-  readonly id: string;
-  readonly name: string;
-  readonly arguments: string;
-}
-
 interface DeepSeekResponse {
   readonly content: string | null;
-  readonly toolCalls: readonly DeepSeekToolCall[];
+  readonly toolCalls: readonly ModelToolCall[];
   readonly usage: ModelUsage;
+}
+
+/** Map internal messages to the Chat Completions wire format. */
+function toWireMessage(message: ChatMessage): Record<string, unknown> {
+  switch (message.role) {
+    case 'system':
+    case 'user':
+      return { role: message.role, content: message.content };
+    case 'assistant':
+      return {
+        role: 'assistant',
+        content: message.content,
+        ...(message.toolCalls.length === 0
+          ? {}
+          : {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: 'function',
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            }),
+      };
+    case 'tool':
+      return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
+  }
+}
+
+function hasTextMessage(messages: readonly ChatMessage[], role: 'system' | 'user'): boolean {
+  return messages.some((message) => message.role === role && message.content.trim().length > 0);
 }
 
 function failure(code: string, message: string, retryable: boolean): Result<never> {
@@ -65,7 +90,7 @@ function numberField(record: Record<string, unknown> | undefined, key: string): 
 }
 
 /** Map one native tool call to an AgentAction; undefined means unknown tool or bad arguments. */
-function toAction(call: DeepSeekToolCall): AgentAction | undefined {
+function toAction(call: ModelToolCall): AgentAction | undefined {
   let args: unknown;
   try {
     args = JSON.parse(call.arguments);
@@ -135,10 +160,10 @@ function readApiError(payload: unknown): string | undefined {
   return typeof payload.error.message === 'string' ? payload.error.message : undefined;
 }
 
-function parseToolCalls(value: unknown): DeepSeekToolCall[] | undefined {
+function parseToolCalls(value: unknown): ModelToolCall[] | undefined {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) return undefined;
-  const calls: DeepSeekToolCall[] = [];
+  const calls: ModelToolCall[] = [];
   for (const item of value) {
     if (!isRecord(item) || typeof item.id !== 'string' || !isRecord(item.function))
       return undefined;
@@ -190,10 +215,8 @@ export class ModelExecutor implements ModelExecutorPort {
   }
 
   public async execute(request: ModelRequest): Promise<Result<ModelResponse>> {
-    if (
-      request.context.instructions.trim().length === 0 ||
-      request.context.input.trim().length === 0
-    ) {
+    const { messages } = request.context;
+    if (!hasTextMessage(messages, 'system') || !hasTextMessage(messages, 'user')) {
       return failure('INVALID_PROMPT', 'Prompt must not be empty.', false);
     }
     if (this.apiKey.length === 0) {
@@ -219,10 +242,7 @@ export class ModelExecutor implements ModelExecutorPort {
         },
         body: JSON.stringify({
           model: DEEPSEEK_MODEL,
-          messages: [
-            { role: 'system', content: request.context.instructions },
-            { role: 'user', content: request.context.input },
-          ],
+          messages: messages.map(toWireMessage),
           ...(request.context.tools.length === 0
             ? {}
             : {
@@ -287,7 +307,14 @@ export class ModelExecutor implements ModelExecutorPort {
         );
       }
 
-      return { ok: true, value: { actions, usage: parsed.usage } };
+      return {
+        ok: true,
+        value: {
+          actions,
+          turn: { content: parsed.content, toolCalls: parsed.toolCalls },
+          usage: parsed.usage,
+        },
+      };
     } catch (error: unknown) {
       if (controller.signal.aborted) {
         return failure(

@@ -74,6 +74,17 @@ const HANDOFF_ARGS = {
   acceptanceCriteria: ['findings cite files and line ranges'],
 };
 
+interface WireMessage {
+  readonly role: string;
+  readonly content: string | null;
+  readonly tool_call_id?: string;
+  readonly tool_calls?: { readonly id: string }[];
+}
+
+function requestMessages(init: RequestInit | undefined): WireMessage[] {
+  return (JSON.parse(requestBody(init)) as { messages: WireMessage[] }).messages;
+}
+
 function requestBody(init: RequestInit | undefined): string {
   if (typeof init?.body !== 'string') throw new Error('Expected a string request body.');
   return init.body;
@@ -98,8 +109,10 @@ async function makeRepository(): Promise<string> {
 const PLANNER_CONTEXT = {
   agentRef: PLANNER_AGENT_REF,
   promptRef: { id: 'prompt', version: '1.0.0' },
-  instructions: 'system instructions',
-  input: '{"objective":"hi"}',
+  messages: [
+    { role: 'system' as const, content: 'system instructions' },
+    { role: 'user' as const, content: '{"objective":"hi"}' },
+  ],
   tools: [{ name: 'handoff', description: 'hand off', parameters: { type: 'object' } }],
 };
 
@@ -126,6 +139,7 @@ describe('ModelExecutor', () => {
       ok: true,
       value: {
         actions: [{ kind: 'FINAL', answer: '你好！' }],
+        turn: { content: '你好！', toolCalls: [] },
         usage: { inputTokens: 11, outputTokens: 7, cacheHitTokens: 8, cacheMissTokens: 3 },
       },
     });
@@ -147,6 +161,39 @@ describe('ModelExecutor', () => {
       thinking: { type: 'disabled' },
       stream: false,
     });
+  });
+
+  it('serializes assistant tool calls and tool results in the wire format', async () => {
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(textResponse('ok')));
+    const executor = new ModelExecutor({ apiKey: 'test-key', fetch: fetchMock });
+    await executor.execute({
+      context: {
+        ...PLANNER_CONTEXT,
+        messages: [
+          ...PLANNER_CONTEXT.messages,
+          {
+            role: 'assistant',
+            content: null,
+            toolCalls: [{ id: 'call-1', name: 'file_read', arguments: '{"path":"a.c"}' }],
+          },
+          { role: 'tool', toolCallId: 'call-1', content: 'result' },
+        ],
+      },
+    });
+    expect(requestMessages(fetchMock.mock.calls[0]?.[1]).slice(2)).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: { name: 'file_read', arguments: '{"path":"a.c"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call-1', content: 'result' },
+    ]);
   });
 
   it('maps each native tool call to one action', async () => {
@@ -334,12 +381,17 @@ describe('minimal full loop', () => {
       'SUCCEEDED',
     ]);
 
-    const secondReviewContextBody = JSON.parse(requestBody(fetchMock.mock.calls[2]?.[1])) as {
-      messages: { role: string; content: string }[];
-    };
-    const reviewerInput = secondReviewContextBody.messages[1]?.content ?? '';
-    expect(reviewerInput).toContain('src/parser.c');
-    expect(reviewerInput).toContain('return input[0]');
+    const firstReview = requestMessages(fetchMock.mock.calls[1]?.[1]);
+    const secondReview = requestMessages(fetchMock.mock.calls[2]?.[1]);
+    // Append-only: the second call starts with exactly the first call's messages.
+    expect(secondReview.slice(0, firstReview.length)).toEqual(firstReview);
+    expect(secondReview.slice(firstReview.length).map((message) => message.role)).toEqual([
+      'assistant',
+      'tool',
+    ]);
+    const toolResult = secondReview.at(-1);
+    expect(toolResult?.tool_call_id).toBe('call-1');
+    expect(toolResult?.content).toContain('return input[0]');
   });
 
   it('queues parallel file reads and calls the model once after all of them', async () => {
@@ -369,12 +421,17 @@ describe('minimal full loop', () => {
 
     expect(result).toEqual({ ok: true, value: { answer: 'done' } });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    const finalBody = JSON.parse(requestBody(fetchMock.mock.calls[2]?.[1])) as {
-      messages: { role: string; content: string }[];
-    };
-    const finalInput = finalBody.messages[1]?.content ?? '';
-    expect(finalInput).toContain('int parse(const char *input);');
-    expect(finalInput).toContain('return input[0]');
+    const finalMessages = requestMessages(fetchMock.mock.calls[2]?.[1]);
+    expect(finalMessages.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+      'tool',
+    ]);
+    expect(finalMessages[2]?.tool_calls?.map((call) => call.id)).toEqual(['call-1', 'call-2']);
+    expect(finalMessages[3]?.content).toContain('int parse(const char *input);');
+    expect(finalMessages[4]?.content).toContain('return input[0]');
   });
 
   it.each<[string, readonly ToolCallSpec[]]>([
@@ -431,8 +488,10 @@ describe('minimal full loop', () => {
         value: {
           agentRef: PLANNER_AGENT_REF,
           promptRef: { id: 'test', version: '1.0.0' },
-          instructions: 'planner',
-          input: 'hi',
+          messages: [
+            { role: 'system', content: 'planner' },
+            { role: 'user', content: 'hi' },
+          ],
           tools: [],
         },
       }),
@@ -443,6 +502,7 @@ describe('minimal full loop', () => {
           ok: true,
           value: {
             actions: [{ kind: 'FINAL', answer: 'hello' }],
+            turn: { content: 'hello', toolCalls: [] },
             usage: { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
           },
         }),
@@ -548,12 +608,45 @@ describe('MinimalContextEngine', () => {
       objective: 'review',
       repository: { rootPath: '/Users/someone/private/repo', revision: 'fixture-v1' },
       routingCatalog: [],
+      turns: [],
       observations: [],
-      status: { modelCallsRemaining: 1, fileReadsRemaining: 1 },
+      limits: { maxModelCalls: 12, maxFileReads: 16 },
     });
     expect(context.ok).toBe(true);
     if (!context.ok) return;
-    expect(context.value.input).not.toContain('/Users/someone');
-    expect(context.value.input).toContain('fixture-v1');
+    const text = JSON.stringify(context.value.messages);
+    expect(text).not.toContain('/Users/someone');
+    expect(text).toContain('fixture-v1');
+  });
+
+  it('states fixed limits once instead of a remaining budget', async () => {
+    const pool = new AgentToolPool();
+    const context = await new MinimalContextEngine(pool).build({
+      agentRef: C_REVIEW_AGENT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
+      objective: 'review',
+      routingCatalog: [],
+      turns: [],
+      observations: [],
+      limits: { maxModelCalls: 12, maxFileReads: 16 },
+    });
+    if (!context.ok) throw new Error(context.error.message);
+    const task = context.value.messages[1]?.content ?? '';
+    expect(JSON.parse(task)).toMatchObject({ limits: { maxModelCalls: 12, maxFileReads: 16 } });
+    expect(task).not.toContain('Remaining');
+  });
+
+  it('rejects a replayed tool call that has no observation', async () => {
+    const pool = new AgentToolPool();
+    const context = await new MinimalContextEngine(pool).build({
+      agentRef: C_REVIEW_AGENT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
+      objective: 'review',
+      routingCatalog: [],
+      turns: [{ content: null, toolCalls: [{ id: 'lost', name: 'file_read', arguments: '{}' }] }],
+      observations: [],
+      limits: { maxModelCalls: 12, maxFileReads: 16 },
+    });
+    expect(context).toMatchObject({ ok: false, error: { code: 'CONTEXT_MISSING_OBSERVATION' } });
   });
 });

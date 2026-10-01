@@ -139,15 +139,18 @@ Unit 是平台级通用定义，不为 Planner 或 ReviewAgent 创建专属 Unit
 
 ## ContextEngine 与文件访问
 
-ContextEngine 只组织已经存在的信息，不访问代码仓库，也不调用模型。它把以下内容组装成不可变 `ContextPack`：
+ContextEngine 只组织已经存在的信息，不访问代码仓库，也不调用模型。它把以下内容组装成不可变 `ContextPack`，形式是只追加的消息列表加上当前 Agent 的工具定义：
 
-- 固定版本的 Agent Prompt；
-- 用户目标；
-- 可用 Agent Catalog；
-- Planner handoff；
-- RepositoryRef 和仓库概览；
-- FileRead Observation；
-- 剩余模型与文件读取预算。
+```text
+system     固定版本的 Agent Prompt
+user       固定的任务消息：用户目标、可用 Agent Catalog、Planner handoff、
+           仓库 revision 和仓库概览、模型调用与文件读取的总上限
+assistant  第 1 轮回复（含 tool_calls）
+tool       每个 tool_call 对应一条 FileRead Observation
+assistant  第 2 轮回复 ...
+```
+
+前面的消息在后续调用中保持不变，每次调用只在末尾追加新的回复和工具结果，因此后一次请求总以前一次请求为前缀。上限只在任务消息中写一次，不在每次调用时更新剩余次数。Workflow 在 AgentRun 中保存每一轮回复，供 ContextEngine 重放。
 
 仓库访问全部经过 Kernel：
 
