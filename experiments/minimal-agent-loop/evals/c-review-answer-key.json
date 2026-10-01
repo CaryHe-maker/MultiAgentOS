@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "fixture": "fixtures/c-review",
   "revision": "fixture-c-review-v1",
   "notes": [
@@ -7,7 +7,8 @@
     "Each issue is found when any one of its patterns matches the report (case-insensitive, dot matches newline).",
     "core: visible from one function in isolation. subtle: needs reading order, data flow, or library semantics.",
     "Every issue was verified by hand against the fixture source.",
-    "Bare line-number patterns are only used for lines that belong to a single issue; shared lines (e.g. main.c:11-12, main.c:19) need a semantic pattern."
+    "Bare line-number patterns are only used for lines that belong to a single issue; shared lines (e.g. main.c:11-12, main.c:19) need a semantic pattern.",
+    "v2 (2026-10-02): English patterns added after the concise-report prompt made most reports English; calibrated on 18 English reports from C3, C5 and C6. Patterns that matched the empty-file warning or fix suggestions were removed."
   ],
   "issues": [
     {
@@ -21,7 +22,9 @@
         "二次释放",
         "释放两次",
         "两次.{0,10}free",
-        "free.{0,40}两次"
+        "free.{0,40}两次",
+        "freed twice",
+        "free.{0,40}\\btwice\\b"
       ]
     },
     {
@@ -87,7 +90,8 @@
       "summary": "document_size is read uninitialized when read_entire_file fails early",
       "patterns": [
         "document_size.{0,120}(未初始化|uninit|不确定|垃圾)",
-        "(未初始化|uninit).{0,120}document_size"
+        "(未初始化|uninit).{0,120}document_size",
+        "document_size.{0,160}(indeterminate|uninitiali[sz]ed|garbage)"
       ]
     },
     {
@@ -98,7 +102,8 @@
       "patterns": [
         "path.{0,80}(未初始化|uninit)",
         "(未初始化|uninit).{0,80}path",
-        "argc\\s*(<=\\s*1|==\\s*1|<\\s*2)"
+        "argc\\s*(<=\\s*1|==\\s*1|<\\s*2)",
+        "path.{0,160}(uninitiali[sz]ed|indeterminate)"
       ]
     },
     {
@@ -110,7 +115,10 @@
         "config_parse.{0,150}(忽略|仍返回|仍然返回|return 0|返回 ?0)",
         "(config_parse|解析失败|无效行|invalid lines|非法).{0,150}(仅|只)(打印|输出)",
         "main\\.c:19-2[1-3].{0,80}(仅|只)(打印|输出)",
-        "load_config.{0,120}(仍|依然|照样)(返回|报告).{0,10}(0|成功)"
+        "load_config.{0,120}(仍|依然|照样)(返回|报告).{0,10}(0|成功)",
+        "load_config.{0,200}(still )?(returns? 0|succeeds|reports success)",
+        "invalid lines.{0,150}(continu|still|returns? 0|success)",
+        "(parse|parsing) (failure|error)s?.{0,100}(only|just) (prints?|warns?|logs?)"
       ]
     },
     {
@@ -120,7 +128,8 @@
       "summary": "status is uninitialized with no data lines and only reflects the last line",
       "patterns": [
         "status.{0,120}(未初始化|uninit|最后一行|覆盖|last)",
-        "(未初始化|uninit).{0,60}status"
+        "(未初始化|uninit).{0,60}status",
+        "status.{0,160}(indeterminate|uninitiali[sz]ed|garbage|only the last|last (parsed )?line)"
       ]
     },
     {
@@ -130,7 +139,9 @@
       "summary": "append_entry does not check duplicate_slice for NULL",
       "patterns": [
         "entry->name\\s*=\\s*duplicate_slice.{0,150}(NULL|未检查|不检查|分配失败)",
-        "append_entry.{0,150}duplicate_slice.{0,80}(未检查|不检查|返回 ?NULL|分配失败)"
+        "append_entry.{0,150}duplicate_slice.{0,80}(未检查|不检查|返回 ?NULL|分配失败)",
+        "duplicate_slice.{0,60}(unchecked|not checked|never checked|without (a )?(NULL )?check)",
+        "(unchecked|never checks?|does not check|not checked).{0,40}duplicate_slice"
       ]
     },
     {
@@ -143,7 +154,10 @@
         "\\bUAF\\b",
         "释放后(使用|读|访问|解引用)",
         "(读|访问).{0,4}已释放",
-        "free\\(copy\\).{0,120}\\*end"
+        "free\\(copy\\).{0,120}\\*end",
+        "freed (memory|buffer|pointer)",
+        "\\*?end.{0,80}after .{0,20}free\\(copy\\)",
+        "dereferenced after .{0,20}free"
       ]
     },
     {
@@ -155,7 +169,10 @@
         "空(字符串|值).{0,80}(解析为 ?0|当作 ?0|视为 ?0|接受|成功)",
         "没有数字",
         "no digits",
-        "end\\s*==\\s*copy"
+        "end\\s*==\\s*copy",
+        "copy\\s*==\\s*end",
+        "empty (value|string).{0,80}(parses? as|treated as|accepted as|becomes) (0|zero)",
+        "(parses?|accepted|treated) as (0|zero)"
       ]
     },
     {
@@ -166,7 +183,10 @@
       "patterns": [
         "fread.{0,200}(泄漏|泄露|leak|fclose|未释放)",
         "短读.{0,150}(未释放|泄漏|泄露|fclose)",
-        "util\\.c:2[23]\\b"
+        "util\\.c:2[23]\\b",
+        "short read.{0,200}(fclose|leak|free)",
+        "bytes_read\\s*!=.{0,150}(leak|fclose|free)",
+        "util\\.c:21-2[34]\\b"
       ]
     },
     {
@@ -174,7 +194,11 @@
       "tier": "subtle",
       "location": "src/util.c:13-16",
       "summary": "fseek/ftell failures are unchecked; ftell returning -1 becomes a huge malloc",
-      "patterns": ["ftell.{0,150}(-1|失败|错误|检查)", "fseek.{0,100}(检查|失败)"]
+      "patterns": [
+        "ftell.{0,150}(-1|失败|错误|检查)",
+        "fseek.{0,100}(检查|失败)",
+        "(fseek|ftell).{0,150}(unchecked|not checked|negative|fail|error|-1)"
+      ]
     }
   ]
 }

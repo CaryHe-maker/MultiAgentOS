@@ -29,6 +29,30 @@ describe('c-review answer key', () => {
     ]);
   });
 
+  it('credits English descriptions of the same defects', () => {
+    const grade = gradeReview(
+      [
+        '- src/parser.c:16 - undefined behavior - `*end` is dereferenced after `free(copy)`.',
+        '- src/parser.c:63-70 - wrong result - `status` is only assigned inside the loop, so it returns an indeterminate value.',
+        '- src/util.c:21-24 - leak - when `bytes_read != file_size` it returns NULL without `fclose(file)`.',
+      ].join('\n'),
+      issues,
+    );
+    expect(grade.found).toEqual([
+      'status-uninit-or-last-only',
+      'parse-integer-use-after-free',
+      'fread-short-leak',
+    ]);
+  });
+
+  it('does not credit parse-error-ignored for the empty-file warning', () => {
+    const grade = gradeReview(
+      'The empty-file case only prints a message and continues with the same NULL buffer.',
+      issues,
+    );
+    expect(grade.found).not.toContain('parse-error-ignored');
+  });
+
   it('does not credit an issue from a shared line number alone', () => {
     const grade = gradeReview(
       '调用点 src/main.c:19 把可能为 NULL 的指针传给下游；duplicate_slice 被 src/parser.c:32 调用。',
