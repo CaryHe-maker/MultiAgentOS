@@ -9,7 +9,6 @@ import {
   AgentToolPool,
   CONTEXT_BUILD_UNIT_REF,
   C_REVIEW_AGENT_REF,
-  C_REVIEW_PROMPT_REF,
   FILE_READ_UNIT_REF,
   MODEL_CALL_UNIT_REF,
   PLANNER_AGENT_REF,
@@ -813,7 +812,7 @@ describe('MinimalContextEngine', () => {
     const pool = new AgentToolPool();
     const context = await new MinimalContextEngine(pool).build({
       agentRef: C_REVIEW_AGENT_REF,
-      promptRef: C_REVIEW_PROMPT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
       objective: 'review',
       routingCatalog: [],
       turns: [],
@@ -853,7 +852,7 @@ describe('MinimalContextEngine', () => {
       ({ ok: false, error: { code: 'E', message, retryable: false } }) as const;
     const context = await new MinimalContextEngine(pool).build({
       agentRef: C_REVIEW_AGENT_REF,
-      promptRef: C_REVIEW_PROMPT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
       objective: 'review',
       routingCatalog: [],
       turns: [
@@ -876,7 +875,7 @@ describe('MinimalContextEngine', () => {
     const pool = new AgentToolPool();
     const context = await new MinimalContextEngine(pool).build({
       agentRef: C_REVIEW_AGENT_REF,
-      promptRef: C_REVIEW_PROMPT_REF,
+      promptRef: { id: 'c-repository-review-prompt', version: '1.0.0' },
       objective: 'review',
       routingCatalog: [],
       turns: [{ content: null, toolCalls: [{ id: 'lost', name: 'file_read', arguments: '{}' }] }],

@@ -26,7 +26,7 @@ export const PLANNER_PROMPT_REF: DefinitionRef = Object.freeze({
 
 export const C_REVIEW_PROMPT_REF: DefinitionRef = Object.freeze({
   id: 'c-repository-review-prompt',
-  version: '1.1.0',
+  version: '1.0.0',
 });
 
 export const CONTEXT_BUILD_UNIT_REF: DefinitionRef = Object.freeze({
@@ -71,13 +71,7 @@ Use the planner handoff, repository overview, and file observations to identify 
 - Read enough .c and .h files to support the conclusions and avoid duplicate reads.
 - Every reported issue must cite a path and line range already present in an observation.
 - If evidence is incomplete, read another file range instead of guessing.
-- When the review is complete, call submit_review alone with the report and its citations.
-
-Report format (submit_review answer):
-- List every defect you found; do not drop defects to save space.
-- One entry per defect, one to two sentences: \`path:lines\` — category (crash, memory error, undefined behavior, leak, or wrong result) — what goes wrong and what input or path triggers it.
-- No code snippets, fix suggestions, per-field headings, summaries, or notes about code that is correct.
-- Group entries under at most three severity headings.`;
+- When the review is complete, call submit_review alone with the report and its citations.`;
 
 const LINE_RANGE_CITATION = {
   type: 'object',
