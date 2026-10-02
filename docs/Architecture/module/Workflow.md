@@ -15,7 +15,8 @@ WorkflowRun
 └── MissionScope Tree
     └── objective / budget / capability ceiling / workspace / cancel boundary
 
-AgentRun -> UnitIntent -> Kernel -> UnitAttempt -> ArtifactRef / Event
+AgentRun -> UnitIntent -> Kernel 准入 -> Execution 创建 UnitAttempt
+        -> 候选结果 / ArtifactRef -> Kernel 确认 -> Workflow 消费 Event
 WorkflowRun -> WorkflowCheckpoint -> SessionCheckpoint
 WorkflowRun -> IntegrationAttempt / RestoreOperation / CompensationTask
 ```
@@ -35,7 +36,7 @@ WorkflowRun -> IntegrationAttempt / RestoreOperation / CompensationTask
 | SessionCheckpoint | 用户可见、长期保留、可派生新运行的恢复边界 |
 | RestoreOperation | 从 SessionCheckpoint 派生运行的持久 Saga |
 
-TaskGraph 决定“何时可运行”；MissionScope Tree 决定“由谁监督、使用何种预算/能力/workspace”；WorkSession/SessionTree 决定“用户如何组织多次运行”。三者不得互相替代。
+TaskGraph 决定业务依赖是否就绪；MissionScope Tree 决定业务监督归属及预算/能力/workspace 上限；WorkSession/SessionTree 决定“用户如何组织多次运行”。三者不得互相替代。实际执行机会由 Kernel Scheduler 分配，资源额度、预留与结算由 Monitor 维护。
 
 ## 3. 组件
 
@@ -72,7 +73,7 @@ Join 满足后，迟到分支不得改变输入集合；重新打开必须发布
 
 MissionScope Supervisor 负责创建监督树、预算继承、capability ceiling、workspace 边界、取消传播、影响闭包和完成条件。父级预算/能力是上限，子级不得扩大。
 
-预算采用 reservation/commit/release：提交 Unit 前请求 Kernel 预留，完成后按实际 usage 结算，失败或取消释放。Workflow 维护业务 budget envelope，不成为 Provider 或资源用量的事实源。
+预算采用 reservation/commit/release：Scheduler 申请资源机会，Monitor 确认额度、预留并按实际 usage 结算；失败或取消后核对消耗，再释放未使用的预留，未知消耗保留待核对状态。Workflow 维护业务 budget envelope、步数与收尾，不成为 Provider 或资源用量的事实源。
 
 父 Scope 取消默认传播到子 Scope；子 Scope 失败是否传播由 required 和 JoinPolicy 决定。Scope 的状态变化必须发布版本化 Event。
 
@@ -92,7 +93,7 @@ MissionScope Supervisor 负责创建监督树、预算继承、capability ceilin
 
 模型只能输出结构化动作提案、Signal、SpawnProposal、GraphPatchProposal 或 AgentResult。Workflow 依据固定定义把合法动作提案转换为 UnitIntent；模型不得自行扩大允许 Unit 集合或指定 Executor。每个等待保存 correlation、类型、deadline 和恢复位置；恢复后复用同一逻辑幂等键。非法输出保存原始 Artifact，并按 Contract 错误采用修复提示、替代定义、重新规划或失败，禁止无限重试。
 
-所有 Tool 调用都必须由一个已发布 UnitDefinitionVersion 封装。Workflow 不生成裸 Tool 调用；若动作提案引用的 Tool 不属于目标 Unit，或目标 Unit 不属于 AgentRun 的允许集合，必须拒绝并记录结构化 Contract 错误。
+所有 Tool 调用都必须由一个已发布 UnitDefinitionVersion 封装，一 Unit 对应一个 Tool 粒度操作，Tool 内的固定 Executor 序列由 Execution 推进。Workflow 不生成裸 Tool 调用；若动作提案引用的 Tool 与目标 Unit 不对应，或目标 Unit 不属于 AgentRun 的允许集合，必须拒绝并记录结构化 Contract 错误。
 
 Context 装配、检索和文件读取的具体路径见 ContextEngine 和 Execution 文档。
 
@@ -178,7 +179,7 @@ RestoreOperation 只用于从 SessionCheckpoint 派生运行。默认创建新�
 
 - Pause 停止创建新工作并在一致边界等待；Resume 延续同一运行。
 - Cancel 表达停止目标，先传播 Scope，再等待 Kernel drain；物理终止不等于取消完成。
-- Retry 创建新 UnitAttempt/TaskAttempt；Rerun 创建新的业务运行；Fork 从明确输入或 checkpoint 派生。
+- Retry 的业务决定由 Workflow 作出；新的 UnitAttempt 由 Execution 经 Kernel 准入后创建，TaskAttempt 由 Workflow 创建；未知效果先核对。Rerun 创建新的业务运行；Fork 从明确输入或 checkpoint 派生。
 - Replan 发布新 GraphRevision，不回写历史。
 - 已发生副作用由 Compensation Coordinator 基于 EffectRecord 和版本化 policy 创建反向 Task。不可补偿、状态未知或补偿失败进入 MANUAL_INTERVENTION_REQUIRED/NEEDS_ATTENTION。
 
@@ -190,7 +191,7 @@ Workflow 的聚合、Journal、Outbox 和投影在同一事务提交。Durable R
 
 ## 16. 完成判定
 
-完成候选必须同时满足：required Task Resolution、Join、MissionScope、acceptance、Artifact、Review/Signal、Integration/QualityGate 和副作用状态。Workflow 发布 CompletionProposed 后，Kernel 执行 execution-scope drain；只有无有效 Lease/Permit、无未知 effect 且审计完成后，Workflow 才提交最终成功。
+完成候选必须同时满足：required Task Resolution、Join、MissionScope、acceptance、Artifact、Review/Signal、Integration/QualityGate 和副作用状态。Workflow 发布 CompletionProposed 后，Kernel 停止本次范围的新调度，收敛在途步骤、资源持有和执行凭证，核对效果与账本并形成 ExecutionScopeDrained；无未知 effect 且审计完成后，Workflow 才提交最终成功。主体在其他工作中仍有效的长期租约不阻止本次完成。
 
 ## 17. 错误、可观测性与测试
 

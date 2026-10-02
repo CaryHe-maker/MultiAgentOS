@@ -20,12 +20,13 @@ ContextEngine 为 CONTEXT 类 Unit 提供执行能力，但不拥有 UnitDefinit
 ## 2. 调用关系
 
 ```text
-Workflow -> CONTEXT UnitIntent -> Kernel 校验定义并创建 UnitAttempt
-Kernel -> ContextPort + ExecutionPermit -> ContextEngine
-Workflow <- UnitResult + ArtifactRef <- Kernel <- ContextPack
+Workflow -> CONTEXT UnitIntent -> Gateway 验证租约 / Core 必要裁决
+-> Execution 幂等创建 UnitAttempt -> Scheduler 调度 / Monitor 预留额度
+-> Execution 经受控执行契约协调 ContextEngine -> ContextPack / ArtifactRef
+-> 候选 UnitResult -> Kernel 确认与结算 -> Workflow
 ```
 
-CONTEXT Unit 在模块内执行；此时 ContextEngine 是满足 CONTEXT capability 的运行时执行目标，Kernel 仍是唯一准入和 Executor 选择入口。ContextEngine 必须校验 UnitAttempt、Permit、UnitDefinitionVersionRef、deadline 和数据范围。需要模型或外部重计算的上下文操作必须形成新的 MODEL Unit，不得由 ContextEngine 直接访问模型服务。
+CONTEXT 能力在模块内执行；ContextEngine 是满足 CONTEXT capability 的运行时执行目标，Execution 维护 UnitAttempt 与 Tool 步骤，Kernel Gateway/Core 负责准入，Scheduler 选择运行时实例，Supervisor 监管执行环境。ContextEngine 必须校验执行关联、固定定义、deadline 和数据范围；Permit 是适用 Lease 对本次执行的受限投影，不由 ContextEngine 签发，也不在模块内另建授权政策。有效租约不免除执行记录、资源限制和结果确认。需要模型或外部重计算的上下文操作必须交由 Workflow 形成相应 UnitIntent 并经 Kernel 准入；模型调用通过 Execution 的模型网关执行，不得由 ContextEngine 直接访问模型服务。
 
 ## 3. 操作
 
@@ -200,7 +201,7 @@ IndexRevision 至少绑定数据源水位、分块版本、embedding/symbol 工�
 
 SessionCheckpoint 若要求精确重现 ContextPack，应将 Pack 物化为不可变 Artifact 并保留；否则保存来源引用、ACL 范围、IndexRevision 和 rebuild recipe。ContextEngine 不回滚共享索引。
 
-恢复动作返回 `REUSED`、`REBUILT`、`STALE` 或 `INCOMPATIBLE`，并附来源和诊断。即使复用历史 Pack，恢复时仍需按当前身份、ACL、DefinitionVersion 和数据撤销状态重新验证；Grant 或旧权限不得继承。
+恢复动作返回 `REUSED`、`REBUILT`、`STALE` 或 `INCOMPATIBLE`，并附来源和诊断。即使复用历史 Pack，恢复时仍需按当前身份、ACL、DefinitionVersion 和数据撤销状态重新验证；不得从 checkpoint 复活旧 Lease、Permit 或执行会话，当前资格由 Kernel 重新确认。
 
 ## 16. 可观测性
 

@@ -10,8 +10,8 @@ AgentToolPool 是 Agent、Unit、Tool 和 Executor 静态定义版本及其兼�
 |---|---|
 | Definition | 稳定逻辑身份和类型 |
 | AgentDefinitionVersion | Agent 的角色、行为约束、输入输出 Contract、允许 Unit 集合与组合约束 |
-| UnitDefinitionVersion | 一个可准入动作的 Contract、所需 capability、允许 Tool 集合、效果和资源约束 |
-| ToolDefinitionVersion | 工具操作的参数/结果 Schema、风险、副作用、幂等与供应链声明 |
+| UnitDefinitionVersion | 一个 Tool 粒度操作的 Contract、对应 Tool 引用、所需 capability、效果和资源约束 |
+| ToolDefinitionVersion | 工具操作的参数/结果 Schema、权限需求、Executor 执行序列、风险、副作用、幂等与供应链声明 |
 | ExecutorDefinitionVersion | Executor 类别的 capability、支持 Contract、运行环境和资源边界 |
 | CapabilityRequirement | 调用方所需能力、数据等级和执行条件 |
 | CompatibilityResult | 输入输出 Contract、运行环境和能力的匹配结果 |
@@ -24,8 +24,8 @@ AgentToolPool 是 Agent、Unit、Tool 和 Executor 静态定义版本及其兼�
 目录中的 `kind` 固定为 `AGENT | UNIT | TOOL | EXECUTOR | MODEL | PROMPT | CONTRACT`。
 
 - Agent：角色、行为约束、输入输出 Contract、Prompt/Model 引用、允许的 `UnitDefinitionVersionRef` 封闭集合，以及 Unit 的顺序、次数、前置条件和终止约束。Agent 不直接声明可调用 Tool。
-- Unit：单一可审计动作的输入输出 Contract、`requiredCapabilities`、允许的 `ToolDefinitionVersionRef` 封闭集合、效果类型、幂等规则、资源上限和可选补偿定义。Unit 不绑定运行时 executorId。
-- Tool：参数 Schema、结果 Schema、风险、幂等性、副作用、dry-run、补偿能力及供应链来源。Tool 只能由引用它的 Unit 调用。
+- Unit：一个 Tool 粒度的可审计动作，声明输入输出 Contract、`requiredCapabilities`、对应的固定 ToolDefinitionVersion 引用、效果类型、幂等规则、资源上限和可选补偿定义。Unit 不绑定运行时 executorId。
+- Tool：参数 Schema、结果 Schema、权限需求、一个或多个 Executor 的固定执行序列、风险、幂等性、副作用、dry-run、补偿能力及供应链来源。Tool 只能由引用它的 Unit 调用；Execution 解释步骤依赖，实际资格由 Core 管理的租约赋予。
 - Executor：静态执行器类别、可提供 capability、支持的 Unit/Tool Contract、运行环境、数据等级、隔离和资源约束。endpoint、进程、会话、Lease、健康度和负载属于运行时状态，不进入定义。
 - Model：Provider 能力、上下文限制、结构化输出、动作提案和数据处理约束。
 - Prompt：不可变内容、变量 Contract、适用 Agent/Task 类型和安全策略。
@@ -39,10 +39,10 @@ AgentToolPool 是 Agent、Unit、Tool 和 Executor 静态定义版本及其兼�
 DefinitionQuery
   -> 按 kind / stable ID / version range 取候选
   -> 校验 DefinitionStatus
-  -> 展开并校验 Agent -> Unit -> Tool 引用闭包
+  -> 展开并校验 Agent -> Unit -> Tool -> Executor 序列的引用闭包
   -> 校验 CapabilityRequirement
   -> 校验输入输出 Contract 兼容性
-  -> 以 Unit.requiredCapabilities 匹配 ExecutorDefinitionVersion
+  -> 校验 Tool 固定序列中的 ExecutorDefinitionVersion 与所需 capability 匹配
   -> 校验执行环境与数据等级约束
   -> 按确定性规则选择
   -> 返回不可变 DefinitionVersion 集合及解释
@@ -52,9 +52,9 @@ DefinitionQuery
 
 ## 5. 运行固定
 
-Workflow 在创建 AgentRun 时解析 AgentDefinitionVersion，并固定它及其允许的 UnitDefinitionVersion、ToolDefinitionVersion、Prompt、Model 与 Contract 引用闭包。运行过程中不得因目录更新静默切换版本。改变 Agent 或 Unit 组合必须创建新的 AgentRun 或 GraphRevision，并重新验证兼容性。
+Workflow 在创建 AgentRun 时解析 AgentDefinitionVersion，并固定它及其允许的 UnitDefinitionVersion、对应 ToolDefinitionVersion、序列中的 ExecutorDefinitionVersion、Prompt、Model 与 Contract 引用闭包。运行过程中不得因目录更新静默切换版本。改变 Agent 或 Unit 组合必须创建新的 AgentRun 或 GraphRevision，并重新验证兼容性。
 
-Workflow 创建 UnitIntent 时只能引用该 AgentRun 已固定且由 AgentDefinitionVersion 允许的 UnitDefinitionVersion。Kernel 只读解析固定定义，验证 Agent→Unit 和 Unit→Tool 成员关系，并依据 Unit.requiredCapabilities 从合格的 ExecutorDefinitionVersion 中选择运行时 Executor。Kernel 仍须重新判断身份、Policy、预算、Secret、数据范围、运行时健康度和资源；目录声明不是授权或调度结论。
+Workflow 创建 UnitIntent 时只能引用该 AgentRun 已固定且由 AgentDefinitionVersion 允许的 UnitDefinitionVersion。Kernel Gateway/Core 只读解析固定定义，验证 Agent→Unit、Unit→Tool 对应关系及 Tool 的固定 Executor 序列，并检查身份、Policy 和适用租约。Execution 报告步骤就绪，Scheduler 根据固定 ExecutorDefinitionVersion 及 capability、Contract、隔离、workspace、Secret、网络、deadline 和健康状态选择运行时实例，Monitor 确认额度、预留和结算；目录声明不是授权或调度结论。
 
 ## 6. 风险与供应链
 
@@ -79,4 +79,4 @@ AgentToolPool 不得保存 MissionScope、AgentRun、UnitIntent、UnitAttempt、
 
 ## 9. 测试要求
 
-测试必须覆盖不可变发布、digest 稳定性、版本范围、Agent→Unit 与 Unit→Tool 引用闭包、非法成员引用、能力匹配、Executor 兼容性、Contract 不兼容、确定性选择、撤销阻断、恢复解析、供应链证据、未知定义及无权限扩大。
+测试必须覆盖不可变发布、digest 稳定性、版本范围、Agent→Unit→Tool→Executor 序列的引用闭包、非法成员引用、能力匹配、Executor 兼容性、Contract 不兼容、确定性选择、撤销阻断、恢复解析、供应链证据、未知定义及无权限扩大。
