@@ -1,0 +1,18 @@
+# The model sends data to the provider but changes no state, so the effect is READ_ONLY.
+# Repeating a call can give a different answer, so it is not idempotent.
+schemaVersion: v0
+kind: UNIT
+id: model-call
+version: v0.1.0
+description: One call to the pinned model that returns the next structured analysis action.
+executionKind: MODEL
+operations: [CALL]
+inputContract: { kind: contract, id: kernel.ModelRequest, version: v0 }
+outputContract: { kind: contract, id: workflow.AnalysisAction, version: v0 }
+requiredCapabilities: [model.tool-calls]
+toolRefs: []
+effect: READ_ONLY
+isIdempotent: false
+limits:
+  timeoutMs: 120000
+  maxOutputBytes: 262144

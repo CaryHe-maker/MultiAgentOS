@@ -1,0 +1,5 @@
+# The only mutable file in the catalog. Definition files never change after sealing; when a
+# published version turns out to be risky, list it here instead (DEPRECATED, QUARANTINED or
+# REVOKED). QUARANTINED and REVOKED versions cannot be looked up or pinned.
+schemaVersion: v0
+entries: []

@@ -1,0 +1,21 @@
+# PLACEHOLDER parameters and result until AnalysisAction is designed.
+schemaVersion: v0
+kind: TOOL
+id: search-repository
+version: v0.1.0
+description: Model-facing search over the repository snapshot, served by ContextEngine SEARCH.
+modelName: search_repository
+modelDescription: Search the repository for text or file paths and return matching line ranges.
+parametersSchema:
+  type: object
+  properties:
+    query: { type: string, minLength: 1 }
+  required: [query]
+  additionalProperties: false
+resultSchema:
+  type: object
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+canDryRun: false
+contentStatus: PLACEHOLDER

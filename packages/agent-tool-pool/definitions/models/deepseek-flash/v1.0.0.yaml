@@ -1,0 +1,45 @@
+# DeepSeek Flash. `deepseek-flash` is an unversioned alias on DeepSeek's side; when DeepSeek
+# moves it to a new model, publish a new version of this file instead of editing this one.
+schemaVersion: v0
+kind: MODEL
+id: deepseek-flash
+version: v1.0.0
+digest: 8dea640ace3fd0fa6a6e74c1731e42a130c15c86a1442d838f6127ac32a83efa
+description: DeepSeek V4.1 Flash via the OpenAI-compatible API; the default low-cost model for M1.
+provider: deepseek
+apiModelId: deepseek-flash
+providerModelLabel: DeepSeek-V4.1-Flash
+apiProtocol: OPENAI_CHAT_COMPLETIONS
+baseUrl: https://api.deepseek.com
+limits:
+  # The pricing page lists "1M" context and "384K" max output.
+  contextWindowTokens: 1000000
+  maxOutputTokens: 384000
+features:
+  hasJsonOutput: true
+  hasToolCalls: true
+  hasVision: true
+  thinking:
+    isSupported: true
+    isEnabledByDefault: true
+    effortLevels: [low, high, max]
+pricing:
+  currency: USD
+  # Integers: micro-USD per 1M tokens, i.e. 3000 = 0.003 USD per 1M tokens.
+  unit: MICRO_USD_PER_MILLION_TOKENS
+  offPeak:
+    inputCacheHit: 3000
+    inputCacheMiss: 150000
+    output: 600000
+  # DeepSeek also bills Chinese public holidays at off-peak rates. M1 has no holiday
+  # calendar, so costs computed from this rule are upper bounds on those days.
+  peak:
+    ratePercent: 200
+    timeZone: UTC
+    weekdays: [1, 2, 3, 4, 5]
+    windows:
+      - { start: '01:00', end: '04:00' }
+      - { start: '06:00', end: '10:00' }
+  source:
+    url: https://api-docs.deepseek.com/quick_start/pricing
+    verifiedOn: '2026-09-28'

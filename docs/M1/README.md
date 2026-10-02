@@ -17,6 +17,8 @@ M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task
 3. [M1Interface](M1Interface.md)：公开 Port、Schema、消息与错误协议。
 4. [M1Process](M1Process.md)：任务状态、实现差距与验证证据。
 
+模块的 M1 实现说明放在 `docs/M1/<module>/` 下，例如 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
+
 依赖版本见 [Dependencies](../Requirements/Dependencies.md)，
 代码、文档、Git 和评审规范见 [Style](../Style.md)。
 

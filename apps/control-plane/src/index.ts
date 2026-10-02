@@ -1,5 +1,9 @@
 import { join } from 'node:path';
-import { BuiltInCatalog } from '@multiagentos/agent-tool-pool';
+import {
+  DEFAULT_DEFINITIONS_DIRECTORY,
+  DefinitionCatalog,
+  FileDefinitionSource,
+} from '@multiagentos/agent-tool-pool';
 import { LocalArtifactStore } from '@multiagentos/artifacts';
 import { InMemoryMessageRouter } from '@multiagentos/communication';
 import { LocalContextEngine } from '@multiagentos/context-engine';
@@ -21,9 +25,23 @@ export interface M1Runtime {
   readonly runRepository: FileRepository<{ readonly id: string; readonly value: unknown }>;
 }
 
-export function createM1Runtime(stateRoot: string): M1Runtime {
+export interface M1RuntimeOptions {
+  /** Catalog directory; defaults to the definitions shipped with agent-tool-pool. */
+  readonly definitionsDirectory?: string;
+}
+
+/**
+ * Builds the M1 runtime. Async because the AgentToolPool catalog is read and validated here,
+ * once: an invalid or edited definition stops startup with a CatalogLoadError.
+ */
+export async function createM1Runtime(
+  stateRoot: string,
+  options: M1RuntimeOptions = {},
+): Promise<M1Runtime> {
   const protocols = createM1ProtocolRegistry();
-  const catalog = new BuiltInCatalog();
+  const catalog = await DefinitionCatalog.load(
+    new FileDefinitionSource(options.definitionsDirectory ?? DEFAULT_DEFINITIONS_DIRECTORY),
+  );
   const workflow = new WorkflowService(catalog);
   const artifacts = new LocalArtifactStore(join(stateRoot, 'artifacts'));
   const context = new LocalContextEngine();

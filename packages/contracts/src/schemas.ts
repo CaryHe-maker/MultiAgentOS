@@ -1,5 +1,6 @@
 import { Type, type Static, type TSchema } from 'typebox';
 import { Compile } from 'typebox/compile';
+import { PinnedDefinitionRefSchema } from './catalog/definition-schemas.js';
 
 const Id = (prefix: string) =>
   Type.String({ pattern: `^${prefix}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$` });
@@ -417,33 +418,6 @@ export const ContextPackSchema = Type.Object(
 );
 export type ContextPack = Static<typeof ContextPackSchema>;
 
-export const DefinitionQuerySchema = Type.Object(
-  {
-    kind: Type.Union([
-      Type.Literal('AGENT'),
-      Type.Literal('MODEL'),
-      Type.Literal('TOOL'),
-      Type.Literal('PROMPT'),
-      Type.Literal('CONTRACT'),
-    ]),
-    definitionId: Type.String({ minLength: 1, maxLength: 160 }),
-    versionRange: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-    requiredCapabilities: Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true }),
-  },
-  { additionalProperties: false, $id: 'catalog.DefinitionQuery.v0' },
-);
-export type DefinitionQuery = Static<typeof DefinitionQuerySchema>;
-export const DefinitionVersionSchema = Type.Object(
-  {
-    ref: VersionedRefSchema,
-    digest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
-    inputContractRef: VersionedRefSchema,
-    outputContractRef: VersionedRefSchema,
-    capabilities: Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true }),
-  },
-  { additionalProperties: false, $id: 'catalog.DefinitionVersion.v0' },
-);
-export type DefinitionVersion = Static<typeof DefinitionVersionSchema>;
 export const RuntimeProjectionSchema = Type.Object(
   {
     workflowRunId: IdSchemas.workflowRunId,
@@ -457,7 +431,7 @@ export const RuntimeProjectionSchema = Type.Object(
     sourceVersion: Type.Integer({ minimum: 0 }),
     graphRevision: Type.Integer({ minimum: 0 }),
     currentStep: Type.Optional(Type.String({ minLength: 1 })),
-    definitionVersions: Type.Array(DefinitionVersionSchema),
+    pinnedDefinitions: Type.Array(PinnedDefinitionRefSchema),
     usage: UsageSchema,
     evidenceRefs: Type.Array(ArtifactRefSchema),
     failure: Type.Optional(ModuleErrorSchema),
@@ -480,7 +454,7 @@ export const WorkflowRunViewSchema = Type.Object(
     sourceVersion: Type.Integer({ minimum: 0 }),
     graphRevision: Type.Integer({ minimum: 0 }),
     currentStep: Type.Optional(Type.String({ minLength: 1 })),
-    definitionVersions: Type.Array(DefinitionVersionSchema),
+    pinnedDefinitions: Type.Array(PinnedDefinitionRefSchema),
     usage: UsageSchema,
     evidenceRefs: Type.Array(ArtifactRefSchema),
     failure: Type.Optional(ModuleErrorSchema),

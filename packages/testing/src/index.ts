@@ -26,3 +26,8 @@ export class RecordingKernelUnitPort implements KernelUnitPort {
     return Promise.resolve(this.responder(intent));
   }
 }
+export { FakeCatalogPort } from './fakes/fake-catalog-port.js';
+export {
+  describeCatalogPortContract,
+  type CatalogPortContractFixture,
+} from './harnesses/catalog-port-contract.js';

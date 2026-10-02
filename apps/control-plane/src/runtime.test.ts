@@ -13,7 +13,7 @@ describe('AC-002 AC-003 M1 composition root', () => {
   it('runs UserInteraction -> Kernel -> Workflow and pins catalog definitions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'multiagentos-runtime-'));
     roots.push(root);
-    const runtime = createM1Runtime(join(root, '.multiagent'));
+    const runtime = await createM1Runtime(join(root, '.multiagent'));
     await runtime.host.start();
     const submission = await runtime.interaction.run(
       'inspect this repository without changing it',
@@ -27,12 +27,21 @@ describe('AC-002 AC-003 M1 composition root', () => {
     expect(submission.projection.ok).toBe(true);
     if (submission.projection.ok) {
       expect(submission.projection.value.status).toBe('CREATED');
-      expect(submission.projection.value.definitionVersions).toHaveLength(5);
+      const pinned = submission.projection.value.pinnedDefinitions;
+      expect(pinned.map((ref) => `${ref.kind}:${ref.id}@${ref.version}`)).toEqual([
+        'AGENT:repository-analysis-agent@v0.1.0',
+        'MODEL:deepseek-flash@v1.0.0',
+        'PROMPT:repository-analysis@v0.1.0',
+        'UNIT:context-build@v0.1.0',
+        'UNIT:file-read@v0.1.0',
+        'UNIT:model-call@v0.1.0',
+        'TOOL:read-file@v0.1.0',
+        'TOOL:search-repository@v0.1.0',
+      ]);
+      expect(pinned.every((ref) => /^[a-f0-9]{64}$/u.test(ref.digest))).toBe(true);
       expect(
-        submission.projection.value.definitionVersions.every((definition) =>
-          /^[a-f0-9]{64}$/u.test(definition.digest),
-        ),
-      ).toBe(true);
+        runtime.workflow.pinnedDefinitions(submission.projection.value.workflowRunId)?.refs,
+      ).toEqual(pinned);
       await expect(
         runtime.interaction.inspect(submission.projection.value.workflowRunId),
       ).resolves.toEqual(submission.projection);
@@ -43,7 +52,7 @@ describe('AC-002 AC-003 M1 composition root', () => {
   it('wires the M1 executor as a read-only unit boundary', async () => {
     const root = await mkdtemp(join(tmpdir(), 'multiagentos-runtime-read-'));
     roots.push(root);
-    const runtime = createM1Runtime(join(root, '.multiagent'));
+    const runtime = await createM1Runtime(join(root, '.multiagent'));
     const workspace = {
       workspaceId: 'wsp_123456',
       rootPath: root,
