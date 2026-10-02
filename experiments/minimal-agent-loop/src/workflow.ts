@@ -292,6 +292,7 @@ export class MinimalWorkflow implements WorkflowPort {
         observations: state.observations,
         limits: { maxModelCalls, maxFileReads: MAX_FILE_READS },
         finalCall: run.modelCallCount >= maxModelCalls - 1,
+        usage: { modelCallsUsed: run.modelCallCount, fileReadsUsed: run.fileReadCount },
       },
     });
   }

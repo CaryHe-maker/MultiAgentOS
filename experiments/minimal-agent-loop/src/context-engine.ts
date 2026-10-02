@@ -31,8 +31,32 @@ function formatObservation(observation: ToolObservation): string {
   return `Error ${code}: ${message}`;
 }
 
+export interface ContextEngineOptions {
+  /**
+   * Experiment C7: end every context with a status bar (call and read counts, ranges read).
+   * It is rebuilt on each call and never kept in history, so the cached prefix is unchanged.
+   */
+  readonly statusBar?: boolean;
+}
+
+/** Render the C7 status bar from Workflow counters and the successful reads so far. */
+export function formatStatusBar(request: ContextRequest): string | undefined {
+  if (request.usage === undefined) return undefined;
+  const ranges = request.observations.flatMap(({ result }) =>
+    result.ok ? [`${result.value.path}:${result.value.startLine}-${result.value.endLine}`] : [],
+  );
+  return [
+    `[Run status] model call ${request.usage.modelCallsUsed + 1} of ${request.limits.maxModelCalls}`,
+    `file reads used ${request.usage.fileReadsUsed} of ${request.limits.maxFileReads}`,
+    `ranges read: ${ranges.length === 0 ? 'none' : ranges.join(', ')}`,
+  ].join(' | ');
+}
+
 export class MinimalContextEngine implements ContextReader {
-  public constructor(private readonly definitions: ContextDefinitions) {}
+  public constructor(
+    private readonly definitions: ContextDefinitions,
+    private readonly options: ContextEngineOptions = {},
+  ) {}
 
   /**
    * Builds an append-only conversation: system prompt, one fixed task message, then each
@@ -89,6 +113,9 @@ export class MinimalContextEngine implements ContextReader {
       }
       if (turn.notice !== undefined) messages.push({ role: 'user', content: turn.notice });
     }
+
+    const statusBar = this.options.statusBar === true ? formatStatusBar(request) : undefined;
+    if (statusBar !== undefined) messages.push({ role: 'user', content: statusBar });
 
     const finishTool = agent.value.finishToolName;
     if (request.finalCall) {

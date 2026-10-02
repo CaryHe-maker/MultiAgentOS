@@ -1,5 +1,5 @@
 import { AgentToolPool } from './agent-tool-pool.js';
-import { MinimalContextEngine } from './context-engine.js';
+import { MinimalContextEngine, type ContextEngineOptions } from './context-engine.js';
 import { FileReadExecutor } from './executors/file-read-executor.js';
 import { ModelExecutor } from './executors/model-executor.js';
 import { MinimalKernel, type KernelOptions } from './kernel.js';
@@ -16,7 +16,7 @@ export interface ExperimentRuntime {
   readonly fileReadExecutor: FileReadExecutor;
 }
 
-export type ExperimentRuntimeOptions = ModelExecutorOptions & KernelOptions;
+export type ExperimentRuntimeOptions = ModelExecutorOptions & KernelOptions & ContextEngineOptions;
 
 export class ExperimentRunError extends Error {
   public readonly code: string;
@@ -32,7 +32,7 @@ export class ExperimentRunError extends Error {
 
 export function createExperimentRuntime(options: ExperimentRuntimeOptions = {}): ExperimentRuntime {
   const agentToolPool = new AgentToolPool();
-  const contextEngine = new MinimalContextEngine(agentToolPool);
+  const contextEngine = new MinimalContextEngine(agentToolPool, options);
   const modelExecutor = new ModelExecutor(options);
   const workflow = new MinimalWorkflow(agentToolPool);
   const fileReadExecutor = new FileReadExecutor();

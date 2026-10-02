@@ -196,6 +196,13 @@ export interface ContextRequest {
   readonly limits: ContextLimits;
   /** True when this context is for the Agent's last allowed model call. */
   readonly finalCall: boolean;
+  /** Counters for the optional per-call status bar (experiment C7). */
+  readonly usage?: ContextUsage;
+}
+
+export interface ContextUsage {
+  readonly modelCallsUsed: number;
+  readonly fileReadsUsed: number;
 }
 
 export interface ContextPack {
