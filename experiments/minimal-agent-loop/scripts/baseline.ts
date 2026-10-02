@@ -5,6 +5,7 @@
 // Usage (from repo root, DEEPSEEK_API_KEY in env):
 //   pnpm exec tsx experiments/minimal-agent-loop/scripts/baseline.ts [repeats] [label] [caseId]
 // c-review answers are graded against evals/c-review-answer-key.json (see grade.ts).
+// MINIMAL_AGENT_LOOP_STATUS_BAR=1 turns on the per-call status bar (experiment C7).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -48,6 +49,7 @@ interface CallRecord {
 
 interface RunRecord {
   readonly caseId: string;
+  readonly statusBar: boolean;
   readonly repeat: number;
   readonly ok: boolean;
   readonly errorCode?: string;
@@ -103,6 +105,7 @@ function toCallRecord(httpStatus: number, latencyMs: number, body: string): Call
 }
 
 const answerKey = loadAnswerKey();
+const statusBar = process.env.MINIMAL_AGENT_LOOP_STATUS_BAR === '1';
 
 async function runOnce(caseId: string, request: UserRequest, repeat: number): Promise<RunRecord> {
   const calls: CallRecord[] = [];
@@ -115,7 +118,9 @@ async function runOnce(caseId: string, request: UserRequest, repeat: number): Pr
   };
 
   const started = performance.now();
-  const result = await createExperimentRuntime({ fetch: recordingFetch }).kernel.run(request);
+  const result = await createExperimentRuntime({ fetch: recordingFetch, statusBar }).kernel.run(
+    request,
+  );
   const wallMs = Math.round(performance.now() - started);
 
   const cacheHit = calls.reduce((sum, call) => sum + call.cacheHit, 0);
@@ -130,6 +135,7 @@ async function runOnce(caseId: string, request: UserRequest, repeat: number): Pr
 
   return {
     caseId,
+    statusBar,
     repeat,
     ok: result.ok,
     ...(result.ok
@@ -178,6 +184,7 @@ function summarize(caseId: string, runs: readonly RunRecord[]): string {
 async function main(): Promise<void> {
   const repeats = Number(process.argv[2] ?? '3');
   const label = process.argv[3] ?? 'baseline';
+  console.log(`status bar: ${statusBar ? 'on' : 'off'}`);
   const onlyCase = process.argv[4];
   const records: RunRecord[] = [];
   const cases = CASES.filter(({ id }) => onlyCase === undefined || id === onlyCase);

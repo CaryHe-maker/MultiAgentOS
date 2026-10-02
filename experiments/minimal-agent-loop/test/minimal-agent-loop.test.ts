@@ -667,6 +667,59 @@ describe('minimal full loop', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'HANDOFF_NOT_ALLOWED' } });
   });
 
+  it('adds no status bar unless it is turned on', async () => {
+    const root = await makeRepository();
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([['file_read', { path: 'src/parser.c', startLine: 1, endLine: 4 }]]),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    await runReview(root, fetchMock);
+    for (const [, init] of fetchMock.mock.calls) {
+      const text = JSON.stringify(requestMessages(init));
+      expect(text).not.toContain('[Run status]');
+    }
+  });
+
+  it('ends each context with a status bar that is never kept in history', async () => {
+    const root = await makeRepository();
+    const responses = [
+      toolCallResponse([['handoff', HANDOFF_ARGS]]),
+      toolCallResponse([['file_read', { path: 'src/parser.c', startLine: 1, endLine: 4 }]]),
+      toolCallResponse([['submit_review', VALID_REVIEW]]),
+    ];
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(responses.shift() ?? textResponse('')),
+    );
+    const result = await createExperimentRuntime({
+      apiKey: 'test-key',
+      fetch: fetchMock,
+      retryDelayMs: 0,
+      statusBar: true,
+    }).kernel.run({
+      prompt: '审查这个 C 仓库',
+      repository: { rootPath: root, revision: 'fixture-v1' },
+    });
+    expect(result).toEqual({ ok: true, value: { answer: VALID_REVIEW.answer } });
+
+    const first = requestMessages(fetchMock.mock.calls[1]?.[1]);
+    const second = requestMessages(fetchMock.mock.calls[2]?.[1]);
+    expect(first.at(-1)).toEqual({
+      role: 'user',
+      content: '[Run status] model call 1 of 12 | file reads used 0 of 16 | ranges read: none',
+    });
+    expect(second.at(-1)?.content).toBe(
+      '[Run status] model call 2 of 12 | file reads used 1 of 16 | ranges read: src/parser.c:1-4',
+    );
+    // Without its trailing status bar, the first request is an exact prefix of the second.
+    const firstHistory = first.slice(0, -1);
+    expect(second.slice(0, firstHistory.length)).toEqual(firstHistory);
+    expect(JSON.stringify(second.slice(0, -1))).not.toContain('[Run status]');
+  });
+
   it('routes every Context build through Kernel', async () => {
     const pool = new AgentToolPool();
     const workflow = new MinimalWorkflow(pool);
