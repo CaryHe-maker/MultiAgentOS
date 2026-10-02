@@ -1,5 +1,9 @@
 # MultiAgentOS M1 技术栈
 
+> 架构衔接说明（2026-09-30）：本文保留既有 M1 范围、接口或进度基线。
+> 长期设计已调整为独立 Execution、Kernel 租约与五组件体系，目标平台为 Ubuntu LTS。
+> 本轮不设计 M1 详细方案，不表示代码已迁移；具体差异见 [M1 指南](README.md)。
+
 ## 1. 目的与权威
 
 本文定义 M1 允许使用的运行环境、第三方技术、基础设施实现和工程工具。M1 只采用完成只读 Repository Analysis Agent 所需的最小技术集合；完整系统技术栈见 [Architecture TechStack](../Architecture/TechStack.md)。

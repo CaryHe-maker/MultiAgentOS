@@ -22,7 +22,7 @@ Shared Contracts 提供跨边界数据的 Schema、类型、规范化编码、�
 
 ## 4. Protocol Registry
 
-Registry 记录 schemaName、major/minor、owner、capability、handler 和状态。它必须拒绝重复注册、未知 major、Owner 缺失和 capability 与 handler 不一致。未实现协议注册为 `UNSUPPORTED`，调用后返回结构化错误且不产生副作用。
+Registry 记录 schemaName、major/minor、owner、capability、handler 和状态。技术注册由 ModuleHost 装配，AgentOS 控制服务分派规则归 Core；Registry 不产生授权。它必须拒绝重复注册、未知 major、Owner 缺失和 capability 与 handler 不一致。未实现协议注册为 `UNSUPPORTED`，调用后返回结构化错误且不产生副作用。
 
 ## 5. Agent、Unit、Tool 与 Executor 通用协议
 
@@ -31,17 +31,29 @@ Shared Contracts 只规定以下对象的结构、引用关系和不变量；具
 | 协议 | 核心语义 | 不包含 |
 |---|---|---|
 | `AgentDefinitionVersion` | Agent 的不可变角色、行为约束、输入输出 Contract、允许的 `UnitDefinitionVersionRef` 集合及组合约束 | AgentRun 状态、动态预算、授权结论 |
-| `UnitDefinitionVersion` | 单个可准入动作的不可变输入输出 Contract、所需 capability、允许的 Tool 引用、效果类型、幂等与资源约束 | UnitIntent、UnitAttempt、运行时 Executor |
-| `ToolDefinitionVersion` | 工具操作的参数/结果 Schema、风险、副作用、幂等、补偿及供应链信息 | 工具调用、凭据、授权结论 |
+| `UnitDefinitionVersion` | 一个 Tool 粒度操作的输入输出 Contract、Tool 引用、效果和执行约束 | UnitIntent、UnitAttempt、运行时 Executor |
+| `ToolDefinitionVersion` | 参数/结果、权限需求、Executor 执行序列、风险、副作用、幂等、补偿及供应链信息 | 调用实例、凭据、授权结论 |
 | `ExecutorDefinitionVersion` | 执行器类别可提供的 capability、支持的 Unit/Tool Contract、环境与资源约束 | endpoint、进程、会话、Lease、健康状态 |
 | `AgentRun` | Workflow 创建并持久化的一次 Agent 执行，固定 Agent 定义及允许的 Unit 定义集合 | 定义内容、物理执行状态 |
 | `UnitIntent` | Workflow 创建的不可变执行需求，引用 AgentRun 与一个已固定的 Unit 定义版本 | executorId、明文 Secret、物理调度结论 |
-| `UnitAttempt` | Kernel 为一次准入与调度创建的运行尝试，绑定选定 Executor 定义、运行时 Executor、Permit、Lease 与 fencing | 业务验收结论 |
-| `UnitResult` | Executor 产生、Kernel 校验的结构化执行事实 | Task 或 Workflow 完成结论 |
+| `UnitAttempt` | Execution 根据获准请求创建的运行尝试，关联 Tool 版本、步骤实例、调度、Permit、Lease 与 fencing | 权限裁决与业务验收结论 |
+| `UnitResult` | Execution 提交、Kernel 确认接收的结构化执行事实；候选与接受状态必须区分 | Task 或 Workflow 完成结论 |
+| `Lease` | Core 维护的使用资格，可由调用者持有凭证或引用 | Workflow 自行改变的授权、业务完成状态 |
+| 控制操作 | Core 分派器管理的调用、中断或异常处理关联 | 消息送达即代表物理生效 |
 
-所有 DefinitionVersionRef 必须携带稳定 ID、版本和内容 digest。`AgentDefinitionVersion.allowedUnitRefs` 是 Agent 可请求 Unit 的封闭集合；`UnitDefinitionVersion.toolRefs` 是该 Unit 可调用 Tool 的封闭集合。引用未知、未固定、已撤销或 digest 不匹配的定义必须拒绝。
+所有 DefinitionVersionRef 必须携带稳定 ID、版本和内容 digest。`AgentDefinitionVersion.allowedUnitRefs` 是 Agent 可请求 Unit 的封闭集合；现有 `UnitDefinitionVersion.toolRefs` 表达封闭 Tool 集合；一个 Unit 对应一个 Tool 及其 Executor 序列的目标关系必须通过显式版本迁移衔接，不能原地改变旧字段含义。见 [架构指南](../README.md#6-文档衔接清单)。引用未知、未固定、已撤销或 digest 不匹配的定义必须拒绝。
 
-Tool 不具有独立的运行入口。任何 Tool 调用必须位于一个 UnitIntent 对应的 UnitAttempt 内，并同时通过 Agent→Unit 成员关系、Unit→Tool 成员关系和 Kernel 准入校验。
+Tool 不具有独立的运行入口。任何 Tool 调用必须位于一个 UnitIntent 对应的 UnitAttempt 内，并通过 Agent→Unit、Unit→Tool 及固定执行序列的合法关系校验与 Kernel 准入。有效租约可免除重复 Core 裁决，不免除 Gateway 检查和资源准入。
+
+### 5.1 状态与资格的分离
+
+静态 Executor 定义、步骤实例和 OS Process 不等同；一个 Attempt 可含多个执行实例。
+Executor 的原子性仅为组合粒度，其效果、取消和重试条件应在定义中表达。
+Core 的授权与结果接收、Execution 的实际进度、Monitor 的消费、Supervisor 的进程事实、
+Workflow 的业务验收分别有 Owner，公共包不能用一个共享可写 status 混合表达。
+
+租约完整性、持有者身份和当前有效性是不同校验。永久 Lease 仍受撤销和版本约束；
+本次执行凭证与 fencing 不能因持有长期 Lease 被省略。
 
 ## 6. 公共值
 

@@ -1,42 +1,47 @@
 # MultiAgentOS M1 指南
 
-## 1. 目的
+## 1. 目的与范围
 
-本目录定义唯一已确定交付范围 M1，包括目标、任务、实时进度和必须实现的跨模块协议。长期架构位于 `docs/Architecture/`；本目录只选择其中需要在 M1 落地和验收的子集，不重新定义模块所有权。
+本目录定义 M1 的交付目标、技术选择、跨模块接口、任务进度和验收要求。
+M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读仓库分析，
+输出包含 repository revision、路径、行范围和 provenance 的结构化报告。
 
-除 M1 外，不定义其他里程碑的范围、排期、接口或完成承诺。超出 M1 的能力只记录为非目标，必须在 M1 验收完成后依据实测结果另行评审。
+长期概念、模块职责与安全边界见 [Architecture 指南](../Architecture/README.md)。
+本目录说明这些能力在 M1 中的具体交付范围，不将长期架构中的全部能力视为 M1 要求。
+其他 MVP 的范围与排期单独评审。
 
 ## 2. 阅读顺序
 
 1. [M1Plan](M1Plan.md)：目标、范围、分工、任务、固定任务集和完成定义。
-2. [M1TechStack](M1TechStack.md)：M1 使用、允许和明确排除的技术。
-3. [M1Interface](M1Interface.md)：M1 必须实现的 Port、Schema、Envelope 和错误协议。
-4. [M1Process](M1Process.md)：三位开发者并行维护的实时状态与验证证据。
+2. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
+3. [M1Interface](M1Interface.md)：公开 Port、Schema、消息与错误协议。
+4. [M1Process](M1Process.md)：任务状态、实现差距与验证证据。
 
 模块的 M1 实现说明放在 `docs/M1/<module>/` 下，例如 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
 
-理解系统边界时先阅读 [Architecture 指南](../Architecture/README.md)；依赖版本见 [Dependencies](../Requirements/Dependencies.md)；代码、Git 和 PR 规则见 [Style](../Style.md)。
+依赖版本见 [Dependencies](../Requirements/Dependencies.md)，
+代码、文档、Git 和评审规范见 [Style](../Style.md)。
 
 ## 3. 文档职责
 
-| 文档 | 可以改变 | 不得改变 |
+| 文档 | 负责内容 | 边界 |
 |---|---|---|
-| M1Plan | M1 范围、任务、验收和降级策略 | 长期模块所有权和调用方向 |
-| M1TechStack | M1 技术、版本用途和引入限制 | 完整系统技术选择或未声明依赖 |
-| M1Interface | M1 实际承诺的具体协议 | 未经范围评审引入长期完整协议 |
-| M1Process | 状态、日期、证据、PR 和阻塞原因 | 范围、接口或完成定义 |
+| M1Plan | 交付范围、任务、验收和降级策略 | 不重新定义长期模块所有权 |
+| M1TechStack | M1 使用的技术、版本用途和引入限制 | 不替代依赖 manifest |
+| M1Interface | M1 具体接口与兼容约定 | 不因长期设计存在某能力就自动纳入交付 |
+| M1Process | 状态、日期、证据、PR 和阻塞原因 | 不改变范围、接口或完成定义 |
 
-## 4. 权威规则
+## 4. 权威关系
 
-1. 架构所有权和长期不变量以 `docs/Architecture/` 为准。
-2. M1 范围与完成定义以 `M1Plan.md` 为准。
-3. M1 协议目标以 `M1Interface.md` 为准；已实现 Schema 以 `packages/contracts/src` 为可执行事实源。
-4. 目标与实现存在差距时，在 `M1Process.md` 标记，不得把未实现内容描述为完成。
-5. 进度证据必须链接自动化测试、Artifact、报告或 PR。
+- 长期模块边界和安全约束由 Architecture 定义。
+- M1 的范围和完成条件以 M1Plan 为准。
+- M1Interface 定义交付接口要求，代码中的 Schema 是已实现协议的可执行事实源。
+- 目标与实现的差距在 M1Process 中记录，完成状态应有测试、报告或 PR 证据。
+- 跨文档契约差异集中见 [架构衔接清单](../Architecture/README.md#6-文档衔接清单)。
 
-## 5. 更新要求
+## 5. 维护要求
 
-- 范围变化：先修改 M1Plan，再更新 Interface、Process、README 和测试。
-- 协议变化：同步 Schema、兼容说明、Producer/Consumer fixture 和 contract test。
-- 任务完成：在同一 PR 更新负责人的进度行、日期和证据。
-- 架构变化：先更新 Architecture，再评估 M1 范围和接口影响。
+- 范围变化同步检查计划、接口、任务和验收条件。
+- 协议变化同步更新 Schema、兼容说明及生产者与消费者的契约测试。
+- 任务完成时更新对应进度、日期和验证证据。
+- 架构调整应评估 M1 的范围与接口影响，不以文档描述代替实现验证。

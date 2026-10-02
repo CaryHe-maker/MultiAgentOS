@@ -2,6 +2,8 @@
 
 > 清单日期：2026-09-28。版本事实源为各 `package.json`；完整解析结果以 `pnpm-lock.yaml` 为准。
 
+目标运行平台已确定为 Ubuntu LTS，具体版本和系统能力由 MVP 明确。
+
 ## 1. 运行环境
 
 | Item | Version / constraint |
@@ -41,7 +43,10 @@
 | `packages/kernel` | `dotenv` | `18.0.1` | 本地配置加载 |
 | `apps/cli` | `commander` | `15.0.0` | CLI 参数解析 |
 
-其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。Provider SDK 只能由 Kernel 适配层导入；公共协议只使用 TypeBox/Ajv。
+其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。
+当前 Provider SDK 仍声明在 Kernel package；长期模型网关归 Execution，API 池归 Kernel。
+实际包迁移需在 M1 详细设计后同步 manifest、依赖边界和测试，本轮不改动代码或依赖。
+公共协议不携带 Provider SDK 类型。
 
 ## 4. Workspace
 

@@ -1,5 +1,9 @@
 # MultiAgentOS M1 接口与跨模块协议
 
+> 架构衔接说明（2026-09-30）：本文保留既有 M1 范围、接口或进度基线。
+> 长期设计已调整为独立 Execution、Kernel 租约与五组件体系，目标平台为 Ubuntu LTS。
+> 本轮不设计 M1 详细方案，不表示代码已迁移；具体差异见 [M1 指南](README.md)。
+
 ## 1. 规范约定
 
 关键词“必须”“不得”“应”具有规范性。运行时实现位于 `packages/contracts/src`；其中 ContextRequest、ContextPack 与 ContextPort 尚未完成的变更以本文和 [ContextEngine.md](../Architecture/module/ContextEngine.md) 为目标，差距记录在 [M1Process.md](M1Process.md) 的 C-05。

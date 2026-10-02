@@ -35,7 +35,12 @@ Adapter -> UserInteraction -> UserIntent -> KernelControlPort
 Kernel -> RuntimeProjection / ReviewProjection -> UserInteraction -> Adapter
 ```
 
-所有改变运行状态的意图必须携带 IdentityContext、目标对象、expectedVersion、idempotencyKey 和 reason。UserInteraction 只表达意图；Kernel 完成认证、授权、策略、状态和版本准入后，才能转发给状态 Owner。
+所有改变运行状态的意图经 Gateway 提交，并说明身份、目标、请求关联和适用版本。
+请求沿用 IdentityContext、目标对象、expectedVersion、idempotencyKey 和 reason 的语义约定；
+身份必须来自可信上下文，重复请求或版本冲突不能通过 UI 重发产生隐式覆盖。
+有效租约可以避免重复进入 Core 裁决，但不允许直接修改目标状态。
+AgentOS 调用的接受、由其产生的中断送达及实际生效必须分别展示。
+具体字段由各 MVP 的版本化接口确定，不得原地改变既有字段含义。
 
 ## 5. Session 与恢复交互
 
@@ -60,7 +65,14 @@ UserInteraction 展示 Kernel 发布的脱敏 ReviewProjection，并提交用户
 
 ## 7. 投影与一致性
 
-用户可见运行状态必须来自 Kernel 拥有的 RuntimeProjection。投影至少带 `sourceVersion`、更新时间和来源身份；客户端按版本单调应用，忽略重复或倒退更新。UserInteraction 不得轮询 Executor、读取进程内存或直读其他 Module 数据库拼接“真实状态”。
+用户可见运行状态来自 Kernel 汇总的受控视图，各底层事实仍由其 Owner 维护。
+RuntimeProjection 保留 sourceVersion、更新时间和来源身份，以支持客户端单调应用与断线重建。
+投影带来源和版本，客户端不能用旧更新覆盖当前状态，也不能直读其他模块内部存储。
+
+执行进度和模型输出可以通过专用逻辑流通道展示，由 Execution 或模型网关生产。
+订阅需限定运行和数据范围，暂态片段不能当作 Kernel 已接受结果或 Workflow 已验收成功。
+只展示供应商实际提供且允许展示的推理相关内容或摘要，不假定可取得内部推理。
+断线、慢消费者和重连策略由 MVP 明确，UI 断线不能改变执行事实。
 
 ## 8. 安全与隐私
 

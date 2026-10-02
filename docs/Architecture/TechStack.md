@@ -6,6 +6,10 @@
 
 本文不表示仓库已经安装全部组件。已声明依赖及精确版本见 `docs/Requirements/Dependencies.md`；交付范围的技术限制由总文档索引指向的交付技术栈规定。
 
+目标运行平台为 **Ubuntu LTS**。具体发行版本、隔离能力、打包与 IPC 参数由各 MVP 验证。
+下表保留完整系统技术基线；交付可以暂不引入尚不需要的组件，但不能将“暂不使用”解释为选型已撤销。
+技术替换仍按第 16 节评审，不以概念文档精简代替架构决定。
+
 ## 2. 完整技术组合
 
 | 能力 | 规范选择 | 替换边界 |
@@ -17,10 +21,10 @@
 | Database / Query | PostgreSQL、Kysely | Persistence Port |
 | Reliable messaging | NATS JetStream、Outbox/Inbox | Communication Port |
 | Artifact | S3-compatible Store、本地 CAS | ArtifactStorePort |
-| Model | Vercel AI SDK、Provider Adapter、可选 LiteLLM Gateway | Model Execution Port |
+| Model | Vercel AI SDK、Provider Adapter、可选 LiteLLM Gateway | Execution 内模型网关 / Model Execution Port |
 | Tool | MCP TypeScript SDK、OpenAPI Tool Adapter | Tool Execution Port |
 | Retrieval | ripgrep、tree-sitter、SCIP、pgvector、Embedding/Rerank Adapter | Context Port |
-| Workspace / Isolation | Git worktree、rootless Docker/Podman | Execution/Sandbox Port |
+| Workspace / Isolation | Git worktree、rootless Docker/Podman | Execution Workspace / Supervisor Sandbox Port |
 | Identity / Policy | OIDC、RBAC/ABAC、PostgreSQL RLS、Policy Adapter | Kernel Control boundary |
 | Secret | Secret Manager Adapter、短期 materialization | SecretRef boundary |
 | Observability | OpenTelemetry、Prometheus、Grafana、结构化日志 | Telemetry Adapter |
@@ -43,7 +47,7 @@
 
 - CLI 使用 Commander，只适配 UserInteraction。
 - HTTP Adapter 使用 Fastify，并由 OpenAPI 描述公开接口。
-- 实时投影使用 SSE；双向交互仅在明确需要时采用 WebSocket。
+- 实时投影使用 SSE；双向交互仅在明确需要时采用 WebSocket。Executor 输出使用受控逻辑流通道，区分暂态片段与 Kernel 确认状态，订阅范围和慢消费者处理不能省略。
 - Web UI 使用 React，但不得直接访问领域数据库或 Executor。
 - 所有入口复用 UserIntent、KernelControlPort 和 RuntimeProjection。
 
@@ -64,11 +68,11 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 ## 7. 模型与工具
 
-- Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 Kernel/Execution 边界。需要集中路由、配额或多 Provider 治理时使用 LiteLLM Gateway，但不改变 Model Port。
+- Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 Execution 的模型网关内。Kernel 的 Gateway 是权限入口，与模型网关不同。需要多 Provider 协议适配或代理时可使用 LiteLLM Gateway，但不改变 Model Port。AgentOS 的 API 池、调用机会分配及配额权威仍归 Kernel Scheduler/Monitor，外部网关不得成为第二套授权或预算事实源。
 - OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定 DefinitionVersion。
-- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。Tool 必须封装在 UnitDefinitionVersion 中，所有调用由 Workflow 创建 UnitIntent，并经 Kernel 校验成员关系与准入。
+- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。业务操作按一个 Tool 粒度封装为 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格。Execution 推进 Tool 内固定 Executor 序列，MCP server 的能力声明不能扩大租约范围。
 - OpenAPI 工具通过版本化定义生成参数 Schema；禁止动态执行未审查描述。
-- Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；运行时 Executor 健康度与负载由 Kernel 管理。
+- Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；运行时 Executor 健康度与负载由 Kernel Supervisor/Monitor 提供，Execution 维护 Attempt 和步骤进度。当前 SDK 所在 package 与目标模块不一致时，应显式迁移依赖与测试，不能让 Workflow 直接导入 Provider SDK。
 
 ## 8. 数据与迁移
 
@@ -83,7 +87,7 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 ## 10. Communication
 
-同进程 Router 用于进程内调用；NATS JetStream 承担独立进程间的背压和可靠消费。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
+Communication Fabric 由 Kernel 管辖，技术实现保留独立 Port。同进程 Router 用于进程内调用；NATS JetStream 承担需要可靠消息能力的独立进程间背压和消费。本地 IPC 可以承载不需要消息集群的部署，不能将此选择解释为取消可靠交付语义。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
 
 ## 11. Context 与检索
 
@@ -100,7 +104,7 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 ## 12. Workspace 与 Sandbox
 
-Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程隔离。gVisor 或 microVM 仅作为高风险执行的强化替换方案。Sandbox 必须支持文件系统、网络、CPU、内存、磁盘、进程数、deadline、输出和 Secret 策略。
+Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程隔离。gVisor 或 microVM 仅作为高风险执行的强化替换方案。Sandbox 必须支持文件系统、网络、CPU、内存、磁盘、进程数、deadline、输出和 Secret 策略。Supervisor 管理执行域生命周期和硬限制，Execution 在其中推进步骤。Ubuntu LTS 上必须验证继承资源、旁路和进程树回收，容器名称本身不是安全证明。
 
 ## 13. 身份、策略与 Secret
 
@@ -109,9 +113,12 @@ Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程�
 - Secret Manager 通过短期 SecretRef/materialization 提供凭据；不把值写入协议或数据库正文。
 - 本地模式可以使用受限配置 Adapter，但必须保持相同 SecretRef 和脱敏语义。
 
+租约凭证完整性、持有者绑定和撤销传播必须一并实现，OIDC 身份或签名不能独自证明当前执行获准。
+长期或永久 Lease 不免除本次执行范围、预算和 fencing 检查，具体算法与有效期策略由 MVP 明确。
+
 ## 14. 可观测性
 
-OpenTelemetry 统一 trace、metric 和 log correlation；Collector 将数据发送到选定后端。Prometheus/Grafana 可用于指标和告警，结构化日志进入受控日志系统。Telemetry 不成为业务事实源，也不记录完整 Prompt、源码、工具输出或 Secret。
+OpenTelemetry 统一 trace、metric 和 log correlation；Collector 将数据发送到选定后端。Prometheus/Grafana 可用于指标和告警，结构化日志进入受控日志系统。Telemetry 不成为业务事实源，也不记录完整 Prompt、源码、工具输出或 Secret。Monitor 内的预算预留与结算账本使用权威存储，不依赖可丢失指标。Scheduler 根据容量安排机会，反馈调节不能突破硬额度。
 
 ## 15. 测试与供应链
 

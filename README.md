@@ -1,19 +1,20 @@
-# MultiAgentOS M1
+# MultiAgentOS
 
-MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统。它将用户交互、业务图、执行准入、上下文构建、能力目录与基础设施分离，使模型和工具行为处于可验证、可恢复、可审计的运行闭环中。
+MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS。
+长期文档定义概念、职责与安全边界，各 MVP 再明确实现和验收。
 
 ## 架构
 
 ```text
 Web / CLI / IDE
        |
-UserInteraction -> Kernel Control -> Workflow
-                                   -> AgentToolPool
-Workflow -> UnitIntent -> Kernel Unit Admission
-                              |-> ContextEngine
-                              |-> Model / Tool
-                              +-> Workspace / Sandbox / Git Execution
-UnitResult / Event -> Workflow -> Kernel RuntimeProjection -> UserInteraction
+UserInteraction -> Kernel Gateway -> Workflow
+Workflow -> UnitIntent -> Gateway -> 有效租约 / Core 授权
+Kernel: Core · Scheduler · Monitor · Supervisor
+Execution: UnitAttempt -> Tool -> Executor 序列 -> Processes
+执行事实 -> Kernel 确认 -> Workflow 验收 -> 用户视图
+
+AgentToolPool: 静态定义    ContextEngine: 上下文与检索
 
 Module Host · Shared Contracts · Persistence
 Communication Fabric · Artifact Store
@@ -22,7 +23,9 @@ Communication Fabric · Artifact Store
 系统遵守以下核心约束：
 
 - 每类领域状态只有一个写入 Owner。
-- Workflow 决定业务推进与验收，Kernel 负责控制和执行准入。
+- Workflow 决定业务推进与验收，Kernel 负责授权、调度、资源和监管，Execution 维护实际执行过程。
+- Lease 的权威记录归 Core；有效租约避免重复鉴权，但不绕过执行记录、额度和结果确认。
+- AgentOS 调用、中断信号、故障异常由 Core 内的控制分派职责管理。
 - 模型只提出动作，不能绕过 Kernel 直接执行工具。
 - Executor 返回物理执行事实，不判断 Task 或 Workflow 是否成功。
 - ContextEngine 在 MissionScope、ACL、revision 和 token 预算内发布不可变 ContextPack。
@@ -30,6 +33,7 @@ Communication Fabric · Artifact Store
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
 完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。
+尚待协同的架构差异集中列于该指南；文档更新不表示代码已完成迁移。
 
 ## 当前交付范围
 
@@ -50,7 +54,7 @@ CLI 入口和完整 Agent 循环仍在实现中，不应将架构文档中的长
 apps/
   cli/                  UserInteraction 的 CLI Adapter
   control-plane/        唯一组合根
-  executor/             Kernel 管辖的执行 Adapter
+  executor/             当前执行 Adapter；独立 Execution 的代码迁移待详细设计
 packages/
   contracts/            Shared Contracts
   user-interaction/     交互领域
@@ -64,7 +68,7 @@ packages/
   artifacts/            Artifact Store
   testing/              Fakes、Contract tests 和 fixtures
 docs/
-  Architecture/         完整长期架构
+  Architecture/         长期概念与架构
   M1/                   当前交付范围、接口与进度
   Requirements/         当前依赖
   Meetings/             原始会议记录
@@ -72,6 +76,8 @@ docs/
 ```
 
 ## 开发环境
+
+以下是仓库现有工程环境，不代表已经完成 Ubuntu LTS 部署验证。
 
 - Node.js `24.19.0`，允许 `>=24.19.0 <25`
 - pnpm `11.25.0`
@@ -82,6 +88,8 @@ pnpm.cmd install --frozen-lockfile
 pnpm.cmd run build
 pnpm.cmd run check
 ```
+
+Ubuntu 使用对应的 `pnpm` 命令；具体 LTS 版本与系统依赖由交付设计确认。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 

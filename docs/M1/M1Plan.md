@@ -1,5 +1,9 @@
 # MultiAgentOS M1 计划
 
+> 架构衔接说明（2026-09-30）：本文保留既有 M1 范围、接口或进度基线。
+> 长期设计已调整为独立 Execution、Kernel 租约与五组件体系，目标平台为 Ubuntu LTS。
+> 本轮不设计 M1 详细方案，不表示代码已迁移；具体差异见 [M1 指南](README.md)。
+
 ## 1. 目标与范围权威
 
 M1 交付一个本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读 Repository Analysis Agent。用户提交仓库分析问题后，系统通过受控的 tree/search/read 路径生成带 repository revision、路径、行范围和 provenance 的结构化报告。
