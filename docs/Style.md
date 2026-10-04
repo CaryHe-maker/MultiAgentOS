@@ -20,7 +20,8 @@
 | 布尔值 | `is/has/can/should` 前缀 | `isRetryable` |
 | TypeScript 源文件 | 小写 `kebab-case`；入口文件使用生态约定 | `protocol-registry.ts`、`index.ts` |
 | 测试文件 | 与被测文件同名并加 `.test.ts` | `context-engine.test.ts` |
-| 文档文件 | 文件主名使用 `PascalCase`；扩展名保持原样 | `Style.md`、`M1TechStack.md`、`Readme.md` |
+| 文档文件 | 文件主名使用 `PascalCase`；扩展名保持原样；会议记录例外 | `Style.md`、`M1TechStack.md`、`Readme.md` |
+| 会议记录文件 | `YYYY-MM-DD-<kebab-case 会议主题>.md` | `2026-09-27-kernel-and-collaboration-meeting.md` |
 | 文档文件夹 | `PascalCase`；按概念组合单词 | `Architecture`、`AgentToolPool` |
 | 代码文件夹 | 小写 `kebab-case` | `agent-tool-pool`、`context-engine` |
 | npm package | `@multiagentos/<kebab-case>` | `@multiagentos/agent-tool-pool` |
@@ -31,7 +32,9 @@
 
 - 所有文档文件的主名使用 PascalCase，即每个概念单词首字母大写且不使用分隔符。
   版本标识保持原样，如 `M1TechStack.md`；普通单词及缩写按概念组合，如 `ApiGuide.md`。
-- 说明文档和会议记录也遵守该规则，如 `Readme.md`、`Meeting20260927.md`，不另设命名例外。
+- 说明文档也遵守该规则，如 `Readme.md`。
+- 会议记录是唯一例外，使用 `YYYY-MM-DD-<meeting-title>.md`，会议主题使用小写 kebab-case，
+  如 `2026-09-27-kernel-and-collaboration-meeting.md`，便于按日期排序并直接识别会议内容。
 - 文档目录使用 PascalCase；仓库文档入口 `docs` 保留固定名称。
 - `package.json`、`tsconfig.json` 等非文档工具配置文件遵循工具要求的固定名称。
 - 源码目录和 package 目录使用小写 kebab-case，不使用空格、下划线或大小写混合形式。
@@ -48,7 +51,13 @@
 
 ### 2.3 格式与文件
 
-- 文本文件使用 UTF-8（无 BOM）和 LF 换行，文件末尾保留一个换行，不得包含行尾空格。
+- 文本文件使用 UTF-8（无 BOM）和 LF 换行，文件末尾保留一个换行，不得包含行尾空格；二进制文件除外。
+- 标识符遵循语言规范，项目约定仅使用 ASCII 字母、数字和下划线，不使用非 ASCII 标识符，
+  以保证跨编译器、编辑器、终端和 CI 的兼容性，并避免 Unicode 规范化、同形字和搜索困难等问题。
+- 注释和字符串可以包含 Unicode，但编译器或解释器、编辑器、终端和 CI 全链路必须统一使用 UTF-8。
+- 极旧工具链或特殊模块要求 ASCII-only 时，字符串与字符字面量中的非 ASCII 字符使用语言支持的转义形式；
+  注释也应保持 ASCII，因为注释中的转义不一定被支持，且部分语言会提前处理 Unicode 转义。
+- 项目配置 CI 后，应由 CI 自动检查文件编码和 BOM。
 - TypeScript 代码使用 2 空格缩进、单引号、分号和尾随逗号，每行最多 100 字符。
 - Markdown 正文每行最多 100 字符，可在语义边界换行；表格、链接及不可拆分的代码标识允许超出。
 - JSON、YAML 等配置文件遵循各自语法，不套用 TypeScript 的引号、分号和尾随逗号规则。
@@ -61,7 +70,9 @@
 - 修复缺陷必须先增加可复现测试。
 - 测试应覆盖变更涉及的正常行为、错误行为和边界条件；具体场景由对应设计与验收要求确定。
 - 测试必须可重复执行；存在外部依赖或非确定性因素时，必须记录运行条件及验证方式。
-- 提交前运行 `pnpm run check` 和 `git diff --check`；Windows 可以使用 `pnpm.cmd run check`。
+- 提交前运行 `pnpm run check` 和 `git diff --check`。
+- 目标运行平台为 Ubuntu LTS；M1 正式开发时，项目成员应尽量统一使用 Ubuntu LTS 开发环境，
+  Windows 成员使用 WSL2 中的 Ubuntu LTS。临时在原生 Windows 中运行时可以使用 `pnpm.cmd run check`。
 
 ## 3. 文档规范
 
@@ -240,7 +251,7 @@ PR 必须说明目标与范围、主要变更、验证方式与结果、风险�
 - 所有必需 CI 检查通过；
 - 至少一名非 PR 创建者批准，普通 PR 与发布 PR 均适用；
 - 无未解决 review thread；
-- `pnpm run check` 与 `git diff --check` 通过；Windows 可以使用 `pnpm.cmd run check`；
+- `pnpm run check` 与 `git diff --check` 通过，检查环境要求见第 2.4 节；
 - 有对应进度任务时，在同一 PR 更新该任务的进度记录和验证证据；没有对应任务时说明不适用；
 - 不包含密钥、生成物、无关格式化或未声明依赖。
 
