@@ -1,46 +1,51 @@
-# MultiAgentOS Artifact Store
+# ArtifactStore
 
-## 1. 职责
+## 1. 定位与管辖
 
-Artifact Store 保存不可变大对象，提供内容寻址、完整性、引用、访问、保留和垃圾回收原语。它拥有对象字节、hash、存储可用性和 GC 执行事实，不决定领域保留、用户授权或恢复业务语义。
+ArtifactStore 保存不可变内容，提供内容寻址、完整性、引用、访问、保留和垃圾回收原语，
+由 Kernel.Execution 管辖。它拥有对象内容、存储可用性与回收执行事实，
+不决定领域保留、用户授权或恢复业务语义。
 
-## 2. Artifact 模型
+Execution 管理执行产物的写入与发布。其他主体通过获准的访问边界读取内容，
+领域 Owner 提出保留与释放需求，由存储设施执行。
+管辖关系不使 Execution 自动成为所有对象的业务 Owner。
 
-ArtifactRef 至少包含 artifactId、sha256、size、mediaType；受控 metadata 可记录 tenant/project、createdAt、encryption key ref 和 provenance ref。正文以 SHA-256 内容寻址；相同内容可以去重，但跨租户可见性不得因去重扩大。
+## 2. 内容与引用
 
-写入流程为临时上传 → 计算并验证 hash/size → 原子发布 → 返回不可变 Ref。读取必须重新验证 hash、size 和 mediaType；损坏返回 INTEGRITY 错误，不得返回部分内容。
+上下文包、模型完整输出、工具产物、变更集和检查点关联的大对象可以保存于此。
+小型控制结论与领域状态仍由各自 Owner 维护，不因使用 ArtifactStore 而迁移权威。
 
-## 3. Artifact 类型
+对象发布后不可原地修改；新内容形成新对象。
+正式引用应指向完整、可验证的对象，不能把尚未完成的写入当作可用产物。
+相同内容的复用不合并访问权限、业务归属或保留责任。
 
-包括 ContextPack、模型原始响应、工具输出、源代码片段、日志、诊断、ChangeSet、patch/commit、测试证据、Workflow/Session checkpoint manifest、workspace snapshot 和报告。协议中只传 Ref，禁止内嵌超限正文。
+引用与对象分别可能失效。缺失、损坏、撤销和暂时不可用需要可区分，
+消费方不能将读取失败解释为空内容或执行成功。
 
-## 4. 引用与一致性
+## 3. 访问边界
 
-- 数据库领域事务提交 ArtifactRef 后，引用才成为可达根。
-- Artifact 已写但领域事务失败时形成孤儿，由 grace period 后 GC。
-- 数据库引用不存在对象时返回完整性故障并阻止完成或恢复。
-- Artifact Store 不反向写领域表；可用性变化通过 Event/Query 告知 Owner。
+内容访问遵循调用身份、数据范围与授权决定。
+内容标识不是读取凭据；检索结果、摘要和存在性信息也不能跨范围泄漏。
+ArtifactStore 不保存 Lease，不替代 Core 作出权限判断。
 
-## 5. Retention
+存储运维权限不自动包含使用对象开展业务的权限。
+审计应能关联访问与相关运行，同时避免复制敏感正文。
 
-CheckpointParticipant 使用 `prepareRetention`、`commitRetention`、`abortRetention`、`queryRetention` 和 `releaseRetention` 管理保留 token。SessionCheckpoint 是 GC root；WorkflowCheckpoint、运行、审计、legal hold 和用户固定点可以形成其他 root。
+## 4. 保留与回收
 
-普通删除只在所有 root 释放并经过 grace period 后物理回收。法规删除、安全撤销或损坏可以使保留对象不可用，但必须留下墓碑并发布失效事实，使相关 checkpoint 转为 DEGRADED、REVOKED 或 CORRUPTED。
+领域 Owner 决定产物为何仍被需要，包括运行、验收、检查点与恢复需求。
+ArtifactStore 执行保留、释放和回收，并报告执行事实。
+释放某一引用不代表其他有效引用同时失效。
 
-## 6. 访问控制与数据保护
+未形成有效业务引用的对象需要能够回收；仍被合法保留的对象不能被提前删除。
+强制撤销或删除应留下可解释的不可用事实，使恢复和查询能够识别缺失原因，
+但不要求继续保存被要求删除的正文。
 
-- 每次读取核对身份、数据范围及适用租约；持有 Ref 不等于有读取权。
-- 稳定只读能力可以预先签发长期租约，通过受控访问边界验证，不必每次进入 Core。
-- 租约内容完整不代表仍有权限；撤销、版本和来源 ACL 的失效规则必须由 MVP 明确。
-- 使用传输和静态加密；密钥轮换不改变内容 hash 语义。
-- Secret、短期 credential 和未脱敏个人数据不得因调试自动写入 Artifact。
-- 下载使用短期、最小范围许可；URL 不得作为长期 ArtifactRef。
-- Retention、合法删除和数据驻留策略必须可审计。
+## 5. 与执行及恢复协作
 
-## 7. 恢复与复制
+Execution 发布结果时，应使结果与产物可用性保持一致；
+执行成功但产物发布失败不能伪装成完整交付。
+保存检查点需要同时考虑相关对象的保留，恢复时重新验证其可用性与访问条件。
 
-恢复时 Store 只验证 Ref 可读性、hash、保留根和访问权限，并在需要时物化对象；不判断用户是否有权启动恢复。远程复制、CAS/S3 Adapter 和本地存储必须提供相同完整性与不可变语义。
-
-## 8. 可观测性与测试
-
-记录容量、对象数、读写延迟、hash 失败、孤儿、保留 token、GC backlog、复制延迟和恢复验证。测试覆盖重复写、部分上传、事务失败孤儿、引用缺失、跨租户拒绝、保留并发、checkpoint 删除/恢复竞争、共享对象不误删、墓碑和加密轮换。
+ArtifactStore 负责恢复存储事实，Workflow 与 Kernel 分别决定业务和运行是否可继续。
+存储备份本身不代表整个系统处于同一个可恢复状态。

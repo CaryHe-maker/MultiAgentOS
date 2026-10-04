@@ -1,78 +1,56 @@
-# MultiAgentOS Persistence Platform
+# Persistence
 
-## 1. 职责
+## 1. 定位与生命周期
 
-Persistence Platform 为各 Module 提供隔离的 Repository、事务、Migration、Journal、Outbox/Inbox、投影重建、备份和恢复原语。它只拥有提交、迁移、投递水位和备份事实，不决定领域状态。
+Persistence 为领域状态提供保存、读取、迁移、重建、备份和恢复能力。
+ModuleHost 统一管理其生命周期；数据的解释、写入和恢复决策仍属于各领域 Owner。
+统一持久化设施不形成任意组件可读写的全局业务状态。
 
 ## 2. 数据所有权
 
-- 每个 Module 拥有独立 Schema 和数据库角色，只能写入自身领域表。
-- 跨模块读取使用 Query、Event 或只读投影，不得 Join 对方内部表形成隐藏耦合。
-- durable runtime 的内部表由 runtime 管理；领域代码不得直接查询或删除。
-- 投影、索引、缓存和遥测是可重建派生数据，不得反向覆盖事实源。
-
-### 2.1 运行时状态
-
-| Owner | 状态 |
+| Owner | 权威状态 |
 |---|---|
-| Workflow | 业务图、AgentRun、UnitIntent、业务 checkpoint 和恢复操作 |
-| Core | 授权、Lease 权威记录、控制操作、结果接收决定 |
-| Scheduler | 队列、派发、调度代次和资源分配关联 |
-| Monitor | 配额、预留、结算及未知消耗 |
-| Supervisor | 监管关系与进程事实 |
-| Execution | UnitAttempt、Executor 步骤实例、进度和执行观测 |
+| UserInteraction | 会话关联、交互状态与展示偏好 |
+| Workflow | 业务图、AgentRun、业务尝试、验收、检查点与恢复决定 |
+| Core | 授权、私有 Lease、控制操作与准入决定 |
+| Scheduler | 调度、排队及派发关联 |
+| Execution | 执行尝试、步骤、效果核对及长期上下文运行状态 |
+| Monitor | 资源预留、结算、未知消耗与观测关联 |
+| Supervisor | 监管关系、生命周期与恢复协调事实 |
 
-这组分属 Owner 的数据构成运行时状态，不提供任意模块可写的全局“AgentOS 内存”。
-实际执行完成、结果被接受与业务验收分别保存，不能共同写入一个含义不明的终态。
-审计由各 Owner 记录并关联，公共查询窗口不产生新的写入权威。
-不可信 Executor 不能直接修改可信 Execution 管理状态。
+实际执行完成、结果被接受和业务验收分别保存，不合并为含义模糊的终态。
+对象正文由 ArtifactStore 保存，领域状态保留必要引用及其业务含义。
+派生视图、索引与缓存不能反向覆盖事实源。
 
-## 3. 事务模板
+Core 的 Lease 持久状态仍属于 Core 私有边界；
+Persistence 的生命周期管理不产生面向其他组件的 Lease 读取能力。
 
-需要持久一致性的领域状态变化必须在同一本地事务中完成：
+## 3. 一致性与交接
 
-```text
-校验 expectedVersion / Inbox
--> 执行纯 Reducer
--> 写聚合新版本
--> 追加 Event Journal
--> 写 Outbox
--> 更新本模块投影
--> 提交
-```
+需要可靠恢复的状态变化与对应事实应保持一致，
+不能先对外宣布成功，再留下无法解释或重建的权威状态。
+并发更新、重复请求与迟到结果必须由相应 Owner 识别。
 
-提交失败不得发布 Event。Outbox 发布成功但 ack 丢失时允许重复投递，由消费者 Inbox 去重。不得用跨模块分布式事务替代明确的 Saga。
+跨 Owner 的操作可能部分完成。资源已预留但执行未启动、
+执行已发生但结果未被接受等状态都需要可核对，
+不能假定多个状态写入天然构成一个整体成功。
 
-不同 MVP 可以明确选择内存或文件 Adapter 的受限能力，但不能将无事务的多个写入宣称为上述原子提交。
-各 Owner 之间仍需幂等交接；Attempt 已创建未调度、预算已预留未启动、
-执行已发生而回执缺失，都需要独立核对，不能假定跨模块全局事务。
+同一 Kernel 内的协调可以利用共同组织带来的便利，
+但不得因此模糊状态归属或把未完成交接隐藏起来。
 
-## 4. Repository 与并发
+## 4. 重建与演进
 
-Repository Port 暴露领域对象，不暴露任意 SQL。聚合使用 optimistic concurrency；expectedVersion 不匹配返回 `VERSION_CONFLICT`，调用方刷新后重新计算，不得 last-write-wins。Command 幂等表以 tenant、command 和 idempotencyKey 唯一；同键不同请求 hash 返回 `IDEMPOTENCY_KEY_REUSED`。
+可重建数据应能追溯其事实来源。重建失败不应反向破坏原始记录，
+不同版本的状态不能在未经解释的情况下混用。
 
-## 5. Journal、Outbox 与 Inbox
+迁移需要考虑旧运行、定义关联、产物引用与恢复能力。
+不兼容状态应显式处理，不应通过丢弃重要信息使系统看似恢复正常。
 
-- Journal 是领域事实的追加记录，包含 aggregate、version、eventSequence、correlation 和 causation。
-- Outbox 与领域事务共同提交，由 dispatcher 至少一次发送。
-- Inbox 以 messageId/consumer 唯一，重复消息返回原处理结果。
-- consumer offset 是投递进度，不是业务完成状态。
-- 保留与压缩策略不得删除仍用于恢复、审计或投影重建的事实。
+## 5. 备份、恢复与访问
 
-## 6. Checkpoint 持久化
+备份与恢复需要协调领域状态、ArtifactStore 对象和关键交接事实。
+恢复顺序首先建立可信的权威状态，再核对尚未确定的执行与外部效果。
+数据恢复不自动恢复过期权限，也不证明外部效果没有发生。
 
-Persistence 保存 Workflow 生成的 WorkflowCheckpoint、SessionCheckpoint manifest、RestoreOperation 和 retention token 状态，但不决定何时创建、是否可恢复或如何恢复。
-
-SessionCheckpoint 创建采用可恢复 Saga：候选记录 → participant prepare → 本地提交 manifest/outbox → participant commit → 标记 AVAILABLE。required participant 未激活时不得发布 AVAILABLE。崩溃后依据 operationId 查询并继续 commit 或 abort，不创建第二个逻辑保存点。
-
-## 7. Migration
-
-Migration 必须版本化、可审查并在部署前验证。一次只允许一套权威 Schema/Migration 工具。破坏性迁移采用 expand/migrate/contract，先兼容旧代码和运行实例，再删除旧字段。Migration 不得隐式重写不可变事件或 Artifact hash。
-
-## 8. 备份与灾难恢复
-
-备份必须覆盖数据库、Artifact metadata、Schema/Migration 版本和加密配置，并与 Artifact 对象做一致性校验。恢复演练验证 RPO/RTO、PITR、投影重建、Outbox 重放和孤儿 Artifact 处理。数据库恢复不自动恢复有效 Lease、Grant、Secret 或 Executor 会话。持久授权依据由 Core 重验，永久租约也不从旧快照直接复活。Execution 核对效果，Monitor 核对消耗，Supervisor 处理旧执行域。
-
-## 9. 安全与测试
-
-数据库角色按 Module 和 migration 职责分离；tenant/project 过滤在 Repository 和数据库策略两层执行。测试覆盖事务注入崩溃、并发版本冲突、重复 Command、Outbox ack 丢失、Inbox 去重、Migration 回滚、越权 SQL、备份恢复和 checkpoint Saga 各提交点。
+数据访问遵守领域边界与安全范围。运维能力不自动授予业务使用权，
+清理、保留与审计需要保留各自的决策主体。

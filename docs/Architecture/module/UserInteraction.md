@@ -1,87 +1,56 @@
 # MultiAgentOS UserInteraction
 
-## 1. 定义
+## 1. 定位
 
-UserInteraction 是人类与 MultiAgentOS 交互的唯一产品边界。Web、CLI 和 IDE 均为该模块的 Adapter，不得形成绕过 Kernel 的独立控制面。
+UserInteraction 是用户与系统交互的产品边界，承载目标输入、会话组织、运行展示与人工参与。
+不同交互入口共享同一领域语义，不形成绕过 Kernel 的独立控制面。
 
-## 2. 权威对象
+## 2. 状态所有权
 
-| 对象 | 语义 |
+| 概念 | 含义 |
 |---|---|
-| WorkSession | 围绕持续目标组织多轮运行、观察和分支的交互容器 |
-| SessionTreeNode | WorkSession 中一次运行、恢复或派生关系的节点 |
-| InteractionTurn | 用户输入与系统展示的交互记录 |
-| PromptRevision | 不可变的用户意图版本；修改产生新版本 |
-| UserIntent | 用户要求系统执行的规范化控制意图 |
-| InteractionViewState | 草稿、筛选、布局和显示偏好 |
-| ReviewResponse | 用户提交的审核原始响应；不是权威审核决定 |
+| WorkSession | 围绕持续目标组织交互的容器 |
+| SessionTree | 运行、派生与恢复之间的展示关系 |
+| InteractionTurn | 用户输入和展示记录 |
+| PromptRevision | 发布后的不可变用户意图版本 |
+| ReviewResponse | 用户原始审核响应 |
+| InteractionView | 草稿、筛选与展示偏好 |
 
-UserInteraction 是上述对象的唯一写入者，但不拥有 WorkflowRun、执行状态、SessionCheckpoint 内容、HumanReviewDecision 或 RuntimeProjection。
+UserInteraction 不拥有 Workflow 的业务状态、Core 的授权决定或 Kernel 执行事实。
+显示偏好和草稿不能改变运行权限。
 
-## 3. 能力
+## 3. 控制与展示
 
-- 创建、命名、归档和选择 WorkSession。
-- 提交初始 Prompt、补充信息和不可变 PromptRevision。
-- 展示 SessionTree、运行分支、任务图、MissionScope、成本、Artifact、错误和恢复可用性。
-- 请求 run、inspect、report、pause、resume、cancel、retry、rerun、fork、replan 和 checkpoint 操作。
-- 展示审核风险、规范化参数、影响范围、证据、替代方案、成本、回滚方式、有效期和职责分离要求。
-- 收集 approve、reject、request-changes、provide-information 和 accept-result 等 ReviewResponse。
-- 根据事件游标和 Query 重建视图；界面断线不得改变运行生命周期。
+用户意图通过 Gateway 的外部 syscall 提交。
+Kernel 提供受控运行视图与控制结果，UserInteraction 负责解释和展示，不直写内部状态。
 
-## 4. 控制路径
+运行创建、暂停、恢复、取消、重试、重规划及保存点操作均须经过对应控制职责。
+请求已收到、已受理和实际完成应分别展示，界面断线不改变实际运行生命周期。
 
-```text
-Adapter -> UserInteraction -> UserIntent -> KernelControlPort
-Kernel -> RuntimeProjection / ReviewProjection -> UserInteraction -> Adapter
-```
+只读产物访问也受身份和工作范围限制，持有引用不等于可以读取正文。
+暂态输出与最终确认结果分开；模型推理相关展示仅限实际提供且允许展示的内容。
 
-所有改变运行状态的意图经 Gateway 提交，并说明身份、目标、请求关联和适用版本。
-请求沿用 IdentityContext、目标对象、expectedVersion、idempotencyKey 和 reason 的语义约定；
-身份必须来自可信上下文，重复请求或版本冲突不能通过 UI 重发产生隐式覆盖。
-有效租约可以避免重复进入 Core 裁决，但不允许直接修改目标状态。
-AgentOS 调用的接受、由其产生的中断送达及实际生效必须分别展示。
-具体字段由各 MVP 的版本化接口确定，不得原地改变既有字段含义。
+## 4. 人工参与
 
-## 5. Session 与恢复交互
+长期交互包括权限审批、事实补充、方案选择和业务验收，不限定为唯一节点。
+Core 管理权限审批及审核适用性，Workflow 解释业务影响，
+UserInteraction 展示必要的目标、风险与证据并收集原始响应。
 
-- SessionTree 保存用户如何组织和派生运行，不替代 TaskGraph 或 MissionScope Tree。
-- PromptRevision 发布后不可覆盖；恢复或分支时创建新 revision，并保留父引用。
-- SessionCheckpoint 的内容和可恢复性由 Workflow 拥有。UserInteraction 只维护标题、标签、固定状态请求、展示关系和用户选择。
-- 新运行已提交前不得提前向 SessionTree 添加成功分支。
-- 删除、固定、恢复或重命名 checkpoint 都必须经 Kernel 准入。
+原始响应不能自行签发权限或解除执行限制。
+条件变化后的旧批准不再直接适用，超时不视为用户同意。
+权限证据展示不能扩大用户的数据访问范围。
 
-## 6. 人类审核
+## 5. 会话与恢复
 
-UserInteraction 展示 Kernel 发布的脱敏 ReviewProjection，并提交用户原始 ReviewResponse。它不得：
+SessionTree 保存用户如何组织运行，不替代 TaskGraph 或 MissionScope。
+保存点内容和恢复资格分别由 Workflow 与 Kernel 管理；
+只有新运行实际成立后，才将其展示为成功派生关系。
 
-- 验证审查者权限或聚合多人决定；
-- 创建 HumanReviewDecision；
-- 解除 Workflow 等待；
-- 签发 Grant、Lease 或 ExecutionPermit；
-- 在参数、revision 或 policy 改变后复用旧响应；
-- 为展示证据扩大审查者的数据权限。
+用户可以请求保存、保留、删除或恢复，但不能直接操作其他模块的存储。
+新的意图形成新版本，不覆写既有运行的历史依据。
 
-审批事实由 Kernel 裁决；审核等待和决定后的业务行为由 Workflow 解释。
+## 6. 一致性与隐私
 
-## 7. 投影与一致性
-
-用户可见运行状态来自 Kernel 汇总的受控视图，各底层事实仍由其 Owner 维护。
-RuntimeProjection 保留 sourceVersion、更新时间和来源身份，以支持客户端单调应用与断线重建。
-投影带来源和版本，客户端不能用旧更新覆盖当前状态，也不能直读其他模块内部存储。
-
-执行进度和模型输出可以通过专用逻辑流通道展示，由 Execution 或模型网关生产。
-订阅需限定运行和数据范围，暂态片段不能当作 Kernel 已接受结果或 Workflow 已验收成功。
-只展示供应商实际提供且允许展示的推理相关内容或摘要，不假定可取得内部推理。
-断线、慢消费者和重连策略由 MVP 明确，UI 断线不能改变执行事实。
-
-## 8. 安全与隐私
-
-- Prompt、ReviewResponse、源代码和个人数据均视为敏感输入。
-- 日志只记录标识、大小、类别和脱敏摘要；正文使用受控 ArtifactRef。
-- 草稿与显示偏好不得影响执行授权。
-- 所有查询限定 tenant/project、WorkSession 和当前身份范围。
-- Web/CLI/IDE Adapter 不得持有长期执行凭据。
-
-## 9. 测试要求
-
-测试必须覆盖 PromptRevision 不可变性、SessionTree 分支、重复 UserIntent 幂等、expectedVersion 冲突、投影乱序、断线重建、审核响应失效、越权证据隐藏，以及 Adapter 无法绕过 Kernel 的架构规则。
+视图保留来源和新旧关系，不能由迟到更新覆盖当前结论。
+显示层可以重建，但不成为业务事实源。
+日志和展示遵守数据范围，敏感正文通过受控产物访问，凭据不得进入交互记录。
