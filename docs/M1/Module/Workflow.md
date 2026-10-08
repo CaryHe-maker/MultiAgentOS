@@ -31,7 +31,8 @@
   Kernel 投递事件只入队，不等待 Workflow 处理，因此不会形成等待环。
 - 处理以 `(状态, 输入) → (新状态, 动作)` 的 reducer 实现，输入包括 Inbox 事件与 syscall 的返回值。
 - 状态按运行保存：`goal`、两个固定定义集合、当前 AgentRun（`agentRunId`、`roundsUsed`、`regenerationCount`、`noProgressCount`、
-  `wrapUpReason`、`steps`、`orientPackRef`、待收的 `requestId` 集合）、最近的 `budgetState`、已读取的 `FileReadOutput` 列表、业务终态。
+  `wrapUpReason`、`steps`、`orientPackRef`、待收的 `requestId` 集合、最近一次 context-assemble 的 `elidedRequestIds`）、最近的 `budgetState`、
+  已读取的 `FileReadOutput` 列表、业务终态。
 - `agentRunId` 与 `requestId` 由 Workflow 生成（`agr_`、`req_` 加 ULID）；重发同一请求时沿用原 `requestId`。
 - 一轮内的工具 Unit 一次全部提交，按 `requestId` 收齐全部 UnitReport 后才进入下一步；UnitReport 可能先于对应的 SyscallAck 到达。
 
@@ -77,7 +78,7 @@ toolCalls 为空 → INVALID（finishReason 为 LENGTH 时 OUTPUT_TRUNCATED，�
 | step1 | 工具是该 Agent 固定集合中 `purpose = UNIT` 的工具 | `UNKNOWN_TOOL` |
 | step1 | `arguments` 不为 null，且符合该工具的 `parametersContract` | `INVALID_ARGUMENTS` |
 | step2 | 最近的 `budgetState` 不为 EXHAUSTED | `NOT_EXECUTED` |
-| step2 | 本 AgentRun 内没有成功执行过相同 Unit 加相同规范化参数的调用 | `DUPLICATE_CALL` |
+| step2 | 本 AgentRun 内没有成功执行过相同 Unit 加相同规范化参数的调用；先前结果的 `requestId` 出现在最近一次 context-assemble 的 `elidedRequestIds` 中时（正文已被裁剪），不算重复 | `DUPLICATE_CALL` |
 
 通过的调用以 `unitRef = 该工具所属 Unit`、`input = arguments` 提交 `submitUnit`。
 Validation 是 Workflow 的业务检查，不替代 Kernel 的准入、定义核验与权限检查。step1 与 Kernel 使用同一份 Schema，
@@ -99,13 +100,14 @@ Validation 是 Workflow 的业务检查，不替代 Kernel 的准入、定义核
 
 ### 7.2 UnitReport 的 REJECTED 与 FAILED
 
-查该 Unit 定义的 `failurePolicy`，未列出的原因码按 `FATAL`：
+查该 Unit 定义的 `failurePolicy`，未列出的原因码按 `FATAL`。唯一例外：失败的是 final-call 的 model-call 时不查 `failurePolicy`，
+无论原因码一律按 `DEGRADED_REPORT` 处理（第 8 节）：
 
 | 处理 | 含义 |
 |---|---|
-| `RETURN_TO_MODEL` | 工具 Unit：记录 `TOOL_RESULT`（含原因码）交给模型；model-call：记录 `FEEDBACK(MODEL_CALL_FAILED)`，进入下一轮。失败的是 final-call 时改为 `DEGRADED_REPORT` |
+| `RETURN_TO_MODEL` | 工具 Unit：记录 `TOOL_RESULT`（含原因码）交给模型；model-call：记录 `FEEDBACK(MODEL_CALL_FAILED)`，进入下一轮 |
 | `FINAL_CALL` | 设置 `wrapUpReason`（`USER_DECLINED` → `USER_DECLINED`，`BUDGET_WRAP_UP` → `BUDGET_WRAP_UP`），下一次 model-call 为 final-call；工具 Unit 同时记录 `TOOL_RESULT` |
-| `DEGRADED_REPORT` | 不再发起 model-call 与新的工具 Unit，收齐本轮结果后生成降级报告（`wrapUp.reason = BUDGET_EXHAUSTED`） |
+| `DEGRADED_REPORT` | 不再发起 model-call 与新的工具 Unit，收齐本轮结果后生成降级报告（`wrapUp.reason` 见第 10.2 节） |
 | `FATAL` | `closeRun(FAILED)`，`failure = { code: 该原因码, category, source: 'WORKFLOW', unitRequestId }` |
 
 一轮内多个 UnitReport 的处理取最严重者：`FATAL` > `DEGRADED_REPORT` > `FINAL_CALL` > `RETURN_TO_MODEL`。
@@ -194,6 +196,11 @@ HANDOFF(brief)
 
 没有合法 FINISH 时（EXHAUSTED、final-call 不合法或失败），以已有材料生成降级报告：`summary` 为按 `wrapUp.reason` 给出的固定说明，
 `conclusions` 与 `unconfirmed` 为空，`readSources` 为全部成功读取的范围，`degraded = true`，`wrapUp` 必填。之后从第 10.1 节第 3 步继续。
+
+| 触发 | `wrapUp.reason` |
+|---|---|
+| 某个 UnitReport 的 `budgetState` 为 EXHAUSTED，或 model-call 被 `BUDGET_EXHAUSTED` 拒绝 | `BUDGET_EXHAUSTED` |
+| final-call 返回不合法或失败 | 触发该 final-call 的 `wrapUpReason` |
 
 Core 不检查报告内容，只核对 `reportRef` 属于本运行；报告是否合格由 Workflow 负责。
 

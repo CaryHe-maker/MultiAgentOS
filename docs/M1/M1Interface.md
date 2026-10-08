@@ -188,7 +188,7 @@ interface CapabilityDescriptor {
 | `RUN_BLOCKED` | SyscallRejected | Gateway、Core | 运行处于 CONVERGING 或 CLOSED，`closeReason` 给出原因 | `CONFLICT` |
 | `REQUEST_CONFLICT` | SyscallRejected | Core | 相同 `requestId` 对应不同内容 | `CONFLICT` |
 | `RUN_LIMIT` | SyscallRejected | Core | 本进程已经创建过运行，或系统正在关闭 | `CONFLICT` |
-| `REPOSITORY_INVALID` | SyscallRejected | Core | 仓库路径不存在、不是目录，或包含系统数据目录 | `VALIDATION` |
+| `REPOSITORY_INVALID` | SyscallRejected | Core | 仓库路径不是绝对路径、不存在、不是目录，或其 realpath 与系统数据目录互相包含 | `VALIDATION` |
 | `DEFINITION_MISMATCH` | SyscallRejected | Core | `agentRef.digest` 与目录不一致 | `INTEGRITY` |
 | `DEFINITION_UNAVAILABLE` | SyscallRejected | Core | 定义不存在、被隔离或撤销 | `DEPENDENCY` |
 | `AGENT_RUN_ACTIVE` | SyscallRejected | Core | 已有另一个 ACTIVE 的 AgentRun | `CONFLICT` |
@@ -197,7 +197,7 @@ interface CapabilityDescriptor {
 | `AGENT_RUN_ENDED` | SyscallRejected | Core | AgentRun 已结束 | `CONFLICT` |
 | `FORBIDDEN` | SyscallRejected | Core | Unit 不在该 AgentRun 的固定定义闭包内，或 Agent 的模型 provider 不是配置的 provider | `POLICY` |
 | `UNSUPPORTED_CAPABILITY` | SyscallRejected | Core | Unit 的 executionKind 为 `FILE_WRITE`、`COMMAND` 或 `TEST` | `CONTRACT` |
-| `INVALID_INPUT` | SyscallRejected | Core | Unit 输入不符合该 Unit 的 `inputContract` | `VALIDATION` |
+| `INVALID_INPUT` | SyscallRejected、UnitReport | Core、Execution | Unit 输入不符合该 Unit 的 `inputContract`（SyscallRejected）；model-call 引用的 ContextPack 与 `final` 不一致（UnitReport） | `VALIDATION` |
 | `QUESTION_NOT_PENDING` | SyscallRejected | Core | 授权询问不存在、已回答或已失效 | `CONFLICT` |
 | `INVALID_ARTIFACT_REF` | SyscallRejected、UnitReport | Core、Execution | 引用不存在或不属于该运行（两者不区分） | `VALIDATION` |
 | `USER_DECLINED` | UnitReport | Core | 用户拒绝或授权询问超时 | `POLICY` |
@@ -209,7 +209,7 @@ interface CapabilityDescriptor {
 | `UNSUPPORTED_FILE` | UnitReport | Executor | 不是普通文本文件（目录、二进制、特殊文件） | `EXECUTION` |
 | `INVALID_RANGE` | UnitReport | Executor | 行范围不合法（`startLine > endLine` 或起始行超出文件） | `VALIDATION` |
 | `INVALID_QUERY` | UnitReport | Executor | 检索表达式不合法 | `VALIDATION` |
-| `LIMIT_EXCEEDED` | UnitReport | Executor | 输出、文件数或报告大小超出限制 | `RESOURCE` |
+| `LIMIT_EXCEEDED` | UnitReport | Executor、Execution | 输出、文件数或报告大小超出限制 | `RESOURCE` |
 | `PROVIDER_UNREACHABLE` | UnitReport | Executor | 请求发出前连接、DNS 或 TLS 失败 | `DEPENDENCY` |
 | `PROVIDER_RATE_LIMITED` | UnitReport | Executor | provider 返回 429 | `DEPENDENCY` |
 | `PROVIDER_AUTH` | UnitReport | Executor | provider 返回 401 或 403 | `DEPENDENCY` |
@@ -584,6 +584,7 @@ interface FileReadInput {                           // executor.FileReadInput；
   startLine?: number;                               // ≥1，缺省 1
   endLine?: number;                                 // ≥startLine，缺省为 startLine + 399 与文件末行中的较小者
 }
+// 空文件（0 行）且未给出行范围时返回空内容：startLine = 1、endLine = 0、totalLines = 0
 
 interface FileReadOutput {                          // executor.FileReadOutput
   path: string;
@@ -614,6 +615,7 @@ interface ContextAssembleOutput {                   // context.ContextAssembleOu
   truncated: boolean;
   droppedCount: number;
   prefixSha256: string;
+  elidedRequestIds: string[];                       // 正文被省略或整轮被移除的 TOOL_RESULT 的 requestId
 }
 
 interface ContextPack {                             // context.ContextPack
@@ -663,16 +665,30 @@ interface ModelToolSpec {                           // 由 Tool 定义与 Protoc
 ```
 
 ASSEMBLE 包的段顺序固定为 INSTRUCTIONS、TOOLS、OBJECTIVE、HANDOFF、ORIENT、HISTORY、STATUS。
-INSTRUCTIONS、TOOLS、OBJECTIVE、HANDOFF、STATUS 不裁剪；超出预算时先裁剪 HISTORY 中最早的 TOOL_RESULT 正文，
-再裁剪 ORIENT，`droppedCount` 记录被丢弃的条目数。每个 `MODEL_TURN` 中的 `toolCallId` 在 HISTORY 中都必须有一条对应的
-`tool` 条目（来自 `TOOL_RESULT` 或带 `toolCallId` 的 `FEEDBACK`）。
+INSTRUCTIONS、TOOLS、OBJECTIVE、HANDOFF、STATUS 不裁剪。超出预算时按以下顺序裁剪，直到不超出：
+
+1. 从最早的 Round 开始，把 `TOOL_RESULT` 条目的正文替换为固定的省略说明（条目保留，说明正文因预算省略，可缩小范围重新执行）；
+2. 移除 ORIENT 段；
+3. 从最早的 Round 开始整轮移除 HISTORY：该 Round 的 assistant 条目、全部 tool 条目与其他 FEEDBACK 条目一起移除。
+
+`droppedCount` 记录被省略正文或被移除的条目数，`elidedRequestIds` 记录受影响的 `TOOL_RESULT`。HISTORY 与 ORIENT 都可以裁剪至空，
+因此只要不可裁剪段小于预算（启动校验见 [Monitor](Kernel/Monitor.md) 第 4 节），组装必然成功。
+裁剪前后，每个 `MODEL_TURN` 中的 `toolCallId` 在 HISTORY 中都必须有一条对应的 `tool` 条目（来自 `TOOL_RESULT` 或带 `toolCallId` 的 `FEEDBACK`）。
+
+token 估算由 contracts 统一提供（[SharedContracts](Library/SharedContracts.md) 4.3），上下文组装、预留与启动校验使用同一组函数：
+
+- `estimateItemTokens(item)`：条目的 `role`、`content`、`toolCallId`、`toolCalls`、`toolSpecs` 组成的规范 JSON 的 UTF-8 字节数，加 16；
+- `estimatePackTokens(pack)`：全部条目的 `estimateItemTokens` 之和。
+
+BPE 类 tokenizer 的单个 token 至少覆盖一个字节，因此估算值不低于实际输入 token 数（provider 侧模板开销由每条 16 的固定开销覆盖，
+超出时按结算异常处理）。
 
 ### 6.4 模型调用
 
 ```ts
 interface ModelCallInput {                          // executor.ModelCallInput
   contextPackRef: ArtifactRef;                      // context-assemble 的产物
-  final: boolean;                                   // 必须与生成该包的 ContextAssembleInput.final 相同
+  final: boolean;                                   // 必须与生成该包的 ContextAssembleInput.final 相同；Execution 派发前核对
 }
 
 interface ModelCallOutput {                         // executor.ModelCallOutput
@@ -917,8 +933,10 @@ interface ModelExecutorInput {                      // kernel.execution.ModelExe
 }
 ```
 
-Kernel 核心与 Supervisor 之间按可序列化值传递已解析的内容，这是“消息只传 ArtifactRef”规则唯一的例外：
+Kernel 核心与 Supervisor 之间按可序列化值传递已解析的内容，这是“大对象以 ArtifactRef 引用”规则的例外之一：
 Executor 不持有 ArtifactStore 句柄，输入与输出的正文只能随执行请求与执行事实传递，大小受 `ExecutionLimits` 约束。
+全部例外只有三处：本节的执行请求与执行事实；`ReportPublishInput.report`（报告发布前还没有引用，大小受 `maxReportBytes` 约束）；
+`ArtifactContent.text`（产物读取本身的响应）。
 
 ### 7.3 执行事实
 
@@ -976,6 +994,7 @@ interface SupervisorPort {                          // 由 Supervisor 实现
 
 interface CancelRunExecutionsRequest {              // kernel.execution.CancelRunExecutionsRequest
   workflowRunId: string;
+  runEpoch: number;                                 // 收敛开始后的 runEpoch；runEpoch 小于它的执行一律取消
 }
 
 interface SupervisorShutdownRequest {               // kernel.execution.SupervisorShutdownRequest
@@ -1274,7 +1293,8 @@ interface RunSummary {                              // kernel.control.RunSummary
   startedAt: string;
   closedAt: string;
   durationMs: number;
-  agentRuns: { agentRunId: string; agentRef: PinnedDefinitionRef; registeredAt: string; endedAt: string }[];
+  agentRuns: { agentRunId: string; agentRef: PinnedDefinitionRef; registeredAt: string; endedAt: string;
+               rounds: number }[];                 // rounds：已交付的 OK 或 FAILED 的 model-call UnitReport 数
   units: { submitted: number; ok: number; rejected: number; failed: number; notDelivered: number };
   model: { requests: number; finalCallUsed: boolean };
   tokens: { limit: number; used: number; unknown: number; inputTokens: number; outputTokens: number;
@@ -1283,7 +1303,9 @@ interface RunSummary {                              // kernel.control.RunSummary
 }
 ```
 
-`units.submitted` 统计得到 SyscallAck 的 submitUnit；`notDelivered` 统计随 RunClosed 结束、没有 UnitReport 的 Unit。
+`units` 由 Core 统计：`submitted` 为得到 SyscallAck 的 submitUnit；`ok`、`rejected`、`failed` 为已交付 UnitReport 的状态，
+含建立尝试之前交付的 `USER_DECLINED`；`notDelivered` 为随 RunClosed 结束、没有 UnitReport 的 Unit（含授权挂起中的请求）。
+步骤数（StepRecord）属于 Workflow 的运行记录，不在 RunSummary 中。
 
 ## 12. 协议注册表
 

@@ -252,6 +252,7 @@ failurePolicy: {}
 未在 `failurePolicy` 中列出的原因码按 `FATAL` 处理。例如 model-call 的 `PROVIDER_UNREACHABLE`、`PROVIDER_AUTH`、
 `PROVIDER_RATE_LIMITED`（技术重试已用尽）、`FINAL_CALL_USED`、`INVALID_ARTIFACT_REF`，
 以及 context-assemble、report-publish 的任何失败，都使 Workflow 以 `closeRun(FAILED)` 结束运行。
+final-call 的 model-call 例外：无论原因码，Workflow 都生成降级报告（[Workflow](../Module/Workflow.md) 7.2）。
 处理值的含义见 [Workflow](../Module/Workflow.md) 第 7 节。
 
 ### 4.3 Tool

@@ -10,11 +10,12 @@ Execution 负责 UnitAttempt、执行队列、产物与内建 Unit。组件间�
 - 实现 `ExecutionDuties`（Interaction 3.4），只经 `CoreSyscalls` 与 Core 交互，不读写 Core、Monitor、Scheduler 的数据。
 - 幂等建立 UnitAttempt 并记录建立时的 runEpoch，维护执行实例、输入输出、已知与未知效果及新旧执行关系（第 3 节）。
 - 维护唯一的 FIFO 执行队列，按 `createAttempt` 的调用顺序串行推进；前一个尝试提交结果检查后才启动下一个。
+  内部 syscall 返回后若 runEpoch 已变（运行开始收敛），不再取下一个队首，等待 Core 在收尾中调用 `abortQueued`（Interaction 4.4）。
 - 解析 Unit 输入中的 ArtifactRef 并检查归属（第 4 节）；构建 `ExecutionRequest`（第 7 节），登记待发送给 Supervisor。
 - 产物只由 Execution 写入 ArtifactStore：执行产物、Workflow 经 `report-publish` 提交的最终报告、RunSummary。
 - 执行内建 Unit `report-publish`（第 5 节）。
 - 处理执行事实：技术重试（第 6 节）、写入产物、隔离违规输出，再提交结果检查；UnitReport 由 Core 交付，Execution 不直接向 Workflow 发送。
-- 维护上下文构建记录（第 8 节），提供运行统计与未知效果（第 9 节）。
+- 维护上下文构建记录（第 8 节），提供模型执行实例数与未知效果（第 9 节）；Unit 的受理与交付统计由 Core 维护。
 
 非 API 工作并发执行只作为后续演进方向，不纳入 M1。
 
@@ -40,13 +41,14 @@ QUEUED → STARTING → DISPATCHED ─┬→ CHECKED（已提交结果检查）
 
 ## 4. 产物归属与解析
 
-Execution 为每个写入的产物登记归属：`artifactId → { producer: unitAttemptId 或 'RUN_SUMMARY', mediaType, sha256, size }`，
-按运行保存在 Execution 状态分块中。`artifactId = 'art_' + sha256`，同一运行内相同内容得到同一个引用。
+Execution 为每个写入的产物登记归属：`(artifactId, mediaType) → { sha256, size, producers: (unitAttemptId 或 'RUN_SUMMARY')[] }`，
+按运行保存在 Execution 状态分块中。`artifactId = 'art_' + sha256`，同一运行内相同内容得到同一个引用；
+不同尝试写入相同内容时追加到 `producers`，不覆盖已有登记。
 
 ```text
 需要解析的引用（ContextAssembleInput.orientPackRef、ToolResultStep.outputRef、ModelCallInput.contextPackRef、
                  ReadArtifactRequest.ref、CloseRunRequest.reportRef）
-  → 归属索引中存在，且 mediaType、sha256、size 与登记一致 → 经 ArtifactStorePort.get 读取（复验 sha256 与 size）
+  → 归属索引中存在 (artifactId, mediaType)，且 sha256、size 与登记一致 → 经 ArtifactStorePort.get 读取（复验 sha256 与 size）
   → 否则 → INVALID_ARTIFACT_REF，不说明是不存在还是不属于本运行
 ```
 
@@ -96,7 +98,9 @@ Execution 不判断报告内容是否合格；报告的来源核验由 Workflow 
   finish 控制工具与（存在时）handoff 控制工具，在 `final = true` 时只有 finish 控制工具；每个工具的 `parameters` 由 Protocol Registry
   把 `parametersContract` 转为 JSON Schema；`tokenBudget` 为 `final ? finalInputBudget : perCallInputLimit`；
   `orientPack` 与 `history` 中的正文由第 4 节解析。
-- MODEL 在派发前计算 `est = estimateTokens(contextPack) + maxOutputTokens`，调用 `requestReservation`；被拒时尝试结束。
+- MODEL 在派发前核对 ContextPack 与 `final` 一致（`operation = ASSEMBLE`，`tokenBudget = final ? finalInputBudget : perCallInputLimit`），
+  不一致时以 `NOT_DISPATCHED`、`INVALID_INPUT` 提交结果检查；一致时计算 `est = estimatePackTokens(contextPack) + maxOutputTokens`，
+  调用 `requestReservation`；被拒时尝试结束。`estimatePackTokens` 来自 contracts（[SharedContracts](../Library/SharedContracts.md) 4.3）。
 
 ## 8. 上下文构建记录
 
@@ -105,7 +109,7 @@ Execution 为每个 ContextPack 记录 `contextPackId`、`operation`、`unitAtte
 
 ## 9. 统计与未知效果
 
-- `unitStatistics()` 返回 RunSummary 的 `units` 字段，以及派发给 Supervisor 的 MODEL 执行实例数（`model.requests`，含技术重试）。
+- `modelRequestCount()` 返回派发给 Supervisor 的 MODEL 执行实例数（RunSummary 的 `model.requests`，含技术重试）。
 - `collectUnknownEffects()` 返回：未完成且 `requestState = UNKNOWN` 的 MODEL 执行（`MODEL_REQUEST_UNCONFIRMED`），
   以及全部 STOP_UNCONFIRMED 的执行（`EXECUTION_STOP_UNCONFIRMED`，包括 Core 在收敛兜底时判定的执行）。
 - `publishRunSummary(summary)` 把 RunSummary 以 `application/vnd.multiagentos.run-summary+json` 写入 ArtifactStore，登记归属

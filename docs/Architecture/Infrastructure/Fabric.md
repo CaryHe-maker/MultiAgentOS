@@ -32,7 +32,7 @@ Persistence、ArtifactStore 等基础设施提供存储机制，不作为通讯�
 |---|---|---|
 | 外部系统调用 | Workflow、UserInteraction → Gateway → Kernel 核心 | 经 Gateway 检查后进入 Core；分片部署时由 Gateway 按 `workflowRunId` 路由 |
 | Kernel 核心内部协作 | Core、Monitor、Scheduler、Execution | 内部 syscall 与职责接口调用，以函数调用完成，不经 Fabric；按组件模块化隔离 |
-| 执行派发 | Kernel 核心 ↔ Supervisor | 执行请求、取消、执行事实与心跳；执行事实携带运行、尝试与执行实例标识，以运行控制状态版本防护；用量与违规随执行事实进入运行 actor，由 Core 交对应组件处理 |
+| 执行派发 | Kernel 核心 ↔ Supervisor | 执行请求、取消、执行事实与心跳；执行事实携带运行、尝试与执行实例标识，以运行控制状态版本防护；执行事实进入运行 actor 后由 Execution 处理，用量与违规经 Execution 的结果检查交给 Core |
 | 执行载体 | Supervisor ↔ Executor 子进程 | 属于 Supervisor 内部，Executor 子进程不与其他主体通信 |
 | 事件交付 | Core 的 Outbox → Workflow、UserInteraction 的 Inbox | 单向投递，有序、可去重，语义见 [Protocol](../Protocol.md) 第 6 节 |
 | 产物访问 | 获准主体 → ArtifactStore 的受控访问边界 | 不以通信可达替代内容授权 |

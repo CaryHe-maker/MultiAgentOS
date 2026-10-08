@@ -78,6 +78,14 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 M1 与 Architecture 当前没有语义差异：结果统一由 Core 经 Outbox 交付、Inbox 事件投递、运行 actor 与收敛、
 额度达到上限时只拒绝新的消耗型预留、Monitor 只由 Core 调用、产物发布由 Execution 完成等机制，已由 Architecture 采纳。
 
+Architecture 的概念名与 M1 的接口名对应如下，指同一概念：
+
+| Architecture | M1 |
+|---|---|
+| UnitIntent | `submitUnit` 请求（`SubmitUnitRequest`） |
+| AgentStep | `StepRecord` |
+| 执行派发、执行事实 | `ExecutionRequest`、`ExecutionFact` |
+
 M1 只实现长期组织的一个子集：
 
 | 长期组织 | M1 的取舍 |

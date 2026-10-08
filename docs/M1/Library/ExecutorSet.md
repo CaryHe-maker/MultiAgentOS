@@ -26,8 +26,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 | 导出 | 用途 |
 |---|---|
-| `createExecutorRegistry(): ReadonlyMap<ExecutorKind, Executor>` | Supervisor 启动时取得全部 Executor |
-| `estimateTokens(text: string): number` | 统一的 token 上界估算：UTF-8 字节数；ContextItem 再加 16 的固定开销。Execution 计算预留时使用同一函数 |
+| `createExecutorRegistry(): ReadonlyMap<ExecutorKind, Executor>` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet |
 | `DEFAULT_EXCLUSIONS` | 硬编码的危险文件规则（第 3.2 节），与 Core 的默认排除规则相同 |
 
 ## 3. 仓库访问
@@ -55,7 +54,8 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | 6 | 是普通文本文件 | `REJECTED(UNSUPPORTED_FILE)` |
 | 7 | 打开后，按文件描述符（`/proc/self/fd/<fd>`）取得的真实路径与第 5 步一致 | `VIOLATION(PATH_ESCAPE)` |
 
-`DEFAULT_EXCLUSIONS` 为 `.git/**`、`**/.env*`、`**/*.pem`、`**/*.key`、`**/id_*`、`**/node_modules/**`。
+`DEFAULT_EXCLUSIONS` 为 `.git/**`、`**/.env*`、`**/*.pem`、`**/*.key`、`**/id_rsa*`、`**/id_dsa*`、`**/id_ecdsa*`、`**/id_ed25519*`、
+`**/node_modules/**`。
 这些规则硬编码在 Executor 中，是 Core 权限裁决之后的最后一道防线；Core 只能追加排除规则，不能删除它们。
 防护逻辑自身出现不一致（例如规范化前后结果矛盾）时返回 `VIOLATION(GUARD_FAILURE)`。
 
@@ -90,9 +90,10 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 ### 4.3 FileReadExecutor
 
-按第 3.2 节检查路径。缺省读取第 1 行到第 400 行；一次最多返回 400 行，超出时截到 400 行并在 `endLine` 中给出实际结束行。
-`startLine > endLine` 或 `startLine` 超出文件行数时返回 `REJECTED(INVALID_RANGE)`；返回内容超过 `limits.maxOutputBytes`
-时返回 `REJECTED(LIMIT_EXCEEDED)`。换行统一为 LF。输出 `FileReadOutput`，产物为读取的文本。
+按第 3.2 节检查路径。缺省读取第 1 行到第 400 行；一次最多返回 400 行且不超过 `limits.maxOutputBytes`，
+超出时截到满足两者的最后一个完整行，并在 `endLine` 中给出实际结束行；第一行本身就超过 `maxOutputBytes` 时返回 `REJECTED(LIMIT_EXCEEDED)`。
+`startLine > endLine` 或 `startLine` 超出文件行数时返回 `REJECTED(INVALID_RANGE)`；空文件（0 行）且未给出行范围时返回空内容，
+`startLine = 1`、`endLine = 0`、`totalLines = 0`。换行统一为 LF。输出 `FileReadOutput`，产物为读取的文本。
 
 ### 4.4 ContextAssembleExecutor
 
@@ -108,9 +109,10 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | HISTORY | `history`：MODEL_TURN 为 assistant 条目（带 `toolCalls`）；TOOL_RESULT 与带 `toolCallId` 的 FEEDBACK 为 tool 条目；其他 FEEDBACK 为 user 条目 | 见左 |
 | STATUS | `status` 的说明文字 | user |
 
-- 用 `estimateTokens` 计算每个条目；总量超过 `tokenBudget` 时按 M1Interface 6.3 的顺序裁剪，并设置 `truncated` 与 `droppedCount`。
-- 不可裁剪的段已超出预算，或某个 `toolCallId` 没有对应的 tool 条目时，返回 `FAILED(INTERNAL, retryable = false)`。
-  启动时的额度校验保证前一种情况不会发生，后一种情况表示 Workflow 有缺陷。
+- 用 contracts 的 `estimateItemTokens` 计算每个条目；总量超过 `tokenBudget` 时按 M1Interface 6.3 的顺序裁剪，
+  并设置 `truncated`、`droppedCount` 与 `elidedRequestIds`。HISTORY 与 ORIENT 可以裁剪至空，启动时的额度校验保证不可裁剪段小于预算，
+  因此裁剪必然成功。
+- 某个 `toolCallId` 没有对应的 tool 条目时返回 `FAILED(INTERNAL, retryable = false)`，这表示 Workflow 有缺陷。
 - `prefixSha256` 为 INSTRUCTIONS 与 TOOLS 段内容的 SHA-256。输出 `ContextAssembleOutput`，产物为该 ContextPack。
 
 ### 4.5 ModelCallExecutor
@@ -152,6 +154,7 @@ M1 只运行可信的内置 Executor；引入不可信 Executor 时须改由访�
 | 路径检查 | 第 3.2 节每一步的反例，包括 symlink 指向仓库外、`..`、绝对路径、排除规则、二进制文件、检查后替换文件 |
 | 快照 | 同一内容得到相同 `snapshotId`；排除的文件不影响摘要 |
 | 检索 | `rg` 与内置扫描对同一 fixture 结果一致；排除文件不出现在命中中；取消时子进程被终止 |
-| 组装 | 段顺序、裁剪顺序、`prefixSha256` 稳定、工具调用与 tool 条目一一对应 |
+| 组装 | 段顺序、裁剪顺序（含整轮移除与裁剪至空）、`elidedRequestIds`、`prefixSha256` 稳定、裁剪前后工具调用与 tool 条目一一对应 |
 | 模型 | 用假的 provider 覆盖第 4.5 节表中每一行；`final` 时强制控制工具；SDK 不自动重试 |
+| 读取 | 按 400 行与 `maxOutputBytes` 截断到完整行；首行超限；空文件 |
 | Contract | 每个 Executor 的输出通过对应 Schema 校验 |

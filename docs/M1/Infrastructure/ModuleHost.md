@@ -18,7 +18,7 @@ AgentToolPool、ExecutorSet、SharedContracts 是静态库，不作为自主服�
 
 ```text
 1. 组合根（apps/control-plane）：加载并校验系统配置与目录（AgentToolPool），构造全部模块
-2. 组合根启动 fabric，再启动 supervisor（清空 <dataDir>/tmp/，取得 Executor 注册表）
+2. 组合根启动 fabric，再启动 supervisor（清空 <dataDir>/tmp/；Executor 注册表由组合根调用 createExecutorRegistry() 后注入）
 3. Supervisor 协调 ModuleHost 按依赖启动：
      artifact-store → persistence → kernel-core → gateway → workflow → user-interaction
 4. 全部就绪后 CLI 开始接收命令；在此之前没有任何请求进入 Gateway
@@ -35,7 +35,7 @@ Supervisor 协调 ModuleHost：
      （user-interaction 与 workflow 先处理完 Inbox 中剩余的事件；gateway 停止后拒绝一切请求；persistence 完成全部写入）
   2. supervisor 终止残留子进程，清理临时文件
   3. fabric 最后关闭
-进程退出；下次启动只清空 <dataDir>/tmp/，<dataDir>/runs/ 保留，不恢复未完成的运行
+组合根以 UserInteraction 记录的退出码退出进程；下次启动只清空 <dataDir>/tmp/，<dataDir>/runs/ 保留，不恢复未完成的运行
 ```
 
 - Executor 由 Supervisor 装配与回收，不由 ModuleHost 装配。

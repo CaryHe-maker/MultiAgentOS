@@ -36,7 +36,8 @@ Gateway 是外部 syscall 的唯一申请入口，负责调用方身份、契约
 ## 4. 准入封锁
 
 - Gateway 按 `workflowRunId` 缓存运行的准入状态（`runState`、`closeReason`）。Gateway 在转发 `createRun` 之前把自己生成的
-  `workflowRunId` 登记为 RUNNING，`createRun` 被拒时删除；此后只由 Core 推送的 `AdmissionProjection` 更新，Gateway 只读。
+  `workflowRunId` 登记为 RUNNING，`createRun` 被拒时删除；`RunCreated.workflowRunId` 与本次生成的不同时（同一 `requestId` 重放，
+  运行管理返回原响应），删除本次生成的登记，以返回的 `workflowRunId` 为准。此后只由 Core 推送的 `AdmissionProjection` 更新，Gateway 只读。
 - `runState` 不为 RUNNING 时，拒绝 `registerAgentRun` 与 `submitUnit`，返回 `RUN_BLOCKED`；其余请求放行，由 Core 按
   [Interaction](Interaction.md) 4.5 处理。
 - Core 处理请求时仍会再次核对运行状态；Gateway 放行后 Core 发现已封锁时，由 Core 返回同样的 `RUN_BLOCKED`（`issuer = 'CORE'`）。

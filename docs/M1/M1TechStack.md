@@ -108,7 +108,7 @@ file-read Executor 属于 ExecutorSet（现有实现位于 `apps/executor`），
 路径检查按 [ExecutorSet](Library/ExecutorSet.md) 3.2 执行：`realpath` 后必须位于 Supervisor 注入的仓库根目录内，并拒绝绝对路径、`..`、
 指向仓库外的 symlink、危险文件、二进制文件和超限输出；打开后按文件描述符复核真实路径。
 
-FILE_WRITE、COMMAND、TEST 由 Core 以 `UNSUPPORTED_CAPABILITY` 拒绝。M1 不引入 Git、容器、远程 Executor 或通用 subprocess 执行框架；
+FILE_WRITE、COMMAND、TEST 由 Core 以 `UNSUPPORTED_CAPABILITY` 拒绝；M1 目录不含这类 Unit，该路径由 fake 目录的测试覆盖（Kernel/Interaction 5.1）。M1 不引入 Git、容器、远程 Executor 或通用 subprocess 执行框架；
 `rg` 经 Supervisor 提供的 `SubprocessRunner`（基于 `child_process.spawn` 的薄封装，只允许 `rg`）运行。
 
 ## 10. Persistence、Fabric 与 Artifact

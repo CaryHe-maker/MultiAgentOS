@@ -25,7 +25,7 @@ Supervisor 不维护执行队列，不作授权、额度或结果接受的裁决
 
 ```text
 Execution  → Supervisor   execute(workflowRunId, unitAttemptId, executionId, runEpoch, 行为, 输入, 范围约束, 限制)
-Core       → Supervisor   cancelRun(workflowRunId) / 关闭
+Core       → Supervisor   cancelRun(workflowRunId, runEpoch) / 关闭
 Supervisor → Kernel 核心   fact(workflowRunId, unitAttemptId, executionId, runEpoch, 终态, 输出, 用量, 请求状态)
 Kernel 核心 ↔ Supervisor   心跳
 ```
@@ -43,7 +43,8 @@ ACCEPTED → RUNNING ─┬→ COMPLETED / REJECTED / FAILED / VIOLATION
   Supervisor 未按时上报时由 Core 判定停止未确认，使运行的结束不依赖 Supervisor 一定按时回复。
 - 执行事实携带 `workflowRunId`，按运行送回所属的 Kernel 核心实例与运行 actor。
 - `workflowRunId`、`unitAttemptId`、`executionId` 与 `runEpoch` 原样带回；是否接受结果由 Core 核对运行控制状态版本后决定，过期结果只作为证据。
-- 取消由 Core 决定并以消息发给 Supervisor，不跨进程传递运行时句柄。
+- 取消由 Core 决定并以消息发给 Supervisor，不跨进程传递运行时句柄；Supervisor 记录取消时的 runEpoch，
+  之后到达的、runEpoch 更小的执行请求不再启动。Kernel 核心发往同一通讯主体的消息按登记顺序发出。
 - 执行事实作为消息进入所属运行的队列，由 Kernel 核心的运行 actor 按顺序处理。
 - Kernel 核心与 Supervisor 互相以心跳检测存活：Supervisor 失联时，Kernel 核心把在途尝试标记为效果未知；
   Kernel 核心失效时，Supervisor 终止并回收其执行，必要时重新拉起 Kernel 核心。

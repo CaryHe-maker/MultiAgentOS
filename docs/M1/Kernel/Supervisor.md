@@ -16,7 +16,7 @@ M1 为单进程部署：Supervisor 与 Kernel 核心同进程，Executor 在进�
 | 类别 | Supervisor 维护的数据 | M1 职责 |
 |---|---|---|
 | 系统生命周期 | 模块生命周期、启动与关闭顺序 | 协调 ModuleHost 完成装配、依赖就绪与按序卸载（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）；启动时清理上次遗留的临时数据 |
-| 执行实例 | `executionId →` `workflowRunId`、`unitAttemptId`、`runEpoch`、`notBefore`、截止时间、状态、中止控制器 | 按 `executionKind` 从 `createExecutorRegistry()` 取得 Executor，注入 `ExecutorEnvironment`；到截止时间或取消时中止；宽限期内未结束时报告 `STOP_UNCONFIRMED`；每个执行实例只上报一个终态 |
+| 执行实例 | `executionId →` `workflowRunId`、`unitAttemptId`、`runEpoch`、`notBefore`、截止时间、状态、中止控制器；已取消运行的取消 runEpoch | 按 `executionKind` 从组合根注入的 Executor 注册表（`createExecutorRegistry()` 的结果）取得 Executor，注入 `ExecutorEnvironment`；到截止时间或取消时中止；宽限期内未结束时报告 `STOP_UNCONFIRMED`；每个执行实例只上报一个终态 |
 | 子进程与残余 | `rg` 子进程、临时文件 | 终止并回收子进程，清理每次执行的临时文件 |
 | 凭据 | 无（只转交） | 经 `ProviderCredentials` 把配置边界读到的 API Key（如 `DEEPSEEK_API_KEY`）只交给 model-call Executor |
 
@@ -29,7 +29,7 @@ M1 不实现心跳、子进程健康判断、进程池与工作区准备，这�
 
 ```text
 Execution（待发送）→ SupervisorPort.execute(ExecutionRequest)
-Core（待发送）     → SupervisorPort.cancelRun({ workflowRunId })
+Core（待发送）     → SupervisorPort.cancelRun({ workflowRunId, runEpoch })
 运行管理           → SupervisorPort.shutdown({ requestId })
 Supervisor         → ExecutionFactSink.report(ExecutionFact)
 ```
@@ -49,7 +49,10 @@ ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILE
 
 - `execute` 受理即返回，到 `notBefore`（缺省立即）后启动 Executor。
 - 到达 `limits.deadline`：触发中止信号，原因码 `UNIT_TIMEOUT`。收到 `cancelRun`：对该运行全部执行实例触发中止信号，原因码
-  `EXECUTION_CANCELLED`，尚未启动的实例直接以 TERMINATED 结束。
+  `EXECUTION_CANCELLED`，尚未启动的实例直接以 TERMINATED 结束；并记录该运行的取消 runEpoch。
+- 此后到达的 `execute`，若属于已取消的运行且 `runEpoch` 小于记录的取消 runEpoch，不启动 Executor，直接上报
+  `TERMINATED(EXECUTION_CANCELLED)`（无 `startedAt`）。Kernel 核心的发送器按登记顺序发出（Interaction 4.4），正常情况下不会出现这种到达顺序，
+  此规则是兜底。
 - 宽限期为 `KernelConfig.cancelGraceMs`，从触发中止信号的时刻起算。Executor 在宽限期内返回：上报 `TERMINATED`，
   `requestState` 沿用 Executor 返回的值（MODEL 缺失时为 `UNKNOWN`）；未返回：上报 `STOP_UNCONFIRMED`，此后该实例的任何返回都被丢弃。
 - 每个 `executionId` 恰好上报一个终态：执行先完成还是先被终止，由 Supervisor 给出唯一结论。

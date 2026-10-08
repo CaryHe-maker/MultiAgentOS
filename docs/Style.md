@@ -52,12 +52,12 @@
 
 ### 2.4 架构约束
 
-- 领域包只依赖 `@multiagentos/contracts` 和自身声明的 Port。
+- 领域包只依赖 `@multiagentos/contracts` 和自身声明的 Port；需要静态库的具体实现（如 ExecutorSet 的 Executor 注册表）时，由组合根注入，不直接导入。
 - `apps/control-plane` 是唯一组合根。
 - CLI 不依赖 Workflow；Workflow 只经 Kernel 公开 syscall 交互，不依赖 Kernel 内部实现或具体适配器；Executor 不回调 Workflow。
 - 通讯主体（Kernel 核心、Supervisor、Gateway、Workflow、UserInteraction）之间只交换可序列化数据，不共享可变对象。
 - Kernel 核心（Core、Monitor、Scheduler、Execution）内部可以直接函数调用，但各组件只读写自己的数据，只经职责接口与内部 syscall 交互；Monitor 与 Scheduler 只由 Core 调用；Lease 只由 Core 维护和使用。
-- 大对象存入 Artifact Store；模块消息只传 ArtifactRef。唯一例外是 Kernel 核心与 Supervisor 之间的执行请求与执行事实：Executor 不持有 ArtifactStore，已解析的内容按值传递，大小受执行限制约束。
+- 大对象存入 Artifact Store；模块消息只传 ArtifactRef。例外只有三处：Kernel 核心与 Supervisor 之间的执行请求与执行事实（Executor 不持有 ArtifactStore，已解析的内容按值传递，大小受执行限制约束）；Workflow 经 `report-publish` 提交的报告正文（发布前尚无引用）；`readArtifact` 返回的产物正文。
 - 新增能力先声明 owner、Schema、Port、错误和测试，再接入实现。
 
 ### 2.5 测试

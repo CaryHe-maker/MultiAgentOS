@@ -33,7 +33,7 @@ ext4 为 root 保留一部分空间，普通写入用不到这部分空间，roo
 | U | 已结算的实际用量（输入 + 输出） |
 | K | 未知消耗：请求可能已发出但无法得到用量时，按预留额全额计入 |
 | R | 在途预留：已预留、尚未结算的额度；M1 串行执行，R 为 0 或一次调用的预留额 |
-| est | 本次调用的估算上界 = `estimateTokens(ContextPack)` + 本次 `max_tokens` |
+| est | 本次调用的估算上界 = `estimatePackTokens(ContextPack)` + 本次 `max_tokens` |
 | finalEst | final-call 的估算上界 = `budget.finalInputBudget` + `budget.finalMaxOutputTokens` |
 
 单位为 token，以 provider 返回的用量为准。只有 model-call 消耗 token。每个运行至多一次 final-call（Core 强制，见 [Core](Core.md) 5.1），
@@ -83,10 +83,12 @@ settle(reservationId, settlement)
 
 ### 3.5 输入 token 上界
 
-输入 token 上界使用 ExecutorSet 的 `estimateTokens`：每个 ContextItem 的 UTF-8 字节数加 16 的固定开销。
-BPE 类 tokenizer 的单个 token 至少覆盖一个字节，因此该估算不低于实际值。context-assemble 按同一函数裁剪：
-普通组装不超过 `perCallInputLimit`，final 组装不超过 `finalInputBudget`。因此 NORMAL 状态下普通 model-call 的预留必然成功，
-final-call 的 est 不超过 finalEst。Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Executor 报告的数字。
+输入 token 上界使用 contracts 的 `estimatePackTokens`（定义见 M1Interface 6.3）：每个条目按其 `role`、`content`、`toolCallId`、
+`toolCalls`、`toolSpecs` 的规范 JSON 计算 UTF-8 字节数，再加 16 的固定开销。工具的 JSON Schema 与历史中的工具调用参数都随请求发给 provider，
+因此都计入估算。BPE 类 tokenizer 的单个 token 至少覆盖一个字节，因此该估算不低于实际值。context-assemble 按同一函数裁剪：
+普通组装不超过 `perCallInputLimit`，final 组装不超过 `finalInputBudget`，且裁剪顺序保证必然能装入（M1Interface 6.3）。
+因此 NORMAL 状态下普通 model-call 的预留必然成功，final-call 的 est 不超过 finalEst。
+Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Executor 报告的数字。
 
 ## 4. 配置（`KernelConfig.budget`）
 
@@ -113,7 +115,9 @@ final-call 的 est 不超过 finalEst。Execution 计算 est 时对 ContextPack 
 3. 对从入口 Agent 可达的每个 Agent，不可裁剪段的估算上界小于对应预算。不可裁剪段为 INSTRUCTIONS、TOOLS、OBJECTIVE、
    HANDOFF、STATUS；OBJECTIVE 与 HANDOFF 按 Schema 的最大长度乘以 4 字节计算（目标 4000 字符，交接说明合计 4500 字符），
    STATUS 按 512 字节计算。普通组装使用该 Agent 全部工具说明，须小于 `perCallInputLimit`；final 组装只使用 finish 控制工具说明，
-   须小于 `finalInputBudget`。
+   须小于 `finalInputBudget`。估算使用 `estimateItemTokens`，TOOLS 段按包含 JSON Schema 的完整 `toolSpecs` 计算。
+4. 对包含 file-read 的 Agent，`executionLimits.FILE_READ.maxOutputBytes` 加该 Agent 普通组装不可裁剪段的估算上界小于
+   `perCallInputLimit`，使一次完整的读取结果能够单独装入下一次普通组装。
 
 ## 5. M1 不实现
 

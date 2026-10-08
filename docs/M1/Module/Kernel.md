@@ -118,7 +118,9 @@ Workflow 与 UserInteraction 各自实现一个 Inbox（`WorkflowInboxPort`、`I
 4. **受理语义**：`deliver` 只做 Schema 校验与入队即返回，不表示已经处理。
 5. **终结**：RunClosed（对 UserInteraction 为 RunFinished）是该运行发给该接收方的最后一个事件；之前入队的事件都先于它投递。
 6. **串行消费**：接收方按 Inbox 顺序逐条处理事件，处理期间可以等待自己发起的请求的返回值。
-7. **投递失败**：只可能是 Schema 不合法，属于契约缺陷，不重试：运行以 `FAILED(KERNEL_INTERNAL)` 收敛；RunClosed、RunFinished 本身投递失败时只写入审计。
+7. **投递失败**：只可能是 Schema 不合法，属于契约缺陷，不重试：该事件写入审计并被跳过，后续事件照常投递，运行以 `FAILED(KERNEL_INTERNAL)` 收敛
+   （经内部消息 `KERNEL_FAULT`，见 [Kernel/Interaction](../Kernel/Interaction.md) 4.4）；RunClosed、RunFinished 本身投递失败时只写入审计。
+   接收方按 `eventId` 去重、按到达顺序处理，不因 `seq` 出现缺口而等待。
 
 ## 5. M1 的 Unit
 
@@ -165,7 +167,7 @@ Workflow 与 UserInteraction 各自实现一个 Inbox（`WorkflowInboxPort`、`I
 | 准入 | Gateway | 所有请求 | 调用方身份、Schema、运行存在、准入封锁 | SyscallRejected（GATEWAY） |
 | 定义核验 | Core | `registerAgentRun`、`submitUnit` | 定义固定与 digest；AgentRun 状态；Unit 属于固定闭包；能力受支持；输入符合 `inputContract` | SyscallRejected（CORE） |
 | 权限 | Core | 受保护 Unit | Lease 与用户授权（第 7 节） | UnitReport `USER_DECLINED` |
-| 产物引用 | Execution | 输入中的 ArtifactRef | 归属与完整性 | UnitReport `INVALID_ARTIFACT_REF` |
+| 产物引用 | Execution | 输入中的 ArtifactRef | 归属与完整性；model-call 的 ContextPack 与 `final` 一致 | UnitReport `INVALID_ARTIFACT_REF`、`INVALID_INPUT` |
 | 额度预留 | Core 调用 Scheduler、Monitor | model-call | final-call 唯一、调用机会、token 预留 | UnitReport `BUDGET_*`、`FINAL_CALL_USED` |
 | 执行点检查 | Executor | 受保护 Unit、model-call | 开发者硬编码的防护检查（[ExecutorSet](../Library/ExecutorSet.md) 3.2） | 越界：UnitReport；违规：以 VIOLATION 收敛 |
 | 结果检查 | Core | 进入执行的 Unit | 归属、运行状态、Lease 有效；model-call 结算 | 见 [Core](../Kernel/Core.md) 第 5 节 |
@@ -203,6 +205,7 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 | 正常结束 | Syscall | COMPLETED | — | COMPLETED | 结论、来源、未确认项 |
 | final-call 收尾 | Syscall | COMPLETED | — | COMPLETED | 同上，附收尾原因 |
 | 额度耗尽 | Syscall | COMPLETED | — | COMPLETED | 降级报告，附“已达到额度上限” |
+| final-call 不合法或失败 | Syscall | COMPLETED | — | COMPLETED | 降级报告，附收尾原因 |
 | Workflow 判定失败 | Syscall | FAILED | `source = WORKFLOW`，`code` 为导致失败的原因码 | FAILED | “运行失败”及按原因码给出的说明 |
 | Kernel 异常 | Exception | FAILED | `source = KERNEL`（`EXECUTION_STOP_UNCONFIRMED`、`KERNEL_INTERNAL`） | FAILED | 同上 |
 | 运行超时 | Exception | RUN_TIMEOUT | — | STOPPED(RUN_TIMEOUT) | “运行超时，已停止” |
@@ -210,7 +213,8 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 | 安全停止 | Exception | VIOLATION | `source = KERNEL`，违规原因码 | STOPPED(VIOLATION) | “因安全原因停止” |
 
 存在未知效果时，用户还会看到“部分操作无法确认是否完成”。用户默认只看到结果；
-运行摘要（步骤、Round、调用次数、token、耗时、失败分类）可通过 CLI 的 `--details` 选项在关闭前读取展示。
+运行摘要（各 AgentRun 的 Round、Unit 与模型调用次数、token、耗时、失败分类）可通过 CLI 的 `--details` 选项在关闭前读取展示；
+步骤数属于 Workflow 的运行记录（[Workflow](Workflow.md) 第 13 节），不在运行摘要中。
 
 ## 10. 原因码与 Workflow 处理
 
@@ -220,7 +224,7 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 |---|---|---|
 | SyscallRejected | `RUN_BLOCKED` | 停止推进，等待 RunClosed |
 | SyscallRejected | 其他全部原因码 | `closeRun(FAILED)`，`failure.code` 为该原因码 |
-| UnitReport | 任意 `REJECTED`、`FAILED` 的原因码 | 按该 Unit 定义的 `failurePolicy` 处理（[Workflow](Workflow.md) 第 7 节）；未列出的按 `FATAL` |
+| UnitReport | 任意 `REJECTED`、`FAILED` 的原因码 | 按该 Unit 定义的 `failurePolicy` 处理（[Workflow](Workflow.md) 第 7 节）；未列出的按 `FATAL`；final-call 的 model-call 失败一律生成降级报告 |
 | RunClosed | 任意 closeReason | 停止推进，记录业务终态 |
 
 Validation 失败（`INVALID_ACTION`、`UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`）

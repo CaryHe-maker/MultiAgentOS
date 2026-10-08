@@ -31,14 +31,15 @@ M1 的 Fabric 是同进程实现 `InProcessFabric`，为每个通讯主体创建
   `ExecutionFactSink`、`WorkflowInboxPort`、`InteractionInboxPort`，路由见 M1Interface 2.2。
 
 所有调用都遵守：使用可序列化的数据契约并在边界校验；区分请求受理与完成；不依赖共享可变对象、裸内部句柄或同步回调链；
-大对象通过 ArtifactRef 传递，Kernel 核心与 Supervisor 之间的执行请求与执行事实是唯一例外（M1Interface 7.2）。
+大对象通过 ArtifactRef 传递，例外只有执行请求与执行事实、`report-publish` 的报告正文与 `readArtifact` 的响应（M1Interface 7.2）。
 
 ## 4. Outbox 与 Inbox
 
 M1 实现内存版 Outbox 与 Inbox，不持久化，进程退出时一起丢失：
 
 - Outbox 位于运行 actor 的 Core 状态分块中；每个接收方一个发送器，按 `seq` 依次调用 `send`，前一个返回后才发下一个。
-- Inbox 位于接收方：`deliver` 只做 Schema 校验与入队；按 `eventId` 去重；单个消费者逐条处理。
+  发往 Supervisor 与 Gateway 的待发送消息同样各用一个发送器按登记顺序发出（Kernel/Interaction 4.4）。
+- Inbox 位于接收方：`deliver` 只做 Schema 校验与入队；按 `eventId` 去重；单个消费者逐条处理，不因 `seq` 缺口等待。
 - 投递语义见 [Kernel（外部视角）](../Module/Kernel.md) 4.5。
 
 ## 5. 边界

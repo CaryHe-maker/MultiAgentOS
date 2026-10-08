@@ -210,6 +210,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `REASON_CODES`、`REASON_CODE_CATEGORY` | `platform-common/reason-code.ts` | 原因码枚举与其 `ErrorCategory`（M1Interface 3.4） |
 | `ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
+| `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
 
 ## 5. 文件依赖顺序
 
@@ -218,7 +219,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 ```text
 platform-common/* → kernel-unit/budget-state.ts
 → executor/model-tool-call.ts → executor/file-read.ts → executor/model-call.ts
-→ context/context-pack.ts → context/repository.ts
+→ context/context-pack.ts → context/token-estimate.ts → context/repository.ts
 → workflow/step-record.ts → workflow/handoff.ts → workflow/report.ts
 → context/assemble.ts
 → catalog/definition-schemas.ts → catalog/catalog-schemas.ts
@@ -256,6 +257,7 @@ platform-common/* → kernel-unit/budget-state.ts
 | `packages/contracts/src/**/*.test.ts` | 每个顶层 Schema 的合法值、缺失必填字段、额外字段、取值越界；条件必填规则（如 `RUN_BLOCKED` 必须带 `closeReason`） |
 | `packages/contracts/src/protocol-registry.test.ts` | 全部顶层 Schema 已注册；重复注册与未知 major 被拒绝；`ContractRef` 可解析 |
 | `packages/contracts/src/platform-common/reason-code.test.ts` | 原因码枚举与 M1Interface 3.4 一致，每个原因码有唯一 `ErrorCategory` |
+| `packages/contracts/src/context/token-estimate.test.ts` | 估算覆盖 `toolSpecs` 与 `toolCalls`；估算值不低于固定样本的实际 token 数；相同输入结果稳定 |
 | `packages/testing/src/harnesses/*-contract.test.ts` | 每个 Port 的共享 contract test 同时运行 fake 与真实实现 |
 | `packages/testing/src/architecture.test.ts` | 文件依赖顺序无环；其他 workspace 不定义公共 Schema |
 

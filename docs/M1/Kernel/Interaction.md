@@ -60,7 +60,9 @@ Core、Monitor、Scheduler、Execution 同进程、同通讯主体，但各自�
 |---|---|---|
 | Gateway → Core | Fabric（`GatewayForward`） | 外部 syscall |
 | Supervisor → Core | Fabric（`ExecutionFactSink.report`） | 执行事实，作为消息进入运行 actor |
-| Core → Supervisor、Gateway | 待发送 | `SupervisorPort` 调用、`AdmissionProjection` |
+| Execution → Supervisor | 待发送 | `SupervisorPort.execute` |
+| Core → Supervisor、Gateway | 待发送 | `SupervisorPort.cancelRun`、`SupervisorPort.shutdown`、`AdmissionProjection` |
+| 运行 actor → Execution | 函数调用 | `handleExecutionFact`：分派执行事实，用量与违规经 Execution 的结果检查交给 Core |
 | Core → Monitor、Scheduler、Execution | 职责接口（函数调用） | 第 3.4 节 |
 | Execution → Core | 内部 syscall（函数调用） | 申请预留、提交结果检查、申请重试 |
 | Monitor、Scheduler → Core | 只通过返回值 | 额度或机会不足以拒绝结果返回，异常以返回值表达 |
@@ -107,16 +109,16 @@ interface ResultCheck {
   stopVerdictBy?: 'SUPERVISOR' | 'CORE';                           // STOP_UNCONFIRMED 的判定来源
 }
 
-// Core → Execution：职责接口
+// Core → Execution：职责接口；handleExecutionFact 例外，由运行 actor 的 dispatch 调用
 interface ExecutionDuties {
   createAttempt(spec: AttemptSpec): Promise<string>;              // 返回 unitAttemptId，进入 FIFO 并在空闲时启动
-  handleExecutionFact(fact: ExecutionFact): Promise<void>;        // actor 收到 EXECUTION_FACT 时调用
+  handleExecutionFact(fact: ExecutionFact): Promise<void>;        // 运行 actor 收到 EXECUTION_FACT 时调用，不经 Core
   abortQueued(): { inFlight: { unitAttemptId: string; executionId: string }[] };
   synthesizeStopUnconfirmed(executionIds: string[]): void;        // 收敛兜底：Core 判定的停止未确认
   ownsArtifact(ref: ArtifactRef): boolean;
   readArtifact(ref: ArtifactRef): Promise<{ ok: true; text: string } | { ok: false }>;
   collectUnknownEffects(): UnknownEffect[];
-  unitStatistics(): { units: RunSummary['units']; modelRequests: number };
+  modelRequestCount(): number;                                     // 派发给 Supervisor 的 MODEL 执行实例数，含技术重试
   publishRunSummary(summary: RunSummary): Promise<ArtifactRef>;
 }
 
@@ -185,10 +187,12 @@ interface RunRegistry {
 | 部分 | 内容 |
 |---|---|
 | 邮箱 | 控制通道与工作通道两个队列 |
-| 处理循环 | 一次只处理一条消息：`while (message = 取下一条（控制通道优先）) await dispatch(message)` |
+| 处理循环 | 一次只处理一条消息：`while (message = 取下一条（控制通道优先）) { await dispatch(message); await core.settleConvergence(); }`；两步合起来是一次处理 |
 | 状态 | Core 分块（控制状态、runEpoch、AgentRun 登记、Lease、授权记录、请求记录、Outbox、待发送、计时器）、Execution 分块（尝试、FIFO、产物归属索引、上下文构建记录）、Monitor 分块（账本、预留）、Scheduler 分块（本运行持有的机会） |
 
 `dispatch` 把 `EXECUTION_FACT` 交给 `Execution.handleExecutionFact`，其余消息交给 Core 的处理函数。
+`core.settleConvergence()` 是 Core 的收尾步骤：本次处理中登记了收敛时，在这里完成需要调用 Execution 或等待 I/O 的部分（第 6 节）；
+没有登记时立即返回。
 
 ### 4.3 消息
 
@@ -200,6 +204,7 @@ interface RunRegistry {
 | `RUN_TIMEOUT` | 控制 | Core 定时器 | Core |
 | `AUTHORIZATION_TIMEOUT` | 控制 | Core 定时器 | Core |
 | `CONVERGENCE_DEADLINE` | 控制 | Core 定时器 | Core |
+| `KERNEL_FAULT` | 控制 | actor 之外的发送器 | Core |
 | `EXECUTION_FACT`（outcome 为 TERMINATED、VIOLATION、STOP_UNCONFIRMED） | 控制 | Supervisor | Execution |
 | `REGISTER_AGENT_RUN`、`SUBMIT_UNIT`、`END_AGENT_RUN`、`CLOSE_RUN` | 工作 | Workflow | Core |
 | `EXECUTION_FACT`（outcome 为 COMPLETED、REJECTED、FAILED） | 工作 | Supervisor | Execution |
@@ -215,8 +220,16 @@ interface RunRegistry {
    - 本地 I/O 可以在处理函数中 `await`：读取目录定义（`CatalogPort`）、读写 ArtifactStore、写入 `runs/<workflowRunId>/`。
      由于不可重入，等待期间该运行的队列整体暂停。
    - 跨主体 I/O 一律不在处理函数中等待：`SupervisorPort` 调用、`AdmissionProjection`、Outbox 投递。处理函数只登记为待发送，
-     处理结束后由 actor 之外的发送器发出。Outbox 每个接收方一个发送器，按 `seq` 依次投递，前一个投递返回后才发下一个。
+     处理结束后由 actor 之外的发送器发出。每个目标一个发送器：Supervisor、Gateway、Workflow 的 Inbox、UserInteraction 的 Inbox
+     各一个，按登记顺序依次发出，前一个返回后才发下一个；Outbox 的 `seq` 即该接收方的登记顺序。
+     因此同一运行的 `SupervisorPort.execute` 一定先于其后登记的 `SupervisorPort.cancelRun` 到达 Supervisor。
+   - 发送失败（只可能是契约缺陷，如 Schema 校验不通过）不重试：发送器把失败写入审计，跳过该消息继续发送后续消息，
+     并向控制通道投递 `KERNEL_FAULT`。Core 处理 `KERNEL_FAULT` 时，运行为 RUNNING 则以 `FAILED(KERNEL_INTERNAL)` 进入收敛，否则只写入审计。
+     RunClosed、RunFinished 本身发送失败时只写入审计。
 3. **结果检查同步**：`CoreSyscalls.submitResultCheck` 是同步函数，“核对 runEpoch”与“放入 Outbox”之间不可能插入 `await`。
+   Core 在同步的内部 syscall（`requestReservation`、`submitResultCheck`、`retryExecution`）中不回调 Execution、不等待 I/O：
+   需要收敛时只执行第 6 节第 ① 步中不涉及 Execution 的部分并登记收敛，其余部分由 `settleConvergence` 在同一次处理的末尾完成。
+   Execution 在内部 syscall 返回后若发现 runEpoch 已变（`currentRunEpoch()`），不再取下一个队首。
 4. **定时器只入队**：定时器回调只向控制通道投递对应消息，不直接修改运行状态。
 5. **响应**：Gateway 转发的请求，其响应是处理函数的返回值，在本次处理结束时返回。同一次处理中放入 Outbox 的事件可能先于该响应到达接收方。
 6. **持久化**：M1 不按消息持久化运行状态，没有“状态持久化后再发送”的步骤；只有审计与运行摘要写入存储。
@@ -236,10 +249,14 @@ interface RunRegistry {
 | `RUN_TIMEOUT` | 进入收敛（RUN_TIMEOUT） | 忽略，写入审计 | 忽略 |
 | `AUTHORIZATION_TIMEOUT` | 处理 | 忽略 | 忽略 |
 | `CONVERGENCE_DEADLINE` | — | 收敛兜底（第 6 节） | 忽略 |
+| `KERNEL_FAULT` | 进入收敛（FAILED(KERNEL_INTERNAL)） | 写入审计 | 写入审计 |
 | `EXECUTION_FACT` | 处理 | 只结算与记录（第 6 节） | 作为证据写入审计 |
 
 结束原因以先进入收敛者为准。唯一例外：收敛中收到 `VIOLATION` 事实时，`closeReason` 升级为 VIOLATION，`failure` 改为该违规，
 `reportRef` 不再交付。
+
+`CLOSE_RUN` 在 RUNNING 时先按 `requestId` 去重（同第 5.1 节第 1 步）；`outcome = COMPLETED` 时再经 `Execution.ownsArtifact`
+核对 `reportRef`，不属于本运行返回 `INVALID_ARTIFACT_REF`，运行保持 RUNNING。核对通过后才进入收敛。
 
 ## 5. 一次 submitUnit 的内部路径
 
@@ -255,6 +272,9 @@ Core 处理 `SUBMIT_UNIT`，依次检查，任一不通过即返回 `SyscallReje
 6. `input` 不符合 Unit 的 `inputContract`：`INVALID_INPUT`。
 
 通过后记录请求，本次处理结束时返回 `SyscallAck`；此后该请求恰好得到一个 UnitReport，或随 RunClosed 结束。
+
+M1 目录不含 executionKind 为 `FILE_WRITE`、`COMMAND`、`TEST` 的 Unit，真实目录下这类请求先在第 4 步得到 `FORBIDDEN`；
+第 5 步由使用 fake 目录的测试覆盖。模型提出的写入、命令或测试动作不对应任何工具，在 Workflow 的 Validation 中以 `UNKNOWN_TOOL` 拒绝。
 
 ### 5.2 权限
 
@@ -277,7 +297,9 @@ createAttempt → FIFO（按 createAttempt 的调用顺序）
   → 解析输入中的 ArtifactRef（M1Interface 6.1 的三个位置）
        不属于本运行 → submitResultCheck(NOT_DISPATCHED, INVALID_ARTIFACT_REF)
   → REPORT_PUBLISH：Execution 内建完成（Execution 第 5 节）→ submitResultCheck
-  → MODEL：估算 est = estimateTokens(ContextPack) + max_tokens → requestReservation
+  → MODEL：核对 ContextPack 与 final 一致：operation 为 ASSEMBLE，且 tokenBudget 等于 final ? finalInputBudget : perCallInputLimit
+       不一致 → submitResultCheck(NOT_DISPATCHED, INVALID_INPUT)
+     估算 est = estimatePackTokens(ContextPack) + max_tokens → requestReservation
        Core：finalCallUsed 检查 → Scheduler.acquire → Monitor.reserve
        被拒 → Core 交付 UnitReport(REJECTED, BUDGET_* 或 FINAL_CALL_USED)，尝试结束
   → 生成 executionId，登记待发送 SupervisorPort.execute(ExecutionRequest)
@@ -321,30 +343,37 @@ Core 在 `submitResultCheck` 中同步完成：
 
 正常结束（`closeRun`）、用户取消、运行超时、安全违规与 Kernel 异常共用以下三步。
 触发来源：`CLOSE_RUN`（COMPLETED 或 FAILED）、`CANCEL_RUN`（CANCELLED）、`RUN_TIMEOUT`（RUN_TIMEOUT）、
+`KERNEL_FAULT` 与 `requestReservation` 中的内部错误（FAILED(KERNEL_INTERNAL)）、
 结果检查中的 VIOLATION（VIOLATION）与 STOP_UNCONFIRMED（FAILED）。
 
-**① 开始收敛**（一次处理内完成）：
+每一步都在一次处理内完成，并分为两段：“登记”只改 Core 自己的状态、调用 Scheduler 与登记待发送，可以在同步的内部 syscall 中执行；
+“收尾”调用 Execution 或等待 I/O，只在 `settleConvergence` 中执行（第 4.4 节第 3 条）。
 
-1. 记录 `closeReason`、`failure`、`reportRef`（只有 COMPLETED）；运行状态改为 CONVERGING；runEpoch 加 1；
-   登记待发送 `AdmissionProjection(CONVERGING)`；停止运行总时长计时。
-2. 授权询问仍在进行时改为 CANCELLED：挂起的请求不再交付 UnitReport，Outbox 发出 `AuthorizationResolved(CANCELLED)`，停止询问计时。
-3. `Execution.abortQueued()`：清空 FIFO，未启动的尝试不交付 UnitReport；返回在途执行集合，记为 pending。
-4. `Scheduler.stopGranting()`：不再发放新机会，不收回在途机会。
-5. pending 不为空：登记待发送 `SupervisorPort.cancelRun`，启动收敛兜底计时（`cancelGraceMs + convergenceMarginMs`）。
-   pending 为空：在同一次处理中执行第 ③ 步。
+**① 开始收敛**：
+
+- 登记：
+  1. 记录 `closeReason`、`failure`、`reportRef`（只有 COMPLETED）；运行状态改为 CONVERGING；runEpoch 加 1；
+     登记待发送 `AdmissionProjection(CONVERGING)`；停止运行总时长计时。
+  2. 授权询问仍在进行时改为 CANCELLED：挂起的请求不再交付 UnitReport，Outbox 发出 `AuthorizationResolved(CANCELLED)`，停止询问计时。
+  3. `Scheduler.stopGranting()`：不再发放新机会，不收回在途机会。
+- 收尾：
+  4. `Execution.abortQueued()`：清空 FIFO，未启动的尝试不交付 UnitReport；返回在途执行集合，记为 pending。
+  5. pending 不为空：登记待发送 `SupervisorPort.cancelRun`（携带新的 runEpoch），启动收敛兜底计时（`cancelGraceMs + convergenceMarginMs`）。
+     pending 为空：接着执行第 ③ 步。
 
 **② 收敛中**（逐条处理消息，处理方式见第 4.5 节）：
 
 - 属于 pending 的执行事实：Execution 不重试、不写产物，直接提交结果检查；Core 只做第 5.4 节的第 1–3 步（结算、释放机会、记录效果），
-  因 runEpoch 已变而不交付。VIOLATION 使 `closeReason` 升级。处理后从 pending 删除，删空时执行第 ③ 步。
+  因 runEpoch 已变而不交付。VIOLATION 使 `closeReason` 升级。处理后从 pending 删除；删空时登记第 ③ 步，由本次处理的 `settleConvergence` 执行。
 - `CONVERGENCE_DEADLINE`：对 pending 中剩余的执行调用 `Execution.synthesizeStopUnconfirmed`（判定来源为 CORE），按未知消耗结算，执行第 ③ 步。
 
-**③ 完成收敛**（一次处理内完成）：
+**③ 完成收敛**（全部在收尾段执行）：
 
 1. `Monitor.finalize()` 得到 `BudgetSummary`；全部 AgentRun 标记为 ENDED；Lease 与授权记录失效；`Scheduler.releaseAll()`。
 2. `unknownEffects = Execution.collectUnknownEffects()`。
-3. Core 组装 `RunSummary`（控制状态与 AgentRun 来自 Core，`tokens` 来自 `BudgetSummary`，`units` 与 `model.requests` 来自 `Execution.unitStatistics()`，
-   `model.finalCallUsed` 来自 Core 的 final-call 记录），调用 `Execution.publishRunSummary` 写成产物，得到 `runSummaryRef`。
+3. Core 组装 `RunSummary`（控制状态、AgentRun 与 `units` 来自 Core，`tokens` 来自 `BudgetSummary`，
+   `model.requests` 来自 `Execution.modelRequestCount()`，`model.finalCallUsed` 来自 Core 的 final-call 记录），
+   调用 `Execution.publishRunSummary` 写成产物，得到 `runSummaryRef`。
 4. Core 向审计追加 `RUN_CLOSED`。
 5. Outbox 放入 `RunClosed`（Workflow）与 `RunFinished`（UserInteraction），二者内容相同（M1Interface 5.3）。
 6. 运行状态改为 CLOSED，登记待发送 `AdmissionProjection(CLOSED)`，通知运行管理。
@@ -397,7 +426,7 @@ M1 的安全停机就是收敛：违规以 VIOLATION 收敛，Kernel 内部不�
 |---|---|---|
 | `REPOSITORY_ORIENT` | 60000 | 1048576 |
 | `REPOSITORY_SEARCH` | 30000 | 1048576 |
-| `FILE_READ` | 10000 | 262144 |
+| `FILE_READ` | 10000 | 16384 |
 | `CONTEXT_ASSEMBLE` | 30000 | 2097152 |
 | `MODEL` | 180000 | 1048576 |
 
