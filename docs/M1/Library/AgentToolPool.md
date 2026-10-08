@@ -28,7 +28,7 @@ M1 不实现：独立服务、热更新、运行时发布、权限管理和版�
 | Agent 必须显式声明 `modelSettings.thinking` | DeepSeek 默认开启思考模式，会增加计费输出与延迟 |
 | 状态（DEPRECATED、QUARANTINED、REVOKED）放在单独的 `status.yaml` | 状态是已发布定义唯一允许变化的部分，不参与 digest |
 | 价格使用整数“微美元 / 百万 token” | digest 不依赖浮点格式 |
-| 查找结果和固定集合全部深冻结，类型为 `DeepReadonly` | 满足 Style §2.2 的发布值不可变要求 |
+| 查找结果和固定集合全部深冻结，类型为 `DeepReadonly` | 满足发布值不可变的要求（[SharedContracts](SharedContracts.md) 第 2 节、M1Interface 1.3） |
 | YAML 使用 1.2 core schema | `no`、`on`、日期等保持字符串，值的类型和 digest 不因写法改变 |
 
 ## 3. 定义文件
