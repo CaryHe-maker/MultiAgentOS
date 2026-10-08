@@ -30,10 +30,13 @@ Kernel.Execution 拥有 UnitAttempt，与 Workflow 的 TaskAttempt 分开。
 Workflow 从 AgentToolPool 选用明确版本的模板，固定本次运行的能力组合，
 不能随模板更新静默改变已有运行。
 
-Unit 的执行链可以有 Tool 权限封装，也可以使用可信开发者授予权限的行为。
+是否需要 Lease 由 Unit 定义中声明的受保护能力决定，Workflow 不作权限判断。
 Workflow 检查模型动作是否存在、是否属于固定组合及是否满足业务输入要求，
 但不通过检查动作合法性替代 Core 的权限审核。
-无 Tool 路径由可信模板决定，模型不能自行省略审核封装。
+受保护能力声明由可信模板决定，模型不能自行省略。
+
+Agent 定义中的运行上限（如每次 AgentRun 的轮次上限）由 Workflow 读取、计数并判断；
+达到上限时 Workflow 组织收尾，Kernel 不解释这些业务上限。
 
 ## 4. Agent 行为闭环
 

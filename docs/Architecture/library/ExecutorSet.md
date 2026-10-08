@@ -3,7 +3,8 @@
 ## 1. 定位
 
 ExecutorSet 是具体 Executor 的原子软件行为代码集合。
-它实现模型调用、文件操作、搜索、上下文处理及其他执行能力，由 Kernel.Execution 调用。
+它实现模型调用、文件操作、搜索、上下文处理及其他执行能力。Kernel.Execution 提交执行定义引用，
+由 Kernel.Supervisor 装配并执行。
 它不是独立 Module，不自行管理任务、调度、Lease 或跨运行状态。
 
 “原子”指可组合的软件行为粒度，不保证效果不可中断、可回滚或可安全重复。
@@ -15,13 +16,13 @@ ExecutorSet 提供行为实现，Kernel 管实际运行。
 
 ```text
 模板声明行为组合 → Kernel 确认执行条件
-  → Execution 调用 ExecutorSet 中的实现
+  → Execution 提交定义引用 → Supervisor 装配并执行 ExecutorSet 中的实现
   → 返回结果与效果事实 → Kernel 确认 → Workflow 验收
 ```
 
 代码版本及其行为契约应能与模板引用对应；行为变化不能被相同名称掩盖。
-Executor 的能力存在不等于调用者获准使用。含 Tool 的链由 Core 检查 Lease，
-无 Tool 链依据可信开发者授权；Executor 无权改变这一区分。
+Executor 的能力存在不等于调用者获准使用。声明了受保护能力的 Unit 由 Core 检查 Lease，
+未声明的依据可信开发者授权；Executor 无权改变这一区分。
 
 ## 3. 行为类别
 
@@ -40,6 +41,8 @@ Executor 的能力存在不等于调用者获准使用。含 Tool 的链由 Core
 
 ContextEngine 不再作为独立运行模块，其能力由相应 Executor 实现。
 概览帮助理解工作材料，检索定位证据，组装形成模型输入，压缩控制上下文规模。
+概览与检索会读取用户材料，所在 Unit 必须声明受保护能力并通过 Lease 审核；
+组装只使用 Execution 已解析的输入，不直接读取用户材料。
 
 必须保留的语义包括：
 
@@ -58,6 +61,11 @@ Executor 接收受控状态视图并返回计算结果，不在静态库建立�
 
 Executor 只使用本次获准的输入和资源，报告结果、消耗及已知或未知效果。
 权限和 Lease 裁决不在各 Executor 中重复实现，原子代码不得读取 Core 的 Lease 内容。
+
+Executor 开发者必须在实现中硬编码执行点防护检查，例如拒绝访问危险文件、只处理允许的对象类型、
+限制输出规模，并在解析真实路径后确认其位于 Supervisor 注入的工作范围内。
+这类检查是最后一道防线，不替代 Core 的权限裁决。越界请求返回拒绝结果；
+发现防护本身失效时，Executor 主动停止并上报，由 Supervisor 与 Execution 交 Core 处理。
 
 模型回复中的工具提案交回业务流程，不直接作为任意执行命令。
 运行取消或失败后仍需报告已发生效果，不能将异常统一解释为未执行。

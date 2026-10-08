@@ -10,36 +10,49 @@ Workflow 决定业务目标与验收，Kernel 负责操作是否获准及如何�
 
 | 组件 | 责任 | 状态归属 |
 |---|---|---|
-| Gateway | 外部 syscall 接入、来源检查、入口控制与分派 | 入口和请求关联 |
+| Gateway | 外部 syscall 接入、来源检查、入口控制与分派，执行准入封锁与限流 | 入口、请求关联与封锁标志 |
 | Core | 授权、Lease、系统控制与结果裁决 | 权限依据、Lease、控制和接收决定 |
-| Scheduler | 执行机会、目标与 API 资源安排 | 就绪、容量占用及调度关系 |
-| Execution | 尝试创建、步骤推进、Executor 调用和效果管理 | Attempt、实际进度、产物及上下文状态 |
-| Supervisor | 模块和执行环境监管、停止与回收 | 生命周期和监管事实 |
-| Monitor | 额度、资源账本与运行观测 | 预留、消费、结算及观测数据 |
+| Scheduler | API 调用机会与调用目标安排 | 容量占用及调度关系 |
+| Execution | 尝试创建、执行队列、步骤推进、产物发布和效果管理 | Attempt、执行队列、实际进度、产物及上下文状态 |
+| Supervisor | 装配并执行 Executor，监管模块与执行环境的停止与回收 | 生命周期和监管事实 |
+| Monitor | 额度、资源账本、限流判断与运行观测 | 预留、消费、结算及观测数据 |
 
 Execution 是内部组件，详见 [Execution](../kernel/Execution.md)。
 组件可以通过内部接口协作，不要求模拟跨 Module 通信；各自状态仍由对应 Owner 修改。
+各组件采用函数调用还是消息通信由部署决定，不改变第 3 节的请求关系。
 
 ## 3. Gateway 与 syscall
 
 Gateway 是外部主体请求受保护 Kernel 操作的统一入口，识别来源和目标并分派服务。
 它不持有 Lease，也不根据租约副本独立裁决。
 
-外部 syscall 表达用户或 Workflow 对系统服务的请求；
-内部 syscall 表达 Kernel 组件间对系统职责的请求。内部入口及分派形式保持开放。
+| 请求关系 | 定义 |
+|---|---|
+| 外部 syscall | 外部 Module（UserInteraction、Workflow）经 Gateway 向 Core 请求 Kernel 服务 |
+| 内部 syscall | Kernel 其他组件向 Core 发起的请求，例如申请资源预留、提交结果检查、上报异常 |
+| 职责接口调用 | Core 在处理请求时调用其他组件的职责接口，例如调用 Monitor 结算、调用 Scheduler 分配调用机会；不属于 syscall，也不构成 Core 对自身的递归请求 |
+
+Gateway 检查调用来源、请求契约与准入封锁。准入被拒时，由 Gateway 直接向调用方返回异常；
+准入通过的请求移交 Core 的统一控制响应逻辑。
 
 受理、处理与完成必须区分，等待超时不证明操作未发生。
-事实报告不等于控制请求，受控事实信道可直接交给责任组件，但不能夹带未授权操作。
+事实报告不等于控制请求。观测数据可以经受控事实信道直接交给 Monitor 或对应 Owner；
+影响账本或权限状态的事实（如用量结算）必须随内部 syscall 交给 Core，由 Core 调用对应组件处理。
 Fabric 归 Core 管辖，不意味着全部数据必须经过 Core 中转。
 
-## 4. Tool、开发者权限与 Lease
+## 4. 受保护能力、开发者权限与 Lease
 
-Unit 可以通过 Tool 权限封装执行，也可以直接使用开发者授予权限的行为。
-Tool 存在时触发相应审核及 Lease 检查；不存在时，权限来自可信开发者定义，
-不是调用者可以选择的默认放行选项。两类路径均受数据、资源和工作范围限制。
+是否需要 Lease，以 Unit 定义中声明的受保护能力为准。声明了受保护能力的 Unit 必须经 Core
+进行 Lease 审核；未声明的 Unit 依据可信开发者定义的权限执行，这不是调用者可以选择的默认放行。
+两类 Unit 都必须通过准入检查，并受数据、资源和工作范围限制。
+面向模型的 Tool 描述只说明模型可以请求什么动作，本身不决定授权。
 
 Workflow 检查动作及模板组合是否合法，Core 判断权限。
-模型或 Workflow 不能移除封装、替换行为或扩大参数范围来绕过授权。
+模型或 Workflow 不能移除受保护能力声明、替换行为或扩大参数范围来绕过授权。
+
+Core 保留用户的授权决定。后续申请若属于已同意范围的安全子集，可以直接签发 Lease；
+危险行为每次都必须单独征得用户同意。同一授权在等待用户回答期间，后续同类申请等待同一结果，
+不重复询问。拒绝或超时不视为同意，并在本次运行内保留。
 
 Lease 表示 Core 管理的使用资格，受主体、行为和工作条件约束。
 Core 负责签发、变更、失效与撤销；长期资格也不是不可撤销或跨范围通用的权限。
@@ -52,13 +65,17 @@ Persistence 可以保存 Core 私有状态，但不向其他组件开放 Lease �
 ## 5. 执行闭环
 
 ```text
-Workflow → Gateway 接收请求 → Core 检查授权依据
-  → Execution 建立尝试并准备步骤
-  → Scheduler 安排机会，Monitor 确认资源
-  → Supervisor 监管环境，Execution 调用 Executor
-  → Core 检查结果，Monitor 核对消耗
-  → Kernel 交付确认事实，Workflow 验收
+Workflow → Gateway 准入（被拒：Gateway 返回异常）
+  → Core 定义核验与权限检查（被拒：Core 交付拒绝结果）
+  → Execution 建立尝试，进入执行队列
+  → 需要资源时：Execution 经内部 syscall 申请，Core 调用 Scheduler 分配机会、调用 Monitor 预留
+  → Execution 提交定义引用，Supervisor 装配并执行 Executor，交回执行事实
+  → Execution 经内部 syscall 提交结果检查，Core 核对结果并调用 Monitor 结算
+  → Execution 依据 Core 的判定交付结果，Workflow 验收
 ```
+
+Core 的判定携带运行控制状态的版本。Execution 交付前须再次核对，
+运行已被取消、结束或停止时不再交付，结果只作为证据保存。
 
 缺少权限时可以拒绝或等待。Core 依据敏感程度与策略发起人工审批，
 UserInteraction 的原始响应不直接成为授权。
@@ -69,9 +86,10 @@ UserInteraction 的原始响应不直接成为授权。
 
 ## 6. 调度与执行协作
 
-Execution 判断固定行为序列的步骤依赖，Scheduler 决定执行机会和目标，
-两者不替代 Workflow 的业务任务图。
-API 池归 Scheduler，Monitor 提供额度与消耗，Execution 负责实际模型和服务调用。
+执行队列归 Execution，由 Execution 判断固定行为序列的步骤依赖与推进顺序。
+Scheduler 只负责 API 等受限资源的调用机会与调用目标，不改变执行队列的顺序。
+两者都不替代 Workflow 的业务任务图。
+API 池归 Scheduler，Monitor 提供额度与消耗，实际模型和服务调用由 Supervisor 监管的执行任务发起。
 未就绪步骤不应长期占据机会，权限有效不等于资源可用。
 
 内部组织简化交接，但不自动消除部分失败、未知效果与资源泄漏。
@@ -80,7 +98,11 @@ API 池归 Scheduler，Monitor 提供额度与消耗，Execution 负责实际模
 ## 7. Monitor
 
 Monitor 维护额度、预留、实际消费、释放和待核对消耗。
-Workflow 管业务预算范围与步数，不成为实际资源用量的第二事实源。
+Workflow 管业务预算的分配与步数，不成为实际资源用量的第二事实源。
+
+额度设软、硬两类阈值。软阈值只在结算时判断，结果作为额度状态随 Core 的判定交回，
+提示业务层收尾，不拒绝请求。硬阈值在预留和结算时都可以触发：Monitor 有权主动提交异常，
+Core 据此封锁准入并停止相应运行。额度状态只能前进，不会回退。
 
 账本依据可核对事实维护，负载、延迟等观测可以采用相应采集策略。
 失败或取消不等于零消耗，重复事实不能重复结算。
@@ -90,6 +112,9 @@ Monitor 可以发现异常并请求控制处置，但不修改 Workflow 状态�
 ## 8. Supervisor 与基础设施
 
 Supervisor 管模块和执行域的健康、停止、隔离与回收。
+Execution 提交执行定义引用与参数，Supervisor 据此装配、启动并监管 Executor 执行实例，
+注入范围约束与受控依赖，并把执行结果与结束事实交回 Execution。
+Supervisor 也负责运行时长等执行期限的计时，超时由 Core 按异常处理。
 ModuleHost 归其管辖，负责装配、就绪与正常关闭。
 ArtifactStore 归 Execution，Fabric 归 Core，Persistence 生命周期由 ModuleHost 统一管理。
 管辖设施不等于拥有其保存的全部领域数据。

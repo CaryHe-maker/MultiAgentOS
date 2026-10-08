@@ -10,8 +10,8 @@ M1 只实现目录机制：定义 Schema、从仓库文件加载并校验、精�
 
 | 决策 | 理由 |
 |---|---|
-| 定义类型为 `AGENT`、`UNIT`、`TOOL`、`MODEL`、`PROMPT`，暂不做 `EXECUTOR` 和 `CONTRACT` | Agent → Unit → Tool 是架构要求的授权边界，必须从 M1 开始存在。Executor 在 M1 由 `executionKind` 路由；Contract 只用 `ContractRef` 指向已注册 Schema |
-| Agent 只引用 Unit，Unit 才引用 Tool | 与 [AgentToolPool](../../Architecture/module/AgentToolPool.md) §3 一致；Kernel 可以只凭锁定集合校验成员关系 |
+| 定义类型为 `AGENT`、`UNIT`、`TOOL`、`MODEL`、`PROMPT`，暂不做 `EXECUTOR` 和 `CONTRACT` | Agent → Unit 是 Kernel 定义核验的成员边界；是否需要 Lease 以 Unit 声明的受保护能力为准，Tool 只是面向模型的工具描述。Executor 在 M1 由 `executionKind` 作为定义引用，由 Supervisor 找到对应实现；Contract 只用 `ContractRef` 指向已注册 Schema |
+| Agent 只引用 Unit，Unit 才引用 Tool | 与 [AgentToolPool](../../Architecture/library/AgentToolPool.md) §2 一致；Kernel 可以只凭锁定集合校验成员关系 |
 | digest 覆盖引用目标的 digest（Merkle） | 一个 Agent 的 digest 就能确定整个闭包的内容 |
 | `v0.x` 是草稿，直接修改；`v1.0.0` 起封存且不可修改 | M1 阶段提示词和工具会频繁调整，改一处只需改一个文件。可复现性由每次运行记录的 `pinnedDefinitions` digest 和 git 历史保证 |
 | 已发布版本只能引用已发布版本 | 否则已发布定义的内容会随草稿变化 |
@@ -82,3 +82,5 @@ packages/agent-tool-pool/definitions/
 | `ContractRef` 指向的 `kernel.ModelRequest`、`file.ReadRequest`、`workflow.AnalysisAction`、`workflow.AnalysisReport` 尚未注册；目录暂不校验 ContractRef 是否已注册 | 各 Schema owner |
 | 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
 | 根 `package.json` 带 BOM，会导致 corepack 解析失败；建议统一去掉 | Cary |
+| 按 #20 与 [UnitCheck](../UnitCheck.md) 调整定义：拆分 `context-build` 为 `repository-orient`、`repository-search`、`context-assemble`；新增 `report-publish`；拆成 Planner 与 CodeViewer 两份 Agent 定义，CodeViewer 的 `startUnits` 为 `[repository-orient]` | meti |
+| Agent schema 新增 `limits.maxRounds`、`limits.maxToolCallsPerRound`；Unit 定义显式声明受保护能力（`repo.read`）；model-call 声明 `maxOutputTokens` | meti |

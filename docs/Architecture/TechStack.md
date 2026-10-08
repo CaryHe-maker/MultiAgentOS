@@ -70,7 +70,7 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 - Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 Execution 的模型网关内。Kernel 的 Gateway 是权限入口，与模型网关不同。需要多 Provider 协议适配或代理时可使用 LiteLLM Gateway，但不改变 Model Port。AgentOS 的 API 池、调用机会分配及配额权威仍归 Kernel Scheduler/Monitor，外部网关不得成为第二套授权或预算事实源。
 - OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定 DefinitionVersion。
-- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。业务操作按一个 Tool 粒度封装为 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格。Execution 推进 Tool 内固定 Executor 序列，MCP server 的能力声明不能扩大租约范围。
+- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。模型可调用的 Tool 对应到 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格；是否需要 Lease 以 Unit 声明的受保护能力为准。Execution 推进 Unit 内固定的 Executor 序列，由 Supervisor 装配执行；MCP server 的能力声明不能扩大租约范围。
 - OpenAPI 工具通过版本化定义生成参数 Schema；禁止动态执行未审查描述。
 - Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；运行时 Executor 健康度与负载由 Kernel Supervisor/Monitor 提供，Execution 维护 Attempt 和步骤进度。当前 SDK 所在 package 与目标模块不一致时，应显式迁移依赖与测试，不能让 Workflow 直接导入 Provider SDK。
 
@@ -97,7 +97,7 @@ Communication Fabric 由 Kernel 管辖，技术实现保留独立 Port。同进�
 | 语法分块 | tree-sitter |
 | 符号/引用 | SCIP；不支持的语言使用语言服务 Adapter |
 | 向量存储 | PostgreSQL + pgvector |
-| Embedding/Rerank | 通过 Kernel MODEL Unit 调用，不在 ContextEngine 内直连 Provider |
+| Embedding/Rerank | 通过 Kernel MODEL Unit 调用，上下文 Executor 不直连 Provider |
 | 缓存 | 内容 hash + IndexRevision + ACL/revision key |
 
 混合检索必须先以无模型评测验证收益。语义检索不能替代 provenance、ACL 和 repository revision 过滤。
@@ -113,7 +113,8 @@ Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程�
 - Secret Manager 通过短期 SecretRef/materialization 提供凭据；不把值写入协议或数据库正文。
 - 本地模式可以使用受限配置 Adapter，但必须保持相同 SecretRef 和脱敏语义。
 
-租约凭证完整性、持有者绑定和撤销传播必须一并实现，OIDC 身份或签名不能独自证明当前执行获准。
+Lease 只存在于 Core。对外交付的裁决结果与 Core 内的 Lease 记录绑定，撤销与失效在 Core 内即时生效；
+OIDC 身份或签名不能独自证明当前执行获准。
 长期或永久 Lease 不免除本次执行范围、预算和 fencing 检查，具体算法与有效期策略由 MVP 明确。
 
 ## 14. 可观测性

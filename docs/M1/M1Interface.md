@@ -1,12 +1,12 @@
 # MultiAgentOS M1 接口与跨模块协议
 
-> 架构衔接说明（2026-09-30）：本文保留既有 M1 范围、接口或进度基线。
-> 长期设计已调整为独立 Execution、Kernel 租约与五组件体系，目标平台为 Ubuntu LTS。
-> 本轮不设计 M1 详细方案，不表示代码已迁移；具体差异见 [M1 指南](README.md)。
+> 架构衔接说明（2026-10-07）：§5 已改为按 [UnitCheck](UnitCheck.md) 定义的目标接口；
+> §3、§4、§6–§9 中仍有既有 v0 协议，迁移差距记录在 [M1Process](M1Process.md) 的 C-05 与 B 组任务。
+> 文档更新不表示代码已迁移。
 
 ## 1. 规范约定
 
-关键词“必须”“不得”“应”具有规范性。运行时实现位于 `packages/contracts/src`；其中 ContextRequest、ContextPack 与 ContextPort 尚未完成的变更以本文和 [ContextEngine.md](../Architecture/module/ContextEngine.md) 为目标，差距记录在 [M1Process.md](M1Process.md) 的 C-05。
+关键词“必须”“不得”“应”具有规范性。运行时实现位于 `packages/contracts/src`；尚未完成的变更以本文为目标，差距记录在 [M1Process.md](M1Process.md) 的 C-05。
 
 兼容规则：
 
@@ -111,8 +111,53 @@ interface WorkflowControlPort {
 
 ## 5. Unit 接口
 
+### 5.1 目标接口（按 UnitCheck）
+
+Workflow 经 Gateway 发起 4 种 syscall，Kernel 返回 5 种信息，语义见 [UnitCheck](UnitCheck.md) 第 3 节。
+
 ```ts
-type ExecutionKind = 'CONTEXT' | 'MODEL' | 'FILE_READ' | 'FILE_WRITE' | 'COMMAND' | 'TEST';
+type ExecutionKind =
+  | 'REPOSITORY_ORIENT' | 'REPOSITORY_SEARCH' | 'FILE_READ'
+  | 'CONTEXT_ASSEMBLE' | 'MODEL' | 'REPORT_PUBLISH'
+  | 'FILE_WRITE' | 'COMMAND' | 'TEST';            // 后三者在 M1 返回 UNSUPPORTED_CAPABILITY
+
+type BudgetState = 'NORMAL' | 'WRAP_UP';           // EXHAUSTED 只在 Kernel 内部使用
+
+interface WorkflowSyscalls {
+  registerAgentRun(req: { workflowRunId: string; agentRunId: string; agentRef: VersionedRef; requestId: string }): Promise<SyscallAck | AdmissionException>;
+  submitUnit(req: { workflowRunId: string; agentRunId: string; unitRef: VersionedRef; input: unknown; requestId: string }): Promise<SyscallAck | AdmissionException>;
+  endAgentRun(req: { agentRunId: string; requestId: string }): Promise<SyscallAck | AdmissionException>;
+  closeRun(req: { workflowRunId: string; outcome: 'COMPLETED' | 'FAILED'; reportRef?: ArtifactRef; requestId: string }): Promise<RunClosed | AdmissionException>;
+}
+
+interface UnitReport {                              // 每个被受理的 submitUnit 恰好一个，或随 RunClosed 结束
+  requestId: string;
+  agentRunId: string;
+  unitRef: VersionedRef;
+  status: 'OK' | 'REJECTED' | 'FAILED';
+  reasonCode?: string;                              // 见 UnitCheck 第 13 节
+  outputRef?: ArtifactRef;
+  output?: unknown;                                 // 小型结构化结果
+  budgetState: BudgetState;
+}
+
+interface RunClosed {
+  workflowRunId: string;
+  closeReason: 'COMPLETED' | 'FAILED' | 'USAGE_LIMIT' | 'RUN_TIMEOUT' | 'CANCELLED' | 'VIOLATION';
+  usageSummaryRef: ArtifactRef;                     // 运行记录的执行部分，Workflow 在 M1 中不读取 token 数
+  unknownEffects: readonly string[];
+}
+```
+
+`SyscallAck`、`AdmissionException`、`RunStart` 的字段由 contracts 定义，至少包含 `requestId` 与原因码。
+UnitReport 不携带额度数值；Workflow 按 `requestId` 对应结果，不依赖到达顺序。
+
+### 5.2 既有 v0 接口（待迁移）
+
+以下为现有代码中的 v0 协议，迁移到 5.1 前保持可用。
+
+```ts
+type ExecutionKindV0 = 'CONTEXT' | 'MODEL' | 'FILE_READ' | 'FILE_WRITE' | 'COMMAND' | 'TEST';
 
 interface UnitIntent {
   schemaVersion: 'v0';
@@ -126,7 +171,7 @@ interface UnitIntent {
   };
   missionScopeId: string;
   graphRevision: number;
-  executionKind: ExecutionKind;
+  executionKind: ExecutionKindV0;
   definitionVersionRef?: VersionedRef;
   inputRef?: ArtifactRef;
   input?: unknown;
@@ -154,9 +199,10 @@ interface KernelUnitPort {
 }
 ```
 
-允许执行 `CONTEXT | MODEL | FILE_READ`。`FILE_WRITE | COMMAND | TEST` 必须返回 `UNSUPPORTED_CAPABILITY`，且不得产生副作用。
+v0 允许执行 `CONTEXT | MODEL | FILE_READ`。`FILE_WRITE | COMMAND | TEST` 必须返回 `UNSUPPORTED_CAPABILITY`，且不得产生副作用。
+`KernelUnitPort.execute` 一次调用直接返回结果，迁移后由 5.1 的 `submitUnit` 与 UnitReport 取代；`UnitResult.usage` 不再交给 Workflow。
 
-## 6. Context 接口
+## 6. 上下文与检索 Unit 的输入输出
 
 ```ts
 interface ContextRequestBase {
@@ -192,7 +238,7 @@ interface ContextPort {
 
 ContextPack 必须包含 `contextPackId`、`requestId`、`operation`、workspace、`repositoryRevision`、`snapshotId`、items、`tokenCount`、`tokenBudget`、`truncated`、`droppedCount`、provenance、`createdAt`，并在 ASSEMBLE 时包含 `prefixSha256`。每个 ContextItem 包含 `itemId`、kind、segment、role、content、`contentSha256`、`tokenCount`、reason 及可选 path/line/score。
 
-ContextPort 失败必须保留 ContextEngine 的稳定错误码，不得统一折叠为异常字符串。
+在目标架构中，ContextRequest 是 `repository-orient`（ORIENT）、`repository-search`（SEARCH）与 `context-assemble`（ASSEMBLE）三个 Unit 的输入，ContextPack 是其输出，由 Kernel 经 Supervisor 装配上下文与检索 Executor 执行。独立的 ContextPort 只在 v0 代码中存在，迁移后取消。失败必须保留稳定错误码，不得统一折叠为异常字符串。
 
 ## 7. Catalog 与平台 Port
 
@@ -245,8 +291,8 @@ M1 定义类型为 `AGENT | UNIT | TOOL | MODEL | PROMPT`，Schema 见 `packages
 | `interaction.*` | user-interaction | UserIntent |
 | `workflow.*` | workflow | TaskGraph、WorkflowRunView |
 | `kernel.control.*` | kernel | RuntimeProjection |
-| `kernel.unit.*` | kernel | UnitIntent、UnitResult |
-| `context.*` | context-engine | ContextRequest、ContextPack |
+| `kernel.unit.*` | kernel | Workflow syscall、UnitReport、AdmissionException、RunClosed（v0：UnitIntent、UnitResult） |
+| `context.*` | executor-set（上下文与检索 Executor） | ContextRequest、ContextPack |
 | `catalog.*` | agent-tool-pool | Agent/Unit/Tool/Model/Prompt Definition、DefinitionLookup、PinnedDefinitionSet |
 | `platform.lifecycle.*` | module-host | 生命周期 |
 | `platform.persistence.*` | persistence | 文件 Repository；其他能力 Unsupported |

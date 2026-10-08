@@ -13,8 +13,8 @@ ModuleHost 统一管理其生命周期；数据的解释、写入和恢复决策
 | UserInteraction | 会话关联、交互状态与展示偏好 |
 | Workflow | 业务图、AgentRun、业务尝试、验收、检查点与恢复决定 |
 | Core | 授权、私有 Lease、控制操作与准入决定 |
-| Scheduler | 调度、排队及派发关联 |
-| Execution | 执行尝试、步骤、效果核对及长期上下文运行状态 |
+| Scheduler | 调用机会分配及调度关联 |
+| Execution | 执行尝试、执行队列、步骤、效果核对及长期上下文运行状态 |
 | Monitor | 资源预留、结算、未知消耗与观测关联 |
 | Supervisor | 监管关系、生命周期与恢复协调事实 |
 

@@ -3,8 +3,9 @@
 ## 1. 定位
 
 Execution 是 Kernel 六组件之一，负责实际执行过程。
-它组织 UnitAttempt、行为步骤、输入输出、效果和执行相关状态，
-使用 ExecutorSet 提供的行为代码，不作为独立 Module 或第二套权限系统。
+它组织 UnitAttempt、执行队列、行为步骤、输入输出、效果和执行相关状态。
+Execution 提交 ExecutorSet 中的执行定义引用，由 Supervisor 装配并执行；
+Execution 不作为独立 Module，也不是第二套权限系统。
 
 Core 作权限和结果裁决，Scheduler 分配机会，Monitor 核对资源，
 Supervisor 管执行环境，Workflow 作业务验收。
@@ -12,16 +13,15 @@ Supervisor 管执行环境，Workflow 作业务验收。
 ## 2. 行为组织
 
 ```text
-UnitIntent → UnitAttempt
-  → 可选 Tool 权限封装
-  → 一个或多个 Executor 步骤
+UnitIntent →（Core 完成定义核验与权限检查）→ UnitAttempt → 执行队列
+  → 一个或多个 Executor 步骤（定义引用交 Supervisor 装配执行）
   → 运行实例 / 受管执行环境
   → 结果、产物与效果事实
 ```
 
-Tool 是权限封装，不是所有 Unit 的必经层。
-无 Tool 路径使用可信开发者授予的权限，有 Tool 路径由 Core 检查适用 Lease。
-Execution 不能自行移除封装或扩大授权，Executor 也不能自由派生未声明操作。
+权限检查在建立 UnitAttempt 之前由 Core 完成。声明了受保护能力的 Unit 由 Core 检查适用 Lease，
+未声明的 Unit 使用可信开发者授予的权限。
+Execution 不能自行移除受保护能力声明或扩大授权，Executor 也不能自由派生未声明操作。
 
 Executor 原子性描述组合粒度，不能据此推断效果可回滚或操作可安全重试。
 
@@ -36,13 +36,17 @@ Execution 拥有尝试、步骤关联、输入输出、实际进度和效果记�
 
 ## 4. 内核协作
 
-Execution 向 Scheduler 报告步骤就绪，在获准机会内执行。
-用量事实交由 Monitor，候选结果交由 Core，环境与停止事实交由 Supervisor 协调。
-这些是 Kernel 内部职责协作，不要求跨 Module 消息或外部 Gateway 回环。
+需要受限资源时，Execution 经内部 syscall 向 Core 申请，由 Core 调用 Scheduler 分配机会、
+调用 Monitor 预留额度。执行完成后，Execution 经内部 syscall 向 Core 提交结果检查，
+用量随之交给 Core，由 Core 调用 Monitor 结算。环境与停止事实交由 Supervisor 协调。
+这些是 Kernel 内部职责协作，不要求外部 Gateway 回环。
 
 Execution 不持有 Lease 内容，通过内核服务取得所需裁决。
 Core 接受结果不等于 Workflow 验收成功，结果被拒绝也不能抹去实际费用或效果。
-对外交付代表 Kernel 的确认事实，不由原子 Executor 回调 Workflow。
+
+已执行的 Unit 由 Execution 依据 Core 的判定封装结果并交付 Workflow；不由原子 Executor 回调 Workflow。
+Core 的判定携带运行控制状态的版本，Execution 交付前再次核对，状态已变时不再交付，
+结果只作为证据保存。运行收敛时，Core 等待 Execution 正在进行的交付结束。
 
 ## 5. 上下文行为与长期状态
 
@@ -77,7 +81,9 @@ Supervisor 管理环境的隔离、停止及回收。
 
 凭据只提供给确实需要的行为，不进入普通输出、日志、上下文或恢复保存点。
 不可信 Executor 不得修改执行管理状态或取得内核控制能力。
-ArtifactStore 由 Execution 管辖，但产物的业务用途和保留需求仍归相应 Owner。
+ArtifactStore 由 Execution 管辖，产物只由 Execution 写入与发布。
+业务产物（如最终报告）由业务 Owner 以 Unit 形式提交，Execution 发布后返回引用；
+产物的业务用途和保留需求仍归相应 Owner。
 
 ## 8. 中断、恢复与效果
 

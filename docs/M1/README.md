@@ -3,8 +3,9 @@
 ## 1. 目的与范围
 
 本目录定义 M1 的交付目标、技术选择、跨模块接口、任务进度和验收要求。
-M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读仓库分析，
-输出包含 repository revision、路径、行范围和 provenance 的结构化报告。
+M1 面向本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析，由 Planner 与 CodeViewer
+两个 Agent 单向交接完成，输出包含 repository revision、路径、行范围和 provenance 的结构化报告。
+M1 的验收平台为 Ubuntu LTS；开发平台不限，但代码必须能在 Ubuntu LTS 上运行。
 
 长期概念、模块职责与安全边界见 [Architecture 指南](../Architecture/README.md)。
 本目录说明这些能力在 M1 中的具体交付范围，不将长期架构中的全部能力视为 M1 要求。
@@ -13,9 +14,11 @@ M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task
 ## 2. 阅读顺序
 
 1. [M1Plan](M1Plan.md)：目标、范围、分工、任务、固定任务集和完成定义。
-2. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
-3. [M1Interface](M1Interface.md)：公开 Port、Schema、消息与错误协议。
-4. [M1Process](M1Process.md)：任务状态、实现差距与验证证据。
+2. [M1KernelRange](kernel/M1KernelRange.md)：M1 Kernel 六组件的职责范围与通讯组织。
+3. [UnitCheck](UnitCheck.md)：Unit 授权、准入、额度、Round 上限与运行结束机制。
+4. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
+5. [M1Interface](M1Interface.md)：公开 Port、Schema、消息与错误协议。
+6. [M1Process](M1Process.md)：任务状态、实现差距与验证证据。
 
 模块的 M1 实现说明放在 `docs/M1/<module>/` 下，例如 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
 
@@ -27,6 +30,8 @@ M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task
 | 文档 | 负责内容 | 边界 |
 |---|---|---|
 | M1Plan | 交付范围、任务、验收和降级策略 | 不重新定义长期模块所有权 |
+| M1KernelRange | M1 Kernel 组件职责与通讯组织 | 不定义 Workflow 业务逻辑 |
+| UnitCheck | M1 授权、准入、额度、收尾与结束机制 | 不规定具体 Schema 字段 |
 | M1TechStack | M1 使用的技术、版本用途和引入限制 | 不替代依赖 manifest |
 | M1Interface | M1 具体接口与兼容约定 | 不因长期设计存在某能力就自动纳入交付 |
 | M1Process | 状态、日期、证据、PR 和阻塞原因 | 不改变范围、接口或完成定义 |
@@ -36,8 +41,8 @@ M1 面向本地、单用户、单项目、单进程、单 Agent、单活动 Task
 - 长期模块边界和安全约束由 Architecture 定义。
 - M1 的范围和完成条件以 M1Plan 为准。
 - M1Interface 定义交付接口要求，代码中的 Schema 是已实现协议的可执行事实源。
+- 授权、准入、额度与结束机制以 UnitCheck 为准，Kernel 组件职责以 M1KernelRange 为准。
 - 目标与实现的差距在 M1Process 中记录，完成状态应有测试、报告或 PR 证据。
-- 跨文档契约差异集中见 [架构衔接清单](../Architecture/README.md#6-文档衔接清单)。
 
 ## 5. 维护要求
 

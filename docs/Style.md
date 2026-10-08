@@ -54,7 +54,7 @@
 
 - 领域包只依赖 `@multiagentos/contracts` 和自身声明的 Port。
 - `apps/control-plane` 是唯一组合根。
-- CLI 不依赖 Workflow；Workflow 不依赖 Kernel、ContextEngine 或具体适配器；Executor 不回调 Workflow。
+- CLI 不依赖 Workflow；Workflow 只经 Kernel 公开 syscall 交互，不依赖 Kernel 内部实现或具体适配器；Executor 不回调 Workflow。
 - 大对象存入 Artifact Store；模块消息只传 ArtifactRef。
 - 新增能力先声明 owner、Schema、Port、错误和测试，再接入实现。
 
@@ -64,7 +64,7 @@
 - 每个 Port 同时提供正例、反例和 adapter contract test。
 - 安全边界必须覆盖 Windows 与 POSIX 路径、symlink/junction、超时和大小限制。
 - 测试必须确定性运行；时间、随机数、模型和文件系统通过可替换依赖控制。
-- 提交前运行 `pnpm.cmd run check` 和 `git diff --check`。
+- 提交前运行 `pnpm run check` 和 `git diff --check`；最终验收在 Ubuntu LTS 上执行。
 
 ## 3. 文档规范
 
@@ -187,7 +187,7 @@ PR 必须包含：目标与范围、关键设计、协议/依赖影响、测试�
 - 所有必需 CI 检查通过；
 - 至少一名非作者批准；涉及 Shared Contracts 时，所有受影响模块 owner 完成评审；
 - 无未解决 review thread；
-- `pnpm.cmd run check` 与 `git diff --check` 通过；
+- `pnpm run check` 与 `git diff --check` 通过；
 - 进度行和证据在同一 PR 更新；
 - 不包含密钥、生成物、无关格式化或未声明依赖。
 

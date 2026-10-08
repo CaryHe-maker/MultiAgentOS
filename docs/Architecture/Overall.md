@@ -31,7 +31,7 @@ Kernel 采用宏内核组织，Execution 成为内部组件。ContextEngine 不�
 Kernel
   Gateway · Core · Scheduler · Execution · Supervisor · Monitor
                                 │
-                                └─ 调用 ExecutorSet 行为实现
+                                └─ Execution 提交定义引用 → Supervisor 装配并执行 ExecutorSet 行为
 Kernel → 确认执行事实 → Workflow 验收 → 用户视图
 
 静态库：AgentToolPool · ExecutorSet · SharedContracts
@@ -48,15 +48,16 @@ Persistence 的启停由 ModuleHost 管理。基础设施管辖不转移领域�
 
 | 组件 | 权威职责 |
 |---|---|
-| Gateway | 外部 syscall 接入、来源检查、入口控制与分派、限流 |
+| Gateway | 外部 syscall 接入、来源检查、入口控制与分派，执行限流 |
 | Core | 授权依据、Lease、控制操作和结果裁决 |
 | Scheduler | 执行机会、目标选择、API 容量与调度关联 |
 | Execution | UnitAttempt、步骤、执行进度、输出及效果关联 |
 | Supervisor | 模块和执行环境的健康、停止、隔离与回收 |
-| Monitor | 资源额度、预留、消费、结算、观测与限流控制 |
+| Monitor | 资源额度、预留、消费、结算、观测与限流判断 |
 
 实际完成、结果被接受和业务成功分别由 Execution、Core、Workflow 表达。
 内部协调可以集中组织，但不能将这些事实混为一个任意可写的状态。
+限流只有一个权威：Monitor 判断是否限流，Gateway 在入口执行。
 
 ## 5. 核心概念
 
@@ -67,23 +68,30 @@ Persistence 的启停由 ModuleHost 管理。基础设施管辖不转移领域�
 | MissionScope | 目标谱系、预算和能力上限、工作范围及取消边界 |
 | AgentRun | Workflow 管理的一次 Agent 行为过程 |
 | Unit / UnitIntent | 操作单元及其执行请求 |
-| Tool | 执行链中可选的权限封装 |
+| Tool | 面向模型的可调用工具描述；本身不决定授权 |
+| 受保护能力 | Unit 定义中声明的、需要 Lease 的能力（如读取用户仓库） |
 | Executor | 开发者提供的原子软件行为 |
 | UnitAttempt | Kernel.Execution 管理的一次实际执行尝试 |
 
 交互树、业务图和目标范围具有不同语义，不合并为万能任务树。
-Unit 可经过 Tool 封装，再由一个或多个 Executor 执行。存在 Tool 时进行对应权限审核和
-Lease 检查；无 Tool 时依据开发者授予的权限。路径由可信模板和代码确定，
-调用者不能自行移除 Tool 改变权限。Executor 的原子性不保证可回滚或事务原子性。
+Unit 由一个或多个 Executor 执行。是否需要 Lease，以 Unit 定义中声明的受保护能力为准：
+声明了受保护能力的 Unit 必须通过 Lease 审核；未声明的 Unit 依据开发者授予的权限执行，
+但仍受准入、资源和工作范围约束。受保护能力由可信定义确定，调用者和模型不能移除或改写。
+Executor 的原子性不保证可回滚或事务原子性。
 
 ## 6. 权限与系统调用
 
-外部 Module 经 Gateway 请求 Kernel 服务；内部组件间存在内部 syscall 概念，
-其接入方式将在 M1 具体设计阶段明确。
+外部 syscall 指外部 Module 经 Gateway 向 Core 请求 Kernel 服务。
+内部 syscall 只指 Kernel 其他组件向 Core 发起的请求；Core 在处理请求时调用其他组件，
+称为职责接口调用，不属于 syscall。各组件之间采用函数调用还是消息通信，由各 MVP 的部署决定，
+但不改变上述请求关系。
 
 Lease 内容仅由 Core 持有。Gateway、Workflow、Execution 及其他组件不保存实体、快照或缓存，
 通过系统调用取得所请求操作的裁决。合法检查不等于直接访问 Lease；
 Core 之外直接读取或修改 Lease 实体属于越权，进入 panic 处置。
+
+Core 保留用户的授权决定。后续申请若属于用户已同意范围的安全子集，可直接签发 Lease；
+危险行为（如执行命令）每次都必须单独征得用户同意。拒绝或超时不视为同意。
 
 开发者授权与 Lease 授权都不免除工作范围、数据保护、资源和监管约束。
 静态能力存在不代表任意调用者可以执行它。
@@ -91,8 +99,12 @@ Core 之外直接读取或修改 Lease 实体属于越权，进入 panic 处置�
 ## 7. 执行闭环
 
 Workflow 固定使用的模板和行为版本，形成 UnitIntent，经 Gateway 进入 Kernel。
-Kernel 组织权限判断、尝试创建、调度及资源安排，由 Execution 调用 Executor。
-输出、实际效果和消耗在内核核对后，交由 Workflow 验收。
+Kernel 组织权限判断、尝试创建、调度及资源安排；Execution 提交定义引用，
+由 Supervisor 装配并执行 Executor。输出、实际效果和消耗经 Core 核对后交由 Workflow 验收：
+已执行的 Unit 由 Execution 交付结果，执行前被拒由 Core 交付，准入被拒由 Gateway 返回。
+
+业务产物（如最终报告）同样以 Unit 的形式提交，由 Execution 发布到 ArtifactStore，
+Workflow 不直接写入产物存储。
 
 模型动作始终是提案。Workflow 检查能力组合的合法性，再提交操作，不替代 Core 作权限裁决。
 模型和 Workflow 不得直接调用 ExecutorSet 来绕过 Kernel。
@@ -136,7 +148,7 @@ Workflow 组织恢复，Kernel 核对权限、效果、资源和环境。恢复�
 
 - 业务执行统一进入 Kernel，Executor 不直接回调业务层推进任务。
 - Lease 由 Core 独占，系统调用只交付操作所需裁决。
-- Tool 的有无由可信定义决定，不能由模型改变。
+- 受保护能力由可信定义声明，不能由模型或调用者改变。
 - 可信执行管理与不可信代码分离，宏内核不授予任意代码内核权限。
 - 权威账本不能由可丢失指标替代，未知消耗不记作零。
 - 重复、乱序、取消竞争和未知副作用必须可解释，不能盲目重跑。

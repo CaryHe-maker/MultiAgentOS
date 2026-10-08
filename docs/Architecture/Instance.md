@@ -16,7 +16,8 @@ Kernel 协调 Workflow 建立业务运行与范围；Workflow 依据 AgentToolPo
 
 已知文件的读取、未知位置的搜索以及跨文件关系分析，
 由 Workflow 按业务需求形成 Unit 并提交 Gateway。
-Core 完成相应准入判断，Scheduler 安排执行，Execution 调用 ExecutorSet 中的具体行为。
+Gateway 完成准入，Core 完成定义核验与权限判断；Execution 安排执行队列并提交定义引用，
+Supervisor 装配并执行 ExecutorSet 中的具体行为。需要 API 等受限资源时，由 Core 调用 Scheduler 分配机会。
 
 模型可见搜索属于执行能力。上下文组装、检索、压缩与去重同样由 Executor 完成，
 不存在独立 ContextEngine Module。
@@ -26,14 +27,16 @@ Execution 维护需要保留的检索台账与上下文运行关联，ContextPac
 ## 3. Agent 与 Unit 循环
 
 Workflow 根据当前业务状态选择下一步 Unit，不固定为某一种循环长度。
-Tool 封装存在时，Core 根据授权和私有 Lease 作出判断；
-没有 Tool 的行为以受信定义中的开发者授权为基础，不能由模型自行选择绕过检查。
+Unit 声明了受保护能力时，Core 根据授权和私有 Lease 作出判断；
+未声明的行为以受信定义中的开发者授权为基础，不能由模型自行选择绕过检查。
 
-需要人类授权时，经 UserInteraction 收集回答，由 Core 判断其有效性。
-后续请求可由 Core 判断是否复用已有 Lease，Gateway 与 Workflow 不保存 Lease 内容。
+需要人类授权时，经 UserInteraction 收集回答，由 Core 判断其有效性并保留授权决定。
+后续申请属于已同意范围的安全子集时，Core 直接签发 Lease；危险行为每次单独询问。
+Gateway 与 Workflow 不保存 Lease 内容。
 
-获准工作进入调度与执行。Execution 报告用量、结果与故障，
-Monitor 维护资源事实，Kernel 对外交付结果，Workflow 决定下一步业务动作。
+获准工作进入执行。Execution 经内部 syscall 提交结果检查，用量随之交给 Core，
+由 Core 调用 Monitor 结算；已执行的结果由 Execution 交付，执行前被拒由 Core 交付，
+准入被拒由 Gateway 返回。Workflow 决定下一步业务动作。
 执行产物可以通过引用交付，必要结构化结果也可以直接随结果提供。
 
 ## 4. 并行、模型调用与集成

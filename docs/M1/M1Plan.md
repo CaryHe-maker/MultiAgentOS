@@ -1,12 +1,11 @@
 # MultiAgentOS M1 计划
 
-> 架构衔接说明（2026-09-30）：本文保留既有 M1 范围、接口或进度基线。
-> 长期设计已调整为独立 Execution、Kernel 租约与五组件体系，目标平台为 Ubuntu LTS。
-> 本轮不设计 M1 详细方案，不表示代码已迁移；具体差异见 [M1 指南](README.md)。
+> 架构衔接说明（2026-10-07）：本文已按三 Module、六组件宏内核与 [UnitCheck](UnitCheck.md) 更新。
+> Kernel 组件职责见 [M1KernelRange](kernel/M1KernelRange.md)。文档更新不表示代码已迁移。
 
 ## 1. 目标与范围权威
 
-M1 交付一个本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读 Repository Analysis Agent。用户提交仓库分析问题后，系统通过受控的 tree/search/read 路径生成带 repository revision、路径、行范围和 provenance 的结构化报告。
+M1 交付一个本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。用户提交仓库分析问题后，系统通过受控的概览、搜索与读取路径生成带 repository revision、路径、行范围和 provenance 的结构化报告。M1 的验收平台为 Ubuntu LTS。
 
 本文件是 M1 范围和验收的权威来源。除 M1 外，不定义其他里程碑的范围、排期、接口或完成承诺。任何超出 M1 的能力只作为非目标记录；必须在 M1 完成验收后，依据实测结果另行立项和评审。
 
@@ -14,20 +13,20 @@ M1 的技术选择、允许依赖和明确排除项以 [M1TechStack.md](M1TechSt
 
 ## 2. 必须交付
 
-1. CLI 经 UserInteraction、Kernel 和 Workflow 创建并查询运行。
-2. AgentToolPool 提供不可变 Agent、Model、Tool、Prompt 和 Contract DefinitionVersion；运行开始后固定版本与 digest。
-3. Workflow 实现单 Task Agent 循环、预算、终止、来源验收和 AnalysisReport。
-4. Kernel 实现 UserIntent/UnitIntent 准入、Context/Model/FILE_READ 路由、UnitAttempt 审计和 RuntimeProjection。
-5. ContextEngine 实现 ORIENT、SEARCH、ASSEMBLE、provenance、稳定前缀、预算和检索评测。
-6. Executor 只允许受控 FILE_READ；所有副作用请求确定性拒绝。
-7. 五个领域模块和五项基础设施均有公开 Port、默认或 fake adapter、组合位置和边界测试。
+1. CLI 经 UserInteraction、Kernel 和 Workflow 创建运行、回答授权、终止运行并展示结果。
+2. AgentToolPool 提供不可变的 Agent（Planner、CodeViewer）、Unit、Tool、Model、Prompt 定义；Agent 定义包含 Round 上限；运行开始后固定版本与 digest。
+3. Workflow 实现 Agent 循环、Round 上限、final-call 收尾、HANDOFF、来源验收与 AnalysisReport，并经 `report-publish` 发布报告。
+4. Kernel 六组件按 [M1KernelRange](kernel/M1KernelRange.md) 与 [UnitCheck](UnitCheck.md) 实现：准入、Lease 与用户授权、token 额度的软硬限制、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
+5. 上下文与检索 Executor 实现仓库概览、搜索、上下文组装、provenance、稳定前缀、预算和检索评测。
+6. Executor 对用户仓库只允许只读访问，并实现硬编码的执行点检查；所有副作用请求确定性拒绝。
+7. 三个 Module、四类基础设施和三个静态库均有公开 Port、默认或 fake adapter、组合位置和边界测试。
 8. Protocol Registry 覆盖所有已声明协议族；未知 major 被拒绝，未支持能力无副作用。
-9. 最终报告包含结论、来源、未确认项、步骤、调用、token、耗时和失败分类。
+9. 面向用户的最终报告包含结论、来源和未确认项，提前收尾时注明原因；步骤、Round、调用、token、耗时和失败分类写入运行记录。
 10. 固定任务集形成成功率、来源完整性、成本和延迟基线。
 
 ## 3. 非目标
 
-M1 不实现文件写入、项目命令、项目测试、Git diff/worktree、Coding Agent、多 Task/DAG、多 Agent、动态重规划、崩溃续跑、持久审批、Checkpoint/Restore、Web UI、多租户、远程执行、消息集群、语义向量检索或生产级隔离。相关请求必须返回结构化 Unsupported 结果，不得以占位成功响应代替实现。
+M1 不实现文件写入、项目命令、项目测试、Git diff/worktree、Coding Agent、多 Task/DAG、并行 Agent（M1 只做 Planner 与 CodeViewer 单向交接）、动态重规划、崩溃续跑、暂停/恢复、持久审批、AgentRun 级额度、Checkpoint/Restore、Web UI、多租户、远程执行、跨进程 IPC、消息集群、语义向量检索或生产级隔离。相关请求必须返回结构化 Unsupported 结果，不得以占位成功响应代替实现。
 
 ## 4. 团队分工
 
@@ -35,7 +34,7 @@ M1 不实现文件写入、项目命令、项目测试、Git diff/worktree、Cod
 |---|---|---|
 | A | Workflow | UserInteraction、CLI、报告与业务验收 |
 | B | Kernel | AgentToolPool、Module Host、Executor 准入与审计 |
-| C | ContextEngine | Artifact、Persistence、Communication 适配器与检索评测 |
+| C | 上下文与检索 Executor（ExecutorSet） | Artifact、Persistence、Communication 适配器与检索评测 |
 
 Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容说明、正反例和 contract test。具体进度只在 [M1Process.md](M1Process.md) 更新。
 
@@ -43,8 +42,8 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 
 ### 5.1 契约与可替换骨架
 
-- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、WorkspaceRef、UnitIntent/Result、ContextRequest/Pack 和 DefinitionVersion。
-- 建立五个领域包、五个基础设施包、三个 app 及依赖规则。
+- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、WorkspaceRef、syscall 与 Kernel 返回信息、UnitIntent/UnitReport、ContextPack 和 DefinitionVersion。
+- 建立三个 Module 包、四类基础设施包、三个静态库包、三个 app 及依赖规则。
 - 完成 Protocol Registry、Fake Port、架构测试和 Fake 纵向闭环。
 
 退出条件：全仓可构建；协议正反测试通过；UserInteraction 到 RuntimeProjection 的 Fake 链可运行；未支持能力无副作用。
@@ -52,14 +51,14 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 ### 5.2 单轮真实只读分析
 
 - 接入一个 Provider；校验结构化 AnalysisAction。
-- 完成 CONTEXT、MODEL、FILE_READ Unit 与 Artifact 输出。
+- 完成 context-assemble、model-call、file-read、report-publish Unit 与 Artifact 输出。
 - 生成初版 AnalysisReport；记录预算、调用和执行证据。
 
 退出条件：真实模型完成已知文件分析并引用来源；所有写入、命令和测试请求被拒绝。
 
 ### 5.3 多轮检索与证据闭环
 
-- 完成 ORIENT/SEARCH/ASSEMBLE、多轮 Observation、历史压缩和无进展检测。
+- 完成 repository-orient、repository-search、context-assemble、多轮 Observation、历史压缩和无进展检测。
 - 完成未知文件定位、跨文件分析、补充检索和来源一致性校验。
 - 贯穿身份、correlation/causation、DefinitionVersion 和 Artifact。
 
@@ -68,7 +67,7 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 ### 5.4 固定任务与发布验收
 
 - 冻结功能，完成安全、兼容、回归、评测和文档。
-- 运行全部质量门、固定任务和 Windows 路径专项测试。
+- 在 Ubuntu LTS 上运行全部质量门和固定任务。
 - 形成限制清单、验收证据和可独立运行的候选版本。
 
 退出条件：第 7 节全部完成条件满足且不存在第 8 节阻断项。
@@ -96,7 +95,7 @@ M1 完成必须同时满足：
 - 写入、命令、测试、网络和 workspace 逃逸成功次数为零。
 - 工作区在运行前后保持不变。
 - 每个 Module/Infrastructure 均有边界、适配器和测试；架构绕行被自动化测试阻止。
-- `pnpm.cmd run check`、E2E、固定任务集和兼容矩阵全部通过。
+- 在 Ubuntu LTS 上，`pnpm run check`、E2E、固定任务集和兼容矩阵全部通过。
 - README、索引、接口、限制和运行说明与实现一致。
 
 ## 8. 发布阻断项
