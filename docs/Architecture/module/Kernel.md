@@ -10,37 +10,115 @@ Workflow 决定业务目标与验收，Kernel 负责操作是否获准及如何�
 
 | 组件 | 责任 | 状态归属 |
 |---|---|---|
-| Gateway | 外部 syscall 接入、来源检查、入口控制与分派，执行准入封锁与限流 | 入口、请求关联与封锁标志 |
-| Core | 授权、Lease、系统控制与结果裁决 | 权限依据、Lease、控制和接收决定 |
+| Gateway | 外部 syscall 接入、调用身份与契约检查、准入封锁与限流的执行、按运行路由 | 入口、请求关联与封锁标志的只读投影 |
+| Core | 授权、Lease、系统控制、结果裁决与事件交付 | 权限依据、Lease、控制和接收决定、运行时长、Outbox |
 | Scheduler | API 调用机会与调用目标安排 | 容量占用及调度关系 |
 | Execution | 尝试创建、执行队列、步骤推进、产物发布和效果管理 | Attempt、执行队列、实际进度、产物及上下文状态 |
-| Supervisor | 装配并执行 Executor，监管模块与执行环境的停止与回收 | 生命周期和监管事实 |
+| Supervisor | 系统生命周期；Executor 子进程的派发、装配、截止时间、终止、回收与健康；上报执行事实 | 执行实例、Executor 子进程、宿主健康与模块生命周期 |
 | Monitor | 额度、资源账本、限流判断与运行观测 | 预留、消费、结算及观测数据 |
 
-Execution 是内部组件，详见 [Execution](../kernel/Execution.md)。
-组件可以通过内部接口协作，不要求模拟跨 Module 通信；各自状态仍由对应 Owner 修改。
-各组件采用函数调用还是消息通信由部署决定，不改变第 3 节的请求关系。
+Execution 与 Supervisor 的展开见 [Execution](../kernel/Execution.md) 与 [Supervisor](../kernel/Supervisor.md)。
+每个组件只读写自己的私有状态，组件之间的数据与调用规则见第 3.4 节。
 
-## 3. Gateway 与 syscall
+## 3. 通讯主体与运行组织
+
+### 3.1 通讯主体
+
+Kernel 对外是一个 Module，以 Gateway 为唯一入口；对内由 Kernel 核心、Supervisor 与 Gateway 三个通讯主体组成。
+
+| 通讯主体 | 组成 | 主体内部 | 进程 |
+|---|---|---|---|
+| Kernel 核心 | Core、Monitor、Scheduler、Execution | 内部 syscall 与职责接口调用，以函数调用完成；按组件模块化隔离 | 同一进程 |
+| Supervisor | Supervisor 及其管理的 Executor 子进程 | Supervisor 与 Executor 子进程之间经执行接口通信 | 独立进程；Executor 在子进程中运行 |
+| Gateway | Gateway | — | 逻辑上独立；是否独立成进程由各 MVP 决定 |
+| Workflow | Workflow Module | — | 独立通讯主体 |
+| UserInteraction | UserInteraction Module 的各交互载体 | — | 独立通讯主体 |
+
+通讯主体之间只交换可序列化的契约数据，不共享可变对象或内部句柄。
+单进程部署时，Supervisor 与 Gateway 可以与 Kernel 核心同进程，但仍按可序列化接口协作。
+
+Supervisor 直接管理操作系统进程，独立成进程使它与 Kernel 核心处于不同的故障域：
+Kernel 核心失效时，Supervisor 仍可终止并回收 Executor 子进程、清理残余；
+Supervisor 失效时，其 Executor 子进程随之退出，Kernel 核心经心跳发现后把在途尝试标记为效果未知。
+
+Gateway 独立成进程的条件是：Kernel 核心按运行分片需要路由、系统对外开放给多用户，
+或长连接需要与 Kernel 核心分开扩展。通信设施见 [Fabric](../infrastructure/Communication.md)。
+
+### 3.2 运行 actor
+
+每个 WorkflowRun 在任一时刻只有一个 Kernel 核心实例写入其状态。
+Kernel 核心为每个运行维护一个运行 actor：该运行的 Lease、账本、尝试、队列、runEpoch 与 Outbox
+都由它按顺序处理，同一时刻只处理一条消息。
+
+- Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，
+  都作为消息进入运行 actor 的队列。
+- 队列按消息类型分为控制通道与工作通道。取消、授权回答、关闭、运行超时、Supervisor 上报的终止或违规属于控制通道，
+  优先处理；`submitUnit` 等业务请求与执行结果属于工作通道。同一来源在同一通道内保持顺序。
+- 处理一条消息时，Kernel 核心以内部 syscall 与职责接口调用同步完成状态检查与修改，不等待外部 I/O；
+  执行交给 Supervisor，等待用户回答只记录待处理状态，执行事实与回答作为新消息返回。
+- 运行状态按组件分块（见第 3.4 节），一次消息处理中各组件的变化一起持久化，再经 Outbox 对外发出事件。
+
+按顺序处理消除了结果、取消与超时之间的竞态：先处理的消息决定结论，后到的消息按已有状态处理。
+Supervisor 对每个执行实例只上报一个终态，执行实例层面的结论由它给出；运行层面的裁决只在 Core。
+
+### 3.3 按运行分片
+
+Kernel 核心可以部署为多个实例，按 WorkflowRun 分片：
+
+- `workflowRunId` 经哈希映射到固定数量的逻辑分片，逻辑分片由 Kernel 核心实例通过 Persistence 中的分片租约领取；
+- 每次状态写入携带分片 epoch，epoch 过期的写入被拒绝；分片转移时运行的 runEpoch 前进，旧尝试的结果只作为证据；
+- Gateway 生成 `workflowRunId` 并按分片路由，被旧 Owner 拒绝时刷新路由后重试，`requestId` 保证重试幂等；
+- Supervisor 按节点部署，执行事实按 `workflowRunId` 送回所属的 Kernel 核心实例；
+- 跨运行的资源（如 Provider 级 API 容量）由全局容量服务以带期限的令牌分配。
+
+单个运行不跨实例拆分。超大运行可拆为子运行，额度通过显式委派划给子运行。
+
+### 3.4 Kernel 核心内部的模块化隔离
+
+Kernel 核心是模块化单体：Core、Monitor、Scheduler、Execution 同进程、同通讯主体，
+但各自的数据按模块隔离。同处一个进程不开放跨组件访问，Execution、Monitor、Scheduler 不能直接读写 Core 的信息。
+
+| 组件 | 私有数据（只有它读写） | 对其他组件提供的内容 |
+|---|---|---|
+| Core | Lease、用户授权记录、AgentRun 登记、运行控制状态（runEpoch、准入封锁）、运行时长、Outbox | 裁决结果与原因码、由 Lease 派生的范围约束、当前 runEpoch 的只读值、推送给 Gateway 的封锁投影 |
+| Execution | UnitAttempt、执行队列、产物归属索引、上下文构建记录 | 建立尝试、封装结果、按归属解析产物引用 |
+| Monitor | 账本（已用、未知、在途预留）、预留记录 | 预留与结算结果、额度状态 |
+| Scheduler | 调用容量与占用 | 申请与归还调用机会的结果 |
+
+| 调用方 → 被调用方 | 规则 |
+|---|---|
+| Gateway → Core | 移交外部 syscall |
+| Core → Monitor、Scheduler、Execution | 职责接口调用 |
+| Execution → Core | 内部 syscall：申请预留、提交结果检查、上报违规 |
+| Monitor、Scheduler → Core | 只通过返回值或上报异常，不主动修改 Core 的状态 |
+| Execution → Monitor、Scheduler | 不允许；额度与调用机会一律经 Core |
+| Monitor ↔ Scheduler，Monitor、Scheduler → Execution | 不允许 |
+| 任何组件 → 其他组件的私有状态 | 不允许 |
+
+组件之间只传递派生值与只读结果，不传递内部实体。例如 Execution 需要仓库范围时，取得的是 Core 由 Lease
+派生的范围约束，而不是 Lease。运行 actor 只负责编排处理顺序，把每个组件的状态分块交给对应组件，不打通访问。
+
+## 4. Gateway 与 syscall
 
 Gateway 是外部主体请求受保护 Kernel 操作的统一入口，识别来源和目标并分派服务。
-它不持有 Lease，也不根据租约副本独立裁决。
+它不持有 Lease、额度数值或运行状态，也不根据租约副本独立裁决。
 
 | 请求关系 | 定义 |
 |---|---|
 | 外部 syscall | 外部 Module（UserInteraction、Workflow）经 Gateway 向 Core 请求 Kernel 服务 |
-| 内部 syscall | Kernel 其他组件向 Core 发起的请求，例如申请资源预留、提交结果检查、上报异常 |
+| 内部 syscall | Kernel 核心其他组件向 Core 发起的请求，例如申请资源预留、提交结果检查、上报异常 |
 | 职责接口调用 | Core 在处理请求时调用其他组件的职责接口，例如调用 Monitor 结算、调用 Scheduler 分配调用机会；不属于 syscall，也不构成 Core 对自身的递归请求 |
 
 Gateway 检查调用来源、请求契约与准入封锁。准入被拒时，由 Gateway 直接向调用方返回异常；
-准入通过的请求移交 Core 的统一控制响应逻辑。
+准入通过的请求移交 Core 的统一控制响应逻辑。准入封锁由 Core 设置并推送给 Gateway，
+Gateway 只读；Core 对封锁状态保留最终检查。
 
 受理、处理与完成必须区分，等待超时不证明操作未发生。
 事实报告不等于控制请求。观测数据可以经受控事实信道直接交给 Monitor 或对应 Owner；
 影响账本或权限状态的事实（如用量结算）必须随内部 syscall 交给 Core，由 Core 调用对应组件处理。
 Fabric 归 Core 管辖，不意味着全部数据必须经过 Core 中转。
 
-## 4. 受保护能力、开发者权限与 Lease
+## 5. 受保护能力、开发者权限与 Lease
 
 是否需要 Lease，以 Unit 定义中声明的受保护能力为准。声明了受保护能力的 Unit 必须经 Core
 进行 Lease 审核；未声明的 Unit 依据可信开发者定义的权限执行，这不是调用者可以选择的默认放行。
@@ -62,20 +140,20 @@ Lease 实体、快照或缓存。权限检查由 syscall 触发，Core 按当前
 裁决及执行关联不等于 Lease，不能重建第二套租约权威。
 Persistence 可以保存 Core 私有状态，但不向其他组件开放 Lease 数据访问。
 
-## 5. 执行闭环
+## 6. 执行闭环
 
 ```text
 Workflow → Gateway 准入（被拒：Gateway 返回异常）
   → Core 定义核验与权限检查（被拒：Core 交付拒绝结果）
   → Execution 建立尝试，进入执行队列
   → 需要资源时：Execution 经内部 syscall 申请，Core 调用 Scheduler 分配机会、调用 Monitor 预留
-  → Execution 提交定义引用，Supervisor 装配并执行 Executor，交回执行事实
-  → Execution 经内部 syscall 提交结果检查，Core 核对结果并调用 Monitor 结算
-  → Execution 依据 Core 的判定交付结果，Workflow 验收
+  → Execution 提交执行请求，Supervisor 在 Executor 子进程中执行，交回执行事实
+  → Execution 封装结果并经内部 syscall 提交结果检查，Core 核对结果并调用 Monitor 结算
+  → Core 核对运行控制状态版本，经 Outbox 交付结果，Workflow 验收
 ```
 
-Core 的判定携带运行控制状态的版本。Execution 交付前须再次核对，
-运行已被取消、结束或停止时不再交付，结果只作为证据保存。
+除准入被拒外，Unit 的结果统一由 Core 交付。尝试建立时记录运行控制状态的版本（runEpoch），
+Core 交付前核对版本，核对与入队在同一次处理中完成；运行已被取消、结束或停止时不再交付，结果只作为证据保存。
 
 缺少权限时可以拒绝或等待。Core 依据敏感程度与策略发起人工审批，
 UserInteraction 的原始响应不直接成为授权。
@@ -84,45 +162,55 @@ UserInteraction 的原始响应不直接成为授权。
 曾经获准不保证被取消或替代的执行仍可提交结果。
 执行已完成但结果被拒绝时，效果和费用必须保留。
 
-## 6. 调度与执行协作
+## 7. 事件交付
+
+Kernel 向 Workflow 与 UserInteraction 发出的事件（运行开始、Unit 结果、授权询问、运行结束等）
+统一由 Core 的 Outbox 发出，投递到接收方提供的 Inbox。Kernel 只依赖公共契约中的 Inbox 接口，
+不依赖外部 Module 的实现。投递语义见 [Protocol](../Protocol.md) 第 6 节。
+
+## 8. 调度与执行协作
 
 执行队列归 Execution，由 Execution 判断固定行为序列的步骤依赖与推进顺序。
 Scheduler 只负责 API 等受限资源的调用机会与调用目标，不改变执行队列的顺序。
 两者都不替代 Workflow 的业务任务图。
-API 池归 Scheduler，Monitor 提供额度与消耗，实际模型和服务调用由 Supervisor 监管的执行任务发起。
+API 池归 Scheduler，Monitor 提供额度与消耗，实际模型和服务调用在 Supervisor 管理的 Executor 子进程中发起。
 未就绪步骤不应长期占据机会，权限有效不等于资源可用。
+
+Kernel 核心按顺序处理同一运行的消息，Executor 子进程中的执行可以并行。并行执行时，
+执行队列按 AgentRun 划分并设运行级并发上限，只在同一 AgentRun 内保证顺序。
 
 内部组织简化交接，但不自动消除部分失败、未知效果与资源泄漏。
 必须能区分未开始、执行中、已完成及无法确认的情况，并保留新旧尝试关系。
 
-## 7. Monitor
+## 9. Monitor
 
 Monitor 维护额度、预留、实际消费、释放和待核对消耗。
 Workflow 管业务预算的分配与步数，不成为实际资源用量的第二事实源。
 
-额度设软、硬两类阈值。软阈值只在结算时判断，结果作为额度状态随 Core 的判定交回，
-提示业务层收尾，不拒绝请求。硬阈值在预留和结算时都可以触发：Monitor 有权主动提交异常，
-Core 据此封锁准入并停止相应运行。额度状态只能前进，不会回退。
+额度检查计入全部在途预留。额度状态只能前进：NORMAL → WRAP_UP → EXHAUSTED。
+WRAP_UP 提示业务层收尾，不拒绝请求；Monitor 为收尾调用保留额度，普通消耗不能使用这部分额度。
+达到硬阈值时 Monitor 拒绝新的消耗型预留，不停止运行：已经发生的消耗照常结算，结果照常交付，
+业务层以已有材料收尾。运行的强制停止只来自超时、取消与安全违规。
+并行 AgentRun 使用子额度，每份子额度各自保留收尾额度。
 
 账本依据可核对事实维护，负载、延迟等观测可以采用相应采集策略。
 失败或取消不等于零消耗，重复事实不能重复结算。
 Monitor 可以发现异常并请求控制处置，但不修改 Workflow 状态；
 反馈调节不能突破权限和硬资源上限。
 
-## 8. Supervisor 与基础设施
+## 10. Supervisor 与基础设施
 
-Supervisor 管模块和执行域的健康、停止、隔离与回收。
-Execution 提交执行定义引用与参数，Supervisor 据此装配、启动并监管 Executor 执行实例，
-注入范围约束与受控依赖，并把执行结果与结束事实交回 Execution。
-Supervisor 也负责运行时长等执行期限的计时，超时由 Core 按异常处理。
-ModuleHost 归其管辖，负责装配、就绪与正常关闭。
+Supervisor 是独立的通讯主体，直接管理进程：负责系统生命周期，以及 Executor 子进程的派发、装配、
+截止时间、终止、回收与健康，向 Kernel 核心上报执行事实。它不维护执行队列，不作授权、额度或结果接受的裁决。
+详见 [Supervisor](../kernel/Supervisor.md)。运行总时长由 Core 计时，超时由 Core 按异常处理。
+
+ModuleHost 归 Supervisor 管辖，负责装配、就绪与正常关闭。
 ArtifactStore 归 Execution，Fabric 归 Core，Persistence 生命周期由 ModuleHost 统一管理。
 管辖设施不等于拥有其保存的全部领域数据。
 
-不可信 Executor 可在受限环境运行，不能修改可信执行管理状态或取得内核权限。
-逻辑组织不规定实际进程数量。
+不可信 Executor 在受限的子进程中运行，不能修改可信执行管理状态或取得内核权限。
 
-## 9. 调用、中断与异常
+## 11. 调用、中断与异常
 
 调用是主动请求服务，中断要求活动响应控制变化，异常表示无法正常继续。
 一次调用可以产生中断，中断失败可以产生异常；因果关联不等于消息送达即已生效。
@@ -132,7 +220,7 @@ Supervisor 监管停止与清理，Monitor 核对资源。
 故障事实交给 Workflow 决定业务重试、重规划、补偿或结束。
 可重试的错误不自动授权再次执行。
 
-## 10. panic 与安全停机
+## 12. panic 与安全停机
 
 panic 用于可信基础或关键安全不变量失守。
 Core 之外直接访问 Lease 实体，或外部主体绕过受保护入口执行内核操作，必须拒绝并进入
@@ -142,7 +230,7 @@ panic 处置。合法权限检查、受控事实传递和普通权限不足不�
 安全停机停止新准入和调度，尽力收敛执行并保存必要事实。
 Kernel 自身失效时不能依赖其必然发出最后通知，未知效果与清理失败必须明确表达。
 
-## 11. 恢复、收敛与视图
+## 13. 恢复、收敛与视图
 
 Workflow 组织业务恢复，Kernel 核对执行、效果、资源与当前权限。
 历史快照不能复活 Lease 或执行会话，未知效果先核对。

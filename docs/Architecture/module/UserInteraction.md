@@ -22,7 +22,8 @@ UserInteraction 不拥有 Workflow 的业务状态、Core 的授权决定或 Ker
 ## 3. 控制与展示
 
 用户意图通过 Gateway 的外部 syscall 提交。
-Kernel 提供受控运行视图与控制结果，UserInteraction 负责解释和展示，不直写内部状态。
+Kernel 提供受控运行视图与控制结果，授权询问与运行结束等事件投递到 UserInteraction 的 Inbox；
+UserInteraction 负责解释和展示，不直写内部状态。
 
 运行创建、暂停、恢复、取消、重试、重规划及保存点操作均须经过对应控制职责。
 请求已收到、已受理和实际完成应分别展示，界面断线不改变实际运行生命周期。

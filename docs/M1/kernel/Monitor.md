@@ -3,7 +3,7 @@
 ## 1. 定位
 
 Monitor 维护资源账本并判断额度阈值，只被 Core 调用。组件间交互见 [Interaction](Interaction.md)，
-长期规划见 [Kernel 架构](../../Architecture/module/Kernel.md) §7。
+长期规划见 [Kernel 架构](../../Architecture/module/Kernel.md) §9。
 
 ## 2. 职责
 

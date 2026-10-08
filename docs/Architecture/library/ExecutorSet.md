@@ -3,8 +3,8 @@
 ## 1. 定位
 
 ExecutorSet 是具体 Executor 的原子软件行为代码集合。
-它实现模型调用、文件操作、搜索、上下文处理及其他执行能力。Kernel.Execution 提交执行定义引用，
-由 Kernel.Supervisor 装配并执行。
+它实现模型调用、文件操作、搜索、上下文处理及其他执行能力。Kernel.Execution 提交执行请求，
+由 Kernel.Supervisor 在 Executor 子进程中运行。
 它不是独立 Module，不自行管理任务、调度、Lease 或跨运行状态。
 
 “原子”指可组合的软件行为粒度，不保证效果不可中断、可回滚或可安全重复。
@@ -16,7 +16,7 @@ ExecutorSet 提供行为实现，Kernel 管实际运行。
 
 ```text
 模板声明行为组合 → Kernel 确认执行条件
-  → Execution 提交定义引用 → Supervisor 装配并执行 ExecutorSet 中的实现
+  → Execution 提交执行请求 → Supervisor 在 Executor 子进程中运行 ExecutorSet 中的实现
   → 返回结果与效果事实 → Kernel 确认 → Workflow 验收
 ```
 
@@ -66,10 +66,11 @@ Executor 开发者必须在实现中硬编码执行点防护检查，例如拒�
 限制输出规模，并在解析真实路径后确认其位于 Supervisor 注入的工作范围内。
 这类检查是最后一道防线，不替代 Core 的权限裁决。越界请求返回拒绝结果；
 发现防护本身失效时，Executor 主动停止并上报，由 Supervisor 与 Execution 交 Core 处理。
+运行不可信行为时，Supervisor 只采信从 Executor 子进程外部观察到的事实与经校验的输出。
 
 模型回复中的工具提案交回业务流程，不直接作为任意执行命令。
 运行取消或失败后仍需报告已发生效果，不能将异常统一解释为未执行。
-不可信行为代码必须受实际隔离，不能因归入代码集合而获得内核管理权限。
+不可信行为代码必须在隔离的 Executor 子进程中运行，不能因归入代码集合而获得内核管理权限。
 
 ## 6. 演进与验证
 

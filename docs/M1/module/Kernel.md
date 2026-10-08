@@ -65,11 +65,14 @@ Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、�
 
 | 请求 | 用途 | 准入封锁期间 |
 |---|---|---|
-| 创建运行 | 提交用户目标 | — |
+| 创建运行 | 提交用户目标与仓库路径，返回 Gateway 生成的 `workflowRunId` | — |
 | 授权回答 | 回答 Core 发起的 Y/N 询问 | 允许 |
 | 取消 | 用户终止运行（Interruption） | 允许 |
 | 读取产物 | 按 ArtifactRef 读取本运行的产物（如最终报告） | 允许 |
 | 关闭系统 | 结果展示完成后请求关闭 | 允许 |
+
+取消、授权回答与关闭系统属于控制类请求，Kernel 优先于业务请求处理
+（见 [kernel/Interaction](../kernel/Interaction.md) 3.2）。
 
 ### 4.3 Kernel 返回给 Workflow 的信息
 
@@ -229,7 +232,7 @@ Round 上限与 WRAP_UP 不对应原因码。
 ## 11. Exception 规则
 
 1. 正常业务结果不提交 Exception：Validation 失败、Round 达到上限、WRAP_UP、额度耗尽、权限拒绝、执行点正常越界。
-2. 以下由 Core 按 Exception 停止运行：运行超时（Supervisor）、安全违规（经 Supervisor、Execution）。
+2. 以下由 Core 按 Exception 停止运行：运行超时（Core 计时）、安全违规（经 Supervisor、Execution）。
 3. 以下只记入审计，不停止运行，由 Workflow 按原因码处理：契约错误（Gateway 报告）、定义核验失败与
    AgentRun 状态不符（Core）。重复结算数值冲突（Monitor）同样只记入审计，并按较大值记账。
 4. 每个被受理的 `submitUnit` 要么收到 UnitReport，要么随 RunClosed 结束；Kernel 内部等待中的调用由 Core 以终止信号结束。

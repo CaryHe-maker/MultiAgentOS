@@ -3,12 +3,14 @@
 ## 1. 定位
 
 Core 负责授权、租约与控制裁决，是内外部 syscall 的处理者。组件间交互见 [Interaction](Interaction.md)，
-长期规划见 [Kernel 架构](../../Architecture/module/Kernel.md) §4。
+长期规划见 [Kernel 架构](../../Architecture/module/Kernel.md) §5、§6。
 
 ## 2. 职责
 
 - 实现并维护统一控制响应逻辑，处理 Syscall（含内部与外部 syscall）、Interruption（中断信号）
   和 Exception（AgentOS 异常，可来自包括 Kernel 在内的整个系统）。
+- 创建运行时为该运行建立运行 actor；该运行的消息由运行 actor 按控制通道优先的顺序逐条处理
+  （见 [Interaction](Interaction.md) 3.2）。
 - 通过各组件职责接口落实处理，不递归提交同一控制请求，也不接管其权威状态。
 - 维护 AgentRun 登记（AgentRun 身份、所属运行、固定的 Agent 定义引用及状态），不持有 AgentRun 实例。
 - 明确授权依据及能力上限：本地用户或系统配置提供授权依据，固定定义限定能力上限；
@@ -19,6 +21,10 @@ Core 负责授权、租约与控制裁决，是内外部 syscall 的处理者。
 - 代为调用 Scheduler 分配调用机会、调用 Monitor 预留与结算额度。
 - 处理结果检查，并作为唯一出口经 Outbox 交付全部 UnitReport（第 5 节）。
 - 维护运行控制状态及其版本（runEpoch），设置准入封锁，组织收敛。
+- 运行总时长计时：创建运行时开始，收敛时停止；到点后按 Exception 停止运行（`RUN_TIMEOUT`）。
+- 决定取消并通知 Supervisor（`cancel`、`cancelRun`）；依据 runEpoch 决定是否接受 Supervisor 上报的执行事实。
+- Lease、用户授权记录与运行控制状态是 Core 的私有数据，Execution、Monitor、Scheduler 只能取得裁决与派生值
+  （见 [Interaction](Interaction.md) 3.3）。
 - 维护 Outbox，向 Workflow 与 UserInteraction 的 Inbox 投递 RunStart、UnitReport、RunClosed、
   AuthorizationRequest 与 RunFinished（投递语义见 [Kernel（外部视角）](../module/Kernel.md) 4.5）。
 - 写入运行记录的执行部分与审计记录（见 [Persistence](../infrastructure/Persistence.md)）。
@@ -80,3 +86,4 @@ Core 检查结果的执行归属与可接受性，Workflow 判断业务结果是
 | 配置 | 位置 | 读取者 | 建议初值 |
 |---|---|---|---|
 | 询问超时 | Core 配置 | Core | 300 秒 |
+| 运行总时长上限 | 系统配置 | Core | 30 分钟 |

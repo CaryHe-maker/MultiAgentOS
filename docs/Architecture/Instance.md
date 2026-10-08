@@ -5,10 +5,11 @@
 ## 1. 启动与创建运行
 
 ModuleHost 在 Supervisor 管辖下完成装配与基础设施就绪，
-各 Owner 恢复必要状态后才开放对应能力。
-静态库参与定义和行为装配，不作为独立 Module 启动。
+各 Owner 恢复必要状态后才开放对应能力。Supervisor 清理上次遗留的 Executor 子进程与临时数据，
+按需要启动 Executor 子进程。静态库参与定义和行为装配，不作为独立 Module 启动。
 
-用户经 UserInteraction 提交目标，外部 syscall 进入 Gateway。
+用户经 UserInteraction 提交目标，外部 syscall 进入 Gateway。Gateway 生成运行标识并交给
+负责该运行的 Kernel 核心，Kernel 核心为运行建立运行 actor 并开始运行计时，经 Outbox 通知 Workflow。
 Kernel 协调 Workflow 建立业务运行与范围；Workflow 依据 AgentToolPool 模板创建 AgentRun，
 并固定本次运行采用的定义。受理回执与后续运行结果分开交付。
 
@@ -16,8 +17,9 @@ Kernel 协调 Workflow 建立业务运行与范围；Workflow 依据 AgentToolPo
 
 已知文件的读取、未知位置的搜索以及跨文件关系分析，
 由 Workflow 按业务需求形成 Unit 并提交 Gateway。
-Gateway 完成准入，Core 完成定义核验与权限判断；Execution 安排执行队列并提交定义引用，
-Supervisor 装配并执行 ExecutorSet 中的具体行为。需要 API 等受限资源时，由 Core 调用 Scheduler 分配机会。
+Gateway 完成准入，Core 完成定义核验与权限判断；Execution 安排执行队列并提交执行请求，
+Supervisor 在 Executor 子进程中运行 ExecutorSet 中的具体行为。需要 API 等受限资源时，
+由 Core 调用 Scheduler 分配机会。
 
 模型可见搜索属于执行能力。上下文组装、检索、压缩与去重同样由 Executor 完成，
 不存在独立 ContextEngine Module。
@@ -35,13 +37,14 @@ Unit 声明了受保护能力时，Core 根据授权和私有 Lease 作出判断
 Gateway 与 Workflow 不保存 Lease 内容。
 
 获准工作进入执行。Execution 经内部 syscall 提交结果检查，用量随之交给 Core，
-由 Core 调用 Monitor 结算；已执行的结果由 Execution 交付，执行前被拒由 Core 交付，
-准入被拒由 Gateway 返回。Workflow 决定下一步业务动作。
+由 Core 调用 Monitor 结算；准入被拒由 Gateway 返回，其余结果统一由 Core 经 Outbox 交付。
+Workflow 决定下一步业务动作。
 执行产物可以通过引用交付，必要结构化结果也可以直接随结果提供。
 
 ## 4. 并行、模型调用与集成
 
 Workflow 决定可并行任务和汇合条件，Scheduler 在资源与控制约束下安排执行。
+同一运行的控制消息由其运行 actor 按顺序处理，Executor 子进程中的执行可以并行。
 模型与工具的实际调用由 Execution 管理，API 资源的可用性、安排和消耗
 分别由相应 Kernel 职责协作维护，不能把请求结束直接当作资源已正确结算。
 
@@ -70,7 +73,8 @@ UserInteraction 将操作交给 Gateway，Kernel 与 Workflow 按权限和业务
 
 ## 7. 暂停、中止与异常
 
-控制请求经 Gateway 进入 Kernel，Core 协调 Scheduler 与 Execution 改变运行状态。
+控制请求经 Gateway 进入 Kernel，作为控制类消息优先处理，Core 协调 Scheduler、Execution 改变运行状态，
+并通知 Supervisor 终止相关执行。
 已受理中止不代表所有效果已经停止；Execution 报告可确认的终态与仍未知的部分。
 
 普通执行失败形成可解释结果，由 Workflow 决定业务重试或调整。
@@ -80,7 +84,9 @@ Kernel 拒绝操作并按 panic 规则进入安全处置。
 
 ## 8. 故障、重连与最终交付
 
-Supervisor 协调故障处置，ModuleHost 管理生命周期。
+Supervisor 协调故障处置，ModuleHost 管理生命周期。Supervisor 或其 Executor 子进程失联时，
+相关在途尝试标记为效果未知；Kernel 核心实例失效时，Supervisor 终止并回收其执行，
+其负责的运行在分片转移后由新实例恢复。
 恢复先核对权威状态和外部效果，避免把断连当作未执行而重复产生效果。
 UserInteraction 重连后查询正式状态，流式展示缺失不改变执行结论。
 

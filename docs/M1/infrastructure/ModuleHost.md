@@ -11,6 +11,10 @@ AgentToolPool、ExecutorSet、SharedContracts 是静态库，不作为自主服�
 
 ## 2. 启动与关闭
 
+- 组合根（`apps/control-plane`）承担引导：先建立 Supervisor 与基础通信，再由 Supervisor
+  协调 ModuleHost 按依赖装配并启动各模块，全部就绪后才开放 Gateway。
+- Executor 由 Supervisor 装配与回收，不由 ModuleHost 装配；M1 的 Executor 在进程内运行，`rg` 以子进程运行。
+
 - 运行结束后，系统由 Supervisor 按序卸载模块并正常关闭；下次启动从空白运行状态开始，不恢复未完成运行。
 - 启动时只清空临时数据，`runs/<runId>/` 保留（见 [Persistence](Persistence.md)）。
 

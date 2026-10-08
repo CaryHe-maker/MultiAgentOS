@@ -5,7 +5,8 @@
 Workflow 是业务推进与验收的权威，负责目标分解、任务依赖、Agent 行为、
 人工等待、集成、恢复和补偿。它决定下一步应该做什么，Kernel 决定并管理实际执行。
 
-Workflow 使用 AgentToolPool 模板创建运行，向 Gateway 提交 UnitIntent。
+Workflow 使用 AgentToolPool 模板创建运行，向 Gateway 提交 UnitIntent，
+经自己的 Inbox 按顺序接收 Kernel 交付的结果与事件。
 它不直接调用 ExecutorSet，不管理 Lease，也不选择执行进程。
 
 ## 2. 业务结构

@@ -31,8 +31,8 @@ Kernel 采用宏内核组织，Execution 成为内部组件。ContextEngine 不�
 Kernel
   Gateway · Core · Scheduler · Execution · Supervisor · Monitor
                                 │
-                                └─ Execution 提交定义引用 → Supervisor 装配并执行 ExecutorSet 行为
-Kernel → 确认执行事实 → Workflow 验收 → 用户视图
+                                └─ Execution 提交执行请求 → Supervisor 在 Executor 子进程中运行 ExecutorSet 行为
+Kernel（Core 经 Outbox 交付）→ 确认执行事实 → Workflow 验收 → 用户视图
 
 静态库：AgentToolPool · ExecutorSet · SharedContracts
 基础设施：ArtifactStore · ModuleHost · Fabric · Persistence
@@ -44,15 +44,20 @@ AgentToolPool 是模板类集合，ExecutorSet 是原子行为代码，SharedCon
 ArtifactStore 归 Execution，ModuleHost 归 Supervisor，Fabric 归 Core。
 Persistence 的启停由 ModuleHost 管理。基础设施管辖不转移领域数据的决定权。
 
+逻辑组织与通讯主体分开表达。Kernel 对外是一个 Module（宏内核），对内由三个通讯主体组成：
+Kernel 核心（Core、Monitor、Scheduler、Execution，同一进程的模块化单体，组件数据按模块隔离）、
+Supervisor（独立进程，管理 Executor 子进程）与 Gateway（逻辑上独立）。Workflow 与 UserInteraction 也是独立的通讯主体。
+各通讯主体的组成与协作方式见 [Fabric](infrastructure/Communication.md)。
+
 ## 4. Kernel 内部权威
 
 | 组件 | 权威职责 |
 |---|---|
-| Gateway | 外部 syscall 接入、来源检查、入口控制与分派，执行限流 |
-| Core | 授权依据、Lease、控制操作和结果裁决 |
+| Gateway | 外部 syscall 接入、来源检查、入口控制、按运行路由与分派，执行限流 |
+| Core | 授权依据、Lease、控制操作、结果裁决与事件交付 |
 | Scheduler | 执行机会、目标选择、API 容量与调度关联 |
 | Execution | UnitAttempt、步骤、执行进度、输出及效果关联 |
-| Supervisor | 模块和执行环境的健康、停止、隔离与回收 |
+| Supervisor | 系统生命周期；Executor 子进程的派发、装配、截止时间、终止、回收与健康 |
 | Monitor | 资源额度、预留、消费、结算、观测与限流判断 |
 
 实际完成、结果被接受和业务成功分别由 Execution、Core、Workflow 表达。
@@ -83,8 +88,8 @@ Executor 的原子性不保证可回滚或事务原子性。
 
 外部 syscall 指外部 Module 经 Gateway 向 Core 请求 Kernel 服务。
 内部 syscall 只指 Kernel 其他组件向 Core 发起的请求；Core 在处理请求时调用其他组件，
-称为职责接口调用，不属于 syscall。各组件之间采用函数调用还是消息通信，由各 MVP 的部署决定，
-但不改变上述请求关系。
+称为职责接口调用，不属于 syscall。二者在 Kernel 核心内以函数调用完成，但组件之间不得访问彼此的私有状态；
+Supervisor、Gateway 与外部 Module 是独立的通讯主体，彼此以可序列化消息协作。
 
 Lease 内容仅由 Core 持有。Gateway、Workflow、Execution 及其他组件不保存实体、快照或缓存，
 通过系统调用取得所请求操作的裁决。合法检查不等于直接访问 Lease；
@@ -99,9 +104,9 @@ Core 保留用户的授权决定。后续申请若属于用户已同意范围的
 ## 7. 执行闭环
 
 Workflow 固定使用的模板和行为版本，形成 UnitIntent，经 Gateway 进入 Kernel。
-Kernel 组织权限判断、尝试创建、调度及资源安排；Execution 提交定义引用，
-由 Supervisor 装配并执行 Executor。输出、实际效果和消耗经 Core 核对后交由 Workflow 验收：
-已执行的 Unit 由 Execution 交付结果，执行前被拒由 Core 交付，准入被拒由 Gateway 返回。
+Kernel 组织权限判断、尝试创建、调度及资源安排；Execution 提交执行请求，
+由 Supervisor 在 Executor 子进程中运行 Executor。输出、实际效果和消耗经 Core 核对后交由
+Workflow 验收：准入被拒由 Gateway 返回，其余结果统一由 Core 交付。
 
 业务产物（如最终报告）同样以 Unit 的形式提交，由 Execution 发布到 ArtifactStore，
 Workflow 不直接写入产物存储。
@@ -136,7 +141,8 @@ Workflow 判断依赖是否就绪，Kernel 判断何时具备执行条件。
 UserInteraction 收集响应，Core 处理权限与审核适用性，Workflow 解释业务影响。
 批准不跳过后续执行检查，超时不能自动视为批准。
 
-控制流恢复、同一运行的业务恢复点、用户可见的长期保存点具有不同身份和生命周期。
+控制流恢复点、同一运行的业务检查点（WorkflowCheckpoint）、用户可见的长期保存点（SessionCheckpoint）
+具有不同身份和生命周期。
 Workflow 组织恢复，Kernel 核对权限、效果、资源和环境。恢复不复活旧 Lease、
 凭据或执行会话，历史产物存在也不自动授予当前访问权。
 
@@ -147,6 +153,8 @@ Workflow 组织恢复，Kernel 核对权限、效果、资源和环境。恢复�
 ## 11. 系统不变量
 
 - 业务执行统一进入 Kernel，Executor 不直接回调业务层推进任务。
+- 每个 WorkflowRun 在任一时刻只有一个 Kernel 核心实例写入其状态；Kernel 对外的结果与事件由 Core 统一发出。
+- Kernel 核心内的组件只读写自己的私有状态，Lease 只由 Core 维护和使用。
 - Lease 由 Core 独占，系统调用只交付操作所需裁决。
 - 受保护能力由可信定义声明，不能由模型或调用者改变。
 - 可信执行管理与不可信代码分离，宏内核不授予任意代码内核权限。

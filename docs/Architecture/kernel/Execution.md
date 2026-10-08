@@ -4,18 +4,18 @@
 
 Execution 是 Kernel 六组件之一，负责实际执行过程。
 它组织 UnitAttempt、执行队列、行为步骤、输入输出、效果和执行相关状态。
-Execution 提交 ExecutorSet 中的执行定义引用，由 Supervisor 装配并执行；
-Execution 不作为独立 Module，也不是第二套权限系统。
+Execution 提交执行请求，由 Supervisor 在 Executor 子进程中运行 ExecutorSet 中的行为；
+Execution 属于 Kernel 核心，不作为独立 Module，也不是第二套权限系统。
 
-Core 作权限和结果裁决，Scheduler 分配机会，Monitor 核对资源，
-Supervisor 管执行环境，Workflow 作业务验收。
+Core 作权限和结果裁决并交付结果，Scheduler 分配机会，Monitor 核对资源，
+Supervisor 管执行派发与执行环境，Workflow 作业务验收。
 
 ## 2. 行为组织
 
 ```text
 UnitIntent →（Core 完成定义核验与权限检查）→ UnitAttempt → 执行队列
-  → 一个或多个 Executor 步骤（定义引用交 Supervisor 装配执行）
-  → 运行实例 / 受管执行环境
+  → 一个或多个 Executor 步骤（执行请求交 Supervisor）
+  → Executor 子进程中的运行实例 / 受管执行环境
   → 结果、产物与效果事实
 ```
 
@@ -44,9 +44,9 @@ Execution 拥有尝试、步骤关联、输入输出、实际进度和效果记�
 Execution 不持有 Lease 内容，通过内核服务取得所需裁决。
 Core 接受结果不等于 Workflow 验收成功，结果被拒绝也不能抹去实际费用或效果。
 
-已执行的 Unit 由 Execution 依据 Core 的判定封装结果并交付 Workflow；不由原子 Executor 回调 Workflow。
-Core 的判定携带运行控制状态的版本，Execution 交付前再次核对，状态已变时不再交付，
-结果只作为证据保存。运行收敛时，Core 等待 Execution 正在进行的交付结束。
+Execution 封装执行结果（输出、产物引用与效果）随结果检查交给 Core，由 Core 经 Outbox 统一交付；
+Execution 与原子 Executor 都不直接回调 Workflow。尝试建立时记录运行控制状态的版本，
+Core 交付前核对，状态已变时不再交付，结果只作为证据保存。
 
 ## 5. 上下文行为与长期状态
 
@@ -76,7 +76,7 @@ API 调用机会归 Scheduler，实际消费归 Monitor，Executor 不建立自�
 ## 7. 工作环境与数据保护
 
 Execution 使用受限工作环境处理文件、模型输入和外部效果，
-Supervisor 管理环境的隔离、停止及回收。
+Supervisor 管理 Executor 子进程与环境的隔离、停止及回收。
 并行修改具有独立工作范围；环境重建依赖可验证依据，不依赖旧活句柄。
 
 凭据只提供给确实需要的行为，不进入普通输出、日志、上下文或恢复保存点。

@@ -13,9 +13,11 @@ AgentToolPool、ExecutorSet 与 SharedContracts 是静态库，
 装配确定各职责的实现、配置、依赖与访问边界。
 构造依赖、启动依赖与运行时通信关系需要分别理解，不能由互相通信推导出循环启动。
 
-系统具备建立监管和基础通信所需的最小引导过程，
-再将正常生命周期交给 Supervisor 与 ModuleHost。
-Supervisor 的建立不能依赖一个已经完整运行的 Supervisor。
+系统具备建立监管和基础通信所需的最小引导过程：由部署层（如 systemd）或组合根先启动 Supervisor，
+再由 Supervisor 协调 ModuleHost 启动 Kernel 核心与其他模块。Supervisor 的建立不能依赖一个已经完整运行的 Supervisor。
+
+Executor 子进程由 Supervisor 启动与回收，不由 ModuleHost 装配。
+多实例部署时，Kernel 核心实例由部署层或 Supervisor 启动，各实例经分片租约领取负责的运行。
 
 组件只获得履行职责所需的依赖。宏内核中的共同部署不允许任意访问他方内部状态，
 执行代码的可加载性也不代表其获得 Kernel 管理权限。

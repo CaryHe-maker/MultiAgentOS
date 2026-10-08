@@ -5,7 +5,7 @@
 | 目录 | 内容 |
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
-| [M1](M1/README.md) | M1 交付范围、机制设计、接口与进度 |
+| [M1](M1/README.md) | M1 交付范围、机制设计与接口；进度由 GitHub Issues 跟踪 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [Style](Style.md) | 工程与文档协作规范 |
@@ -15,12 +15,13 @@
 ## 2. 推荐阅读路线
 
 1. [Overall](Architecture/Overall.md)：整体职责、对象与执行闭环。
-2. [Kernel](Architecture/module/Kernel.md)：六组件、syscall、Lease 与额度。
+2. [Kernel](Architecture/module/Kernel.md)：六组件、通讯主体、运行组织、syscall、Lease 与额度。
 3. [Execution](Architecture/kernel/Execution.md)：Kernel 内的尝试、执行与产物发布。
-4. [Protocol](Architecture/Protocol.md)：请求、事实、结果与恢复的共同语义。
-5. [Instance](Architecture/Instance.md)：运行、控制与恢复示例。
-6. [Architecture 指南](Architecture/README.md)：全部长期文档入口。
-7. [M1 指南](M1/README.md)：M1 的范围、机制与接口。
+4. [Supervisor](Architecture/kernel/Supervisor.md)：系统生命周期、Executor 子进程与执行事实。
+5. [Protocol](Architecture/Protocol.md)：请求、事实、结果、事件与恢复的共同语义。
+6. [Instance](Architecture/Instance.md)：运行、控制与恢复示例。
+7. [Architecture 指南](Architecture/README.md)：全部长期文档入口。
+8. [M1 指南](M1/README.md)：M1 的范围、机制与接口。
 
 ## 3. 模块、静态库与基础设施
 
@@ -30,11 +31,12 @@
 | [Workflow](Architecture/module/Workflow.md) | 业务图、AgentRun、验收、恢复与补偿 |
 | [Kernel](Architecture/module/Kernel.md) | Gateway、Core、Scheduler、Execution、Supervisor、Monitor |
 | [Execution](Architecture/kernel/Execution.md) | Kernel 内的尝试、步骤、效果与产物发布 |
+| [Supervisor](Architecture/kernel/Supervisor.md) | 独立的通讯主体：系统生命周期、Executor 子进程、派发与监管 |
 | [AgentToolPool](Architecture/library/AgentToolPool.md) | Agent、Unit、Tool 等模板定义 |
 | [ExecutorSet](Architecture/library/ExecutorSet.md) | Executor 行为代码 |
 | [SharedContracts](Architecture/library/SharedContracts.md) | 公共数据、版本及兼容验证 |
 | [ModuleHost](Architecture/infrastructure/ModuleHost.md) | Supervisor 管理的装配与生命周期 |
-| [Fabric](Architecture/infrastructure/Communication.md) | Core 管理的通信与事实交接 |
+| [Fabric](Architecture/infrastructure/Communication.md) | 通讯主体，以及 Core 管理的通信与事实交接 |
 | [Persistence](Architecture/infrastructure/Persistence.md) | 分属各 Owner 的状态保存与恢复原语 |
 | [ArtifactStore](Architecture/infrastructure/ArtifactStore.md) | 不可变大对象、访问与保留 |
 | [TechStack](Architecture/TechStack.md) | 长期目标技术栈 |

@@ -10,7 +10,8 @@ Execution 负责 UnitAttempt、执行队列与产物发布。组件间交互见 
 - 幂等建立 UnitAttempt 并记录建立时的 runEpoch，维护步骤、执行进度、输入输出、已知与未知效果及新旧尝试关系。
 - 维护唯一的 Unit FIFO 执行队列，按受理顺序串行推进；前一执行活动完成或确认停止后才启动下一项。
 - 需要 API 时经内部 syscall 向 Core 申请预留，附估算上界（输入 token 上界 + `max_tokens`）与是否为 final-call；执行完成后经内部 syscall 向 Core 提交结果检查，用量随之交给 Core。
-- 向 Supervisor 提交 `executionKind`、已获准参数、范围约束与限制，由其装配并执行，不自行扩大操作范围。
+- 向 Supervisor 提交 `executionKind`、已解析的输入、范围约束与限制，由其执行，不自行扩大操作范围；
+  只经 Core 的内部 syscall 接口与 Core 交互，不读写 Core、Monitor、Scheduler 的数据。
 - 管理本次分析所需的上下文构建记录、检索台账和来源关联；为上下文组装解析本运行内的输入产物。
 - 维护产物归属索引，解析 Unit 输入中的 ArtifactRef 前检查其归属（第 3 节）。
 - 产物只由 Execution 写入 ArtifactStore，包括执行产物与 Workflow 经 `report-publish` 提交的最终报告。

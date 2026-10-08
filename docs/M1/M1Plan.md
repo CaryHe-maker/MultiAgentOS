@@ -16,7 +16,7 @@ M1 的技术选择、允许依赖和明确排除项以 [M1TechStack.md](M1TechSt
 1. CLI 经 UserInteraction、Kernel 和 Workflow 创建运行、回答授权、终止运行并展示结果。
 2. AgentToolPool 提供不可变的 Agent（Planner、CodeViewer）、Unit、Tool、Model、Prompt 定义；Agent 定义包含 Round 上限；运行开始后固定版本与 digest。
 3. Workflow 实现 Agent 循环、Round 上限、final-call 收尾、HANDOFF、来源验收与 AnalysisReport，并经 `report-publish` 发布报告。
-4. Kernel 六组件按 [Kernel（外部视角）](module/Kernel.md) 与 [kernel/](kernel/Interaction.md) 下的组件文档实现：准入、Lease 与用户授权、token 额度状态与 final-call 保留额度、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
+4. Kernel 六组件按 [Kernel（外部视角）](module/Kernel.md) 与 [kernel/](kernel/Interaction.md) 下的组件文档实现：准入、Lease 与用户授权、token 额度状态与 final-call 保留额度、运行超时、FIFO 执行、运行 actor 与控制通道优先、Kernel 核心内部的模块化隔离、Supervisor 执行并上报执行事实、结果检查与交付、收敛与关闭。
 5. 上下文与检索 Executor 实现仓库概览、搜索、上下文组装、provenance、稳定前缀、预算和检索评测。
 6. Executor 对用户仓库只允许只读访问，并实现硬编码的执行点检查；所有副作用请求确定性拒绝。
 7. 三个 Module 与四类基础设施均有公开 Port、默认或 fake adapter、组合位置和边界测试；三个静态库有 contract test。
@@ -43,7 +43,7 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 
 ### 5.1 契约与可替换骨架
 
-- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、VersionedRef、syscall 与 UserInteraction 请求、Inbox 事件（RunStart、UnitReport、RunClosed、AuthorizationRequest、RunFinished）、各 Unit 输入、ContextPack 和 DefinitionVersion。
+- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、VersionedRef、syscall 与 UserInteraction 请求、Inbox 事件（RunStart、UnitReport、RunClosed、AuthorizationRequest、RunFinished）、Kernel 核心与 Supervisor 的接口（ExecutionRequest、ExecutionFact）、各 Unit 输入、ContextPack 和 DefinitionVersion。
 - 建立三个 Module 包、四类基础设施包、三个静态库包、三个 app 及依赖规则。
 - 完成 Protocol Registry、Fake Port、架构测试和 Fake 纵向闭环。
 

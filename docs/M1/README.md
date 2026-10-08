@@ -68,14 +68,20 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 - 范围变化同步检查计划、接口、任务和验收条件。
 - 协议变化同步更新 Schema、兼容说明及生产者与消费者的契约测试。
 - 任务完成时在对应 GitHub Issue 中关联 PR 与验证证据。
-- Architecture 已冻结，M1 的机制调整只修改本目录；与 Architecture 的差异记录在第 7 节。
+- Architecture 记录概念与方向；M1 的机制调整影响长期概念时，同步修改 Architecture，并在第 7 节记录仍存在的差异。
 
-## 7. 与 Architecture 的差异
+## 7. 与 Architecture 的关系
 
-以下差异只适用于 M1，不改变 Architecture 的安全约束与状态所有权：
+M1 与 Architecture 当前没有语义差异。结果统一由 Core 经 Outbox 交付、Inbox 事件投递、
+额度达到上限时只拒绝新的消耗型预留等机制，已由 Architecture 采纳。
 
-| 主题 | Architecture | M1 | 原因 |
-|---|---|---|---|
-| 结果交付 | 已执行的 Unit 由 Execution 交付，执行前被拒由 Core 交付 | 全部 UnitReport 由 Core 经 Outbox 交付，Execution 把结果随结果检查交给 Core | runEpoch 核对与交付在同一 Owner 内同步完成，消除竞态；外部模块只有一个事件来源 |
-| Kernel 向外部模块的通知 | 未规定通道 | Workflow、UserInteraction 各提供 Inbox，由 Core 的 Outbox 投递 | 依赖倒置：Kernel 只依赖 contracts 中的接口 |
-| 额度硬阈值 | 触发时 Core 封锁准入并停止运行 | 只拒绝 model-call 的预留，不停止运行；为 final-call 保留额度 | 用尽额度后不再产生费用，保留已有成果并生成降级报告 |
+M1 只实现长期组织的一个子集：
+
+| 长期组织 | M1 的取舍 |
+|---|---|
+| 通讯主体：Kernel 核心、Supervisor、Gateway、Workflow、UserInteraction | 主体划分相同，全部位于同一进程，主体之间仍只交换可序列化数据 |
+| Kernel 核心是模块化单体，组件数据按模块隔离 | 照常实现，并以目录边界、导入规则与架构测试强制 |
+| Kernel 核心按 WorkflowRun 分片 | 单个 Kernel 核心实例，不分片，不需要分片租约与路由 |
+| Supervisor 独立成进程，Executor 在子进程中运行（可信进程池、不可信按次进程） | Supervisor 与 Kernel 核心同进程，只运行可信的内置 Executor；`rg` 以子进程运行 |
+| 运行 actor 按顺序处理，执行可以并行 | 运行 actor 与控制通道优先照常实现；执行按 FIFO 串行 |
+| Kernel 核心与 Supervisor 的心跳、子进程健康判断 | 不实现 |

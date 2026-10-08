@@ -10,8 +10,8 @@ CLI
  |
 UserInteraction -> Kernel.Gateway -> Workflow
 Workflow -> submitUnit -> Gateway 准入 -> Core（定义核验、Lease、额度）
-Kernel: Gateway · Core · Scheduler · Execution · Supervisor · Monitor
-Execution -> Supervisor 装配并执行 ExecutorSet 中的 Executor
+Kernel 核心（模块化单体）: Core · Scheduler · Execution · Monitor；Supervisor 独立；Gateway 逻辑独立
+Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 执行事实 -> Core 结果检查 -> Outbox -> Workflow 验收 -> 用户视图
 
 静态库：AgentToolPool · ExecutorSet · SharedContracts
@@ -22,6 +22,8 @@ Execution -> Supervisor 装配并执行 ExecutorSet 中的 Executor
 
 - 每类领域状态只有一个写入 Owner。
 - Workflow 决定业务推进与验收，Kernel 负责授权、调度、执行、资源和监管。
+- 每个 WorkflowRun 由一个 Kernel 核心实例按顺序处理；Executor 子进程中的执行可以并行。
+- Kernel 核心内的组件只读写自己的数据，Lease 只由 Core 维护和使用。
 - Lease 只存在于 Core，其他组件只取得裁决与派生的范围约束。
 - Syscall、Interruption 与 Exception 由 Core 统一处理。
 - 模型只提出动作，不能绕过 Kernel 直接执行工具。
@@ -31,7 +33,7 @@ Execution -> Supervisor 装配并执行 ExecutorSet 中的 Executor
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
 完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。
-Architecture 已冻结；M1 与 Architecture 的差异列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示代码已完成迁移。
+M1 与 Architecture 的关系列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示代码已完成迁移。
 
 ## 当前交付范围
 

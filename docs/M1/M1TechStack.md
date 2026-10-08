@@ -33,7 +33,7 @@ TypeScript 必须开启 `strict`、`noUncheckedIndexedAccess`、`exactOptionalPr
 
 ## 3. 部署形态
 
-M1 使用模块化单体：三个 Module、四类基础设施、三个静态库和只读 Executor 位于同一 Node.js 进程，通过公开 Port 和运行时 Schema 保持逻辑边界。Kernel 内 Core、Monitor、Scheduler、Execution 之间直接函数调用；Gateway、Supervisor 与其他主体之间、以及外部 Module 与 Kernel 之间使用进程内可序列化消息，Kernel 发给外部 Module 的事件经 Inbox 投递（见 [Communication](infrastructure/Communication.md) §2）。
+M1 使用模块化单体：三个 Module、四类基础设施、三个静态库和只读 Executor 位于同一 Node.js 进程，通过公开 Port 和运行时 Schema 保持逻辑边界。Kernel 核心（Core、Monitor、Scheduler、Execution）内部直接函数调用，组件数据按模块隔离；Supervisor、Gateway、Workflow 与 UserInteraction 是独立的通讯主体，彼此之间使用进程内可序列化消息，Kernel 发给外部 Module 的事件经 Inbox 投递（见 [Communication](infrastructure/Communication.md) §2）。Supervisor 与 Kernel 核心同进程，Executor 在进程内运行，`rg` 以子进程运行。
 
 ```text
 apps/cli                 CLI Adapter
@@ -72,7 +72,7 @@ Workflow 以 reducer 逐条处理 Inbox 事件。预算状态、状态机、Defi
 
 ## 8. 上下文与检索 Executor
 
-M1 使用 Node.js `fs/path/crypto` 构建只读仓库快照、分块、hash、预算和 provenance。文本搜索通过可替换 SearchBackend：检测到受支持的系统 `rg` 时使用参数数组调用；不可用时使用确定性 Node.js 文件扫描。
+M1 使用 Node.js `fs/path/crypto` 构建只读仓库快照、分块、hash、预算和 provenance。文本搜索通过可替换 SearchBackend：检测到受支持的系统 `rg` 时以子进程按参数数组调用，取消时终止子进程；不可用时使用确定性 Node.js 文件扫描，扫描分块执行并在块之间让出事件循环，使取消与超时能够及时处理。
 
 仓库当前未声明 ripgrep npm 包，因此不得在源码中导入未安装的二进制包。引入固定 ripgrep 分发依赖时，必须先更新 workspace manifest、lockfile、依赖文档和 Ubuntu LTS 上的 Contract tests。
 
