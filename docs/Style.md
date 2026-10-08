@@ -28,7 +28,7 @@
 
 - Markdown 文件使用 PascalCase，即每个概念单词首字母大写且不使用分隔符；数字前缀与既定缩写保持原样。
 - `README.md`、`package.json`、`tsconfig.json`、工具配置文件和日期型会议记录遵循生态或既有固定名称，不改写为 PascalCase。
-- 源码目录、package 目录和新建的普通文档子目录使用小写 kebab-case，不使用空格、下划线或大小写混合形式。
+- 源码目录与 package 目录使用小写 kebab-case，不使用空格、下划线或大小写混合形式；文档目录使用 PascalCase（如 `docs/M1/Kernel`）。
 - 文件名必须表达单一概念；禁止使用 `misc`、`temp`、`new`、`final`、`v2` 等无法说明职责的名称。
 
 ### 2.2 TypeScript
@@ -56,8 +56,8 @@
 - `apps/control-plane` 是唯一组合根。
 - CLI 不依赖 Workflow；Workflow 只经 Kernel 公开 syscall 交互，不依赖 Kernel 内部实现或具体适配器；Executor 不回调 Workflow。
 - 通讯主体（Kernel 核心、Supervisor、Gateway、Workflow、UserInteraction）之间只交换可序列化数据，不共享可变对象。
-- Kernel 核心（Core、Monitor、Scheduler、Execution）内部可以直接函数调用，但各组件只读写自己的数据，只经职责接口与内部 syscall 交互；Lease 只由 Core 维护和使用。
-- 大对象存入 Artifact Store；模块消息只传 ArtifactRef。
+- Kernel 核心（Core、Monitor、Scheduler、Execution）内部可以直接函数调用，但各组件只读写自己的数据，只经职责接口与内部 syscall 交互；Monitor 与 Scheduler 只由 Core 调用；Lease 只由 Core 维护和使用。
+- 大对象存入 Artifact Store；模块消息只传 ArtifactRef。唯一例外是 Kernel 核心与 Supervisor 之间的执行请求与执行事实：Executor 不持有 ArtifactStore，已解析的内容按值传递，大小受执行限制约束。
 - 新增能力先声明 owner、Schema、Port、错误和测试，再接入实现。
 
 ### 2.5 测试
@@ -103,7 +103,7 @@
 - 具体部分可以为 Docs、ContextEngine、Test 等
 - 工作分支内部的 commit 无需 PR 但是 工作分支到main或feat/*必须经过PR
 - 如果需要与受保护分支对齐状态，可以先 PR 入受保护分支后 再从受保护分支分出
-- 如 `feature/M1/ContextEngine`、`feature/M2/kernel`
+- 如 `feature/M1/ContextEngine`、`feature/M2/Kernel`
 
 ### 4.3 其他分支（正常情况不得使用）
 
@@ -175,7 +175,7 @@ the authorized workspace.
 
 ### 6.1 目标分支
 
-- `feat/M1/<work-unit>` 的功能、修复、测试和文档 PR 合并到 `feat/M1`。
+- `feature/M1/<Part>` 工作分支的功能、修复、测试和文档 PR 合并到 `feat/M1`。
 - `feat/M1 -> main` 只用于达到 M1 发布门后的集成 PR。
 - `hotfix/<scope>` 可以通过独立 PR 合并到 `main`；合并后必须同步到 `feat/M1`。
 - 禁止从其他工作分支直接合并到 `main`。

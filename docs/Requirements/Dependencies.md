@@ -11,7 +11,7 @@
 | Node.js | `24.19.0`; `>=24.19.0 <25` |
 | pnpm | `11.25.0` |
 | TypeScript module | ESM / NodeNext |
-| Git | 可读取 revision 和 status 的维护版本 |
+| Git | 仅测试工具使用（准备固定任务集的仓库内容并比对）；M1 产品代码不调用 git |
 
 ## 2. 根开发依赖
 
@@ -43,7 +43,7 @@
 | `apps/cli` | `commander` | `15.0.0` | CLI 参数解析 |
 
 其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。
-当前 Provider SDK 仍声明在 Kernel package；模型调用实现归 ExecutorSet 的 model-call Executor，API 池归 Kernel.Scheduler。
+当前 Provider SDK 仍声明在 Kernel package；模型调用实现归 ExecutorSet 的 model-call Executor（目标位置 `packages/executor-set`），API 池归 Kernel.Scheduler；`dotenv` 的目标位置为组合根 `apps/control-plane`。
 实际包迁移需在 M1 详细设计后同步 manifest、依赖边界和测试，本轮不改动代码或依赖。
 公共协议不携带 Provider SDK 类型。
 

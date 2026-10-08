@@ -28,7 +28,7 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 - Syscall、Interruption 与 Exception 由 Core 统一处理。
 - 模型只提出动作，不能绕过 Kernel 直接执行工具。
 - Executor 返回物理执行事实，不判断 Task 或 Workflow 是否成功。
-- 上下文与检索由 ExecutorSet 中的 Executor 完成，ContextPack 不可变并带 revision、provenance 与 token 预算。
+- 上下文与检索由 ExecutorSet 中的 Executor 完成，ContextPack 不可变并带仓库快照摘要、provenance 与 token 预算。
 - 跨模块数据经过运行时 Schema 校验，大对象通过 ArtifactRef 传递。
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
@@ -37,7 +37,7 @@ M1 与 Architecture 的关系列于 [M1 指南](docs/M1/README.md) 第 7 节。�
 
 ## 当前交付范围
 
-项目只确定 M1：交付本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。系统接收仓库分析问题，通过受控的概览、搜索与读取路径生成包含 repository revision、路径、行范围和 provenance 的结构化报告。
+项目只确定 M1：交付本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。系统接收仓库分析问题，通过受控的概览、搜索与读取路径生成包含仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。
 
 M1 不执行文件写入、项目命令、项目测试或其他副作用。其他交付目标只能在 M1 完成验收后另行定义。范围、机制和接口见 [M1 指南](docs/M1/README.md)，任务进度由 GitHub Issues 跟踪：
 
@@ -59,11 +59,12 @@ packages/
   user-interaction/     交互领域
   workflow/             业务图与运行语义
   kernel/               Kernel 六组件
-  context-engine/       现有检索与上下文代码；目标归 ExecutorSet
-  agent-tool-pool/      DefinitionVersion 目录
+  context-engine/       现有检索与上下文代码；目标迁入 executor-set
+  executor-set/         ExecutorSet（待建）：上下文、检索、文件读取与模型调用 Executor
+  agent-tool-pool/      Agent、Unit、Tool、Model、Prompt 定义目录
   module-host/          生命周期与组合
   persistence/          Repository Adapter
-  communication/        消息路由 Adapter
+  communication/        Fabric 的同进程实现（包名迁移由 Issue 跟踪）
   artifacts/            Artifact Store
   testing/              Fakes、Contract tests 和 fixtures
 docs/

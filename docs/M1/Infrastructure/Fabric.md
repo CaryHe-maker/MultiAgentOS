@@ -1,0 +1,46 @@
+# MultiAgentOS M1 Fabric
+
+## 1. 定位
+
+Fabric 提供通讯主体之间的通信、路由与交接，Core 承担管理职责，但不因此中转全部消息。
+长期规划见 [Fabric 架构](../../Architecture/Infrastructure/Fabric.md)，Port 与路由表见 [M1Interface](../M1Interface.md) 第 2、10 节。
+
+## 2. 通讯主体与调用形式
+
+M1 全系统运行在一个操作系统进程中，通讯主体与长期架构一致：
+
+| 通讯主体 | producer | 组成 | 与其他主体之间 | M1 实现 |
+|---|---|---|---|---|
+| Kernel 核心 | `kernel-core` | Core、Monitor、Scheduler、Execution | Fabric | 单个实例，不分片 |
+| Supervisor | `supervisor` | Supervisor 及其管理的 Executor | Fabric（`SupervisorPort`、`ExecutionFactSink`） | 与 Kernel 核心同进程；Executor 在进程内运行，`rg` 以子进程运行 |
+| Gateway | `gateway` | Gateway | Fabric | 逻辑独立，与 Kernel 核心同进程 |
+| Workflow | `workflow` | Workflow Module | 经 Gateway 发起 syscall，经 Inbox 接收事件 | 同进程 |
+| UserInteraction | `user-interaction` | UserInteraction Module 与 CLI | 经 Gateway 发起请求，经 Inbox 接收事件 | 同进程 |
+
+Kernel 核心内部（Core、Monitor、Scheduler、Execution）以函数调用协作，不经 Fabric。
+
+## 3. 实现
+
+M1 的 Fabric 是同进程实现 `InProcessFabric`，为每个通讯主体创建一个 `FabricPort` 客户端：
+
+- 客户端固定写入 `Envelope.producer`、`messageId` 与 `occurredAt`，主体代码不能修改；Gateway 以 producer 判定调用方。
+- 每次投递先按 `schemaName` 的 Schema 校验 payload，再以 `structuredClone` 复制，使误传对象引用、函数或类实例在 M1 即可被发现。
+- `request`：调用方等待处理方返回；超时不证明操作未发生。M1 不设 Fabric 级超时，由各请求的业务时限兜底。
+- `send` / `subscribe`：单向消息；`send` 返回表示已进入接收方队列。同一地址按发送顺序投递。
+- 组合根基于各主体的客户端生成 Port 存根：`WorkflowGatewayPort`、`InteractionGatewayPort`、`SupervisorPort`、
+  `ExecutionFactSink`、`WorkflowInboxPort`、`InteractionInboxPort`，路由见 M1Interface 2.2。
+
+所有调用都遵守：使用可序列化的数据契约并在边界校验；区分请求受理与完成；不依赖共享可变对象、裸内部句柄或同步回调链；
+大对象通过 ArtifactRef 传递，Kernel 核心与 Supervisor 之间的执行请求与执行事实是唯一例外（M1Interface 7.2）。
+
+## 4. Outbox 与 Inbox
+
+M1 实现内存版 Outbox 与 Inbox，不持久化，进程退出时一起丢失：
+
+- Outbox 位于运行 actor 的 Core 状态分块中；每个接收方一个发送器，按 `seq` 依次调用 `send`，前一个返回后才发下一个。
+- Inbox 位于接收方：`deliver` 只做 Schema 校验与入队；按 `eventId` 去重；单个消费者逐条处理。
+- 投递语义见 [Kernel（外部视角）](../Module/Kernel.md) 4.5。
+
+## 5. 边界
+
+M1 不实现跨进程 IPC、多进程部署或持久化的可靠投递。Fabric 在系统关闭时最后关闭（[ModuleHost](ModuleHost.md) 第 2 节）。

@@ -9,7 +9,7 @@ ModuleHost 在 Supervisor 管辖下完成装配与基础设施就绪，
 按需要启动 Executor 子进程。静态库参与定义和行为装配，不作为独立 Module 启动。
 
 用户经 UserInteraction 提交目标，外部 syscall 进入 Gateway。Gateway 生成运行标识并交给
-负责该运行的 Kernel 核心，Kernel 核心为运行建立运行 actor 并开始运行计时，经 Outbox 通知 Workflow。
+负责该运行的 Kernel 核心，Core 的运行管理为运行建立运行 actor；actor 处理的第一条消息开始运行计时，经 Outbox 通知 Workflow。
 Kernel 协调 Workflow 建立业务运行与范围；Workflow 依据 AgentToolPool 模板创建 AgentRun，
 并固定本次运行采用的定义。受理回执与后续运行结果分开交付。
 
@@ -37,7 +37,7 @@ Unit 声明了受保护能力时，Core 根据授权和私有 Lease 作出判断
 Gateway 与 Workflow 不保存 Lease 内容。
 
 获准工作进入执行。Execution 经内部 syscall 提交结果检查，用量随之交给 Core，
-由 Core 调用 Monitor 结算；准入被拒由 Gateway 返回，其余结果统一由 Core 经 Outbox 交付。
+由 Core 调用 Monitor 结算；请求被拒由 Gateway 或 Core 直接返回，其余结果统一由 Core 经 Outbox 交付。
 Workflow 决定下一步业务动作。
 执行产物可以通过引用交付，必要结构化结果也可以直接随结果提供。
 
@@ -73,14 +73,14 @@ UserInteraction 将操作交给 Gateway，Kernel 与 Workflow 按权限和业务
 
 ## 7. 暂停、中止与异常
 
-控制请求经 Gateway 进入 Kernel，作为控制类消息优先处理，Core 协调 Scheduler、Execution 改变运行状态，
-并通知 Supervisor 终止相关执行。
+控制请求经 Gateway 进入 Kernel，作为控制类消息优先处理，运行进入收敛：Core 协调 Scheduler、Execution 改变运行状态，
+并通知 Supervisor 终止相关执行，等待在途执行给出终态（或兜底时限到达）后才发出运行结束事件。
 已受理中止不代表所有效果已经停止；Execution 报告可确认的终态与仍未知的部分。
 
 普通执行失败形成可解释结果，由 Workflow 决定业务重试或调整。
 越权绕过受保护入口、直接读写 Core 的 Lease 或破坏安全不变量时，
 Kernel 拒绝操作并按 panic 规则进入安全处置。
-可信监控事实按约定通道报告，不因未经过 Gateway 而被当作越权调用。
+Supervisor 上报的执行事实经执行事实通道进入 Kernel 核心，不因未经过 Gateway 而被当作越权调用。
 
 ## 8. 故障、重连与最终交付
 
@@ -94,5 +94,5 @@ Execution 完成执行、Kernel 接受相关结果、Workflow 完成业务验收
 UserInteraction 展示最终交付。完整正文可以从 ArtifactStore 的受控入口读取。
 最终报告不能绕过正常的权限和资源约束。
 
-运行查询由各 Owner 的公开状态形成视图；Monitor 汇集运行和资源事实，
+运行查询由各 Owner 的公开状态形成视图；Monitor 经 Core 汇集运行和资源事实，
 展示采样不改变结算账目，也不成为新的业务权威。

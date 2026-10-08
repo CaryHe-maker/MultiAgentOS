@@ -22,7 +22,7 @@ Kernel 内部保留清晰的状态所有权，不提供任意组件可写的全�
 ## 2. 阅读路线
 
 1. [Overall](Overall.md)：系统关系、权威归属和不变量。
-2. [Kernel](module/Kernel.md)：六组件、通讯主体、运行组织、权限、Lease 与系统调用。
+2. [Kernel](Module/Kernel.md)：六组件、通讯主体、运行组织、权限、Lease 与系统调用。
 3. [Protocol](Protocol.md)：请求、事实、结果和恢复的共同语义。
 4. [Instance](Instance.md)：运行、控制、集成和恢复示例。
 5. [Evolution](Evolution.md)：部署阶段、分片与架构演进。
@@ -32,28 +32,28 @@ Kernel 内部保留清晰的状态所有权，不提供任意组件可写的全�
 
 | 文档 | 职责 |
 |---|---|
-| [UserInteraction](module/UserInteraction.md) | 会话、意图、审核交互与展示 |
-| [Workflow](module/Workflow.md) | 业务图、AgentRun、验收、恢复与补偿 |
-| [Kernel](module/Kernel.md) | 统一控制与执行管理 |
-| [Execution](kernel/Execution.md) | Kernel 内的尝试、步骤、效果与上下文状态 |
-| [Supervisor](kernel/Supervisor.md) | 系统生命周期、Executor 子进程与执行事实 |
+| [UserInteraction](Module/UserInteraction.md) | 会话、意图、审核交互与展示 |
+| [Workflow](Module/Workflow.md) | 业务图、AgentRun、验收、恢复与补偿 |
+| [Kernel](Module/Kernel.md) | 统一控制与执行管理 |
+| [Execution](Kernel/Execution.md) | Kernel 内的尝试、步骤、效果与上下文状态 |
+| [Supervisor](Kernel/Supervisor.md) | 系统生命周期、Executor 子进程与执行事实 |
 
 ## 4. 静态库
 
 | 文档 | 内容 |
 |---|---|
-| [AgentToolPool](library/AgentToolPool.md) | Agent、Unit、Tool 等模板类及其组合 |
-| [ExecutorSet](library/ExecutorSet.md) | Executor 原子软件行为代码，包括上下文能力 |
-| [SharedContracts](library/SharedContracts.md) | 公共概念、数据契约与兼容关系 |
+| [AgentToolPool](Library/AgentToolPool.md) | Agent、Unit、Tool 等模板类及其组合 |
+| [ExecutorSet](Library/ExecutorSet.md) | Executor 原子软件行为代码，包括上下文能力 |
+| [SharedContracts](Library/SharedContracts.md) | 公共概念、数据契约与兼容关系 |
 
 ## 5. Infrastructure
 
 | 文档 | 管辖与职责 |
 |---|---|
-| [ArtifactStore](infrastructure/ArtifactStore.md) | Execution 管辖；不可变内容与保留原语 |
-| [ModuleHost](infrastructure/ModuleHost.md) | Supervisor 管辖；装配、就绪与关闭 |
-| [Fabric](infrastructure/Communication.md) | Core 管辖；通讯主体、通信、路由与事实交接 |
-| [Persistence](infrastructure/Persistence.md) | ModuleHost 管理生命周期；各 Owner 保有数据权威 |
+| [ArtifactStore](Infrastructure/ArtifactStore.md) | Execution 管辖；不可变内容与保留原语 |
+| [ModuleHost](Infrastructure/ModuleHost.md) | Supervisor 管辖；装配、就绪与关闭 |
+| [Fabric](Infrastructure/Fabric.md) | Core 管辖；通讯主体、通信、路由与事实交接 |
+| [Persistence](Infrastructure/Persistence.md) | ModuleHost 管理生命周期；各 Owner 保有数据权威 |
 
 ## 6. 权威与演进
 

@@ -46,8 +46,8 @@ Persistence 的启停由 ModuleHost 管理。基础设施管辖不转移领域�
 
 逻辑组织与通讯主体分开表达。Kernel 对外是一个 Module（宏内核），对内由三个通讯主体组成：
 Kernel 核心（Core、Monitor、Scheduler、Execution，同一进程的模块化单体，组件数据按模块隔离）、
-Supervisor（独立进程，管理 Executor 子进程）与 Gateway（逻辑上独立）。Workflow 与 UserInteraction 也是独立的通讯主体。
-各通讯主体的组成与协作方式见 [Fabric](infrastructure/Communication.md)。
+Supervisor（长期独立成进程，管理 Executor 子进程）与 Gateway（逻辑上独立）。Workflow 与 UserInteraction 也是独立的通讯主体。
+各通讯主体的组成与协作方式见 [Fabric](Infrastructure/Fabric.md)。
 
 ## 4. Kernel 内部权威
 
@@ -62,7 +62,7 @@ Supervisor（独立进程，管理 Executor 子进程）与 Gateway（逻辑上�
 
 实际完成、结果被接受和业务成功分别由 Execution、Core、Workflow 表达。
 内部协调可以集中组织，但不能将这些事实混为一个任意可写的状态。
-限流只有一个权威：Monitor 判断是否限流，Gateway 在入口执行。
+限流只有一个权威：Monitor 在被 Core 调用时判断是否限流，Core 把结论推送给 Gateway，Gateway 在入口执行。
 
 ## 5. 核心概念
 
@@ -106,9 +106,9 @@ Core 保留用户的授权决定。后续申请若属于用户已同意范围的
 Workflow 固定使用的模板和行为版本，形成 UnitIntent，经 Gateway 进入 Kernel。
 Kernel 组织权限判断、尝试创建、调度及资源安排；Execution 提交执行请求，
 由 Supervisor 在 Executor 子进程中运行 Executor。输出、实际效果和消耗经 Core 核对后交由
-Workflow 验收：准入被拒由 Gateway 返回，其余结果统一由 Core 交付。
+Workflow 验收：请求被拒由 Gateway 或 Core 直接返回，其余结果统一由 Core 交付。
 
-业务产物（如最终报告）同样以 Unit 的形式提交，由 Execution 发布到 ArtifactStore，
+业务产物（如最终报告）同样以 Unit 的形式提交，由 Execution 直接发布到 ArtifactStore（Kernel 内建 Unit，不经 Executor），
 Workflow 不直接写入产物存储。
 
 模型动作始终是提案。Workflow 检查能力组合的合法性，再提交操作，不替代 Core 作权限裁决。

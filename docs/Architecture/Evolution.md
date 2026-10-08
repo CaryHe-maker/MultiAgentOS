@@ -16,7 +16,7 @@ SharedContracts 维持公共语义。
 也不意味着 Executor 与可信管理代码具有相同权限。
 
 长期通讯主体为 Kernel 核心、Supervisor、Gateway、Workflow 与 UserInteraction
-（见 [Fabric](infrastructure/Communication.md)）。Kernel 核心内的 Core、Monitor、Scheduler 与 Execution
+（见 [Fabric](Infrastructure/Fabric.md)）。Kernel 核心内的 Core、Monitor、Scheduler 与 Execution
 始终同处一个进程，以内部 syscall 与函数调用协作，组件数据按模块隔离；Supervisor 独立成进程并管理
 Executor 子进程；Gateway 逻辑上独立，其余通讯主体按需要独立成进程。
 
@@ -68,6 +68,14 @@ Core 管辖 Fabric、ModuleHost 统一管理 Persistence 生命周期的关系�
 | 并行执行 | 执行队列按 AgentRun 划分并设运行级并发上限 |
 | 按运行分片 | 逻辑分片固定数量，Kernel 核心实例经 Persistence 中的分片租约领取；写入携带分片 epoch；全局 API 容量由全局容量服务以令牌分配 |
 | 子运行 | 超大运行拆为子运行，额度通过显式委派划给子运行 |
+
+以下逻辑问题须在对应能力进入 MVP 前给出设计：
+
+| 问题 | 需要明确的内容 |
+|---|---|
+| 分片后的跨运行状态 | 用户的长期授权记录、共享索引与仓库快照、租户级配额在按运行分片后的 Owner 与存放位置（目前只有 API 容量定义了全局服务） |
+| 业务类人工参与 | 信息补充、方案选择、结果验收以及暂停、重试、重规划等用户操作，在 Workflow 与 UserInteraction 之间经 Kernel 中转的请求与事件 |
+| 多实例下的基础设施管辖 | Kernel 核心有多个实例、Supervisor 按节点部署时，Fabric、ModuleHost、ArtifactStore 的管辖关系 |
 
 ## 5. 演进核对
 

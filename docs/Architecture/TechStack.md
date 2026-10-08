@@ -19,7 +19,7 @@
 | API / UI | Fastify、OpenAPI、SSE、React | UserInteraction Adapter |
 | Durable workflow | DBOS | Durable Runtime Port |
 | Database / Query | PostgreSQL、Kysely | Persistence Port |
-| Reliable messaging | NATS JetStream、Outbox/Inbox | Communication Port |
+| Reliable messaging | NATS JetStream、Outbox/Inbox | Fabric Port |
 | Artifact | S3-compatible Store、本地 CAS | ArtifactStorePort |
 | Model | Vercel AI SDK、Provider Adapter、可选 LiteLLM Gateway | ExecutorSet 的模型调用 Executor / Model Port |
 | Tool | MCP TypeScript SDK、OpenAPI Tool Adapter | Tool Execution Port |
@@ -70,7 +70,7 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 ## 7. 模型与工具
 
 - Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 ExecutorSet 的模型调用 Executor 中，在 Supervisor 管理的 Executor 子进程内运行。Kernel 的 Gateway 是权限入口，与模型调用的协议适配无关。需要多 Provider 协议适配或代理时可使用 LiteLLM Gateway，但不改变 Model Port。AgentOS 的 API 池、调用机会分配及配额权威仍归 Kernel Scheduler/Monitor，外部网关不得成为第二套授权或预算事实源。
-- OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定 DefinitionVersion。
+- OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定定义版本与 digest。
 - MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。模型可调用的 Tool 对应到 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格；是否需要 Lease 以 Unit 声明的受保护能力为准。Execution 推进 Unit 内固定的 Executor 序列，由 Supervisor 在 Executor 子进程中执行；MCP server 的能力声明不能扩大租约范围。
 - OpenAPI 工具通过版本化定义生成参数 Schema；禁止动态执行未审查描述。
 - Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；Executor 子进程的健康度与负载由 Supervisor 与 Monitor 提供，Execution 维护 Attempt 和步骤进度。当前 SDK 所在 package 与目标模块不一致时，应显式迁移依赖与测试，不能让 Workflow 直接导入 Provider SDK。
@@ -86,9 +86,9 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 本地 CAS 用于开发和单机运行；S3-compatible Store 承担完整系统的远程对象、复制和生命周期管理。所有 Adapter 统一执行 SHA-256、size/mediaType 验证、tenant 隔离、retention token 和延迟 GC。数据库只保存 ArtifactRef 和业务引用。
 
-## 10. Communication
+## 10. Fabric
 
-Communication Fabric 由 Kernel 管辖，技术实现保留独立 Port。同进程 Router 承载同进程部署时通讯主体之间的可序列化消息；Kernel 核心内部直接函数调用，不经 Router。Kernel 核心与 Supervisor、Supervisor 与 Executor 子进程之间在本地使用进程间通信；NATS JetStream 承担需要可靠消息能力的独立进程间背压和消费。本地 IPC 可以承载不需要消息集群的部署，不能将此选择解释为取消可靠交付语义。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
+Fabric 由 Kernel.Core 管辖，技术实现保留独立 Port。同进程 Router 承载同进程部署时通讯主体之间的可序列化消息；Kernel 核心内部直接函数调用，不经 Router。Kernel 核心与 Supervisor、Supervisor 与 Executor 子进程之间在本地使用进程间通信；NATS JetStream 承担需要可靠消息能力的独立进程间背压和消费。本地 IPC 可以承载不需要消息集群的部署，不能将此选择解释为取消可靠交付语义。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
 
 Kernel 核心多实例部署时，分片租约保存在 PostgreSQL，实例按租约领取逻辑分片，写入携带分片 epoch；Gateway 按分片路由。全局 API 容量由全局容量服务以带期限的令牌分配，可以使用 Redis 实现令牌桶，但令牌只用于短期协调，不保存领域事实。
 
@@ -100,7 +100,7 @@ Kernel 核心多实例部署时，分片租约保存在 PostgreSQL，实例按�
 | 语法分块 | tree-sitter |
 | 符号/引用 | SCIP；不支持的语言使用语言服务 Adapter |
 | 向量存储 | PostgreSQL + pgvector |
-| Embedding/Rerank | 通过 Kernel MODEL Unit 调用，上下文 Executor 不直连 Provider |
+| Embedding/Rerank | 作为同一 Unit 内的模型调用步骤，由 Kernel 分配调用机会与额度；上下文 Executor 不直连 Provider |
 | 缓存 | 内容 hash + IndexRevision + ACL/revision key |
 
 混合检索必须先以无模型评测验证收益。语义检索不能替代 provenance、ACL 和 repository revision 过滤。
