@@ -1,6 +1,6 @@
 # MultiAgentOS M1 进度
 
-> 架构衔接说明（2026-10-07）：M1 范围已按三 Module、六组件宏内核与 [UnitCheck](UnitCheck.md) 更新。
+> 架构衔接说明（2026-10-07）：M1 范围已按三 Module、六组件宏内核与 [Kernel（外部视角）](module/Kernel.md) 更新。
 > 下列任务表仍为 2026-09-24 的进度基线；C 组任务中的 ContextEngine 对应新架构中的上下文与检索 Executor。
 > Kernel 六组件、Lease、额度、报告发布与结束流程的任务待各 Owner 按新范围补充到各自表格。
 
@@ -72,3 +72,13 @@
 |---|---|---|---|---|
 | 2026-09-23 | `feat/M1` | `pnpm.cmd run check` | PASS：10 files / 20 tests | 基础协议、平台包、Context、Executor、装配和依赖边界 |
 | 2026-09-24 | `feat/M1` | `pnpm.cmd run check` | PASS：10 files / 22 tests | 版本与边界统一；不代表 M1 验收完成 |
+
+## 7. Kernel 设计阶段
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 1 | 确定 M1 Kernel 实现范围 | 已完成 |
+| 2 | 讨论 Kernel 具体机制及单进程软件组织、数据通信机制 | 部分完成，剩余事项见 [kernel/Interaction](kernel/Interaction.md) 第 9 节 |
+| 3 | 编写能够直接指导实现的模块级设计文档初稿 | 未开始 |
+| 4 | 根据其他开发者意见完善设计 | 未开始 |
+| 5 | 设计项目目录结构 | 未开始 |

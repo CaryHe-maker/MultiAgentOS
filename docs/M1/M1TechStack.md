@@ -33,7 +33,7 @@ TypeScript 必须开启 `strict`、`noUncheckedIndexedAccess`、`exactOptionalPr
 
 ## 3. 部署形态
 
-M1 使用模块化单体：三个 Module、四类基础设施、三个静态库和只读 Executor 位于同一 Node.js 进程，通过公开 Port 和运行时 Schema 保持逻辑边界。Kernel 内 Core、Monitor、Scheduler、Execution 之间直接函数调用；Gateway、Supervisor 与其他主体之间、以及外部 Module 与 Kernel 之间使用进程内可序列化消息（见 [M1KernelRange](kernel/M1KernelRange.md) §3.1）。
+M1 使用模块化单体：三个 Module、四类基础设施、三个静态库和只读 Executor 位于同一 Node.js 进程，通过公开 Port 和运行时 Schema 保持逻辑边界。Kernel 内 Core、Monitor、Scheduler、Execution 之间直接函数调用；Gateway、Supervisor 与其他主体之间、以及外部 Module 与 Kernel 之间使用进程内可序列化消息（见 [Communication](infrastructure/Communication.md) §2）。
 
 ```text
 apps/cli                 CLI Adapter
@@ -79,7 +79,7 @@ M1 不使用 tree-sitter、SCIP、向量数据库、embedding、reranker 或跨�
 
 ## 9. Execution
 
-`apps/executor` 使用 Node.js 文件系统 API 实现受限 FILE_READ。路径必须在 `realpath` 后位于 Supervisor 注入的仓库根目录内，并拒绝绝对路径、`..`、指向仓库外的 symlink、危险文件、超时和超限输出（见 [UnitCheck](UnitCheck.md) 第 9 节）。
+`apps/executor` 使用 Node.js 文件系统 API 实现受限 FILE_READ。路径必须在 `realpath` 后位于 Supervisor 注入的仓库根目录内，并拒绝绝对路径、`..`、指向仓库外的 symlink、危险文件、超时和超限输出（见 [ExecutorSet](library/ExecutorSet.md) 第 3 节）。
 
 FILE_WRITE、COMMAND、TEST、网络和其他副作用返回 `UNSUPPORTED_CAPABILITY`。M1 不引入 Git worktree、容器、远程 Executor 或 subprocess 执行框架。
 

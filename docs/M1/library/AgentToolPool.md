@@ -82,5 +82,5 @@ packages/agent-tool-pool/definitions/
 | `ContractRef` 指向的 `kernel.ModelRequest`、`file.ReadRequest`、`workflow.AnalysisAction`、`workflow.AnalysisReport` 尚未注册；目录暂不校验 ContractRef 是否已注册 | 各 Schema owner |
 | 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
 | 根 `package.json` 带 BOM，会导致 corepack 解析失败；建议统一去掉 | Cary |
-| 按 #20 与 [UnitCheck](../UnitCheck.md) 调整定义：拆分 `context-build` 为 `repository-orient`、`repository-search`、`context-assemble`；新增 `report-publish`；拆成 Planner 与 CodeViewer 两份 Agent 定义，CodeViewer 的 `startUnits` 为 `[repository-orient]` | meti |
+| 按 #20 与 [Kernel（外部视角）](../module/Kernel.md) 第 5 节调整定义：拆分 `context-build` 为 `repository-orient`、`repository-search`、`context-assemble`；新增 `report-publish`；拆成 Planner 与 CodeViewer 两份 Agent 定义，CodeViewer 的 `startUnits` 为 `[repository-orient]` | meti |
 | Agent schema 新增 `limits.maxRounds`、`limits.maxToolCallsPerRound`；Unit 定义显式声明受保护能力（`repo.read`）；model-call 声明 `maxOutputTokens` | meti |

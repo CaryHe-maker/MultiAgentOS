@@ -1,7 +1,7 @@
 # MultiAgentOS M1 计划
 
-> 架构衔接说明（2026-10-07）：本文已按三 Module、六组件宏内核与 [UnitCheck](UnitCheck.md) 更新。
-> Kernel 组件职责见 [M1KernelRange](kernel/M1KernelRange.md)。文档更新不表示代码已迁移。
+> 架构衔接说明（2026-10-07）：本文已按三 Module、六组件宏内核更新。
+> Kernel 对外行为见 [Kernel（外部视角）](module/Kernel.md)，组件职责见 [kernel/](kernel/Interaction.md)。文档更新不表示代码已迁移。
 
 ## 1. 目标与范围权威
 
@@ -16,7 +16,7 @@ M1 的技术选择、允许依赖和明确排除项以 [M1TechStack.md](M1TechSt
 1. CLI 经 UserInteraction、Kernel 和 Workflow 创建运行、回答授权、终止运行并展示结果。
 2. AgentToolPool 提供不可变的 Agent（Planner、CodeViewer）、Unit、Tool、Model、Prompt 定义；Agent 定义包含 Round 上限；运行开始后固定版本与 digest。
 3. Workflow 实现 Agent 循环、Round 上限、final-call 收尾、HANDOFF、来源验收与 AnalysisReport，并经 `report-publish` 发布报告。
-4. Kernel 六组件按 [M1KernelRange](kernel/M1KernelRange.md) 与 [UnitCheck](UnitCheck.md) 实现：准入、Lease 与用户授权、token 额度的软硬限制、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
+4. Kernel 六组件按 [Kernel（外部视角）](module/Kernel.md) 与 [kernel/](kernel/Interaction.md) 下的组件文档实现：准入、Lease 与用户授权、token 额度的软硬限制、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
 5. 上下文与检索 Executor 实现仓库概览、搜索、上下文组装、provenance、稳定前缀、预算和检索评测。
 6. Executor 对用户仓库只允许只读访问，并实现硬编码的执行点检查；所有副作用请求确定性拒绝。
 7. 三个 Module、四类基础设施和三个静态库均有公开 Port、默认或 fake adapter、组合位置和边界测试。

@@ -1,6 +1,6 @@
 # MultiAgentOS M1 接口与跨模块协议
 
-> 架构衔接说明（2026-10-07）：§5 已改为按 [UnitCheck](UnitCheck.md) 定义的目标接口；
+> 架构衔接说明（2026-10-07）：§5 已改为按 [Kernel（外部视角）](module/Kernel.md) 定义的目标接口；
 > §3、§4、§6–§9 中仍有既有 v0 协议，迁移差距记录在 [M1Process](M1Process.md) 的 C-05 与 B 组任务。
 > 文档更新不表示代码已迁移。
 
@@ -111,9 +111,9 @@ interface WorkflowControlPort {
 
 ## 5. Unit 接口
 
-### 5.1 目标接口（按 UnitCheck）
+### 5.1 目标接口
 
-Workflow 经 Gateway 发起 4 种 syscall，Kernel 返回 5 种信息，语义见 [UnitCheck](UnitCheck.md) 第 3 节。
+Workflow 经 Gateway 发起 4 种 syscall，Kernel 返回 5 种信息，语义见 [Kernel（外部视角）](module/Kernel.md) 第 4 节。
 
 ```ts
 type ExecutionKind =
@@ -135,7 +135,7 @@ interface UnitReport {                              // 每个被受理的 submit
   agentRunId: string;
   unitRef: VersionedRef;
   status: 'OK' | 'REJECTED' | 'FAILED';
-  reasonCode?: string;                              // 见 UnitCheck 第 13 节
+  reasonCode?: string;                              // 见 module/Kernel 第 10 节
   outputRef?: ArtifactRef;
   output?: unknown;                                 // 小型结构化结果
   budgetState: BudgetState;
@@ -281,7 +281,7 @@ M1 定义类型为 `AGENT | UNIT | TOOL | MODEL | PROMPT`，Schema 见 `packages
 
 - `getDefinition` 只做精确查找；错误码为 `CATALOG_LOOKUP_INVALID`、`CATALOG_DEFINITION_NOT_FOUND`、`CATALOG_VERSION_NOT_FOUND` 和 `CATALOG_DEFINITION_UNAVAILABLE`（QUARANTINED/REVOKED）。
 - Workflow 在创建运行时调用一次 `pinAgent`，此后只读取返回的 `PinnedDefinitionSet`，不得再次查找。
-- 定义文件位于 `packages/agent-tool-pool/definitions/`，启动时全部校验；任何问题都阻止启动。设计说明见 [AgentToolPoolM1](agent-tool-pool/AgentToolPoolM1.md)。
+- 定义文件位于 `packages/agent-tool-pool/definitions/`，启动时全部校验；任何问题都阻止启动。设计说明见 [AgentToolPool](library/AgentToolPool.md)。
 
 ## 8. 协议注册表
 
