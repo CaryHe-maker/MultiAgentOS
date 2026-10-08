@@ -25,7 +25,15 @@ M1 全系统运行在一个操作系统进程中，按通讯主体划分调用�
 - 协作不依赖共享可变对象、裸内部句柄或同步回调链。
 - 大对象通过受控 Artifact 引用传递，必要的小型结构化结果可以直接交付。
 
-syscall 的分类见 [kernel/Interaction](../kernel/Interaction.md) 第 3 节。
+MessageRouter 提供两种通信：
+
+| 方式 | 用途 | 语义 |
+|---|---|---|
+| 请求-响应（`request`） | 外部 syscall、UserInteraction 请求、跨主体的 Kernel 内部请求 | 调用方等待受理结果；超时不证明操作未发生 |
+| 单向消息（`send` / `subscribe`） | Core 的 Outbox 向 Workflow、UserInteraction 的 Inbox 投递事件 | 返回表示已进入接收方 Inbox；同一接收方按顺序投递 |
+
+syscall 的分类见 [kernel/Interaction](../kernel/Interaction.md) 第 3 节，Inbox 投递语义见
+[Kernel（外部视角）](../module/Kernel.md) 4.5。
 
 ## 3. 边界
 

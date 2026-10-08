@@ -6,45 +6,42 @@ MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执
 ## 架构
 
 ```text
-Web / CLI / IDE
-       |
-UserInteraction -> Kernel Gateway -> Workflow
-Workflow -> UnitIntent -> Gateway -> 有效租约 / Core 授权
-Kernel: Core · Scheduler · Monitor · Supervisor
-Execution: UnitAttempt -> Tool -> Executor 序列 -> Processes
-执行事实 -> Kernel 确认 -> Workflow 验收 -> 用户视图
+CLI
+ |
+UserInteraction -> Kernel.Gateway -> Workflow
+Workflow -> submitUnit -> Gateway 准入 -> Core（定义核验、Lease、额度）
+Kernel: Gateway · Core · Scheduler · Execution · Supervisor · Monitor
+Execution -> Supervisor 装配并执行 ExecutorSet 中的 Executor
+执行事实 -> Core 结果检查 -> Outbox -> Workflow 验收 -> 用户视图
 
-AgentToolPool: 静态定义    ContextEngine: 上下文与检索
-
-Module Host · Shared Contracts · Persistence
-Communication Fabric · Artifact Store
+静态库：AgentToolPool · ExecutorSet · SharedContracts
+基础设施：ArtifactStore · ModuleHost · Fabric · Persistence
 ```
 
 系统遵守以下核心约束：
 
 - 每类领域状态只有一个写入 Owner。
-- Workflow 决定业务推进与验收，Kernel 负责授权、调度、资源和监管，Execution 维护实际执行过程。
-- Lease 的权威记录归 Core；有效租约避免重复鉴权，但不绕过执行记录、额度和结果确认。
-- AgentOS 调用、中断信号、故障异常由 Core 内的控制分派职责管理。
+- Workflow 决定业务推进与验收，Kernel 负责授权、调度、执行、资源和监管。
+- Lease 只存在于 Core，其他组件只取得裁决与派生的范围约束。
+- Syscall、Interruption 与 Exception 由 Core 统一处理。
 - 模型只提出动作，不能绕过 Kernel 直接执行工具。
 - Executor 返回物理执行事实，不判断 Task 或 Workflow 是否成功。
-- ContextEngine 在 MissionScope、ACL、revision 和 token 预算内发布不可变 ContextPack。
+- 上下文与检索由 ExecutorSet 中的 Executor 完成，ContextPack 不可变并带 revision、provenance 与 token 预算。
 - 跨模块数据经过运行时 Schema 校验，大对象通过 ArtifactRef 传递。
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
 完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。
-尚待协同的架构差异集中列于该指南；文档更新不表示代码已完成迁移。
+Architecture 已冻结；M1 与 Architecture 的差异列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示代码已完成迁移。
 
 ## 当前交付范围
 
-项目只确定 M1：交付本地、单用户、单项目、单进程、单 Agent、单活动 Task 的只读 Repository Analysis Agent。系统接收仓库分析问题，通过受控的 tree/search/read 路径生成包含 repository revision、路径、行范围和 provenance 的结构化报告。
+项目只确定 M1：交付本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。系统接收仓库分析问题，通过受控的概览、搜索与读取路径生成包含 repository revision、路径、行范围和 provenance 的结构化报告。
 
-M1 不执行文件写入、项目命令、项目测试或其他副作用。其他交付目标只能在 M1 完成验收后另行定义。范围、接口和实时状态分别见：
+M1 不执行文件写入、项目命令、项目测试或其他副作用。其他交付目标只能在 M1 完成验收后另行定义。范围、机制和接口见 [M1 指南](docs/M1/README.md)，任务进度由 GitHub Issues 跟踪：
 
 - [M1Plan](docs/M1/M1Plan.md)
 - [M1TechStack](docs/M1/M1TechStack.md)
 - [M1Interface](docs/M1/M1Interface.md)
-- [M1Process](docs/M1/M1Process.md)
 
 CLI 入口和完整 Agent 循环仍在实现中，不应将架构文档中的长期能力理解为已经交付。
 
@@ -54,13 +51,13 @@ CLI 入口和完整 Agent 循环仍在实现中，不应将架构文档中的长
 apps/
   cli/                  UserInteraction 的 CLI Adapter
   control-plane/        唯一组合根
-  executor/             当前执行 Adapter；独立 Execution 的代码迁移待详细设计
+  executor/             现有 file-read 实现；目标归 ExecutorSet
 packages/
   contracts/            Shared Contracts
   user-interaction/     交互领域
   workflow/             业务图与运行语义
-  kernel/               控制与执行准入
-  context-engine/       检索与上下文构建
+  kernel/               Kernel 六组件
+  context-engine/       现有检索与上下文代码；目标归 ExecutorSet
   agent-tool-pool/      DefinitionVersion 目录
   module-host/          生命周期与组合
   persistence/          Repository Adapter
@@ -69,7 +66,7 @@ packages/
   testing/              Fakes、Contract tests 和 fixtures
 docs/
   Architecture/         长期概念与架构
-  M1/                   当前交付范围、接口与进度
+  M1/                   当前交付范围、机制与接口
   Requirements/         当前依赖
   Meetings/             原始会议记录
   Style.md              工程协作规范
@@ -83,13 +80,13 @@ docs/
 - pnpm `11.25.0`
 - TypeScript `6.0.3`
 
-```powershell
-pnpm.cmd install --frozen-lockfile
-pnpm.cmd run build
-pnpm.cmd run check
+```bash
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run check
 ```
 
-Ubuntu 使用对应的 `pnpm` 命令；具体 LTS 版本与系统依赖由交付设计确认。
+开发平台不限，最终验收在 Ubuntu LTS 上执行；具体 LTS 版本与系统依赖由交付设计确认。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 

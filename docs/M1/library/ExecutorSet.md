@@ -21,5 +21,7 @@ Executor 负责硬编码的执行点检查；正常越界返回拒绝；违规�
 
 | 情况 | 例子 | 处理 |
 |---|---|---|
-| 正常越界 | 读取 `.env`、仓库外路径、输出超限 | 返回拒绝 → Core 判定 → Execution 交付 UnitReport REJECTED → 交还模型 |
-| 安全违规 | 校验后文件被替换、范围约束缺失、用量超出 max_tokens | Executor 主动停止并上报 → Supervisor → Execution（隔离输出）→ Core 停止运行（VIOLATION） |
+| 正常越界 | 读取 `.env`、仓库外路径、输出超限 | 返回拒绝 → Execution 随结果检查交 Core → Core 交付 UnitReport REJECTED → 交还模型 |
+| 安全违规 | 校验后文件被替换、范围约束缺失 | Executor 主动停止并上报 → Supervisor → Execution（隔离输出）→ Core 停止运行（VIOLATION） |
+
+provider 返回的用量超过请求的 `max_tokens` 或输入估算时，按结算异常处理（见 [Monitor](../kernel/Monitor.md) 3.4），不属于安全违规。

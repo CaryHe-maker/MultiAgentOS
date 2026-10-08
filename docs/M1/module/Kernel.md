@@ -39,7 +39,7 @@ M1 Kernel 采用最小可行子集：Gateway、Core、Scheduler、Execution、Su
 | Lease | Core 私有的运行时授权记录，只存在于 Core |
 | 用户授权记录 | Core 保留的用户同意或拒绝结果 |
 | 额度 | 一次 WorkflowRun 可消耗的 token 上限，账本归 Monitor |
-| budgetState | 额度状态：NORMAL、WRAP_UP（应收尾）、EXHAUSTED（已达硬限制）；只能前进 |
+| budgetState | 额度状态：NORMAL、WRAP_UP（应收尾）、EXHAUSTED（不再允许 model-call）；只能前进 |
 | 准入封锁 | Core 对某个 WorkflowRun 设置的禁止准入状态，由 Gateway 检查，设置后不解除 |
 
 Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、终止信号等 Kernel 内部概念见
@@ -57,7 +57,7 @@ Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、�
 | `registerAgentRun` | 创建 AgentRun 时（运行开始、HANDOFF 之后） | `workflowRunId, agentRunId, agentRef@digest, requestId` | SyscallAck | 拒绝 |
 | `submitUnit` | 提交每个 unitIntent | `workflowRunId, agentRunId, unitRef, input, requestId` | 受理时 SyscallAck，最终 UnitReport | 拒绝 |
 | `endAgentRun` | HANDOFF 或报告发布之后 | `agentRunId, requestId` | SyscallAck | 允许 |
-| `closeRun` | 报告发布之后，或 Workflow 自身无法继续 | `workflowRunId, outcome: COMPLETED \| FAILED, reportRef?, requestId` | RunClosed | 允许 |
+| `closeRun` | 报告发布之后，或 Workflow 自身无法继续 | `workflowRunId, outcome: COMPLETED \| FAILED, reportRef?, requestId` | SyscallAck，收敛完成后 RunClosed | 允许 |
 
 4 种 syscall 均以 `requestId` 幂等：重复提交返回同一结果；相同 `requestId` 但内容不同按冲突处理。
 
@@ -68,17 +68,20 @@ Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、�
 | 创建运行 | 提交用户目标 | — |
 | 授权回答 | 回答 Core 发起的 Y/N 询问 | 允许 |
 | 取消 | 用户终止运行（Interruption） | 允许 |
+| 读取产物 | 按 ArtifactRef 读取本运行的产物（如最终报告） | 允许 |
 | 关闭系统 | 结果展示完成后请求关闭 | 允许 |
 
 ### 4.3 Kernel 返回给 Workflow 的信息
 
-| 信息 | 发出者 | 何时发出 | 内容 |
-|---|---|---|---|
-| RunStart | Core | 用户创建运行后 | 用户目标 |
-| SyscallAck | Core | `registerAgentRun`、`endAgentRun` 处理完成；`submitUnit` 被受理 | 是否受理 |
-| AdmissionException | Gateway | 任一 syscall 在准入被拒 | 拒绝原因 |
-| UnitReport | Core（执行前被拒）或 Execution（已进入执行） | 每个被受理的 `submitUnit` 的最终结果 | 状态（OK / REJECTED / FAILED）、原因码、输出或 Artifact 引用、budgetState |
-| RunClosed | Core | `closeRun` 收敛完成；或硬限制、超时、取消、违规导致停止 | 结束来源、控制终态、用量摘要、未知效果 |
+Kernel 用两种方式回应外部模块：syscall 的直接返回值，以及投递到接收方 Inbox 的事件（第 4.5 节）。
+
+| 信息 | 方式 | 发出者 | 何时发出 | 内容 |
+|---|---|---|---|---|
+| SyscallAck | 返回值 | Core | `registerAgentRun`、`endAgentRun` 处理完成；`submitUnit`、`closeRun` 被受理 | 是否受理 |
+| AdmissionException | 返回值 | Gateway | 任一 syscall 在准入被拒 | 拒绝原因 |
+| RunStart | 事件 | Core | 用户创建运行后 | `workflowRunId`、用户目标 |
+| UnitReport | 事件 | Core | 每个被受理的 `submitUnit` 的最终结果 | 状态（OK / REJECTED / FAILED）、原因码、输出或 Artifact 引用、budgetState |
+| RunClosed | 事件 | Core | `closeRun` 收敛完成；或超时、取消、违规导致停止 | 结束来源、控制终态、用量摘要、未知效果 |
 
 规则：
 
@@ -87,6 +90,28 @@ Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、�
 3. 一个 WorkflowRun 恰好收到一个 RunClosed，收到后 Workflow 不再等待任何 UnitReport。
 4. Workflow 按 `requestId` 对应结果，不依赖到达顺序；一轮的 UnitReport 全部收齐后才进入下一轮。
 5. UnitReport 只携带 budgetState，不携带额度数值。Workflow 在 M1 中不读取 token 数。
+
+### 4.4 Kernel 发给 UserInteraction 的事件
+
+| 事件 | 何时发出 | 内容 |
+|---|---|---|
+| AuthorizationRequest | 第一个受保护 Unit 到达权限检查且尚无授权时 | `questionId`、仓库路径、排除规则、外发目标 provider、回答期限 |
+| RunFinished | RunClosed 发出时 | 结束来源、`reportRef`（正常结束时）、未知效果 |
+
+### 4.5 Inbox 投递
+
+Workflow 与 UserInteraction 各自提供一个 Inbox，由组合根注入 Kernel；Kernel 只依赖 contracts 中定义的
+Inbox 接口，不依赖 Workflow 或 UserInteraction 的实现。投递语义参照 io_uring 完成队列与 Actor 邮箱：
+
+1. **单一出口**：所有事件由 Core 的 Outbox 发出；Execution、Monitor 等组件不直接向外部模块发送。
+2. **有序**：每个 WorkflowRun、每个接收方有从 1 递增的 `seq`，Outbox 按 `seq` 顺序投递。
+3. **可去重**：每个事件有唯一 `eventId`，接收方按 `eventId` 去重。
+4. **受理语义**：投递返回只表示事件已进入接收方 Inbox，不表示已经处理。
+5. **终结**：RunClosed（对 UserInteraction 为 RunFinished）是该运行发给该接收方的最后一个事件；
+   之前入队的 UnitReport 都先于它投递。
+6. **串行消费**：接收方按 Inbox 顺序逐条处理事件，不并发处理同一运行的事件。
+
+字段级定义见 [M1Interface](../M1Interface.md) 第 4、5 节。
 
 ## 5. M1 的 Unit
 
@@ -107,6 +132,26 @@ Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、�
 
 Unit 与 Executor 的对应关系及执行点检查见 [ExecutorSet](../library/ExecutorSet.md)。
 
+### 5.1 输出与产物引用
+
+| Unit | UnitReport 中的小型结构化输出 | 产物引用 |
+|---|---|---|
+| repository-orient | 仓库概览摘要、`repositoryRevision`、`snapshotId` | `orientPackRef`（ORIENT ContextPack） |
+| repository-search | 命中条目（路径、行范围、得分） | 检索 ContextPack |
+| file-read | 路径、行范围、内容 SHA-256 | 读取结果 |
+| context-assemble | `tokenCount`、`truncated`、`droppedCount` | `contextPackRef`（ASSEMBLE ContextPack） |
+| model-call | 结构化动作（AnalysisAction） | 完整模型输出 |
+| report-publish | — | `reportRef` |
+
+产物引用按 handle 模型使用，类似进程的文件描述符：引用只是名字，每次使用时由 Kernel 检查归属。
+
+- Workflow 只从 UnitReport 获得 ArtifactRef，并在后续 Unit 的输入中显式传递；不按运行或 AgentRun 搜索产物。
+  Workflow 的来源核验与降级报告只使用 UnitReport 中的结构化输出，不读取产物正文。
+- Agent 指令与工具 Schema 不作为 Workflow 传递的产物：context-assemble 由 Execution 依据该 AgentRun 登记的
+  固定定义（`agentRef@digest`）解析。
+- Unit 输入中的每个 ArtifactRef 必须属于同一 WorkflowRun；不属于本运行或不存在时，统一返回
+  `OUT_OF_SCOPE`，不区分两者，以免泄露其他运行的产物是否存在。
+
 ## 6. 检查层次
 
 | 层 | 执行者 | 对象 | 内容 | 不通过时 |
@@ -115,7 +160,7 @@ Unit 与 Executor 的对应关系及执行点检查见 [ExecutorSet](../library/
 | 准入 | Gateway | 所有 syscall | 来源、契约、准入封锁 | AdmissionException |
 | 定义核验 | Core | 所有 Unit | AgentRun 已登记且为 ACTIVE、属于该运行；Unit 属于该 Agent 定义闭包 | Core 交付 UnitReport |
 | 权限 | Core | 受保护 Unit | Lease 与用户授权（第 7 节） | Core 交付 UnitReport |
-| 额度预留 | Core 调用 Scheduler、Monitor | model-call | 调用机会、token 预留 | 硬限制（第 8 节） |
+| 额度预留 | Core 调用 Scheduler、Monitor | model-call | 调用机会、token 预留 | Core 交付 UnitReport（第 8 节） |
 | 执行点检查 | Executor | 受保护 Unit、model-call | 开发者硬编码的防护检查（见 [ExecutorSet](../library/ExecutorSet.md)） | 越界：UnitReport；违规：停止运行 |
 | 结果检查 | Core | 进入执行的 Unit | 结果归属、运行状态、Lease 有效；model-call 结算 | 见 [Core](../kernel/Core.md) |
 
@@ -129,13 +174,16 @@ Unit 与 Executor 的对应关系及执行点检查见 [ExecutorSet](../library/
 
 Lease 的范围与签发逻辑见 [Core](../kernel/Core.md)。
 
-## 8. 额度状态与运行停止
+## 8. 额度状态
 
 - 只有 model-call 消耗 token；账本按 WorkflowRun 计，Planner 与 CodeViewer 共用。
-- 软限制只在 model-call 结算时触发，以 UnitReport 中的 `budgetState = WRAP_UP` 通知 Workflow 收尾；
-  Workflow 据此发起 final-call（见 [Workflow](Workflow.md)）。
-- 硬限制或运行超时时，Kernel 停止运行：触发硬限制的 Unit 不再有 UnitReport，不执行 final-call，
-  Workflow 收到 `RunClosed(USAGE_LIMIT)` 或 `RunClosed(RUN_TIMEOUT)` 后停止推进。
+- 每个 UnitReport 携带当前 budgetState，Workflow 据此收尾（见 [Workflow](Workflow.md) 第 6 节）：
+  - `WRAP_UP`：执行完本轮剩余工具 Unit 后发起 final-call；
+  - `EXHAUSTED`：不再发起 model-call，以已有材料生成降级报告。
+- Kernel 为 final-call 保留额度：普通 model-call 不能使用这部分额度，因此进入 WRAP_UP 后 final-call 仍能发起。
+- 额度不足时 Kernel 只拒绝 model-call 的预留（`BUDGET_WRAP_UP` 或 `BUDGET_EXHAUSTED`），不停止运行；
+  被拒的 model-call 没有发出，不消耗 token。运行未被停止时，已经发出的 model-call 结果照常交付。
+- 运行超时时 Kernel 停止运行：Workflow 收到 `RunClosed(RUN_TIMEOUT)` 后停止推进，不发起 final-call。
 
 预留、结算与阈值的计算见 [Monitor](../kernel/Monitor.md)。
 
@@ -146,7 +194,7 @@ Lease 的范围与签发逻辑见 [Core](../kernel/Core.md)。
 | 正常结束 | Syscall | CLOSED(COMPLETED) | COMPLETED | 结论、来源、未确认项 |
 | final-call 收尾 | Syscall | CLOSED(COMPLETED) | COMPLETED | 同上，附收尾说明 |
 | Workflow 失败 | Syscall | CLOSED(FAILED) | FAILED | 运行失败及原因 |
-| 硬限制 | Exception | CLOSED(USAGE_LIMIT) | STOPPED(USAGE_LIMIT) | "已达到 usage limit，运行已停止" |
+| 额度耗尽 | Syscall | CLOSED(COMPLETED) | COMPLETED | 结论或降级报告，附"已达到额度上限" |
 | 运行超时 | Exception | CLOSED(RUN_TIMEOUT) | STOPPED(RUN_TIMEOUT) | "运行超时，已停止" |
 | 用户终止 | Interruption | CLOSED(CANCELLED) | CANCELLED | 已终止 |
 | 安全停止 | Exception | CLOSED(VIOLATION) | STOPPED(VIOLATION) | 因安全原因停止 |
@@ -161,20 +209,28 @@ Lease 的范围与签发逻辑见 [Core](../kernel/Core.md)。
 | INVALID_ACTION | Workflow 内部 | Validation step1 失败 | 交还模型 |
 | TOO_MANY_TOOL_CALLS | Workflow 内部 | 超过 maxToolCallsPerRound | 超出部分交还模型 |
 | INVALID_REQUEST | AdmissionException | 契约不合法 | closeRun(FAILED) |
-| USAGE_LIMIT / RUN_TIMEOUT / CANCELLED / CLOSING / VIOLATION | AdmissionException | 处于准入封锁 | 停止推进，等待 RunClosed |
-| RUN_NOT_ACTIVE | UnitReport（Core） | AgentRun 未登记或已结束 | 停止推进 |
+| RUN_TIMEOUT / CANCELLED / CLOSING / VIOLATION | AdmissionException | 处于准入封锁 | 停止推进，等待 RunClosed |
+| AGENT_RUN_NOT_FOUND | UnitReport 或 SyscallAck（Core） | AgentRun 未登记或不属于该运行 | closeRun(FAILED) |
+| AGENT_RUN_ENDED | UnitReport 或 SyscallAck（Core） | AgentRun 已结束后仍提交 | closeRun(FAILED) |
 | FORBIDDEN | UnitReport（Core） | 不在定义闭包内或能力不可申请 | closeRun(FAILED) |
 | USER_DECLINED | UnitReport（Core） | 用户拒绝或超时 | 交还模型，进入 final-call |
-| OUT_OF_SCOPE | UnitReport（Core 或 Execution） | 越界、命中排除规则 | 交还模型 |
-| LIMIT_EXCEEDED | UnitReport（Execution） | 输出超限 | 交还模型 |
-| UNAVAILABLE / INTERNAL | UnitReport（Execution，FAILED） | 技术重试后仍失败 | 交还模型或按业务处理 |
+| BUDGET_WRAP_UP | UnitReport（Core） | 普通 model-call 的预留会占用 final-call 保留额度，未发出 | 发起 final-call |
+| BUDGET_EXHAUSTED | UnitReport（Core） | 额度已不足以发起任何 model-call，未发出 | 以已有材料生成降级报告 |
+| OUT_OF_SCOPE | UnitReport（权限检查、产物归属或执行点检查） | 越界、命中排除规则 | 交还模型 |
+| LIMIT_EXCEEDED | UnitReport（执行点检查） | 输出超限 | 交还模型 |
+| UNAVAILABLE / INTERNAL | UnitReport（执行失败，FAILED） | 技术重试后仍失败 | 交还模型或按业务处理 |
 
 Round 上限与 WRAP_UP 不对应原因码。
 
+运行处于收敛中时，Gateway 先以准入封锁拒绝请求，因此 AGENT_RUN_NOT_FOUND 与 AGENT_RUN_ENDED
+只表示 Workflow 自身的状态错误。表中每种处理都以 closeRun 结束，或等待必然到来的 RunClosed，
+见 [Workflow](Workflow.md) 第 10 节。
+
 ## 11. Exception 规则
 
-1. 正常业务结果不提交 Exception：Validation 失败、Round 达到上限、WRAP_UP、权限拒绝、执行点正常越界。
-2. 以下由 Core 按 Exception 处理：硬限制（Monitor）、运行超时（Supervisor）、重复结算数值冲突（Monitor）、
-   契约错误（Gateway）、定义核验失败（Core）、安全违规（经 Supervisor、Execution）。
-3. 每个被受理的 `submitUnit` 要么收到 UnitReport，要么随 RunClosed 结束；Kernel 内部等待中的调用由 Core 以终止信号结束。
-4. 仅凭 Executor 自报不升级为 panic。
+1. 正常业务结果不提交 Exception：Validation 失败、Round 达到上限、WRAP_UP、额度耗尽、权限拒绝、执行点正常越界。
+2. 以下由 Core 按 Exception 停止运行：运行超时（Supervisor）、安全违规（经 Supervisor、Execution）。
+3. 以下只记入审计，不停止运行，由 Workflow 按原因码处理：契约错误（Gateway 报告）、定义核验失败与
+   AgentRun 状态不符（Core）。重复结算数值冲突（Monitor）同样只记入审计，并按较大值记账。
+4. 每个被受理的 `submitUnit` 要么收到 UnitReport，要么随 RunClosed 结束；Kernel 内部等待中的调用由 Core 以终止信号结束。
+5. 仅凭 Executor 自报不升级为 panic。

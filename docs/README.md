@@ -44,4 +44,4 @@
 Architecture 是长期规划，不代表某个 MVP 必须全部实现。
 M1 目录定义 M1 的范围与机制；与 Architecture 存在差异时，以 M1 文档对 M1 的规定为准，
 但 M1 不得违反 Architecture 的安全约束与状态所有权。
-代码 Schema 说明已实现接口，M1Process 说明进度证据，文档更新不代表实现已经完成。
+代码 Schema 说明已实现接口，GitHub Issues 跟踪进度与证据，文档更新不代表实现已经完成。

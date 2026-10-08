@@ -21,6 +21,7 @@
 |---|---|
 | runEpoch | 运行控制状态的版本号，每次控制状态变化加 1，用于防止判定与交付之间的竞态 |
 | 终止信号 | Core 结束 Kernel 内部等待中的调用时给出的信号，不携带任何结果 |
+| Outbox | Core 维护的事件出口，按接收方与 `seq` 顺序向 Workflow、UserInteraction 的 Inbox 投递 |
 
 ## 3. 组织与 syscall
 
@@ -48,56 +49,59 @@ Workflow → submitUnit → Gateway 准入
        ├─ 被拒 → Core 交付 UnitReport
        └─ 通过 → Execution：建立 UnitAttempt，进入 FIFO
             → model-call：内部 syscall 申请预留，Core 调用 Scheduler 与 Monitor
+              （预留被拒 → Core 交付 UnitReport(BUDGET_WRAP_UP 或 BUDGET_EXHAUSTED)）
             → 提交 executionKind、参数、范围约束、限制 → Supervisor 装配并执行 → 交回事实
             → 内部 syscall 提交结果检查；Core 核对结果，model-call 调用 Monitor 结算
-            → Core 返回判定（含额度状态与 runEpoch）→ Execution 核对 runEpoch → 交付 UnitReport
+            → Core 核对 runEpoch，将 UnitReport 放入 Outbox → 投递到 Workflow 的 Inbox
   → Workflow 作业务判断，结束或提交后续 UnitIntent
 ```
 
 - 预留与结算见 [Monitor](Monitor.md)，权限检查与结果检查见 [Core](Core.md)。
-- Execution 交付前核对 runEpoch；不一致则不交付，结果只作为证据保存。
+- Core 交付前核对 UnitAttempt 建立时的 runEpoch；不一致则不交付，结果只作为证据保存（见 [Core](Core.md) 第 5 节）。
 - FIFO 约束执行请求的推进顺序，不阻塞取消、停止、Exception 和查询等控制处理。
 - 重复请求、重复结果和迟到结果不得导致重复执行、重复结算或重新推进业务。
+
+产物引用的归属检查见 [Execution](Execution.md) 第 3 节。
 
 ## 5. AgentRun 登记
 
 ```text
-UserInteraction → Gateway → Core：创建运行 → Core 启动运行总时长计时（经 Supervisor）→ RunStart → Workflow
+UserInteraction → Gateway → Core：创建运行 → Core 启动运行总时长计时（经 Supervisor）→ Outbox：RunStart → Workflow
 Workflow → registerAgentRun → Gateway 准入 → Core 读取定义并核对 digest，登记为 ACTIVE → SyscallAck
 ```
 
-## 6. 硬限制与运行超时
+## 6. 运行超时
 
-硬限制由 Monitor 在预留或结算时返回，运行超时由 Supervisor 报告。两者处理相同：
+额度不足不停止运行，只拒绝 model-call 的预留（见 [Monitor](Monitor.md)）。运行超时由 Supervisor 报告：
 
 ```text
-Core 设置准入封锁(USAGE_LIMIT 或 RUN_TIMEOUT)，runEpoch 加 1，通知 Gateway
+Core 设置准入封锁(RUN_TIMEOUT)，runEpoch 加 1，通知 Gateway
   → 以终止信号结束 Kernel 内部等待中的调用（不携带结果，不交付 Workflow）
-  → 收敛（第 7 节）→ RunClosed(USAGE_LIMIT 或 RUN_TIMEOUT) → Workflow 停止推进
-  → UserInteraction 显示"已达到 usage limit，运行已停止"或"运行超时"
+  → 收敛（第 7 节）→ RunClosed(RUN_TIMEOUT) → Workflow 停止推进
+  → UserInteraction 显示"运行超时，已停止"
   → 关闭系统（见 ModuleHost）
 ```
 
 安全违规（`VIOLATION`）与用户取消（`CANCELLED`）同样进入第 7 节的收敛过程。
-硬限制、超时与违规触发时，Core 以终止信号结束 Kernel 内部等待中的调用，不再向 Workflow 交付该 Unit 的结果。
+超时、违规与取消触发时，Core 以终止信号结束 Kernel 内部等待中的调用，不再向 Workflow 交付该 Unit 的结果。
 
 ## 7. 收敛过程
 
-取消/停止必须区分请求收到、接受与实际生效。正常结束（`closeRun`）、硬限制、超时、取消与违规
+取消/停止必须区分请求收到、接受与实际生效。正常结束（`closeRun`）、超时、取消与违规
 共用同一收敛过程：
 
 ```text
 Core 设置准入封锁，runEpoch 加 1
-  → Execution 清空 FIFO；在途任务经 Supervisor 中止；等待正在进行的交付结束
+  → Execution 清空 FIFO；在途任务经 Supervisor 中止
   → Core 调用 Scheduler 释放调用机会
   → Core 调用 Monitor 完成最终结算，取得用量摘要
   → 全部 AgentRun 标记为 ENDED，Lease 与用户授权记录失效
   → 通知 Supervisor 停止运行总时长计时
   → Core 把运行记录的执行部分与审计记录写入 runs/<runId>/
-  → Core 发出 RunClosed
+  → Core 将 RunClosed 放入 Outbox，并向 UserInteraction 投递 RunFinished
 ```
 
-Core 收敛时等待 Execution 正在进行的交付结束后才发出 RunClosed。
+runEpoch 加 1 之后，旧尝试的结果不再进入 Outbox；此前已入队的 UnitReport 按顺序先于 RunClosed 投递。
 未知效果不得被标记为成功或直接自动重跑。
 
 ## 8. panic 与安全停机
@@ -115,7 +119,7 @@ M1 不提供自动故障恢复、透明续跑或高可用。
 | 主题 | 需要明确的机制 |
 |---|---|
 | 组织与通信 | ModuleHost 装配顺序、各主体的消息契约与超时 |
-| 调度与账本 | tokenLimit、finalReserve、每轮输入上限等数值；输入 token 上界的估算方法 |
+| 调度与账本 | tokenLimit、finalReserve、wrapUpMargin、每轮输入上限等数值 |
 | 执行与控制 | 技术重试的错误分类、单次调用的中断细节 |
 | 生命周期与故障 | panic 判定边界与安全停机通路、用户通知 |
 | 记录与验证 | 运行记录与审计的具体格式、验证场景及验收证据 |

@@ -17,8 +17,10 @@ Core 负责授权、租约与控制裁决，是内外部 syscall 的处理者。
 - 将 Lease 作为 Core 私有运行时数据，维护其签发、检查、复用、失效与撤销；对外只返回裁决与派生的范围约束。
 - 保留用户的授权决定：属于已同意范围的安全子集直接签发 Lease，危险行为每次询问（M1 不涉及危险行为）。
 - 代为调用 Scheduler 分配调用机会、调用 Monitor 预留与结算额度。
-- 处理结果检查并向 Execution 返回判定；执行前被拒的 Unit 由 Core 直接向 Workflow 交付结果。
-- 维护运行控制状态及其版本（runEpoch），设置准入封锁，组织收敛，发出 RunStart、SyscallAck、RunClosed。
+- 处理结果检查，并作为唯一出口经 Outbox 交付全部 UnitReport（第 5 节）。
+- 维护运行控制状态及其版本（runEpoch），设置准入封锁，组织收敛。
+- 维护 Outbox，向 Workflow 与 UserInteraction 的 Inbox 投递 RunStart、UnitReport、RunClosed、
+  AuthorizationRequest 与 RunFinished（投递语义见 [Kernel（外部视角）](../module/Kernel.md) 4.5）。
 - 写入运行记录的执行部分与审计记录（见 [Persistence](../infrastructure/Persistence.md)）。
 
 M1 支持只读分析所需的基础人工授权，由 UserInteraction 收集响应，Core 判断适用性并决定
@@ -60,10 +62,15 @@ Lease 检查未通过不等于可以申请授权；明确禁止或超出能力�
 
 ```text
 ① 结果归属于本运行、对应当前 UnitAttempt、Lease 未失效
-② model-call：调用 Monitor 结算（见 Monitor）；达到硬限制 → 停止运行，以终止信号结束本次调用
+② model-call：调用 Monitor 结算并取得额度状态（见 Monitor）；结算不阻止本次结果交付
 ③ Executor 违规 → 停止运行（VIOLATION），以终止信号结束本次调用
-④ 判定 {status, reasonCode, budgetState, runEpoch} 返回 Execution
+④ 形成判定 {status, reasonCode, budgetState}
+⑤ 核对该 UnitAttempt 建立时的 runEpoch 与当前 runEpoch：一致 → 将 UnitReport 放入 Outbox；
+   不一致 → 不交付，结果只作为证据保存
 ```
+
+执行前被拒（定义核验、权限、额度预留）的 Unit 同样由 Core 形成 UnitReport 并放入 Outbox。
+⑤ 的核对与入队在 Core 内同步完成，期间不会插入控制状态变化，因此不存在“核对后、交付前运行已停止”的竞态。
 
 Core 检查结果的执行归属与可接受性，Workflow 判断业务结果是否成功；实际执行完成、Core
 接受结果和业务验收必须分别表达。执行失败或结果被拒绝均不能免除已发生的消耗。

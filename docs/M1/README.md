@@ -2,7 +2,7 @@
 
 ## 1. 目的与范围
 
-本目录定义 M1 的交付目标、技术选择、跨模块接口、任务进度和验收要求。
+本目录定义 M1 的交付目标、技术选择、机制、跨模块接口和验收要求。任务进度与验证证据由 GitHub Issues 跟踪。
 M1 面向本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析，由 Planner 与 CodeViewer
 两个 Agent 单向交接完成，输出包含 repository revision、路径、行范围和 provenance 的结构化报告。
 M1 的验收平台为 Ubuntu LTS；开发平台不限，但代码必须能在 Ubuntu LTS 上运行。
@@ -33,7 +33,6 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 4. [Kernel 内部交互](kernel/Interaction.md)：内部 syscall、执行路径、停止、收敛与 panic。
 5. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
 6. [M1Interface](M1Interface.md)：公开 Port、Schema、消息与错误协议。
-7. [M1Process](M1Process.md)：任务状态、实现差距与验证证据。
 
 | 分类 | 文档 |
 |---|---|
@@ -55,7 +54,6 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 | library/、infrastructure/ | 静态库与基础设施的 M1 实现说明 | 不替代长期架构 |
 | M1TechStack | M1 使用的技术、版本用途和引入限制 | 不替代依赖 manifest |
 | M1Interface | M1 具体接口与兼容约定 | 不因长期设计存在某能力就自动纳入交付 |
-| M1Process | 状态、日期、证据、PR 和阻塞原因 | 不改变范围、接口或完成定义 |
 
 ## 5. 权威关系
 
@@ -63,11 +61,21 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 - M1 的范围和完成条件以 M1Plan 为准。
 - M1Interface 定义交付接口要求，代码中的 Schema 是已实现协议的可执行事实源。
 - Kernel 对外行为以 module/Kernel 为准，Kernel 组件职责与内部交互以 kernel/ 下的文档为准。
-- 目标与实现的差距在 M1Process 中记录，完成状态应有测试、报告或 PR 证据。
+- 目标与实现的差距在 GitHub Issues 中跟踪，完成状态应有测试、报告或 PR 证据。
 
 ## 6. 维护要求
 
 - 范围变化同步检查计划、接口、任务和验收条件。
 - 协议变化同步更新 Schema、兼容说明及生产者与消费者的契约测试。
-- 任务完成时更新对应进度、日期和验证证据。
-- 架构调整应评估 M1 的范围与接口影响，不以文档描述代替实现验证。
+- 任务完成时在对应 GitHub Issue 中关联 PR 与验证证据。
+- Architecture 已冻结，M1 的机制调整只修改本目录；与 Architecture 的差异记录在第 7 节。
+
+## 7. 与 Architecture 的差异
+
+以下差异只适用于 M1，不改变 Architecture 的安全约束与状态所有权：
+
+| 主题 | Architecture | M1 | 原因 |
+|---|---|---|---|
+| 结果交付 | 已执行的 Unit 由 Execution 交付，执行前被拒由 Core 交付 | 全部 UnitReport 由 Core 经 Outbox 交付，Execution 把结果随结果检查交给 Core | runEpoch 核对与交付在同一 Owner 内同步完成，消除竞态；外部模块只有一个事件来源 |
+| Kernel 向外部模块的通知 | 未规定通道 | Workflow、UserInteraction 各提供 Inbox，由 Core 的 Outbox 投递 | 依赖倒置：Kernel 只依赖 contracts 中的接口 |
+| 额度硬阈值 | 触发时 Core 封锁准入并停止运行 | 只拒绝 model-call 的预留，不停止运行；为 final-call 保留额度 | 用尽额度后不再产生费用，保留已有成果并生成降级报告 |

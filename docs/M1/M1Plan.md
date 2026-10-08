@@ -16,10 +16,10 @@ M1 的技术选择、允许依赖和明确排除项以 [M1TechStack.md](M1TechSt
 1. CLI 经 UserInteraction、Kernel 和 Workflow 创建运行、回答授权、终止运行并展示结果。
 2. AgentToolPool 提供不可变的 Agent（Planner、CodeViewer）、Unit、Tool、Model、Prompt 定义；Agent 定义包含 Round 上限；运行开始后固定版本与 digest。
 3. Workflow 实现 Agent 循环、Round 上限、final-call 收尾、HANDOFF、来源验收与 AnalysisReport，并经 `report-publish` 发布报告。
-4. Kernel 六组件按 [Kernel（外部视角）](module/Kernel.md) 与 [kernel/](kernel/Interaction.md) 下的组件文档实现：准入、Lease 与用户授权、token 额度的软硬限制、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
+4. Kernel 六组件按 [Kernel（外部视角）](module/Kernel.md) 与 [kernel/](kernel/Interaction.md) 下的组件文档实现：准入、Lease 与用户授权、token 额度状态与 final-call 保留额度、运行超时、FIFO 执行、Supervisor 装配执行、结果检查与交付、收敛与关闭。
 5. 上下文与检索 Executor 实现仓库概览、搜索、上下文组装、provenance、稳定前缀、预算和检索评测。
 6. Executor 对用户仓库只允许只读访问，并实现硬编码的执行点检查；所有副作用请求确定性拒绝。
-7. 三个 Module、四类基础设施和三个静态库均有公开 Port、默认或 fake adapter、组合位置和边界测试。
+7. 三个 Module 与四类基础设施均有公开 Port、默认或 fake adapter、组合位置和边界测试；三个静态库有 contract test。
 8. Protocol Registry 覆盖所有已声明协议族；未知 major 被拒绝，未支持能力无副作用。
 9. 面向用户的最终报告包含结论、来源和未确认项，提前收尾时注明原因；步骤、Round、调用、token、耗时和失败分类写入运行记录。
 10. 固定任务集形成成功率、来源完整性、成本和延迟基线。
@@ -30,23 +30,24 @@ M1 不实现文件写入、项目命令、项目测试、Git diff/worktree、Cod
 
 ## 4. 团队分工
 
-| 负责人 | 主责 | 配套责任 |
-|---|---|---|
-| A | Workflow | UserInteraction、CLI、报告与业务验收 |
-| B | Kernel | AgentToolPool、Module Host、Executor 准入与审计 |
-| C | 上下文与检索 Executor（ExecutorSet） | Artifact、Persistence、Communication 适配器与检索评测 |
+| 代号 | 负责人 | 主责 | 配套责任 |
+|---|---|---|---|
+| A | Cary | Workflow | UserInteraction、CLI、报告与业务验收 |
+| B | field | Kernel | AgentToolPool、Module Host、Executor 准入与审计 |
+| C | meti | 上下文与检索 Executor（ExecutorSet） | Artifact、Persistence、Communication 适配器与检索评测 |
 
-Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容说明、正反例和 contract test。具体进度只在 [M1Process.md](M1Process.md) 更新。
+Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容说明、正反例和 contract test。
+任务、进度与验证证据由 GitHub Issues 跟踪，每个 Issue 只有一个负责人；完成时在 Issue 中关联 PR 与测试证据。
 
 ## 5. 执行计划
 
 ### 5.1 契约与可替换骨架
 
-- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、WorkspaceRef、syscall 与 Kernel 返回信息、UnitIntent/UnitReport、ContextPack 和 DefinitionVersion。
+- 冻结 Envelope、BoundaryContext、ModuleError、ArtifactRef、VersionedRef、syscall 与 UserInteraction 请求、Inbox 事件（RunStart、UnitReport、RunClosed、AuthorizationRequest、RunFinished）、各 Unit 输入、ContextPack 和 DefinitionVersion。
 - 建立三个 Module 包、四类基础设施包、三个静态库包、三个 app 及依赖规则。
 - 完成 Protocol Registry、Fake Port、架构测试和 Fake 纵向闭环。
 
-退出条件：全仓可构建；协议正反测试通过；UserInteraction 到 RuntimeProjection 的 Fake 链可运行；未支持能力无副作用。
+退出条件：全仓可构建；协议正反测试通过；UserInteraction 经 Gateway 创建运行、Workflow 收到 RunStart、UserInteraction 收到 RunFinished 的 Fake 链可运行；未支持能力无副作用。
 
 ### 5.2 单轮真实只读分析
 

@@ -15,5 +15,5 @@ Gateway 是外部 syscall 的唯一申请入口，负责准入检查。组件间
 
 ## 3. 准入封锁
 
-准入封锁由 Core 设置，原因包括 `USAGE_LIMIT`、`RUN_TIMEOUT`、`CANCELLED`、`CLOSING`、`VIOLATION`，
+准入封锁由 Core 设置，原因包括 `RUN_TIMEOUT`、`CANCELLED`、`CLOSING`、`VIOLATION`，
 在同一 WorkflowRun 内设置后不解除。M1 不实现请求速率限制。

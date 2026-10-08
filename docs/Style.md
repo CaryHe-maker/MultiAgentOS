@@ -188,7 +188,7 @@ PR 必须包含：目标与范围、关键设计、协议/依赖影响、测试�
 - 至少一名非作者批准；涉及 Shared Contracts 时，所有受影响模块 owner 完成评审；
 - 无未解决 review thread；
 - `pnpm run check` 与 `git diff --check` 通过；
-- 进度行和证据在同一 PR 更新；
+- 关联 GitHub Issue 的进度与验证证据在同一 PR 中更新；
 - 不包含密钥、生成物、无关格式化或未声明依赖。
 
 推荐 squash merge，使 PR 对应一个清晰的目标分支提交。PR 标题遵循 Commit 规范。

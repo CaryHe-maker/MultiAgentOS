@@ -76,9 +76,9 @@ packages/agent-tool-pool/definitions/
 
 | 事项 | Owner |
 |---|---|
-| Prompt 正文和 Tool 参数/结果 Schema 为占位，AnalysisAction 确定后直接修改 `v0.1.0` | Cary（A-04）与 meti |
-| `M1Process.md` 中 B-05 的证据路径 `catalog.test.ts` 已删除，需要改为本分支的测试 | field（B） |
-| Kernel 准入应使用运行的 `PinnedDefinitionSet` 校验 Agent→Unit→Tool 成员关系；模型调用使用 Agent 的 `modelSettings` | field（B-02、B-06） |
+| Prompt 正文和 Tool 参数/结果 Schema 为占位，AnalysisAction 确定后直接修改 `v0.1.0` | Cary 与 meti |
+| Kernel 准入应使用运行的 `PinnedDefinitionSet` 校验 Agent→Unit→Tool 成员关系；模型调用使用 Agent 的 `modelSettings` | field |
+| `WorkflowService.create` 目前只锁定单个 `M1_AGENT`；需改为收到 RunStart 后分别锁定 Planner 与 CodeViewer（见 [M1Interface](../M1Interface.md) §7） | Cary |
 | `ContractRef` 指向的 `kernel.ModelRequest`、`file.ReadRequest`、`workflow.AnalysisAction`、`workflow.AnalysisReport` 尚未注册；目录暂不校验 ContractRef 是否已注册 | 各 Schema owner |
 | 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
 | 根 `package.json` 带 BOM，会导致 corepack 解析失败；建议统一去掉 | Cary |
