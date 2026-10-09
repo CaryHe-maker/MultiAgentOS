@@ -1,0 +1,19 @@
+# The model receives data but changes no state, so the effect is READ_ONLY.
+# Repeating a call can give a different answer, so it is not idempotent.
+schemaVersion: v0
+kind: UNIT
+id: model-call
+version: v0.1.0
+description: One call to the pinned model with an assembled ContextPack.
+executionKind: MODEL
+protectedCapabilities: []
+inputContract: { kind: contract, id: executor.ModelCallInput, version: v0 }
+outputContract: { kind: contract, id: executor.ModelCallOutput, version: v0 }
+toolRefs: []
+effect: READ_ONLY
+isIdempotent: false
+failurePolicy:
+  BUDGET_WRAP_UP: FINAL_CALL
+  BUDGET_EXHAUSTED: DEGRADED_REPORT
+  PROVIDER_ERROR: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

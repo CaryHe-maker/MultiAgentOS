@@ -1,0 +1,14 @@
+schemaVersion: v0
+kind: UNIT
+id: repository-orient
+version: v0.1.0
+description: Snapshot the repository and build an ORIENT ContextPack.
+executionKind: REPOSITORY_ORIENT
+protectedCapabilities: [repo.read]
+inputContract: { kind: contract, id: context.RepositoryOrientInput, version: v0 }
+outputContract: { kind: contract, id: context.RepositoryOrientOutput, version: v0 }
+toolRefs: []
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  USER_DECLINED: FINAL_CALL

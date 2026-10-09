@@ -1,4 +1,4 @@
-﻿{
+{
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "./src",
@@ -10,10 +10,10 @@
   "exclude": ["dist", "node_modules", "test"],
   "references": [
     {
-      "path": "../../packages/contracts"
+      "path": "../../packages/libraries/contracts"
     },
     {
-      "path": "../../packages/user-interaction"
+      "path": "../../packages/modules/user-interaction"
     }
   ]
 }

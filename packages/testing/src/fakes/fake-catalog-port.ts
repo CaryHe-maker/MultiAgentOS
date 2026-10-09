@@ -9,6 +9,7 @@ import {
   type DefinitionKind,
   type DefinitionLookup,
   type ModuleError,
+  type PinnedDefinitionRef,
   type PinnedDefinitionSet,
   type PortResult,
 } from '@multiagentos/contracts';
@@ -58,7 +59,25 @@ export class FakeCatalogPort implements CatalogPort {
       { kind: 'MODEL', ...agent.value.modelRef },
       { kind: 'PROMPT', ...agent.value.promptRef },
       ...agent.value.unitRefs.map((ref) => ({ kind: 'UNIT' as const, ...ref })),
+      { kind: 'TOOL', ...agent.value.actions.finish.toolRef },
     ];
+    const handoff = agent.value.actions.handoff;
+    let handoffTargetRef: PinnedDefinitionRef | undefined;
+    if (handoff !== undefined) {
+      lookups.push({ kind: 'TOOL', ...handoff.toolRef });
+      const target = this.#find({ kind: 'AGENT', ...handoff.targetAgentRef }, context);
+      if (!target.ok)
+        return Promise.resolve(
+          error(
+            target.error.code,
+            target.error.category,
+            `cannot pin: ${target.error.message}`,
+            context,
+          ),
+        );
+      const { kind, id, version, digest } = target.value;
+      handoffTargetRef = { kind, id, version, digest };
+    }
     for (let index = 0; index < lookups.length; index += 1) {
       const lookup = lookups[index];
       if (lookup === undefined) continue;
@@ -94,6 +113,7 @@ export class FakeCatalogPort implements CatalogPort {
       prompt,
       units: only('UNIT'),
       tools: only('TOOL'),
+      ...(handoffTargetRef === undefined ? {} : { handoffTargetRef }),
       refs: sorted.map(({ kind, id, version, digest }) => ({ kind, id, version, digest })),
     };
     return Promise.resolve({ ok: true, value: freeze(pinned) });

@@ -1,0 +1,12 @@
+schemaVersion: v0
+kind: PROMPT
+id: code-viewer-system
+version: v0.1.0
+description: System prompt of the code viewer.
+role: system
+template: |
+  PLACEHOLDER CODE VIEWER PROMPT.
+  Answer only from content you have read with read_file, and cite path and line range for every
+  conclusion. Call finish_analysis when you are done.
+variables: []
+contentStatus: PLACEHOLDER

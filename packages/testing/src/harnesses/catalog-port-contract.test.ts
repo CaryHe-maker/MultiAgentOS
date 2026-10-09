@@ -7,9 +7,11 @@ import {
   buildCatalogIndex,
 } from '@multiagentos/agent-tool-pool';
 import type { BoundaryContext, Definition, DefinitionLookup } from '@multiagentos/contracts';
-import { M1_AGENT } from '@multiagentos/workflow';
 import { FakeCatalogPort } from '../fakes/fake-catalog-port.js';
 import { describeCatalogPortContract } from './catalog-port-contract.js';
+
+/** The entry agent of the shipped catalog; it declares a handoff, so pinning covers it. */
+const SHIPPED_AGENT = { id: 'planner', version: 'v0.1.0' } as const;
 
 /** The shipped catalog is the shared fixture for both implementations. */
 const snapshot = await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load();
@@ -32,7 +34,7 @@ function statusDocument(revoked: readonly DefinitionLookup[]) {
 }
 
 describeCatalogPortContract('DefinitionCatalog', {
-  agent: M1_AGENT,
+  agent: SHIPPED_AGENT,
   create: async (revoked = []) =>
     await DefinitionCatalog.load(
       new InMemoryDefinitionSource(snapshot.documents, statusDocument(revoked)),
@@ -40,7 +42,7 @@ describeCatalogPortContract('DefinitionCatalog', {
 });
 
 describeCatalogPortContract('FakeCatalogPort', {
-  agent: M1_AGENT,
+  agent: SHIPPED_AGENT,
   create: (revoked = []) => Promise.resolve(new FakeCatalogPort(shippedDefinitions(), revoked)),
 });
 
@@ -53,6 +55,8 @@ describe('FakeCatalogPort parity', () => {
     };
     const real = await DefinitionCatalog.load(new InMemoryDefinitionSource(snapshot.documents));
     const fake = new FakeCatalogPort(shippedDefinitions());
-    expect(await fake.pinAgent(M1_AGENT, context)).toEqual(await real.pinAgent(M1_AGENT, context));
+    expect(await fake.pinAgent(SHIPPED_AGENT, context)).toEqual(
+      await real.pinAgent(SHIPPED_AGENT, context),
+    );
   });
 });

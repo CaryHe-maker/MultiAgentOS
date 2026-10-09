@@ -1,0 +1,13 @@
+schemaVersion: v0
+kind: TOOL
+id: search-repository
+version: v0.1.0
+description: Model-facing repository search, served by the repository-search unit.
+purpose: UNIT
+modelName: search_repository
+modelDescription: Search the repository by text, path or symbol and return matching line ranges.
+parametersContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: PLACEHOLDER

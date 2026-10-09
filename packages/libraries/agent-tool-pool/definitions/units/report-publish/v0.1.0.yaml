@@ -1,0 +1,13 @@
+schemaVersion: v0
+kind: UNIT
+id: report-publish
+version: v0.1.0
+description: Publish the verified AnalysisReport as an artifact; executed by Kernel Execution itself.
+executionKind: REPORT_PUBLISH
+protectedCapabilities: []
+inputContract: { kind: contract, id: kernel.unit.ReportPublishInput, version: v0 }
+outputContract: { kind: contract, id: kernel.unit.ReportPublishOutput, version: v0 }
+toolRefs: []
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy: {}

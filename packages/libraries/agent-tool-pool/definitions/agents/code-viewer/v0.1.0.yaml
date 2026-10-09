@@ -1,0 +1,21 @@
+schemaVersion: v0
+kind: AGENT
+id: code-viewer
+version: v0.1.0
+description: Reads the repository through orient, search and read units and writes the analysis report.
+role: read-only code analyst
+modelRef: { id: deepseek-flash, version: v1.0.0 }
+modelSettings: { thinking: DISABLED }
+promptRef: { id: code-viewer-system, version: v0.1.0 }
+unitRefs:
+  - { id: repository-orient, version: v0.1.0 }
+  - { id: repository-search, version: v0.1.0 }
+  - { id: file-read, version: v0.1.0 }
+  - { id: context-assemble, version: v0.1.0 }
+  - { id: model-call, version: v0.1.0 }
+  - { id: report-publish, version: v0.1.0 }
+startUnitRefs:
+  - { id: repository-orient, version: v0.1.0 }
+actions:
+  finish: { toolRef: { id: finish-analysis, version: v0.1.0 } }
+limits: { maxRounds: 20, maxToolCallsPerRound: 8 }

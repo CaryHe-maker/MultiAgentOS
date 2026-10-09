@@ -1,5 +1,8 @@
 packages:
   - 'apps/*'
-  - 'packages/*'
+  - 'packages/modules/*'
+  - 'packages/libraries/*'
+  - 'packages/infrastructure/*'
+  - 'packages/testing'
 allowBuilds:
   esbuild: true

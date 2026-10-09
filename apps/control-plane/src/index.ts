@@ -1,69 +1,49 @@
-import { join } from 'node:path';
-import {
-  DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalog,
-  FileDefinitionSource,
-} from '@multiagentos/agent-tool-pool';
-import { LocalArtifactStore } from '@multiagentos/artifacts';
-import { InMemoryMessageRouter } from '@multiagentos/communication';
-import { LocalContextEngine } from '@multiagentos/context-engine';
-import { Kernel } from '@multiagentos/kernel';
-import { ModuleHost, simpleLifecycle } from '@multiagentos/module-host';
-import { FileRepository, persistenceCapabilities } from '@multiagentos/persistence';
-import { UserInteractionService } from '@multiagentos/user-interaction';
-import { WorkflowService } from '@multiagentos/workflow';
-import { createM1ProtocolRegistry } from '@multiagentos/contracts';
-import { LocalReadExecutor } from '@multiagentos/executor';
+/**
+ * Composition root and process entry (docs/M1/Infrastructure/ModuleHost.md 2). `config/` loads
+ * and validates the system configuration; `bootstrap/` builds every module, the Fabric clients
+ * and the Port stubs. `main` starts the Supervisor only and exits with the code UserInteraction
+ * recorded.
+ */
+import { createNodeTerminal, runCli } from '@multiagentos/cli';
+import dotenv from 'dotenv';
+import { composeSystem } from './bootstrap/compose-system.js';
+import { loadSystemConfig } from './config/system-config.js';
 
-export interface M1Runtime {
-  readonly host: ModuleHost;
-  readonly interaction: UserInteractionService;
-  readonly workflow: WorkflowService;
-  readonly kernel: Kernel;
-  readonly router: InMemoryMessageRouter;
-  readonly protocols: ReturnType<typeof createM1ProtocolRegistry>;
-  readonly runRepository: FileRepository<{ readonly id: string; readonly value: unknown }>;
-}
+export {
+  PRODUCT_PARTS,
+  composeSystem,
+  type ComposeOptions,
+  type System,
+  type SystemParts,
+} from './bootstrap/compose-system.js';
+export {
+  ConfigError,
+  assertSystemConfig,
+  defaultSystemConfig,
+  loadSystemConfig,
+  type SystemConfig,
+} from './config/system-config.js';
 
-export interface M1RuntimeOptions {
-  /** Catalog directory; defaults to the definitions shipped with agent-tool-pool. */
-  readonly definitionsDirectory?: string;
+/** Secrets come from the environment only and reach nothing but the model-call Executor. */
+export function credentialsFrom(env: Readonly<Record<string, string | undefined>>) {
+  return { apiKeyFor: (provider: string) => env[`${provider.toUpperCase()}_API_KEY`] };
 }
 
 /**
- * Builds the M1 runtime. Async because the AgentToolPool catalog is read and validated here,
- * once: an invalid or edited definition stops startup with a CatalogLoadError.
+ * Runs one command line to its end and resolves with the process exit code. For local
+ * development it first loads `.env` from the working directory of MultiAgentOS itself, never
+ * from the repository under analysis.
  */
-export async function createM1Runtime(
-  stateRoot: string,
-  options: M1RuntimeOptions = {},
-): Promise<M1Runtime> {
-  const protocols = createM1ProtocolRegistry();
-  const catalog = await DefinitionCatalog.load(
-    new FileDefinitionSource(options.definitionsDirectory ?? DEFAULT_DEFINITIONS_DIRECTORY),
-  );
-  const workflow = new WorkflowService(catalog);
-  const artifacts = new LocalArtifactStore(join(stateRoot, 'artifacts'));
-  const context = new LocalContextEngine();
-  const kernel = new Kernel(workflow, context, artifacts, new LocalReadExecutor(artifacts));
-  const interaction = new UserInteractionService(kernel);
-  const router = new InMemoryMessageRouter();
-  const runRepository = new FileRepository<{ readonly id: string; readonly value: unknown }>(
-    join(stateRoot, 'runs'),
-  );
-  void persistenceCapabilities();
-  const host = new ModuleHost();
-  for (const module of [
-    simpleLifecycle('contracts'),
-    simpleLifecycle('communication', ['contracts']),
-    simpleLifecycle('persistence', ['contracts']),
-    simpleLifecycle('artifacts', ['contracts']),
-    simpleLifecycle('agent-tool-pool', ['contracts']),
-    simpleLifecycle('context-engine', ['contracts']),
-    simpleLifecycle('workflow', ['contracts', 'agent-tool-pool']),
-    simpleLifecycle('kernel', ['contracts', 'workflow', 'context-engine']),
-    simpleLifecycle('user-interaction', ['contracts', 'kernel']),
-  ])
-    host.register(module);
-  return Object.freeze({ host, interaction, workflow, kernel, router, protocols, runRepository });
+export async function main(argv: readonly string[]): Promise<number> {
+  dotenv.config({ quiet: true });
+  const terminal = createNodeTerminal();
+  const system = await composeSystem({
+    config: await loadSystemConfig(process.env),
+    terminal,
+    credentials: credentialsFrom(process.env),
+  });
+  await system.start();
+  const exitCode = await runCli(argv, system.userInteraction, terminal);
+  await system.whenStopped();
+  return exitCode;
 }

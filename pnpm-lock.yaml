@@ -43,10 +43,10 @@ importers:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../packages/libraries/contracts
       '@multiagentos/user-interaction':
         specifier: workspace:*
-        version: link:../../packages/user-interaction
+        version: link:../../packages/modules/user-interaction
       commander:
         specifier: 15.0.0
         version: 15.0.0
@@ -55,45 +55,70 @@ importers:
     dependencies:
       '@multiagentos/agent-tool-pool':
         specifier: workspace:*
-        version: link:../../packages/agent-tool-pool
+        version: link:../../packages/libraries/agent-tool-pool
       '@multiagentos/artifacts':
         specifier: workspace:*
-        version: link:../../packages/artifacts
-      '@multiagentos/communication':
+        version: link:../../packages/infrastructure/artifacts
+      '@multiagentos/cli':
         specifier: workspace:*
-        version: link:../../packages/communication
-      '@multiagentos/context-engine':
-        specifier: workspace:*
-        version: link:../../packages/context-engine
+        version: link:../cli
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
-      '@multiagentos/executor':
+        version: link:../../packages/libraries/contracts
+      '@multiagentos/executor-set':
         specifier: workspace:*
-        version: link:../executor
+        version: link:../../packages/libraries/executor-set
+      '@multiagentos/fabric':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure/fabric
       '@multiagentos/kernel':
         specifier: workspace:*
-        version: link:../../packages/kernel
+        version: link:../../packages/modules/kernel
       '@multiagentos/module-host':
         specifier: workspace:*
-        version: link:../../packages/module-host
+        version: link:../../packages/infrastructure/module-host
       '@multiagentos/persistence':
         specifier: workspace:*
-        version: link:../../packages/persistence
+        version: link:../../packages/infrastructure/persistence
       '@multiagentos/user-interaction':
         specifier: workspace:*
-        version: link:../../packages/user-interaction
+        version: link:../../packages/modules/user-interaction
       '@multiagentos/workflow':
         specifier: workspace:*
-        version: link:../../packages/workflow
+        version: link:../../packages/modules/workflow
+      dotenv:
+        specifier: 18.0.1
+        version: 18.0.1
+    devDependencies:
+      '@multiagentos/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
 
-  apps/executor:
+  packages/infrastructure/artifacts:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../libraries/contracts
 
-  packages/agent-tool-pool:
+  packages/infrastructure/fabric:
+    dependencies:
+      '@multiagentos/contracts':
+        specifier: workspace:*
+        version: link:../../libraries/contracts
+
+  packages/infrastructure/module-host:
+    dependencies:
+      '@multiagentos/contracts':
+        specifier: workspace:*
+        version: link:../../libraries/contracts
+
+  packages/infrastructure/persistence:
+    dependencies:
+      '@multiagentos/contracts':
+        specifier: workspace:*
+        version: link:../../libraries/contracts
+
+  packages/libraries/agent-tool-pool:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
@@ -102,37 +127,13 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
-  packages/artifacts:
+  packages/libraries/contracts:
     dependencies:
-      '@multiagentos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-
-  packages/communication:
-    dependencies:
-      '@multiagentos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-
-  packages/context-engine:
-    dependencies:
-      '@multiagentos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-
-  packages/contracts:
-    dependencies:
-      ajv:
-        specifier: 8.20.0
-        version: 8.20.0
-      ajv-formats:
-        specifier: 3.0.1
-        version: 3.0.1(ajv@8.20.0)
       typebox:
         specifier: 1.3.34
         version: 1.3.34
 
-  packages/kernel:
+  packages/libraries/executor-set:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 4.0.58
@@ -146,54 +147,54 @@ importers:
       ai:
         specifier: 7.0.107
         version: 7.0.107(zod@4.6.5)
-      dotenv:
-        specifier: 18.0.1
-        version: 18.0.1
 
-  packages/module-host:
+  packages/modules/kernel:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../libraries/contracts
+      '@multiagentos/fabric':
+        specifier: workspace:*
+        version: link:../../infrastructure/fabric
 
-  packages/persistence:
+  packages/modules/user-interaction:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../libraries/contracts
+      '@multiagentos/fabric':
+        specifier: workspace:*
+        version: link:../../infrastructure/fabric
+
+  packages/modules/workflow:
+    dependencies:
+      '@multiagentos/contracts':
+        specifier: workspace:*
+        version: link:../../libraries/contracts
+      '@multiagentos/fabric':
+        specifier: workspace:*
+        version: link:../../infrastructure/fabric
 
   packages/testing:
     devDependencies:
       '@multiagentos/agent-tool-pool':
         specifier: workspace:*
-        version: link:../agent-tool-pool
-      '@multiagentos/context-engine':
-        specifier: workspace:*
-        version: link:../context-engine
+        version: link:../libraries/agent-tool-pool
       '@multiagentos/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../libraries/contracts
+      '@multiagentos/fabric':
+        specifier: workspace:*
+        version: link:../infrastructure/fabric
       '@multiagentos/kernel':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../modules/kernel
       '@multiagentos/user-interaction':
         specifier: workspace:*
-        version: link:../user-interaction
+        version: link:../modules/user-interaction
       '@multiagentos/workflow':
         specifier: workspace:*
-        version: link:../workflow
-
-  packages/user-interaction:
-    dependencies:
-      '@multiagentos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-
-  packages/workflow:
-    dependencies:
-      '@multiagentos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
+        version: link:../modules/workflow
 
 packages:
 
@@ -722,19 +723,8 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  ajv-formats@3.0.1:
-    resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
-    peerDependencies:
-      ajv: ^8.0.0
-    peerDependenciesMeta:
-      ajv:
-        optional: true
-
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
-
-  ajv@8.20.0:
-    resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
@@ -865,9 +855,6 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
-  fast-uri@3.1.8:
-    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
-
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -937,9 +924,6 @@ packages:
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
-
-  json-schema-traverse@1.0.0:
-    resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
   json-schema@0.4.0:
     resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
@@ -1107,10 +1091,6 @@ packages:
   qified@0.10.1:
     resolution: {integrity: sha512-+Owyggi9IxT1ePKGafcI87ubSmxol6smwJ+RAHDQlx9+9cPwFWDiKFFCPuWhr9ignlGpZ9vDQLw67N4dcTVFEA==}
     engines: {node: '>=20'}
-
-  require-from-string@2.0.2:
-    resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
-    engines: {node: '>=0.10.0'}
 
   rolldown@1.2.9:
     resolution: {integrity: sha512-hx/Pv0N1haXRb11qkfnK5MXB/iqr7i0yjWQqmO9uHqZpBgQSqzc8UsSnEpalsh+j1I8qQ2CkXAkJC8Br3dKSlg==}
@@ -1720,23 +1700,12 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
       zod: 4.6.5
 
-  ajv-formats@3.0.1(ajv@8.20.0):
-    optionalDependencies:
-      ajv: 8.20.0
-
   ajv@6.15.0:
     dependencies:
       fast-deep-equal: 3.1.3
       fast-json-stable-stringify: 2.1.0
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
-
-  ajv@8.20.0:
-    dependencies:
-      fast-deep-equal: 3.1.3
-      fast-uri: 3.1.8
-      json-schema-traverse: 1.0.0
-      require-from-string: 2.0.2
 
   assertion-error@2.0.1: {}
 
@@ -1895,8 +1864,6 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
-  fast-uri@3.1.8: {}
-
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
@@ -1950,8 +1917,6 @@ snapshots:
   js-tokens@10.0.0: {}
 
   json-schema-traverse@0.4.1: {}
-
-  json-schema-traverse@1.0.0: {}
 
   json-schema@0.4.0: {}
 
@@ -2083,8 +2048,6 @@ snapshots:
   qified@0.10.1:
     dependencies:
       hookified: 2.2.0
-
-  require-from-string@2.0.2: {}
 
   rolldown@1.2.9:
     dependencies:
