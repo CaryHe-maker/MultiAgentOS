@@ -2,7 +2,7 @@
 
 > 架构衔接说明（2026-10-08）：本文已按三 Module、六组件宏内核与运行 actor 更新。
 > Kernel 对外行为见 [Kernel（外部视角）](Module/Kernel.md)，组件职责见 [Kernel/](Kernel/Interaction.md)，
-> 跨模块字段见 [M1Interface](M1Interface.md)。文档更新不表示代码已迁移。
+> 跨模块字段见 [M1Interface](M1Interface.md)。各 Module 与 ExecutorSet 的实现进度由 GitHub Issues 跟踪。
 
 ## 1. 目标与范围权威
 
@@ -45,7 +45,7 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 ### 5.1 契约与可替换骨架
 
 - 按 [SharedContracts](Library/SharedContracts.md) 第 3 节实现并冻结全部 Schema：公共类型与 ReasonCode、Gateway 请求与响应、Inbox 事件（RunStart、UnitReport、RunClosed、AuthorizationRequest、AuthorizationResolved、RunFinished）、Kernel 核心与 Supervisor 的接口（ExecutionRequest、ExecutionFact）、各 Unit 的输入输出、ContextPack、Workflow 结构、Catalog 定义与 RunSummary。
-- 建立三个 Module 包、四类基础设施包、三个静态库包（含新建的 `packages/executor-set`）、三个 app 及依赖规则。
+- 建立三个 Module 包、四类基础设施包、三个静态库包（含新建的 `packages/libraries/executor-set`）、三个 app 及依赖规则。
 - 完成 Protocol Registry、Fake Port、架构测试和 Fake 纵向闭环。
 
 退出条件：全仓可构建；协议正反测试通过；UserInteraction 经 Gateway 创建运行、Workflow 收到 RunStart、运行收敛后 Workflow 收到 RunClosed、UserInteraction 收到 RunFinished 的 Fake 链可运行；未支持能力无副作用。

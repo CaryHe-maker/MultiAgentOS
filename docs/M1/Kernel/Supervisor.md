@@ -32,6 +32,8 @@ Supervisor 的启动分为两段：
 2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器，开始接受 `execute`、`cancelRun` 与 `shutdown`。
 
 模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
+工厂 `createSupervisor`、`SupervisorDeps`、`ModuleHostControl` 与 `SupervisorModule.whenStopped()` 的定义见
+[M1Interface](../M1Interface.md) 第 14.1 节。
 
 ## 3. 与 Kernel 核心的接口
 

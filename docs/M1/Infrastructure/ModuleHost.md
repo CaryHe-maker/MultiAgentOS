@@ -48,3 +48,4 @@ Supervisor 驱动 ModuleHost：
 - 任一模块启动失败时，Supervisor 按相反顺序停止已启动的模块，系统不开放 Gateway；
   Supervisor 自身启动失败时组合根直接退出。
 - 一个进程只处理一个运行；运行结束、展示完成后系统关闭。
+- 各模块的工厂函数、依赖清单与组合根的 `composeSystem` 见 [M1Interface](../M1Interface.md) 第 14 节。

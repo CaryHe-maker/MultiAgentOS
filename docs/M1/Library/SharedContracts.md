@@ -2,16 +2,18 @@
 
 ## 1. 定位
 
-SharedContracts 是静态库 `@multiagentos/contracts`（`packages/contracts`），提供 M1 全部跨模块 Schema、
+SharedContracts 是静态库 `@multiagentos/contracts`（`packages/libraries/contracts`），提供 M1 全部跨模块 Schema、
 由 Schema 派生的 TypeScript 类型、Port 接口、Protocol Registry 与校验工具。它不运行服务，不保存状态。
 长期规划见 [SharedContracts 架构](../../Architecture/Library/SharedContracts.md)。
 
 字段与语义以 [M1Interface](../M1Interface.md) 为准。本文规定每个类型落在哪个 Schema ID、哪个文件、由谁负责，
-以及与现有代码的迁移差异。
+以及对应的测试。
 
 ## 2. 规则
 
 - Schema 使用 TypeBox 定义，`$id` 为 `<family>.<Name>.v<major>`，M1 的 major 全部为 0（见 M1Interface 1.2）。
+- 运行时校验使用 TypeBox 自带的编译器（`typebox/compile`），每个 Schema 只编译一次；不引入第二个校验库。
+- 条件必填的字段以联合变体表达（M1Interface 1.3）。
 - TypeScript 类型一律由 Schema 派生（`Static<typeof XSchema>`），发布值使用 `DeepReadonly`。
 - 跨两个以上 family 使用、或作为消息 payload 的类型注册为顶层 Schema；只在一个 Schema 内部使用的结构作为嵌套类型，
   与父 Schema 放在同一文件，不单独注册。
@@ -164,8 +166,21 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `platform.lifecycle` | ModuleHost 的 `CapabilityDescriptor` | `platform-lifecycle/` |
 | `platform.persistence` | Persistence 的 `CapabilityDescriptor`；`JournalPositionRef`（opaque） | `platform-persistence/` |
 | `platform.artifact` | ArtifactStore 的 `CapabilityDescriptor`；`RetentionTokenRef`（opaque） | `platform-artifact/` |
-| `checkpoint`、`restore`、`review`、`integration` | 现有 opaque Ref | 各自目录 |
+| `checkpoint`、`restore`、`review`、`integration` | opaque Ref | 各自目录 |
 | `interaction` | M1 无 Schema | `interaction/`（空） |
+
+`VersionedRef`、`OpaqueRef` 与 `OpaqueRefSchema` 位于 `platform-common/opaque-ref.ts`，只供上表的 opaque Ref 使用；
+`platform.common.VersionedRef.v0` 一并注册。
+
+### 3.10 `platform.config`
+
+| Schema ID | 嵌套类型 | 文件 | 节 |
+|---|---|---|---|
+| `platform.config.KernelConfig.v0` | BudgetConfig、executionLimits | `platform-config/system-config.ts` | 14.3 |
+| `platform.config.WorkflowConfig.v0` | — | `platform-config/system-config.ts` | 14.3 |
+| `platform.config.SystemConfig.v0` | — | `platform-config/system-config.ts` | 14.3 |
+
+缺省值不属于契约：`DEFAULT_KERNEL_CONFIG` 由 `@multiagentos/kernel` 导出，`DEFAULT_WORKFLOW_CONFIG` 由 `@multiagentos/workflow` 导出。
 
 ## 4. 标识、Port 与工具
 
@@ -173,12 +188,11 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 
 `platform-common/ids.ts` 导出 `IdSchemas`，前缀与生成者见 M1Interface 3.1：
 
-| 键 | 前缀 | 状态 |
+| 键 | 前缀 | 说明 |
 |---|---|---|
-| `workflowRunId`、`agentRunId`、`unitAttemptId`、`messageId`、`correlationId`、`contextPackId`、`artifactId` | `wfr`、`agr`、`una`、`msg`、`cor`、`ctx`、`art` | 已有 |
-| `requestId`、`executionId`、`eventId`、`questionId`、`snapshotId` | `req`、`exe`、`evt`、`qst`、`snp` | 新增 |
+| `workflowRunId`、`agentRunId`、`unitAttemptId`、`messageId`、`correlationId`、`contextPackId`、`artifactId` | `wfr`、`agr`、`una`、`msg`、`cor`、`ctx`、`art` | 见 M1Interface 3.1 |
+| `requestId`、`executionId`、`eventId`、`questionId`、`snapshotId` | `req`、`exe`、`evt`、`qst`、`snp` | 见 M1Interface 3.1 |
 | `workSessionId`、`missionScopeId` | `wss`、`msc` | 保留，供 `BoundaryContext` 与 `Envelope` 的可选字段使用 |
-| `promptRevisionId`、`sessionTreeNodeId`、`taskRunId`、`taskAttemptId`、`agentStepId`、`unitIntentId` | — | 删除（M1 不使用） |
 
 ### 4.2 Port
 
@@ -198,17 +212,22 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `PersistencePort`、`RepositoryPort`、`AuditLogPort` | 10 | Persistence | Workflow、Kernel 核心 |
 | `FabricPort`、`FabricAddress` | 10 | Fabric | 全部通讯主体 |
 | `LifecyclePort`、`ModuleId`、`HealthStatus` | 10 | 各模块 | ModuleHost |
+| `ExecutorRegistry` | 8 | ExecutorSet | 组合根、Supervisor |
 | `PortResult` | 3.3 | — | 同步 Port 的返回 |
+
+第 14 节的模块装配接口（各 `createXxx` 工厂、`XxxDeps`、`TerminalPort` 等）由各模块包导出，不在 contracts 中。
 
 ### 4.3 工具
 
 | 导出 | 文件 | 用途 |
 |---|---|---|
 | `canonicalJson`、`sha256Hex` | `platform-common/canonical-json.ts` | 规范 JSON 与摘要；用于 digest、请求幂等与快照摘要 |
-| `validate`、`assertValid`、`ContractValidationError` | `platform-common/validation.ts` | 运行时校验 |
+| `validate`、`assertValid`、`ContractValidationError` | `platform-common/validation.ts` | 运行时校验（TypeBox 编译器） |
+| `newId`、`ulid` | `platform-common/new-id.ts` | 生成 `<prefix>_<ULID>` 形式的随机标识（M1Interface 3.1） |
+| `parseSchemaId` | `protocol-registry.ts` | 把 Schema ID 拆为 `Envelope.schemaName` 与 `schemaVersion` |
 | `unsupported` | `platform-common/validation.ts` | 构造 `UNSUPPORTED_CAPABILITY` 的 `ModuleError` |
 | `REASON_CODES`、`REASON_CODE_CATEGORY` | `platform-common/reason-code.ts` | 原因码枚举与其 `ErrorCategory`（M1Interface 3.4） |
-| `ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema |
+| `ProtocolRegistry`、`createM1ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema，并生成工具参数的 JSON Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
 | `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
 
@@ -230,34 +249,22 @@ platform-common/* → kernel-unit/budget-state.ts
 → kernel-control/run-summary.ts → kernel-control/gateway-forward.ts
 → kernel-execution/execution-request.ts → kernel-execution/execution-fact.ts
 → kernel-execution/supervisor-requests.ts
+→ platform-config/system-config.ts
 → ports.ts → protocol-registry.ts → index.ts
 ```
 
 `kernel-unit/budget-state.ts` 没有任何导入，因此排在最前，供 `workflow.StatusFacts` 使用。
-`catalog/definition-schemas.ts` 只导入 `platform-common/`，保持现有约束（不导入 `schemas.ts`）。
+`catalog/definition-schemas.ts` 只导入 `platform-common/`。各 family 的 opaque Ref 文件只导入 `platform-common/opaque-ref.ts`。
 
-## 6. 与现有代码的差异
-
-| 现有 | 处理 |
-|---|---|
-| `schemas.ts` 中的 `UnitIntent`、`UnitResult`、`UnitOwner`、`Usage`、`UserIntent` 及其变体、`TaskGraph`、`RuntimeProjection`、`WorkflowRunView`、`WorkspaceRef`、`PageSchema` | 删除；由第 3 节的 Schema 取代 |
-| `context.ContextRequest.v0`、`context.ContextPack.v0`（旧字段） | 删除 ContextRequest；ContextPack 按 M1Interface 6.3 重写 |
-| `ExecutionKindSchema`（`CONTEXT` 等旧值） | 改为 `platform.common.ExecutionKind.v0` 的九个取值 |
-| `ports.ts` 中的 `KernelUnitPort`、`KernelControlPort`、`ContextPort`、`MessageRouterPort`、`MessageHandler` | 删除；由第 4.2 节的 Port 取代 |
-| `ArtifactStorePort.put/get` | 增加 `workflowRunId` 参数 |
-| `RepositoryPort` | 保留；新增 `PersistencePort` 与 `AuditLogPort` |
-| `platform-communication/`、`platform.communication.*` | 目录改名为 `platform-fabric/`，family 改为 `platform.fabric` |
-| `catalog/definition-schemas.ts` 的 Agent、Unit、Tool 字段 | 按 M1Interface 9.2 修改，差异清单见 [AgentToolPool](AgentToolPool.md) 第 8 节 |
-| `VersionedRef`、`OpaqueRef` 与 opaque Ref Schema | 保留，只用于第 3.9 节的未支持协议 |
-
-## 7. 测试
+## 6. 测试
 
 | 位置 | 覆盖 |
 |---|---|
-| `packages/contracts/src/**/*.test.ts` | 每个顶层 Schema 的合法值、缺失必填字段、额外字段、取值越界；条件必填规则（如 `RUN_BLOCKED` 必须带 `closeReason`） |
-| `packages/contracts/src/protocol-registry.test.ts` | 全部顶层 Schema 已注册；重复注册与未知 major 被拒绝；`ContractRef` 可解析 |
-| `packages/contracts/src/platform-common/reason-code.test.ts` | 原因码枚举与 M1Interface 3.4 一致，每个原因码有唯一 `ErrorCategory` |
-| `packages/contracts/src/context/token-estimate.test.ts` | 估算覆盖 `toolSpecs` 与 `toolCalls`；估算值不低于固定样本的实际 token 数；相同输入结果稳定 |
+| `packages/libraries/contracts/src/**/*.test.ts` | 每个顶层 Schema 的合法值、缺失必填字段、额外字段、取值越界；条件必填规则（如 `RUN_BLOCKED` 必须带 `closeReason`） |
+| `packages/libraries/contracts/src/protocol-registry.test.ts` | 已注册的 Schema ID 与第 3 节逐一相同；重复注册与未知 major 被拒绝；`ContractRef` 可解析 |
+| `packages/libraries/contracts/src/kernel-protocol.test.ts` | Kernel 协议中各条件必填规则的正反例 |
+| `packages/libraries/contracts/src/platform-common/reason-code.test.ts` | 原因码枚举与 M1Interface 3.4 一致，每个原因码有唯一 `ErrorCategory` |
+| `packages/libraries/contracts/src/context/token-estimate.test.ts` | 估算覆盖 `toolSpecs` 与 `toolCalls`；估算值不低于固定样本的实际 token 数；相同输入结果稳定 |
 | `packages/testing/src/harnesses/*-contract.test.ts` | 每个 Port 的共享 contract test 同时运行 fake 与真实实现 |
 | `packages/testing/src/architecture.test.ts` | 文件依赖顺序无环；其他 workspace 不定义公共 Schema |
 

@@ -15,6 +15,7 @@
 - 核验来源，生成 AnalysisReport 或降级报告，经 `report-publish` 发布。
 - 写入运行记录的业务部分（第 13 节），标记业务终态。
 - 不持有任何 token 数值，只经 UnitReport 的 `budgetState` 得知额度状态。
+- 工厂 `createWorkflow` 与 `WorkflowDeps` 的定义见 [M1Interface](../M1Interface.md) 第 14.2 节。
 
 ## 3. 术语
 

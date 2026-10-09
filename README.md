@@ -33,7 +33,7 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
 完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。
-M1 与 Architecture 的关系列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示代码已完成迁移。
+M1 与 Architecture 的关系列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示对应能力已经实现。
 
 ## 当前交付范围
 
@@ -51,22 +51,23 @@ CLI 入口和完整 Agent 循环仍在实现中，不应将架构文档中的长
 
 ```text
 apps/
-  cli/                  UserInteraction 的 CLI Adapter
-  control-plane/        唯一组合根
-  executor/             现有 file-read 实现；目标归 ExecutorSet
+  cli/                    UserInteraction 的 CLI Adapter
+  control-plane/          唯一组合根与进程入口
 packages/
-  contracts/            Shared Contracts
-  user-interaction/     交互领域
-  workflow/             业务图与运行语义
-  kernel/               Kernel 六组件
-  context-engine/       现有检索与上下文代码；目标迁入 executor-set
-  executor-set/         ExecutorSet（待建）：上下文、检索、文件读取与模型调用 Executor
-  agent-tool-pool/      Agent、Unit、Tool、Model、Prompt 定义目录
-  module-host/          生命周期与组合
-  persistence/          Repository Adapter
-  communication/        Fabric 的同进程实现（包名迁移由 Issue 跟踪）
-  artifacts/            Artifact Store
-  testing/              Fakes、Contract tests 和 fixtures
+  modules/
+    kernel/               Kernel：core、execution、monitor、scheduler、gateway、supervisor
+    workflow/             Workflow
+    user-interaction/     UserInteraction
+  libraries/
+    contracts/            SharedContracts：Schema、Port、Protocol Registry
+    agent-tool-pool/      AgentToolPool：Agent、Unit、Tool、Model、Prompt 定义目录
+    executor-set/         ExecutorSet：仓库访问、检索、文件读取、上下文组装与模型调用
+  infrastructure/
+    fabric/               Fabric：同进程通信、Inbox 与有序发送器
+    module-host/          ModuleHost：装配与生命周期
+    persistence/          Persistence：运行目录文件存储
+    artifacts/            ArtifactStore：本地内容寻址存储
+  testing/                Fakes、Contract tests、架构测试和 fixtures
 docs/
   Architecture/         长期概念与架构
   M1/                   当前交付范围、机制与接口
@@ -90,6 +91,9 @@ pnpm run check
 ```
 
 开发平台不限，最终验收在 Ubuntu LTS 上执行；具体 LTS 版本与系统依赖由交付设计确认。
+
+Kernel、Workflow、UserInteraction 与 ExecutorSet 目前只有固定签名的工厂，调用时抛出 `NOT_IMPLEMENTED`。
+`pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 

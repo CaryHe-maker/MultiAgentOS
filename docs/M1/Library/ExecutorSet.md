@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-ExecutorSet 是静态库 `@multiagentos/executor-set`（目标位置 `packages/executor-set`），提供 M1 Unit 的原子执行行为。
+ExecutorSet 是静态库 `@multiagentos/executor-set`（目标位置 `packages/libraries/executor-set`），提供 M1 Unit 的原子执行行为。
 每个 Executor 实现 [M1Interface](../M1Interface.md) 第 8 节的 `Executor` 接口，由 Supervisor 按 `executionKind`
 装配并运行（见 [Supervisor](../Kernel/Supervisor.md)）。长期规划见 [ExecutorSet 架构](../../Architecture/Library/ExecutorSet.md)，
 技术选择见 [M1TechStack](../M1TechStack.md) §8、§9。
@@ -12,13 +12,16 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 ## 2. Executor 清单
 
-| executionKind | 实现 | 迁移来源 | scope.kind | 产物 |
+| executionKind | 实现 | 目录（`packages/libraries/executor-set/src/`） | scope.kind | 产物 |
 |---|---|---|---|---|
-| `REPOSITORY_ORIENT` | `RepositoryOrientExecutor` | `packages/context-engine` | `REPOSITORY` | ORIENT ContextPack |
-| `REPOSITORY_SEARCH` | `RepositorySearchExecutor` | `packages/context-engine` | `REPOSITORY` | SEARCH ContextPack |
-| `FILE_READ` | `FileReadExecutor` | `apps/executor` | `REPOSITORY` | 读取的文本 |
-| `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `packages/context-engine` | `NONE` | ASSEMBLE ContextPack |
-| `MODEL` | `ModelCallExecutor` | `packages/kernel` 中的 Provider 调用 | `MODEL` | `ModelRawOutput` |
+| `REPOSITORY_ORIENT` | `RepositoryOrientExecutor` | `repository-orient/` | `REPOSITORY` | ORIENT ContextPack |
+| `REPOSITORY_SEARCH` | `RepositorySearchExecutor` | `repository-search/` | `REPOSITORY` | SEARCH ContextPack |
+| `FILE_READ` | `FileReadExecutor` | `file-read/` | `REPOSITORY` | 读取的文本 |
+| `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `context-assemble/` | `NONE` | ASSEMBLE ContextPack |
+| `MODEL` | `ModelCallExecutor` | `model-call/` | `MODEL` | `ModelRawOutput` |
+
+三个仓库 Executor 共用 `repository-access/`。旧系统的文件读取、检索与 Provider 调用已从仓库移除，
+可在提交 `e9bb4c3` 的 `apps/executor`、`packages/context-engine` 与 `packages/kernel` 中查阅；它们基于旧协议，只供参考，不得原样搬回。
 
 `REPORT_PUBLISH` 不属于 ExecutorSet，由 Kernel 的 Execution 直接完成（见 [Execution](../Kernel/Execution.md) 第 5 节）。
 
@@ -26,7 +29,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 | 导出 | 用途 |
 |---|---|
-| `createExecutorRegistry(): ReadonlyMap<ExecutorKind, Executor>` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet |
+| `createExecutorRegistry(): ExecutorRegistry` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet。`ExecutorRegistry` 是按 `executionKind` 索引的对象（M1Interface 第 8 节） |
 | `DEFAULT_EXCLUSIONS` | 硬编码的危险文件规则（第 3.2 节），与 Core 的默认排除规则相同 |
 
 ## 3. 仓库访问

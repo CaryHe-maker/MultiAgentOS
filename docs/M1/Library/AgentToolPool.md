@@ -2,7 +2,7 @@
 
 ## 1. 定位与范围
 
-AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`（`packages/agent-tool-pool`），提供 Agent、Unit、Tool、
+AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`（`packages/libraries/agent-tool-pool`），提供 Agent、Unit、Tool、
 Model、Prompt 五类定义的目录。长期规划见 [AgentToolPool 架构](../../Architecture/Library/AgentToolPool.md)。
 
 本文规定 M1 目录的机制、校验规则与全部定义实例。定义的字段以 [M1Interface](../M1Interface.md) 第 9 节为准，
@@ -34,7 +34,7 @@ M1 不实现：独立服务、热更新、运行时发布、权限管理和版�
 ## 3. 定义文件
 
 ```text
-packages/agent-tool-pool/definitions/
+packages/libraries/agent-tool-pool/definitions/
   agents/<id>/<version>.yaml   units/<id>/<version>.yaml   tools/<id>/<version>.yaml
   models/<id>/<version>.yaml   prompts/<id>/<version>.yaml status.yaml
 ```
@@ -64,8 +64,8 @@ M1 目录恰好包含以下 16 个定义文件和 `status.yaml`（`entries: []`�
 | TOOL | `read-file` | `v0.1.0` | 草稿 |
 | TOOL | `finish-analysis` | `v0.1.0` | 草稿 |
 | TOOL | `handoff-to-code-viewer` | `v0.1.0` | 草稿 |
-| MODEL | `deepseek-flash` | `v1.0.0` | 已封存（现有） |
-| MODEL | `deepseek-v4-pro` | `v1.0.0` | 已封存（现有） |
+| MODEL | `deepseek-flash` | `v1.0.0` | 已封存 |
+| MODEL | `deepseek-v4-pro` | `v1.0.0` | 已封存 |
 | PROMPT | `planner-system` | `v0.1.0` | 草稿 |
 | PROMPT | `code-viewer-system` | `v0.1.0` | 草稿 |
 
@@ -426,36 +426,20 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 - 两个模型都支持思考模式，默认开启，档位为 low、high、max。M1 Agent 设置为 `thinking: DISABLED`；评测时如果开启，必须记录档位。
 - `deepseek-flash` 是服务端别名。DeepSeek 更换背后的模型时，应发布新的 ModelDefinition 版本，并更新 `providerModelLabel`。
 
-## 8. 与现有代码的差异
-
-| 对象 | 修改 |
-|---|---|
-| `AgentDefinition` | 删除 `inputContract`、`outputContract`；新增 `startUnitRefs`、`actions`、`limits` |
-| `UnitDefinition` | `executionKind` 改为 M1Interface 6.1 的取值；`requiredCapabilities` 改为 `protectedCapabilities`；删除 `operations`、`limits`；新增 `failurePolicy` |
-| `ToolDefinition` | 新增 `purpose`、`parametersContract`；删除 `parametersSchema`、`resultSchema`、`canDryRun` |
-| `PinnedDefinitionSet` | `tools` 包含控制工具；新增 `handoffTargetRef` |
-| digest | Merkle 展开覆盖 `actions.finish.toolRef`、`actions.handoff.toolRef`、`actions.handoff.targetAgentRef` |
-| 加载校验 | 新增第 5 节中 Agent、Unit、Tool 的规则与 ContractRef 注册检查 |
-| 定义文件 | 删除 `agents/repository-analysis-agent`、`units/context-build`、`prompts/repository-analysis`；修改 `units/file-read`、`units/model-call`、`tools/read-file`、`tools/search-repository`；新增其余文件 |
-| Workflow 用法 | `WorkflowService.create` 固定单个 `M1_AGENT` 改为收到 RunStart 后按 `entryAgentRef` 固定（第 6 节） |
-
-## 9. 测试
+## 8. 测试
 
 | 位置 | 覆盖内容 |
 |---|---|
 | `contracts/src/catalog/definition-schemas.test.ts` | 合法值、额外字段、版本/ID/digest 格式、整数价格、草稿 Schema、`failurePolicy` 键与值 |
 | `contracts/src/platform-common/canonical-json.test.ts` | 规范化 JSON，含属性测试 |
-| `agent-tool-pool/src/domain/*.test.ts` | digest（含 `actions`）、草稿与发布规则、第 5 节每条规则的反例、查找错误、状态阻断、固定集合的组成 |
+| `agent-tool-pool/src/domain/*.test.ts` | digest（含 `actions`）、草稿与发布规则、第 5 节各规则的反例（`definition-rules.test.ts`）、查找错误、状态阻断、固定集合的组成 |
 | `agent-tool-pool/src/adapters/file/*.test.ts` | 目录布局、YAML/JSON、封存写回保留注释、并发修改保护 |
 | `agent-tool-pool/src/definitions-directory.test.ts` | 仓库内定义恰好是第 4 节的文件且全部有效；已发布版本都已封存；DeepSeek 价格 |
 | `testing/src/harnesses/catalog-port-contract.test.ts` | 同一套 contract 分别运行真实实现和 `FakeCatalogPort`，并检查两者一致 |
 
-## 10. 遗留事项
+## 9. 遗留事项
 
 | 事项 | Owner |
 |---|---|
 | 两个 Prompt 正文与四个 Tool 的 `modelDescription` 为占位（`contentStatus: PLACEHOLDER`），在固定任务集评测前定稿 | Cary 与 meti |
-| 按第 8 节修改 Schema、加载校验与 digest 展开 | field |
-| 按第 4 节替换定义文件 | meti |
 | 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
-| 根 `package.json` 带 BOM，会导致 corepack 解析失败；建议统一去掉 | Cary |

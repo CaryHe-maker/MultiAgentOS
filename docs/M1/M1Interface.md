@@ -1,8 +1,7 @@
 # MultiAgentOS M1 接口与跨模块协议
 
-> 本文定义 M1 的目标接口，是 M1 全部跨模块数据结构与 Port 的唯一字段级权威。
-> `packages/contracts` 中现有代码仍为 v0 迁移前协议（`UnitIntent`、`UnitResult`、`KernelUnitPort`、
-> `ContextPort`、`KernelControlPort`、`MessageRouterPort` 等），迁移差距由 GitHub Issues 跟踪；文档更新不表示代码已迁移。
+> 本文定义 M1 的接口，是 M1 全部跨模块数据结构与 Port 的唯一字段级权威。
+> `packages/libraries/contracts` 已按本文实现全部 Schema 与 Port；二者不一致时以本文为准，并在同一 PR 中修正代码。
 
 ## 1. 规范约定
 
@@ -13,7 +12,7 @@
 | 文档 | 权威内容 |
 |---|---|
 | 本文 | 每个跨模块类型与 Port 的名称、字段、取值和语义 |
-| [SharedContracts](Library/SharedContracts.md) | 这些类型在 `packages/contracts` 中的 Schema ID、文件位置、owner 与测试 |
+| [SharedContracts](Library/SharedContracts.md) | 这些类型在 `packages/libraries/contracts` 中的 Schema ID、文件位置、owner 与测试 |
 | [AgentToolPool](Library/AgentToolPool.md) | 目录机制、加载校验规则与 M1 全部定义实例 |
 
 三者必须一致：本文出现的每个类型在 SharedContracts 的清单中有且只有一个 Schema ID；
@@ -34,6 +33,9 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 - 使用 TypeScript 记法；`?` 表示可选字段；所有对象发布后不可变（省略 `readonly`）。
 - 字段使用 camelCase；标识字段以 `Id` 结尾；时间字段以 `At` 结尾，为 ISO 8601 UTC 字符串；时长字段以 `Ms` 结尾。
 - 注释中的 `≤N` 表示字符串最大长度或数组最大元素数，`a..b` 表示整数取值范围。
+- 注释写明“某条件下必填”的字段（如 `SyscallRejected.closeReason`、`UnitReport.output`、`RunEnd.reportRef`、
+  `ExecutionFact.result`），在 Schema 中以联合变体表达：每个变体只含该条件下允许的字段，条件不成立时带上该字段同样不合法。
+  派生的 TypeScript 类型随判别字段收窄，构造这类值时必须按变体一次写全。
 
 ## 2. 通讯主体、Fabric 与端口
 
@@ -83,6 +85,16 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
   内容相同指请求 payload 的规范 JSON（`canonical-json`）SHA-256 相同。
 - 运行内请求的响应由 Core 按运行记录；`createRun`、`shutdown` 的响应由 Core 的运行管理记录。
 - 事件按 `eventId` 去重、按 `seq` 排序；`Envelope.messageId` 是传输标识，每次传递都不同，不用于去重。
+
+### 2.4 correlationId
+
+`correlationId` 只用于追踪，把同一运行引发的消息串在一起，不参与任何裁决。
+
+- 运行的 `correlationId` 由 Gateway 在 `createRun` 时生成并按 `workflowRunId` 保存。
+  Gateway 转发运行内请求时，以保存的值覆盖调用方在 `BoundaryContext` 中传入的值；Kernel 核心与 Supervisor 之间的消息沿用该值。
+- Workflow 与 UserInteraction 不会得到运行的 `correlationId`：`RunCreated` 与 Inbox 事件都不携带它。
+  二者传入的 `correlationId` 可以任意生成，各自的记录以 `workflowRunId` 为关联键。
+- 没有运行可查的请求沿用调用方传入的值：被拒绝的 `createRun`，以及 `shutdown`。
 
 ## 3. 公共类型（`platform.common`）
 
@@ -136,7 +148,7 @@ interface Envelope<T> {
 }
 ```
 
-现有 `Envelope` Schema 中的 `workSessionId`、`missionScopeId`、`aggregateId`、`aggregateVersion`、`graphRevision`、
+`Envelope` Schema 中的 `workSessionId`、`missionScopeId`、`aggregateId`、`aggregateVersion`、`graphRevision`、
 `traceparent` 保留为可选字段，M1 不填写。
 
 ### 3.3 通用值
@@ -1071,6 +1083,13 @@ interface ProviderCredentials {
 
 `TERMINATED` 与 `STOP_UNCONFIRMED` 由 Supervisor 依据执行是否在宽限期内结束给出，Executor 不返回这两种结果。
 
+```ts
+type ExecutorRegistry = { [K in ExecutorKind]: Executor<K> };   // createExecutorRegistry() 的返回值
+```
+
+注册表是按 `executionKind` 索引的对象而不是 Map：缺少任何一种 Executor 都无法通过编译，
+`registry.FILE_READ.execute` 的输入类型也随之确定。
+
 ## 9. AgentToolPool（`catalog.*`）
 
 ### 9.1 引用
@@ -1280,6 +1299,10 @@ interface HealthStatus {
 
 M1 的存储布局见 [Persistence](Infrastructure/Persistence.md) 与 [ArtifactStore](Infrastructure/ArtifactStore.md)。
 
+`FabricPort` 各方法的 `schemaName` 参数传完整的 Schema ID（如 `kernel.unit.SubmitUnitRequest.v0`），
+Fabric 据此取得 Schema，并拆出 `Envelope.schemaName` 与 `Envelope.schemaVersion`。
+`PersistencePort` 与其他平台 Port 一样提供 `capabilities()`。
+
 ## 11. RunSummary
 
 ```ts
@@ -1310,6 +1333,7 @@ interface RunSummary {                              // kernel.control.RunSummary
 | Family | Owner | M1 Schema | M1 行为 |
 |---|---|---|---|
 | `platform.common` | contracts | BoundaryContext、Envelope、ArtifactRef、ModuleError、CapabilityDescriptor、ErrorCategory、ReasonCode、ExecutionKind | 完整校验 |
+| `platform.config` | contracts | KernelConfig、WorkflowConfig、SystemConfig | 完整校验（第 14.3 节） |
 | `kernel.control` | kernel | CreateRunRequest、AnswerAuthorizationRequest、CancelRunRequest、ReadArtifactRequest、ShutdownRequest、SyscallAck、SyscallRejected、RunCreated、ArtifactContent、InteractionInboxEvent、AuthorizationRequest、AuthorizationResolved、RunFinished、RunFailure、UnknownEffect、CloseReason、RunSummary、GatewayForward、AdmissionProjection | 完整校验 |
 | `kernel.unit` | kernel | RegisterAgentRunRequest、SubmitUnitRequest、EndAgentRunRequest、CloseRunRequest、WorkflowInboxEvent、RunStart、UnitReport、RunClosed、BudgetState、UnitInput、UnitOutput、ReportPublishInput、ReportPublishOutput | 完整校验 |
 | `kernel.execution` | kernel | ExecutionRequest、ExecutionScope、ExecutionLimits、OrientExecutorInput、SearchExecutorInput、AssembleExecutorInput、ModelExecutorInput、ExecutionFact、ExecutionResult、CancelRunExecutionsRequest、SupervisorShutdownRequest | 完整校验 |
@@ -1339,3 +1363,139 @@ M1 不实现 WorkSession、SessionTree、TaskGraph、MissionScope 与 TaskAttemp
 ContextPack、UnitReport、InboxEvent、ExecutionFact、Catalog Definition、AnalysisReport、RunSummary 与 ArtifactRef 发布后不可修改。
 每个 Port 必须提供共享 contract test，至少覆盖合法值、额外字段、错误映射、未知 major、不可变输出、
 Unsupported 无副作用以及 fake 与真实 adapter 的一致性。
+
+## 14. 模块装配接口
+
+本节规定各模块对组合根（`apps/control-plane`）暴露的工厂函数及其依赖。它们是并行开发的接缝：
+各模块只替换自己工厂的实现，签名的修改必须单独评审，并同步 `packages/testing` 中的 fake。
+工厂只构造，不启动；启动与停止由 Supervisor 驱动 ModuleHost 完成（[ModuleHost](Infrastructure/ModuleHost.md) 第 2 节）。
+
+### 14.1 Kernel
+
+```ts
+function createGateway(deps: GatewayDeps): LifecyclePort;
+function createKernelCore(deps: KernelCoreDeps): LifecyclePort;
+function createSupervisor(deps: SupervisorDeps): SupervisorModule;
+
+interface GatewayDeps {
+  fabric: FabricPort;                               // producer 为 gateway 的客户端
+  now?: () => Date;
+}
+
+interface KernelCoreDeps {
+  fabric: FabricPort;                               // producer 为 kernel-core 的客户端
+  catalog: CatalogPort;
+  artifacts: ArtifactStorePort;                     // 只由 Execution 使用
+  persistence: PersistencePort;                     // Core 取用 kernel-core 命名空间
+  registry: ProtocolRegistry;
+  config: KernelConfig;
+  dataDir: string;
+  now?: () => Date;
+}
+
+interface SupervisorDeps {
+  fabric: FabricPort;                               // producer 为 supervisor 的客户端
+  executors: ExecutorRegistry;
+  credentials: ProviderCredentials;
+  moduleHost: ModuleHostControl;
+  config: KernelConfig;
+  dataDir: string;                                  // 启动时清空 <dataDir>/tmp/
+  now?: () => Date;
+}
+
+interface ModuleHostControl {                       // Supervisor 驱动 ModuleHost 的部分
+  start(): Promise<void>;                           // 按依赖启动其余全部模块
+  stop(): Promise<void>;                            // 按相反顺序停止
+}
+
+interface SupervisorModule extends LifecyclePort {
+  whenStopped(): Promise<void>;                     // shutdown 请求使全部模块停止后完成
+}
+```
+
+组合根只调用 `supervisor.start()`，并在 `whenStopped()` 完成后以 UserInteraction 给出的退出码退出进程。
+
+### 14.2 Workflow 与 UserInteraction
+
+```ts
+function createWorkflow(deps: WorkflowDeps): WorkflowModule;
+function createUserInteraction(deps: UserInteractionDeps): UserInteractionModule;
+
+interface WorkflowDeps {
+  gateway: WorkflowGatewayPort;
+  catalog: CatalogPort;
+  persistence: PersistencePort;                     // Workflow 取用 workflow 命名空间
+  registry: ProtocolRegistry;                       // 按 parametersContract 校验工具参数
+  config: WorkflowConfig;
+  now?: () => Date;
+}
+
+interface WorkflowModule extends LifecyclePort {
+  inbox: WorkflowInboxPort;                         // 组合根把它接到地址 inbox.workflow
+}
+
+interface UserInteractionDeps {
+  gateway: InteractionGatewayPort;
+  terminal: TerminalPort;
+  now?: () => Date;
+}
+
+interface UserInteractionModule extends LifecyclePort {
+  inbox: InteractionInboxPort;                      // 组合根把它接到地址 inbox.user-interaction
+  analyze(command: AnalyzeCommand): Promise<number>;   // 运行一个目标直到结束，返回进程退出码
+}
+
+interface AnalyzeCommand {
+  goal: string;
+  repositoryPath: string;                           // 绝对路径
+  details: boolean;                                 // 是否额外展示 RunSummary
+}
+
+interface TerminalPort {                            // 由 apps/cli 实现
+  write(text: string): void;
+  askYesNo(question: string, signal: AbortSignal): Promise<'YES' | 'NO' | undefined>;
+  onInterrupt(handler: () => void): () => void;     // 返回值用于取消注册
+}
+```
+
+`askYesNo` 在 `signal` 触发时以 `undefined` 结束并停止读取，使询问任务不阻塞 Inbox 的处理
+（[UserInteraction](Module/UserInteraction.md) 第 4 节）。`analyze` 在展示完成并请求 `shutdown` 后返回，不退出进程。
+
+### 14.3 系统配置（`platform.config`）
+
+```ts
+interface SystemConfig {                            // platform.config.SystemConfig
+  dataDir: string;                                  // 绝对路径
+  kernel: KernelConfig;                             // platform.config.KernelConfig
+  workflow: WorkflowConfig;                         // platform.config.WorkflowConfig
+}
+```
+
+`KernelConfig` 的字段见 [Kernel/Interaction](Kernel/Interaction.md) 第 9 节与 [Monitor](Kernel/Monitor.md) 第 4 节，
+`WorkflowConfig` 的字段见 [Workflow](Module/Workflow.md) 第 12 节。组合根的读取与校验见 [M1TechStack](M1TechStack.md) 第 4 节。
+
+### 14.4 组合根
+
+```ts
+interface SystemParts {                             // 非基础设施部分的工厂，缺省为各产品包的导出
+  createGateway(deps: GatewayDeps): LifecyclePort;
+  createKernelCore(deps: KernelCoreDeps): LifecyclePort;
+  createSupervisor(deps: SupervisorDeps): SupervisorModule;
+  createWorkflow(deps: WorkflowDeps): WorkflowModule;
+  createUserInteraction(deps: UserInteractionDeps): UserInteractionModule;
+  createExecutorRegistry(): ExecutorRegistry;
+}
+
+function composeSystem(options: {
+  config: SystemConfig;
+  terminal: TerminalPort;
+  credentials: ProviderCredentials;
+  parts?: Partial<SystemParts>;                     // 测试用 fake 替换其中任意几项
+  catalog?: CatalogPort;                            // 缺省为仓库内的定义目录
+  now?: () => Date;
+}): Promise<System>;
+```
+
+尚未实现的产品工厂在被调用时抛出 `NOT_IMPLEMENTED`，不返回占位的成功结果。
+`packages/testing` 为每个工厂提供 fake，为 `CatalogPort` 与 `Executor` 提供共享 contract test；
+fake 只保证消息的形状与先后顺序符合本文，不实现任何权限、额度或业务逻辑。
