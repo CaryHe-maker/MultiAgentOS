@@ -5,6 +5,7 @@ import {
   newId,
   sha256Hex,
   type AnalysisReport,
+  type AssembleExecutorInput,
   type ContextItem,
   type ContextPack,
   type ExecutionResult,
@@ -24,7 +25,7 @@ export const FAKE_SNAPSHOT_ID = `snp_${sha256Hex('fake-repository')}`;
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 
 type ItemSpec = Pick<ContextItem, 'segment' | 'role' | 'content'> &
-  Partial<Pick<ContextItem, 'provenance' | 'score' | 'toolSpecs'>>;
+  Partial<Pick<ContextItem, 'provenance' | 'score' | 'toolSpecs' | 'toolCalls' | 'toolCallId'>>;
 
 function pack(
   operation: ContextPack['operation'],
@@ -118,17 +119,45 @@ export function cannedFileRead(input: Pick<FileReadInput, 'path'>): ExecutionRes
   };
 }
 
-export function cannedAssemble(objective: string, tokenBudget = 64_000): ExecutionResult {
-  const value = pack('ASSEMBLE', tokenBudget, [
-    { segment: 'INSTRUCTIONS', role: 'system', content: 'CANNED INSTRUCTIONS' },
-    { segment: 'TOOLS', role: 'system', content: '', toolSpecs: [] },
-    { segment: 'OBJECTIVE', role: 'user', content: objective },
+/**
+ * Lays the input out in the segment order of M1Interface 6.3 and nothing more: it never trims,
+ * so `truncated` is always false, and it does not check that tool calls and results pair up.
+ */
+export function cannedAssemble(input: AssembleExecutorInput): ExecutionResult {
+  const history = input.history.map(({ step, outputText }): ItemSpec => {
+    if (step.kind === 'MODEL_TURN')
+      return { segment: 'HISTORY', role: 'assistant', content: '', toolCalls: step.toolCalls };
+    if (step.kind === 'TOOL_RESULT')
+      return {
+        segment: 'HISTORY',
+        role: 'tool',
+        content: step.status === 'OK' ? (outputText ?? '') : step.reasonCode,
+        toolCallId: step.toolCallId,
+      };
+    return step.toolCallId === undefined
+      ? { segment: 'HISTORY', role: 'user', content: step.message }
+      : { segment: 'HISTORY', role: 'tool', content: step.message, toolCallId: step.toolCallId };
+  });
+  const value = pack('ASSEMBLE', input.tokenBudget, [
+    { segment: 'INSTRUCTIONS', role: 'system', content: input.instructions },
+    { segment: 'TOOLS', role: 'system', content: '', toolSpecs: input.toolSpecs },
+    { segment: 'OBJECTIVE', role: 'user', content: input.objective },
+    ...(input.handoff === undefined
+      ? []
+      : [{ segment: 'HANDOFF' as const, role: 'user' as const, content: input.handoff.task }]),
+    ...(input.orientPack?.items ?? []).map((item): ItemSpec => ({
+      segment: 'ORIENT',
+      role: 'user',
+      content: item.content,
+    })),
+    ...history,
+    { segment: 'STATUS', role: 'user', content: canonicalJson(input.status) },
   ]);
   return {
     output: {
       contextPackId: value.contextPackId,
       tokenCount: value.tokenCount,
-      tokenBudget,
+      tokenBudget: input.tokenBudget,
       truncated: false,
       droppedCount: 0,
       prefixSha256: value.prefixSha256 ?? '',
@@ -157,30 +186,39 @@ export function cannedModelCall(toolCalls: readonly ModelToolCall[]): ExecutionR
 }
 
 export interface ModelScriptStep {
-  /** `id` of the Agent definition that makes the call; undefined when it is not known. */
-  readonly agentId: string | undefined;
-  /** 0 for the first model-call of the AgentRun. */
-  readonly callIndex: number;
+  /** `name` of every tool the ContextPack offers. */
+  readonly toolNames: readonly string[];
+  /** Whether the history already holds a tool result. */
+  readonly hasToolResults: boolean;
   readonly final: boolean;
+  /** Counts every model-call the registry has served, starting at 0. */
+  readonly callIndex: number;
 }
 /** Decides what the fake model "answers"; replace it to script another conversation. */
 export type ModelScript = (step: ModelScriptStep) => ModelToolCall[];
 
 /**
- * The planner hands over at once; any other agent reads FAKE_FILE on its first call and
- * finishes on the next one with a conclusion that cites what it read. A final-call finishes.
+ * Hands over when a handoff tool is offered, reads FAKE_FILE once when `read_file` is offered
+ * and nothing has been read yet, and otherwise finishes with a conclusion that cites the three
+ * lines it read. A final-call always finishes.
  */
-export const defaultModelScript: ModelScript = ({ agentId, callIndex, final }) => {
+export const defaultModelScript: ModelScript = ({
+  toolNames,
+  hasToolResults,
+  final,
+  callIndex,
+}) => {
   const call = (toolName: string, argumentsValue: unknown): ModelToolCall[] => [
     { toolCallId: `call_${callIndex}`, toolName, arguments: argumentsValue },
   ];
-  if (agentId === 'planner' && !final)
+  if (!final && toolNames.includes('handoff_to_code_viewer'))
     return call('handoff_to_code_viewer', {
       task: 'Analyse the repository.',
       focusAreas: [],
       openQuestions: [],
     });
-  if (callIndex === 0 && !final) return call('read_file', { path: FAKE_FILE.path });
+  if (!final && !hasToolResults && toolNames.includes('read_file'))
+    return call('read_file', { path: FAKE_FILE.path });
   return call('finish_analysis', {
     summary: 'Canned analysis.',
     conclusions: [
@@ -192,6 +230,18 @@ export const defaultModelScript: ModelScript = ({ agentId, callIndex, final }) =
     unconfirmed: [],
   });
 };
+
+/** What a ModelScript needs to know about an assembled pack. */
+export function describePack(
+  contextPack: ContextPack,
+): Pick<ModelScriptStep, 'toolNames' | 'hasToolResults'> {
+  return {
+    toolNames: contextPack.items.flatMap((item) => (item.toolSpecs ?? []).map((spec) => spec.name)),
+    hasToolResults: contextPack.items.some(
+      (item) => item.segment === 'HISTORY' && item.role === 'tool',
+    ),
+  };
+}
 
 /** A report without conclusions, as Workflow would publish it. */
 export function cannedReport(workflowRunId: string, goal: string): AnalysisReport {

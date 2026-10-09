@@ -12,15 +12,18 @@ import {
   cannedOrient,
   cannedSearch,
   defaultModelScript,
+  describePack,
   type ModelScript,
 } from '../fixtures/canned.js';
 
 /**
- * ExecutorSet stand-in for Kernel work: every Executor completes at once with a canned,
- * Schema-valid result. It reads no repository and calls no provider.
+ * ExecutorSet stand-in: every Executor completes at once with a canned, Schema-valid result.
+ * It reads no repository and calls no provider. Pass `overrides` to run a real Executor for
+ * some kinds next to the fakes for the others.
  */
 export function createFakeExecutorRegistry(
   modelScript: ModelScript = defaultModelScript,
+  overrides: Partial<ExecutorRegistry> = {},
 ): ExecutorRegistry {
   let modelCalls = 0;
   const completed = (result: ExecutionResult) =>
@@ -37,11 +40,13 @@ export function createFakeExecutorRegistry(
       completed(cannedSearch(input.tokenBudget)),
     ),
     FILE_READ: executor('FILE_READ', (input) => completed(cannedFileRead(input))),
-    CONTEXT_ASSEMBLE: executor('CONTEXT_ASSEMBLE', (input) =>
-      completed(cannedAssemble(input.objective, input.tokenBudget)),
-    ),
+    CONTEXT_ASSEMBLE: executor('CONTEXT_ASSEMBLE', (input) => completed(cannedAssemble(input))),
     MODEL: executor('MODEL', (input) => {
-      const calls = modelScript({ agentId: undefined, callIndex: modelCalls, final: input.final });
+      const calls = modelScript({
+        ...describePack(input.contextPack),
+        final: input.final,
+        callIndex: modelCalls,
+      });
       modelCalls += 1;
       return Promise.resolve<ExecutorOutcome>({
         outcome: 'COMPLETED',
@@ -50,5 +55,6 @@ export function createFakeExecutorRegistry(
         usage: { inputTokens: 100, outputTokens: 10 },
       });
     }),
+    ...overrides,
   };
 }

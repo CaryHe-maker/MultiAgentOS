@@ -1,4 +1,5 @@
 import type {
+  ContextPack,
   ExecutorEnvironment,
   ExecutorInputByKind,
   ExecutorKind,
@@ -23,21 +24,22 @@ const SCOPES: { readonly [K in ExecutorKind]: ExecutionScope } = {
   },
 };
 const status = { roundsUsed: 0, maxRounds: 1, final: false, budgetState: 'NORMAL' } as const;
+const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
+  objective: 'Explain the README.',
+  final: false,
+  tokenBudget: 64_000,
+  instructions: 'CANNED INSTRUCTIONS',
+  toolSpecs: [],
+  history: [],
+  status,
+};
 const INPUTS: ExecutorInputByKind = {
   REPOSITORY_ORIENT: { objective: 'Explain the README.', tokenBudget: 4_000 },
   REPOSITORY_SEARCH: { query: 'README', mode: 'AUTO', maxItems: 20, tokenBudget: 4_000 },
   FILE_READ: { path: 'README.md' },
-  CONTEXT_ASSEMBLE: {
-    objective: 'Explain the README.',
-    final: false,
-    tokenBudget: 64_000,
-    instructions: 'CANNED INSTRUCTIONS',
-    toolSpecs: [],
-    history: [],
-    status,
-  },
+  CONTEXT_ASSEMBLE: assembleInput,
   MODEL: {
-    contextPack: JSON.parse(cannedAssemble('Explain the README.').artifact?.text ?? '{}') as never,
+    contextPack: JSON.parse(cannedAssemble(assembleInput).artifact?.text ?? '{}') as ContextPack,
     final: false,
   },
 };

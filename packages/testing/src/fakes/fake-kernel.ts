@@ -1,20 +1,34 @@
 import {
   MEDIA_TYPES,
+  REASON_CODE_CATEGORY,
   canonicalJson,
   newId,
   type AdmissionProjection,
   type ArtifactContent,
   type ArtifactRef,
   type BoundaryContext,
+  type BudgetState,
   type CloseReason,
+  type ContextPack,
   type Envelope,
+  type ExecutionFact,
+  type ExecutionRequest,
+  type ExecutionResult,
+  type ExecutionScope,
+  type Executor,
+  type ExecutorEnvironment,
+  type ExecutorKind,
+  type ExecutorOutcome,
   type GatewayForward,
   type InteractionInboxEvent,
   type KernelToInteractionEvent,
   type KernelToWorkflowEvent,
   type LifecyclePort,
+  type ModelToolSpec,
   type PinnedDefinitionRef,
+  type PinnedDefinitionSet,
   type Producer,
+  type ReasonCode,
   type RunClosed,
   type RunCreated,
   type RunFailure,
@@ -24,12 +38,12 @@ import {
   type SyscallAck,
   type SyscallRejected,
   type UnitDefinition,
-  type ExecutionResult,
   type WorkflowInboxEvent,
 } from '@multiagentos/contracts';
 import {
   OrderedSender,
   SCHEMA_IDS,
+  createExecutionFactSink,
   createInteractionInboxSender,
   createSupervisorPort,
   createWorkflowInboxSender,
@@ -42,27 +56,27 @@ import type {
   SupervisorDeps,
   SupervisorModule,
 } from '@multiagentos/kernel';
-import {
-  cannedAssemble,
-  cannedFileRead,
-  cannedModelCall,
-  cannedOrient,
-  cannedSearch,
-  defaultModelScript,
-  type ModelScript,
-} from '../fixtures/canned.js';
 
 /**
- * Kernel stand-in for Workflow and UserInteraction work. It follows the external behaviour of
- * docs/M1/Module/Kernel.md (one RunStart, one UnitReport per accepted submitUnit, one
- * RunClosed and RunFinished) but answers every Unit with a canned result at once. It has no
- * Lease, budget, timeout, retry, run actor or Executor, and it accepts whatever a Unit input
- * says: never use it to judge Kernel behaviour.
+ * Kernel stand-in for Workflow, UserInteraction and ExecutorSet work. It follows the external
+ * behaviour of docs/M1/Module/Kernel.md (one RunStart, one UnitReport per accepted submitUnit,
+ * one RunClosed and RunFinished) and sends every Unit except report-publish through
+ * SupervisorPort to the injected Executors, one at a time. It has no Lease, budget ledger,
+ * timeout, retry or run actor, and it does not validate a Unit input against its contract:
+ * never use it to judge Kernel behaviour.
  */
 export interface FakeKernelOptions {
   /** ASK sends one AuthorizationRequest before the first protected Unit; default GRANTED. */
   readonly authorization?: 'GRANTED' | 'ASK';
-  readonly modelScript?: ModelScript;
+  /**
+   * Scripts the fate of a Unit before it is dispatched: `reject` or `fail` deliver that
+   * UnitReport without running an Executor, and `budgetState` is attached to the report.
+   */
+  readonly unitScript?: (unit: {
+    readonly executionKind: UnitDefinition['executionKind'];
+    /** 0 for the first accepted submitUnit of the run. */
+    readonly index: number;
+  }) => { reject?: ReasonCode; fail?: ReasonCode; budgetState?: BudgetState } | undefined;
 }
 
 type GatewayResponse = SyscallAck | SyscallRejected | RunCreated | ArtifactContent;
@@ -100,7 +114,7 @@ export function createFakeGateway(): (deps: GatewayDeps) => LifecyclePort {
           if (requestType === 'createRun' && workflowRunId !== undefined)
             correlationIds.set(workflowRunId, newId('cor'));
           const context: BoundaryContext = {
-            // Callers cannot know the run's correlationId, so Gateway stamps it.
+            // Callers cannot know the run's correlationId, so Gateway stamps it (M1Interface 2.4).
             correlationId:
               (workflowRunId === undefined ? undefined : correlationIds.get(workflowRunId)) ??
               envelope.correlationId,
@@ -134,9 +148,14 @@ export function createFakeGateway(): (deps: GatewayDeps) => LifecyclePort {
   };
 }
 
-/** Boots and stops the other modules through ModuleHost; it runs no Executor. */
+/**
+ * Boots and stops the other modules through ModuleHost and runs each execution with the
+ * injected Executor, reporting exactly one fact for it. It enforces no deadline and has no grace
+ * period: `cancelRun` only fires the abort signal, and the subprocess runner never starts
+ * anything.
+ */
 export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModule {
-  return ({ fabric, moduleHost }) => {
+  return ({ fabric, moduleHost, executors, credentials, now = () => new Date() }) => {
     let resolveStopped: () => void = () => undefined;
     const stopped = new Promise<void>((resolve) => {
       resolveStopped = resolve;
@@ -146,13 +165,65 @@ export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModu
       stopping ??= moduleHost.stop().finally(resolveStopped);
       return stopping;
     };
+    const aborts = new Map<string, AbortController>();
+    const facts = createExecutionFactSink(fabric, (workflowRunId) => ({
+      correlationId: newId('cor'),
+      tenantId: 'local',
+      projectId: 'local',
+      ...(workflowRunId === undefined ? {} : { workflowRunId }),
+    }));
+
+    const run = async (request: ExecutionRequest) => {
+      const abort = new AbortController();
+      aborts.set(request.executionId, abort);
+      const startedAt = now().toISOString();
+      const environment: ExecutorEnvironment = {
+        scope: request.scope,
+        limits: request.limits,
+        signal: abort.signal,
+        subprocess: {
+          run: () =>
+            Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
+        },
+        credentials,
+        now,
+      };
+      let outcome: ExecutorOutcome;
+      try {
+        const executor = executors[request.executionKind] as Executor<ExecutorKind>;
+        outcome = await executor.execute(request.input, environment);
+      } catch {
+        // An Executor must not throw; the fake reports it instead of hiding it.
+        outcome = { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false };
+      }
+      aborts.delete(request.executionId);
+      const { workflowRunId, unitAttemptId, executionId, runEpoch } = request;
+      const fact = {
+        workflowRunId,
+        unitAttemptId,
+        executionId,
+        runEpoch,
+        startedAt,
+        endedAt: now().toISOString(),
+        ...outcome,
+      };
+      await facts.report(fact);
+    };
+
     return {
       ...lifecycle('supervisor', [], {
         start: async () => {
           await moduleHost.start();
           serveSupervisor(fabric, {
-            execute: () => Promise.resolve(),
-            cancelRun: () => Promise.resolve(),
+            // Accepting returns at once; the execution itself runs afterwards.
+            execute: (request) => {
+              setImmediate(() => void run(request));
+              return Promise.resolve();
+            },
+            cancelRun: () => {
+              for (const abort of aborts.values()) abort.abort();
+              return Promise.resolve();
+            },
             // Stopping includes Fabric, so it must start after this request has returned.
             shutdown: () => {
               setImmediate(() => void stop());
@@ -167,19 +238,25 @@ export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModu
   };
 }
 
+interface FakeAgentRun {
+  readonly agentRef: PinnedDefinitionRef;
+  readonly pinned: PinnedDefinitionSet;
+  modelCalls: number;
+}
+
 interface FakeRun {
   readonly workflowRunId: string;
   readonly correlationId: string;
   readonly repositoryPath: string;
   readonly startedAt: Date;
   closeReason: CloseReason | undefined;
-  readonly agentRuns: Map<string, { agentRef: PinnedDefinitionRef; modelCalls: number }>;
+  readonly agentRuns: Map<string, FakeAgentRun>;
   readonly artifacts: Map<string, ArtifactRef>;
   readonly seq: { workflow: number; interaction: number };
   authorization: 'NOT_ASKED' | 'PENDING' | 'GRANTED' | 'DECLINED';
   questionId: string | undefined;
-  readonly waiting: { request: SubmitUnitRequest; unit: UnitDefinition }[];
-  readonly units: { submitted: number; ok: number; rejected: number };
+  readonly waiting: { request: SubmitUnitRequest; unit: UnitDefinition; index: number }[];
+  readonly units: { submitted: number; ok: number; rejected: number; failed: number };
 }
 
 export function createFakeKernelCore(
@@ -187,9 +264,9 @@ export function createFakeKernelCore(
 ): (deps: KernelCoreDeps) => LifecyclePort {
   return (deps) => {
     const now = deps.now ?? (() => new Date());
-    const script = options.modelScript ?? defaultModelScript;
     let run: FakeRun | undefined;
     let shuttingDown = false;
+    const faults: unknown[] = [];
     /** Work that needs I/O runs here one after another, so reports keep the submit order. */
     let work: Promise<void> = Promise.resolve();
     const later = (task: () => Promise<void>) => {
@@ -197,7 +274,8 @@ export function createFakeKernelCore(
         faults.push(error);
       });
     };
-    const faults: unknown[] = [];
+    const awaitedFacts = new Map<string, (fact: ExecutionFact) => void>();
+
     const contextOf = (workflowRunId: string | undefined): BoundaryContext => ({
       correlationId: run?.correlationId ?? newId('cor'),
       tenantId: 'local',
@@ -244,64 +322,220 @@ export function createFakeKernelCore(
       target.artifacts.set(ref.artifactId, ref);
       return ref;
     };
+    /** Undefined when the reference is unknown to this run. */
+    const readText = async (target: FakeRun, ref: ArtifactRef): Promise<string | undefined> => {
+      const owned = target.artifacts.get(ref.artifactId);
+      if (owned === undefined || owned.sha256 !== ref.sha256) return undefined;
+      return Buffer.from(await deps.artifacts.get(target.workflowRunId, owned)).toString('utf8');
+    };
 
-    const resultOf = (target: FakeRun, request: SubmitUnitRequest, unit: UnitDefinition) => {
+    const toolSpecsOf = (pinned: PinnedDefinitionSet, final: boolean): ModelToolSpec[] =>
+      pinned.tools
+        .filter((tool) => !final || tool.id === pinned.agent.actions.finish.toolRef.id)
+        .map((tool) => ({
+          name: tool.modelName,
+          description: tool.modelDescription,
+          parameters: deps.registry.jsonSchemaOf(tool.parametersContract),
+          purpose: tool.purpose,
+        }));
+
+    /** The executor input and scope of a Unit, or the reason it cannot be dispatched. */
+    const prepare = async (
+      target: FakeRun,
+      agentRun: FakeAgentRun,
+      request: SubmitUnitRequest,
+      kind: ExecutorKind,
+    ): Promise<{ input: unknown; scope: ExecutionScope } | ReasonCode> => {
       const input = request.input as Record<string, unknown>;
-      switch (unit.executionKind) {
+      const { budget } = deps.config;
+      const repository: ExecutionScope = {
+        kind: 'REPOSITORY',
+        repositoryRoot: target.repositoryPath,
+        exclusions: [...deps.config.repositoryExclusions],
+      };
+      switch (kind) {
         case 'REPOSITORY_ORIENT':
-          return cannedOrient(deps.config.budget.orientBudget);
+          return {
+            input: { objective: input['objective'], tokenBudget: budget.orientBudget },
+            scope: repository,
+          };
         case 'REPOSITORY_SEARCH':
-          return cannedSearch(deps.config.budget.searchBudget);
-        case 'FILE_READ':
-          return cannedFileRead({ path: String(input['path']) });
-        case 'CONTEXT_ASSEMBLE':
-          return cannedAssemble(String(input['objective']), deps.config.budget.perCallInputLimit);
-        case 'MODEL': {
-          const agentRun = target.agentRuns.get(request.agentRunId);
-          const callIndex = agentRun?.modelCalls ?? 0;
-          if (agentRun !== undefined) agentRun.modelCalls += 1;
-          return cannedModelCall(
-            script({ agentId: agentRun?.agentRef.id, callIndex, final: input['final'] === true }),
-          );
-        }
-        default: {
-          const report = input['report'] as {
-            conclusions: unknown[];
-            unconfirmed: unknown[];
-            degraded: boolean;
-          };
-          const published: ExecutionResult = {
-            output: {
-              conclusionCount: report.conclusions.length,
-              unconfirmedCount: report.unconfirmed.length,
-              degraded: report.degraded,
+          return {
+            input: {
+              query: input['query'],
+              mode: input['mode'] ?? 'AUTO',
+              maxItems: input['maxItems'] ?? 20,
+              tokenBudget: budget.searchBudget,
             },
-            artifact: { mediaType: MEDIA_TYPES.analysisReport, text: canonicalJson(report) },
+            scope: repository,
           };
-          return published;
+        case 'FILE_READ':
+          return { input, scope: repository };
+        case 'CONTEXT_ASSEMBLE': {
+          const final = input['final'] === true;
+          const orientRef = input['orientPackRef'] as ArtifactRef | undefined;
+          const orientText =
+            orientRef === undefined ? undefined : await readText(target, orientRef);
+          if (orientRef !== undefined && orientText === undefined) return 'INVALID_ARTIFACT_REF';
+          const history = [];
+          for (const step of input['steps'] as {
+            kind: string;
+            status?: string;
+            outputRef?: ArtifactRef;
+          }[]) {
+            if (
+              step.kind !== 'TOOL_RESULT' ||
+              step.status !== 'OK' ||
+              step.outputRef === undefined
+            ) {
+              history.push({ step });
+              continue;
+            }
+            const outputText = await readText(target, step.outputRef);
+            if (outputText === undefined) return 'INVALID_ARTIFACT_REF';
+            history.push({ step, outputText });
+          }
+          return {
+            input: {
+              objective: input['objective'],
+              final,
+              tokenBudget: final ? budget.finalInputBudget : budget.perCallInputLimit,
+              instructions: agentRun.pinned.prompt.template,
+              toolSpecs: toolSpecsOf(agentRun.pinned, final),
+              ...(input['handoff'] === undefined ? {} : { handoff: input['handoff'] }),
+              ...(orientText === undefined
+                ? {}
+                : { orientPack: JSON.parse(orientText) as ContextPack }),
+              history,
+              status: input['status'],
+            },
+            scope: { kind: 'NONE' },
+          };
+        }
+        case 'MODEL': {
+          const packText = await readText(target, input['contextPackRef'] as ArtifactRef);
+          if (packText === undefined) return 'INVALID_ARTIFACT_REF';
+          const { model, agent } = agentRun.pinned;
+          agentRun.modelCalls += 1;
+          return {
+            input: {
+              contextPack: JSON.parse(packText) as ContextPack,
+              final: input['final'] === true,
+            },
+            scope: {
+              kind: 'MODEL',
+              provider: model.provider,
+              apiModelId: model.apiModelId,
+              apiProtocol: model.apiProtocol,
+              baseUrl: model.baseUrl,
+              thinking: agent.modelSettings.thinking,
+              ...(agent.modelSettings.thinkingEffort === undefined
+                ? {}
+                : { thinkingEffort: agent.modelSettings.thinkingEffort }),
+            },
+          };
         }
       }
     };
 
-    const report = (target: FakeRun, request: SubmitUnitRequest, unit: UnitDefinition) => {
+    /** Runs one Unit to its result: built in for report-publish, through the Supervisor otherwise. */
+    const execute = async (
+      target: FakeRun,
+      agentRun: FakeAgentRun,
+      request: SubmitUnitRequest,
+      unit: UnitDefinition,
+    ): Promise<ExecutionResult | { status: 'REJECTED' | 'FAILED'; reasonCode: ReasonCode }> => {
+      if (unit.executionKind === 'REPORT_PUBLISH') {
+        const { report } = request.input as {
+          report: { conclusions: unknown[]; unconfirmed: unknown[]; degraded: boolean };
+        };
+        return {
+          output: {
+            conclusionCount: report.conclusions.length,
+            unconfirmedCount: report.unconfirmed.length,
+            degraded: report.degraded,
+          },
+          artifact: { mediaType: MEDIA_TYPES.analysisReport, text: canonicalJson(report) },
+        };
+      }
+      const kind = unit.executionKind as ExecutorKind;
+      const prepared = await prepare(target, agentRun, request, kind);
+      if (typeof prepared === 'string') return { status: 'REJECTED', reasonCode: prepared };
+      const executionId = newId('exe');
+      const limit = deps.config.executionLimits[kind];
+      const final = (request.input as { final?: boolean }).final === true;
+      const fact = new Promise<ExecutionFact>((resolve) => awaitedFacts.set(executionId, resolve));
+      await supervisor.execute({
+        workflowRunId: target.workflowRunId,
+        unitAttemptId: newId('una'),
+        executionId,
+        runEpoch: 1,
+        executionKind: kind,
+        ...prepared,
+        limits: {
+          deadline: new Date(now().getTime() + limit.timeoutMs).toISOString(),
+          maxOutputBytes: limit.maxOutputBytes,
+          ...(kind === 'MODEL'
+            ? {
+                maxOutputTokens: final
+                  ? deps.config.budget.finalMaxOutputTokens
+                  : deps.config.budget.maxOutputTokens,
+              }
+            : {}),
+          ...(kind === 'REPOSITORY_ORIENT' ? { maxFiles: deps.config.maxSnapshotFiles } : {}),
+        },
+      } as ExecutionRequest);
+      const result = await fact;
+      if (result.outcome === 'COMPLETED') return result.result;
+      if (result.outcome === 'VIOLATION') {
+        finish(target, 'VIOLATION', {
+          failure: {
+            code: result.reasonCode,
+            category: REASON_CODE_CATEGORY[result.reasonCode],
+            source: 'KERNEL',
+            unitRequestId: request.requestId,
+          },
+        });
+        return { status: 'FAILED', reasonCode: result.reasonCode };
+      }
+      return {
+        status: result.outcome === 'REJECTED' ? 'REJECTED' : 'FAILED',
+        reasonCode: result.reasonCode,
+      };
+    };
+
+    const report = (
+      target: FakeRun,
+      request: SubmitUnitRequest,
+      unit: UnitDefinition,
+      index: number,
+    ) => {
+      const scripted = options.unitScript?.({ executionKind: unit.executionKind, index });
       const common = {
         type: 'UnitReport' as const,
         requestId: request.requestId,
         agentRunId: request.agentRunId,
         unitRef: request.unitRef,
         executionKind: unit.executionKind,
-        budgetState: 'NORMAL' as const,
+        budgetState: scripted?.budgetState ?? ('NORMAL' as const),
       };
-      if (unit.protectedCapabilities.length > 0 && target.authorization === 'DECLINED') {
-        target.units.rejected += 1;
-        emitWorkflow(target, { ...common, status: 'REJECTED', reasonCode: 'USER_DECLINED' });
-        return;
-      }
+      const failed = (status: 'REJECTED' | 'FAILED', reasonCode: ReasonCode) => {
+        target.units[status === 'REJECTED' ? 'rejected' : 'failed'] += 1;
+        emitWorkflow(target, { ...common, status, reasonCode });
+      };
+      if (unit.protectedCapabilities.length > 0 && target.authorization === 'DECLINED')
+        return failed('REJECTED', 'USER_DECLINED');
+      if (scripted?.reject !== undefined) return failed('REJECTED', scripted.reject);
+      if (scripted?.fail !== undefined) return failed('FAILED', scripted.fail);
+      const agentRun = target.agentRuns.get(request.agentRunId);
+      if (agentRun === undefined) return failed('FAILED', 'INTERNAL');
       later(async () => {
-        const result = resultOf(target, request, unit);
+        if (target.closeReason !== undefined) return;
+        const result = await execute(target, agentRun, request, unit);
+        if (target.closeReason !== undefined) return;
+        if ('status' in result) return failed(result.status, result.reasonCode);
         const artifact = result.artifact ?? { mediaType: MEDIA_TYPES.fileText, text: '' };
         const outputRef = await store(target, artifact.mediaType, artifact.text);
-        if (target.closeReason !== undefined) return;
         target.units.ok += 1;
         emitWorkflow(target, {
           ...common,
@@ -313,11 +547,11 @@ export function createFakeKernelCore(
       });
     };
 
-    const finish = (
+    function finish(
       target: FakeRun,
       closeReason: CloseReason,
       outcome: { reportRef?: ArtifactRef; failure?: RunFailure } = {},
-    ) => {
+    ): void {
       if (target.closeReason !== undefined) return;
       target.closeReason = closeReason;
       if (target.authorization === 'PENDING' && target.questionId !== undefined)
@@ -326,8 +560,12 @@ export function createFakeKernelCore(
           questionId: target.questionId,
           resolution: 'CANCELLED',
         });
+      void supervisor
+        .cancelRun({ workflowRunId: target.workflowRunId, runEpoch: 2 })
+        .catch((error: unknown) => faults.push(error));
       later(async () => {
         const closedAt = now();
+        const { submitted, ok, rejected, failed } = target.units;
         const summary: RunSummary = {
           workflowRunId: target.workflowRunId,
           closeReason,
@@ -343,13 +581,19 @@ export function createFakeKernelCore(
             rounds: agentRun.modelCalls,
           })),
           units: {
-            submitted: target.units.submitted,
-            ok: target.units.ok,
-            rejected: target.units.rejected,
-            failed: 0,
-            notDelivered: target.units.submitted - target.units.ok - target.units.rejected,
+            submitted,
+            ok,
+            rejected,
+            failed,
+            notDelivered: submitted - ok - rejected - failed,
           },
-          model: { requests: 0, finalCallUsed: false },
+          model: {
+            requests: [...target.agentRuns.values()].reduce(
+              (sum, item) => sum + item.modelCalls,
+              0,
+            ),
+            finalCallUsed: false,
+          },
           tokens: {
             limit: deps.config.budget.tokenLimit,
             used: 0,
@@ -365,24 +609,21 @@ export function createFakeKernelCore(
         emitWorkflow(target, { type: 'RunClosed', ...end } as RunClosed);
         emitInteraction(target, { type: 'RunFinished', ...end } as RunFinished);
       });
-    };
+    }
 
-    const submit = async (
-      target: FakeRun,
-      request: SubmitUnitRequest,
-    ): Promise<GatewayResponse> => {
-      if (!target.agentRuns.has(request.agentRunId))
-        return reject(request.requestId, 'AGENT_RUN_NOT_FOUND');
-      const { id, version } = request.unitRef;
-      const found = await deps.catalog.getDefinition(
-        { kind: 'UNIT', id, version },
-        contextOf(target.workflowRunId),
+    const submit = (target: FakeRun, request: SubmitUnitRequest): GatewayResponse => {
+      const agentRun = target.agentRuns.get(request.agentRunId);
+      if (agentRun === undefined) return reject(request.requestId, 'AGENT_RUN_NOT_FOUND');
+      const unit = agentRun.pinned.units.find(
+        (candidate) =>
+          candidate.id === request.unitRef.id &&
+          candidate.version === request.unitRef.version &&
+          candidate.digest === request.unitRef.digest,
       );
-      if (!found.ok || found.value.digest !== request.unitRef.digest)
-        return reject(request.requestId, 'FORBIDDEN');
-      const unit = found.value;
+      if (unit === undefined) return reject(request.requestId, 'FORBIDDEN');
       if (['FILE_WRITE', 'COMMAND', 'TEST'].includes(unit.executionKind))
         return reject(request.requestId, 'UNSUPPORTED_CAPABILITY');
+      const index = target.units.submitted;
       target.units.submitted += 1;
       const mustAsk = unit.protectedCapabilities.length > 0 && options.authorization === 'ASK';
       if (mustAsk && target.authorization === 'NOT_ASKED') {
@@ -398,8 +639,9 @@ export function createFakeKernelCore(
           expiresAt: new Date(now().getTime() + deps.config.authorizationTimeoutMs).toISOString(),
         });
       }
-      if (mustAsk && target.authorization === 'PENDING') target.waiting.push({ request, unit });
-      else report(target, request, unit);
+      if (mustAsk && target.authorization === 'PENDING')
+        target.waiting.push({ request, unit, index });
+      else report(target, request, unit, index);
       return ack(request.requestId);
     };
 
@@ -422,7 +664,7 @@ export function createFakeKernelCore(
           authorization: 'NOT_ASKED',
           questionId: undefined,
           waiting: [],
-          units: { submitted: 0, ok: 0, rejected: 0 },
+          units: { submitted: 0, ok: 0, rejected: 0, failed: 0 },
         };
         emitWorkflow(run, { type: 'RunStart', goal: forward.request.goal });
         return {
@@ -444,23 +686,36 @@ export function createFakeKernelCore(
       if (target === undefined || target.workflowRunId !== forward.request.workflowRunId)
         return reject(request.requestId, 'RUN_NOT_FOUND');
       switch (forward.requestType) {
-        case 'registerAgentRun':
+        case 'registerAgentRun': {
           if (target.closeReason !== undefined)
             return blocked(request.requestId, target.closeReason);
           if (target.agentRuns.has(forward.request.agentRunId))
             return reject(request.requestId, 'AGENT_RUN_EXISTS');
+          const { agentRef } = forward.request;
+          const pinned = await deps.catalog.pinAgent(
+            { id: agentRef.id, version: agentRef.version },
+            contextOf(target.workflowRunId),
+          );
+          if (!pinned.ok) return reject(request.requestId, 'DEFINITION_UNAVAILABLE');
+          if (pinned.value.agent.digest !== agentRef.digest)
+            return reject(request.requestId, 'DEFINITION_MISMATCH');
           target.agentRuns.set(forward.request.agentRunId, {
-            agentRef: forward.request.agentRef,
+            agentRef,
+            pinned: pinned.value,
             modelCalls: 0,
           });
           return ack(request.requestId);
+        }
         case 'submitUnit':
           if (target.closeReason !== undefined)
             return blocked(request.requestId, target.closeReason);
-          return await submit(target, forward.request);
+          return submit(target, forward.request);
         case 'endAgentRun':
-          return ack(request.requestId);
+          return target.agentRuns.has(forward.request.agentRunId)
+            ? ack(request.requestId)
+            : reject(request.requestId, 'AGENT_RUN_NOT_FOUND');
         case 'closeRun':
+          if (target.closeReason !== undefined) return ack(request.requestId);
           if (forward.request.outcome === 'FAILED')
             finish(target, 'FAILED', { failure: forward.request.failure });
           else if (!target.artifacts.has(forward.request.reportRef.artifactId))
@@ -484,19 +739,15 @@ export function createFakeKernelCore(
             resolution: granted ? 'GRANTED' : 'DECLINED',
           });
           for (const waiting of target.waiting.splice(0))
-            report(target, waiting.request, waiting.unit);
+            report(target, waiting.request, waiting.unit, waiting.index);
           return ack(request.requestId);
         }
         case 'readArtifact': {
+          const text = await readText(target, forward.request.ref);
           const ref = target.artifacts.get(forward.request.ref.artifactId);
-          if (ref === undefined) return reject(request.requestId, 'INVALID_ARTIFACT_REF');
-          const content = await deps.artifacts.get(target.workflowRunId, ref);
-          return {
-            requestId: request.requestId,
-            outcome: 'ACCEPTED',
-            ref,
-            text: Buffer.from(content).toString('utf8'),
-          };
+          if (text === undefined || ref === undefined)
+            return reject(request.requestId, 'INVALID_ARTIFACT_REF');
+          return { requestId: request.requestId, outcome: 'ACCEPTED', ref, text };
         }
       }
     };
@@ -507,7 +758,13 @@ export function createFakeKernelCore(
           SCHEMA_IDS.gatewayForward,
           (envelope) => handle(envelope.payload, envelope.correlationId),
         );
-        serveExecutionFacts(deps.fabric, { report: () => Promise.resolve() });
+        serveExecutionFacts(deps.fabric, {
+          report: (fact) => {
+            awaitedFacts.get(fact.executionId)?.(fact);
+            awaitedFacts.delete(fact.executionId);
+            return Promise.resolve();
+          },
+        });
         return Promise.resolve();
       },
       stop: async () => {
