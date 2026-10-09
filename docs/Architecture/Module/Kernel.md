@@ -78,7 +78,7 @@ Kernel 核心可以部署为多个实例，按 WorkflowRun 分片：
 - `workflowRunId` 经哈希映射到固定数量的逻辑分片，逻辑分片由 Kernel 核心实例通过 Persistence 中的分片租约领取；
 - 每次状态写入携带分片 epoch，epoch 过期的写入被拒绝；分片转移时运行的 runEpoch 前进，旧尝试的结果只作为证据；
 - Gateway 生成 `workflowRunId` 并按分片路由，被旧 Owner 拒绝时刷新路由后重试，`requestId` 保证重试幂等；
-- Supervisor 按节点部署，执行事实按 `workflowRunId` 送回所属的 Kernel 核心实例；
+- 执行事实按 `workflowRunId` 送回所属的 Kernel 核心实例；
 - 跨运行的资源（如 Provider 级 API 容量）由全局容量服务以带期限的令牌分配。
 
 单个运行不跨实例拆分。超大运行可拆为子运行，额度通过显式委派划给子运行。

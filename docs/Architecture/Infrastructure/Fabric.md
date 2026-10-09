@@ -15,7 +15,7 @@ Module 与组件边界不直接等同于进程边界。
 | 通讯主体 | 组成 | 进程 |
 |---|---|---|
 | Kernel 核心 | Core、Monitor、Scheduler、Execution（模块化单体） | 同一进程；可按 WorkflowRun 分片为多个实例 |
-| Supervisor | Supervisor 及其管理的 Executor 子进程 | 独立进程；按节点部署 |
+| Supervisor | Supervisor 及其管理的 Executor 子进程 | 独立进程 |
 | Gateway | Gateway | 逻辑上独立；是否独立成进程由各 MVP 决定 |
 | Workflow | Workflow Module | 独立通讯主体 |
 | UserInteraction | UserInteraction Module 的各交互载体 | 独立通讯主体 |

@@ -75,4 +75,4 @@ Supervisor 是可信的 Kernel 组件，它上报的执行事实可以作为依�
 
 单进程部署时，Supervisor 可以与 Kernel 核心同进程，Executor 也可以在进程内运行，
 但 Supervisor 与 Kernel 核心之间仍按第 3 节的可序列化接口协作，取消以消息表达。
-Supervisor 独立成进程后，Executor 改在其子进程中运行；跨主机部署时，Supervisor 按节点部署。
+Supervisor 独立成进程后，Executor 改在其子进程中运行。

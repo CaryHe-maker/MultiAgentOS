@@ -25,7 +25,7 @@ Executor 子进程；Gateway 逻辑上独立，其余通讯主体按需要独立
 | 单进程 | 全部通讯主体同处一个进程，按可序列化契约协作 | 无 |
 | 隔离执行 | Supervisor 独立成进程，Executor 在其子进程或容器中运行 | Kernel 核心 ↔ Supervisor、Supervisor ↔ Executor 子进程 |
 | 独立交互与业务 | UserInteraction、Workflow 独立成进程 | UserInteraction ↔ Gateway、Workflow ↔ Gateway |
-| 多实例 | Kernel 核心按 WorkflowRun 分片，Gateway 独立并负责路由，Supervisor 按节点部署，增加全局容量服务 | Gateway ↔ Kernel 核心实例、Kernel 核心实例 ↔ 全局容量服务 |
+| 多实例 | Kernel 核心按 WorkflowRun 分片，Gateway 独立并负责路由，增加全局容量服务 | Gateway ↔ Kernel 核心实例、Kernel 核心实例 ↔ 全局容量服务 |
 
 拆分执行载体或通信路径时，应保持状态所有权、身份、受理、
 效果核对及恢复语义，不能仅以替换调用方式代替边界设计。
@@ -75,7 +75,7 @@ Core 管辖 Fabric、ModuleHost 统一管理 Persistence 生命周期的关系�
 |---|---|
 | 分片后的跨运行状态 | 用户的长期授权记录、共享索引与仓库快照、租户级配额在按运行分片后的 Owner 与存放位置（目前只有 API 容量定义了全局服务） |
 | 业务类人工参与 | 信息补充、方案选择、结果验收以及暂停、重试、重规划等用户操作，在 Workflow 与 UserInteraction 之间经 Kernel 中转的请求与事件 |
-| 多实例下的基础设施管辖 | Kernel 核心有多个实例、Supervisor 按节点部署时，Fabric、ModuleHost、ArtifactStore 的管辖关系 |
+| 多实例下的基础设施管辖 | Kernel 核心有多个实例时，Fabric、ModuleHost、ArtifactStore 的管辖关系 |
 
 ## 5. 演进核对
 
