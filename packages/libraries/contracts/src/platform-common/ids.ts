@@ -2,6 +2,8 @@ import { Type } from 'typebox';
 
 const Id = (prefix: string) =>
   Type.String({ pattern: `^${prefix}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$` });
+/** An identifier whose body is a SHA-256 in lower-case hexadecimal. */
+const DigestId = (prefix: string) => Type.String({ pattern: `^${prefix}_[a-f0-9]{64}$` });
 
 /** Identifier formats; prefixes and generators are listed in M1Interface 3.1. */
 export const IdSchemas = {
@@ -14,9 +16,11 @@ export const IdSchemas = {
   messageId: Id('msg'),
   correlationId: Id('cor'),
   questionId: Id('qst'),
-  artifactId: Id('art'),
+  /** `art_` followed by the SHA-256 of the content. */
+  artifactId: DigestId('art'),
   contextPackId: Id('ctx'),
-  snapshotId: Id('snp'),
+  /** `snp_` followed by the repository snapshot digest. */
+  snapshotId: DigestId('snp'),
   // Kept for the optional BoundaryContext and Envelope fields; M1 does not fill them.
   workSessionId: Id('wss'),
   missionScopeId: Id('msc'),

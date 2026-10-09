@@ -1,6 +1,13 @@
 import { Type, type Static } from 'typebox';
 import { IdSchemas } from '../platform-common/ids.js';
-import { closed, count, text } from '../platform-common/schema-helpers.js';
+import {
+  LINE_RANGE_ERROR,
+  closed,
+  count,
+  isLineRange,
+  lineRange,
+  text,
+} from '../platform-common/schema-helpers.js';
 
 export const RepositoryOrientInputSchema = closed(
   { objective: text(4000) },
@@ -35,13 +42,16 @@ export const RepositorySearchInputSchema = closed(
 );
 export type RepositorySearchInput = Static<typeof RepositorySearchInputSchema>;
 
-export const SearchHitSchema = closed({
-  path: text(1024),
-  startLine: count(1),
-  endLine: count(1),
-  score: Type.Number({ minimum: 0, maximum: 1 }),
-  matchKind: Type.Enum(['TEXT', 'PATH', 'SYMBOL']),
-});
+export const SearchHitSchema = Type.Refine(
+  closed({
+    path: text(1024),
+    ...lineRange,
+    score: Type.Number({ minimum: 0, maximum: 1 }),
+    matchKind: Type.Enum(['TEXT', 'PATH', 'SYMBOL']),
+  }),
+  isLineRange,
+  LINE_RANGE_ERROR,
+);
 export type SearchHit = Static<typeof SearchHitSchema>;
 
 export const RepositorySearchOutputSchema = closed(

@@ -2,16 +2,31 @@ import { Type, type Static, type TSchema } from 'typebox';
 import { IdSchemas } from './ids.js';
 import { Sha256Schema, TimestampSchema, closed, count, text } from './schema-helpers.js';
 
-export const ArtifactRefSchema = closed(
-  {
-    artifactId: IdSchemas.artifactId,
-    mediaType: text(128),
-    sha256: Sha256Schema,
-    size: count(),
-  },
-  'platform.common.ArtifactRef.v0',
+const artifactRef = { artifactId: IdSchemas.artifactId, sha256: Sha256Schema, size: count() };
+const matchesDigest = (ref: { artifactId: string; sha256: string }) =>
+  ref.artifactId === `art_${ref.sha256}`;
+const DIGEST_ERROR = () => "artifactId must be 'art_' followed by sha256";
+
+/** `artifactId` is always `'art_' + sha256`; a reference that disagrees with itself is invalid. */
+export const ArtifactRefSchema = Type.Refine(
+  closed({ ...artifactRef, mediaType: text(128) }, 'platform.common.ArtifactRef.v0'),
+  matchesDigest,
+  DIGEST_ERROR,
 );
 export type ArtifactRef = Static<typeof ArtifactRefSchema>;
+
+/**
+ * An ArtifactRef that must carry one given media type. Used wherever M1Interface 6.1 fixes the
+ * kind of artifact a field points at; the static type stays `ArtifactRef`.
+ */
+export const artifactRefOf = (mediaType: string) =>
+  Type.Unsafe<ArtifactRef>(
+    Type.Refine(
+      closed({ ...artifactRef, mediaType: Type.Literal(mediaType) }),
+      matchesDigest,
+      DIGEST_ERROR,
+    ),
+  );
 
 export const ErrorCategorySchema = Type.Enum(
   [

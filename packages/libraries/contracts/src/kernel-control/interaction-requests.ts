@@ -3,7 +3,11 @@ import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
 
-/** `repositoryPath` must be absolute; Core checks it (REPOSITORY_INVALID). */
+/**
+ * `repositoryPath` must be an absolute path of an existing directory outside the system data
+ * directory. A Schema cannot see the file system, so Core checks it and answers
+ * REPOSITORY_INVALID.
+ */
 export const CreateRunRequestSchema = closed(
   { requestId: IdSchemas.requestId, goal: text(4000), repositoryPath: text(4096) },
   'kernel.control.CreateRunRequest.v0',
@@ -27,6 +31,7 @@ export const CancelRunRequestSchema = closed(
 );
 export type CancelRunRequest = Static<typeof CancelRunRequestSchema>;
 
+/** Any artifact of the run may be read: the report, the RunSummary or a Unit artifact. */
 export const ReadArtifactRequestSchema = closed(
   {
     requestId: IdSchemas.requestId,

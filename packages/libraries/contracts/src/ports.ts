@@ -33,7 +33,6 @@ import type {
   ExecutionLimits,
   ExecutionRequest,
   ExecutionScope,
-  ExecutorKind,
   ModelExecutorInput,
   OrientExecutorInput,
   SearchExecutorInput,
@@ -56,7 +55,12 @@ import type {
   Envelope,
   ModuleError,
 } from './platform-common/common-schemas.js';
-import type { ReasonCode } from './platform-common/reason-code.js';
+import type { ExecutorKind } from './platform-common/execution-kind.js';
+import type {
+  ExecutorFailedCode,
+  ExecutorRejectedCode,
+  ViolationCode,
+} from './platform-common/reason-code.js';
 
 /** Return value of the synchronous Ports (M1Interface 3.3). */
 export type PortResult<T> =
@@ -192,17 +196,17 @@ export type ExecutorOutcome =
       readonly usage?: TokenUsage;
       readonly requestState?: RequestState;
     }
-  | { readonly outcome: 'REJECTED'; readonly reasonCode: ReasonCode }
+  | { readonly outcome: 'REJECTED'; readonly reasonCode: ExecutorRejectedCode }
   | {
       readonly outcome: 'FAILED';
-      readonly reasonCode: ReasonCode;
+      readonly reasonCode: ExecutorFailedCode;
       readonly retryable: boolean;
       readonly usage?: TokenUsage;
       readonly requestState?: RequestState;
     }
   | {
       readonly outcome: 'VIOLATION';
-      readonly reasonCode: 'SCOPE_MISSING' | 'PATH_ESCAPE' | 'GUARD_FAILURE';
+      readonly reasonCode: ViolationCode;
     };
 
 /** Implemented by ExecutorSet and called by the Supervisor. */

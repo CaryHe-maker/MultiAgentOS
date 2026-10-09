@@ -8,6 +8,7 @@ import {
   DefinitionVersionTagSchema,
   ModelDefinitionSchema,
   PinnedDefinitionRefSchema,
+  pinnedRefOf,
   PromptDefinitionSchema,
   ToolDefinitionSchema,
   UnitDefinitionSchema,
@@ -43,7 +44,7 @@ export const PinnedDefinitionSetSchema = Type.Object(
     /** The tools of those units and the control tools of `agent.actions`. */
     tools: Type.Array(ToolDefinitionSchema),
     /** Present when the agent declares a handoff; the target is pinned by the caller. */
-    handoffTargetRef: Type.Optional(PinnedDefinitionRefSchema),
+    handoffTargetRef: Type.Optional(pinnedRefOf('AGENT')),
     refs: Type.Array(PinnedDefinitionRefSchema, { minItems: 3 }),
   },
   { additionalProperties: false, $id: 'catalog.PinnedDefinitionSet.v0' },

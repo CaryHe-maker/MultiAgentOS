@@ -9,11 +9,13 @@ import {
   type BoundaryContext,
   type BudgetState,
   type CloseReason,
-  type ContextPack,
+  type AssembleContextPack,
+  type CoreRejectedCode,
+  type OrientContextPack,
+  type UnitOutput,
   type Envelope,
   type ExecutionFact,
   type ExecutionRequest,
-  type ExecutionResult,
   type ExecutionScope,
   type Executor,
   type ExecutorEnvironment,
@@ -197,17 +199,28 @@ export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModu
         outcome = { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false };
       }
       aborts.delete(request.executionId);
-      const { workflowRunId, unitAttemptId, executionId, runEpoch } = request;
+      const { workflowRunId, unitAttemptId, executionId, runEpoch, executionKind } = request;
+      const { usage, requestState, ...verdict } = {
+        usage: undefined,
+        requestState: undefined,
+        ...outcome,
+      };
       const fact = {
         workflowRunId,
         unitAttemptId,
         executionId,
         runEpoch,
+        executionKind,
         startedAt,
         endedAt: now().toISOString(),
-        ...outcome,
+        ...verdict,
+        // Only a MODEL execution has a request state; UNKNOWN when the Executor gave none.
+        ...(executionKind === 'MODEL'
+          ? { requestState: requestState ?? 'UNKNOWN', ...(usage === undefined ? {} : { usage }) }
+          : {}),
       };
-      await facts.report(fact);
+      // The shape depends on the Executor's verdict; Fabric validates it against the Schema.
+      await facts.report(fact as unknown as ExecutionFact);
     };
 
     return {
@@ -236,6 +249,12 @@ export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModu
       whenStopped: () => stopped,
     };
   };
+}
+
+/** The output and artifact of a finished Unit, whether an Executor or the Kernel produced it. */
+interface UnitResult {
+  readonly output: UnitOutput;
+  readonly artifact: { readonly mediaType: string; readonly text: string };
 }
 
 interface FakeAgentRun {
@@ -305,10 +324,12 @@ export function createFakeKernelCore(
       toInteraction.enqueue({ ...header(target, 'interaction'), event });
 
     const ack = (requestId: string): SyscallAck => ({ requestId, outcome: 'ACCEPTED' });
-    const reject = (
-      requestId: string,
-      reasonCode: Exclude<SyscallRejected['reasonCode'], 'RUN_BLOCKED'>,
-    ): SyscallRejected => ({ requestId, outcome: 'REJECTED', reasonCode, issuer: 'CORE' });
+    const reject = (requestId: string, reasonCode: CoreRejectedCode): SyscallRejected => ({
+      requestId,
+      outcome: 'REJECTED',
+      reasonCode,
+      issuer: 'CORE',
+    });
     const blocked = (requestId: string, closeReason: CloseReason): SyscallRejected => ({
       requestId,
       outcome: 'REJECTED',
@@ -405,7 +426,7 @@ export function createFakeKernelCore(
               ...(input['handoff'] === undefined ? {} : { handoff: input['handoff'] }),
               ...(orientText === undefined
                 ? {}
-                : { orientPack: JSON.parse(orientText) as ContextPack }),
+                : { orientPack: JSON.parse(orientText) as OrientContextPack }),
               history,
               status: input['status'],
             },
@@ -419,7 +440,7 @@ export function createFakeKernelCore(
           agentRun.modelCalls += 1;
           return {
             input: {
-              contextPack: JSON.parse(packText) as ContextPack,
+              contextPack: JSON.parse(packText) as AssembleContextPack,
               final: input['final'] === true,
             },
             scope: {
@@ -428,10 +449,9 @@ export function createFakeKernelCore(
               apiModelId: model.apiModelId,
               apiProtocol: model.apiProtocol,
               baseUrl: model.baseUrl,
-              thinking: agent.modelSettings.thinking,
-              ...(agent.modelSettings.thinkingEffort === undefined
-                ? {}
-                : { thinkingEffort: agent.modelSettings.thinkingEffort }),
+              ...(agent.modelSettings.thinking === 'ENABLED'
+                ? { thinking: 'ENABLED', thinkingEffort: agent.modelSettings.thinkingEffort ?? '' }
+                : { thinking: 'DISABLED' }),
             },
           };
         }
@@ -444,7 +464,7 @@ export function createFakeKernelCore(
       agentRun: FakeAgentRun,
       request: SubmitUnitRequest,
       unit: UnitDefinition,
-    ): Promise<ExecutionResult | { status: 'REJECTED' | 'FAILED'; reasonCode: ReasonCode }> => {
+    ): Promise<UnitResult | { status: 'REJECTED' | 'FAILED'; reasonCode: ReasonCode }> => {
       if (unit.executionKind === 'REPORT_PUBLISH') {
         const { report } = request.input as {
           report: { conclusions: unknown[]; unconfirmed: unknown[]; degraded: boolean };
@@ -519,9 +539,16 @@ export function createFakeKernelCore(
         executionKind: unit.executionKind,
         budgetState: scripted?.budgetState ?? ('NORMAL' as const),
       };
+      // The report shapes depend on run-time values; Fabric validates each against the Schema.
       const failed = (status: 'REJECTED' | 'FAILED', reasonCode: ReasonCode) => {
         target.units[status === 'REJECTED' ? 'rejected' : 'failed'] += 1;
-        emitWorkflow(target, { ...common, status, reasonCode });
+        emitWorkflow(target, {
+          ...common,
+          // A declined Unit never became an attempt, so it has no unitAttemptId.
+          ...(reasonCode === 'USER_DECLINED' ? {} : { unitAttemptId: newId('una') }),
+          status,
+          reasonCode,
+        } as KernelToWorkflowEvent);
       };
       if (unit.protectedCapabilities.length > 0 && target.authorization === 'DECLINED')
         return failed('REJECTED', 'USER_DECLINED');
@@ -534,8 +561,7 @@ export function createFakeKernelCore(
         const result = await execute(target, agentRun, request, unit);
         if (target.closeReason !== undefined) return;
         if ('status' in result) return failed(result.status, result.reasonCode);
-        const artifact = result.artifact ?? { mediaType: MEDIA_TYPES.fileText, text: '' };
-        const outputRef = await store(target, artifact.mediaType, artifact.text);
+        const outputRef = await store(target, result.artifact.mediaType, result.artifact.text);
         target.units.ok += 1;
         emitWorkflow(target, {
           ...common,
@@ -543,7 +569,7 @@ export function createFakeKernelCore(
           status: 'OK',
           output: result.output,
           outputRef,
-        });
+        } as KernelToWorkflowEvent);
       });
     };
 
@@ -566,7 +592,8 @@ export function createFakeKernelCore(
       later(async () => {
         const closedAt = now();
         const { submitted, ok, rejected, failed } = target.units;
-        const summary: RunSummary = {
+        // Which of failure and reportRef exists follows closeReason; the Schema checks it.
+        const summary = {
           workflowRunId: target.workflowRunId,
           closeReason,
           ...outcome,
@@ -603,7 +630,7 @@ export function createFakeKernelCore(
             finalBudgetState: 'NORMAL',
           },
           unknownEffects: [],
-        };
+        } as RunSummary;
         const runSummaryRef = await store(target, MEDIA_TYPES.runSummary, canonicalJson(summary));
         const end = { closeReason, ...outcome, unknownEffects: [], runSummaryRef };
         emitWorkflow(target, { type: 'RunClosed', ...end } as RunClosed);

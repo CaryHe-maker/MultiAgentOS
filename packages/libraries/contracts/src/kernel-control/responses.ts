@@ -1,7 +1,11 @@
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
-import { SYSCALL_REJECTED_CODES } from '../platform-common/reason-code.js';
+import {
+  CORE_REJECTED_CODES,
+  GATEWAY_REJECTED_CODES,
+  reasonCodeOf,
+} from '../platform-common/reason-code.js';
 import { closed } from '../platform-common/schema-helpers.js';
 import { CloseReasonSchema } from './run-outcome.js';
 
@@ -11,25 +15,28 @@ export const SyscallAckSchema = closed(
 );
 export type SyscallAck = Static<typeof SyscallAckSchema>;
 
-type SyscallRejectedCode = (typeof SYSCALL_REJECTED_CODES)[number];
-const rejected = {
-  requestId: IdSchemas.requestId,
-  outcome: Type.Literal('REJECTED'),
-  issuer: Type.Enum(['GATEWAY', 'CORE']),
-};
-/** `closeReason` is present exactly when the reason is RUN_BLOCKED. */
+const rejected = { requestId: IdSchemas.requestId, outcome: Type.Literal('REJECTED') };
+/**
+ * Each issuer may only use its own reason codes (M1Interface 3.4). RUN_BLOCKED may come from
+ * either and is the only reason that carries `closeReason`, which it always does.
+ */
 export const SyscallRejectedSchema = Type.Union(
   [
     closed({
       ...rejected,
-      reasonCode: Type.Literal('RUN_BLOCKED'),
-      closeReason: CloseReasonSchema,
+      issuer: Type.Literal('GATEWAY'),
+      reasonCode: reasonCodeOf(GATEWAY_REJECTED_CODES),
     }),
     closed({
       ...rejected,
-      reasonCode: Type.Unsafe<Exclude<SyscallRejectedCode, 'RUN_BLOCKED'>>(
-        Type.Enum(SYSCALL_REJECTED_CODES.filter((code) => code !== 'RUN_BLOCKED')),
-      ),
+      issuer: Type.Literal('CORE'),
+      reasonCode: reasonCodeOf(CORE_REJECTED_CODES),
+    }),
+    closed({
+      ...rejected,
+      issuer: Type.Enum(['GATEWAY', 'CORE']),
+      reasonCode: Type.Literal('RUN_BLOCKED'),
+      closeReason: CloseReasonSchema,
     }),
   ],
   { $id: 'kernel.control.SyscallRejected.v0' },

@@ -85,6 +85,20 @@ export const PinnedDefinitionRefSchema = Type.Object(
 );
 export type PinnedDefinitionRef = Static<typeof PinnedDefinitionRefSchema>;
 
+/** A PinnedDefinitionRef that must name a definition of one given kind; the static type stays the same. */
+export const pinnedRefOf = (kind: DefinitionKind) =>
+  Type.Unsafe<PinnedDefinitionRef>(
+    Type.Object(
+      {
+        kind: Type.Literal(kind),
+        id: DefinitionIdSchema,
+        version: DefinitionVersionTagSchema,
+        digest: Sha256HexSchema,
+      },
+      { additionalProperties: false },
+    ),
+  );
+
 /** Points at a registered protocol schema, e.g. `{ id: 'context.ContextPack', version: 'v0' }`. */
 export const ContractRefSchema = Type.Object(
   {

@@ -37,7 +37,7 @@ describe('token estimate', () => {
       { role: 'tool', content: 'b', toolCallId: 'call_1' },
     ] as const;
     const total = estimateItemTokens(items[0]) + estimateItemTokens(items[1]);
-    expect(estimatePackTokens({ items: items as never })).toBe(total);
-    expect(estimatePackTokens({ items: items as never })).toBe(total);
+    expect(estimatePackTokens({ items: items })).toBe(total);
+    expect(estimatePackTokens({ items: items })).toBe(total);
   });
 });

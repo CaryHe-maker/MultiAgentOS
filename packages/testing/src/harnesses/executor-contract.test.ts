@@ -1,5 +1,5 @@
 import type {
-  ContextPack,
+  AssembleContextPack,
   ExecutorEnvironment,
   ExecutorInputByKind,
   ExecutorKind,
@@ -39,7 +39,7 @@ const INPUTS: ExecutorInputByKind = {
   FILE_READ: { path: 'README.md' },
   CONTEXT_ASSEMBLE: assembleInput,
   MODEL: {
-    contextPack: JSON.parse(cannedAssemble(assembleInput).artifact?.text ?? '{}') as ContextPack,
+    contextPack: JSON.parse(cannedAssemble(assembleInput).artifact.text) as AssembleContextPack,
     final: false,
   },
 };

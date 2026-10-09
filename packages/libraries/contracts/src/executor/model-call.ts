@@ -1,33 +1,55 @@
 import { Type, type Static } from 'typebox';
-import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
+import { artifactRefOf } from '../platform-common/common-schemas.js';
 import { ToolCallIdSchema } from '../platform-common/ids.js';
+import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { ModelToolCallSchema } from './model-tool-call.js';
 
-export const TokenUsageSchema = closed(
-  {
-    inputTokens: count(),
-    outputTokens: count(),
-    inputCacheHitTokens: Type.Optional(count()),
-  },
-  'executor.TokenUsage.v0',
+/** Cache hits are part of the input tokens, so they can never exceed them. */
+export const TokenUsageSchema = Type.Refine(
+  closed(
+    {
+      inputTokens: count(),
+      outputTokens: count(),
+      inputCacheHitTokens: Type.Optional(count()),
+    },
+    'executor.TokenUsage.v0',
+  ),
+  (usage) =>
+    usage.inputCacheHitTokens === undefined || usage.inputCacheHitTokens <= usage.inputTokens,
+  () => 'inputCacheHitTokens must not exceed inputTokens',
 );
 export type TokenUsage = Static<typeof TokenUsageSchema>;
 
-/** `final` must equal the `final` of the ContextAssembleInput that produced the pack. */
+/**
+ * `contextPackRef` is the artifact of a context-assemble Unit. `final` must equal the `final`
+ * of the ContextAssembleInput that produced it; Execution checks that before dispatch.
+ */
 export const ModelCallInputSchema = closed(
-  { contextPackRef: ArtifactRefSchema, final: Type.Boolean() },
+  { contextPackRef: artifactRefOf(MEDIA_TYPES.contextPack), final: Type.Boolean() },
   'executor.ModelCallInput.v0',
 );
 export type ModelCallInput = Static<typeof ModelCallInputSchema>;
 
-export const ModelCallOutputSchema = closed(
-  {
-    finishReason: Type.Enum(['TOOL_CALLS', 'STOP', 'LENGTH', 'CONTENT_FILTER', 'OTHER']),
-    toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 32 }),
-    hasText: Type.Boolean(),
-  },
-  'executor.ModelCallOutput.v0',
+const callOutput = {
+  toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 32 }),
+  hasText: Type.Boolean(),
+};
+/** `finishReason` is TOOL_CALLS exactly when the model called at least one tool. */
+export const ModelCallOutputSchema = Type.Union(
+  [
+    closed({
+      ...callOutput,
+      finishReason: Type.Literal('TOOL_CALLS'),
+      toolCalls: Type.Array(ModelToolCallSchema, { minItems: 1, maxItems: 32 }),
+    }),
+    closed({
+      ...callOutput,
+      finishReason: Type.Enum(['STOP', 'LENGTH', 'CONTENT_FILTER', 'OTHER']),
+      toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 0 }),
+    }),
+  ],
+  { $id: 'executor.ModelCallOutput.v0' },
 );
 export type ModelCallOutput = Static<typeof ModelCallOutputSchema>;
 

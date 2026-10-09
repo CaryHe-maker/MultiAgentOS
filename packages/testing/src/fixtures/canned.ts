@@ -5,6 +5,7 @@ import {
   newId,
   sha256Hex,
   type AnalysisReport,
+  type AssembleContextPack,
   type AssembleExecutorInput,
   type ContextItem,
   type ContextPack,
@@ -12,6 +13,8 @@ import {
   type FileReadInput,
   type ModelRawOutput,
   type ModelToolCall,
+  type OrientContextPack,
+  type SearchContextPack,
 } from '@multiagentos/contracts';
 
 /**
@@ -24,35 +27,35 @@ export const FAKE_FILE = Object.freeze({ path: 'README.md', text: 'line 1\nline 
 export const FAKE_SNAPSHOT_ID = `snp_${sha256Hex('fake-repository')}`;
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 
-type ItemSpec = Pick<ContextItem, 'segment' | 'role' | 'content'> &
-  Partial<Pick<ContextItem, 'provenance' | 'score' | 'toolSpecs' | 'toolCalls' | 'toolCallId'>>;
+/** A ContextItem before the fields that are derived from its content. */
+type Draft<Item> = Item extends unknown
+  ? Omit<Item, 'itemId' | 'contentSha256' | 'tokenCount' | 'reason'>
+  : never;
 
-function pack(
-  operation: ContextPack['operation'],
-  tokenBudget: number,
-  specs: readonly ItemSpec[],
-): ContextPack {
-  const contextPackId = newId('ctx');
-  const items = specs.map((spec, index) => ({
-    itemId: `${contextPackId}:${index}`,
-    contentSha256: sha256Hex(spec.content),
-    tokenCount: estimateItemTokens(spec),
-    reason: 'canned',
-    ...spec,
-  }));
-  return {
-    contextPackId,
-    operation,
-    ...(operation === 'ASSEMBLE' ? {} : { snapshotId: FAKE_SNAPSHOT_ID }),
-    tokenCount: items.reduce((total, item) => total + item.tokenCount, 0),
-    tokenBudget,
-    truncated: false,
-    droppedCount: 0,
-    ...(operation === 'ASSEMBLE' ? { prefixSha256: sha256Hex('canned-prefix') } : {}),
-    items,
-    createdAt: CREATED_AT,
-  };
+function finishItems<Item extends ContextItem>(
+  contextPackId: string,
+  drafts: readonly Draft<Item>[],
+): Item[] {
+  return drafts.map(
+    (draft, index) =>
+      ({
+        ...draft,
+        itemId: `${contextPackId}:${index}`,
+        contentSha256: sha256Hex(draft.content),
+        tokenCount: estimateItemTokens(draft),
+        reason: 'canned',
+      }) as Item,
+  );
 }
+
+const packFields = (contextPackId: string, items: readonly ContextItem[], tokenBudget: number) => ({
+  contextPackId,
+  tokenCount: items.reduce((total, item) => total + item.tokenCount, 0),
+  tokenBudget,
+  truncated: false,
+  droppedCount: 0,
+  createdAt: CREATED_AT,
+});
 
 const packArtifact = (value: ContextPack) => ({
   mediaType: MEDIA_TYPES.contextPack,
@@ -68,9 +71,16 @@ const provenance = (retrieval: 'TREE' | 'TEXT') => ({
 });
 
 export function cannedOrient(tokenBudget = 4_000): ExecutionResult {
-  const value = pack('ORIENT', tokenBudget, [
+  const contextPackId = newId('ctx');
+  const items = finishItems<OrientContextPack['items'][number]>(contextPackId, [
     { segment: 'ORIENT', role: 'user', content: FAKE_FILE.path, provenance: provenance('TREE') },
   ]);
+  const value: OrientContextPack = {
+    ...packFields(contextPackId, items, tokenBudget),
+    operation: 'ORIENT',
+    snapshotId: FAKE_SNAPSHOT_ID,
+    items,
+  };
   return {
     output: {
       snapshotId: FAKE_SNAPSHOT_ID,
@@ -85,7 +95,8 @@ export function cannedOrient(tokenBudget = 4_000): ExecutionResult {
 }
 
 export function cannedSearch(tokenBudget = 4_000): ExecutionResult {
-  const value = pack('SEARCH', tokenBudget, [
+  const contextPackId = newId('ctx');
+  const items = finishItems<SearchContextPack['items'][number]>(contextPackId, [
     {
       segment: 'SEARCH_HIT',
       role: 'user',
@@ -94,6 +105,12 @@ export function cannedSearch(tokenBudget = 4_000): ExecutionResult {
       score: 1,
     },
   ]);
+  const value: SearchContextPack = {
+    ...packFields(contextPackId, items, tokenBudget),
+    operation: 'SEARCH',
+    snapshotId: FAKE_SNAPSHOT_ID,
+    items,
+  };
   return {
     output: {
       snapshotId: FAKE_SNAPSHOT_ID,
@@ -124,9 +141,15 @@ export function cannedFileRead(input: Pick<FileReadInput, 'path'>): ExecutionRes
  * so `truncated` is always false, and it does not check that tool calls and results pair up.
  */
 export function cannedAssemble(input: AssembleExecutorInput): ExecutionResult {
-  const history = input.history.map(({ step, outputText }): ItemSpec => {
+  type Item = AssembleContextPack['items'][number];
+  const history = input.history.map(({ step, outputText }): Draft<Item> => {
     if (step.kind === 'MODEL_TURN')
-      return { segment: 'HISTORY', role: 'assistant', content: '', toolCalls: step.toolCalls };
+      return {
+        segment: 'HISTORY',
+        role: 'assistant',
+        content: '',
+        ...(step.toolCalls.length === 0 ? {} : { toolCalls: step.toolCalls }),
+      };
     if (step.kind === 'TOOL_RESULT')
       return {
         segment: 'HISTORY',
@@ -134,33 +157,43 @@ export function cannedAssemble(input: AssembleExecutorInput): ExecutionResult {
         content: step.status === 'OK' ? (outputText ?? '') : step.reasonCode,
         toolCallId: step.toolCallId,
       };
-    return step.toolCallId === undefined
-      ? { segment: 'HISTORY', role: 'user', content: step.message }
-      : { segment: 'HISTORY', role: 'tool', content: step.message, toolCallId: step.toolCallId };
+    return 'toolCallId' in step && step.toolCallId !== undefined
+      ? { segment: 'HISTORY', role: 'tool', content: step.message, toolCallId: step.toolCallId }
+      : { segment: 'HISTORY', role: 'user', content: step.message };
   });
-  const value = pack('ASSEMBLE', input.tokenBudget, [
+  const contextPackId = newId('ctx');
+  const items = finishItems<Item>(contextPackId, [
     { segment: 'INSTRUCTIONS', role: 'system', content: input.instructions },
     { segment: 'TOOLS', role: 'system', content: '', toolSpecs: input.toolSpecs },
     { segment: 'OBJECTIVE', role: 'user', content: input.objective },
     ...(input.handoff === undefined
       ? []
       : [{ segment: 'HANDOFF' as const, role: 'user' as const, content: input.handoff.task }]),
-    ...(input.orientPack?.items ?? []).map((item): ItemSpec => ({
+    ...(input.orientPack?.items ?? []).map((item): Draft<Item> => ({
       segment: 'ORIENT',
       role: 'user',
       content: item.content,
+      provenance: item.provenance,
     })),
     ...history,
     { segment: 'STATUS', role: 'user', content: canonicalJson(input.status) },
   ]);
+  const prefixSha256 = sha256Hex('canned-prefix');
+  const value: AssembleContextPack = {
+    ...packFields(contextPackId, items, input.tokenBudget),
+    operation: 'ASSEMBLE',
+    ...(input.orientPack === undefined ? {} : { snapshotId: input.orientPack.snapshotId }),
+    prefixSha256,
+    items,
+  };
   return {
     output: {
-      contextPackId: value.contextPackId,
+      contextPackId,
       tokenCount: value.tokenCount,
       tokenBudget: input.tokenBudget,
       truncated: false,
       droppedCount: 0,
-      prefixSha256: value.prefixSha256 ?? '',
+      prefixSha256,
       elidedRequestIds: [],
     },
     artifact: packArtifact(value),
@@ -208,7 +241,7 @@ export const defaultModelScript: ModelScript = ({
   final,
   callIndex,
 }) => {
-  const call = (toolName: string, argumentsValue: unknown): ModelToolCall[] => [
+  const call = (toolName: string, argumentsValue: Record<string, unknown>): ModelToolCall[] => [
     { toolCallId: `call_${callIndex}`, toolName, arguments: argumentsValue },
   ];
   if (!final && toolNames.includes('handoff_to_code_viewer'))
@@ -233,10 +266,12 @@ export const defaultModelScript: ModelScript = ({
 
 /** What a ModelScript needs to know about an assembled pack. */
 export function describePack(
-  contextPack: ContextPack,
+  contextPack: AssembleContextPack,
 ): Pick<ModelScriptStep, 'toolNames' | 'hasToolResults'> {
   return {
-    toolNames: contextPack.items.flatMap((item) => (item.toolSpecs ?? []).map((spec) => spec.name)),
+    toolNames: contextPack.items.flatMap((item) =>
+      'toolSpecs' in item ? item.toolSpecs.map((spec) => spec.name) : [],
+    ),
     hasToolResults: contextPack.items.some(
       (item) => item.segment === 'HISTORY' && item.role === 'tool',
     ),
