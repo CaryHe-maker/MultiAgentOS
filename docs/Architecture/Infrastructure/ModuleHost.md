@@ -14,7 +14,7 @@ AgentToolPool、ExecutorSet 与 SharedContracts 是静态库，
 构造依赖、启动依赖与运行时通信关系需要分别理解，不能由互相通信推导出循环启动。
 
 系统具备建立监管和基础通信所需的最小引导过程：由部署层（如 systemd）或组合根先启动 Supervisor，
-再由 Supervisor 协调 ModuleHost 启动 Kernel 核心与其他模块。Supervisor 的建立不能依赖一个已经完整运行的 Supervisor。
+再由 Supervisor 协调 ModuleHost 启动通信设施、Kernel 核心与其他模块。Supervisor 的建立不能依赖一个已经完整运行的 Supervisor。
 
 Executor 子进程由 Supervisor 启动与回收，不由 ModuleHost 装配。
 多实例部署时，Kernel 核心实例由部署层或 Supervisor 启动，各实例经分片租约领取负责的运行。
@@ -26,8 +26,8 @@ Executor 子进程由 Supervisor 启动与回收，不由 ModuleHost 装配。
 
 ModuleHost 统一管理 Persistence 的开启、就绪与关闭；
 各领域 Owner 仍独占自己的数据语义和写入权威。
-ArtifactStore 由 Execution 管辖，Fabric 由 Core 管辖，
-其生命周期由 ModuleHost 与相应管理组件协调。
+ArtifactStore 由 Execution 管辖，Fabric 由 Core 管辖。
+管辖指设施的使用方式与语义，启动与关闭由 ModuleHost 在 Supervisor 协调下统一执行。
 
 配置与凭据按职责提供，不能因统一装配而对所有组件公开。
 依赖缺失、契约不兼容或必要状态无法恢复时，不应宣告系统已经就绪。

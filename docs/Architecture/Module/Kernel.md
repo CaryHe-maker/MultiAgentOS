@@ -223,8 +223,8 @@ Supervisor 是独立的通讯主体，直接管理进程：负责系统生命周
 产物发布等 Kernel 内建 Unit 由 Execution 直接完成，不派发给 Supervisor，也不经 Executor。
 
 ModuleHost 归 Supervisor 管辖，负责装配、就绪与正常关闭。
-ArtifactStore 归 Execution，Fabric 归 Core，Persistence 生命周期由 ModuleHost 统一管理。
-管辖设施不等于拥有其保存的全部领域数据。
+ArtifactStore 归 Execution，Fabric 归 Core；管辖指设施的使用方式与语义，
+各设施的启动与关闭由 ModuleHost 统一执行。管辖设施不等于拥有其保存的全部领域数据。
 
 不可信 Executor 在受限的子进程中运行，不能修改可信执行管理状态或取得内核权限。
 

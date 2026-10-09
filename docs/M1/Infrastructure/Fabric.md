@@ -3,6 +3,7 @@
 ## 1. 定位
 
 Fabric 提供通讯主体之间的通信、路由与交接，Core 承担管理职责，但不因此中转全部消息。
+Core 的管辖指通信的使用方式与语义；Fabric 的启动与停止由 Supervisor 驱动 ModuleHost 执行。
 长期规划见 [Fabric 架构](../../Architecture/Infrastructure/Fabric.md)，Port 与路由表见 [M1Interface](../M1Interface.md) 第 2、10 节。
 
 ## 2. 通讯主体与调用形式
@@ -44,4 +45,4 @@ M1 实现内存版 Outbox 与 Inbox，不持久化，进程退出时一起丢失
 
 ## 5. 边界
 
-M1 不实现跨进程 IPC、多进程部署或持久化的可靠投递。Fabric 在系统关闭时最后关闭（[ModuleHost](ModuleHost.md) 第 2 节）。
+M1 不实现跨进程 IPC、多进程部署或持久化的可靠投递。Fabric 在各模块中最先启动、最后停止（[ModuleHost](ModuleHost.md) 第 2 节）。

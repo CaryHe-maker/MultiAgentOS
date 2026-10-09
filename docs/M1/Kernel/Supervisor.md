@@ -15,7 +15,7 @@ M1 为单进程部署：Supervisor 与 Kernel 核心同进程，Executor 在进�
 
 | 类别 | Supervisor 维护的数据 | M1 职责 |
 |---|---|---|
-| 系统生命周期 | 模块生命周期、启动与关闭顺序 | 协调 ModuleHost 完成装配、依赖就绪与按序卸载（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）；启动时清理上次遗留的临时数据 |
+| 系统生命周期 | 模块生命周期、启动与关闭顺序 | 第一个启动、最后一个退出；驱动 ModuleHost 按依赖启动与按序停止其余模块（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）；启动时清理上次遗留的临时数据 |
 | 执行实例 | `executionId →` `workflowRunId`、`unitAttemptId`、`runEpoch`、`notBefore`、截止时间、状态、中止控制器；已取消运行的取消 runEpoch | 按 `executionKind` 从组合根注入的 Executor 注册表（`createExecutorRegistry()` 的结果）取得 Executor，注入 `ExecutorEnvironment`；到截止时间或取消时中止；宽限期内未结束时报告 `STOP_UNCONFIRMED`；每个执行实例只上报一个终态 |
 | 子进程与残余 | `rg` 子进程、临时文件 | 终止并回收子进程，清理每次执行的临时文件 |
 | 凭据 | 无（只转交） | 经 `ProviderCredentials` 把配置边界读到的 API Key（如 `DEEPSEEK_API_KEY`）只交给 model-call Executor |
@@ -24,6 +24,14 @@ M1 为单进程部署：Supervisor 与 Kernel 核心同进程，Executor 在进�
 额度（Monitor）、调用机会（Scheduler）。是否接受执行结果由 Core 决定。
 
 M1 不实现心跳、子进程健康判断、进程池与工作区准备，这些在 Supervisor 独立成进程后引入。
+
+Supervisor 的启动分为两段：
+
+1. 引导：组合根调用 `start()` 后，Supervisor 清理临时数据，驱动 ModuleHost 依次启动
+   fabric、artifact-store、persistence、kernel-core、gateway、workflow、user-interaction。这一段不依赖通信。
+2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器，开始接受 `execute`、`cancelRun` 与 `shutdown`。
+
+模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
 
 ## 3. 与 Kernel 核心的接口
 
@@ -64,8 +72,8 @@ Supervisor 是可信的 Kernel 组件。M1 只运行可信的内置 Executor，E
 
 ## 6. 关闭与失控任务
 
-- 收到 `shutdown` 后，Supervisor 按 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节的顺序关闭模块，最后终止残留子进程、
-  清理临时文件，再关闭 Fabric。此时全部运行 actor 已收敛完毕（[Interaction](Interaction.md) 第 7 节）。
+- 收到 `shutdown` 后，Supervisor 按 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节的顺序停止模块，Fabric 最后停止；
+  随后终止残留子进程、清理临时文件并退出。此时全部运行 actor 已收敛完毕（[Interaction](Interaction.md) 第 7 节）。
 - 进程内执行依赖 Executor 响应中止信号，Supervisor 不能强制终止同一进程中的失控代码，也不能在所在进程卡死或崩溃后继续监管；
   无法确认停止的执行以 `STOP_UNCONFIRMED` 报告，相关效果标记为未知。需要强制终止的行为（如 `rg`）以子进程运行。
 
