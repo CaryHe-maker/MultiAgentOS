@@ -13,7 +13,10 @@ SharedContracts 是静态库 `@multiagentos/contracts`（`packages/libraries/con
 
 - Schema 使用 TypeBox 定义，`$id` 为 `<family>.<Name>.v<major>`，M1 的 major 全部为 0（见 M1Interface 1.2）。
 - 运行时校验使用 TypeBox 自带的编译器（`typebox/compile`），每个 Schema 只编译一次；不引入第二个校验库。
-- 条件必填的字段以联合变体表达（M1Interface 1.3）。
+- 条件必填的字段以联合变体表达（M1Interface 1.3）；跨字段的相等或大小关系以 `Type.Refine` 表达。
+  M1Interface 1.4 列出的每条约束都必须由 Schema 强制，并在 `kernel-protocol.test.ts` 中有反例。
+- 约束收紧而 TypeScript 类型不变的字段，使用 `artifactRefOf(mediaType)`、`pinnedRefOf(kind)` 与
+  `reasonCodeOf(codes)` 构造：Schema 只接受指定的媒体类型、定义种类或原因码集合。
 - TypeScript 类型一律由 Schema 派生（`Static<typeof XSchema>`），发布值使用 `DeepReadonly`。
 - 跨两个以上 family 使用、或作为消息 payload 的类型注册为顶层 Schema；只在一个 Schema 内部使用的结构作为嵌套类型，
   与父 Schema 放在同一文件，不单独注册。
@@ -227,6 +230,8 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `parseSchemaId` | `protocol-registry.ts` | 把 Schema ID 拆为 `Envelope.schemaName` 与 `schemaVersion` |
 | `unsupported` | `platform-common/validation.ts` | 构造 `UNSUPPORTED_CAPABILITY` 的 `ModuleError` |
 | `REASON_CODES`、`REASON_CODE_CATEGORY` | `platform-common/reason-code.ts` | 原因码枚举与其 `ErrorCategory`（M1Interface 3.4） |
+| `GATEWAY_REJECTED_CODES`、`CORE_REJECTED_CODES`、`UNIT_REJECTED_CODES`、`UNIT_FAILED_CODES`、`EXECUTOR_REJECTED_CODES`、`EXECUTOR_FAILED_CODES`、`VIOLATION_CODES`、`TERMINATION_CODES` | `platform-common/reason-code.ts` | 各位置允许的原因码集合及对应类型（M1Interface 1.4） |
+| `EXECUTOR_KINDS`、`REPOSITORY_KINDS` | `platform-common/execution-kind.ts` | 会派发给 Supervisor 的五种执行，以及其中读取仓库的三种 |
 | `ProtocolRegistry`、`createM1ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema，并生成工具参数的 JSON Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
 | `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
@@ -262,7 +267,7 @@ platform-common/* → kernel-unit/budget-state.ts
 |---|---|
 | `packages/libraries/contracts/src/**/*.test.ts` | 每个顶层 Schema 的合法值、缺失必填字段、额外字段、取值越界；条件必填规则（如 `RUN_BLOCKED` 必须带 `closeReason`） |
 | `packages/libraries/contracts/src/protocol-registry.test.ts` | 已注册的 Schema ID 与第 3 节逐一相同；重复注册与未知 major 被拒绝；`ContractRef` 可解析 |
-| `packages/libraries/contracts/src/kernel-protocol.test.ts` | Kernel 协议中各条件必填规则的正反例 |
+| `packages/libraries/contracts/src/kernel-protocol.test.ts` | M1Interface 1.4 每条约束的正例与反例 |
 | `packages/libraries/contracts/src/platform-common/reason-code.test.ts` | 原因码枚举与 M1Interface 3.4 一致，每个原因码有唯一 `ErrorCategory` |
 | `packages/libraries/contracts/src/context/token-estimate.test.ts` | 估算覆盖 `toolSpecs` 与 `toolCalls`；估算值不低于固定样本的实际 token 数；相同输入结果稳定 |
 | `packages/testing/src/harnesses/*-contract.test.ts` | 每个 Port 的共享 contract test 同时运行 fake 与真实实现 |

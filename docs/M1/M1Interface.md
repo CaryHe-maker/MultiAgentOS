@@ -36,6 +36,93 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 - 注释写明“某条件下必填”的字段（如 `SyscallRejected.closeReason`、`UnitReport.output`、`RunEnd.reportRef`、
   `ExecutionFact.result`），在 Schema 中以联合变体表达：每个变体只含该条件下允许的字段，条件不成立时带上该字段同样不合法。
   派生的 TypeScript 类型随判别字段收窄，构造这类值时必须按变体一次写全。
+- 本文的类型定义为便于阅读，仍写成“一个接口加可选字段”的形式；第 1.4 节列出 Schema 实际强制的全部条件，
+  二者不一致时以第 1.4 节为准。
+
+### 1.4 Schema 强制的约束
+
+以下约束全部由 `packages/libraries/contracts` 的 Schema 在运行时强制，Fabric 在每次投递时校验；不满足任何一条的值都不合法。
+没有列在这里、又无法由字段类型表达的要求（例如仓库路径是否存在、Unit 输入是否符合该 Unit 的 `inputContract`），
+由文中指明的组件检查，Schema 不负责。
+
+**标识与引用**
+
+| 对象 | 约束 |
+|---|---|
+| `artifactId`、`snapshotId` | body 必须是 64 位小写十六进制 |
+| `ArtifactRef` | `artifactId` 必须等于 `'art_' + sha256` |
+| 指向产物的字段 | `mediaType` 必须是该字段对应的类型：`ModelCallInput.contextPackRef`、`ContextAssembleInput.orientPackRef` 为 ContextPack；`reportRef` 为 AnalysisReport；`runSummaryRef` 为 RunSummary；`UnitReport.outputRef` 与 `ToolResultStep.outputRef` 为第 6.1 节中该 Unit 的类型。`ReadArtifactRequest.ref` 与 `ArtifactContent.ref` 不限类型 |
+| `PinnedDefinitionRef` | `agentRef`、`handoffTargetRef` 的 `kind` 必须为 `AGENT`；`unitRef` 必须为 `UNIT` |
+| 行范围 | `SearchHit`、`SourceRef`、`VerifiedSource`、`Provenance` 的 `startLine ≤ endLine`；`FileReadInput` 同时给出两者时亦然 |
+
+**原因码**：每个携带原因码的位置只接受自己的集合。
+
+| 位置 | 允许的原因码 |
+|---|---|
+| `SyscallRejected`，`issuer = 'GATEWAY'` | `INVALID_REQUEST`、`CALLER_FORBIDDEN`、`RUN_NOT_FOUND`、`RUN_BLOCKED` |
+| `SyscallRejected`，`issuer = 'CORE'` | 第 3.4 节中出现位置含 SyscallRejected 的其余原因码，以及 `RUN_NOT_FOUND`、`RUN_BLOCKED` |
+| `SyscallRejected.closeReason` | 当且仅当原因码为 `RUN_BLOCKED` 时存在 |
+| `UnitReport`、`ToolResultStep`，`status = 'REJECTED'` | `INVALID_INPUT`、`INVALID_ARTIFACT_REF`、`USER_DECLINED`、`BUDGET_WRAP_UP`、`BUDGET_EXHAUSTED`、`FINAL_CALL_USED`、`OUT_OF_SCOPE`、`NOT_FOUND`、`UNSUPPORTED_FILE`、`INVALID_RANGE`、`INVALID_QUERY`、`LIMIT_EXCEEDED` |
+| `UnitReport`、`ToolResultStep`，`status = 'FAILED'` | `PROVIDER_UNREACHABLE`、`PROVIDER_RATE_LIMITED`、`PROVIDER_AUTH`、`PROVIDER_ERROR`、`INTERNAL`、`UNIT_TIMEOUT` |
+| `ExecutionFact` 与 `ExecutorOutcome` | 按 `outcome` 取第 7.3 节表中的集合 |
+| `failurePolicy` 的键 | 上面 UnitReport 两行的并集 |
+| `RunFailure` | `category` 必须等于 `REASON_CODE_CATEGORY[code]` |
+
+**Gateway 请求与运行结束**
+
+| 对象 | 约束 |
+|---|---|
+| `CloseRunRequest` | `COMPLETED` 只带 `reportRef`；`FAILED` 只带 `failure`，且 `failure.source = 'WORKFLOW'` |
+| `RunEnd`（RunClosed、RunFinished）与 `RunSummary` | `COMPLETED`：有 `reportRef`，无 `failure`；`FAILED`：有 `failure`，无 `reportRef`；`VIOLATION`：`failure.code` 为三个安全违规原因码之一、`category = 'INTEGRITY'`、`source = 'KERNEL'`，无 `reportRef`；`RUN_TIMEOUT`、`CANCELLED`：二者皆无 |
+| `RunSummary.units` | `submitted = ok + rejected + failed + notDelivered` |
+| `UnknownEffect` | `MODEL_REQUEST_UNCONFIRMED` 的 `executionKind` 必须为 `MODEL`；`EXECUTION_STOP_UNCONFIRMED` 的 `executionKind` 必须是会派发给 Supervisor 的五种之一 |
+| `AdmissionProjection` | `closeReason` 当且仅当 `runState` 不为 `RUNNING` 时存在 |
+
+**UnitReport**
+
+| 情况 | 约束 |
+|---|---|
+| `status = 'OK'` | `executionKind` 为第 6.1 节的六种之一；`output` 必须是该种 Unit 的输出类型，`outputRef` 必须是该种 Unit 的产物类型；`unitAttemptId` 必填；不得带 `reasonCode` |
+| `reasonCode = 'USER_DECLINED'` | `status` 必须为 `REJECTED`；`executionKind` 必须是读取仓库的三种之一；不得带 `unitAttemptId` |
+| 其余 `REJECTED`、`FAILED` | `unitAttemptId` 与 `reasonCode` 必填；不得带 `output`、`outputRef` |
+
+**上下文**
+
+| 对象 | 约束 |
+|---|---|
+| `ContextItem` | `segment` 决定 `role` 与附加字段：INSTRUCTIONS、TOOLS 为 `system`；OBJECTIVE、HANDOFF、ORIENT、SEARCH_HIT、STATUS 为 `user`；HISTORY 为 `assistant`、`tool` 或 `user`。`toolSpecs` 只出现在 TOOLS 且必填；`provenance` 在 ORIENT、SEARCH_HIT 必填，在 HISTORY 的 `tool` 条目可选，其余不得出现；`score` 只出现在 SEARCH_HIT 且必填；`toolCalls` 只出现在 HISTORY 的 `assistant` 条目，出现时至少一项；`toolCallId` 只出现在 HISTORY 的 `tool` 条目且必填 |
+| `ContextPack` | ORIENT 包只含 ORIENT 条目，SEARCH 包只含 SEARCH_HIT 条目，二者 `snapshotId` 必填且不得带 `prefixSha256`；ASSEMBLE 包 `prefixSha256` 必填且不含 SEARCH_HIT 条目。`itemId` 必须等于 `${contextPackId}:${序号}` |
+| `ContextAssembleInput`、`AssembleExecutorInput` | `final` 必须等于 `status.final` |
+| `AssembleExecutorInput` | `orientPack` 必须是 ORIENT 包；`ResolvedStep.outputText` 当且仅当该步骤是 `status = 'OK'` 的 `TOOL_RESULT` 时存在 |
+| `ModelExecutorInput.contextPack` | 必须是 ASSEMBLE 包 |
+| `ContextAssembleOutput` | `tokenCount ≤ tokenBudget` |
+| `StatusFacts` | `roundsUsed ≤ maxRounds` |
+
+**模型与文件**
+
+| 对象 | 约束 |
+|---|---|
+| `ModelToolCall` | 只有两种形态：`arguments` 为非 `null` 的 JSON 值且不带 `argumentsError`；或 `arguments = null` 且 `argumentsError = 'INVALID_JSON'` |
+| `ModelCallOutput` | `finishReason = 'TOOL_CALLS'` 当且仅当 `toolCalls` 非空 |
+| `TokenUsage` | `inputCacheHitTokens ≤ inputTokens` |
+| `FileReadOutput` | `totalLines = 0` 时 `startLine = 1`、`endLine = 0`；否则 `startLine ≤ endLine ≤ totalLines` |
+
+**Workflow 结构**
+
+| 对象 | 约束 |
+|---|---|
+| `ToolResultStep` | `status = 'OK'` 时 `output` 与 `outputRef` 必填且类型相配（检索输出配 ContextPack，读取输出配文本）；否则只带该状态的 `reasonCode` |
+| `FeedbackStep` | `UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`、`NOT_EXECUTED` 必须带 `toolCallId`；`MODEL_CALL_FAILED`、`WRAP_UP_NOTICE` 不得带；`INVALID_ACTION` 可带可不带 |
+| `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空 |
+
+**执行请求与执行事实**
+
+| 对象 | 约束 |
+|---|---|
+| `ExecutionRequest` | `executionKind` 同时决定 `input`、`scope.kind` 与 `limits`：`maxFiles` 只属于 `REPOSITORY_ORIENT` 且必填，`maxOutputTokens` 只属于 `MODEL` 且必填 |
+| `ExecutionScope`（MODEL） | `thinkingEffort` 当且仅当 `thinking = 'ENABLED'` 时存在；`baseUrl` 必须以 `https://` 开头 |
+| `ExecutionResult` | `output` 必须是该 `executionKind` 的输出类型；`artifact` 必填，`mediaType` 必须是该种的产物类型 |
+| `ExecutionFact` | 携带 `executionKind`，并由它决定其余字段：`COMPLETED` 的 `result` 必须是该种的结果；只有 `MODEL` 带 `requestState`（必填）与 `usage`（可选），其余种类不得带；`MODEL` 的 `COMPLETED` 必须 `requestState = 'SENT'`；`retryable` 只属于 `FAILED` 且必填；`startedAt` 只有 `TERMINATED` 可以缺失 |
 
 ## 2. 通讯主体、Fabric 与端口
 
@@ -956,6 +1043,7 @@ interface ExecutionFact {                           // kernel.execution.Executio
   unitAttemptId: string;
   executionId: string;
   runEpoch: number;                                 // 原样带回
+  executionKind: ExecutorKind;                      // 与所回答的 ExecutionRequest 相同
   outcome: ExecutionOutcome;
   reasonCode?: ReasonCode;                          // outcome 不为 COMPLETED 时必填
   retryable?: boolean;                              // outcome 为 FAILED 时必填
@@ -976,7 +1064,7 @@ type RequestState =
 
 interface ExecutionResult {
   output: UnitOutput;                               // 按 executionKind 校验
-  artifact?: { mediaType: string; text: string };   // 由 Execution 写入 ArtifactStore，生成 outputRef
+  artifact: { mediaType: string; text: string };    // 必填；由 Execution 写入 ArtifactStore，生成 outputRef
 }
 
 interface TokenUsage {                              // executor.TokenUsage
@@ -1065,7 +1153,7 @@ interface ExecutorEnvironment {
   now(): Date;
 }
 
-type ExecutorOutcome =
+type ExecutorOutcome =                              // reasonCode 只取第 7.3 节表中该 outcome 的原因码
   | { outcome: 'COMPLETED'; result: ExecutionResult; usage?: TokenUsage; requestState?: RequestState }
   | { outcome: 'REJECTED'; reasonCode: ReasonCode }
   | { outcome: 'FAILED'; reasonCode: ReasonCode; retryable: boolean; usage?: TokenUsage; requestState?: RequestState }
@@ -1082,6 +1170,8 @@ interface ProviderCredentials {
 ```
 
 `TERMINATED` 与 `STOP_UNCONFIRMED` 由 Supervisor 依据执行是否在宽限期内结束给出，Executor 不返回这两种结果。
+`ExecutorOutcome` 不带 `executionKind`：Supervisor 组装 ExecutionFact 时填入请求的 `executionKind`；
+对 `MODEL` 执行，Executor 没有给出 `requestState` 时填 `UNKNOWN`，对其他种类则丢弃 `usage` 与 `requestState`。
 
 ```ts
 type ExecutorRegistry = { [K in ExecutorKind]: Executor<K> };   // createExecutorRegistry() 的返回值
