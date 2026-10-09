@@ -19,12 +19,13 @@
 | API / UI | Fastify、OpenAPI、SSE、React | UserInteraction Adapter |
 | Durable workflow | DBOS | Durable Runtime Port |
 | Database / Query | PostgreSQL、Kysely | Persistence Port |
-| Reliable messaging | NATS JetStream、Outbox/Inbox | Communication Port |
+| Reliable messaging | NATS JetStream、Outbox/Inbox | Fabric Port |
 | Artifact | S3-compatible Store、本地 CAS | ArtifactStorePort |
-| Model | Vercel AI SDK、Provider Adapter、可选 LiteLLM Gateway | Execution 内模型网关 / Model Execution Port |
+| Model | Vercel AI SDK、Provider Adapter、可选 LiteLLM Gateway | ExecutorSet 的模型调用 Executor / Model Port |
 | Tool | MCP TypeScript SDK、OpenAPI Tool Adapter | Tool Execution Port |
-| Retrieval | ripgrep、tree-sitter、SCIP、pgvector、Embedding/Rerank Adapter | Context Port |
-| Workspace / Isolation | Git worktree、rootless Docker/Podman | Execution Workspace / Supervisor Sandbox Port |
+| Retrieval | ripgrep、tree-sitter、SCIP、pgvector、Embedding/Rerank Adapter | ExecutorSet 的上下文与检索 Executor |
+| Workspace / Isolation | Git worktree、子进程、rootless Docker/Podman | Execution Workspace / Supervisor 执行接口 |
+| Sharding | PostgreSQL 分片租约表 | Persistence Port |
 | Identity / Policy | OIDC、RBAC/ABAC、PostgreSQL RLS、Policy Adapter | Kernel Control boundary |
 | Secret | Secret Manager Adapter、短期 materialization | SecretRef boundary |
 | Observability | OpenTelemetry、Prometheus、Grafana、结构化日志 | Telemetry Adapter |
@@ -49,7 +50,7 @@
 - HTTP Adapter 使用 Fastify，并由 OpenAPI 描述公开接口。
 - 实时投影使用 SSE；双向交互仅在明确需要时采用 WebSocket。Executor 输出使用受控逻辑流通道，区分暂态片段与 Kernel 确认状态，订阅范围和慢消费者处理不能省略。
 - Web UI 使用 React，但不得直接访问领域数据库或 Executor。
-- 所有入口复用 UserIntent、KernelControlPort 和 RuntimeProjection。
+- 所有入口复用 Gateway 的请求契约与 Kernel 投递的 Inbox 事件。
 
 ## 5. 持久工作流
 
@@ -68,11 +69,11 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 ## 7. 模型与工具
 
-- Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 Execution 的模型网关内。Kernel 的 Gateway 是权限入口，与模型网关不同。需要多 Provider 协议适配或代理时可使用 LiteLLM Gateway，但不改变 Model Port。AgentOS 的 API 池、调用机会分配及配额权威仍归 Kernel Scheduler/Monitor，外部网关不得成为第二套授权或预算事实源。
-- OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定 DefinitionVersion。
-- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。业务操作按一个 Tool 粒度封装为 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格。Execution 推进 Tool 内固定 Executor 序列，MCP server 的能力声明不能扩大租约范围。
+- Vercel AI SDK 提供应用内模型调用和结构化输出抽象；Provider Adapter 位于 ExecutorSet 的模型调用 Executor 中，在 Supervisor 管理的 Executor 子进程内运行。Kernel 的 Gateway 是权限入口，与模型调用的协议适配无关。需要多 Provider 协议适配或代理时可使用 LiteLLM Gateway，但不改变 Model Port。AgentOS 的 API 池、调用机会分配及配额权威仍归 Kernel Scheduler/Monitor，外部网关不得成为第二套授权或预算事实源。
+- OpenAI、Anthropic 或兼容 Provider 由配置选择；具体运行固定定义版本与 digest。
+- MCP TypeScript SDK 可作为 Tool Adapter；MCP server 声明不是授权。模型可调用的 Tool 对应到 Unit，由 Workflow 创建 UnitIntent 并经 Kernel 校验资格；是否需要 Lease 以 Unit 声明的受保护能力为准。Execution 推进 Unit 内固定的 Executor 序列，由 Supervisor 在 Executor 子进程中执行；MCP server 的能力声明不能扩大租约范围。
 - OpenAPI 工具通过版本化定义生成参数 Schema；禁止动态执行未审查描述。
-- Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；运行时 Executor 健康度与负载由 Kernel Supervisor/Monitor 提供，Execution 维护 Attempt 和步骤进度。当前 SDK 所在 package 与目标模块不一致时，应显式迁移依赖与测试，不能让 Workflow 直接导入 Provider SDK。
+- Agent、Unit、Tool、Executor、Prompt 和 Model 的供应链 digest 由 AgentToolPool 管理；Executor 子进程的健康度与负载由 Supervisor 与 Monitor 提供，Execution 维护 Attempt 和步骤进度。当前 SDK 所在 package 与目标模块不一致时，应显式迁移依赖与测试，不能让 Workflow 直接导入 Provider SDK。
 
 ## 8. 数据与迁移
 
@@ -85,9 +86,11 @@ TaskGraph、Readiness、Join、MissionScope 和 GraphRevision 由 Workflow 自�
 
 本地 CAS 用于开发和单机运行；S3-compatible Store 承担完整系统的远程对象、复制和生命周期管理。所有 Adapter 统一执行 SHA-256、size/mediaType 验证、tenant 隔离、retention token 和延迟 GC。数据库只保存 ArtifactRef 和业务引用。
 
-## 10. Communication
+## 10. Fabric
 
-Communication Fabric 由 Kernel 管辖，技术实现保留独立 Port。同进程 Router 用于进程内调用；NATS JetStream 承担需要可靠消息能力的独立进程间背压和消费。本地 IPC 可以承载不需要消息集群的部署，不能将此选择解释为取消可靠交付语义。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
+Fabric 由 Kernel.Core 管辖，技术实现保留独立 Port。同进程 Router 承载同进程部署时通讯主体之间的可序列化消息；Kernel 核心内部直接函数调用，不经 Router。Kernel 核心与 Supervisor、Supervisor 与 Executor 子进程之间在本地使用进程间通信；NATS JetStream 承担需要可靠消息能力的独立进程间背压和消费。本地 IPC 可以承载不需要消息集群的部署，不能将此选择解释为取消可靠交付语义。Outbox/Inbox 仍是领域提交与至少一次投递的边界。Broker 不承担 TaskGraph、retry policy 或业务状态。
+
+Kernel 核心多实例部署时，分片租约保存在 PostgreSQL，实例按租约领取逻辑分片，写入携带分片 epoch；Gateway 按分片路由。全局 API 容量由全局容量服务以带期限的令牌分配，可以使用 Redis 实现令牌桶，但令牌只用于短期协调，不保存领域事实。
 
 ## 11. Context 与检索
 
@@ -97,14 +100,14 @@ Communication Fabric 由 Kernel 管辖，技术实现保留独立 Port。同进�
 | 语法分块 | tree-sitter |
 | 符号/引用 | SCIP；不支持的语言使用语言服务 Adapter |
 | 向量存储 | PostgreSQL + pgvector |
-| Embedding/Rerank | 通过 Kernel MODEL Unit 调用，不在 ContextEngine 内直连 Provider |
+| Embedding/Rerank | 作为同一 Unit 内的模型调用步骤，由 Kernel 分配调用机会与额度；上下文 Executor 不直连 Provider |
 | 缓存 | 内容 hash + IndexRevision + ACL/revision key |
 
 混合检索必须先以无模型评测验证收益。语义检索不能替代 provenance、ACL 和 repository revision 过滤。
 
 ## 12. Workspace 与 Sandbox
 
-Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程隔离。gVisor 或 microVM 仅作为高风险执行的强化替换方案。Sandbox 必须支持文件系统、网络、CPU、内存、磁盘、进程数、deadline、输出和 Secret 策略。Supervisor 管理执行域生命周期和硬限制，Execution 在其中推进步骤。Ubuntu LTS 上必须验证继承资源、旁路和进程树回收，容器名称本身不是安全证明。
+Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程隔离。gVisor 或 microVM 仅作为高风险执行的强化替换方案。Sandbox 必须支持文件系统、网络、CPU、内存、磁盘、进程数、deadline、输出和 Secret 策略。Supervisor 管理 Executor 子进程（或容器）的生命周期和硬限制，Execution 管理其中的尝试与步骤。Ubuntu LTS 上必须验证继承资源、旁路和进程树回收，容器名称本身不是安全证明。
 
 ## 13. 身份、策略与 Secret
 
@@ -113,7 +116,8 @@ Git worktree 提供独立代码 workspace；rootless Docker/Podman 提供进程�
 - Secret Manager 通过短期 SecretRef/materialization 提供凭据；不把值写入协议或数据库正文。
 - 本地模式可以使用受限配置 Adapter，但必须保持相同 SecretRef 和脱敏语义。
 
-租约凭证完整性、持有者绑定和撤销传播必须一并实现，OIDC 身份或签名不能独自证明当前执行获准。
+Lease 只存在于 Core。对外交付的裁决结果与 Core 内的 Lease 记录绑定，撤销与失效在 Core 内即时生效；
+OIDC 身份或签名不能独自证明当前执行获准。
 长期或永久 Lease 不免除本次执行范围、预算和 fencing 检查，具体算法与有效期策略由 MVP 明确。
 
 ## 14. 可观测性

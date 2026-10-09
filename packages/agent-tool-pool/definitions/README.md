@@ -26,4 +26,4 @@ A published definition may only reference published versions, and its digest cov
 digests of everything it references.
 
 `status.yaml` marks versions as DEPRECATED, QUARANTINED or REVOKED without editing them.
-Design notes: `docs/M1/agent-tool-pool/AgentToolPoolM1.md`.
+Design notes: `docs/M1/Library/AgentToolPool.md`.
