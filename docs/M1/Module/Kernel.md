@@ -42,6 +42,34 @@ M1 Kernel 采用最小可行子集：Gateway、Core、Scheduler、Execution、Su
 Round、final-call 等 Workflow 概念见 [Workflow](Workflow.md)；runEpoch、收敛等 Kernel 内部概念见
 [Kernel/Interaction](../Kernel/Interaction.md)。
 
+### 3.1 控制语义
+
+Kernel 与外部 Module 之间的交互，以及 Kernel 对执行的控制，统一用以下四个词描述。
+这是对现有交互的分类，不引入新的组件或传输机制；传输仍由 Gateway、Fabric、Outbox 与 Inbox 完成。
+
+| 词 | 指什么 | 规则 |
+|---|---|---|
+| Syscall | 外部 Module 向 Kernel 发起的请求（第 4.1、4.2 节） | 必须有调用者；经 Gateway 进入；以 `requestId` 幂等；同步返回受理或拒绝 |
+| Event | Kernel 发给外部 Module 的结果与事实通知（第 4.4 节） | 由 Core 经 Outbox 主动发出；有序、可去重；接收方不能拒绝，只据此更新自己的状态 |
+| Interruption | Kernel 经 Supervisor 要求在途执行停止（取消、截止时间到达） | 由 Core 决定、Supervisor 执行；发出不等于已停止，以执行事实确认 |
+| Exception | 无法正常继续的故障（第 11 节） | 不跨通讯主体抛出；由 Core 收敛并写入审计 |
+
+三者有因果关系：Syscall 可以产生 Interruption（`cancelRun` 使在途执行被要求停止），
+Interruption 在宽限期内未被确认时产生 Exception（`EXECUTION_STOP_UNCONFIRMED`）。
+
+单说 Syscall 时指外部 syscall。Kernel 内其他组件向 Core 发起的请求称为内部 syscall，二者的区别：
+
+| | 外部 syscall | 内部 syscall |
+|---|---|---|
+| 必须经 Core 裁决 | 是 | 是 |
+| 经过 Gateway 与 Fabric | 是 | 否，同步函数调用 |
+| 校验调用方身份 | 是 | 否，Kernel 内组件互相可信 |
+| 带 `requestId` 幂等 | 是 | 否 |
+| 受理与完成分两步 | 是 | 否，当场返回裁决 |
+
+Kernel 内部各方向的叫法（内部 syscall、职责接口调用、执行事实上报）见
+[Kernel/Interaction](../Kernel/Interaction.md) 3.3。
+
 ## 4. syscall 与请求
 
 外部模块申请受保护系统服务、执行能力或提交 Kernel 控制请求时，以 Gateway 为唯一入口。
@@ -86,7 +114,8 @@ Gateway 按调用方身份拒绝越权请求（`CALLER_FORBIDDEN`）。
 
 ### 4.4 Kernel 的回应
 
-Kernel 用两种方式回应外部模块：请求的直接返回值，以及投递到接收方 Inbox 的事件（第 4.5 节）。
+Kernel 用两种方式回应外部模块：请求的直接返回值，以及投递到接收方 Inbox 的事件（Event，第 4.5 节）。
+所有跨通讯主体的消息共用同一个信封 `Envelope<T>`（[M1Interface](../M1Interface.md) 3.2），下表各项只是载荷不同。
 
 | 信息 | 方式 | 接收方 | 何时发出 |
 |---|---|---|---|
@@ -110,7 +139,7 @@ Kernel 用两种方式回应外部模块：请求的直接返回值，以及投�
 ### 4.5 Inbox 投递
 
 Workflow 与 UserInteraction 各自实现一个 Inbox（`WorkflowInboxPort`、`InteractionInboxPort`），Kernel 经 Fabric 投递，
-只依赖 contracts 中的接口。M1 的 Outbox 与 Inbox 为内存实现，不持久化，进程退出时一起丢失。投递语义参照 io_uring 完成队列与 Actor 邮箱：
+只依赖 contracts 中的接口。M1 的 Outbox 与 Inbox 为内存实现，不持久化，进程退出时一起丢失。投递语义参照 io_uring 完成队列：
 
 1. **单一出口**：所有事件由 Core 的 Outbox 发出；其他组件不直接向外部模块发送。
 2. **有序**：每个运行、每个接收方的 `seq` 从 1 连续递增，Outbox 按 `seq` 依次投递，前一个投递返回后才发下一个。
@@ -200,7 +229,7 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 
 无论哪种方式结束，Core 都先完成收敛，再把结束原因、失败信息、未知效果与运行摘要一并经 RunFinished 交给 UserInteraction。
 
-| 方式 | 控制类别 | closeReason | failure | Workflow 业务终态 | 用户看到 |
+| 方式 | 触发来源 | closeReason | failure | Workflow 业务终态 | 用户看到 |
 |---|---|---|---|---|---|
 | 正常结束 | Syscall | COMPLETED | — | COMPLETED | 结论、来源、未确认项 |
 | final-call 收尾 | Syscall | COMPLETED | — | COMPLETED | 同上，附收尾原因 |
@@ -209,12 +238,15 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 | Workflow 判定失败 | Syscall | FAILED | `source = WORKFLOW`，`code` 为导致失败的原因码 | FAILED | “运行失败”及按原因码给出的说明 |
 | Kernel 异常 | Exception | FAILED | `source = KERNEL`（`EXECUTION_STOP_UNCONFIRMED`、`KERNEL_INTERNAL`） | FAILED | 同上 |
 | 运行超时 | Exception | RUN_TIMEOUT | — | STOPPED(RUN_TIMEOUT) | “运行超时，已停止” |
-| 用户终止 | Interruption | CANCELLED | — | CANCELLED | “已终止” |
+| 用户终止 | Syscall | CANCELLED | — | CANCELLED | “已终止” |
 | 安全停止 | Exception | VIOLATION | `source = KERNEL`，违规原因码 | STOPPED(VIOLATION) | “因安全原因停止” |
 
 存在未知效果时，用户还会看到“部分操作无法确认是否完成”。用户默认只看到结果；
 运行摘要（各 AgentRun 的 Round、Unit 与模型调用次数、token、耗时、失败分类）可通过 CLI 的 `--details` 选项在关闭前读取展示；
 步骤数属于 Workflow 的运行记录（[Workflow](Workflow.md) 第 13 节），不在运行摘要中。
+
+触发来源指使运行进入收敛的控制类别（第 3.1 节）：Syscall 为 `closeRun` 或 `cancelRun`，Exception 见第 11 节。
+无论哪种来源，收敛时 Kernel 都对在途执行发出 Interruption；宽限期内未确认停止的执行按 Exception 处理。
 
 ## 10. 原因码与 Workflow 处理
 

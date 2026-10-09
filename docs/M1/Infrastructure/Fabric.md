@@ -41,6 +41,9 @@ M1 实现内存版 Outbox 与 Inbox，不持久化，进程退出时一起丢失
 - Outbox 位于运行 actor 的 Core 状态分块中；每个接收方一个发送器，按 `seq` 依次调用 `send`，前一个返回后才发下一个。
   发往 Supervisor 与 Gateway 的待发送消息同样各用一个发送器按登记顺序发出（Kernel/Interaction 4.4）。
 - Inbox 位于接收方：`deliver` 只做 Schema 校验与入队；按 `eventId` 去重；单个消费者逐条处理，不因 `seq` 缺口等待。
+- Fabric 包提供两份通用实现供各主体复用，不要求各自重写：Inbox（通道数与去重键可配置，Workflow、UserInteraction
+  使用单通道并按 `eventId` 去重，Kernel 核心的运行 Inbox 使用控制与工作两个通道且不去重）与有序发送器
+  （按登记顺序逐条发出，Core 对 Workflow、UserInteraction、Supervisor、Gateway 各用一个）。
 - 投递语义见 [Kernel（外部视角）](../Module/Kernel.md) 4.5。
 
 ## 5. 边界

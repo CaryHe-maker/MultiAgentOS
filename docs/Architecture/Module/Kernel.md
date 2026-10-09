@@ -47,14 +47,14 @@ Gateway 独立成进程的条件是：Kernel 核心按运行分片需要路由�
 ### 3.2 运行 actor
 
 每个 WorkflowRun 在任一时刻只有一个 Kernel 核心实例写入其状态。
-Kernel 核心为每个运行维护一个运行 actor：该运行的邮箱、串行处理循环，以及该运行在 Core、Execution、Monitor、Scheduler 中的状态分块
+Kernel 核心为每个运行维护一个运行 actor：该运行的 Inbox（运行 Inbox）、串行处理循环，以及该运行在 Core、Execution、Monitor、Scheduler 中的状态分块
 （Lease、账本、尝试、队列、runEpoch 与 Outbox 都在其中）。运行 actor 是并发模型，不是第七个组件。
 
 - **创建与回收**：Core 的运行管理是 Kernel 核心中唯一跨运行的部分，只保存 `workflowRunId → actor` 的映射与生命周期，不保存运行状态。
   只有创建运行的请求能建立 actor；actor 处理的第一条消息完成初始化（开始计时、经 Outbox 通知 Workflow）。actor 结束后，
   运行管理在其 Outbox 投递完毕后回收它，并保留记录结束原因的墓碑，用于拒绝或记录迟到的消息。
-- **消息**：Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，都作为消息进入邮箱。
-  邮箱按消息类型分为控制通道与工作通道：取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
+- **消息**：Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，都作为消息进入运行 Inbox。
+  运行 Inbox 与外部 Module 的 Inbox 是同一种接收队列，只是按消息类型分为控制通道与工作通道：取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
   优先处理；业务请求与正常的执行结果属于工作通道。同一来源在同一通道内保持顺序。
   执行事实交给 Execution 处理，其余消息交给 Core 处理。
 - **不可重入**：一条消息处理完之前不开始处理下一条，控制通道的优先只在两条消息之间生效。处理中可以等待本地存储 I/O；
@@ -230,8 +230,10 @@ ArtifactStore 归 Execution，Fabric 归 Core；管辖指设施的使用方式�
 
 ## 11. 调用、中断与异常
 
-调用是主动请求服务，中断要求活动响应控制变化，异常表示无法正常继续。
+调用（syscall）是主体主动向 Core 请求服务；中断（Interruption）是 Kernel 要求在途执行停止或响应控制变化，
+经 Supervisor 作用于执行载体；异常（Exception）表示无法正常继续。
 一次调用可以产生中断，中断失败可以产生异常；因果关联不等于消息送达即已生效。
+Kernel 向外部 Module 交付的结果与事实通知是事件（Event），接收方据此更新自己的状态，不属于中断。
 
 Core 组织控制职责，Scheduler 阻止新机会，Execution 响应安全点，
 Supervisor 监管停止与清理，Monitor 核对资源。

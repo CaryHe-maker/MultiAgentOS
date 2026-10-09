@@ -21,7 +21,7 @@ Kernel 对外提供的 syscall 与返回信息见 [Kernel（外部视角）](../
 | 术语 | 定义 |
 |---|---|
 | 运行管理（`RunRegistry`） | Core 中跨运行的部分：创建与回收运行 actor、按 `workflowRunId` 分发消息、处理 `createRun` 与 `shutdown`。只保存映射与生命周期，不保存任何运行状态 |
-| 运行 actor | 一个运行的邮箱、串行处理循环，以及该运行在 Core、Execution、Monitor、Scheduler 中的状态分块。每个运行一个，不是第七个组件 |
+| 运行 actor | 一个运行的 Inbox（称为运行 Inbox）、串行处理循环，以及该运行在 Core、Execution、Monitor、Scheduler 中的状态分块。每个运行一个，不是第七个组件 |
 | runEpoch | 运行控制状态的版本号，从 1 开始，只在运行进入 CONVERGING 时加 1 |
 | 在途执行 | 已派发给 Supervisor、尚未收到终态事实的执行实例 |
 | Outbox | Core 状态分块中的事件出口，每个接收方一个 `seq` 计数与一个待发队列 |
@@ -186,9 +186,28 @@ interface RunRegistry {
 
 | 部分 | 内容 |
 |---|---|
-| 邮箱 | 控制通道与工作通道两个队列 |
+| 运行 Inbox | 控制通道与工作通道两个队列 |
 | 处理循环 | 一次只处理一条消息：`while (message = 取下一条（控制通道优先）) { await dispatch(message); await core.settleConvergence(); }`；两步合起来是一次处理 |
 | 状态 | Core 分块（控制状态、runEpoch、AgentRun 登记、Lease、授权记录、请求记录、Outbox、待发送、计时器）、Execution 分块（尝试、FIFO、产物归属索引、上下文构建记录）、Monitor 分块（账本、预留）、Scheduler 分块（本运行持有的机会） |
+
+运行 Inbox 与 Workflow、UserInteraction 的 Inbox 是同一种东西：通讯主体内部的接收队列，消息先入队，再由该主体逐条处理。
+Port 在主体的边界上负责收发，Inbox 在主体内部负责排队，二者不在同一层。三个 Inbox 使用 Fabric 提供的同一份通用实现
+（[Fabric](../Infrastructure/Fabric.md) 第 4 节），差别只在配置与消息来源：
+
+| | 运行 Inbox | Workflow、UserInteraction 的 Inbox |
+|---|---|---|
+| 入口 | Kernel 核心的 `GatewayForward` 处理器与 `ExecutionFactSink`，以及内部定时器 | `InboxPort` |
+| 数量 | 每个运行一个 | 每个主体一个 |
+| 通道 | 控制与工作两个，控制优先 | 一个，按到达顺序 |
+| 去重 | 不在 Inbox 做，Core 按 `requestId` 返回同一结果 | 按 `eventId` |
+| 回应 | 请求类消息处理完后把结果交回调用方 | 不需要 |
+
+一次往返经过的环节：
+
+```text
+Workflow → WorkflowGatewayPort → Fabric → Gateway → Fabric → 运行 Inbox → Core 处理
+        → Outbox → Fabric → InboxPort → Workflow 的 Inbox → Workflow 处理
+```
 
 `dispatch` 把 `EXECUTION_FACT` 交给 `Execution.handleExecutionFact`，其余消息交给 Core 的处理函数。
 `core.settleConvergence()` 是 Core 的收尾步骤：本次处理中登记了收敛时，在这里完成需要调用 Execution 或等待 I/O 的部分（第 6 节）；
@@ -210,7 +229,7 @@ interface RunRegistry {
 | `EXECUTION_FACT`（outcome 为 COMPLETED、REJECTED、FAILED） | 工作 | Supervisor | Execution |
 | `READ_ARTIFACT` | 工作 | UserInteraction | Core |
 
-消息按类型分配通道；同一来源在同一通道内保持顺序。Gateway 在入队前完成契约、调用方与准入封锁检查，被拒的请求不进入邮箱。
+消息按类型分配通道；同一来源在同一通道内保持顺序。Gateway 在入队前完成契约、调用方与准入封锁检查，被拒的请求不进入运行 Inbox。
 
 ### 4.4 处理规则
 
@@ -303,7 +322,7 @@ createAttempt → FIFO（按 createAttempt 的调用顺序）
        Core：finalCallUsed 检查 → Scheduler.acquire → Monitor.reserve
        被拒 → Core 交付 UnitReport(REJECTED, BUDGET_* 或 FINAL_CALL_USED)，尝试结束
   → 生成 executionId，登记待发送 SupervisorPort.execute(ExecutionRequest)
-  → …… Supervisor 交回 ExecutionFact，作为新消息进入邮箱
+  → …… Supervisor 交回 ExecutionFact，作为新消息进入运行 Inbox
   → Execution.handleExecutionFact
        FAILED 且 retryable 且未达上限 → retryExecution → 允许则以新 executionId 重新派发（带退避 notBefore）
        COMPLETED 且运行仍为 RUNNING → 把 result.artifact 写入 ArtifactStore，登记归属，得到 outputRef

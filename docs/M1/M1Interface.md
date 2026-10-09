@@ -52,6 +52,7 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 1. 通讯主体之间的每次交互都经 Fabric，包装为 `Envelope`，在接收边界按 Schema 校验 payload；
    Fabric 投递时复制 payload（`structuredClone`）。
 2. 组合根（`apps/control-plane`）为每个通讯主体创建一个 Fabric 客户端，客户端固定写入 `Envelope.producer`，主体代码不能修改。
+   五个通讯主体使用同一个 `FabricPort`（第 10 节）；上表中的各个 Port 是其上的类型化存根，限定每个主体能调用与提供的范围。
 3. 跨通讯主体的 Port 是组合根基于该主体的 Fabric 客户端生成的存根：Workflow 只拿到 `WorkflowGatewayPort`，
    UserInteraction 只拿到 `InteractionGatewayPort`，Supervisor 只拿到 `ExecutionFactSink`。
    `CatalogPort`、`PersistencePort`、`ArtifactStorePort` 由静态库或基础设施直接实现，按上表只注入需要的主体。
@@ -400,13 +401,12 @@ interface InboxEvent<T> {
 type WorkflowInboxEvent = InboxEvent<KernelToWorkflowEvent>;
 type InteractionInboxEvent = InboxEvent<KernelToInteractionEvent>;
 
-interface WorkflowInboxPort {                       // 由 Workflow 实现
-  deliver(event: WorkflowInboxEvent): Promise<void>;
+interface InboxPort<T> {                            // 由接收方实现
+  deliver(event: InboxEvent<T>): Promise<void>;
 }
 
-interface InteractionInboxPort {                    // 由 UserInteraction 实现
-  deliver(event: InteractionInboxEvent): Promise<void>;
-}
+type WorkflowInboxPort = InboxPort<KernelToWorkflowEvent>;        // 由 Workflow 实现
+type InteractionInboxPort = InboxPort<KernelToInteractionEvent>;  // 由 UserInteraction 实现
 ```
 
 `deliver` 只做 Schema 校验与入队即返回，返回不表示已经处理。投递语义见 [Kernel（外部视角）](Module/Kernel.md) 4.5。
@@ -435,13 +435,16 @@ interface UnitReport {                              // 每个得到 SyscallAck �
   budgetState: BudgetState;
 }
 
-interface RunClosed {                               // 每个运行恰好一个，是发给 Workflow 的最后一个事件
-  type: 'RunClosed';
+interface RunEnd {                                  // RunClosed 与 RunFinished 共用的结束信息
   closeReason: CloseReason;
   failure?: RunFailure;                             // closeReason 为 FAILED、VIOLATION 时必填
   reportRef?: ArtifactRef;                          // closeReason 为 COMPLETED 时必填
   unknownEffects: UnknownEffect[];
   runSummaryRef: ArtifactRef;                       // RunSummary 产物（第 11 节）
+}
+
+interface RunClosed extends RunEnd {                // 每个运行恰好一个，是发给 Workflow 的最后一个事件
+  type: 'RunClosed';
 }
 
 type BudgetState = 'NORMAL' | 'WRAP_UP' | 'EXHAUSTED';
@@ -469,18 +472,13 @@ interface AuthorizationResolved {
   resolution: 'GRANTED' | 'DECLINED' | 'TIMED_OUT' | 'CANCELLED';
 }
 
-interface RunFinished {                             // 每个运行恰好一个，是发给 UserInteraction 的最后一个事件
+interface RunFinished extends RunEnd {              // 每个运行恰好一个，是发给 UserInteraction 的最后一个事件
   type: 'RunFinished';
-  closeReason: CloseReason;
-  failure?: RunFailure;
-  reportRef?: ArtifactRef;
-  unknownEffects: UnknownEffect[];
-  runSummaryRef: ArtifactRef;
 }
 ```
 
-RunFinished 与 RunClosed 在同一次处理中由 Core 放入 Outbox，二者的 `closeReason`、`failure`、`reportRef`、
-`unknownEffects`、`runSummaryRef` 完全相同。
+RunFinished 与 RunClosed 在同一次处理中由 Core 放入 Outbox，二者的 `RunEnd` 字段完全相同。
+`RunEnd` 只是两个 Schema 共用的字段定义，不单独注册 Schema。
 
 ### 5.4 结束信息
 
@@ -1002,7 +1000,7 @@ interface SupervisorShutdownRequest {               // kernel.execution.Supervis
 }
 
 interface ExecutionFactSink {                       // 由 Kernel 核心实现
-  report(fact: ExecutionFact): Promise<void>;       // 返回表示已进入所属运行 actor 的邮箱
+  report(fact: ExecutionFact): Promise<void>;       // 返回表示已进入所属运行的运行 Inbox
 }
 ```
 

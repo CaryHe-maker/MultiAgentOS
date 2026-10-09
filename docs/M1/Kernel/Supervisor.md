@@ -43,7 +43,7 @@ Supervisor         → ExecutionFactSink.report(ExecutionFact)
 ```
 
 - 字段定义见 [M1Interface](../M1Interface.md) 第 7 节。`workflowRunId`、`unitAttemptId`、`executionId`、`runEpoch` 原样带回；
-  执行事实作为消息进入所属运行的邮箱，由 Core 核对 runEpoch 后决定是否接受。
+  执行事实作为消息进入所属运行的运行 Inbox，由 Core 核对 runEpoch 后决定是否接受。
 - 取消由 Core 决定并以消息发出，不跨边界传递运行时句柄；进程内实现在 Supervisor 内部把它转换为 `AbortSignal`。
 
 ## 4. 执行实例
