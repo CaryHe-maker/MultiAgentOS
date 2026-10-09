@@ -37,6 +37,7 @@ import {
   type RunFinished,
   type RunSummary,
   type SubmitUnitRequest,
+  type SubprocessRunner,
   type SyscallAck,
   type SyscallRejected,
   type UnitDefinition,
@@ -153,10 +154,17 @@ export function createFakeGateway(): (deps: GatewayDeps) => LifecyclePort {
 /**
  * Boots and stops the other modules through ModuleHost and runs each execution with the
  * injected Executor, reporting exactly one fact for it. It enforces no deadline and has no grace
- * period: `cancelRun` only fires the abort signal, and the subprocess runner never starts
- * anything.
+ * period: `cancelRun` only fires the abort signal, and by default the subprocess runner
+ * starts nothing.
  */
-export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModule {
+export interface FakeSupervisorOptions {
+  /** Defaults to a runner that starts nothing; pass `createSubprocessRunner()` to run `rg`. */
+  readonly subprocess?: SubprocessRunner;
+}
+
+export function createFakeSupervisor(
+  options: FakeSupervisorOptions = {},
+): (deps: SupervisorDeps) => SupervisorModule {
   return ({ fabric, moduleHost, executors, credentials, now = () => new Date() }) => {
     let resolveStopped: () => void = () => undefined;
     const stopped = new Promise<void>((resolve) => {
@@ -183,7 +191,7 @@ export function createFakeSupervisor(): (deps: SupervisorDeps) => SupervisorModu
         scope: request.scope,
         limits: request.limits,
         signal: abort.signal,
-        subprocess: {
+        subprocess: options.subprocess ?? {
           run: () =>
             Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
         },

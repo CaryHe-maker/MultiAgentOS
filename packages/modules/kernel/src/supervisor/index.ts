@@ -13,6 +13,8 @@ import type {
 import type { KernelConfig } from '../interfaces/index.js';
 
 /** The part of ModuleHost the Supervisor drives; the composition root registers the modules. */
+export { createSubprocessRunner } from './subprocess-runner.js';
+
 export interface ModuleHostControl {
   start(): Promise<void>;
   stop(): Promise<void>;

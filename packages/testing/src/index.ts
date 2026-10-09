@@ -6,6 +6,7 @@ export {
   createFakeKernelCore,
   createFakeSupervisor,
   type FakeKernelOptions,
+  type FakeSupervisorOptions,
 } from './fakes/fake-kernel.js';
 export { createFakeTerminal } from './fakes/fake-terminal.js';
 export {
@@ -20,5 +21,13 @@ export {
 } from './harnesses/catalog-port-contract.js';
 export {
   describeExecutorContract,
+  repositoryGuardExpectations,
+  type ExecutorCase,
   type ExecutorContractFixture,
+  type ExecutorExpectation,
 } from './harnesses/executor-contract.js';
+export {
+  FIXTURE_FILES,
+  createFixtureRepository,
+  type FixtureRepository,
+} from './fixtures/repository.js';

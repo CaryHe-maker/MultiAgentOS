@@ -161,3 +161,16 @@ M1 只运行可信的内置 Executor；引入不可信 Executor 时须改由访�
 | 模型 | 用假的 provider 覆盖第 4.5 节表中每一行；`final` 时强制控制工具；SDK 不自动重试 |
 | 读取 | 按 400 行与 `maxOutputBytes` 截断到完整行；首行超限；空文件 |
 | Contract | 每个 Executor 的输出通过对应 Schema 校验 |
+
+`packages/testing` 为上表提供三样共用的东西，ExecutorSet 的测试必须使用它们，使 fake 与真实实现按同一标准验收：
+
+| 导出 | 用途 |
+|---|---|
+| `describeExecutorContract(name, fixture)` | 对注册表中的五种 Executor 逐一检查：完成时能组成合法的 ExecutionFact（输出类型、产物媒体类型、MODEL 的 `requestState`）；产物与输出一致（ContextPack 的 `operation`、`snapshotId`、`contextPackId`、`prefixSha256`、token 数；读取文本的 `contentSha256`；模型原始输出的工具调用）；相同输入得到相同输出；收到中止信号时仍返回合法结果而不抛出异常 |
+| `createFixtureRepository(root, outside)` 与 `FIXTURE_FILES` | 一个固定的小仓库：普通文本、空文件、命中默认排除规则的文件、二进制文件，以及指向仓库外的符号链接（平台不允许创建时为空） |
+| `repositoryGuardExpectations(repository, environment)` | 第 3.2、3.3、4.3 节对该仓库要求的结果清单（`OUT_OF_SCOPE`、`NOT_FOUND`、`UNSUPPORTED_FILE`、`INVALID_RANGE`、`INVALID_QUERY`、`LIMIT_EXCEEDED`、`SCOPE_MISSING` 等），作为 `fixture.expectations` 传入 `describeExecutorContract` |
+
+真实 Executor 还可以放进整条链路运行：`createFakeExecutorRegistry(undefined, { FILE_READ: 真实实现 })` 只替换其中几种，
+或在 `composeSystem` 的 `parts.createExecutorRegistry` 中直接使用 `createExecutorRegistry`；fake Kernel 会经 Supervisor
+调用它们。需要真实运行 `rg` 时，把 `@multiagentos/kernel` 的 `createSubprocessRunner()` 传给 `createFakeSupervisor({ subprocess })`，
+或直接放进 `ExecutorEnvironment.subprocess`。

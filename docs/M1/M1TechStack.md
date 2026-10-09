@@ -139,6 +139,9 @@ git diff --check
 
 最终验收必须在 Ubuntu LTS 上执行上述命令。
 
+`.github/workflows/quality-gate.yml` 在 `ubuntu-24.04` 上对每次 push 和每个指向 `main`、`feat/*` 的 Pull Request 执行上述命令，
+并运行一次 `pnpm run demo:fake`。它不使用任何 Secret，不调用真实模型。
+
 `pnpm run demo:fake` 用 `packages/testing` 的 fake 替换全部 Module 与 ExecutorSet，运行真实的装配、Fabric、ModuleHost 与存储。
 它只用于演示与联调接线，回复全部是固定值，不属于产品入口，也不计入任何验收。
 

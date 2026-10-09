@@ -8,6 +8,7 @@ export { DEFAULT_KERNEL_CONFIG, type BudgetConfig, type KernelConfig } from './i
 export { createGateway, type GatewayDeps } from './gateway/index.js';
 export { createKernelCore, type KernelCoreDeps } from './kernel-core.js';
 export {
+  createSubprocessRunner,
   createSupervisor,
   type ModuleHostControl,
   type SupervisorDeps,
