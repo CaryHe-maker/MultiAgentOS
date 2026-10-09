@@ -164,7 +164,11 @@ Workflow 与 UserInteraction 各自实现一个 Inbox（`WorkflowInboxPort`、`I
 | `model-call` | `MODEL` | 否 | 否 | 是 | 是 | Supervisor |
 | `report-publish` | `REPORT_PUBLISH` | 否 | 否 | 否 | 否 | Execution（内建） |
 
-- 是否需要 Lease 只看 Unit 定义中的 `protectedCapabilities`，与是否关联面向模型的工具无关。
+- 执行绑定：每个 Unit 定义声明一个 `executionKind`，Supervisor 按它从 Executor 注册表取得唯一的 Executor
+  并在进程内运行；需要强制终止的外部命令（M1 只有 `rg`）由 Executor 经 Supervisor 以子进程运行。
+  面向模型的工具（Tool）只是 Unit 的一种暴露方式，不参与绑定；`report-publish` 不经 Executor，由 Execution 直接完成。
+- 是否需要 Lease 只看 Unit 定义中的 `protectedCapabilities`，与是否关联面向模型的工具无关：
+  `repository-orient` 不暴露给模型，但读取仓库，属于受保护 Unit。
 - model-call 的使用资格来自可信配置（Agent 定义声明的模型、`KernelConfig.provider`），不需要 Lease。
   仓库内容只能经受保护 Unit 进入系统，因此外发给模型的仓库内容已由 `repo.read` 的用户同意覆盖；
   Core 在登记 AgentRun 时核对模型的 provider 与询问中告知用户的 provider 相同。
@@ -241,12 +245,12 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 | 用户终止 | Syscall | CANCELLED | — | CANCELLED | “已终止” |
 | 安全停止 | Exception | VIOLATION | `source = KERNEL`，违规原因码 | STOPPED(VIOLATION) | “因安全原因停止” |
 
+触发来源指使运行进入收敛的控制类别（第 3.1 节）：Syscall 为 `closeRun` 或 `cancelRun`，Exception 见第 11 节。
+无论哪种来源，收敛时 Kernel 都对在途执行发出 Interruption；宽限期内未确认停止的执行按 Exception 处理。
+
 存在未知效果时，用户还会看到“部分操作无法确认是否完成”。用户默认只看到结果；
 运行摘要（各 AgentRun 的 Round、Unit 与模型调用次数、token、耗时、失败分类）可通过 CLI 的 `--details` 选项在关闭前读取展示；
 步骤数属于 Workflow 的运行记录（[Workflow](Workflow.md) 第 13 节），不在运行摘要中。
-
-触发来源指使运行进入收敛的控制类别（第 3.1 节）：Syscall 为 `closeRun` 或 `cancelRun`，Exception 见第 11 节。
-无论哪种来源，收敛时 Kernel 都对在途执行发出 Interruption；宽限期内未确认停止的执行按 Exception 处理。
 
 ## 10. 原因码与 Workflow 处理
 

@@ -21,6 +21,9 @@ Execution 负责 UnitAttempt、执行队列、产物与内建 Unit。组件间�
 
 ## 3. UnitAttempt 与 FIFO
 
+这里的 FIFO 指执行队列的推进顺序：尝试按建立顺序逐个执行。它不是调度策略，
+调用机会的分配由 Scheduler 决定（[Scheduler](Scheduler.md) 第 3 节）。
+
 | 字段 | 含义 |
 |---|---|
 | `unitAttemptId` | 本次尝试 |

@@ -70,6 +70,9 @@ ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILE
 Supervisor 是可信的 Kernel 组件。M1 只运行可信的内置 Executor，Executor 交回的结果、用量与违规可以作为依据；
 违规由 Supervisor 上报，Execution 隔离输出，Core 以 VIOLATION 收敛。不能仅凭 Executor 自报触发 panic。
 
+M1 的安全停机就是收敛（[Interaction](Interaction.md) 第 8 节），Supervisor 在其中的职责是：收到 `cancelRun` 后对该运行的
+全部执行实例触发中止信号，在宽限期内给出每个实例的终态，未能确认的以 `STOP_UNCONFIRMED` 上报；不自行决定停机，也不修改运行状态。
+
 ## 6. 关闭与失控任务
 
 - 收到 `shutdown` 后，Supervisor 按 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节的顺序停止模块，Fabric 最后停止；
