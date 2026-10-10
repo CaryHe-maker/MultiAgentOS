@@ -83,6 +83,7 @@ describe('fake vertical chain', () => {
     const finished = interaction.events.at(-1);
     expect(finished).toMatchObject({ type: 'RunFinished', closeReason: 'COMPLETED' });
     if (finished?.type !== 'RunFinished') return;
+    if (!('runSummaryRef' in finished)) throw new Error('Expected a persisted RunSummary');
     const summary: unknown = JSON.parse(
       await readFile(join(artifacts, finished.runSummaryRef.sha256), 'utf8'),
     );

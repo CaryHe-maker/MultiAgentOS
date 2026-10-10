@@ -55,6 +55,7 @@ import type {
   Envelope,
   ModuleError,
 } from './platform-common/common-schemas.js';
+import type { ContractValidationError } from './platform-common/validation.js';
 import type { ExecutorKind } from './platform-common/execution-kind.js';
 import type {
   ExecutorFailedCode,
@@ -298,6 +299,8 @@ export interface FabricPort {
   register<TRequest, TResponse>(
     schemaId: string,
     handler: (envelope: Envelope<TRequest>) => Promise<TResponse>,
+    /** Only Gateway syscall routes may turn a malformed body with a valid requestId into a rejection. */
+    onInvalid?: (envelope: Envelope<unknown>, error: ContractValidationError) => Promise<TResponse>,
   ): void;
   /** Waits for the handler's response. */
   request<TRequest, TResponse>(

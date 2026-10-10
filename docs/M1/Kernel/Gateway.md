@@ -14,6 +14,8 @@ Gateway 是外部 syscall 的唯一申请入口，负责调用方身份、契约
 - 按 `workflowRunId` 保存 `createRun` 时生成的 `correlationId`，转发运行内请求时以它覆盖调用方传入的值
   （[M1Interface](../M1Interface.md) 2.4）。
 - 按 Schema 校验请求（`SubmitUnitRequest.input` 先按 `kernel.unit.UnitInput` 校验，Unit 级的精确校验由 Core 完成）。
+  Fabric 只对 Gateway 的 syscall 路由提供受控的无效正文回调：`requestId` 合法时返回
+  `SyscallRejected(INVALID_REQUEST)`；缺失或非法 `requestId` 属于传输契约错误，不能编造标识。
 - 处理 `createRun` 时生成 `workflowRunId` 与 `correlationId`，随 `GatewayForward` 交给 Kernel 核心。
 - 按 Core 推送的 `AdmissionProjection` 检查准入封锁（第 4 节）。
 - 准入被拒时直接返回 `SyscallRejected(issuer = 'GATEWAY')`，并写入 Gateway 的结构化日志；通过的请求转发 Kernel 核心并原样返回其响应。
@@ -21,19 +23,19 @@ Gateway 是外部 syscall 的唯一申请入口，负责调用方身份、契约
 
 ## 3. 调用方与请求
 
-| requestType | 允许的 producer | 需要 `workflowRunId` 已知 |
-|---|---|---|
-| `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun` | `workflow` | 是 |
-| `createRun` | `user-interaction` | 否 |
-| `answerAuthorization`、`cancelRun`、`readArtifact` | `user-interaction` | 是 |
-| `shutdown` | `user-interaction` | 否 |
+| requestType                                                 | 允许的 producer    | 需要 `workflowRunId` 已知 |
+| ----------------------------------------------------------- | ------------------ | ------------------------- |
+| `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun` | `workflow`         | 是                        |
+| `createRun`                                                 | `user-interaction` | 否                        |
+| `answerAuthorization`、`cancelRun`、`readArtifact`          | `user-interaction` | 是                        |
+| `shutdown`                                                  | `user-interaction` | 否                        |
 
-| 检查 | 不通过时的原因码 |
-|---|---|
-| producer 与请求类型不匹配 | `CALLER_FORBIDDEN` |
-| 请求不符合 Schema | `INVALID_REQUEST` |
-| `workflowRunId` 不在 Gateway 的准入状态缓存中 | `RUN_NOT_FOUND` |
-| 准入封锁（第 4 节） | `RUN_BLOCKED`，附 `closeReason` |
+| 检查                                          | 不通过时的原因码                |
+| --------------------------------------------- | ------------------------------- |
+| producer 与请求类型不匹配                     | `CALLER_FORBIDDEN`              |
+| 请求不符合 Schema                             | `INVALID_REQUEST`               |
+| `workflowRunId` 不在 Gateway 的准入状态缓存中 | `RUN_NOT_FOUND`                 |
+| 准入封锁（第 4 节）                           | `RUN_BLOCKED`，附 `closeReason` |
 
 ## 4. 准入封锁
 

@@ -14,7 +14,8 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 - 按第 3.2 节判断额度状态，并为 final-call 保留额度。
 - 收敛时完成最终结算并提供 `BudgetSummary`。
 - 不接收任何组件的直接上报；用量随执行事实进入运行 actor，由 Core 在结果检查中调用 `settle`。
-  被调用时发现的异常（结算冲突、实际用量超过估算）以返回值交给 Core，由 Core 写入审计。
+  被调用时发现的异常（结算冲突、实际用量超过估算）以 `SettlementResult.anomalies` 交给 Core，
+  由 Core 写入审计；`budgetState` 同时返回。只有账本不变量无法维持才抛出程序异常。
 
 Workflow 负责 Round 上限与业务收尾，不持有任何 token 数值，只经 UnitReport 的 `budgetState` 得知额度状态。
 
@@ -26,14 +27,14 @@ ext4 为 root 保留一部分空间，普通写入用不到这部分空间，roo
 
 ### 3.1 账本
 
-| 符号 | 含义 |
-|---|---|
-| L | `budget.tokenLimit`，一次 WorkflowRun 的总额度 |
-| F | `finalReserve`，只供 final-call 使用的保留额度（第 4 节派生） |
-| U | 已结算的实际用量（输入 + 输出） |
-| K | 未知消耗：请求可能已发出但无法得到用量时，按预留额全额计入 |
-| R | 在途预留：已预留、尚未结算的额度；M1 串行执行，R 为 0 或一次调用的预留额 |
-| est | 本次调用的估算上界 = `estimatePackTokens(ContextPack)` + 本次 `max_tokens` |
+| 符号     | 含义                                                                              |
+| -------- | --------------------------------------------------------------------------------- |
+| L        | `budget.tokenLimit`，一次 WorkflowRun 的总额度                                    |
+| F        | `finalReserve`，只供 final-call 使用的保留额度（第 4 节派生）                     |
+| U        | 已结算的实际用量（输入 + 输出）                                                   |
+| K        | 未知消耗：请求可能已发出但无法得到用量时，按预留额全额计入                        |
+| R        | 在途预留：已预留、尚未结算的额度；M1 串行执行，R 为 0 或一次调用的预留额          |
+| est      | 本次调用的估算上界 = `estimatePackTokens(ContextPack)` + 本次 `max_tokens`        |
 | finalEst | final-call 的估算上界 = `budget.finalInputBudget` + `budget.finalMaxOutputTokens` |
 
 单位为 token，以 provider 返回的用量为准。只有 model-call 消耗 token。每个运行至多一次 final-call（Core 强制，见 [Core](Core.md) 5.1），
@@ -43,11 +44,11 @@ ext4 为 root 保留一部分空间，普通写入用不到这部分空间，roo
 
 额度状态由结算后的 U + K 决定，只能前进：NORMAL → WRAP_UP → EXHAUSTED。
 
-| 状态 | 条件（剩余 = L − U − K） | 含义 |
-|---|---|---|
-| NORMAL | 剩余 ≥ F + `wrapUpMargin` | 正常推进 |
-| WRAP_UP | 剩余 < F + `wrapUpMargin`，或普通 model-call 预留被拒 | 应收尾 |
-| EXHAUSTED | 剩余 < finalEst，或 final-call 预留被拒 | 不再允许任何 model-call |
+| 状态      | 条件（剩余 = L − U − K）                              | 含义                    |
+| --------- | ----------------------------------------------------- | ----------------------- |
+| NORMAL    | 剩余 ≥ F + `wrapUpMargin`                             | 正常推进                |
+| WRAP_UP   | 剩余 < F + `wrapUpMargin`，或普通 model-call 预留被拒 | 应收尾                  |
+| EXHAUSTED | 剩余 < finalEst，或 final-call 预留被拒               | 不再允许任何 model-call |
 
 `wrapUpMargin` 为一次普通 model-call 的估算上界，使 WRAP_UP 比普通调用被拒提前一次调用发出。
 
@@ -92,15 +93,15 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 
 ## 4. 配置（`KernelConfig.budget`）
 
-| 配置 | 读取者 | 用途 | 建议初值 |
-|---|---|---|---|
-| `tokenLimit` | Monitor | L | 600000（需评测校准） |
-| `perCallInputLimit` | Execution | 普通 context-assemble 的 `tokenBudget` | 64000 |
-| `finalInputBudget` | Execution | final context-assemble 的 `tokenBudget` | 48000 |
-| `maxOutputTokens` | Execution | 普通 model-call 的 `max_tokens` | 8192 |
-| `finalMaxOutputTokens` | Execution | final-call 的 `max_tokens` | 8192 |
-| `orientBudget` | Execution | repository-orient 的 `tokenBudget` | 4000 |
-| `searchBudget` | Execution | repository-search 的 `tokenBudget` | 4000 |
+| 配置                   | 读取者    | 用途                                    | 建议初值             |
+| ---------------------- | --------- | --------------------------------------- | -------------------- |
+| `tokenLimit`           | Monitor   | L                                       | 600000（需评测校准） |
+| `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 64000                |
+| `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 48000                |
+| `maxOutputTokens`      | Execution | 普通 model-call 的 `max_tokens`         | 8192                 |
+| `finalMaxOutputTokens` | Execution | final-call 的 `max_tokens`              | 8192                 |
+| `orientBudget`         | Execution | repository-orient 的 `tokenBudget`      | 4000                 |
+| `searchBudget`         | Execution | repository-search 的 `tokenBudget`      | 4000                 |
 
 派生值，不单独配置：
 

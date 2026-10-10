@@ -508,6 +508,23 @@ describe('Gateway responses and run outcomes', () => {
     );
   });
 
+  it('delivers a summary write failure without inventing a RunSummary reference', () => {
+    const base = {
+      type: 'RunFinished',
+      unknownEffects: [],
+      finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+    };
+    const failure = { code: 'PATH_ESCAPE', category: 'INTEGRITY', source: 'KERNEL' };
+    expect(ok(RunFinishedSchema, { ...base, closeReason: 'CANCELLED' })).toBe(true);
+    expect(ok(RunFinishedSchema, { ...base, closeReason: 'VIOLATION', failure })).toBe(true);
+    expect(
+      ok(RunFinishedSchema, { ...base, closeReason: 'CANCELLED', runSummaryRef: summaryRef }),
+    ).toBe(false);
+    expect(
+      ok(RunFinishedSchema, { type: 'RunFinished', unknownEffects: [], closeReason: 'CANCELLED' }),
+    ).toBe(false);
+  });
+
   it('keeps the RunSummary consistent', () => {
     const summary = {
       workflowRunId: 'wfr_123456',

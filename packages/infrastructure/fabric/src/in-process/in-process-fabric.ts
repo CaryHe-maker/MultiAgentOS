@@ -1,6 +1,10 @@
 import {
   assertValid,
+  BoundaryContextSchema,
+  ContractValidationError,
+  IdSchemas,
   newId,
+  validate,
   type BoundaryContext,
   type CapabilityDescriptor,
   type Envelope,
@@ -12,11 +16,17 @@ import {
   type Producer,
   type ProtocolRegistry,
 } from '@multiagentos/contracts';
+import { SCHEMA_IDS } from '../stubs/port-stubs.js';
 
 /** A message could not be routed. Schema violations throw ContractValidationError instead. */
 export class FabricError extends Error {
   public constructor(
-    public readonly code: 'NO_HANDLER' | 'NO_SUBSCRIBER' | 'ALREADY_REGISTERED' | 'NOT_RUNNING',
+    public readonly code:
+      | 'NO_HANDLER'
+      | 'NO_SUBSCRIBER'
+      | 'ALREADY_REGISTERED'
+      | 'INVALID_REGISTRATION'
+      | 'NOT_RUNNING',
     detail: string,
   ) {
     super(`${code}: ${detail}`);
@@ -26,6 +36,35 @@ export class FabricError extends Error {
 
 type RequestHandler = (envelope: Envelope<unknown>) => Promise<unknown>;
 type MessageHandler = (envelope: Envelope<unknown>) => Promise<void>;
+interface RegisteredHandler {
+  readonly handle: RequestHandler;
+  readonly onInvalid?: (
+    envelope: Envelope<unknown>,
+    error: ContractValidationError,
+  ) => Promise<unknown>;
+}
+
+const GATEWAY_REQUEST_SCHEMAS = new Set<string>([
+  SCHEMA_IDS.registerAgentRun,
+  SCHEMA_IDS.submitUnit,
+  SCHEMA_IDS.endAgentRun,
+  SCHEMA_IDS.closeRun,
+  SCHEMA_IDS.createRun,
+  SCHEMA_IDS.answerAuthorization,
+  SCHEMA_IDS.cancelRun,
+  SCHEMA_IDS.readArtifact,
+  SCHEMA_IDS.shutdown,
+]);
+
+function hasValidRequestId(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    !Array.isArray(payload) &&
+    Object.hasOwn(payload, 'requestId') &&
+    validate(IdSchemas.requestId, (payload as { readonly requestId: unknown }).requestId).ok
+  );
+}
 
 /**
  * Same-process Fabric (docs/M1/Infrastructure/Fabric.md 3). Every communication subject gets
@@ -37,8 +76,9 @@ export class InProcessFabric implements LifecyclePort {
   readonly manifest = { moduleId: 'fabric', version: '0.1.0', dependencies: [] } as const;
   readonly #registry: ProtocolRegistry;
   readonly #now: () => Date;
-  readonly #handlers = new Map<string, RequestHandler>();
+  readonly #handlers = new Map<string, RegisteredHandler>();
   readonly #subscribers = new Map<FabricAddress, MessageHandler>();
+  readonly #addressTails = new Map<FabricAddress, Promise<void>>();
   #running = false;
 
   public constructor(registry: ProtocolRegistry, now: () => Date = () => new Date()) {
@@ -67,26 +107,57 @@ export class InProcessFabric implements LifecyclePort {
   /** The composition root calls this once per subject and hands the client to that subject. */
   client(producer: Producer): FabricPort {
     return {
-      register: (schemaId, handler) => {
+      register: (schemaId, handler, onInvalid) => {
         this.#registry.get(schemaId);
         if (this.#handlers.has(schemaId)) throw new FabricError('ALREADY_REGISTERED', schemaId);
-        this.#handlers.set(schemaId, handler as RequestHandler);
+        if (
+          onInvalid !== undefined &&
+          (producer !== 'gateway' || !GATEWAY_REQUEST_SCHEMAS.has(schemaId))
+        )
+          throw new FabricError('INVALID_REGISTRATION', schemaId);
+        this.#handlers.set(schemaId, {
+          handle: handler as RequestHandler,
+          ...(onInvalid === undefined ? {} : { onInvalid }),
+        });
       },
       request: async <TRequest, TResponse>(
         schemaId: string,
         payload: TRequest,
         context: BoundaryContext,
       ) => {
-        const envelope = this.#envelope(producer, 'command', schemaId, payload, context);
+        // A bad transport context is never a malformed Gateway syscall body.
+        assertValid(BoundaryContextSchema, context);
         const handler = this.#handlers.get(schemaId);
+        let envelope: Envelope<unknown>;
+        try {
+          envelope = this.#envelope(producer, 'command', schemaId, payload, context);
+        } catch (error) {
+          if (
+            !(error instanceof ContractValidationError) ||
+            handler?.onInvalid === undefined ||
+            !hasValidRequestId(payload)
+          )
+            throw error;
+          const malformed = this.#envelope(producer, 'command', schemaId, payload, context, false);
+          return structuredClone(await handler.onInvalid(malformed, error)) as TResponse;
+        }
         if (handler === undefined) throw new FabricError('NO_HANDLER', schemaId);
-        return structuredClone(await handler(envelope)) as TResponse;
+        return structuredClone(await handler.handle(envelope)) as TResponse;
       },
       send: async (address, schemaId, payload, context) => {
         const envelope = this.#envelope(producer, 'event', schemaId, payload, context);
         const subscriber = this.#subscribers.get(address);
         if (subscriber === undefined) throw new FabricError('NO_SUBSCRIBER', address);
-        await subscriber(envelope);
+        const previous = this.#addressTails.get(address);
+        const delivery = (previous ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => subscriber(envelope));
+        this.#addressTails.set(address, delivery);
+        try {
+          await delivery;
+        } finally {
+          if (this.#addressTails.get(address) === delivery) this.#addressTails.delete(address);
+        }
       },
       subscribe: (address, handler) => {
         if (this.#subscribers.has(address)) throw new FabricError('ALREADY_REGISTERED', address);
@@ -102,8 +173,10 @@ export class InProcessFabric implements LifecyclePort {
     schemaId: string,
     payload: unknown,
     context: BoundaryContext,
+    validatePayload = true,
   ): Envelope<unknown> {
     if (!this.#running) throw new FabricError('NOT_RUNNING', schemaId);
+    const checkedContext = assertValid<BoundaryContext>(BoundaryContextSchema, context);
     const entry = this.#registry.get(schemaId);
     return {
       schemaName: entry.schemaName,
@@ -112,12 +185,16 @@ export class InProcessFabric implements LifecyclePort {
       messageId: newId('msg'),
       producer,
       occurredAt: this.#now().toISOString(),
-      tenantId: context.tenantId,
-      projectId: context.projectId,
-      correlationId: context.correlationId,
-      ...(context.causationId === undefined ? {} : { causationId: context.causationId }),
-      ...(context.workflowRunId === undefined ? {} : { workflowRunId: context.workflowRunId }),
-      payload: structuredClone(assertValid(entry.schema, payload)),
+      tenantId: checkedContext.tenantId,
+      projectId: checkedContext.projectId,
+      correlationId: checkedContext.correlationId,
+      ...(checkedContext.causationId === undefined
+        ? {}
+        : { causationId: checkedContext.causationId }),
+      ...(checkedContext.workflowRunId === undefined
+        ? {}
+        : { workflowRunId: checkedContext.workflowRunId }),
+      payload: structuredClone(validatePayload ? assertValid(entry.schema, payload) : payload),
     };
   }
 }
