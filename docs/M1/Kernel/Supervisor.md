@@ -32,6 +32,12 @@ Supervisor 的启动分为两段：
 2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器，开始接受 `execute`、`cancelRun` 与 `shutdown`。
 
 模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
+工厂 `createSupervisor`、`SupervisorDeps`、`ModuleHostControl` 与 `SupervisorModule.whenStopped()` 的定义见
+[M1Interface](../M1Interface.md) 第 14.1 节。
+
+`SubprocessRunner` 已实现为 `supervisor/subprocess-runner.ts` 的 `createSubprocessRunner()`：只运行 `rg`，以参数数组启动、不经 shell；
+`signal` 触发或输出超过 `maxOutputBytes` 时终止子进程；二进制不存在或无法启动时以 `exitCode: null` 返回，不抛出异常。
+它由 `@multiagentos/kernel` 导出，供 Supervisor 注入 `ExecutorEnvironment`，也供 ExecutorSet 的测试直接使用。
 
 ## 3. 与 Kernel 核心的接口
 

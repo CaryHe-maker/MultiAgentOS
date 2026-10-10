@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-ExecutorSet 是静态库 `@multiagentos/executor-set`（目标位置 `packages/executor-set`），提供 M1 Unit 的原子执行行为。
+ExecutorSet 是静态库 `@multiagentos/executor-set`（目标位置 `packages/libraries/executor-set`），提供 M1 Unit 的原子执行行为。
 每个 Executor 实现 [M1Interface](../M1Interface.md) 第 8 节的 `Executor` 接口，由 Supervisor 按 `executionKind`
 装配并运行（见 [Supervisor](../Kernel/Supervisor.md)）。长期规划见 [ExecutorSet 架构](../../Architecture/Library/ExecutorSet.md)，
 技术选择见 [M1TechStack](../M1TechStack.md) §8、§9。
@@ -12,13 +12,16 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 ## 2. Executor 清单
 
-| executionKind | 实现 | 迁移来源 | scope.kind | 产物 |
+| executionKind | 实现 | 目录（`packages/libraries/executor-set/src/`） | scope.kind | 产物 |
 |---|---|---|---|---|
-| `REPOSITORY_ORIENT` | `RepositoryOrientExecutor` | `packages/context-engine` | `REPOSITORY` | ORIENT ContextPack |
-| `REPOSITORY_SEARCH` | `RepositorySearchExecutor` | `packages/context-engine` | `REPOSITORY` | SEARCH ContextPack |
-| `FILE_READ` | `FileReadExecutor` | `apps/executor` | `REPOSITORY` | 读取的文本 |
-| `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `packages/context-engine` | `NONE` | ASSEMBLE ContextPack |
-| `MODEL` | `ModelCallExecutor` | `packages/kernel` 中的 Provider 调用 | `MODEL` | `ModelRawOutput` |
+| `REPOSITORY_ORIENT` | `RepositoryOrientExecutor` | `repository-orient/` | `REPOSITORY` | ORIENT ContextPack |
+| `REPOSITORY_SEARCH` | `RepositorySearchExecutor` | `repository-search/` | `REPOSITORY` | SEARCH ContextPack |
+| `FILE_READ` | `FileReadExecutor` | `file-read/` | `REPOSITORY` | 读取的文本 |
+| `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `context-assemble/` | `NONE` | ASSEMBLE ContextPack |
+| `MODEL` | `ModelCallExecutor` | `model-call/` | `MODEL` | `ModelRawOutput` |
+
+三个仓库 Executor 共用 `repository-access/`。旧系统的文件读取、检索与 Provider 调用已从仓库移除，
+可在提交 `e9bb4c3` 的 `apps/executor`、`packages/context-engine` 与 `packages/kernel` 中查阅；它们基于旧协议，只供参考，不得原样搬回。
 
 `REPORT_PUBLISH` 不属于 ExecutorSet，由 Kernel 的 Execution 直接完成（见 [Execution](../Kernel/Execution.md) 第 5 节）。
 
@@ -26,7 +29,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 | 导出 | 用途 |
 |---|---|
-| `createExecutorRegistry(): ReadonlyMap<ExecutorKind, Executor>` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet |
+| `createExecutorRegistry(): ExecutorRegistry` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet。`ExecutorRegistry` 是按 `executionKind` 索引的对象（M1Interface 第 8 节） |
 | `DEFAULT_EXCLUSIONS` | 硬编码的危险文件规则（第 3.2 节），与 Core 的默认排除规则相同 |
 
 ## 3. 仓库访问
@@ -158,3 +161,16 @@ M1 只运行可信的内置 Executor；引入不可信 Executor 时须改由访�
 | 模型 | 用假的 provider 覆盖第 4.5 节表中每一行；`final` 时强制控制工具；SDK 不自动重试 |
 | 读取 | 按 400 行与 `maxOutputBytes` 截断到完整行；首行超限；空文件 |
 | Contract | 每个 Executor 的输出通过对应 Schema 校验 |
+
+`packages/testing` 为上表提供三样共用的东西，ExecutorSet 的测试必须使用它们，使 fake 与真实实现按同一标准验收：
+
+| 导出 | 用途 |
+|---|---|
+| `describeExecutorContract(name, fixture)` | 对注册表中的五种 Executor 逐一检查：完成时能组成合法的 ExecutionFact（输出类型、产物媒体类型、MODEL 的 `requestState`）；产物与输出一致（ContextPack 的 `operation`、`snapshotId`、`contextPackId`、`prefixSha256`、token 数；读取文本的 `contentSha256`；模型原始输出的工具调用）；相同输入得到相同输出；收到中止信号时仍返回合法结果而不抛出异常 |
+| `createFixtureRepository(root, outside)` 与 `FIXTURE_FILES` | 一个固定的小仓库：普通文本、空文件、命中默认排除规则的文件、二进制文件，以及指向仓库外的符号链接（平台不允许创建时为空） |
+| `repositoryGuardExpectations(repository, environment)` | 第 3.2、3.3、4.3 节对该仓库要求的结果清单（`OUT_OF_SCOPE`、`NOT_FOUND`、`UNSUPPORTED_FILE`、`INVALID_RANGE`、`INVALID_QUERY`、`LIMIT_EXCEEDED`、`SCOPE_MISSING` 等），作为 `fixture.expectations` 传入 `describeExecutorContract` |
+
+真实 Executor 还可以放进整条链路运行：`createFakeExecutorRegistry(undefined, { FILE_READ: 真实实现 })` 只替换其中几种，
+或在 `composeSystem` 的 `parts.createExecutorRegistry` 中直接使用 `createExecutorRegistry`；fake Kernel 会经 Supervisor
+调用它们。需要真实运行 `rg` 时，把 `@multiagentos/kernel` 的 `createSubprocessRunner()` 传给 `createFakeSupervisor({ subprocess })`，
+或直接放进 `ExecutorEnvironment.subprocess`。

@@ -1,0 +1,13 @@
+schemaVersion: v0
+kind: TOOL
+id: handoff-to-code-viewer
+version: v0.1.0
+description: Control tool that hands the analysis task from the planner to the code viewer.
+purpose: CONTROL
+modelName: handoff_to_code_viewer
+modelDescription: Hand the analysis task to the code viewer, which can search and read the repository.
+parametersContract: { kind: contract, id: workflow.HandoffBrief, version: v0 }
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: PLACEHOLDER

@@ -1,0 +1,12 @@
+schemaVersion: v0
+kind: PROMPT
+id: planner-system
+version: v0.1.0
+description: System prompt of the planner.
+role: system
+template: |
+  PLACEHOLDER PLANNER PROMPT.
+  Decide whether the question needs the repository. If it does, call handoff_to_code_viewer
+  with a precise task. If it does not, call finish_analysis.
+variables: []
+contentStatus: PLACEHOLDER

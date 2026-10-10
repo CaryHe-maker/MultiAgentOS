@@ -1,4 +1,4 @@
-﻿{
+{
   "files": [],
   "references": [
     {
@@ -8,40 +8,37 @@
       "path": "apps/control-plane"
     },
     {
-      "path": "apps/executor"
+      "path": "packages/infrastructure/artifacts"
     },
     {
-      "path": "packages/agent-tool-pool"
+      "path": "packages/infrastructure/fabric"
     },
     {
-      "path": "packages/artifacts"
+      "path": "packages/infrastructure/module-host"
     },
     {
-      "path": "packages/communication"
+      "path": "packages/infrastructure/persistence"
     },
     {
-      "path": "packages/context-engine"
+      "path": "packages/libraries/agent-tool-pool"
     },
     {
-      "path": "packages/contracts"
+      "path": "packages/libraries/contracts"
     },
     {
-      "path": "packages/kernel"
+      "path": "packages/libraries/executor-set"
     },
     {
-      "path": "packages/module-host"
+      "path": "packages/modules/kernel"
     },
     {
-      "path": "packages/persistence"
+      "path": "packages/modules/user-interaction"
+    },
+    {
+      "path": "packages/modules/workflow"
     },
     {
       "path": "packages/testing"
-    },
-    {
-      "path": "packages/user-interaction"
-    },
-    {
-      "path": "packages/workflow"
     }
   ]
 }

@@ -1,0 +1,13 @@
+schemaVersion: v0
+kind: TOOL
+id: read-file
+version: v0.1.0
+description: Model-facing file read, served by the file-read unit.
+purpose: UNIT
+modelName: read_file
+modelDescription: Read up to 400 lines from one file in the repository.
+parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: PLACEHOLDER

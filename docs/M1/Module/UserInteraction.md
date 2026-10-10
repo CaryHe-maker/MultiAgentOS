@@ -14,6 +14,8 @@
 - 展示 AnalysisReport、结束原因、失败说明与未知效果；展示完成后请求关闭。
 - M1 采用单次目标输入与最终输出，运行中用户只能终止运行或回答授权。
 - 不直接访问 ArtifactStore、Persistence 或 Workflow；`requestId` 由 UserInteraction 生成（`req_` 加 ULID）。
+- 对终端的全部要求由 `TerminalPort` 表达，由 `apps/cli` 实现；CLI 经 `UserInteractionModule.analyze` 进入
+  （[M1Interface](../M1Interface.md) 第 14.2 节）。
 
 ## 3. CLI 流程
 

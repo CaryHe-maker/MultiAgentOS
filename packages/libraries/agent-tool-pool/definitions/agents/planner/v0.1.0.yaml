@@ -1,0 +1,20 @@
+schemaVersion: v0
+kind: AGENT
+id: planner
+version: v0.1.0
+description: Plans the repository analysis and hands it to the code viewer; never reads the repository.
+role: analysis planner
+modelRef: { id: deepseek-flash, version: v1.0.0 }
+modelSettings: { thinking: DISABLED }
+promptRef: { id: planner-system, version: v0.1.0 }
+unitRefs:
+  - { id: context-assemble, version: v0.1.0 }
+  - { id: model-call, version: v0.1.0 }
+  - { id: report-publish, version: v0.1.0 }
+startUnitRefs: []
+actions:
+  finish: { toolRef: { id: finish-analysis, version: v0.1.0 } }
+  handoff:
+    toolRef: { id: handoff-to-code-viewer, version: v0.1.0 }
+    targetAgentRef: { id: code-viewer, version: v0.1.0 }
+limits: { maxRounds: 3, maxToolCallsPerRound: 0 }

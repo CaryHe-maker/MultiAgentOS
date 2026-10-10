@@ -23,8 +23,7 @@
 | Runtime | Node.js `24.19.0` | `>=24.19.0 <25`，ESM |
 | Package manager | pnpm `11.25.0` | 单一 workspace 和 lockfile |
 | Language | TypeScript `6.0.3` | NodeNext、strict、project references |
-| Schema | TypeBox `1.3.34` | 公共 Schema 与静态类型来源 |
-| Validation | Ajv `8.20.0`、ajv-formats `3.0.1` | 跨边界运行时校验 |
+| Schema 与 Validation | TypeBox `1.3.34` | 公共 Schema、静态类型来源，以及跨边界运行时校验（`typebox/compile`） |
 | Test | Vitest `5.0.1`、fast-check `4.10.2` | 单元、Contract、属性、集成测试 |
 | Quality | ESLint `10.11.0`、Prettier `3.9.8` | `pnpm run check` |
 | Development runner | tsx `4.23.15` | 开发期 TypeScript harness |
@@ -40,11 +39,12 @@ Kernel 核心（Core、Monitor、Scheduler、Execution）内部直接函数调�
 一个进程只处理一个运行，运行结束、展示完成后系统关闭。
 
 ```text
-apps/cli                 CLI Adapter
-apps/control-plane       唯一 composition root
-apps/executor            现有只读 FILE_READ 实现；迁移到 packages/executor-set
-packages/executor-set    ExecutorSet（新建）；接收 packages/context-engine 与 apps/executor 的实现
-packages/*               Module、Infrastructure、Contracts 和 Testing
+apps/cli                    CLI Adapter
+apps/control-plane          唯一 composition root 与进程入口
+packages/modules/*          三个 Module：kernel、workflow、user-interaction
+packages/libraries/*        三个静态库：contracts、agent-tool-pool、executor-set
+packages/infrastructure/*   四类基础设施：fabric、module-host、persistence、artifacts
+packages/testing            Fakes、Contract tests、架构测试和 fixtures
 ```
 
 M1 不因同进程而允许跨包读取 Repository、Reducer 或内部类。`apps/control-plane` 是唯一可以组合多个具体实现的位置。
@@ -54,7 +54,9 @@ M1 不因同进程而允许跨包读取 Repository、Reducer 或内部类。`app
 CLI 使用 Commander `15.0.0` 解析参数，只调用 UserInteraction 的公开入口（命令见 [UserInteraction](Module/UserInteraction.md) 第 3 节）。
 M1 不引入 HTTP Server、OpenAPI、SSE、Web UI 或浏览器运行时。
 
-组合根读取环境变量 `MULTIAGENTOS_CONFIG` 指向的 JSON 文件作为系统配置，未设置时使用内置默认值；按 Schema 校验后拆分注入：
+组合根读取环境变量 `MULTIAGENTOS_CONFIG` 指向的 JSON 文件作为系统配置，未设置时使用内置默认值。
+文件可以只写需要改动的设置，逐项覆盖在内置默认值之上（对象按键合并，数组与其他值整体替换）；
+合并结果按 `platform.config.SystemConfig.v0` 校验，出现未知的键、类型不符或 `dataDir` 不是绝对路径时系统不启动。校验后拆分注入：
 
 | 部分 | 内容 | 定义 |
 |---|---|---|
@@ -67,7 +69,7 @@ Secret 只从环境变量读取（如 `DEEPSEEK_API_KEY`；本地开发可由 `d
 
 ## 5. Shared Contracts
 
-`packages/contracts` 使用 TypeBox 定义 Schema，使用 Ajv 编译并执行验证；全部 Schema、Port 与工具的清单见
+`packages/libraries/contracts` 使用 TypeBox 定义 Schema，并用 TypeBox 自带的编译器执行验证；全部 Schema、Port 与工具的清单见
 [SharedContracts](Library/SharedContracts.md)。其他 workspace 不得引入第二套公共 Schema 工具，也不得仅依赖 TypeScript interface 通过边界。
 
 ## 6. Workflow 与运行控制
@@ -89,7 +91,7 @@ Kernel 的运行 actor 按 [Kernel/Interaction](Kernel/Interaction.md) 第 4 节
 
 一个运行只启用一个配置选定的 Provider（`KernelConfig.provider`）。Provider SDK 只能在 model-call Executor 中使用，并关闭 SDK 自带的自动重试；
 Workflow、UserInteraction、AgentToolPool 和其他 Executor 不得直接导入 Provider SDK。
-上述 Provider 依赖当前声明在 `packages/kernel`，迁移到 `packages/executor-set` 时同步 manifest、依赖边界和测试；`dotenv` 迁移到 `apps/control-plane`。
+上述 Provider 依赖声明在 `packages/libraries/executor-set`，`dotenv` 声明在 `apps/control-plane`。
 
 ## 8. 上下文与检索 Executor
 
@@ -104,7 +106,7 @@ M1 不使用 tree-sitter、SCIP、向量数据库、embedding、reranker 或跨�
 
 ## 9. 文件读取 Executor
 
-file-read Executor 属于 ExecutorSet（现有实现位于 `apps/executor`），使用 Node.js 文件系统 API 实现受限 FILE_READ。
+file-read Executor 属于 ExecutorSet，使用 Node.js 文件系统 API 实现受限 FILE_READ。
 路径检查按 [ExecutorSet](Library/ExecutorSet.md) 3.2 执行：`realpath` 后必须位于 Supervisor 注入的仓库根目录内，并拒绝绝对路径、`..`、
 指向仓库外的 symlink、危险文件、二进制文件和超限输出；打开后按文件描述符复核真实路径。
 
@@ -136,6 +138,12 @@ git diff --check
 ```
 
 最终验收必须在 Ubuntu LTS 上执行上述命令。
+
+`.github/workflows/quality-gate.yml` 在 `ubuntu-24.04` 上对每次 push 和每个指向 `main`、`feat/*` 的 Pull Request 执行上述命令，
+并运行一次 `pnpm run demo:fake`。它不使用任何 Secret，不调用真实模型。
+
+`pnpm run demo:fake` 用 `packages/testing` 的 fake 替换全部 Module 与 ExecutorSet，运行真实的装配、Fabric、ModuleHost 与存储。
+它只用于演示与联调接线，回复全部是固定值，不属于产品入口，也不计入任何验收。
 
 涉及模型的端到端评测必须记录 Provider、模型、配置、固定定义的 digest、commit、token、成本和耗时；普通质量门不得依赖真实模型或外部网络。
 

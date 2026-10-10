@@ -32,24 +32,21 @@
 
 | Workspace | Dependency | Version | Ownership |
 |---|---|---:|---|
-| `packages/contracts` | `typebox` | `1.3.34` | Schema 与 TypeScript 类型 |
-| `packages/contracts` | `ajv` | `8.20.0` | JSON Schema 验证 |
-| `packages/contracts` | `ajv-formats` | `3.0.1` | 标准 format 验证 |
-| `packages/agent-tool-pool` | `yaml` | `2.9.1` | 读取与封存 YAML 定义文件 |
-| `packages/kernel` | `ai` | `7.0.107` | 模型调用抽象 |
-| `packages/kernel` | `@ai-sdk/openai` | `4.0.71` | OpenAI adapter |
-| `packages/kernel` | `@ai-sdk/anthropic` | `4.0.58` | Anthropic adapter |
-| `packages/kernel` | `dotenv` | `18.0.1` | 本地配置加载 |
+| `packages/libraries/contracts` | `typebox` | `1.3.34` | Schema、TypeScript 类型与运行时校验 |
+| `packages/libraries/agent-tool-pool` | `yaml` | `2.9.1` | 读取与封存 YAML 定义文件 |
+| `packages/libraries/executor-set` | `ai` | `7.0.107` | 模型调用抽象 |
+| `packages/libraries/executor-set` | `@ai-sdk/openai` | `4.0.71` | OpenAI adapter |
+| `packages/libraries/executor-set` | `@ai-sdk/anthropic` | `4.0.58` | Anthropic adapter |
+| `apps/control-plane` | `dotenv` | `18.0.1` | 本地配置加载 |
 | `apps/cli` | `commander` | `15.0.0` | CLI 参数解析 |
 
 其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。
-当前 Provider SDK 仍声明在 Kernel package；模型调用实现归 ExecutorSet 的 model-call Executor（目标位置 `packages/executor-set`），API 池归 Kernel.Scheduler；`dotenv` 的目标位置为组合根 `apps/control-plane`。
-实际包迁移需在 M1 详细设计后同步 manifest、依赖边界和测试，本轮不改动代码或依赖。
+Provider SDK 只由 ExecutorSet 的 model-call Executor（`packages/libraries/executor-set/src/model-call`）导入，API 池归 Kernel.Scheduler；`dotenv` 只由组合根 `apps/control-plane` 导入。
 公共协议不携带 Provider SDK 类型。
 
 ## 4. Workspace
 
-仓库包含 3 个 app 和 11 个 package。`apps/control-plane` 负责组合；`packages/testing` 以 devDependency 使用相关模块；其他内部依赖均使用 `workspace:*`。
+仓库包含 2 个 app 和 11 个 package。`apps/control-plane` 负责组合；`packages/` 下按 `modules`、`libraries`、`infrastructure` 分组，`packages/testing` 以 devDependency 使用相关模块；其他内部依赖均使用 `workspace:*`。
 
 ## 5. 安装与验证
 

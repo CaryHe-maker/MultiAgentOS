@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@multiagentos/cli",
   "version": "0.1.0",
   "private": true,
@@ -11,5 +11,16 @@
   "scripts": {
     "build": "tsc -b tsconfig.json --pretty false",
     "check": "tsc -b tsconfig.json --pretty false"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   }
 }

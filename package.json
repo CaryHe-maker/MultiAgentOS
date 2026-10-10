@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "multiagentos",
   "version": "0.1.0",
   "private": true,
@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint:fix": "eslint apps packages --fix",
-    "catalog:seal": "tsc -b packages/agent-tool-pool --pretty false && node packages/agent-tool-pool/dist/cli/seal-definitions.js"
+    "catalog:seal": "tsc -b packages/libraries/agent-tool-pool --pretty false && node packages/libraries/agent-tool-pool/dist/cli/seal-definitions.js",
+    "demo:fake": "tsc -b --pretty false && node apps/control-plane/dist/demo/fake-demo.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

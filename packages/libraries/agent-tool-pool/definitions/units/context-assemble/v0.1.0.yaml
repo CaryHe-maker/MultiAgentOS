@@ -1,0 +1,13 @@
+schemaVersion: v0
+kind: UNIT
+id: context-assemble
+version: v0.1.0
+description: Assemble the model input from instructions, tools, objective and the AgentRun history.
+executionKind: CONTEXT_ASSEMBLE
+protectedCapabilities: []
+inputContract: { kind: contract, id: context.ContextAssembleInput, version: v0 }
+outputContract: { kind: contract, id: context.ContextAssembleOutput, version: v0 }
+toolRefs: []
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy: {}

@@ -1,4 +1,4 @@
-﻿{
+{
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "./src",
@@ -10,22 +10,22 @@
   "exclude": ["dist", "node_modules", "test"],
   "references": [
     {
-      "path": "../agent-tool-pool"
+      "path": "../libraries/agent-tool-pool"
     },
     {
-      "path": "../context-engine"
+      "path": "../libraries/contracts"
     },
     {
-      "path": "../contracts"
+      "path": "../infrastructure/fabric"
     },
     {
-      "path": "../kernel"
+      "path": "../modules/kernel"
     },
     {
-      "path": "../user-interaction"
+      "path": "../modules/user-interaction"
     },
     {
-      "path": "../workflow"
+      "path": "../modules/workflow"
     }
   ]
 }

@@ -5,34 +5,10 @@
 *.pem
 *.key
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-.Python
-.venv/
-venv/
-env/
-ENV/
-pip-wheel-metadata/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-dist/
-build/
-*.egg-info/
-
-# Node / frontend
+# Node
 node_modules/
-.npm/
 .pnpm-store/
-.yarn/
-.next/
-.nuxt/
+dist/
 coverage/
 
 # IDE and OS files
@@ -44,19 +20,10 @@ coverage/
 Thumbs.db
 Desktop.ini
 
-# MultiAgentOS runtime state and generated artifacts
-.multiagent/
+# MultiAgentOS system data directory
 .multiagentos/
-runtime/
-/artifacts/
-worktrees/
-*.sqlite
-*.sqlite3
-*.db
-*.log
 
 # Temporary files
-tmp/
-temp/
+*.log
 *.tmp
 *.bak

@@ -47,7 +47,7 @@ Core、Monitor、Scheduler、Execution 同进程、同通讯主体，但各自�
 | 约束 | M1 实现 |
 |---|---|
 | 运行状态分块 | 运行 actor 的状态分为 Core、Execution、Monitor、Scheduler 四块，每个组件只拿到自己的一块 |
-| 模块边界 | `packages/kernel` 下按组件分目录（`core/`、`execution/`、`monitor/`、`scheduler/`、`gateway/`、`supervisor/`），每个目录只经 `index.ts` 导出第 3.4 节的接口；Lease 等内部类型不导出 |
+| 模块边界 | `packages/modules/kernel` 下按组件分目录（`core/`、`execution/`、`monitor/`、`scheduler/`、`gateway/`、`supervisor/`），每个目录只经 `index.ts` 导出第 3.4 节的接口；Lease 等内部类型不导出 |
 | 依赖规则 | ESLint `no-restricted-imports` 禁止跨组件导入内部文件，纳入 `pnpm run check` |
 | 按需注入 | 组合根只把第 3.4 节的接口交给各组件：Execution 只拿到 `CoreSyscalls`，拿不到 Core 对象；Monitor、Scheduler 拿不到任何其他组件 |
 | 运行时私有 | Lease、账本等状态以 ES 私有字段保存，接口返回冻结的只读值 |
@@ -74,7 +74,7 @@ Monitor 只在被 Core 调用时运行，不接收任何组件的直接上报；
 
 ### 3.4 Kernel 私有接口
 
-以下接口只在 `packages/kernel` 内使用，不进入 contracts。`reservationId`（前缀 `rsv`）由 Monitor 生成，
+以下接口只在 `packages/modules/kernel` 内使用，不进入 contracts。`reservationId`（前缀 `rsv`）由 Monitor 生成，
 `grantId`（前缀 `grt`）由 Scheduler 生成，二者都不跨出 Kernel 核心。
 
 ```ts

@@ -11,6 +11,8 @@ Gateway 是外部 syscall 的唯一申请入口，负责调用方身份、契约
 - 提供 `WorkflowGatewayPort` 与 `InteractionGatewayPort` 的服务端（[M1Interface](../M1Interface.md) 4.1）。
   组合根只把前者的存根注入 Workflow、后者的存根注入 UserInteraction。
 - 以 `Envelope.producer` 确认调用方身份，按第 3 节检查调用方与请求类型是否匹配。
+- 按 `workflowRunId` 保存 `createRun` 时生成的 `correlationId`，转发运行内请求时以它覆盖调用方传入的值
+  （[M1Interface](../M1Interface.md) 2.4）。
 - 按 Schema 校验请求（`SubmitUnitRequest.input` 先按 `kernel.unit.UnitInput` 校验，Unit 级的精确校验由 Core 完成）。
 - 处理 `createRun` 时生成 `workflowRunId` 与 `correlationId`，随 `GatewayForward` 交给 Kernel 核心。
 - 按 Core 推送的 `AdmissionProjection` 检查准入封锁（第 4 节）。

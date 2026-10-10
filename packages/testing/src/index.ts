@@ -1,33 +1,33 @@
-import type {
-  BoundaryContext,
-  ContextPack,
-  ContextPort,
-  ContextRequest,
-  KernelUnitPort,
-  UnitIntent,
-  UnitResult,
-} from '@multiagentos/contracts';
-
-export class FakeContextPort implements ContextPort {
-  public constructor(private readonly response: ContextPack) {}
-  buildContext(request: ContextRequest, context: BoundaryContext): Promise<ContextPack> {
-    void request;
-    void context;
-    return Promise.resolve(this.response);
-  }
-}
-
-export class RecordingKernelUnitPort implements KernelUnitPort {
-  readonly intents: UnitIntent[] = [];
-  public constructor(private readonly responder: (intent: UnitIntent) => UnitResult) {}
-  execute(intent: UnitIntent, context: BoundaryContext): Promise<UnitResult> {
-    void context;
-    this.intents.push(intent);
-    return Promise.resolve(this.responder(intent));
-  }
-}
+export * from './fixtures/canned.js';
 export { FakeCatalogPort } from './fakes/fake-catalog-port.js';
+export { createFakeExecutorRegistry } from './fakes/fake-executors.js';
+export {
+  createFakeGateway,
+  createFakeKernelCore,
+  createFakeSupervisor,
+  type FakeKernelOptions,
+  type FakeSupervisorOptions,
+} from './fakes/fake-kernel.js';
+export { createFakeTerminal } from './fakes/fake-terminal.js';
+export {
+  createFakeUserInteraction,
+  type FakeUserInteractionModule,
+  type FakeUserInteractionOptions,
+} from './fakes/fake-user-interaction.js';
+export { createFakeWorkflow, type FakeWorkflowModule } from './fakes/fake-workflow.js';
 export {
   describeCatalogPortContract,
   type CatalogPortContractFixture,
 } from './harnesses/catalog-port-contract.js';
+export {
+  describeExecutorContract,
+  repositoryGuardExpectations,
+  type ExecutorCase,
+  type ExecutorContractFixture,
+  type ExecutorExpectation,
+} from './harnesses/executor-contract.js';
+export {
+  FIXTURE_FILES,
+  createFixtureRepository,
+  type FixtureRepository,
+} from './fixtures/repository.js';
