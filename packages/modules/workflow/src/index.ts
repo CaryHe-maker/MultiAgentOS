@@ -9,6 +9,7 @@ import type {
   LifecyclePort,
   PersistencePort,
   ProtocolRegistry,
+  SystemFaultReporter,
   WorkflowConfig,
   WorkflowGatewayPort,
   WorkflowInboxPort,
@@ -32,6 +33,11 @@ export interface WorkflowDeps {
   /** Validates tool arguments against a tool's `parametersContract`. */
   readonly registry: ProtocolRegistry;
   readonly config: WorkflowConfig;
+  /**
+   * Where Workflow escalates an error it could not end with `closeRun(FAILED, WORKFLOW_INTERNAL)`:
+   * what its Inbox failure observer receives (docs/M1/Module/Workflow.md 11.1).
+   */
+  readonly reportSystemFault?: SystemFaultReporter;
   readonly now?: () => Date;
 }
 

@@ -9,6 +9,8 @@ Scheduler 负责 API 调用机会的分配，只被 Core 调用。组件间交�
 
 - 实现 `SchedulerDuties`（Interaction 3.4）：`acquire(provider)`、`release(grantId)`、`stopGranting()`、`releaseAll()`。
 - 经 `ProviderCapacityPort` 取得跨运行的 provider 令牌；M1 为进程内实现，每个 provider 容量为 1。
+- 组合运行时，各运行的 `Scheduler` 必须共享同一个 `InProcessProviderCapacity` 实例；
+  否则无法约束跨运行的同一 provider。
 - 运行状态分块中只记录本运行持有的 `grantId → 令牌`。
 - 不维护执行队列，不改变 Unit 的 FIFO 顺序；只有 model-call 经过 Scheduler。
 - 不判断额度；`stopGranting()` 之后不再发放机会。

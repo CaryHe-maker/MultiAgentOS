@@ -41,6 +41,8 @@ import {
   type SyscallAck,
   type SyscallRejected,
   type UnitDefinition,
+  type UnknownEffect,
+  type ViolationCode,
   type WorkflowInboxEvent,
 } from '@multiagentos/contracts';
 import {
@@ -56,6 +58,7 @@ import {
 import type {
   GatewayDeps,
   KernelCoreDeps,
+  KernelCoreModule,
   SupervisorDeps,
   SupervisorModule,
 } from '@multiagentos/kernel';
@@ -67,19 +70,45 @@ import type {
  * SupervisorPort to the injected Executors, one at a time. It has no Lease, budget ledger,
  * timeout, retry or run actor, and it does not validate a Unit input against its contract:
  * never use it to judge Kernel behaviour.
+ *
+ * Every ending and event that Workflow and UserInteraction must handle can be produced from
+ * the options below, so their tests never need to edit this file: COMPLETED, FAILED and
+ * CANCELLED come from the requests themselves, the rest is scripted.
  */
 export interface FakeKernelOptions {
-  /** ASK sends one AuthorizationRequest before the first protected Unit; default GRANTED. */
-  readonly authorization?: 'GRANTED' | 'ASK';
+  /**
+   * ASK sends one AuthorizationRequest before the first protected Unit. TIMEOUT sends it and
+   * resolves it as TIMED_OUT at once, which the Kernel treats like NO; an answer that arrives
+   * afterwards is rejected with QUESTION_NOT_PENDING. Default GRANTED.
+   */
+  readonly authorization?: 'GRANTED' | 'ASK' | 'TIMEOUT';
   /**
    * Scripts the fate of a Unit before it is dispatched: `reject` or `fail` deliver that
    * UnitReport without running an Executor, and `budgetState` is attached to the report.
+   * `end` makes the Kernel end the run when the Unit is submitted, as a run timeout or a
+   * security violation does: the Unit gets no report and the run closes with that reason.
    */
   readonly unitScript?: (unit: {
     readonly executionKind: UnitDefinition['executionKind'];
     /** 0 for the first accepted submitUnit of the run. */
     readonly index: number;
-  }) => { reject?: ReasonCode; fail?: ReasonCode; budgetState?: BudgetState } | undefined;
+  }) =>
+    | {
+        reject?: ReasonCode;
+        fail?: ReasonCode;
+        budgetState?: BudgetState;
+        end?: 'RUN_TIMEOUT' | ViolationCode;
+      }
+    | undefined;
+  /** `createRun` is rejected with this code (for example REPOSITORY_INVALID); no run exists. */
+  readonly rejectCreateRun?: CoreRejectedCode;
+  /**
+   * The RunSummary cannot be saved: RunClosed and RunFinished carry
+   * `finalizationError: RUN_SUMMARY_WRITE_FAILED` and no `runSummaryRef`.
+   */
+  readonly summaryWriteFails?: boolean;
+  /** Reported in RunClosed, RunFinished and the RunSummary of the run. */
+  readonly unknownEffects?: readonly UnknownEffect[];
 }
 
 type GatewayResponse = SyscallAck | SyscallRejected | RunCreated | ArtifactContent;
@@ -167,12 +196,19 @@ export function createFakeSupervisor(
 ): (deps: SupervisorDeps) => SupervisorModule {
   return ({ fabric, moduleHost, executors, credentials, now = () => new Date() }) => {
     let resolveStopped: () => void = () => undefined;
-    const stopped = new Promise<void>((resolve) => {
+    let rejectStopped: (error: unknown) => void = () => undefined;
+    const stopped = new Promise<void>((resolve, reject) => {
       resolveStopped = resolve;
+      rejectStopped = reject;
     });
+    void stopped.catch(() => undefined);
     let stopping: Promise<void> | undefined;
+    // Like the product: a failed stop is visible through whenStopped, never reported as done.
     const stop = () => {
-      stopping ??= moduleHost.stop().finally(resolveStopped);
+      stopping ??= moduleHost.stop().then(resolveStopped, (error: unknown) => {
+        rejectStopped(error);
+        throw error;
+      });
       return stopping;
     };
     const aborts = new Map<string, AbortController>();
@@ -247,7 +283,7 @@ export function createFakeSupervisor(
             },
             // Stopping includes Fabric, so it must start after this request has returned.
             shutdown: () => {
-              setImmediate(() => void stop());
+              setImmediate(() => void stop().catch(() => undefined));
               return Promise.resolve();
             },
           });
@@ -288,7 +324,7 @@ interface FakeRun {
 
 export function createFakeKernelCore(
   options: FakeKernelOptions = {},
-): (deps: KernelCoreDeps) => LifecyclePort {
+): (deps: KernelCoreDeps) => KernelCoreModule {
   return (deps) => {
     const now = deps.now ?? (() => new Date());
     let run: FakeRun | undefined;
@@ -539,6 +575,16 @@ export function createFakeKernelCore(
       index: number,
     ) => {
       const scripted = options.unitScript?.({ executionKind: unit.executionKind, index });
+      if (scripted?.end === 'RUN_TIMEOUT') return finish(target, 'RUN_TIMEOUT');
+      if (scripted?.end !== undefined)
+        return finish(target, 'VIOLATION', {
+          failure: {
+            code: scripted.end,
+            category: REASON_CODE_CATEGORY[scripted.end],
+            source: 'KERNEL',
+            unitRequestId: request.requestId,
+          },
+        });
       const common = {
         type: 'UnitReport' as const,
         requestId: request.requestId,
@@ -599,6 +645,7 @@ export function createFakeKernelCore(
         .catch((error: unknown) => faults.push(error));
       later(async () => {
         const closedAt = now();
+        const unknownEffects = [...(options.unknownEffects ?? [])];
         const { submitted, ok, rejected, failed } = target.units;
         // Which of failure and reportRef exists follows closeReason; the Schema checks it.
         const summary = {
@@ -637,10 +684,18 @@ export function createFakeKernelCore(
             outputTokens: 0,
             finalBudgetState: 'NORMAL',
           },
-          unknownEffects: [],
+          unknownEffects,
         } as RunSummary;
-        const runSummaryRef = await store(target, MEDIA_TYPES.runSummary, canonicalJson(summary));
-        const end = { closeReason, ...outcome, unknownEffects: [], runSummaryRef };
+        const end = {
+          closeReason,
+          ...outcome,
+          unknownEffects,
+          ...(options.summaryWriteFails === true
+            ? { finalizationError: 'RUN_SUMMARY_WRITE_FAILED' }
+            : {
+                runSummaryRef: await store(target, MEDIA_TYPES.runSummary, canonicalJson(summary)),
+              }),
+        };
         emitWorkflow(target, { type: 'RunClosed', ...end } as RunClosed);
         emitInteraction(target, { type: 'RunFinished', ...end } as RunFinished);
       });
@@ -660,7 +715,8 @@ export function createFakeKernelCore(
         return reject(request.requestId, 'UNSUPPORTED_CAPABILITY');
       const index = target.units.submitted;
       target.units.submitted += 1;
-      const mustAsk = unit.protectedCapabilities.length > 0 && options.authorization === 'ASK';
+      const mode = options.authorization ?? 'GRANTED';
+      const mustAsk = unit.protectedCapabilities.length > 0 && mode !== 'GRANTED';
       if (mustAsk && target.authorization === 'NOT_ASKED') {
         target.authorization = 'PENDING';
         target.questionId = newId('qst');
@@ -674,9 +730,19 @@ export function createFakeKernelCore(
           expiresAt: new Date(now().getTime() + deps.config.authorizationTimeoutMs).toISOString(),
         });
       }
-      if (mustAsk && target.authorization === 'PENDING')
+      if (mustAsk && target.authorization === 'PENDING') {
         target.waiting.push({ request, unit, index });
-      else report(target, request, unit, index);
+        if (mode === 'TIMEOUT' && target.questionId !== undefined) {
+          target.authorization = 'DECLINED';
+          emitInteraction(target, {
+            type: 'AuthorizationResolved',
+            questionId: target.questionId,
+            resolution: 'TIMED_OUT',
+          });
+          for (const waiting of target.waiting.splice(0))
+            report(target, waiting.request, waiting.unit, waiting.index);
+        }
+      } else report(target, request, unit, index);
       return ack(request.requestId);
     };
 
@@ -687,6 +753,8 @@ export function createFakeKernelCore(
       const { request } = forward;
       if (forward.requestType === 'createRun') {
         if (run !== undefined || shuttingDown) return reject(request.requestId, 'RUN_LIMIT');
+        if (options.rejectCreateRun !== undefined)
+          return reject(request.requestId, options.rejectCreateRun);
         run = {
           workflowRunId: forward.workflowRunId,
           correlationId,
@@ -787,27 +855,45 @@ export function createFakeKernelCore(
       }
     };
 
-    return lifecycle('kernel-core', ['fabric', 'artifact-store', 'persistence'], {
-      start: () => {
-        deps.fabric.register<GatewayForward, GatewayResponse>(
-          SCHEMA_IDS.gatewayForward,
-          (envelope) => handle(envelope.payload, envelope.correlationId),
-        );
-        serveExecutionFacts(deps.fabric, {
-          report: (fact) => {
-            awaitedFacts.get(fact.executionId)?.(fact);
-            awaitedFacts.delete(fact.executionId);
-            return Promise.resolve();
-          },
-        });
-        return Promise.resolve();
-      },
-      stop: async () => {
+    return {
+      // The composition root's fault path: close the run as a Kernel fault and drain the events.
+      abortAllRuns: async ({ faultId }) => {
+        shuttingDown = true;
+        if (run !== undefined)
+          finish(run, 'FAILED', {
+            failure: {
+              code: 'KERNEL_INTERNAL',
+              category: REASON_CODE_CATEGORY.KERNEL_INTERNAL,
+              source: 'KERNEL',
+              detail: faultId,
+            },
+          });
         await work;
         await Promise.all([toWorkflow.flushed(), toInteraction.flushed()]);
-        if (faults.length > 0) throw new AggregateError(faults, 'The fake Kernel core hit errors');
       },
-    });
+      ...lifecycle('kernel-core', ['fabric', 'artifact-store', 'persistence'], {
+        start: () => {
+          deps.fabric.register<GatewayForward, GatewayResponse>(
+            SCHEMA_IDS.gatewayForward,
+            (envelope) => handle(envelope.payload, envelope.correlationId),
+          );
+          serveExecutionFacts(deps.fabric, {
+            report: (fact) => {
+              awaitedFacts.get(fact.executionId)?.(fact);
+              awaitedFacts.delete(fact.executionId);
+              return Promise.resolve();
+            },
+          });
+          return Promise.resolve();
+        },
+        stop: async () => {
+          await work;
+          await Promise.all([toWorkflow.flushed(), toInteraction.flushed()]);
+          if (faults.length > 0)
+            throw new AggregateError(faults, 'The fake Kernel core hit errors');
+        },
+      }),
+    };
   };
 }
 

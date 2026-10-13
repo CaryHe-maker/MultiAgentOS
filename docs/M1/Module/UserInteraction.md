@@ -8,7 +8,7 @@
 
 ## 2. 职责
 
-- 只持有 `InteractionGatewayPort`：`createRun`、`answerAuthorization`、`cancelRun`、`readArtifact`、`shutdown`。
+- 进入 Kernel 的唯一途径是 `InteractionGatewayPort`：`createRun`、`answerAuthorization`、`cancelRun`、`readArtifact`、`shutdown`。
 - 实现 `InteractionInboxPort`，按顺序逐条处理 AuthorizationRequest、AuthorizationResolved 与 RunFinished。
   处理事件时只等待自己发起的请求的返回值，不等待用户输入：读取 Y/N 由独立的询问任务完成，Inbox 的处理不因此阻塞。
 - 展示 AnalysisReport、结束原因、失败说明与未知效果；展示完成后请求关闭。
@@ -20,6 +20,8 @@
 ## 3. CLI 流程
 
 CLI（`apps/cli`，Commander）只调用 UserInteraction 的公开入口：
+组合根先调用 CLI 解析与校验参数；无效命令直接返回退出码，不构造或启动系统。
+合法命令在系统启动后交给 `UserInteraction.analyze`。
 
 ```text
 multiagentos analyze --repo <绝对路径> [--details] "<目标>"
@@ -32,18 +34,28 @@ createRun({ goal, repositoryPath })
        AuthorizationRequest  → 显示询问，启动询问任务后立即结束本条处理
                                询问任务读到 Y/N → answerAuthorization；到达 expiresAt 时自行结束，不提交回答
        AuthorizationResolved → 撤销仍在等待输入的询问任务；TIMED_OUT、CANCELLED 时显示说明
-       RunFinished           → 撤销仍在等待输入的询问任务 → 第 5 节展示 → --details 时 readArtifact(runSummaryRef) 并展示
+       RunFinished           → 撤销仍在等待输入的询问任务 → 第 5 节展示 → 有 runSummaryRef 且 --details 时读取并展示
                                → 记录退出码 → shutdown
 用户按 Ctrl+C（运行中）→ cancelRun；之后照常等待 RunFinished
 ```
 
 | closeReason | 退出码 |
-|---|---|
-| COMPLETED | 0 |
-| FAILED | 1 |
-| RUN_TIMEOUT | 2 |
-| VIOLATION | 3 |
-| CANCELLED | 130 |
+| ----------- | ------ |
+| COMPLETED   | 0      |
+| FAILED      | 1      |
+| RUN_TIMEOUT | 2      |
+| VIOLATION   | 3      |
+| CANCELLED   | 130    |
+
+若 RunFinished 带 `finalizationError = RUN_SUMMARY_WRITE_FAILED`，显示摘要保存失败；最终退出码至少为 1，
+原有非零退出码（例如 VIOLATION 的 3）保持不变，并继续请求 `shutdown`。
+
+Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`，尚未创建运行或运行已结束时不做任何事。
+第二次 Ctrl+C 由组合根的最后防线强制退出进程（退出码 130），UserInteraction 与 `apps/cli` 的终端适配器都不自行退出
+（[错误与系统故障处理](../SystemFaultHandling.md) 第 6 节）。
+
+以上是 UserInteraction **记录**的退出码，即 `analyze` 的返回值。进程最终的退出码由组合根决定（第 6 节）；
+命令行无法解析时 CLI 返回 64，系统故障为 70，这两个值都不由 UserInteraction 产生。
 
 ## 4. 授权询问
 
@@ -60,6 +72,8 @@ createRun({ goal, repositoryPath })
 - 没有 `reportRef` 时按 `closeReason` 展示结束说明；`failure` 存在时，按 `failure.code` 从 UserInteraction 自有的文案表
   （`InteractionMessages`）给出说明，未收录的原因码使用通用说明。`failure.detail` 不展示。
 - `unknownEffects` 不为空时附“部分操作无法确认是否完成”。
+- `finalizationError` 表示 RunSummary 发布失败，不能读摘要，也不能伪造 `runSummaryRef`；显示明确的保存失败说明。
+  即使有报告仍先展示报告，再展示这一故障；`--details` 只在事件带合法 `runSummaryRef` 时读取摘要。
 - 各结束方式下用户看到的内容见 [Kernel（外部视角）](Kernel.md) 第 9 节。
 - 用户默认只看到结果；`--details` 时额外展示 RunSummary：各 AgentRun 的 Round（`agentRuns[].rounds`）、Unit 与模型调用次数、token、耗时，
   以及 `failure.category` 给出的失败分类。步骤数只在 Workflow 的运行记录中，不展示。
@@ -68,8 +82,26 @@ createRun({ goal, repositoryPath })
 
 - 展示完成后调用 `shutdown`；运行仍在进行时调用会先按取消收敛（Kernel 第 4.3 节）。
 - `UserInteraction.stop()` 先处理完 Inbox 中剩余的事件再停止，保证 RunFinished 一定被展示。
-- UserInteraction 不自行退出进程：它记录退出码（第 3 节），组合根在 ModuleHost 完成全部关闭（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）后，
-  以该退出码退出进程。
+- `stop()` 可重复调用，在 `start()` 之前或失败之后调用也安全，只清理已取得的资源（M1Interface 第 10 节）；
+  ModuleHost 会对启动失败的模块调用它。
+- UserInteraction 不自行退出进程：它记录退出码（第 3 节），组合根在 ModuleHost 完成全部关闭（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）后
+  决定进程的退出码：正常关闭时取该退出码；出现过系统故障时，该退出码非零则保留，否则为 70
+  （[错误与系统故障处理](../SystemFaultHandling.md) 第 5 节）。
+
+### 6.1 自身错误
+
+UserInteraction 不尝试自行恢复，也不把自身错误写成运行结果。以下三处是它的捕获边界，捕获后只调用
+`UserInteractionDeps.reportSystemFault`（`source = 'user-interaction'`），由组合根请求运行收敛并关闭系统：
+
+| 位置 | 说明 |
+| --- | --- |
+| Inbox 处理器 | 作为 Inbox 的失败观察者接入；之后的事件仍按顺序处理 |
+| 询问任务 | 它脱离 Inbox 的处理独立运行，必须自带捕获，不得留下未处理的 Promise 拒绝 |
+| Ctrl+C 等终端中断的处理 | 同上 |
+
+`analyze` 自身抛错由组合根的命令入口捕获，不需要再上报。契约内的结果不属于自身错误：SyscallRejected、
+`QUESTION_NOT_PENDING`、报告校验不通过等按第 3–5 节展示。没有注入上报函数时（单独测试本模块），
+错误留给 Inbox 记录，并使 `stop()` 失败。
 
 ## 7. M1 不实现
 

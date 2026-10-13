@@ -40,6 +40,38 @@ M1 不实现文件写入、项目命令、项目测试、任何 git 调用（含
 Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容说明、正反例和 contract test。
 任务、进度与验证证据由 GitHub Issues 跟踪，每个 Issue 只有一个负责人；完成时在 Issue 中关联 PR 与测试证据。
 
+### 4.1 分支与共享目录
+
+M1 的实现在三个工作分支上并行进行，都合入 `feature/M1/main`，全部完成后再由它合入 `feat/M1`：
+
+| 分支 | 可以直接修改的目录 |
+|---|---|
+| `feature/M1/kernel-infrasturcture` | `packages/modules/kernel`、`packages/infrastructure/**`、`apps/control-plane` |
+| `feature/M1/workflow-UserInteraction` | `packages/modules/workflow`、`packages/modules/user-interaction`、`apps/cli` |
+| `feature/M1/pool-executor` | `packages/libraries/executor-set`、`packages/libraries/agent-tool-pool` |
+
+以下是三个分支共用的接缝，任何一个分支都不得把对它们的修改夹在功能提交里：
+
+| 共享内容 | 说明 |
+|---|---|
+| `packages/libraries/contracts` | Schema、Port 与跨模块类型 |
+| `packages/testing` | fake、fixture 与共享 contract test；fake 只跟随规范，不用来重新定义被替代方的行为 |
+| 各模块包的 `XxxDeps` 与工厂签名 | [M1Interface](M1Interface.md) 第 14 节 |
+| `docs/M1/M1Interface.md`、`docs/M1/Library/SharedContracts.md` | 上述内容的规范 |
+| 根目录的构建与检查配置 | `package.json`、`tsconfig*.json`、`eslint.config.js`、`vitest.config.ts`、`pnpm-lock.yaml` |
+
+共享内容的修改规则：
+
+1. 单独提交，只包含接缝本身及其规范、fake 与 contract test 的同步修改，并说明对另外两个分支的影响。
+2. 先合入 `feature/M1/main`，其他分支从 `feature/M1/main` 同步之后再继续依赖它；不在分支之间互相合并未进入
+   `feature/M1/main` 的接缝修改。
+3. 需要另一个分支的目录发生变化时，向其负责人提出，不代为修改；可以先用 fake 或 Adapter 继续自己的工作。
+4. 分支被其他分支合并之后不再改写历史（rebase、squash、force push）；合入 `feature/M1/main` 使用 merge commit。
+5. 每次从 `feature/M1/main` 同步之后在 Ubuntu 上运行 `pnpm run check`。
+
+fake Kernel 可以由选项产生 Workflow 与 UserInteraction 需要处理的全部结束方式与事件（`FakeKernelOptions`），
+两个模块的测试不需要修改 `packages/testing`；确有缺口时按上面的规则补充。
+
 ## 5. 执行计划
 
 ### 5.1 契约与可替换骨架

@@ -23,6 +23,7 @@ Core 负责运行管理、授权、租约与控制裁决，是内外部 syscall 
 - 推送 `AdmissionProjection` 给 Gateway。
 - 写入审计记录（第 7 节）；统计 Unit 的受理与交付（`RunSummary.units`），组装 RunSummary 并交 Execution 写成产物。
 - 处理 actor 之外的发送器投递的 `KERNEL_FAULT`（Interaction 4.4）。
+- 运行管理实现组合根的 `abortAllRuns`（Interaction 7.1）；收敛过程自身失败时经 `reportSystemFault` 升级。
 
 M1 只支持只读分析所需的基础人工授权，不引入任意能力扩权、复杂审批、委派与再委派或长期跨运行租约。
 
@@ -131,6 +132,7 @@ Core 经 `PersistencePort.auditLog('kernel-core', workflowRunId)` 追加审计�
 | `SETTLEMENT_ANOMALY` | 实际用量超过估算，或重复结算数值冲突（[Monitor](Monitor.md) 3.4） |
 | `STALE_FACT` | 归属核对失败或 CLOSED 后到达的执行事实 |
 | `CONVERGENCE_STARTED`、`CLOSE_REASON_UPGRADED`、`CONVERGENCE_DEADLINE` | 收敛过程 |
+| `SYSTEM_FAULT_ABORT` | 组合根调用 `abortAllRuns`，附 `faultId`（Interaction 7.1） |
 | `RUN_CLOSED` | 收敛第 ③ 步，附 `runSummaryRef` |
 
 ## 8. 配置
