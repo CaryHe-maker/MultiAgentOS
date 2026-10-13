@@ -290,7 +290,7 @@ Workflow → WorkflowGatewayPort → Fabric → Gateway → Fabric → 运行 In
 | `RUN_TIMEOUT`                                                          | 控制 | Core 定时器                                            | Core      |
 | `AUTHORIZATION_TIMEOUT`                                                | 控制 | Core 定时器                                            | Core      |
 | `CONVERGENCE_DEADLINE`                                                 | 控制 | Core 定时器                                            | Core      |
-| `KERNEL_FAULT`                                                         | 控制 | actor 之外的发送器                                     | Core      |
+| `KERNEL_FAULT`                                                         | 控制 | actor 之外的发送器、运行管理（`abortAllRuns`）         | Core      |
 | `EXECUTION_FACT`（outcome 为 TERMINATED、VIOLATION、STOP_UNCONFIRMED） | 控制 | Supervisor                                             | Execution |
 | `REGISTER_AGENT_RUN`、`SUBMIT_UNIT`、`END_AGENT_RUN`、`CLOSE_RUN`      | 工作 | Workflow                                               | Core      |
 | `EXECUTION_FACT`（outcome 为 COMPLETED、REJECTED、FAILED）             | 工作 | Supervisor                                             | Execution |
@@ -429,7 +429,7 @@ Core 在 `submitResultCheck` 中同步完成：
 
 正常结束（`closeRun`）、用户取消、运行超时、安全违规与 Kernel 异常共用以下三步。
 触发来源：`CLOSE_RUN`（COMPLETED 或 FAILED）、`CANCEL_RUN`（CANCELLED）、`RUN_TIMEOUT`（RUN_TIMEOUT）、
-`KERNEL_FAULT` 与 `requestReservation` 中的内部错误（FAILED(KERNEL_INTERNAL)）、
+`KERNEL_FAULT`（含组合根的 `abortAllRuns`）与 `requestReservation` 中的内部错误（FAILED(KERNEL_INTERNAL)）、
 结果检查中的 VIOLATION（VIOLATION）与 STOP_UNCONFIRMED（FAILED）。
 
 每一步都在一次处理内完成，并分为两段：“登记”只改 Core 自己的状态、调用 Scheduler 与登记待发送，可以在同步的内部 syscall 中执行；
@@ -479,15 +479,37 @@ UserInteraction → shutdown → Gateway → 运行管理
 actor 必须在 Supervisor 卸载模块之前排空，否则 RunClosed 可能还在 Outbox 中而 Fabric 已经关闭。
 关闭顺序见 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节。
 
+### 7.1 故障关闭
+
+系统故障（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 2 节的 L2）时，关闭不能依赖 UserInteraction 发起。
+组合根调用 Kernel 核心模块对象上的 `abortAllRuns({ faultId, deadlineMs })`（M1Interface 14.1）：
+
+```text
+组合根 → abortAllRuns
+  → 运行管理标记正在关闭（此后 createRun 返回 RUN_LIMIT）
+  → 对每个不在 CLOSED 的 actor 向控制通道投递 KERNEL_FAULT，faultId 写入审计
+  → RUNNING 的运行按 FAILED(KERNEL_INTERNAL) 收敛，failure.detail 为 faultId；CONVERGING 的运行只写入审计
+  → 全部 actor 为 CLOSED 且各自 Outbox 投递完毕后返回
+```
+
+`abortAllRuns` 不调用 `SupervisorPort.shutdown`，也不停止任何模块；组合根在它返回或到期后自行停止模块。
+它在到期后可能仍未完成，实现不得假定调用方继续等待。
+
 ## 8. panic 与安全停机
 
 panic 只用于可信基础或关键安全不变量已无法维持的情况。普通工具失败、权限拒绝或 Provider 错误不触发 panic。
 除 Core 内部的受控维护逻辑外，绕过 syscall 访问 Lease，或外部主体绕过 Gateway 执行内核操作，均属于权限边界失守。
 M1 以模块边界、私有字段与端口分离使这类访问在结构上不可达；架构测试负责证明这一点。
+`abortAllRuns`（第 7.1 节）是受控维护入口：它只存在于组合根持有的模块对象上，不注册到 Fabric，
+外部主体无法取得；它只能使运行收敛，不能读取或改写 Lease、账本与结束原因以外的状态。
 
 M1 的安全停机就是收敛：违规以 VIOLATION 收敛，Kernel 内部不变量被破坏时以
 `closeRun` 同样的流程按 `FAILED(KERNEL_INTERNAL)` 收敛。不能仅凭 Executor 自报触发 panic。
 进程崩溃时不保证收敛步骤执行，M1 不提供自动故障恢复、透明续跑或高可用。
+
+运行 actor 的处理循环是 Kernel 核心的捕获边界：处理函数抛出的错误不传出 actor，按 `KERNEL_FAULT` 处理。
+收敛过程自身抛错时不再投递 `KERNEL_FAULT`，而是调用 `KernelCoreDeps.reportSystemFault` 升级为系统故障，
+由组合根执行故障关闭；此时不保证 RunClosed 与 RunFinished。
 
 ## 9. 配置（`KernelConfig`）
 

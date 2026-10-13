@@ -215,6 +215,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `PersistencePort`、`RepositoryPort`、`AuditLogPort` | 10 | Persistence | Workflow、Kernel 核心 |
 | `FabricPort`、`FabricAddress` | 10 | Fabric | 全部通讯主体 |
 | `LifecyclePort`、`ModuleId`、`HealthStatus` | 10 | 各模块 | ModuleHost |
+| `SystemFault`、`SystemFaultReporter` | 10 | 组合根 | Kernel 核心、Workflow、UserInteraction |
 | `ExecutorRegistry` | 8 | ExecutorSet | 组合根、Supervisor |
 | `PortResult` | 3.3 | — | 同步 Port 的返回 |
 

@@ -12,7 +12,9 @@ import type {
 import { SCHEMA_IDS } from '@multiagentos/fabric';
 import type { KernelConfig } from '../interfaces/index.js';
 
-export { createSubprocessRunner } from './subprocess-runner.js';
+import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
+
+export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 
 export interface ModuleHostControl {
   start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void>;
@@ -28,6 +30,11 @@ export interface SupervisorDeps {
   readonly config: KernelConfig;
   /** System data directory; the Supervisor empties `<dataDir>/tmp/` before anything starts. */
   readonly dataDir: string;
+  /**
+   * The runner handed to Executors. The composition root passes its own so that it can still
+   * end the child processes when the Supervisor cannot; the default is a private runner.
+   */
+  readonly subprocess?: TrackedSubprocessRunner;
   readonly now?: () => Date;
 }
 
@@ -47,6 +54,7 @@ function temporaryDirectory(dataDir: string): string {
 
 export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const now = deps.now ?? (() => new Date());
+  const subprocess = deps.subprocess ?? createSubprocessRunner();
   const registered = new Set<string>();
   let ready = false;
   let starting: Promise<void> | undefined;
@@ -74,6 +82,8 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       } catch (error) {
         errors.push(error);
       }
+      // Every run has converged by now on the normal path; on a fault path nothing else will.
+      subprocess.killAll();
       try {
         await rm(temporaryDirectory(deps.dataDir), { recursive: true, force: true });
       } catch (error) {

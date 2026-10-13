@@ -56,6 +56,7 @@ import {
 import type {
   GatewayDeps,
   KernelCoreDeps,
+  KernelCoreModule,
   SupervisorDeps,
   SupervisorModule,
 } from '@multiagentos/kernel';
@@ -167,12 +168,19 @@ export function createFakeSupervisor(
 ): (deps: SupervisorDeps) => SupervisorModule {
   return ({ fabric, moduleHost, executors, credentials, now = () => new Date() }) => {
     let resolveStopped: () => void = () => undefined;
-    const stopped = new Promise<void>((resolve) => {
+    let rejectStopped: (error: unknown) => void = () => undefined;
+    const stopped = new Promise<void>((resolve, reject) => {
       resolveStopped = resolve;
+      rejectStopped = reject;
     });
+    void stopped.catch(() => undefined);
     let stopping: Promise<void> | undefined;
+    // Like the product: a failed stop is visible through whenStopped, never reported as done.
     const stop = () => {
-      stopping ??= moduleHost.stop().finally(resolveStopped);
+      stopping ??= moduleHost.stop().then(resolveStopped, (error: unknown) => {
+        rejectStopped(error);
+        throw error;
+      });
       return stopping;
     };
     const aborts = new Map<string, AbortController>();
@@ -247,7 +255,7 @@ export function createFakeSupervisor(
             },
             // Stopping includes Fabric, so it must start after this request has returned.
             shutdown: () => {
-              setImmediate(() => void stop());
+              setImmediate(() => void stop().catch(() => undefined));
               return Promise.resolve();
             },
           });
@@ -288,7 +296,7 @@ interface FakeRun {
 
 export function createFakeKernelCore(
   options: FakeKernelOptions = {},
-): (deps: KernelCoreDeps) => LifecyclePort {
+): (deps: KernelCoreDeps) => KernelCoreModule {
   return (deps) => {
     const now = deps.now ?? (() => new Date());
     let run: FakeRun | undefined;
@@ -787,27 +795,45 @@ export function createFakeKernelCore(
       }
     };
 
-    return lifecycle('kernel-core', ['fabric', 'artifact-store', 'persistence'], {
-      start: () => {
-        deps.fabric.register<GatewayForward, GatewayResponse>(
-          SCHEMA_IDS.gatewayForward,
-          (envelope) => handle(envelope.payload, envelope.correlationId),
-        );
-        serveExecutionFacts(deps.fabric, {
-          report: (fact) => {
-            awaitedFacts.get(fact.executionId)?.(fact);
-            awaitedFacts.delete(fact.executionId);
-            return Promise.resolve();
-          },
-        });
-        return Promise.resolve();
-      },
-      stop: async () => {
+    return {
+      // The composition root's fault path: close the run as a Kernel fault and drain the events.
+      abortAllRuns: async ({ faultId }) => {
+        shuttingDown = true;
+        if (run !== undefined)
+          finish(run, 'FAILED', {
+            failure: {
+              code: 'KERNEL_INTERNAL',
+              category: REASON_CODE_CATEGORY.KERNEL_INTERNAL,
+              source: 'KERNEL',
+              detail: faultId,
+            },
+          });
         await work;
         await Promise.all([toWorkflow.flushed(), toInteraction.flushed()]);
-        if (faults.length > 0) throw new AggregateError(faults, 'The fake Kernel core hit errors');
       },
-    });
+      ...lifecycle('kernel-core', ['fabric', 'artifact-store', 'persistence'], {
+        start: () => {
+          deps.fabric.register<GatewayForward, GatewayResponse>(
+            SCHEMA_IDS.gatewayForward,
+            (envelope) => handle(envelope.payload, envelope.correlationId),
+          );
+          serveExecutionFacts(deps.fabric, {
+            report: (fact) => {
+              awaitedFacts.get(fact.executionId)?.(fact);
+              awaitedFacts.delete(fact.executionId);
+              return Promise.resolve();
+            },
+          });
+          return Promise.resolve();
+        },
+        stop: async () => {
+          await work;
+          await Promise.all([toWorkflow.flushed(), toInteraction.flushed()]);
+          if (faults.length > 0)
+            throw new AggregateError(faults, 'The fake Kernel core hit errors');
+        },
+      }),
+    };
   };
 }
 

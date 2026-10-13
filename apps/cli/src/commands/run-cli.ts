@@ -7,18 +7,18 @@ export interface CliTarget {
   analyze(command: AnalyzeCommand): Promise<number>;
 }
 
+export type CliParseResult =
+  | { readonly ok: true; readonly command: AnalyzeCommand }
+  | { readonly ok: false; readonly exitCode: number };
+
 /** Exit code of a command line that could not be parsed. */
 const EXIT_CODE_USAGE = 64;
 
-/**
- * Parses `multiagentos analyze --repo <absolute path> [--details] "<goal>"` and resolves with
- * the exit code. It never exits the process: the composition root does that after shutdown.
- */
-export async function runCli(
+/** Parses and validates the command before the composition root starts any module. */
+export async function parseCli(
   argv: readonly string[],
-  target: CliTarget,
   terminal: Pick<TerminalPort, 'write'>,
-): Promise<number> {
+): Promise<CliParseResult> {
   let command: AnalyzeCommand | undefined;
   const program = new Command('multiagentos').exitOverride().configureOutput({
     writeOut: (text) => terminal.write(text),
@@ -36,13 +36,29 @@ export async function runCli(
   try {
     await program.parseAsync([...argv], { from: 'user' });
   } catch (error) {
-    if (error instanceof CommanderError) return error.exitCode === 0 ? 0 : EXIT_CODE_USAGE;
+    if (error instanceof CommanderError)
+      return { ok: false, exitCode: error.exitCode === 0 ? 0 : EXIT_CODE_USAGE };
     throw error;
   }
-  if (command === undefined) return EXIT_CODE_USAGE;
+  if (command === undefined) return { ok: false, exitCode: EXIT_CODE_USAGE };
   if (!isAbsolute(command.repositoryPath)) {
     terminal.write('--repo must be an absolute path\n');
-    return EXIT_CODE_USAGE;
+    return { ok: false, exitCode: EXIT_CODE_USAGE };
   }
-  return await target.analyze(command);
+  return { ok: true, command };
+}
+
+/** Runs a command already validated by the CLI adapter. */
+export function runParsedCli(command: AnalyzeCommand, target: CliTarget): Promise<number> {
+  return target.analyze(command);
+}
+
+/** Convenience entry for callers that do not need to separate parsing from startup. */
+export async function runCli(
+  argv: readonly string[],
+  target: CliTarget,
+  terminal: Pick<TerminalPort, 'write'>,
+): Promise<number> {
+  const parsed = await parseCli(argv, terminal);
+  return parsed.ok ? runParsedCli(parsed.command, target) : parsed.exitCode;
 }

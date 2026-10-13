@@ -8,7 +8,7 @@
 
 ## 2. 职责
 
-- 只持有 `InteractionGatewayPort`：`createRun`、`answerAuthorization`、`cancelRun`、`readArtifact`、`shutdown`。
+- 进入 Kernel 的唯一途径是 `InteractionGatewayPort`：`createRun`、`answerAuthorization`、`cancelRun`、`readArtifact`、`shutdown`。
 - 实现 `InteractionInboxPort`，按顺序逐条处理 AuthorizationRequest、AuthorizationResolved 与 RunFinished。
   处理事件时只等待自己发起的请求的返回值，不等待用户输入：读取 Y/N 由独立的询问任务完成，Inbox 的处理不因此阻塞。
 - 展示 AnalysisReport、结束原因、失败说明与未知效果；展示完成后请求关闭。
@@ -20,6 +20,8 @@
 ## 3. CLI 流程
 
 CLI（`apps/cli`，Commander）只调用 UserInteraction 的公开入口：
+组合根先调用 CLI 解析与校验参数；无效命令直接返回退出码，不构造或启动系统。
+合法命令在系统启动后交给 `UserInteraction.analyze`。
 
 ```text
 multiagentos analyze --repo <绝对路径> [--details] "<目标>"
@@ -48,6 +50,9 @@ createRun({ goal, repositoryPath })
 若 RunFinished 带 `finalizationError = RUN_SUMMARY_WRITE_FAILED`，显示摘要保存失败；最终退出码至少为 1，
 原有非零退出码（例如 VIOLATION 的 3）保持不变，并继续请求 `shutdown`。
 
+以上是 UserInteraction **记录**的退出码，即 `analyze` 的返回值。进程最终的退出码由组合根决定（第 6 节）；
+命令行无法解析时 CLI 返回 64，系统故障为 70，这两个值都不由 UserInteraction 产生。
+
 ## 4. 授权询问
 
 - 询问由 Core 在第一个受保护 Unit 到达权限检查时发起，以 AuthorizationRequest 投递到 UserInteraction 的 Inbox。
@@ -73,8 +78,26 @@ createRun({ goal, repositoryPath })
 
 - 展示完成后调用 `shutdown`；运行仍在进行时调用会先按取消收敛（Kernel 第 4.3 节）。
 - `UserInteraction.stop()` 先处理完 Inbox 中剩余的事件再停止，保证 RunFinished 一定被展示。
-- UserInteraction 不自行退出进程：它记录退出码（第 3 节），组合根在 ModuleHost 完成全部关闭（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）后，
-  以该退出码退出进程。
+- `stop()` 可重复调用，在 `start()` 之前或失败之后调用也安全，只清理已取得的资源（M1Interface 第 10 节）；
+  ModuleHost 会对启动失败的模块调用它。
+- UserInteraction 不自行退出进程：它记录退出码（第 3 节），组合根在 ModuleHost 完成全部关闭（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）后
+  决定进程的退出码：正常关闭时取该退出码；出现过系统故障时，该退出码非零则保留，否则为 70
+  （[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 5 节）。
+
+### 6.1 自身错误
+
+UserInteraction 不尝试自行恢复，也不把自身错误写成运行结果。以下三处是它的捕获边界，捕获后只调用
+`UserInteractionDeps.reportSystemFault`（`source = 'user-interaction'`），由组合根请求运行收敛并关闭系统：
+
+| 位置 | 说明 |
+| --- | --- |
+| Inbox 处理器 | 作为 Inbox 的失败观察者接入；之后的事件仍按顺序处理 |
+| 询问任务 | 它脱离 Inbox 的处理独立运行，必须自带捕获，不得留下未处理的 Promise 拒绝 |
+| Ctrl+C 等终端中断的处理 | 同上 |
+
+`analyze` 自身抛错由组合根的命令入口捕获，不需要再上报。契约内的结果不属于自身错误：SyscallRejected、
+`QUESTION_NOT_PENDING`、报告校验不通过等按第 3–5 节展示。没有注入上报函数时（单独测试本模块），
+错误留给 Inbox 记录，并使 `stop()` 失败。
 
 ## 7. M1 不实现
 

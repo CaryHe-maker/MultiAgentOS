@@ -1,6 +1,6 @@
 import type { AnalyzeCommand } from '@multiagentos/user-interaction';
 import { describe, expect, it } from 'vitest';
-import { runCli } from './run-cli.js';
+import { parseCli, runCli } from './run-cli.js';
 
 function harness(exitCode = 0) {
   const commands: AnalyzeCommand[] = [];
@@ -20,6 +20,18 @@ function harness(exitCode = 0) {
 const absolute = process.platform === 'win32' ? 'C:\\repo' : '/repo';
 
 describe('runCli', () => {
+  it('returns a validated command without running it', async () => {
+    const { terminal } = harness();
+    expect(await parseCli(['analyze', '--repo', absolute, 'Explain X'], terminal)).toEqual({
+      ok: true,
+      command: { goal: 'Explain X', repositoryPath: absolute, details: false },
+    });
+    expect(await parseCli(['analyze', '--repo', 'relative', 'Explain X'], terminal)).toEqual({
+      ok: false,
+      exitCode: 64,
+    });
+  });
+
   it('passes the analyze command on and returns its exit code', async () => {
     const { commands, target, terminal } = harness(3);
     const code = await runCli(

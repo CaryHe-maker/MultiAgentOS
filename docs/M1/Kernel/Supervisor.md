@@ -84,6 +84,11 @@ M1 的安全停机就是收敛（[Interaction](Interaction.md) 第 8 节），Su
 
 - 收到 `shutdown` 后，Supervisor 按 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节的顺序停止模块，Fabric 最后停止；
   随后终止残留子进程、清理临时文件并退出。此时全部运行 actor 已收敛完毕（[Interaction](Interaction.md) 第 7 节）。
+- `stop()` 可重复调用并共用同一次执行，停止失败经 `whenStopped()` 以拒绝表达，不报告为完成。
+  故障关闭时由组合根直接调用它（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 5 节）；
+  Supervisor 不裁决系统故障，也不决定进程退出码。
+- 子进程在创建时登记到 `SubprocessRunner` 的存活集合，`killAll()` 同步终止全部存活子进程。
+  runner 由组合根构造并经 `SupervisorDeps.subprocess` 注入，组合根因此能在 Supervisor 不可用时终止子进程。
 - 进程内执行依赖 Executor 响应中止信号，Supervisor 不能强制终止同一进程中的失控代码，也不能在所在进程卡死或崩溃后继续监管；
   无法确认停止的执行以 `STOP_UNCONFIRMED` 报告，相关效果标记为未知。需要强制终止的行为（如 `rg`）以子进程运行。
 
