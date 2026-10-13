@@ -23,7 +23,7 @@ AgentToolPool、ExecutorSet、SharedContracts 是静态库，不作为自主服�
 3. Supervisor 清空 <dataDir>/tmp/，再驱动 ModuleHost 按依赖启动：
      fabric → artifact-store → persistence → kernel-core → gateway → workflow → user-interaction
    fabric 就绪后，ModuleHost.start 的 afterStart 钩子让 Supervisor 注册 SupervisorPort 的处理器，
-   此后才接受派发；钩子失败同启动失败一样回滚已启动模块
+   处理器已登记但只在全部模块就绪后接受请求；钩子失败同启动失败一样回滚已启动模块
 4. 全部就绪后 CLI 开始接收命令；在此之前没有任何请求进入 Gateway
 ```
 
