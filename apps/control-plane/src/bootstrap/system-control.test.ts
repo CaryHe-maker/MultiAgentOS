@@ -15,7 +15,11 @@ import type { SystemFaultReporter } from '@multiagentos/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultSystemConfig } from '../config/system-config.js';
 import { composeSystem, type ComposeOptions, type System } from './compose-system.js';
-import { installProcessGuards, type GuardedProcess } from './process-guards.js';
+import {
+  EXIT_CODE_INTERRUPTED,
+  installProcessGuards,
+  type GuardedProcess,
+} from './process-guards.js';
 import { EXIT_CODE_SYSTEM_FAULT } from './system-control.js';
 
 const roots: string[] = [];
@@ -257,6 +261,28 @@ describe('process guards', () => {
     expect(calls).toEqual(['fatal: lost promise', 'kill', `exit ${EXIT_CODE_SYSTEM_FAULT}`]);
     listeners.get('exit')?.();
     expect(calls.at(-1)).toBe('kill');
+    remove();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('leaves the first interrupt to UserInteraction and forces the exit on the second', () => {
+    const listeners = new Map<string, (error?: unknown) => void>();
+    const calls: string[] = [];
+    const target: GuardedProcess = {
+      on: (event: string, listener: (error?: unknown) => void) =>
+        void listeners.set(event, listener),
+      off: (event) => void listeners.delete(event),
+      exit: (code) => void calls.push(`exit ${code}`),
+    };
+    const remove = installProcessGuards({
+      killSubprocesses: () => calls.push('kill'),
+      log: () => calls.push('log'),
+      target,
+    });
+    listeners.get('SIGINT')?.();
+    expect(calls).toEqual([]);
+    listeners.get('SIGINT')?.();
+    expect(calls).toEqual(['log', 'kill', `exit ${EXIT_CODE_INTERRUPTED}`]);
     remove();
     expect(listeners.size).toBe(0);
   });

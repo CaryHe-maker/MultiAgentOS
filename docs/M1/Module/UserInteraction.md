@@ -50,6 +50,10 @@ createRun({ goal, repositoryPath })
 若 RunFinished 带 `finalizationError = RUN_SUMMARY_WRITE_FAILED`，显示摘要保存失败；最终退出码至少为 1，
 原有非零退出码（例如 VIOLATION 的 3）保持不变，并继续请求 `shutdown`。
 
+Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`，尚未创建运行或运行已结束时不做任何事。
+第二次 Ctrl+C 由组合根的最后防线强制退出进程（退出码 130），UserInteraction 与 `apps/cli` 的终端适配器都不自行退出
+（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 6 节）。
+
 以上是 UserInteraction **记录**的退出码，即 `analyze` 的返回值。进程最终的退出码由组合根决定（第 6 节）；
 命令行无法解析时 CLI 返回 64，系统故障为 70，这两个值都不由 UserInteraction 产生。
 
