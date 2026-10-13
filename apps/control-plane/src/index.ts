@@ -18,7 +18,7 @@ export {
   type System,
   type SystemParts,
 } from './bootstrap/compose-system.js';
-export { installProcessGuards } from './bootstrap/process-guards.js';
+export { EXIT_CODE_INTERRUPTED, installProcessGuards } from './bootstrap/process-guards.js';
 export {
   EXIT_CODE_SYSTEM_FAULT,
   type ShutdownTimeouts,

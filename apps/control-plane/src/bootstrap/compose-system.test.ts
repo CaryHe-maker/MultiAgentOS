@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   AnalysisReportSchema,
   RunSummarySchema,
+  newId,
   validate,
   type PersistencePort,
 } from '@multiagentos/contracts';
@@ -154,6 +155,86 @@ describe('fake vertical chain', () => {
       closeReason: 'FAILED',
       failure: { code: 'USER_DECLINED', source: 'WORKFLOW' },
     });
+  });
+
+  it('resolves the question as TIMED_OUT, which counts as a refusal', async () => {
+    const { system, workflow, interaction } = await fakeSystem({ authorization: 'TIMEOUT' });
+    await system.start();
+    expect(await system.userInteraction.analyze(command)).toBe(1);
+    await system.whenStopped();
+    expect(interaction.events.slice(0, 2)).toMatchObject([
+      { type: 'AuthorizationRequest' },
+      { type: 'AuthorizationResolved', resolution: 'TIMED_OUT' },
+    ]);
+    expect(workflow.events.at(-1)).toMatchObject({
+      type: 'RunClosed',
+      failure: { code: 'USER_DECLINED' },
+    });
+  });
+
+  it('rejects createRun when scripted, so that no run exists', async () => {
+    const { system, workflow, interaction } = await fakeSystem({
+      rejectCreateRun: 'REPOSITORY_INVALID',
+    });
+    await system.start();
+    expect(await system.userInteraction.analyze(command)).toBe(4);
+    await system.whenStopped();
+    expect(workflow.events).toEqual([]);
+    expect(interaction.events).toEqual([]);
+  });
+
+  it('ends the run by itself as RUN_TIMEOUT or VIOLATION', async () => {
+    const timedOut = await fakeSystem({
+      unitScript: ({ index }) => (index === 2 ? { end: 'RUN_TIMEOUT' } : undefined),
+    });
+    await timedOut.system.start();
+    expect(await timedOut.system.userInteraction.analyze(command)).toBe(2);
+    await timedOut.system.whenStopped();
+    const closed = timedOut.workflow.events.at(-1);
+    expect(closed).toMatchObject({ type: 'RunClosed', closeReason: 'RUN_TIMEOUT' });
+    expect(closed).not.toHaveProperty('failure');
+    expect(timedOut.workflow.events.filter((event) => event.type === 'UnitReport')).toHaveLength(2);
+
+    const violated = await fakeSystem({
+      unitScript: ({ executionKind }) =>
+        executionKind === 'FILE_READ' ? { end: 'PATH_ESCAPE' } : undefined,
+    });
+    await violated.system.start();
+    expect(await violated.system.userInteraction.analyze(command)).toBe(3);
+    await violated.system.whenStopped();
+    expect(violated.interaction.events.at(-1)).toMatchObject({
+      type: 'RunFinished',
+      closeReason: 'VIOLATION',
+      failure: { code: 'PATH_ESCAPE', category: 'INTEGRITY', source: 'KERNEL' },
+    });
+  });
+
+  it('reports a RunSummary that could not be saved, and unknown effects', async () => {
+    const unknownEffects = [
+      {
+        unitAttemptId: newId('una'),
+        executionId: newId('exe'),
+        executionKind: 'MODEL',
+        effect: 'MODEL_REQUEST_UNCONFIRMED',
+      },
+    ] as const;
+    const { system, workflow, interaction } = await fakeSystem({
+      summaryWriteFails: true,
+      unknownEffects,
+    });
+    await system.start();
+    // The run completed, but the exit code is at least 1 (UserInteraction 3).
+    expect(await system.userInteraction.analyze(command)).toBe(1);
+    await system.whenStopped();
+    for (const end of [workflow.events.at(-1), interaction.events.at(-1)]) {
+      expect(end).toMatchObject({
+        closeReason: 'COMPLETED',
+        finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+        unknownEffects,
+      });
+      expect(end).not.toHaveProperty('runSummaryRef');
+    }
+    expect(interaction.reportText).toBeDefined();
   });
 
   it('fails fast while a product part is not implemented', async () => {

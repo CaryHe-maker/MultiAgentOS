@@ -1860,6 +1860,10 @@ interface StopReport {
 否则为 70。出现过系统故障的进程不以 0 退出。完整规则见
 [错误、Exception 与系统故障处理](../SystemFaultHandling.md) 第 5 节。
 
+进程入口是 `apps/control-plane` 的 `bin.ts`（命令名 `multiagentos`）：它只调用 `main(argv)` 并以返回值作为退出码，
+组合阶段抛错时写 stderr 并以 70 退出。`main` 安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；
+第一次 Ctrl+C 经 `TerminalPort.onInterrupt` 交给 UserInteraction。
+
 尚未实现的产品工厂在被调用时抛出 `NOT_IMPLEMENTED`，不返回占位的成功结果。
 `packages/testing` 为每个工厂提供 fake，为 `CatalogPort` 与 `Executor` 提供共享 contract test；
 fake 只保证消息的形状与先后顺序符合本文，不实现任何权限、额度或业务逻辑。

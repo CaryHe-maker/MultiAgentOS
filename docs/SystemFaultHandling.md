@@ -147,6 +147,8 @@ REGISTERED → STARTING → READY → STOPPING → STOPPED
 | 意图为 `FAULT`，命令返回 0、抛错或没有返回     | 70（`EXIT_CODE_SYSTEM_FAULT`）             |
 | 引导失败                                       | 70                                         |
 | 未捕获异常、未处理的 Promise 拒绝              | 70，不尝试收敛                             |
+| 组合阶段抛错（配置、目录、工厂）               | 70；此时没有模块被启动                     |
+| 用户第二次按 Ctrl+C                            | 130，不尝试收敛（第 6 节）                 |
 
 出现过系统故障的进程不会以 0 退出。
 
@@ -159,6 +161,10 @@ REGISTERED → STARTING → READY → STOPPING → STOPPED
   靠进程退出结束。
 - 最后防线（`installProcessGuards`）在未捕获异常时只做三件事：写诊断、同步终止子进程、非零退出。
   此时进程内状态不可信，不调用 Core，也不等待任何异步清理。
+- Ctrl+C 分两段，两段的主体不同。第一次属于 UserInteraction：它经 `TerminalPort.onInterrupt` 调用 `cancelRun`，
+  运行按 CANCELLED 正常收敛，退出码 130；最后防线只计数，不做任何事。第二次属于最后防线：用户不再等待收敛，
+  它写诊断、同步终止子进程、以 130 退出，同样不调用任何模块。尚未创建运行时第一次没有可取消的对象，
+  用户再按一次即退出。`apps/cli` 的终端适配器只转发中断，不得自行退出进程。
 - 事件循环卡死或进程崩溃由进程外处理。M1 的进程外监督者是启动它的用户或 shell；
   M1 不部署独立的监督进程。
 
@@ -185,6 +191,7 @@ REGISTERED → STARTING → READY → STOPPING → STOPPED
 | ModuleHost 账本、停止失败模块、启动中停止、停止期限、失败不重试                   | `packages/infrastructure/module-host`              | 已实现   |
 | 系统控制：故障入口、有界故障关闭、关闭意图、退出码                                | `apps/control-plane/src/bootstrap/system-control.ts` | 已实现   |
 | `main()` 保证关闭；最后防线                                                       | `apps/control-plane/src/index.ts`、`process-guards.ts` | 已实现   |
+| 进程入口 `multiagentos`；第二次 Ctrl+C 强制退出                                   | `apps/control-plane/src/bin.ts`、`process-guards.ts` | 已实现   |
 | 子进程存活集合与 `killAll()`；Supervisor 停止时调用                               | `packages/modules/kernel/src/supervisor`           | 已实现   |
 | `KernelCoreModule.abortAllRuns`、`KernelCoreDeps.reportSystemFault` 的接口与注入  | `packages/modules/kernel/src/kernel-core.ts`       | 接口已定 |
 | fake Kernel 的 `abortAllRuns`；fake Supervisor 如实报告停止失败                   | `packages/testing/src/fakes/fake-kernel.ts`        | 已实现   |
@@ -204,8 +211,9 @@ REGISTERED → STARTING → READY → STOPPING → STOPPED
 - ExecutorSet 与 AgentToolPool 不受影响：Executor 不是模块，不持有上报函数。
 
 其余事项：
-- `main()` 目前没有进程入口脚本调用；加入入口时不需要再安装最后防线，`main()` 已经安装。
-- Ctrl+C 的两段处理（第一次取消运行，第二次强制退出）属于 CLI 产品功能，尚未设计。
+- 进程入口是 `apps/control-plane/src/bin.ts`：它只调用 `main()` 并设置退出码，最后防线由 `main()` 安装。
+  入口与进程信号归组合根；`apps/cli` 只做参数解析与终端适配，UserInteraction 只处理第一次中断（第 6 节）。
+- M1 不处理 SIGTERM 等其他信号：进程按 Node.js 的默认行为结束，不保证收敛。
 
 ## 9. 验证
 

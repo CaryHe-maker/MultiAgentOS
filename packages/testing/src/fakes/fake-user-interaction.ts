@@ -104,7 +104,8 @@ export function createFakeUserInteraction(
         }
         deps.terminal.write(`${end.closeReason}\n`);
         await deps.gateway.shutdown({ requestId: newId('req') }, contextOf());
-        return EXIT_CODES[end.closeReason];
+        // A RunSummary that could not be saved never exits 0 (UserInteraction 3).
+        return Math.max(EXIT_CODES[end.closeReason], 'finalizationError' in end ? 1 : 0);
       },
     };
   };
