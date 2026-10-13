@@ -29,7 +29,8 @@ Supervisor 的启动分为两段：
 
 1. 引导：组合根调用 `start()` 后，Supervisor 清理临时数据，驱动 ModuleHost 依次启动
    fabric、artifact-store、persistence、kernel-core、gateway、workflow、user-interaction。这一段不依赖通信。
-2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器，开始接受 `execute`、`cancelRun` 与 `shutdown`。
+2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器；全部模块就绪后才接受请求。P04 先实现引导与关闭，
+   `execute`、`cancelRun` 在 P08 实现之前明确拒绝。
 
 模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
 工厂 `createSupervisor`、`SupervisorDeps`、`ModuleHostControl` 与 `SupervisorModule.whenStopped()` 的定义见

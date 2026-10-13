@@ -80,6 +80,8 @@ settle(reservationId, settlement)
 - 实际用量超过 est 时按实际结算，并作为结算异常返回给 Core 写入审计（`SETTLEMENT_ANOMALY`），不视为安全违规。
   超出部分会占用 F；只有一次调用超出 est 的量大于 F，运行才会直接进入 EXHAUSTED。
 - 同一 `reservationId` 再次结算时不重复记账；数值冲突时按较大值记账，并作为结算异常返回。
+- 非法用量（包括 cache-hit 超过输入用量）及超出安全整数表示范围的账本更新是程序异常；
+  在改写账本前拒绝，保留原预留或结算。
 - `finalize()` 把仍未结算的预留按 UNKNOWN 结算，返回 `BudgetSummary`。
 
 ### 3.5 输入 token 上界

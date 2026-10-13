@@ -45,6 +45,11 @@ export class Monitor implements MonitorDuties {
     this.#config = config;
     this.#finalReserve = config.finalInputBudget + config.finalMaxOutputTokens;
     this.#wrapUpMargin = config.perCallInputLimit + config.maxOutputTokens;
+    if (
+      Object.values(config).some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+      !Number.isSafeInteger(this.#finalReserve + this.#wrapUpMargin)
+    )
+      throw new MonitorInvariantError('Invalid token budget configuration');
     if (config.tokenLimit < this.#finalReserve + this.#wrapUpMargin)
       throw new MonitorInvariantError(
         'Token limit cannot cover the final reserve and wrap-up margin',
@@ -64,7 +69,7 @@ export class Monitor implements MonitorDuties {
     if (this.#state === 'EXHAUSTED')
       return { ok: false as const, reasonCode: 'BUDGET_EXHAUSTED' as const };
     const available = this.#config.tokenLimit - (final ? 0 : this.#finalReserve);
-    if (this.#used + this.#unknown + this.#reserved + estimatedTokens > available) {
+    if (estimatedTokens > available - this.#used - this.#unknown - this.#reserved) {
       this.#advance(final ? 'EXHAUSTED' : 'WRAP_UP');
       return {
         ok: false as const,
@@ -86,8 +91,8 @@ export class Monitor implements MonitorDuties {
     const previous = reservation.charge;
     let applied = false;
     if (previous === undefined) {
+      this.#replaceCharge(undefined, charge);
       this.#reserved -= reservation.estimatedTokens;
-      this.#apply(charge, 1);
       reservation.charge = charge;
       applied = true;
     } else if (!this.#sameCharge(previous, charge)) {
@@ -104,8 +109,7 @@ export class Monitor implements MonitorDuties {
           charge.type === 'ACTUAL' &&
           previous.type !== 'ACTUAL')
       ) {
-        this.#apply(previous, -1);
-        this.#apply(charge, 1);
+        this.#replaceCharge(previous, charge);
         reservation.charge = charge;
         applied = true;
       }
@@ -130,9 +134,9 @@ export class Monitor implements MonitorDuties {
     if (!this.#finalized) {
       for (const reservation of this.#reservations.values()) {
         if (reservation.charge !== undefined) continue;
-        this.#reserved -= reservation.estimatedTokens;
         const charge: Charge = { type: 'UNKNOWN', amount: reservation.estimatedTokens };
-        this.#apply(charge, 1);
+        this.#replaceCharge(undefined, charge);
+        this.#reserved -= reservation.estimatedTokens;
         reservation.charge = charge;
       }
       this.#recalculateState();
@@ -158,7 +162,11 @@ export class Monitor implements MonitorDuties {
       !Number.isSafeInteger(outputTokens) ||
       inputTokens < 0 ||
       outputTokens < 0 ||
-      !Number.isSafeInteger(inputTokens + outputTokens)
+      !Number.isSafeInteger(inputTokens + outputTokens) ||
+      (settlement.usage.inputCacheHitTokens !== undefined &&
+        (!Number.isSafeInteger(settlement.usage.inputCacheHitTokens) ||
+          settlement.usage.inputCacheHitTokens < 0 ||
+          settlement.usage.inputCacheHitTokens > inputTokens))
     )
       throw new MonitorInvariantError('Invalid actual token usage');
     return { type: 'ACTUAL', amount: inputTokens + outputTokens, usage: settlement.usage };
@@ -174,12 +182,29 @@ export class Monitor implements MonitorDuties {
     );
   }
 
-  #apply(charge: Charge, sign: 1 | -1): void {
-    if (charge.type === 'ACTUAL') {
-      this.#used += sign * charge.amount;
-      this.#inputTokens += sign * (charge.usage?.inputTokens ?? 0);
-      this.#outputTokens += sign * (charge.usage?.outputTokens ?? 0);
-    } else if (charge.type === 'UNKNOWN') this.#unknown += sign * charge.amount;
+  #replaceCharge(previous: Charge | undefined, next: Charge): void {
+    const used =
+      this.#used -
+      (previous?.type === 'ACTUAL' ? previous.amount : 0) +
+      (next.type === 'ACTUAL' ? next.amount : 0);
+    const unknown =
+      this.#unknown -
+      (previous?.type === 'UNKNOWN' ? previous.amount : 0) +
+      (next.type === 'UNKNOWN' ? next.amount : 0);
+    const inputTokens =
+      this.#inputTokens - (previous?.usage?.inputTokens ?? 0) + (next.usage?.inputTokens ?? 0);
+    const outputTokens =
+      this.#outputTokens - (previous?.usage?.outputTokens ?? 0) + (next.usage?.outputTokens ?? 0);
+    if (
+      [used, unknown, inputTokens, outputTokens, used + unknown].some(
+        (value) => !Number.isSafeInteger(value) || value < 0,
+      )
+    )
+      throw new MonitorInvariantError('Token ledger cannot represent the settlement');
+    this.#used = used;
+    this.#unknown = unknown;
+    this.#inputTokens = inputTokens;
+    this.#outputTokens = outputTokens;
   }
 
   #advance(next: BudgetState): void {

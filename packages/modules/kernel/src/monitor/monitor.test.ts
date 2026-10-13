@@ -8,6 +8,53 @@ const grantedId = (decision: ReturnType<Monitor['reserve']>): string => {
 };
 
 describe('Monitor settlement', () => {
+  const budget = {
+    ...DEFAULT_KERNEL_CONFIG.budget,
+    tokenLimit: 100,
+    finalInputBudget: 20,
+    finalMaxOutputTokens: 10,
+    perCallInputLimit: 20,
+    maxOutputTokens: 10,
+  };
+
+  it('keeps the final reserve unavailable to ordinary calls and moves state only forward', () => {
+    const monitor = new Monitor(budget);
+    const ordinary = grantedId(monitor.reserve({ estimatedTokens: 70, final: false }));
+    expect(monitor.reserve({ estimatedTokens: 1, final: false })).toEqual({
+      ok: false,
+      reasonCode: 'BUDGET_WRAP_UP',
+    });
+    expect(monitor.budgetState()).toBe('WRAP_UP');
+    monitor.settle(ordinary, { type: 'NOT_SENT' });
+    expect(monitor.budgetState()).toBe('WRAP_UP');
+    const final = grantedId(monitor.reserve({ estimatedTokens: 30, final: true }));
+    monitor.settle(final, { type: 'ACTUAL', usage: { inputTokens: 20, outputTokens: 10 } });
+    expect(monitor.finalize()).toMatchObject({ used: 30, finalBudgetState: 'WRAP_UP' });
+  });
+
+  it('rejects a final call beyond the total limit and exhausts after an overrun', () => {
+    const monitor = new Monitor(budget);
+    const ordinary = grantedId(monitor.reserve({ estimatedTokens: 70, final: false }));
+    monitor.settle(ordinary, { type: 'ACTUAL', usage: { inputTokens: 60, outputTokens: 15 } });
+    expect(monitor.budgetState()).toBe('EXHAUSTED');
+    expect(monitor.reserve({ estimatedTokens: 30, final: true })).toEqual({
+      ok: false,
+      reasonCode: 'BUDGET_EXHAUSTED',
+    });
+    expect(monitor.finalize()).toMatchObject({ used: 75, finalBudgetState: 'EXHAUSTED' });
+  });
+
+  it('accounts for an in-flight final reservation and rejects another that exceeds the limit', () => {
+    const monitor = new Monitor(budget);
+    grantedId(monitor.reserve({ estimatedTokens: 70, final: false }));
+    grantedId(monitor.reserve({ estimatedTokens: 30, final: true }));
+    expect(monitor.reserve({ estimatedTokens: 1, final: true })).toEqual({
+      ok: false,
+      reasonCode: 'BUDGET_EXHAUSTED',
+    });
+    expect(monitor.finalize()).toMatchObject({ unknown: 100, finalBudgetState: 'EXHAUSTED' });
+  });
+
   it('returns an over-estimate anomaly while keeping the actual usage and final reserve', () => {
     const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
     const reservationId = grantedId(monitor.reserve({ estimatedTokens: 100, final: false }));
@@ -87,5 +134,32 @@ describe('Monitor settlement', () => {
       }),
     ).toThrow(MonitorInvariantError);
     expect(monitor.finalize().unknown).toBe(100);
+  });
+
+  it('rejects an impossible cache-hit count without consuming a reservation', () => {
+    const monitor = new Monitor(budget);
+    const reservationId = grantedId(monitor.reserve({ estimatedTokens: 10, final: false }));
+    expect(() =>
+      monitor.settle(reservationId, {
+        type: 'ACTUAL',
+        usage: { inputTokens: 5, outputTokens: 1, inputCacheHitTokens: 6 },
+      }),
+    ).toThrow(MonitorInvariantError);
+    expect(monitor.finalize().unknown).toBe(10);
+  });
+
+  it('leaves the prior charge intact when a conflicting settlement would overflow the ledger', () => {
+    const monitor = new Monitor(budget);
+    const first = grantedId(monitor.reserve({ estimatedTokens: 10, final: false }));
+    const second = grantedId(monitor.reserve({ estimatedTokens: 10, final: false }));
+    monitor.settle(first, { type: 'ACTUAL', usage: { inputTokens: 10, outputTokens: 0 } });
+    monitor.settle(second, { type: 'ACTUAL', usage: { inputTokens: 10, outputTokens: 0 } });
+    expect(() =>
+      monitor.settle(first, {
+        type: 'ACTUAL',
+        usage: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0 },
+      }),
+    ).toThrow(MonitorInvariantError);
+    expect(monitor.finalize()).toMatchObject({ used: 20, inputTokens: 20, outputTokens: 0 });
   });
 });
