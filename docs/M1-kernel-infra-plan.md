@@ -2,11 +2,33 @@
 
 ## 1. 用途与当前状态
 
-- 更新日期：2026-10-11。
+### 1.1 本文的地位
+
+- 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档，有两个用途：记录本分支的实现进度，
+  以及作为后续对话（AI agent）继续这项工作的上下文入口。
+- 本文不是规范，也不随 M1 发布：它可以随分支进入 `feature/M1/main`，但必须在 `feature/M1/main` 合入 `feat/M1`
+  之前由一个单独的提交删除，不进入 `feat/M1` 与 `main`。不要在 `feature/M1/main` 上提前删除，
+  否则本分支后续对本文的修改会在每次合并时产生冲突。
+- 进入 `main` 的任何文件都不得依赖本文：规范、源码注释、错误信息与测试不链接本文，
+  也不使用本文的阶段编号（P01–P11）和协调事项编号（C01–C08）。只有本文可以引用规范，方向不能反过来。
+  新增内容时遵守这一点；`git grep -nE "kernel-infra-plan|\bP(0[1-9]|1[01])a?\b|\bC0[1-8]\b" -- . ':!docs/M1-kernel-infra-plan.md'`
+  除锁文件外应当没有结果。
+- 实现状态与验证证据只记录在本文（以及 GitHub Issues），规范只写要求。规范中“已实现、待实现”一类的说明
+  应移到本文。[错误与系统故障处理](M1/SystemFaultHandling.md) 的实现状态见本文第 20 节。
+- 删除本文之前，确认其中没有只此一处的规范性内容：用户决定（第 9.2、19 节）必须已经写入对应规范；
+  第 21 节的核查结论是留给后续阶段的备忘，处理完毕或转为 Issue 之后才能随本文删除。
+- 分支与共享目录的规则以 [M1Plan](M1/M1Plan.md) 第 4.1 节为准；第 2 节是它在本分支上的细化，
+  两者不一致时以 M1Plan 为准。
+- 文件名是文档 PascalCase 命名惯例的明确例外（第 2.2 节）。
+
+### 1.2 当前状态
+
+- 更新日期：2026-10-13。
 - 本文是后续对话继续 Kernel 与 Infrastructure 实现工作的上下文和进度入口。
 - 当前进度：P01–P05 已完成；错误与系统故障处理机制已定稿并实现了不依赖 Core 的部分（第 19、20 节）。
   下一阶段是 P06。第 10–18 节是各阶段当时的记录，其中的“下一步”以第 9.1 节为准。
-- P02–P05 与故障处理机制均已在 WSL Ubuntu 24.04 通过构建、lint 与完整测试，并已按阶段提交到工作分支（未推送）。
+- P02–P05 与故障处理机制均已在 WSL Ubuntu 24.04 通过构建、lint 与完整测试，并已提交、推送到工作分支。
+- 分支自 `a86173a` 起的历史已整理为 4 个提交；被其他分支合并之后不再改写历史（M1Plan 4.1）。
 - 后续对话开始时，先读本文，再检查工作区状态与当前代码；不要只凭本文推断实现已经完成。
 
 ## 2. 用户明确规定的修改边界
@@ -226,7 +248,7 @@ M1 不需要部署 PostgreSQL、DBOS、NATS、Redis、S3、Docker/Podman、进�
 
 - 当前任务：P01–P05 与故障处理机制（第 19、20 节）已完成并按阶段提交；下一步是 P05a，然后 P06。
 - P06 的退出条件已改为最小纵向链（第 6 节）；第 21 节其余核查结论在对应阶段处理。
-- P06 实现运行 actor 时，按 [错误、Exception 与系统故障处理](SystemFaultHandling.md) 第 2.2 节设置捕获边界，
+- P06 实现运行 actor 时，按 [错误与系统故障处理](M1/SystemFaultHandling.md) 第 2.2 节设置捕获边界，
   实现产品 Core 的 `abortAllRuns`，并复核真实 actor 的发送时序。
 - WSL 验证方法已固定：把未提交改动做成补丁，应用到 WSL 内的独立工作副本再运行质量门。
 - 尚未检查：远端 Issue/PR 进度。不要先启动真实模型评测，也不要修改另一位负责人的包。
@@ -578,7 +600,7 @@ Prettier 检查通过；`git diff --check` 通过。
 
 ## 19. 已确认设计：错误、Exception 与系统故障处理（2026-10-11）
 
-完整设计见 [错误、Exception 与系统故障处理](SystemFaultHandling.md)；本节只记录用户的决定，后续实现以该文为准。
+完整设计见 [错误与系统故障处理](M1/SystemFaultHandling.md)；本节只记录用户的决定，后续实现以该文为准。
 
 1. **分级**：按“是否属于契约”分为 L0 结果（返回值或消息）、L1 Exception（Core 按收敛结束运行）、
    L2 系统故障（组合根处理）、L3 进程级（最后防线）。处理某一级时再次失败则升级，不在同级重试。
@@ -662,3 +684,30 @@ Supervisor 每个执行实例的捕获边界（P08）；审计类型 `SYSTEM_FAU
 7. Monitor、Scheduler、Persistence、ArtifactStore 的实现与各自规范逐条对照，未发现不一致。
 8. **第一条真实链路出现得太晚（已处理）。** 原计划到 P08 才有真实执行、P09 才有结果路径，Core 的接口问题会
    积到后期暴露。P06 的退出条件已改为用内建 REPORT_PUBLISH 走通的最小纵向链。
+
+## 22. 接缝统一与文档整理记录（2026-10-13）
+
+为三个分支并行开发做的准备，不属于第 6 节的任何阶段。之后第 20 节中与下列内容不一致的说法以本节为准。
+
+| 内容 | 位置 | 说明 |
+| --- | --- | --- |
+| C08 落地 | `packages/libraries/contracts/src/ports.ts`、Workflow 与 UserInteraction 的依赖清单、组合根 | `SystemFault`、`SystemFaultReporter` 移入 contracts；两个模块各有可选的 `reportSystemFault`；捕获边界随两个模块的产品实现完成 |
+| fake Kernel 的结束方式 | `packages/testing/src/fakes/fake-kernel.ts` | 可由选项产生 RUN_TIMEOUT、VIOLATION、授权超时、createRun 被拒、RunSummary 写入失败与未知效果 |
+| 进程入口与第二次 Ctrl+C | `apps/control-plane/src/bin.ts`、`bootstrap/process-guards.ts` | 第 20 节所说“没有进程入口”“Ctrl+C 尚未设计”已不成立；SIGTERM 仍不处理 |
+| 分支与共享目录规则 | [M1Plan](M1/M1Plan.md) 第 4.1 节 | 三个分支各自的目录、共享接缝及其修改规则 |
+| 故障处理规范移入 M1 | [错误与系统故障处理](M1/SystemFaultHandling.md) | 原 `docs/SystemFaultHandling.md`；改为只写要求，并成为跨组件规则的权威来源 |
+| 规范与本文解耦 | 规范、源码注释、错误信息 | 不再链接本文，也不使用阶段编号与协调事项编号（第 1.1 节） |
+
+原规范第 8 节的实现状态表不再保留在规范中，现状如下：
+
+| 内容 | 状态 |
+| --- | --- |
+| ModuleHost 账本；系统控制；`main()` 保证关闭与最后防线；子进程存活集合与 `killAll()`；进程入口；第二次 Ctrl+C | 已实现 |
+| `KernelCoreModule.abortAllRuns`、各模块的 `reportSystemFault` 接口与注入；fake Kernel 的 `abortAllRuns` | 已实现（接口与 fake） |
+| 产品 Core 的 `abortAllRuns`、actor 捕获边界、`KERNEL_FAULT`、收敛失败后的升级 | P06、P10 |
+| Supervisor 每个执行实例的捕获边界、宽限期与 `STOP_UNCONFIRMED` | P08 |
+| 审计类型 `SYSTEM_FAULT_ABORT`；以真实 Core 重做故障注入（规范第 8 节的验证要求） | P10 |
+| Workflow 与 UserInteraction 的捕获边界与上报 | 由 `feature/M1/workflow-UserInteraction` 分支实现 |
+
+验证：WSL Ubuntu 24.04 独立工作副本中 `pnpm run build`、`pnpm run lint`、`pnpm run format:check`、`pnpm run test`
+全部通过，完整测试为 35 文件、288 项；入口实测：用法错误退出 64，`--help` 退出 0，产品工厂未实现时退出 70。

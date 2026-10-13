@@ -1,4 +1,4 @@
-/** Kernel.Supervisor owns the system lifecycle and, in P08, execution dispatch. */
+/** Kernel.Supervisor owns the system lifecycle and execution dispatch. */
 import { mkdir, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
@@ -112,10 +112,10 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       registered.add(schemaId);
     };
     serve(SCHEMA_IDS.execute, () =>
-      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution dispatch (P08)')),
+      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution dispatch')),
     );
     serve(SCHEMA_IDS.cancelRunExecutions, () =>
-      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution cancellation (P08)')),
+      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution cancellation')),
     );
     serve(SCHEMA_IDS.supervisorShutdown, () => {
       ready = false;

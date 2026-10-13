@@ -18,7 +18,7 @@ export interface ProcessGuardOptions {
 }
 
 /**
- * The last line of defence (docs/SystemFaultHandling.md 2, level L3). An uncaught exception or
+ * The last line of defence (docs/M1/SystemFaultHandling.md 2, level L3). An uncaught exception or
  * an unhandled rejection means no in-process state can be trusted, so nothing converges here:
  * the child processes are killed synchronously and the process exits non-zero. A hung event
  * loop or a crash is beyond this and needs whoever started the process. Returns the uninstall.

@@ -1598,7 +1598,7 @@ type SystemFaultReporter = (fault: SystemFault) => void; // 进程内函数，�
 
 `SystemFault` 与 `SystemFaultReporter` 不是注册的 Schema，也不经 Fabric 传递：组合根把同一个上报函数注入
 Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即触发有界的故障关闭
-（[错误、Exception 与系统故障处理](../SystemFaultHandling.md) 第 5 节）。Executor 不持有它：
+（[错误与系统故障处理](SystemFaultHandling.md) 第 5 节）。Executor 不持有它：
 Executor 的一切结局由 Supervisor 转成 ExecutionFact。
 
 M1 的存储布局见 [Persistence](Infrastructure/Persistence.md) 与 [ArtifactStore](Infrastructure/ArtifactStore.md)。
@@ -1858,7 +1858,7 @@ interface StopReport {
 
 退出码：意图为 `REQUESTED` 时取 UserInteraction 记录的退出码；意图为 `FAULT` 时，命令已返回非零退出码则保留，
 否则为 70。出现过系统故障的进程不以 0 退出。完整规则见
-[错误、Exception 与系统故障处理](../SystemFaultHandling.md) 第 5 节。
+[错误与系统故障处理](SystemFaultHandling.md) 第 5 节。
 
 进程入口是 `apps/control-plane` 的 `bin.ts`（命令名 `multiagentos`）：它只调用 `main(argv)` 并以返回值作为退出码，
 组合阶段抛错时写 stderr 并以 70 退出。`main` 安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；

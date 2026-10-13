@@ -235,7 +235,7 @@ Workflow 处理一条输入时发现自身内部错误（reducer 抛错、状态
 
 只有这一步也做不到时才升级：处理函数仍然抛出，由 Inbox 的失败观察者调用 `WorkflowDeps.reportSystemFault`
 （`source = 'workflow'`，带 `workflowRunId`），由组合根请求运行收敛并关闭系统
-（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 2 节）。不在同一级重试，也不再发起其他 syscall。
+（[错误与系统故障处理](../SystemFaultHandling.md) 第 2 节）。不在同一级重试，也不再发起其他 syscall。
 契约内的结果（SyscallRejected、UnitReport 的 REJECTED 与 FAILED）不属于内部错误，按第 7 节处理。
 没有注入上报函数时（单独测试本模块），错误留给 Inbox 记录，并使 `stop()` 失败。
 

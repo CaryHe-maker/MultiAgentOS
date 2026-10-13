@@ -29,8 +29,8 @@ Supervisor 的启动分为两段：
 
 1. 引导：组合根调用 `start()` 后，Supervisor 清理临时数据，驱动 ModuleHost 依次启动
    fabric、artifact-store、persistence、kernel-core、gateway、workflow、user-interaction。这一段不依赖通信。
-2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器；全部模块就绪后才接受请求。P04 先实现引导与关闭，
-   `execute`、`cancelRun` 在 P08 实现之前明确拒绝。
+2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器；全部模块就绪后才接受请求。
+   执行派发尚未实现时，`execute`、`cancelRun` 必须明确拒绝，不得返回占位的成功结果。
 
 模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
 工厂 `createSupervisor`、`SupervisorDeps`、`ModuleHostControl` 与 `SupervisorModule.whenStopped()` 的定义见
@@ -85,7 +85,7 @@ M1 的安全停机就是收敛（[Interaction](Interaction.md) 第 8 节），Su
 - 收到 `shutdown` 后，Supervisor 按 [ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节的顺序停止模块，Fabric 最后停止；
   随后终止残留子进程、清理临时文件并退出。此时全部运行 actor 已收敛完毕（[Interaction](Interaction.md) 第 7 节）。
 - `stop()` 可重复调用并共用同一次执行，停止失败经 `whenStopped()` 以拒绝表达，不报告为完成。
-  故障关闭时由组合根直接调用它（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 5 节）；
+  故障关闭时由组合根直接调用它（[错误与系统故障处理](../SystemFaultHandling.md) 第 5 节）；
   Supervisor 不裁决系统故障，也不决定进程退出码。
 - 子进程在创建时登记到 `SubprocessRunner` 的存活集合，`killAll()` 同步终止全部存活子进程。
   runner 由组合根构造并经 `SupervisorDeps.subprocess` 注入，组合根因此能在 Supervisor 不可用时终止子进程。

@@ -349,7 +349,7 @@ export interface LifecyclePort {
 }
 
 /**
- * A fault that no run can absorb (docs/SystemFaultHandling.md 2). Only the composition root
+ * A fault that no run can absorb (docs/M1/SystemFaultHandling.md 2). Only the composition root
  * receives it; the original error stays in local diagnostics and never crosses a subject.
  */
 export interface SystemFault {
