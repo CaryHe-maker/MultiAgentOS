@@ -29,7 +29,7 @@ import {
   type SupervisorModule,
 } from '@multiagentos/kernel';
 import { ModuleHost } from '@multiagentos/module-host';
-import { FilePersistence } from '@multiagentos/persistence';
+import { FilePersistence, forPersistenceNamespace } from '@multiagentos/persistence';
 import {
   createUserInteraction,
   type TerminalPort,
@@ -102,7 +102,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     fabric: fabric.client('kernel-core'),
     catalog,
     artifacts,
-    persistence,
+    persistence: forPersistenceNamespace(persistence, 'kernel-core'),
     registry,
     config: config.kernel,
     dataDir: config.dataDir,
@@ -114,7 +114,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const workflow = parts.createWorkflow({
     gateway: createWorkflowGatewayPort(workflowFabric),
     catalog,
-    persistence,
+    persistence: forPersistenceNamespace(persistence, 'workflow'),
     registry,
     config: config.workflow,
     now,

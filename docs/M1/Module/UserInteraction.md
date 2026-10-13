@@ -32,18 +32,21 @@ createRun({ goal, repositoryPath })
        AuthorizationRequest  → 显示询问，启动询问任务后立即结束本条处理
                                询问任务读到 Y/N → answerAuthorization；到达 expiresAt 时自行结束，不提交回答
        AuthorizationResolved → 撤销仍在等待输入的询问任务；TIMED_OUT、CANCELLED 时显示说明
-       RunFinished           → 撤销仍在等待输入的询问任务 → 第 5 节展示 → --details 时 readArtifact(runSummaryRef) 并展示
+       RunFinished           → 撤销仍在等待输入的询问任务 → 第 5 节展示 → 有 runSummaryRef 且 --details 时读取并展示
                                → 记录退出码 → shutdown
 用户按 Ctrl+C（运行中）→ cancelRun；之后照常等待 RunFinished
 ```
 
 | closeReason | 退出码 |
-|---|---|
-| COMPLETED | 0 |
-| FAILED | 1 |
-| RUN_TIMEOUT | 2 |
-| VIOLATION | 3 |
-| CANCELLED | 130 |
+| ----------- | ------ |
+| COMPLETED   | 0      |
+| FAILED      | 1      |
+| RUN_TIMEOUT | 2      |
+| VIOLATION   | 3      |
+| CANCELLED   | 130    |
+
+若 RunFinished 带 `finalizationError = RUN_SUMMARY_WRITE_FAILED`，显示摘要保存失败；最终退出码至少为 1，
+原有非零退出码（例如 VIOLATION 的 3）保持不变，并继续请求 `shutdown`。
 
 ## 4. 授权询问
 
@@ -60,6 +63,8 @@ createRun({ goal, repositoryPath })
 - 没有 `reportRef` 时按 `closeReason` 展示结束说明；`failure` 存在时，按 `failure.code` 从 UserInteraction 自有的文案表
   （`InteractionMessages`）给出说明，未收录的原因码使用通用说明。`failure.detail` 不展示。
 - `unknownEffects` 不为空时附“部分操作无法确认是否完成”。
+- `finalizationError` 表示 RunSummary 发布失败，不能读摘要，也不能伪造 `runSummaryRef`；显示明确的保存失败说明。
+  即使有报告仍先展示报告，再展示这一故障；`--details` 只在事件带合法 `runSummaryRef` 时读取摘要。
 - 各结束方式下用户看到的内容见 [Kernel（外部视角）](Kernel.md) 第 9 节。
 - 用户默认只看到结果；`--details` 时额外展示 RunSummary：各 AgentRun 的 Round（`agentRuns[].rounds`）、Unit 与模型调用次数、token、耗时，
   以及 `failure.category` 给出的失败分类。步骤数只在 Workflow 的运行记录中，不展示。

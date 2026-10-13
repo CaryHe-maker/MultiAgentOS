@@ -17,9 +17,11 @@ M1 实现选择见 [M1TechStack](../M1TechStack.md) §10，Port 见 [M1Interface
 
 - 按运行分目录：`<dataDir>/runs/<workflowRunId>/artifacts/<sha256>`，内容寻址；`artifactId = 'art_' + sha256`。
 - `put(workflowRunId, content, mediaType)`：先写入 `<dataDir>/tmp/`，复验 SHA-256 与 size 后原子 rename；
-  同名文件已存在时校验内容相同后直接返回引用。未完成的写入不形成可用引用。
+  同名文件已存在时校验内容相同后直接返回引用；若已存在内容损坏则报告完整性错误，不静默覆盖。
+  未完成或失败的写入不形成可用引用。`stop()` 拒绝新写入，并等待已经受理的写入结束。
 - `mediaType` 记录在 Execution 的归属索引中，与 `ArtifactRef.mediaType` 一致；M1 的五种产物 mediaType 见 M1Interface 6.1。
-- `get(workflowRunId, ref)`：读取后复验 SHA-256 与 size，不一致时返回完整性错误，不返回内容。
+- `get(workflowRunId, ref)`：先校验引用字段和运行 ID，再读取并复验 SHA-256 与 size；
+  不一致时返回完整性错误，不返回内容。运行目录、临时目录与目标文件不得通过符号链接重定向。
 - 产物随运行目录保留；启动清理只删除 `<dataDir>/tmp/`，因此运行记录中的 `reportRef` 在下次启动后仍可在磁盘上找到。
 
 ## 4. 读取

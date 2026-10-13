@@ -569,6 +569,7 @@ describe('Workflow seat: the whole business flow runs against the fake Kernel', 
       unconfirmed: [],
       conclusions: [{ sources: [{ path: 'README.md', readRequestId: read?.requestId }] }],
     });
+    if (!('runSummaryRef' in run.finished)) throw new Error('reference run has no summary');
     const summary = JSON.parse(await run.artifact(run.finished.runSummaryRef)) as RunSummary;
     expect(summary.agentRuns.map((agentRun) => [agentRun.agentRef.id, agentRun.rounds])).toEqual([
       ['planner', 1],
@@ -735,9 +736,11 @@ function referenceInteraction() {
         };
         if (end.closeReason === 'COMPLETED') await show('report', end.reportRef);
         else deps.terminal.write(`ended:${end.closeReason}`);
-        if (command.details) await show('summary', end.runSummaryRef);
+        if ('finalizationError' in end) {
+          deps.terminal.write(`ended:${end.finalizationError}`);
+        } else if (command.details) await show('summary', end.runSummaryRef);
         await deps.gateway.shutdown({ requestId: newId('req') }, contextOf());
-        return EXIT_CODES[end.closeReason];
+        return 'finalizationError' in end ? 1 : EXIT_CODES[end.closeReason];
       },
     };
   };

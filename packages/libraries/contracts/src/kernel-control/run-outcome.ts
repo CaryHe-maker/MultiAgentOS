@@ -110,10 +110,36 @@ export const runOutcomeVariants = <P extends TProperties>(common: P) => {
   ];
 };
 
-/** RunEnd, the fields RunClosed and RunFinished share. It is not a registered Schema itself. */
-export const runEndVariants = <T extends string>(type: T) =>
-  runOutcomeVariants({
+/** Normal endings carry a RunSummary; a failed write has a typed error and no forged reference. */
+export const runEndVariants = <T extends string>(type: T) => {
+  const [completed, failed, violation, stopped] = runOutcomeVariants({
     type: Type.Literal(type),
     unknownEffects: Type.Array(UnknownEffectSchema),
     runSummaryRef: RunSummaryRefSchema,
   });
+  const [writeFailedCompleted, writeFailedFailed, writeFailedViolation, writeFailedStopped] =
+    runOutcomeVariants({
+      type: Type.Literal(type),
+      unknownEffects: Type.Array(UnknownEffectSchema),
+      finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED'),
+    });
+  return [
+    completed,
+    failed,
+    violation,
+    stopped,
+    writeFailedCompleted,
+    writeFailedFailed,
+    writeFailedViolation,
+    writeFailedStopped,
+  ] as [
+    typeof completed,
+    typeof failed,
+    typeof violation,
+    typeof stopped,
+    typeof writeFailedCompleted,
+    typeof writeFailedFailed,
+    typeof writeFailedViolation,
+    typeof writeFailedStopped,
+  ];
+};

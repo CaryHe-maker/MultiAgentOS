@@ -46,17 +46,24 @@ export class ModuleHost {
     return order;
   }
 
-  async start(): Promise<void> {
+  async start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void> {
     for (const moduleId of this.startOrder()) {
       const module = this.#modules.get(moduleId);
       if (module === undefined) continue;
       try {
         await module.start();
+        this.#started.push(module);
+        await afterStart?.(moduleId);
       } catch (error) {
-        await this.stop();
+        try {
+          await this.stop();
+        } catch (rollbackError) {
+          throw new AggregateError([error, rollbackError], 'Module start and rollback failed', {
+            cause: rollbackError,
+          });
+        }
         throw error;
       }
-      this.#started.push(module);
     }
   }
 

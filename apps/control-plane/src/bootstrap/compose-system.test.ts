@@ -1,7 +1,12 @@
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AnalysisReportSchema, RunSummarySchema, validate } from '@multiagentos/contracts';
+import {
+  AnalysisReportSchema,
+  RunSummarySchema,
+  validate,
+  type PersistencePort,
+} from '@multiagentos/contracts';
 import {
   createFakeExecutorRegistry,
   createFakeGateway,
@@ -49,6 +54,41 @@ async function fakeSystem(kernel: FakeKernelOptions = {}, answer: 'YES' | 'NO' =
 const command = { goal: 'Explain the README.', repositoryPath: tmpdir(), details: false };
 
 describe('fake vertical chain', () => {
+  it('gives Core and Workflow distinct namespace-limited persistence ports', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    let corePersistence: PersistencePort | undefined;
+    let workflowPersistence: PersistencePort | undefined;
+    await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => undefined },
+      parts: {
+        createGateway: createFakeGateway(),
+        createKernelCore: (deps) => {
+          corePersistence = deps.persistence;
+          return createFakeKernelCore()(deps);
+        },
+        createSupervisor: createFakeSupervisor(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+        createWorkflow: (deps) => {
+          workflowPersistence = deps.persistence;
+          return createFakeWorkflow()(deps);
+        },
+        createUserInteraction: createFakeUserInteraction(),
+      },
+    });
+    expect(corePersistence).toBeDefined();
+    expect(workflowPersistence).toBeDefined();
+    expect(corePersistence).not.toBe(workflowPersistence);
+    expect(() => corePersistence?.repository('workflow', 'wfr_123456')).toThrow(
+      'Namespace is not owned',
+    );
+    expect(() => workflowPersistence?.auditLog('kernel-core', 'wfr_123456')).toThrow(
+      'Namespace is not owned',
+    );
+  });
+
   it('runs createRun to RunFinished through every Unit and shuts down', async () => {
     const { system, workflow, interaction, dataDir } = await fakeSystem();
     await system.start();
@@ -83,6 +123,7 @@ describe('fake vertical chain', () => {
     const finished = interaction.events.at(-1);
     expect(finished).toMatchObject({ type: 'RunFinished', closeReason: 'COMPLETED' });
     if (finished?.type !== 'RunFinished') return;
+    if (!('runSummaryRef' in finished)) throw new Error('Expected a persisted RunSummary');
     const summary: unknown = JSON.parse(
       await readFile(join(artifacts, finished.runSummaryRef.sha256), 'utf8'),
     );
