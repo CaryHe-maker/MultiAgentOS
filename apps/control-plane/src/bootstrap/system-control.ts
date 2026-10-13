@@ -79,7 +79,7 @@ function describe(error: unknown): string {
 }
 
 /**
- * The process-level control of the composition root (docs/SystemFaultHandling.md 3). It is not
+ * The process-level control of the composition root (docs/M1/SystemFaultHandling.md 3). It is not
  * a module: it has no Fabric identity, is not registered with ModuleHost and holds no run
  * state. It decides three things only: when the system shuts down, how long each step may
  * take, and the exit code. A fault shutdown asks the Kernel core to converge first and falls

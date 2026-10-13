@@ -42,7 +42,7 @@ Supervisor 驱动 ModuleHost：
      user-interaction → workflow → gateway → kernel-core → persistence → artifact-store → fabric
      （user-interaction 与 workflow 先处理完 Inbox 中剩余的事件；gateway 停止后拒绝一切请求；persistence 完成全部写入）
   2. supervisor 终止残留子进程，清理临时文件，最后退出
-组合根以 UserInteraction 记录的退出码退出进程；下次启动只清空 <dataDir>/tmp/，<dataDir>/runs/ 保留，不恢复未完成的运行
+组合根决定进程的退出码（正常关闭时取 UserInteraction 记录的退出码）；下次启动只清空 <dataDir>/tmp/，<dataDir>/runs/ 保留，不恢复未完成的运行
 ```
 
 - Executor 由 Supervisor 装配与回收，不由 ModuleHost 装配。
@@ -54,7 +54,7 @@ Supervisor 驱动 ModuleHost：
 ## 3. 生命周期账本
 
 ModuleHost 是机制，不作决定：它记录每个模块的状态并如实返回，是否关闭系统、以什么退出码退出由组合根决定
-（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 3、4 节）。
+（[错误与系统故障处理](../SystemFaultHandling.md) 第 3、4 节）。
 
 ```text
 REGISTERED → STARTING → READY → STOPPING → STOPPED

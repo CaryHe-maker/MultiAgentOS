@@ -52,7 +52,7 @@ createRun({ goal, repositoryPath })
 
 Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`，尚未创建运行或运行已结束时不做任何事。
 第二次 Ctrl+C 由组合根的最后防线强制退出进程（退出码 130），UserInteraction 与 `apps/cli` 的终端适配器都不自行退出
-（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 6 节）。
+（[错误与系统故障处理](../SystemFaultHandling.md) 第 6 节）。
 
 以上是 UserInteraction **记录**的退出码，即 `analyze` 的返回值。进程最终的退出码由组合根决定（第 6 节）；
 命令行无法解析时 CLI 返回 64，系统故障为 70，这两个值都不由 UserInteraction 产生。
@@ -86,7 +86,7 @@ Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`�
   ModuleHost 会对启动失败的模块调用它。
 - UserInteraction 不自行退出进程：它记录退出码（第 3 节），组合根在 ModuleHost 完成全部关闭（[ModuleHost](../Infrastructure/ModuleHost.md) 第 2 节）后
   决定进程的退出码：正常关闭时取该退出码；出现过系统故障时，该退出码非零则保留，否则为 70
-  （[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 5 节）。
+  （[错误与系统故障处理](../SystemFaultHandling.md) 第 5 节）。
 
 ### 6.1 自身错误
 

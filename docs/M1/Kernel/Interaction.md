@@ -481,7 +481,7 @@ actor 必须在 Supervisor 卸载模块之前排空，否则 RunClosed 可能还
 
 ### 7.1 故障关闭
 
-系统故障（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 2 节的 L2）时，关闭不能依赖 UserInteraction 发起。
+系统故障（[错误与系统故障处理](../SystemFaultHandling.md) 第 2 节的 L2）时，关闭不能依赖 UserInteraction 发起。
 组合根调用 Kernel 核心模块对象上的 `abortAllRuns({ faultId, deadlineMs })`（M1Interface 14.1）：
 
 ```text

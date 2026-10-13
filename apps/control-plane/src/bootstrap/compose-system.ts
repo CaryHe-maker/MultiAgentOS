@@ -97,7 +97,7 @@ export interface System {
    * module stopped, whether the command returned, threw, or the system faulted meanwhile.
    */
   run(command: (userInteraction: UserInteractionModule) => Promise<number>): Promise<number>;
-  /** The system fault entry (docs/SystemFaultHandling.md 2); it starts a bounded shutdown. */
+  /** The system fault entry (docs/M1/SystemFaultHandling.md 2); it starts a bounded shutdown. */
   reportFault(fault: SystemFault): void;
   shutdown(): Promise<StopReport>;
   /** Synchronous; for the process guards of the entry. */
