@@ -9,6 +9,7 @@ import type {
   FabricPort,
   LifecyclePort,
   ProviderCredentials,
+  ModuleId,
 } from '@multiagentos/contracts';
 import type { KernelConfig } from '../interfaces/index.js';
 
@@ -16,7 +17,7 @@ import type { KernelConfig } from '../interfaces/index.js';
 export { createSubprocessRunner } from './subprocess-runner.js';
 
 export interface ModuleHostControl {
-  start(): Promise<void>;
+  start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void>;
   stop(): Promise<void>;
 }
 

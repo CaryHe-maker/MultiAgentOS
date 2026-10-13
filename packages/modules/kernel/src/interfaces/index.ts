@@ -7,6 +7,7 @@
 import type {
   ArtifactContent,
   ArtifactRef,
+  BoundaryContext,
   BudgetState,
   ExecutionFact,
   ExecutionOutcome,
@@ -64,7 +65,27 @@ export interface ResultCheck {
   readonly stopVerdictBy?: 'SUPERVISOR' | 'CORE';
 }
 
+/** A Core-owned projection of the identity needed for a synchronous result decision. */
+export interface AttemptRegistration {
+  readonly unitAttemptId: string;
+  readonly requestId: string;
+  readonly agentRunId: string;
+  readonly runEpoch: number;
+  readonly executionKind: UnitDefinition['executionKind'];
+  readonly requiresLease: boolean;
+}
+
+export interface ExecutionRegistration {
+  readonly unitAttemptId: string;
+  readonly executionId: string;
+  readonly runEpoch: number;
+}
+
 export interface CoreSyscalls {
+  /** Must precede reservation or any result check, including an in-process built-in Unit. */
+  registerAttempt(attempt: AttemptRegistration): void;
+  /** Must precede registration of a Supervisor.execute message for this executionId. */
+  registerExecution(execution: ExecutionRegistration): void;
   requestReservation(request: {
     readonly unitAttemptId: string;
     readonly estimatedTokens: number;
@@ -121,6 +142,25 @@ export type Settlement =
   | { readonly type: 'NOT_SENT' }
   | { readonly type: 'UNKNOWN' };
 
+export type SettlementAnomaly =
+  | {
+      readonly type: 'ACTUAL_EXCEEDED_ESTIMATE';
+      readonly reservationId: string;
+      readonly estimatedTokens: number;
+      readonly actualTokens: number;
+    }
+  | {
+      readonly type: 'CONFLICTING_SETTLEMENT';
+      readonly reservationId: string;
+      readonly previousTokens: number;
+      readonly offeredTokens: number;
+    };
+
+export interface SettlementResult {
+  readonly budgetState: BudgetState;
+  readonly anomalies: readonly SettlementAnomaly[];
+}
+
 export interface BudgetSummary {
   readonly limit: number;
   readonly used: number;
@@ -138,7 +178,7 @@ export interface MonitorDuties {
     | { readonly ok: true; readonly reservationId: string }
     | { readonly ok: false; readonly reasonCode: 'BUDGET_WRAP_UP' | 'BUDGET_EXHAUSTED' };
   /** Idempotent by reservationId. */
-  settle(reservationId: string, settlement: Settlement): BudgetState;
+  settle(reservationId: string, settlement: Settlement): SettlementResult;
   budgetState(): BudgetState;
   /** Settles what is still reserved as unknown consumption. */
   finalize(): BudgetSummary;
@@ -169,6 +209,7 @@ export interface ProviderCapacityPort {
 export interface RunRegistry {
   handleForward(
     forward: GatewayForward,
+    context: Readonly<BoundaryContext>,
   ): Promise<SyscallAck | SyscallRejected | RunCreated | ArtifactContent>;
   report(fact: ExecutionFact): Promise<void>;
 }
