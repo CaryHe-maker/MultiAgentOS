@@ -227,6 +227,20 @@ Workflow 不得停在既不推进、也不等待 RunClosed 的状态。任何一
 
 `closeRun` 以 `requestId` 幂等；运行已在收敛或已结束时 Kernel 只返回 SyscallAck，因此不会与超时、取消冲突，Workflow 仍只收到一个 RunClosed。
 
+### 11.1 内部错误
+
+Workflow 处理一条输入时发现自身内部错误（reducer 抛错、状态不变量被破坏、运行记录写入失败）属于第三种情况：
+调用 `closeRun(FAILED)`，`failure = { code: WORKFLOW_INTERNAL, category: INTERNAL, source: 'WORKFLOW' }`，
+然后等待 RunClosed。运行照常收敛，用户看到正常的结束说明。
+
+只有这一步也做不到时才升级：处理函数仍然抛出，由 Inbox 的失败观察者调用 `WorkflowDeps.reportSystemFault`
+（`source = 'workflow'`，带 `workflowRunId`），由组合根请求运行收敛并关闭系统
+（[错误、Exception 与系统故障处理](../../SystemFaultHandling.md) 第 2 节）。不在同一级重试，也不再发起其他 syscall。
+契约内的结果（SyscallRejected、UnitReport 的 REJECTED 与 FAILED）不属于内部错误，按第 7 节处理。
+没有注入上报函数时（单独测试本模块），错误留给 Inbox 记录，并使 `stop()` 失败。
+
+`stop()` 可重复调用，在 `start()` 之前或失败之后调用也安全，只清理已取得的资源（M1Interface 第 10 节）。
+
 ## 12. 配置（`WorkflowConfig`）
 
 | 配置 | 位置 | 建议初值 |

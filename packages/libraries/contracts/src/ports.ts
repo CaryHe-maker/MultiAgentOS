@@ -347,3 +347,21 @@ export interface LifecyclePort {
   stop(): Promise<void>;
   health(): Promise<HealthStatus>;
 }
+
+/**
+ * A fault that no run can absorb (docs/SystemFaultHandling.md 2). Only the composition root
+ * receives it; the original error stays in local diagnostics and never crosses a subject.
+ */
+export interface SystemFault {
+  /** The module that caught it, or the entry or process guard of the composition root. */
+  readonly source: string;
+  readonly phase: 'BOOT' | 'RUN' | 'SHUTDOWN';
+  readonly error: unknown;
+  readonly workflowRunId?: string;
+}
+
+/**
+ * The system fault entry the composition root hands to a module. A plain function, not a
+ * Fabric message and not a registered Schema: it starts a bounded shutdown and never throws.
+ */
+export type SystemFaultReporter = (fault: SystemFault) => void;

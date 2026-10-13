@@ -22,6 +22,8 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
+const kills: string[] = [];
+
 async function fixture(hostFactory: (fabric: InProcessFabric) => ModuleHostControl) {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-'));
   roots.push(dataDir);
@@ -34,6 +36,10 @@ async function fixture(hostFactory: (fabric: InProcessFabric) => ModuleHostContr
     moduleHost: host,
     config: DEFAULT_KERNEL_CONFIG,
     dataDir,
+    subprocess: {
+      run: () => Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
+      killAll: () => void kills.push('killAll'),
+    },
   });
   return { dataDir, fabric, supervisor };
 }
@@ -68,6 +74,8 @@ describe('Supervisor bootstrap', () => {
     await fabric.client('kernel-core').request(SCHEMA_IDS.supervisorShutdown, shutdown, context);
     await supervisor.whenStopped();
     expect(log).toEqual(['fabric start', 'core start', 'core stop', 'fabric stop']);
+    // Residual child processes are ended after the modules, through the injected runner.
+    expect(kills).toEqual(['killAll']);
     await expect(access(join(dataDir, 'tmp'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await supervisor.health()).status).toBe('DOWN');
   });

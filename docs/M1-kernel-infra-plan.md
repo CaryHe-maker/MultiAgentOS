@@ -2,12 +2,11 @@
 
 ## 1. 用途与当前状态
 
-- 更新日期：2026-10-10。
+- 更新日期：2026-10-11。
 - 本文是后续对话继续 Kernel 与 Infrastructure 实现工作的上下文和进度入口。
-- 本文已由用户要求创建；创建计划不代表已经授权开始业务代码实现。
-- 当前已完整阅读 docs 文档，并检查相关骨架、基础设施实现、组合根和测试。
-- 当前 P01 契约与接缝核对已完成；尚未修改 Kernel 或 Infrastructure 的业务实现。
-- 已在 Windows 运行构建与 P01 范围基线测试，结果见第 10 节；尚未进行 Ubuntu/WSL 验收。
+- 当前进度：P01–P05 已完成；错误与系统故障处理机制已定稿并实现了不依赖 Core 的部分（第 19、20 节）。
+  下一阶段是 P06。第 10–18 节是各阶段当时的记录，其中的“下一步”以第 9.1 节为准。
+- P02–P05 与故障处理机制均已在 WSL Ubuntu 24.04 通过构建、lint 与完整测试，并已按阶段提交到工作分支（未推送）。
 - 后续对话开始时，先读本文，再检查工作区状态与当前代码；不要只凭本文推断实现已经完成。
 
 ## 2. 用户明确规定的修改边界
@@ -141,16 +140,21 @@ Core 分阶段接入，各阶段不是新的并行事实源。
 | --- | ------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- |
 | P01 | 契约与接缝核对                  | 核对公共 Port、私有接口、配置、接线和架构约束；记录必须协调的接口缺口  | 实现所需接缝明确，没有未经授权的跨负责人改动         | 已完成                             |
 | P02 | Fabric                          | 验证身份、Schema、数据隔离、Inbox、发送顺序与失败处理                  | 控制优先、不可重入和处理结束后发送均有证据           | 已完成；真实 actor 接入在 P06 再验 |
-| P03 | Persistence → ArtifactStore     | 补齐路径边界、写入失败、关闭排空、运行隔离与完整性                     | 临时写入不形成有效引用；运行数据保留；失败可解释     | 未开始                             |
-| P04 | ModuleHost + Supervisor 引导    | 实现实际启动顺序、Fabric 就绪后服务注册、启动失败回滚                  | 全部就绪前不开放请求；已启动模块正确回滚             | 未开始                             |
-| P05 | Monitor → Scheduler             | 实现预留、实际/未知结算、finalReserve、单向额度状态与机会释放          | 幂等及异常结算、普通与 final 额度边界正确            | 未开始                             |
-| P06 | actor + Core 运行管理 + Gateway | 实现运行创建、请求幂等、两通道、计时、准入投影与消息分发               | createRun 到 RunStart 真实链通过，actor 无等待环     | 未开始                             |
+| P03 | Persistence → ArtifactStore     | 补齐路径边界、写入失败、关闭排空、运行隔离与完整性                     | 临时写入不形成有效引用；运行数据保留；失败可解释     | 已完成                             |
+| P04 | ModuleHost + Supervisor 引导    | 实现实际启动顺序、Fabric 就绪后服务注册、启动失败回滚                  | 全部就绪前不开放请求；已启动模块正确回滚             | 已完成                             |
+| P05 | Monitor → Scheduler             | 实现预留、实际/未知结算、finalReserve、单向额度状态与机会释放          | 幂等及异常结算、普通与 final 额度边界正确            | 已完成                             |
+| P05a | 启动期配置关系校验 | 组合根在加载 Catalog 之后、调用产品工厂之前，核对预算关系、模型限制，并沿 handoffTargetRef 遍历可达 Agent 核对 provider、digest 与不可裁剪段上界（第 10.3 节第 1–3 条、Monitor 第 4 节） | 不满足的配置使 composeSystem 以 ConfigError 失败，不启动任何模块；`tokenLimit = 1` 的探针被拒绝 | 未开始 |
+| P06 | actor + Core 运行管理 + Gateway | 实现运行创建、请求幂等、两通道、计时、准入投影与消息分发；actor 捕获边界、`KERNEL_FAULT`、`abortAllRuns`；Execution 的最小尝试路径（仅内建 REPORT_PUBLISH，不经 Supervisor、不需要 Lease） | 最小纵向链通过：真实 Core 与 Gateway 配合外围 fake，用内建 REPORT_PUBLISH 走通 createRun → RunStart → submitUnit → UnitReport → closeRun → RunClosed/RunFinished → shutdown；actor 无等待环；处理函数抛错按 L1 收敛 | 未开始 |
 | P07 | Core 定义与授权                 | 实现 AgentRun 登记、定义核验、Unit 准入、询问、回答/超时与私有 Lease   | 无权限不派发，同范围只问一次，拒绝被记住             | 未开始                             |
-| P08 | Supervisor 执行                 | 用 fake Executor 验证受理、notBefore、deadline、取消、宽限期和唯一终态 | TERMINATED/STOP_UNCONFIRMED 及迟到返回语义正确       | 未开始                             |
+| P08 | Supervisor 执行                 | 用 fake Executor 验证受理、notBefore、deadline、取消、宽限期和唯一终态；Executor 抛错转为事实 | TERMINATED/STOP_UNCONFIRMED 及迟到返回语义正确；Executor 抛错不成为系统故障 | 未开始                             |
 | P09 | Execution + Core 结果路径       | 实现 Attempt/FIFO、引用解析、产物、重试、预留与结果检查                | 内建报告发布及五类 Executor 路径通过，无资源泄漏     | 未开始                             |
-| P10 | Core 完整收敛与关闭             | 统一结束、取消、超时、违规、兜底、摘要、最终事件及 Outbox 排空         | 每个运行结束事件唯一，未知效果明确，设施关闭顺序正确 | 未开始                             |
+| P10 | Core 完整收敛与关闭             | 统一结束、取消、超时、违规、兜底、摘要、最终事件及 Outbox 排空；收敛失败升级为系统故障 | 每个运行结束事件唯一，未知效果明确，设施关闭顺序正确；用真实 Core 重做第 20 节的故障注入 | 未开始                             |
 | P11 | 组合与 Ubuntu 验收              | 真实 Kernel 配合外围 fake 验证，再按其他组件就绪情况接入真实系统       | 本范围质量门和故障集成通过，Ubuntu 证据已记录        | 未开始                             |
 
+P05a 是 P06 的前置任务：真实 Core 接入之前，错误的配置必须在启动期被拒绝，而不是等到创建运行时由 Monitor 抛错。
+P06 的最小纵向链是第一条真实链路：它只覆盖不需要授权和 Supervisor 的内建 Unit，目的是尽早暴露 Core、Gateway、
+Outbox 与外围模块之间的接口问题；P07–P09 在这条链上逐段替换，不另起并行实现。P09 仍负责 Execution 的完整路径，
+P06 中的最小尝试路径不得绕过 `registerAttempt` 与 `submitResultCheck`。
 P06 起就验证基本取消与运行状态边界，不等 P10 才首次考虑失败路径。
 P10 负责证明各组件的收敛逻辑在整条链上正确组合。
 P11 的完整产品 E2E 和 F1–F5 依赖其他负责人交付，不因外围 fake 通过就标记 M1 完成。
@@ -220,10 +224,12 @@ M1 不需要部署 PostgreSQL、DBOS、NATS、Redis、S3、Docker/Podman、进�
 
 ### 9.1 当前继续点
 
-- 当前任务：P01 核对已完成；用户已批准 C01–C06，接口与独立逻辑已开始实现，见第 12 节。
-- P02 的 Fabric 基础设施已完成并有测试证据；下一阶段按顺序进入 P03。真实 actor 接入时在 P06 复核发送时序。
-- 尚未检查：本地 WSL 实际环境、Ubuntu 验收和远端 Issue/PR 进度；Windows 基线已检查。
-- 不要先启动真实模型评测，也不要修改另一位负责人的包。
+- 当前任务：P01–P05 与故障处理机制（第 19、20 节）已完成并按阶段提交；下一步是 P05a，然后 P06。
+- P06 的退出条件已改为最小纵向链（第 6 节）；第 21 节其余核查结论在对应阶段处理。
+- P06 实现运行 actor 时，按 [错误、Exception 与系统故障处理](SystemFaultHandling.md) 第 2.2 节设置捕获边界，
+  实现产品 Core 的 `abortAllRuns`，并复核真实 actor 的发送时序。
+- WSL 验证方法已固定：把未提交改动做成补丁，应用到 WSL 内的独立工作副本再运行质量门。
+- 尚未检查：远端 Issue/PR 进度。不要先启动真实模型评测，也不要修改另一位负责人的包。
 
 ### 9.2 待协调事项
 
@@ -235,6 +241,8 @@ M1 不需要部署 PostgreSQL、DBOS、NATS、Redis、S3、Docker/Podman、进�
 | C04 | Fabric 就绪后 Supervisor 注册的启动钩子，详见 10.2              | P04      | 用户同意 | ModuleHost 钩子已实现，Supervisor 待接入          |
 | C05 | Fabric 校验失败与 Gateway INVALID_REQUEST 的错误边界，详见 10.2 | P02、P06 | 用户同意 | Fabric/Gateway 已实现，产品链待联调               |
 | C06 | RunSummary 永久写入失败的安全退出语义，详见 10.2                | P10      | 用户同意 | 契约与事件构造已实现，Core/UserInteraction 待接入 |
+| C07 | 错误分级、角色、`abortAllRuns` 与结束原因，详见第 19 节         | P06–P10  | 用户同意 | 机制与接口已实现，产品 Core/Supervisor 待接入     |
+| C08 | UserInteraction 规范的退出码措辞；Workflow/UserInteraction 的故障上报注入，详见第 20 节 | P11 | 用户同意（2026-10-13） | 规范、contracts 类型、依赖清单与组合根注入已实现；两个模块的捕获边界随产品实现完成 |
 
 这些是核对得到的设计协调事项，不代表需要修改另一位负责人的业务代码。
 全部事项均已由用户决定；按第 2 节的修改边界继续实施。上表的“已实现”仅指所列层次，不表示产品链已完成。
@@ -478,4 +486,179 @@ Windows 验证：`pnpm run build`、`pnpm run lint`、`pnpm run typecheck`、`gi
 排除已知 Windows 符号链接限制的完整测试为 30 文件、237 测试通过。
 `pnpm run format:check` 仍只报告另一位负责人所有的三个未修改 YAML 文件；本轮源码已单独格式化。
 WSL 验收仍未做。
-下一步 P03：Persistence → ArtifactStore，先检查路径与命名空间隔离，再实现失败与关闭排空测试。
+P03 的实际完成情况与验收证据见第 14 节。
+
+## 14. P03 Persistence → ArtifactStore 验收与继续点（2026-10-11）
+
+本阶段改动仅涉及 `packages/infrastructure/persistence`、`packages/infrastructure/artifacts`、
+组合根的依赖注入、相应测试和基础设施规范；未修改 `agent-tool-pool`、`executor-set` 或 prompt 工程业务代码。
+
+1. Persistence 同一审计文件的追加跨 Port 实例统一排队；一次写入失败不毒化后续队列。
+   `stop()` 先拒绝新写入，再等待已受理的记录写入与排队审计；测试覆盖关闭排空、顺序和失败后恢复。
+2. 组合根分别给 Workflow 与 Core 注入同签名的命名空间限定 `PersistencePort` facade，
+   越权访问在进入 FilePersistence 前拒绝。运行 ID 校验及目录、临时路径、目标文件的符号链接检查已加上。
+3. ArtifactStore 写入时复验临时文件，同名内容已损坏时报告完整性错误，不静默覆盖；
+   `get` 在拼接路径前校验 `ArtifactRef` 与运行 ID。`stop()` 等待已受理写入、拒绝新写入；
+   已发布产物在新 Store 实例启动后仍可读取。
+4. Linux 符号链接测试在 WSL Ubuntu 24.04 临时副本运行，不改动 Windows 工作区的 `node_modules`。
+   检查只覆盖静态路径与符号链接重定向；M1 单用户进程内存储不承诺抵御同机恶意进程并发改写目录的竞态。
+
+验证：WSL 中 `pnpm run build`、`pnpm run lint`、`pnpm run test` 通过；完整测试为 31 文件、259 项通过。
+`git diff --check` 通过。完整 `pnpm run check` 的格式阶段仍仅因另一位负责人范围内的三个未修改 YAML 文件失败，
+没有越界格式化。下一步 P04：ModuleHost + Supervisor 引导，验证 Fabric 就绪后的服务注册、启动失败回滚与关闭顺序。
+
+## 15. P04 ModuleHost + Supervisor 引导验收与继续点（2026-10-11）
+
+Supervisor 已实现生命周期引导：先清理 `<dataDir>/tmp/`（保留其他数据），再通过 ModuleHost 启动各模块；
+Fabric 启动成功后的钩子注册 SupervisorPort 三个请求处理器。处理器核对 producer 必须为 `kernel-core`，
+且只在全部模块启动完成后接受请求。启动失败由 ModuleHost 按逆序回滚；重试时复用已登记的处理器并继续受就绪状态保护。
+关闭请求先向 Core 返回，再异步逆序停止模块，Fabric 最后停止；`whenStopped()` 反映停止完成或错误。
+
+P04 只完成引导与关闭。`execute` 和 `cancelRun` 当前明确报 `NOT_IMPLEMENTED`，不会静默接受执行；
+Executor 派发、取消、截止时间、终态事实属于 P08。Core 与其他产品模块仍有骨架，端到端真实链尚未就绪。
+后续 P05 按计划实现 Monitor 与 Scheduler。没有修改 agent-tool-pool、executor-set 或 prompt 工程。
+
+验证：WSL Ubuntu 24.04 临时副本中 `pnpm run build`、`pnpm run lint`、`pnpm run test` 通过，
+完整测试为 32 文件、261 项；ModuleHost 和 Supervisor 定向测试覆盖钩子时序、启动回滚、
+未就绪拒绝、重试注册及 Fabric 最后停止。`git diff --check` 通过。全局格式门仍有另一位负责人
+范围内的既有 YAML 格式问题，P04 修改文件单独检查格式。
+
+## 16. P05 Monitor → Scheduler 验收与继续点（2026-10-11）
+
+Monitor 的已有账本实现补齐了预算配置、usage 与安全整数校验；冲突结算在改写账本前计算并校验
+新余额，避免失败时只撤销旧结算而留下半更新。普通调用不能占用 finalReserve，final 调用可用总额度；
+NOT_SENT 释放预留，UNKNOWN 按预留全额计入，实际用量超过估算或重复结算冲突会返回异常供 Core 审计。
+状态只按结算与拒绝单向前进，`finalize()` 把未结算预留计为 UNKNOWN。
+
+新增进程内 `InProcessProviderCapacity`：同一 provider 同时只发一个令牌，不同 provider 独立；
+每个运行持有自己的 `Scheduler`，并共享同一容量实例。`acquire` 不排队，`release` 与 `releaseAll`
+幂等，`stopGranting` 阻止新机会但不收回在途机会。Core 尚是骨架，P06 建立运行 actor 时须把同一
+容量实例注入各运行的 Scheduler；P09 结果路径须在 Monitor 拒绝、重试和正常结果时核对机会归还，
+`STOP_UNCONFIRMED` 留到收敛末尾释放。没有修改另一位负责人的业务代码。
+
+验证：WSL Ubuntu 24.04 临时副本中先构建后运行完整测试、lint 与 P05 修改文件格式检查；
+33 个测试文件、268 项测试全部通过，`git diff --check` 通过。覆盖配置与账本安全整数、
+结算幂等和冲突、普通/final 额度边界、跨运行容量与收敛释放。下一步 P06 为运行 actor、
+Core 运行管理和 Gateway 接线，不把 P05 独立单元测试视为真实运行链验收。
+
+## 17. P05 后续核查：CLI 启动前校验（2026-10-11）
+
+`apps/control-plane` 的 `main()` 现在先由 `apps/cli` 解析并校验命令；无效命令直接返回
+CLI 退出码，不加载配置、不构造模块、不启动 Supervisor，也不等待 `whenStopped()`。
+合法命令启动系统后只执行一次已解析的 `UserInteraction.analyze`，随后等待 Supervisor
+完成全部模块关闭，才把退出码返回进程入口。`whenStopped()` 的 Promise 由 Supervisor 持有；
+它是停机完成通知，不负责发起关闭。测试覆盖无效参数不触发骨架产品工厂。
+
+此前提出的“启动中直接调用 Supervisor.stop”竞态，在当前组合根接线中无可达调用路径；
+正常 shutdown 只在 Supervisor 全部就绪后受理。此项是公开生命周期接口的防御性改进候选，
+不视为当前产品链已发生的缺陷，也不因此跨越另一负责人的代码边界。
+
+验证：WSL Ubuntu 24.04 临时副本中 `pnpm run build`、`pnpm run lint`、完整测试和本次修改文件的
+Prettier 检查通过；完整测试为 34 文件、270 项。修改仅在 CLI、control-plane 入口及文档，
+未改 UserInteraction 或另一负责人业务代码。
+
+## 18. P05 后续核查：存储健康状态与异常边界（2026-10-11）
+
+ArtifactStorePort 只注入 Kernel 核心，由 Execution 负责写入执行产物、最终报告和 RunSummary；
+没有新增写入主体。FilePersistence 与 LocalArtifactStore 的 `health()` 现在以是否接受写入报告
+UP/DOWN：启动前及停止后为 DOWN，启动完成且可写时为 UP；读取已保存内容的能力不改变。
+两组件分别新增启动前、运行中、停止后的生命周期测试。
+
+后续要区分两个异常边界：启动阶段 Core/运行 actor 可能尚不存在，模块 start 失败由
+ModuleHost 逆序回滚已成功启动的模块并向组合根抛错；当前失败模块若在 start 内取得资源后
+再抛错，不在 ModuleHost 的已启动集合内。应先明确 LifecyclePort 对部分启动的清理责任，
+再决定由该模块自身清理还是由 ModuleHost 尝试调用其 stop；若需修改其他负责人的模块业务代码，
+必须先通知用户。运行期可归属运行的 Kernel 内部异常按 Interaction 第 8 节进入
+KERNEL_FAULT → FAILED(KERNEL_INTERNAL) 收敛，不把所有错误直接当作进程级 panic。
+UserInteraction 或入口层在关闭请求前抛错时，目前还没有独立的兜底关闭入口；P06/P10
+接入真实链时应设计受控关闭与有界兜底，避免只等待 `whenStopped()` 而无人发起停机。
+
+验证：WSL Ubuntu 24.04 临时副本中构建、两个存储组件的 18 项定向测试、相关源码和测试的
+Prettier 检查通过；`git diff --check` 通过。
+
+## 19. 已确认设计：错误、Exception 与系统故障处理（2026-10-11）
+
+完整设计见 [错误、Exception 与系统故障处理](SystemFaultHandling.md)；本节只记录用户的决定，后续实现以该文为准。
+
+1. **分级**：按“是否属于契约”分为 L0 结果（返回值或消息）、L1 Exception（Core 按收敛结束运行）、
+   L2 系统故障（组合根处理）、L3 进程级（最后防线）。处理某一级时再次失败则升级，不在同级重试。
+   去向由捕获位置静态决定，不由协调者判断“Core 是否可处理”；故障关闭先请求 Core 收敛并等待期限，超时继续。
+2. **角色**：ModuleHost 是纯机制，只记账；Supervisor 负责正常路径的启停顺序和把 Executor 的结局转成事实，
+   不裁决系统故障；Core 只对运行终态有权威；组合根的系统控制拥有关闭意图、期限与退出码。
+   组合根不是模块：没有 `moduleId`、Fabric 身份与领域状态，只做直接函数调用。
+3. **组合根请求 Core 收敛**：Kernel 核心模块对象暴露只交给组合根的 `abortAllRuns({ faultId, deadlineMs })`，
+   不经 Gateway；Interaction 第 8 节已写明它是受控维护入口。
+4. **结束原因采用方案 A**：复用 `FAILED(KERNEL_INTERNAL)`，`failure.source = KERNEL`，`faultId` 写入
+   `failure.detail` 与审计；不新增原因码，不改公共 Schema。若 P10 故障注入表明审计加 `detail` 不足以区分来源，
+   再评估新增原因码（涉及 contracts、M1Interface 3.4、UserInteraction 展示文案）。
+5. **不做的事**：不重试失败的 `stop()`；不公开系统级状态机协议；不建立绕过 Supervisor 的独立执行回收能力，
+   只保留子进程存活集合；不部署进程外监督者。
+
+## 20. 故障处理机制落地记录（2026-10-11）
+
+本轮实现了不依赖产品 Core 的全部部分；改动位于 `module-host`、`kernel`（Supervisor、接口）、`control-plane`、
+`testing` 的 fake 与相关规范，没有修改 `agent-tool-pool`、`executor-set`、prompt 工程或公共 contracts。
+
+| 内容 | 位置 | 说明 |
+| --- | --- | --- |
+| 生命周期账本 | `packages/infrastructure/module-host/src/index.ts` | 逐模块状态；启动失败的模块也被停止；启动中收到停止不再启动后续模块；并发与重复停止共用一次执行；`stopTimeoutMs`；`STOP_FAILED` 不重试；`ledger()` |
+| 系统控制 | `apps/control-plane/src/bootstrap/system-control.ts` | `reportFault`、有界故障关闭、关闭意图、退出码 70 |
+| 入口 | `apps/control-plane/src/index.ts`、`bootstrap/process-guards.ts` | `main()` 经 `System.run` 保证关闭；最后防线 |
+| 子进程 | `packages/modules/kernel/src/supervisor/subprocess-runner.ts` | 存活集合与 `killAll()`；组合根构造 runner 并经 `SupervisorDeps.subprocess` 注入 |
+| Kernel 接口 | `packages/modules/kernel/src/kernel-core.ts` | `KernelCoreModule.abortAllRuns`、`KernelCoreDeps.reportSystemFault`；产品工厂仍为 `NOT_IMPLEMENTED` |
+| fake | `packages/testing/src/fakes/fake-kernel.ts` | fake Core 实现 `abortAllRuns`；fake Supervisor 的 `whenStopped()` 在停止失败时拒绝 |
+
+实现中修正的既有问题：
+
+- ModuleHost 原先在 `stop()` 开始时清空已启动列表，停止失败后无据可查；`start()` 进行中调用 `stop()` 时，
+  启动循环还会继续启动后续模块。两者都由账本解决。第 17 节记录的“启动中直接调用 Supervisor.stop”竞态随之关闭。
+- `main()` 原先在命令抛错时不停止任何模块，在关闭请求未发出时永久等待 `whenStopped()`。
+- fake Supervisor 原先用 `finally` 完成 `whenStopped()`，把失败的停止报告为完成，并留下未处理的 Promise 拒绝；
+  这会让依赖 fake 链的测试看不到关闭失败。
+
+行为变化，其他负责人需要知道：
+
+- `LifecyclePort.stop()` 的契约明确为可重复调用，且在 `start()` 之前或失败之后调用也安全（M1Interface 第 10 节）。
+  ModuleHost 现在会对启动失败的模块调用 `stop()`。Workflow 与 UserInteraction 的产品实现须满足这一点。
+- `createKernelCore` 的返回类型由 `LifecyclePort` 扩为 `KernelCoreModule`；替换该工厂的测试须提供 `abortAllRuns`。
+- 出现过系统故障的进程不再以 0 退出；模块停止失败时即使运行已完成，退出码也是 70。
+
+同步的规范：ModuleHost 第 2、3 节，Supervisor 第 6 节，Interaction 4.3、第 6 节、7.1、第 8 节，Core 第 2、7 节，
+M1Interface 第 10、14.1、14.4 节。未改动、列为 C08 待协调：UserInteraction 第 3、6 节的退出码措辞；
+Workflow 与 UserInteraction 把 Inbox 失败观察者接到系统故障入口所需的依赖清单变更。
+
+尚未实现，随后续阶段完成：产品 Core 的 `abortAllRuns`、actor 捕获边界与收敛失败升级（P06、P10）；
+Supervisor 每个执行实例的捕获边界（P08）；审计类型 `SYSTEM_FAULT_ABORT`（P10）。
+`main()` 目前没有进程入口脚本调用；Ctrl+C 的两段处理属于 CLI 产品功能，尚未设计。
+
+验证：WSL Ubuntu 24.04 独立工作副本中 `pnpm run build`、`pnpm run lint`、`pnpm run test`、`pnpm run format:check`
+全部通过，完整测试为 35 文件、282 项。Windows 上相同测试除已知的 `agent-tool-pool` 符号链接 `EPERM` 外通过。
+新增故障注入测试覆盖：正常结束、命令抛错、重复故障共用一个 faultId、Core 不收敛时超时继续、模块停止失败、
+引导失败时停止失败模块、启动中停止、停止超时、最后防线。fake Core 只证明关闭步骤的顺序与期限，
+不证明产品 Core 的收敛；P10 用真实 Core 重做。第 12 节记录的 `format:check` 失败在 WSL 上不出现，
+它是 Windows 检出的换行差异。
+
+## 21. 已完成阶段与计划的核查结论（2026-10-11）
+
+对 P02–P05 的源码逐一对照规范后的结论。标“待决定”的项目尚未改动。
+
+1. **启动期配置关系校验没有阶段负责（已列为 P05a，尚未实现）。** 第 10.3 节第 1–3 条确认它应在组合根完成，
+   第 10.4 节也用 `tokenLimit = 1` 证明了缺口，但第 6 节的阶段表没有任何一行包含它。
+   现在 `Monitor` 的构造函数会拒绝该配置，但 Monitor 在创建运行时才构造，系统已经启动并开放了 Gateway，
+   与 Monitor 第 4 节“系统不启动”不符。`system-config.ts` 的注释仍写“属于 Kernel”，在 P05a 一并修正。
+2. **P03–P05 与本轮改动原先叠在一个未提交的工作区（已处理）。** 已拆为 P03、P04、P05、CLI 启动前校验、
+   故障处理机制与计划文档六个提交，每个提交都在 WSL Ubuntu 24.04 单独通过构建与完整测试。
+3. **Inbox 的处理器失败在没有 `onError` 时只在 `idle()` 暴露。** 也就是到模块停止时才可见；
+   运行中 Workflow 或 UserInteraction 的处理器抛错会静默，直到 `RUN_TIMEOUT`（默认 30 分钟）。
+   这不是 Fabric 的缺陷，但产品模块必须传入 `onError` 并接到系统故障入口（C08）。
+4. **发送失败不一定是契约缺陷。** Interaction 4.4 假定发送失败只可能来自 Schema；Fabric 停止后发送会得到
+   `NOT_RUNNING`。P06 的发送器在故障关闭期间会遇到它，Core 处理由此产生的 `KERNEL_FAULT` 时运行多半已
+   CONVERGING 或 CLOSED，按规范只写审计，行为正确，但审计条目应能区分两种原因。
+5. **Supervisor 的处理器以抛错拒绝请求**（producer 不符、未就绪、`NOT_IMPLEMENTED`）。`SupervisorPort` 的方法
+   没有结构化拒绝的返回形态，因此这是唯一的表达方式，调用方把它当作发送失败处理。P08 实现执行时保持：
+   抛错只用于契约缺陷，执行层面的拒绝一律走 ExecutionFact。
+6. **`clearTemporaryFiles` 只被测试使用。** Supervisor 因依赖边界自己清理 `tmp`（第 10.2 节 C04），
+   Persistence 导出的同名能力没有产品调用方。保留或删除均可，建议删除以免两处实现分叉。
+7. Monitor、Scheduler、Persistence、ArtifactStore 的实现与各自规范逐条对照，未发现不一致。
+8. **第一条真实链路出现得太晚（已处理）。** 原计划到 P08 才有真实执行、P09 才有结果路径，Core 的接口问题会
+   积到后期暴露。P06 的退出条件已改为用内建 REPORT_PUBLISH 走通的最小纵向链。

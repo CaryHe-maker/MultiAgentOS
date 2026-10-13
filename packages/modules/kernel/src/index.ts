@@ -6,11 +6,17 @@
  */
 export { DEFAULT_KERNEL_CONFIG, type BudgetConfig, type KernelConfig } from './interfaces/index.js';
 export { createGateway, type GatewayDeps } from './gateway/index.js';
-export { createKernelCore, type KernelCoreDeps } from './kernel-core.js';
+export {
+  createKernelCore,
+  type AbortAllRunsRequest,
+  type KernelCoreDeps,
+  type KernelCoreModule,
+} from './kernel-core.js';
 export {
   createSubprocessRunner,
   createSupervisor,
   type ModuleHostControl,
   type SupervisorDeps,
   type SupervisorModule,
+  type TrackedSubprocessRunner,
 } from './supervisor/index.js';

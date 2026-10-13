@@ -1566,8 +1566,8 @@ type FabricAddress =
 interface LifecyclePort {
   manifest: { moduleId: ModuleId; version: string; dependencies: ModuleId[] };
   start(): Promise<void>;
-  stop(): Promise<void>;
-  health(): Promise<HealthStatus>;
+  stop(): Promise<void>; // 可重复调用；start() 之前或失败之后调用也安全，只清理已取得的资源
+  health(): Promise<HealthStatus>; // 调用时刻的快照，不是故障通知
 }
 
 type ModuleId =
@@ -1585,7 +1585,21 @@ interface HealthStatus {
   checkedAt: string;
   details: string[];
 }
+
+interface SystemFault {
+  source: string; // 捕获它的模块（ModuleId），或组合根的 entry、composition-root
+  phase: 'BOOT' | 'RUN' | 'SHUTDOWN';
+  error: unknown; // 只留在本地诊断，不跨通讯主体
+  workflowRunId?: string;
+}
+
+type SystemFaultReporter = (fault: SystemFault) => void; // 进程内函数，不经 Fabric，不抛错
 ```
+
+`SystemFault` 与 `SystemFaultReporter` 不是注册的 Schema，也不经 Fabric 传递：组合根把同一个上报函数注入
+Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即触发有界的故障关闭
+（[错误、Exception 与系统故障处理](../SystemFaultHandling.md) 第 5 节）。Executor 不持有它：
+Executor 的一切结局由 Supervisor 转成 ExecutionFact。
 
 M1 的存储布局见 [Persistence](Infrastructure/Persistence.md) 与 [ArtifactStore](Infrastructure/ArtifactStore.md)。
 
@@ -1676,7 +1690,7 @@ Unsupported 无副作用以及 fake 与真实 adapter 的一致性。
 
 ```ts
 function createGateway(deps: GatewayDeps): LifecyclePort;
-function createKernelCore(deps: KernelCoreDeps): LifecyclePort;
+function createKernelCore(deps: KernelCoreDeps): KernelCoreModule;
 function createSupervisor(deps: SupervisorDeps): SupervisorModule;
 
 interface GatewayDeps {
@@ -1692,7 +1706,13 @@ interface KernelCoreDeps {
   registry: ProtocolRegistry;
   config: KernelConfig;
   dataDir: string;
+  reportSystemFault?: SystemFaultReporter; // 第 10 节；收敛自身失败时升级
   now?: () => Date;
+}
+
+interface KernelCoreModule extends LifecyclePort {
+  // 组合根的受控维护入口（Interaction 7.1）；不注册到 Fabric
+  abortAllRuns(request: { faultId: string; deadlineMs: number }): Promise<void>;
 }
 
 interface SupervisorDeps {
@@ -1702,7 +1722,12 @@ interface SupervisorDeps {
   moduleHost: ModuleHostControl;
   config: KernelConfig;
   dataDir: string; // 启动时清空 <dataDir>/tmp/
+  subprocess?: TrackedSubprocessRunner; // 组合根注入自己持有的 runner；缺省为私有 runner
   now?: () => Date;
+}
+
+interface TrackedSubprocessRunner extends SubprocessRunner {
+  killAll(): void; // 同步终止全部存活子进程
 }
 
 interface ModuleHostControl {
@@ -1713,11 +1738,12 @@ interface ModuleHostControl {
 }
 
 interface SupervisorModule extends LifecyclePort {
-  whenStopped(): Promise<void>; // shutdown 请求使全部模块停止后完成
+  whenStopped(): Promise<void>; // 全部模块停止后完成；停止失败时拒绝
 }
 ```
 
-组合根只调用 `supervisor.start()`，并在 `whenStopped()` 完成后以 UserInteraction 给出的退出码退出进程。
+正常路径上组合根只调用 `supervisor.start()`，并在 `whenStopped()` 完成后以 UserInteraction 给出的退出码退出进程。
+系统故障时的关闭与退出码见第 14.4 节。
 
 ### 14.2 Workflow 与 UserInteraction
 
@@ -1731,6 +1757,7 @@ interface WorkflowDeps {
   persistence: PersistencePort; // Workflow 取用 workflow 命名空间
   registry: ProtocolRegistry; // 按 parametersContract 校验工具参数
   config: WorkflowConfig;
+  reportSystemFault?: SystemFaultReporter; // 第 10 节；closeRun(FAILED, WORKFLOW_INTERNAL) 也无法结束运行时升级
   now?: () => Date;
 }
 
@@ -1741,6 +1768,7 @@ interface WorkflowModule extends LifecyclePort {
 interface UserInteractionDeps {
   gateway: InteractionGatewayPort;
   terminal: TerminalPort;
+  reportSystemFault?: SystemFaultReporter; // 第 10 节；Inbox 处理器、询问任务或中断处理抛错时上报
   now?: () => Date;
 }
 
@@ -1786,7 +1814,7 @@ interface SystemConfig {
 interface SystemParts {
   // 非基础设施部分的工厂，缺省为各产品包的导出
   createGateway(deps: GatewayDeps): LifecyclePort;
-  createKernelCore(deps: KernelCoreDeps): LifecyclePort;
+  createKernelCore(deps: KernelCoreDeps): KernelCoreModule;
   createSupervisor(deps: SupervisorDeps): SupervisorModule;
   createWorkflow(deps: WorkflowDeps): WorkflowModule;
   createUserInteraction(deps: UserInteractionDeps): UserInteractionModule;
@@ -1800,8 +1828,37 @@ function composeSystem(options: {
   parts?: Partial<SystemParts>; // 测试用 fake 替换其中任意几项
   catalog?: CatalogPort; // 缺省为仓库内的定义目录
   now?: () => Date;
+  timeouts?: Partial<ShutdownTimeouts>; // 关闭各步的期限，缺省由 KernelConfig 推出
+  log?: (line: string) => void; // 系统故障的本地诊断，缺省为 stderr
 }): Promise<System>;
+
+interface System {
+  // 进程级控制对象，不是模块：没有 moduleId、Fabric 身份与领域状态
+  start(): Promise<void>; // 引导失败时先停止已启动的模块再拒绝
+  userInteraction: UserInteractionModule;
+  whenStopped(): Promise<void>;
+  run(command: (ui: UserInteractionModule) => Promise<number>): Promise<number>; // 全部模块停止后给出退出码
+  reportFault(fault: SystemFault): void; // 系统故障入口，触发有界的故障关闭
+  shutdown(): Promise<StopReport>; // 幂等；正常关闭之后只返回报告
+  killSubprocesses(): void;
+}
+
+interface ShutdownTimeouts {
+  abortRunsMs: number; // 等待 abortAllRuns；缺省 2 ×（cancelGraceMs + convergenceMarginMs）
+  stopMs: number; // 一次停止全部模块的期限
+  settleMs: number; // 运行结束后，命令返回与正常关闭完成的期限
+}
+
+interface StopReport {
+  intent: 'REQUESTED' | 'FAULT'; // 经 Gateway 与 Core 的关闭且没有任何故障时才是 REQUESTED
+  faults: (SystemFault & { faultId: string; at: string })[]; // 一次关闭只有一个 faultId
+  modules: { moduleId: ModuleId; state: ModuleLifecycleState; error?: unknown }[];
+}
 ```
+
+退出码：意图为 `REQUESTED` 时取 UserInteraction 记录的退出码；意图为 `FAULT` 时，命令已返回非零退出码则保留，
+否则为 70。出现过系统故障的进程不以 0 退出。完整规则见
+[错误、Exception 与系统故障处理](../SystemFaultHandling.md) 第 5 节。
 
 尚未实现的产品工厂在被调用时抛出 `NOT_IMPLEMENTED`，不返回占位的成功结果。
 `packages/testing` 为每个工厂提供 fake，为 `CatalogPort` 与 `Executor` 提供共享 contract test；
