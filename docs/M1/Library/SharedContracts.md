@@ -235,6 +235,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `EXECUTOR_KINDS`、`REPOSITORY_KINDS` | `platform-common/execution-kind.ts` | 会派发给 Supervisor 的五种执行，以及其中读取仓库的三种 |
 | `ProtocolRegistry`、`createM1ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema，并生成工具参数的 JSON Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
+| `DEFAULT_REPOSITORY_EXCLUSIONS`、`ExclusionRuleSchema`、`isValidExclusionRule`、`isExcluded`、`excludesDirectory` | `platform-common/repository-exclusions.ts` | 默认排除规则与唯一的匹配器（M1Interface 3.5）；Core 与 Executor 共用，使用户看到的范围等于实际读取的范围 |
 | `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
 
 ## 5. 文件依赖顺序
