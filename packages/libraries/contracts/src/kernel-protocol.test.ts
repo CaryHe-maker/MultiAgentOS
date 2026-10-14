@@ -694,6 +694,10 @@ describe('ExecutionRequest and ExecutionFact', () => {
       'scope of another kind': { ...read, scope: { kind: 'NONE' } },
       'a kind that is never dispatched': { ...read, executionKind: 'REPORT_PUBLISH' },
       'maxOutputTokens outside MODEL': { ...read, limits: { ...limits, maxOutputTokens: 1 } },
+      'an exclusion rule the matcher cannot apply': {
+        ...read,
+        scope: { ...repository, exclusions: ['**/*.{pem,key}'] },
+      },
     });
     const orient = {
       ...read,
