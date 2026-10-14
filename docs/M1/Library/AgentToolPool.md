@@ -487,6 +487,9 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 | deepseek-flash | 0.003 | 0.15 | 0.60 |
 | deepseek-v4-pro | 0.022 | 0.66 | 1.98 |
 
+- 成本由 `modelCallCost(model, usage, at)` 计算（包导出，另有 `isPeakTime`）：缓存命中按命中价，其余输入按未命中价，
+  没有缓存数字时全部按未命中计（上限）；`at` 落在高峰时段（UTC、按 `peak.weekdays` 与半开区间 `[start, end)`）时乘 `ratePercent / 100`。
+  结果以微美元为单位，可以带小数。
 - DeepSeek 在中国法定节假日按非高峰计费，M1 没有节假日日历，因此按规则算出的节假日成本是上限。
 - 两个模型都支持思考模式，默认开启，档位为 low、high、max。M1 Agent 设置为 `thinking: DISABLED`；评测时如果开启，必须记录档位。
 - `deepseek-flash` 是服务端别名。DeepSeek 更换背后的模型时，应发布新的 ModelDefinition 版本，并更新 `providerModelLabel`。
@@ -507,4 +510,3 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 | 事项 | Owner |
 |---|---|
 | 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现），仍标 `contentStatus: PLACEHOLDER`，在固定任务集的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
-| 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
