@@ -5,7 +5,14 @@ version: v0.1.0
 description: Model-facing file read, served by the file-read unit.
 purpose: UNIT
 modelName: read_file
-modelDescription: Read up to 400 lines from one file in the repository.
+modelDescription: >-
+  Read a line range of one text file in the repository, returned with line numbers.
+  path is relative to the repository root and uses / (for example src/server/app.ts).
+  startLine and endLine are optional, 1-based and inclusive; by default the file is read from
+  line 1. One call returns at most 400 lines; the result states the lines returned and the
+  total, so continue with startLine when there is more. Only text returned by this tool can
+  be cited as evidence. Paths outside the repository, directories, binary files and protected
+  files (.env files, keys, .git, node_modules) are refused.
 parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE

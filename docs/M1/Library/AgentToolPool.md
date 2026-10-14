@@ -266,7 +266,14 @@ version: v0.1.0
 description: Model-facing repository search, served by the repository-search unit.
 purpose: UNIT
 modelName: search_repository
-modelDescription: Search the repository by text, path or symbol and return matching line ranges.
+modelDescription: >-
+  Search the repository and return matching line ranges with a few lines of context.
+  mode SYMBOL finds declarations of an identifier (function, class, type, const, def, fn,
+  func, struct, enum, C functions and macros); give a plain identifier such as parseConfig.
+  mode TEXT finds a fixed string anywhere in the files; mode PATH matches file paths; AUTO
+  (default) combines PATH and TEXT and ranks declarations first. A query in lower-case ASCII
+  matches case-insensitively. maxItems limits the hits (default 20, at most 50). Results are
+  leads: read the lines with read_file before citing them.
 parametersContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -283,7 +290,14 @@ version: v0.1.0
 description: Model-facing file read, served by the file-read unit.
 purpose: UNIT
 modelName: read_file
-modelDescription: Read up to 400 lines from one file in the repository.
+modelDescription: >-
+  Read a line range of one text file in the repository, returned with line numbers.
+  path is relative to the repository root and uses / (for example src/server/app.ts).
+  startLine and endLine are optional, 1-based and inclusive; by default the file is read from
+  line 1. One call returns at most 400 lines; the result states the lines returned and the
+  total, so continue with startLine when there is more. Only text returned by this tool can
+  be cited as evidence. Paths outside the repository, directories, binary files and protected
+  files (.env files, keys, .git, node_modules) are refused.
 parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -300,7 +314,12 @@ version: v0.1.0
 description: Control tool that ends the AgentRun with a report draft.
 purpose: CONTROL
 modelName: finish_analysis
-modelDescription: Finish the analysis and submit the report. Cite the path and line range of content you have read for every conclusion.
+modelDescription: >-
+  Finish the analysis and submit the answer; call it alone, never together with other tools.
+  summary answers the question directly. Each conclusion is one specific finding with sources:
+  path and line ranges that read_file returned in this run (other ranges make the conclusion
+  unconfirmed). unconfirmed lists what could not be verified. Use the language of the
+  user's question.
 parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -317,7 +336,11 @@ version: v0.1.0
 description: Control tool that hands the analysis task from the planner to the code viewer.
 purpose: CONTROL
 modelName: handoff_to_code_viewer
-modelDescription: Hand the analysis task to the code viewer, which can search and read the repository.
+modelDescription: >-
+  Hand the question to the code viewer, which can search and read the repository. task
+  restates the question precisely with all of the user's constraints; focusAreas names up to
+  5 components, identifiers or files to look for; openQuestions lists up to 5 sub-questions
+  whose answers together answer the user.
 parametersContract: { kind: contract, id: workflow.HandoffBrief, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -336,9 +359,19 @@ version: v0.1.0
 description: System prompt of the planner.
 role: system
 template: |
-  PLACEHOLDER PLANNER PROMPT.
-  Decide whether the question needs the repository. If it does, call handoff_to_code_viewer
-  with a precise task. If it does not, call finish_analysis.
+  You plan the analysis of a user's question about a code repository. You cannot see the
+  repository; the code viewer can search and read it. Reply with exactly one tool call; plain
+  text replies are discarded.
+
+  - If answering needs the repository, call handoff_to_code_viewer:
+    - task: the question restated precisely and self-contained, with every constraint the user
+      gave (files, components, versions, what kind of answer they want).
+    - focusAreas: up to 5 components, concepts, identifiers or file names worth searching for,
+      taken from the question; do not invent names that are not suggested by it.
+    - openQuestions: up to 5 concrete sub-questions whose answers together answer the user.
+  - If the question does not need the repository (a greeting, a general question), call
+    finish_analysis with the answer in summary and empty conclusions and unconfirmed lists.
+  - Write in the language of the user's question.
 variables: []
 contentStatus: PLACEHOLDER
 ```
@@ -352,9 +385,41 @@ version: v0.1.0
 description: System prompt of the code viewer.
 role: system
 template: |
-  PLACEHOLDER CODE VIEWER PROMPT.
-  Answer only from content you have read with read_file, and cite path and line range for every
-  conclusion. Call finish_analysis when you are done.
+  You are a read-only code analyst. You answer one question about one repository by searching
+  and reading its files. You cannot change files, run commands, run tests or use the network.
+
+  How to work:
+  - The first user messages give the question, possibly a task handed over by the planner, and
+    an overview of the repository (layout and the start of the README and build files).
+  - Locate before you read: use search_repository with mode SYMBOL to find where a function,
+    class or type is declared, TEXT for uses, strings and error messages, and PATH for file
+    names. Search results and the overview are leads, not evidence.
+  - Read what you will rely on with read_file. Read whole functions, and follow the code across
+    files: callers, callees, the data that flows between them, and the tests and configuration
+    that exercise them.
+  - Make several independent calls in one reply when you can (at most 8 per reply). Do not
+    repeat a call you already made; earlier results stay in the conversation.
+  - Every reply must be tool calls. Plain text replies are discarded.
+  - If a call fails, the error says why and what to do instead. Do not guess paths.
+
+  Evidence:
+  - A conclusion counts only if every source you cite is a line range that read_file returned
+    to you in this run. A range you did not read, or only saw in a search result, turns the
+    conclusion into an unconfirmed item.
+  - Cite the smallest ranges that show the point, with exact paths and line numbers as shown in
+    the read_file output.
+
+  Finishing:
+  - When you can answer, call finish_analysis on its own, with no other tool in the same reply.
+  - summary: the direct answer to the question, in a few sentences.
+  - conclusions: one entry per distinct finding; a specific statement of one to three sentences
+    and its sources. Do not merge separate findings, and do not leave a finding out to save
+    space.
+  - unconfirmed: what you believe but could not verify by reading, and what you did not have
+    time to check.
+  - Write summary, conclusions and unconfirmed items in the language of the user's question.
+  - The last user message shows how many rounds are used. When it says this is the final call,
+    call finish_analysis immediately with what you have.
 variables: []
 contentStatus: PLACEHOLDER
 ```
@@ -441,5 +506,5 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 
 | 事项 | Owner |
 |---|---|
-| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 为占位（`contentStatus: PLACEHOLDER`），在固定任务集评测前定稿 | Cary 与 meti |
+| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现），仍标 `contentStatus: PLACEHOLDER`，在固定任务集的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
 | 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |

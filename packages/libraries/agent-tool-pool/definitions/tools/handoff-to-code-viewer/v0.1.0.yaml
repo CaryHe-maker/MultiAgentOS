@@ -5,7 +5,11 @@ version: v0.1.0
 description: Control tool that hands the analysis task from the planner to the code viewer.
 purpose: CONTROL
 modelName: handoff_to_code_viewer
-modelDescription: Hand the analysis task to the code viewer, which can search and read the repository.
+modelDescription: >-
+  Hand the question to the code viewer, which can search and read the repository. task
+  restates the question precisely with all of the user's constraints; focusAreas names up to
+  5 components, identifiers or files to look for; openQuestions lists up to 5 sub-questions
+  whose answers together answer the user.
 parametersContract: { kind: contract, id: workflow.HandoffBrief, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
