@@ -241,3 +241,19 @@ Supervisor 按 [Supervisor](../Kernel/Supervisor.md) 第 4 节把宽限期内返
 或在 `composeSystem` 的 `parts.createExecutorRegistry` 中直接使用 `createExecutorRegistry`；fake Kernel 会经 Supervisor
 调用它们。需要真实运行 `rg` 时，把 `@multiagentos/kernel` 的 `createSubprocessRunner()` 传给 `createFakeSupervisor({ subprocess })`，
 或直接放进 `ExecutorEnvironment.subprocess`。
+
+### 6.1 真实模型评测
+
+`packages/libraries/executor-set/eval/` 在产品 Workflow 与 Kernel 就绪之前，用真实的 ExecutorSet、目录中的 code-viewer
+Prompt 与 Tool 定义和真实模型衡量检索与上下文的效果。它按 [Workflow](../Module/Workflow.md) 第 4–10 节的规则驱动单个 Agent
+（解释模型返回、Validation、重复调用、无进展、final-call、来源核验），使用 M0 的 C 审查题、问题与答案清单
+（`fixtures/c-review`、`fixtures/c-review-answer-key.json`），因此结果可以直接与
+`experiments/minimal-agent-loop/RUNS.md` 中 M0 与 mini-agent 的数字比较。
+
+```bash
+DEEPSEEK_API_KEY=... pnpm --filter @multiagentos/executor-set run eval -- --repeat 10 --label m1-draft
+```
+
+每次运行输出调用次数、输入与缓存命中 token、输出 token、费用、耗时、core/subtle 得分、已核验结论比例、读取与重复读取次数，
+结果写入 `eval/runs/`（不提交）。它不属于质量门；离线用例 `eval/agent-loop.test.ts` 用脚本化的假模型检查这条循环本身。
+真实链路可以运行之后（Workflow 计划 T19），评测改为经过完整的权威调用链。
