@@ -7,6 +7,7 @@ import {
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
 import { IdSchemas } from '../platform-common/ids.js';
+import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { HandoffBriefSchema } from '../workflow/handoff.js';
 import { StatusFactsSchema, StepRecordSchema } from '../workflow/step-record.js';
@@ -15,7 +16,7 @@ const RepositoryScopeSchema = closed({
   kind: Type.Literal('REPOSITORY'),
   /** The realpath of the repository root. */
   repositoryRoot: text(4096),
-  exclusions: Type.Array(text(512)),
+  exclusions: Type.Array(ExclusionRuleSchema),
 });
 const modelScope = {
   kind: Type.Literal('MODEL'),

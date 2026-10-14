@@ -45,8 +45,8 @@ Execution、Monitor、Scheduler 只能取得裁决与派生值（Interaction 3.2
 ## 4. Lease 与用户授权
 
 - `repo.read` 的范围：仓库根目录（`createRun` 时 `repositoryPath` 的 realpath）、排除规则、外发目标 provider（`KernelConfig.provider`）。
-- 默认排除规则：`.git/**`、`**/.env*`、`**/*.pem`、`**/*.key`、`**/id_rsa*`、`**/id_dsa*`、`**/id_ecdsa*`、`**/id_ed25519*`、`**/node_modules/**`；`KernelConfig.repositoryExclusions`
-  只能追加，不能删除。Executor 硬编码同一组默认规则（[ExecutorSet](../Library/ExecutorSet.md) 3.2）。
+- 默认排除规则是 contracts 的 `DEFAULT_REPOSITORY_EXCLUSIONS`，匹配语义见 [M1Interface](../M1Interface.md) 3.5；
+  `KernelConfig.repositoryExclusions` 只能追加，不能删除。Executor 使用同一份列表与同一个匹配器。
 - Lease = Agent 定义的能力 ∩ 用户授权 ∩ 系统策略；绑定 WorkflowRun，在收敛第 ③ 步失效。
 - 一个运行只询问一次。用户同意后，后续 `repo.read` 申请直接签发或复用 Lease，不再询问；危险行为每次询问（M1 不涉及）。
 

@@ -120,6 +120,7 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 | 对象                      | 约束                                                                                                                                                                                                                                                                                          |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ExecutionRequest`        | `executionKind` 同时决定 `input`、`scope.kind` 与 `limits`：`maxFiles` 只属于 `REPOSITORY_ORIENT` 且必填，`maxOutputTokens` 只属于 `MODEL` 且必填                                                                                                                                             |
+| `ExecutionScope`（REPOSITORY）、`AuthorizationRequest`、`KernelConfig` | `exclusions` 与 `repositoryExclusions` 中的每条规则必须符合第 3.5 节的写法 |
 | `ExecutionScope`（MODEL） | `thinkingEffort` 当且仅当 `thinking = 'ENABLED'` 时存在；`baseUrl` 必须以 `https://` 开头                                                                                                                                                                                                     |
 | `ExecutionResult`         | `output` 必须是该 `executionKind` 的输出类型；`artifact` 必填，`mediaType` 必须是该种的产物类型                                                                                                                                                                                               |
 | `ExecutionFact`           | 携带 `executionKind`，并由它决定其余字段：`COMPLETED` 的 `result` 必须是该种的结果；只有 `MODEL` 带 `requestState`（必填）与 `usage`（可选），其余种类不得带；`MODEL` 的 `COMPLETED` 必须 `requestState = 'SENT'`；`retryable` 只属于 `FAILED` 且必填；`startedAt` 只有 `TERMINATED` 可以缺失 |
@@ -383,6 +384,31 @@ type ReasonCode =
   | 'KERNEL_INTERNAL';
 ```
 
+### 3.5 排除规则
+
+排除规则决定仓库中哪些路径不可读取。Core 把它们展示给用户（`AuthorizationRequest.exclusions`）并写入每个
+REPOSITORY 范围（`ExecutionScope.exclusions`），Executor 按它们拒绝路径。双方使用 contracts 中同一份默认列表与同一个匹配器
+（`DEFAULT_REPOSITORY_EXCLUSIONS`、`isExcluded`，见 [SharedContracts](Library/SharedContracts.md) 4.3），
+用户同意的范围因此就是实际读取的范围。
+
+```ts
+const DEFAULT_REPOSITORY_EXCLUSIONS = [
+  '**/.git', '**/.git/**', '**/.env*', '**/*.pem', '**/*.key',
+  '**/id_rsa*', '**/id_dsa*', '**/id_ecdsa*', '**/id_ed25519*', '**/node_modules/**',
+];
+```
+
+匹配语义：
+
+- 规则与路径都相对仓库根目录，分隔符为 `/`。
+- `**` 必须是一个完整的路径段，匹配零个或多个路径段；`*` 匹配一个路径段内的任意字符；`?` 匹配一个字符。
+- 以点开头的路径段与其他路径段一样参与匹配：`**/*.pem` 也排除 `.config/server.pem`。
+- 不区分大小写：多排除是安全的，少排除会泄露密钥。
+- 不支持 `{`、`}`、`[`、`]`、`!` 与 `\`；含有它们、或含空段、`.`、`..` 段的规则不合法，由 Schema 拒绝（第 1.4 节），
+  系统配置中出现时系统不启动。
+
+默认规则不可删除：`KernelConfig.repositoryExclusions` 只能在其后追加（[Core](Kernel/Core.md) 第 4 节）。
+
 ## 4. Gateway 端口
 
 ### 4.1 端口定义
@@ -606,7 +632,7 @@ interface AuthorizationRequest {
   questionId: string;
   capability: 'repo.read';
   repositoryPath: string; // 仓库根目录的 realpath
-  exclusions: string[]; // 排除规则（glob），见 Kernel/Core 第 4 节
+  exclusions: string[]; // 排除规则，见第 3.5 节
   provider: string; // 读取内容将发送到的模型 provider
   expiresAt: string;
 }
@@ -1061,7 +1087,7 @@ interface ExecutionRequest {
 }
 
 type ExecutionScope =
-  | { kind: 'REPOSITORY'; repositoryRoot: string; exclusions: string[] } // 由 Lease 派生
+  | { kind: 'REPOSITORY'; repositoryRoot: string; exclusions: string[] } // 由 Lease 派生；规则见第 3.5 节
   | {
       kind: 'MODEL';
       provider: string;
