@@ -1,8 +1,6 @@
 /**
- * Workflow Module (docs/M1/Module/Workflow.md). `domain/` holds the pure reducer and business
- * rules (AnalysisAction, Validation, failurePolicy, Round and final-call, handoff, report);
- * `application/` consumes the Inbox, issues syscalls through `WorkflowGatewayPort` and writes
- * the WorkflowRunRecord.
+ * Workflow Module (docs/M1/Module/Workflow.md). domain holds the pure reducer and rules;
+ * application consumes the Inbox and executes actions through WorkflowGatewayPort.
  */
 import type {
   CatalogPort,
@@ -14,10 +12,11 @@ import type {
   WorkflowGatewayPort,
   WorkflowInboxPort,
 } from '@multiagentos/contracts';
+import { createWorkflowRunner } from './application/workflow-runner.js';
 
 export type { WorkflowConfig } from '@multiagentos/contracts';
 
-/** The suggested initial values (docs/M1/Module/Workflow.md 12). */
+/** Suggested initial configuration (docs/M1/Module/Workflow.md section 12). */
 export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   entryAgentRef: Object.freeze({ id: 'planner', version: 'v0.1.0' }),
   regenerationLimit: 3,
@@ -25,28 +24,27 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
 });
 
 export interface WorkflowDeps {
-  /** Workflow's only way into the Kernel. */
+  /** Workflow's only entry into the Kernel. */
   readonly gateway: WorkflowGatewayPort;
   readonly catalog: CatalogPort;
-  /** Workflow takes the `workflow` namespace from it. */
+  /** Only the workflow namespace may be used. */
   readonly persistence: PersistencePort;
-  /** Validates tool arguments against a tool's `parametersContract`. */
+  /** Validates arguments against the tool's parametersContract. */
   readonly registry: ProtocolRegistry;
   readonly config: WorkflowConfig;
   /**
-   * Where Workflow escalates an error it could not end with `closeRun(FAILED, WORKFLOW_INTERNAL)`:
-   * what its Inbox failure observer receives (docs/M1/Module/Workflow.md 11.1).
+   * Escalates through the Inbox failure observer if closeRun(FAILED, WORKFLOW_INTERNAL) fails
+   * (docs/M1/Module/Workflow.md section 11.1).
    */
   readonly reportSystemFault?: SystemFaultReporter;
   readonly now?: () => Date;
 }
 
-/** `inbox` is served on the address `inbox.workflow` by the composition root. */
+/** The composition root serves inbox at inbox.workflow. */
 export interface WorkflowModule extends LifecyclePort {
   readonly inbox: WorkflowInboxPort;
 }
 
 export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
-  void deps;
-  throw new Error('NOT_IMPLEMENTED: Workflow');
+  return createWorkflowRunner(deps);
 }
