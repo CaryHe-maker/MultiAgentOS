@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { modelCallCost } from '@multiagentos/agent-tool-pool';
+import { sha256Hex, type TokenUsage } from '@multiagentos/contracts';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { createExecutorRegistry } from '../src/index.js';
 import { BUDGET, runAgentLoop, type LoopResult } from './agent-loop.js';
@@ -19,9 +20,11 @@ import { gradeReport, loadAnswerKey, type Grade } from './grade.js';
  */
 const here = dirname(fileURLToPath(import.meta.url));
 const { values } = parseArgs({
-  // `pnpm run eval -- --repeat 3` passes the `--` through.
-  allowPositionals: true,
+  // `pnpm run eval -- --repeat 3` passes the `--` through; after it parseArgs would take every
+  // option as a positional, so it is dropped, and unknown options stay errors.
+  args: process.argv.slice(2).filter((arg, index) => !(index === 0 && arg === '--')),
   options: {
+    instructions: { type: 'string' },
     repeat: { type: 'string', default: '5' },
     label: { type: 'string', default: 'run' },
     model: { type: 'string' },
@@ -43,20 +46,35 @@ if (apiKey === undefined || apiKey.length === 0) {
 const setup = await loadCodeViewer(values.model);
 const issues = loadAnswerKey(resolve(values.key));
 const subprocess = createSubprocessRunner();
-const cost = (result: LoopResult) =>
-  result.calls.reduce(
-    (total, call) =>
-      call.usage === undefined
-        ? total
-        : total + modelCallCost(setup.model, call.usage, new Date(call.at)).microUsd / 1e6,
-    0,
-  );
+/**
+ * `--instructions <file>` replaces the catalog prompt for this evaluation only, so a prompt
+ * change can be compared before the definition is edited; its digest is recorded.
+ */
+const instructions =
+  values.instructions === undefined
+    ? setup.instructions
+    : readFileSync(resolve(values.instructions), 'utf8');
+/**
+ * Billed cost uses the peak price when a call fell in a peak window; the off-peak figure is the
+ * one comparable with RUNS.md, whose M0 and mini-agent costs are all off-peak.
+ */
+const cost = (result: LoopResult, offPeak: boolean) =>
+  result.calls.reduce((total, call) => {
+    if (call.usage === undefined) return total;
+    const billed = modelCallCost(setup.model, call.usage, new Date(call.at));
+    const microUsd =
+      offPeak && billed.peak
+        ? (billed.microUsd * 100) / setup.model.pricing.peak.ratePercent
+        : billed.microUsd;
+    return total + microUsd / 1e6;
+  }, 0);
 
 interface Row {
   readonly repeat: number;
   readonly result: LoopResult;
   readonly grade: Grade;
   readonly costUsd: number;
+  readonly offPeakCostUsd: number;
   readonly seconds: number;
 }
 const rows: Row[] = [];
@@ -68,7 +86,7 @@ for (let repeat = 1; repeat <= Number(values.repeat); repeat += 1) {
     registry: createExecutorRegistry(),
     agent: setup.agent,
     model: setup.model,
-    instructions: setup.instructions,
+    instructions,
     tools: setup.tools,
     apiKey,
     subprocess,
@@ -77,7 +95,8 @@ for (let repeat = 1; repeat <= Number(values.repeat); repeat += 1) {
     repeat,
     result,
     grade: gradeReport(result.report, issues),
-    costUsd: cost(result),
+    costUsd: cost(result, false),
+    offPeakCostUsd: cost(result, true),
     seconds: (Date.now() - started) / 1000,
   };
   rows.push(row);
@@ -94,7 +113,7 @@ for (let repeat = 1; repeat <= Number(values.repeat); repeat += 1) {
       `in=${sum((usage) => usage.inputTokens)}`,
       `hit=${sum((usage) => usage.inputCacheHitTokens ?? 0)}`,
       `out=${sum((usage) => usage.outputTokens)}`,
-      `$${row.costUsd.toFixed(4)}`,
+      `$${row.costUsd.toFixed(4)} (off-peak $${row.offPeakCostUsd.toFixed(4)})`,
       `${row.seconds.toFixed(1)}s`,
       `core=${row.grade.coreFound}/${row.grade.coreTotal}`,
       `subtle=${row.grade.subtleFound}/${row.grade.subtleTotal}`,
@@ -107,6 +126,11 @@ for (let repeat = 1; repeat <= Number(values.repeat); repeat += 1) {
   );
 }
 
+const tokens = (row: Row, pick: (usage: TokenUsage) => number) =>
+  row.result.calls.reduce(
+    (total, call) => total + (call.usage === undefined ? 0 : pick(call.usage)),
+    0,
+  );
 const mean = (pick: (row: Row) => number) =>
   rows.reduce((total, row) => total + pick(row), 0) / Math.max(rows.length, 1);
 const summary = {
@@ -114,6 +138,9 @@ const summary = {
   succeeded: rows.filter((row) => row.result.ok).length,
   calls: mean((row) => row.result.calls.length),
   costUsd: mean((row) => row.costUsd),
+  offPeakCostUsd: mean((row) => row.offPeakCostUsd),
+  inputTokens: mean((row) => tokens(row, (usage) => usage.inputTokens)),
+  outputTokens: mean((row) => tokens(row, (usage) => usage.outputTokens)),
   seconds: mean((row) => row.seconds),
   core: mean((row) => row.grade.coreFound),
   subtle: mean((row) => row.grade.subtleFound),
@@ -161,6 +188,8 @@ function runRecord() {
       noProgressRounds: 2,
     },
     digests: setup.digests,
+    instructionsSha256: sha256Hex(instructions),
+    instructionsFile: values.instructions,
     commit: gitCommit(here),
   };
 }
