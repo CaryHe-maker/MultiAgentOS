@@ -90,10 +90,11 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 `TEXT` 为固定字符串匹配；查询是不含大写字母的 ASCII 时只折叠 A–Z 做大小写不敏感匹配，否则区分大小写。
 
 - 检测到系统 `rg` 时（经 runner 执行一次 `rg --version`，按 runner 缓存），以参数数组调用：
-  `--json --no-follow --no-ignore --hidden --no-config --text --max-filesize 1M`，每条排除规则加一个 `-g '!<规则>'`，
+  `--json --no-follow --no-ignore --hidden --no-config --text --sort path --max-filesize 1M`，每条排除规则加一个 `-g '!<规则>'`，
   区分大小写的 `TEXT` 模式加 `--fixed-strings`，大小写不敏感时改用 `(?i-u)` 加转义后的查询，`SYMBOL` 的 `\b` 写作 `(?-u:\b)`，
   最后为 `-- <模式> .`，工作目录为仓库根目录。`--no-config` 使用户的 `RIPGREP_CONFIG_PATH` 不影响结果；
-  `--text` 把二进制判定交给文件集合（`rg` 会跳过 8 KiB 之后才出现 NUL 的文件）。
+  `--text` 把二进制判定交给文件集合（`rg` 会跳过 8 KiB 之后才出现 NUL 的文件）；`--sort path` 使输出被截断时保留的匹配固定
+  （多线程的 `rg` 输出文件的顺序不定）。
   `rg` 经 `ExecutorEnvironment.subprocess` 启动，取消时由 Supervisor 终止；输出超过 `maxOutputBytes` 时只用完整的记录，结果标记为截断。
 - 未检测到 `rg`、或 `rg` 以退出码 2 且无输出结束时，对第 3.1 节的文件集合做确定性扫描，每 32 个文件让出一次事件循环。
   两种后端都跳过超过 1 MiB 的文件；这些文件仍在快照中，可以用 `read_file` 分段读取。

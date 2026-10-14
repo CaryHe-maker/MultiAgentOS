@@ -79,10 +79,12 @@ export function hasRipgrep(runner: SubprocessRunner): Promise<boolean> {
 }
 
 /**
- * The arguments of ExecutorSet 3.3, plus three that keep `rg` equivalent to the scan
+ * The arguments of ExecutorSet 3.3, plus the ones that keep `rg` equivalent to the scan
  * (issue #26, A4): `--no-config` so a user's RIPGREP_CONFIG_PATH cannot change the search,
  * `--text` so binary detection is left to the file set (rg would also skip files with a NUL
- * after the first 8 KiB), and for case folding the ASCII-only `(?i-u)` instead of `-i`.
+ * after the first 8 KiB), `--sort path` so an output cut at `maxOutputBytes` always keeps the
+ * same matches (threaded rg emits files in any order), and for case folding the ASCII-only
+ * `(?i-u)` instead of `-i`.
  */
 export function ripgrepArguments(line: LineQuery, rules: readonly string[]): string[] {
   const pattern =
@@ -98,6 +100,8 @@ export function ripgrepArguments(line: LineQuery, rules: readonly string[]): str
     '--hidden',
     '--no-config',
     '--text',
+    '--sort',
+    'path',
     '--max-filesize',
     '1M',
     ...rules.flatMap((rule) => ['-g', `!${rule}`]),

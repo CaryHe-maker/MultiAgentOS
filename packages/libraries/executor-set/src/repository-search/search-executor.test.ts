@@ -188,6 +188,24 @@ describe.skipIf(!ripgrep)('rg and the scan agree (ExecutorSet 6)', () => {
     );
   });
 
+  it('keeps the same matches when the rg output is cut at maxOutputBytes', async () => {
+    const cut = async () => {
+      const executor = createSearchExecutor({ cache: new FileDigestCache(), backend: 'ripgrep' });
+      const environment = environmentFor('REPOSITORY_SEARCH', repositoryScope(root), {
+        subprocess: runner,
+      });
+      return hitsOf(
+        await executor.execute(
+          { query: 'e', mode: 'TEXT', maxItems: 50, tokenBudget: 100_000 },
+          { ...environment, limits: { ...environment.limits, maxOutputBytes: 1_500 } },
+        ),
+      );
+    };
+    const first = await cut();
+    expect(first.length).toBeGreaterThan(0);
+    for (let attempt = 0; attempt < 5; attempt += 1) expect(await cut()).toEqual(first);
+  });
+
   it('stops rg when the execution is aborted', async () => {
     const controller = new AbortController();
     let seen: AbortSignal | undefined;
