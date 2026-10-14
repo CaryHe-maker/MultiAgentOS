@@ -148,6 +148,9 @@ importers:
         specifier: 7.0.107
         version: 7.0.107(zod@4.6.5)
     devDependencies:
+      '@multiagentos/agent-tool-pool':
+        specifier: workspace:*
+        version: link:../agent-tool-pool
       '@multiagentos/kernel':
         specifier: workspace:*
         version: link:../../modules/kernel
