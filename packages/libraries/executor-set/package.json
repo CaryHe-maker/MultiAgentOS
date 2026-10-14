@@ -9,6 +9,10 @@
     "@multiagentos/contracts": "workspace:*",
     "ai": "7.0.107"
   },
+  "devDependencies": {
+    "@multiagentos/kernel": "workspace:*",
+    "@multiagentos/testing": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -b tsconfig.json --pretty false",
     "check": "tsc -b tsconfig.json --pretty false"
