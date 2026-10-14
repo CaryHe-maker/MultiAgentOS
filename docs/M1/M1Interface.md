@@ -820,7 +820,7 @@ interface ContextPack {
   tokenBudget: number;
   truncated: boolean;
   droppedCount: number;
-  prefixSha256?: string; // ASSEMBLE 必填：INSTRUCTIONS 与 TOOLS 段内容的 SHA-256
+  prefixSha256?: string; // ASSEMBLE 必填：sha256Hex(canonicalJson({ instructions, toolSpecs }))
   items: ContextItem[];
   createdAt: string;
 }
@@ -884,6 +884,9 @@ token 估算由 contracts 统一提供（[SharedContracts](Library/SharedContrac
 
 BPE 类 tokenizer 的单个 token 至少覆盖一个字节，因此估算值不低于实际输入 token 数（provider 侧模板开销由每条 16 的固定开销覆盖，
 超出时按结算异常处理）。
+
+`prefixSha256` 只由组装输入中的 `instructions` 与 `toolSpecs` 决定，同一 AgentRun 的普通调用之间保持不变，
+用于确认 provider 的前缀缓存可以命中。final-call 只提供 finish 控制工具，`toolSpecs` 改变，前缀随之改变，这是预期的。
 
 ### 6.4 模型调用
 
@@ -1064,6 +1067,11 @@ interface AgentRoundsEntry {
   maxRounds: number;
 }
 ```
+
+`ContextAssembleInput.steps` 中，每个 `MODEL_TURN` 的每个 `toolCallId` 之后必须至少有一条 `TOOL_RESULT`，
+或一条带该 `toolCallId` 的 `FEEDBACK`：provider 拒绝没有结果的工具调用。不满足时 context-assemble 返回
+`FAILED(INTERNAL)`，这是 Workflow 的缺陷。Workflow 第 5–7 节的每条路径都满足这一点
+（INVALID、Validation 不通过、`NOT_EXECUTED` 都按 `toolCallId` 记录 FEEDBACK）。
 
 ## 7. Kernel 核心与 Supervisor
 
