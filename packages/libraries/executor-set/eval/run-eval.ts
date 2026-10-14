@@ -1,10 +1,11 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { modelCallCost } from '@multiagentos/agent-tool-pool';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { createExecutorRegistry } from '../src/index.js';
-import { runAgentLoop, type LoopResult } from './agent-loop.js';
+import { BUDGET, runAgentLoop, type LoopResult } from './agent-loop.js';
 import { loadCodeViewer } from './eval-setup.js';
 import { gradeReport, loadAnswerKey, type Grade } from './grade.js';
 
@@ -42,20 +43,14 @@ if (apiKey === undefined || apiKey.length === 0) {
 const setup = await loadCodeViewer(values.model);
 const issues = loadAnswerKey(resolve(values.key));
 const subprocess = createSubprocessRunner();
-const prices = setup.model.pricing.offPeak;
 const cost = (result: LoopResult) =>
-  result.calls.reduce((total, call) => {
-    const usage = call.usage;
-    if (usage === undefined) return total;
-    const hit = usage.inputCacheHitTokens ?? 0;
-    return (
-      total +
-      (hit * prices.inputCacheHit +
-        (usage.inputTokens - hit) * prices.inputCacheMiss +
-        usage.outputTokens * prices.output) /
-        1e12
-    );
-  }, 0);
+  result.calls.reduce(
+    (total, call) =>
+      call.usage === undefined
+        ? total
+        : total + modelCallCost(setup.model, call.usage, new Date(call.at)).microUsd / 1e6,
+    0,
+  );
 
 interface Row {
   readonly repeat: number;
@@ -137,9 +132,57 @@ const file = join(
 writeFileSync(
   file,
   JSON.stringify(
-    { label: values.label, model: setup.model.id, question: values.question, summary, rows },
+    { label: values.label, record: runRecord(), question: values.question, summary, rows },
     null,
     2,
   ),
 );
 console.log(`saved ${file}`);
+
+/**
+ * What M1TechStack 11 requires of every evaluation that uses a model: provider, model,
+ * configuration, the digests of the definitions, the commit, tokens, cost and time (the last
+ * three are in the rows).
+ */
+function runRecord() {
+  return {
+    recordedAt: new Date().toISOString(),
+    provider: setup.model.provider,
+    model: {
+      id: setup.model.id,
+      apiModelId: setup.model.apiModelId,
+      label: setup.model.providerModelLabel,
+    },
+    thinking: setup.agent.modelSettings,
+    configuration: {
+      budget: BUDGET,
+      limits: setup.agent.limits,
+      regenerationLimit: 3,
+      noProgressRounds: 2,
+    },
+    digests: setup.digests,
+    commit: gitCommit(here),
+  };
+}
+
+/** Reads HEAD without running git: the product never calls git, and neither does this. */
+function gitCommit(start: string): string | undefined {
+  let directory = start;
+  while (!existsSync(join(directory, '.git'))) {
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+  const git = join(directory, '.git');
+  const head = readFileSync(join(git, 'HEAD'), 'utf8').trim();
+  if (!head.startsWith('ref: ')) return head;
+  const ref = head.slice('ref: '.length);
+  if (existsSync(join(git, ref))) return readFileSync(join(git, ref), 'utf8').trim();
+  const packed = existsSync(join(git, 'packed-refs'))
+    ? readFileSync(join(git, 'packed-refs'), 'utf8')
+    : '';
+  return packed
+    .split('\n')
+    .find((line) => line.endsWith(` ${ref}`))
+    ?.split(' ')[0];
+}

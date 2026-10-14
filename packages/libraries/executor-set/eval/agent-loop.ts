@@ -59,6 +59,8 @@ export interface LoopOptions {
 
 export interface CallMetrics {
   readonly usage?: TokenUsage;
+  /** When the answer arrived; peak pricing depends on it. */
+  readonly at: string;
   readonly latencyMs: number;
   readonly outcome: string;
 }
@@ -83,7 +85,8 @@ export interface LoopResult {
   readonly report: string;
 }
 
-const BUDGET = {
+/** The default KernelConfig budgets (Kernel/Interaction 9), as the real Kernel would apply. */
+export const BUDGET = {
   perCallInputLimit: 64_000,
   finalInputBudget: 48_000,
   orientBudget: 4_000,
@@ -205,6 +208,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LoopResult> {
       environment('MODEL', modelScope, options, 180_000),
     );
     calls.push({
+      at: new Date().toISOString(),
       latencyMs: Date.now() - started,
       outcome: describe(answered),
       ...('usage' in answered && answered.usage !== undefined ? { usage: answered.usage } : {}),

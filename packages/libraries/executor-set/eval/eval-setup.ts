@@ -21,15 +21,19 @@ export interface CodeViewerSetup {
   readonly model: ModelDefinition;
   readonly instructions: string;
   readonly tools: LoopTools;
+  /** `KIND:id@version` → digest of every definition the evaluation uses. */
+  readonly digests: Readonly<Record<string, string>>;
 }
 
 export async function loadCodeViewer(modelId?: string): Promise<CodeViewerSetup> {
+  const digests: Record<string, string> = {};
   const index = await loadCatalogIndex(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY));
   const find = <D extends Definition>(kind: D['kind'], id: string): D => {
     const found = [...index.definitions.values()].find(
       (definition) => definition.kind === kind && definition.id === id,
     );
     if (found === undefined) throw new Error(`${kind} ${id} is not in the catalog`);
+    digests[`${found.kind}:${found.id}@${found.version}`] = found.digest;
     return found as D;
   };
   const agent = find<AgentDefinition>('AGENT', 'code-viewer');
@@ -58,6 +62,7 @@ export async function loadCodeViewer(modelId?: string): Promise<CodeViewerSetup>
   }
   const finishTool = find<ToolDefinition>('TOOL', agent.actions.finish.toolRef.id);
   return {
+    digests,
     agent,
     model,
     instructions: prompt.template,

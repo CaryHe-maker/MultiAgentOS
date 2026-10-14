@@ -256,5 +256,6 @@ DEEPSEEK_API_KEY=... pnpm --filter @multiagentos/executor-set run eval -- --repe
 ```
 
 每次运行输出调用次数、输入与缓存命中 token、输出 token、费用、耗时、core/subtle 得分、已核验结论比例、读取与重复读取次数，
-结果写入 `eval/runs/`（不提交）。它不属于质量门；离线用例 `eval/agent-loop.test.ts` 用脚本化的假模型检查这条循环本身。
+结果写入 `eval/runs/`（不提交）。按 M1TechStack 第 11 节，每份结果另记录 provider、模型、思考设置、预算与 Agent 上限、
+用到的全部定义的 digest 和当前 commit；费用按 AgentToolPool 的 `modelCallCost` 以每次调用的时间计算高峰价。它不属于质量门；离线用例 `eval/agent-loop.test.ts` 用脚本化的假模型检查这条循环本身。
 真实链路可以运行之后（Workflow 计划 T19），评测改为经过完整的权威调用链。
