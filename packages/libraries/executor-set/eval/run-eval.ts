@@ -148,6 +148,16 @@ const summary = {
     (row) => row.result.verified / Math.max(row.result.verified + row.result.unverified, 1),
   ),
   withRepeatedReads: rows.filter((row) => row.result.repeatedReads > 0).length,
+  /** How many runs missed each answer-key issue, most missed first. */
+  missed: Object.fromEntries(
+    issues
+      .map(
+        (issue) =>
+          [issue.id, rows.filter((row) => row.grade.missed.includes(issue.id)).length] as const,
+      )
+      .filter(([, count]) => count > 0)
+      .sort(([, left], [, right]) => right - left),
+  ),
 };
 console.log(JSON.stringify(summary));
 const directory = join(here, 'runs');

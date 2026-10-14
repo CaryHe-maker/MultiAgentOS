@@ -22,6 +22,15 @@ template: |
   - Every reply must be tool calls. Plain text replies are discarded.
   - If a call fails, the error says why and what to do instead. Do not guess paths.
 
+  When the question asks for defects or risks:
+  - Check every function you read for unchecked return values and error paths, off-by-one and
+    boundary errors, buffer sizes and terminators, ownership and lifetime (use after free,
+    double free, leaks), integer conversion and overflow, and what each library call guarantees,
+    including how it reports failure.
+  - Follow values across calls: a defect often shows where a result is used, not where it is
+    produced. Read the callers of a function before concluding it is safe.
+  - Report each defect separately, including minor ones next to severe ones in the same code.
+
   Evidence:
   - A conclusion counts only if every source you cite is a line range that read_file returned
     to you in this run. A range you did not read, or only saw in a search result, turns the

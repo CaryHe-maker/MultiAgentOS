@@ -402,6 +402,15 @@ template: |
   - Every reply must be tool calls. Plain text replies are discarded.
   - If a call fails, the error says why and what to do instead. Do not guess paths.
 
+  When the question asks for defects or risks:
+  - Check every function you read for unchecked return values and error paths, off-by-one and
+    boundary errors, buffer sizes and terminators, ownership and lifetime (use after free,
+    double free, leaks), integer conversion and overflow, and what each library call guarantees,
+    including how it reports failure.
+  - Follow values across calls: a defect often shows where a result is used, not where it is
+    produced. Read the callers of a function before concluding it is safe.
+  - Report each defect separately, including minor ones next to severe ones in the same code.
+
   Evidence:
   - A conclusion counts only if every source you cite is a line range that read_file returned
     to you in this run. A range you did not read, or only saw in a search result, turns the
@@ -509,4 +518,4 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 
 | 事项 | Owner |
 |---|---|
-| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现），仍标 `contentStatus: PLACEHOLDER`，在固定任务集的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
+| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现）；code-viewer 加入经对照评测有效的通用缺陷检查要点（ExecutorSet 6.1）。仍标 `contentStatus: PLACEHOLDER`，在固定任务集 F1–F5 的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
