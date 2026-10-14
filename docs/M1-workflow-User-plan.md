@@ -14,17 +14,25 @@
   下面的命令除本文外应当没有结果：
 
   ```bash
-  git grep -nE "workflow-User-plan|\bT(0[1-9]|1[0-9])\b|\bQ(0[1-9]|10)\b" -- . ':!docs/M1-workflow-User-plan.md' ':!pnpm-lock.yaml'
+  git grep -nE "workflow-User-plan|\bT(0[1-9]|1[0-9])\b|\bQ(0[1-9]|1[0-9]|2[0-3])\b" -- . \
+    ':!docs/M1-workflow-User-plan.md' ':!pnpm-lock.yaml'
   ```
 
 - 文件名是文档 PascalCase 命名惯例的例外，由用户指定，保留该名称。
 
 ### 1.2 当前状态
 
-- 更新日期：2026-10-13。
-- 基线：分支与 `feature/M1/main` 同为 `ac368ad`，没有自己的提交。该提交已在 CI（Ubuntu 24.04）通过质量门。
-- 尚未开始任何实现：`createWorkflow` 与 `createUserInteraction` 抛出 `NOT_IMPLEMENTED`。
-- 当前继续点见第 10.1 节。下一步是 T01（规范缺口的决定），其中的问题需要用户回答。
+- 更新日期：2026-10-14。
+- 基线：实现基线为 `ac368ad`；本轮实现提交前 HEAD 为 `fb09124`，实际提交以 git log 为准。
+  实现基线已在 CI（Ubuntu 24.04）通过质量门。
+- Workflow 已接入工厂、循环、交接、报告发布与记录，通过模块内替身验收；尚未完成真实 Kernel 联合验收。
+  UserInteraction 已接入工厂、授权、中文展示、退出码与组合根故障回调。
+- 当前继续点见第 10.1 节。T01、T02 已完成；语言要求已更正，Q11 解除。
+  Q14 已由用户决定并实现；T03–T06 已完成；预算事实优先已实现。
+  用户最终决定 FAILED 只走错误路径，不提交降级报告；Q17 已解除，不修改共同契约。
+  用户已同意 Q18 的本分支映射例外，不修改报告结构与共同协议。
+  T07–T14 已完成本次模块实现；Q19–Q23 的决定和最新验证见第 10 节。
+  CLI 与全部系统级组合、共享 Inbox 契约验收仍按后续阶段开展。
 
 ### 1.3 后续对话的开始步骤
 
@@ -56,7 +64,8 @@
 
 - `packages/libraries/contracts/**`（Schema、Port、跨模块类型）
 - `packages/testing/**`（fake、fixture、共享 contract test）
-- `WorkflowDeps`、`UserInteractionDeps`、`TerminalPort`、`AnalyzeCommand` 与两个工厂的签名（M1Interface 第 14.2 节）
+- `WorkflowDeps`、`UserInteractionDeps`、`TerminalPort`、`AnalyzeCommand` 与两个工厂的签名
+  （M1Interface 第 14.2 节）
 - `docs/M1/M1Interface.md`、`docs/M1/Library/SharedContracts.md`
 - 根目录的构建与检查配置、`pnpm-lock.yaml`
 
@@ -94,7 +103,8 @@ Architecture 定义长期职责，M1 定义当前交付子集；M1 不实现的�
 
 可参考的现有代码（只读）：
 
-- `apps/control-plane/src/bootstrap/perspectives.test.ts`：其中的 `referenceWorkflow` 与 `referenceInteraction`
+- `apps/control-plane/src/bootstrap/perspectives.test.ts`：
+  其中的 `referenceWorkflow` 与 `referenceInteraction`
   是只依赖公开接缝写成的最小参照实现，展示了完整的 syscall 顺序、UnitReport 先于 SyscallAck 的处理和询问任务。
   它们是测试代码，不满足规范的大部分要求，不得直接搬作产品实现。
 - `packages/testing/src/fakes/fake-kernel.ts`：`FakeKernelOptions` 可以产生本分支需要处理的全部结束方式与事件。
@@ -196,23 +206,23 @@ Architecture 定义长期职责，M1 定义当前交付子集；M1 不实现的�
 
 ## 6. 待决定的问题与已有决定
 
-### 6.1 待决定（T01 处理）
+### 6.1 已确认的问题（T01）
 
-这些是规范没有写明、实现时必须有答案的地方。每一项给出建议；未取得用户决定之前不得按建议实现后当作既成事实，
-涉及规范的决定要写回对应文档。
+2026-10-14 用户确认并更正：Q03 的用户文案使用中文（UTF-8），
+面向开发者的报错与注释使用英文；其他问题按建议执行。协议标识保持原样；不得因此自动修改其他分支或共享接缝的代码。
 
 | 编号 | 问题 | 建议 | 影响阶段 | 状态 |
 | --- | --- | --- | --- | --- |
-| Q01 | `FeedbackCode` 中有 `WRAP_UP_NOTICE`，但 Workflow 规范没有规定何时记录 | 在决定下一次 model-call 为 final-call 时记录一条不带 `toolCallId` 的 `FEEDBACK(WRAP_UP_NOTICE)`，说明 `wrapUpReason`；若认为 `status.wrapUpReason` 已足够，则明确规定 M1 不使用该反馈码 | T06 | 待决定 |
-| Q02 | 重复调用检测中“规范化参数”的定义 | 对模型给出的 `arguments` 取 `canonicalJson`，不补缺省值；`{query:"a"}` 与 `{query:"a",mode:"AUTO"}` 视为不同调用 | T04 | 待决定 |
-| Q03 | 用户可见文案的语言，以及 `InteractionMessages` 的内容 | 使用中文（规范中的示例文案即中文）；全部文案集中在一个表中；为 M1Interface 3.4 中 `RunFailure` 可能出现的原因码各写一条，其余用通用说明 | T13 | 待决定 |
-| Q04 | `readArtifact(reportRef)` 被拒，或报告未通过 `AnalysisReport` 校验时如何展示、退出码是多少 | 显示“报告无法读取”，退出码至少为 1，照常 `shutdown`；属于契约内结果，不上报系统故障 | T13 | 待决定 |
-| Q05 | `--details` 读取或校验 RunSummary 失败时 | 显示“运行摘要无法读取”，不改变退出码 | T13 | 待决定 |
-| Q06 | 同一来源范围被多次 file-read 覆盖时，`VerifiedSource` 记哪一次 | 记最早一次覆盖它的成功读取，使结果确定 | T09 | 待决定 |
-| Q07 | Gateway 存根的调用抛错（传输层缺陷，而不是 SyscallRejected）时 Workflow 是否重发 | 不重发，按内部错误处理（R-W19）；M1 没有需要重发的场景，R-C4 的“重发沿用”只是保持幂等的写法 | T10 | 待决定 |
-| Q08 | 系统级测试必须放在 `apps/control-plane`，它不属于本分支可直接修改的范围 | 作为单独的测试提交加入 `apps/control-plane/src/bootstrap/`（只新增测试文件，不改产品代码），按共享接缝的规则先进 `feature/M1/main` | T16 | 待决定 |
-| Q09 | M1Interface 第 13 节要求每个 Port 有共享 contract test；`packages/testing/src/harnesses` 目前没有两个 Inbox Port 的 | 由本分支补一个同时运行 fake 与产品实现的 Inbox Port contract test，作为共享接缝提交 | T17 | 待决定 |
-| Q10 | 展示格式（标题、缩进、来源的写法）规范没有规定 | 纯文本、无颜色、每条结论后列出 `路径:起始行-结束行`；格式由视图函数的快照测试固定，不写进规范 | T13 | 待决定 |
+| Q01 | `FeedbackCode` 中有 `WRAP_UP_NOTICE`，但 Workflow 规范没有规定何时记录 | 在决定下一次 model-call 为 final-call 时记录一条不带 `toolCallId` 的 `FEEDBACK(WRAP_UP_NOTICE)`，说明 `wrapUpReason`；若认为 `status.wrapUpReason` 已足够，则明确规定 M1 不使用该反馈码 | T06 | 已完成 |
+| Q02 | 重复调用检测中“规范化参数”的定义 | 对模型给出的 `arguments` 取 `canonicalJson`，不补缺省值；`{query:"a"}` 与 `{query:"a",mode:"AUTO"}` 视为不同调用 | T04 | 已完成 |
+| Q03 | 用户可见文案的语言，以及 `InteractionMessages` 的内容 | 用户文案使用中文（UTF-8），面向开发者的报错与注释使用英文；用户文案集中在一个表中；为 M1Interface 3.4 中 `RunFailure` 可能出现的原因码各写一条，其余用通用说明 | T13 | 已完成 |
+| Q04 | `readArtifact(reportRef)` 被拒，或报告未通过 `AnalysisReport` 校验时如何展示、退出码是多少 | 显示“报告无法读取”，退出码至少为 1，照常 `shutdown`；属于契约内结果，不上报系统故障 | T13 | 已完成 |
+| Q05 | `--details` 读取或校验 RunSummary 失败时 | 显示“运行摘要无法读取”，不改变退出码 | T13 | 已完成 |
+| Q06 | 同一来源范围被多次 file-read 覆盖时，`VerifiedSource` 记哪一次 | 记最早一次覆盖它的成功读取，使结果确定 | T09 | 已完成 |
+| Q07 | Gateway 存根的调用抛错（传输层缺陷，而不是 SyscallRejected）时 Workflow 是否重发 | 不重发，按内部错误处理（R-W19）；M1 没有需要重发的场景，R-C4 的“重发沿用”只是保持幂等的写法 | T10 | 已完成 |
+| Q08 | 系统级测试必须放在 `apps/control-plane`，它不属于本分支可直接修改的范围 | 作为单独的测试提交加入 `apps/control-plane/src/bootstrap/`（只新增测试文件，不改产品代码），按共享接缝的规则先进 `feature/M1/main` | T16 | 已完成 |
+| Q09 | M1Interface 第 13 节要求每个 Port 有共享 contract test；`packages/testing/src/harnesses` 目前没有两个 Inbox Port 的 | 由本分支补一个同时运行 fake 与产品实现的 Inbox Port contract test，作为共享接缝提交 | T17 | 已完成 |
+| Q10 | 展示格式（标题、缩进、来源的写法）规范没有规定 | 纯文本、无颜色、每条结论后列出 `路径:起始行-结束行`；格式由视图函数的快照测试固定，不写进规范 | T13 | 已完成 |
 
 ### 6.2 已有决定
 
@@ -225,6 +235,57 @@ Architecture 定义长期职责，M1 定义当前交付子集；M1 不实现的�
 | D05 | 第一次 Ctrl+C 归 UserInteraction，第二次归组合根的最后防线；进程入口在 `apps/control-plane` | 2026-10-13 | SystemFaultHandling 第 6 节 |
 | D06 | `RunClosed`、`RunFinished` 可能带 `finalizationError` 而没有 `runSummaryRef` | 2026-10-11 | M1Interface 5.2 |
 | D07 | 本文不进入 `feature/M1/main`；PR 使用不含本文的导出分支 | 2026-10-13 | 本文第 9.3 节 |
+| D08 | Q01、Q02、Q06 按第 6.3 节补充写入 Workflow.md | 2026-10-14 | 用户本轮决定 |
+| D09 | Q03：用户文案中文（UTF-8），开发者报错与注释英文（用户已更正）；Q04、Q05 按建议写入 UserInteraction.md | 2026-10-14 | 用户本轮决定 |
+| D10 | Q07 不重发 Gateway 抛错；Q10 使用无颜色纯文本与来源行范围 | 2026-10-14 | 用户本轮决定 |
+| D11 | Q08、Q09 按建议实施，保持独立测试与共享接缝提交边界 | 2026-10-14 | 用户本轮决定 |
+| D12 | 继续后续实现至下个必须用户决定的问题；所有问题记入本文；共享及其他分支代码变更须先询问 | 2026-10-14 | 用户本轮决定 |
+| D13 | 用户更正 Q03：用户文案中文（UTF-8），开发者报错与注释英文；Q11 解除 | 2026-10-14 | 用户最新决定 |
+| D14 | Q14：CodeViewer 的 handoff 为非法输出，按 INVALID 反馈并重新尝试；final-call 仍降级 | 2026-10-14 | 用户最新决定 |
+| D15 | Q15：同一 UnitReport 先应用预算事实，再应用失败策略或模型动作与计数器，最后检查 Round 上限；已有原因保持不变 | 2026-10-14 | 用户最新决定 |
+| D16 | Q16：普通调用 FATAL 与 EXHAUSTED 同时出现时仍以 FAILED 结束；降级报告必须说明最后失败；final-call 的既有降级例外保持不变 | 2026-10-14 | 历史决定；失败报告要求已被 D17 替代 |
+| D17 | 用户最终决定：FAILED 按错误路径实现，不提交降级报告；替代 D16 的失败报告要求。FATAL 与 EXHAUSTED 同时出现仍为 FAILED，只传 failure；原有 COMPLETED 降级报告路径保留 | 2026-10-14 | 用户最新决定；Q17 解除，不修改共同契约 |
+| D18 | 同意 Q18 建议：空文件读取留在内部记录，不列入报告行范围来源；摘要注明空文件数量，不能作为结论的有效行来源。沿用现有报告结构、发布方案与共同协议 | 2026-10-14 | 用户最新决定 |
+| D19 | 用户要求补全 Workflow 故障闭环与 UserInteraction 调用组合根，完成后提交当前分支。实施故障后业务守卫、脱敏诊断及异常控制拒绝升级，不改共同契约或其他分支产品代码 | 2026-10-14 | 用户本轮明确授权 |
+| D20 | Workflow 的 Gateway、Catalog、Persistence 每次等待返回 30 秒；超时升级、停止业务推进，忽略迟到结果，不把超时当作远端已经停止 | 2026-10-14 | 用户选择 30 秒；Q21 解除 |
+| D21 | UserInteraction 五类 Gateway 调用也采用 30 秒返回期限；授权输入等待仍按 expiresAt，不套用端口期限 | 2026-10-14 | 用户明确同意；Q23 解除 |
+
+### 6.3 已确认的规范补充
+
+2026-10-14 用户已确认下列补充，并已写入对应模块规范。
+Q07、Q10 按建议执行；Q08、Q09 仅授权所列测试范围，仍须独立提交，
+不授权其他共享代码或其他分支产品代码的修改。
+
+已写入 Workflow.md：
+
+- Q01，第 8 节：确定下一次 model-call 为 final-call 后，在其 context-assemble 提交前，
+  在当前 AgentRun 的 steps 中记录一条 `FEEDBACK(WRAP_UP_NOTICE)`。
+  不带 `toolCallId`，`round = roundsUsed + 1`，message 说明已确定的 `wrapUpReason`。
+  同一次 final-call 只记录一次；不发起 final-call 的降级路径不记录该反馈。
+- Q02，第 6 节：重复调用比较使用同一 Unit 与 `canonicalJson(arguments)`；
+  参数取模型给出的原始 JSON 对象，不补缺省值。对象键顺序不影响比较，数组顺序保留。
+  `{ query: "a" }` 与 `{ query: "a", mode: "AUTO" }` 视为不同参数。
+- Q06，第 10.1 节：同一来源范围被多次成功 file-read 覆盖时，选择 Workflow
+  最早收到的、覆盖该来源的成功 UnitReport，记录其 requestId 与内容 SHA-256。
+  不拼接多次读取的范围，不按 requestId 排序，也不依赖执行时间推断先后。
+
+已写入 UserInteraction.md：
+
+- Q03，第 5 节：用户可见文案使用中文（UTF-8），面向开发者的报错与源码注释使用英文；
+  用户文案集中维护在 `InteractionMessages` 中。
+  M1Interface 第 3.4 节的全部原因码均有对应说明；未收录的原因码使用通用说明。
+  文案表还包含结束说明、授权超时与取消、未知效果、报告与摘要读取失败、摘要保存失败。
+- Q04，第 5 节：报告读取得到 SyscallRejected 或报告未通过 AnalysisReport 校验时，
+  显示“报告无法读取”，继续展示结束说明及其他可展示信息，最终退出码至少为 1，
+  保留原有非零退出码，照常请求 shutdown。该结果不调用 reportSystemFault；
+  读取调用本身抛错仍按第 6.1 节处理。
+- Q05，第 5 节：`--details` 的摘要读取得到 SyscallRejected 或未通过 RunSummary 校验时，
+  显示“运行摘要无法读取”，不改变退出码，照常请求 shutdown。
+  该结果不调用 reportSystemFault；读取调用本身抛错仍按第 6.1 节处理。
+  `finalizationError` 的保存失败说明与非零退出码规则保持适用，此时不读取摘要。
+
+补充核对：Q09 的共享测试除第 7.17 节列出的投递与生命周期行为外，
+还必须覆盖 M1Interface 第 13 节适用于 Inbox Port 的边界要求；不以四项行为测试代替全部契约要求。
 
 ## 7. 分步实施计划
 
@@ -233,22 +294,22 @@ Workflow（T02–T10）与 UserInteraction（T11–T15）互不依赖，可以�
 
 | ID | 范围 | 退出条件 | 依赖 | 状态 |
 | --- | --- | --- | --- | --- |
-| T01 | 规范缺口的决定 | Q01–Q10 全部有用户决定；涉及规范的已写回 Workflow.md、UserInteraction.md | — | 未开始 |
-| T02 | Workflow 骨架与测试替身 | `createWorkflow` 不再抛错；RunStart 后完成固定与 `registerAgentRun`；固定失败按 `PIN_FAILED` 结束 | T01 | 未开始 |
-| T03 | 解释模型返回 | 第 5 节的全部分支有纯函数与测试 | T02 | 未开始 |
-| T04 | Validation 与无进展检测 | 第 6 节五项检查、重复调用、`noProgressCount` 有测试 | T03 | 未开始 |
-| T05 | 失败处理 | 第 7 节的两张表、最严重者规则、final-call 例外有测试 | T02 | 未开始 |
-| T06 | Round、final-call 与额度状态 | 第 8 节的计数、触发条件、WRAP_UP 与 EXHAUSTED 的处理有测试 | T05 | 未开始 |
-| T07 | 运行循环 | 启动 Unit、每一轮的组装与模型调用、工具轮的收齐在测试替身上跑通；UnitReport 先于 SyscallAck 的情况有测试 | T03–T06 | 未开始 |
-| T08 | 交接 | Planner → CodeViewer 的完整顺序与 `BUDGET_WRAP_UP` 的继承有测试 | T07 | 未开始 |
-| T09 | 报告 | 来源核验、正常报告、降级报告、发布与结束顺序有测试；产出的报告通过 Schema | T07 | 未开始 |
-| T10 | 结束保证、运行记录与自身错误 | 第 11、11.1、13 节与 `stop()` 契约有测试；性质测试证明任意输入序列都不会停在中间状态 | T08、T09 | 未开始 |
-| T11 | UserInteraction 骨架与主流程 | `createUserInteraction` 不再抛错；`createRun` → RunFinished → 退出码 → `shutdown` 跑通；被拒时退出码 4 | T01 | 未开始 |
-| T12 | 授权询问与中断 | 询问任务的四种结束方式、`QUESTION_NOT_PENDING`、第一次 Ctrl+C 有测试；Inbox 不被用户输入阻塞 | T11 | 未开始 |
-| T13 | 结果展示 | 报告视图、文案表、未知效果、摘要保存失败、`--details` 有测试 | T11 | 未开始 |
-| T14 | 自身错误与关闭 | 三处捕获边界与 `stop()` 契约有测试 | T12、T13 | 未开始 |
+| T01 | 规范缺口的决定 | Q01–Q10 全部有用户决定；涉及规范的已写回 Workflow.md、UserInteraction.md | — | 已完成 |
+| T02 | Workflow 骨架与测试替身 | `createWorkflow` 不再抛错；RunStart 后完成固定与 `registerAgentRun`；固定失败按 `PIN_FAILED` 结束 | T01 | 已完成 |
+| T03 | 解释模型返回 | 第 5 节的全部分支有纯函数与测试 | T02 | 已完成 |
+| T04 | Validation 与无进展检测 | 第 6 节五项检查、重复调用、`noProgressCount` 有测试 | T03 | 已完成 |
+| T05 | 失败处理 | 第 7 节的两张表、最严重者规则、final-call 例外有测试 | T02 | 已完成 |
+| T06 | Round、final-call 与额度状态 | 第 8 节的计数、触发条件、WRAP_UP 与 EXHAUSTED 的处理有测试 | T05 | 已完成 |
+| T07 | 运行循环 | 启动 Unit、每一轮的组装与模型调用、工具轮的收齐在测试替身上跑通；UnitReport 先于 SyscallAck 的情况有测试 | T03–T06 | 已完成 |
+| T08 | 交接 | Planner → CodeViewer 的完整顺序与 `BUDGET_WRAP_UP` 的继承有测试 | T07 | 已完成 |
+| T09 | 报告 | 来源核验、正常报告、降级报告、发布与结束顺序有测试；产出的报告通过 Schema | T07 | 已完成 |
+| T10 | 结束保证、运行记录与自身错误 | 第 11、11.1、13 节与 `stop()` 契约有测试；性质测试证明任意输入序列都不会停在中间状态 | T08、T09 | 已完成 |
+| T11 | UserInteraction 骨架与主流程 | `createUserInteraction` 不再抛错；`createRun` → RunFinished → 退出码 → `shutdown` 跑通；被拒时退出码 4 | T01 | 已完成 |
+| T12 | 授权询问与中断 | 询问任务的四种结束方式、`QUESTION_NOT_PENDING`、第一次 Ctrl+C 有测试；Inbox 不被用户输入阻塞 | T11 | 已完成 |
+| T13 | 结果展示 | 报告视图、文案表、未知效果、摘要保存失败、`--details` 有测试 | T11 | 已完成 |
+| T14 | 自身错误与关闭 | 三处捕获边界与 `stop()` 契约有测试 | T12、T13 | 已完成 |
 | T15 | CLI 适配 | 终端适配器的行为有测试；CLI 只经公开入口调用 | T12 | 未开始 |
-| T16 | 系统级组合测试 | 真实的两个模块配合 fake Kernel 经 `composeSystem` 跑通全部结束方式与故障注入 | T10、T14、T15、Q08 | 未开始 |
+| T16 | 系统级组合测试 | 真实的两个模块配合 fake Kernel 经 `composeSystem` 跑通全部结束方式与故障注入 | T10、T14、T15、Q08 | 进行中；本轮仅补真实交互的控制故障组合测试 |
 | T17 | Inbox Port 的共享 contract test | fake 与产品实现通过同一组用例 | T10、T14、Q09 | 未开始 |
 | T18 | 文档同步与首次合入 | 规范与实现一致；导出分支的 PR 合入 `feature/M1/main`；本分支完成同步 | T16、T17 | 未开始 |
 | T19 | 真实链路联调与业务验收 | 真实 Kernel、真实 Executor 与真实模型下完成 M1Plan 5.2、5.3 中属于本分支的退出条件；第二次合入 | T18，以及第 4.2 节的三项 | 未开始 |
@@ -271,7 +332,8 @@ T18 是本分支第一次合入 `feature/M1/main`，不等待其他分支。T19 
 - 定义运行状态类型（Workflow 第 4 节列出的全部字段）、reducer 的输入与动作类型。先只实现 RunStart 一条路径。
 - 实现工厂：构造 `Inbox`（`dedupeKey` 用 `eventId`，`onError` 接 `reportSystemFault`）、`inbox.deliver`、
   `start`、`stop`、`health`、`manifest`。
-- 实现 RunStart → `pinAgent(entryAgentRef)` → 有 `handoffTargetRef` 时固定目标并核对 digest → `registerAgentRun`。
+- 实现 RunStart → `pinAgent(entryAgentRef)` → 有 `handoffTargetRef` 时固定目标并核对 digest →
+  `registerAgentRun`。
 - 写模块内的测试替身：一个可脚本化的 `WorkflowGatewayPort`，记录每个请求，并能按脚本回 SyscallAck、
   SyscallRejected 与投递 UnitReport、RunClosed（包括先投递 UnitReport 再返回 Ack）；一个内存的 `PersistencePort`；
   一个由固定值构成的 `CatalogPort`。它们只在本模块的测试中使用。
@@ -304,7 +366,8 @@ T18 是本分支第一次合入 `feature/M1/main`，不等待其他分支。T19 
 - 纯函数：原因码加 Unit 定义 → 四种处理之一，未列出的为 FATAL；一组处理 → 最严重者。
 - final-call 的 model-call 失败不查表，一律 DEGRADED_REPORT。
 - `FINAL_CALL` 处理设置的 `wrapUpReason`（`USER_DECLINED`、`BUDGET_WRAP_UP`）；工具 Unit 同时记录 TOOL_RESULT。
-- SyscallRejected 的两种处理；`failure` 的三个必填字段，`category` 取 `REASON_CODE_CATEGORY`，`source` 恒为 `WORKFLOW`。
+- SyscallRejected 的两种处理；`failure` 的三个必填字段，`category` 取 `REASON_CODE_CATEGORY`，
+  `source` 恒为 `WORKFLOW`。
 - 用目录中真实的六个 Unit 定义的 `failurePolicy` 做表驱动测试，防止实现与定义脱节（只读取，不修改定义）。
 
 ### 7.6 T06 Round、final-call 与额度状态
@@ -315,7 +378,7 @@ T18 是本分支第一次合入 `feature/M1/main`，不等待其他分支。T19 
   `FINAL_CALL_USED` 拒绝的不计。
 - 下一次是否为 final-call 的判断；多个原因保留最先设置的。
 - WRAP_UP：设置 `BUDGET_WRAP_UP`，本轮已提交的工具 Unit 照常收齐。
-- EXHAUSTED：携带它的是返回 FINISH 的 model-call 时照常进入正常报告；否则生成降级报告（`BUDGET_EXHAUSTED`）。
+- EXHAUSTED：合法 FINISH 照常进入正常报告；FATAL 只走 FAILED 错误路径；其余情况降级。
 - final-call 的结果不是合法 FINISH（INVALID、失败）时生成降级报告，`wrapUp.reason` 为触发该 final-call 的原因。
 
 ### 7.7 T07 运行循环
@@ -323,7 +386,8 @@ T18 是本分支第一次合入 `feature/M1/main`，不等待其他分支。T19 
 规范：Workflow 第 4、9.1 节；Kernel 4.4。
 
 - 把 T03–T06 的纯函数接入 reducer：启动 Unit 逐个提交；每一轮 `context-assemble` → `model-call` → 动作。
-- `ContextAssembleInput`：`objective`、`final`、`orientPackRef`、`steps`（本 AgentRun 的全部 StepRecord，按发生顺序）、`status`。
+- `ContextAssembleInput`：`objective`、`final`、`orientPackRef`、`steps`
+  （本 AgentRun 的全部 StepRecord，按发生顺序）、`status`。
 - StepRecord 的记录：MODEL_TURN、每个工具结果的 TOOL_RESULT、每条 FEEDBACK；`round` 从 1 开始。
 - 待收集合按 `requestId` 管理；UnitReport 先于 SyscallAck 到达时不得丢失或重复处理。
 - 应用层只做三件事：从 Inbox 取事件交给 reducer、执行 reducer 给出的动作、把 syscall 的返回值再交给 reducer。
@@ -335,7 +399,8 @@ T18 是本分支第一次合入 `feature/M1/main`，不等待其他分支。T19 
 
 规范：Workflow 9.2。
 
-- HANDOFF → `endAgentRun(Planner)` → `registerAgentRun(CodeViewer)`（新的 `agentRunId`，`agentRef` 为已固定的目标）→
+- HANDOFF → `endAgentRun(Planner)` → `registerAgentRun(CodeViewer)`
+  （新的 `agentRunId`，`agentRef` 为已固定的目标）→
   CodeViewer 的启动 Unit → 第一轮的 `context-assemble` 携带 `handoff`。
 - CodeViewer 的 `roundsUsed`、`steps`、计数器从零开始；Planner 的 AgentRun 不再恢复。
 - 携带 HANDOFF 的 model-call 同时使 `budgetState` 变为 WRAP_UP 时，`BUDGET_WRAP_UP` 带入 CodeViewer，
@@ -490,7 +555,8 @@ packages/modules/user-interaction/src/
 - 验收平台是 Ubuntu LTS。本机是 Windows，正式验证在 WSL 的 `Ubuntu-24.04` 中进行：
   1. 在 Windows 上：`git add -A && git diff --cached HEAD --binary > <补丁文件> && git reset -q`。
   2. 在 WSL 的独立工作副本 `~/MultiAgentOS` 中：`git fetch origin`，检出 `origin/<当前分支>`，`git apply <补丁文件>`，
-     然后 `pnpm install --frozen-lockfile`、`pnpm run build`、`pnpm run lint`、`pnpm run format:check`、`pnpm run test`。
+     然后 `pnpm install --frozen-lockfile`、`pnpm run build`、`pnpm run lint`、
+     `pnpm run format:check`、`pnpm run test`。
   3. WSL 中使用它自己安装的 Node 与 pnpm（登录 shell 的 PATH 已设置），不要使用 `/mnt/c`、`/mnt/d` 下的 Windows 版本。
   4. 需要 `sudo` 的操作请用户执行。
 - 原生 Windows 上有一个与本分支无关的已知失败（`agent-tool-pool` 的符号链接测试，`EPERM`），在 Ubuntu 上通过；
@@ -530,11 +596,11 @@ packages/modules/user-interaction/src/
 
 ### 10.1 当前继续点
 
-- 当前阶段：T01，未开始。
-- 下一步：向用户确认 Q01–Q10；把需要写回规范的决定写入 Workflow.md 与 UserInteraction.md。
-- 阻塞：无。T02 与 T11 都要等 T01 中与其相关的决定，但骨架本身不依赖任何一个问题，
-  用户暂时无法回答时可以先做 T02、T11，把问题留到用到它们的阶段之前。
-- 工作区：干净；分支没有自己的提交。
+- 当前阶段：本轮已实现 T11–T14，并补齐 T10 的故障审计缺口。
+- 下一步：按本轮授权提交现有分支，之后继续点为 T15、其余 T16 与 T17，不自动 push 或合并。
+- 待决定：本轮已决定 Q19–Q23；未修改共同契约、Kernel 或组合根产品源码。
+- 工作区：本轮提交按 Workflow、UserInteraction、授权的组合测试与分支计划分开组织。
+  分支计划不得进入集成分支；具体提交号以 git log 为准。
 
 ### 10.2 等待其他分支的事项
 
@@ -551,6 +617,17 @@ packages/modules/user-interaction/src/
 | 日期 | 阶段 | 实际变更 | 验证与环境 | 下一步 |
 | --- | --- | --- | --- | --- |
 | 2026-10-13 | 建立计划 | 创建本文；分支已同步到 `ac368ad` | 只有文档变更，未运行业务测试；基线提交已在 CI（Ubuntu 24.04）通过质量门 | T01 |
+| 2026-10-14 | T01 进行中 | 完整阅读计划，核对模块规范、错误处理与 contracts；修正 HEAD 记录，准备第 6.3 节待审草案；未修改规范或代码 | Windows：`git diff --check` 通过；UTF-8 无 BOM、LF、行尾与草案行宽检查通过；10 个本地链接目标存在；仓库 Prettier 配置忽略 docs，未运行业务测试 | 等待 Q01–Q10 的用户决定 |
+| 2026-10-14 | T01 已完成 | 完整重读 Style.md；记录 Q01–Q10 的用户决定；Q01、Q02、Q06 写回 Workflow.md，Q03、Q04、Q05 写回 UserInteraction.md；协议标识不改 | Windows：文档格式、链接与差异检查；模块规范修改纳入后续 Ubuntu 验证副本 | T02 |
+| 2026-10-14 | T02 已完成 | 新增 domain/state.ts、domain/reducer.ts、application/workflow-runner.ts 及其测试，index.ts 接入工厂；新增固定 Catalog、内存 Persistence、可脚本化 Gateway 与合法定义 fixture；固定失败不登记，目标核对 digest；去重、投递只入队、停止排空；抛错先关闭，关闭也失败才升级 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、`pnpm run build`、`pnpm run check` 通过，36 文件/303 测试，其中新增 15 测试；Windows 全仓构建有既有类型错误，未改共享代码；`git diff --check` 通过 | T03（Q11 已因用户更正解除） |
+| 2026-10-14 | 语言要求更正；T03 进行中 | 根据用户更正将本轮 Workflow 报错、诊断与源码注释恢复英文，用户内容保留中文（UTF-8）；同步两个模块规范和 Q03/D13，Q11 解除；核对实际 Planner/CodeViewer 定义与 PinnedDefinitionSet.tools，发现 Q14；未按未定规则编写解释器 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、`pnpm run build`、`pnpm run check` 再次通过，36 文件/303 测试；Windows：`git diff --check`、文档 UTF-8 无 BOM/LF/空白检查与 24 个本地链接检查通过；未修改共享及其他分支代码 | 用户决定 Q14 后继续 T03 |
+| 2026-10-14 | T03 已完成 | 新增 domain/analysis-action.ts 与测试，补 Workflow 第 5 节；依据固定 modelName/purpose 与当前 actions 解释返回，按 ProtocolRegistry 校验控制参数；覆盖五种 INVALID、混合调用、无 handoff 权限、final-call、参数解析失败与 UNIT 调用 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、全仓 build、Workflow lint 与模块测试通过；新增 21 测试，模块共 36 测试 | T04 |
+| 2026-10-14 | T04 已完成 | 新增 domain/validation.ts、domain/progress.ts 及测试；五项检查按顺序，UNIT 限额只计当前已知 UNIT；重复比较原始参数 canonicalJson 与固定 Unit 身份，忽略已裁剪结果；计数器更新保留最先收尾原因 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、全仓 build、Workflow lint 与模块 54 测试通过，其中新增 18 测试 | T05 |
+| 2026-10-14 | T05 已完成 | 新增 domain/failure-policy.ts 与测试，reducer 复用 syscall 拒绝处理与 RunFailure 构造；四级严重度、未列原因按 FATAL、final model-call 一律降级；只读加载六个真实 Unit 的策略字段并拒绝未支持的 fixture 语法 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、全仓 build、Workflow lint 与模块 81 测试通过；失败策略新增 14 测试，未修改定义文件 | T06 |
+| 2026-10-14 | T06 进行中 | 新增 domain/rounds.ts 与 13 测试，覆盖 Round 计数、最后一轮 final-call、已有原因保留、WRAP_UP 指令、EXHAUSTED 下合法 FINISH 与降级、final-call 不合法即降级；组合顺序待 Q15，尚未接入运行循环，未标记阶段完成 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、`pnpm run build`、`pnpm run check` 全部通过，41 文件/369 测试，其中 Workflow 6 文件/81 测试；Windows：文档编码/链接/空白、源码行宽及分支计划引用隔离检查与 `git diff --check` 通过 | 用户决定 Q15 |
+| 2026-10-14 | T06 进行中（预算优先已实现） | Workflow 第 8 节补 Q15 的处理顺序；rounds.ts 新增 applyBudgetFacts 与 prepareRound，保留已有原因、final-call 只预留一次、上下文组装前记录单条 WRAP_UP_NOTICE，EXHAUSTED 不记 notice；新增同条预算/计数器竞争、已设原因、单次预留与协议允许的 FATAL+EXHAUSTED 证据测试；发现 Q16，未自行选择冲突终态 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、`pnpm run build`、`pnpm run check` 全部通过，41 文件/374 测试，其中 Workflow 6 文件/86 测试；Windows：文档编码/链接/空白、源码行宽与分支计划隔离检查、`git diff --check` 通过 | 用户决定 Q16 |
+| 2026-10-14 | T06 进行中（失败报告交付待授权） | 按 D16 补失败与额度组合判定、中文降级报告纯函数及 8 项测试；报告明确最终失败，不包含内部 detail 或虚构结论；修订 Workflow 规范。为本次决定提前准备 T09 的纯报告构造，不代表 T09 完成。发现 Q17，共享协议不允许失败报告引用；未修改共享或 Kernel 代码，未接入运行循环与报告交付 | Ubuntu-24.04 隔离副本：build 与完整 check 通过，43 文件/382 测试，Workflow 8 文件/94 测试；只读 Schema 校验确认失败携带报告被拒。Windows 文档编码/链接/空白、源码行宽与计划引用隔离、git diff --check 通过 | 用户授权 Q17 的最小共享接缝变更 |
+| 2026-10-14 | T06 已完成；T07 进行中 | 按 D17 移除 FAILED 的报告原因与终态失败报告构造分支，保留原有降级路径；规范明确 FATAL 优先只传 failure。新增 Unit 循环纯状态机与 12 测试，覆盖顺序启动、上下文与模型、多轮工具乱序收齐、重复反馈、预算先于计数器、FATAL+EXHAUSTED 只返回错误、final-call 例外。尚未接入工厂或 syscall 回流，不标 T07 完成；发现并记录 Q18 空文件来源不兼容，未自定业务例外 | Ubuntu-24.04 隔离副本：锁定依赖离线安装、build 与完整 check 通过，44 文件/394 测试，其中 Workflow 9 文件/106 测试；Windows：文档 UTF-8/LF/链接、源码行宽与计划引用隔离、git diff --check 通过。最终检查后只缩短测试标题与更新计划，无行为变化 | 用户决定 Q18；继续 T07 工厂接入与 Ack/Report 次序测试 |
 
 ### 10.4 更新本文的规则
 
@@ -559,3 +636,269 @@ packages/modules/user-interaction/src/
 - 更新第 1.2 节的日期与基线；第 10.1 节必须始终反映仓库的真实状态。
 - 不记录密钥、完整 Prompt、源码正文或未经脱敏的模型输出。
 - 不覆盖用户或其他负责人未提交的改动；每次开始先检查 `git status` 与 diff。
+
+### 10.5 实现中发现的问题
+
+| 编号 | 问题与证据 | 影响与建议 | 状态 |
+| --- | --- | --- | --- |
+| Q11 | 上轮因用户笔误提出全系统开发者诊断中文化，发现会涉及共享及其他分支代码 | 2026-10-14 用户更正：用户文案中文（UTF-8），开发者报错与注释英文。原问题解除，本分支恢复英文报错与注释；不需修改其他分支或共享代码 | 已完成 |
+| Q12 | Windows 全仓 tsc 构建在既有测试中出现 TS2339：Vitest 的 Assertion 类型缺少 not，涉及 contracts、Fabric、AgentToolPool、kernel；pnpm 在沙箱中另有 EPERM | Ubuntu 隔离副本按锁定依赖安装后构建与全仓质量门通过，证明不需要改共享类型或根配置；记录 Windows 环境限制，正式证据以 Ubuntu 为准 | 已完成 |
+| Q13 | WSL 的 ~/MultiAgentOS 位于 a650175，且包含 kernel 与组合根等未提交改动 | 未覆盖、切换或清理该副本；以本分支 HEAD 的 git archive 加本轮文件创建 Ubuntu 临时隔离副本验证；未修改任何其他分支代码 | 已完成 |
+| Q14 | CodeViewer 没有 handoff 动作与该工具，但计划要求覆盖其 handoff 返回的处理 | 2026-10-14 用户决定：并非所有 Agent 都有 handoff；CodeViewer 的 handoff 作为非法输出，要求重新尝试。已补 Workflow 第 5 节：用运行内已固定集合识别控制工具，权限只看当前 actions；不允许的返回 INVALID(CONTROL_NOT_ALLOWED)，混合返回 CONTROL_MIXED，final-call 按既有规则降级；不查询目录、不硬编码模型名、不修改其他分支 | 已完成 |
+| Q15 | 同一 UnitReport 内预算事实、失败策略、计数器与 Round 上限的处理顺序未规定 | 2026-10-14 用户决定：预算事实优先，再失败策略/模型动作与计数器，最后 Round 上限；已有原因保持不变。已写入 Workflow 第 8 节，并补充纯函数组合测试。该决定解决收尾原因的先后，不改变第 7、8 节各自的终态规则；两者交叉场景见 Q16 | 已完成 |
+| Q16 | Schema 允许普通 model-call 同时失败且 EXHAUSTED；原 Workflow 规则未规定该交叉场景的终态优先级 | 按最终 D17：FATAL 优先，以 FAILED 只携带 failure 收尾，不生成或发布降级报告；final-call 的既有例外与非 FATAL 降级路径保留 | 已完成 |
+| Q17 | 现有 FAILED 终态不能携带实际报告引用；自动交付失败报告需要共享变更 | 用户最终决定 FAILED 只按错误路径实现，不提交降级报告；撤回共同契约变更建议，不再需要授权。下文草案与核对仅保留讨论历史，不是待实施任务 | 已完成 |
+| Q18 | 成功读取空文件合法返回 1..0，但报告来源不接受该范围；原规范未规定映射例外 | 按 D18 在本分支处理：空文件完整事实内部保存，不作为有效行来源；正常与降级报告摘要按路径去重注明数量，预留既有 4000 字符上限，必要时截短原摘要并加省略号。报告结构和共同协议不变，已加入纯函数及测试，工厂流程验收中 | 已完成 |
+| Q19 | 三个交互控制请求的 Port 都允许拒绝，UserInteraction 未完整规定相应处理；用户要求先解释中止优先级与故障关闭 | Kernel 4.3 明确合法 cancelRun 在 RUNNING 受理、CONVERGING/CLOSED 也 Ack，关闭请求一律放行。Gateway 仍拒绝畸形请求、错误调用者或未知运行；不能与授权失效混为一类。此前统一普通拒绝建议过宽，待用户决定是否对正常中止/关闭的异常拒绝走现有系统故障关闭。未实施新规则，不改共同协议 | 待决定 |
+
+Q16 的解释阶段核对（2026-10-14；后续用户决定见 D16）：
+
+- 额度指本次 WorkflowRun 的 token 额度；EXHAUSTED 表示不能再发起任何 model-call，
+  不要求剩余恰为零。提醒进入最后一次收尾调用的是 WRAP_UP。
+- 模型调用成功但输出不合格是 `AnalysisAction.INVALID`，不是 UnitReport 的 FAILED。
+  是否继续调用由反馈、计数器、Round 与额度共同约束。
+- UnitReport 的 FAILED 不自动等于 FATAL；失败策略区分 RETURN_TO_MODEL、FINAL_CALL、
+  DEGRADED_REPORT 与 FATAL，final-call 的 model-call 失败另有降级例外。
+- 前文的 PROVIDER_AUTH + EXHAUSTED 是 Schema 容许的边界输入证据，
+  尚未证明它在健康的真实链路中可达。ExecutorSet 第 4.5 节规定 HTTP 401/403 为
+  `NOT_SENT`、`retryable = false`；Monitor 第 3.4 节会全额释放该次预留。
+  因此 PROVIDER_AUTH 本身不会使正常额度进入 EXHAUSTED。
+- 正常普通调用的预留保留 finalReserve；Monitor 第 3.3、3.4 节说明，
+  估算上界成立时收尾额度保持完整，异常的实际用量超估可能占用该额度。
+  Schema 通过不能代替跨字段语义与真实链路可达性的验证。
+- Q16 要决定的是交叉边界输入的终态（FAILED 或发布降级报告后 COMPLETED），
+  不是额度耗尽后是否还继续重试；EXHAUSTED 时两种方案均不再调用模型。
+- 用户在解释阶段继续询问降级报告的生成与 FATAL 的关系。
+  Workflow 第 10.2 节规定降级报告由程序按收尾原因填写固定说明与已确认的运行事实，
+  不需要合法 FINISH，也不再调用模型；conclusions 与 unconfirmed 必须为空。
+  readSources 只保留成功读取范围与 provenance，可以为空；没有合法分析结果不妨碍
+  构造这种协议合法的收尾说明，但不能因此声称生成了有效分析结论。
+- FATAL 是策略要求结束运行，不自动表示所有既有材料无效或报告序列化能力损坏。
+  provider 授权失败时，已有成功读取事实可能仍然有效；存储、report-publish 或状态不变量
+  本身损坏时，降级报告的可信构造或持久发布则可能失败。
+  当前策略对 FATAL 直接 closeRun(FAILED)，final-call 的模型失败有既定降级例外；
+  降级报告发布本身失败仍按 FATAL 处理，不能伪造发布成功。
+
+Q17 的历史共享变更草案（已撤回，按 D17 不实施）：
+
+1. `CloseRunRequest` 的 FAILED 分支保留必填 `failure`，增加可选 `reportRef`；
+   COMPLETED 的约束保持不变。FAILED 没有报告时仍使用原来的合法形态。
+2. `runOutcomeVariants` 同步增加 FAILED 的可选报告引用，使 RunSummary、RunClosed、
+   RunFinished 保留同一份失败与报告。不得以有报告为由改变 FAILED 或退出码 1。
+3. Kernel 传递失败报告引用；接收失败收尾请求时必须校验报告已经发布、属于当前运行，
+   保留产物引用与内容完整性校验。当前尚未实现的产品 Core 也须同步该验收要求。
+4. fake-kernel 同步处理并验证该路径；测试覆盖失败无报告、失败有报告、非法或其他运行的引用、
+   终态传递与 RunSummary 写入失败。Workflow 与 UserInteraction 接入后覆盖用户展示。
+5. 同步 M1Interface、SharedContracts 与 Kernel 规范的兼容说明；旧消费者会拒绝新增字段，
+   必须协调升级，不能将其视为所有旧消费者都可接受的变更。
+
+预计共享及其他分支变更范围：
+
+- `packages/libraries/contracts/src/kernel-unit/workflow-syscalls.ts`
+- `packages/libraries/contracts/src/kernel-control/run-outcome.ts` 及对应契约测试。
+- `packages/modules/kernel/src/core/finalize-run.ts` 及对应测试。
+- `packages/testing/src/fakes/fake-kernel.ts` 及相关 fixture、契约测试。
+- `docs/M1/M1Interface.md`、`docs/M1/Library/SharedContracts.md`、`docs/M1/Module/Kernel.md`。
+
+这组共享接缝变更按第 2.2 节单独组织并先进入集成分支，不自动切换或修改其他工作分支，
+不改 ExecutorSet、额度计算、其他 Unit 的失败策略或 AnalysisReport Schema。
+最后失败的中文说明写入已有 summary，保留原始结构化 failure；不得把内部 detail 或凭据写入报告。
+
+证据：本地对现有 Schema 运行只读校验，FAILED 不带 reportRef 三项均通过，
+带 reportRef 的 CloseRunRequest、RunClosed、RunFinished 三项均被拒绝。
+当时实现只完成模块内纯函数，未接入发布和终态交付，T06 尚未完成；后续状态见第 10.1 节。
+
+Q17 的不修改共享协议方案与取舍（2026-10-14，用户要求说明必要性，尚未授权）：
+
+- 必要性取决于报告是否必须通过现有 CLI 自动展示。仅要求保持 FAILED、生成并保存包含最后失败
+  说明的降级报告，不必扩展共享契约：Workflow 可发布报告并在内部 WorkflowRunRecord 保存引用，
+  closeRun 仍只传 failure；UserInteraction 根据失败码显示中文说明，退出码仍为 1。
+  该方案下 CLI 无法自动发现和读取这份降级报告，报告保留用于内部审计。
+- 如果要求用户自动收到并看到这份实际 AnalysisReport，则现有链路缺少引用传递，必须扩展
+  CloseRunRequest、RunClosed、RunFinished、RunSummary 的 FAILED 分支，或另行设计新的发现接口。
+  新发现接口同样涉及共享协议与 Kernel，不是无需共享变更的替代方案。
+- UserInteraction 可以用已有 failure.code 自行显示失败说明，但这种提示不是 Workflow 生成的
+  AnalysisReport，也没有其中的读取来源与代理轮次；不得把它当作完整报告交付。
+- 不通过 failure.detail 偷渡报告引用；该字段明确不用于决策或用户文案。UserInteraction 不直接
+  读取 Workflow 的私有持久化记录，也不绕过 Gateway 访问产物；不得改为 COMPLETED 来传报告。
+- AnalysisReport、RunFailure、ArtifactRef、readArtifact 请求响应与 Port 方法签名无需修改。
+  需协调的是 FAILED 可携带报告的语义和终态载荷，而非模型输出、额度或 ExecutorSet 的协议。
+
+降级报告的来源与展示核对（2026-10-14）：
+
+- 降级报告是既有设计：祖先提交 `3a36347`（2026-10-08）的 Workflow 第 10.2 节已规定
+  EXHAUSTED、final-call 不合法或失败时生成确定性降级报告；UserInteraction 第 5 节已规定展示。
+  该提交早于三分支并行接缝提交 `9cf8c9c`（2026-10-13），不是本次实现新加的机制。
+- 原设计将成功发布的降级报告按 COMPLETED 收尾；FATAL 按 FAILED 收尾，只展示失败说明。
+  本次新增的是 FATAL 与 EXHAUSTED 交叉场景仍为 FAILED，同时报告描述最后失败；失败报告
+  是否必须自动展示尚待用户确认，不能把“生成”自行等同于“自动交付”。
+- 展示降级报告的设计作用是说明分析为什么停止与不能给出结论，避免把空结论当成没有问题。
+  这是既有产品设计的解释，不代表所有故障均必须生成报告或新增展示要求已获批准。
+- 默认展示按 UserInteraction 第 5 节和 Kernel 第 9 节：正常报告展示结论、来源、未确认项；
+  降级报告标明降级并附收尾原因；FAILED 展示运行失败与原因码对应的中文说明；
+  只有 --details 才额外展示轮次、调用次数、token、耗时等 RunSummary 内容。
+- 以上是规范默认行为，当前产品 UserInteraction 工厂仍抛 NOT_IMPLEMENTED，完整展示链路尚未
+  实现。不得把规范行为描述成当前系统已经能实际完成的输出。
+
+协议断点核对（2026-10-14，未修改共同契约）：
+
+- 不是三个分支各自实现出不同协议；现有共享 Schema、Kernel 收尾辅助与 fake 对 FAILED
+  只携带 failure 的设计一致。问题来自原 Workflow 第 7.2 节与第 8 节在同一输入同时触发时
+  没有规定优先级，以及新增的“保留 FAILED 并生成失败降级报告”不属于原终态交付组合。
+- 失败信息本身可经 failure → RunFinished → 原因码中文说明正常交付。受阻的是实际
+  AnalysisReport 的引用：closeRun 的 FAILED 分支不接受它，后续终态也不承载它；
+  UserInteraction 无法发现报告，不是 report-publish 必然失败或 readArtifact 不支持读报告。
+- 保持协议不变可完成 D16 的 FAILED 判定、中文失败提示、退出码 1，以及在发布能力可用时
+  生成并保存包含最后失败说明的降级报告、内部记录报告引用；还可保持原有非 FATAL 降级报告
+  的 COMPLETED 交付与展示。唯独不能自动向用户交付 FAILED 下的实际 AnalysisReport。
+- 解释阶段尚未决定是否采用“FAILED 只显示失败说明，报告内部保存”；随后 D17 明确改为
+  FAILED 只走错误路径，不提交降级报告。Q17 已解除，不改其他分支，不改共同契约。
+
+Q18 的解释阶段核对（2026-10-14，用户要求先解释，尚未选择方案）：
+
+- 空文件指没有可返回的文本行，读取成功不等于必须返回至少一行。FileReadOutput 明确定义
+  1..0、totalLines=0 为合法空文件结果；这不是读取失败、权限失败或模型失败。
+- 报告 readSources 和每条结论的 sources 使用 VerifiedSource，表示实际读取过的非空行范围，
+  起止行均至少为 1，结束行不得小于开始行。空文件没有第 1 行，不能伪造 1..1 作为来源。
+- 两份 Schema 各有明确用途；缺口是 Workflow 规范要求把“全部成功读取范围”放入报告时，
+  未规定空文件例外。只读校验已证明该读取结果合法，对应报告来源不合法；这是边界设计缺口，
+  不是已发生的生产运行失败，也不是三个分支已被证明实现了互不兼容的版本。
+- 不改共同契约的建议方案只调整本分支映射：非空读取按原规则成为报告来源；空文件路径、
+  requestId、哈希与空文件状态保留在 Workflow 私有记录，报告 summary 注明空文件数量。
+  不会把整次运行标为 FAILED 或强制生成降级报告；正常与原有降级报告均可采用该映射。
+- 空文件不能覆盖合法的非空来源范围；模型引用不存在的第 1 行时，该结论按既有
+  SOURCE_NOT_READ 规则降为未确认。其他已读取非空文件的结论不受影响。
+- 若需要在报告结构化字段中列出空文件，则须扩展来源类型或增加独立字段，涉及共享协议、
+  校验、消费者协调，不在未授权时实施。只在 summary 提示不等价于新增结构化来源能力。
+- 当前工厂未接入完整报告流程，因此不是已经出现报告发布失败；此核对是在实现前发现
+  直接映射会被拒绝。用户尚未批准空文件映射例外，Q18 保持待决定。
+
+本轮完成证据（2026-10-14）：T07–T10 的工厂接入、交接、来源核验、空文件映射、发布顺序与
+业务记录已实现；新增全部终态、关闭后不再发请求、20 组固定种子的随机合法模型历史测试。
+Ubuntu-24.04 隔离副本 build 与完整 check 通过：47 文件/421 测试，其中 Workflow 12 文件/133 测试。
+随后只缩短测试标题、更新本计划，无行为变化；共同协议、Kernel、ExecutorSet 未修改。
+进入 T11 时发现 Q19，用户要求先解释，不把问题回复视为对新规则的授权。
+
+Q19 的责任边界建议（2026-10-14，用户要求说明是否需要修改 Kernel，尚未授权新规则）：
+
+- Kernel 必须兑现既有规范：合法 cancelRun 走控制通道，RUNNING 进入取消收敛，
+  CONVERGING/CLOSED 返回 Ack；shutdown 完成收敛后关闭；收敛机制自身失败走已有故障升级。
+  这是 kernel 分支原有实现与验收责任，不需要为了本次问题新增取消权限或共同协议。
+- 当前分支的 createKernelCore 仍为 NOT_IMPLEMENTED，不能把规范承诺或 fake 测试结果
+  描述成真实 Kernel 已具备完整中止能力；也不能据此断言其他分支已有实现存在具体缺陷。
+- Gateway 当前只对新工作实施 RUN_BLOCKED，cancelRun 与 shutdown 不在该封锁名单。
+  格式、调用者身份和运行引用校验仍须保留，不因为取消优先级高而放弃边界检查。
+- UserInteraction 可通过已注入的 reportSystemFault 上报“正常控制请求被异常拒绝”所揭示的
+  内部控制不变量缺陷；不伪造取消成功，不循环重试，不直接访问 Kernel 内部或退出进程。
+  已失效授权询问仍为正常结果，不和控制失效混为一类。该建议的故障判定尚待用户确认。
+- 组合根已把同一故障上报函数注入两个模块与 Kernel，并实现 abortAllRuns 的期限、
+  Supervisor 停止与 ModuleHost 兜底、残留子进程清理、故障退出码非零；可复用已有路径。
+  UserInteraction 只负责触发升级，真正停止由 Kernel、Supervisor 与组合根执行。
+- 如果联合验收发现 Kernel 拒绝合法控制请求、丢失取消或吞掉收敛错误，再由 kernel 分支
+  修复对应实现，属于恢复既有规范，未必需要改共同契约。当前未证明这种产品缺陷。
+- 建议新增的联合验收：取消在 RUNNING/CONVERGING/CLOSED 下的处理；中止请求异常拒绝
+  后故障关闭；Gateway 调用抛错；Core 不收敛的期限兜底；重复故障只执行一次关闭。
+  不未经授权修改 Kernel、Gateway、组合根产品代码或其他分支。
+
+多进程故障处理核对（2026-10-14，用户提问；仅记录长期迁移建议，不改变 M1 任务范围）：
+
+- 当前按生产依赖与组合根接线统计，共 3 个组件有 reportSystemFault：Workflow、
+  UserInteraction、Kernel Core。三者注入同一组合根回调；不是三套监管系统。
+  Supervisor 没有该注入项，其启动、停止与 whenStopped 失败由现有监管链路观察。
+  UserInteraction 与 Kernel Core 当前工厂仍未实现，接口接线不等于所有调用点已经完成。
+- Architecture/Evolution 第 2 节已规划 Supervisor 独立成进程，Workflow 与交互按需拆分；
+  Core、Monitor、Scheduler、Execution 仍同处一个 Kernel 核心进程，通讯主体不等于进程。
+- 多进程时不能跨地址空间直接调用当前函数或传递 Error/AbortController 等内部句柄；
+  可保留模块内上报入口，通过适配器发送经校验、认证、脱敏的可序列化故障事件。
+  当前 SystemFault 是明确的进程内类型，不是已有的网络故障协议。
+- 组合根继续负责每个进程的装配、接线和本地清理，跨进程的长期生命周期职责交给独立
+  Supervisor；同时监测主动故障上报、进程退出、通道断开与有期限的存活检测。
+  失联只能说明未能确认状态，不能等同于执行已经停止或尚未产生效果。
+- Supervisor 自身需部署层兜底，例如 systemd 或容器管理器；本地 Linux 多进程可用服务的
+  cgroup 生命周期控制覆盖子进程，不能仅依赖父进程退出。Linux 的父进程退出通常会使孩子
+  被重新托管，不天然杀死孩子；Architecture/Module/Kernel 关于 Supervisor 失效后孩子随之
+  退出的承诺，未来必须通过具体机制与故障注入兑现，当前不改长期规范。
+- 未来控制请求均需期限、幂等和停止确认；RPC 超时不代表远端工作已经停止。按运行或实例
+  范围处置故障，重启前核对旧执行与未知效果；不默认每个模块故障都关闭所有实例。
+- 上述属于未来拆分阶段的独立协议与部署设计，不为此修改当前共同协议、Kernel 或组合根。
+
+当前故障调用闭环审计（2026-10-14，用户要求解释与评估；未修改产品逻辑）：
+
+- Workflow 已有真实调用点：内部错误先 closeRun(FAILED, WORKFLOW_INTERNAL)，收尾再抛错、
+  没有可用状态、已在 CLOSING 时再出内部错误，或终态记录写入失败，才由 Inbox 观察者上报。
+  UnitReport 失败、非法模型输出、普通 SyscallRejected 不直接上报；closeRun 返回拒绝按
+  现有规范等待 RunClosed，不等于抛错，也不立即调用 reportSystemFault。
+- Core 与 UserInteraction 工厂仍未实现，仅可评估规范承诺。Core 的运行 actor 错误先走
+  KERNEL_FAULT；收敛再失败及 actor 外系统错误才上报。UserInteraction 的 Inbox、询问任务、
+  中断处理抛错直接上报；analyze 自身抛错由命令入口捕获。Q19 的异常拒绝升级尚未实施。
+- 分级与组合根兜底方向合理，但不能宣称全部实际链路闭环。原 T10 完成证据只覆盖会返回
+  的依赖与正常终态，以下问题需要补充；不以先前 421 项测试通过代替新增边界验证。
+
+| 编号 | 审计问题与证据 | 建议与范围 | 状态 |
+| --- | --- | --- | --- |
+| Q20 | Workflow 上报后 hasFault 仅用于 health，没有独立停止业务推进守卫。模块内注入错误顺序的合法 Schema UnitReport，再投递 RunStart：故障回调调用 1 次后仍出现 REGISTER、SUBMIT。替身回调仅记录，不证明真实组合根关闭后必然继续执行，但证明本模块依赖外部封锁 | 建议上报后停止业务动作，按需要处理最终事件与记录；本分支补守卫与测试。未实施审计修复 | 待决定 |
+| Q21 | Workflow 直接 await Gateway、Catalog、Persistence；当前 Fabric.request 直接 await handler，未执行请求超时。持有 SUBMIT 返回并投递 RunClosed：故障数 0、终态写入 0、stop 未完成；释放返回后写入 1、stop 完成。等待期间 Inbox 不能处理已排队终态；10ms 观察不是建议超时阈值 | 需要决定调用期限、超时升级、后台工作处置及与 Kernel/组合根期限的配合；已有 BoundaryContext.deadline 不等于已有超时执行器。不自动改共享配置或 Fabric | 待决定 |
+| Q22 | Workflow 内部异常成功转为 WORKFLOW_INTERNAL 时，原异常未见被持久记录；收尾又失败时上报的是第二个异常。业务结束路径存在，但原错误诊断链不完整 | 建议保留脱敏内部诊断或因果关联，不向用户暴露异常原文、源码或凭据；不改 RunFailure 共同契约 | 待决定 |
+
+审计使用 Windows 原有 tsx 加载本分支源文件与模块内替身，未新增共享测试或修改共同协议。
+真实组合根在已触发关闭之后有各步期限，但这不自动为每一个挂起调用提供截止机制。
+
+本轮实施与决定（2026-10-14，替代上表待决定状态）：
+
+- 用户明确要求完成故障补全与 UserInteraction 调用组合根，并提交当前分支；D19 记录授权。
+  Q19：合法 cancelRun、shutdown 的异常拒绝升级为控制不变量故障，禁止重试或伪造成功。
+  合法授权回答的异常拒绝同样升级，QUESTION_NOT_PENDING 保持普通失效结果。
+- Q20 已补业务守卫：系统故障后不再固定定义、登记代理或提交 Unit；已有运行仍接收 RunClosed
+  并尝试保存终态记录。未注入上报函数时也停止业务，并由 stop 保留未观察错误。
+- Q21 按用户明确选择采用 30 秒：全部 Workflow Gateway、Catalog、Persistence 调用均有期限。
+  超时直接上报，不再发起 closeRun 等业务动作；迟到响应与拒绝不会恢复 reducer。
+  已排队终态可以继续处理；挂起的终态写入也在期限后升级，不重新开启运行。
+- Q22 已补 workflow 私有脱敏审计，保存操作、阶段、诊断标识、运行标识、固定码与时间。
+  原异常文案、堆栈、源码与凭据不写入持久记录或用户输出；恢复成功时提供定位元数据，
+  不宣称保存了完整原始堆栈。诊断或关闭再次失败时，AggregateError 在进程内保留两个异常。
+- 实现 UserInteraction 后发现 Q23：五类 Gateway 调用若挂起，原规范捕获边界不会得到异常。
+  用户明确同意也采用 30 秒；已在本模块私有 helper 中实施，不跨模块导入或扩展共同配置。
+  用户输入仍按 expiresAt 到期，迟到返回或拒绝仅被观察，不恢复业务。
+- 实现中还发现：已结束运行的 shutdown 若直接抛给命令入口，组合根拿不到已记录的非零码。
+  为兑现原规范，已记录结果后的 shutdown 超时、抛错或异常拒绝通过既有回调上报并返回原码；
+  组合根保留原非零码，原码为 0 时返回 70。没有回调时仍抛错，不假装关闭成功。
+
+本轮文件与验证范围：
+
+- Workflow 的 application/domain、模块内替身与测试，以及 Workflow 自有规范。
+- UserInteraction 的工厂、application/domain、中文 InteractionMessages、纯视图与模块内测试，
+  以及 UserInteraction 自有规范。开发者报错与源码注释均为英文。
+- 按既有 Q08/D11 授权，只新增 apps/control-plane/src/bootstrap/interaction-fault.test.ts，
+  真实 UserInteraction 配合 fake Kernel、fake Workflow 与真实组合根，验证取消／关闭异常拒绝、
+  全部模块停止，以及故障时仍保留 RUN_TIMEOUT 的退出码 2；该文件单独测试提交。
+- 共同契约、公开依赖及工厂签名、Kernel、Fabric、ExecutorSet、ToolPool、组合根产品实现均未改。
+  模块调用期限不等于远端停止保证；真实 Kernel 的迟到控制操作与停止确认仍须后续联合验收。
+- T11–T14 本分支实现完成；T15 未开始，T16 仅完成上述故障组合子集，T17 未开始。
+  本次请求完成并提交后结束，不自动推进其他分支、push、PR 或合并。
+
+提交组织：Workflow 功能及规范、UserInteraction 功能及规范、组合故障测试各独立提交；
+本分支计划单独 docs 提交，并保留不进入集成分支的导出规则。
+
+最终验证证据（2026-10-14）：
+
+- Ubuntu-24.04 的隔离副本按当前 HEAD 加本轮允许的源文件覆盖构建；
+  锁定依赖离线安装、pnpm run build 与 pnpm run check 全部通过。
+  完整结果为 50 文件／462 测试，其中 Workflow 12 文件／138 测试，
+  UserInteraction 2 文件／33 测试，新增组合故障测试 1 文件／3 测试。
+- 先新增复现用例，再修复 Workflow 的故障后推进、挂起调用与原异常丢失问题。
+  假定时器验证期限；迟到拒绝已被观察，不产生未处理 Promise 拒绝。
+- UserInteraction 的调用期限增加了确认时序：调用 createRun 不代表运行已创建。
+  两个旧中断测试曾过早触发中断，被正确忽略；已修正替身就绪点，等待确认后的事件循环，
+  不更改“创建前中断忽略”的产品规则，不以延长测试超时掩盖时序错误。
+- Windows 只运行文件和差异核对：UTF-8 无 BOM、LF、末尾换行、无行尾空白、
+  源码 100 字符行宽、分支计划引用隔离与 git diff --check 均通过。
+- 最终质量门之后仅补充本文验证记录和本分支模块规范的正文换行，不改变产品行为。
+  未执行真实 Kernel／Executor 联合验收，不以 fake 结果宣称其他分支功能已完成。
+
+已完成的实现提交（均在 feature/M1/workflow-UserInteraction）：
+
+- f586fc8：feat: implement workflow analysis and fault closure。
+- b33a16e：feat: implement user interaction and system fault escalation。
+- b78139d：test: verify interaction faults close the composed system。
+
+本文另作独立 docs 提交；该提交不得进入集成分支。未 push、未创建 PR、未切换其他分支。
