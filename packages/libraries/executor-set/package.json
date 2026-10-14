@@ -9,9 +9,15 @@
     "@multiagentos/contracts": "workspace:*",
     "ai": "7.0.107"
   },
+  "devDependencies": {
+    "@multiagentos/agent-tool-pool": "workspace:*",
+    "@multiagentos/kernel": "workspace:*",
+    "@multiagentos/testing": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -b tsconfig.json --pretty false",
-    "check": "tsc -b tsconfig.json --pretty false"
+    "check": "tsc -b tsconfig.json --pretty false",
+    "eval": "tsx eval/run-eval.ts"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

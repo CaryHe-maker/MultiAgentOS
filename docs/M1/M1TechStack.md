@@ -127,6 +127,9 @@ M1 不安装 PostgreSQL、Kysely、DBOS、NATS、Redis、S3 SDK 或 Migration �
 ## 11. 测试与质量门
 
 测试分为 Schema/Contract、Module 单元、Adapter、架构依赖、组合和固定任务评测。`packages/testing` 只使用 workspace devDependency 和根测试工具。
+架构测试只约束 `dependencies`。`executor-set` 的测试与评测另有三个 devDependency：`@multiagentos/testing`（共享 contract test）、
+`@multiagentos/kernel`（只取 `createSubprocessRunner` 真实运行 `rg`，因为只有 Supervisor 可以创建子进程）与
+`@multiagentos/agent-tool-pool`（评测读取目录中的定义）；产品代码仍只依赖 `contracts`。
 
 提交前必须执行：
 

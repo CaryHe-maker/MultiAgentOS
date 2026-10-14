@@ -26,6 +26,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      # ExecutorSet 3.3 checks that rg and the built-in scan agree; without rg those tests skip.
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - run: pnpm run check
