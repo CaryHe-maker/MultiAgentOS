@@ -247,6 +247,31 @@ describe('Workflow pinning and registration', () => {
     expect(gateway.calls).toEqual([]);
   });
 
+  it('rejects an unsupported feature before pinning definitions or submitting work', async () => {
+    const { module, gateway, catalog } = setup();
+    await expect(
+      module.inbox.deliver({
+        ...startEvent(),
+        event: { type: 'RestoreRequested' },
+      } as unknown as WorkflowInboxEvent),
+    ).rejects.toThrow('event violates its contract');
+    await module.stop();
+    expect(catalog.requests).toEqual([]);
+    expect(gateway.calls).toEqual([]);
+  });
+
+  it('copies an accepted start before the caller can change the objective', async () => {
+    const { module, gateway } = setup();
+    const event = startEvent();
+    const accepted = module.inbox.deliver(event);
+    if (event.event.type !== 'RunStart') throw new Error('Expected a start event');
+    event.event.goal = 'Changed after publication';
+    await accepted;
+    await module.start();
+    await module.stop();
+    expect(gateway.calls.at(-1)?.request).toMatchObject({ input: { objective: '分析仓库' } });
+  });
+
   it('test definition sets satisfy the shared Schema', () => {
     expect(validate(PinnedDefinitionSetSchema, definitions()).ok).toBe(true);
     expect(validate(PinnedDefinitionSetSchema, definitions('code-viewer', false)).ok).toBe(true);

@@ -41,6 +41,48 @@ const handoff: ModelCallOutput = {
 };
 
 describe('Workflow public cycle and report delivery', () => {
+  it('supports 32 tools when reports arrive before acknowledgements', async () => {
+    const base = cycleDefinitions();
+    const calls: ModelCallOutput = {
+      hasText: false,
+      finishReason: 'TOOL_CALLS',
+      toolCalls: Array.from({ length: 32 }, (_, index) => ({
+        toolCallId: `read-${index}`,
+        toolName: 'read_file',
+        arguments: { path: `source-${index}.ts` },
+      })),
+    };
+    const result = await runWorkflowCase({
+      entry: {
+        ...base,
+        agent: {
+          ...base.agent,
+          limits: { ...base.agent.limits, maxToolCallsPerRound: 32 },
+        },
+      },
+      modelOutputs: [calls, finishOutput],
+      beforeAck: true,
+      reverseTools: true,
+    });
+    expect(result.faults).toEqual([]);
+    const submissions = result.gateway.calls.filter((call) => call.kind === 'SUBMIT');
+    const reads = submissions.filter((call) => call.request.unitRef.id === 'file-read');
+    expect(reads).toHaveLength(32);
+    expect(new Set(reads.map((call) => call.request.requestId)).size).toBe(32);
+    const context = submissions.filter((call) => call.request.unitRef.id === 'context-assemble')[1];
+    if (context === undefined || !('steps' in context.request.input))
+      throw new Error('Expected the next assembled context');
+    expect(validate(ContextAssembleInputSchema, context.request.input).ok).toBe(true);
+    expect(context.request.input.steps.filter((step) => step.kind === 'TOOL_RESULT')).toHaveLength(
+      32,
+    );
+    const publish = submissions.find((call) => 'report' in call.request.input);
+    if (publish === undefined || !('report' in publish.request.input))
+      throw new Error('Expected report publication');
+    expect(publish.request.input.report.readSources).toHaveLength(32);
+    expect(result.gateway.calls.at(-1)?.kind).toBe('CLOSE');
+  });
+
   it.each([true, false])('completes with reports arriving before Ack = %s', async (beforeAck) => {
     const result = await runWorkflowCase({ beforeAck });
     expect(result.faults).toEqual([]);
