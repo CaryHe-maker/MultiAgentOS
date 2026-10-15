@@ -1,6 +1,8 @@
 import {
   REASON_CODE_CATEGORY,
+  WorkflowInboxEventSchema,
   newId,
+  validate,
   type ArtifactRef,
   type BoundaryContext,
   type KernelToWorkflowEvent,
@@ -179,7 +181,10 @@ export function createFakeWorkflow(): (deps: WorkflowDeps) => FakeWorkflowModule
       events,
       inbox: {
         deliver: (event) => {
-          inbox.enqueue(event);
+          const checked = validate<WorkflowInboxEvent>(WorkflowInboxEventSchema, event);
+          if (!checked.ok)
+            return Promise.reject(new Error('Workflow Inbox event violates its contract'));
+          inbox.enqueue(structuredClone(checked.value));
           return Promise.resolve();
         },
       },
