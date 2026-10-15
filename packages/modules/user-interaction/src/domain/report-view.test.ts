@@ -2,7 +2,7 @@ import type { AnalysisReport, RunSummary } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { REASON_CODES } from '@multiagentos/contracts';
 import { describeReason } from './interaction-messages.js';
-import { renderReport, renderSummary } from './report-view.js';
+import { renderQuestion, renderReport, renderSummary } from './report-view.js';
 
 const report: AnalysisReport = {
   workflowRunId: 'wfr_123456',
@@ -30,7 +30,58 @@ const report: AnalysisReport = {
   wrapUp: { reason: 'ROUND_LIMIT' },
 };
 
+function expectNoTerminalControls(text: string): void {
+  expect(
+    [...text].filter((character) => {
+      const code = character.charCodeAt(0);
+      return code !== 10 && (code < 32 || (code >= 127 && code <= 159));
+    }),
+  ).toEqual([]);
+}
+
 describe('Chinese report views', () => {
+  it('escapes terminal controls while preserving Chinese, Unicode and line breaks', () => {
+    const input: AnalysisReport = {
+      ...report,
+      summary: '中文 English 🙂\n第二行\u001b[2J\r\b\t\u0000\u007f\u009b31m',
+      conclusions: [
+        {
+          statement: '结论\u001b[31m',
+          sources: [{ ...report.conclusions[0]!.sources[0]!, path: 'src/\u001b[2J.ts' }],
+        },
+      ],
+      unconfirmed: [{ statement: '待确认\b', reason: 'MODEL_UNCONFIRMED' }],
+    };
+    const original = structuredClone(input);
+    const text = renderReport(input);
+    expect(text).toContain('中文 English 🙂\n第二行\\u001b[2J\\u000d\\u0008\\u0009');
+    expect(text).toContain('\\u0000\\u007f\\u009b31m');
+    expect(text).toContain('结论\\u001b[31m');
+    expect(text).toContain('src/\\u001b[2J.ts');
+    expect(text).toContain('待确认\\u0008');
+    expectNoTerminalControls(text);
+    expect(input).toEqual(original);
+  });
+
+  it('escapes terminal controls in authorization metadata without changing its values', () => {
+    const question = {
+      type: 'AuthorizationRequest' as const,
+      questionId: 'qst_123456',
+      capability: 'repo.read' as const,
+      repositoryPath: '/仓库\u001b[2J',
+      exclusions: ['目录\r覆盖'],
+      provider: '服务商\u009b31m',
+      expiresAt: '2026-10-14T00:01:00.000Z',
+    };
+    const original = structuredClone(question);
+    const text = renderQuestion(question);
+    expect(text).toContain('/仓库\\u001b[2J');
+    expect(text).toContain('目录\\u000d覆盖');
+    expect(text).toContain('服务商\\u009b31m');
+    expectNoTerminalControls(text);
+    expect(question).toEqual(original);
+  });
+
   it('fixes conclusion, source, unconfirmed and wrap-up formatting', () => {
     expect(renderReport(report)).toMatchInlineSnapshot(`
       "分析报告

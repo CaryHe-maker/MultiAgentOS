@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import type { AnalyzeCommand, TerminalPort } from '@multiagentos/user-interaction';
 import { Command, CommanderError } from 'commander';
+import { CLI_MESSAGES, parserErrorMessage } from '../presentation/cli-messages.js';
 
 /** The part of UserInteraction the CLI drives. */
 export interface CliTarget {
@@ -20,29 +21,37 @@ export async function parseCli(
   terminal: Pick<TerminalPort, 'write'>,
 ): Promise<CliParseResult> {
   let command: AnalyzeCommand | undefined;
-  const program = new Command('multiagentos').exitOverride().configureOutput({
-    writeOut: (text) => terminal.write(text),
-    writeErr: (text) => terminal.write(text),
-  });
+  const program = new Command('multiagentos')
+    .exitOverride()
+    .configureHelp({ formatHelp: () => CLI_MESSAGES.help })
+    .showSuggestionAfterError(false)
+    .configureOutput({
+      writeOut: (text) => terminal.write(text),
+      // Commander messages are developer diagnostics; the catch boundary renders user text.
+      writeErr: () => {},
+    });
   program
     .command('analyze')
-    .description('Analyse a repository read-only and print a report with sources')
-    .requiredOption('--repo <path>', 'absolute path of the repository')
-    .option('--details', 'also show the run summary', false)
-    .argument('<goal>', 'the question to answer')
+    .description(CLI_MESSAGES.analyze)
+    .requiredOption('--repo <path>', CLI_MESSAGES.repository)
+    .option('--details', CLI_MESSAGES.details, false)
+    .argument('<goal>', CLI_MESSAGES.goal)
     .action((goal: string, options: { repo: string; details: boolean }) => {
       command = { goal, repositoryPath: options.repo, details: options.details };
     });
   try {
     await program.parseAsync([...argv], { from: 'user' });
   } catch (error) {
-    if (error instanceof CommanderError)
+    if (error instanceof CommanderError) {
+      if (error.exitCode !== 0)
+        terminal.write(parserErrorMessage(error.code) + '\n' + CLI_MESSAGES.help);
       return { ok: false, exitCode: error.exitCode === 0 ? 0 : EXIT_CODE_USAGE };
+    }
     throw error;
   }
   if (command === undefined) return { ok: false, exitCode: EXIT_CODE_USAGE };
   if (!isAbsolute(command.repositoryPath)) {
-    terminal.write('--repo must be an absolute path\n');
+    terminal.write(CLI_MESSAGES.absolutePath + '\n');
     return { ok: false, exitCode: EXIT_CODE_USAGE };
   }
   return { ok: true, command };

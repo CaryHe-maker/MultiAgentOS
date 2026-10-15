@@ -107,6 +107,227 @@ const stopped = (closeReason: 'CANCELLED' | 'RUN_TIMEOUT' = 'CANCELLED'): RunFin
 });
 
 describe('UserInteraction session and fault boundaries', () => {
+  it.each([
+    ['cancelRun', 'ACK'],
+    ['cancelRun', 'REJECTION'],
+    ['answerAuthorization', 'ACK'],
+    ['answerAuthorization', 'REJECTION'],
+  ] as const)('ends the local %s wait on fault stop before late %s', async (operation, late) => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      let finishLate: () => void = () => {};
+      test.gateway[operation].mockImplementation(
+        (request) =>
+          new Promise((resolve, reject) => {
+            finishLate = () =>
+              late === 'ACK'
+                ? resolve({ requestId: request.requestId, outcome: 'ACCEPTED' })
+                : reject(new Error('Late control rejection'));
+          }),
+      );
+      test.terminal.askYesNo.mockResolvedValue('YES');
+      await test.module.start();
+      const result = test.module.analyze(command);
+      const observed = expect(result).rejects.toThrow('Independent terminal failure');
+      await vi.advanceTimersByTimeAsync(0);
+      if (operation === 'cancelRun') test.interrupt();
+      else
+        await test.deliver({
+          type: 'AuthorizationRequest',
+          questionId: newId('qst'),
+          capability: 'repo.read',
+          repositoryPath: '/repo',
+          exclusions: [],
+          provider: '服务商',
+          expiresAt: '2026-10-14T00:01:00.000Z',
+        });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(test.gateway[operation]).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(1);
+      test.terminal.write.mockImplementation(() => {
+        throw new Error('Independent terminal failure');
+      });
+      await test.deliver({
+        type: 'AuthorizationResolved',
+        questionId: newId('qst'),
+        resolution: 'CANCELLED',
+      });
+      await observed;
+      await test.module.stop();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(test.reportSystemFault).toHaveBeenCalledTimes(1);
+      finishLate();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(test.reportSystemFault).toHaveBeenCalledTimes(1);
+      expect(test.gateway.shutdown).not.toHaveBeenCalled();
+      expect(test.gateway[operation]).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves a finished result when external shutdown ends a pending control wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      test.gateway.cancelRun.mockImplementation(() => new Promise<never>(() => {}));
+      await test.module.start();
+      const result = test.module.analyze(command);
+      await vi.advanceTimersByTimeAsync(0);
+      test.interrupt();
+      await test.deliver(stopped());
+      await vi.advanceTimersByTimeAsync(0);
+      await test.module.stop();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(await result).toBe(130);
+      expect(test.gateway.shutdown).not.toHaveBeenCalled();
+      expect(test.reportSystemFault).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['cancelRun', 'answerAuthorization'] as const)(
+    'observes a pending %s before completing a finished command',
+    async (operation) => {
+      vi.useFakeTimers();
+      try {
+        const test = setup();
+        test.gateway[operation].mockImplementation(() => new Promise<never>(() => {}));
+        test.terminal.askYesNo.mockResolvedValue('YES');
+        await test.module.start();
+        let hasReturned = false;
+        const result = test.module.analyze(command).then((code) => {
+          hasReturned = true;
+          return code;
+        });
+        void result.catch(() => undefined);
+        await vi.advanceTimersByTimeAsync(0);
+        if (operation === 'cancelRun') test.interrupt();
+        else
+          await test.deliver({
+            type: 'AuthorizationRequest',
+            questionId: newId('qst'),
+            capability: 'repo.read',
+            repositoryPath: '/repo',
+            exclusions: [],
+            provider: '服务商',
+            expiresAt: '2026-10-14T00:01:00.000Z',
+          });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(test.gateway[operation]).toHaveBeenCalledTimes(1);
+        await test.deliver(stopped());
+        await vi.advanceTimersByTimeAsync(0);
+        expect(hasReturned).toBe(false);
+        expect(test.gateway.shutdown).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(await result).toBe(130);
+        expect(test.reportSystemFault).toHaveBeenCalledTimes(1);
+        expect(test.gateway.shutdown).not.toHaveBeenCalled();
+        await test.module.stop();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('continues normal shutdown after an outstanding cancel acknowledgement arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      let acknowledge: () => void = () => {};
+      test.gateway.cancelRun.mockImplementation(
+        (request) =>
+          new Promise((resolve) => {
+            acknowledge = () => resolve({ requestId: request.requestId, outcome: 'ACCEPTED' });
+          }),
+      );
+      await test.module.start();
+      const result = test.module.analyze(command);
+      await vi.advanceTimersByTimeAsync(0);
+      test.interrupt();
+      await test.deliver(stopped());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(test.gateway.shutdown).not.toHaveBeenCalled();
+      acknowledge();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await result).toBe(130);
+      expect(test.gateway.shutdown).toHaveBeenCalledTimes(1);
+      expect(test.reportSystemFault).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      await test.module.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a post-finish control timeout observable without a fault reporter', async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup(false);
+      test.gateway.cancelRun.mockImplementation(() => new Promise<never>(() => {}));
+      await test.module.start();
+      const result = test.module.analyze(command);
+      void result.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      test.interrupt();
+      await test.deliver(stopped());
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(result).rejects.toThrow('Interaction port return deadline exceeded');
+      await expect(test.module.stop()).rejects.toThrow('Interaction port return deadline exceeded');
+      expect(test.gateway.shutdown).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects extra fields and unsupported events before starting a session', async () => {
+    const test = setup();
+    const envelope = {
+      eventId: newId('evt'),
+      workflowRunId: test.workflowRunId,
+      seq: 1,
+      occurredAt: now().toISOString(),
+      event: { type: 'AuthorizationResolved', questionId: newId('qst'), resolution: 'TIMED_OUT' },
+    };
+    for (const invalid of [
+      { ...envelope, extra: true },
+      { ...envelope, event: { type: 'ReviewRequested' } },
+    ])
+      await expect(
+        test.module.inbox.deliver(invalid as unknown as InteractionInboxEvent),
+      ).rejects.toThrow('Inbox event violates its contract');
+    await test.module.stop();
+    expect(test.gateway.createRun).not.toHaveBeenCalled();
+    expect(test.gateway.answerAuthorization).not.toHaveBeenCalled();
+    expect(test.reportSystemFault).not.toHaveBeenCalled();
+    expect(test.output).toEqual([]);
+  });
+
+  it('copies an accepted event before the caller can change its resolution', async () => {
+    const test = setup();
+    const { result } = await test.begin();
+    const envelope: InteractionInboxEvent = {
+      eventId: newId('evt'),
+      workflowRunId: test.workflowRunId,
+      seq: 1,
+      occurredAt: now().toISOString(),
+      event: { type: 'AuthorizationResolved', questionId: newId('qst'), resolution: 'TIMED_OUT' },
+    };
+    const accepted = test.module.inbox.deliver(envelope);
+    if (envelope.event.type !== 'AuthorizationResolved') throw new Error('Expected a resolution');
+    envelope.event.resolution = 'GRANTED';
+    await accepted;
+    await test.deliver(stopped());
+    expect(await result).toBe(130);
+    expect(test.output.join('')).toContain('授权询问已超时');
+    expect(test.reportSystemFault).not.toHaveBeenCalled();
+    await test.module.stop();
+  });
+
   it.each(['createRun', 'cancelRun', 'answerAuthorization', 'readArtifact', 'shutdown'] as const)(
     'bounds a held %s response and observes late rejection',
     async (operation) => {
@@ -166,6 +387,56 @@ describe('UserInteraction session and fault boundaries', () => {
     expect(module.stop()).toBe(stopping);
     await stopping;
     await expect(module.start()).rejects.toThrow('after stop');
+  });
+
+  it('reports terminal cleanup failure while preserving the recorded nonzero code', async () => {
+    const test = setup();
+    const release = vi.fn(() => {
+      throw new Error('Terminal release failed');
+    });
+    test.terminal.onInterrupt.mockReturnValue(release);
+    const { result } = await test.begin();
+    await test.deliver(stopped());
+    expect(await result).toBe(130);
+    expect(test.reportSystemFault).toHaveBeenCalledTimes(1);
+    expect(test.reportSystemFault.mock.calls[0]?.[0].source).toBe('user-interaction');
+    expect(test.reportSystemFault.mock.calls[0]?.[0].error).toBeInstanceOf(Error);
+    await test.module.stop();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('still drains its Inbox when removing the terminal listener fails during stop', async () => {
+    const test = setup();
+    const release = vi.fn(() => {
+      throw new Error('Terminal release failed');
+    });
+    test.terminal.onInterrupt.mockReturnValue(release);
+    const { result } = await test.begin();
+    await test.deliver(stopped());
+    const stopping = test.module.stop();
+    const observed = expect(stopping).rejects.toThrow('Terminal release failed');
+    expect(test.module.stop()).toBe(stopping);
+    await observed;
+    expect(await result).toBe(130);
+    expect(test.output.join('')).toContain('运行已取消');
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the command failure when terminal cleanup also fails', async () => {
+    const test = setup(false);
+    const commandError = new Error('Create transport failed');
+    const cleanupError = new Error('Terminal release failed');
+    test.gateway.createRun.mockRejectedValue(commandError);
+    const release = vi.fn(() => {
+      throw cleanupError;
+    });
+    test.terminal.onInterrupt.mockReturnValue(release);
+    await test.module.start();
+    const failure: unknown = await test.module.analyze(command).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure).toMatchObject({ errors: [commandError, cleanupError] });
+    await expect(test.module.stop()).rejects.toThrow('Terminal release failed');
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -445,6 +716,15 @@ describe('UserInteraction session and fault boundaries', () => {
     await expect(test.module.stop()).rejects.toThrow('Cancel transport failed');
   });
 
+  it('keeps an undefined detached rejection observable during stop', async () => {
+    const test = setup(false);
+    test.gateway.cancelRun.mockRejectedValue(undefined);
+    const { result } = await test.begin();
+    test.interrupt();
+    await expect(result).rejects.toBeUndefined();
+    await expect(test.module.stop()).rejects.toMatchObject({ cause: undefined });
+  });
+
   it('expires an unanswered question without sending authorization', async () => {
     vi.useFakeTimers();
     try {
@@ -468,6 +748,74 @@ describe('UserInteraction session and fault boundaries', () => {
       await vi.advanceTimersByTimeAsync(0);
       await result;
       await test.module.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([1_000, -1_000])(
+    'shows one timeout notice when local expiry precedes Core resolution: %s',
+    async (delayMs) => {
+      vi.useFakeTimers();
+      try {
+        const test = setup();
+        const questionId = newId('qst');
+        await test.module.start();
+        const result = test.module.analyze(command);
+        await test.deliver({
+          type: 'AuthorizationRequest',
+          questionId,
+          capability: 'repo.read',
+          repositoryPath: '/repo',
+          exclusions: [],
+          provider: '服务商',
+          expiresAt: new Date(now().getTime() + delayMs).toISOString(),
+        });
+        await vi.advanceTimersByTimeAsync(Math.max(0, delayMs));
+        expect(test.output.join('').split('授权询问已超时')).toHaveLength(2);
+        await test.deliver({ type: 'AuthorizationResolved', questionId, resolution: 'TIMED_OUT' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(test.output.join('').split('授权询问已超时')).toHaveLength(2);
+        expect(test.gateway.answerAuthorization).not.toHaveBeenCalled();
+        await test.deliver(stopped());
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await result).toBe(130);
+        await test.module.stop();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('does not expire a long authorization deadline after timer overflow', async () => {
+    vi.useFakeTimers();
+    try {
+      const test = setup();
+      await test.module.start();
+      const result = test.module.analyze(command);
+      const delayMs = 2_147_483_647 + 1_000;
+      await test.deliver({
+        type: 'AuthorizationRequest',
+        questionId: newId('qst'),
+        capability: 'repo.read',
+        repositoryPath: '/repo',
+        exclusions: [],
+        provider: '服务商',
+        expiresAt: new Date(now().getTime() + delayMs).toISOString(),
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(test.signal()?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(delayMs - 2);
+      expect(test.signal()?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(test.signal()?.aborted).toBe(true);
+      expect(test.gateway.answerAuthorization).not.toHaveBeenCalled();
+      await test.deliver(stopped());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await result).toBe(130);
+      await test.module.stop();
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }

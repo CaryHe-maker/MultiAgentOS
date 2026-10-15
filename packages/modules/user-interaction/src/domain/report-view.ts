@@ -1,6 +1,18 @@
 import type { AnalysisReport, AuthorizationRequest, RunSummary } from '@multiagentos/contracts';
 import { InteractionMessages as messages, describeReason } from './interaction-messages.js';
 
+/** Escape C0, DEL and C1 controls; LF remains available for ordinary text layout. */
+function terminalText(text: string): string {
+  return [...text]
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code !== 10 && (code < 32 || (code >= 127 && code <= 159))
+        ? `\\u${code.toString(16).padStart(4, '0')}`
+        : character;
+    })
+    .join('');
+}
+
 /** Produces plain Chinese terminal text without exposing internal diagnostics. */
 export function renderReport(report: AnalysisReport): string {
   const lines = [report.degraded ? messages.degraded : messages.reportTitle, report.summary];
@@ -13,17 +25,17 @@ export function renderReport(report: AnalysisReport): string {
     lines.push(messages.unconfirmedItem(item.statement, messages.unconfirmedReason[item.reason]));
   if (report.wrapUp !== undefined)
     lines.push(messages.wrapUpLine(messages.wrapUp[report.wrapUp.reason]));
-  return lines.join('\n') + '\n';
+  return terminalText(lines.join('\n') + '\n');
 }
 
 export function renderQuestion(question: AuthorizationRequest): string {
-  return (
+  return terminalText(
     [
       messages.repository(question.repositoryPath),
       messages.exclusions(question.exclusions),
       messages.provider(question.provider),
       messages.expiresAt(question.expiresAt),
-    ].join('\n') + '\n'
+    ].join('\n') + '\n',
   );
 }
 
@@ -51,5 +63,5 @@ export function renderSummary(summary: RunSummary): string {
     );
     lines.push(describeReason(summary.failure.code));
   }
-  return lines.join('\n') + '\n';
+  return terminalText(lines.join('\n') + '\n');
 }

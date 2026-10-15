@@ -22,6 +22,7 @@ import { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from '../domain/exit-codes.js';
 import { InteractionMessages as messages, describeReason } from '../domain/interaction-messages.js';
 import { renderQuestion, renderReport, renderSummary } from '../domain/report-view.js';
 import { awaitPort } from './port-deadline.js';
+import { scheduleQuestionDeadline } from './question-deadline.js';
 
 /** Converts unexpected rejection of a locally valid control request into an invariant error. */
 function requireControlAck(operation: string, result: SyscallAck | SyscallRejected): void {
@@ -31,13 +32,19 @@ function requireControlAck(operation: string, result: SyscallAck | SyscallReject
     );
 }
 
+function interactionError(error: unknown): Error {
+  return error instanceof Error
+    ? error
+    : new Error('Interaction operation failed', { cause: error });
+}
+
 /** Builds one interaction session without acquiring terminal resources until start. */
 export function createInteractionRunner(deps: UserInteractionDeps): UserInteractionModule {
   const now = deps.now ?? (() => new Date());
-  const questions = new Map<
-    string,
-    { controller: AbortController; timer: ReturnType<typeof setTimeout> }
-  >();
+  const questions = new Map<string, { controller: AbortController; cancelTimer: () => void }>();
+  const controlTasks = new Set<Promise<void>>();
+  const controlWaits = new AbortController();
+  const expiredQuestions = new Set<string>();
   let isStarted = false;
   let isStopping = false;
   let isAnalyzing = false;
@@ -47,7 +54,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
   let workflowRunId: string | undefined;
   let removeInterrupt: (() => void) | undefined;
   let stopTask: Promise<void> | undefined;
-  let detachedError: unknown;
+  let detachedError: Error | undefined;
   let command: AnalyzeCommand | undefined;
   let resolveCreated: () => void = () => {};
   const created = new Promise<void>((resolve) => {
@@ -75,7 +82,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     const question = questions.get(id);
     if (question === undefined) return;
     questions.delete(id);
-    clearTimeout(question.timer);
+    question.cancelTimer();
     question.controller.abort();
   }
 
@@ -83,11 +90,17 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     for (const id of questions.keys()) endQuestion(id);
   }
 
+  function releaseInterrupt(): void {
+    const release = removeInterrupt;
+    removeInterrupt = undefined;
+    release?.();
+  }
+
   function reportFault(error: unknown): void {
     hasFault = true;
     endQuestions();
     rejectFinished(error);
-    if (deps.reportSystemFault === undefined) detachedError ??= error;
+    if (deps.reportSystemFault === undefined) detachedError ??= interactionError(error);
     else
       deps.reportSystemFault({
         source: 'user-interaction',
@@ -95,6 +108,54 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
         error,
         ...(workflowRunId === undefined ? {} : { workflowRunId }),
       });
+  }
+
+  function observeControl(task: Promise<void>): Promise<void> {
+    const observed = task.catch((error: unknown) => {
+      // Local disposal does not acknowledge or cancel the remote operation.
+      if (isStopping && controlWaits.signal.aborted && error === controlWaits.signal.reason) return;
+      reportFault(error);
+    });
+    controlTasks.add(observed);
+    const release = () => {
+      controlTasks.delete(observed);
+    };
+    void observed.then(release, release);
+    return observed;
+  }
+
+  function throwDetachedError(): void {
+    if (detachedError !== undefined) throw detachedError;
+  }
+
+  function finishCommand(commandFailure?: { readonly error: unknown }): void {
+    endQuestions();
+    try {
+      releaseInterrupt();
+    } catch (cleanupError) {
+      reportFault(cleanupError);
+      if (commandFailure !== undefined)
+        throw new AggregateError(
+          [commandFailure.error, cleanupError],
+          'Interaction command and cleanup failed',
+          { cause: cleanupError },
+        );
+      throwDetachedError();
+    }
+  }
+
+  async function answerQuestion(questionId: string, answer: 'YES' | 'NO'): Promise<void> {
+    if (workflowRunId === undefined) throw new Error('Authorization has no active run');
+    const result = await awaitPort(
+      'answerAuthorization',
+      deps.gateway.answerAuthorization(
+        { requestId: newId('req'), workflowRunId, questionId, answer },
+        context(),
+      ),
+      controlWaits.signal,
+    );
+    if (result.outcome === 'REJECTED' && result.reasonCode === 'QUESTION_NOT_PENDING') return;
+    requireControlAck('answerAuthorization', result);
   }
 
   async function ask(question: AuthorizationRequest, signal: AbortSignal): Promise<void> {
@@ -108,16 +169,13 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     if (answer === undefined || signal.aborted || isFinished || hasFault || isStopping) return;
     // Release the timer before awaiting the response; a late answer is still checked by Core.
     endQuestion(question.questionId);
-    if (workflowRunId === undefined) throw new Error('Authorization has no active run');
-    const result = await awaitPort(
-      'answerAuthorization',
-      deps.gateway.answerAuthorization(
-        { requestId: newId('req'), workflowRunId, questionId: question.questionId, answer },
-        context(),
-      ),
-    );
-    if (result.outcome === 'REJECTED' && result.reasonCode === 'QUESTION_NOT_PENDING') return;
-    requireControlAck('answerAuthorization', result);
+    await observeControl(answerQuestion(question.questionId, answer));
+  }
+
+  function showQuestionExpired(questionId: string): void {
+    if (expiredQuestions.has(questionId)) return;
+    deps.terminal.write(messages.questionExpired + '\n');
+    expiredQuestions.add(questionId);
   }
 
   function beginQuestion(question: AuthorizationRequest): void {
@@ -125,19 +183,19 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     deps.terminal.write(renderQuestion(question));
     const remainingMs = Date.parse(question.expiresAt) - now().getTime();
     if (remainingMs <= 0) {
-      deps.terminal.write(messages.questionExpired + '\n');
+      showQuestionExpired(question.questionId);
       return;
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => {
+    const cancelTimer = scheduleQuestionDeadline(remainingMs, () => {
       endQuestion(question.questionId);
       try {
-        deps.terminal.write(messages.questionExpired + '\n');
+        showQuestionExpired(question.questionId);
       } catch (error) {
         reportFault(error);
       }
-    }, remainingMs);
-    questions.set(question.questionId, { controller, timer });
+    });
+    questions.set(question.questionId, { controller, cancelTimer });
     void ask(question, controller.signal).catch(reportFault);
   }
 
@@ -200,7 +258,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
       resolveFinished(await showFinished(event));
     } else if (event.type === 'AuthorizationResolved') {
       endQuestion(event.questionId);
-      if (event.resolution === 'TIMED_OUT') deps.terminal.write(messages.questionExpired + '\n');
+      if (event.resolution === 'TIMED_OUT') showQuestionExpired(event.questionId);
       if (event.resolution === 'CANCELLED') deps.terminal.write(messages.questionCancelled + '\n');
     } else if (!isFinished && !hasFault && !isStopping) beginQuestion(event);
   }
@@ -216,6 +274,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     const result = await awaitPort(
       'cancelRun',
       deps.gateway.cancelRun({ requestId: newId('req'), workflowRunId }, context()),
+      controlWaits.signal,
     );
     requireControlAck('cancelRun', result);
   }
@@ -239,6 +298,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     if (isAnalyzing || isStopping) throw new Error('Interaction accepts only one analyze command');
     isAnalyzing = true;
     command = { ...input };
+    let commandFailure: { readonly error: unknown } | undefined;
     try {
       const result = await awaitPort(
         'createRun',
@@ -254,6 +314,13 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
       } else workflowRunId = result.workflowRunId;
       resolveCreated();
       const code = await finished;
+      // Finish observing sent controls before normal shutdown can stop the fault reporter.
+      // Pending user input is aborted by RunFinished and is never part of this set.
+      await Promise.all([...controlTasks]);
+      if (hasFault || isStopping) {
+        throwDetachedError();
+        return code;
+      }
       try {
         const shutdown = await awaitPort(
           'shutdown',
@@ -267,14 +334,13 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
       }
       return code;
     } catch (error) {
+      commandFailure = { error };
       hasFault = true;
       endQuestions();
       resolveCreated();
       throw error;
     } finally {
-      endQuestions();
-      removeInterrupt?.();
-      removeInterrupt = undefined;
+      finishCommand(commandFailure);
     }
   }
 
@@ -301,7 +367,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
         removeInterrupt = deps.terminal.onInterrupt(() => {
           if (hasInterrupted) return;
           hasInterrupted = true;
-          void cancel().catch(reportFault);
+          void observeControl(cancel());
         });
         startConsumer();
       }
@@ -310,19 +376,30 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     stop: () => {
       if (stopTask !== undefined) return stopTask;
       isStopping = true;
+      controlWaits.abort(new Error('Interaction control wait stopped locally'));
       endQuestions();
-      removeInterrupt?.();
-      removeInterrupt = undefined;
+      let releaseError: Error | undefined;
+      try {
+        releaseInterrupt();
+      } catch (error) {
+        releaseError = interactionError(error);
+      }
       resolveCreated();
       if (inbox.size > 0) startConsumer();
-      stopTask = inbox.idle().then(() => {
+      const finishStop = (drainError?: Error): void => {
         isStarted = false;
         rejectFinished(new Error('Interaction stopped before command completion'));
-        if (detachedError !== undefined)
-          throw detachedError instanceof Error
-            ? detachedError
-            : new Error('Detached interaction task failed', { cause: detachedError });
-      });
+        const errors = [drainError, detachedError, releaseError].filter(
+          (error) => error !== undefined,
+        );
+        if (errors.length > 1)
+          throw new AggregateError(errors, 'Interaction stop failed', { cause: errors[0] });
+        if (errors[0] !== undefined) throw errors[0];
+      };
+      stopTask = Promise.all([inbox.idle(), Promise.all([...controlTasks])]).then(
+        () => finishStop(),
+        (error: unknown) => finishStop(interactionError(error)),
+      );
       return stopTask;
     },
     health: () =>
