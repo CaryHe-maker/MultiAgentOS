@@ -19,7 +19,11 @@ import {
   unitFailureHandling,
 } from './failure-policy.js';
 
-/** Reads only the two needed YAML fields, rejecting values outside the frozen protocol enums. */
+/**
+ * Reads only the two needed YAML fields, rejecting values outside the frozen protocol enums.
+ * Workflow may not depend on agent-tool-pool, so the shipped files are read by path; a change
+ * to the catalog layout must update this helper.
+ */
 async function shippedUnit(id: string): Promise<UnitDefinition> {
   const text = await readFile(
     join(process.cwd(), 'packages/libraries/agent-tool-pool/definitions/units', id, 'v0.1.0.yaml'),

@@ -32,6 +32,7 @@ function requireControlAck(operation: string, result: SyscallAck | SyscallReject
     );
 }
 
+/** Non-Error rejections are wrapped so that stop() still fails when no reporter is injected. */
 function interactionError(error: unknown): Error {
   return error instanceof Error
     ? error
@@ -90,6 +91,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     for (const id of questions.keys()) endQuestion(id);
   }
 
+  /** Releases the terminal listener at most once; a failure is kept, never swallowed. */
   function releaseInterrupt(): void {
     const release = removeInterrupt;
     removeInterrupt = undefined;

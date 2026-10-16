@@ -46,7 +46,8 @@ export const InteractionMessages = Object.freeze({
   questionExpired: '授权询问已超时，未视为同意。',
   questionCancelled: '授权询问已取消。',
   genericReason: '请求未能完成，请检查运行配置。',
-  authorize: '是否允许读取仓库？请输入 Y 或 N：',
+  /** The terminal adapter appends its own input hint, such as `[y/n]`. */
+  authorize: '是否允许读取仓库？',
   reportTitle: '分析报告',
   summaryTitle: '运行摘要',
   conclusion: (statement: string) => `结论：${statement}`,

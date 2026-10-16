@@ -168,7 +168,8 @@ export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
     manifest: Object.freeze({
       moduleId: 'workflow',
       version: '0.1.0',
-      dependencies: Object.freeze(['gateway'] as const),
+      // Workflow calls Gateway and Persistence directly; the Catalog is a library, not a module.
+      dependencies: Object.freeze(['gateway', 'persistence'] as const),
     }),
     inbox: {
       deliver: (envelope) => {
