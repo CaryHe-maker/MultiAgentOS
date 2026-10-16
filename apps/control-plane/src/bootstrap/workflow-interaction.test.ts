@@ -554,9 +554,10 @@ describe('Product Workflow and UserInteraction through the composition root', ()
       wrapUp: { reason: 'BUDGET_EXHAUSTED' },
       conclusions: [],
     });
-    // The ending is described by UserInteraction from wrapUp; the last failure is shown once
-    // the report Schema carries it.
+    // UserInteraction describes the ending from wrapUp and its lastIssue; Workflow wrote no text.
     expect(run.text).toContain('额度已不足以继续调用模型');
+    expect(run.text).toContain('最后一次操作失败');
+    expect(run.text).toContain('模型服务认证失败');
     expect(run.calls.slice(-3)).toEqual(['submit:report-publish', 'end', 'close:COMPLETED']);
   });
 

@@ -1,4 +1,9 @@
-import type { AnalysisReport, AuthorizationRequest, RunSummary } from '@multiagentos/contracts';
+import type {
+  AnalysisReport,
+  AuthorizationRequest,
+  ReportLastIssue,
+  RunSummary,
+} from '@multiagentos/contracts';
 import { InteractionMessages as messages, describeReason } from './interaction-messages.js';
 
 /** Escape C0, DEL and C1 controls; LF remains available for ordinary text layout. */
@@ -13,28 +18,11 @@ function terminalText(text: string): string {
     .join('');
 }
 
-/**
- * Why the last call of a degraded run did not finish. The report will carry it as a structured
- * field; the text is always written here, never by Workflow.
- */
-export type ReportLastIssue =
-  | { readonly kind: 'FAILURE'; readonly code: string }
-  | { readonly kind: 'INVALID_OUTPUT'; readonly reason: string }
-  | { readonly kind: 'NO_FINISH' };
-
-/** Facts shown with a report that the report Schema does not carry yet. */
-export interface ReportExtras {
-  readonly lastIssue?: ReportLastIssue;
-  readonly emptyPaths?: readonly string[];
-}
-
 function describeLastIssue(issue: ReportLastIssue): string {
   if (issue.kind === 'FAILURE') return messages.lastFailure(describeReason(issue.code));
   if (issue.kind === 'INVALID_OUTPUT')
     return messages.lastInvalidOutput(
-      Object.hasOwn(messages.invalidOutput, issue.reason)
-        ? (messages.invalidOutput[issue.reason] ?? messages.genericReason)
-        : messages.genericReason,
+      messages.invalidOutput[issue.reason] ?? messages.genericReason,
     );
   return messages.lastNoFinish;
 }
@@ -44,12 +32,12 @@ function describeLastIssue(issue: ReportLastIssue): string {
  * shows the model's summary as written; a degraded report has no model text, so its ending is
  * described from `wrapUp` and its placeholder summary is not shown.
  */
-export function renderReport(report: AnalysisReport, extras: ReportExtras = {}): string {
+export function renderReport(report: AnalysisReport): string {
   const lines = report.degraded
     ? [messages.degraded, messages.degradedReason[report.wrapUp.reason]]
     : [messages.reportTitle, report.summary];
-  if (report.degraded && extras.lastIssue !== undefined)
-    lines.push(describeLastIssue(extras.lastIssue));
+  if (report.degraded && report.wrapUp.lastIssue !== undefined)
+    lines.push(describeLastIssue(report.wrapUp.lastIssue));
   for (const conclusion of report.conclusions) {
     lines.push(messages.conclusion(conclusion.statement));
     for (const source of conclusion.sources)
@@ -59,8 +47,8 @@ export function renderReport(report: AnalysisReport, extras: ReportExtras = {}):
     lines.push(messages.unconfirmedItem(item.statement, messages.unconfirmedReason[item.reason]));
   if (!report.degraded && report.wrapUp !== undefined)
     lines.push(messages.wrapUpLine(messages.wrapUp[report.wrapUp.reason]));
-  if (extras.emptyPaths !== undefined && extras.emptyPaths.length > 0)
-    lines.push(messages.emptyFiles(extras.emptyPaths.length));
+  if (report.emptyReads !== undefined && report.emptyReads.length > 0)
+    lines.push(messages.emptyFiles(report.emptyReads.length));
   return terminalText(lines.join('\n') + '\n');
 }
 

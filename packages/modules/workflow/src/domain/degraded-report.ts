@@ -1,5 +1,10 @@
 import { AnalysisReportSchema, assertValid } from '@multiagentos/contracts';
-import type { AnalysisReport, RunFailure, WrapUpReason } from '@multiagentos/contracts';
+import type {
+  AnalysisReport,
+  ReportLastIssue,
+  RunFailure,
+  WrapUpReason,
+} from '@multiagentos/contracts';
 import type { InvalidActionReason } from './analysis-action.js';
 
 /**
@@ -10,7 +15,7 @@ import type { InvalidActionReason } from './analysis-action.js';
 export const DEGRADED_REPORT_SUMMARY =
   'Degraded report: the analysis ended without a valid finish. The reason is in wrapUp.';
 
-/** Why the last call did not finish; carried to the report once its Schema has a field for it. */
+/** Why the last call did not finish, as the cycle knows it; the report keeps only the code. */
 export type LastReportIssue =
   | { readonly kind: 'FAILURE'; readonly failure: RunFailure }
   | { readonly kind: 'INVALID_OUTPUT'; readonly reason: InvalidActionReason }
@@ -29,6 +34,13 @@ export interface DegradedReportInput {
   readonly emptyPaths?: readonly string[];
 }
 
+/** The report states the reason code only; failure.detail never leaves Workflow. */
+function reportIssue(issue: LastReportIssue): ReportLastIssue {
+  if (issue.kind === 'FAILURE') return { kind: 'FAILURE', code: issue.failure.code };
+  if (issue.kind === 'INVALID_OUTPUT') return { kind: 'INVALID_OUTPUT', reason: issue.reason };
+  return { kind: 'NO_FINISH' };
+}
+
 /** Builds a report from known facts only: no conclusions, no model content, no user-facing text. */
 export function createDegradedReport(input: DegradedReportInput): AnalysisReport {
   return assertValid<AnalysisReport>(AnalysisReportSchema, {
@@ -36,12 +48,18 @@ export function createDegradedReport(input: DegradedReportInput): AnalysisReport
     goal: input.goal,
     summary: DEGRADED_REPORT_SUMMARY,
     degraded: true,
-    wrapUp: { reason: input.reason },
+    wrapUp: {
+      reason: input.reason,
+      ...(input.lastIssue === undefined ? {} : { lastIssue: reportIssue(input.lastIssue) }),
+    },
     conclusions: [],
     unconfirmed: [],
     readSources: input.readSources.map((source) => ({ ...source })),
     agentRounds: input.agentRounds.map((agent) => ({ ...agent })),
     ...(input.snapshotId === undefined ? {} : { snapshotId: input.snapshotId }),
+    ...(input.emptyPaths === undefined || input.emptyPaths.length === 0
+      ? {}
+      : { emptyReads: [...input.emptyPaths] }),
     createdAt: input.createdAt,
   });
 }

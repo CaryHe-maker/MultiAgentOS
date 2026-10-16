@@ -48,7 +48,7 @@ export function createNormalReport(input: NormalReportInput): AnalysisReport {
   }
   for (const statement of input.draft.unconfirmed)
     unconfirmed.push({ statement, reason: 'MODEL_UNCONFIRMED' });
-  const { readSources } = reportSources(input.reads);
+  const { readSources, emptyPaths } = reportSources(input.reads);
   return assertValid<AnalysisReport>(AnalysisReportSchema, {
     workflowRunId: input.workflowRunId,
     goal: input.goal,
@@ -61,6 +61,7 @@ export function createNormalReport(input: NormalReportInput): AnalysisReport {
     degraded: false,
     createdAt: input.createdAt,
     ...(input.snapshotId === undefined ? {} : { snapshotId: input.snapshotId }),
+    ...(emptyPaths.length === 0 ? {} : { emptyReads: [...emptyPaths] }),
     ...(input.wrapUpReason === undefined ? {} : { wrapUp: { reason: input.wrapUpReason } }),
   });
 }

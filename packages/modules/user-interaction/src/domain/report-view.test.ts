@@ -1,4 +1,4 @@
-import type { AnalysisReport, RunSummary } from '@multiagentos/contracts';
+import type { ReportLastIssue, AnalysisReport, RunSummary } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { REASON_CODES } from '@multiagentos/contracts';
 import { describeReason } from './interaction-messages.js';
@@ -111,30 +111,25 @@ describe('Chinese report views', () => {
       `);
   });
 
-  it('adds the last issue and empty files when they are known', () => {
-    const degraded = {
+  it('describes the last issue and empty files from the report fields', () => {
+    const degraded = (lastIssue: ReportLastIssue): AnalysisReport => ({
       ...report,
-      degraded: true as const,
+      degraded: true,
       conclusions: [],
       unconfirmed: [],
-      wrapUp: { reason: 'ROUND_LIMIT' as const },
-    };
-    const failed = renderReport(degraded, {
-      lastIssue: { kind: 'FAILURE', code: 'UNIT_TIMEOUT' },
-      emptyPaths: ['a.txt', 'b.txt'],
+      wrapUp: { reason: 'ROUND_LIMIT', lastIssue },
+    });
+    const failed = renderReport({
+      ...degraded({ kind: 'FAILURE', code: 'UNIT_TIMEOUT' }),
+      emptyReads: ['a.txt', 'b.txt'],
     });
     expect(failed).toContain('最后一次操作失败');
     expect(failed).toContain('2 个空文件');
-    expect(
-      renderReport(degraded, { lastIssue: { kind: 'INVALID_OUTPUT', reason: 'CONTROL_MIXED' } }),
-    ).toContain('混合返回');
-    expect(renderReport(degraded, { lastIssue: { kind: 'NO_FINISH' } })).toContain(
-      '没有返回合法的结束结果',
+    expect(renderReport(degraded({ kind: 'INVALID_OUTPUT', reason: 'CONTROL_MIXED' }))).toContain(
+      '混合返回',
     );
-    expect(
-      renderReport(degraded, { lastIssue: { kind: 'INVALID_OUTPUT', reason: 'UNKNOWN' } }),
-    ).toContain('请求未能完成');
-    expect(renderReport(report, { emptyPaths: ['a.txt'] })).toContain('1 个空文件');
+    expect(renderReport(degraded({ kind: 'NO_FINISH' }))).toContain('没有返回合法的结束结果');
+    expect(renderReport({ ...report, emptyReads: ['a.txt'] })).toContain('1 个空文件');
   });
 
   it('renders counts and failure category without internal detail', () => {

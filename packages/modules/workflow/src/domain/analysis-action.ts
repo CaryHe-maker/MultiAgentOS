@@ -7,15 +7,11 @@ import type {
   ModelToolCall,
   PinnedDefinitionSet,
   ProtocolRegistry,
+  InvalidActionReason,
   ToolDefinition,
 } from '@multiagentos/contracts';
 
-export type InvalidActionReason =
-  | 'NO_ACTION'
-  | 'OUTPUT_TRUNCATED'
-  | 'CONTROL_MIXED'
-  | 'CONTROL_NOT_ALLOWED'
-  | 'CONTROL_ARGUMENTS_INVALID';
+export type { InvalidActionReason } from '@multiagentos/contracts';
 
 export type AnalysisAction =
   | { readonly kind: 'TOOL_CALLS'; readonly calls: readonly ModelToolCall[] }
