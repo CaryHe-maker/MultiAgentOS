@@ -54,7 +54,7 @@ async function fixture(
   result.system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
     terminal: createFakeTerminal(),
-    credentials: { apiKeyFor: () => undefined },
+    credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
     log: (line) => log.push(line),
     timeouts,
     parts: {

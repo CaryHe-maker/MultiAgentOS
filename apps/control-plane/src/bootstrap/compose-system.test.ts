@@ -38,7 +38,7 @@ async function fakeSystem(kernel: FakeKernelOptions = {}, answer: 'YES' | 'NO' =
   const system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
     terminal: createFakeTerminal(),
-    credentials: { apiKeyFor: () => undefined },
+    credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
     parts: {
       createGateway: createFakeGateway(),
       createKernelCore: createFakeKernelCore(kernel),
@@ -63,7 +63,7 @@ describe('fake vertical chain', () => {
     await composeSystem({
       config: { ...defaultSystemConfig(), dataDir },
       terminal: createFakeTerminal(),
-      credentials: { apiKeyFor: () => undefined },
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
       parts: {
         createGateway: createFakeGateway(),
         createKernelCore: (deps) => {
@@ -244,7 +244,7 @@ describe('fake vertical chain', () => {
       composeSystem({
         config: { ...defaultSystemConfig(), dataDir },
         terminal: createFakeTerminal(),
-        credentials: { apiKeyFor: () => undefined },
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
       }),
     ).rejects.toThrow('NOT_IMPLEMENTED');
   });

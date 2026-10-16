@@ -27,7 +27,7 @@ let interaction: FakeUserInteractionModule | undefined;
 const system = await composeSystem({
   config: { ...defaultSystemConfig(), dataDir },
   terminal,
-  credentials: { apiKeyFor: () => undefined },
+  credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
   parts: {
     createGateway: createFakeGateway(),
     createKernelCore: createFakeKernelCore({ authorization: 'ASK' }),

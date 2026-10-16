@@ -41,7 +41,7 @@
 | Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 引导与关闭完成；`execute`、`cancelRun` 为 `NOT_IMPLEMENTED` |
 | Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 已实现，未与真实 Core 联调 |
 | Monitor、Scheduler、`InProcessProviderCapacity` | 已实现并测试，未接入 Core |
-| 组合根：配置加载与校验、`composeSystem`、系统控制（有界故障关闭、退出码 70）、最后防线（含第二次 Ctrl+C）、进程入口 `bin.ts` | 完成；配置关系校验待 P05a |
+| 组合根：配置加载与校验、`composeSystem`、系统控制（有界故障关闭、退出码 70）、最后防线（含第二次 Ctrl+C）、进程入口 `bin.ts` | 完成；配置关系校验及 P05a 全部验收通过 |
 | Kernel 私有接口（`kernel/src/interfaces/`）、`KernelCoreModule.abortAllRuns`、`reportSystemFault` 的注入 | 接口已定；`createKernelCore` 为 `NOT_IMPLEMENTED` |
 
 下列部件已实现并有单元测试，但还没有产品调用方。它们是为后续阶段预先写好的，**不是死代码，不要删除或另写一份**：
@@ -123,7 +123,7 @@
 
 | ID | 范围 | 退出条件 | 状态 |
 | --- | --- | --- | --- |
-| P05a | 启动期配置关系校验 | 不满足的配置使 `composeSystem` 以 `ConfigError` 失败、不启动任何模块；`tokenLimit = 1` 与缺少 API key 都被拒绝 | 未开始 |
+| P05a | 启动期配置关系校验 | 不满足的配置使 `composeSystem` 以 `ConfigError` 失败、不启动任何模块；`tokenLimit = 1` 与缺少 API key 都被拒绝 | 完成；阶段四全仓质量门与 fake demo 通过 |
 | P06 | actor、Core 运行管理、Gateway 接线 | 真实 Core 与 Gateway 配合外围 fake，用内建 REPORT_PUBLISH 走通 createRun → RunStart → submitUnit → UnitReport → closeRun → RunClosed/RunFinished → shutdown；actor 无等待环；处理函数抛错按 L1 收敛 | 未开始 |
 | P07 | Core 定义核验与授权 | 无权限不派发，同范围只问一次，拒绝被记住 | 未开始 |
 | P08 | Supervisor 执行 | 受理、`notBefore`、deadline、取消、宽限期与唯一终态正确；Executor 抛错转为事实而非系统故障 | 未开始 |
@@ -139,6 +139,11 @@
   限制与各预算的关系（Monitor 第 4 节）；检查这些 provider 的 API key 存在（#26）。使用 contracts 的 `estimateItemTokens`、
   `estimatePackTokens` 与 `registry.jsonSchemaOf`；只读取 Prompt 与 `modelDescription`。排除规则的写法已由 Schema 校验，不必另做。
   顺带修正 `apps/control-plane/src/config/system-config.ts` 中 “The checks that need the catalog ... belong to the Kernel.” 这句注释。
+  2026-10-16 已完成规则核对和实现接线（本任务的阶段一、二）；经负责人确认，Monitor 第 4 节改用
+  JSON 转义后的固定输入上界，补充 final-call 模型窗口校验，普通/收尾输入默认预算改为 80000/64000。
+  阶段三已新增 59 项规则与边界测试，并给本分支的 fake 测试及 demo 提供离线假凭据；control-plane 的 7 个测试文件、96 项测试全部通过。
+  阶段四已完成：全仓 38 个测试文件、355 项测试通过，格式、lint、类型检查与 build 通过；fake demo 正常完成授权与运行关闭，退出码 0。
+  同步修正 Monitor 测试中依赖旧默认预算的固定预留量，改为从当前预算推导普通调用可用额度。验收不包含真实模型调用或真实 Core 执行。
 - **P06**：两通道 actor，不做 Inbox 去重；请求按规范 JSON 的 SHA-256 幂等，`createRun` 的幂等摘要不含 Gateway 每次转发时
   生成的 `workflowRunId`。处理与 `settleConvergence` 完成后才把待发送项交给 `OrderedSender`（`enqueue` 会立即发送）。
   Kernel 核心边界直接核验 `envelope.producer`，不只相信 `GatewayForward.caller`；`RunRegistry.handleForward` 接收不可变的
@@ -218,3 +223,6 @@
 | 2026-10-11 | P03 存储、P04 Supervisor 引导、P05 Monitor 与 Scheduler；CLI 启动前校验；C07 错误与系统故障处理 | WSL：35 个文件、282 项 |
 | 2026-10-13 | C08；fake Kernel 的全部结束方式；进程入口与第二次 Ctrl+C；M1Plan 4.1；首次经导出分支合入（PR 23） | WSL：35 个文件、288 项 |
 | 2026-10-14 | 同步 `feature/M1/main`（#27：排除规则移入 contracts、CI 安装 ripgrep）；本分支交由 field | WSL：36 个文件、296 项 |
+| 2026-10-16 | P05a 阶段二：启动关系校验与组合根接线；修正 JSON 转义上界与 final 窗口规范，调整输入预算 | Ubuntu：build、定向 ESLint/Prettier、diff 检查通过；离线冒烟覆盖默认配置、交接遍历、工厂前拒绝和 final 窗口；完整测试待阶段三、四 |
+| 2026-10-16 | P05a 阶段三：新增配置关系与固定输入上界测试；适配 fake 测试及 demo 的离线假凭据 | Ubuntu：build、control-plane 7 个文件/96 项测试（新增 59 项）、定向 ESLint/Prettier、diff 检查通过；全仓质量门与 fake demo 执行待阶段四 |
+| 2026-10-16 | P05a 阶段四完成：修正 Monitor 旧预算测试数据，全仓验收与离线 fake demo 通过 | Ubuntu：pnpm install --frozen-lockfile、pnpm run build、pnpm run check（38 个文件/355 项）、pnpm run demo:fake（退出码 0）、git diff --check；无真实模型调用 |

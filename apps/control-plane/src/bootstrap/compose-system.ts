@@ -40,6 +40,7 @@ import {
   type UserInteractionModule,
 } from '@multiagentos/user-interaction';
 import { createWorkflow, type WorkflowDeps, type WorkflowModule } from '@multiagentos/workflow';
+import { assertStartupConfig } from '../config/startup-config.js';
 import { assertSystemConfig, type SystemConfig } from '../config/system-config.js';
 import { createSystemControl, type ShutdownTimeouts, type StopReport } from './system-control.js';
 
@@ -118,6 +119,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const catalog =
     options.catalog ??
     (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
+  await assertStartupConfig(config, catalog, registry, options.credentials);
 
   // Built before any module so that a module can hold the reporter; it is bound further down.
   let reportFault: (fault: SystemFault) => void = () => undefined;
