@@ -653,6 +653,8 @@ packages/modules/user-interaction/src/
   上轮计划对齐为 `20fd7a3`；本轮从 `57dc85d` 继续，修复提交为 `c3d6a9a`、`be6e740`。
   用户已授权当前工作分支的三个提交与推送；没有 PR、导出或合并授权，本文不得进入集成分支。
 
+- 2026-10-16 代码审查后：完成低级问题修复与报告文字移交（第 10.3 节同日记录）；需要其他模块协调的事项见 `docs/adjustmentFromWorkflow.md`，A2 的契约修改随 T18 合入。
+
 ### 10.2 等待其他分支的事项
 
 | 事项 | 等待的内容 | 影响阶段 | 状态 |
@@ -693,6 +695,7 @@ packages/modules/user-interaction/src/
 | 2026-10-15 | 按用户决定补齐展示与故障停止 | 已实现 Q34 视图控制字符转义和 Q36 本地控制等待释放；共同协议、共享 Inbox、既有 fake、根 Readme、Prompt 与 canned fixture 均未修改。同步本模块规范，记录 Q25 集成后处理、Q26 暂缓、Q27 外部范围，Q24 仍待授权 | 7 项新回归先失败后通过；Ubuntu-24.04 隔离副本 build 与完整 check 通过：55 文件／573 测试，定向 281 项；Windows 检查 19 个变动文件的编码、换行、行宽、18 个本地链接及 git diff --check 通过 | 仍为 16／19；不提交、不推送；T17 等待 Q24，T18 首次合入待授权，T19 等待真实链路 |
 | 2026-10-15 | T17 已完成 | 按 D28 仅修改两个既有 fake 的 deliver，先校验再复制入队；新增直接额外字段／缺失事件／未知事件拒绝、消息复制与合法 Schema 发错 Inbox 的共享用例。真实模块与 fake 运行相同套件，其他共享组件及 fixture 不改 | 新增 20 项中先复现 10 项 fake 失败；修复后共享 44 项、定向 301 项通过；Ubuntu-24.04 隔离副本 build 与完整 check 通过，55 文件／593 测试；21 个变动文件的编码、换行、行宽、18 个链接及 git diff --check 通过 | 17／19；剩余 T18 首次合入待授权，T19 等待真实链路；不 commit／push |
 | 2026-10-16 | 远端 CI 未处理拒绝修复 | 读取 00c3f95 的 quality-gate 日志，593 项断言通过但迟到 ExecutionFact 触发 NOT_RUNNING；先在未修改 HEAD 的隔离副本复现，再按 D30 仅修 createFakeSupervisor 与新增 fake-kernel.test.ts，修复提交 eea339d | 6 项确定性用例先有 5 项失败及 3 条未处理拒绝；修复后全部通过；Ubuntu 24.04 隔离副本 build、完整 check、demo:fake 通过：56 文件／599 测试，未再出现未处理拒绝 | 记录与共享修复分开提交；推送后核对远端 CI，不改写原三个提交、不创建 PR |
+| 2026-10-16 | 代码审查后的修复与报告文字移交 | 反馈文案改为可执行说明并附 Schema 路径；`MODEL_CALL_FAILED` 只在交还模型时记录；同一次返回中的重复调用只执行第一个；私有诊断区分端口失败与内部错误。Workflow 不再写入面向用户的文字：删除中文收尾说明与原因码表，正常报告原样采用模型摘要，降级报告 `summary` 为英文占位；UserInteraction 按 `wrapUp` 生成说明，“最后一次失败”与空文件的视图已就绪，待报告 Schema 增加字段（`docs/adjustmentFromWorkflow.md` A2）。新增协调清单 `docs/adjustmentFromWorkflow.md` | Ubuntu 24.04 隔离副本 build、lint、format:check 通过，56 个文件／601 项测试通过 | A2 第二步随 T18 合入；A1、A3、A4 以 Issue 告知 field |
 
 ### 10.4 更新本文的规则
 
