@@ -11,6 +11,7 @@ import type {
   SystemFaultReporter,
 } from '@multiagentos/contracts';
 import type { TerminalPort } from './ports/terminal-port.js';
+import { createInteractionRunner } from './application/interaction-runner.js';
 
 export { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from './domain/exit-codes.js';
 export type { TerminalPort } from './ports/terminal-port.js';
@@ -46,6 +47,5 @@ export interface UserInteractionModule extends LifecyclePort {
 }
 
 export function createUserInteraction(deps: UserInteractionDeps): UserInteractionModule {
-  void deps;
-  throw new Error('NOT_IMPLEMENTED: UserInteraction');
+  return createInteractionRunner(deps);
 }

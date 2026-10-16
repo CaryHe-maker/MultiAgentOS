@@ -49,7 +49,7 @@ describe('runCli', () => {
     expect(commands[0]?.details).toBe(false);
   });
 
-  it('rejects a missing goal, a missing --repo and a relative path without calling analyze', async () => {
+  it('rejects missing arguments and relative paths before calling analyze', async () => {
     for (const argv of [
       ['analyze', '--repo', absolute],
       ['analyze', 'Explain X'],
@@ -60,5 +60,31 @@ describe('runCli', () => {
       expect(await runCli(argv, target, terminal)).toBe(64);
       expect(commands).toEqual([]);
     }
+  });
+
+  it.each([[], ['--help'], ['analyze', '--help']].map((argv) => ({ argv })))(
+    'shows Chinese help for $argv',
+    async ({ argv }) => {
+      const test = harness();
+      await parseCli(argv, test.terminal);
+      expect(test.written.join('')).toContain('用法');
+      expect(test.written.join('')).not.toMatch(/Usage:|Options:|Commands:|Analyse a repository/u);
+      expect(test.commands).toEqual([]);
+    },
+  );
+
+  it.each(
+    [
+      ['unknown'],
+      ['analyze', '--unknown'],
+      ['analyze', '--repo', absolute],
+      ['analyze', '--repo', 'relative', '分析仓库'],
+    ].map((argv) => ({ argv })),
+  )('shows Chinese validation errors for $argv', async ({ argv }) => {
+    const test = harness();
+    expect(await runCli(argv, test.target, test.terminal)).toBe(64);
+    expect(test.written.join('')).toMatch(/[\u4e00-\u9fff]/u);
+    expect(test.written.join('')).not.toMatch(/error:|required|unknown command|must be/u);
+    expect(test.commands).toEqual([]);
   });
 });
