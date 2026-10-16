@@ -182,9 +182,9 @@ export function createFakeGateway(): (deps: GatewayDeps) => LifecyclePort {
 
 /**
  * Boots and stops the other modules through ModuleHost and runs each execution with the
- * injected Executor, reporting exactly one fact for it. It enforces no deadline and has no grace
- * period: `cancelRun` only fires the abort signal, and by default the subprocess runner
- * starts nothing.
+ * injected Executor, reporting one fact while running. Stop discards queued starts and late
+ * outcomes, aborts active executions and drains facts already being sent before closing Fabric.
+ * It enforces no execution deadline or grace period; the default subprocess runner starts nothing.
  */
 export interface FakeSupervisorOptions {
   /** Defaults to a runner that starts nothing; pass `createSubprocessRunner()` to run `rg`. */
@@ -203,15 +203,37 @@ export function createFakeSupervisor(
     });
     void stopped.catch(() => undefined);
     let stopping: Promise<void> | undefined;
+    let isStopping = false;
+    const starts = new Set<ReturnType<typeof setImmediate>>();
+    const aborts = new Map<string, AbortController>();
+    const reports = new Set<Promise<void>>();
+    const failures: unknown[] = [];
     // Like the product: a failed stop is visible through whenStopped, never reported as done.
     const stop = () => {
-      stopping ??= moduleHost.stop().then(resolveStopped, (error: unknown) => {
+      if (stopping !== undefined) return stopping;
+      isStopping = true;
+      for (const start of starts) clearImmediate(start);
+      starts.clear();
+      for (const abort of aborts.values()) abort.abort();
+      aborts.clear();
+      stopping = (async () => {
+        // Executors may never settle; only already-started fact delivery must drain.
+        const settled = await Promise.allSettled([...reports]);
+        for (const result of settled)
+          if (result.status === 'rejected') failures.push(result.reason);
+        try {
+          await moduleHost.stop();
+        } catch (error) {
+          failures.push(error);
+        }
+        if (failures.length > 0)
+          throw new AggregateError([...new Set(failures)], 'Fake Supervisor shutdown failed');
+      })().then(resolveStopped, (error: unknown) => {
         rejectStopped(error);
         throw error;
       });
       return stopping;
     };
-    const aborts = new Map<string, AbortController>();
     const facts = createExecutionFactSink(fabric, (workflowRunId) => ({
       correlationId: newId('cor'),
       tenantId: 'local',
@@ -220,6 +242,7 @@ export function createFakeSupervisor(
     }));
 
     const run = async (request: ExecutionRequest) => {
+      if (isStopping) return;
       const abort = new AbortController();
       aborts.set(request.executionId, abort);
       const startedAt = now().toISOString();
@@ -243,6 +266,7 @@ export function createFakeSupervisor(
         outcome = { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false };
       }
       aborts.delete(request.executionId);
+      if (isStopping) return;
       const { workflowRunId, unitAttemptId, executionId, runEpoch, executionKind } = request;
       const { usage, requestState, ...verdict } = {
         usage: undefined,
@@ -264,7 +288,13 @@ export function createFakeSupervisor(
           : {}),
       };
       // The shape depends on the Executor's verdict; Fabric validates it against the Schema.
-      await facts.report(fact as unknown as ExecutionFact);
+      const reporting = facts.report(fact as unknown as ExecutionFact);
+      reports.add(reporting);
+      try {
+        await reporting;
+      } finally {
+        reports.delete(reporting);
+      }
     };
 
     return {
@@ -274,7 +304,16 @@ export function createFakeSupervisor(
           serveSupervisor(fabric, {
             // Accepting returns at once; the execution itself runs afterwards.
             execute: (request) => {
-              setImmediate(() => void run(request));
+              if (isStopping) return Promise.reject(new Error('Fake Supervisor is stopping'));
+              const start = setImmediate(() => {
+                starts.delete(start);
+                void run(request).catch((error: unknown) => {
+                  failures.push(error);
+                  // The lifecycle observer exposes the failure after the host is stopped.
+                  void stop().catch(() => undefined);
+                });
+              });
+              starts.add(start);
               return Promise.resolve();
             },
             cancelRun: () => {

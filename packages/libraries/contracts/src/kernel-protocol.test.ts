@@ -405,8 +405,46 @@ describe('workflow values', () => {
       },
       'degraded without wrapUp': { ...report, conclusions: [], degraded: true },
       'degraded with conclusions': { ...degraded, conclusions: report.conclusions },
+      'a normal report with lastIssue': {
+        ...report,
+        wrapUp: { reason: 'ROUND_LIMIT', lastIssue: { kind: 'NO_FINISH' } },
+      },
+      'the same empty read twice': { ...report, emptyReads: ['e.ts', 'e.ts'] },
     });
     expect(ok(AnalysisReportSchema, degraded)).toBe(true);
+    expect(ok(AnalysisReportSchema, { ...report, emptyReads: ['e.ts', 'f.ts'] })).toBe(true);
+    expect(ok(AnalysisReportSchema, { ...report, wrapUp: { reason: 'ROUND_LIMIT' } })).toBe(true);
+  });
+
+  it('lets a degraded report state its last issue as a structured fact', () => {
+    const degraded = {
+      workflowRunId: 'wfr_123456',
+      goal: 'g',
+      summary: 's',
+      conclusions: [],
+      unconfirmed: [],
+      readSources: [],
+      degraded: true,
+      agentRounds: [],
+      createdAt: at,
+      emptyReads: ['empty.ts'],
+    };
+    const withIssue = (lastIssue: object) => ({
+      ...degraded,
+      wrapUp: { reason: 'ROUND_LIMIT', lastIssue },
+    });
+    for (const lastIssue of [
+      { kind: 'FAILURE', code: 'UNIT_TIMEOUT' },
+      { kind: 'INVALID_OUTPUT', reason: 'CONTROL_MIXED' },
+      { kind: 'NO_FINISH' },
+    ])
+      expect(ok(AnalysisReportSchema, withIssue(lastIssue)), lastIssue.kind).toBe(true);
+    expectRules(AnalysisReportSchema, withIssue({ kind: 'NO_FINISH' }), {
+      'an unknown reason code': withIssue({ kind: 'FAILURE', code: 'NOT_A_CODE' }),
+      'an unknown invalid-output reason': withIssue({ kind: 'INVALID_OUTPUT', reason: 'X' }),
+      'free text in place of a fact': withIssue({ kind: 'NO_FINISH', message: 'text' }),
+      'an unknown kind': withIssue({ kind: 'OTHER' }),
+    });
   });
 });
 
