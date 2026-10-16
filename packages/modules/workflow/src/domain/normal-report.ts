@@ -1,7 +1,7 @@
 import { AnalysisReportSchema, assertValid } from '@multiagentos/contracts';
 import type { AnalysisReport, AnalysisReportDraft, WrapUpReason } from '@multiagentos/contracts';
 import type { WorkflowState } from './state.js';
-import { reportSources, withEmptyFileNotice } from './report-sources.js';
+import { reportSources } from './report-sources.js';
 
 export interface NormalReportInput {
   readonly workflowRunId: string;
@@ -48,11 +48,12 @@ export function createNormalReport(input: NormalReportInput): AnalysisReport {
   }
   for (const statement of input.draft.unconfirmed)
     unconfirmed.push({ statement, reason: 'MODEL_UNCONFIRMED' });
-  const { readSources, emptyFileCount } = reportSources(input.reads);
+  const { readSources } = reportSources(input.reads);
   return assertValid<AnalysisReport>(AnalysisReportSchema, {
     workflowRunId: input.workflowRunId,
     goal: input.goal,
-    summary: withEmptyFileNotice(input.draft.summary, emptyFileCount),
+    // The model's summary is published as written; Workflow adds no text to it.
+    summary: input.draft.summary,
     conclusions,
     unconfirmed,
     readSources,

@@ -86,6 +86,9 @@ Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`�
   面向开发者的报错与源码注释使用英文；协议码、Schema 标识、字段名与其他协议标识保持原样。
 - RunFinished 带 `reportRef` 时，经 Gateway 的 `readArtifact` 读取，按 `workflow.AnalysisReport` 校验后展示：
   结论与来源（路径与行范围）、未确认项；`wrapUp` 存在时附收尾原因；`degraded` 为 true 时标明为降级报告。
+  正常报告展示模型的 `summary` 原文；降级报告的 `summary` 是占位文本，不展示，改为按 `wrapUp.reason`
+  从 `InteractionMessages` 给出说明。报告结构提供最后一次失败的原因与空文件列表后，一并在此生成说明。
+  报告的全部说明文字只由本模块生成，Workflow 不在报告中写入面向用户的文字。
 - 没有 `reportRef` 时按 `closeReason` 展示结束说明；`failure` 存在时，按 `failure.code` 从 UserInteraction 自有的文案表
   （`InteractionMessages`）给出说明，未收录的原因码使用通用说明。`failure.detail` 不展示。
 - 报告读取得到 SyscallRejected 或未通过 AnalysisReport 校验时，显示“报告无法读取”，

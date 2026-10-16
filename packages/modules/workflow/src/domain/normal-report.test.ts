@@ -3,7 +3,7 @@ import type { AnalysisReportDraft } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { createNormalReport } from './normal-report.js';
 import type { NormalReportInput } from './normal-report.js';
-import { reportSources, withEmptyFileNotice } from './report-sources.js';
+import { reportSources } from './report-sources.js';
 
 const read = {
   requestId: newId('req'),
@@ -121,13 +121,16 @@ describe('normal report and source verification', () => {
         ],
       },
     });
-    expect(report.summary).toContain('1 个空文件');
+    expect(report.summary).toBe(draft.summary);
     expect(report.readSources).toHaveLength(1);
     expect(report.conclusions).toHaveLength(1);
     expect(report.unconfirmed[0]?.reason).toBe('SOURCE_NOT_READ');
     expect(validate(AnalysisReportSchema, report).ok).toBe(true);
     expect(empty.output.endLine).toBe(0);
     expect(reportSources([empty]).readSources).toEqual([]);
+    expect(reportSources([empty, { ...empty, requestId: newId('req') }]).emptyPaths).toEqual([
+      empty.output.path,
+    ]);
   });
 
   it('keeps wrap-up and snapshot metadata without changing report shape', () => {
@@ -142,15 +145,14 @@ describe('normal report and source verification', () => {
     expect(validate(AnalysisReportSchema, report).ok).toBe(true);
   });
 
-  it('reserves space for the notice when the model already filled the summary limit', () => {
+  it('publishes a full-length model summary unchanged', () => {
+    const summary = '文'.repeat(4000);
     const report = createNormalReport({
       ...facts,
       reads: [empty],
-      draft: { summary: '文'.repeat(4000), conclusions: [], unconfirmed: [] },
+      draft: { summary, conclusions: [], unconfirmed: [] },
     });
-    expect(report.summary.length).toBeLessThanOrEqual(4000);
-    expect(report.summary).toContain('… 本次另成功读取了 1 个空文件');
+    expect(report.summary).toBe(summary);
     expect(validate(AnalysisReportSchema, report).ok).toBe(true);
-    expect(withEmptyFileNotice('内容', 0)).toBe('内容');
   });
 });

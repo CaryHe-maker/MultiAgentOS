@@ -436,7 +436,7 @@ describe('Product Workflow and UserInteraction through the composition root', ()
       unconfirmed: [],
       readSources: [],
     });
-    expect(run.text).toContain('模型调用额度已不足');
+    expect(run.text).toContain('额度已不足以继续调用模型');
   });
 
   it('keeps an ordinary fatal failure as FAILED even when the budget is exhausted', async () => {
@@ -554,8 +554,9 @@ describe('Product Workflow and UserInteraction through the composition root', ()
       wrapUp: { reason: 'BUDGET_EXHAUSTED' },
       conclusions: [],
     });
-    expect(run.text).toContain('最后一次操作失败');
-    expect(run.text).toContain('认证或访问权限校验失败');
+    // The ending is described by UserInteraction from wrapUp; the last failure is shown once
+    // the report Schema carries it.
+    expect(run.text).toContain('额度已不足以继续调用模型');
     expect(run.calls.slice(-3)).toEqual(['submit:report-publish', 'end', 'close:COMPLETED']);
   });
 

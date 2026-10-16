@@ -13,6 +13,15 @@ const FAILURE_CATEGORIES: Readonly<Record<string, string>> = {
   INTERNAL: '内部故障',
 };
 
+/** Keyed by the model-output reasons Workflow reports; unknown reasons use the generic text. */
+const INVALID_OUTPUT_REASONS: Readonly<Record<string, string>> = {
+  NO_ACTION: '模型没有返回可执行的动作。',
+  OUTPUT_TRUNCATED: '模型输出被截断，没有返回可执行的动作。',
+  CONTROL_MIXED: '模型把结束或交接动作与其他调用混合返回。',
+  CONTROL_NOT_ALLOWED: '模型返回了当前代理或当前阶段不允许的控制动作。',
+  CONTROL_ARGUMENTS_INVALID: '模型返回的控制动作参数不符合要求。',
+};
+
 /** User text is independent of exception messages and failure.detail. */
 export const InteractionMessages = Object.freeze({
   reportUnreadable: '报告无法读取。',
@@ -20,6 +29,19 @@ export const InteractionMessages = Object.freeze({
   summaryWriteFailed: '运行摘要保存失败。',
   unknownEffects: '部分操作无法确认是否完成。',
   degraded: '降级报告',
+  degradedReason: {
+    ROUND_LIMIT: '已达到本次分析的轮次上限，未形成可发布的分析结论。',
+    BUDGET_WRAP_UP: '本次分析已进入额度收尾阶段，收尾调用未形成可发布的分析结论。',
+    BUDGET_EXHAUSTED: '本次分析的额度已不足以继续调用模型，未形成可发布的分析结论。',
+    USER_DECLINED: '仓库读取授权未获同意，未形成可发布的分析结论。',
+    NO_PROGRESS: '本次分析连续多轮未取得新的有效结果，收尾调用未形成可发布的分析结论。',
+    REGENERATION_LIMIT: '模型输出连续未满足要求，收尾调用未形成可发布的分析结论。',
+  } satisfies Record<WrapUpReason, string>,
+  lastFailure: (reason: string) => `最后一次操作失败：${reason}`,
+  lastInvalidOutput: (reason: string) => `最后一次模型输出不合格：${reason}`,
+  lastNoFinish: '最后一次收尾调用没有返回合法的结束结果。',
+  invalidOutput: INVALID_OUTPUT_REASONS,
+  emptyFiles: (count: number) => `本次另成功读取了 ${count} 个空文件，未列入行范围来源。`,
   unconfirmed: '未确认项',
   questionExpired: '授权询问已超时，未视为同意。',
   questionCancelled: '授权询问已取消。',
