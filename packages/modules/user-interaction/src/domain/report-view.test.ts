@@ -94,7 +94,7 @@ describe('Chinese report views', () => {
     `);
   });
 
-  it('labels a degraded report and keeps the factual summary', () => {
+  it('describes a degraded report from wrapUp instead of its placeholder summary', () => {
     expect(
       renderReport({
         ...report,
@@ -102,14 +102,39 @@ describe('Chinese report views', () => {
         conclusions: [],
         unconfirmed: [],
         wrapUp: { reason: 'BUDGET_EXHAUSTED' },
-        summary: '已停止分析；读取了 1 个空文件。',
+        summary: 'Degraded report: placeholder that is never shown.',
       }),
     ).toMatchInlineSnapshot(`
         "降级报告
-        已停止分析；读取了 1 个空文件。
-        收尾原因：模型调用额度已不足。
+        本次分析的额度已不足以继续调用模型，未形成可发布的分析结论。
         "
       `);
+  });
+
+  it('adds the last issue and empty files when they are known', () => {
+    const degraded = {
+      ...report,
+      degraded: true as const,
+      conclusions: [],
+      unconfirmed: [],
+      wrapUp: { reason: 'ROUND_LIMIT' as const },
+    };
+    const failed = renderReport(degraded, {
+      lastIssue: { kind: 'FAILURE', code: 'UNIT_TIMEOUT' },
+      emptyPaths: ['a.txt', 'b.txt'],
+    });
+    expect(failed).toContain('最后一次操作失败');
+    expect(failed).toContain('2 个空文件');
+    expect(
+      renderReport(degraded, { lastIssue: { kind: 'INVALID_OUTPUT', reason: 'CONTROL_MIXED' } }),
+    ).toContain('混合返回');
+    expect(renderReport(degraded, { lastIssue: { kind: 'NO_FINISH' } })).toContain(
+      '没有返回合法的结束结果',
+    );
+    expect(
+      renderReport(degraded, { lastIssue: { kind: 'INVALID_OUTPUT', reason: 'UNKNOWN' } }),
+    ).toContain('请求未能完成');
+    expect(renderReport(report, { emptyPaths: ['a.txt'] })).toContain('1 个空文件');
   });
 
   it('renders counts and failure category without internal detail', () => {

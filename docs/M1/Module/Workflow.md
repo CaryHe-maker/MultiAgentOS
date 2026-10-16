@@ -215,9 +215,10 @@ UnitReport，记录其 requestId 与内容 SHA-256。不拼接多次读取的范
 也不依赖执行时间推断先后。
 
 空文件的成功读取仍保留在 Workflow 私有运行记录中，但不列入报告 readSources，
-也不能作为结论的有效行来源。正常与降级报告的 summary 附中文空文件数量说明；
-按路径计数，重复读取同一个空文件只计一个。说明计入 summary 既有长度上限，必要时
-截短原摘要并加省略号，不修改报告结构。其他成功读取范围按原规则处理。
+也不能作为结论的有效行来源。其他成功读取范围按原规则处理。
+
+Workflow 不生成面向用户的文字：正常报告的 `summary` 原样采用模型草稿的摘要，不追加、不截短；
+降级、收尾与空文件的说明由 UserInteraction 根据报告的结构化字段生成（UserInteraction 第 5 节）。
 
 ```text
 1. 核验来源：对 draft 的每条结论，
@@ -238,12 +239,13 @@ UnitReport，记录其 requestId 与内容 SHA-256。不拼接多次读取的范
 
 ### 10.2 降级报告
 
-没有合法 FINISH 时（EXHAUSTED、final-call 不合法或失败），以已有材料生成降级报告：`summary` 为按 `wrapUp.reason` 给出的固定说明，
+没有合法 FINISH 时（EXHAUSTED、final-call 不合法或失败），以已有材料生成降级报告：`summary` 为固定的英文占位文本
+（不含原因、不向用户展示，只因该字段必填而存在），
 `conclusions` 与 `unconfirmed` 为空，`readSources` 为全部成功读取的范围，`degraded = true`，`wrapUp` 必填。
 之后从第 10.1 节第 3 步继续，以 COMPLETED 携带报告引用收尾。
 第 7.2 节的 FATAL 与 EXHAUSTED 交叉场景只按 FAILED 错误路径处理，不进入本节。
 
-已知最后一次失败或非法输出时，summary 必须附中文说明；说明根据结构化原因码或非法动作原因生成，
+最后一次失败的原因码或非法输出的原因只以结构化形式提供，不写入 `summary`；报告结构增加相应字段之前不提供。
 不使用 failure.detail、异常报错原文、凭据或不合法的模型内容。
 报告无法发布时，仍必须失败关闭，不得伪造 reportRef。
 
