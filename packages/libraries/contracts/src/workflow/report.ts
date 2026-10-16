@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { IdSchemas } from '../platform-common/ids.js';
+import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import {
   LINE_RANGE_ERROR,
   Sha256Schema,
@@ -59,15 +60,45 @@ const report = {
     }),
   ),
   snapshotId: Type.Optional(IdSchemas.snapshotId),
+  /** Paths of successfully read empty files, once each; they cannot be line sources. */
+  emptyReads: Type.Optional(Type.Array(text(1024), { uniqueItems: true })),
   createdAt: TimestampSchema,
 };
+
+/** Why Workflow could not use a model reply as an action (Workflow 5). */
+export const INVALID_ACTION_REASONS = [
+  'NO_ACTION',
+  'OUTPUT_TRUNCATED',
+  'CONTROL_MIXED',
+  'CONTROL_NOT_ALLOWED',
+  'CONTROL_ARGUMENTS_INVALID',
+] as const;
+export type InvalidActionReason = (typeof INVALID_ACTION_REASONS)[number];
+
+/**
+ * Why the last call of a degraded run did not finish. It is a fact, not text: UserInteraction
+ * writes the explanation, so the report never mixes languages with the model's own text.
+ */
+export const ReportLastIssueSchema = Type.Union([
+  closed({ kind: Type.Literal('FAILURE'), code: ReasonCodeSchema }),
+  closed({ kind: Type.Literal('INVALID_OUTPUT'), reason: Type.Enum(INVALID_ACTION_REASONS) }),
+  closed({ kind: Type.Literal('NO_FINISH') }),
+]);
+export type ReportLastIssue = Static<typeof ReportLastIssueSchema>;
+
 const WrapUpSchema = closed({ reason: WrapUpReasonSchema });
+/** Only a degraded report explains why its last call did not finish. */
+const DegradedWrapUpSchema = closed({
+  reason: WrapUpReasonSchema,
+  lastIssue: Type.Optional(ReportLastIssueSchema),
+});
 
 /**
  * Input of report-publish; UserInteraction reads and shows it. A normal report has
  * `degraded = false`, every conclusion with at least one verified source, and `wrapUp` only
  * when Workflow wrapped up early. A degraded report (no valid FINISH) has `degraded = true`,
- * `wrapUp` always, and neither conclusions nor unconfirmed items.
+ * `wrapUp` always, and neither conclusions nor unconfirmed items; only it may carry
+ * `wrapUp.lastIssue`. Both may list `emptyReads`.
  */
 export const AnalysisReportSchema = Type.Union(
   [
@@ -93,7 +124,7 @@ export const AnalysisReportSchema = Type.Union(
       degraded: Type.Literal(true),
       conclusions: Type.Array(Type.Never(), { maxItems: 0 }),
       unconfirmed: Type.Array(Type.Never(), { maxItems: 0 }),
-      wrapUp: WrapUpSchema,
+      wrapUp: DegradedWrapUpSchema,
     }),
   ],
   { $id: 'workflow.AnalysisReport.v0' },
