@@ -91,6 +91,8 @@ toolCalls 为空 → INVALID（finishReason 为 LENGTH 时 OUTPUT_TRUNCATED，�
 | step2 | 本 AgentRun 内没有成功执行过相同 Unit 加相同规范化参数的调用；先前结果的 `requestId` 出现在最近一次 context-assemble 的 `elidedRequestIds` 中时（正文已被裁剪），不算重复 | `DUPLICATE_CALL` |
 
 通过的调用以 `unitRef = 该工具所属 Unit`、`input = arguments` 提交 `submitUnit`。
+同一次返回中重复出现的相同调用（相同 Unit 加相同规范化参数）只执行第一个，其余记录
+`FEEDBACK(DUPLICATE_CALL)`，不提交。
 规范化参数使用模型给出的原始 JSON 参数的 `canonicalJson(arguments)`，不补缺省值。
 对象键顺序不影响比较，数组顺序保留；`{ query: "a" }` 与 `{ query: "a", mode: "AUTO" }`
 视为不同参数。

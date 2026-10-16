@@ -473,11 +473,37 @@ describe('registered Agent Unit cycle', () => {
     };
     const next = receiveUnitReport(model.state, rejected, environment());
     expect(next.state.run.roundsUsed).toBe(0);
-    expect(next.state.run.steps).toMatchObject([
-      { code: 'MODEL_CALL_FAILED', round: 1 },
-      { code: 'WRAP_UP_NOTICE', round: 1 },
-    ]);
+    // A wrap-up is explained once, by the notice; no MODEL_CALL_FAILED feedback is added.
+    expect(next.state.run.steps).toMatchObject([{ code: 'WRAP_UP_NOTICE', round: 1 }]);
     expect(requestOf(next).input).toMatchObject({ final: true });
+  });
+
+  it('explains a model failure returned to the model, and only that kind', () => {
+    const { run, environment } = setup();
+    const definition = {
+      ...run.definitions,
+      units: run.definitions.units.map((unit) =>
+        unit.executionKind === 'MODEL'
+          ? { ...unit, failurePolicy: { PROVIDER_ERROR: 'RETURN_TO_MODEL' as const } }
+          : unit,
+      ),
+    };
+    const start = startUnitCycle({ ...run, definitions: definition }, environment());
+    const model = receiveUnitReport(
+      start.state,
+      ok(requestOf(start), 'CONTEXT_ASSEMBLE', contextOutput),
+      environment(),
+    );
+    const next = receiveUnitReport(
+      model.state,
+      { ...failure(requestOf(model), 'MODEL'), reasonCode: 'PROVIDER_ERROR' },
+      environment(),
+    );
+    expect(next.state.run.steps).toMatchObject([{ code: 'MODEL_CALL_FAILED', round: 1 }]);
+    expect(next.state.run.steps[0]).toMatchObject({
+      message: expect.stringContaining('PROVIDER_ERROR') as unknown,
+    });
+    expect(requestOf(next).input).toMatchObject({ final: false });
   });
 
   it('degrades invalid final output without submitting another model or tool', () => {
