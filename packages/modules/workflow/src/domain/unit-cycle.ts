@@ -15,7 +15,7 @@ import type {
   WorkflowConfig,
   WrapUpReason,
 } from '@multiagentos/contracts';
-import type { AnalysisAction } from './analysis-action.js';
+import type { AnalysisAction, InvalidActionReason } from './analysis-action.js';
 import { interpretModelOutput } from './analysis-action.js';
 import type { LastReportIssue } from './degraded-report.js';
 import { decideUnitFailure } from './failure-decision.js';
@@ -73,6 +73,24 @@ export interface CycleEnvironment {
 export interface CycleTransition {
   readonly state: UnitCycleState;
   readonly submissions: readonly SubmitUnitRequest[];
+}
+
+/** Model-facing guidance: what was wrong and what to send instead. */
+const INVALID_ACTION_MESSAGES: Readonly<Record<InvalidActionReason, string>> = {
+  NO_ACTION:
+    'Your reply contained no tool call. Call a tool to continue, or call the finish tool to submit the report.',
+  OUTPUT_TRUNCATED:
+    'Your reply was cut off before a complete tool call. Send a shorter reply with one complete tool call.',
+  CONTROL_MIXED:
+    'A finish or handoff call must be the only tool call in a reply. Send it again on its own.',
+  CONTROL_NOT_ALLOWED:
+    'That control tool is not available to you at this point. Use your own tools or the finish tool.',
+  CONTROL_ARGUMENTS_INVALID:
+    'The arguments of the finish or handoff call do not match its parameters. Fix them and call it again.',
+};
+
+function modelCallFailedMessage(code: string): string {
+  return `The previous model call failed (${code}). Continue from the history above.`;
 }
 
 function decide(state: UnitCycleState, decision: CycleDecision): CycleTransition {
@@ -330,7 +348,7 @@ function handleModel(
       kind: 'FEEDBACK' as const,
       round: next.run.roundsUsed,
       code: 'INVALID_ACTION' as const,
-      message: `Invalid model action: ${action.reason}.`,
+      message: INVALID_ACTION_MESSAGES[action.reason],
       ...(call === undefined ? {} : { toolCallId: call.toolCallId }),
     }));
     return nextRound(
@@ -426,7 +444,15 @@ export function receiveUnitReport(
     return pending.size === 0 ? completeTools(next, environment) : { state: next, submissions: [] };
   }
   if (report.status !== 'OK') {
-    if (state.phase === 'MODEL')
+    const failure = decideUnitFailure(
+      request.unit,
+      report,
+      state.phase === 'MODEL' && state.isFinal,
+      next.run.wrapUpReason,
+    );
+    // Only a failure handed back to the model is explained in its history (Workflow 7.2);
+    // a wrap-up is already stated by WRAP_UP_NOTICE and the final-call status.
+    if (state.phase === 'MODEL' && failure.kind === 'RETURN_TO_MODEL')
       next = {
         ...next,
         run: {
@@ -440,21 +466,12 @@ export function receiveUnitReport(
                   ? next.run.roundsUsed + 1
                   : Math.max(1, next.run.roundsUsed),
               code: 'MODEL_CALL_FAILED',
-              message: `Model call failed: ${report.reasonCode}.`,
+              message: modelCallFailedMessage(report.reasonCode),
             },
           ],
         },
       };
-    return applyFailure(
-      next,
-      decideUnitFailure(
-        request.unit,
-        report,
-        state.phase === 'MODEL' && state.isFinal,
-        next.run.wrapUpReason,
-      ),
-      environment,
-    );
+    return applyFailure(next, failure, environment);
   }
   if (state.phase === 'STARTUP' && report.executionKind === 'REPOSITORY_ORIENT')
     return nextStartup(

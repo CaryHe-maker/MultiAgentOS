@@ -141,12 +141,30 @@ describe('UNIT tool Validation', () => {
     ).toHaveLength(1);
   });
 
-  it('does not treat unexecuted calls in the same round as successful duplicates', () => {
+  it('executes only the first of identical calls in the same reply', () => {
     const result = validateToolCalls(
-      [call('read_file', { path: 'file' }), call('read_file', { path: 'file' }, 'call-2')],
+      [
+        call('read_file', { path: 'file' }),
+        call('read_file', { path: 'file' }, 'call-2'),
+        call('read_file', { path: 'other' }, 'call-3'),
+      ],
       context(),
     );
-    expect(result.accepted).toHaveLength(2);
+    expect(result.accepted.map((tool) => tool.call.toolCallId)).toEqual(['call-1', 'call-3']);
+    expect(result.feedback).toMatchObject([{ code: 'DUPLICATE_CALL', toolCallId: 'call-2' }]);
+    expect(result.feedback[0]?.message).toContain('same reply');
+  });
+
+  it('names the failing argument paths without echoing the argument values', () => {
+    const result = validateToolCalls(
+      [call('read_file', { path: 'secret-value', startLine: 0 })],
+      context(),
+    );
+    const message = result.feedback[0]?.message ?? '';
+    expect(result.feedback).toMatchObject([{ code: 'INVALID_ARGUMENTS' }]);
+    expect(message).toContain('/startLine');
+    expect(message).not.toContain('secret-value');
+    expect(message.length).toBeLessThanOrEqual(1000);
   });
 
   it('produces Schema-valid feedback with the round and toolCallId for every rejected call', () => {

@@ -33,12 +33,29 @@ export interface ValidationContext {
 }
 
 const MESSAGES = {
-  TOO_MANY_TOOL_CALLS: 'This call exceeds the UNIT tool-call limit for the round.',
-  UNKNOWN_TOOL: 'This tool is not an allowed UNIT tool of the current Agent.',
-  INVALID_ARGUMENTS: 'The arguments do not satisfy the tool parameters contract.',
-  NOT_EXECUTED: 'The budget is exhausted; this tool call was not executed.',
-  DUPLICATE_CALL: 'An identical call already succeeded and its result is still in context.',
+  TOO_MANY_TOOL_CALLS:
+    'Not executed: this reply has more tool calls than allowed per round. Send fewer calls at a time.',
+  UNKNOWN_TOOL:
+    'Not executed: this tool does not exist for you. Use only the tools you were given.',
+  INVALID_ARGUMENTS:
+    'Not executed: the arguments do not match the tool parameters. Fix them and call again.',
+  NOT_EXECUTED: 'Not executed: the budget is used up. Finish with what you already have.',
+  DUPLICATE_CALL:
+    'Not executed: the same call already succeeded and its result is above. Use that result.',
+  DUPLICATE_IN_ROUND:
+    'Not executed: this repeats another call in the same reply. Its result is given once.',
 } as const;
+
+/** Schema paths and messages only; never echoes the model's argument values. */
+const MAX_ISSUES = 3;
+function argumentsMessage(issues: readonly string[] | undefined): string {
+  if (issues === undefined)
+    return 'Not executed: the arguments are not valid JSON. Send a JSON object.';
+  if (issues.length === 0) return MESSAGES.INVALID_ARGUMENTS;
+  const listed = issues.slice(0, MAX_ISSUES).join('; ');
+  const more = issues.length > MAX_ISSUES ? ` (and ${issues.length - MAX_ISSUES} more)` : '';
+  return `${MESSAGES.INVALID_ARGUMENTS} Problems: ${listed}${more}.`.slice(0, 1000);
+}
 
 const sameUnit = (previous: PinnedDefinitionRef, unit: UnitDefinition): boolean =>
   previous.kind === 'UNIT' &&
@@ -55,13 +72,17 @@ export function validateToolCalls(
   const feedback: FeedbackStep[] = [];
   const elided = new Set(context.elidedRequestIds);
   let unitOrdinal = 0;
-  function reject(call: ModelToolCall, code: keyof typeof MESSAGES): void {
+  function reject(
+    call: ModelToolCall,
+    code: FeedbackStep['code'] & keyof typeof MESSAGES,
+    message: string = MESSAGES[code],
+  ): void {
     feedback.push({
       kind: 'FEEDBACK',
       round: context.round,
       toolCallId: call.toolCallId,
       code,
-      message: MESSAGES[code],
+      message,
     });
   }
   for (const call of calls) {
@@ -87,7 +108,7 @@ export function validateToolCalls(
             call.arguments,
           );
     if (checked === undefined || !checked.ok) {
-      reject(call, 'INVALID_ARGUMENTS');
+      reject(call, 'INVALID_ARGUMENTS', argumentsMessage(checked?.issues));
       continue;
     }
     if (context.budgetState === 'EXHAUSTED') {
@@ -108,6 +129,14 @@ export function validateToolCalls(
       )
     ) {
       reject(call, 'DUPLICATE_CALL');
+      continue;
+    }
+    if (
+      accepted.some(
+        (other) => other.unit === unit && other.argumentsCanonical === argumentsCanonical,
+      )
+    ) {
+      reject(call, 'DUPLICATE_CALL', MESSAGES.DUPLICATE_IN_ROUND);
       continue;
     }
     accepted.push({ call, unit, input: checked.value, argumentsCanonical });

@@ -123,7 +123,7 @@ export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
             diagnosticId: newId('cor'),
             workflowRunId: envelope.workflowRunId,
             operation: diagnostic?.operation ?? 'REDUCE',
-            code: 'PORT_FAILURE',
+            code: diagnostic === undefined ? 'INTERNAL_ERROR' : 'PORT_FAILURE',
             phase: state.phase,
             occurredAt: now().toISOString(),
           }),
