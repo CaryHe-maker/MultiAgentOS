@@ -215,7 +215,8 @@ UnitReport，记录其 requestId 与内容 SHA-256。不拼接多次读取的范
 也不依赖执行时间推断先后。
 
 空文件的成功读取仍保留在 Workflow 私有运行记录中，但不列入报告 readSources，
-也不能作为结论的有效行来源。其他成功读取范围按原规则处理。
+也不能作为结论的有效行来源；它们的路径按首次收到的顺序去重后写入报告的 `emptyReads`。
+其他成功读取范围按原规则处理。
 
 Workflow 不生成面向用户的文字：正常报告的 `summary` 原样采用模型草稿的摘要，不追加、不截短；
 降级、收尾与空文件的说明由 UserInteraction 根据报告的结构化字段生成（UserInteraction 第 5 节）。
@@ -245,7 +246,9 @@ Workflow 不生成面向用户的文字：正常报告的 `summary` 原样采用
 之后从第 10.1 节第 3 步继续，以 COMPLETED 携带报告引用收尾。
 第 7.2 节的 FATAL 与 EXHAUSTED 交叉场景只按 FAILED 错误路径处理，不进入本节。
 
-最后一次失败的原因码或非法输出的原因只以结构化形式提供，不写入 `summary`；报告结构增加相应字段之前不提供。
+已知最后一次调用为何没有结束时，写入 `wrapUp.lastIssue`：失败时为原因码（`FAILURE`），
+模型输出不合法时为第 5 节的原因（`INVALID_OUTPUT`），final-call 返回了合法但不是结束的动作时为 `NO_FINISH`。
+只写结构化的事实，不写入 `summary`。
 不使用 failure.detail、异常报错原文、凭据或不合法的模型内容。
 报告无法发布时，仍必须失败关闭，不得伪造 reportRef。
 

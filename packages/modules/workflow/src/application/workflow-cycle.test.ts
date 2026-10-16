@@ -132,6 +132,7 @@ describe('Workflow public cycle and report delivery', () => {
       throw new Error('Missing publication');
     expect(validate(AnalysisReportSchema, publish.request.input.report).ok).toBe(true);
     expect(publish.request.input.report.summary).not.toContain('空文件');
+    expect(publish.request.input.report.emptyReads).toEqual(['b.ts', 'a.ts']);
     expect(publish.request.input.report.readSources).toEqual([]);
     expect(result.persistence.writes[1]).toMatchObject({
       reads: [

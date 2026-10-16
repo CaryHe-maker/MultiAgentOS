@@ -122,6 +122,7 @@ describe('normal report and source verification', () => {
       },
     });
     expect(report.summary).toBe(draft.summary);
+    expect(report.emptyReads).toEqual([empty.output.path]);
     expect(report.readSources).toHaveLength(1);
     expect(report.conclusions).toHaveLength(1);
     expect(report.unconfirmed[0]?.reason).toBe('SOURCE_NOT_READ');
