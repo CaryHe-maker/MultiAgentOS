@@ -696,6 +696,7 @@ packages/modules/user-interaction/src/
 | 2026-10-15 | T17 已完成 | 按 D28 仅修改两个既有 fake 的 deliver，先校验再复制入队；新增直接额外字段／缺失事件／未知事件拒绝、消息复制与合法 Schema 发错 Inbox 的共享用例。真实模块与 fake 运行相同套件，其他共享组件及 fixture 不改 | 新增 20 项中先复现 10 项 fake 失败；修复后共享 44 项、定向 301 项通过；Ubuntu-24.04 隔离副本 build 与完整 check 通过，55 文件／593 测试；21 个变动文件的编码、换行、行宽、18 个链接及 git diff --check 通过 | 17／19；剩余 T18 首次合入待授权，T19 等待真实链路；不 commit／push |
 | 2026-10-16 | 远端 CI 未处理拒绝修复 | 读取 00c3f95 的 quality-gate 日志，593 项断言通过但迟到 ExecutionFact 触发 NOT_RUNNING；先在未修改 HEAD 的隔离副本复现，再按 D30 仅修 createFakeSupervisor 与新增 fake-kernel.test.ts，修复提交 eea339d | 6 项确定性用例先有 5 项失败及 3 条未处理拒绝；修复后全部通过；Ubuntu 24.04 隔离副本 build、完整 check、demo:fake 通过：56 文件／599 测试，未再出现未处理拒绝 | 记录与共享修复分开提交；推送后核对远端 CI，不改写原三个提交、不创建 PR |
 | 2026-10-16 | 代码审查后的修复与报告文字移交 | 反馈文案改为可执行说明并附 Schema 路径；`MODEL_CALL_FAILED` 只在交还模型时记录；同一次返回中的重复调用只执行第一个；私有诊断区分端口失败与内部错误。Workflow 不再写入面向用户的文字：删除中文收尾说明与原因码表，正常报告原样采用模型摘要，降级报告 `summary` 为英文占位；UserInteraction 按 `wrapUp` 生成说明，“最后一次失败”与空文件的视图已就绪，待报告 Schema 增加字段（`docs/adjustmentFromWorkflow.md` A2）。新增协调清单 `docs/adjustmentFromWorkflow.md` | Ubuntu 24.04 隔离副本 build、lint、format:check 通过，56 个文件／601 项测试通过 | A2 第二步随 T18 合入；A1、A3、A4 以 Issue 告知 field |
+| 2026-10-16 | 第二轮审查修复；接缝 PR；报告结构化字段接入 | 授权提示去重、Workflow 依赖声明补 persistence、UserInteraction 规范精简（`f99a286`）；接缝 PR #30 合入 `AnalysisReport.emptyReads` 与降级报告的 `wrapUp.lastIssue`，并带入共享 Supervisor 替身修复；本分支同步后由 Workflow 填写、UserInteraction 从报告读取并展示 | Ubuntu 24.04 隔离副本 build、lint、format:check 通过，56 个文件／602 项测试通过，`demo:fake` 正常 | T18：导出业务 PR |
 
 ### 10.4 更新本文的规则
 

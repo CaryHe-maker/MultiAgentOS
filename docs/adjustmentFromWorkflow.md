@@ -7,7 +7,7 @@
 | 编号 | 事项 | 涉及 | 优先级 |
 | --- | --- | --- | --- |
 | A1 | 端口响应期限从模块内的硬编码改为系统级约定 | field（Fabric、组合根、Kernel）、contracts | 高 |
-| A2 | 报告的收尾说明改为结构化字段，文案统一由 UserInteraction 生成 | contracts、Cary | 中 |
+| A2 | 报告的收尾说明改为结构化字段，文案统一由 UserInteraction 生成（已完成） | contracts、Cary | — |
 | A3 | 本分支对共享替身与组合根测试的改动 | field、packages/testing | 高 |
 | A4 | Workflow 与 UserInteraction 依赖的 Kernel 行为，需在真实 Core 上确认 | field | 高 |
 | A5 | `WRAP_UP_NOTICE` 与上下文组装器的 final-call 状态行重复 | meti | 低 |
@@ -36,31 +36,11 @@
 **涉及**：`contracts`（配置 Schema、Fabric 错误类型，共享接缝）、Fabric 与组合根（field）、
 两个模块（Cary）、M1Interface 与 Kernel 规范。完成之前保留两个模块中的现有实现。
 
-## A2 报告的收尾说明结构化
+## A2 报告的收尾说明结构化（已完成）
 
-**已定方案**（Cary，2026-10-16）：报告增加结构化字段，面向用户的文字全部由 UserInteraction 生成；
-`summary` 仍不允许为空。
-
-**本分支已完成（第一步）**：
-
-- Workflow 不再写入任何面向用户的文字：删除了中文的收尾说明与原因码文案表；正常报告的 `summary` 原样采用模型摘要；
-  降级报告的 `summary` 是固定的英文占位文本，不向用户展示。
-- UserInteraction 按 `wrapUp.reason` 生成降级说明；“最后一次失败”和空文件说明的文案与视图已准备好，
-  等报告提供对应字段后接入。
-- 过渡期内用户看不到最后一次失败的具体原因和空文件数量，只看到收尾原因。
-
-**需要协调的部分（第二步，共享接缝）**：
-
-1. `contracts/src/workflow/report.ts`：
-   - 降级报告的 `wrapUp` 增加可选的 `lastIssue`：`{ kind: 'FAILURE', code }`、`{ kind: 'INVALID_OUTPUT', reason }`
-     或 `{ kind: 'NO_FINISH' }`；正常报告的 `wrapUp` 不允许带 `lastIssue`。
-   - 两种报告都增加可选的 `emptyReads`：成功读取的空文件路径，去重。
-   - 模型输出不合法的 5 种原因（现为 Workflow 内部的 `InvalidActionReason`）作为公共枚举移入 contracts。
-2. M1Interface 6.6 与 1.4、SharedContracts 3.4；契约测试的正反例。
-3. 评审：meti、field。Kernel 的 `report-publish` 只核对归属与大小，不受影响；
-   `packages/testing` 的现有报告不带新字段，仍然合法。
-
-**第三步（本分支，第二步合入后）**：Workflow 填写两个字段；UserInteraction 从报告读取它们并展示；同步两份模块规范与系统测试。
+报告增加 `wrapUp.lastIssue` 与 `emptyReads`，说明文字统一由 UserInteraction 生成；`summary` 仍不允许为空。
+契约修改经 #30 合入（2026-10-16，meti 与 field 评审）；Workflow 填写、UserInteraction 展示已在本分支完成。
+本项不再需要协调，合入后从本文删除。
 
 ## A3 共享替身与组合根测试
 
