@@ -119,7 +119,8 @@ Execution 为每个 ContextPack 记录 `contextPackId`、`operation`、`unitAtte
   以及全部 STOP_UNCONFIRMED 的执行（`EXECUTION_STOP_UNCONFIRMED`，包括 Core 在收敛兜底时判定的执行）。
 - `publishRunSummary(summary)` 把 RunSummary 以 `application/vnd.multiagentos.run-summary+json` 写入 ArtifactStore，登记归属
   （`producer = 'RUN_SUMMARY'`），返回引用。
-- 收到违规事实时隔离该次输出：不写入产物，不交付。运行已不为 RUNNING（尝试的 runEpoch 不等于当前值）时不写入任何产物。
+- 收到违规事实时隔离该次输出：不写入产物，不交付。运行已不为 RUNNING（尝试的 runEpoch 不等于当前值）时不写入新的执行产物或 AnalysisReport；
+  收敛第 ③ 步由 Core 调用 publishRunSummary 发布 RunSummary 是明确例外。
 
 ## 10. 配置
 

@@ -1631,9 +1631,16 @@ type SystemFaultReporter = (fault: SystemFault) => void; // 进程内函数，�
 ```
 
 `SystemFault` 与 `SystemFaultReporter` 不是注册的 Schema，也不经 Fabric 传递：组合根把同一个上报函数注入
-Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即触发有界的故障关闭
+Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即进入组合根唯一 panic，触发有界的安全停机
 （[错误与系统故障处理](SystemFaultHandling.md) 第 5 节）。Executor 不持有它：
 Executor 的一切结局由 Supervisor 转成 ExecutionFact。
+
+上述名称为兼容既有接缝保留，不表示旧的异常等级。
+组合根内部实现唯一 panic；reportSystemFault 与 System.reportFault 均适配到它，不新增公共 panic Schema。
+入口在配置和模块构造前有效；构造中不能使用空上报函数。控制对象逐步登记 Core、Supervisor、
+ModuleHost 与子进程清理能力，组件未就绪时跳过不适用的操作。
+重复调用合并为同一个 faultId 和关闭操作；新增错误持续记录，诊断失败也不能阻断退出。
+Core 非停机语义使用既有结果、计时消息与 KERNEL_FAULT，不要求调用方修改现有消息格式。
 
 M1 的存储布局见 [Persistence](Infrastructure/Persistence.md) 与 [ArtifactStore](Infrastructure/ArtifactStore.md)。
 
@@ -1740,7 +1747,7 @@ interface KernelCoreDeps {
   registry: ProtocolRegistry;
   config: KernelConfig;
   dataDir: string;
-  reportSystemFault?: SystemFaultReporter; // 第 10 节；收敛自身失败时升级
+  reportSystemFault?: SystemFaultReporter; // 第 10 节；收敛自身失败时请求 panic
   now?: () => Date;
 }
 
@@ -1862,7 +1869,7 @@ function composeSystem(options: {
   parts?: Partial<SystemParts>; // 测试用 fake 替换其中任意几项
   catalog?: CatalogPort; // 缺省为仓库内的定义目录
   now?: () => Date;
-  timeouts?: Partial<ShutdownTimeouts>; // 关闭各步的期限，缺省由 KernelConfig 推出
+  timeouts?: Partial<ShutdownTimeouts>; // 引导与关闭期限；bootMs 初值 60000，其余按现有规则
   log?: (line: string) => void; // 系统故障的本地诊断，缺省为 stderr
 }): Promise<System>;
 
@@ -1872,12 +1879,13 @@ interface System {
   userInteraction: UserInteractionModule;
   whenStopped(): Promise<void>;
   run(command: (ui: UserInteractionModule) => Promise<number>): Promise<number>; // 全部模块停止后给出退出码
-  reportFault(fault: SystemFault): void; // 系统故障入口，触发有界的故障关闭
+  reportFault(fault: SystemFault): void; // 兼容名称；进入唯一 panic，立即返回且不抛错
   shutdown(): Promise<StopReport>; // 幂等；正常关闭之后只返回报告
   killSubprocesses(): void;
 }
 
 interface ShutdownTimeouts {
+  bootMs: number; // 引导总期限；建议初值 60000，须为正安全整数
   abortRunsMs: number; // 等待 abortAllRuns；缺省 2 ×（cancelGraceMs + convergenceMarginMs）
   stopMs: number; // 一次停止全部模块的期限
   settleMs: number; // 运行结束后，命令返回与正常关闭完成的期限
@@ -1895,9 +1903,21 @@ interface StopReport {
 [错误与系统故障处理](SystemFaultHandling.md) 第 5 节。
 
 进程入口是 `apps/control-plane` 的 `bin.ts`（命令名 `multiagentos`）：它只调用 `main(argv)` 并以返回值作为退出码，
-组合阶段抛错时写 stderr 并以 70 退出。`main` 安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；
+组合阶段失败进入已建立的 panic 控制，写 stderr、清理已登记资源并以 70 退出。`main` 在配置加载与装配之前安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；
 第一次 Ctrl+C 经 `TerminalPort.onInterrupt` 交给 UserInteraction。
 
 尚未实现的产品工厂在被调用时抛出 `NOT_IMPLEMENTED`，不返回占位的成功结果。
 `packages/testing` 为每个工厂提供 fake，为 `CatalogPort` 与 `Executor` 提供共享 contract test；
 fake 只保证消息的形状与先后顺序符合本文，不实现任何权限、额度或业务逻辑。
+
+### 14.5 启动期限与实现迁移
+
+本次文档修订新增 ShutdownTimeouts.bootMs；沿用类型名以减少接缝改动，包含引导总期限。
+组合根在启动 Supervisor 前计时，覆盖临时目录准备、模块 start、afterStart 与启动失败回滚。
+ModuleHost 的构造配置增加 startTimeoutMs，建议初值 10000，覆盖单模块 start 与对应 afterStart；
+stopTimeoutMs 保持 5000。期限均为正安全整数，数值可在验收中校准。
+ModuleHost 不属于公共 Fabric 协议；具体失败和迟到完成规则见 [ModuleHost](Infrastructure/ModuleHost.md) 第 4 节。
+bootMs 到期后封锁 ready 并进入 panic，清理各步仍有独立期限，不无限等待原启动 Promise。
+
+以上是目标接口与行为，尚需同步源码、测试与 fake；本次只修订文档。
+不修改 Workflow、UserInteraction 工厂签名，不改变其既有报告入口。

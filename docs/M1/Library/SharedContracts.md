@@ -221,6 +221,10 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 
 第 14 节的模块装配接口（各 `createXxx` 工厂、`XxxDeps`、`TerminalPort` 等）由各模块包导出，不在 contracts 中。
 
+SystemFault 与 SystemFaultReporter 保留接口名称，表示停机异常及组合根唯一 panic 的适配入口；
+不编码异常等级。Core 的非停机异常语义属于 Kernel 私有逻辑，不新增公共异常 Schema。
+已有 reportSystemFault 注入统一进入同一个 panic，不要求其他模块立即改名。
+
 ### 4.3 工具
 
 | 导出 | 文件 | 用途 |

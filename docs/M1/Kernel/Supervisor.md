@@ -77,7 +77,8 @@ ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILE
 Supervisor 是可信的 Kernel 组件。M1 只运行可信的内置 Executor，Executor 交回的结果、用量与违规可以作为依据；
 违规由 Supervisor 上报，Execution 隔离输出，Core 以 VIOLATION 收敛。不能仅凭 Executor 自报触发 panic。
 
-M1 的安全停机就是收敛（[Interaction](Interaction.md) 第 8 节），Supervisor 在其中的职责是：收到 `cancelRun` 后对该运行的
+任务收敛属于 Core 的非停机异常处理；系统 panic 由组合根控制（[Interaction](Interaction.md) 第 8 节）。
+Supervisor 在任务收敛中的职责是：收到 `cancelRun` 后对该运行的
 全部执行实例触发中止信号，在宽限期内给出每个实例的终态，未能确认的以 `STOP_UNCONFIRMED` 上报；不自行决定停机，也不修改运行状态。
 
 ## 6. 关闭与失控任务
@@ -97,3 +98,17 @@ M1 的安全停机就是收敛（[Interaction](Interaction.md) 第 8 节），Su
 | 配置 | 读取者 | 建议初值 |
 |---|---|---|
 | `KernelConfig.cancelGraceMs` | Supervisor、Core | 5000 |
+
+## 8. panic 协作与启动期限
+
+Supervisor 不持有第二套 panic 状态，不接管 uncaughtException 或 unhandledRejection。
+单次执行抛错转换为唯一 FAILED(INTERNAL) 事实，运行语义由 Core 裁决。
+自身引导或停止失败通过调用结果及 whenStopped 上报组合根，由唯一 panic 控制流程处理。
+
+panic 中 stop 不得假设 Core 已完成收敛：先封锁新执行，对残余执行发出中止，
+按 ModuleHost 规则停止模块并清理子进程和临时资源。已经关闭的运行结果不得改写。
+无法确认进程内执行停止时保留未知事实，由组合根最终退出；不得报告虚假的执行成功。
+
+ModuleHost 的每模块启动和 afterStart 有期限，组合根另约束 Supervisor 引导总期限。
+启动超时或开始停止后不得继续启动后续模块，迟到完成不得令 ready 重新为 true。
+这些是待实现目标；当前生命周期代码不等于已完成启动超时与 panic 联调。

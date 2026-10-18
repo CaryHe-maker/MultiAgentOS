@@ -32,7 +32,7 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 3. [Workflow](Module/Workflow.md)：模型返回的解释、Validation、失败处理、Round、final-call、交接与报告。
 4. [Kernel 内部交互](Kernel/Interaction.md)：运行 actor、内部接口、执行路径、收敛、关闭与 panic。
 5. [M1Interface](M1Interface.md)：全部跨模块类型与 Port 的字段级定义。
-6. [SystemFaultHandling](SystemFaultHandling.md)：错误分级、捕获边界、故障关闭与退出码。
+6. [SystemFaultHandling](SystemFaultHandling.md)：两类异常语义、捕获边界、panic 与安全停机与退出码。
 7. [SharedContracts](Library/SharedContracts.md)、[AgentToolPool](Library/AgentToolPool.md)：Schema 清单、定义实例。
 8. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
 
@@ -52,7 +52,7 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 |---|---|---|
 | M1Plan | 交付范围、任务、验收和降级策略 | 不重新定义长期模块所有权 |
 | M1Interface | 每个跨模块类型与 Port 的名称、字段与语义 | 不因长期设计存在某能力就自动纳入交付 |
-| SystemFaultHandling | 跨组件的错误分级、捕获边界、角色权限、故障关闭步骤与退出码 | 不重复各组件自身的行为与字段 |
+| SystemFaultHandling | 跨组件的两类异常语义、捕获边界、角色权限、panic 与安全停机步骤与退出码 | 不重复各组件自身的行为与字段 |
 | Library/SharedContracts | Schema ID、文件位置、owner、迁移与测试 | 字段以 M1Interface 为准 |
 | Library/AgentToolPool | 目录机制、加载校验与全部定义实例 | 字段以 M1Interface 为准 |
 | Module/ | 各 Module 的 M1 机制；Kernel 的对外行为 | 不重复定义字段 |
@@ -66,7 +66,7 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 - M1 的范围和完成条件以 M1Plan 为准。
 - 跨模块字段以 M1Interface 为准；SharedContracts 与 AgentToolPool 必须与其一致，代码中的 Schema 是已实现协议的可执行事实源。
 - Kernel 对外行为以 Module/Kernel 为准，Kernel 组件职责与内部交互以 Kernel/ 下的文档为准。
-- 跨组件的错误分级、故障关闭与进程退出码以 SystemFaultHandling 为准。
+- 跨组件的两类异常语义、panic 与安全停机与进程退出码以 SystemFaultHandling 为准。
 - 目标与实现的差距在 GitHub Issues 中跟踪，完成状态应有测试、报告或 PR 证据。
 
 ## 6. 维护要求
