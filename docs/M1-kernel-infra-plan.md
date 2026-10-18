@@ -2,7 +2,7 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 已完成本轮覆盖核对，六阶段计划修订闭合。**
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点。**
 本计划作为剩余开发执行基线，六阶段实现均未开始；后续由负责人指定阶段推进。
 本次仅更新计划，不启动实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
@@ -322,21 +322,104 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 2026-10-17 按负责人确认采用两类异常：Core 维护非停机异常语义；
 组合根持有唯一 panic，Supervisor 执行中止及模块停止。
 SystemFaultReporter/reportSystemFault/reportFault 名称保留，均指向同一停机流程。
-权威规则见 M1/SystemFaultHandling.md；本次仅修订文档，源码、fake 与测试尚未迁移。
+2026-10-18 按 [SystemFaultHandling](M1/SystemFaultHandling.md) 补齐捕获边界、panic 五步、退出码与验收落点；
+本节只登记实现与验证位置，语义以规范为准，不在此重新定义协议；源码、fake 与测试尚未迁移。
 
 | 阶段 | 必做工作与验证 |
 | --- | --- |
-| 一 | Core 私有异常处理入口、状态语义表、收尾失败转 panic；拒绝不误停机、旧事实结算 |
+| 一 | Core 私有异常处理入口、状态语义表、收尾失败转 panic；拒绝不误停机、旧事实结算；`KERNEL_FAULT` 只收敛一次 |
 | 二 | 取消后收费、重试许可、停止未确认、容量保留与未知效果；不能自行决定 panic 退出码 |
 | 三 | 唯一执行事实、取消竞争；panic 的 stop 不假设 Core 已收敛，封锁执行并清理残余 |
-| 四 | 消息捕获与失败观察者、取消/完成交错、异常处理再失败进入唯一 panic |
+| 四 | 消息捕获与失败观察者、取消/完成交错、异常处理再失败进入唯一 panic；`Inbox.request` 拒绝显式观察 |
 | 五 | 每模块 start/afterStart 期限、迟到资源释放、停止中迟到启动不重新 ready；设施失败传播 |
-| 六 | panic/进程保护前移、取消空上报窗口、bootMs、部分装配清理、重复故障、UI 不可用、首次/二次中断、最小退出 |
+| 六 | panic/进程保护前移、取消空上报窗口、bootMs、部分装配清理、重复故障、UI 不可用、首次/二次中断、CLI 参数错误 64、`uncaughtException`/`unhandledRejection` 最小退出、`StopReport`、退出码 |
 
-panic 各步有期限，原始错误先记录，上报不依赖 UI、Fabric 或存储，清理错误补报。
-非停机可结束任务；正常退出不等于 panic。完整异步停机不可行时执行最小退出，不增加第三类异常。
-启动期限涉及组合根 ShutdownTimeouts 与 ModuleHost 构造配置，不新增 Fabric Schema；
+#### 6.8.1 捕获与规范化边界
+
+各边界只按规范转换一次，不把原始 `Error` 当作跨主体协议，也不吞掉异常。
+
+| 边界或事件 | 实现落点 | 验收要点 |
+| --- | --- | --- |
+| CLI 参数错误 | CLI/组合根入口 | 返回 64；不加载配置、不构造或启动系统；不触发 panic |
+| 配置、Catalog、工厂构造失败 | 组合根 | 登记原始错误并进入 panic；未构造组件不参与清理；已取得资源按登记释放 |
+| 非法传输请求、Gateway 准入拒绝 | Fabric/Gateway | 保持传输契约错误或结构化拒绝；无运行的请求不创建 Core 异常 |
+| Executor 抛错、超时、`rg` 失败 | Supervisor/Execution | Supervisor 形成唯一执行事实；由 Core 判断运行语义 |
+| actor 普通消息处理抛错 | 运行 actor/Core | 可归属运行且收尾机制可用时投递 `KERNEL_FAULT`；已知状态不可信时请求 panic |
+| Inbox、OrderedSender、定时器失败 | Fabric/运行 actor | 按是否存在有效运行处理通道路由；通道失效时请求 panic；定时器只入队 |
+| 收尾处理自身抛错 | Core | 请求 panic，不再次投递 `KERNEL_FAULT` |
+| 模块 start/stop 失败或超时 | ModuleHost/Supervisor | 记账、回滚或继续清理；组合根进入或继续 panic |
+| `uncaughtException`、`unhandledRejection` | 组合根 | 停机异常；记录诊断、同步清理已登记子进程、70 退出；不调用 Core，不等待异步停机 |
+| Workflow 内部失败 | Workflow（外部） | 先 `closeRun(FAILED, WORKFLOW_INTERNAL)`；无法完成时 `reportSystemFault` |
+| UserInteraction 自身失效 | UserInteraction（外部） | 经同一 `reportSystemFault` 入口上报；展示层不自行退出进程 |
+
+#### 6.8.2 panic 五步与职责边界
+
+panic 的业务顺序固定为“中止任务 → 收集错误 → 上报用户 → 安全停机”：
+
+1. 组合根登记原始错误、唯一 `faultId`，写 stderr，封锁启动和命令入口；最小诊断、进程保护与 panic 控制必须在配置、Catalog 和模块构造之前建立。
+2. 有期限调用 `kernelCore.abortAllRuns({ faultId, deadlineMs })`。它只交给组合根，不经 Gateway/Fabric；不停止模块，也不调用 `Supervisor.shutdown`。
+   Core 封锁新运行，向未 CLOSED 的 actor 投递 `KERNEL_FAULT`；RUNNING 按 `FAILED(KERNEL_INTERNAL)` 收敛，
+   `failure.detail` 与审计关联 `faultId`；等运行 CLOSED 且 Outbox 排空，无法完成或到期只记录，不阻止后续步骤。
+3. 汇总当前错误并上报用户。stderr 是不依赖 UI、Fabric、存储的基本通道；UI 可用时可正常展示收尾事件，但不能以其应答作为继续清理的条件。
+4. 有期限调用 `supervisor.stop`；失败或超时后直接调用 `moduleHost.stop` 兜底。Supervisor 停止接收执行、中止在途执行、
+   驱动模块停止并清理子进程与临时资源；不得把未确认停止伪造为完成，也不得在 Core 已关闭后修改已发布结果。
+5. 组合根直接清理残留子进程，汇总 `StopReport`，补报清理错误并以非零码退出；必要时由入口结束进程。
+   不能仅因异步清理返回就假定失控执行已经消失。
+
+每步有期限；失败只追加到同一次 panic 并继续，不递归启动另一轮 panic；重复故障共用 `faultId`。
+panic 由组合根与 Supervisor 协作，但只有一份停机状态、一个 `faultId` 和一次关闭操作。
+已收敛运行不因 panic 改写结束原因；收敛中确认 VIOLATION 的优先规则仍有效。引导未完成时没有运行，跳过任务中止，
+只清理已登记且取得资源的对象。stderr 诊断自身失败时仍继续清理并非零退出。
+RunSummary 发布失败是受控分支：使用 `finalizationError`，不伪造引用，不改原结束原因。
+任务收敛与 panic 不承诺在基础设施失效时一定交付 `RunFinished`，未确认的效果按未知记录。
+
+| 主体 | 职责 | 边界 |
+| --- | --- | --- |
+| Core | syscall、非停机语义、任务状态、授权、结算、收敛 | 不决定进程退出码，不持有全系统停机权 |
+| Supervisor | 执行监管、取消、子进程管理；正常引导及 panic 中的模块停止 | 不改写任务结果，不接管未捕获进程异常 |
+| ModuleHost | 依赖顺序、启停期限、生命周期账本与回滚 | 不决定异常类别或是否停机 |
+| 组合根 | 唯一 panic 入口、错误汇总、用户诊断、停机期限、退出码与最后防线 | 不是模块；不注册 ModuleHost/Fabric/Inbox；不改写 Lease、预算或任务结果 |
+
+`SystemFaultReporter` 是进程内、立即返回且不抛错的适配入口；停机任务的拒绝必须被内部观察。
+Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转换为执行事实。
+启动期限涉及组合根 `ShutdownTimeouts` 与 ModuleHost 构造配置，不新增 Fabric Schema；
 属于共享接缝的源码迁移按第 3.2 节同步测试，其余在所属阶段完成。
+
+#### 6.8.3 退出码与中断
+
+| 情况 | 处理 | 退出码 |
+| --- | --- | --- |
+| CLI 参数错误 | CLI 返回参数错误，不启动系统 | 64 |
+| 正常关闭 | UserInteraction 记录的退出码 | COMPLETED 0；FAILED 1；RUN_TIMEOUT 2；VIOLATION 3；CANCELLED 130 |
+| panic，命令已返回非零码 | 保留该非零码 | 原非零码 |
+| panic，命令返回 0、抛错或未返回 | 组合根决定 | 70 |
+| 配置、装配或引导失败 | 组合根 | 70 |
+| `uncaughtException`、`unhandledRejection` | 最小退出：诊断、同步清理子进程 | 70 |
+| 第一次 Ctrl+C（运行中） | `TerminalPort.onInterrupt` → `cancelRun` → CANCELLED | 130 |
+| 第一次 Ctrl+C（无运行） | 无可取消对象；不退出 | — |
+| 第二次 Ctrl+C | 组合根最小退出 | 130 |
+
+正常关闭保持固定顺序：UserInteraction → `shutdown` → Gateway → Core 收敛及 Outbox 排空 →
+`SupervisorPort.shutdown` → Supervisor 驱动 ModuleHost 逆序停止 → 清理残留资源。
+70 只由组合根产生；正常任务失败不自动等于 panic；停机异常不得以 0 退出。
+进程入口与信号归组合根；CLI 只负责参数与终端适配，终端适配器不得自行退出进程。
+子进程创建时登记在 `SubprocessRunner`；组合根持有并注入 Supervisor，`supervisor.stop`、panic 末尾、exit 钩子与最小退出均可幂等调用 `killAll`。
+进程内 Executor 无法被强制单独终止；宽限期后记 `STOP_UNCONFIRMED`，由进程退出最终结束。
+
+#### 6.8.4 验收补充
+
+- `SystemFaultHandling` 第 8 节的故障注入必须使用真实 Kernel、Fabric、ModuleHost、存储与组合根；fake 只证明局部顺序与期限，不证明任务收敛。
+- 真实子进程退出测试覆盖 CLI 参数错误、第一次/第二次 Ctrl+C、无运行中断、`uncaughtException`、`unhandledRejection`、panic 与正常关闭退出码；不得在测试主进程触发 exit。
+- 覆盖 UI/Fabric/存储不可用仍能输出诊断并退出、stderr 诊断失败仍清理并非零退出、重复故障共用 `faultId`、
+  Core 超时后继续、Supervisor 失败走 ModuleHost、模块停止失败后继续清理。
+- 覆盖首次 Ctrl+C 的 `cancelRun`、无运行首次中断无操作、第二次 Ctrl+C 立即最小退出，以及终端适配器不自退。
+- 覆盖 panic 不承诺 `RunFinished`、未知效果如实记录、已收敛运行不被改写。
+- 阶段映射保持规范第 7 节：授权超时与预算拒绝归阶段一、二；执行失败、Unit/运行超时、违规与停止未确认归阶段一至四；
+  actor 缺陷与收尾/通道失败归阶段四至六；模块启停归阶段三、五、六；Ctrl+C 与未捕获异常归阶段六，UI 接入为外部依赖。
+- `health` 只是调用时刻的快照；静默失败通过执行、授权、运行、收尾和系统启停期限发现，不能把 `health` 通过当作故障不存在。
+- M1 不实现崩溃恢复、暂停恢复、独立进程外监督、失败停止的无限重试或公开的系统级状态机协议；
+  SIGTERM 等信号按 Node 默认行为结束，事件循环卡死或崩溃由用户或启动它的 shell 处理。
+
 长期架构及其他 Module 文档本次未修改；跨模块术语同步留给负责人协调，既有报告接口不改名。
 
 ### 6.9 预留登记入口
@@ -349,6 +432,7 @@ panic 各步有期限，原始错误先记录，上报不依赖 UI、Fabric 或�
 | 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 待实现与细化 |
 | 阶段一至三 | actor 串行调度、定时消息、Outbox 与关闭协调 | 四 | 待实现与细化 |
 | 阶段一至四 | 真实存储、消息、生命周期及其故障传播 | 五 | 待联调与细化 |
+| 阶段一至六 | 异常捕获边界、panic 五步、退出码与真实故障注入 | 一、四、六 | 待实现与验证 |
 | 阶段四、五 | 真实组合根启动与完整 Kernel 验收 | 六 | 待验收 |
 | 全部阶段 | Workflow、UI、Executor 等其他分支交付 | 六记录真实接入结果 | 按实际交付核对，不修改他人范围 |
 
@@ -365,7 +449,8 @@ panic 各步有期限，原始错误先记录，上报不依赖 UI、Fabric 或�
 | Gateway 与身份因果链 | [Gateway](M1/Kernel/Gateway.md) §2–4；[M1Interface](M1/M1Interface.md) §2、13 | 一、四、五 | producer 固定与核验、correlation 固定、causation 衔接；重放不覆盖旧封锁状态；拒绝日志；合法 requestId 的畸形请求结构化拒绝 |
 | 定义固定与 AgentRun | [Core](M1/Kernel/Core.md) §6；[AgentToolPool](M1/Library/AgentToolPool.md) §6 | 一、四 | pin/digest/provider 核验、单 ACTIVE、结束后行为；Planner/CodeViewer 共用运行账本且不能重新取得 final-call |
 | 授权与 Lease | [Core](M1/Kernel/Core.md) §4；[Interaction](M1/Kernel/Interaction.md) §5.2 | 一、四 | 默认加配置排除规则、只问一次、挂起请求顺序、YES/NO/超时/取消/迟答；拒绝时无执行副作用 |
-| Core 非停机语义 | [Core](M1/Kernel/Core.md) §9；[SystemFaultHandling](M1/SystemFaultHandling.md) §2 | 一、四 | 与 syscall 并列的语义处理、受控失败不误 panic、异常处理自身失败不循环、预期结果仍结构化 |
+| Core 非停机语义 | [Core](M1/Kernel/Core.md) §9；[SystemFaultHandling](M1/SystemFaultHandling.md) §2 | 一、四 | 与 syscall 并列的语义处理、受控失败不误 panic、异常处理自身失败不循环、预期结果仍结构化；捕获边界逐项覆盖、`KERNEL_FAULT` 只收敛一次 |
+| 异常捕获边界与退出码 | [SystemFaultHandling](M1/SystemFaultHandling.md) §2.2、§5–6 | 一、四、六 | CLI 参数错误 64、正常关闭码、panic 70、首次/二次 Ctrl+C 130、`uncaughtException`/`unhandledRejection` 70；无运行请求不创建 Core 异常；终端适配器不自退；真实子进程退出测试 |
 | 收敛与终态 | [Interaction](M1/Kernel/Interaction.md) §6–8 | 一、二、四 | 三步收敛、原因先到优先及 VIOLATION 例外、取消授权、清队列、旧事实结算、兜底、Lease 失效、摘要失败变体；终态发送失败不递归 |
 | 审计字段与脱敏 | [Core](M1/Kernel/Core.md) §7；[Persistence](M1/Infrastructure/Persistence.md) §4 | 一、五、六 | 在阶段一落实各审计 type 的字段与触发用例，包含拒绝、结算异常、迟到事实、faultId；核对日志不含密钥、Prompt、源码、工具正文或 Lease |
 | RunSummary 统计 | [M1Interface](M1/M1Interface.md) §11；[Execution](M1/Kernel/Execution.md) §8–9 | 一、二、四 | submitted = ok + rejected + failed + notDelivered；授权拒绝和挂起取消计数；rounds 仅已交付 OK/FAILED MODEL；requests 含重试；时间、token、finalCallUsed 与未知效果一致 |
@@ -379,10 +464,11 @@ panic 各步有期限，原始错误先记录，上报不依赖 UI、Fabric 或�
 | 架构隔离与可替换性 | [Interaction](M1/Kernel/Interaction.md) §3、11；[M1TechStack](M1/M1TechStack.md) §3、11 | 一至五，六汇总 | 私有数据/冻结返回、禁止跨组件私有导入、Executor 不持有存储与 panic；真实 Port 与 fake 运行相同 contract tests，唯一组合位置与允许依赖 |
 | Fabric 与协议兼容 | [M1Interface](M1/M1Interface.md) §1.2–1.4、12–13；[SharedContracts](M1/Library/SharedContracts.md) §6 | 五、六 | 登记清单一致、未知 major/重复注册/多余字段/条件字段反例；BoundaryContext 校验、structuredClone 与不可变输出；Unsupported 无副作用、同地址有序、失败后继续排空 |
 | 文件存储与保留 | [Persistence](M1/Infrastructure/Persistence.md) §2–4；[ArtifactStore](M1/Infrastructure/ArtifactStore.md) §2–4 | 五 | namespace 限定、路径与符号链接、tmp/rename、跨 Port 审计排队、失败后继续、stop 排空；已有损坏 CAS 不覆盖，get 复验；重启保留 runs 但不恢复运行权限 |
-| 启动生命周期 | [ModuleHost](M1/Infrastructure/ModuleHost.md) §2–4；[M1Interface](M1/M1Interface.md) §14.5 | 三、五、六 | 顺序与账本、失败模块清理、start/afterStart/boot 期限、停止中迟到完成与拒绝、资源补清理、ready 前无业务、不重试失败 stop |
-| panic 与进程保护 | [SystemFaultHandling](M1/SystemFaultHandling.md) §3–8 | 四验证上报，六完成真实控制 | 原始错误不丢、唯一 faultId、Core 超时继续、Supervisor 失败兜底、stderr 失败仍退出、部分装配清理、二次中断与未捕获错误的真实子进程退出测试 |
+| 启动生命周期 | [ModuleHost](M1/Infrastructure/ModuleHost.md) §2–4；[M1Interface](M1/M1Interface.md) §14.5 | 三、五、六 | 顺序与账本、失败模块清理、start/afterStart/boot 期限、停止中迟到完成与拒绝、资源补清理、ready 前无业务、不重试失败 stop；配置/Catalog/工厂构造失败诊断、启动前建立 panic 控制、无 run 跳过任务收敛、迟到资源释放 |
+| panic 与进程保护 | [SystemFaultHandling](M1/SystemFaultHandling.md) §3–8 | 四验证上报，六完成真实控制 | 原始错误不丢、唯一 faultId、组合根不是模块、Core 不决定退出码、`abortAllRuns` 只由组合根调用、panic 五步与 `StopReport`、`supervisor.stop` 失败走 `moduleHost.stop`、UI/Fabric/存储不可用仍诊断退出、stderr 失败仍退出、部分装配清理、不承诺 `RunFinished` |
 | 配置与启动检查 | [Monitor](M1/Kernel/Monitor.md) §4；[M1TechStack](M1/M1TechStack.md) §4 | 二核对表示，六回归 | P05a 已完成能力回归；配置覆盖/未知字段/绝对 dataDir；凭据来源；bootMs/startTimeoutMs/stopTimeoutMs 正安全整数与默认值，无网络密钥验证 |
 | 只读、安全与不支持能力 | [M1Plan](M1/M1Plan.md) §2–3、7–8；[Interaction](M1/Kernel/Interaction.md) §5.1 | 一、三、四、六 | 真实目录 FORBIDDEN 与 fake 目录 UNSUPPORTED_CAPABILITY 两路径；路径逃逸/排除/非授权网络与副作用零成功；测试工具在运行前后对同一仓库计算摘要并比较 |
+| Workflow/UI 故障上报集成 | [SystemFaultHandling](M1/SystemFaultHandling.md) §2.2；[Workflow](M1/Module/Workflow.md) §11.1 | 六，外部协作 | Workflow 内部失败先 `closeRun(FAILED, WORKFLOW_INTERNAL)`，无法完成才 `reportSystemFault`；UserInteraction 同一入口；Cary 侧交付后验证注入与上报 |
 | 整机固定任务与发布证据 | [M1Plan](M1/M1Plan.md) §6–8；[M1TechStack](M1/M1TechStack.md) §11 | 六，外部协作 | F1–F5、至少一个真实模型跑全部任务；报告来源完整性与未确认项、成功率/成本/延迟基线、兼容矩阵、限制清单与运行说明；外部缺失则整机验收未完成 |
 
 ### 6.11 预留关闭与验收边界
@@ -423,6 +509,8 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 
 本轮闭合的是六阶段开发计划修订，不是实现或验收。
 六阶段顺序保持不变且均未开始；后续按负责人指定阶段执行，完成时更新状态与证据。
+2026-10-18 仅补齐 SystemFaultHandling 的实现与验收落点（捕获边界、panic 五步、退出码与中断、真实故障注入），
+不改变六阶段顺序、阶段范围或已定决定，也不新增第七阶段。
 除新增需求、规范冲突或实际交付变化外，不再重复展开整轮阶段重规划。
 
 ## 7. 已定的设计决定
@@ -438,7 +526,7 @@ C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类�
 | C04 | Fabric 启动后经 `afterStart` 注册 Supervisor 处理器；钩子失败回滚 | 完成 | — |
 | C05 | `requestId` 合法的畸形 syscall 由 Gateway 结构化拒绝；缺失或非法 `requestId` 是传输契约错误 | Fabric、Gateway | 阶段一核对，阶段四产品链联调 |
 | C06 | RunSummary 写入失败时，终结事件带 `finalizationError`，不伪造引用，保留原结束原因 | contracts、`finalizeRunEvents` | 阶段一接入，阶段四收尾联调 |
-| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；两类异常及启动保护待迁移 | Core 语义（一）、执行监管（三）、actor（四）、启动期限（五）、panic 与入口（六） |
+| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；两类异常及启动保护待迁移 | Core 语义（一）、执行监管（三）、actor（四）、启动期限（五）、panic 与入口（六）；计划落点见 §6.8 |
 | C08 | `SystemFault` 类型在 contracts；Workflow 与 UserInteraction 注入 `reportSystemFault` | 接口与注入 | 两个模块一侧由 Cary 完成 |
 
 ## 8. 注意事项
@@ -453,6 +541,13 @@ C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类�
 7. **阶段五落实**：Supervisor 保持 tmp 清理责任；删除 Persistence 无产品调用方的 clearTemporaryFiles，
    同步测试与说明，避免两处实现分叉。
 8. **排除规则的旧副本**：`executor-set` 中的 `DEFAULT_EXCLUSIONS` 由 meti 删除并改用 contracts（#28），本分支不要改它，也不要再用它。
+9. **panic 不承诺终态事件。** 任务收敛与 panic 在基础设施失效时可能无法交付 `RunFinished`；未知效果如实记录，不伪造成功。
+10. **最小退出不是第三类异常。** `uncaughtException`、`unhandledRejection` 直接走诊断、同步清理与 70 退出；
+    不调用 Core，不等待异步停机；终端适配器不得自行退出进程。
+11. **退出码归属固定。** CLI 参数错误 64，panic 70，正常关闭码由 UserInteraction 记录；70 只由组合根产生，
+    停机异常不得以 0 退出。
+12. **组合根不是模块。** 它不注册 ModuleHost、Fabric 或 Inbox，只调用已登记的控制对象；
+    Supervisor 自身失效时仍应能独立报告、调用 ModuleHost 并清理子进程。
 
 ## 9. 环境与验证
 
@@ -461,6 +556,10 @@ C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类�
 - 提交前：`pnpm install --frozen-lockfile`、`pnpm run build`、`pnpm run check`、`git diff --check`。
 - 原生 Windows 上 `agent-tool-pool` 的符号链接测试因 `EPERM` 失败，与本分支无关，不要为此修改该包。
 - 存储路径、权限、rename、符号链接、`rg` 子进程、Ctrl+C 必须在 Linux 上验证；普通测试不得依赖真实模型或网络。
+- 真实子进程退出测试覆盖 CLI 参数错误 64、第一次/第二次 Ctrl+C 130、无运行中断、`uncaughtException`/`unhandledRejection` 70、
+  panic 70、正常关闭码；不得在测试主进程触发 exit。
+- 故障注入使用真实 Kernel、Fabric、ModuleHost、存储与组合根；fake 只证明局部顺序与期限，
+  不宣称任务收敛或全系统验收。
 - 验证记录写明命令、环境、结果与限制；没有测试证据不标记完成。只改文档时只做格式与差异检查。
 - 不记录密钥、完整 Prompt、源码正文或未经脱敏的模型输出。
 
@@ -492,3 +591,4 @@ C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类�
 | 2026-10-16 | 计划初步修订：更新基线与实现状态，以六阶段替代旧 P06–P11 安排，补充偏差修正、预留规则与验收边界；由负责人继续主导修订 | 仅文档修订；文档结构、历史阶段引用及 git diff --check 核对，未执行开发或重跑历史测试 |
 | 2026-10-17 | 按负责人决定修订 M1 与 Kernel 异常设计：两类异常、Core 私有语义、唯一 panic、启动保护与期限；保留其他模块接口名称 | 仅文档修订；源码与测试待各阶段实现，长期架构和其他 Module 文档未修改 |
 | 2026-10-17 | 完成 M1 要求覆盖核对，补齐兼容/身份链/统计/安全/真实评测及预留关闭规则；六阶段计划修订闭合，均未开始实施 | 文档范围、链接、格式与差异检查；本轮不运行产品测试、不提交 |
+| 2026-10-18 | 按 SystemFaultHandling 补齐计划：捕获边界、panic 五步与职责、退出码与中断、真实故障注入与验收证据 | 仅文档修订；文档结构、链接、格式与差异检查，未运行产品测试、不提交 |
