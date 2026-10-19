@@ -2,9 +2,9 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点。**
-本计划作为剩余开发执行基线，六阶段实现均未开始；后续由负责人指定阶段推进。
-本次仅更新计划，不启动实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一验收结果。**
+本计划作为剩余开发执行基线；阶段一已完成验收，阶段二至六未开始，后续由负责人指定阶段推进。
+本次只同步阶段状态，不启动实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
   规范在 `docs/M1/` 下，两者不一致时以规范为准并修正本文。
@@ -28,14 +28,17 @@
 
 - 文件名是 PascalCase 命名惯例的例外；分支名中的拼写 `infrasturcture` 保持不变，不要改名。
 
-## 2. 现状（代码基线 2026-10-16，文档核对 2026-10-17）
+## 2. 现状（代码基线 2026-10-19，文档核对 2026-10-19）
 
 ### 2.1 基线
 
-`1c2a609`：启动期配置关系校验已提交；此前通过 `f9e6dc1` 同步 `feature/M1/main` 的 `b44380a`。
-P05a 最近验收记录：Ubuntu 24.04 上 build、check 通过，38 个测试文件、355 项测试通过，
-fake demo 退出码 0。该证据不包含真实 Core 执行或真实模型调用。
-本次计划修订仅做文档检查，不将上述历史测试记为本次重新执行。
+`1fec492`：阶段一（1.1–1.6）已完成并验收，包含提交 `9f7c9f2`（1.1–1.3）与 `1fec492`（1.4–1.6 及阶段报告）。
+阶段一报告记录：`pnpm run build`、`pnpm run check`（44 个测试文件、433 项测试）与 `git diff --check` 通过，
+`pnpm run demo:fake` 退出码 0；覆盖率、测试矩阵与边界见 [M1KernelStage1](M1KernelStage1.md) 第 5、7 节。
+该证据使用 Execution 与 Supervisor 测试替身，不包含真实执行链或真实模型调用。
+
+此前 P05a 的启动配置校验仍有效：Ubuntu 24.04 上 build、check 通过，38 个测试文件、355 项测试通过，
+fake demo 退出码 0。本次状态同步不将上述历史测试记为重新执行。
 
 ### 2.2 实现状态
 
@@ -43,31 +46,34 @@ fake demo 退出码 0。该证据不包含真实 Core 执行或真实模型调�
 
 | 部分 | 状态 |
 | --- | --- |
+| Core：运行管理、九种外部 syscall、AgentRun、授权与 Lease、CoreSyscalls、预留与结算、结果检查、收敛、异常语义、审计 | 阶段一已实现并验收；使用 Execution 与 Supervisor 替身，真实接线待阶段四 |
 | Fabric：Schema 校验、身份、拷贝、Inbox（两通道、去重、失败观察者）、有序发送器、Gateway 畸形请求的结构化拒绝接缝 | 已实现，真实主链联调待阶段五 |
 | Persistence、ArtifactStore：路径与符号链接检查、写入排队与关闭排空、内容寻址与复验、命名空间限定的 Port | 已实现，真实主链联调待阶段五 |
 | ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、停止期限、`afterStart` 钩子 | 已实现，真实主链联调待阶段五 |
-| Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 引导与关闭完成；`execute`、`cancelRun` 为 `NOT_IMPLEMENTED` |
-| Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 已实现，未与真实 Core 联调 |
-| Monitor、Scheduler、`InProcessProviderCapacity` | 已实现并测试，未接入 Core |
+| Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 空导出占位，待阶段二 |
+| Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 引导与关闭完成；`execute`、`cancelRun` 为 `NOT_IMPLEMENTED`，待阶段三 |
+| Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 阶段一完成身份、准入与拒绝日志修正；与真实 Core 的产品链联调待阶段四 |
+| Monitor、Scheduler、`InProcessProviderCapacity` | 已实现并测试；与 Core 的真实协作待阶段二 |
+| run actor、双通道 Inbox、OrderedSender、真实 Outbox | 空导出占位，待阶段四 |
 | 组合根：配置加载与校验、`composeSystem`、系统控制（有界故障关闭、退出码 70）、最后防线（含第二次 Ctrl+C）、进程入口 `bin.ts` | 启动配置校验与控制基础已实现；真实 Kernel 启动待阶段六 |
-| Kernel 私有接口（`kernel/src/interfaces/`）、`KernelCoreModule.abortAllRuns`、`reportSystemFault` 的注入 | 接口已定；`createKernelCore` 为 `NOT_IMPLEMENTED` |
+| Kernel 私有接口（`kernel/src/interfaces/`）、`KernelCoreModule.abortAllRuns`、`reportSystemFault` 的注入 | 接口已定；Core 阶段一已实现；`createKernelCore` 仍为 `NOT_IMPLEMENTED`，装配待阶段四 |
 
-Core 当前仅有局部辅助实现；Execution 与 run actor 仍为空导出占位。
-下列部件已有单元测试但尚无产品调用方；优先复用并按规范修正，不能将局部测试通过视为完整组件实现：
+Core 阶段一已实现；Execution 与 run actor 仍为空导出占位。
+下列部件已有单元测试，阶段一后的接入状态如下；不能将局部测试通过视为完整组件实现：
 
 | 部件 | 位置 | 接入阶段 |
 | --- | --- | --- |
-| `AttemptIdentityRegistry`（C02） | `kernel/src/core/index.ts` | 阶段一、二接入，阶段四联调 |
-| `finalizeRunEvents`（C06） | `kernel/src/core/finalize-run.ts` | 阶段一接入，阶段四联调 |
-| `Monitor.settle` 返回的 `SettlementResult`（C01） | `kernel/src/monitor/index.ts` | 阶段一、二 |
+| `AttemptIdentityRegistry`（C02） | `kernel/src/core/index.ts` | 阶段一已接入 Core；阶段二、四继续联调 |
+| `finalizeRunEvents`（C06） | `kernel/src/core/finalize-run.ts` | 阶段一已接入 Core；阶段四联调 |
+| `Monitor.settle` 返回的 `SettlementResult`（C01） | `kernel/src/monitor/index.ts` | 阶段一已由 Core 消费异常并审计；阶段二接入真实结算 |
 | `InProcessProviderCapacity` | `kernel/src/scheduler/index.ts` | 阶段二、四 |
 
 ### 2.3 已发现偏差与接入风险
 
 | 单元 | 当前判断 | 处理阶段 |
 | --- | --- | --- |
-| Gateway | 已确认：普通拒绝路径的结构化日志不完整 | 一 |
-| Core 身份核验 | 接入风险：不能把 epoch 不匹配等同于无需结算 | 一、四 |
+| Gateway | 已关闭（阶段一）：普通拒绝路径的结构化日志已补齐 | 一 |
+| Core 身份核验 | 已关闭（阶段一）：结算资格与交付资格分离，旧 epoch 事实仍结算 | 一、四 |
 | Inbox / actor | 接入风险：request 异常不能仅靠 onError 捕获 | 四 |
 | OrderedSender / actor | 接入风险：enqueue 即发送，须在状态处理完成后提交 | 四 |
 | Fabric 注释 | 已确认：发送失败不一律是契约缺陷，停止时可能为 NOT_RUNNING | 五 |
@@ -171,7 +177,7 @@ Core 当前仅有局部辅助实现；Execution 与 run actor 仍为空导出占
 
 | 阶段 | 主要范围 | 退出条件 | 状态 |
 | --- | --- | --- | --- |
-| 一 | Core 控制逻辑，Gateway 偏差修正 | Core 职责内无占位业务分支；通过替身验证 syscall、授权、结果检查、收尾和异常处理 | 未开始 |
+| 一 | Core 控制逻辑，Gateway 偏差修正 | Core 职责内无占位业务分支；通过替身验证 syscall、授权、结果检查、收尾和异常处理 | 已完成（2026-10-19） |
 | 二 | Execution、Scheduler，Monitor 接入 | 测试驱动下完成排队、许可、预留、执行结果处理与结算，覆盖重试和收尾 | 未开始 |
 | 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 未开始 |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 未开始 |
@@ -179,6 +185,9 @@ Core 当前仅有局部辅助实现；Execution 与 run actor 仍为空导出占
 | 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 未开始 |
 
 ### 6.2 阶段一：完善 Core
+
+**状态：已完成（2026-10-19）。** 实现内容、验证证据、边界与遗留见
+[M1KernelStage1](M1KernelStage1.md)；本阶段不包含真实 Execution、Supervisor、run actor 或 `createKernelCore`。
 
 **实现工作**
 
@@ -428,12 +437,12 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 
 | 来源 | 依赖或预留 | 完成阶段 | 当前状态 |
 | --- | --- | --- | --- |
-| 阶段一 | Execution 执行管理、产物与摘要能力 | 二；四完成 actor 接线 | 待实现与细化 |
-| 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 待实现与细化 |
-| 阶段一至三 | actor 串行调度、定时消息、Outbox 与关闭协调 | 四 | 待实现与细化 |
-| 阶段一至四 | 真实存储、消息、生命周期及其故障传播 | 五 | 待联调与细化 |
-| 阶段一至六 | 异常捕获边界、panic 五步、退出码与真实故障注入 | 一、四、六 | 待实现与验证 |
-| 阶段四、五 | 真实组合根启动与完整 Kernel 验收 | 六 | 待验收 |
+| 阶段一 | Execution 执行管理、产物与摘要能力 | 二；四完成 actor 接线 | 待实现（阶段二） |
+| 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 待实现（阶段三） |
+| 阶段一至三 | actor 串行调度、定时消息、Outbox 与关闭协调 | 四 | 待实现（阶段四） |
+| 阶段一至四 | 真实存储、消息、生命周期及其故障传播 | 五 | 待联调（阶段五） |
+| 阶段一至六 | 异常捕获边界、panic 五步、退出码与真实故障注入 | 一、四、六 | 阶段一 Core 非停机语义已完成；panic 与真实故障注入待四、六 |
+| 阶段四、五 | 真实组合根启动与完整 Kernel 验收 | 六 | 待验收（阶段六） |
 | 全部阶段 | Workflow、UI、Executor 等其他分支交付 | 六记录真实接入结果 | 按实际交付核对，不修改他人范围 |
 
 
@@ -442,6 +451,7 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 本表是第 6.2–6.8 节的强制补充，用于阶段退出核对；“已覆盖”表示已安排实现和验证，
 不表示代码已完成。接口字段与算法仍以链接规范为准，不在本计划另定义协议。
 每行到负责阶段结束时填写实际文件、测试用例、命令及结果；没有证据不得勾选完成。
+阶段一的实际实现、测试矩阵与验证证据见 [M1KernelStage1](M1KernelStage1.md) 第 5、6 节。
 
 | 要求单元 | 规范来源 | 负责阶段 | 必须交付或核对的证据 |
 | --- | --- | --- | --- |
@@ -508,25 +518,28 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 第 6.10 节将本分支要求映射到实现阶段与验收证据；外部职责单独登记，不转移为 Kernel 实现。
 
 本轮闭合的是六阶段开发计划修订，不是实现或验收。
-六阶段顺序保持不变且均未开始；后续按负责人指定阶段执行，完成时更新状态与证据。
+六阶段顺序保持不变；阶段一已于 2026-10-19 完成验收，阶段二至六未开始。后续按负责人指定阶段执行，
+完成时更新状态与证据。
 2026-10-18 仅补齐 SystemFaultHandling 的实现与验收落点（捕获边界、panic 五步、退出码与中断、真实故障注入），
 不改变六阶段顺序、阶段范围或已定决定，也不新增第七阶段。
+2026-10-19 只同步阶段一验收结果，不改变阶段范围、顺序或规范。
 除新增需求、规范冲突或实际交付变化外，不再重复展开整轮阶段重规划。
 
 ## 7. 已定的设计决定
 
 C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类由负责人在
-2026-10-17 确认的两类异常方案替代，其余兼容规则保留。新规范尚待实现，不按旧代码推定完成。
+2026-10-17 确认的两类异常方案替代，其余兼容规则保留。新规范已开始实现，阶段一完成 C01–C06 的
+Core 部分；不按旧代码推定其余阶段已完成。
 
 | ID | 决定 | 已实现 | 剩余 |
 | --- | --- | --- | --- |
-| C01 | 结算异常（超估算、重复结算冲突）以 `SettlementResult` 返回给 Core 审计，不用 throw | Monitor | Core 消费（阶段一、二） |
-| C02 | Execution → Core 同步登记：先登记尝试，再申请资源或提交结果；派发前登记执行实例；旧实例不得覆盖新实例结果 | 接口、`AttemptIdentityRegistry` | Core、Execution 接入（阶段一、二），阶段四联调 |
-| C03 | `RunRegistry.handleForward` 接收不可变 `BoundaryContext`；不改公共 Schema | 接口 | 产品 RunRegistry（阶段一），阶段四接线 |
+| C01 | 结算异常（超估算、重复结算冲突）以 `SettlementResult` 返回给 Core 审计，不用 throw | Monitor；Core 已消费异常并审计（阶段一） | 阶段二接入真实结算 |
+| C02 | Execution → Core 同步登记：先登记尝试，再申请资源或提交结果；派发前登记执行实例；旧实例不得覆盖新实例结果 | 接口、`AttemptIdentityRegistry`、Core 接入 | Execution 接入（阶段二），阶段四联调 |
+| C03 | `RunRegistry.handleForward` 接收不可变 `BoundaryContext`；不改公共 Schema | 接口；产品 `RunRegistry`（阶段一） | 阶段四接线 |
 | C04 | Fabric 启动后经 `afterStart` 注册 Supervisor 处理器；钩子失败回滚 | 完成 | — |
-| C05 | `requestId` 合法的畸形 syscall 由 Gateway 结构化拒绝；缺失或非法 `requestId` 是传输契约错误 | Fabric、Gateway | 阶段一核对，阶段四产品链联调 |
-| C06 | RunSummary 写入失败时，终结事件带 `finalizationError`，不伪造引用，保留原结束原因 | contracts、`finalizeRunEvents` | 阶段一接入，阶段四收尾联调 |
-| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；两类异常及启动保护待迁移 | Core 语义（一）、执行监管（三）、actor（四）、启动期限（五）、panic 与入口（六）；计划落点见 §6.8 |
+| C05 | `requestId` 合法的畸形 syscall 由 Gateway 结构化拒绝；缺失或非法 `requestId` 是传输契约错误 | Fabric、Gateway；阶段一核对完成 | 阶段四产品链联调 |
+| C06 | RunSummary 写入失败时，终结事件带 `finalizationError`，不伪造引用，保留原结束原因 | contracts、`finalizeRunEvents`、Core 接入（阶段一） | 阶段四收尾联调 |
+| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；Core 非停机语义（阶段一） | 执行监管（三）、actor（四）、启动期限（五）、panic 与入口（六）；计划落点见 §6.8 |
 | C08 | `SystemFault` 类型在 contracts；Workflow 与 UserInteraction 注入 `reportSystemFault` | 接口与注入 | 两个模块一侧由 Cary 完成 |
 
 ## 8. 注意事项
@@ -592,3 +605,5 @@ C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类�
 | 2026-10-17 | 按负责人决定修订 M1 与 Kernel 异常设计：两类异常、Core 私有语义、唯一 panic、启动保护与期限；保留其他模块接口名称 | 仅文档修订；源码与测试待各阶段实现，长期架构和其他 Module 文档未修改 |
 | 2026-10-17 | 完成 M1 要求覆盖核对，补齐兼容/身份链/统计/安全/真实评测及预留关闭规则；六阶段计划修订闭合，均未开始实施 | 文档范围、链接、格式与差异检查；本轮不运行产品测试、不提交 |
 | 2026-10-18 | 按 SystemFaultHandling 补齐计划：捕获边界、panic 五步与职责、退出码与中断、真实故障注入与验收证据 | 仅文档修订；文档结构、链接、格式与差异检查，未运行产品测试、不提交 |
+| 2026-10-19 | 阶段一（1.1–1.6）完成并验收：Core 运行管理、外部 syscall、授权与 Lease、预留结算、结果检查、收敛、异常语义与审计；Gateway 偏差关闭。报告见 [M1KernelStage1](M1KernelStage1.md) | 阶段一报告记录：pnpm run build、pnpm run check（44 个文件/433 项）、pnpm run demo:fake（退出码 0）、git diff --check 通过；使用 Execution 与 Supervisor 替身，无真实模型调用 |
+| 2026-10-19 | 同步计划状态：阶段一标记完成，更新实现状态、偏差、预留表与 C01–C07 进度；阶段二至六仍未开始 | 仅文档修订；格式、链接与 `git diff --check` 检查 |
