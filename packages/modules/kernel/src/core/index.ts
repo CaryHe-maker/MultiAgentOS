@@ -4,6 +4,29 @@ import type {
   ResultCheck,
 } from '../interfaces/index.js';
 
+export { type AuditSink, type CoreAuditEntry, type CoreAuditType } from './audit.js';
+export {
+  CoreRequestHandler,
+  type CoreEventSink,
+  type CoreExecutionPort,
+  type CoreRequestHandlerDeps,
+} from './request-handler.js';
+export {
+  RunRegistry,
+  type RunRegistryDeps,
+  type RunRequestHandler,
+  type RunResponse,
+} from './run-registry.js';
+export {
+  createRunState,
+  type AgentRunRecord,
+  type AwaitingAuthorization,
+  type NewRunState,
+  type RunState,
+  type UnitCounters,
+  type UnitDecision,
+} from './run-state.js';
+
 interface TrackedAttempt {
   readonly registration: AttemptRegistration;
   executionId?: string;
