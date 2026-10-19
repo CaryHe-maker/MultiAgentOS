@@ -1,18 +1,23 @@
 import {
   createM1ProtocolRegistry,
+  type AdmissionProjection,
   type CatalogPort,
   type GatewayForward,
-  type KernelToInteractionEvent,
   type PinnedDefinitionSet,
   type PortResult,
+  type RunSummary,
+  type SystemFaultReporter,
 } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { MonitorDuties, SchedulerDuties } from '../interfaces/index.js';
 import { DEFAULT_KERNEL_CONFIG as KERNEL_CONFIG } from '../interfaces/kernel-config.js';
 import type { AuditSink, CoreAuditEntry } from './audit.js';
 import {
   CoreRequestHandler,
+  type CoreEvent,
   type CoreExecutionPort,
   type CoreRequestHandlerDeps,
+  type CoreSupervisorPort,
 } from './request-handler.js';
 import { createRunState, type RunState } from './run-state.js';
 
@@ -126,12 +131,46 @@ function catalogWith(result: PortResult<PinnedDefinitionSet>): CatalogPort {
   };
 }
 
+const runSummaryRef = {
+  artifactId: `art_${'f'.repeat(64)}`,
+  sha256: 'f'.repeat(64),
+  size: 10,
+  mediaType: 'application/vnd.multiagentos.run-summary+json',
+};
+
 function execution(owned = true): CoreExecutionPort {
   return {
+    createAttempt: () => Promise.resolve('una_123456'),
+    abortQueued: () => ({ inFlight: [] }),
+    synthesizeStopUnconfirmed: () => undefined,
     ownsArtifact: () => owned,
     readArtifact: () => Promise.resolve({ ok: true, text: 'artifact text' }),
+    collectUnknownEffects: () => [],
+    modelRequestCount: () => 0,
+    publishRunSummary: () => Promise.resolve(runSummaryRef),
   };
 }
+
+const monitor: MonitorDuties = {
+  reserve: () => ({ ok: true, reservationId: 'rsv_123456' }),
+  settle: () => ({ budgetState: 'NORMAL', anomalies: [] }),
+  budgetState: () => 'NORMAL',
+  finalize: () => ({
+    limit: 600_000,
+    used: 0,
+    unknown: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    finalBudgetState: 'NORMAL',
+  }),
+};
+
+const scheduler: SchedulerDuties = {
+  acquire: () => ({ ok: true, grantId: 'grt_123456' }),
+  release: () => undefined,
+  stopGranting: () => undefined,
+  releaseAll: () => 0,
+};
 
 function auditSink(): { readonly sink: AuditSink; readonly entries: CoreAuditEntry[] } {
   const entries: CoreAuditEntry[] = [];
@@ -151,15 +190,21 @@ function handler(
     readonly pinned?: PinnedDefinitionSet;
     readonly owned?: boolean;
     readonly execution?: CoreExecutionPort;
+    readonly monitor?: MonitorDuties;
+    readonly scheduler?: SchedulerDuties;
+    readonly onRunClosed?: (run: RunState) => void;
+    readonly admission?: (projection: AdmissionProjection) => void;
+    readonly supervisor?: CoreSupervisorPort;
+    readonly reportSystemFault?: SystemFaultReporter;
   } = {},
 ): {
   readonly handler: CoreRequestHandler;
   readonly run: RunState;
   readonly entries: CoreAuditEntry[];
-  readonly events: KernelToInteractionEvent[];
+  readonly events: CoreEvent[];
 } {
   const audit = auditSink();
-  const events: KernelToInteractionEvent[] = [];
+  const events: CoreEvent[] = [];
   const run = createRunState({
     workflowRunId: 'wfr_123456',
     correlationId: 'cor_123456',
@@ -171,14 +216,21 @@ function handler(
     catalog: catalogWith({ ok: true, value: options.pinned ?? pinned() }),
     registry: createM1ProtocolRegistry(),
     execution: options.execution ?? execution(options.owned ?? true),
+    monitor: options.monitor ?? monitor,
+    scheduler: options.scheduler ?? scheduler,
     audit: audit.sink,
     config: KERNEL_CONFIG,
     events: {
       emit: (event) => {
         events.push(event);
-        return Promise.resolve();
       },
     },
+    ...(options.onRunClosed === undefined ? {} : { onRunClosed: options.onRunClosed }),
+    ...(options.admission === undefined ? {} : { admission: options.admission }),
+    ...(options.supervisor === undefined ? {} : { supervisor: options.supervisor }),
+    ...(options.reportSystemFault === undefined
+      ? {}
+      : { reportSystemFault: options.reportSystemFault }),
     now: () => new Date('2026-10-19T00:00:01.000Z'),
   };
   return {
@@ -353,6 +405,8 @@ describe('CoreRequestHandler registerAgentRun', () => {
       }),
       registry: {} as CoreRequestHandlerDeps['registry'],
       execution: execution(),
+      monitor,
+      scheduler,
       audit: auditSink().sink,
       config: KERNEL_CONFIG,
     });
@@ -571,7 +625,7 @@ describe('CoreRequestHandler state matrix', () => {
       requestId: 'req_close1',
       outcome: 'ACCEPTED',
     });
-    expect(run.runState).toBe('CONVERGING');
+    expect(run.runState).toBe('CLOSED');
     expect(run.runEpoch).toBe(2);
     expect(run.closeReason).toBe('COMPLETED');
     expect(run.reportRef).toEqual(reportRef);
@@ -595,6 +649,7 @@ describe('CoreRequestHandler state matrix', () => {
         cancelled.run,
       ),
     ).resolves.toEqual({ requestId: 'req_cancel1', outcome: 'ACCEPTED' });
+    expect(cancelled.run.runState).toBe('CLOSED');
     expect(cancelled.run.closeReason).toBe('CANCELLED');
     expect(cancelled.run.runEpoch).toBe(2);
   });
@@ -602,7 +657,7 @@ describe('CoreRequestHandler state matrix', () => {
   it('starts convergence on FAILED closeRun with the Workflow failure', async () => {
     const { handler: core, run } = handler();
     await core.handleForward(closeForward('req_fail01', 'FAILED'), context(), run);
-    expect(run.runState).toBe('CONVERGING');
+    expect(run.runState).toBe('CLOSED');
     expect(run.closeReason).toBe('FAILED');
     expect(run.failure).toEqual({
       code: 'WORKFLOW_INTERNAL',
@@ -674,14 +729,22 @@ describe('CoreRequestHandler authorization', () => {
     };
   }
 
-  function questionIdOf(events: readonly KernelToInteractionEvent[]): string {
+  function questionIdOf(events: readonly CoreEvent[]): string {
     const request = events.find((event) => event.type === 'AuthorizationRequest');
     if (request === undefined) throw new Error('no authorization request');
     return request.questionId;
   }
 
   it('asks once, holds protected requests and allows them after YES', async () => {
-    const { handler: core, run, entries, events } = handler();
+    const createAttempt = vi.fn(() => Promise.resolve('una_123456'));
+    const {
+      handler: core,
+      run,
+      entries,
+      events,
+    } = handler({
+      execution: { ...execution(), createAttempt },
+    });
     await register(core, run);
     await expect(core.handleForward(submitForward('req_auth001'), context(), run)).resolves.toEqual(
       { requestId: 'req_auth001', outcome: 'ACCEPTED' },
@@ -798,5 +861,352 @@ describe('CoreRequestHandler authorization', () => {
     const cancelledResult = await cancelled.handler.cancelAuthorization(cancelled.run);
     expect(cancelledResult?.resolution).toBe('CANCELLED');
     expect(cancelled.run.unitDecisions.get('req_auth007')).toEqual({ kind: 'CANCELLED' });
+  });
+});
+
+describe('CoreRequestHandler convergence', () => {
+  it('waits for in-flight executions and completes on the convergence deadline', async () => {
+    const synthesize = vi.fn();
+    const onRunClosed = vi.fn();
+    const admissions: AdmissionProjection[] = [];
+    const cancelRun = vi.fn(() => Promise.resolve());
+    const unknownEffects = [
+      {
+        unitAttemptId: 'una_pending',
+        executionId: 'exe_pending',
+        executionKind: 'MODEL' as const,
+        effect: 'EXECUTION_STOP_UNCONFIRMED' as const,
+      },
+    ];
+    const test = handler({
+      onRunClosed,
+      admission: (projection) => admissions.push(projection),
+      supervisor: { cancelRun },
+      execution: {
+        ...execution(),
+        abortQueued: () => ({
+          inFlight: [{ unitAttemptId: 'una_pending', executionId: 'exe_pending' }],
+        }),
+        synthesizeStopUnconfirmed: synthesize,
+        collectUnknownEffects: () => unknownEffects,
+      },
+    });
+
+    await test.handler.handleForward(closeForward('req_closePend'), context(), test.run);
+    expect(test.run.runState).toBe('CONVERGING');
+    expect(test.events.some((event) => event.type === 'RunClosed')).toBe(false);
+
+    await test.handler.convergenceDeadline(test.run);
+    await test.handler.whenConverged(test.run);
+
+    expect(synthesize).toHaveBeenCalledWith(['exe_pending']);
+    expect(cancelRun).toHaveBeenCalledWith({ workflowRunId: 'wfr_123456', runEpoch: 2 });
+    expect(admissions).toEqual([
+      { workflowRunId: 'wfr_123456', runState: 'CONVERGING', closeReason: 'COMPLETED' },
+      { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+    ]);
+    expect(test.run.runState).toBe('CLOSED');
+    expect(onRunClosed).toHaveBeenCalledWith(test.run);
+    expect(test.entries.map((entry) => entry.type)).toEqual(
+      expect.arrayContaining(['CONVERGENCE_STARTED', 'CONVERGENCE_DEADLINE', 'RUN_CLOSED']),
+    );
+    const closed = test.events.find((event) => event.type === 'RunClosed');
+    const finished = test.events.find((event) => event.type === 'RunFinished');
+    expect(closed).toMatchObject({
+      type: 'RunClosed',
+      closeReason: 'COMPLETED',
+      unknownEffects,
+    });
+    expect(finished).toMatchObject({
+      type: 'RunFinished',
+      closeReason: 'COMPLETED',
+      unknownEffects,
+    });
+  });
+
+  it('cancels a run on shutdown and normalizes counters in RunSummary', async () => {
+    let published: RunSummary | undefined;
+    const test = handler({
+      execution: {
+        ...execution(),
+        publishRunSummary: (summary) => {
+          published = summary;
+          return Promise.resolve(runSummaryRef);
+        },
+      },
+    });
+    await register(test.handler, test.run);
+    test.run.units.submitted = 3;
+    test.run.units.ok = 2;
+    await test.handler.shutdownRun(test.run);
+
+    expect(published?.units).toEqual({
+      submitted: 3,
+      ok: 2,
+      rejected: 0,
+      failed: 0,
+      notDelivered: 1,
+    });
+    expect(test.run.runState).toBe('CLOSED');
+    expect(test.run.closeReason).toBe('CANCELLED');
+    expect(test.events).toContainEqual(
+      expect.objectContaining({ type: 'RunClosed', closeReason: 'CANCELLED' }),
+    );
+    expect(test.events).toContainEqual(
+      expect.objectContaining({ type: 'RunFinished', closeReason: 'CANCELLED' }),
+    );
+  });
+
+  it('cancels a pending authorization question during convergence', async () => {
+    const test = handler();
+    await register(test.handler, test.run);
+    await test.handler.handleForward(submitForward('req_authClose'), context(), test.run);
+    const request = test.events.find((event) => event.type === 'AuthorizationRequest');
+    if (request?.type !== 'AuthorizationRequest') throw new Error('no authorization request');
+
+    await test.handler.handleForward(
+      {
+        caller: 'user-interaction',
+        requestType: 'cancelRun',
+        request: { requestId: 'req_cancelClose', workflowRunId: 'wfr_123456' },
+      },
+      context(),
+      test.run,
+    );
+    await test.handler.whenConverged(test.run);
+
+    expect(test.run.unitDecisions.get('req_authClose')).toEqual({ kind: 'CANCELLED' });
+    expect(test.events).toContainEqual({
+      type: 'AuthorizationResolved',
+      questionId: request.questionId,
+      resolution: 'CANCELLED',
+    });
+    expect(
+      test.events.some(
+        (event) => event.type === 'UnitReport' && event.requestId === 'req_authClose',
+      ),
+    ).toBe(false);
+    expect(test.run.units.notDelivered).toBe(1);
+  });
+
+  it('aborts a RUNNING run with KERNEL_INTERNAL and the faultId', async () => {
+    const test = handler();
+    await test.handler.abortRun(test.run, 'fault-001');
+    expect(test.run.runState).toBe('CLOSED');
+    expect(test.run.closeReason).toBe('FAILED');
+    expect(test.run.failure).toMatchObject({
+      code: 'KERNEL_INTERNAL',
+      source: 'KERNEL',
+      detail: 'fault-001',
+    });
+    expect(test.entries).toContainEqual(
+      expect.objectContaining({ type: 'SYSTEM_FAULT_ABORT', faultId: 'fault-001' }),
+    );
+  });
+
+  it('ends a RUNNING run as RUN_TIMEOUT', async () => {
+    const test = handler();
+    await test.handler.runTimedOut(test.run);
+    expect(test.run.runState).toBe('CLOSED');
+    expect(test.run.closeReason).toBe('RUN_TIMEOUT');
+    expect(test.events).toContainEqual(
+      expect.objectContaining({ type: 'RunClosed', closeReason: 'RUN_TIMEOUT' }),
+    );
+  });
+
+  it('keeps terminal events usable when RunSummary publication fails', async () => {
+    const test = handler({
+      execution: {
+        ...execution(),
+        publishRunSummary: () => Promise.reject(new Error('disk is full')),
+      },
+    });
+    await test.handler.handleForward(closeForward('req_closeSum'), context(), test.run);
+    expect(test.run.runState).toBe('CLOSED');
+    expect(test.events).toContainEqual(
+      expect.objectContaining({
+        type: 'RunClosed',
+        closeReason: 'COMPLETED',
+        finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+      }),
+    );
+    expect(test.events).toContainEqual(
+      expect.objectContaining({
+        type: 'RunFinished',
+        closeReason: 'COMPLETED',
+        finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+      }),
+    );
+  });
+});
+
+describe('CoreRequestHandler non-halting exceptions', () => {
+  it('handles KERNEL_FAULT as FAILED(KERNEL_INTERNAL) with the faultId', async () => {
+    const test = handler();
+    await expect(
+      test.handler.handleCoreException(test.run, { kind: 'KERNEL_FAULT', faultId: 'fault-9' }),
+    ).resolves.toBe('HANDLED');
+    expect(test.run.runState).toBe('CLOSED');
+    expect(test.run.closeReason).toBe('FAILED');
+    expect(test.run.failure).toMatchObject({
+      code: 'KERNEL_INTERNAL',
+      source: 'KERNEL',
+      detail: 'fault-9',
+    });
+    expect(test.entries).toContainEqual(
+      expect.objectContaining({ type: 'SYSTEM_FAULT_ABORT', faultId: 'fault-9' }),
+    );
+  });
+
+  it('only audits a KERNEL_FAULT after the run has closed', async () => {
+    const test = handler();
+    test.run.runState = 'CLOSED';
+    test.run.closeReason = 'COMPLETED';
+    await expect(
+      test.handler.handleCoreException(test.run, { kind: 'KERNEL_FAULT', faultId: 'fault-10' }),
+    ).resolves.toBe('ALREADY_CLOSED');
+    expect(test.run.closeReason).toBe('COMPLETED');
+    expect(test.entries).toContainEqual(
+      expect.objectContaining({ type: 'SYSTEM_FAULT_ABORT', faultId: 'fault-10' }),
+    );
+  });
+
+  it('routes RUN_TIMEOUT, VIOLATION and STOP_UNCONFIRMED to convergence', async () => {
+    const timedOut = handler();
+    await timedOut.handler.handleCoreException(timedOut.run, { kind: 'RUN_TIMEOUT' });
+    expect(timedOut.run.closeReason).toBe('RUN_TIMEOUT');
+
+    const violation = handler();
+    await violation.handler.handleCoreException(violation.run, {
+      kind: 'VIOLATION',
+      reasonCode: 'PATH_ESCAPE',
+      unitRequestId: 'req_viol001',
+    });
+    expect(violation.run.runState).toBe('CLOSED');
+    expect(violation.run.closeReason).toBe('VIOLATION');
+    expect(violation.run.failure).toMatchObject({
+      code: 'PATH_ESCAPE',
+      category: 'INTEGRITY',
+      source: 'KERNEL',
+      unitRequestId: 'req_viol001',
+    });
+
+    const stopped = handler();
+    await stopped.handler.handleCoreException(stopped.run, {
+      kind: 'STOP_UNCONFIRMED',
+      unitRequestId: 'req_stop001',
+    });
+    expect(stopped.run.runState).toBe('CLOSED');
+    expect(stopped.run.closeReason).toBe('FAILED');
+    expect(stopped.run.failure).toMatchObject({
+      code: 'EXECUTION_STOP_UNCONFIRMED',
+      source: 'KERNEL',
+      unitRequestId: 'req_stop001',
+    });
+  });
+
+  it('expires authorization without stopping the run', async () => {
+    const test = handler();
+    await register(test.handler, test.run);
+    await test.handler.handleForward(submitForward('req_authExp'), context(), test.run);
+    await expect(
+      test.handler.handleCoreException(test.run, { kind: 'AUTHORIZATION_TIMEOUT' }),
+    ).resolves.toBe('HANDLED');
+    expect(test.run.runState).toBe('RUNNING');
+    expect(test.run.unitDecisions.get('req_authExp')).toEqual({
+      kind: 'DECLINED',
+      reasonCode: 'USER_DECLINED',
+    });
+    expect(test.events).toContainEqual(
+      expect.objectContaining({
+        type: 'UnitReport',
+        requestId: 'req_authExp',
+        reasonCode: 'USER_DECLINED',
+      }),
+    );
+  });
+
+  it('keeps execution failures and settlement anomalies on the structured path', async () => {
+    const test = handler();
+    await expect(
+      test.handler.handleCoreException(test.run, {
+        kind: 'EXECUTION_FAILED',
+        reasonCode: 'UNIT_TIMEOUT',
+        retryable: true,
+      }),
+    ).resolves.toBe('IGNORED');
+    await expect(
+      test.handler.handleCoreException(test.run, {
+        kind: 'SETTLEMENT_ANOMALY',
+        unitAttemptId: 'una_123456',
+        anomaly: 'ACTUAL_EXCEEDED_ESTIMATE',
+      }),
+    ).resolves.toBe('IGNORED');
+    expect(test.run.runState).toBe('RUNNING');
+  });
+
+  it('requests panic when convergence itself fails', async () => {
+    const reportSystemFault = vi.fn<SystemFaultReporter>();
+    const test = handler({
+      reportSystemFault,
+      monitor: {
+        ...monitor,
+        finalize: () => {
+          throw new Error('ledger failure');
+        },
+      },
+    });
+    await test.handler.handleForward(closeForward('req_closeFail'), context(), test.run);
+    await expect(test.handler.whenConverged(test.run)).rejects.toThrow('ledger failure');
+    expect(reportSystemFault).toHaveBeenCalledTimes(1);
+    const fault = reportSystemFault.mock.calls[0]?.[0];
+    expect(fault).toMatchObject({
+      source: 'kernel-core',
+      phase: 'RUN',
+      workflowRunId: 'wfr_123456',
+    });
+    expect(fault?.error).toBeInstanceOf(Error);
+  });
+});
+
+describe('CoreRequestHandler audit coverage', () => {
+  it('records the Core lifecycle audit types without sensitive payloads', async () => {
+    const test = handler();
+    await register(test.handler, test.run);
+    await test.handler.handleForward(submitForward('req_audit01'), context(), test.run);
+    const question = test.events.find((event) => event.type === 'AuthorizationRequest');
+    if (question?.type !== 'AuthorizationRequest') throw new Error('no authorization request');
+    await test.handler.handleForward(
+      {
+        caller: 'user-interaction',
+        requestType: 'answerAuthorization',
+        request: {
+          requestId: 'req_answerAudit',
+          workflowRunId: 'wfr_123456',
+          questionId: question.questionId,
+          answer: 'NO',
+        },
+      },
+      context(),
+      test.run,
+    );
+    await test.handler.handleForward(endForward('req_endAudit'), context(), test.run);
+    await test.handler.handleForward(closeForward('req_closeAudit', 'FAILED'), context(), test.run);
+
+    const types = new Set(test.entries.map((entry) => entry.type));
+    expect([...types]).toEqual(
+      expect.arrayContaining([
+        'AGENT_RUN_REGISTERED',
+        'AUTHORIZATION_ASKED',
+        'UNIT_ACCEPTED',
+        'AUTHORIZATION_RESOLVED',
+        'UNIT_REPORTED',
+        'AGENT_RUN_ENDED',
+        'CONVERGENCE_STARTED',
+        'RUN_CLOSED',
+      ]),
+    );
+    const serialized = JSON.stringify(test.entries);
+    expect(serialized).not.toMatch(/lease|credential|prompt|sourceText/i);
   });
 });

@@ -91,6 +91,8 @@ describe('AuthorizationManager', () => {
     });
     expect(authorization.answer(questionId, 'YES')).toBeUndefined();
     expect(authorization.cancel()).toBeUndefined();
+    expect(authorization.isLeaseValid()).toBe(true);
+    authorization.invalidateLease();
     expect(authorization.isLeaseValid()).toBe(false);
     expect(authorization.check('req_fourth', unit(['repo.read']))).toEqual({
       decision: { kind: 'DECLINED' },

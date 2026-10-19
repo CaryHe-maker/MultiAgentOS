@@ -36,6 +36,7 @@ export interface CoreAuditEntry {
   readonly resolution?: 'GRANTED' | 'DECLINED' | 'TIMED_OUT' | 'CANCELLED';
   readonly runSummaryRef?: ArtifactRef;
   readonly faultId?: string;
+  readonly anomaly?: 'ACTUAL_EXCEEDED_ESTIMATE' | 'CONFLICTING_SETTLEMENT';
 }
 
 /** Injected by the composition root; stage 1.6 wires it to Persistence. */

@@ -292,6 +292,60 @@ describe('RunRegistry shutdown and tombstone', () => {
     });
   });
 
+  it('starts the handler shutdown and resolves whenClosed', async () => {
+    const repository = await tempDir('kernel-repo-');
+    const dataDir = await tempDir('kernel-data-');
+    const fake = handler();
+    let closedRun: RunState | undefined;
+    const registry = new RunRegistry({
+      dataDir,
+      handler: {
+        ...fake.impl,
+        shutdownRun: (run) => {
+          closedRun = run;
+          run.runState = 'CLOSED';
+          run.closeReason = 'CANCELLED';
+          return Promise.resolve();
+        },
+      },
+    });
+
+    await registry.handleForward(createForward('req_shut04', repository), context);
+    await expect(registry.handleForward(shutdown('req_shut05'), context)).resolves.toEqual({
+      requestId: 'req_shut05',
+      outcome: 'ACCEPTED',
+    });
+    await registry.whenClosed();
+    expect(closedRun?.runState).toBe('CLOSED');
+    expect(closedRun?.closeReason).toBe('CANCELLED');
+  });
+
+  it('aborts the run through the handler with the faultId', async () => {
+    const repository = await tempDir('kernel-repo-');
+    const dataDir = await tempDir('kernel-data-');
+    const fake = handler();
+    let abortedFault: string | undefined;
+    const registry = new RunRegistry({
+      dataDir,
+      handler: {
+        ...fake.impl,
+        abortRun: (run, faultId) => {
+          abortedFault = faultId;
+          run.runState = 'CLOSED';
+          run.closeReason = 'FAILED';
+          return Promise.resolve();
+        },
+      },
+    });
+
+    await registry.handleForward(createForward('req_abort01', repository), context);
+    await registry.abortAllRuns({ faultId: 'fault-001', deadlineMs: 1_000 });
+    expect(abortedFault).toBe('fault-001');
+    await expect(
+      registry.handleForward(createForward('req_after02', repository, 'wfr_999998'), context),
+    ).resolves.toMatchObject({ reasonCode: 'RUN_LIMIT' });
+  });
+
   it('routes unknown runs as RUN_NOT_FOUND and delegates a closed run to the handler', async () => {
     const repository = await tempDir('kernel-repo-');
     const dataDir = await tempDir('kernel-data-');

@@ -28,6 +28,8 @@ export interface RunRequestHandler {
     run: RunState,
   ): Promise<RunResponse>;
   report?(fact: ExecutionFact, run: RunState): Promise<void>;
+  shutdownRun?(run: RunState): Promise<void>;
+  abortRun?(run: RunState, faultId: string): Promise<void>;
 }
 
 export interface RunRegistryDeps {
@@ -58,6 +60,8 @@ export class RunRegistry {
   #hasCreatedRun = false;
   #closing = false;
   #resolvedDataDir: string | undefined;
+  #shutdownStarted = false;
+  #shutdownPromise: Promise<void> = Promise.resolve();
 
   public constructor(deps: RunRegistryDeps) {
     if (!isAbsolute(deps.dataDir)) throw new Error('dataDir must be an absolute path');
@@ -161,11 +165,55 @@ export class RunRegistry {
     if (lookup.kind === 'replay') return lookup.response;
     if (lookup.kind === 'conflict') return rejected(request.requestId, 'REQUEST_CONFLICT');
 
-    // Stage 1.5 adds run cancellation and waits for CLOSED plus Outbox drain.
     this.#closing = true;
     const response: SyscallAck = { requestId: request.requestId, outcome: 'ACCEPTED' };
     this.#ledger.remember(request.requestId, request, response);
+    if (!this.#shutdownStarted) {
+      this.#shutdownStarted = true;
+      const run = this.#run;
+      if (run !== undefined && this.#handler.shutdownRun !== undefined) {
+        this.#shutdownPromise = this.#handler.shutdownRun(run).then(() => {
+          this.#rememberTombstone(run);
+        });
+      } else {
+        if (run !== undefined) this.#rememberTombstone(run);
+      }
+    }
     return response;
+  }
+
+  /** Waits for the shutdown convergence started by `shutdown`. */
+  public whenClosed(): Promise<void> {
+    return this.#shutdownPromise;
+  }
+
+  /** Composition root panic path: cancel all runs within the given deadline. */
+  public async abortAllRuns(request: {
+    readonly faultId: string;
+    readonly deadlineMs: number;
+  }): Promise<void> {
+    this.#closing = true;
+    const run = this.#run;
+    if (run === undefined || this.#handler.abortRun === undefined) return;
+    const pending = this.#handler.abortRun(run, request.faultId).then(() => {
+      this.#rememberTombstone(run);
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, request.deadlineMs);
+      timer.unref();
+    });
+    try {
+      await Promise.race([pending, deadline]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      void pending.catch(() => undefined);
+    }
+  }
+
+  #rememberTombstone(run: RunState): void {
+    if (run.runState === 'CLOSED' && run.closeReason !== undefined)
+      this.#tombstones.set(run.workflowRunId, { closeReason: run.closeReason });
   }
 
   async #resolveRepositoryRoot(repositoryPath: string): Promise<string | undefined> {

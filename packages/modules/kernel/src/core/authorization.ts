@@ -168,13 +168,16 @@ export class AuthorizationManager {
   }
 
   public cancel(): AuthorizationResolution | undefined {
-    // The Lease dies with the run even when the question had already been answered.
-    this.#lease = undefined;
     const record = this.#record;
     if (record === undefined || record.status !== 'PENDING') return undefined;
     record.status = 'CANCELLED';
     record.answeredAt = this.#now().toISOString();
     return this.#resolution(record, 'CANCELLED');
+  }
+
+  /** Step ③ of convergence: the Lease does not survive the run. */
+  public invalidateLease(): void {
+    this.#lease = undefined;
   }
 
   #resolution(
