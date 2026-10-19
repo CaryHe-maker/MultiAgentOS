@@ -30,6 +30,7 @@ import {
   type ExecutionRegistration,
   type ReservationDecision,
   type ResultCheck,
+  type RetryDecision,
 } from '../interfaces/index.js';
 import { ArtifactOwnership } from './artifact-ownership.js';
 import type { AttemptDispatcher } from './dispatcher.js';
@@ -275,10 +276,20 @@ class FakeCore implements CoreSyscalls {
     estimatedTokens: number;
     final: boolean;
   }[] = [];
+  public readonly retries: {
+    unitAttemptId: string;
+    previousExecutionId: string;
+    requestState?: 'NOT_SENT' | 'SENT' | 'UNKNOWN';
+  }[] = [];
   public reservationDecision: ReservationDecision = {
     granted: true,
     reservationId: 'rsv_000001',
     grantId: 'grt_000001',
+  };
+  public retryDecision: RetryDecision = {
+    allowed: true,
+    reservationId: 'rsv_000002',
+    grantId: 'grt_000002',
   };
   public epoch = 1;
 
@@ -307,8 +318,17 @@ class FakeCore implements CoreSyscalls {
     this.checks.push(check);
   }
 
-  public retryExecution(): never {
-    throw new Error('retryExecution is not used by stage 2.3');
+  public retryExecution(request: {
+    readonly unitAttemptId: string;
+    readonly previousExecutionId: string;
+    readonly requestState?: 'NOT_SENT' | 'SENT' | 'UNKNOWN';
+  }): RetryDecision {
+    this.retries.push({
+      unitAttemptId: request.unitAttemptId,
+      previousExecutionId: request.previousExecutionId,
+      ...(request.requestState === undefined ? {} : { requestState: request.requestState }),
+    });
+    return this.retryDecision;
   }
 
   public currentRunEpoch(): number {
@@ -470,6 +490,97 @@ function failedFact(
   };
 }
 
+function completedFileFact(
+  unitAttemptId: string,
+  executionId: string,
+  text = 'const answer = 42;',
+): ExecutionFact {
+  return {
+    workflowRunId: 'wfr_123456',
+    unitAttemptId,
+    executionId,
+    runEpoch: 1,
+    executionKind: 'FILE_READ',
+    outcome: 'COMPLETED',
+    result: {
+      output: {
+        path: 'a.ts',
+        startLine: 1,
+        endLine: 1,
+        totalLines: 1,
+        contentSha256: sha,
+        fileSha256: 'b'.repeat(64),
+      },
+      artifact: { mediaType: MEDIA_TYPES.fileText, text },
+    },
+    startedAt: '2026-10-19T00:00:01.000Z',
+    endedAt: '2026-10-19T00:00:02.000Z',
+  };
+}
+
+function completedModelFact(unitAttemptId: string, executionId: string): ExecutionFact {
+  return {
+    workflowRunId: 'wfr_123456',
+    unitAttemptId,
+    executionId,
+    runEpoch: 1,
+    executionKind: 'MODEL',
+    outcome: 'COMPLETED',
+    result: {
+      output: { finishReason: 'STOP', toolCalls: [], hasText: false },
+      artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{"finishReason":"STOP"}' },
+    },
+    requestState: 'SENT',
+    usage: { inputTokens: 10, outputTokens: 5 },
+    startedAt: '2026-10-19T00:00:01.000Z',
+    endedAt: '2026-10-19T00:00:02.000Z',
+  };
+}
+
+function retryableModelFact(unitAttemptId: string, executionId: string): ExecutionFact {
+  return {
+    workflowRunId: 'wfr_123456',
+    unitAttemptId,
+    executionId,
+    runEpoch: 1,
+    executionKind: 'MODEL',
+    outcome: 'FAILED',
+    reasonCode: 'PROVIDER_UNREACHABLE',
+    retryable: true,
+    requestState: 'NOT_SENT',
+    startedAt: '2026-10-19T00:00:01.000Z',
+    endedAt: '2026-10-19T00:00:02.000Z',
+  };
+}
+
+function violationFact(unitAttemptId: string, executionId: string): ExecutionFact {
+  return {
+    workflowRunId: 'wfr_123456',
+    unitAttemptId,
+    executionId,
+    runEpoch: 1,
+    executionKind: 'FILE_READ',
+    outcome: 'VIOLATION',
+    reasonCode: 'SCOPE_MISSING',
+    startedAt: '2026-10-19T00:00:01.000Z',
+    endedAt: '2026-10-19T00:00:02.000Z',
+  };
+}
+
+function stopFact(unitAttemptId: string, executionId: string): ExecutionFact {
+  return {
+    workflowRunId: 'wfr_123456',
+    unitAttemptId,
+    executionId,
+    runEpoch: 1,
+    executionKind: 'FILE_READ',
+    outcome: 'STOP_UNCONFIRMED',
+    reasonCode: 'UNIT_TIMEOUT',
+    startedAt: '2026-10-19T00:00:01.000Z',
+    endedAt: '2026-10-19T00:00:02.000Z',
+  };
+}
+
 describe('Execution attempts and FIFO', () => {
   it('registers an attempt before dispatching it', async () => {
     const test = harness();
@@ -583,7 +694,7 @@ describe('Execution attempts and FIFO', () => {
       executionKind: 'MODEL',
       outcome: 'FAILED',
       reasonCode: 'PROVIDER_UNREACHABLE',
-      retryable: true,
+      retryable: false,
       requestState: 'NOT_SENT',
       startedAt: '2026-10-19T00:00:01.000Z',
       endedAt: '2026-10-19T00:00:02.000Z',
@@ -1030,6 +1141,168 @@ describe('Execution request construction', () => {
     await flush();
 
     expect(test.dispatcher.requests).toHaveLength(0);
+    expect(test.core.checks).toHaveLength(0);
+  });
+});
+
+describe('Execution facts, retry and convergence', () => {
+  it('writes a COMPLETED artifact and submits its result check', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(spec('req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+
+    await test.execution.handleExecutionFact(completedFileFact(unitAttemptId, executionId));
+
+    const ref = outputRefOf(test.core.checks[0]);
+    expect(ref.mediaType).toBe(MEDIA_TYPES.fileText);
+    expect(test.execution.ownsArtifact(ref)).toBe(true);
+    expect(test.artifacts.puts[0]?.content).toEqual(Buffer.from('const answer = 42;'));
+    await expect(test.execution.readArtifact(ref)).resolves.toEqual({
+      ok: true,
+      text: 'const answer = 42;',
+    });
+  });
+
+  it('does not write a COMPLETED artifact after the attempt epoch is stale', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(spec('req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+    test.core.epoch = 2;
+
+    await test.execution.handleExecutionFact(completedFileFact(unitAttemptId, executionId));
+
+    expect(test.artifacts.puts).toHaveLength(0);
+    expect(test.core.checks[0]).toMatchObject({
+      unitAttemptId,
+      executionId,
+      outcome: 'COMPLETED',
+    });
+    expect(test.core.checks[0]?.outputRef).toBeUndefined();
+  });
+
+  it('turns an artifact write failure into FAILED(INTERNAL)', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(spec('req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+    test.artifacts.failNextPut = true;
+
+    await test.execution.handleExecutionFact(completedFileFact(unitAttemptId, executionId));
+
+    expect(test.core.checks[0]).toMatchObject({
+      unitAttemptId,
+      executionId,
+      outcome: 'FAILED',
+      reasonCode: 'INTERNAL',
+    });
+    expect(test.artifacts.puts).toHaveLength(0);
+  });
+
+  it('does not write artifacts for VIOLATION or STOP_UNCONFIRMED', async () => {
+    const violation = harness();
+    const violationAttempt = await violation.execution.createAttempt(spec('req_000001'));
+    await flush();
+    const violationExecution = violation.dispatcher.requests[0]?.executionId ?? '';
+    await violation.execution.handleExecutionFact(
+      violationFact(violationAttempt, violationExecution),
+    );
+    expect(violation.core.checks[0]).toMatchObject({
+      unitAttemptId: violationAttempt,
+      executionId: violationExecution,
+      outcome: 'VIOLATION',
+      reasonCode: 'SCOPE_MISSING',
+    });
+    expect(violation.artifacts.puts).toHaveLength(0);
+
+    const stop = harness();
+    const stopAttempt = await stop.execution.createAttempt(spec('req_000001'));
+    await flush();
+    const stopExecution = stop.dispatcher.requests[0]?.executionId ?? '';
+    await stop.execution.handleExecutionFact(stopFact(stopAttempt, stopExecution));
+    expect(stop.core.checks[0]).toMatchObject({
+      unitAttemptId: stopAttempt,
+      executionId: stopExecution,
+      outcome: 'STOP_UNCONFIRMED',
+      stopVerdictBy: 'SUPERVISOR',
+    });
+    expect(stop.artifacts.puts).toHaveLength(0);
+  });
+
+  it('retries a retryable MODEL failure with back-off and a new executionId', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(await modelSpec(test, 'req_000001'));
+    await flush();
+    const firstExecution = test.dispatcher.requests[0]?.executionId ?? '';
+
+    await test.execution.handleExecutionFact(retryableModelFact(unitAttemptId, firstExecution));
+
+    expect(test.core.retries).toEqual([
+      {
+        unitAttemptId,
+        previousExecutionId: firstExecution,
+        requestState: 'NOT_SENT',
+      },
+    ]);
+    expect(test.core.checks).toHaveLength(0);
+    expect(test.dispatcher.requests).toHaveLength(2);
+    const retry = test.dispatcher.requests[1];
+    expect(retry?.executionId).not.toBe(firstExecution);
+    expect(retry?.notBefore).toBe('2026-10-19T00:00:01.000Z');
+    expect(test.execution.modelRequestCount()).toBe(2);
+
+    await test.execution.handleExecutionFact(
+      completedModelFact(unitAttemptId, retry?.executionId ?? ''),
+    );
+    const ref = outputRefOf(test.core.checks[0]);
+    expect(ref.mediaType).toBe(MEDIA_TYPES.modelOutput);
+    expect(test.execution.ownsArtifact(ref)).toBe(true);
+  });
+
+  it('ignores a second fact for the previous execution after a retry', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(await modelSpec(test, 'req_000001'));
+    await flush();
+    const firstExecution = test.dispatcher.requests[0]?.executionId ?? '';
+
+    await test.execution.handleExecutionFact(retryableModelFact(unitAttemptId, firstExecution));
+    await test.execution.handleExecutionFact(retryableModelFact(unitAttemptId, firstExecution));
+
+    expect(test.core.retries).toHaveLength(1);
+    expect(test.dispatcher.requests).toHaveLength(2);
+    expect(test.core.checks).toHaveLength(0);
+  });
+
+  it('settles the last failure when retry is not allowed', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(await modelSpec(test, 'req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+    test.core.retryDecision = { allowed: false, reason: 'RETRY_LIMIT' };
+
+    await test.execution.handleExecutionFact(retryableModelFact(unitAttemptId, executionId));
+
+    expect(test.dispatcher.requests).toHaveLength(1);
+    expect(test.core.checks[0]).toMatchObject({
+      unitAttemptId,
+      executionId,
+      outcome: 'FAILED',
+      reasonCode: 'PROVIDER_UNREACHABLE',
+      requestState: 'NOT_SENT',
+    });
+  });
+
+  it('abandons the attempt when Core already delivered a budget rejection', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(await modelSpec(test, 'req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+    test.core.retryDecision = { allowed: false, reason: 'BUDGET_EXHAUSTED' };
+
+    await test.execution.handleExecutionFact(retryableModelFact(unitAttemptId, executionId));
+
+    expect(test.dispatcher.requests).toHaveLength(1);
     expect(test.core.checks).toHaveLength(0);
   });
 });

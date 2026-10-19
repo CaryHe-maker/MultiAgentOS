@@ -379,12 +379,12 @@ describe('CoreAttempts result checks', () => {
       executionId,
       outcome: 'COMPLETED',
       output: fileOutput,
-      outputRef: fileRef,
       usage: { inputTokens: 3, outputTokens: 2 },
     });
     expect(test.settlements).toHaveLength(1);
     expect(test.run.units.notDelivered).toBe(1);
     expect(test.events.filter((event) => event.type === 'UnitReport')).toHaveLength(0);
+    expect(test.audits.some((entry) => entry.type === 'UNIT_NOT_DELIVERED')).toBe(true);
   });
 
   it('handles a stale execution without settling or delivering', async () => {

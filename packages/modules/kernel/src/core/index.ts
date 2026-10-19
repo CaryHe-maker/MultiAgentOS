@@ -1,4 +1,5 @@
 export { AttemptIdentityRegistry } from './attempt-identity.js';
+export { CoreAttempts, type AttemptStarter, type CoreAttemptsDeps } from './attempts.js';
 export { type AuditSink, type CoreAuditEntry, type CoreAuditType } from './audit.js';
 export type { CoreEvent, CoreEventSink } from './events.js';
 export type { CoreException, CoreExceptionOutcome } from './exceptions.js';

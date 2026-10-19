@@ -21,6 +21,7 @@ import type {
   CoreSyscalls,
   ExecutionDuties,
   ResultCheck,
+  RetryDecision,
 } from '../interfaces/index.js';
 import { ArtifactOwnership } from './artifact-ownership.js';
 import type { ExecutionRecord, UnitAttempt } from './attempt.js';
@@ -125,42 +126,162 @@ export class Execution implements ExecutionDuties {
   }
 
   /**
-   * Stage 2.4 adds the full result path. Non-completed facts already carry everything Core
-   * needs to settle and release the attempt, so they can advance the FIFO here.
+   * Routes one terminal execution fact. A retryable MODEL/other failure may create a new
+   * execution instance; all other outcomes settle through Core exactly once.
    */
-  public handleExecutionFact(fact: ExecutionFact): Promise<void> {
-    try {
-      const attempt = this.#byAttempt.get(fact.unitAttemptId);
-      if (attempt === undefined) return Promise.resolve();
-      if (attempt.state === 'CHECKED' || attempt.state === 'ABORTED') return Promise.resolve();
-      if (fact.runEpoch !== attempt.runEpoch) return Promise.resolve();
-      if (fact.executionKind !== attempt.unit.executionKind) return Promise.resolve();
-      const execution = attempt.executions.find((entry) => entry.executionId === fact.executionId);
-      if (execution === undefined || execution.outcome !== undefined) return Promise.resolve();
+  public async handleExecutionFact(fact: ExecutionFact): Promise<void> {
+    const attempt = this.#byAttempt.get(fact.unitAttemptId);
+    if (attempt === undefined) return;
+    if (attempt.state === 'CHECKED' || attempt.state === 'ABORTED') return;
+    if (fact.runEpoch !== attempt.runEpoch) return;
+    if (fact.executionKind !== attempt.unit.executionKind) return;
+    const execution = attempt.executions.find((entry) => entry.executionId === fact.executionId);
+    if (execution === undefined || execution.outcome !== undefined) return;
 
-      execution.outcome = fact.outcome;
-      if (fact.executionKind === 'MODEL') execution.requestState = fact.requestState;
-      if (fact.outcome === 'COMPLETED')
-        return Promise.reject(
-          new Error('NOT_IMPLEMENTED: COMPLETED result handling (stage 2.2/2.4)'),
-        );
+    execution.outcome = fact.outcome;
+    if (fact.executionKind === 'MODEL') execution.requestState = fact.requestState;
 
-      const check: ResultCheck = {
-        unitAttemptId: attempt.unitAttemptId,
-        executionId: fact.executionId,
-        outcome: fact.outcome,
-        reasonCode: fact.reasonCode,
-        ...(fact.executionKind === 'MODEL' && fact.usage !== undefined
-          ? { usage: fact.usage }
-          : {}),
-        ...(fact.executionKind === 'MODEL' ? { requestState: fact.requestState } : {}),
-        ...(fact.outcome === 'STOP_UNCONFIRMED' ? { stopVerdictBy: 'SUPERVISOR' as const } : {}),
-      };
-      this.#finish(attempt, check);
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    if (fact.outcome === 'COMPLETED') {
+      await this.#completeExecution(attempt, execution, fact);
+      return;
     }
+
+    if (fact.outcome === 'FAILED' && fact.retryable) {
+      const retried = await this.#retryAttempt(attempt, execution, fact);
+      if (retried) return;
+    }
+
+    this.#finish(attempt, this.#resultCheck(attempt, execution, fact));
+  }
+
+  async #completeExecution(
+    attempt: UnitAttempt,
+    execution: ExecutionRecord,
+    fact: Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
+  ): Promise<void> {
+    const deliverable = this.#core.currentRunEpoch() === attempt.runEpoch;
+    let outputRef: ArtifactRef | undefined;
+    if (deliverable) {
+      try {
+        const content = Buffer.from(fact.result.artifact.text, 'utf8');
+        outputRef = await this.#artifacts.put(
+          this.#workflowRunId,
+          content,
+          fact.result.artifact.mediaType,
+        );
+        this.#ownership.register(outputRef, attempt.unitAttemptId);
+        attempt.outputRef = outputRef;
+      } catch {
+        this.#finish(attempt, {
+          unitAttemptId: attempt.unitAttemptId,
+          executionId: execution.executionId,
+          outcome: 'FAILED',
+          reasonCode: 'INTERNAL',
+          ...(fact.executionKind === 'MODEL' ? { requestState: 'SENT' as const } : {}),
+          ...(fact.executionKind === 'MODEL' && fact.usage !== undefined
+            ? { usage: fact.usage }
+            : {}),
+        });
+        return;
+      }
+    }
+
+    this.#finish(attempt, {
+      unitAttemptId: attempt.unitAttemptId,
+      executionId: execution.executionId,
+      outcome: 'COMPLETED',
+      output: fact.result.output,
+      ...(outputRef === undefined ? {} : { outputRef }),
+      ...(fact.executionKind === 'MODEL' && fact.usage !== undefined ? { usage: fact.usage } : {}),
+      ...(fact.executionKind === 'MODEL' ? { requestState: fact.requestState } : {}),
+    });
+  }
+
+  /** Returns true when the attempt was retried or otherwise ended; false means settle now. */
+  async #retryAttempt(
+    attempt: UnitAttempt,
+    execution: ExecutionRecord,
+    fact: Extract<ExecutionFact, { outcome: 'FAILED' }>,
+  ): Promise<boolean> {
+    let decision: RetryDecision;
+    try {
+      decision = this.#core.retryExecution({
+        unitAttemptId: attempt.unitAttemptId,
+        previousExecutionId: execution.executionId,
+        ...(fact.executionKind === 'MODEL' ? { requestState: fact.requestState } : {}),
+      });
+    } catch {
+      return false;
+    }
+
+    if (decision.allowed) {
+      if (decision.reservationId !== undefined) attempt.reservationId = decision.reservationId;
+      if (decision.grantId !== undefined) attempt.grantId = decision.grantId;
+      await this.#dispatchRetry(attempt);
+      return true;
+    }
+    if (decision.reason === 'BUDGET_WRAP_UP' || decision.reason === 'BUDGET_EXHAUSTED') {
+      // Core already delivered the budget UnitReport and abandoned the attempt.
+      this.#abandonAttempt(attempt);
+      return true;
+    }
+    return false;
+  }
+
+  async #dispatchRetry(attempt: UnitAttempt): Promise<void> {
+    const retryCount = attempt.retryCount + 1;
+    const notBefore = new Date(
+      this.#now().getTime() + this.#config.retryBackoffBaseMs * 2 ** Math.max(0, retryCount - 1),
+    ).toISOString();
+    const execution: ExecutionRecord = {
+      executionId: this.#newExecutionId(),
+      notBefore,
+    };
+    attempt.retryCount = retryCount;
+    attempt.executions.push(execution);
+
+    try {
+      this.#core.registerExecution({
+        unitAttemptId: attempt.unitAttemptId,
+        executionId: execution.executionId,
+        runEpoch: attempt.runEpoch,
+      });
+      let built;
+      try {
+        built = await this.#builder.build(attempt, execution);
+      } catch {
+        this.#finish(attempt, {
+          unitAttemptId: attempt.unitAttemptId,
+          executionId: execution.executionId,
+          outcome: 'FAILED',
+          reasonCode: 'INTERNAL',
+          ...(attempt.unit.executionKind === 'MODEL' ? { requestState: 'NOT_SENT' as const } : {}),
+        });
+        return;
+      }
+      attempt.state = 'DISPATCHED';
+      execution.dispatchedAt = this.#now().toISOString();
+      if (attempt.unit.executionKind === 'MODEL') this.#modelRequests += 1;
+      await this.#dispatcher.dispatch(built.request);
+    } catch {
+      this.#onDispatchFailure(attempt, execution);
+    }
+  }
+
+  #resultCheck(
+    attempt: UnitAttempt,
+    execution: ExecutionRecord,
+    fact: Exclude<ExecutionFact, { outcome: 'COMPLETED' }>,
+  ): ResultCheck {
+    return {
+      unitAttemptId: attempt.unitAttemptId,
+      executionId: execution.executionId,
+      outcome: fact.outcome,
+      reasonCode: fact.reasonCode,
+      ...(fact.executionKind === 'MODEL' && fact.usage !== undefined ? { usage: fact.usage } : {}),
+      ...(fact.executionKind === 'MODEL' ? { requestState: fact.requestState } : {}),
+      ...(fact.outcome === 'STOP_UNCONFIRMED' ? { stopVerdictBy: 'SUPERVISOR' as const } : {}),
+    };
   }
 
   public abortQueued(): {
@@ -460,6 +581,7 @@ export function createExecution(deps: ExecutionDeps): Execution {
   return new Execution(deps);
 }
 
+export { ArtifactOwnership } from './artifact-ownership.js';
 export type { ExecutionRecord, UnitAttempt } from './attempt.js';
 export type { AttemptDispatcher } from './dispatcher.js';
 

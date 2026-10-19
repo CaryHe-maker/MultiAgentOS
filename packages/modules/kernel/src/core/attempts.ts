@@ -242,6 +242,22 @@ export class CoreAttempts implements CoreSyscalls {
       return;
     }
 
+    // A result from an older runEpoch or a run that already started converging is settled as
+    // evidence, but it cannot be delivered. Check this before building a UnitReport: a
+    // COMPLETED result then needs no outputRef and Execution writes no new artifact.
+    if (this.#run.runState !== 'RUNNING' || meta.runEpoch !== this.#run.runEpoch) {
+      this.#identity.markChecked(check.unitAttemptId);
+      this.#settled(check.executionId);
+      this.#run.units.notDelivered += 1;
+      this.#recordAudit({
+        type: 'UNIT_NOT_DELIVERED',
+        requestId: meta.requestId,
+        unitAttemptId: check.unitAttemptId,
+        ...(check.reasonCode === undefined ? {} : { reasonCode: check.reasonCode }),
+      });
+      return;
+    }
+
     const report = this.#reportOf(meta, check);
     if (report === undefined) throw new Error('Result has no UnitReport shape');
     this.#identity.markChecked(check.unitAttemptId);
