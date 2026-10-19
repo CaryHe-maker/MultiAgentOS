@@ -2,8 +2,8 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一验收结果。**
-本计划作为剩余开发执行基线；阶段一已完成验收，阶段二至六未开始，后续由负责人指定阶段推进。
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一验收结果与阶段二 2.1–2.3 完成状态。**
+本计划作为剩余开发执行基线；阶段一已完成验收，阶段二进行中（2.1–2.3 已完成），阶段三至六未开始，后续由负责人指定阶段推进。
 本次只同步阶段状态，不启动实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
@@ -50,7 +50,7 @@ fake demo 退出码 0。本次状态同步不将上述历史测试记为重新�
 | Fabric：Schema 校验、身份、拷贝、Inbox（两通道、去重、失败观察者）、有序发送器、Gateway 畸形请求的结构化拒绝接缝 | 已实现，真实主链联调待阶段五 |
 | Persistence、ArtifactStore：路径与符号链接检查、写入排队与关闭排空、内容寻址与复验、命名空间限定的 Port | 已实现，真实主链联调待阶段五 |
 | ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、停止期限、`afterStart` 钩子 | 已实现，真实主链联调待阶段五 |
-| Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 空导出占位，待阶段二 |
+| Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 2.1–2.3 已实现；结果写入、重试与真实执行待 2.4 |
 | Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 引导与关闭完成；`execute`、`cancelRun` 为 `NOT_IMPLEMENTED`，待阶段三 |
 | Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 阶段一完成身份、准入与拒绝日志修正；与真实 Core 的产品链联调待阶段四 |
 | Monitor、Scheduler、`InProcessProviderCapacity` | 已实现并测试；与 Core 的真实协作待阶段二 |
@@ -178,7 +178,7 @@ Core 阶段一已实现；Execution 与 run actor 仍为空导出占位。
 | 阶段 | 主要范围 | 退出条件 | 状态 |
 | --- | --- | --- | --- |
 | 一 | Core 控制逻辑，Gateway 偏差修正 | Core 职责内无占位业务分支；通过替身验证 syscall、授权、结果检查、收尾和异常处理 | 已完成（2026-10-19） |
-| 二 | Execution、Scheduler，Monitor 接入 | 测试驱动下完成排队、许可、预留、执行结果处理与结算，覆盖重试和收尾 | 未开始 |
+| 二 | Execution、Scheduler，Monitor 接入 | 测试驱动下完成排队、许可、预留、执行结果处理与结算，覆盖重试和收尾 | 进行中（2.1–2.3 已完成，2026-10-19） |
 | 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 未开始 |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 未开始 |
 | 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 未开始 |
@@ -222,6 +222,9 @@ actor 调度、定时消息和发送提交留至阶段四；真实存储故障�
 从本阶段即覆盖取消、重复请求、状态边界和收尾，不拖到最终验收。
 
 ### 6.3 阶段二：完善 Execution 与 Scheduler
+
+**状态：进行中（2.1–2.3 已完成，2026-10-19；2.4–2.6 未开始）。** 子阶段规划与完成记录见
+[M1KernelStage2](M1KernelStage2.md)。
 
 **实现工作**
 
@@ -437,7 +440,7 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 
 | 来源 | 依赖或预留 | 完成阶段 | 当前状态 |
 | --- | --- | --- | --- |
-| 阶段一 | Execution 执行管理、产物与摘要能力 | 二；四完成 actor 接线 | 待实现（阶段二） |
+| 阶段一 | Execution 执行管理、产物与摘要能力 | 二；四完成 actor 接线 | 进行中（2.1–2.3 完成；2.4 待实现） |
 | 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 待实现（阶段三） |
 | 阶段一至三 | actor 串行调度、定时消息、Outbox 与关闭协调 | 四 | 待实现（阶段四） |
 | 阶段一至四 | 真实存储、消息、生命周期及其故障传播 | 五 | 待联调（阶段五） |
@@ -518,7 +521,7 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 第 6.10 节将本分支要求映射到实现阶段与验收证据；外部职责单独登记，不转移为 Kernel 实现。
 
 本轮闭合的是六阶段开发计划修订，不是实现或验收。
-六阶段顺序保持不变；阶段一已于 2026-10-19 完成验收，阶段二至六未开始。后续按负责人指定阶段执行，
+六阶段顺序保持不变；阶段一已于 2026-10-19 完成验收，阶段二进行中（2.1–2.3 已完成），阶段三至六未开始。后续按负责人指定阶段执行，
 完成时更新状态与证据。
 2026-10-18 仅补齐 SystemFaultHandling 的实现与验收落点（捕获边界、panic 五步、退出码与中断、真实故障注入），
 不改变六阶段顺序、阶段范围或已定决定，也不新增第七阶段。
@@ -607,3 +610,6 @@ Core 部分；不按旧代码推定其余阶段已完成。
 | 2026-10-18 | 按 SystemFaultHandling 补齐计划：捕获边界、panic 五步与职责、退出码与中断、真实故障注入与验收证据 | 仅文档修订；文档结构、链接、格式与差异检查，未运行产品测试、不提交 |
 | 2026-10-19 | 阶段一（1.1–1.6）完成并验收：Core 运行管理、外部 syscall、授权与 Lease、预留结算、结果检查、收敛、异常语义与审计；Gateway 偏差关闭。报告见 [M1KernelStage1](M1KernelStage1.md) | 阶段一报告记录：pnpm run build、pnpm run check（44 个文件/433 项）、pnpm run demo:fake（退出码 0）、git diff --check 通过；使用 Execution 与 Supervisor 替身，无真实模型调用 |
 | 2026-10-19 | 同步计划状态：阶段一标记完成，更新实现状态、偏差、预留表与 C01–C07 进度；阶段二至六仍未开始 | 仅文档修订；格式、链接与 `git diff --check` 检查 |
+| 2026-10-19 | 阶段二 2.1 完成：Execution 骨架、Attempt/FIFO/状态机、幂等创建、`abortQueued`、非 `COMPLETED` 事实基础路径；详见 [M1KernelStage2](M1KernelStage2.md) 5.1 | `pnpm run check`（45 个文件、445 项）；`pnpm run test:coverage`（全仓语句 92.28%，execution 语句 72.41%）；代码未提交 |
+| 2026-10-19 | 阶段二 2.2 完成：产物归属、多生产者登记、`ownsArtifact`/`readArtifact`、内建 `report-publish`、RunSummary；详见 [M1KernelStage2](M1KernelStage2.md) 5.2 | `pnpm run check`（46 个文件、457 项）；`pnpm run test:coverage`（全仓语句 92.42%，execution 语句 80.72%）；代码未提交 |
+| 2026-10-19 | 阶段二 2.3 完成：五类 `ExecutionRequest`、ArtifactRef 解析、上下文/模型输入、toolSpecs、估算与预留；详见 [M1KernelStage2](M1KernelStage2.md) 5.3 | `pnpm run check`（46 个文件、469 项）；`pnpm run test:coverage`（全仓语句 92.21%，execution 语句 82.29%）；代码未提交 |
