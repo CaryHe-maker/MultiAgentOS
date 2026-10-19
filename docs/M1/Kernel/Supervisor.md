@@ -30,7 +30,7 @@ Supervisor 的启动分为两段：
 1. 引导：组合根调用 `start()` 后，Supervisor 清理临时数据，驱动 ModuleHost 依次启动
    fabric、artifact-store、persistence、kernel-core、gateway、workflow、user-interaction。这一段不依赖通信。
 2. 服务：fabric 就绪后注册 `SupervisorPort` 的处理器；全部模块就绪后才接受请求。
-   执行派发尚未实现时，`execute`、`cancelRun` 必须明确拒绝，不得返回占位的成功结果。
+   执行派发与取消必须真实执行或明确拒绝，不得返回占位的成功结果。
 
 模块的构造与依赖注入由组合根完成，Supervisor 只决定启动与停止的顺序。
 工厂 `createSupervisor`、`SupervisorDeps`、`ModuleHostControl` 与 `SupervisorModule.whenStopped()` 的定义见
@@ -51,6 +51,9 @@ Supervisor         → ExecutionFactSink.report(ExecutionFact)
 
 - 字段定义见 [M1Interface](../M1Interface.md) 第 7 节。`workflowRunId`、`unitAttemptId`、`executionId`、`runEpoch` 原样带回；
   执行事实作为消息进入所属运行的运行 Inbox，由 Core 核对 runEpoch 后决定是否接受。
+- 执行事实沿用 `execute` 请求的 `correlationId`，只用于追踪，不参与裁决。Supervisor 不需要为此新增公共协议或
+  第二套事实通道。
+- 事实投递失败不改变执行终态，也不触发执行重试；Supervisor 记录诊断，不重复投递同一 `executionId` 的事实。
 - 取消由 Core 决定并以消息发出，不跨边界传递运行时句柄；进程内实现在 Supervisor 内部把它转换为 `AbortSignal`。
 
 ## 4. 执行实例
@@ -62,14 +65,30 @@ ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILE
          └→ TERMINATED（启动前被取消，无 startedAt）
 ```
 
-- `execute` 受理即返回，到 `notBefore`（缺省立即）后启动 Executor。
-- 到达 `limits.deadline`：触发中止信号，原因码 `UNIT_TIMEOUT`。收到 `cancelRun`：对该运行全部执行实例触发中止信号，原因码
-  `EXECUTION_CANCELLED`，尚未启动的实例直接以 TERMINATED 结束；并记录该运行的取消 runEpoch。
+- `execute` 只登记并返回，启动由请求处理之外的调度完成，不得在 handler 内同步运行 Executor。
+  到 `notBefore`（缺省立即）后启动 Executor。
+- 执行表以 `executionId` 为键，记录请求、状态、`startedAt`、`endedAt`、中止原因与定时器；
+  重复 `executionId` 只保留第一次受理。
+- 到达 `limits.deadline`：触发中止信号，原因码 `UNIT_TIMEOUT`。收到 `cancelRun`：对该运行全部执行实例触发中止信号，
+  原因码 `EXECUTION_CANCELLED`，尚未启动的实例直接以 TERMINATED 结束；并记录该运行的取消 runEpoch。
+- 中止由第一个触发者决定原因：先到 deadline 为 `UNIT_TIMEOUT`，先到 `cancelRun` 为 `EXECUTION_CANCELLED`；
+  后续触发不改变原因、不重置宽限期。
 - 此后到达的 `execute`，若属于已取消的运行且 `runEpoch` 小于记录的取消 runEpoch，不启动 Executor，直接上报
-  `TERMINATED(EXECUTION_CANCELLED)`（无 `startedAt`）。Kernel 核心的发送器按登记顺序发出（Interaction 4.4），正常情况下不会出现这种到达顺序，
-  此规则是兜底。
+  `TERMINATED(EXECUTION_CANCELLED)`（无 `startedAt`）。Kernel 核心的发送器按登记顺序发出（Interaction 4.4），
+  正常情况下不会出现这种到达顺序，此规则是兜底。
 - 宽限期为 `KernelConfig.cancelGraceMs`，从触发中止信号的时刻起算。Executor 在宽限期内返回：上报 `TERMINATED`，
-  `requestState` 沿用 Executor 返回的值（MODEL 缺失时为 `UNKNOWN`）；未返回：上报 `STOP_UNCONFIRMED`，此后该实例的任何返回都被丢弃。
+  `requestState` 沿用 Executor 返回的值（MODEL 缺失时为 `UNKNOWN`）；未返回：上报 `STOP_UNCONFIRMED`，此后该实例的
+  任何返回都被丢弃。
+- 宽限期内 Executor 返回 `VIOLATION` 时，Supervisor 上报 `VIOLATION` 而不是 `TERMINATED`，避免安全证据被取消或
+  超时路径吞掉；其他结果仍按上一条上报 `TERMINATED`。
+- Executor 抛错、执行注册表缺失或 `executionKind` 不一致时，形成唯一的 `FAILED(INTERNAL, retryable = false)` 事实；
+  MODEL 的 `requestState` 按 `UNKNOWN` 处理。不得把原始异常跨主体抛出。
+- 执行事实只由 Supervisor 产生一次。MODEL 的 `COMPLETED` 的 `requestState` 为 `SENT`；其他结果使用 Executor 给出的值，
+  缺失时 `REJECTED` 记 `NOT_SENT`，其余记 `UNKNOWN`；启动前取消记 `NOT_SENT`。
+  MODEL 的 `TERMINATED` 与 `FAILED` 在 Executor 给出 `usage` 时保留；非 MODEL 结果一律丢弃 `usage` 与 `requestState`。
+- `STOP_UNCONFIRMED` 使用中止原因，保留 `startedAt`，不带 `usage`；此后的 Executor 返回一律丢弃。
+- 执行环境按 `executionKind` 最小化：只有 MODEL 取得 `ProviderCredentials`，只有 REPOSITORY_SEARCH 取得真实
+  `SubprocessRunner`；其他执行拿到拒绝式实现。`scope`、`limits`、`signal` 与 `now` 始终提供。
 - 每个 `executionId` 恰好上报一个终态：执行先完成还是先被终止，由 Supervisor 给出唯一结论。
 
 ## 5. 信任与上报
@@ -88,6 +107,9 @@ Supervisor 在任务收敛中的职责是：收到 `cancelRun` 后对该运行�
 - `stop()` 可重复调用并共用同一次执行，停止失败经 `whenStopped()` 以拒绝表达，不报告为完成。
   故障关闭时由组合根直接调用它（[错误与系统故障处理](../SystemFaultHandling.md) 第 5 节）；
   Supervisor 不裁决系统故障，也不决定进程退出码。
+- `stop()` 先封锁新执行、中止全部在途执行并清理定时器；对已启动但未确认停止的执行，尽力上报
+  `STOP_UNCONFIRMED`，不等待宽限期或事实投递完成，再按顺序停止模块并回收子进程。
+  正常路径没有在途执行，不应因此产生额外事实。
 - 子进程在创建时登记到 `SubprocessRunner` 的存活集合，`killAll()` 同步终止全部存活子进程。
   runner 由组合根构造并经 `SupervisorDeps.subprocess` 注入，组合根因此能在 Supervisor 不可用时终止子进程。
 - 进程内执行依赖 Executor 响应中止信号，Supervisor 不能强制终止同一进程中的失控代码，也不能在所在进程卡死或崩溃后继续监管；
@@ -102,7 +124,7 @@ Supervisor 在任务收敛中的职责是：收到 `cancelRun` 后对该运行�
 ## 8. panic 协作与启动期限
 
 Supervisor 不持有第二套 panic 状态，不接管 uncaughtException 或 unhandledRejection。
-单次执行抛错转换为唯一 FAILED(INTERNAL) 事实，运行语义由 Core 裁决。
+单次执行抛错转换为唯一 `FAILED(INTERNAL, retryable = false)` 事实，运行语义由 Core 裁决。
 自身引导或停止失败通过调用结果及 whenStopped 上报组合根，由唯一 panic 控制流程处理。
 
 panic 中 stop 不得假设 Core 已完成收敛：先封锁新执行，对残余执行发出中止，

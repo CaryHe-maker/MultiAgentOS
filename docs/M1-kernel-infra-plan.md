@@ -2,9 +2,9 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一验收结果、阶段二验收结果与文档收尾。**
-本计划作为剩余开发执行基线；阶段一、阶段二已完成验收，阶段三至六未开始，后续由负责人指定阶段推进。
-本次完成阶段二实现记录压缩与文档状态同步，不启动新阶段实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划。**
+本计划作为剩余开发执行基线；阶段一、阶段二已完成验收，阶段三规划中，阶段四至六未开始，后续由负责人指定阶段推进。
+本次完成阶段二实现记录压缩、阶段三规划与文档状态同步，不启动阶段三实现；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
   规范在 `docs/M1/` 下，两者不一致时以规范为准并修正本文。
@@ -259,6 +259,29 @@ Supervisor 反馈暂用替身，阶段三接入；FIFO 唤醒、定时消息和�
 
 ### 6.4 阶段三：完善 Supervisor
 
+**状态：规划中（2026-10-19）。** 子阶段、工程决定、测试与验收计划见
+[M1KernelStage3](M1KernelStage3.md)；本轮只完成规划，不标记阶段三完成。
+
+| 子阶段 | 内容 | 退出条件 |
+| --- | --- | --- |
+| 3.1 | 执行表、execute 受理、notBefore、Executor 查找、最小环境、正常终态与抛错规范化 | 正常结果产生唯一合法 ExecutionFact |
+| 3.2 | deadline、cancelRun、cancelEpoch、启动前取消、宽限期、STOP_UNCONFIRMED、迟到结果 | 中断矩阵完整，每个 execution 唯一终态 |
+| 3.3 | stop/panic 清理、定时器清理、事实投递失败处理、health 诊断 | 停止有界、幂等、无未处理拒绝 |
+| 3.4 | 真实 Fabric 路由、correlation、producer/not-ready、端到端集成 | Supervisor 经真实 Fabric 完成执行闭环 |
+| 3.5 | 质量门、覆盖率、Stage3 报告、计划状态同步 | 验收证据完整，无共享接缝变更 |
+
+**已确认的工程决定**
+
+- 事实投递在 Supervisor 内部用现有 Fabric 构造，不修改 `SupervisorDeps`；事实沿用 execute 的 `correlationId`。
+- Executor 抛错统一为 `FAILED(INTERNAL, retryable = false)`；MODEL `requestState = UNKNOWN`。
+- 启动前取消为 `TERMINATED(EXECUTION_CANCELLED)`，无 `startedAt`，MODEL `requestState = NOT_SENT`。
+- deadline 与 cancel 先触发者决定原因，后续不改变终态、不重置宽限期。
+- 宽限期内返回 `VIOLATION` 时上报 `VIOLATION`；其他结果上报 `TERMINATED`。
+- MODEL 的 `TERMINATED`/`FAILED` 保留 Executor 提供的 `usage`；其他结果按 ExecutionFact 约束归一化。
+- `stop()` 先中止、清定时器，事实投递尽力而为，不阻塞关闭。
+- 执行环境最小权限：MODEL 仅 credentials，REPOSITORY_SEARCH 仅 subprocess。
+- 测试使用 fake timers、注入 `now` 与受控 Executor，不新增定时器依赖。
+
 **实现工作**
 
 - 清除 execute、cancel 的占位实现，建立 execution 表、Executor 查找与最小执行环境。
@@ -267,9 +290,9 @@ Supervisor 反馈暂用替身，阶段三接入；FIFO 唤醒、定时消息和�
   丢弃重复或迟到结果。
 - Executor 抛错转为规范化失败事实；执行层面的拒绝通过 ExecutionFact 表达，
   处理器抛错用于 producer 不符、未就绪等契约缺陷。
-- 宽限期内返回按规范报告 TERMINATED 并沿用 requestState；MODEL 缺失时按 UNKNOWN，
-  非 MODEL 丢弃 usage 与 requestState。无法确认停止时如实报告 STOP_UNCONFIRMED。
-- 按需注入模型凭据与受限 subprocess 能力，完成执行期间停止、清理和事实投递。
+- 宽限期内返回按规范报告 TERMINATED 并沿用 requestState；若返回 VIOLATION 则上报 VIOLATION。
+  MODEL 缺失时按 UNKNOWN，非 MODEL 丢弃 usage 与 requestState。无法确认停止时如实报告 STOP_UNCONFIRMED。
+- 按 executionKind 最小权限注入模型凭据与受限 subprocess 能力，完成执行期间停止、清理和事实投递。
 
 **偏差修正与预留**
 
@@ -526,8 +549,8 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 第 6.10 节将本分支要求映射到实现阶段与验收证据；外部职责单独登记，不转移为 Kernel 实现。
 
 本轮闭合的是六阶段开发计划修订，不是实现或验收。
-六阶段顺序保持不变；阶段一与阶段二已分别于 2026-10-19 完成验收，阶段三至六未开始。后续按负责人指定阶段执行，
-完成时更新状态与证据。
+六阶段顺序保持不变；阶段一与阶段二已分别于 2026-10-19 完成验收，阶段三规划中，阶段四至六未开始。
+后续按负责人指定阶段执行，完成时更新状态与证据。
 2026-10-18 仅补齐 SystemFaultHandling 的实现与验收落点（捕获边界、panic 五步、退出码与中断、真实故障注入），
 不改变六阶段顺序、阶段范围或已定决定，也不新增第七阶段。
 2026-10-19 只同步阶段一验收结果，不改变阶段范围、顺序或规范。
@@ -617,3 +640,4 @@ Core 部分，阶段二完成 Execution 接入；不按旧代码推定其余阶�
 | 2026-10-19 | 同步计划状态：阶段一标记完成，更新实现状态、偏差、预留表与 C01–C07 进度；阶段二至六仍未开始 | 仅文档修订；格式、链接与 `git diff --check` 检查 |
 | 2026-10-19 | 阶段二（2.1–2.6）完成并验收：Execution 骨架/FIFO、产物归属、内建 report-publish 与 RunSummary、五类 ExecutionRequest、全终态事实与技术重试、预算/容量集成、纵向链与 FIFO 验证；报告见 [M1KernelStage2](M1KernelStage2.md) | `pnpm run check`（48 个文件、485 项）；`pnpm run test:coverage`（全仓语句 92.45%、分支 83.06%、行 94.55%）；`pnpm run demo:fake`（退出码 0）；`git diff --check` 通过；2.1–2.3 已提交于 `51fec05`，2.4–2.6 随本轮提交 |
 | 2026-10-19 | 阶段二文档收尾：将 M1KernelStage2.md 重写为实现报告，压缩阶段二实现记录，并同步计划状态、偏差、预留表与 C01–C06 进度 | 仅文档修订；Prettier、链接与 `git diff --check` 检查 |
+| 2026-10-19 | Stage3 规划：确定 3.1–3.5 子阶段及执行表、取消、宽限期、事实映射、最小环境、停止清理方案；明确 VIOLATION 例外、usage 与 requestState 归一化；工作文档见 [M1KernelStage3](M1KernelStage3.md) | 仅文档修订；Prettier 与 `git diff --check`；不标记阶段三完成 |
