@@ -32,12 +32,15 @@
 
 ### 2.1 基线
 
-阶段二（2.1–2.6）已完成并验收，报告见 [M1KernelStage2](M1KernelStage2.md)。2.1–2.3 已提交于
-`51fec05`；2.4–2.6 与本轮文档收尾随当前提交进入工作分支。
-阶段二报告记录：48 个测试文件、485 项测试通过，全仓语句覆盖率 92.45%，`pnpm run demo:fake`
-退出码 0，`git diff --check` 通过。该证据使用 fake Supervisor、fake Catalog 与 ArtifactStorePort
-测试替身，不包含真实 Supervisor、真实模型调用或基础设施故障矩阵。
+阶段三（3.1–3.5）已完成并验收，报告见 [M1KernelStage3](M1KernelStage3.md)。阶段三规划、实现与验收
+分别提交于 `025eab5`、`959fdc4` 与 `2cf2456`。
+阶段三报告记录：50 个测试文件、535 项测试通过，全仓语句覆盖率 92.66%、分支 83.16%、
+行 94.71%，`pnpm run demo:fake` 退出码 0，`git diff --check` 通过。该证据使用真实 Fabric、
+受控 Executor 与测试替身，不包含 run actor、真实启动、真实模型调用或基础设施故障矩阵。
 
+此前阶段二记录：2.1–2.6 已完成并验收，报告见 [M1KernelStage2](M1KernelStage2.md)；2.1–2.3
+提交于 `51fec05`，2.4–2.6 提交于 `9f5f09e`。阶段二使用 48 个测试文件、485 项测试，
+全仓语句覆盖率 92.45%。
 此前阶段一记录：`1fec492`（1.1–1.6）已完成并验收，包含提交 `9f7c9f2`（1.1–1.3）与
 `1fec492`（1.4–1.6 及阶段报告）。P05a 的启动配置校验继续有效。本次状态同步不将历史测试
 记为重新执行。
@@ -52,16 +55,16 @@
 | Fabric：Schema 校验、身份、拷贝、Inbox（两通道、去重、失败观察者）、有序发送器、Gateway 畸形请求的结构化拒绝接缝 | 已实现，真实主链联调待阶段五 |
 | Persistence、ArtifactStore：路径与符号链接检查、写入排队与关闭排空、内容寻址与复验、命名空间限定的 Port | 已实现，真实主链联调待阶段五 |
 | ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、停止期限、`afterStart` 钩子 | 已实现，真实主链联调待阶段五 |
-| Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 阶段二已完成（2.1–2.6）；真实 Supervisor 与 run actor 接线待阶段三、四 |
+| Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 阶段二已完成（2.1–2.6）；真实 Supervisor 已于阶段三接入；run actor 接线待阶段四 |
 | Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 阶段三已完成（3.1–3.5）；execute、cancelRun、stop 清理与 Fabric 集成通过验收 |
 | Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 阶段一完成身份、准入与拒绝日志修正；与真实 Core 的产品链联调待阶段四 |
 | Monitor、Scheduler、`InProcessProviderCapacity` | 阶段二已接入 Core/Execution 并通过真实组件集成测试；故障验证待阶段五 |
 | run actor、双通道 Inbox、OrderedSender、真实 Outbox | 空导出占位，待阶段四 |
 | 组合根：配置加载与校验、`composeSystem`、系统控制（有界故障关闭、退出码 70）、最后防线（含第二次 Ctrl+C）、进程入口 `bin.ts` | 启动配置校验与控制基础已实现；真实 Kernel 启动待阶段六 |
-| Kernel 私有接口（`kernel/src/interfaces/`）、`KernelCoreModule.abortAllRuns`、`reportSystemFault` 的注入 | 接口已定；Core 与 Execution 已实现；`createKernelCore` 仍为 `NOT_IMPLEMENTED`，装配待阶段四 |
+| Kernel 私有接口（`kernel/src/interfaces/`）、`KernelCoreModule.abortAllRuns`、`reportSystemFault` 的注入 | 接口已定；Core、Execution 与 Supervisor 已实现；`createKernelCore` 仍为 `NOT_IMPLEMENTED`，装配待阶段四 |
 
-Core 阶段一已实现；Execution 阶段二已完成；run actor 仍为空导出占位。
-下列部件已有单元测试，阶段二后的接入状态如下；不能将局部测试通过视为完整组件实现：
+Core 阶段一、Execution 阶段二、Supervisor 阶段三已实现；run actor 仍为空导出占位。
+下列部件已有单元测试，阶段三后的接入状态如下；不能将局部测试通过视为完整组件实现：
 
 | 部件 | 位置 | 接入阶段 |
 | --- | --- | --- |
@@ -182,7 +185,7 @@ Core 阶段一已实现；Execution 阶段二已完成；run actor 仍为空导�
 | --- | --- | --- | --- |
 | 一 | Core 控制逻辑，Gateway 偏差修正 | Core 职责内无占位业务分支；通过替身验证 syscall、授权、结果检查、收尾和异常处理 | 已完成（2026-10-19） |
 | 二 | Execution、Scheduler，Monitor 接入 | 测试驱动下完成排队、许可、预留、执行结果处理与结算，覆盖重试和收尾 | 已完成（2026-10-19） |
-| 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 未开始 |
+| 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 已完成（2026-10-20） |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 未开始 |
 | 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 未开始 |
 | 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 未开始 |
@@ -280,7 +283,7 @@ Supervisor 反馈暂用替身，阶段三接入；FIFO 唤醒、定时消息和�
 - MODEL 的 `TERMINATED`/`FAILED` 保留 Executor 提供的 `usage`；其他结果按 ExecutionFact 约束归一化。
 - `stop()` 先中止、清定时器，事实投递尽力而为，不阻塞关闭。
 - 执行环境最小权限：MODEL 仅 credentials，REPOSITORY_SEARCH 仅 subprocess。
-- 测试使用 fake timers、注入 `now` 与受控 Executor，不新增定时器依赖。
+- 测试使用真实时间、短延时与 `vi.waitFor`，配合注入 `now` 与受控 Executor；不新增定时器依赖。
 
 **实现工作**
 
@@ -362,7 +365,8 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 组合根持有唯一 panic，Supervisor 执行中止及模块停止。
 SystemFaultReporter/reportSystemFault/reportFault 名称保留，均指向同一停机流程。
 2026-10-18 按 [SystemFaultHandling](M1/SystemFaultHandling.md) 补齐捕获边界、panic 五步、退出码与验收落点；
-本节只登记实现与验证位置，语义以规范为准，不在此重新定义协议；源码、fake 与测试尚未迁移。
+本节只登记实现与验证位置，语义以规范为准，不在此重新定义协议；Core 非停机语义与 Supervisor
+中止已分别于阶段一、阶段三落地，panic 与启动保护待后续阶段迁移。
 
 | 阶段 | 必做工作与验证 |
 | --- | --- |
@@ -561,7 +565,7 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 
 C01–C08 起源于 Cary 的 2026-10-10 至 10-13 决定；C07 的四级分类由负责人在
 2026-10-17 确认的两类异常方案替代，其余兼容规则保留。新规范已开始实现，阶段一完成 C01–C06 的
-Core 部分，阶段二完成 Execution 接入；不按旧代码推定其余阶段已完成。
+Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执行监管；不按旧代码推定其余阶段已完成。
 
 | ID | 决定 | 已实现 | 剩余 |
 | --- | --- | --- | --- |
@@ -571,7 +575,7 @@ Core 部分，阶段二完成 Execution 接入；不按旧代码推定其余阶�
 | C04 | Fabric 启动后经 `afterStart` 注册 Supervisor 处理器；钩子失败回滚 | 完成 | — |
 | C05 | `requestId` 合法的畸形 syscall 由 Gateway 结构化拒绝；缺失或非法 `requestId` 是传输契约错误 | Fabric、Gateway；阶段一核对完成 | 阶段四产品链联调 |
 | C06 | RunSummary 写入失败时，终结事件带 `finalizationError`，不伪造引用，保留原结束原因 | contracts、`finalizeRunEvents`、Core 接入（阶段一）；阶段二 RunSummary 发布通过 | 阶段四收尾联调 |
-| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；Core 非停机语义（阶段一） | 执行监管（三）、actor（四）、启动期限（五）、panic 与入口（六）；计划落点见 §6.8 |
+| C07 | 两类异常、Core 语义与组合根 panic（2026-10-17 修订）、角色权限、`abortAllRuns`、故障结束原因复用 `FAILED(KERNEL_INTERNAL)`（SystemFaultHandling） | 旧版关闭与生命周期基础；Core 非停机语义（阶段一）；Supervisor 执行监管（阶段三） | actor（四）、启动期限（五）、panic 与入口（六）；计划落点见 §6.8 |
 | C08 | `SystemFault` 类型在 contracts；Workflow 与 UserInteraction 注入 `reportSystemFault` | 接口与注入 | 两个模块一侧由 Cary 完成 |
 
 ## 8. 注意事项
@@ -644,3 +648,4 @@ Core 部分，阶段二完成 Execution 接入；不按旧代码推定其余阶�
 | 2026-10-19 | Stage3 规划：确定 3.1–3.5 子阶段及执行表、取消、宽限期、事实映射、最小环境、停止清理方案；明确 VIOLATION 例外、usage 与 requestState 归一化；工作文档见 [M1KernelStage3](M1KernelStage3.md) | 仅文档修订；Prettier 与 `git diff --check`；不标记阶段三完成 |
 | 2026-10-20 | Stage3.1–3.4 实现：Supervisor execution 表、execute 与 notBefore、五类 Executor、最小执行环境、正常终态、deadline/cancel/宽限期、stop 清理与 Fabric 集成；3.1、3.2 于 10-19，3.3、3.4 于 10-20 完成 | `pnpm run check`（50 个文件、533 项）；supervisor 语句 92.30%、分支 80.70%；全仓语句 92.62%、分支 83.08%、行 94.65%；`demo:fake` 退出码 0 |
 | 2026-10-20 | Stage3 完成：3.5 代码验证与实现报告收尾；阶段三验收通过，报告见 [M1KernelStage3](M1KernelStage3.md) | `pnpm run check`（50 个文件、535 项）；supervisor 语句 92.85%、分支 81.49%；全仓语句 92.66%、分支 83.16%、函数 88.13%、行 94.71%；`demo:fake` 退出码 0；`git diff --check` 通过 |
+| 2026-10-20 | 同步阶段三计划状态：基线更新至 `2cf2456`，阶段总表标记三完成，修正 Execution 接线、C07 剩余项与测试说明 | 仅文档修订；Prettier、链接与 `git diff --check` 检查 |
