@@ -108,8 +108,11 @@ export class CoreRequestHandler implements RunRequestHandler {
   readonly #reportSystemFault: SystemFaultReporter | undefined;
   readonly #now: () => Date;
   readonly #convergences = new Map<string, ConvergenceState>();
+  readonly #convergenceStarts = new Map<string, Promise<void>>();
   readonly #completing = new Set<string>();
   readonly #settledExecutions = new Set<string>();
+  readonly #startedRuns = new Set<string>();
+  readonly #settleRequested = new Set<string>();
   #authorization: AuthorizationManager | undefined;
   #authorizationRunId: string | undefined;
   #attempts: CoreAttempts | undefined;
@@ -131,7 +134,29 @@ export class CoreRequestHandler implements RunRequestHandler {
     this.#now = deps.now ?? (() => new Date());
   }
 
-  public handleForward(
+  /**
+   * Handles `RUN_INIT`: the run is now active and Workflow receives its first event.
+   * The run timer is scheduled by the actor (stage 4.4); time starts when this method runs.
+   */
+  public startRun(run: RunState): Promise<void> {
+    if (run.runState !== 'RUNNING' || this.#startedRuns.has(run.workflowRunId))
+      return Promise.resolve();
+    this.#startedRuns.add(run.workflowRunId);
+    this.#emit({ type: 'RunStart', goal: run.goal });
+    return Promise.resolve();
+  }
+
+  public async handleForward(
+    forward: GatewayForward,
+    context: Readonly<BoundaryContext>,
+    run: RunState,
+  ): Promise<RunResponse> {
+    const response = await this.#dispatchForward(forward, context, run);
+    await this.settleConvergence(run);
+    return response;
+  }
+
+  async #dispatchForward(
     forward: GatewayForward,
     context: Readonly<BoundaryContext>,
     run: RunState,
@@ -569,6 +594,7 @@ export class CoreRequestHandler implements RunRequestHandler {
     run: RunState,
     exception: CoreException,
   ): Promise<CoreExceptionOutcome> {
+    let outcome: CoreExceptionOutcome = 'IGNORED';
     switch (exception.kind) {
       case 'KERNEL_FAULT':
         await this.#tryAudit({
@@ -576,50 +602,65 @@ export class CoreRequestHandler implements RunRequestHandler {
           workflowRunId: run.workflowRunId,
           faultId: exception.faultId,
         });
-        if (run.runState === 'CLOSED') return 'ALREADY_CLOSED';
-        if (run.runState === 'CONVERGING') return 'IGNORED';
-        await this.#converge(run, 'FAILED', {
-          code: 'KERNEL_INTERNAL',
-          category: 'INTERNAL',
-          source: 'KERNEL',
-          detail: exception.faultId,
-        });
-        return 'HANDLED';
+        if (run.runState === 'CLOSED') {
+          outcome = 'ALREADY_CLOSED';
+        } else if (run.runState === 'CONVERGING') {
+          outcome = 'IGNORED';
+        } else {
+          await this.#converge(run, 'FAILED', {
+            code: 'KERNEL_INTERNAL',
+            category: 'INTERNAL',
+            source: 'KERNEL',
+            detail: exception.faultId,
+          });
+          outcome = 'HANDLED';
+        }
+        break;
       case 'RUN_TIMEOUT':
-        if (run.runState !== 'RUNNING') return 'IGNORED';
-        await this.#converge(run, 'RUN_TIMEOUT');
-        return 'HANDLED';
+        if (run.runState === 'RUNNING') {
+          await this.#converge(run, 'RUN_TIMEOUT');
+          outcome = 'HANDLED';
+        }
+        break;
       case 'AUTHORIZATION_TIMEOUT':
-        if (run.runState !== 'RUNNING') return 'IGNORED';
-        await this.expireAuthorization(run);
-        return 'HANDLED';
+        if (run.runState === 'RUNNING') {
+          await this.expireAuthorization(run);
+          outcome = 'HANDLED';
+        }
+        break;
       case 'VIOLATION':
-        if (run.runState !== 'RUNNING' && run.runState !== 'CONVERGING') return 'IGNORED';
-        await this.#converge(run, 'VIOLATION', {
-          code: exception.reasonCode,
-          category: 'INTEGRITY',
-          source: 'KERNEL',
-          ...(exception.unitRequestId === undefined
-            ? {}
-            : { unitRequestId: exception.unitRequestId }),
-        });
-        return 'HANDLED';
+        if (run.runState === 'RUNNING' || run.runState === 'CONVERGING') {
+          await this.#converge(run, 'VIOLATION', {
+            code: exception.reasonCode,
+            category: 'INTEGRITY',
+            source: 'KERNEL',
+            ...(exception.unitRequestId === undefined
+              ? {}
+              : { unitRequestId: exception.unitRequestId }),
+          });
+          outcome = 'HANDLED';
+        }
+        break;
       case 'STOP_UNCONFIRMED':
-        if (run.runState !== 'RUNNING') return 'IGNORED';
-        await this.#converge(run, 'FAILED', {
-          code: 'EXECUTION_STOP_UNCONFIRMED',
-          category: 'INTERNAL',
-          source: 'KERNEL',
-          ...(exception.unitRequestId === undefined
-            ? {}
-            : { unitRequestId: exception.unitRequestId }),
-        });
-        return 'HANDLED';
+        if (run.runState === 'RUNNING') {
+          await this.#converge(run, 'FAILED', {
+            code: 'EXECUTION_STOP_UNCONFIRMED',
+            category: 'INTERNAL',
+            source: 'KERNEL',
+            ...(exception.unitRequestId === undefined
+              ? {}
+              : { unitRequestId: exception.unitRequestId }),
+          });
+          outcome = 'HANDLED';
+        }
+        break;
       case 'EXECUTION_FAILED':
       case 'SETTLEMENT_ANOMALY':
         // These keep their existing structured result/audit path; they never stop the run.
-        return 'IGNORED';
+        break;
     }
+    await this.settleConvergence(run);
+    return outcome;
   }
 
   async #converge(
@@ -628,10 +669,15 @@ export class CoreRequestHandler implements RunRequestHandler {
     failure?: RunState['failure'],
     reportRef?: ArtifactRef,
   ): Promise<void> {
+    const start = this.#beginConvergence(run, closeReason, failure, reportRef);
+    this.#convergenceStarts.set(run.workflowRunId, start);
     try {
-      await this.#beginConvergence(run, closeReason, failure, reportRef);
+      await start;
     } catch (error) {
       this.#failConvergence(run, error);
+    } finally {
+      if (this.#convergenceStarts.get(run.workflowRunId) === start)
+        this.#convergenceStarts.delete(run.workflowRunId);
     }
   }
 
@@ -657,7 +703,9 @@ export class CoreRequestHandler implements RunRequestHandler {
 
   /** Stage 1.5 timer hook: the run exceeded KernelConfig.runTimeoutMs. */
   public async runTimedOut(run: RunState): Promise<void> {
-    if (run.runState === 'RUNNING') await this.#converge(run, 'RUN_TIMEOUT');
+    if (run.runState !== 'RUNNING') return;
+    await this.#converge(run, 'RUN_TIMEOUT');
+    await this.settleConvergence(run);
   }
 
   /** Stage 1.5 timer hook: the authorization question reached expiresAt. */
@@ -674,21 +722,17 @@ export class CoreRequestHandler implements RunRequestHandler {
     await this.#tryAudit({ type: 'CONVERGENCE_DEADLINE', workflowRunId: run.workflowRunId });
     if (executionIds.length > 0) this.#execution.synthesizeStopUnconfirmed(executionIds);
     state.pending.clear();
-    try {
-      await this.#completeConvergence(run);
-    } catch (error) {
-      this.#failConvergence(run, error);
-    }
+    this.#requestSettlement(run);
+    await this.settleConvergence(run);
   }
 
-  /** Used by RunRegistry/System shutdown after the user requests shutdown. */
-  public async shutdownRun(run: RunState): Promise<void> {
+  /** Starts a shutdown convergence without waiting for it to finish. */
+  public async beginShutdown(run: RunState): Promise<void> {
     if (run.runState === 'RUNNING') await this.#converge(run, 'CANCELLED');
-    await this.whenConverged(run);
   }
 
-  /** Used by the composition root's abortAllRuns. */
-  public async abortRun(run: RunState, faultId: string): Promise<void> {
+  /** Starts a fault convergence without waiting for it to finish. */
+  public async beginAbort(run: RunState, faultId: string): Promise<void> {
     if (run.runState === 'RUNNING')
       await this.#converge(run, 'FAILED', {
         code: 'KERNEL_INTERNAL',
@@ -701,12 +745,55 @@ export class CoreRequestHandler implements RunRequestHandler {
       workflowRunId: run.workflowRunId,
       faultId,
     });
+  }
+
+  /** Used by RunRegistry/System shutdown after the user requests shutdown. */
+  public async shutdownRun(run: RunState): Promise<void> {
+    await this.beginShutdown(run);
+    await this.settleConvergence(run);
+    await this.whenConverged(run);
+  }
+
+  /** Used by the composition root's abortAllRuns. */
+  public async abortRun(run: RunState, faultId: string): Promise<void> {
+    await this.beginAbort(run, faultId);
+    await this.settleConvergence(run);
     await this.whenConverged(run);
   }
 
   public whenConverged(run: RunState): Promise<void> {
     if (run.runState === 'CLOSED') return Promise.resolve();
     return this.#convergences.get(run.workflowRunId)?.promise ?? Promise.resolve();
+  }
+
+  /**
+   * The only place a started convergence is completed. The run actor calls this after every
+   * dispatch; public handlers also call it at the end of their own processing so direct callers
+   * (and tests built before the actor) keep the same completion boundary.
+   */
+  public async settleConvergence(run: RunState): Promise<void> {
+    const starting = this.#convergenceStarts.get(run.workflowRunId);
+    if (starting !== undefined) {
+      try {
+        await starting;
+      } catch {
+        return;
+      }
+    }
+    if (!this.#settleRequested.delete(run.workflowRunId)) return;
+    if (this.#completing.has(run.workflowRunId)) {
+      await this.whenConverged(run);
+      return;
+    }
+    try {
+      await this.#completeConvergence(run);
+    } catch (error) {
+      this.#failConvergence(run, error);
+    }
+  }
+
+  #requestSettlement(run: RunState): void {
+    this.#settleRequested.add(run.workflowRunId);
   }
 
   async #beginConvergence(
@@ -765,7 +852,7 @@ export class CoreRequestHandler implements RunRequestHandler {
       void this.#supervisor
         ?.cancelRun({ workflowRunId: run.workflowRunId, runEpoch: run.runEpoch })
         .catch(() => undefined);
-    if (state.pending.size === 0) await this.#completeConvergence(run);
+    if (state.pending.size === 0) this.#requestSettlement(run);
   }
 
   #onResultSettled(run: RunState, executionId: string): void {
@@ -773,8 +860,7 @@ export class CoreRequestHandler implements RunRequestHandler {
     const state = this.#convergences.get(run.workflowRunId);
     if (state === undefined) return;
     state.pending.delete(executionId);
-    if (state.pending.size === 0)
-      void this.#completeConvergence(run).catch((error) => this.#failConvergence(run, error));
+    if (state.pending.size === 0) this.#requestSettlement(run);
   }
 
   async #completeConvergence(run: RunState): Promise<void> {
