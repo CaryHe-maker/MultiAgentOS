@@ -107,9 +107,9 @@ Supervisor 在任务收敛中的职责是：收到 `cancelRun` 后对该运行�
 - `stop()` 可重复调用并共用同一次执行，停止失败经 `whenStopped()` 以拒绝表达，不报告为完成。
   故障关闭时由组合根直接调用它（[错误与系统故障处理](../SystemFaultHandling.md) 第 5 节）；
   Supervisor 不裁决系统故障，也不决定进程退出码。
-- `stop()` 先封锁新执行、中止全部在途执行并清理定时器；对已启动但未确认停止的执行，尽力上报
-  `STOP_UNCONFIRMED`，不等待宽限期或事实投递完成，再按顺序停止模块并回收子进程。
-  正常路径没有在途执行，不应因此产生额外事实。
+- `stop()` 先封锁新执行、中止全部在途执行并清理定时器；对已启动但未确认停止的执行，以
+  `EXECUTION_CANCELLED` 为中止原因尽力上报 `STOP_UNCONFIRMED`，不等待宽限期或事实投递完成，
+  再按顺序停止模块并回收子进程。正常路径没有在途执行，不应因此产生额外事实。
 - 子进程在创建时登记到 `SubprocessRunner` 的存活集合，`killAll()` 同步终止全部存活子进程。
   runner 由组合根构造并经 `SupervisorDeps.subprocess` 注入，组合根因此能在 Supervisor 不可用时终止子进程。
 - 进程内执行依赖 Executor 响应中止信号，Supervisor 不能强制终止同一进程中的失控代码，也不能在所在进程卡死或崩溃后继续监管；
