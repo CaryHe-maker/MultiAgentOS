@@ -1,12 +1,14 @@
-import type { BoundaryContext, ExecutionFact, GatewayForward } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
-import {
-  RunActor,
-  runChannelOf,
-  type RunMessage,
-  type RunProcessor,
-  type RunResponse,
-} from './index.js';
+import type {
+  AdmissionProjection,
+  BoundaryContext,
+  ExecutionFact,
+  GatewayForward,
+} from '@multiagentos/contracts';
+import { describe, expect, it, vi } from 'vitest';
+import type { CoreEvent } from '../core/index.js';
+import { RunActor, runChannelOf } from './index.js';
+import type { RunMessage, RunProcessor, RunResponse } from './index.js';
+import type { RunSendFailure } from './egress.js';
 
 const context: BoundaryContext = {
   correlationId: 'cor_123456',
@@ -176,6 +178,203 @@ describe('RunActor', () => {
     actor.start();
 
     await expect(actor.forward(submit, context)).rejects.toThrow('without a response');
+  });
+
+  it('settles and flushes egress before taking the next message', async () => {
+    const order: string[] = [];
+    const actor = new RunActor({
+      processor: {
+        dispatch: () => {
+          order.push('dispatch');
+          return Promise.resolve();
+        },
+        settle: () => {
+          order.push('settle');
+          return Promise.resolve();
+        },
+      },
+      egress: {
+        flush: () => order.push('flush'),
+        drain: () => {
+          order.push('drain');
+          return Promise.resolve();
+        },
+      },
+    });
+    actor.start();
+    await actor.init();
+    await actor.drain();
+
+    expect(order).toEqual(['dispatch', 'settle', 'flush', 'drain']);
+  });
+
+  it('schedules and clears run timers from egress observations', async () => {
+    vi.useFakeTimers();
+    const seen: string[] = [];
+    let observer:
+      | {
+          onEvent(event: CoreEvent): void;
+          onAdmission(projection: AdmissionProjection): void;
+        }
+      | undefined;
+    const actor = new RunActor({
+      processor: {
+        dispatch: (message) => {
+          seen.push(labelOf(message));
+          return Promise.resolve();
+        },
+      },
+      egress: {
+        flush: () => undefined,
+        drain: () => Promise.resolve(),
+        setObserver: (value) => {
+          observer = value;
+        },
+      },
+      timers: {
+        runTimeoutMs: 10,
+        authorizationTimeoutMs: 20,
+        convergenceDeadlineMs: 30,
+      },
+    });
+    try {
+      actor.start();
+      observer?.onEvent({ type: 'RunStart', goal: 'analyze' });
+      await vi.advanceTimersByTimeAsync(10);
+      await actor.drain();
+      expect(seen).toEqual(['RUN_TIMEOUT']);
+
+      observer?.onEvent({
+        type: 'AuthorizationRequest',
+        questionId: 'qst_123456',
+        capability: 'repo.read',
+        repositoryPath: '/repo',
+        exclusions: [],
+        provider: 'deepseek',
+        expiresAt: '2026-10-21T00:00:01.000Z',
+      });
+      await vi.advanceTimersByTimeAsync(20);
+      await actor.drain();
+      expect(seen).toEqual(['RUN_TIMEOUT', 'AUTHORIZATION_TIMEOUT']);
+
+      observer?.onEvent({
+        type: 'AuthorizationResolved',
+        questionId: 'qst_123456',
+        resolution: 'GRANTED',
+      });
+      await vi.advanceTimersByTimeAsync(20);
+      await actor.drain();
+      expect(seen).toEqual(['RUN_TIMEOUT', 'AUTHORIZATION_TIMEOUT']);
+
+      observer?.onAdmission({
+        workflowRunId: 'wfr_123456',
+        runState: 'CONVERGING',
+        closeReason: 'COMPLETED',
+      });
+      await vi.advanceTimersByTimeAsync(30);
+      await actor.drain();
+      expect(seen).toEqual(['RUN_TIMEOUT', 'AUTHORIZATION_TIMEOUT', 'CONVERGENCE_DEADLINE']);
+
+      observer?.onAdmission({
+        workflowRunId: 'wfr_123456',
+        runState: 'CLOSED',
+        closeReason: 'COMPLETED',
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      await actor.drain();
+      expect(seen).toEqual(['RUN_TIMEOUT', 'AUTHORIZATION_TIMEOUT', 'CONVERGENCE_DEADLINE']);
+    } finally {
+      await actor.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('turns a queued message failure into one KERNEL_FAULT', async () => {
+    const seen: string[] = [];
+    const actor = new RunActor({
+      processor: {
+        dispatch: (message) => {
+          seen.push(labelOf(message));
+          if (message.kind === 'EXECUTION_FACT') return Promise.reject(new Error('queued failure'));
+          return Promise.resolve();
+        },
+      },
+    });
+    actor.start();
+
+    await actor.reportFact({ outcome: 'COMPLETED' } as ExecutionFact);
+    await actor.drain();
+
+    expect(seen).toEqual(['COMPLETED', 'KERNEL_FAULT']);
+    await actor.stop();
+  });
+
+  it('rejects the caller and queues KERNEL_FAULT when a request fails', async () => {
+    const seen: string[] = [];
+    const actor = new RunActor({
+      processor: {
+        dispatch: (message) => {
+          seen.push(labelOf(message));
+          return message.kind === 'FORWARD'
+            ? Promise.reject(new Error('request failure'))
+            : Promise.resolve();
+        },
+      },
+    });
+    actor.start();
+
+    await expect(actor.forward(submit, context)).rejects.toThrow('request failure');
+    await actor.drain();
+
+    expect(seen).toEqual(['submitUnit', 'KERNEL_FAULT']);
+    await actor.stop();
+  });
+
+  it('escalates when handling KERNEL_FAULT itself fails', async () => {
+    const onFatal = vi.fn();
+    const actor = new RunActor({
+      processor: {
+        dispatch: () => Promise.reject(new Error('fault handling failed')),
+      },
+      onFatal,
+    });
+    actor.start();
+
+    await actor.reportFact({ outcome: 'COMPLETED' } as ExecutionFact);
+    await actor.drain();
+
+    expect(onFatal).toHaveBeenCalledTimes(1);
+    await actor.stop();
+  });
+
+  it('turns a non-terminal send failure into KERNEL_FAULT but ignores terminal failures', async () => {
+    const seen: string[] = [];
+    let fail: ((failure: RunSendFailure) => void) | undefined;
+    const actor = new RunActor({
+      processor: {
+        dispatch: (message) => {
+          seen.push(labelOf(message));
+          return Promise.resolve();
+        },
+      },
+      egress: {
+        flush: () => undefined,
+        drain: () => Promise.resolve(),
+        setFailureHandler: (handler) => {
+          fail = handler;
+        },
+      },
+    });
+    actor.start();
+
+    fail?.({ target: 'supervisor', error: new Error('send failed'), terminal: false });
+    await actor.drain();
+    expect(seen).toEqual(['KERNEL_FAULT']);
+
+    fail?.({ target: 'workflow', error: new Error('terminal failed'), terminal: true });
+    await actor.drain();
+    expect(seen).toEqual(['KERNEL_FAULT']);
+    await actor.stop();
   });
 
   it('marks the run closed and stops accepting messages after stop', async () => {

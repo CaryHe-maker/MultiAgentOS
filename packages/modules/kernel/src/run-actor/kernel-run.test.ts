@@ -1,22 +1,27 @@
 import {
   createM1ProtocolRegistry,
   sha256Hex,
+  type AdmissionProjection,
   type ArtifactRef,
   type ArtifactStorePort,
+  type CancelRunExecutionsRequest,
   type CapabilityDescriptor,
   type CatalogPort,
   type ExecutionFact,
   type ExecutionRequest,
   type GatewayForward,
+  type InteractionInboxEvent,
   type PinnedDefinitionSet,
+  type SupervisorPort,
+  type WorkflowInboxEvent,
 } from '@multiagentos/contracts';
-import { describe, expect, it, vi } from 'vitest';
-import { createRunState, type CoreEvent } from '../core/index.js';
+import { describe, expect, it } from 'vitest';
+import { createRunState } from '../core/index.js';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { InProcessProviderCapacity } from '../scheduler/index.js';
 import { RunActor } from './actor.js';
+import { RunEgress } from './egress.js';
 import { createKernelRun, type KernelRun } from './kernel-run.js';
-import type { AttemptDispatcher } from '../execution/index.js';
 
 const context = {
   tenantId: 'local',
@@ -188,11 +193,22 @@ class FakeArtifactStore implements ArtifactStorePort {
   }
 }
 
-class RecordingDispatcher implements AttemptDispatcher {
+class FakeSupervisor implements SupervisorPort {
   public readonly requests: ExecutionRequest[] = [];
+  public readonly cancels: CancelRunExecutionsRequest[] = [];
 
-  public dispatch(request: ExecutionRequest): void {
+  public execute(request: ExecutionRequest): Promise<void> {
     this.requests.push(request);
+    return Promise.resolve();
+  }
+
+  public cancelRun(request: CancelRunExecutionsRequest): Promise<void> {
+    this.cancels.push(request);
+    return Promise.resolve();
+  }
+
+  public shutdown(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -235,13 +251,19 @@ function report() {
 interface Harness {
   readonly actor: RunActor;
   readonly run: KernelRun;
-  readonly events: CoreEvent[];
-  readonly dispatcher: RecordingDispatcher;
+  readonly workflow: WorkflowInboxEvent[];
+  readonly interaction: InteractionInboxEvent[];
+  readonly admissions: AdmissionProjection[];
+  readonly supervisor: FakeSupervisor;
+  readonly egress: RunEgress;
 }
 
 function harness(): Harness {
-  const events: CoreEvent[] = [];
-  const dispatcher = new RecordingDispatcher();
+  const workflow: WorkflowInboxEvent[] = [];
+  const interaction: InteractionInboxEvent[] = [];
+  const admissions: AdmissionProjection[] = [];
+  const supervisor = new FakeSupervisor();
+  let eventSequence = 0;
   const runState = createRunState({
     workflowRunId: 'wfr_123456',
     correlationId: 'cor_123456',
@@ -251,6 +273,28 @@ function harness(): Harness {
   });
   const holder: { actor?: RunActor } = {};
   let attemptSequence = 0;
+  const egress = new RunEgress({
+    workflowRunId: 'wfr_123456',
+    supervisor,
+    gatewayAdmission: (projection) => {
+      admissions.push(projection);
+      return Promise.resolve();
+    },
+    workflowInbox: {
+      deliver: (event) => {
+        workflow.push(event);
+        return Promise.resolve();
+      },
+    },
+    interactionInbox: {
+      deliver: (event) => {
+        interaction.push(event);
+        return Promise.resolve();
+      },
+    },
+    now: () => new Date('2026-10-21T00:00:01.000Z'),
+    newEventId: () => `evt_${String((eventSequence += 1)).padStart(6, '0')}`,
+  });
   const run = createKernelRun({
     run: runState,
     catalog: new FakeCatalog(),
@@ -258,17 +302,16 @@ function harness(): Harness {
     artifacts: new FakeArtifactStore(),
     config: DEFAULT_KERNEL_CONFIG,
     audit: { append: () => Promise.resolve() },
-    dispatcher,
     capacity: new InProcessProviderCapacity(),
-    events: { emit: (event) => events.push(event) },
+    egress,
     onRunClosed: () => holder.actor?.markClosed(),
     now: () => new Date('2026-10-21T00:00:01.000Z'),
     newAttemptId: () => `una_${String((attemptSequence += 1)).padStart(6, '0')}`,
     newExecutionId: () => 'exe_123456',
   });
-  const actor = new RunActor({ processor: run.processor });
+  const actor = new RunActor({ processor: run.processor, egress });
   holder.actor = actor;
-  return { actor, run, events, dispatcher };
+  return { actor, run, workflow, interaction, admissions, supervisor, egress };
 }
 
 async function register(harnessValue: Harness): Promise<unknown> {
@@ -317,7 +360,7 @@ describe('createKernelRun and RunActor', () => {
     await test.actor.init();
     await test.actor.drain();
 
-    expect(test.events[0]).toEqual({ type: 'RunStart', goal: 'analyze' });
+    expect(test.workflow[0]?.event).toEqual({ type: 'RunStart', goal: 'analyze' });
 
     await register(test);
     await submit(
@@ -331,8 +374,8 @@ describe('createKernelRun and RunActor', () => {
       },
       'req_sub123456',
     );
-    await vi.waitFor(() => expect(test.dispatcher.requests).toHaveLength(1));
-    const request = test.dispatcher.requests[0];
+    await test.actor.drain();
+    const request = test.supervisor.requests[0];
     if (request === undefined) throw new Error('no execution request');
 
     const fact: ExecutionFact = {
@@ -348,21 +391,15 @@ describe('createKernelRun and RunActor', () => {
     };
     await test.actor.reportFact(fact);
     await test.actor.drain();
-    await vi.waitFor(() =>
-      expect(test.events).toContainEqual(
-        expect.objectContaining({ type: 'UnitReport', requestId: 'req_sub123456' }),
-      ),
+    expect(test.workflow.map((entry) => entry.event)).toContainEqual(
+      expect.objectContaining({ type: 'UnitReport', requestId: 'req_sub123456' }),
     );
 
     await submit(test, 'report-publish', { report: report() }, 'req_report123');
     await test.actor.drain();
-    const unitReport = await vi.waitFor(() => {
-      const found = test.events.find(
-        (event) => event.type === 'UnitReport' && event.requestId === 'req_report123',
-      );
-      expect(found).toBeDefined();
-      return found;
-    });
+    const unitReport = test.workflow
+      .map((entry) => entry.event)
+      .find((event) => event.type === 'UnitReport' && event.requestId === 'req_report123');
     if (
       unitReport?.type !== 'UnitReport' ||
       unitReport.status !== 'OK' ||
@@ -388,12 +425,22 @@ describe('createKernelRun and RunActor', () => {
     await test.actor.drain();
 
     expect(test.run.run.runState).toBe('CLOSED');
-    expect(test.events).toContainEqual(
+    expect(test.workflow.map((entry) => entry.event)).toContainEqual(
       expect.objectContaining({ type: 'RunClosed', closeReason: 'COMPLETED' }),
     );
-    expect(test.events).toContainEqual(
+    expect(test.interaction.map((entry) => entry.event)).toContainEqual(
       expect.objectContaining({ type: 'RunFinished', closeReason: 'COMPLETED' }),
     );
+    expect(test.workflow.at(-1)?.event.type).toBe('RunClosed');
+    expect(test.interaction.at(-1)?.event.type).toBe('RunFinished');
+    expect(test.workflow.map((entry) => entry.seq)).toEqual(
+      test.workflow.map((_, index) => index + 1),
+    );
+    expect(test.admissions).toContainEqual({
+      workflowRunId: 'wfr_123456',
+      runState: 'CLOSED',
+      closeReason: 'COMPLETED',
+    });
     await test.actor.stop();
   });
 
@@ -414,8 +461,8 @@ describe('createKernelRun and RunActor', () => {
       },
       'req_violation123',
     );
-    await vi.waitFor(() => expect(test.dispatcher.requests).toHaveLength(1));
-    const request = test.dispatcher.requests[0];
+    await test.actor.drain();
+    const request = test.supervisor.requests[0];
     if (request === undefined) throw new Error('no execution request');
 
     await test.actor.reportFact({
@@ -431,10 +478,11 @@ describe('createKernelRun and RunActor', () => {
     });
     await test.actor.drain();
     await test.actor.whenClosed();
+    await test.actor.drain();
 
     expect(test.run.run.runState).toBe('CLOSED');
     expect(test.run.run.closeReason).toBe('VIOLATION');
-    expect(test.events).toContainEqual(
+    expect(test.workflow.map((entry) => entry.event)).toContainEqual(
       expect.objectContaining({ type: 'RunClosed', closeReason: 'VIOLATION' }),
     );
     await test.actor.stop();

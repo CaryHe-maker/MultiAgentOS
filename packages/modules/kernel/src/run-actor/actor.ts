@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { BoundaryContext, ExecutionFact, GatewayForward } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
+import type { RunEgressObserver, RunSendFailure } from './egress.js';
 import {
   runChannelOf,
   type RunChannel,
@@ -7,6 +9,7 @@ import {
   type RunResponse,
   type RunTimer,
 } from './messages.js';
+import { RunTimers, type RunTimerConfig } from './timers.js';
 
 /**
  * The run-scoped work behind the actor. Stage 4.2 supplies a processor that drives
@@ -25,6 +28,19 @@ export interface RunProcessor {
 
 export interface RunActorDeps {
   readonly processor: RunProcessor;
+  /** Flushes outbox events and cross-subject requests after each message. */
+  readonly egress?: RunEgressPort;
+  /** Starts and clears the run, authorization and convergence timers. */
+  readonly timers?: RunTimerConfig;
+  /** Last-resort escalation when the actor's own fault handling fails. */
+  readonly onFatal?: (error: unknown) => void;
+}
+
+export interface RunEgressPort {
+  flush(): void;
+  drain(): Promise<void>;
+  setObserver?(observer: RunEgressObserver | undefined): void;
+  setFailureHandler?(handler: ((failure: RunSendFailure) => void) | undefined): void;
 }
 
 /**
@@ -36,16 +52,39 @@ export interface RunActorDeps {
 export class RunActor {
   readonly #inbox: Inbox<RunMessage, RunResponse | void, RunChannel>;
   readonly #processor: RunProcessor;
+  readonly #egress: RunEgressPort | undefined;
+  readonly #timers: RunTimers | undefined;
+  readonly #onFatal: ((error: unknown) => void) | undefined;
   readonly #closed: Promise<void>;
   #resolveClosed: () => void = () => undefined;
   #started = false;
   #stopped = false;
   #closedResolved = false;
+  #faultPending = false;
 
   public constructor(deps: RunActorDeps) {
     this.#processor = deps.processor;
+    this.#egress = deps.egress;
+    this.#onFatal = deps.onFatal;
     this.#inbox = new Inbox<RunMessage, RunResponse | void, RunChannel>({
       channels: ['control', 'work'],
+      onError: (error, message) => this.#handleQueuedFailure(error, message),
+    });
+    this.#timers =
+      deps.timers === undefined
+        ? undefined
+        : new RunTimers(deps.timers, (timer) => {
+            if (this.#stopped || this.#closedResolved) return;
+            try {
+              this.#inbox.enqueue({ kind: timer }, 'control');
+            } catch (error) {
+              this.#panic(error);
+            }
+          });
+    this.#egress?.setObserver?.(this.#timers);
+    this.#egress?.setFailureHandler?.((failure) => {
+      if (failure.terminal) return;
+      this.#requestFault(failure.error);
     });
     this.#closed = new Promise<void>((resolve) => {
       this.#resolveClosed = resolve;
@@ -74,11 +113,17 @@ export class RunActor {
   ): Promise<RunResponse> {
     this.#assertOpen();
     const message: RunMessage = { kind: 'FORWARD', forward, context };
-    return this.#inbox.request(message, runChannelOf(message)).then((response) => {
-      if (response === undefined)
-        throw new Error('A forwarded request was handled without a response');
-      return response;
-    });
+    return this.#inbox
+      .request(message, runChannelOf(message))
+      .then((response) => {
+        if (response === undefined)
+          throw new Error('A forwarded request was handled without a response');
+        return response;
+      })
+      .catch((error: unknown) => {
+        this.#requestFault(error);
+        throw error;
+      });
   }
 
   /** Queues an execution fact; the processor decides whether it settles one attempt. */
@@ -107,6 +152,7 @@ export class RunActor {
   public markClosed(): void {
     if (this.#closedResolved) return;
     this.#closedResolved = true;
+    this.#timers?.close();
     this.#resolveClosed();
   }
 
@@ -115,16 +161,18 @@ export class RunActor {
     return this.#closed;
   }
 
-  /** Waits until everything queued so far has been handled. */
+  /** Waits until everything queued so far has been handled and flushed. */
   public async drain(): Promise<void> {
     if (!this.#started) throw new Error('Run actor has not started');
     await this.#inbox.idle();
+    await this.#egress?.drain();
   }
 
   /** Stops accepting new messages and drains what was already queued. */
   public async stop(): Promise<void> {
     if (this.#stopped) return;
     this.#stopped = true;
+    this.#timers?.close();
     if (this.#started) await this.drain();
   }
 
@@ -133,8 +181,37 @@ export class RunActor {
   }
 
   async #handle(message: RunMessage): Promise<RunResponse | void> {
-    const response = await this.#processor.dispatch(message);
-    await this.#processor.settle?.();
-    return response;
+    try {
+      const response = await this.#processor.dispatch(message);
+      await this.#processor.settle?.();
+      return response;
+    } finally {
+      this.#egress?.flush();
+    }
+  }
+
+  #handleQueuedFailure(error: unknown, message: RunMessage): void {
+    if (message.kind === 'KERNEL_FAULT') this.#panic(error);
+    else this.#requestFault(error);
+  }
+
+  /** Injects one KERNEL_FAULT; only the Kernel core's actor decides to do this. */
+  #requestFault(error: unknown): void {
+    if (this.#stopped || this.#closedResolved || this.#faultPending) return;
+    this.#faultPending = true;
+    try {
+      this.#inbox.enqueue({ kind: 'KERNEL_FAULT', faultId: `flt_${randomUUID()}` }, 'control');
+    } catch (enqueueError) {
+      this.#panic(enqueueError);
+    }
+    void error;
+  }
+
+  #panic(error: unknown): void {
+    try {
+      this.#onFatal?.(error);
+    } catch {
+      // The last-resort handler must not turn a fault into another actor failure.
+    }
   }
 }

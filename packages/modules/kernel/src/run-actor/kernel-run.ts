@@ -20,6 +20,7 @@ import type { ProviderCapacityPort } from '../interfaces/index.js';
 import { Monitor } from '../monitor/index.js';
 import { Scheduler } from '../scheduler/index.js';
 import type { RunProcessor } from './actor.js';
+import type { RunEgress } from './egress.js';
 import type { RunMessage, RunResponse } from './messages.js';
 
 export interface KernelRunDeps {
@@ -29,9 +30,12 @@ export interface KernelRunDeps {
   readonly artifacts: ArtifactStorePort;
   readonly config: KernelConfig;
   readonly audit: AuditSink;
-  readonly dispatcher: AttemptDispatcher;
+  /** One of `dispatcher` or `egress` must be supplied. */
+  readonly dispatcher?: AttemptDispatcher;
   readonly capacity: ProviderCapacityPort;
   readonly events?: CoreEventSink;
+  /** Egress supplies the dispatcher, events, admission and Supervisor cancel together. */
+  readonly egress?: RunEgress;
   readonly admission?: (projection: AdmissionProjection) => void;
   readonly supervisor?: CoreSupervisorPort;
   readonly onRunClosed?: (run: RunState) => void;
@@ -99,6 +103,15 @@ export interface KernelRun {
  * bound lazily because Core needs it before Execution can receive Core's syscall surface.
  */
 export function createKernelRun(deps: KernelRunDeps): KernelRun {
+  const dispatcher = deps.dispatcher ?? deps.egress;
+  if (dispatcher === undefined) throw new Error('A dispatcher or egress is required');
+  const events = deps.events ?? deps.egress;
+  const supervisor = deps.supervisor ?? deps.egress;
+  const admission =
+    deps.admission ??
+    (deps.egress === undefined
+      ? undefined
+      : (projection: AdmissionProjection) => deps.egress?.admission(projection));
   const monitor = new Monitor(deps.config.budget);
   const scheduler = new Scheduler(deps.capacity);
   const holder: { execution?: Execution } = {};
@@ -127,9 +140,9 @@ export function createKernelRun(deps: KernelRunDeps): KernelRun {
     scheduler,
     audit: deps.audit,
     config: deps.config,
-    ...(deps.events === undefined ? {} : { events: deps.events }),
-    ...(deps.admission === undefined ? {} : { admission: deps.admission }),
-    ...(deps.supervisor === undefined ? {} : { supervisor: deps.supervisor }),
+    ...(events === undefined ? {} : { events }),
+    ...(admission === undefined ? {} : { admission }),
+    ...(supervisor === undefined ? {} : { supervisor }),
     ...(deps.onRunClosed === undefined ? {} : { onRunClosed: deps.onRunClosed }),
     ...(deps.reportSystemFault === undefined ? {} : { reportSystemFault: deps.reportSystemFault }),
     ...(deps.now === undefined ? {} : { now: deps.now }),
@@ -137,7 +150,7 @@ export function createKernelRun(deps: KernelRunDeps): KernelRun {
 
   const execution = new Execution({
     core: core.coreSyscalls(deps.run),
-    dispatcher: deps.dispatcher,
+    dispatcher,
     workflowRunId: deps.run.workflowRunId,
     artifacts: deps.artifacts,
     config: deps.config,
