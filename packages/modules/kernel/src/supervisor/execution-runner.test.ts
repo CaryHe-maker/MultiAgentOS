@@ -696,6 +696,44 @@ describe('ExecutionRunner', () => {
     expect(fact).toMatchObject({ outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' });
   });
 
+  it('reports TERMINATED when the Executor rejects during abort', async () => {
+    const failing = executor('REPOSITORY_ORIENT', (_input, environment) => {
+      if (environment.signal.aborted) return Promise.reject(new Error('aborted'));
+      return new Promise<ExecutorOutcome>((_resolve, reject) => {
+        environment.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+      });
+    });
+    const { runner, sink } = makeRunnerWith(registry(failing), 50);
+
+    runner.execute(orientRequest(), 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
+    runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
+
+    const fact = await waitForFact(sink);
+    expect(fact).toMatchObject({
+      outcome: 'TERMINATED',
+      reasonCode: 'EXECUTION_CANCELLED',
+      startedAt: '2026-10-19T00:00:00.000Z',
+    });
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+  });
+
+  it('reports TERMINATED without Executor extras when abort receives REJECTED', async () => {
+    const rejected: ExecutorOutcome = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(rejected)), 50);
+
+    runner.execute(orientRequest(), 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
+    runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
+
+    const fact = await waitForFact(sink);
+    expect(fact).toMatchObject({ outcome: 'TERMINATED', reasonCode: 'EXECUTION_CANCELLED' });
+    expect(fact).not.toHaveProperty('requestState');
+    expect(fact).not.toHaveProperty('usage');
+  });
+
   it('rejects a late execute after cancelRun using the recorded epoch', async () => {
     let calls = 0;
     const { runner, sink } = makeRunner(

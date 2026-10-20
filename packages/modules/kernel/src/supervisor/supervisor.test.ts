@@ -80,6 +80,29 @@ describe('Supervisor bootstrap', () => {
     expect((await supervisor.health()).status).toBe('DOWN');
   });
 
+  it('returns shutdown before module stop completes', async () => {
+    let releaseStop: (() => void) | undefined;
+    const stopGate = new Promise<void>((resolve) => (releaseStop = resolve));
+    const { fabric, supervisor } = await fixture((instance) => ({
+      start: async (afterStart) => {
+        await instance.start();
+        await afterStart?.('fabric');
+      },
+      stop: async () => {
+        await stopGate;
+        await instance.stop();
+      },
+    }));
+    await supervisor.start();
+
+    const response = fabric
+      .client('kernel-core')
+      .request(SCHEMA_IDS.supervisorShutdown, shutdown, context);
+    await expect(response).resolves.toBeUndefined();
+    releaseStop?.();
+    await supervisor.whenStopped();
+  });
+
   it('does not accept requests during boot and reuses guarded registration after rollback', async () => {
     let attempts = 0;
     let release: (() => void) | undefined;
@@ -102,6 +125,26 @@ describe('Supervisor bootstrap', () => {
     }));
     const first = supervisor.start();
     await reached;
+    await expect(
+      fabric.client('kernel-core').request(
+        SCHEMA_IDS.execute,
+        {
+          workflowRunId: 'wfr_123456',
+          unitAttemptId: 'una_123456',
+          executionId: 'exe_123456',
+          runEpoch: 1,
+          executionKind: 'REPOSITORY_ORIENT',
+          input: { objective: 'analyze', tokenBudget: 4000 },
+          scope: { kind: 'REPOSITORY', repositoryRoot: '/repo', exclusions: [] },
+          limits: {
+            deadline: '2026-10-19T01:00:00.000Z',
+            maxOutputBytes: 1024,
+            maxFiles: 10,
+          },
+        },
+        context,
+      ),
+    ).rejects.toThrow('not ready');
     await expect(
       fabric.client('kernel-core').request(SCHEMA_IDS.supervisorShutdown, shutdown, context),
     ).rejects.toThrow('not ready');

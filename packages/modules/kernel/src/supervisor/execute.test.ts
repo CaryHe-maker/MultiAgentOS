@@ -13,7 +13,7 @@ import {
   type ExecutorOutcome,
   type ExecutorRegistry,
 } from '@multiagentos/contracts';
-import { InProcessFabric, SCHEMA_IDS } from '@multiagentos/fabric';
+import { InProcessFabric, SCHEMA_IDS, createSupervisorPort } from '@multiagentos/fabric';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl, type SupervisorModule } from './index.js';
@@ -145,8 +145,9 @@ describe('Supervisor execute over Fabric', () => {
   it('accepts execute and delivers one correlated fact', async () => {
     const { fabric, facts } = await fixture();
     const kernelCore = fabric.client('kernel-core');
+    const port = createSupervisorPort(kernelCore, () => context);
 
-    await kernelCore.request(SCHEMA_IDS.execute, request(), context);
+    await port.execute(request());
     await vi.waitFor(() => expect(facts).toHaveLength(1));
 
     const envelope = facts[0] as Envelope<ExecutionFact>;
@@ -160,6 +161,36 @@ describe('Supervisor execute over Fabric', () => {
     });
   });
 
+  it('returns execute before the Executor produces a fact', async () => {
+    const { fabric, facts } = await fixture(abortingRegistry());
+    const port = createSupervisorPort(fabric.client('kernel-core'), () => context);
+
+    await port.execute(request());
+    expect(facts).toHaveLength(0);
+  });
+
+  it('delivers one ordered fact per execution', async () => {
+    const { fabric, facts } = await fixture();
+    const port = createSupervisorPort(fabric.client('kernel-core'), () => context);
+
+    await port.execute(request('exe_123456'));
+    await port.execute(request('exe_654321'));
+    await vi.waitFor(() => expect(facts).toHaveLength(2));
+
+    const ids = facts.map((envelope) => envelope.payload.executionId);
+    expect(ids).toEqual(['exe_123456', 'exe_654321']);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('rejects a malformed execute payload before it reaches the Supervisor', async () => {
+    const { fabric } = await fixture();
+    await expect(
+      fabric
+        .client('kernel-core')
+        .request(SCHEMA_IDS.execute, { ...request(), unexpected: true }, context),
+    ).rejects.toThrow();
+  });
+
   it('rejects execute from a producer other than kernel-core', async () => {
     const { fabric } = await fixture();
     await expect(
@@ -167,16 +198,26 @@ describe('Supervisor execute over Fabric', () => {
     ).rejects.toThrow('invalid producer');
   });
 
+  it('rejects cancelRun from a producer other than kernel-core', async () => {
+    const { fabric } = await fixture();
+    await expect(
+      fabric
+        .client('gateway')
+        .request(
+          SCHEMA_IDS.cancelRunExecutions,
+          { workflowRunId: 'wfr_123456', runEpoch: 2 },
+          context,
+        ),
+    ).rejects.toThrow('invalid producer');
+  });
+
   it('cancels an execution over Fabric', async () => {
     const { fabric, facts } = await fixture(abortingRegistry());
     const kernelCore = fabric.client('kernel-core');
+    const port = createSupervisorPort(kernelCore, () => context);
 
-    await kernelCore.request(SCHEMA_IDS.execute, request(), context);
-    await kernelCore.request(
-      SCHEMA_IDS.cancelRunExecutions,
-      { workflowRunId: 'wfr_123456', runEpoch: 2 },
-      context,
-    );
+    await port.execute(request());
+    await port.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
     await vi.waitFor(() => expect(facts).toHaveLength(1));
 
     const envelope = facts[0] as Envelope<ExecutionFact>;
@@ -190,8 +231,9 @@ describe('Supervisor execute over Fabric', () => {
   it('reports STOP_UNCONFIRMED during stop before Fabric closes', async () => {
     const { fabric, facts, supervisor } = await fixture(abortingRegistry());
     const kernelCore = fabric.client('kernel-core');
+    const port = createSupervisorPort(kernelCore, () => context);
 
-    await kernelCore.request(SCHEMA_IDS.execute, request(), context);
+    await port.execute(request());
     await delay(10);
     await supervisor.stop();
     await vi.waitFor(() => expect(facts).toHaveLength(1));

@@ -1,274 +1,216 @@
-# MultiAgentOS M1 Kernel 阶段三工作规划
+# MultiAgentOS M1 Kernel 阶段三实现报告
 
-> 状态：工作文档，2026-10-19 完成阶段 3.1、3.2；2026-10-20 完成阶段 3.3；3.4–3.5 待实现。
+> 状态：工作文档，2026-10-20 完成阶段三实现验收。
 > 依据：[M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6.4 节与 `docs/M1/` 下的 M1 规范。
 > 本文件不是规范，不进入 `feature/M1/main`；与 `docs/M1/` 冲突时以规范为准。
-> 本文件记录阶段三（3.1–3.5）的子阶段、工程决定、测试与验收计划，完成后改写为实现报告。
+> 本文件记录阶段三（3.1–3.5）的实际实现、验证证据、边界与遗留事项。
 
-## 1. 目的与范围
+## 1. 验收结论
 
-阶段三只实现 Supervisor 的执行控制：
+阶段三（Supervisor 执行控制）通过验收。
 
-- 清除 `execute`、`cancelRun` 的 `NOT_IMPLEMENTED`；
-- 建立 execution 表、Executor 查找与最小执行环境；
-- 实现 `notBefore`、deadline、取消宽限期、cancelEpoch、`startedAt`、`requestState`；
-- `execute` 受理即返回，执行结果作为独立 `ExecutionFact` 上报；
-- 每个 `executionId` 恰好一个终态，丢弃重复与迟到结果；
-- Executor 抛错规范化；宽限期内返回上报 `TERMINATED`，未返回上报 `STOP_UNCONFIRMED`；
-- 按 executionKind 最小权限提供凭据与 subprocess 能力；
-- 完成停止、清理与事实投递。
+验收范围：
 
-阶段三不做：
+- execution 表、execute 受理与 notBefore 调度；
+- 五类 Executor 的查找、最小执行环境与调用；
+- 正常终态 COMPLETED、REJECTED、FAILED、VIOLATION；
+- Executor 抛错规范化与 ExecutionFact 映射；
+- deadline、cancelRun、cancelEpoch、启动前取消与宽限期；
+- TERMINATED、STOP_UNCONFIRMED、迟到结果丢弃；
+- stop 清理、定时器清理与事实投递韧性；
+- 真实 Fabric 路由、correlation、producer、not-ready 与 Schema 校验；
+- Supervisor 的 health 诊断。
+
+本阶段不包含：
 
 - run actor、双通道 Inbox、OrderedSender、真实 Outbox；
 - `createKernelCore` 装配与真实启动；
-- 基础设施真实故障矩阵；
+- ModuleHost、Fabric、Persistence、ArtifactStore 的真实故障矩阵；
 - 真实模型 E2E、F1–F5 与 M1 整机验收；
 - 并行执行、跨进程 IPC、分片或生产级隔离。
 
-阶段三可以用真实 Fabric、受控 Executor 与 fake kernel-core 事实接收端完成验收，不依赖阶段四。
+阶段三代码工作已收敛。后续改动应属于阶段四至六、缺陷修复或单独的接口调整，
+不再以阶段三子阶段名义扩展功能。
 
-## 2. 当前基线
+## 2. 交付范围与代码结构
 
-- 阶段一完成 Core 控制逻辑，阶段二完成 Execution、Scheduler 与 Monitor 接入。
-- `packages/modules/kernel/src/supervisor/index.ts` 已完成引导、关闭、Fabric 注册与子进程清理；
-  `execute`、`cancelRun` 与 `stop` 清理路径已实现（3.1–3.3），包括 deadline、宽限期、停止未确认与
-  事实投递失败诊断。
-- `SupervisorDeps` 已包含 `fabric`、`executors`、`credentials`、`moduleHost`、`config`、
-  `dataDir`、`subprocess`、`now`。
-- `SupervisorPort`、`ExecutionFactSink` 的 Fabric 存根与 `serveSupervisor`、`serveExecutionFacts`
-  已存在。
-- `attemptDispatcher` 是阶段二留给执行派发的接缝；阶段三不需要改它。
-- 现有 Supervisor 测试覆盖引导、Fabric 注册、关闭、子进程清理、正常执行、事实投递、中断路径与
-  停止清理。
+阶段三实现集中在：
 
-## 3. 子阶段
+```text
+packages/modules/kernel/src/supervisor/
+  index.ts                createSupervisor、Fabric 注册、生命周期与 health
+  execution-table.ts      execution 表、状态、取消原因与定时器字段
+  execution-runner.ts     execute、notBefore、deadline、取消、宽限期、stop
+  environment.ts          按 executionKind 构造最小 ExecutorEnvironment
+  fact-mapper.ts          ExecutorOutcome / TerminationVerdict → ExecutionFact
+  subprocess-runner.ts    既有 rg 子进程适配（阶段三前已有）
+  execute.test.ts         Fabric、typed SupervisorPort 与执行闭环
+  execution-runner.test.ts
+                          执行表、正常终态、中断、stop 与事实归一化
+  supervisor.test.ts      引导、not-ready、关闭顺序与生命周期
+```
 
-### 3.1 执行表与正常终态
+未修改：
 
-**状态：已完成（2026-10-19）。** 实现位于 `packages/modules/kernel/src/supervisor/`：
-`execution-table.ts`、`execution-runner.ts`、`environment.ts`、`fact-mapper.ts`，由 `index.ts` 接线；
-测试位于 `execution-runner.test.ts` 与 `execute.test.ts`。
+- `packages/libraries/contracts`；
+- `packages/testing`；
+- 根构建、检查与锁文件；
+- 其他 Module、静态库或基础设施目录。
 
-**目标**
+阶段 3.1–3.3 已由提交 `959fdc4` 提交；3.4–3.5 与本报告随后续提交进入工作分支。
 
-让 Supervisor 真正接受执行请求，并为正常结果产生唯一合法事实。
+## 3. 实现内容
 
-**工作**
+### 3.1 执行表与 execute
 
-- 新增内部 execution 表：`executionId → ExecutionEntry`。
-- Entry 字段：请求、状态、`startedAt`、`endedAt`、中止原因、定时器、`correlationId`、terminal 标记。
-- `execute`：
-  - 受理后立即返回；
-  - 按 `notBefore` 调度，缺省立即启动；
-  - 启动不得在 handler 内同步执行。
-- Executor 查找：
-  - 按 `executionKind` 从 `deps.executors` 取；
-  - 校验 `executor.executionKind` 与请求一致；
-  - 缺失或不一致产生 `FAILED(INTERNAL, retryable = false)`。
-- 最小执行环境：`scope`、`limits`、`signal`、`now`，以及按 kind 注入的凭据与 subprocess。
-- 正常终态：`COMPLETED`、`REJECTED`、`FAILED`、`VIOLATION`。
-- Executor 抛错：`FAILED(INTERNAL, retryable = false)`；MODEL `requestState = UNKNOWN`。
-- 事实映射：统一 `toExecutionFact`，保证字段与 Schema 联合类型一致。
-- 首次接入事实投递，保证每个 execution 只投递一次。
+`ExecutionRunner` 实现 Supervisor 的单运行执行控制：
 
-**测试**
+- execution 表以 `executionId` 为键；
+- 记录请求、状态、`startedAt`、`endedAt`、中止原因与定时器；
+- 重复 `executionId` 只保留第一次受理；
+- `execute` 只登记并立即返回，启动由请求处理之外的调度完成；
+- `notBefore` 缺省立即启动，未来时间使用定时器；
+- 已取消的运行收到更低 `runEpoch` 的迟到 execute 时，不启动 Executor，直接上报
+  `TERMINATED(EXECUTION_CANCELLED)`，无 `startedAt`。
 
-- execute 返回早于 Executor 启动；
-- notBefore 未来与过去；
-- 五类 executionKind 都能进入受控 Executor；
-- 四种正常结果的 fact 形状；
-- Executor 抛错；
-- registry 缺失或 kind 不一致；
-- 重复 executionId 只保留第一次；
-- 环境能力隔离。
+执行状态：
 
-**退出**
+```text
+ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILED / VIOLATION
+         │                           ├→ TERMINATED（宽限期内结束）
+         │                           └→ STOP_UNCONFIRMED（宽限期内未结束）
+         └→ TERMINATED（启动前被取消，无 startedAt）
+```
 
-正常路径产生唯一合法 `ExecutionFact`，`execute` 不再抛 `NOT_IMPLEMENTED`。
+### 3.2 Executor 查找与最小执行环境
 
-### 3.2 截止时间与取消
+- 按请求的 `executionKind` 从 `ExecutorRegistry` 取得唯一 Executor。
+- 运行时核对 `executor.executionKind` 与请求一致。
+- 注册表缺失或 kind 不一致时产生 `FAILED(INTERNAL, retryable = false)`。
+- 环境始终提供 `scope`、`limits`、`signal` 与 `now`。
+- 能力最小化：
+  - 只有 MODEL 取得真实 `ProviderCredentials`；
+  - 只有 REPOSITORY_SEARCH 取得真实 `SubprocessRunner`；
+  - 其他执行使用拒绝式 credentials 与 subprocess。
 
-**状态：已完成（2026-10-19）。** 实现位于 `execution-runner.ts` 的 deadline/cancel/grace 路径与
-`fact-mapper.ts` 的 `toTerminationFact`；测试覆盖 deadline、启动前取消、运行中取消、停止未确认、
-迟到结果、首个中止原因与 VIOLATION 例外。
+### 3.3 正常终态与事实映射
 
-**目标**
+支持四种正常结果：
 
-覆盖中断路径，保证唯一终态与可解释的未知效果。
+| ExecutorOutcome | ExecutionFact | 说明 |
+|---|---|---|
+| COMPLETED | COMPLETED | 保留 output 与 artifact；MODEL 的 `requestState = SENT` |
+| REJECTED | REJECTED | 原因码原样保留；MODEL 的 `requestState = NOT_SENT` |
+| FAILED | FAILED | 保留 `retryable`；MODEL 保留 `usage` 与 `requestState`，缺失时 `UNKNOWN` |
+| VIOLATION | VIOLATION | 原因码原样保留；MODEL 的 `requestState = UNKNOWN` |
 
-**工作**
+Executor 抛错：
 
-- deadline：按 `limits.deadline` 设置定时器，到点 abort，原因 `UNIT_TIMEOUT`。
-- `cancelRun`：
-  - 记录该运行的最大取消 runEpoch；
-  - 对全部执行实例触发 abort；
-  - 原因 `EXECUTION_CANCELLED`；
-  - 尚未启动的实例直接 `TERMINATED`，无 `startedAt`。
-- 启动前取消：清除 notBefore 定时器，不调用 Executor。
-- 宽限期：从 abort 起算 `cancelGraceMs`。
-- 宽限期内返回：`TERMINATED`；返回 `VIOLATION` 时例外上报 `VIOLATION`。
-- 宽限期后：`STOP_UNCONFIRMED`；此后返回丢弃。
-- 竞争：第一个触发者决定原因，后续触发不改变原因、不重置宽限期。
-- 迟到 execute：`runEpoch < cancelEpoch` 时不启动，直接 `TERMINATED(EXECUTION_CANCELLED)`。
-- 重复 cancel：不产生额外事实。
+- 统一形成 `FAILED(INTERNAL, retryable = false)`；
+- MODEL `requestState = UNKNOWN`；
+- 非 MODEL 不携带 `requestState` 与 `usage`；
+- 原始异常不跨通讯主体传播。
 
-**测试**
+事实只由 Supervisor 产生一次。重复结果、迟到结果或已终态的执行不产生第二条事实。
 
-- deadline 触发；
-- 启动前取消；
-- 运行中取消；
-- Executor 响应 abort；
-- Executor 忽略 abort；
-- 宽限期后返回被丢弃；
-- deadline 与 cancel 竞争；
-- 重复 cancel；
-- 迟到 execute；
-- 同一 execution 只产生一个终态。
+### 3.4 截止时间、取消与宽限期
 
-**退出**
+deadline：
 
-正常、抛错、超时、取消、未确认停止、迟到结果全部可验证。
+- 执行启动时按 `limits.deadline` 设置定时器；
+- 到点触发 abort，原因 `UNIT_TIMEOUT`；
+- 已过或无法解析的 deadline 视为立即超时，不启动 Executor；
+- 进入中止后启动 `cancelGraceMs` 宽限期。
 
-### 3.3 停止、清理与投递韧性
+cancelRun：
 
-**状态：已完成（2026-10-20）。** `ExecutionRunner.stop()` 会封锁新执行、清理全部定时器、中止在途执行，
-并对已启动但未确认的执行尽力上报 `STOP_UNCONFIRMED(EXECUTION_CANCELLED)`；事实投递失败记录到
-`health().details`，不重试执行、不重复投递、不产生未处理拒绝。
+- 记录该运行的最大取消 runEpoch；
+- 对运行中的执行触发 `EXECUTION_CANCELLED`；
+- 尚未启动的执行直接 `TERMINATED`，不调用 Executor；
+- 重复取消幂等，不产生额外事实。
 
-**目标**
+竞争与终态：
 
-让停止路径和有缺陷的投递路径可控。
-
-**工作**
-
-- `stop()`：封锁新执行、中止在途执行、清理定时器，尽力上报 `STOP_UNCONFIRMED`，
-  再停止 ModuleHost、回收子进程、清理临时资源。
-- 不等待宽限期或事实投递完成；不伪造完成。
-- 事实投递失败：记录诊断，不重试执行、不重复投递、不产生未处理拒绝。
-- `health().details` 暴露最近投递错误与活动执行数。
-- 终态后清理 execution 表项或写入 tombstone。
-- 保持 `whenStopped()`、重复 `stop()` 与停止失败语义。
-
-**测试**
-
-- 有在途执行时 stop；
-- Executor 忽略 abort 时 stop 有界返回；
-- 事实投递失败；
-- 无未处理拒绝；
-- 定时器清理；
-- 重复 stop；
-- shutdown 与 stop 顺序。
-
-**退出**
-
-停止有界、幂等、不伪造完成、不重复投递。
-
-### 3.4 Fabric 与跨组件集成
-
-**目标**
-
-验证 Supervisor 在真实通讯边界上的行为。
-
-**工作**
-
-- 内部 `serve` 辅助函数接收 `Envelope`，以取得 `correlationId`。
-- 使用现有 Fabric 构造 `ExecutionFactSink`，不修改 `SupervisorDeps`。
-- 真实 `InProcessFabric` + fake kernel-core 订阅端验证：
-  - `execute`；
-  - 受控 Executor 完成；
-  - 事实进入 fake kernel-core；
-  - `cancelRun`；
-  - `shutdown`。
-- 校验 producer、not-ready、Schema、`execute` 返回早于事实、correlation 延续。
-- 不引入 run actor 或 `createKernelCore`。
-
-**测试**
-
-- 真实 Fabric 路由；
-- 事实 Schema 校验；
-- producer 错误；
-- not-ready；
-- 畸形 payload；
-- shutdown 先返回再停止；
-- 事实唯一性与顺序。
-
-**退出**
-
-Supervisor 通过真实 Fabric 接口完成一条执行闭环。
-
-### 3.5 验收与报告
-
-**工作**
-
-- `pnpm run check`、`pnpm run test:coverage`、`pnpm run demo:fake`、`git diff --check`。
-- 新增 `docs/M1KernelStage3.md` 实现报告内容。
-- 更新 `docs/M1-kernel-infra-plan.md`：阶段三完成、实现状态、预留表、C07 进度。
-- 确认未修改 `contracts`、`testing`、根构建配置或锁文件。
-- 记录阶段四、阶段五与 M1 整机验收遗留。
-
-**退出**
-
-阶段三退出条件满足，报告与计划状态一致。
-
-## 4. 工程决定
-
-### 4.1 事实投递依赖
-
-**决定：不修改 `SupervisorDeps`，在 Supervisor 内部用现有 Fabric 构造 `ExecutionFactSink`。**
-
-- `@multiagentos/kernel` 已依赖 `@multiagentos/fabric`；
-- `createExecutionFactSink` 已存在，fake supervisor 也使用同一方式；
-- 修改 `SupervisorDeps` 属于共享接缝，需要同步 `M1Interface` 第 14.1 节、`packages/testing` 与组合根；
-- 事实沿用 `execute` 请求的 `correlationId`，只用于追踪。
-
-测试需要模拟投递失败时，通过 fake Fabric 或内部 sink 工厂实现，不扩大公共工厂签名。
-
-### 4.2 Executor 抛错
-
-**决定：`FAILED(INTERNAL, retryable = false)`。**
-
-- 抛错通常是实现缺陷，不是可安全重试的技术错误；
-- 避免 Execution 自动重试导致未知副作用重复发生；
-- MODEL 的 `requestState` 为 `UNKNOWN`，因为请求可能已经发出；
-- 非 MODEL 不携带 `usage` 与 `requestState`；
-- `startedAt` 保留。
-
-### 4.3 启动前取消
-
-**决定：`TERMINATED(EXECUTION_CANCELLED)`，无 `startedAt`。**
-
-- 不调用 Executor；
-- MODEL `requestState = NOT_SENT`；
-- 清除 notBefore 定时器；
-- 记录取消 runEpoch。
-
-### 4.4 deadline 与 cancel 竞争
-
-**决定：第一个触发者决定原因。**
-
-- 先到 deadline：`UNIT_TIMEOUT`；
-- 先到 cancel：`EXECUTION_CANCELLED`；
+- deadline 与 cancel 谁先触发，谁决定中止原因；
 - 后续触发不改变原因、不重置宽限期；
-- 所有终态经单一 `finalize` 守卫；
-- 宽限期内返回 `TERMINATED`，宽限期后 `STOP_UNCONFIRMED`。
+- 宽限期内 Executor 返回：`TERMINATED`；
+- 宽限期后未返回：`STOP_UNCONFIRMED`，此后的返回全部丢弃；
+- 宽限期内返回 `VIOLATION` 时上报 `VIOLATION`，避免安全证据被取消或超时路径吞掉。
+
+### 3.5 stop、清理与投递韧性
+
+`ExecutionRunner.stop()`：
+
+- 封锁新执行；
+- 清理 notBefore、deadline 与 grace 三类定时器；
+- 对运行中的执行触发 abort；
+- 对已启动但未确认停止的执行，以 `EXECUTION_CANCELLED` 为原因尽力上报
+  `STOP_UNCONFIRMED`；
+- 尚未启动的执行只标记终态，不产生执行事实；
+- 重复调用幂等，不产生重复事实。
+
+`createSupervisor.stop()`：
+
+- 在停止 ModuleHost 前调用 `runner.stop()`，使事实投递在 Fabric 关闭前发起；
+- 不等待宽限期或事实投递完成；
+- 随后停止模块、回收子进程并清理临时数据；
+- 不把未确认停止伪装成执行完成。
+
+事实投递失败：
+
+- 只记录诊断，不重试执行；
+- 不产生第二条事实；
+- 不产生未处理 Promise 拒绝；
+- 错误进入 `health().details`，同时暴露活动执行数。
+
+### 3.6 Fabric 与跨组件集成
+
+- Supervisor 在 Fabric 就绪后注册 `execute`、`cancelRun`、`shutdown` 处理器。
+- `serve` 辅助函数接收 `Envelope`，从 execute 请求捕获 `correlationId`。
+- 执行事实沿用该 `correlationId`，只用于追踪，不参与裁决。
+- 事实经 `createExecutionFactSink` 投递到 `kernel-core.execution-facts`。
+- 校验：
+  - producer 必须为 `kernel-core`；
+  - 未 ready 时拒绝请求；
+  - Fabric 在进入 handler 前完成 Schema 校验；
+  - `execute` 在 Executor 产生事实之前返回；
+  - `shutdown` 响应先于模块停止完成。
+- typed `createSupervisorPort` 存根已纳入执行闭环测试。
+
+## 4. 关键设计决定
+
+### 4.1 事实投递在 Supervisor 内部构造
+
+`SupervisorDeps` 不增加 `ExecutionFactSink` 或 `ContextOf` 字段。Supervisor 使用现有 Fabric 客户端
+构造 sink，保持阶段一、阶段二的工厂签名不变，避免共享接缝同步成本。
+
+### 4.2 Executor 抛错不可重试
+
+Executor 抛错视为实现缺陷，统一使用 `FAILED(INTERNAL, retryable = false)`，避免 Execution
+自动重试导致未知副作用重复发生。MODEL 使用 `UNKNOWN`，因为请求可能已经发出。
+
+### 4.3 启动前取消不产生 startedAt
+
+启动前取消没有调用 Executor，因此上报 `TERMINATED(EXECUTION_CANCELLED)` 时不带 `startedAt`；
+MODEL 的 `requestState = NOT_SENT`，非 MODEL 不携带 `requestState`。
+
+### 4.4 第一个中止原因不可变
+
+deadline 与 cancel 竞争时，第一个触发者决定 `UNIT_TIMEOUT` 或 `EXECUTION_CANCELLED`。
+后续触发只记录取消 runEpoch，不改变原因、不重置宽限期。所有终态经单一 `finalize` 守卫，
+保证每个 `executionId` 只有一条事实。
 
 ### 4.5 VIOLATION 例外
 
-**决定：宽限期内 Executor 返回 `VIOLATION` 时上报 `VIOLATION`，而不是 `TERMINATED`。**
+宽限期内 Executor 返回 `VIOLATION` 时，Supervisor 上报 `VIOLATION` 而不是 `TERMINATED`。
+安全违规证据不能被取消或超时路径吞掉，Core 仍可在收敛中按 VIOLATION 处理。
 
-- 安全违规证据不得被取消或超时路径吞掉；
-- Core 仍可在收敛中升级为 `VIOLATION`；
-- 其他结果仍按 `TERMINATED` 处理。
-
-### 4.6 usage 与 requestState
-
-**决定：按 ExecutionFact Schema 归一化。**
+### 4.6 usage 与 requestState 归一化
 
 MODEL 的 `requestState`：
 
 | 情况 | 值 |
-| --- | --- |
+|---|---|
 | COMPLETED | `SENT` |
 | 启动前取消 | `NOT_SENT` |
 | Executor 提供 | 原值 |
@@ -281,153 +223,90 @@ MODEL 的 `requestState`：
 - `STOP_UNCONFIRMED` 不带 `usage`；
 - 非 MODEL 一律丢弃 `usage` 与 `requestState`。
 
-### 4.7 事实投递失败
+### 4.7 stop 使用 EXECUTION_CANCELLED
 
-**决定：记录诊断，不重试执行，不重复投递，不产生未处理拒绝。**
+`stop()` 触发的中止使用 `EXECUTION_CANCELLED`。原因是 `TERMINATED` 与 `STOP_UNCONFIRMED`
+只允许 `UNIT_TIMEOUT` 与 `EXECUTION_CANCELLED`，而正常关闭没有在途执行，该路径主要用于故障清理。
 
-- `finalize` 先设置 terminal；
-- `facts.report` 失败写入 health 诊断；
-- 不把投递失败伪装成执行成功或执行失败；
-- 可靠投递与基础设施故障留至阶段五。
+### 4.8 测试使用真实时间与受控 Executor
 
-### 4.8 stop 与清理
+执行控制测试使用受控 Executor、deferred Promise、`AbortSignal` 与固定 `now`；notBefore、
+deadline 与宽限期使用短延时和 `vi.waitFor`。Supervisor 测试重复运行未出现抖动。
 
-**决定：先中止、清定时器，再停止模块；事实投递尽力而为。**
+## 5. 验证与证据
 
-```text
-stop()
-  → ready = false
-  → abort 全部 execution
-  → 清理全部定时器
-  → 尽力上报已启动但未确认的 STOP_UNCONFIRMED
-  → moduleHost.stop()
-  → killAll()
-  → 清理 tmp
-```
-
-正常关闭没有在途执行，不应产生额外事实；panic 路径不等待宽限期或投递完成。
-
-决定：`stop()` 触发的中止在 `ExecutionFact` 中使用 `EXECUTION_CANCELLED`。原因是
-`TERMINATED` 与 `STOP_UNCONFIRMED` 只允许 `UNIT_TIMEOUT` 与 `EXECUTION_CANCELLED`，
-而正常关闭没有在途执行，该路径主要用于故障清理。
-
-### 4.9 确定性测试
-
-**决定：使用 Vitest fake timers、注入 `now` 与受控 Executor，不新增定时器依赖。**
-
-- fake timers 控制 notBefore、deadline、宽限期；
-- 受控 Executor 使用 deferred Promise 与 `AbortSignal`；
-- 忽略取消的 Executor 保持 pending，再推进宽限期；
-- 测试配置覆盖 `cancelGraceMs` 与 `executionLimits`；
-- 不调用真实模型、网络或真实 `rg`。
-
-### 4.10 执行环境最小权限
-
-| executionKind | credentials | subprocess |
-| --- | --- | --- |
-| MODEL | 真实 `deps.credentials` | 拒绝式 runner |
-| REPOSITORY_SEARCH | 拒绝式 credentials | 真实 `deps.subprocess` |
-| 其他 | 拒绝式 credentials | 拒绝式 runner |
-
-拒绝式 credentials：`apiKeyFor: () => undefined`。
-
-拒绝式 subprocess：返回 `{ exitCode: null, signal: null, stdout: '', truncated: false }`，不启动进程。
-
-## 5. 执行实例与事实映射
+### 5.1 质量门
 
 ```text
-ACCEPTED（等待 notBefore）→ RUNNING ─┬→ COMPLETED / REJECTED / FAILED / VIOLATION
-         │                           ├→ TERMINATED（宽限期内结束）
-         │                           └→ STOP_UNCONFIRMED（宽限期内未结束）
-         └→ TERMINATED（启动前被取消，无 startedAt）
+pnpm install --frozen-lockfile   通过（已是最新）
+pnpm run build                   通过
+pnpm run check                   通过
+  format:check                   通过
+  lint                           通过
+  typecheck                      通过
+  test                           50 个测试文件、535 项测试全部通过
+pnpm run demo:fake               退出码 0
+git diff --check                 通过
 ```
 
-规则：
+环境：
 
-- 每个 `executionId` 只产生一个终态；
-- 重复 executionId 只保留第一次受理；
-- 迟到 execute 与迟到结果都按已取消或已终态处理；
-- `stop()` 不影响已经产生的终态；
-- `STOP_UNCONFIRMED` 之后任何 Executor 返回都丢弃。
+```text
+Ubuntu 24.04.5 LTS（WSL2）
+Node.js v24.19.0
+pnpm 11.25.0
+```
 
-## 6. Fabric 集成
+`demo:fake` 使用 fake Module 与 fake Executor，只证明装配链路，不作为阶段三验收依据。
 
-- `execute` 与 `cancelRun` 处理器仍由 Supervisor 在 Fabric 就绪后注册。
-- `serve` 辅助函数需要把 `Envelope` 传给 handler，以取得 `correlationId`。
-- 事实通过 `ExecutionFactSink` 发送到 `kernel-core.execution-facts`。
-- producer 必须为 `kernel-core`；未 ready 时拒绝；Schema 由 Fabric 校验。
-- 不新增公共 Schema，不修改 `SupervisorDeps`。
+### 5.2 覆盖率
 
-## 7. 测试矩阵
+```text
+全仓                语句 92.66%  分支 83.16%  函数 88.13%  行 94.71%
+kernel/supervisor   语句 92.85%  分支 81.49%  函数 74.63%  行 96.24%
+execution-runner    语句 94.18%  分支 83.56%  函数 60.65%  行 96.92%
+execution-table     语句 100.00% 分支 100.00% 函数 50.00%  行 100.00%
+fact-mapper         语句 95.00%  分支 88.63%  函数 50.00%  行 94.44%
+```
 
-| 维度 | 用例 |
-| --- | --- |
-| 正常 | COMPLETED、REJECTED、FAILED(true/false)、VIOLATION、Executor 抛错 |
-| 调度 | notBefore 未来/过去、execute 返回早于启动、重复 execute |
-| 截止 | deadline 到点、deadline 已过、Executor 忽略 abort |
-| 取消 | 启动前取消、运行中取消、重复取消、cancelEpoch、迟到 execute |
-| 宽限 | 宽限期内返回、宽限期后返回、STOP_UNCONFIRMED、迟到结果丢弃 |
-| 竞争 | deadline vs cancel、完成 vs cancel、违规 vs cancel |
-| 事实 | 唯一性、MODEL requestState/usage、非 MODEL 无 usage/requestState、Schema 校验 |
+### 5.3 测试覆盖矩阵
+
+| 范围 | 覆盖 |
+|---|---|
+| 执行表 | 受理、重复 executionId、状态转换、终态唯一 |
+| 调度 | notBefore 未来/过去、execute 返回早于启动 |
+| 五类 Executor | ORIENT、SEARCH、FILE_READ、CONTEXT_ASSEMBLE、MODEL |
+| 正常终态 | COMPLETED、REJECTED、FAILED、VIOLATION、抛错 |
 | 环境 | MODEL 凭据、SEARCH subprocess、其他拒绝 |
-| 生命周期 | stop、shutdown、重复 stop、定时器清理、投递失败、health 诊断 |
-| Fabric | producer、not-ready、畸形 payload、correlation、真实路由 |
+| deadline | 到点、已过、无法解析、Executor 忽略 abort |
+| 取消 | 启动前、运行中、重复、cancelEpoch、迟到 execute |
+| 宽限 | 宽限期内返回、宽限期后 STOP_UNCONFIRMED、迟到结果丢弃 |
+| 竞争 | deadline vs cancel、完成 vs cancel、VIOLATION vs cancel |
+| 事实 | 唯一性、顺序、MODEL requestState/usage、非 MODEL 归一化 |
+| stop | 定时器清理、STOP_UNCONFIRMED、重复 stop、投递失败 |
+| Fabric | typed SupervisorPort、producer、not-ready、畸形 payload、correlation |
+| shutdown | 响应先于模块停止 |
 
-## 8. 文件布局
+## 6. 阶段三退出条件核对
 
-保持 `supervisor/index.ts` 公开导出不变，内部拆分：
+| 条件 | 结果 |
+|---|---|
+| execute、cancel 无占位实现 | 满足 |
+| execution 表、Executor 查找与最小环境 | 满足 |
+| notBefore、deadline、宽限期、cancelEpoch、startedAt、requestState | 满足 |
+| 每个 execution 恰好一个终态 | 满足 |
+| 正常、抛错、超时、取消、忽略取消、重复取消、迟到结果可验证 | 满足 |
+| M1 的 Executor 能力最小权限 | 满足 |
+| 真实 Fabric 路由、correlation、producer、not-ready、Schema | 满足 |
+| 阶段三质量门与覆盖率 | 满足 |
+| 未修改共享接缝 | 满足 |
 
-```text
-packages/modules/kernel/src/supervisor/
-  index.ts                 createSupervisor、Fabric handler、生命周期
-  execution-table.ts       entry、状态、cancelEpoch、finalize 守卫
-  execution-runner.ts      调度、定时器、Executor 调用、abort
-  environment.ts           按 kind 构造 ExecutorEnvironment
-  fact-mapper.ts           ExecutorOutcome → ExecutionFact
-  *.test.ts
-```
+## 7. 边界与遗留
 
-`index.ts` 只负责装配与通讯，避免继续膨胀。
-
-## 9. 风险与规避
-
-| 风险 | 规避 |
-| --- | --- |
-| ExecutionFact 联合类型复杂，构造易错 | 单独 `fact-mapper.ts`，按 kind/outcome 穷举并测试 |
-| 定时器与迟到结果竞争 | 单一 `finalize` 守卫、terminal 标记、清理全部 timer |
-| stop 与投递互相等待 | 先 abort、清 timer，再停模块；投递尽力而为 |
-| Executor 忽略 abort | 宽限期 + STOP_UNCONFIRMED，不假设可强制终止 |
-| 投递失败产生未处理拒绝 | 所有 detached 任务带 catch，诊断写 health |
-| 测试不稳定 | fake timers、deferred Executor、固定 now、无真实网络 |
-| 范围蔓延到阶段四 | 不实现 run actor、createKernelCore、Outbox/Inbox |
-| 共享接缝变更 | 不改 contracts/testing/SupervisorDeps；必须改时单独评审 |
-
-## 10. 完成定义
-
-阶段三完成必须同时满足：
-
-- `supervisor/` 不再有 `NOT_IMPLEMENTED`；
-- 正常、抛错、超时、取消、未确认停止、迟到结果全部有测试；
-- 每个 execution 恰好一个合法 `ExecutionFact`；
-- stop/shutdown 有界、幂等、不伪造完成；
-- 未修改共享接缝；
-- `pnpm run check`、coverage、demo、diff check 通过；
-- `docs/M1KernelStage3.md` 与计划状态一致。
-
-建议覆盖率目标：
-
-- Supervisor 语句 ≥ 90%，分支 ≥ 80%；
-- 全仓不低于阶段二的 92.45% / 83.06% / 89.43% / 94.55%。
-
-建议提交拆分：
-
-1. `feat: 实现 Supervisor 阶段 3.1-3.3 执行控制`
-2. `feat: 完成 Supervisor 阶段 3.4-3.5 与阶段三实现报告`
-
-## 11. 边界与遗留
+以下事项明确属于后续阶段，不阻断阶段三验收：
 
 | 事项 | 归属 |
-| --- | --- |
+|---|---|
 | run actor、双通道 Inbox、OrderedSender、真实 Outbox | 阶段四 |
 | `createKernelCore` 装配、真实启动与组合根联调 | 阶段四、六 |
 | ModuleHost/Fabric/Persistence/ArtifactStore 真实故障联调 | 阶段五 |
@@ -435,11 +314,21 @@ packages/modules/kernel/src/supervisor/
 | 可靠事实投递与投递失败重试 | 阶段五及后续 |
 | 并行执行、跨进程 IPC、分片、生产级隔离 | 后续演进 |
 
-## 12. 进度记录
+已知实现边界：
 
-| 日期 | 内容 | 验证 |
-| --- | --- | --- |
-| 2026-10-19 | 完成阶段三规划：确定 3.1–3.5 子阶段、工程决定、测试矩阵、文件布局与完成定义 | 仅文档修订；Prettier 与 `git diff --check` 检查 |
-| 2026-10-19 | 3.1 完成：执行表、execute 受理与 notBefore、五类 Executor、最小环境、正常终态与抛错规范化、事实映射与 Fabric 投递；`cancelRun` 仍待 3.2 | `pnpm run check`（50 个文件、509 项）；supervisor 语句 91.01%、分支 76.19%；全仓语句 92.56%、分支 82.92%、行 94.63%；`demo:fake` 退出码 0；无共享接缝变更 |
-| 2026-10-19 | 3.2 完成：deadline、cancelRun、cancelEpoch、启动前取消、宽限期、TERMINATED / STOP_UNCONFIRMED、迟到结果丢弃、首个中止原因与 VIOLATION 例外；Fabric cancel 路由已接入 | `pnpm run check`（50 个文件、524 项）；supervisor 语句 91.87%、分支 80.32%；全仓语句 92.59%、分支 83.06%、行 94.65%；`demo:fake` 退出码 0；无共享接缝变更 |
-| 2026-10-20 | 3.3 完成：stop 封锁新执行、清理全部定时器、在途执行尽力上报 STOP_UNCONFIRMED(EXECUTION_CANCELLED)、投递失败写 health、重复 stop 幂等；Fabric stop 前事实投递已验证 | `pnpm run check`（50 个文件、528 项）；supervisor 语句 92.30%、分支 80.70%；全仓语句 92.62%、分支 83.08%、行 94.65%；`demo:fake` 退出码 0；无未处理拒绝 |
+- 进程内 Executor 无法被强制终止；无法确认停止时如实报告 `STOP_UNCONFIRMED`；
+- `stop()` 不等待宽限期或事实投递完成，正常路径不应有在途执行；
+- 事实投递失败只记录诊断，不重试执行，不伪造第二条事实；
+- M1 仍是单运行、内存状态，不提供崩溃恢复或持久化执行表。
+
+## 8. 工作收敛结论
+
+阶段三代码工作已收敛：
+
+- 不再以阶段三子阶段名义扩展功能；
+- 后续修复应关联具体缺陷或阶段四至六任务；
+- 阶段三以外的能力不得以占位成功响应进入产品路径；
+- 共享接缝变更需单独评审并同步 contracts、testing 与相关 fake。
+
+阶段三完成不表示 Kernel 或 M1 整机完成；阶段四仍需 run actor 与 `createKernelCore` 装配，
+M1 验收仍以 [M1Plan](M1/M1Plan.md) 第 7 节和第 8 节为准。

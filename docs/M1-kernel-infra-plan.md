@@ -2,9 +2,9 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 同步阶段三 3.1–3.3 实现状态。**
-本计划作为剩余开发执行基线；阶段一、阶段二已完成验收，阶段三进行中（3.1–3.3 完成），阶段四至六未开始，后续由负责人指定阶段推进。
-本次完成阶段三 3.1–3.3 实现状态同步；阶段三实现已启动，3.4–3.5 未完成；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收。**
+本计划作为剩余开发执行基线；阶段一、阶段二、阶段三已完成验收，阶段四至六未开始，后续由负责人指定阶段推进。
+本次完成阶段三实现与验收状态同步；阶段四至六未开始；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
   规范在 `docs/M1/` 下，两者不一致时以规范为准并修正本文。
@@ -53,7 +53,7 @@
 | Persistence、ArtifactStore：路径与符号链接检查、写入排队与关闭排空、内容寻址与复验、命名空间限定的 Port | 已实现，真实主链联调待阶段五 |
 | ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、停止期限、`afterStart` 钩子 | 已实现，真实主链联调待阶段五 |
 | Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 阶段二已完成（2.1–2.6）；真实 Supervisor 与 run actor 接线待阶段三、四 |
-| Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 引导与关闭完成；`execute`、`cancelRun` 与 stop 清理已实现（3.1–3.3）；3.4 事实联调待完成 |
+| Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 阶段三已完成（3.1–3.5）；execute、cancelRun、stop 清理与 Fabric 集成通过验收 |
 | Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 阶段一完成身份、准入与拒绝日志修正；与真实 Core 的产品链联调待阶段四 |
 | Monitor、Scheduler、`InProcessProviderCapacity` | 阶段二已接入 Core/Execution 并通过真实组件集成测试；故障验证待阶段五 |
 | run actor、双通道 Inbox、OrderedSender、真实 Outbox | 空导出占位，待阶段四 |
@@ -259,8 +259,8 @@ Supervisor 反馈暂用替身，阶段三接入；FIFO 唤醒、定时消息和�
 
 ### 6.4 阶段三：完善 Supervisor
 
-**状态：进行中（3.1、3.2 于 2026-10-19 完成，3.3 于 2026-10-20 完成）。** 子阶段、工程决定、测试与验收计划见
-[M1KernelStage3](M1KernelStage3.md)；3.4–3.5 尚未完成，阶段三整体不标记完成。
+**状态：已完成（2026-10-20）。** 实现内容、验证证据、边界与遗留见
+[M1KernelStage3](M1KernelStage3.md)；阶段三整体通过验收。
 
 | 子阶段 | 内容 | 退出条件 |
 | --- | --- | --- |
@@ -468,7 +468,7 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 | 来源 | 依赖或预留 | 完成阶段 | 当前状态 |
 | --- | --- | --- | --- |
 | 阶段一 | Execution 执行管理、产物与摘要能力 | 二；四完成 actor 接线 | 已完成（阶段二）；阶段四 actor 接线待实现 |
-| 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 3.1 execute、3.2 cancel、3.3 stop 清理已完成；3.4 事实联调待完成 |
+| 阶段一、二 | Supervisor 执行、取消与事实反馈 | 三；四完成事实接线 | 阶段三已完成（3.1–3.5）；阶段四事实接线待完成 |
 | 阶段一至三 | actor 串行调度、定时消息、Outbox 与关闭协调 | 四 | 待实现（阶段四） |
 | 阶段一至四 | 真实存储、消息、生命周期及其故障传播 | 五 | 待联调（阶段五） |
 | 阶段一至六 | 异常捕获边界、panic 五步、退出码与真实故障注入 | 一、四、六 | 阶段一 Core 非停机语义已完成；panic 与真实故障注入待四、六 |
@@ -482,7 +482,8 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 不表示代码已完成。接口字段与算法仍以链接规范为准，不在本计划另定义协议。
 每行到负责阶段结束时填写实际文件、测试用例、命令及结果；没有证据不得勾选完成。
 阶段一的实际实现、测试矩阵与验证证据见 [M1KernelStage1](M1KernelStage1.md) 第 5、6 节；
-阶段二的实现、测试矩阵与验证证据见 [M1KernelStage2](M1KernelStage2.md) 第 5、6 节。
+阶段二的实现、测试矩阵与验证证据见 [M1KernelStage2](M1KernelStage2.md) 第 5、6 节；
+阶段三的实现、测试矩阵与验证证据见 [M1KernelStage3](M1KernelStage3.md) 第 5、6 节。
 
 | 要求单元 | 规范来源 | 负责阶段 | 必须交付或核对的证据 |
 | --- | --- | --- | --- |
@@ -549,7 +550,7 @@ Kernel 六组件/Interaction、四类 Infrastructure、SharedContracts 逐项核
 第 6.10 节将本分支要求映射到实现阶段与验收证据；外部职责单独登记，不转移为 Kernel 实现。
 
 本轮闭合的是六阶段开发计划修订，不是实现或验收。
-六阶段顺序保持不变；阶段一与阶段二已分别于 2026-10-19 完成验收，阶段三进行中（3.1、3.2 于 2026-10-19 完成，3.3 于 2026-10-20 完成），阶段四至六未开始。
+六阶段顺序保持不变；阶段一、阶段二、阶段三已分别于 2026-10-19、2026-10-19、2026-10-20 完成验收，阶段四至六未开始。
 后续按负责人指定阶段执行，完成时更新状态与证据。
 2026-10-18 仅补齐 SystemFaultHandling 的实现与验收落点（捕获边界、panic 五步、退出码与中断、真实故障注入），
 不改变六阶段顺序、阶段范围或已定决定，也不新增第七阶段。
@@ -641,6 +642,5 @@ Core 部分，阶段二完成 Execution 接入；不按旧代码推定其余阶�
 | 2026-10-19 | 阶段二（2.1–2.6）完成并验收：Execution 骨架/FIFO、产物归属、内建 report-publish 与 RunSummary、五类 ExecutionRequest、全终态事实与技术重试、预算/容量集成、纵向链与 FIFO 验证；报告见 [M1KernelStage2](M1KernelStage2.md) | `pnpm run check`（48 个文件、485 项）；`pnpm run test:coverage`（全仓语句 92.45%、分支 83.06%、行 94.55%）；`pnpm run demo:fake`（退出码 0）；`git diff --check` 通过；2.1–2.3 已提交于 `51fec05`，2.4–2.6 随本轮提交 |
 | 2026-10-19 | 阶段二文档收尾：将 M1KernelStage2.md 重写为实现报告，压缩阶段二实现记录，并同步计划状态、偏差、预留表与 C01–C06 进度 | 仅文档修订；Prettier、链接与 `git diff --check` 检查 |
 | 2026-10-19 | Stage3 规划：确定 3.1–3.5 子阶段及执行表、取消、宽限期、事实映射、最小环境、停止清理方案；明确 VIOLATION 例外、usage 与 requestState 归一化；工作文档见 [M1KernelStage3](M1KernelStage3.md) | 仅文档修订；Prettier 与 `git diff --check`；不标记阶段三完成 |
-| 2026-10-19 | Stage3.1 完成：实现 Supervisor execution 表、execute 受理与 notBefore、五类 Executor 调用、最小执行环境、正常终态与抛错事实映射、Fabric 事实投递；`cancelRun` 留待 3.2 | `pnpm run check`（50 个文件、509 项）；supervisor 语句 91.01%、分支 76.19%；全仓语句 92.56%、分支 82.92%、行 94.63%；`demo:fake` 退出码 0 |
-| 2026-10-19 | Stage3.2 完成：实现 deadline、cancelRun、cancelEpoch、启动前取消、宽限期、TERMINATED/STOP_UNCONFIRMED、迟到结果丢弃、首个中止原因与 VIOLATION 例外；Fabric cancel 路由接入 | `pnpm run check`（50 个文件、524 项）；supervisor 语句 91.87%、分支 80.32%；全仓语句 92.59%、分支 83.06%、行 94.65%；`demo:fake` 退出码 0 |
-| 2026-10-20 | Stage3.3 完成：stop 封锁新执行、清理全部定时器、在途执行尽力上报 STOP_UNCONFIRMED(EXECUTION_CANCELLED)、投递失败写 health、重复 stop 幂等；Fabric stop 前事实投递已验证 | `pnpm run check`（50 个文件、528 项）；supervisor 语句 92.30%、分支 80.70%；全仓语句 92.62%、分支 83.08%、行 94.65%；`demo:fake` 退出码 0 |
+| 2026-10-20 | Stage3.1–3.4 实现：Supervisor execution 表、execute 与 notBefore、五类 Executor、最小执行环境、正常终态、deadline/cancel/宽限期、stop 清理与 Fabric 集成；3.1、3.2 于 10-19，3.3、3.4 于 10-20 完成 | `pnpm run check`（50 个文件、533 项）；supervisor 语句 92.30%、分支 80.70%；全仓语句 92.62%、分支 83.08%、行 94.65%；`demo:fake` 退出码 0 |
+| 2026-10-20 | Stage3 完成：3.5 代码验证与实现报告收尾；阶段三验收通过，报告见 [M1KernelStage3](M1KernelStage3.md) | `pnpm run check`（50 个文件、535 项）；supervisor 语句 92.85%、分支 81.49%；全仓语句 92.66%、分支 83.16%、函数 88.13%、行 94.71%；`demo:fake` 退出码 0；`git diff --check` 通过 |
