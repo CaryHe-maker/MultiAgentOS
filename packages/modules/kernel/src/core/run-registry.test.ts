@@ -9,7 +9,12 @@ import type {
 } from '@multiagentos/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CoreAuditEntry } from './audit.js';
-import { RunRegistry, type RunRequestHandler, type RunResponse } from './run-registry.js';
+import {
+  RunRegistry,
+  type RunActorPort,
+  type RunRequestHandler,
+  type RunResponse,
+} from './run-registry.js';
 import type { RunState } from './run-state.js';
 
 const roots: string[] = [];
@@ -366,6 +371,152 @@ describe('RunRegistry shutdown and tombstone', () => {
     });
     expect(fake.calls).toHaveLength(1);
     expect(fake.calls[0]?.run.runState).toBe('CLOSED');
+  });
+});
+
+describe('RunRegistry actor path', () => {
+  class FakeActor implements RunActorPort {
+    public started = false;
+    public initialized = false;
+    public cancelled = false;
+    public aborted: string | undefined;
+    public stopped = false;
+    public readonly forwards: GatewayForward[] = [];
+    public readonly facts: ExecutionFact[] = [];
+    #resolveClosed: () => void = () => undefined;
+    readonly #closed = new Promise<void>((resolve) => {
+      this.#resolveClosed = resolve;
+    });
+
+    public start(): void {
+      this.started = true;
+    }
+
+    public init(): Promise<void> {
+      this.initialized = true;
+      return Promise.resolve();
+    }
+
+    public cancel(): Promise<void> {
+      this.cancelled = true;
+      return Promise.resolve();
+    }
+
+    public abort(faultId: string): Promise<void> {
+      this.aborted = faultId;
+      return Promise.resolve();
+    }
+
+    public forward(forward: GatewayForward): Promise<RunResponse> {
+      this.forwards.push(forward);
+      const requestId = 'requestId' in forward.request ? forward.request.requestId : 'req_123456';
+      return Promise.resolve({ requestId, outcome: 'ACCEPTED' } as SyscallAck);
+    }
+
+    public reportFact(fact: ExecutionFact): Promise<void> {
+      this.facts.push(fact);
+      return Promise.resolve();
+    }
+
+    public whenClosed(): Promise<void> {
+      return this.#closed;
+    }
+
+    public drain(): Promise<void> {
+      return Promise.resolve();
+    }
+
+    public stop(): Promise<void> {
+      this.stopped = true;
+      return Promise.resolve();
+    }
+
+    public markClosed(): void {
+      this.#resolveClosed();
+    }
+  }
+
+  it('creates and starts an actor, routes messages and drains shutdown', async () => {
+    const repository = await tempDir('kernel-repo-');
+    const dataDir = await tempDir('kernel-data-');
+    const actor = new FakeActor();
+    let drained: string | undefined;
+    const registry = new RunRegistry({
+      dataDir,
+      createActor: () => actor,
+      onDrained: (requestId) => {
+        drained = requestId;
+        return Promise.resolve();
+      },
+    });
+
+    await expect(
+      registry.handleForward(createForward('req_actor1', repository), context),
+    ).resolves.toEqual({
+      requestId: 'req_actor1',
+      outcome: 'ACCEPTED',
+      workflowRunId: 'wfr_123456',
+    });
+    expect(actor.started).toBe(true);
+    expect(actor.initialized).toBe(true);
+
+    await registry.handleForward(registerForward('wfr_123456'), context);
+    expect(actor.forwards).toHaveLength(1);
+
+    const fact = {
+      workflowRunId: 'wfr_123456',
+      unitAttemptId: 'una_123456',
+      executionId: 'exe_123456',
+      runEpoch: 1,
+      executionKind: 'MODEL',
+      outcome: 'COMPLETED',
+      result: {
+        output: {
+          finishReason: 'STOP',
+          toolCalls: [],
+          hasText: true,
+        },
+        artifact: {
+          mediaType: 'application/vnd.multiagentos.model-output+json',
+          text: '{}',
+        },
+      },
+      requestState: 'SENT',
+      startedAt: '2026-10-21T00:00:00.500Z',
+      endedAt: '2026-10-21T00:00:01.000Z',
+    } as ExecutionFact;
+    await registry.report(fact);
+    expect(actor.facts).toEqual([fact]);
+
+    await registry.handleForward(
+      {
+        caller: 'user-interaction',
+        requestType: 'shutdown',
+        request: { requestId: 'req_shutdown1' },
+      },
+      context,
+    );
+    expect(actor.cancelled).toBe(true);
+    actor.markClosed();
+    await registry.whenClosed();
+    expect(drained).toBe('req_shutdown1');
+
+    await registry.stop();
+    expect(actor.stopped).toBe(true);
+  });
+
+  it('aborts the actor with the composition-root fault id', async () => {
+    const repository = await tempDir('kernel-repo-');
+    const dataDir = await tempDir('kernel-data-');
+    const actor = new FakeActor();
+    const registry = new RunRegistry({ dataDir, createActor: () => actor });
+    await registry.handleForward(createForward('req_actor2', repository), context);
+
+    const pending = registry.abortAllRuns({ faultId: 'fault-001', deadlineMs: 100 });
+    actor.markClosed();
+    await pending;
+
+    expect(actor.aborted).toBe('fault-001');
   });
 });
 

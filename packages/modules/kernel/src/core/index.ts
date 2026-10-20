@@ -11,6 +11,7 @@ export {
 } from './request-handler.js';
 export {
   RunRegistry,
+  type RunActorPort,
   type RunRegistryDeps,
   type RunRequestHandler,
   type RunResponse,

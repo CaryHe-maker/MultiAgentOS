@@ -55,6 +55,27 @@ async function fakeSystem(kernel: FakeKernelOptions = {}, answer: 'YES' | 'NO' =
 const command = { goal: 'Explain the README.', repositoryPath: tmpdir(), details: false };
 
 describe('fake vertical chain', () => {
+  it('runs fake Workflow and UserInteraction through the real Kernel core and Supervisor', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    const repository = await mkdtemp(join(tmpdir(), 'multiagentos-repo-'));
+    roots.push(dataDir, repository);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      parts: {
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+        createWorkflow: createFakeWorkflow(),
+        createUserInteraction: createFakeUserInteraction(),
+      },
+    });
+    await system.start();
+    expect(await system.userInteraction.analyze({ ...command, repositoryPath: repository })).toBe(
+      0,
+    );
+    await system.whenStopped();
+  });
+
   it('gives Core and Workflow distinct namespace-limited persistence ports', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
     roots.push(dataDir);

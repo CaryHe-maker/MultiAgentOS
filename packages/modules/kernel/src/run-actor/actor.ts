@@ -141,6 +141,13 @@ export class RunActor {
     return Promise.resolve();
   }
 
+  /** Queues the internal shutdown convergence message. */
+  public cancel(): Promise<void> {
+    this.#assertOpen();
+    this.#inbox.enqueue({ kind: 'CANCEL_RUN' }, 'control');
+    return Promise.resolve();
+  }
+
   /** Requests run convergence through the control channel. */
   public abort(faultId: string): Promise<void> {
     this.#assertOpen();
