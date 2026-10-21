@@ -2,9 +2,10 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾。**
-本计划作为剩余开发执行基线；阶段一至阶段四已完成验收，阶段五、六未开始，后续由负责人指定阶段推进。
-本次完成阶段四实现与验收状态同步；阶段五、六未开始；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾，并完成阶段五 5.1、5.2。**
+本计划作为剩余开发执行基线；阶段一至阶段四已完成验收，阶段五进行中，阶段六未开始，后续由负责人指定阶段推进。
+本次完成阶段五 5.1（ModuleHost 启动与停止保护）与 5.2（Fabric 生命周期与失败分类）并同步状态；
+阶段五其余子阶段与阶段六未开始；旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
   规范在 `docs/M1/` 下，两者不一致时以规范为准并修正本文。
@@ -56,9 +57,9 @@ ExecutorSet、真实模型调用或基础设施故障矩阵。
 | 部分 | 状态 |
 | --- | --- |
 | Core：运行管理、九种外部 syscall、AgentRun、授权与 Lease、CoreSyscalls、预留与结算、结果检查、收敛、异常语义、审计 | 阶段一已实现并验收；阶段二纵向集成验证通过 |
-| Fabric：Schema 校验、身份、拷贝、Inbox（两通道、去重、失败观察者）、有序发送器、Gateway 畸形请求的结构化拒绝接缝 | 已实现，真实主链联调待阶段五 |
+| Fabric：Schema 校验、身份、拷贝、Inbox（两通道、去重、失败观察者）、有序发送器、Gateway 畸形请求的结构化拒绝接缝 | 阶段五 5.2 完成停止排空、`NOT_RUNNING` 分类与失败分类说明；真实主链故障联调待 5.5 |
 | Persistence、ArtifactStore：路径与符号链接检查、写入排队与关闭排空、内容寻址与复验、命名空间限定的 Port | 已实现，真实主链联调待阶段五 |
-| ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、停止期限、`afterStart` 钩子 | 已实现，真实主链联调待阶段五 |
+| ModuleHost：逐模块生命周期账本、启动失败回滚、启动中停止、启动/停止期限、`afterStart` 钩子 | 阶段五 5.1 完成启动期限、迟到完成与停止中启动保护；真实主链故障联调待 5.5 |
 | Execution：UnitAttempt、FIFO、执行事实处理、产物与内建 `report-publish` | 阶段二已完成（2.1–2.6）；真实 Supervisor 已于阶段三接入；阶段四 actor 接线完成 |
 | Supervisor：清理 `tmp`、引导与逆序关闭、Fabric 就绪后注册处理器、子进程存活集合与 `killAll()` | 阶段三已完成（3.1–3.5）；execute、cancelRun、stop 清理与 Fabric 集成通过验收 |
 | Gateway（`createGateway`）：调用方身份、Schema、准入投影 | 阶段一完成身份、准入与拒绝日志修正；阶段四真实 Kernel 产品链联调通过 |
@@ -85,10 +86,10 @@ Core 阶段一、Execution 阶段二、Supervisor 阶段三、run actor 与 Kern
 | Core 身份核验 | 已关闭（阶段一）：结算资格与交付资格分离，旧 epoch 事实仍结算 | 一、四 |
 | Inbox / actor | 已关闭（阶段四）：运行 actor 显式捕获请求失败并触发 KERNEL_FAULT | 四 |
 | OrderedSender / actor | 已关闭（阶段四）：待发送在处理与收尾后 flush，目标内有序 | 四 |
-| Fabric 注释 | 已确认：发送失败不一律是契约缺陷，停止时可能为 NOT_RUNNING | 五 |
+| Fabric 注释 | 已关闭（5.2）：发送失败不一律是契约缺陷，停止时为 `NOT_RUNNING`；`OrderedSender` 与 Fabric 文档已同步 | 五 |
 | Persistence / Supervisor | 已确认：tmp 清理重复，clearTemporaryFiles 的产品调用说明过时 | 五 |
 | Scheduler、Monitor | 阶段二已通过正常路径集成；真实故障与收尾联调待阶段五 | 二、五 |
-| ModuleHost、ArtifactStore | 真实主链接入与故障验证未完成 | 五 |
+| ModuleHost、ArtifactStore | ModuleHost 启停保护已关闭（5.1）；ArtifactStore 与两者的真实主链故障验证待 5.5 | 五 |
 
 ### 2.4 已完成的启动配置校验
 
@@ -191,7 +192,7 @@ Core 阶段一、Execution 阶段二、Supervisor 阶段三、run actor 与 Kern
 | 二 | Execution、Scheduler，Monitor 接入 | 测试驱动下完成排队、许可、预留、执行结果处理与结算，覆盖重试和收尾 | 已完成（2026-10-19） |
 | 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 已完成（2026-10-20） |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 已完成（2026-10-21） |
-| 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 未开始 |
+| 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 进行中（5.1、5.2 已完成，2026-10-21） |
 | 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 未开始 |
 
 ### 6.2 阶段一：完善 Core
@@ -351,6 +352,9 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 本阶段建立内部闭环，基础设施实现缺口与系统性故障联调仍由阶段五完成。
 
 ### 6.6 阶段五：完善并联调四类基础设施
+
+**状态：进行中（5.1、5.2 已完成，2026-10-21）。** 子阶段与验收要求见
+[M1KernelStage5](M1KernelStage5.md)；Persistence、ArtifactStore 与真实故障矩阵仍待完成。
 
 | 单元 | 实现核对与偏差修正 | 真实联调 |
 | --- | --- | --- |
@@ -669,3 +673,5 @@ Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执�
 | 2026-10-20 | 同步阶段三计划状态：基线更新至 `2cf2456`，阶段总表标记三完成，修正 Execution 接线、C07 剩余项与测试说明 | 仅文档修订；Prettier、链接与 `git diff --check` 检查 |
 | 2026-10-21 | Stage4 代码与测试阶段完成：4.1–4.6 的运行 actor、Core 收敛收尾、Outbox/待发送、定时器与失败边界、RunRegistry、createKernelCore，以及真实 Kernel core + Supervisor 组合链、超时/取消/shutdown/abort 集成验证；Stage4 报告与最终文档收尾待单独轮次 | `pnpm run check`（55 个文件、561 项）；`test:coverage`（全仓语句 93.15%、分支 83.98%、行 94.93%）；`demo:fake` 退出码 0；`git diff --check` 通过；文档状态更新另行处理 |
 | 2026-10-21 | Stage4 完成：将 M1KernelStage4.md 整理为阶段四实现报告，同步计划基线、实现状态、阶段表、预留表与 C02–C07；Kernel Module 在 fake 外部模块下完成内部闭环和交付边界验收 | `pnpm run check`（55 个文件、561 项）；`test:coverage`（全仓语句 93.15%、分支 83.98%、行 94.93%）；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实外部模块与 M1 整机验收仍为阻塞项 |
+| 2026-10-21 | Stage5.1 完成：ModuleHost 增加 `startTimeoutMs`、`start`/`afterStart` 合并期限、启动代次保护、迟到完成与停止中启动处理；组合根传入 10000ms | `pnpm run check`（55 个文件、567 项）；`test:coverage`（全仓语句 93.18%、分支 84.07%、行 94.96%）；Prettier 与 `git diff --check` 通过 |
+| 2026-10-21 | Stage5.2 完成：Fabric `stop()` 停止接收新请求并排空已受理发送；补测停止后 `NOT_RUNNING`、同地址串行、跨地址并行、订阅者/处理器失败；修正 `OrderedSender` 与 Fabric 文档的失败分类，补测终端事件失败标记 | `pnpm run check`（55 个文件、571 项）；`test:coverage`（全仓语句 93.24%、分支 84.14%、行 94.96%）；Prettier 与 `git diff --check` 通过 |

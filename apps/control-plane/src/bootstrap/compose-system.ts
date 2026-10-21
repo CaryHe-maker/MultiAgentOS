@@ -46,6 +46,8 @@ import { createSystemControl, type ShutdownTimeouts, type StopReport } from './s
 
 /** One module's `stop()` may take this long before ModuleHost records it as failed. */
 const MODULE_STOP_TIMEOUT_MS = 5000;
+/** One module's `start()` and `afterStart` may take this long together. */
+const MODULE_START_TIMEOUT_MS = 10000;
 
 /**
  * The factories of everything that is not infrastructure. Their signatures are the seams
@@ -163,7 +165,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   });
   serveInteractionInbox(interactionFabric, userInteraction.inbox);
 
-  const moduleHost = new ModuleHost({ stopTimeoutMs: MODULE_STOP_TIMEOUT_MS });
+  const moduleHost = new ModuleHost({
+    startTimeoutMs: MODULE_START_TIMEOUT_MS,
+    stopTimeoutMs: MODULE_STOP_TIMEOUT_MS,
+  });
   for (const module of [
     fabric,
     artifacts,

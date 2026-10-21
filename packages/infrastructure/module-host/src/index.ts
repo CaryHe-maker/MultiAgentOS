@@ -7,7 +7,9 @@ export class ModuleHostError extends Error {
       | 'DUPLICATE_MODULE'
       | 'MISSING_DEPENDENCY'
       | 'DEPENDENCY_CYCLE'
+      | 'INVALID_TIMEOUT'
       | 'START_IN_PROGRESS'
+      | 'START_TIMEOUT'
       | 'HOST_STOPPED'
       | 'STOP_TIMEOUT',
     detail: string,
@@ -33,6 +35,11 @@ export interface ModuleLedgerEntry {
 }
 
 export interface ModuleHostOptions {
+  /**
+   * A `start()` and its `afterStart` hook share one deadline. A module that exceeds it is
+   * recorded as `START_FAILED` and rolled back; a late completion cannot become READY.
+   */
+  readonly startTimeoutMs?: number;
   /** A `stop()` that takes longer is recorded as `STOP_FAILED` and the next module is stopped. */
   readonly stopTimeoutMs?: number;
 }
@@ -41,9 +48,12 @@ interface Entry {
   readonly module: LifecyclePort;
   state: ModuleLifecycleState;
   error?: unknown;
+  /** Identifies the start attempt; a late completion from another attempt is ignored. */
+  startGeneration: number;
 }
 
 const NEEDS_STOP: readonly ModuleLifecycleState[] = ['STARTING', 'READY', 'START_FAILED'];
+const DEFAULT_START_TIMEOUT_MS = 10_000;
 
 /**
  * Assembly and lifecycle mechanism (docs/M1/Infrastructure/ModuleHost.md). The Supervisor
@@ -54,21 +64,32 @@ const NEEDS_STOP: readonly ModuleLifecycleState[] = ['STARTING', 'READY', 'START
  */
 export class ModuleHost {
   readonly #entries = new Map<ModuleId, Entry>();
+  readonly #startTimeoutMs: number;
   readonly #stopTimeoutMs: number | undefined;
   /** Modules whose `start()` was called, in that order. */
   #startSequence: Entry[] = [];
+  #generation = 0;
   #startOp: Promise<void> | undefined;
   #stopOp: Promise<void> | undefined;
   #stopRequested = false;
 
   public constructor(options: ModuleHostOptions = {}) {
+    const startTimeoutMs = options.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
+    if (!Number.isSafeInteger(startTimeoutMs) || startTimeoutMs <= 0)
+      throw new ModuleHostError('INVALID_TIMEOUT', 'startTimeoutMs must be a positive integer');
+    if (
+      options.stopTimeoutMs !== undefined &&
+      (!Number.isSafeInteger(options.stopTimeoutMs) || options.stopTimeoutMs <= 0)
+    )
+      throw new ModuleHostError('INVALID_TIMEOUT', 'stopTimeoutMs must be a positive integer');
+    this.#startTimeoutMs = startTimeoutMs;
     this.#stopTimeoutMs = options.stopTimeoutMs;
   }
 
   register(module: LifecyclePort): void {
     const { moduleId } = module.manifest;
     if (this.#entries.has(moduleId)) throw new ModuleHostError('DUPLICATE_MODULE', moduleId);
-    this.#entries.set(moduleId, { module, state: 'REGISTERED' });
+    this.#entries.set(moduleId, { module, state: 'REGISTERED', startGeneration: 0 });
   }
 
   /** Dependency order; modules without an order between them keep their registration order. */
@@ -126,11 +147,11 @@ export class ModuleHost {
         if (this.#stopRequested) throw new ModuleHostError('HOST_STOPPED', 'stop was requested');
         entry.state = 'STARTING';
         delete entry.error;
+        const generation = ++this.#generation;
+        entry.startGeneration = generation;
         this.#startSequence.push(entry);
         try {
-          await entry.module.start();
-          entry.state = 'READY';
-          await afterStart?.(moduleId);
+          await this.#runStart(entry, generation, afterStart);
         } catch (error) {
           entry.state = 'START_FAILED';
           entry.error = error;
@@ -147,6 +168,52 @@ export class ModuleHost {
       }
       throw error;
     }
+  }
+
+  /**
+   * Runs `start()` and `afterStart` under one deadline. A timeout or a stop request makes
+   * every later completion of this attempt inert: it cannot set READY or run the hook.
+   */
+  async #runStart(
+    entry: Entry,
+    generation: number,
+    afterStart: ((moduleId: ModuleId) => void | Promise<void>) | undefined,
+  ): Promise<void> {
+    if (this.#stopRequested) throw new ModuleHostError('HOST_STOPPED', 'stop was requested');
+    const deadline = Date.now() + this.#startTimeoutMs;
+    const moduleId = entry.module.manifest.moduleId;
+    await this.#withinStartDeadline(() => entry.module.start(), deadline, moduleId);
+    this.#assertStartCurrent(entry, generation);
+    await this.#withinStartDeadline(() => afterStart?.(moduleId), deadline, moduleId);
+    this.#assertStartCurrent(entry, generation);
+    entry.state = 'READY';
+  }
+
+  /** The start timeout covers the module start and its afterStart hook together. */
+  async #withinStartDeadline<T>(
+    step: () => T | Promise<T>,
+    deadline: number,
+    moduleId: ModuleId,
+  ): Promise<T> {
+    const operation = Promise.resolve().then(step);
+    const remaining = Math.max(0, deadline - Date.now());
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ModuleHostError('START_TIMEOUT', moduleId)), remaining);
+    });
+    try {
+      return await Promise.race([operation, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  #assertStartCurrent(entry: Entry, generation: number): void {
+    if (entry.startGeneration !== generation || this.#stopRequested)
+      throw new ModuleHostError(
+        'HOST_STOPPED',
+        `${entry.module.manifest.moduleId} start was superseded`,
+      );
   }
 
   /**

@@ -123,7 +123,7 @@ describe('RunEgress', () => {
   });
 
   it('reports a send failure without throwing from the sender observer', async () => {
-    const failures: string[] = [];
+    const failures: { target: string; terminal: boolean }[] = [];
     const egress = new RunEgress({
       workflowRunId: 'wfr_123456',
       supervisor: {
@@ -134,12 +134,52 @@ describe('RunEgress', () => {
       gatewayAdmission: () => Promise.resolve(),
       workflowInbox: { deliver: () => Promise.resolve() },
       interactionInbox: { deliver: () => Promise.resolve() },
-      onFailure: (failure) => failures.push(failure.target),
+      onFailure: (failure) => failures.push({ target: failure.target, terminal: failure.terminal }),
     });
 
     egress.dispatch(request);
     await egress.drain();
 
-    expect(failures).toEqual(['supervisor']);
+    expect(failures).toEqual([{ target: 'supervisor', terminal: false }]);
+  });
+
+  it('marks RunClosed and RunFinished delivery failures as terminal', async () => {
+    const failures: { target: string; terminal: boolean }[] = [];
+    const egress = new RunEgress({
+      workflowRunId: 'wfr_123456',
+      supervisor: {
+        execute: () => Promise.resolve(),
+        cancelRun: () => Promise.resolve(),
+        shutdown: () => Promise.resolve(),
+      },
+      gatewayAdmission: () => Promise.resolve(),
+      workflowInbox: {
+        deliver: (event) =>
+          event.event.type === 'RunClosed'
+            ? Promise.reject(new Error('closed not delivered'))
+            : Promise.resolve(),
+      },
+      interactionInbox: {
+        deliver: (event) =>
+          event.event.type === 'RunFinished'
+            ? Promise.reject(new Error('finished not delivered'))
+            : Promise.resolve(),
+      },
+      onFailure: (failure) => failures.push({ target: failure.target, terminal: failure.terminal }),
+    });
+
+    egress.emit(runStart());
+    egress.emit(runClosed());
+    egress.emit(runFinished());
+    egress.flush();
+    await egress.drain();
+
+    expect(failures).toHaveLength(2);
+    expect(failures).toEqual(
+      expect.arrayContaining([
+        { target: 'workflow', terminal: true },
+        { target: 'user-interaction', terminal: true },
+      ]),
+    );
   });
 });
