@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -88,6 +88,58 @@ describe('fake vertical chain', () => {
       .map((line) => (JSON.parse(line) as { type: string }).type);
     expect(auditTypes).toEqual(
       expect.arrayContaining(['RUN_STARTED', 'UNIT_ACCEPTED', 'UNIT_REPORTED', 'RUN_CLOSED']),
+    );
+  }, 15000);
+
+  it('rolls back real infrastructure when an external module fails to start', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      log: () => undefined,
+      parts: {
+        createWorkflow: (deps) => ({
+          ...createFakeWorkflow()(deps),
+          start: () => Promise.reject(new Error('workflow start failed')),
+        }),
+        createUserInteraction: createFakeUserInteraction(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+      },
+    });
+
+    await expect(system.start()).rejects.toThrow('workflow start failed');
+    await expect(system.whenStopped()).resolves.toBeUndefined();
+    await expect(access(join(dataDir, 'tmp'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('continues stopping real infrastructure after an external module fails to stop', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      log: () => undefined,
+      parts: {
+        createWorkflow: (deps) => ({
+          ...createFakeWorkflow()(deps),
+          stop: () => Promise.reject(new Error('workflow stop failed')),
+        }),
+        createUserInteraction: createFakeUserInteraction(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+      },
+    });
+
+    await system.start();
+    const report = await system.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.modules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ moduleId: 'workflow', state: 'STOP_FAILED' }),
+        expect.objectContaining({ moduleId: 'fabric', state: 'STOPPED' }),
+      ]),
     );
   });
 
