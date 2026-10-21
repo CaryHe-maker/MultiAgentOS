@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   AnalysisReportSchema,
+  ContextPackSchema,
+  MEDIA_TYPES,
   RunSummarySchema,
   newId,
   validate,
@@ -74,6 +76,19 @@ describe('fake vertical chain', () => {
       0,
     );
     await system.whenStopped();
+
+    const [run] = await readdir(join(dataDir, 'runs'));
+    const audit = await readFile(
+      join(dataDir, 'runs', run ?? '', 'kernel-core', 'audit.jsonl'),
+      'utf8',
+    );
+    const auditTypes = audit
+      .trimEnd()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as { type: string }).type);
+    expect(auditTypes).toEqual(
+      expect.arrayContaining(['RUN_STARTED', 'UNIT_ACCEPTED', 'UNIT_REPORTED', 'RUN_CLOSED']),
+    );
   });
 
   it('gives Core and Workflow distinct namespace-limited persistence ports', async () => {
@@ -142,10 +157,33 @@ describe('fake vertical chain', () => {
     // Five Unit artifacts (search and orient differ), the report and the RunSummary.
     const artifacts = join(dataDir, 'runs', run ?? '', 'artifacts');
     expect(await readdir(artifacts)).toHaveLength(7);
+
+    const contextRefs = workflow.events.flatMap((event) =>
+      event.type === 'UnitReport' &&
+      event.status === 'OK' &&
+      event.outputRef?.mediaType === MEDIA_TYPES.contextPack
+        ? [event.outputRef]
+        : [],
+    );
+    expect(contextRefs).toHaveLength(3);
+    const packs: unknown[] = await Promise.all(
+      contextRefs.map(
+        async (ref) => JSON.parse(await readFile(join(artifacts, ref.sha256), 'utf8')) as unknown,
+      ),
+    );
+    for (const pack of packs) expect(validate(ContextPackSchema, pack)).toMatchObject({ ok: true });
+    expect(packs.map((pack) => (pack as { operation: string }).operation).sort()).toEqual([
+      'ASSEMBLE',
+      'ORIENT',
+      'SEARCH',
+    ]);
+
     const finished = interaction.events.at(-1);
     expect(finished).toMatchObject({ type: 'RunFinished', closeReason: 'COMPLETED' });
-    if (finished?.type !== 'RunFinished') return;
+    if (finished?.type !== 'RunFinished' || finished.closeReason !== 'COMPLETED') return;
+    expect(finished.reportRef).toMatchObject({ mediaType: MEDIA_TYPES.analysisReport });
     if (!('runSummaryRef' in finished)) throw new Error('Expected a persisted RunSummary');
+    expect(finished.runSummaryRef).toMatchObject({ mediaType: MEDIA_TYPES.runSummary });
     const summary: unknown = JSON.parse(
       await readFile(join(artifacts, finished.runSummaryRef.sha256), 'utf8'),
     );
