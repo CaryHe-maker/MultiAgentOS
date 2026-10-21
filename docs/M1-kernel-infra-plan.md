@@ -33,7 +33,7 @@
 ### 2.1 基线
 
 阶段四（4.1–4.6）已完成并验收，报告见 [M1KernelStage4](M1KernelStage4.md)。4.1–4.2 提交于
-`04d2f63`，4.3–4.4 提交于 `ead9b15`，4.5–4.6 与阶段报告随当前工作树提交。
+`04d2f63`，4.3–4.4 提交于 `ead9b15`，4.5–4.6 与阶段报告提交于 `2e0eab8`。
 阶段四报告记录：55 个测试文件、561 项测试通过，全仓语句覆盖率 93.15%、分支 83.98%、
 行 94.93%，`pnpm run demo:fake` 退出码 0，`git diff --check` 通过。该证据使用真实 Kernel
 core、Gateway、Supervisor 与 fake 外部模块，不包含真实 Workflow、UserInteraction、

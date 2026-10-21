@@ -65,7 +65,7 @@ apps/control-plane/src/bootstrap/
 
 - 4.1–4.2：`04d2f63`（运行 actor 与 Core 收敛接线）；
 - 4.3–4.4：`ead9b15`（Outbox、定时器与失败边界）；
-- 4.5–4.6 与本报告：当前工作树提交。
+- 4.5–4.6 与本报告：`2e0eab8`（Kernel 模块交付验收）。
 
 未修改：
 
