@@ -473,10 +473,12 @@ git diff --check
   提交 `0704fbb`。
 - 最终质量门：
   - `pnpm install --frozen-lockfile`、`pnpm run build`、`pnpm run check` 通过；
-  - 78 个测试文件、912 项测试；
-  - 全仓语句 94.27%、分支 85.64%、函数 92.22%、行 96.27%；
+  - 78 个测试文件、913 项测试；
+  - 全仓语句 94.27%、分支 85.63%、函数 92.23%、行 96.26%；
   - `pnpm run demo:fake` 退出码 0；
   - Prettier 与 `git diff --check` 通过。
+- CI 首次质量门暴露 report-publish 异步落盘完成后 Egress 事件偶发未 flush 的竞态；已在
+  `RunActor`/`Execution` 增加异步 settle 后的补 flush，并新增门控 ArtifactStore 回归测试。
 - 已确认直接 PR 范围与七个工作文档、总报告的归档安排。
 - 实际分支推送、PR 创建与合并由负责人手动操作；本报告不宣称 PR 已创建或已合并。
 - 外部 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 仍为阻塞项。
@@ -574,4 +576,5 @@ Stage6 完成必须同时满足：
 | 2026-10-22 | 6.3 完成：真实子进程退出码矩阵、进程保护韧性、CLI 64、配置失败 70、第一次/第二次 Ctrl+C | `pnpm run check`（57 个文件、600 项）；coverage 93.46%/84.62%/89.24%/95.15%；`demo:fake` 退出码 0 |
 | 2026-10-22 | 6.4 完成：真实 Kernel/Infra 正常、授权拒绝/超时、取消、运行超时、违规验收；组件级矩阵与外部阻塞登记 | `pnpm run check`（58 个文件、606 项）；coverage 93.54%/84.77%/90.35%/95.25%；`demo:fake` 退出码 0 |
 | 2026-10-22 | 6.5 完成：README、总实现报告、七个工作文档头部、计划第 10 节与文档入口同步 | Prettier 与 `git diff --check` 通过；代码质量门沿用 6.4（58 个文件、606 项） |
-| 2026-10-22 | 6.6 PR 准备完成：合并 `feature/M1/main`、修正共享测试、最终质量门与直接 PR 范围确认；实际推送与 PR 由负责人手动操作 | 78 个文件、912 项；coverage 94.27%/85.64%/92.22%/96.27%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
+| 2026-10-22 | 6.6 PR 准备完成：合并 `feature/M1/main`、修正共享测试、最终质量门与直接 PR 范围确认；实际推送与 PR 由负责人手动操作 | 78 个文件、913 项；coverage 94.27%/85.63%/92.23%/96.26%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
+| 2026-10-22 | CI 质量门偶发失败修复：定位 report-publish 异步落盘完成后事件滞留于 Egress，增加异步 settle 后补 flush 与门控 ArtifactStore 回归测试 | `pnpm run check`（78 个文件、913 项）；coverage 94.27%/85.63%/92.23%/96.26%；`demo:fake` 退出码 0 |

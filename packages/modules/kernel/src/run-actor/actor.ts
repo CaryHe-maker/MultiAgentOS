@@ -61,6 +61,7 @@ export class RunActor {
   #stopped = false;
   #closedResolved = false;
   #faultPending = false;
+  #handling = false;
 
   public constructor(deps: RunActorDeps) {
     this.#processor = deps.processor;
@@ -175,6 +176,19 @@ export class RunActor {
     await this.#egress?.drain();
   }
 
+  /**
+   * Flushes work settled by an asynchronous operation after its initiating dispatch returned.
+   * While a message is being handled, the normal `finally` flush already covers it.
+   */
+  public flushPending(): void {
+    if (this.#handling || this.#stopped || !this.#started) return;
+    try {
+      this.#egress?.flush();
+    } catch (error) {
+      this.#panic(error);
+    }
+  }
+
   /** Stops accepting new messages and drains what was already queued. */
   public async stop(): Promise<void> {
     if (this.#stopped) return;
@@ -188,12 +202,17 @@ export class RunActor {
   }
 
   async #handle(message: RunMessage): Promise<RunResponse | void> {
+    this.#handling = true;
     try {
       const response = await this.#processor.dispatch(message);
       await this.#processor.settle?.();
       return response;
     } finally {
-      this.#egress?.flush();
+      try {
+        this.#egress?.flush();
+      } finally {
+        this.#handling = false;
+      }
     }
   }
 

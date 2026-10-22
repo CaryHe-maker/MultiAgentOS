@@ -44,6 +44,12 @@ export interface ExecutionDeps {
   readonly now?: () => Date;
   readonly newAttemptId?: () => string;
   readonly newExecutionId?: () => string;
+  /**
+   * Called after Execution settles an attempt outside the actor's current dispatch. The actor
+   * uses it to flush events produced by asynchronous built-in Units (report-publish) and late
+   * dispatch failures; while a handler is running the actor defers to its normal flush.
+   */
+  readonly onSettled?: () => void;
 }
 
 /**
@@ -60,6 +66,7 @@ export class Execution implements ExecutionDuties {
   readonly #now: () => Date;
   readonly #newAttemptId: () => string;
   readonly #newExecutionId: () => string;
+  readonly #onSettled: (() => void) | undefined;
   readonly #builder: ExecutionRequestBuilder;
   readonly #ownership: ArtifactOwnership;
   readonly #queue = new AttemptQueue();
@@ -79,6 +86,7 @@ export class Execution implements ExecutionDuties {
     this.#now = deps.now ?? (() => new Date());
     this.#newAttemptId = deps.newAttemptId ?? (() => newId('una'));
     this.#newExecutionId = deps.newExecutionId ?? (() => newId('exe'));
+    this.#onSettled = deps.onSettled;
     this.#ownership = deps.ownership ?? new ArtifactOwnership();
     this.#builder = new ExecutionRequestBuilder({
       config: this.#config,
@@ -564,6 +572,7 @@ export class Execution implements ExecutionDuties {
     this.#core.submitResultCheck(check);
     if (this.#active === attempt) this.#active = undefined;
     this.#pump();
+    this.#onSettled?.();
   }
 
   #findExecution(

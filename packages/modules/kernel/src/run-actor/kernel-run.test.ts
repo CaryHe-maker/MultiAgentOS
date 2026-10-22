@@ -15,7 +15,7 @@ import {
   type SupervisorPort,
   type WorkflowInboxEvent,
 } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRunState } from '../core/index.js';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { InProcessProviderCapacity } from '../scheduler/index.js';
@@ -193,6 +193,38 @@ class FakeArtifactStore implements ArtifactStorePort {
   }
 }
 
+/** Holds the report-publish write until the test releases it, after the dispatch returned. */
+class GatedArtifactStore extends FakeArtifactStore {
+  public readonly putStarted: Promise<void>;
+  #resolveStarted: () => void = () => undefined;
+  #release: () => void = () => undefined;
+  readonly #gate: Promise<void>;
+
+  public constructor() {
+    super();
+    this.putStarted = new Promise<void>((resolve) => {
+      this.#resolveStarted = resolve;
+    });
+    this.#gate = new Promise<void>((resolve) => {
+      this.#release = resolve;
+    });
+  }
+
+  public override async put(
+    workflowRunId: string,
+    content: Uint8Array,
+    mediaType: string,
+  ): Promise<ArtifactRef> {
+    this.#resolveStarted();
+    await this.#gate;
+    return super.put(workflowRunId, content, mediaType);
+  }
+
+  public release(): void {
+    this.#release();
+  }
+}
+
 class FakeSupervisor implements SupervisorPort {
   public readonly requests: ExecutionRequest[] = [];
   public readonly cancels: CancelRunExecutionsRequest[] = [];
@@ -258,7 +290,7 @@ interface Harness {
   readonly egress: RunEgress;
 }
 
-function harness(): Harness {
+function harness(options: { readonly artifacts?: ArtifactStorePort } = {}): Harness {
   const workflow: WorkflowInboxEvent[] = [];
   const interaction: InteractionInboxEvent[] = [];
   const admissions: AdmissionProjection[] = [];
@@ -299,7 +331,7 @@ function harness(): Harness {
     run: runState,
     catalog: new FakeCatalog(),
     registry: createM1ProtocolRegistry(),
-    artifacts: new FakeArtifactStore(),
+    artifacts: options.artifacts ?? new FakeArtifactStore(),
     config: DEFAULT_KERNEL_CONFIG,
     audit: { append: () => Promise.resolve() },
     capacity: new InProcessProviderCapacity(),
@@ -308,6 +340,7 @@ function harness(): Harness {
     now: () => new Date('2026-10-21T00:00:01.000Z'),
     newAttemptId: () => `una_${String((attemptSequence += 1)).padStart(6, '0')}`,
     newExecutionId: () => 'exe_123456',
+    onSettled: () => holder.actor?.flushPending(),
   });
   const actor = new RunActor({ processor: run.processor, egress });
   holder.actor = actor;
@@ -441,6 +474,34 @@ describe('createKernelRun and RunActor', () => {
       runState: 'CLOSED',
       closeReason: 'COMPLETED',
     });
+    await test.actor.stop();
+  });
+
+  it('flushes a report-publish result completed after its dispatch returned', async () => {
+    const artifacts = new GatedArtifactStore();
+    const test = harness({ artifacts });
+    test.actor.start();
+    await test.actor.init();
+    await test.actor.drain();
+    await register(test);
+
+    await submit(test, 'report-publish', { report: report() }, 'req_async_report');
+    await artifacts.putStarted;
+    expect(
+      test.workflow
+        .map((entry) => entry.event)
+        .some((event) => event.type === 'UnitReport' && event.requestId === 'req_async_report'),
+    ).toBe(false);
+
+    artifacts.release();
+    await vi.waitFor(() => {
+      expect(
+        test.workflow
+          .map((entry) => entry.event)
+          .some((event) => event.type === 'UnitReport' && event.requestId === 'req_async_report'),
+      ).toBe(true);
+    });
+
     await test.actor.stop();
   });
 

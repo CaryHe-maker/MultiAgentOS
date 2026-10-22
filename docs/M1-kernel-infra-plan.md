@@ -39,8 +39,8 @@
 
 阶段六（6.1–6.6）已完成质量门与 PR 准备，实际 PR 由负责人手动发起。6.1–6.2 提交于 `2348ad7`，
 6.3–6.4 提交于 `6cddf8b`，6.5 文档提交于 `c86469e`，合并 `feature/M1/main` 后修正共享测试的提交为 `0704fbb`。
-阶段六最终记录：78 个测试文件、912 项测试通过，全仓语句覆盖率 94.27%、分支 85.64%、
-函数 92.22%、行 96.27%；`pnpm run demo:fake` 退出码 0。该证据使用真实 Kernel/Infra 与 fake 外部模块，
+阶段六最终记录：78 个测试文件、913 项测试通过，全仓语句覆盖率 94.27%、分支 85.63%、
+函数 92.23%、行 96.26%；`pnpm run demo:fake` 退出码 0。该证据使用真实 Kernel/Infra 与 fake 外部模块，
 不表示真实 Workflow、UserInteraction、ExecutorSet 或真实模型 E2E 已完成。
 
 此前阶段五记录：5.1–5.6 已完成并验收，报告见 [M1KernelStage5](M1KernelStage5.md)。5.1–5.2 提交于
@@ -695,4 +695,5 @@ Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执�
 | 2026-10-21 至 2026-10-22 | Stage5.1–5.5 完成：ModuleHost 启动期限与迟到完成保护；Fabric 停止排空与失败分类；Persistence tmp 职责统一与写入排空；ArtifactStore 完整性与 Execution 集成；四类基础设施真实联调与故障矩阵 | 各子阶段 `pnpm run check` 从 567 增至 575 项测试；最终 `test:coverage` 全仓语句 93.43%、分支 84.38%、行 95.13%；`demo:fake` 退出码 0；实现与证据见 [M1KernelStage5](M1KernelStage5.md) |
 | 2026-10-22 | 阶段五（5.1–5.6）完成并验收：四类基础设施代码、正常路径、故障矩阵与文档收尾；报告见 [M1KernelStage5](M1KernelStage5.md)；计划阶段表标记五完成 | `pnpm install --frozen-lockfile` 已是最新；`pnpm run build`、`pnpm run check` 通过（55 个文件、575 项）；`test:coverage` 全仓语句 93.43%、分支 84.38%、函数 89.20%、行 95.13%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 仍为外部阻塞 |
 | 2026-10-21 至 2026-10-22 | Stage6.1–6.5 完成：启动总期限与组合前保护；panic/StopReport 韧性；真实子进程退出码矩阵；真实 Kernel/Infra 验收；README、总实现报告与七个工作文档同步；详见 [M1KernelStage6](M1KernelStage6.md) | 合并 `feature/M1/main` 前 6.1–6.4 质量门：58 个测试文件、606 项测试；全仓语句 93.54%、分支 84.77%、函数 90.35%、行 95.25%；`demo:fake` 退出码 0；6.5 文档 Prettier 与 `git diff --check` 通过 |
-| 2026-10-22 | Stage6.6 PR 准备完成：同步 `feature/M1/main`，修正合并后凭据测试，执行最终质量门；确认直接 PR 范围与文档归档，实际分支推送与 PR 由负责人手动操作 | 78 个测试文件、912 项测试；全仓语句 94.27%、分支 85.64%、函数 92.22%、行 96.27%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
+| 2026-10-22 | Stage6.6 PR 准备完成：同步 `feature/M1/main`，修正合并后凭据测试，执行最终质量门；确认直接 PR 范围与文档归档，实际分支推送与 PR 由负责人手动操作 | 78 个测试文件、913 项测试；全仓语句 94.27%、分支 85.63%、函数 92.23%、行 96.26%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
+| 2026-10-22 | CI 质量门偶发失败修复：定位 report-publish 异步落盘完成后事件滞留于 Egress；在 `RunActor`/`Execution` 增加异步 settle 补 flush，并新增门控 ArtifactStore 回归测试 | `pnpm run check`（78 个文件、913 项）；coverage 94.27%/85.63%/92.23%/96.26%；`demo:fake` 退出码 0 |

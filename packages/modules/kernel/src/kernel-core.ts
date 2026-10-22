@@ -123,6 +123,7 @@ export function createKernelCore(deps: KernelCoreDeps): KernelCoreModule {
         ? {}
         : { reportSystemFault: deps.reportSystemFault }),
       now,
+      onSettled: () => actorHolder.actor?.flushPending(),
     });
     const actor = new RunActor({
       processor: kernelRun.processor,

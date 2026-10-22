@@ -43,6 +43,8 @@ export interface KernelRunDeps {
   readonly now?: () => Date;
   readonly newAttemptId?: () => string;
   readonly newExecutionId?: () => string;
+  /** Lets the actor flush events settled after an asynchronous dispatch has returned. */
+  readonly onSettled?: () => void;
 }
 
 /**
@@ -158,6 +160,7 @@ export function createKernelRun(deps: KernelRunDeps): KernelRun {
     ...(deps.now === undefined ? {} : { now: deps.now }),
     ...(deps.newAttemptId === undefined ? {} : { newAttemptId: deps.newAttemptId }),
     ...(deps.newExecutionId === undefined ? {} : { newExecutionId: deps.newExecutionId }),
+    ...(deps.onSettled === undefined ? {} : { onSettled: deps.onSettled }),
   });
   holder.execution = execution;
 
