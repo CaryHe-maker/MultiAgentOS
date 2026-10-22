@@ -35,6 +35,37 @@
 | D4 | 失败分类按规范确认：Fabric 停止期间的 `NOT_RUNNING` 不等同于契约缺陷；终端事件失败只记录，非终端失败进入 `KERNEL_FAULT`；Persistence 审计失败不使收敛无限等待；Artifact 发布失败形成受控 Unit 失败，不伪造成功。 |
 | D5 | 阶段五真实联调使用真实 Fabric、ArtifactStore、Persistence、ModuleHost 与真实 Kernel core、Gateway、Supervisor；Workflow、UserInteraction、ExecutorSet 继续使用 fake，并作为外部依赖登记。 |
 
+### 2.1 交付提交
+
+- 5.1–5.2：`2e6eb15`（ModuleHost 启动期限与 Fabric 停止语义）；
+- 5.3–5.4：`7c32942`（Persistence 临时目录职责与 ArtifactStore 完整性）；
+- 5.5–5.6 与本报告：`4caa373`（四类基础设施故障联调与阶段验收）。
+
+阶段四报告中的提交哈希由前置提交 `586ea74` 补记，不属于阶段五实现提交。
+
+### 2.2 交付范围与代码结构
+
+阶段五实现与验证集中在：
+
+```text
+packages/infrastructure/module-host/src/index.ts
+packages/infrastructure/module-host/src/module-host.test.ts
+packages/infrastructure/fabric/src/in-process/in-process-fabric.ts
+packages/infrastructure/fabric/src/ordered-sender/ordered-sender.ts
+packages/infrastructure/fabric/src/fabric.test.ts
+packages/infrastructure/persistence/src/index.ts
+packages/infrastructure/persistence/src/persistence.test.ts
+packages/infrastructure/artifacts/src/artifacts.test.ts
+packages/modules/kernel/src/run-actor/egress.test.ts
+apps/control-plane/src/bootstrap/compose-system.ts
+apps/control-plane/src/bootstrap/compose-system.test.ts
+```
+
+文档变更：`docs/M1-kernel-infra-plan.md`、`docs/M1/Infrastructure/Fabric.md`、
+`docs/M1/Infrastructure/Persistence.md` 与本报告。
+
+未修改：`packages/libraries/contracts`、`packages/testing`、根构建、检查与锁文件。
+
 ## 3. 规划时现状与已关闭差距
 
 下表记录制定阶段五规划时的差距；5.1–5.5 已全部关闭，5.6 已完成验收。

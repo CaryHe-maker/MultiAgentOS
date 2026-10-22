@@ -33,15 +33,16 @@
 
 ### 2.1 基线
 
-阶段五（5.1–5.6）已完成并验收，报告见 [M1KernelStage5](M1KernelStage5.md)。
+阶段五（5.1–5.6）已完成并验收，报告见 [M1KernelStage5](M1KernelStage5.md)。5.1–5.2 提交于
+`2e6eb15`，5.3–5.4 提交于 `7c32942`，5.5–5.6 与阶段报告提交于 `4caa373`。
 阶段五报告记录：55 个测试文件、575 项测试通过，全仓语句覆盖率 93.43%、分支 84.38%、
 行 95.13%，`pnpm run demo:fake` 退出码 0，`git diff --check` 通过。该证据使用真实
 Fabric、ArtifactStore、Persistence、ModuleHost、Kernel core、Gateway 与 Supervisor，
 Workflow、UserInteraction、ExecutorSet 使用 fake；不包含真实外部模块、真实模型调用或 M1 整机验收。
 
 此前阶段四记录：4.1–4.6 已完成并验收，报告见 [M1KernelStage4](M1KernelStage4.md)。4.1–4.2 提交于
-`04d2f63`，4.3–4.4 提交于 `ead9b15`，4.5–4.6 与阶段报告提交于 `2e0eab8`。
-阶段四使用 55 个测试文件、561 项测试，全仓语句覆盖率 93.15%。
+`04d2f63`，4.3–4.4 提交于 `ead9b15`，4.5–4.6 与阶段报告提交于 `2e0eab8`；文档哈希补记于
+`586ea74`。阶段四使用 55 个测试文件、561 项测试，全仓语句覆盖率 93.15%。
 此前阶段三记录：3.1–3.5 已完成并验收，报告见 [M1KernelStage3](M1KernelStage3.md)；
 规划、实现与验收提交于 `025eab5`、`959fdc4`、`2cf2456`。阶段三使用 50 个测试文件、
 535 项测试，全仓语句覆盖率 92.66%。
