@@ -92,8 +92,12 @@ pnpm run check
 
 开发平台不限，最终验收在 Ubuntu LTS 上执行；具体 LTS 版本与系统依赖由交付设计确认。
 
-Kernel、Workflow、UserInteraction 与 ExecutorSet 目前只有固定签名的工厂，调用时抛出 `NOT_IMPLEMENTED`。
+Kernel 与四类基础设施已经实现并通过阶段验收；Workflow、UserInteraction 与 ExecutorSet 仍只有固定签名的工厂，
+调用时抛出 `NOT_IMPLEMENTED`。CLI 入口和完整 Agent 循环仍受这些外部模块阻塞，不应将架构文档中的长期能力理解为已经交付。
 `pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
+
+Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见
+[M1 Kernel 与 Infrastructure 总实现报告](docs/M1KernelImplementationReport.md)。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 
@@ -105,5 +109,6 @@ Kernel、Workflow、UserInteraction 与 ExecutorSet 目前只有固定签名的�
 - [协议架构](docs/Architecture/Protocol.md)
 - [运行实例](docs/Architecture/Instance.md)
 - [M1 指南](docs/M1/README.md)
+- [M1 Kernel 与 Infrastructure 总实现报告](docs/M1KernelImplementationReport.md)
 
 所有合并到 `feat/M1` 或 `main` 的变更都必须通过 Pull Request。

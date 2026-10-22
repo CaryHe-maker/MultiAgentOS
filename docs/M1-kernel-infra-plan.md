@@ -2,9 +2,9 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾，并完成阶段五 5.1–5.4；2026-10-22 完成阶段五 5.5、5.6 与阶段验收，并完成阶段六 6.1–6.4。**
-本计划作为剩余开发执行基线；阶段一至阶段五已完成验收，阶段六进行中（6.1–6.4 已完成）。
-本次完成阶段六 6.4（Kernel 与 Infra 验收矩阵）；阶段六 6.5–6.6 未开始；
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾，并完成阶段五 5.1–5.4；2026-10-22 完成阶段五 5.5、5.6 与阶段验收，并完成阶段六 6.1–6.5。**
+本计划作为剩余开发执行基线；阶段一至阶段五已完成验收，阶段六进行中（6.1–6.5 已完成）。
+本次完成阶段六 6.5（文档、README、工作文档与总报告）；阶段六 6.6 未开始；
 旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
@@ -20,11 +20,14 @@
 - **工作方式**：每次开始先运行 `git status` 与 `git log --oneline -10`，与第 2.1 节核对，不一致时以仓库为准；
   只做当前阶段；完成后按第 9 节验证、按第 11 节记录。不自动 commit、push 或创建 PR，也不自动向其他人发消息，
   都等负责人明确要求。
-- **本文不进入 `feature/M1/main`**。规范、源码注释、错误信息与测试都不得链接本文或使用本文的编号
-  （P01–P11、C01–C08）；只有本文可以引用规范。下面的命令除本文外应当没有结果：
+- **本文随本分支进入 `feature/M1/main`，由项目主管人后续归档整理**。它仍不是规范；
+  规范、源码注释、错误信息和测试不得把本文当作规范或使用本文的编号（P01–P11、C01–C08），
+  工作文档之间可以相互引用。下面的命令除工作文档外应当没有结果：
 
   ```bash
-  git grep -nE "kernel-infra-plan|\bP(0[1-9]|1[01])a?\b|\bC0[1-8]\b" -- . ':!docs/M1-kernel-infra-plan.md' ':!pnpm-lock.yaml'
+  git grep -nE "kernel-infra-plan|\bP(0[1-9]|1[01])a?\b|\bC0[1-8]\b" -- . \
+    ':!docs/M1-kernel-infra-plan.md' ':!docs/M1KernelStage*.md' \
+    ':!docs/M1KernelImplementationReport.md' ':!pnpm-lock.yaml'
   ```
 
 - 文件名是 PascalCase 命名惯例的例外；分支名中的拼写 `infrasturcture` 保持不变，不要改名。
@@ -33,7 +36,13 @@
 
 ### 2.1 基线
 
-阶段五（5.1–5.6）已完成并验收，报告见 [M1KernelStage5](M1KernelStage5.md)。5.1–5.2 提交于
+阶段六（6.1–6.5）已完成，6.6 导出与 PR 待执行。6.1–6.2 提交于 `2348ad7`，
+6.3–6.4 提交于 `6cddf8b`，6.5 文档随本轮提交。阶段六当前记录：58 个测试文件、
+606 项测试通过，全仓语句覆盖率 93.54%、分支 84.77%、函数 90.35%、行 95.25%；
+`pnpm run demo:fake` 退出码 0。该证据使用真实 Kernel/Infra 与 fake 外部模块，
+不表示真实 Workflow、UserInteraction、ExecutorSet 或真实模型 E2E 已完成。
+
+此前阶段五记录：5.1–5.6 已完成并验收，报告见 [M1KernelStage5](M1KernelStage5.md)。5.1–5.2 提交于
 `2e6eb15`，5.3–5.4 提交于 `7c32942`，5.5–5.6 与阶段报告提交于 `4caa373`。
 阶段五报告记录：55 个测试文件、575 项测试通过，全仓语句覆盖率 93.43%、分支 84.38%、
 行 95.13%，`pnpm run demo:fake` 退出码 0，`git diff --check` 通过。该证据使用真实
@@ -197,7 +206,7 @@ Core 阶段一、Execution 阶段二、Supervisor 阶段三、run actor 与 Kern
 | 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 已完成（2026-10-20） |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 已完成（2026-10-21） |
 | 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 已完成（2026-10-22） |
-| 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 进行中（6.1–6.4 已完成，2026-10-22） |
+| 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 进行中（6.1–6.5 已完成，2026-10-22） |
 
 ### 6.2 阶段一：完善 Core
 
@@ -373,7 +382,7 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 
 ### 6.7 阶段六：Kernel 启动与验收
 
-**状态：进行中（6.1–6.4 已完成，2026-10-22）。** 子阶段与完成记录见
+**状态：进行中（6.1–6.5 已完成，2026-10-22）。** 子阶段与完成记录见
 [M1KernelStage6](M1KernelStage6.md)。
 
 - 完成真实组合根装配，核对依赖实例、容量共享、凭据与配置注入；复核 P05a 在工厂执行前拒绝错误配置。
@@ -647,14 +656,15 @@ Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执�
 - 按阶段或逻辑变更提交，每个提交可构建、可测试；Conventional Commits，说明用中文，不使用本文的编号。
 - 只从 `feature/M1/main` 同步，用 merge，不 rebase；不直接合并其他工作分支。本分支已被合入过 `feature/M1/main`，不得改写历史。
   每次同步后在 Ubuntu 上运行完整质量门。
-- 向 `feature/M1/main` 合入时使用不含本文的导出分支：
+- 向 `feature/M1/main` 合入时使用导出分支：
   1. 确认本分支已同步 `feature/M1/main` 的最新提交；
-  2. 在 `feature/M1/main` 的最新提交之上，逐个重放本分支自上次导出以来的非合并提交，每个提交去掉本文，
-     提交说明中提到本文或其编号的行一并去掉；
-  3. 推送导出分支，提 PR，使用 merge commit 合并；
-  4. 合并后本分支同步一次 `feature/M1/main`（其余文件两边相同，会干净合并），删除导出分支。
+  2. 在 `feature/M1/main` 的最新提交之上，逐个重放本分支自上次导出以来的非合并提交；
+  3. 导出分支保留七个工作文档、[总实现报告](M1KernelImplementationReport.md)、`docs/M1/` 规范更新与 README；
+     不因工作文档身份删除文件或改写提交说明；
+  4. 推送导出分支，提 PR，使用 merge commit 合并；
+  5. 合并后本分支同步一次 `feature/M1/main`（其余文件两边相同，会干净合并），删除导出分支。
 
-  2026-10-13 的首次合入（PR 23）就是这样做的。
+  2026-10-13 的首次合入（PR 23）就是这样做的。七个工作文档与总实现报告由项目主管人后续归档整理。
 
 ## 11. 进度记录
 
@@ -683,7 +693,4 @@ Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执�
 | 2026-10-21 | Stage4 完成：将 M1KernelStage4.md 整理为阶段四实现报告，同步计划基线、实现状态、阶段表、预留表与 C02–C07；Kernel Module 在 fake 外部模块下完成内部闭环和交付边界验收 | `pnpm run check`（55 个文件、561 项）；`test:coverage`（全仓语句 93.15%、分支 83.98%、行 94.93%）；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实外部模块与 M1 整机验收仍为阻塞项 |
 | 2026-10-21 至 2026-10-22 | Stage5.1–5.5 完成：ModuleHost 启动期限与迟到完成保护；Fabric 停止排空与失败分类；Persistence tmp 职责统一与写入排空；ArtifactStore 完整性与 Execution 集成；四类基础设施真实联调与故障矩阵 | 各子阶段 `pnpm run check` 从 567 增至 575 项测试；最终 `test:coverage` 全仓语句 93.43%、分支 84.38%、行 95.13%；`demo:fake` 退出码 0；实现与证据见 [M1KernelStage5](M1KernelStage5.md) |
 | 2026-10-22 | 阶段五（5.1–5.6）完成并验收：四类基础设施代码、正常路径、故障矩阵与文档收尾；报告见 [M1KernelStage5](M1KernelStage5.md)；计划阶段表标记五完成 | `pnpm install --frozen-lockfile` 已是最新；`pnpm run build`、`pnpm run check` 通过（55 个文件、575 项）；`test:coverage` 全仓语句 93.43%、分支 84.38%、函数 89.20%、行 95.13%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 仍为外部阻塞 |
-| 2026-10-22 | Stage6.1 完成：`bootMs` 与启动总期限、组合前进程保护与 deferred fault reporter、`composeSystem` 构造失败清理、配置/装配失败返回 70；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（56 个文件、582 项）；`test:coverage` 全仓语句 93.47%、分支 84.47%、函数 89.26%、行 95.18%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
-| 2026-10-22 | Stage6.2 完成：panic 五步与 StopReport 韧性、日志/清理失败隔离、同步 abort/stop/command 异常处理；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（56 个文件、586 项）；`test:coverage` 全仓语句 93.45%、分支 84.56%、函数 89.24%、行 95.15%；`demo:fake` 退出码 0 |
-| 2026-10-22 | Stage6.3 完成：真实子进程退出码矩阵、进程保护韧性、64/70/130 与信号处理；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（57 个文件、600 项）；`test:coverage` 全仓语句 93.46%、分支 84.62%、函数 89.24%、行 95.15%；`demo:fake` 退出码 0 |
-| 2026-10-22 | Stage6.4 完成：真实 Kernel/Infra 组合验收（正常、授权拒绝/超时、取消、运行超时、违规）；组件级矩阵与外部阻塞登记；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（58 个文件、606 项）；`test:coverage` 全仓语句 93.54%、分支 84.77%、函数 90.35%、行 95.25%；`demo:fake` 退出码 0 |
+| 2026-10-21 至 2026-10-22 | Stage6.1–6.5 完成：启动总期限与组合前保护；panic/StopReport 韧性；真实子进程退出码矩阵；真实 Kernel/Infra 验收；README、总实现报告与七个工作文档同步；详见 [M1KernelStage6](M1KernelStage6.md) | 6.1–6.4 最终质量门：58 个测试文件、606 项测试；全仓语句 93.54%、分支 84.77%、函数 90.35%、行 95.25%；`demo:fake` 退出码 0；6.5 文档 Prettier 与 `git diff --check` 通过 |
