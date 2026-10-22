@@ -2,9 +2,9 @@
 
 ## 1. 本文与本分支
 
-**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾，并完成阶段五 5.1–5.4；2026-10-22 完成阶段五 5.5、5.6 与阶段验收。**
-本计划作为剩余开发执行基线；阶段一至阶段五已完成验收，阶段六未开始，后续由负责人指定阶段推进。
-本次完成阶段五 5.6（文档、覆盖率与阶段验收收尾）；阶段六未开始；
+**修订状态：2026-10-17 完成六阶段覆盖核对；2026-10-18 按 SystemFaultHandling 逐项补齐异常、panic 与退出验收落点；2026-10-19 同步阶段一、阶段二验收结果与阶段三规划；2026-10-20 完成阶段三实现与验收；2026-10-21 完成阶段四实现、验收与文档收尾，并完成阶段五 5.1–5.4；2026-10-22 完成阶段五 5.5、5.6 与阶段验收，并完成阶段六 6.1–6.2。**
+本计划作为剩余开发执行基线；阶段一至阶段五已完成验收，阶段六进行中（6.1–6.2 已完成）。
+本次完成阶段六 6.2（panic 五步、StopReport 与故障韧性）；阶段六 6.3–6.6 未开始；
 旧 P06–P11 安排由第 6 节替代，历史记录与已定设计决定保留。
 
 - 本文是 `feature/M1/kernel-infrasturcture` 分支的工作文档：本分支的任务、进度与注意事项。它不是规范，
@@ -197,7 +197,7 @@ Core 阶段一、Execution 阶段二、Supervisor 阶段三、run actor 与 Kern
 | 三 | Supervisor 执行控制 | execute、cancel 和执行事实完整；正常、抛错、超时、取消、未确认停止及迟到结果可验证 | 已完成（2026-10-20） |
 | 四 | Run actor、Kernel 工厂与内部联调 | 真实 Kernel 内部闭环；前三阶段内部预留全部关闭，产品路径无占位实现 | 已完成（2026-10-21） |
 | 五 | ModuleHost、Fabric、Persistence、ArtifactStore | 真实基础设施正常与故障联调通过，跨基础设施预留关闭 | 已完成（2026-10-22） |
-| 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 未开始 |
+| 六 | 组合根、真实启动与验收 | 启动可用，Kernel 验收可复现，未完成的外部依赖明确记录 | 进行中（6.1–6.2 已完成，2026-10-22） |
 
 ### 6.2 阶段一：完善 Core
 
@@ -372,6 +372,9 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 退出时正常和故障联调均有证据；未完成的外部模块依赖单独列出。
 
 ### 6.7 阶段六：Kernel 启动与验收
+
+**状态：进行中（6.1–6.2 已完成，2026-10-22）。** 子阶段与完成记录见
+[M1KernelStage6](M1KernelStage6.md)。
 
 - 完成真实组合根装配，核对依赖实例、容量共享、凭据与配置注入；复核 P05a 在工厂执行前拒绝错误配置。
 - 验证真实入口启动、ready、正常关闭、启动失败回滚、系统故障退出与最后防线。
@@ -680,3 +683,5 @@ Core 部分，阶段二完成 Execution 接入，阶段三完成 Supervisor 执�
 | 2026-10-21 | Stage4 完成：将 M1KernelStage4.md 整理为阶段四实现报告，同步计划基线、实现状态、阶段表、预留表与 C02–C07；Kernel Module 在 fake 外部模块下完成内部闭环和交付边界验收 | `pnpm run check`（55 个文件、561 项）；`test:coverage`（全仓语句 93.15%、分支 83.98%、行 94.93%）；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实外部模块与 M1 整机验收仍为阻塞项 |
 | 2026-10-21 至 2026-10-22 | Stage5.1–5.5 完成：ModuleHost 启动期限与迟到完成保护；Fabric 停止排空与失败分类；Persistence tmp 职责统一与写入排空；ArtifactStore 完整性与 Execution 集成；四类基础设施真实联调与故障矩阵 | 各子阶段 `pnpm run check` 从 567 增至 575 项测试；最终 `test:coverage` 全仓语句 93.43%、分支 84.38%、行 95.13%；`demo:fake` 退出码 0；实现与证据见 [M1KernelStage5](M1KernelStage5.md) |
 | 2026-10-22 | 阶段五（5.1–5.6）完成并验收：四类基础设施代码、正常路径、故障矩阵与文档收尾；报告见 [M1KernelStage5](M1KernelStage5.md)；计划阶段表标记五完成 | `pnpm install --frozen-lockfile` 已是最新；`pnpm run build`、`pnpm run check` 通过（55 个文件、575 项）；`test:coverage` 全仓语句 93.43%、分支 84.38%、函数 89.20%、行 95.13%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过；真实 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 仍为外部阻塞 |
+| 2026-10-22 | Stage6.1 完成：`bootMs` 与启动总期限、组合前进程保护与 deferred fault reporter、`composeSystem` 构造失败清理、配置/装配失败返回 70；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（56 个文件、582 项）；`test:coverage` 全仓语句 93.47%、分支 84.47%、函数 89.26%、行 95.18%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |
+| 2026-10-22 | Stage6.2 完成：panic 五步与 StopReport 韧性、日志/清理失败隔离、同步 abort/stop/command 异常处理；详见 [M1KernelStage6](M1KernelStage6.md) | `pnpm run check`（56 个文件、586 项）；`test:coverage` 全仓语句 93.45%、分支 84.56%、函数 89.24%、行 95.15%；`demo:fake` 退出码 0 |

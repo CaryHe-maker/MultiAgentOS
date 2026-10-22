@@ -359,4 +359,58 @@ describe('fake vertical chain', () => {
       }),
     ).rejects.toThrow('NOT_IMPLEMENTED');
   });
+
+  it('kills the injected runner when composition fails after creating it', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const killed: string[] = [];
+    const subprocess = {
+      run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: '', truncated: false }),
+      killAll: () => void killed.push('kill'),
+    };
+
+    await expect(
+      composeSystem({
+        config: { ...defaultSystemConfig(), dataDir },
+        terminal: createFakeTerminal(),
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+        subprocess,
+        parts: {
+          createKernelCore: () => {
+            throw new Error('factory failed');
+          },
+        },
+      }),
+    ).rejects.toThrow('factory failed');
+    expect(killed).toEqual(['kill']);
+  });
+
+  it('rejects invalid bootMs after construction and kills the runner', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const killed: string[] = [];
+    const subprocess = {
+      run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: '', truncated: false }),
+      killAll: () => void killed.push('kill'),
+    };
+
+    await expect(
+      composeSystem({
+        config: { ...defaultSystemConfig(), dataDir },
+        terminal: createFakeTerminal(),
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+        subprocess,
+        timeouts: { bootMs: 0 },
+        parts: {
+          createGateway: createFakeGateway(),
+          createKernelCore: createFakeKernelCore(),
+          createSupervisor: createFakeSupervisor(),
+          createExecutorRegistry: () => createFakeExecutorRegistry(),
+          createWorkflow: createFakeWorkflow(),
+          createUserInteraction: createFakeUserInteraction(),
+        },
+      }),
+    ).rejects.toThrow('bootMs');
+    expect(killed).toEqual(['kill']);
+  });
 });
