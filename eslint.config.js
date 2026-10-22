@@ -84,4 +84,11 @@ export default tseslint.config(
       ],
     },
   })),
+  {
+    // The child-process exit matrix must spawn a real child; product code still may not.
+    files: ['apps/control-plane/test/process-entry.test.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [providerSdk] }],
+    },
+  },
 );

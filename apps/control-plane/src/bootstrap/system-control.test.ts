@@ -420,4 +420,29 @@ describe('process guards', () => {
     remove();
     expect(listeners.size).toBe(0);
   });
+
+  it('still exits when diagnostics and child cleanup throw', () => {
+    const listeners = new Map<string, (error?: unknown) => void>();
+    const calls: string[] = [];
+    const target: GuardedProcess = {
+      on: (event: string, listener: (error?: unknown) => void) =>
+        void listeners.set(event, listener),
+      off: (event) => void listeners.delete(event),
+      exit: (code) => void calls.push(`exit ${code}`),
+    };
+    installProcessGuards({
+      killSubprocesses: () => {
+        throw new Error('kill failed');
+      },
+      log: () => {
+        throw new Error('log failed');
+      },
+      target,
+    });
+    expect(() => listeners.get('uncaughtException')?.(new Error('boom'))).not.toThrow();
+    expect(calls).toEqual([`exit ${EXIT_CODE_SYSTEM_FAULT}`]);
+    listeners.get('SIGINT')?.();
+    expect(() => listeners.get('SIGINT')?.()).not.toThrow();
+    expect(calls).toEqual([`exit ${EXIT_CODE_SYSTEM_FAULT}`, `exit ${EXIT_CODE_INTERRUPTED}`]);
+  });
 });
