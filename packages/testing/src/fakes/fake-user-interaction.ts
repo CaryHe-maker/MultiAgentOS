@@ -1,5 +1,7 @@
 import {
+  InteractionInboxEventSchema,
   newId,
+  validate,
   type BoundaryContext,
   type InteractionInboxEvent,
   type KernelToInteractionEvent,
@@ -59,7 +61,10 @@ export function createFakeUserInteraction(
       },
       inbox: {
         deliver: (event) => {
-          inbox.enqueue(event);
+          const checked = validate<InteractionInboxEvent>(InteractionInboxEventSchema, event);
+          if (!checked.ok)
+            return Promise.reject(new Error('Interaction Inbox event violates its contract'));
+          inbox.enqueue(structuredClone(checked.value));
           return Promise.resolve();
         },
       },

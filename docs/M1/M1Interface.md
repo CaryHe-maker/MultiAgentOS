@@ -113,7 +113,7 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ToolResultStep` | `status = 'OK'` 时 `output` 与 `outputRef` 必填且类型相配（检索输出配 ContextPack，读取输出配文本）；否则只带该状态的 `reasonCode`                                                          |
 | `FeedbackStep`   | `UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`、`NOT_EXECUTED` 必须带 `toolCallId`；`MODEL_CALL_FAILED`、`WRAP_UP_NOTICE` 不得带；`INVALID_ACTION` 可带可不带 |
-| `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空                                                          |
+| `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选且不得带 `lastIssue`；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空；`emptyReads` 中的路径不得重复 |
 
 **执行请求与执行事实**
 
@@ -1035,12 +1035,26 @@ interface AnalysisReport {
   conclusions: VerifiedConclusion[];
   unconfirmed: UnconfirmedItem[];
   readSources: VerifiedSource[]; // 本运行全部读取成功的范围
-  wrapUp?: { reason: WrapUpReason }; // 提前收尾时必填
+  wrapUp?: { reason: WrapUpReason; lastIssue?: ReportLastIssue }; // 提前收尾时必填；lastIssue 只属于降级报告
   degraded: boolean; // 没有合法 FINISH 时为 true
   agentRounds: AgentRoundsEntry[];
   snapshotId?: string;
+  emptyReads?: string[]; // 成功读取的空文件路径，去重；空文件不能作为行来源
   createdAt: string;
 }
+
+type ReportLastIssue =
+  // 降级报告最后一次调用为何没有结束；只是事实，说明文字由 UserInteraction 生成
+  | { kind: 'FAILURE'; code: ReasonCode }
+  | { kind: 'INVALID_OUTPUT'; reason: InvalidActionReason }
+  | { kind: 'NO_FINISH' }; // final-call 返回了合法但不是结束的动作
+
+type InvalidActionReason = // Workflow 第 5 节的五种非法动作
+  | 'NO_ACTION'
+  | 'OUTPUT_TRUNCATED'
+  | 'CONTROL_MIXED'
+  | 'CONTROL_NOT_ALLOWED'
+  | 'CONTROL_ARGUMENTS_INVALID';
 
 interface VerifiedConclusion {
   statement: string;

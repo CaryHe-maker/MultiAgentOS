@@ -74,9 +74,10 @@ SharedContracts 是静态库 `@multiagentos/contracts`（`packages/libraries/con
 | `workflow.StatusFacts.v0` | WrapUpReason | `workflow/step-record.ts` | 6.6 |
 | `workflow.HandoffBrief.v0` | — | `workflow/handoff.ts` | 6.6 |
 | `workflow.AnalysisReportDraft.v0` | DraftConclusion、SourceRef | `workflow/report.ts` | 6.6 |
-| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry | `workflow/report.ts` | 6.6 |
+| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry、ReportLastIssue | `workflow/report.ts` | 6.6 |
 
 `WrapUpReason` 与 `AnalysisReport.wrapUp` 共用 `workflow/step-record.ts` 中的定义。
+`INVALID_ACTION_REASONS`（Workflow 第 5 节的非法动作原因）在 `workflow/report.ts` 中定义，供 `ReportLastIssue` 使用。
 
 ### 3.5 `catalog`
 
