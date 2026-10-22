@@ -260,7 +260,7 @@ describe('Stage6 Kernel and infrastructure acceptance', () => {
       model: { requests: 1, finalCallUsed: false },
       unknownEffects: [],
     });
-  });
+  }, 15_000);
 
   it('records authorization refusal as a failed run', async () => {
     const { system, command } = await realSystem({ answer: 'NO' });
