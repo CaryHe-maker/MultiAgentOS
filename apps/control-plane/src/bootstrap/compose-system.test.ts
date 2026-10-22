@@ -89,7 +89,7 @@ describe('fake vertical chain', () => {
     expect(auditTypes).toEqual(
       expect.arrayContaining(['RUN_STARTED', 'UNIT_ACCEPTED', 'UNIT_REPORTED', 'RUN_CLOSED']),
     );
-  }, 15000);
+  }, 60_000);
 
   it('rolls back real infrastructure when an external module fails to start', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));

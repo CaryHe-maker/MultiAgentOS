@@ -1,6 +1,6 @@
 # MultiAgentOS M1 Kernel 阶段六实施计划
 
-> 状态：临时工作文档，2026-10-22 完成规划；6.1–6.5 已完成，待继续 6.6。
+> 状态：临时工作文档，2026-10-22 完成规划；6.1–6.6 PR 准备完成，实际分支推送与 PR 由负责人手动操作。
 > 依据：[M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6.7、6.8 节，[SystemFaultHandling](M1/SystemFaultHandling.md)，
 > [M1Interface](M1/M1Interface.md) 第 14 节与 `docs/M1/` 下的 M1 规范。
 > 本文件不是规范；随本分支进入 `feature/M1/main`，由项目主管人后续归档整理。与 `docs/M1/` 冲突时以规范为准。
@@ -65,7 +65,7 @@
 - 阶段六报告与总实现报告已创建（6.5）。
 - 七个工作文档头部已改为随 PR 进入 `feature/M1/main`（6.5）。
 - `M1-kernel-infra-plan.md` 第 10 节已改为正常导出全部工作文档与总报告（6.5）。
-- 导出分支与 PR 说明仍待 6.6。
+- 6.6 已改为从工作分支直接发起 PR；分支推送、PR 创建与合并由负责人手动操作。
 
 ## 4. 已确认决策
 
@@ -416,11 +416,12 @@ fake Workflow / UserInteraction / ExecutorSet
   - `M1Interface` 的 `bootMs` 与实现一致；
   - `SystemFaultHandling` 的 panic/退出码与测试一致；
   - `ModuleHost`、`Fabric`、`Persistence`、`ArtifactStore` 与实现一致。
-- 验证：Prettier 与 `git diff --check` 通过；代码质量门沿用 6.4 的 58 个测试文件、606 项测试结果。
+- 验证：Prettier 与 `git diff --check` 通过；代码质量门沿用合并 `feature/M1/main` 前 6.4 的
+  58 个测试文件、606 项测试结果。
 
-### 6.6 Ubuntu 质量门、导出分支与 PR
+### 6.6 Ubuntu 质量门与 PR 准备
 
-**目标**：完成可复现验收并准备向 `feature/M1/main` 发起 PR。
+**目标**：完成可复现验收，准备从工作分支直接向 `feature/M1/main` 发起 PR。
 
 **工作项**
 
@@ -438,33 +439,47 @@ git diff --check
 - 同步 `feature/M1/main`：
   - 使用 merge，不 rebase；
   - 在最新基础上重新运行质量门。
-- 创建导出分支：
-  - 从 `feature/M1/main` 最新提交开始；
-  - 逐个重放本分支自上次导出以来的非合并提交；
-  - 包含七个工作文档与总实现报告；
-  - 包含必要的 `docs/M1/` 规范更新与 `README.md` 更新。
-- 导出分支检查：
+- 直接 PR：
+  - 从 `feature/M1/kernel-infrasturcture` 向 `feature/M1/main` 发起；
+  - 保留七个工作文档、总实现报告、`docs/M1/` 规范更新与 `README.md`；
+  - 不创建临时导出分支；
+  - 使用 merge commit 合并，不使用 squash/rebase 改写受保护分支历史。
+- PR 前检查：
   - 所有文档链接有效；
   - 总报告正确索引 Stage1–6 与计划文档；
   - 工作文档头部不再声称“不进入主分支”；
   - 不包含密钥、生成物、无关格式化或未声明依赖。
-- 在导出分支重新运行质量门。
-- 发起 PR 到 `feature/M1/main`：
-  - 目标不是 `main`；
-  - 使用 merge commit；
-  - 说明 Kernel/Infra 范围、验证证据、外部阻塞、风险与回滚；
-  - 说明七个工作文档、总报告与项目主管人归档安排；
+- PR 说明：
+  - Kernel/Infra 范围与验证证据；
+  - 外部阻塞、风险与回滚；
+  - 七个工作文档、总报告与项目主管人归档安排；
   - 不宣称 M1 整机完成。
+- 分支推送、PR 创建与合并由负责人手动操作。
 
 **退出条件**
 
-- 导出分支通过全部质量门；
-- PR 可评审、可合并；
+- 最终质量门通过；
+- 工作分支可直接作为 PR 源分支；
+- PR 说明可评审、可合并；
 - PR 明确列出外部阻塞：
   - 真实 Workflow；
   - 真实 UserInteraction/CLI；
   - 真实 ExecutorSet；
   - 真实模型 E2E 与 F1–F5。
+
+**完成记录（2026-10-22）**
+
+- 已合并 `origin/feature/M1/main`（merge commit `1e088ec`），修正合并后共享测试的离线凭据，
+  提交 `0704fbb`。
+- 最终质量门：
+  - `pnpm install --frozen-lockfile`、`pnpm run build`、`pnpm run check` 通过；
+  - 78 个测试文件、912 项测试；
+  - 全仓语句 94.27%、分支 85.64%、函数 92.22%、行 96.27%；
+  - `pnpm run demo:fake` 退出码 0；
+  - Prettier 与 `git diff --check` 通过。
+- 已确认直接 PR 范围与七个工作文档、总报告的归档安排。
+- 实际分支推送、PR 创建与合并由负责人手动操作；本报告不宣称 PR 已创建或已合并。
+- 外部 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 仍为阻塞项。
 
 ## 6. 依赖关系与关键路径
 
@@ -479,7 +494,7 @@ git diff --check
     ↓
 6.5 文档、README、工作文档与总报告
     ↓
-6.6 Ubuntu 质量门、导出分支与 PR
+6.6 Ubuntu 质量门与直接 PR
 ```
 
 - 6.1 必须最先完成，后续启动、panic 与进程测试都依赖它。
@@ -547,7 +562,7 @@ Stage6 完成必须同时满足：
 | 进程级测试 | 不得在测试主进程触发 exit；使用独立子进程 |
 | 真实产品入口 | 外部模块占位时不能伪造正常启动 |
 | 文档归档 | 七份工作文档与总报告必须一致，链接有效 |
-| 导出分支 | 不得改写已合入历史；使用 merge commit |
+| 直接 PR | 分支推送、PR 创建与合并由负责人手动操作；使用 merge commit |
 
 ## 11. 进度记录
 
@@ -559,3 +574,4 @@ Stage6 完成必须同时满足：
 | 2026-10-22 | 6.3 完成：真实子进程退出码矩阵、进程保护韧性、CLI 64、配置失败 70、第一次/第二次 Ctrl+C | `pnpm run check`（57 个文件、600 项）；coverage 93.46%/84.62%/89.24%/95.15%；`demo:fake` 退出码 0 |
 | 2026-10-22 | 6.4 完成：真实 Kernel/Infra 正常、授权拒绝/超时、取消、运行超时、违规验收；组件级矩阵与外部阻塞登记 | `pnpm run check`（58 个文件、606 项）；coverage 93.54%/84.77%/90.35%/95.25%；`demo:fake` 退出码 0 |
 | 2026-10-22 | 6.5 完成：README、总实现报告、七个工作文档头部、计划第 10 节与文档入口同步 | Prettier 与 `git diff --check` 通过；代码质量门沿用 6.4（58 个文件、606 项） |
+| 2026-10-22 | 6.6 PR 准备完成：合并 `feature/M1/main`、修正共享测试、最终质量门与直接 PR 范围确认；实际推送与 PR 由负责人手动操作 | 78 个文件、912 项；coverage 94.27%/85.64%/92.22%/96.27%；`demo:fake` 退出码 0；Prettier 与 `git diff --check` 通过 |

@@ -1,6 +1,6 @@
 # MultiAgentOS M1 Kernel 与 Infrastructure 总实现报告
 
-> 状态：实现报告，2026-10-22 完成阶段六 6.1–6.5；阶段六 6.6（导出与 PR）待执行。
+> 状态：实现报告，2026-10-22 完成阶段六 6.1–6.6 的质量门与 PR 准备；实际分支推送与 PR 由负责人手动操作。
 > 本文件不是规范；与 `docs/M1/` 冲突时以规范为准。
 > 本文件随本分支进入 `feature/M1/main`，由项目主管人后续归档整理。
 
@@ -20,8 +20,8 @@
 
 - 阶段一至阶段五已完成验收；
 - 阶段六 6.1–6.5 已完成；
+- 阶段六 6.6 质量门与 PR 准备完成，实际 PR 待负责人手动发起；
 - Kernel 与 Infrastructure 在真实组件、fake 外部模块下完成内部闭环；
-- 阶段六 6.6（导出分支与 PR）尚未执行；
 - M1 整机验收仍受真实 Workflow、UserInteraction、ExecutorSet 与真实模型 E2E 阻塞。
 
 本报告不把 fake 外部模块通过解释为 M1 整机完成。
@@ -35,7 +35,7 @@
 | 三 | Supervisor 执行控制 | 已完成 | `025eab5`、`959fdc4`、`2cf2456` |
 | 四 | run actor、Outbox、定时器与 Kernel 工厂 | 已完成 | `04d2f63`、`ead9b15`、`2e0eab8` |
 | 五 | 四类基础设施完善与故障联调 | 已完成 | `2e6eb15`、`7c32942`、`4caa373` |
-| 六 | 启动保护、进程验收与基础设施矩阵 | 6.1–6.5 完成；6.6 待执行 | `2348ad7`、`6cddf8b`、本轮文档提交 |
+| 六 | 启动保护、进程验收与基础设施矩阵 | 6.1–6.5 完成；6.6 质量门与 PR 准备完成，PR 待手动发起 | `2348ad7`、`6cddf8b`、`c86469e`、`0704fbb` |
 
 补充提交：
 
@@ -133,9 +133,9 @@ pnpm 11.25.0
 
 ```text
 pnpm run check       通过
-  58 个测试文件、606 项测试全部通过
+  78 个测试文件、912 项测试全部通过
 pnpm run test:coverage
-  全仓语句 93.54%、分支 84.77%、函数 90.35%、行 95.25%
+  全仓语句 94.27%、分支 85.64%、函数 92.22%、行 96.27%
 pnpm run demo:fake   退出码 0
 git diff --check     通过
 ```
@@ -214,15 +214,16 @@ PR 范围：
 - `docs/M1/` 下必要的规范更新；
 - README 与文档入口更新。
 
-PR 目标：
+PR 目标与方式：
 
-- `feature/M1/main`；
+- 从 `feature/M1/kernel-infrasturcture` 直接向 `feature/M1/main` 发起；
+- 分支推送、PR 创建与合并由负责人手动操作；
 - 使用 merge commit；
 - 不使用 squash/rebase 改写受保护分支历史。
 
 后续工作：
 
-- 阶段六 6.6：导出分支、Ubuntu 质量门复核与 PR；
+- 负责人手动推送分支并创建 PR；
 - 真实 Workflow、UserInteraction、ExecutorSet 接入；
 - 真实模型 E2E、F1–F5 与 M1 整机验收。
 
