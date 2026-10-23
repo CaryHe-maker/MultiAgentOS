@@ -32,6 +32,10 @@ M1 的 Fabric 是同进程实现 `InProcessFabric`，为每个通讯主体创建
 - `request`：调用方等待处理方返回；超时不证明操作未发生。M1 不设 Fabric 级超时，由各请求的业务时限兜底。
 - `send` / `subscribe`：单向消息；`send` 返回表示已进入接收方队列。同一地址的并发投递按调用登记顺序串行受理，
   一次投递失败不阻断后续投递；不同地址可并行。
+- `send` 失败可能来自订阅者、缺失订阅者或停止期间的 `NOT_RUNNING`，不一律是契约缺陷；
+  调用方按失败类型处理，不重试业务请求。
+- `stop()` 停止接收新的请求与发送，并等待已受理的 `send` 结束；停止后的请求得到 `NOT_RUNNING`。
+  M1 只支持单次启动，不提供公共注销或重启 API。
 - 组合根基于各主体的客户端生成 Port 存根：`WorkflowGatewayPort`、`InteractionGatewayPort`、`SupervisorPort`、
   `ExecutionFactSink`、`WorkflowInboxPort`、`InteractionInboxPort`，路由见 M1Interface 2.2。
 

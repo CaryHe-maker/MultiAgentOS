@@ -5,8 +5,10 @@
  * recorded, or with `EXIT_CODE_SYSTEM_FAULT` when the system did not end on the normal path.
  */
 import { createNodeTerminal, parseCli, runParsedCli } from '@multiagentos/cli';
+import { createSubprocessRunner } from '@multiagentos/kernel';
 import dotenv from 'dotenv';
-import { composeSystem } from './bootstrap/compose-system.js';
+import { composeSystem, type System } from './bootstrap/compose-system.js';
+import { createDeferredFaultReporter } from './bootstrap/deferred-fault-reporter.js';
 import { installProcessGuards } from './bootstrap/process-guards.js';
 import { EXIT_CODE_SYSTEM_FAULT } from './bootstrap/system-control.js';
 import { loadSystemConfig } from './config/system-config.js';
@@ -48,22 +50,50 @@ export async function main(argv: readonly string[]): Promise<number> {
   const terminal = createNodeTerminal();
   const parsed = await parseCli(argv, terminal);
   if (!parsed.ok) return parsed.exitCode;
-  dotenv.config({ quiet: true });
-  const system = await composeSystem({
-    config: await loadSystemConfig(process.env),
-    terminal,
-    credentials: credentialsFrom(process.env),
-  });
-  const removeGuards = installProcessGuards({ killSubprocesses: () => system.killSubprocesses() });
+
+  const subprocess = createSubprocessRunner();
+  const faults = createDeferredFaultReporter();
+  const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });
   try {
+    let system: System;
+    try {
+      dotenv.config({ quiet: true });
+      system = await composeSystem({
+        config: await loadSystemConfig(process.env),
+        terminal,
+        credentials: credentialsFrom(process.env),
+        subprocess,
+        reportSystemFault: faults.report,
+      });
+    } catch (error) {
+      // Configuration, Catalog, factory or assembly failure before a System exists.
+      faults.report({ source: 'composition-root', phase: 'BOOT', error });
+      return EXIT_CODE_SYSTEM_FAULT;
+    }
+
+    // The composition-time reporter buffers faults until the real panic entry exists.
+    faults.bind((fault) => system.reportFault(fault));
+
     try {
       await system.start();
     } catch {
-      // The control already stopped what had started and wrote the fault to stderr.
+      // The control already wrote the fault and stopped what had started.
       return EXIT_CODE_SYSTEM_FAULT;
     }
-    return await system.run((userInteraction) => runParsedCli(parsed.command, userInteraction));
+
+    try {
+      return await system.run((userInteraction) => runParsedCli(parsed.command, userInteraction));
+    } catch (error) {
+      system.reportFault({ source: 'entry', phase: 'RUN', error });
+      await system.shutdown().catch(() => undefined);
+      return EXIT_CODE_SYSTEM_FAULT;
+    }
   } finally {
     removeGuards();
+    try {
+      subprocess.killAll();
+    } catch {
+      // The entry still has to return; a cleanup failure is reported by the control path.
+    }
   }
 }

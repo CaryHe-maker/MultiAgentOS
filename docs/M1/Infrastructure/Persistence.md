@@ -10,7 +10,8 @@ M1 实现选择见 [M1TechStack](../M1TechStack.md) §10，Port 见 [M1Interface
 
 - `dataDir` 由系统配置给出，缺省为 `~/.multiagentos`，必须是绝对路径。`createRun` 时 Core 检查被分析仓库与 `dataDir`
   不互相包含（`REPOSITORY_INVALID`），保证运行前后被分析仓库保持不变。
-- 启动时只清空 `<dataDir>/tmp/`；`<dataDir>/runs/` 不删除。清理不涉及被分析仓库、配置或凭据。
+- Supervisor 启动时只清空 `<dataDir>/tmp/`；`<dataDir>/runs/` 不删除。清理不涉及被分析仓库、配置或凭据。
+- Persistence 的 `start()` 只确保 `<dataDir>/tmp/` 可用，不负责清空其中内容，避免与 Supervisor 形成两份清理责任。
 
 ```text
 <dataDir>/

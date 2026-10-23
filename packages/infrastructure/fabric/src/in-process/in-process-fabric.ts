@@ -91,9 +91,13 @@ export class InProcessFabric implements LifecyclePort {
     return Promise.resolve();
   }
 
+  /**
+   * Stops accepting new requests and sends, then waits for sends already accepted.
+   * A failed delivery is still reported to its caller; `stop()` itself does not reject.
+   */
   stop(): Promise<void> {
     this.#running = false;
-    return Promise.resolve();
+    return Promise.allSettled([...this.#addressTails.values()]).then(() => undefined);
   }
 
   health(): Promise<HealthStatus> {

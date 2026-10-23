@@ -11,6 +11,7 @@ import {
   type LifecyclePort,
   type ProviderCredentials,
   type SystemFault,
+  type SystemFaultReporter,
 } from '@multiagentos/contracts';
 import { createExecutorRegistry } from '@multiagentos/executor-set';
 import {
@@ -30,6 +31,7 @@ import {
   type KernelCoreModule,
   type SupervisorDeps,
   type SupervisorModule,
+  type TrackedSubprocessRunner,
 } from '@multiagentos/kernel';
 import { ModuleHost } from '@multiagentos/module-host';
 import { FilePersistence, forPersistenceNamespace } from '@multiagentos/persistence';
@@ -40,11 +42,17 @@ import {
   type UserInteractionModule,
 } from '@multiagentos/user-interaction';
 import { createWorkflow, type WorkflowDeps, type WorkflowModule } from '@multiagentos/workflow';
+import { assertStartupConfig } from '../config/startup-config.js';
 import { assertSystemConfig, type SystemConfig } from '../config/system-config.js';
+import { createDeferredFaultReporter } from './deferred-fault-reporter.js';
 import { createSystemControl, type ShutdownTimeouts, type StopReport } from './system-control.js';
 
 /** One module's `stop()` may take this long before ModuleHost records it as failed. */
 const MODULE_STOP_TIMEOUT_MS = 5000;
+/** One module's `start()` and `afterStart` may take this long together. */
+const MODULE_START_TIMEOUT_MS = 10000;
+/** The whole Supervisor boot; a late completion is not allowed to reopen the system. */
+const BOOT_TIMEOUT_MS = 60000;
 
 /**
  * The factories of everything that is not infrastructure. Their signatures are the seams
@@ -81,6 +89,10 @@ export interface ComposeOptions {
   readonly timeouts?: Partial<ShutdownTimeouts>;
   /** Local fault diagnostics; defaults to stderr. */
   readonly log?: (line: string) => void;
+  /** The runner owned by the entry so it can kill children even if composition fails. */
+  readonly subprocess?: TrackedSubprocessRunner;
+  /** Composition-time fault entry; the entry buffers faults until SystemControl is bound. */
+  readonly reportSystemFault?: SystemFaultReporter;
 }
 
 export interface System {
@@ -118,99 +130,116 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const catalog =
     options.catalog ??
     (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
+  await assertStartupConfig(config, catalog, registry, options.credentials);
 
-  // Built before any module so that a module can hold the reporter; it is bound further down.
-  let reportFault: (fault: SystemFault) => void = () => undefined;
-  const reportSystemFault = (fault: SystemFault): void => reportFault(fault);
+  const subprocess = options.subprocess ?? createSubprocessRunner();
+  const internalFaults =
+    options.reportSystemFault === undefined ? createDeferredFaultReporter(options.log) : undefined;
+  const reportSystemFault: SystemFaultReporter =
+    options.reportSystemFault ?? ((fault) => internalFaults?.report(fault));
 
-  const fabric = new InProcessFabric(registry, now);
-  const artifacts = new LocalArtifactStore(config.dataDir);
-  const persistence = new FilePersistence(config.dataDir);
+  try {
+    const fabric = new InProcessFabric(registry, now);
+    const artifacts = new LocalArtifactStore(config.dataDir);
+    const persistence = new FilePersistence(config.dataDir);
 
-  const kernelCore = parts.createKernelCore({
-    fabric: fabric.client('kernel-core'),
-    catalog,
-    artifacts,
-    persistence: forPersistenceNamespace(persistence, 'kernel-core'),
-    registry,
-    config: config.kernel,
-    dataDir: config.dataDir,
-    reportSystemFault,
-    now,
-  });
-  const gateway = parts.createGateway({ fabric: fabric.client('gateway'), now });
+    const kernelCore = parts.createKernelCore({
+      fabric: fabric.client('kernel-core'),
+      catalog,
+      artifacts,
+      persistence: forPersistenceNamespace(persistence, 'kernel-core'),
+      registry,
+      config: config.kernel,
+      dataDir: config.dataDir,
+      reportSystemFault,
+      now,
+    });
+    const gateway = parts.createGateway({ fabric: fabric.client('gateway'), now });
 
-  const workflowFabric = fabric.client('workflow');
-  const workflow = parts.createWorkflow({
-    gateway: createWorkflowGatewayPort(workflowFabric),
-    catalog,
-    persistence: forPersistenceNamespace(persistence, 'workflow'),
-    registry,
-    config: config.workflow,
-    reportSystemFault,
-    now,
-  });
-  serveWorkflowInbox(workflowFabric, workflow.inbox);
+    const workflowFabric = fabric.client('workflow');
+    const workflow = parts.createWorkflow({
+      gateway: createWorkflowGatewayPort(workflowFabric),
+      catalog,
+      persistence: forPersistenceNamespace(persistence, 'workflow'),
+      registry,
+      config: config.workflow,
+      reportSystemFault,
+      now,
+    });
+    serveWorkflowInbox(workflowFabric, workflow.inbox);
 
-  const interactionFabric = fabric.client('user-interaction');
-  const userInteraction = parts.createUserInteraction({
-    gateway: createInteractionGatewayPort(interactionFabric),
-    terminal: options.terminal,
-    reportSystemFault,
-    now,
-  });
-  serveInteractionInbox(interactionFabric, userInteraction.inbox);
+    const interactionFabric = fabric.client('user-interaction');
+    const userInteraction = parts.createUserInteraction({
+      gateway: createInteractionGatewayPort(interactionFabric),
+      terminal: options.terminal,
+      reportSystemFault,
+      now,
+    });
+    serveInteractionInbox(interactionFabric, userInteraction.inbox);
 
-  const moduleHost = new ModuleHost({ stopTimeoutMs: MODULE_STOP_TIMEOUT_MS });
-  for (const module of [
-    fabric,
-    artifacts,
-    persistence,
-    kernelCore,
-    gateway,
-    workflow,
-    userInteraction,
-  ])
-    moduleHost.register(module);
+    const moduleHost = new ModuleHost({
+      startTimeoutMs: MODULE_START_TIMEOUT_MS,
+      stopTimeoutMs: MODULE_STOP_TIMEOUT_MS,
+    });
+    for (const module of [
+      fabric,
+      artifacts,
+      persistence,
+      kernelCore,
+      gateway,
+      workflow,
+      userInteraction,
+    ])
+      moduleHost.register(module);
 
-  // The root keeps the runner so that it can end the child processes without the Supervisor.
-  const subprocess = createSubprocessRunner();
-  const supervisor = parts.createSupervisor({
-    fabric: fabric.client('supervisor'),
-    executors: parts.createExecutorRegistry(),
-    credentials: options.credentials,
-    moduleHost,
-    config: config.kernel,
-    dataDir: config.dataDir,
-    subprocess,
-    now,
-  });
+    // The root keeps the runner so that it can end the child processes without the Supervisor.
+    const supervisor = parts.createSupervisor({
+      fabric: fabric.client('supervisor'),
+      executors: parts.createExecutorRegistry(),
+      credentials: options.credentials,
+      moduleHost,
+      config: config.kernel,
+      dataDir: config.dataDir,
+      subprocess,
+      now,
+    });
 
-  const stopMs = MODULE_STOP_TIMEOUT_MS * (moduleHost.startOrder().length + 2);
-  const control = createSystemControl({
-    supervisor,
-    kernelCore,
-    moduleHost,
-    killSubprocesses: () => subprocess.killAll(),
-    timeouts: {
-      // Twice the convergence backstop of Interaction 6, to leave room for the final events.
-      abortRunsMs: 2 * (config.kernel.cancelGraceMs + config.kernel.convergenceMarginMs),
-      stopMs,
-      settleMs: stopMs,
-      ...options.timeouts,
-    },
-    now,
-    log: options.log ?? ((line) => void process.stderr.write(line)),
-  });
-  reportFault = (fault) => control.reportFault(fault);
+    const stopMs = MODULE_STOP_TIMEOUT_MS * (moduleHost.startOrder().length + 2);
+    const control = createSystemControl({
+      supervisor,
+      kernelCore,
+      moduleHost,
+      killSubprocesses: () => subprocess.killAll(),
+      timeouts: {
+        bootMs: BOOT_TIMEOUT_MS,
+        // Twice the convergence backstop of Interaction 6, to leave room for the final events.
+        abortRunsMs: 2 * (config.kernel.cancelGraceMs + config.kernel.convergenceMarginMs),
+        stopMs,
+        settleMs: stopMs,
+        ...options.timeouts,
+      },
+      now,
+      log: options.log ?? ((line) => void process.stderr.write(line)),
+    });
+    internalFaults?.bind((fault) => control.reportFault(fault));
 
-  return {
-    start: () => control.start(),
-    userInteraction,
-    whenStopped: () => supervisor.whenStopped(),
-    run: (command) => control.run(() => command(userInteraction)),
-    reportFault: (fault) => control.reportFault(fault),
-    shutdown: () => control.shutdown(),
-    killSubprocesses: () => subprocess.killAll(),
-  };
+    return {
+      start: () => control.start(),
+      userInteraction,
+      whenStopped: () => supervisor.whenStopped(),
+      run: (command) => control.run(() => command(userInteraction)),
+      reportFault: (fault) => control.reportFault(fault),
+      shutdown: () => control.shutdown(),
+      killSubprocesses: () => subprocess.killAll(),
+    };
+  } catch (error) {
+    // A factory or registration can fail after the runner was created. Nothing was started,
+    // so ending the children and rethrowing is the complete cleanup for this stage.
+    try {
+      subprocess.killAll();
+    } catch {
+      // The original composition error is more useful than a cleanup failure.
+    }
+    throw error;
+  }
 }

@@ -98,8 +98,8 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 | 配置                   | 读取者    | 用途                                    | 建议初值             |
 | ---------------------- | --------- | --------------------------------------- | -------------------- |
 | `tokenLimit`           | Monitor   | L                                       | 600000（需评测校准） |
-| `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 64000                |
-| `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 48000                |
+| `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 80000                |
+| `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 64000                |
 | `maxOutputTokens`      | Execution | 普通 model-call 的 `max_tokens`         | 8192                 |
 | `finalMaxOutputTokens` | Execution | final-call 的 `max_tokens`              | 8192                 |
 | `orientBudget`         | Execution | repository-orient 的 `tokenBudget`      | 4000                 |
@@ -110,17 +110,39 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 - `finalReserve` = `finalInputBudget` + `finalMaxOutputTokens`
 - `wrapUpMargin` = `perCallInputLimit` + `maxOutputTokens`
 
-启动时校验，不满足即为配置错误，系统不启动：
+组合根在 Catalog 加载后、任何产品工厂调用前校验；预期配置错误以 `ConfigError` 拒绝，不启动模块：
 
-1. `tokenLimit ≥ finalReserve + wrapUpMargin`。
-2. `maxOutputTokens` 与 `finalMaxOutputTokens` 不超过模型的 `limits.maxOutputTokens`；
-   `perCallInputLimit + maxOutputTokens` 不超过模型的 `limits.contextWindowTokens`。
-3. 对从入口 Agent 可达的每个 Agent，不可裁剪段的估算上界小于对应预算。不可裁剪段为 INSTRUCTIONS、TOOLS、OBJECTIVE、
-   HANDOFF、STATUS；OBJECTIVE 与 HANDOFF 按 Schema 的最大长度乘以 4 字节计算（目标 4000 字符，交接说明合计 4500 字符），
-   STATUS 按 512 字节计算。普通组装使用该 Agent 全部工具说明，须小于 `perCallInputLimit`；final 组装只使用 finish 控制工具说明，
-   须小于 `finalInputBudget`。估算使用 `estimateItemTokens`，TOOLS 段按包含 JSON Schema 的完整 `toolSpecs` 计算。
-4. 对包含 file-read 的 Agent，`executionLimits.FILE_READ.maxOutputBytes` 加该 Agent 普通组装不可裁剪段的估算上界小于
-   `perCallInputLimit`，使一次完整的读取结果能够单独装入下一次普通组装。
+1. 所有 budget 字段为正安全整数，以下求和也必须在安全整数范围内；
+   `tokenLimit ≥ finalReserve + wrapUpMargin`。
+2. 从入口 Agent 沿 `handoffTargetRef` 固定全部可达 Agent，检查目标身份与 digest，
+   并维护 visited 避免重复遍历。每个模型的 provider 必须等于 `KernelConfig.provider`，
+   通过 `ProviderCredentials` 检查 API key 非空（空白也视为缺失），不联网验证密钥。
+3. 对每个可达 Agent，`maxOutputTokens` 与 `finalMaxOutputTokens` 均不超过模型的
+   `limits.maxOutputTokens`；普通的 `perCallInputLimit + maxOutputTokens` 和收尾的
+   `finalInputBudget + finalMaxOutputTokens` 均不超过 `limits.contextWindowTokens`。
+4. 不可裁剪段为 INSTRUCTIONS、TOOLS、OBJECTIVE、HANDOFF、STATUS，按下述序列化上界估算。
+   普通组装使用该 Agent 的全部工具，估算须严格小于 `perCallInputLimit`；
+   final 组装只使用 finish 控制工具，估算须严格小于 `finalInputBudget`。
+5. 对包含 file-read 的 Agent，`executionLimits.FILE_READ.maxOutputBytes` 为正安全整数，
+   它与普通组装不可裁剪段估算之和须在安全整数范围内，且严格小于 `perCallInputLimit`。
+
+固定输入估算复用 contracts 的 `estimateItemTokens` 与 `estimatePackTokens`，
+包括规范 JSON 的结构字符与每条 16 的固定开销：
+
+- INSTRUCTIONS 使用固定 Prompt 正文；TOOLS 的 `content` 为空，完整工具定义只在 `toolSpecs`
+  中计入一次。工具描述取 `modelDescription`，参数由 `registry.jsonSchemaOf` 生成；
+  参数协议须已注册且受支持。
+- OBJECTIVE 从 Schema 取得 4000 字符上限，用 U+0001 重复填满，再交估算函数计算。
+  U+0001 在 JSON 字符串中占 6 字节，覆盖合法字符的最坏转义；不得用原始 UTF-8 长度乘法代替。
+- HANDOFF 从 Schema 取得 task、focusAreas、openQuestions 的长度与数组数量上限，
+  用同样的字符填满全部字段，先转为规范 JSON 再作为条目 content 估算，包含第二次转义的开销。
+  每个 Agent 都预留完整 HANDOFF 上界；实际展示可以更短，但不得超过该表示的估算上界。
+- STATUS 的说明文字最多 512 个原始 UTF-8 字节；启动估算用 512 个 U+0001，
+  连同 JSON 转义计入。上下文组装不得产生超过该上界的说明文字。
+
+此规则不改变输入 Schema；普通与收尾输入建议值上调至 80000、64000，以容纳现有定义在
+最坏转义下的固定段，并为 file-read 留出空间。总额度及两类输出预算保持不变；
+后续更换 Prompt 或工具定义后仍必须重新通过启动检查。
 
 ## 5. M1 不实现
 

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FilePersistence, clearTemporaryFiles, forPersistenceNamespace } from './index.js';
+import { FilePersistence, forPersistenceNamespace } from './index.js';
 
 const roots: string[] = [];
 async function persistence(): Promise<{ persistence: FilePersistence; dataDir: string }> {
@@ -82,6 +82,16 @@ describe('FilePersistence', () => {
     expect(await readFile(join(directory, 'audit.jsonl'), 'utf8')).toBe('{"type":"recovered"}\n');
   });
 
+  it('rejects a repository write when the namespace path is blocked', async () => {
+    const { persistence: files, dataDir } = await persistence();
+    await mkdir(join(dataDir, 'runs', run), { recursive: true });
+    await writeFile(join(dataDir, 'runs', run, 'workflow'), 'blocked');
+    await expect(
+      files.repository<{ id: string }>('workflow', run).put({ id: run }),
+    ).rejects.toThrow();
+    expect(await readdir(join(dataDir, 'tmp'))).toEqual([]);
+  });
+
   it('limits each owner facade to its own namespace', async () => {
     const { persistence: files } = await persistence();
     const workflow = forPersistenceNamespace(files, 'workflow');
@@ -115,13 +125,14 @@ describe('FilePersistence', () => {
     expect(() => files.auditLog('other' as never, run)).toThrow('Invalid namespace');
   });
 
-  it('clears only the temporary directory', async () => {
-    const { persistence: files, dataDir } = await persistence();
-    await files.repository<{ id: string }>('workflow', run).put({ id: run });
+  it('does not clear the temporary directory during start', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'persistence-'));
+    roots.push(dataDir);
     await mkdir(join(dataDir, 'tmp'), { recursive: true });
-    await writeFile(join(dataDir, 'tmp', 'leftover'), 'x');
-    await clearTemporaryFiles(dataDir);
-    expect(await readdir(join(dataDir, 'tmp'))).toEqual([]);
-    expect(await readdir(join(dataDir, 'runs'))).toEqual([run]);
+    await writeFile(join(dataDir, 'tmp', 'leftover'), 'kept');
+    const files = new FilePersistence(dataDir);
+    await files.start();
+    expect(await readdir(join(dataDir, 'tmp'))).toEqual(['leftover']);
+    await files.stop();
   });
 });

@@ -171,4 +171,114 @@ describe('ModuleHost', () => {
     host.register(module('gateway', ['fabric'], []));
     expect(() => host.startOrder()).toThrow('DEPENDENCY_CYCLE');
   });
+
+  it('validates its start and stop deadlines', () => {
+    expect(() => new ModuleHost({ startTimeoutMs: 0 })).toThrow('INVALID_TIMEOUT');
+    expect(() => new ModuleHost({ startTimeoutMs: 1.5 })).toThrow('INVALID_TIMEOUT');
+    expect(() => new ModuleHost({ stopTimeoutMs: -1 })).toThrow('INVALID_TIMEOUT');
+  });
+
+  it('times out a start and keeps a late completion inert', async () => {
+    const log: string[] = [];
+    let release: () => void = () => undefined;
+    let started = false;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const host = new ModuleHost({ startTimeoutMs: 50 });
+    host.register({
+      ...module('fabric', [], log),
+      start: async () => {
+        await gate;
+        started = true;
+      },
+    });
+    host.register(module('gateway', ['fabric'], log));
+
+    await expect(host.start()).rejects.toMatchObject({ code: 'START_TIMEOUT' });
+    expect(host.ledger()[0]).toMatchObject({ state: 'STOPPED' });
+    expect(log).toEqual(['stop fabric']);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toBe(true);
+    // The late start did not become READY, and the dependent module never started.
+    expect(host.ledger()).toMatchObject([
+      { moduleId: 'fabric', state: 'STOPPED' },
+      { moduleId: 'gateway', state: 'REGISTERED' },
+    ]);
+  });
+
+  it('times out an after-start hook and rolls back the module', async () => {
+    const log: string[] = [];
+    const host = new ModuleHost({ startTimeoutMs: 50 });
+    host.register(module('fabric', [], log));
+    host.register(module('gateway', ['fabric'], log));
+
+    await expect(
+      host.start((moduleId) =>
+        moduleId === 'fabric' ? new Promise<void>(() => undefined) : undefined,
+      ),
+    ).rejects.toMatchObject({ code: 'START_TIMEOUT' });
+    expect(log).toEqual(['start fabric', 'stop fabric']);
+    expect(host.ledger()).toMatchObject([
+      { moduleId: 'fabric', state: 'STOPPED' },
+      { moduleId: 'gateway', state: 'REGISTERED' },
+    ]);
+  });
+
+  it('handles a late start rejection after timeout without changing state', async () => {
+    let rejectStart: (error: unknown) => void = () => undefined;
+    const host = new ModuleHost({ startTimeoutMs: 50 });
+    host.register({
+      ...module('fabric', [], []),
+      start: () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectStart = reject;
+        }),
+    });
+
+    await expect(host.start()).rejects.toMatchObject({ code: 'START_TIMEOUT' });
+    rejectStart(new Error('late start failure'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(host.ledger()[0]).toMatchObject({ state: 'STOPPED' });
+  });
+
+  it('does not run afterStart when stop arrives during a start', async () => {
+    const log: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const host = new ModuleHost({ startTimeoutMs: 100 });
+    host.register({
+      ...module('fabric', [], log),
+      start: async () => {
+        await gate;
+        log.push('start fabric');
+      },
+    });
+
+    const starting = host.start((moduleId) => {
+      log.push(`ready ${moduleId}`);
+    });
+    const stopping = host.stop();
+    release();
+    await expect(starting).rejects.toMatchObject({ code: 'HOST_STOPPED' });
+    await stopping;
+    expect(log).toEqual(['start fabric', 'stop fabric']);
+    expect(host.ledger()[0]).toMatchObject({ state: 'STOPPED' });
+  });
+
+  it('bounds stop while a module start is still hanging', async () => {
+    const log: string[] = [];
+    const host = new ModuleHost({ startTimeoutMs: 50 });
+    host.register({
+      ...module('fabric', [], log),
+      start: () => new Promise<void>(() => undefined),
+    });
+
+    const starting = host.start();
+    const stopping = host.stop();
+    await expect(stopping).resolves.toBeUndefined();
+    await expect(starting).rejects.toMatchObject({ code: 'START_TIMEOUT' });
+    expect(host.ledger()[0]).toMatchObject({ state: 'STOPPED' });
+    expect(log).toEqual(['stop fabric']);
+  });
 });

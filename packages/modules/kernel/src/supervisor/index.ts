@@ -2,17 +2,23 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
+  CancelRunExecutionsRequest,
+  Envelope,
+  ExecutionRequest,
   ExecutorRegistry,
   FabricPort,
   HealthStatus,
   LifecyclePort,
   ProviderCredentials,
   ModuleId,
+  SupervisorShutdownRequest,
 } from '@multiagentos/contracts';
-import { SCHEMA_IDS } from '@multiagentos/fabric';
+import { newId } from '@multiagentos/contracts';
+import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
 import type { KernelConfig } from '../interfaces/index.js';
 
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
+import { ExecutionRunner } from './execution-runner.js';
 
 export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 
@@ -55,6 +61,24 @@ function temporaryDirectory(dataDir: string): string {
 export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const now = deps.now ?? (() => new Date());
   const subprocess = deps.subprocess ?? createSubprocessRunner();
+  const correlations = new Map<string, string>();
+  const facts = createExecutionFactSink(deps.fabric, (workflowRunId) => ({
+    correlationId:
+      workflowRunId === undefined
+        ? newId('cor')
+        : (correlations.get(workflowRunId) ?? newId('cor')),
+    tenantId: 'local',
+    projectId: 'local',
+    ...(workflowRunId === undefined ? {} : { workflowRunId }),
+  }));
+  const runner = new ExecutionRunner({
+    executors: deps.executors,
+    credentials: deps.credentials,
+    subprocess,
+    facts,
+    cancelGraceMs: deps.config.cancelGraceMs,
+    now,
+  });
   const registered = new Set<string>();
   let ready = false;
   let starting: Promise<void> | undefined;
@@ -75,6 +99,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const stop = (): Promise<void> => {
     if (stopping !== undefined) return stopping;
     ready = false;
+    runner.stop();
     stopping = (async () => {
       const errors: unknown[] = [];
       try {
@@ -101,23 +126,29 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   };
 
   const register = (): void => {
-    const serve = (schemaId: string, handler: () => Promise<void>): void => {
+    const serve = <TRequest>(
+      schemaId: string,
+      handler: (envelope: Envelope<TRequest>) => Promise<void>,
+    ): void => {
       if (registered.has(schemaId)) return;
-      deps.fabric.register(schemaId, (envelope) => {
+      deps.fabric.register<TRequest, void>(schemaId, (envelope) => {
         if (envelope.producer !== 'kernel-core')
           throw new Error('Supervisor request has an invalid producer');
         requireReady();
-        return handler();
+        return handler(envelope);
       });
       registered.add(schemaId);
     };
-    serve(SCHEMA_IDS.execute, () =>
-      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution dispatch')),
-    );
-    serve(SCHEMA_IDS.cancelRunExecutions, () =>
-      Promise.reject(new Error('NOT_IMPLEMENTED: Supervisor execution cancellation')),
-    );
-    serve(SCHEMA_IDS.supervisorShutdown, () => {
+    serve<ExecutionRequest>(SCHEMA_IDS.execute, (envelope) => {
+      correlations.set(envelope.payload.workflowRunId, envelope.correlationId);
+      runner.execute(envelope.payload, envelope.correlationId);
+      return Promise.resolve();
+    });
+    serve<CancelRunExecutionsRequest>(SCHEMA_IDS.cancelRunExecutions, (envelope) => {
+      runner.cancelRun(envelope.payload);
+      return Promise.resolve();
+    });
+    serve<SupervisorShutdownRequest>(SCHEMA_IDS.supervisorShutdown, () => {
       ready = false;
       // Let Fabric complete this request before ModuleHost stops Fabric itself.
       setImmediate(() => {
@@ -151,7 +182,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       Promise.resolve({
         status: ready ? 'UP' : 'DOWN',
         checkedAt: now().toISOString(),
-        details: [],
+        details: [...runner.healthDetails()],
       }),
     whenStopped: () => stopped,
   };

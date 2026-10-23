@@ -101,6 +101,8 @@ Execution 不判断报告内容是否合格；报告的来源核验由 Workflow 
   finish 控制工具与（存在时）handoff 控制工具，在 `final = true` 时只有 finish 控制工具；每个工具的 `parameters` 由 Protocol Registry
   把 `parametersContract` 转为 JSON Schema；`tokenBudget` 为 `final ? finalInputBudget : perCallInputLimit`；
   `orientPack` 与 `history` 中的正文由第 4 节解析。
+  不可裁剪段的表示须符合 [Monitor](Monitor.md) 第 4 节的启动估算约束：TOOLS 的 `content` 为空，
+  HANDOFF 不超过完整规范 JSON 表示的估算上界，STATUS 说明不超过 512 个原始 UTF-8 字节。
 - MODEL 在派发前核对 ContextPack 与 `final` 一致（`operation = ASSEMBLE`，`tokenBudget = final ? finalInputBudget : perCallInputLimit`），
   不一致时以 `NOT_DISPATCHED`、`INVALID_INPUT` 提交结果检查；一致时计算 `est = estimatePackTokens(contextPack) + maxOutputTokens`，
   调用 `requestReservation`；被拒时尝试结束。`estimatePackTokens` 来自 contracts（[SharedContracts](../Library/SharedContracts.md) 4.3）。
@@ -117,7 +119,8 @@ Execution 为每个 ContextPack 记录 `contextPackId`、`operation`、`unitAtte
   以及全部 STOP_UNCONFIRMED 的执行（`EXECUTION_STOP_UNCONFIRMED`，包括 Core 在收敛兜底时判定的执行）。
 - `publishRunSummary(summary)` 把 RunSummary 以 `application/vnd.multiagentos.run-summary+json` 写入 ArtifactStore，登记归属
   （`producer = 'RUN_SUMMARY'`），返回引用。
-- 收到违规事实时隔离该次输出：不写入产物，不交付。运行已不为 RUNNING（尝试的 runEpoch 不等于当前值）时不写入任何产物。
+- 收到违规事实时隔离该次输出：不写入产物，不交付。运行已不为 RUNNING（尝试的 runEpoch 不等于当前值）时不写入新的执行产物或 AnalysisReport；
+  收敛第 ③ 步由 Core 调用 publishRunSummary 发布 RunSummary 是明确例外。
 
 ## 10. 配置
 

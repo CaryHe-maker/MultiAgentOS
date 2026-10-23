@@ -309,9 +309,10 @@ Workflow → WorkflowGatewayPort → Fabric → Gateway → Fabric → 运行 In
      处理结束后由 actor 之外的发送器发出。每个目标一个发送器：Supervisor、Gateway、Workflow 的 Inbox、UserInteraction 的 Inbox
      各一个，按登记顺序依次发出，前一个返回后才发下一个；Outbox 的 `seq` 即该接收方的登记顺序。
      因此同一运行的 `SupervisorPort.execute` 一定先于其后登记的 `SupervisorPort.cancelRun` 到达 Supervisor。
-   - 发送失败（只可能是契约缺陷，如 Schema 校验不通过）不重试：发送器把失败写入审计，跳过该消息继续发送后续消息，
+   - 发送失败不重试：发送器区分契约缺陷与停止期间的 NOT_RUNNING，记录原因并跳过该消息继续发送后续消息，
      并向控制通道投递 `KERNEL_FAULT`。Core 处理 `KERNEL_FAULT` 时，运行为 RUNNING 则以 `FAILED(KERNEL_INTERNAL)` 进入收敛，否则只写入审计。
-     RunClosed、RunFinished 本身发送失败时只写入审计。
+     RunClosed、RunFinished 本身发送失败时只写入审计，不递归触发收敛。
+     若运行消息通道或故障记录机制自身失效，则按第 8 节请求 panic，不依赖已失效的队列上报。
 3. **结果检查同步**：`CoreSyscalls.submitResultCheck` 是同步函数，“核对 runEpoch”与“放入 Outbox”之间不可能插入 `await`。
    Core 在同步的内部 syscall（`requestReservation`、`submitResultCheck`、`retryExecution`）中不回调 Execution、不等待 I/O：
    需要收敛时只执行第 6 节第 ① 步中不涉及 Execution 的部分并登记收敛，其余部分由 `settleConvergence` 在同一次处理的末尾完成。
@@ -481,7 +482,7 @@ actor 必须在 Supervisor 卸载模块之前排空，否则 RunClosed 可能还
 
 ### 7.1 故障关闭
 
-系统故障（[错误与系统故障处理](../SystemFaultHandling.md) 第 2 节的 L2）时，关闭不能依赖 UserInteraction 发起。
+停机异常进入组合根 panic（[异常处理与安全停机](../SystemFaultHandling.md) 第 5 节）时，关闭不能依赖 UserInteraction 发起。
 组合根调用 Kernel 核心模块对象上的 `abortAllRuns({ faultId, deadlineMs })`（M1Interface 14.1）：
 
 ```text
@@ -495,21 +496,25 @@ actor 必须在 Supervisor 卸载模块之前排空，否则 RunClosed 可能还
 `abortAllRuns` 不调用 `SupervisorPort.shutdown`，也不停止任何模块；组合根在它返回或到期后自行停止模块。
 它在到期后可能仍未完成，实现不得假定调用方继续等待。
 
-## 8. panic 与安全停机
+## 8. 非停机异常与 panic
 
-panic 只用于可信基础或关键安全不变量已无法维持的情况。普通工具失败、权限拒绝或 Provider 错误不触发 panic。
-除 Core 内部的受控维护逻辑外，绕过 syscall 访问 Lease，或外部主体绕过 Gateway 执行内核操作，均属于权限边界失守。
-M1 以模块边界、私有字段与端口分离使这类访问在结构上不可达；架构测试负责证明这一点。
-`abortAllRuns`（第 7.1 节）是受控维护入口：它只存在于组合根持有的模块对象上，不注册到 Fabric，
-外部主体无法取得；它只能使运行收敛，不能读取或改写 Lease、账本与结束原因以外的状态。
+M1 仅分非停机异常与停机异常，权威规则见 [异常处理与安全停机](../SystemFaultHandling.md)。
+Core 与 syscall 并列维护私有异常语义，见 [Core](Core.md) 第 9 节；复用第 6 节收敛，
+不另建异常状态机。受控违规、运行超时及停止未确认可以结束任务，并不自动触发系统 panic。
 
-M1 的安全停机就是收敛：违规以 VIOLATION 收敛，Kernel 内部不变量被破坏时以
-`closeRun` 同样的流程按 `FAILED(KERNEL_INTERNAL)` 收敛。不能仅凭 Executor 自报触发 panic。
-进程崩溃时不保证收敛步骤执行，M1 不提供自动故障恢复、透明续跑或高可用。
+运行 actor 捕获普通消息处理缺陷，在可归属运行且收尾机制可用时向控制通道投递 KERNEL_FAULT。
+已知状态不可信、消息通道失效或收尾自身再次抛错时，经 reportSystemFault 请求组合根 panic；
+不再次投递 KERNEL_FAULT。Inbox.request 拒绝必须显式观察，不能只依赖 onError。
+发送器失败按契约分类；终态投递失败及已关闭运行的迟到失败按既有审计规则处理，不形成无限故障循环。
 
-运行 actor 的处理循环是 Kernel 核心的捕获边界：处理函数抛出的错误不传出 actor，按 `KERNEL_FAULT` 处理。
-收敛过程自身抛错时不再投递 `KERNEL_FAULT`，而是调用 `KernelCoreDeps.reportSystemFault` 升级为系统故障，
-由组合根执行故障关闭；此时不保证 RunClosed 与 RunFinished。
+panic 由组合根唯一持有，Supervisor 执行中止与模块停止；它不是普通任务收敛的别名。
+组合根先登记原始错误，按第 7.1 节有期限请求 Core 收敛，再汇总报告并停止模块。
+Core 不可用不阻止后续停机；Supervisor 不可用由组合根调用 ModuleHost 并清理已登记子进程。
+不保证 panic 一定产生 RunClosed、RunFinished；最小退出不等待异步收敛。
+
+权限边界仍通过私有状态和端口隔离守护；abortAllRuns 只交给组合根，不注册 Fabric，
+不公开 Lease 或预算。Executor 自报违规由 Supervisor、Execution、Core 核验处理，
+不能直接取得 panic 权限。M1 不提供崩溃恢复或透明续跑。
 
 ## 9. 配置（`KernelConfig`）
 

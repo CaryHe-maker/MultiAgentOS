@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AttemptIdentityRegistry } from './index.js';
+import { AttemptIdentityRegistry } from './attempt-identity.js';
 
 const attempt = {
   unitAttemptId: 'una_123456',
@@ -29,16 +29,44 @@ describe('Core attempt identity projection', () => {
       outcome: 'FAILED' as const,
     };
     const secondResult = { ...firstResult, executionId: second.executionId };
-    expect(identities.check('wfr_123456', epoch, firstResult, () => true)).toBe(false);
-    expect(identities.check('wfr_654321', epoch, secondResult, () => true)).toBe(false);
-    expect(identities.check('wfr_123456', epoch, secondResult, () => true)).toBe(true);
+    expect(identities.check('wfr_123456', firstResult, () => true)).toBe(false);
+    expect(identities.check('wfr_654321', secondResult, () => true)).toBe(false);
+    expect(identities.check('wfr_123456', secondResult, () => true)).toBe(true);
+    expect(identities.attemptEpoch(attempt.unitAttemptId)).toBe(1);
     identities.markChecked(attempt.unitAttemptId);
-    expect(identities.check('wfr_123456', epoch, secondResult, () => true)).toBe(false);
+    expect(identities.check('wfr_123456', secondResult, () => true)).toBe(false);
 
     epoch = 2;
+    expect(identities.check('wfr_123456', secondResult, () => true)).toBe(false);
     expect(() => identities.registerAttempt({ ...attempt, unitAttemptId: 'una_654321' })).toThrow(
       'Stale attempt epoch',
     );
+  });
+
+  it('keeps an old-epoch attempt eligible for settlement but exposes its epoch', () => {
+    let epoch = 1;
+    const identities = new AttemptIdentityRegistry('wfr_123456', () => epoch);
+    const oldAttempt = { ...attempt, unitAttemptId: 'una_old001', requestId: 'req_old001' };
+    identities.registerAttempt(oldAttempt);
+    identities.registerExecution({
+      unitAttemptId: oldAttempt.unitAttemptId,
+      executionId: 'exe_old001',
+      runEpoch: 1,
+    });
+
+    epoch = 2;
+    expect(
+      identities.check(
+        'wfr_123456',
+        {
+          unitAttemptId: oldAttempt.unitAttemptId,
+          executionId: 'exe_old001',
+          outcome: 'COMPLETED',
+        },
+        () => true,
+      ),
+    ).toBe(true);
+    expect(identities.attemptEpoch(oldAttempt.unitAttemptId)).toBe(1);
   });
 
   it('checks the lease and permits a built-in report result without executionId', () => {
@@ -49,7 +77,7 @@ describe('Core attempt identity projection', () => {
       requiresLease: true,
     });
     const result = { unitAttemptId: attempt.unitAttemptId, outcome: 'COMPLETED' as const };
-    expect(identities.check('wfr_123456', 1, result, () => false)).toBe(false);
-    expect(identities.check('wfr_123456', 1, result, () => true)).toBe(true);
+    expect(identities.check('wfr_123456', result, () => false)).toBe(false);
+    expect(identities.check('wfr_123456', result, () => true)).toBe(true);
   });
 });

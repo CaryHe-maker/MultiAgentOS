@@ -7,6 +7,8 @@ import type { ModuleLedgerEntry } from '@multiagentos/module-host';
 export const EXIT_CODE_SYSTEM_FAULT = 70;
 
 export interface ShutdownTimeouts {
+  /** The whole Supervisor boot, including module starts and afterStart hooks. */
+  readonly bootMs: number;
   /** How long a fault shutdown waits for the Kernel core to converge its runs. */
   readonly abortRunsMs: number;
   /** How long one attempt to stop every module may take. */
@@ -72,10 +74,20 @@ async function within<T>(promise: Promise<T>, ms: number): Promise<Settled<T>> {
   }
 }
 
+/** Runs a callback that may throw synchronously under the same bounded settlement shape. */
+function invoke<T>(step: () => Promise<T>, ms: number): Promise<Settled<T>> {
+  return within(Promise.resolve().then(step), ms);
+}
+
 function describe(error: unknown): string {
   if (error instanceof AggregateError)
     return `${error.message} [${error.errors.map(describe).join('; ')}]`;
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+function requireTimeout(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${name} must be a positive safe integer`);
 }
 
 /**
@@ -87,6 +99,10 @@ function describe(error: unknown): string {
  */
 export function createSystemControl(deps: SystemControlDeps): SystemControl {
   const { supervisor, kernelCore, moduleHost, timeouts } = deps;
+  requireTimeout('bootMs', timeouts.bootMs);
+  requireTimeout('abortRunsMs', timeouts.abortRunsMs);
+  requireTimeout('stopMs', timeouts.stopMs);
+  requireTimeout('settleMs', timeouts.settleMs);
   const faults: SystemFaultRecord[] = [];
   let faultId: string | undefined;
   let booted = false;
@@ -102,9 +118,13 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
     faultId ??= `flt_${randomUUID()}`;
     if (faults.some((known) => known.error === fault.error)) return faultId;
     faults.push(Object.freeze({ ...fault, faultId, at: deps.now().toISOString() }));
-    deps.log(
-      `system fault ${faultId} [${fault.phase}] ${fault.source}: ${describe(fault.error)}\n`,
-    );
+    try {
+      deps.log(
+        `system fault ${faultId} [${fault.phase}] ${fault.source}: ${describe(fault.error)}\n`,
+      );
+    } catch {
+      // A diagnostic failure must not prevent shutdown or the exit code.
+    }
     signalFault();
     return faultId;
   };
@@ -120,8 +140,8 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
             error: new Error('The system was stopped outside the normal shutdown path'),
           });
         if (booted) {
-          const aborted = await within(
-            kernelCore.abortAllRuns({ faultId: id, deadlineMs: timeouts.abortRunsMs }),
+          const aborted = await invoke(
+            () => kernelCore.abortAllRuns({ faultId: id, deadlineMs: timeouts.abortRunsMs }),
             timeouts.abortRunsMs,
           );
           if (aborted.status !== 'ok')
@@ -134,7 +154,7 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
                   : new Error('The Kernel core did not converge its runs in time'),
             });
         }
-        const stopped = await within(supervisor.stop(), timeouts.stopMs);
+        const stopped = await invoke(() => supervisor.stop(), timeouts.stopMs);
         if (stopped.status !== 'ok') {
           record({
             source: 'supervisor',
@@ -145,7 +165,7 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
                 : new Error('The Supervisor did not stop the modules in time'),
           });
           // Past the Supervisor: the host shares one stop pass and keeps what already failed.
-          const direct = await within(moduleHost.stop(), timeouts.stopMs);
+          const direct = await invoke(() => moduleHost.stop(), timeouts.stopMs);
           if (direct.status !== 'ok')
             record({
               source: 'module-host',
@@ -157,11 +177,21 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
             });
         }
       }
-      deps.killSubprocesses();
+      try {
+        deps.killSubprocesses();
+      } catch (error) {
+        record({ source: 'composition-root', phase: 'SHUTDOWN', error });
+      }
+      let modules: readonly ModuleLedgerEntry[] = [];
+      try {
+        modules = moduleHost.ledger();
+      } catch (error) {
+        record({ source: 'module-host', phase: 'SHUTDOWN', error });
+      }
       return Object.freeze({
         intent: faults.length === 0 ? 'REQUESTED' : 'FAULT',
         faults: [...faults],
-        modules: moduleHost.ledger(),
+        modules,
       });
     })();
     return shutdownOp;
@@ -169,32 +199,51 @@ export function createSystemControl(deps: SystemControlDeps): SystemControl {
 
   const reportFault = (fault: SystemFault): void => {
     record(fault);
-    void shutdown();
+    void shutdown().catch((error: unknown) => {
+      record({ source: 'composition-root', phase: 'SHUTDOWN', error });
+    });
   };
 
-  const supervisorStopped = supervisor.whenStopped().then(
-    () => {
-      supervisorSettled = true;
-    },
-    (error: unknown) => {
-      supervisorSettled = true;
-      reportFault({ source: 'supervisor', phase: 'SHUTDOWN', error });
-    },
-  );
+  const supervisorStopped = Promise.resolve()
+    .then(() => supervisor.whenStopped())
+    .then(
+      () => {
+        supervisorSettled = true;
+      },
+      (error: unknown) => {
+        supervisorSettled = true;
+        reportFault({ source: 'supervisor', phase: 'SHUTDOWN', error });
+      },
+    );
 
   return {
     start: async () => {
-      try {
-        await supervisor.start();
+      const started = await invoke(() => supervisor.start(), timeouts.bootMs);
+      if (started.status === 'ok') {
         booted = true;
-      } catch (error) {
-        record({ source: 'supervisor', phase: 'BOOT', error });
-        await shutdown();
-        throw error;
+        return;
       }
+      const error =
+        started.status === 'error'
+          ? started.error
+          : new Error('The Supervisor did not boot within bootMs');
+      record({ source: 'supervisor', phase: 'BOOT', error });
+      try {
+        await shutdown();
+      } catch {
+        // The shutdown path records its own failures; the boot error remains the cause.
+      }
+      throw error;
     },
     run: async (command) => {
-      const result = command();
+      let result: Promise<number>;
+      try {
+        result = command();
+      } catch (error) {
+        record({ source: 'entry', phase: phase(), error });
+        await shutdown();
+        return EXIT_CODE_SYSTEM_FAULT;
+      }
       const ended = result.then(
         () => undefined,
         () => undefined,

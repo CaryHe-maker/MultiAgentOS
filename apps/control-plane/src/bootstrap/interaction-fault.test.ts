@@ -47,7 +47,7 @@ describe('Product interaction to composition root fault closure', () => {
       const system = await composeSystem({
         config: { ...defaultSystemConfig(), dataDir },
         terminal,
-        credentials: { apiKeyFor: () => undefined },
+        credentials: { apiKeyFor: () => 'offline-test' },
         log: () => {},
         parts: {
           createKernelCore: createFakeKernelCore({

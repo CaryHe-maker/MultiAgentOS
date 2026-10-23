@@ -32,17 +32,39 @@ export function installProcessGuards(options: ProcessGuardOptions): () => void {
   const target = options.target ?? (process as unknown as GuardedProcess);
   const log = options.log ?? ((line: string) => void process.stderr.write(line));
   const fatal = (error: unknown): void => {
-    log(`fatal: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
-    options.killSubprocesses();
+    try {
+      log(`fatal: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
+    } catch {
+      // Diagnostics must not prevent the last-resort exit.
+    }
+    try {
+      options.killSubprocesses();
+    } catch {
+      // Child cleanup failure must not prevent the last-resort exit.
+    }
     target.exit(EXIT_CODE_SYSTEM_FAULT);
   };
-  const onExit = (): void => options.killSubprocesses();
+  const onExit = (): void => {
+    try {
+      options.killSubprocesses();
+    } catch {
+      // The process is already leaving; nothing else can be done.
+    }
+  };
   let interrupts = 0;
   const onInterrupt = (): void => {
     interrupts += 1;
     if (interrupts < 2) return;
-    log('interrupted again: exiting without waiting for the run to end\n');
-    options.killSubprocesses();
+    try {
+      log('interrupted again: exiting without waiting for the run to end\n');
+    } catch {
+      // The second interrupt still forces the exit.
+    }
+    try {
+      options.killSubprocesses();
+    } catch {
+      // The second interrupt still forces the exit.
+    }
     target.exit(EXIT_CODE_INTERRUPTED);
   };
   target.on('uncaughtException', fatal);

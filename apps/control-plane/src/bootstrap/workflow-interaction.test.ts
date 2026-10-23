@@ -87,7 +87,7 @@ async function runScenario(scenario: Scenario = {}) {
         terminal.write(text);
       },
     },
-    credentials: { apiKeyFor: () => undefined },
+    credentials: { apiKeyFor: () => 'offline-test' },
     log: () => {},
     parts: {
       createKernelCore: createFakeKernelCore(scenario.kernel),
