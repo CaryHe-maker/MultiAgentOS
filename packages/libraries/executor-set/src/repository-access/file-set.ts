@@ -2,10 +2,9 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, opendir, realpath, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
-import { canonicalJson, sha256Hex } from '@multiagentos/contracts';
+import { canonicalJson, excludesDirectory, isExcluded, sha256Hex } from '@multiagentos/contracts';
 import { throwIfAborted } from '../outcome/outcomes.js';
 import { BINARY_PROBE_BYTES } from '../text/text-document.js';
-import { excludesDirectory, isExcluded } from './glob.js';
 import { isInside, relativeToRoot } from './guarded-file.js';
 import type { RepositoryScope } from './repository-scope.js';
 

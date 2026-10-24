@@ -3,9 +3,7 @@ import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { emptyDirectory, repositoryScope } from '../test-support/environments.js';
-import { DEFAULT_EXCLUSIONS } from './default-exclusions.js';
 import { FileDigestCache, buildFileSet } from './file-set.js';
-import { excludesDirectory, isExcluded } from './glob.js';
 import { readGuardedFile } from './guarded-file.js';
 import { resolveRepositoryScope, type RepositoryScope } from './repository-scope.js';
 import { normalizeRequestPath } from './request-path.js';
@@ -23,35 +21,28 @@ async function scopeOf(root: string, exclusions: string[] = []): Promise<Reposit
   return scope;
 }
 
-describe('exclusion rules (issue #24)', () => {
+describe('exclusion rules (M1Interface 3.5, shared with Core)', () => {
   it.each([
-    ['.env', true],
-    ['config/.env.local', true],
-    ['.hidden/server.pem', true],
-    ['.cfg/node_modules/a.js', true],
-    ['node_modules/a/index.js', true],
-    ['.git/config', true],
-    ['home/.ssh/id_ed25519.pub', true],
-    ['src/.git/config', false], // `.git/**` is anchored at the root until #24 is decided
-    ['A.PEM', false], // case-sensitive, like the acceptance platform's file system
-    ['src/environment.ts', false],
-    ['docs/keys.md', false],
-  ])('%s excluded by default: %s', (path, excluded) => {
-    expect(isExcluded(path, DEFAULT_EXCLUSIONS)).toBe(excluded);
+    ['.env.production'],
+    ['.hidden/server.pem'],
+    ['KEYS/SERVER.PEM'], // case-insensitive: excluding too much is safe
+    ['src/.git/config'], // nested repositories and submodules
+    ['vendor/lib/node_modules/x/index.js'],
+  ])('rejects %s before looking at the disk', async (path) => {
+    const root = await emptyDirectory('guard');
+    const read = await readGuardedFile(await scopeOf(root), path);
+    expect(read).toMatchObject({ ok: false, outcome: { reasonCode: 'OUT_OF_SCOPE' } });
   });
 
-  it('treats glob characters other than * and ? literally', () => {
-    expect(isExcluded('src/a.ts', ['src/{a,b}.ts'])).toBe(false);
-    expect(isExcluded('src/{a,b}.ts', ['src/{a,b}.ts'])).toBe(true);
-    expect(isExcluded('a1.ts', ['a?.ts'])).toBe(true);
-    expect(isExcluded('a12.ts', ['a?.ts'])).toBe(false);
+  it('applies the defaults even when the scope carries none', async () => {
+    const scope = await scopeOf(await emptyDirectory('guard'));
+    expect(scope.rules).toEqual(expect.arrayContaining(['**/.env*', '**/.git/**']));
   });
 
-  it('prunes a directory only when every path below it is excluded', () => {
-    expect(excludesDirectory('node_modules', DEFAULT_EXCLUSIONS)).toBe(true);
-    expect(excludesDirectory('packages/x/node_modules', DEFAULT_EXCLUSIONS)).toBe(true);
-    expect(excludesDirectory('.git', DEFAULT_EXCLUSIONS)).toBe(true);
-    expect(excludesDirectory('src', DEFAULT_EXCLUSIONS)).toBe(false);
+  it('treats a scope with a rule the shared matcher cannot apply as missing', async () => {
+    const root = await emptyDirectory('guard');
+    expect(await resolveRepositoryScope(repositoryScope(root, ['src/{a,b}.ts']))).toBeUndefined();
+    expect(await resolveRepositoryScope(repositoryScope(root, ['../outside/**']))).toBeUndefined();
   });
 });
 
@@ -184,6 +175,7 @@ describe('file set and snapshot (ExecutorSet 3.1)', () => {
     await writeTree(root, {
       '.env': 'SECRET=1\n',
       'node_modules/x/index.js': 'x\n',
+      'vendor/sub/.git/HEAD': 'ref: refs/heads/main\n',
       'logo.bin': Buffer.from([1, 0, 2]),
     });
     await symlink(join(root, 'README.md'), join(root, 'link.md'));

@@ -1,10 +1,9 @@
 import { constants } from 'node:fs';
 import { open, readlink, realpath, stat, type FileHandle } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import type { ExecutorOutcome } from '@multiagentos/contracts';
+import { isExcluded, type ExecutorOutcome } from '@multiagentos/contracts';
 import { rejected, violation } from '../outcome/outcomes.js';
 import { isBinary } from '../text/text-document.js';
-import { isExcluded } from './glob.js';
 import { normalizeRequestPath } from './request-path.js';
 import type { RepositoryScope } from './repository-scope.js';
 

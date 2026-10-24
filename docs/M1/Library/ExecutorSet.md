@@ -30,7 +30,6 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | 导出 | 用途 |
 |---|---|
 | `createExecutorRegistry(): ExecutorRegistry` | 组合根调用后把注册表注入 Supervisor；Kernel 包不导入 ExecutorSet。`ExecutorRegistry` 是按 `executionKind` 索引的对象（M1Interface 第 8 节） |
-| `DEFAULT_EXCLUSIONS` | 硬编码的危险文件规则（第 3.2 节），与 Core 的默认排除规则相同 |
 
 ## 3. 仓库访问
 
@@ -39,7 +38,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 ### 3.1 文件集合与快照
 
 - 文件集合：仓库根目录（`scope.repositoryRoot` 的 realpath）下的全部普通文件；不跟随符号链接；排除命中 `scope.exclusions`
-  或 `DEFAULT_EXCLUSIONS` 的路径；排除二进制文件（前 8 KiB 含 NUL 字节）。M1 不读取 `.gitignore`，也不调用 git。
+  或 `DEFAULT_REPOSITORY_EXCLUSIONS` 的路径；排除二进制文件（前 8 KiB 含 NUL 字节）。M1 不读取 `.gitignore`，也不调用 git。
   遍历时跳过整棵被排除的目录（规则形如 `<前缀>/**`），不可读的目录与文件不进入集合。
 - 文件数超过 `limits.maxFiles` 时返回 `REJECTED(LIMIT_EXCEEDED)`，遍历在超出时立即停止。
 - 快照摘要：对文件集合按路径的 UTF-16 码元顺序排序（不使用 locale 排序），取每个文件的 `{ path, size, sha256 }`，
@@ -53,20 +52,17 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 |---|---|---|
 | 1 | `scope.kind` 为 `REPOSITORY` 且 `repositoryRoot` 为绝对路径 | `VIOLATION(SCOPE_MISSING)` |
 | 2 | 输入路径为相对路径，不含 NUL，规范化后不含 `..` 段 | `REJECTED(OUT_OF_SCOPE)` |
-| 3 | 命中 `DEFAULT_EXCLUSIONS` 或 `scope.exclusions` | `REJECTED(OUT_OF_SCOPE)` |
+| 3 | 命中 `DEFAULT_REPOSITORY_EXCLUSIONS` 或 `scope.exclusions` | `REJECTED(OUT_OF_SCOPE)` |
 | 4 | 路径存在 | `REJECTED(NOT_FOUND)` |
 | 5 | `realpath` 位于 `repositoryRoot` 内，且其相对路径同样不命中排除规则 | `REJECTED(OUT_OF_SCOPE)` |
 | 6 | 是普通文本文件 | `REJECTED(UNSUPPORTED_FILE)` |
 | 7 | 以 `O_NOFOLLOW` 打开；描述符的 `(dev, ino)` 与第 5 步 `stat` 的结果一致；Linux 上 `/proc/self/fd/<fd>` 指向的路径也与第 5 步一致 | `VIOLATION(PATH_ESCAPE)` |
 
-`DEFAULT_EXCLUSIONS` 为 `.git/**`、`**/.env*`、`**/*.pem`、`**/*.key`、`**/id_rsa*`、`**/id_dsa*`、`**/id_ecdsa*`、`**/id_ed25519*`、
-`**/node_modules/**`。
-这些规则硬编码在 Executor 中，是 Core 权限裁决之后的最后一道防线；Core 只能追加排除规则，不能删除它们。
+默认排除规则 `DEFAULT_REPOSITORY_EXCLUSIONS` 与匹配器 `isExcluded`、`excludesDirectory` 由 contracts 提供
+（[M1Interface](../M1Interface.md) 3.5），Core 展示给用户与 Executor 执行的是同一份规则与同一个匹配器。
+Core 已把默认规则写入每个范围，Executor 仍再次加上它们，作为 Core 权限裁决之后的最后一道防线；Core 只能追加排除规则，不能删除它们。
+范围中出现匹配器不能按原样执行的规则时，视为范围约束缺失（`VIOLATION(SCOPE_MISSING)`）。
 防护逻辑自身出现不一致（例如规范化后的路径在字面上越出根目录）时返回 `VIOLATION(GUARD_FAILURE)`。
-
-规则的匹配语义（[#24](https://github.com/CaryHe-maker/MultiAgentOS/issues/24)）：规则相对仓库根目录；`**` 是完整路径段，
-匹配零个或多个段；`*` 匹配一个段内的任意字符，`?` 匹配一个字符；以点开头的段同样参与匹配；区分大小写；其余字符按字面量匹配。
-不使用 Node 的 `path.matchesGlob`：它的 `**` 不进入点目录，会使 `.hidden/key.pem` 绕过默认规则。
 
 第 2 步还拒绝含反斜杠或盘符的路径，使同一路径在各平台含义相同。第 7 步比较文件身份而不是只看 `/proc`：
 检查之后替换文件或其路径上的目录必然改变 inode，在 macOS 上也能检测与测试。超过 16 MiB 的文件返回 `REJECTED(LIMIT_EXCEEDED)`。

@@ -11,8 +11,6 @@ import { FileDigestCache } from './repository-access/file-set.js';
 import { createOrientExecutor } from './repository-orient/orient-executor.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
 
-export { DEFAULT_EXCLUSIONS } from './repository-access/default-exclusions.js';
-
 /**
  * Called by the composition root, which injects the result into the Supervisor. The registry
  * owns one digest cache, so the snapshot of a repository is hashed once per process and only
