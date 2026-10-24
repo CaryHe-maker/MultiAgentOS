@@ -81,6 +81,8 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 5. 真实模型运行会产生费用。成批运行前先说明次数、模型与预计费用。
    每次运行记录 provider、模型、配置、固定定义的 digest、commit、token、成本和耗时。
 6. 评测结论引用的运行记录必须能由 commit 与定义 digest 复现。
+7. 发现的问题（缺陷、偶发失败、文档与实现不一致等）不论大小，都要在发现时记入第 4 节相应阶段作为任务，
+   并在发布前解决，不留下技术问题；不得用“已知限制”代替修复。只有 M1 文档明确不在 M1 范围内的事项才写入限制清单。
 
 ### 2.5 本计划的维护
 
@@ -139,8 +141,9 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R1.6 | 按 D2 修改检索评分与对应测试，同步 ExecutorSet.md | D2 及其请求获得同意 |
 | R1.7 | 按 D6 的结论，在限制清单草稿中记录不做的事项 | D6 |
 | R1.8 | 按 D5 实现端口期限的系统级约定：`SystemConfig` 增加端口响应期限（默认 30 秒），由 Fabric 的 `request` 统一执行并给出超时错误，组合根注入；Workflow 与 UserInteraction 删除各自的 `PORT_RETURN_TIMEOUT_MS`，只负责按所在的捕获边界升级；用户输入仍不受期限约束。同步 M1Interface、Fabric.md、Workflow.md、UserInteraction.md 与相关测试 | D5；文档修改内容获得同意 |
+| R1.9 | 查明并修复 `stage6-acceptance` 在 CPU 满载下偶发失败的原因（2026-10-24 压力测试中 12 轮出现 1 次）：先在压力下稳定复现并取得失败输出，再修复；修复后在同样压力下连续运行足够次数无失败 | 原因写入进度记录；压力下连续 50 次通过 |
 
-退出条件：R1.1–R1.4、R1.8 完成；D1、D2、D5、D6 有结论，结论要求的修改已完成；质量门通过。
+退出条件：R1.1–R1.4、R1.8、R1.9 完成；D1、D2、D5、D6 有结论，结论要求的修改已完成；质量门通过。
 
 ### 4.3 阶段二：固定任务集与验收工具
 
