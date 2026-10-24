@@ -1,4 +1,4 @@
-import { mkdir, rename, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -131,6 +131,18 @@ describe('guarded read (ExecutorSet 3.2)', () => {
     expect(read).toMatchObject({
       ok: false,
       outcome: { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' },
+    });
+  });
+
+  it('reports a file deleted between the checks and the open as NOT_FOUND', async () => {
+    const base = await emptyDirectory('guard');
+    await writeTree(base, { 'repo/a.txt': 'original\n' });
+    const read = await readGuardedFile(await scopeOf(join(base, 'repo')), 'a.txt', {
+      beforeOpen: (real) => rm(real),
+    });
+    expect(read).toMatchObject({
+      ok: false,
+      outcome: { outcome: 'REJECTED', reasonCode: 'NOT_FOUND' },
     });
   });
 

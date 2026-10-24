@@ -65,7 +65,9 @@ Core 已把默认规则写入每个范围，Executor 仍再次加上它们，作
 防护逻辑自身出现不一致（例如规范化后的路径在字面上越出根目录）时返回 `VIOLATION(GUARD_FAILURE)`。
 
 第 2 步还拒绝含反斜杠或盘符的路径，使同一路径在各平台含义相同。第 7 步比较文件身份而不是只看 `/proc`：
-检查之后替换文件或其路径上的目录必然改变 inode，在 macOS 上也能检测与测试。超过 16 MiB 的文件返回 `REJECTED(LIMIT_EXCEEDED)`。
+检查之后替换文件或其路径上的目录必然改变 inode，在 macOS 上也能检测与测试。
+第 7 步打开时文件已不存在（检查之后被删除）返回 `REJECTED(NOT_FOUND)`：删除不会造成逃逸，
+分析期间仓库被正常修改不应使运行以安全违规结束。超过 16 MiB 的文件返回 `REJECTED(LIMIT_EXCEEDED)`。
 
 ### 3.3 检索
 
@@ -98,7 +100,7 @@ Core 已把默认规则写入每个范围，Executor 仍再次加上它们，作
 - 两种后端只给出“哪一行匹配”，片段、得分与排序都由同一段代码根据文件内容计算，因此结果逐条相同。
 - 得分（[#26](https://github.com/CaryHe-maker/MultiAgentOS/issues/26) E17）：`base × 次数因子 × 路径因子`，截断到 0–1 并保留 4 位小数。
   `base`：SYMBOL 1.0、PATH 0.9、TEXT 0.7；次数因子 `min(1, 0.6 + 0.1 × 文件内匹配行数)`；PATH 的文件名（或去掉扩展名后）
-  与查询相同乘 1.1；路径含 `test` 乘 0.9；路径含 `dist`、`build`、`out`、`target`、`coverage`、`vendor` 段乘 0.8。
+  与查询相同乘 1.1；路径含 `dist`、`build`、`out`、`target`、`coverage`、`vendor` 段乘 0.8。
   `TEXT`/`AUTO` 模式下，若匹配行本身是该标识符的声明，这条命中记为 `SYMBOL`，使按名称检索时定义排在引用之前。
   排序为得分降序、路径、起始行，同一快照与查询得到相同结果。
 - 查询去掉首尾空白后为空，或 `SYMBOL` 模式下不是标识符时，返回 `REJECTED(INVALID_QUERY)`。

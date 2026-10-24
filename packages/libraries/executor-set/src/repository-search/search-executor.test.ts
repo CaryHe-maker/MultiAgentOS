@@ -98,12 +98,17 @@ describe('REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2)', () => {
     expect(paths.some((path) => path.startsWith('node_modules/'))).toBe(false);
   });
 
-  it('ranks generated copies and tests below the source', async () => {
+  it('ranks generated copies below the source', async () => {
     const paths = hitsOf((await search({ query: 'parseConfig', mode: 'TEXT' })).outcome).map(
       (hit) => hit.path,
     );
     expect(paths.indexOf('src/config.ts')).toBeLessThan(paths.indexOf('dist/config.js'));
-    expect(paths.indexOf('src/config.ts')).toBeLessThan(paths.indexOf('test/config.test.ts'));
+  });
+
+  it('does not demote test files, which F2 and F4 ask for', async () => {
+    const hits = hitsOf((await search({ query: 'parseConfig', mode: 'TEXT' })).outcome);
+    // Two matching lines: TEXT base 0.7 × count factor 0.8, with no path factor.
+    expect(hits.find((hit) => hit.path === 'test/config.test.ts')?.score).toBe(0.56);
   });
 
   it.each([

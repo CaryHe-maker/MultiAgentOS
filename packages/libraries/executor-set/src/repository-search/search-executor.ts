@@ -286,8 +286,8 @@ function declarationTester(query: PreparedQuery): ((text: string) => boolean) | 
 function score(kind: MatchKind, path: string, count: number, exactName: boolean): number {
   let value = BASE_SCORE[kind] * Math.min(1, 0.6 + 0.1 * count);
   if (exactName) value *= 1.1;
+  // Test files are not demoted: F2 and F4 ask for them (issue #26, E).
   const lower = asciiLower(path);
-  if (lower.includes('test')) value *= 0.9;
   if (lower.split('/').some((segment) => GENERATED_DIRECTORIES.has(segment))) value *= 0.8;
   return Math.round(Math.min(1, value) * 10_000) / 10_000;
 }

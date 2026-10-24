@@ -81,8 +81,10 @@ export async function readGuardedFile(
     // O_NOFOLLOW: `real` has no links left, so a link here was put in after step 5.
     handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (error) {
-    if (isMissing(error)) return refuse(violation('PATH_ESCAPE'));
-    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return refuse(violation('PATH_ESCAPE'));
+    // A file deleted after the checks cannot lead outside the root; a link put in its place can.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return refuse(rejected('NOT_FOUND'));
+    if (code === 'ENOTDIR' || code === 'ELOOP') return refuse(violation('PATH_ESCAPE'));
     return refuse(rejected('UNSUPPORTED_FILE'));
   }
   try {
