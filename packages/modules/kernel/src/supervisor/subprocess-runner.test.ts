@@ -19,9 +19,9 @@ describe('SubprocessRunner', () => {
     else expect(version).toEqual({ exitCode: null, signal: null, stdout: '', truncated: false });
   });
 
-  // quality-gate.yml installs rg; in CI a missing rg must fail rather than pass either way.
-  it.runIf(process.env['CI'] !== undefined)('finds rg in CI', () => {
-    expect(hasRipgrep).toBe(true);
+  // Each cell of the CI matrix (M1TechStack 11) states whether it has rg; a broken install fails.
+  it.runIf(process.env['CI'] !== undefined)('has rg exactly when the CI cell says so', () => {
+    expect(hasRipgrep).toBe(process.env['MULTIAGENTOS_RIPGREP'] !== 'absent');
   });
 
   it('does not start anything once the signal has fired', async () => {

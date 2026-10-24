@@ -71,8 +71,8 @@
 - 测试应覆盖变更涉及的正常行为、错误行为和边界条件；具体场景由对应设计与验收要求确定。
 - 测试必须可重复执行；存在外部依赖或非确定性因素时，必须记录运行条件及验证方式。
 - 提交前运行 `pnpm run check` 和 `git diff --check`。
-- 目标运行平台为 Ubuntu LTS；M1 正式开发时，项目成员应尽量统一使用 Ubuntu LTS 开发环境，
-  Windows 成员使用 WSL2 中的 Ubuntu LTS。临时在原生 Windows 中运行时可以使用 `pnpm.cmd run check`。
+- 目标运行平台为 Ubuntu LTS，项目规范版本为 Ubuntu 24.04 LTS；M1 正式开发时，项目成员应尽量统一使用 Ubuntu 24.04 LTS 开发环境，
+  Windows 成员使用 WSL2 中的 Ubuntu 24.04 LTS。临时在原生 Windows 中运行时可以使用 `pnpm.cmd run check`。
 
 ## 3. 文档规范
 

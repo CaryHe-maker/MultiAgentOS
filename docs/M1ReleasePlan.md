@@ -103,7 +103,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | D4 | 启动期额度校验的上界 | 现为 79156 / 80000。用户输入按每个字符都是二次转义的控制字符估算，约预留 58k token；Monitor 第 4 节还把 FILE_READ 的字节上限当作 token 相加。留给 Prompt 与工具说明的空间约 5k token | 在阶段三开始前决定是否放宽估算方法或调整 `perCallInputLimit`。需请求（Monitor.md 第 4 节） | 阶段三之前 | 待定 |
 | D5 | 30 秒端口期限是否改为系统级约定 | Workflow 与 UserInteraction 各有一个 `PORT_RETURN_TIMEOUT_MS`；#29 计划改为 `SystemConfig` 配置项、由 Fabric 统一执行。M1Plan 没有要求 | 端口期限已在两个模块中按 Workflow.md 与 UserInteraction.md 的规定执行；系统级化只是集中配置与执行的位置。M1 发布不做，作为已知限制记录 | 阶段一 | 2026-10-24 决定在阶段一实现（R1.8），采用方案 A：期限值进入 `SystemConfig`，Fabric 执行 Gateway 请求的期限，组合根为 Catalog 与 Persistence 适配器加同样的期限，模块内不再有期限逻辑；需修改的 M1 文档在实施前列出，按 2.1 第 3 条确认 |
 | D6 | CI 的 `pull_request` 分支过滤 | 只匹配 `main` 与 `feat/**`，与 M1TechStack 第 11 节一致；`feature/M1/main` 上的提交靠 push 事件触发 | 保持现状 | 阶段一 | 2026-10-24 同意保持现状 |
-| D7 | “兼容矩阵”的含义 | M1Plan 第 7 节要求兼容矩阵全部通过，但 M1 文档没有定义它包含哪些维度 | 阶段二开始时提出定义（例如协议族的 major 版本正反例、Node 与 Ubuntu 版本）。需请求（M1Plan 第 7 节） | 阶段二 | 待定 |
+| D7 | “兼容矩阵”的含义 | M1Plan 第 7 节要求兼容矩阵全部通过，但 M1 文档没有定义它包含哪些维度 | 阶段二开始时提出定义（例如协议族的 major 版本正反例、Node 与 Ubuntu 版本）。需请求（M1Plan 第 7 节） | 阶段二 | 2026-10-25 决定：Ubuntu 版本定为 24.04 LTS（项目规范版本），只测这一版；矩阵为主格（`.node-version`、有 rg）、Node 上界（最新 24.x、有 rg）、无 rg 三格，外加协议冻结守卫，全部放入 CI；定义写入 M1Plan 第 7 节与 M1TechStack 第 11 节 |
 | D8 | 评测脚本的 Agent 循环 | `executor-set/eval/agent-loop.ts` 自己实现了简化的 Workflow，评测结果不能代表产品（#32 第 4 条） | M1 验收只采用阶段二的验收工具经产品调用链得到的结果；`agent-loop.ts` 保留为开发工具 | 阶段二 | 待定 |
 
 ## 4. 阶段规划
@@ -155,7 +155,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R2.2 | 编写验收工具：经 `multiagentos analyze` 的完整调用链运行任务；运行前后计算同一快照摘要并比对；从 RunSummary 与 AnalysisReport 取得指标并检查断言；按 M1TechStack 第 11 节记录运行信息 | 工具能对单个任务给出通过或失败及原因 |
 | R2.3 | 离线 E2E：用脚本化的假 provider 驱动 R2.2 的工具跑 F1–F5，纳入质量门 | 质量门中 F1–F5 离线用例全部通过，不使用网络 |
 | R2.4 | 把 #6 的安全风险清单落实为测试或陷阱题：假 `.env` 与假 key 不出现在上下文、模型请求和审计记录中；README 中的注入指令不导致越界读取；死循环在预算上限停下并给出原因；超大文件与二进制文件在限定时间内返回明确错误；GBK 编码与中文文件名不导致崩溃或乱码 | 每一条都有对应的测试或陷阱题，并通过 |
-| R2.5 | 按 D7 的结论建立兼容矩阵的测试 | D7 获得同意；矩阵测试通过 |
+| R2.5 | 按 D7 的结论建立兼容矩阵的测试 | D7 获得同意；矩阵测试通过（2026-10-25 已提前完成，阶段二新增的离线 E2E 与 fixture 放在 `pnpm run test` 中即自动进入各格） |
 
 验收工具与 fixture 只作为 devDependency 或测试目录存在，不得成为任何产品包的生产依赖。
 真实模型运行不属于质量门。
@@ -187,7 +187,8 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R4.2 | 逐条核对 M1Plan 第 8 节发布阻断项 | 不存在任何阻断项 |
 | R4.3 | 核对 M1Interface、SharedContracts、AgentToolPool 与代码 Schema、定义文件一致；不一致时列出差异并按 2.1 第 3、6 条处理 | 无未处理的差异 |
 | R4.4 | 确认写入、命令、测试、网络与 workspace 逃逸的成功次数为 0；Unsupported 请求不产生状态变化；预算可以确定性终止 | 对应测试与 F1–F5 运行记录可以证明 |
-| R4.5 | 在 Ubuntu LTS 上运行 `pnpm run check`、`pnpm run test:coverage`、`demo:fake`、离线 E2E 与兼容矩阵；连续三次全部通过 | 记录结果 |
+| R4.5 | 在 Ubuntu 24.04 LTS 上运行 `pnpm run check`、`pnpm run test:coverage`、`demo:fake`、离线 E2E 与兼容矩阵；连续三次全部通过 | 记录结果 |
+| R4.6 | 冻结协议：把 `packages/libraries/contracts/test/compatibility/schema-snapshot.json` 的 `frozen` 置为 `true`（M1Interface 1.2、M1TechStack 第 11 节），此后快照只能由兼容修改通过守卫 | 守卫在冻结状态下通过 |
 
 退出条件：R4.1–R4.5 完成。
 
@@ -220,3 +221,4 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R1.3 | 2026-10-24 | 同上 | fast-check 生成合法、未知、参数错误、重复、混入控制动作的工具调用与随机结果和额度状态，检查每次 context-assemble 输入与最终步骤；去掉对 FEEDBACK 的认可后性质立即失败，确认用例有效 |
 | R1.4 | 2026-10-24 | 不适用 | #24–#29 已答复的决定全部落实；#32 中未落实的事项已分别由 D3、R1.8、R3.2、D8 跟踪 |
 | R1.8 | 2026-10-25 | `feat: 端口响应期限改由系统配置与 Fabric 统一执行` | M1 文档修改经 2026-10-25 确认：M1Interface 14.3、14.4，Fabric.md 第 3 节，Workflow.md 11.1，UserInteraction.md 第 6 节，M1TechStack 第 4 节。`SystemConfig.portReturnTimeoutMs` 默认 30000；Workflow 与 UserInteraction 的 Fabric 客户端和交给 Workflow 的 Catalog、Persistence 到期以 `FabricError(REQUEST_TIMEOUT)` 拒绝，Kernel 的客户端不设期限；两个模块删除各自的计时器，原有期限用例改为注入超时拒绝，迟到返回的用例移到 Fabric。WSL 上 1101 项测试通过 |
+| R2.5 | 2026-10-25 | `ci: 确定 Ubuntu 24.04 并建立兼容矩阵与协议冻结守卫` | D7 结论写入 M1Plan 第 7 节、M1TechStack 第 11 节；README、Style、docs/README 与 M1 文档中的 Ubuntu LTS 统一为 24.04。CI 增加 Node 上界与无 rg 两格；两处 rg 检查改为按 `MULTIAGENTOS_RIPGREP` 断言。协议快照 101 个 Schema。WSL：主格 1112 项通过；无 rg 格（PATH 中去掉 rg）1101 项通过、14 项 rg 专属用例跳过，demo 通过；有 rg 而格子声明无 rg 时检查失败。Node 上界格本机没有其他 Node 版本，由 CI 验证 |

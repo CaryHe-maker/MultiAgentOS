@@ -1,6 +1,6 @@
 # MultiAgentOS
 
-MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS。
+MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS，规范版本为 24.04。
 长期文档定义概念、职责与安全边界，各 MVP 再明确实现和验收。
 
 ## 架构
@@ -81,7 +81,7 @@ docs/
 
 ## 开发环境
 
-以下是仓库现有工程环境，不代表已经完成 Ubuntu LTS 部署验证。
+以下是仓库现有工程环境；项目规范平台为 Ubuntu 24.04 LTS。
 
 - Node.js `24.19.0`，允许 `>=24.19.0 <25`
 - pnpm `11.25.0`
@@ -93,7 +93,7 @@ pnpm run build
 pnpm run check
 ```
 
-开发平台不限，最终验收在 Ubuntu LTS 上执行；具体 LTS 版本与系统依赖由交付设计确认。
+开发平台不限，最终验收在 Ubuntu 24.04 LTS 上执行，CI 的兼容矩阵见 [M1TechStack](docs/M1/M1TechStack.md) 第 11 节。
 检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 

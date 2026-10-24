@@ -5,7 +5,7 @@
 本目录定义 M1 的交付目标、技术选择、机制、跨模块接口和验收要求。任务进度与验证证据由 GitHub Issues 跟踪。
 M1 面向本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析，由 Planner 与 CodeViewer
 两个 Agent 单向交接完成，输出包含仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。
-M1 的验收平台为 Ubuntu LTS；开发平台不限，但代码必须能在 Ubuntu LTS 上运行。
+M1 的验收平台为 Ubuntu 24.04 LTS（项目规范版本）；开发平台不限，但代码必须能在 Ubuntu 24.04 LTS 上运行。
 
 长期概念、模块职责与安全边界见 [Architecture 指南](../Architecture/README.md)。
 本目录说明这些能力在 M1 中的具体交付范围，不将长期架构中的全部能力视为 M1 要求。

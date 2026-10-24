@@ -1,5 +1,6 @@
-# The quality gate of docs/Style.md 6.3 on the acceptance platform (Ubuntu LTS). It needs no
-# secrets, calls no model and uses no network beyond installing dependencies.
+# The quality gate of docs/Style.md 6.3 and the compatibility matrix of M1TechStack 11, on the
+# acceptance platform (Ubuntu 24.04 LTS). It needs no secrets, calls no model and uses no
+# network beyond installing dependencies.
 name: quality-gate
 
 on:
@@ -15,6 +16,7 @@ permissions:
   contents: read
 
 jobs:
+  # The main cell: Node.js from .node-version (the lower bound of `engines`) with rg.
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -32,4 +34,42 @@ jobs:
       - run: pnpm run build
       - run: pnpm run check
       - run: git diff --check
+      - run: pnpm run demo:fake
+
+  # The other cells of the matrix run the whole offline chain under one changed condition each.
+  compatibility:
+    name: compatibility (${{ matrix.cell }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: node-24-latest
+            node: '24.x'
+            ripgrep: present
+          - cell: without-rg
+            # Empty: setup-node falls back to .node-version.
+            node: ''
+            ripgrep: absent
+    env:
+      MULTIAGENTOS_RIPGREP: ${{ matrix.ripgrep }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          node-version-file: .node-version
+          cache: pnpm
+      - run: node --version
+      - if: matrix.ripgrep == 'present'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version
+      - if: matrix.ripgrep == 'absent'
+        run: |
+          if command -v rg; then sudo apt-get remove -y ripgrep; fi
+          ! command -v rg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run test
       - run: pnpm run demo:fake
