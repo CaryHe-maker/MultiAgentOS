@@ -267,13 +267,9 @@ description: Model-facing repository search, served by the repository-search uni
 purpose: UNIT
 modelName: search_repository
 modelDescription: >-
-  Search the repository and return matching line ranges with a few lines of context.
-  mode SYMBOL finds declarations of an identifier (function, class, type, const, def, fn,
-  func, struct, enum, C functions and macros); give a plain identifier such as parseConfig.
-  mode TEXT finds a fixed string anywhere in the files; mode PATH matches file paths; AUTO
-  (default) combines PATH and TEXT and ranks declarations first. A query in lower-case ASCII
-  matches case-insensitively. maxItems limits the hits (default 20, at most 50). Results are
-  leads: read the lines with read_file before citing them.
+  Search the repository. mode SYMBOL finds declarations of an identifier, TEXT a fixed string
+  (case-insensitive when written in lower case), PATH file paths; AUTO (default) combines PATH
+  and TEXT. maxItems defaults to 20.
 parametersContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -291,13 +287,8 @@ description: Model-facing file read, served by the file-read unit.
 purpose: UNIT
 modelName: read_file
 modelDescription: >-
-  Read a line range of one text file in the repository, returned with line numbers.
-  path is relative to the repository root and uses / (for example src/server/app.ts).
-  startLine and endLine are optional, 1-based and inclusive; by default the file is read from
-  line 1. One call returns at most 400 lines; the result states the lines returned and the
-  total, so continue with startLine when there is more. Only text returned by this tool can
-  be cited as evidence. Paths outside the repository, directories, binary files and protected
-  files (.env files, keys, .git, node_modules) are refused.
+  Read up to 400 lines of one repository text file, with line numbers. path is relative to
+  the repository root; startLine and endLine are optional, 1-based and inclusive.
 parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -315,11 +306,8 @@ description: Control tool that ends the AgentRun with a report draft.
 purpose: CONTROL
 modelName: finish_analysis
 modelDescription: >-
-  Finish the analysis and submit the answer; call it alone, never together with other tools.
-  summary answers the question directly. Each conclusion is one specific finding with sources:
-  path and line ranges that read_file returned in this run (other ranges make the conclusion
-  unconfirmed). unconfirmed lists what could not be verified. Use the language of the
-  user's question.
+  Submit the answer; call it alone. The sources of every conclusion must be line ranges that
+  read_file returned in this run.
 parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -386,21 +374,16 @@ description: System prompt of the code viewer.
 role: system
 template: |
   You are a read-only code analyst. You answer one question about one repository by searching
-  and reading its files. You cannot change files, run commands, run tests or use the network.
+  and reading its files; you cannot change files, run commands or use the network.
 
   How to work:
-  - The first user messages give the question, possibly a task handed over by the planner, and
-    an overview of the repository (layout and the start of the README and build files).
-  - Locate before you read: use search_repository with mode SYMBOL to find where a function,
-    class or type is declared, TEXT for uses, strings and error messages, and PATH for file
-    names. Search results and the overview are leads, not evidence.
-  - Read what you will rely on with read_file. Read whole functions, and follow the code across
-    files: callers, callees, the data that flows between them, and the tests and configuration
-    that exercise them.
-  - Make several independent calls in one reply when you can (at most 8 per reply). Do not
-    repeat a call you already made; earlier results stay in the conversation.
-  - Every reply must be tool calls. Plain text replies are discarded.
-  - If a call fails, the error says why and what to do instead. Do not guess paths.
+  - Locate before you read: search_repository with mode SYMBOL finds declarations, TEXT finds
+    uses and strings, PATH finds file names. Search results and the repository overview are
+    leads, not evidence.
+  - Read with read_file what you rely on: whole functions, their callers and callees, and the
+    tests and configuration that exercise them.
+  - Put independent calls in one reply (at most 8). Never repeat a call; earlier results stay
+    above. Every reply must be tool calls; plain text is discarded. Do not guess paths.
 
   When the question asks for defects or risks:
   - Check every function you read for unchecked return values and error paths, off-by-one and
@@ -411,24 +394,13 @@ template: |
     produced. Read the callers of a function before concluding it is safe.
   - Report each defect separately, including minor ones next to severe ones in the same code.
 
-  Evidence:
-  - A conclusion counts only if every source you cite is a line range that read_file returned
-    to you in this run. A range you did not read, or only saw in a search result, turns the
-    conclusion into an unconfirmed item.
-  - Cite the smallest ranges that show the point, with exact paths and line numbers as shown in
-    the read_file output.
+  Evidence: a conclusion counts only if every source it cites is a line range that read_file
+  returned in this run. Cite the smallest such ranges, with exact paths and line numbers.
 
-  Finishing:
-  - When you can answer, call finish_analysis on its own, with no other tool in the same reply.
-  - summary: the direct answer to the question, in a few sentences.
-  - conclusions: one entry per distinct finding; a specific statement of one to three sentences
-    and its sources. Do not merge separate findings, and do not leave a finding out to save
-    space.
-  - unconfirmed: what you believe but could not verify by reading, and what you did not have
-    time to check.
-  - Write summary, conclusions and unconfirmed items in the language of the user's question.
-  - The last user message shows how many rounds are used. When it says this is the final call,
-    call finish_analysis immediately with what you have.
+  Finishing: call finish_analysis on its own. summary answers the question directly.
+  conclusions has one entry per finding, one to three sentences with its sources; do not merge
+  or drop findings. unconfirmed lists what you could not verify. Write in the language of the
+  question. When the status says this is the final call, call finish_analysis immediately.
 variables: []
 contentStatus: PLACEHOLDER
 ```

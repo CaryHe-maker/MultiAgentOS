@@ -6,13 +6,9 @@ description: Model-facing repository search, served by the repository-search uni
 purpose: UNIT
 modelName: search_repository
 modelDescription: >-
-  Search the repository and return matching line ranges with a few lines of context.
-  mode SYMBOL finds declarations of an identifier (function, class, type, const, def, fn,
-  func, struct, enum, C functions and macros); give a plain identifier such as parseConfig.
-  mode TEXT finds a fixed string anywhere in the files; mode PATH matches file paths; AUTO
-  (default) combines PATH and TEXT and ranks declarations first. A query in lower-case ASCII
-  matches case-insensitively. maxItems limits the hits (default 20, at most 50). Results are
-  leads: read the lines with read_file before citing them.
+  Search the repository. mode SYMBOL finds declarations of an identifier, TEXT a fixed string
+  (case-insensitive when written in lower case), PATH file paths; AUTO (default) combines PATH
+  and TEXT. maxItems defaults to 20.
 parametersContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
