@@ -41,7 +41,8 @@ export function renderHandoff(handoff: HandoffBrief): string {
 const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   INVALID_INPUT: 'the arguments do not match the tool parameters; fix them and call again',
   INVALID_ARTIFACT_REF: 'an internal reference was invalid; continue with what you have',
-  USER_DECLINED: 'the user declined repository access; answer from what you already have',
+  USER_DECLINED:
+    'repository access was not granted (declined or not answered in time); answer from what you already have',
   BUDGET_WRAP_UP: 'the budget is nearly used up; finish with what you already have',
   BUDGET_EXHAUSTED: 'the budget is used up; finish with what you already have',
   FINAL_CALL_USED: 'no more tool calls are possible; finish now',
@@ -132,7 +133,7 @@ const WRAP_UP_REASONS: Record<WrapUpReason, string> = {
   ROUND_LIMIT: 'the round limit has been reached',
   BUDGET_WRAP_UP: 'the token budget is nearly used up',
   BUDGET_EXHAUSTED: 'the token budget is used up',
-  USER_DECLINED: 'the user declined repository access',
+  USER_DECLINED: 'repository access was not granted (declined or not answered in time)',
   NO_PROGRESS: 'the last rounds made no progress',
   REGENERATION_LIMIT: 'too many replies were invalid',
 };
