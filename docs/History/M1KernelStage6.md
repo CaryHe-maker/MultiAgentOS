@@ -1,8 +1,8 @@
 # MultiAgentOS M1 Kernel 阶段六实施计划
 
 > 状态：临时工作文档，2026-10-22 完成规划；6.1–6.6 PR 准备完成，实际分支推送与 PR 由负责人手动操作。
-> 依据：[M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6.7、6.8 节，[SystemFaultHandling](M1/SystemFaultHandling.md)，
-> [M1Interface](M1/M1Interface.md) 第 14 节与 `docs/M1/` 下的 M1 规范。
+> 依据：[M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6.7、6.8 节，[SystemFaultHandling](../M1/SystemFaultHandling.md)，
+> [M1Interface](../M1/M1Interface.md) 第 14 节与 `docs/M1/` 下的 M1 规范。
 > 本文件不是规范；随本分支进入 `feature/M1/main`，由项目主管人后续归档整理。与 `docs/M1/` 冲突时以规范为准。
 
 ## 1. 目的与范围

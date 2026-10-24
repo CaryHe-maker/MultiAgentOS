@@ -534,4 +534,4 @@ kernel/gateway  语句 87.91%  分支 70.58%  函数 86.36%  行 92.30%
 - 共享接缝变更需单独评审并同步 contracts、testing 与相关 fake。
 
 阶段一完成不表示 M1 整机完成；M1 验收仍以
-[M1Plan](M1/M1Plan.md) 第 7 节和第 8 节为准。
+[M1Plan](../M1/M1Plan.md) 第 7 节和第 8 节为准。

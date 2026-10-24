@@ -9,9 +9,9 @@
 
 阶段五（ModuleHost、Fabric、Persistence、ArtifactStore 的完善与真实联调）的目标是：
 
-1. 使四类基础设施的行为符合 [ModuleHost](M1/Infrastructure/ModuleHost.md)、
-   [Fabric](M1/Infrastructure/Fabric.md)、[Persistence](M1/Infrastructure/Persistence.md) 与
-   [ArtifactStore](M1/Infrastructure/ArtifactStore.md)；
+1. 使四类基础设施的行为符合 [ModuleHost](../M1/Infrastructure/ModuleHost.md)、
+   [Fabric](../M1/Infrastructure/Fabric.md)、[Persistence](../M1/Infrastructure/Persistence.md) 与
+   [ArtifactStore](../M1/Infrastructure/ArtifactStore.md)；
 2. 在真实 Kernel core、Gateway、Supervisor 组合下完成正常与故障联调；
 3. 关闭前四个 Stage 留下的跨基础设施预留；
 4. 为阶段六的真实启动、panic、退出码与进程级验收提供稳定基础。
@@ -89,8 +89,8 @@ apps/control-plane/src/bootstrap/compose-system.test.ts
 
 **状态：已完成（2026-10-21）。** 实现与验证记录见本节末尾。
 
-**目标**：满足 [ModuleHost](M1/Infrastructure/ModuleHost.md) 第 3、4 节与
-[M1Interface](M1/M1Interface.md) 14.5 的启动期限要求。
+**目标**：满足 [ModuleHost](../M1/Infrastructure/ModuleHost.md) 第 3、4 节与
+[M1Interface](../M1/M1Interface.md) 14.5 的启动期限要求。
 
 **工作项**
 
@@ -197,7 +197,7 @@ apps/control-plane/src/bootstrap/compose-system.test.ts
   停止后的请求与发送返回 `NOT_RUNNING`，重复停止幂等。
 - 补测同一地址串行投递、订阅者失败后继续、不同地址并行、停止后拒绝新工作。
 - 补测缺失订阅者、请求处理器失败、无效正文、未知 Schema 与 producer 不符。
-- `OrderedSender` 注释与 [Fabric](M1/Infrastructure/Fabric.md) 第 3 节已修正：
+- `OrderedSender` 注释与 [Fabric](../M1/Infrastructure/Fabric.md) 第 3 节已修正：
   发送失败不一律是契约缺陷，停止期间可能是 `NOT_RUNNING`。
 - `RunEgress` 补测终端事件失败标记：`RunClosed`/`RunFinished` 失败的 `terminal = true`，
   其他发送失败为非终端。
@@ -481,9 +481,9 @@ fake Workflow / UserInteraction / ExecutorSet
   - 阶段五标记完成；
   - 基线更新至 575 项测试与最终覆盖率；
   - 实现状态、偏差、预留表、C07 与进度记录更新。
-- 已确认 [ModuleHost](M1/Infrastructure/ModuleHost.md) 与实现一致；更新
-  [Fabric](M1/Infrastructure/Fabric.md) 与 [Persistence](M1/Infrastructure/Persistence.md)
-  中需要明确的实现行为；[ArtifactStore](M1/Infrastructure/ArtifactStore.md) 已覆盖失败路径，无需变更。
+- 已确认 [ModuleHost](../M1/Infrastructure/ModuleHost.md) 与实现一致；更新
+  [Fabric](../M1/Infrastructure/Fabric.md) 与 [Persistence](../M1/Infrastructure/Persistence.md)
+  中需要明确的实现行为；[ArtifactStore](../M1/Infrastructure/ArtifactStore.md) 已覆盖失败路径，无需变更。
 - 验证：
   - `pnpm install --frozen-lockfile`：已是最新；
   - `pnpm run build`、`pnpm run check` 通过；
@@ -565,4 +565,4 @@ fake Workflow / UserInteraction / ExecutorSet
 
 阶段五工作已闭合，不表示 M1 整机完成。真实 Workflow、UserInteraction、ExecutorSet、
 真实模型 E2E 与 F1–F5 仍为外部阻塞；M1 验收以
-[M1Plan](M1/M1Plan.md) 第 7 节和第 8 节为准。
+[M1Plan](../M1/M1Plan.md) 第 7 节和第 8 节为准。

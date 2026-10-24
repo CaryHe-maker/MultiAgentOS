@@ -8,11 +8,12 @@
 | [M1](M1/README.md) | M1 交付范围、机制设计与接口；进度由 GitHub Issues 跟踪 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
+| [History](History/) | 已归档的阶段工作文档，不作为规范 |
 | [Style](Style.md) | 工程与文档协作规范 |
 
 目标平台为 Ubuntu LTS。Architecture 只描述长期规划，不穷尽实现；各 MVP 的具体机制在对应目录中明确。
-M1 Kernel 与 Infrastructure 的实现、阶段记录与归档说明见
-[M1KernelImplementationReport](M1KernelImplementationReport.md)。
+M1 Kernel 与 Infrastructure 的实现与阶段记录已归档，见
+[M1KernelImplementationReport](History/M1KernelImplementationReport.md)。
 
 ## 2. 推荐阅读路线
 

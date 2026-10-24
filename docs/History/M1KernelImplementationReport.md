@@ -227,4 +227,4 @@ PR 目标与方式：
 - 真实 Workflow、UserInteraction、ExecutorSet 接入；
 - 真实模型 E2E、F1–F5 与 M1 整机验收。
 
-本报告不宣称 M1 整机完成。M1 完成标准仍以 [M1Plan](M1/M1Plan.md) 第 7、8 节为准。
+本报告不宣称 M1 整机完成。M1 完成标准仍以 [M1Plan](../M1/M1Plan.md) 第 7、8 节为准。

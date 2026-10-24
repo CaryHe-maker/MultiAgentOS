@@ -149,9 +149,9 @@ Core 阶段一、Execution 阶段二、Supervisor 阶段三、run actor 与 Kern
 
 ## 4. 规范与范围
 
-阅读顺序：[M1Plan](M1/M1Plan.md)、[M1Interface](M1/M1Interface.md)、[Kernel 内部交互](M1/Kernel/Interaction.md)、
-[Kernel（外部视角）](M1/Module/Kernel.md)、[错误与系统故障处理](M1/SystemFaultHandling.md)、
-`docs/M1/Kernel/` 与 `docs/M1/Infrastructure/` 下各组件文档、[M1TechStack](M1/M1TechStack.md)、[Style](Style.md)。
+阅读顺序：[M1Plan](../M1/M1Plan.md)、[M1Interface](../M1/M1Interface.md)、[Kernel 内部交互](../M1/Kernel/Interaction.md)、
+[Kernel（外部视角）](../M1/Module/Kernel.md)、[错误与系统故障处理](../M1/SystemFaultHandling.md)、
+`docs/M1/Kernel/` 与 `docs/M1/Infrastructure/` 下各组件文档、[M1TechStack](../M1/M1TechStack.md)、[Style](../Style.md)。
 
 - `contracts` 中的 Schema 是已实现协议的可执行事实源；M1Interface 1.4 列出 Schema 强制的全部约束。
 - 会议记录与 Issue 中的历史提案不覆盖现行规范。规范之间冲突时记录证据并先协调，不自行选择有利于实现的一份。
@@ -401,7 +401,7 @@ Inbox.request 异常需显式捕获，不能仅依赖 onError；OrderedSender.en
 2026-10-17 按负责人确认采用两类异常：Core 维护非停机异常语义；
 组合根持有唯一 panic，Supervisor 执行中止及模块停止。
 SystemFaultReporter/reportSystemFault/reportFault 名称保留，均指向同一停机流程。
-2026-10-18 按 [SystemFaultHandling](M1/SystemFaultHandling.md) 补齐捕获边界、panic 五步、退出码与验收落点；
+2026-10-18 按 [SystemFaultHandling](../M1/SystemFaultHandling.md) 补齐捕获边界、panic 五步、退出码与验收落点；
 本节只登记实现与验证位置，语义以规范为准，不在此重新定义协议；Core 非停机语义与 Supervisor
 中止已分别于阶段一、阶段三落地，panic 与启动保护待后续阶段迁移。
 
@@ -530,31 +530,31 @@ Executor 不持有 panic 或 `SystemFaultReporter`，其结局由 Supervisor 转
 
 | 要求单元 | 规范来源 | 负责阶段 | 必须交付或核对的证据 |
 | --- | --- | --- | --- |
-| 九个外部 syscall 与状态矩阵 | [Kernel](M1/Module/Kernel.md) §4；[Interaction](M1/Kernel/Interaction.md) §4–5 | 一、四 | 每个请求的合法/拒绝/重放/冲突，RUNNING/CONVERGING/CLOSED 行为；CLOSED 可读产物但不能新建第二个 run |
-| Gateway 与身份因果链 | [Gateway](M1/Kernel/Gateway.md) §2–4；[M1Interface](M1/M1Interface.md) §2、13 | 一、四、五 | producer 固定与核验、correlation 固定、causation 衔接；重放不覆盖旧封锁状态；拒绝日志；合法 requestId 的畸形请求结构化拒绝 |
-| 定义固定与 AgentRun | [Core](M1/Kernel/Core.md) §6；[AgentToolPool](M1/Library/AgentToolPool.md) §6 | 一、四 | pin/digest/provider 核验、单 ACTIVE、结束后行为；Planner/CodeViewer 共用运行账本且不能重新取得 final-call |
-| 授权与 Lease | [Core](M1/Kernel/Core.md) §4；[Interaction](M1/Kernel/Interaction.md) §5.2 | 一、四 | 默认加配置排除规则、只问一次、挂起请求顺序、YES/NO/超时/取消/迟答；拒绝时无执行副作用 |
-| Core 非停机语义 | [Core](M1/Kernel/Core.md) §9；[SystemFaultHandling](M1/SystemFaultHandling.md) §2 | 一、四 | 与 syscall 并列的语义处理、受控失败不误 panic、异常处理自身失败不循环、预期结果仍结构化；捕获边界逐项覆盖、`KERNEL_FAULT` 只收敛一次 |
-| 异常捕获边界与退出码 | [SystemFaultHandling](M1/SystemFaultHandling.md) §2.2、§5–6 | 一、四、六 | CLI 参数错误 64、正常关闭码、panic 70、首次/二次 Ctrl+C 130、`uncaughtException`/`unhandledRejection` 70；无运行请求不创建 Core 异常；终端适配器不自退；真实子进程退出测试 |
-| 收敛与终态 | [Interaction](M1/Kernel/Interaction.md) §6–8 | 一、二、四 | 三步收敛、原因先到优先及 VIOLATION 例外、取消授权、清队列、旧事实结算、兜底、Lease 失效、摘要失败变体；终态发送失败不递归 |
-| 审计字段与脱敏 | [Core](M1/Kernel/Core.md) §7；[Persistence](M1/Infrastructure/Persistence.md) §4 | 一、五、六 | 在阶段一落实各审计 type 的字段与触发用例，包含拒绝、结算异常、迟到事实、faultId；核对日志不含密钥、Prompt、源码、工具正文或 Lease |
-| RunSummary 统计 | [M1Interface](M1/M1Interface.md) §11；[Execution](M1/Kernel/Execution.md) §8–9 | 一、二、四 | submitted = ok + rejected + failed + notDelivered；授权拒绝和挂起取消计数；rounds 仅已交付 OK/FAILED MODEL；requests 含重试；时间、token、finalCallUsed 与未知效果一致 |
-| 六种 Unit 与 FIFO | [Execution](M1/Kernel/Execution.md) §3、5、7 | 二、三、四 | 五类 Executor 请求加内建 REPORT_PUBLISH；状态转换、唯一 FIFO、epoch 改变不推进队首；不得将 report-publish 派发给 Executor |
-| 产物所有权与媒体类型 | [Execution](M1/Kernel/Execution.md) §4–5、9；[M1Interface](M1/M1Interface.md) §6.1 | 二、四、五 | 引用位置逐项解析、所有权和完整性双检查、多生产者登记、错误不泄漏其他运行存在性、五种 mediaType；违规输出隔离；收尾仅发布 RunSummary |
-| 上下文构建与来源传递 | [Execution](M1/Kernel/Execution.md) §7–8；[M1Interface](M1/M1Interface.md) §6.3 | 二、四、六 | 固定 Prompt/toolSpecs，final 仅 finish；HANDOFF/STATUS 上界；历史正文与工具调用关联；ContextPack 台账全部字段、snapshotId/provenance/prefixSha256 不丢失 |
-| 预算与容量 | [Monitor](M1/Kernel/Monitor.md) §3–4；[Scheduler](M1/Kernel/Scheduler.md) §2–3 | 一、二、四 | token 安全整数与单调状态、普通/收尾隔离、ACTUAL/UNKNOWN/NOT_SENT、冲突保守记账；容量与预留原子回滚，STOP_UNCONFIRMED 保留容量；重算估算而非采信 tokenCount |
-| 技术重试 | [Execution](M1/Kernel/Execution.md) §6；[Core](M1/Kernel/Core.md) §5.1 | 一、二、三、四 | FAILED/retryable/次数/NOT_SENT 条件、指数退避、全新 executionId、旧实例不覆盖、先释放再预留；不计 Workflow Round、不重复 final-call |
-| Supervisor 执行监管 | [Supervisor](M1/Kernel/Supervisor.md) §3–8 | 三、四 | 按 kind 最小环境、凭据仅给 MODEL、subprocess 仅给获准检索；deadline 从 notBefore 或派发时间计算；取消 epoch、无 startedAt 的启动前取消、唯一事实及 requestState 归一化 |
-| actor 与事件顺序 | [Interaction](M1/Kernel/Interaction.md) §3–4；[Fabric](M1/Infrastructure/Fabric.md) §4 | 四、五 | 控制仅在消息间优先、内部 syscall 同步、local I/O 可 await、跨主体仅登记；四目标发送器；事件可早于 Ack；seq 缺口不等待；关闭前排空，无等待环 |
-| 架构隔离与可替换性 | [Interaction](M1/Kernel/Interaction.md) §3、11；[M1TechStack](M1/M1TechStack.md) §3、11 | 一至五，六汇总 | 私有数据/冻结返回、禁止跨组件私有导入、Executor 不持有存储与 panic；真实 Port 与 fake 运行相同 contract tests，唯一组合位置与允许依赖 |
-| Fabric 与协议兼容 | [M1Interface](M1/M1Interface.md) §1.2–1.4、12–13；[SharedContracts](M1/Library/SharedContracts.md) §6 | 五、六 | 登记清单一致、未知 major/重复注册/多余字段/条件字段反例；BoundaryContext 校验、structuredClone 与不可变输出；Unsupported 无副作用、同地址有序、失败后继续排空 |
-| 文件存储与保留 | [Persistence](M1/Infrastructure/Persistence.md) §2–4；[ArtifactStore](M1/Infrastructure/ArtifactStore.md) §2–4 | 五 | namespace 限定、路径与符号链接、tmp/rename、跨 Port 审计排队、失败后继续、stop 排空；已有损坏 CAS 不覆盖，get 复验；重启保留 runs 但不恢复运行权限 |
-| 启动生命周期 | [ModuleHost](M1/Infrastructure/ModuleHost.md) §2–4；[M1Interface](M1/M1Interface.md) §14.5 | 三、五、六 | 顺序与账本、失败模块清理、start/afterStart/boot 期限、停止中迟到完成与拒绝、资源补清理、ready 前无业务、不重试失败 stop；配置/Catalog/工厂构造失败诊断、启动前建立 panic 控制、无 run 跳过任务收敛、迟到资源释放 |
-| panic 与进程保护 | [SystemFaultHandling](M1/SystemFaultHandling.md) §3–8 | 四验证上报，六完成真实控制 | 原始错误不丢、唯一 faultId、组合根不是模块、Core 不决定退出码、`abortAllRuns` 只由组合根调用、panic 五步与 `StopReport`、`supervisor.stop` 失败走 `moduleHost.stop`、UI/Fabric/存储不可用仍诊断退出、stderr 失败仍退出、部分装配清理、不承诺 `RunFinished` |
-| 配置与启动检查 | [Monitor](M1/Kernel/Monitor.md) §4；[M1TechStack](M1/M1TechStack.md) §4 | 二核对表示，六回归 | P05a 已完成能力回归；配置覆盖/未知字段/绝对 dataDir；凭据来源；bootMs/startTimeoutMs/stopTimeoutMs 正安全整数与默认值，无网络密钥验证 |
-| 只读、安全与不支持能力 | [M1Plan](M1/M1Plan.md) §2–3、7–8；[Interaction](M1/Kernel/Interaction.md) §5.1 | 一、三、四、六 | 真实目录 FORBIDDEN 与 fake 目录 UNSUPPORTED_CAPABILITY 两路径；路径逃逸/排除/非授权网络与副作用零成功；测试工具在运行前后对同一仓库计算摘要并比较 |
-| Workflow/UI 故障上报集成 | [SystemFaultHandling](M1/SystemFaultHandling.md) §2.2；[Workflow](M1/Module/Workflow.md) §11.1 | 六，外部协作 | Workflow 内部失败先 `closeRun(FAILED, WORKFLOW_INTERNAL)`，无法完成才 `reportSystemFault`；UserInteraction 同一入口；Cary 侧交付后验证注入与上报 |
-| 整机固定任务与发布证据 | [M1Plan](M1/M1Plan.md) §6–8；[M1TechStack](M1/M1TechStack.md) §11 | 六，外部协作 | F1–F5、至少一个真实模型跑全部任务；报告来源完整性与未确认项、成功率/成本/延迟基线、兼容矩阵、限制清单与运行说明；外部缺失则整机验收未完成 |
+| 九个外部 syscall 与状态矩阵 | [Kernel](../M1/Module/Kernel.md) §4；[Interaction](../M1/Kernel/Interaction.md) §4–5 | 一、四 | 每个请求的合法/拒绝/重放/冲突，RUNNING/CONVERGING/CLOSED 行为；CLOSED 可读产物但不能新建第二个 run |
+| Gateway 与身份因果链 | [Gateway](../M1/Kernel/Gateway.md) §2–4；[M1Interface](../M1/M1Interface.md) §2、13 | 一、四、五 | producer 固定与核验、correlation 固定、causation 衔接；重放不覆盖旧封锁状态；拒绝日志；合法 requestId 的畸形请求结构化拒绝 |
+| 定义固定与 AgentRun | [Core](../M1/Kernel/Core.md) §6；[AgentToolPool](../M1/Library/AgentToolPool.md) §6 | 一、四 | pin/digest/provider 核验、单 ACTIVE、结束后行为；Planner/CodeViewer 共用运行账本且不能重新取得 final-call |
+| 授权与 Lease | [Core](../M1/Kernel/Core.md) §4；[Interaction](../M1/Kernel/Interaction.md) §5.2 | 一、四 | 默认加配置排除规则、只问一次、挂起请求顺序、YES/NO/超时/取消/迟答；拒绝时无执行副作用 |
+| Core 非停机语义 | [Core](../M1/Kernel/Core.md) §9；[SystemFaultHandling](../M1/SystemFaultHandling.md) §2 | 一、四 | 与 syscall 并列的语义处理、受控失败不误 panic、异常处理自身失败不循环、预期结果仍结构化；捕获边界逐项覆盖、`KERNEL_FAULT` 只收敛一次 |
+| 异常捕获边界与退出码 | [SystemFaultHandling](../M1/SystemFaultHandling.md) §2.2、§5–6 | 一、四、六 | CLI 参数错误 64、正常关闭码、panic 70、首次/二次 Ctrl+C 130、`uncaughtException`/`unhandledRejection` 70；无运行请求不创建 Core 异常；终端适配器不自退；真实子进程退出测试 |
+| 收敛与终态 | [Interaction](../M1/Kernel/Interaction.md) §6–8 | 一、二、四 | 三步收敛、原因先到优先及 VIOLATION 例外、取消授权、清队列、旧事实结算、兜底、Lease 失效、摘要失败变体；终态发送失败不递归 |
+| 审计字段与脱敏 | [Core](../M1/Kernel/Core.md) §7；[Persistence](../M1/Infrastructure/Persistence.md) §4 | 一、五、六 | 在阶段一落实各审计 type 的字段与触发用例，包含拒绝、结算异常、迟到事实、faultId；核对日志不含密钥、Prompt、源码、工具正文或 Lease |
+| RunSummary 统计 | [M1Interface](../M1/M1Interface.md) §11；[Execution](../M1/Kernel/Execution.md) §8–9 | 一、二、四 | submitted = ok + rejected + failed + notDelivered；授权拒绝和挂起取消计数；rounds 仅已交付 OK/FAILED MODEL；requests 含重试；时间、token、finalCallUsed 与未知效果一致 |
+| 六种 Unit 与 FIFO | [Execution](../M1/Kernel/Execution.md) §3、5、7 | 二、三、四 | 五类 Executor 请求加内建 REPORT_PUBLISH；状态转换、唯一 FIFO、epoch 改变不推进队首；不得将 report-publish 派发给 Executor |
+| 产物所有权与媒体类型 | [Execution](../M1/Kernel/Execution.md) §4–5、9；[M1Interface](../M1/M1Interface.md) §6.1 | 二、四、五 | 引用位置逐项解析、所有权和完整性双检查、多生产者登记、错误不泄漏其他运行存在性、五种 mediaType；违规输出隔离；收尾仅发布 RunSummary |
+| 上下文构建与来源传递 | [Execution](../M1/Kernel/Execution.md) §7–8；[M1Interface](../M1/M1Interface.md) §6.3 | 二、四、六 | 固定 Prompt/toolSpecs，final 仅 finish；HANDOFF/STATUS 上界；历史正文与工具调用关联；ContextPack 台账全部字段、snapshotId/provenance/prefixSha256 不丢失 |
+| 预算与容量 | [Monitor](../M1/Kernel/Monitor.md) §3–4；[Scheduler](../M1/Kernel/Scheduler.md) §2–3 | 一、二、四 | token 安全整数与单调状态、普通/收尾隔离、ACTUAL/UNKNOWN/NOT_SENT、冲突保守记账；容量与预留原子回滚，STOP_UNCONFIRMED 保留容量；重算估算而非采信 tokenCount |
+| 技术重试 | [Execution](../M1/Kernel/Execution.md) §6；[Core](../M1/Kernel/Core.md) §5.1 | 一、二、三、四 | FAILED/retryable/次数/NOT_SENT 条件、指数退避、全新 executionId、旧实例不覆盖、先释放再预留；不计 Workflow Round、不重复 final-call |
+| Supervisor 执行监管 | [Supervisor](../M1/Kernel/Supervisor.md) §3–8 | 三、四 | 按 kind 最小环境、凭据仅给 MODEL、subprocess 仅给获准检索；deadline 从 notBefore 或派发时间计算；取消 epoch、无 startedAt 的启动前取消、唯一事实及 requestState 归一化 |
+| actor 与事件顺序 | [Interaction](../M1/Kernel/Interaction.md) §3–4；[Fabric](../M1/Infrastructure/Fabric.md) §4 | 四、五 | 控制仅在消息间优先、内部 syscall 同步、local I/O 可 await、跨主体仅登记；四目标发送器；事件可早于 Ack；seq 缺口不等待；关闭前排空，无等待环 |
+| 架构隔离与可替换性 | [Interaction](../M1/Kernel/Interaction.md) §3、11；[M1TechStack](../M1/M1TechStack.md) §3、11 | 一至五，六汇总 | 私有数据/冻结返回、禁止跨组件私有导入、Executor 不持有存储与 panic；真实 Port 与 fake 运行相同 contract tests，唯一组合位置与允许依赖 |
+| Fabric 与协议兼容 | [M1Interface](../M1/M1Interface.md) §1.2–1.4、12–13；[SharedContracts](../M1/Library/SharedContracts.md) §6 | 五、六 | 登记清单一致、未知 major/重复注册/多余字段/条件字段反例；BoundaryContext 校验、structuredClone 与不可变输出；Unsupported 无副作用、同地址有序、失败后继续排空 |
+| 文件存储与保留 | [Persistence](../M1/Infrastructure/Persistence.md) §2–4；[ArtifactStore](../M1/Infrastructure/ArtifactStore.md) §2–4 | 五 | namespace 限定、路径与符号链接、tmp/rename、跨 Port 审计排队、失败后继续、stop 排空；已有损坏 CAS 不覆盖，get 复验；重启保留 runs 但不恢复运行权限 |
+| 启动生命周期 | [ModuleHost](../M1/Infrastructure/ModuleHost.md) §2–4；[M1Interface](../M1/M1Interface.md) §14.5 | 三、五、六 | 顺序与账本、失败模块清理、start/afterStart/boot 期限、停止中迟到完成与拒绝、资源补清理、ready 前无业务、不重试失败 stop；配置/Catalog/工厂构造失败诊断、启动前建立 panic 控制、无 run 跳过任务收敛、迟到资源释放 |
+| panic 与进程保护 | [SystemFaultHandling](../M1/SystemFaultHandling.md) §3–8 | 四验证上报，六完成真实控制 | 原始错误不丢、唯一 faultId、组合根不是模块、Core 不决定退出码、`abortAllRuns` 只由组合根调用、panic 五步与 `StopReport`、`supervisor.stop` 失败走 `moduleHost.stop`、UI/Fabric/存储不可用仍诊断退出、stderr 失败仍退出、部分装配清理、不承诺 `RunFinished` |
+| 配置与启动检查 | [Monitor](../M1/Kernel/Monitor.md) §4；[M1TechStack](../M1/M1TechStack.md) §4 | 二核对表示，六回归 | P05a 已完成能力回归；配置覆盖/未知字段/绝对 dataDir；凭据来源；bootMs/startTimeoutMs/stopTimeoutMs 正安全整数与默认值，无网络密钥验证 |
+| 只读、安全与不支持能力 | [M1Plan](../M1/M1Plan.md) §2–3、7–8；[Interaction](../M1/Kernel/Interaction.md) §5.1 | 一、三、四、六 | 真实目录 FORBIDDEN 与 fake 目录 UNSUPPORTED_CAPABILITY 两路径；路径逃逸/排除/非授权网络与副作用零成功；测试工具在运行前后对同一仓库计算摘要并比较 |
+| Workflow/UI 故障上报集成 | [SystemFaultHandling](../M1/SystemFaultHandling.md) §2.2；[Workflow](../M1/Module/Workflow.md) §11.1 | 六，外部协作 | Workflow 内部失败先 `closeRun(FAILED, WORKFLOW_INTERNAL)`，无法完成才 `reportSystemFault`；UserInteraction 同一入口；Cary 侧交付后验证注入与上报 |
+| 整机固定任务与发布证据 | [M1Plan](../M1/M1Plan.md) §6–8；[M1TechStack](../M1/M1TechStack.md) §11 | 六，外部协作 | F1–F5、至少一个真实模型跑全部任务；报告来源完整性与未确认项、成功率/成本/延迟基线、兼容矩阵、限制清单与运行说明；外部缺失则整机验收未完成 |
 
 ### 6.11 预留关闭与验收边界
 

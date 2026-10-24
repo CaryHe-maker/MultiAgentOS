@@ -288,4 +288,4 @@ kernel/scheduler 语句 92.10% 分支 78.57%  函数 100.00% 行 96.77%
 
 阶段二完成不表示 Kernel 或 M1 整机完成；Stage3 仍需要真实 Supervisor 执行控制，
 Stage4 仍需要 run actor 与 `createKernelCore` 装配，M1 验收仍以
-[M1Plan](M1/M1Plan.md) 第 7 节和第 8 节为准。
+[M1Plan](../M1/M1Plan.md) 第 7 节和第 8 节为准。

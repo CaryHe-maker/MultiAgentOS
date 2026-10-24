@@ -45,7 +45,8 @@ M1 不执行文件写入、项目命令、项目测试或其他副作用。其�
 - [M1TechStack](docs/M1/M1TechStack.md)
 - [M1Interface](docs/M1/M1Interface.md)
 
-CLI 入口和完整 Agent 循环仍在实现中，不应将架构文档中的长期能力理解为已经交付。
+M1 的全部产品部件已经实现，正在进行真实模型联调与发布验收，进度见
+[M1 发布工作计划](docs/M1ReleasePlan.md)。不应将架构文档中的长期能力理解为已经交付。
 
 ## 仓库结构
 
@@ -73,6 +74,8 @@ docs/
   M1/                   当前交付范围、机制与接口
   Requirements/         当前依赖
   Meetings/             原始会议记录
+  History/              已归档的阶段工作文档
+  M1ReleasePlan.md      M1 发布工作计划
   Style.md              工程协作规范
 ```
 
@@ -91,13 +94,24 @@ pnpm run check
 ```
 
 开发平台不限，最终验收在 Ubuntu LTS 上执行；具体 LTS 版本与系统依赖由交付设计确认。
+检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
+Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
-Kernel 与四类基础设施已经实现并通过阶段验收；Workflow、UserInteraction 与 ExecutorSet 仍只有固定签名的工厂，
-调用时抛出 `NOT_IMPLEMENTED`。CLI 入口和完整 Agent 循环仍受这些外部模块阻塞，不应将架构文档中的长期能力理解为已经交付。
+Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，
+可以组成完整系统。真实模型下的固定任务集（F1–F5）与发布验收尚未完成；
+Prompt 与工具说明仍是 `PLACEHOLDER` 草稿。
+
+```bash
+pnpm run build
+export DEEPSEEK_API_KEY=<key>
+node apps/control-plane/dist/bin.js analyze --repo <仓库绝对路径> "<问题>"
+```
+
+API key 只从环境变量读取（也可以写在 MultiAgentOS 自身工作目录下不入库的 `.env` 中）。
 `pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
 
-Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见
-[M1 Kernel 与 Infrastructure 总实现报告](docs/M1KernelImplementationReport.md)。
+Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
+[M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 
@@ -109,6 +123,7 @@ Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见
 - [协议架构](docs/Architecture/Protocol.md)
 - [运行实例](docs/Architecture/Instance.md)
 - [M1 指南](docs/M1/README.md)
-- [M1 Kernel 与 Infrastructure 总实现报告](docs/M1KernelImplementationReport.md)
+- [M1 发布工作计划](docs/M1ReleasePlan.md)
+- [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)
 
 所有合并到 `feat/M1` 或 `main` 的变更都必须通过 Pull Request。

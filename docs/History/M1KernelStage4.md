@@ -314,4 +314,4 @@ kernel/supervisor        语句 93.13%  分支 82.67%  行 96.24%
 - 共享接缝变更需单独评审并同步 contracts、testing 与 fake。
 
 阶段四完成不表示 M1 整机完成；M1 验收仍以
-[M1Plan](M1/M1Plan.md) 第 7 节和 [M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6 节为准。
+[M1Plan](../M1/M1Plan.md) 第 7 节和 [M1-kernel-infra-plan](M1-kernel-infra-plan.md) 第 6 节为准。

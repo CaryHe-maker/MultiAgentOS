@@ -331,4 +331,4 @@ fact-mapper         语句 95.00%  分支 88.63%  函数 50.00%  行 94.44%
 - 共享接缝变更需单独评审并同步 contracts、testing 与相关 fake。
 
 阶段三完成不表示 Kernel 或 M1 整机完成；阶段四仍需 run actor 与 `createKernelCore` 装配，
-M1 验收仍以 [M1Plan](M1/M1Plan.md) 第 7 节和第 8 节为准。
+M1 验收仍以 [M1Plan](../M1/M1Plan.md) 第 7 节和第 8 节为准。
