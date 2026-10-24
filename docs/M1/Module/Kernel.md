@@ -52,7 +52,7 @@ Kernel 与外部 Module 之间的交互，以及 Kernel 对执行的控制，统
 | Syscall      | 外部 Module 向 Kernel 发起的请求（第 4.1、4.2 节）          | 必须有调用者；经 Gateway 进入；以 `requestId` 幂等；同步返回受理或拒绝         |
 | Event        | Kernel 发给外部 Module 的结果与事实通知（第 4.4 节）        | 由 Core 经 Outbox 主动发出；有序、可去重；接收方不能拒绝，只据此更新自己的状态 |
 | Interruption | Kernel 经 Supervisor 要求在途执行停止（取消、截止时间到达） | 由 Core 决定、Supervisor 执行；发出不等于已停止，以执行事实确认                |
-| Exception    | 无法正常继续的故障（第 11 节）                              | 不跨通讯主体抛出；由 Core 收敛并写入审计                                       |
+| Exception    | 需要 Core 裁决的运行异常（第 11 节）                              | 不跨主体抛出；由 Core 处理语义，必要时收敛；停机异常进入 panic                                       |
 
 三者有因果关系：Syscall 可以产生 Interruption（`cancelRun` 使在途执行被要求停止），
 Interruption 在宽限期内未被确认时产生 Exception（`EXECUTION_STOP_UNCONFIRMED`）。
@@ -128,6 +128,8 @@ Kernel 用两种方式回应外部模块：请求的直接返回值，以及投�
 | AuthorizationResolved                   | 事件   | UserInteraction | 询问得到同意、拒绝、超时或因收敛取消             |
 | RunFinished                             | 事件   | UserInteraction | 收敛完成，最后一个事件，内容与 RunClosed 相同    |
 
+以下保证适用于通信可用且受控收敛完成的路径；panic 或进程崩溃不保证终态交付。
+
 规则：
 
 1. 得到 SyscallAck 的 `submitUnit`，要么恰好收到一个 UnitReport，要么随 RunClosed 结束（运行先进入收敛）。
@@ -147,9 +149,11 @@ Workflow 与 UserInteraction 各自实现一个 Inbox（`WorkflowInboxPort`、`I
 4. **受理语义**：`deliver` 只做 Schema 校验与入队即返回，不表示已经处理。
 5. **终结**：RunClosed（对 UserInteraction 为 RunFinished）是该运行发给该接收方的最后一个事件；之前入队的事件都先于它投递。
 6. **串行消费**：接收方按 Inbox 顺序逐条处理事件，处理期间可以等待自己发起的请求的返回值。
-7. **投递失败**：只可能是 Schema 不合法，属于契约缺陷，不重试：该事件写入审计并被跳过，后续事件照常投递，运行以 `FAILED(KERNEL_INTERNAL)` 收敛
+7. **投递失败**：可能为契约缺陷或停止期间的 NOT_RUNNING；记录原因，不重试。跳过失败事件并继续后续投递，
+   RUNNING 的运行以 `FAILED(KERNEL_INTERNAL)` 收敛
    （经内部消息 `KERNEL_FAULT`，见 [Kernel/Interaction](../Kernel/Interaction.md) 4.4）；RunClosed、RunFinished 本身投递失败时只写入审计。
    接收方按 `eventId` 去重、按到达顺序处理，不因 `seq` 出现缺口而等待。
+   已收敛运行不因发送失败改写结束原因；运行消息通道或异常处理机制失效时进入组合根 panic。
 
 ## 5. M1 的 Unit
 
@@ -231,7 +235,7 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 
 ## 9. 结束方式与用户可见内容
 
-无论哪种方式结束，Core 都先完成收敛，再把结束原因、失败信息、未知效果与运行摘要发布结果经 RunFinished 交给 UserInteraction。
+下表列出的受控任务结束方式中，Core 都先完成收敛，再把结束原因、失败信息、未知效果与运行摘要发布结果经 RunFinished 交给 UserInteraction。
 发布成功时携带 `runSummaryRef`；发布失败时携带 `finalizationError = RUN_SUMMARY_WRITE_FAILED`，保留原 `closeReason`、
 `failure` 与 `unknownEffects`，不伪造摘要引用。Workflow 收到内容相同的 RunClosed，因此双方均能终止等待并继续关闭。
 
@@ -268,11 +272,18 @@ Lease 的范围与签发逻辑见 [Core](../Kernel/Core.md) 第 4 节。
 Validation 失败（`INVALID_ACTION`、`UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`）
 是 Workflow 内部的反馈码（`FeedbackCode`），不是 Kernel 原因码。Round 上限与 WRAP_UP 不对应原因码。
 
-## 11. Exception 规则
+## 11. 非停机异常与停机异常
 
-1. 正常业务结果不进入 Exception：Validation 失败、Round 达到上限、WRAP_UP、额度耗尽、权限拒绝、执行点正常越界。
-2. 以下由 Core 按 Exception 收敛：运行超时（Core 计时）、安全违规（经 Supervisor、Execution）、执行停止未确认、Kernel 内部错误。
-3. 请求被拒（SyscallRejected）不停止运行，由 Workflow 按第 10 节处理；Core 拒绝的请求写入审计，Gateway 拒绝的请求写入 Gateway 的结构化日志。
-4. 重复结算的数值冲突由 Monitor 按较大值记账，并由 Core 写入审计，不停止运行。
-5. 每个被受理的 `submitUnit` 要么收到 UnitReport，要么随 RunClosed 结束。
-6. 仅凭 Executor 自报不升级为 panic。
+M1 采用两类异常，见 [异常处理与安全停机](../SystemFaultHandling.md)。
+第 9 节的 Exception 表示触发任务收敛的运行异常，不是独立等级。
+
+1. 权限拒绝、额度不足、执行失败等保留结构化结果，不以 throw 代替契约分支。
+   Validation 与 Round 上限仍由 Workflow 处理，不移入 Core。
+2. Core 维护非停机异常语义，统一裁决拒绝、结算、重试许可与任务收敛。
+   运行超时、受控安全违规、停止未确认、可收敛的内部错误可以结束当前任务。
+3. SyscallRejected 不直接停止运行；Core 拒绝写审计，Gateway 拒绝写结构化日志。
+4. 结算数值冲突由 Monitor 保守记账、Core 审计；取消或旧 epoch 不免除已发生消耗。
+5. 正常受控路径中，每个受理的 submitUnit 要么收到 UnitReport，要么随 RunClosed 结束。
+   panic 或进程崩溃时不保证终态交付，不伪造成功。
+6. 关键状态不可信或异常处理机制失效时请求组合根 panic。组合根决定停机，
+   Supervisor 执行中止与清理，Core 只负责任务语义；Executor 无权直接触发 panic。

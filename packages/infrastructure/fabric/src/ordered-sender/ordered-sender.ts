@@ -1,7 +1,8 @@
 /**
  * Sends registered items one after another, in registration order, the next one only after the
- * previous send returned (docs/M1/Kernel/Interaction.md 4.4). A failed send is a contract
- * defect: it is reported, skipped and never retried, and later items are still sent.
+ * previous send returned (docs/M1/Kernel/Interaction.md 4.4). A failed send is reported,
+ * skipped and never retried; later items are still sent. The caller decides whether the
+ * failure is a contract defect, a stopped target or another delivery error.
  */
 export class OrderedSender<T> {
   readonly #send: (item: T) => Promise<void>;

@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Real-system and child-process tests share OS resources; running files sequentially keeps
+    // their timing deterministic on the Ubuntu quality gate.
+    fileParallelism: false,
     include: [
       'apps/**/*.test.ts',
       'apps/**/*.spec.ts',

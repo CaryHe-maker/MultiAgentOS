@@ -35,6 +35,11 @@ export class FilePersistence implements PersistencePort, LifecyclePort {
     this.#dataDir = dataDir;
   }
 
+  /**
+   * Ensures the temporary directory exists. Clearing `<dataDir>/tmp/` is the Supervisor's
+   * startup responsibility (docs/M1/Infrastructure/Persistence.md 2); Persistence does not
+   * delete previously retained content here.
+   */
   async start(): Promise<void> {
     await this.#assertNoSymlink('tmp');
     await mkdir(join(this.#dataDir, 'tmp'), { recursive: true });
@@ -187,13 +192,6 @@ export function forPersistenceNamespace(
     },
     capabilities: () => persistence.capabilities(),
   });
-}
-
-/** Empties `<dataDir>/tmp/`; `<dataDir>/runs/` is never touched. The Supervisor calls it once at start. */
-export async function clearTemporaryFiles(dataDir: string): Promise<void> {
-  if (!isAbsolute(dataDir)) throw new Error('dataDir must be an absolute path');
-  await rm(join(dataDir, 'tmp'), { recursive: true, force: true });
-  await mkdir(join(dataDir, 'tmp'), { recursive: true });
 }
 
 const PERSISTENCE_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze([

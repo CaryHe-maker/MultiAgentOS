@@ -105,7 +105,7 @@ async function runSystem(seats: Seats = {}) {
   const system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
     terminal: { ...(seats.terminal ?? createFakeTerminal()), write: (text) => written.push(text) },
-    credentials: { apiKeyFor: () => undefined },
+    credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
     parts: {
       ...parts,
       // Record what each Inbox receives, whichever implementation sits behind it.

@@ -11,6 +11,8 @@ import {
   createFakeWorkflow,
   type FakeWorkflowModule,
 } from '@multiagentos/testing';
+import type { KernelCoreModule, SupervisorModule } from '@multiagentos/kernel';
+import type { ModuleLedgerEntry } from '@multiagentos/module-host';
 import type { SystemFaultReporter } from '@multiagentos/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultSystemConfig } from '../config/system-config.js';
@@ -20,7 +22,7 @@ import {
   installProcessGuards,
   type GuardedProcess,
 } from './process-guards.js';
-import { EXIT_CODE_SYSTEM_FAULT } from './system-control.js';
+import { createSystemControl, EXIT_CODE_SYSTEM_FAULT } from './system-control.js';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -41,21 +43,22 @@ interface Fixture {
 async function fixture(
   parts: NonNullable<ComposeOptions['parts']> = {},
   timeouts: ComposeOptions['timeouts'] = {},
+  log?: (line: string) => void,
 ): Promise<Fixture> {
   const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
   roots.push(dataDir);
-  const log: string[] = [];
+  const logLines: string[] = [];
   let workflow: FakeWorkflowModule | undefined;
   let fired = false;
   const result = {
-    log,
+    log: logLines,
     onRunning: () => undefined,
   } as { system: System; workflow: FakeWorkflowModule; log: string[]; onRunning: () => void };
   result.system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
     terminal: createFakeTerminal(),
-    credentials: { apiKeyFor: () => undefined },
-    log: (line) => log.push(line),
+    credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+    log: log ?? ((line) => logLines.push(line)),
     timeouts,
     parts: {
       createGateway: createFakeGateway(),
@@ -240,6 +243,137 @@ describe('system control', () => {
       'user-interaction': 'REGISTERED',
     });
   });
+
+  it('bounds the Supervisor boot with bootMs and ignores a late start', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const context = await fixture(
+      {
+        createSupervisor: (deps) => {
+          const supervisor = createFakeSupervisor()(deps);
+          const start = supervisor.start.bind(supervisor);
+          return Object.assign(supervisor, {
+            start: async () => {
+              await gate;
+              await start();
+            },
+          });
+        },
+      },
+      { bootMs: 20, stopMs: 100, settleMs: 100 },
+    );
+
+    await expect(context.system.start()).rejects.toThrow('bootMs');
+    release();
+    const report = await context.system.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.faults[0]).toMatchObject({ source: 'supervisor', phase: 'BOOT' });
+    const moduleStates = await states(context.system);
+    expect(Object.values(moduleStates)).not.toContain('READY');
+  });
+
+  it('continues when the diagnostic log throws', async () => {
+    const context = await fixture({}, {}, () => {
+      throw new Error('log failed');
+    });
+    await context.system.start();
+    context.onRunning = () =>
+      context.system.reportFault({
+        source: 'workflow',
+        phase: 'RUN',
+        error: new Error('workflow failed'),
+      });
+
+    const exitCode = await context.system.run((interaction) => interaction.analyze(command));
+    expect([1, EXIT_CODE_SYSTEM_FAULT]).toContain(exitCode);
+    const report = await context.system.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.faults.map((fault) => fault.source)).toContain('workflow');
+  });
+
+  it('handles a command that throws synchronously', async () => {
+    const { system } = await fixture();
+    await system.start();
+
+    expect(
+      await system.run(() => {
+        throw new Error('synchronous command failure');
+      }),
+    ).toBe(EXIT_CODE_SYSTEM_FAULT);
+    const report = await system.shutdown();
+    expect(report.faults[0]).toMatchObject({ source: 'entry', phase: 'RUN' });
+  });
+
+  it('continues to StopReport when abortAllRuns or killSubprocesses throws', async () => {
+    const supervisor = {
+      start: () => Promise.resolve(),
+      stop: () => Promise.resolve(),
+      whenStopped: () => new Promise<void>(() => undefined),
+    } as unknown as SupervisorModule;
+    const kernelCore = {
+      abortAllRuns: () => {
+        throw new Error('abort failed synchronously');
+      },
+    } as unknown as KernelCoreModule;
+    const moduleHost = {
+      stop: () => Promise.resolve(),
+      ledger: (): readonly ModuleLedgerEntry[] => [],
+    };
+    const control = createSystemControl({
+      supervisor,
+      kernelCore,
+      moduleHost,
+      killSubprocesses: () => {
+        throw new Error('kill failed');
+      },
+      timeouts: { bootMs: 100, abortRunsMs: 100, stopMs: 100, settleMs: 100 },
+      now: () => new Date('2026-10-22T00:00:00.000Z'),
+      log: () => undefined,
+    });
+
+    await control.start();
+    control.reportFault({ source: 'workflow', phase: 'RUN', error: new Error('inbox failed') });
+    const report = await control.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.faults.map((fault) => fault.source)).toEqual(
+      expect.arrayContaining(['workflow', 'kernel-core', 'composition-root']),
+    );
+  });
+
+  it('falls back to ModuleHost when supervisor.stop throws synchronously', async () => {
+    let directStops = 0;
+    const supervisor = {
+      start: () => Promise.resolve(),
+      stop: () => {
+        throw new Error('supervisor stop failed');
+      },
+      whenStopped: () => new Promise<void>(() => undefined),
+    } as unknown as SupervisorModule;
+    const kernelCore = { abortAllRuns: () => Promise.resolve() } as unknown as KernelCoreModule;
+    const moduleHost = {
+      stop: () => {
+        directStops += 1;
+        return Promise.resolve();
+      },
+      ledger: (): readonly ModuleLedgerEntry[] => [],
+    };
+    const control = createSystemControl({
+      supervisor,
+      kernelCore,
+      moduleHost,
+      killSubprocesses: () => undefined,
+      timeouts: { bootMs: 100, abortRunsMs: 100, stopMs: 100, settleMs: 100 },
+      now: () => new Date('2026-10-22T00:00:00.000Z'),
+      log: () => undefined,
+    });
+
+    await control.start();
+    control.reportFault({ source: 'workflow', phase: 'RUN', error: new Error('inbox failed') });
+    const report = await control.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.faults.map((fault) => fault.source)).toContain('supervisor');
+    expect(directStops).toBe(1);
+  });
 });
 
 describe('process guards', () => {
@@ -285,5 +419,30 @@ describe('process guards', () => {
     expect(calls).toEqual(['log', 'kill', `exit ${EXIT_CODE_INTERRUPTED}`]);
     remove();
     expect(listeners.size).toBe(0);
+  });
+
+  it('still exits when diagnostics and child cleanup throw', () => {
+    const listeners = new Map<string, (error?: unknown) => void>();
+    const calls: string[] = [];
+    const target: GuardedProcess = {
+      on: (event: string, listener: (error?: unknown) => void) =>
+        void listeners.set(event, listener),
+      off: (event) => void listeners.delete(event),
+      exit: (code) => void calls.push(`exit ${code}`),
+    };
+    installProcessGuards({
+      killSubprocesses: () => {
+        throw new Error('kill failed');
+      },
+      log: () => {
+        throw new Error('log failed');
+      },
+      target,
+    });
+    expect(() => listeners.get('uncaughtException')?.(new Error('boom'))).not.toThrow();
+    expect(calls).toEqual([`exit ${EXIT_CODE_SYSTEM_FAULT}`]);
+    listeners.get('SIGINT')?.();
+    expect(() => listeners.get('SIGINT')?.()).not.toThrow();
+    expect(calls).toEqual([`exit ${EXIT_CODE_SYSTEM_FAULT}`, `exit ${EXIT_CODE_INTERRUPTED}`]);
   });
 });

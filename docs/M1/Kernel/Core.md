@@ -19,11 +19,11 @@ Core 负责运行管理、授权、租约与控制裁决，是内外部 syscall 
 - 结果检查（第 5 节），并作为唯一出口经 Outbox 交付 RunStart、UnitReport、RunClosed、AuthorizationRequest、AuthorizationResolved 与 RunFinished。
 - 维护运行控制状态（`RUNNING`、`CONVERGING`、`CLOSED`）与 runEpoch，组织收敛（Interaction 第 6 节）。
 - 运行总时长计时：`RUN_INIT` 时开始，进入收敛时停止；到点按 `RUN_TIMEOUT` 收敛。
-- 通知 Supervisor 取消与关闭（`SupervisorPort.cancelRun`、`SupervisorPort.shutdown`），依据 runEpoch 决定是否接受执行事实。
+- 通知 Supervisor 取消与关闭（`SupervisorPort.cancelRun`、`SupervisorPort.shutdown`），区分执行归属、费用结算与 runEpoch 交付资格。
 - 推送 `AdmissionProjection` 给 Gateway。
 - 写入审计记录（第 7 节）；统计 Unit 的受理与交付（`RunSummary.units`），组装 RunSummary 并交 Execution 写成产物。
 - 处理 actor 之外的发送器投递的 `KERNEL_FAULT`（Interaction 4.4）。
-- 运行管理实现组合根的 `abortAllRuns`（Interaction 7.1）；收敛过程自身失败时经 `reportSystemFault` 升级。
+- 运行管理实现组合根的 `abortAllRuns`（Interaction 7.1）；收敛过程自身失败时经 `reportSystemFault` 请求组合根 panic。
 
 M1 只支持只读分析所需的基础人工授权，不引入任意能力扩权、复杂审批、委派与再委派或长期跨运行租约。
 
@@ -45,8 +45,8 @@ Execution、Monitor、Scheduler 只能取得裁决与派生值（Interaction 3.2
 ## 4. Lease 与用户授权
 
 - `repo.read` 的范围：仓库根目录（`createRun` 时 `repositoryPath` 的 realpath）、排除规则、外发目标 provider（`KernelConfig.provider`）。
-- 默认排除规则：`.git/**`、`**/.env*`、`**/*.pem`、`**/*.key`、`**/id_rsa*`、`**/id_dsa*`、`**/id_ecdsa*`、`**/id_ed25519*`、`**/node_modules/**`；`KernelConfig.repositoryExclusions`
-  只能追加，不能删除。Executor 硬编码同一组默认规则（[ExecutorSet](../Library/ExecutorSet.md) 3.2）。
+- 默认排除规则是 contracts 的 `DEFAULT_REPOSITORY_EXCLUSIONS`，匹配语义见 [M1Interface](../M1Interface.md) 3.5；
+  `KernelConfig.repositoryExclusions` 只能追加，不能删除。Executor 使用同一份列表与同一个匹配器。
 - Lease = Agent 定义的能力 ∩ 用户授权 ∩ 系统策略；绑定 WorkflowRun，在收敛第 ③ 步失效。
 - 一个运行只询问一次。用户同意后，后续 `repo.read` 申请直接签发或复用 Lease，不再询问；危险行为每次询问（M1 不涉及）。
 
@@ -146,3 +146,34 @@ Core 经 `PersistencePort.auditLog('kernel-core', workflowRunId)` 追加审计�
 | `KernelConfig.repositoryExclusions` | Core | `[]` |
 
 完整配置见 [Interaction](Interaction.md) 第 9 节。
+
+## 9. 非停机异常语义
+
+Core 维护与 syscall 并列的私有异常处理入口；分类以
+[异常处理与安全停机](../SystemFaultHandling.md) 为准。
+该入口是 Kernel 内部逻辑，不新增外部 syscall、Fabric Schema 或跨模块异常总线。
+既有消息、执行结果和同步返回值在各自接收点进入统一的处理规则，不能再投递一次造成重复结算。
+
+处理顺序：
+
+1. 核验来源、workflowRunId、关联 request、attempt 和当前 execution；不信任外部自报的异常类别。
+2. 读取运行状态，按下面的语义表决定拒绝、记录、许可重试或登记收敛。
+3. 在同步内部 syscall 中只改变 Core 状态、调用 Monitor/Scheduler 和登记待发送项；
+   不回调 Execution、不等待 I/O。收尾由本轮末尾的 settleConvergence 执行。
+4. 按原契约响应、审计或交付。需要重试时由 Execution 发起申请，Core 只裁决许可。
+5. 已知关键状态无法维持或异常处理自身失败时请求组合根 panic，不递归处理自身异常。
+
+| 输入 | Core 语义 |
+| --- | --- |
+| 权限、输入、预算等拒绝 | 保持已有拒绝码，不自动结束运行；Gateway 边界拒绝仍由 Gateway 处理 |
+| 授权超时 | 结束询问，拒绝挂起请求，不直接终止运行 |
+| 执行失败、UNIT_TIMEOUT | 核验并结算；按契约交付失败，重试按 Execution 规则申请 |
+| 结算异常 | 使用 Monitor 的保守结算结果并审计，不重复收费 |
+| RUN_TIMEOUT | 按 RUN_TIMEOUT 收敛 |
+| VIOLATION | 隔离输出，按违规收敛；收敛中允许升级结束原因 |
+| STOP_UNCONFIRMED | 记录未知效果，按 FAILED 收敛，容量保留到最终清理 |
+| KERNEL_FAULT | RUNNING 时按 FAILED(KERNEL_INTERNAL) 收敛；已收敛时只记录 |
+
+CONVERGING 中旧 epoch 的合法在途事实仍需结算与记录，不重试、不发布执行产物、不交付 UnitReport。
+CLOSED 后的事实只作为证据，不修改已发布结果。非停机异常可以结束任务，任务结束后的正常退出不等于 panic。
+异常类型与当前状态的处理表必须有确定性测试，覆盖重复、迟到、取消竞争以及异常处理再次失败。

@@ -67,6 +67,13 @@ describe('LocalArtifactStore', () => {
     await expect(artifacts.get('wfr_another', ref)).rejects.toThrow(ArtifactIntegrityError);
   });
 
+  it('reports a missing artifact as an integrity error', async () => {
+    const { store: artifacts, dataDir } = await store();
+    const ref = await artifacts.put(run, bytes('gone'), 'text/plain');
+    await rm(join(dataDir, 'runs', run, 'artifacts', ref.sha256));
+    await expect(artifacts.get(run, ref)).rejects.toThrow(ArtifactIntegrityError);
+  });
+
   it('refuses damaged content and malformed run ids', async () => {
     const { store: artifacts, dataDir } = await store();
     const ref = await artifacts.put(run, bytes('original'), 'text/plain');

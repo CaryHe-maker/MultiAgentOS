@@ -3,8 +3,10 @@ import {
   type AdmissionProjection,
   type ArtifactContent,
   type BoundaryContext,
+  type CloseReason,
   type FabricPort,
   type GatewayForward,
+  type GatewayRejectedCode,
   type HealthStatus,
   type LifecyclePort,
   type RunCreated,
@@ -54,10 +56,40 @@ export function createGateway({ fabric, now = () => new Date() }: GatewayDeps): 
   let registered = false;
   let running = false;
 
+  const logRejection = (
+    requestId: string,
+    reasonCode: GatewayRejectedCode | 'RUN_BLOCKED',
+    closeReason?: CloseReason,
+  ): void => {
+    process.stderr.write(
+      `${JSON.stringify({
+        at: now().toISOString(),
+        component: 'gateway',
+        requestId,
+        reasonCode,
+        ...(closeReason === undefined ? {} : { closeReason }),
+      })}\n`,
+    );
+  };
+
   const rejected = (
     requestId: string,
-    reasonCode: 'INVALID_REQUEST' | 'CALLER_FORBIDDEN' | 'RUN_NOT_FOUND',
-  ): SyscallRejected => ({ requestId, outcome: 'REJECTED', issuer: 'GATEWAY', reasonCode });
+    reasonCode: GatewayRejectedCode | 'RUN_BLOCKED',
+    closeReason?: CloseReason,
+  ): SyscallRejected => {
+    logRejection(requestId, reasonCode, closeReason);
+    if (reasonCode === 'RUN_BLOCKED') {
+      if (closeReason === undefined) throw new Error('RUN_BLOCKED requires closeReason');
+      return {
+        requestId,
+        outcome: 'REJECTED',
+        issuer: 'GATEWAY',
+        reasonCode,
+        closeReason,
+      };
+    }
+    return { requestId, outcome: 'REJECTED', issuer: 'GATEWAY', reasonCode };
+  };
 
   const serve = (route: (typeof ROUTES)[number]): void => {
     fabric.register<GatewayForward['request'], GatewayResponse>(
@@ -83,13 +115,9 @@ export function createGateway({ fabric, now = () => new Date() }: GatewayDeps): 
           known.runState !== 'RUNNING' &&
           (route.requestType === 'registerAgentRun' || route.requestType === 'submitUnit')
         ) {
-          return {
-            requestId: request.requestId,
-            outcome: 'REJECTED',
-            issuer: 'GATEWAY',
-            reasonCode: 'RUN_BLOCKED',
-            closeReason: known.closeReason,
-          } as SyscallRejected;
+          if (known.closeReason === undefined)
+            throw new Error('A non-running admission must carry closeReason');
+          return rejected(request.requestId, 'RUN_BLOCKED', known.closeReason);
         }
 
         const correlationId =
@@ -132,9 +160,6 @@ export function createGateway({ fabric, now = () => new Date() }: GatewayDeps): 
         const request = envelope.payload as { readonly requestId: string };
         const reasonCode =
           envelope.producer === route.caller ? 'INVALID_REQUEST' : 'CALLER_FORBIDDEN';
-        process.stderr.write(
-          `${JSON.stringify({ at: now().toISOString(), component: 'gateway', requestId: request.requestId, reasonCode })}\n`,
-        );
         return Promise.resolve(rejected(request.requestId, reasonCode));
       },
     );

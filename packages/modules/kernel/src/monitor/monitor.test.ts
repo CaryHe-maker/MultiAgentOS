@@ -112,13 +112,16 @@ describe('Monitor settlement', () => {
 
   it('accounts for unreturned reservations as unknown and preserves monotonic budget state', () => {
     const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
-    grantedId(monitor.reserve({ estimatedTokens: 540_000, final: false }));
+    const config = DEFAULT_KERNEL_CONFIG.budget;
+    const ordinaryAvailable =
+      config.tokenLimit - config.finalInputBudget - config.finalMaxOutputTokens;
+    grantedId(monitor.reserve({ estimatedTokens: ordinaryAvailable, final: false }));
     expect(monitor.finalize()).toMatchObject({
       used: 0,
-      unknown: 540_000,
+      unknown: ordinaryAvailable,
       finalBudgetState: 'WRAP_UP',
     });
-    expect(monitor.finalize().unknown).toBe(540_000);
+    expect(monitor.finalize().unknown).toBe(ordinaryAvailable);
     expect(() => monitor.reserve({ estimatedTokens: 1, final: false })).toThrow(
       MonitorInvariantError,
     );

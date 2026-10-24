@@ -113,13 +113,14 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ToolResultStep` | `status = 'OK'` 时 `output` 与 `outputRef` 必填且类型相配（检索输出配 ContextPack，读取输出配文本）；否则只带该状态的 `reasonCode`                                                          |
 | `FeedbackStep`   | `UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`、`NOT_EXECUTED` 必须带 `toolCallId`；`MODEL_CALL_FAILED`、`WRAP_UP_NOTICE` 不得带；`INVALID_ACTION` 可带可不带 |
-| `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空                                                          |
+| `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选且不得带 `lastIssue`；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空；`emptyReads` 中的路径不得重复 |
 
 **执行请求与执行事实**
 
 | 对象                      | 约束                                                                                                                                                                                                                                                                                          |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ExecutionRequest`        | `executionKind` 同时决定 `input`、`scope.kind` 与 `limits`：`maxFiles` 只属于 `REPOSITORY_ORIENT` 且必填，`maxOutputTokens` 只属于 `MODEL` 且必填                                                                                                                                             |
+| `ExecutionScope`（REPOSITORY）、`AuthorizationRequest`、`KernelConfig` | `exclusions` 与 `repositoryExclusions` 中的每条规则必须符合第 3.5 节的写法 |
 | `ExecutionScope`（MODEL） | `thinkingEffort` 当且仅当 `thinking = 'ENABLED'` 时存在；`baseUrl` 必须以 `https://` 开头                                                                                                                                                                                                     |
 | `ExecutionResult`         | `output` 必须是该 `executionKind` 的输出类型；`artifact` 必填，`mediaType` 必须是该种的产物类型                                                                                                                                                                                               |
 | `ExecutionFact`           | 携带 `executionKind`，并由它决定其余字段：`COMPLETED` 的 `result` 必须是该种的结果；只有 `MODEL` 带 `requestState`（必填）与 `usage`（可选），其余种类不得带；`MODEL` 的 `COMPLETED` 必须 `requestState = 'SENT'`；`retryable` 只属于 `FAILED` 且必填；`startedAt` 只有 `TERMINATED` 可以缺失 |
@@ -383,6 +384,31 @@ type ReasonCode =
   | 'KERNEL_INTERNAL';
 ```
 
+### 3.5 排除规则
+
+排除规则决定仓库中哪些路径不可读取。Core 把它们展示给用户（`AuthorizationRequest.exclusions`）并写入每个
+REPOSITORY 范围（`ExecutionScope.exclusions`），Executor 按它们拒绝路径。双方使用 contracts 中同一份默认列表与同一个匹配器
+（`DEFAULT_REPOSITORY_EXCLUSIONS`、`isExcluded`，见 [SharedContracts](Library/SharedContracts.md) 4.3），
+用户同意的范围因此就是实际读取的范围。
+
+```ts
+const DEFAULT_REPOSITORY_EXCLUSIONS = [
+  '**/.git', '**/.git/**', '**/.env*', '**/*.pem', '**/*.key',
+  '**/id_rsa*', '**/id_dsa*', '**/id_ecdsa*', '**/id_ed25519*', '**/node_modules/**',
+];
+```
+
+匹配语义：
+
+- 规则与路径都相对仓库根目录，分隔符为 `/`。
+- `**` 必须是一个完整的路径段，匹配零个或多个路径段；`*` 匹配一个路径段内的任意字符；`?` 匹配一个字符。
+- 以点开头的路径段与其他路径段一样参与匹配：`**/*.pem` 也排除 `.config/server.pem`。
+- 不区分大小写：多排除是安全的，少排除会泄露密钥。
+- 不支持 `{`、`}`、`[`、`]`、`!` 与 `\`；含有它们、或含空段、`.`、`..` 段的规则不合法，由 Schema 拒绝（第 1.4 节），
+  系统配置中出现时系统不启动。
+
+默认规则不可删除：`KernelConfig.repositoryExclusions` 只能在其后追加（[Core](Kernel/Core.md) 第 4 节）。
+
 ## 4. Gateway 端口
 
 ### 4.1 端口定义
@@ -606,7 +632,7 @@ interface AuthorizationRequest {
   questionId: string;
   capability: 'repo.read';
   repositoryPath: string; // 仓库根目录的 realpath
-  exclusions: string[]; // 排除规则（glob），见 Kernel/Core 第 4 节
+  exclusions: string[]; // 排除规则，见第 3.5 节
   provider: string; // 读取内容将发送到的模型 provider
   expiresAt: string;
 }
@@ -794,7 +820,7 @@ interface ContextPack {
   tokenBudget: number;
   truncated: boolean;
   droppedCount: number;
-  prefixSha256?: string; // ASSEMBLE 必填：INSTRUCTIONS 与 TOOLS 段内容的 SHA-256
+  prefixSha256?: string; // ASSEMBLE 必填：sha256Hex(canonicalJson({ instructions, toolSpecs }))
   items: ContextItem[];
   createdAt: string;
 }
@@ -858,6 +884,9 @@ token 估算由 contracts 统一提供（[SharedContracts](Library/SharedContrac
 
 BPE 类 tokenizer 的单个 token 至少覆盖一个字节，因此估算值不低于实际输入 token 数（provider 侧模板开销由每条 16 的固定开销覆盖，
 超出时按结算异常处理）。
+
+`prefixSha256` 只由组装输入中的 `instructions` 与 `toolSpecs` 决定，同一 AgentRun 的普通调用之间保持不变，
+用于确认 provider 的前缀缓存可以命中。final-call 只提供 finish 控制工具，`toolSpecs` 改变，前缀随之改变，这是预期的。
 
 ### 6.4 模型调用
 
@@ -1006,12 +1035,26 @@ interface AnalysisReport {
   conclusions: VerifiedConclusion[];
   unconfirmed: UnconfirmedItem[];
   readSources: VerifiedSource[]; // 本运行全部读取成功的范围
-  wrapUp?: { reason: WrapUpReason }; // 提前收尾时必填
+  wrapUp?: { reason: WrapUpReason; lastIssue?: ReportLastIssue }; // 提前收尾时必填；lastIssue 只属于降级报告
   degraded: boolean; // 没有合法 FINISH 时为 true
   agentRounds: AgentRoundsEntry[];
   snapshotId?: string;
+  emptyReads?: string[]; // 成功读取的空文件路径，去重；空文件不能作为行来源
   createdAt: string;
 }
+
+type ReportLastIssue =
+  // 降级报告最后一次调用为何没有结束；只是事实，说明文字由 UserInteraction 生成
+  | { kind: 'FAILURE'; code: ReasonCode }
+  | { kind: 'INVALID_OUTPUT'; reason: InvalidActionReason }
+  | { kind: 'NO_FINISH' }; // final-call 返回了合法但不是结束的动作
+
+type InvalidActionReason = // Workflow 第 5 节的五种非法动作
+  | 'NO_ACTION'
+  | 'OUTPUT_TRUNCATED'
+  | 'CONTROL_MIXED'
+  | 'CONTROL_NOT_ALLOWED'
+  | 'CONTROL_ARGUMENTS_INVALID';
 
 interface VerifiedConclusion {
   statement: string;
@@ -1039,6 +1082,11 @@ interface AgentRoundsEntry {
 }
 ```
 
+`ContextAssembleInput.steps` 中，每个 `MODEL_TURN` 的每个 `toolCallId` 之后必须至少有一条 `TOOL_RESULT`，
+或一条带该 `toolCallId` 的 `FEEDBACK`：provider 拒绝没有结果的工具调用。不满足时 context-assemble 返回
+`FAILED(INTERNAL)`，这是 Workflow 的缺陷。Workflow 第 5–7 节的每条路径都满足这一点
+（INVALID、Validation 不通过、`NOT_EXECUTED` 都按 `toolCallId` 记录 FEEDBACK）。
+
 ## 7. Kernel 核心与 Supervisor
 
 ### 7.1 执行请求
@@ -1061,7 +1109,7 @@ interface ExecutionRequest {
 }
 
 type ExecutionScope =
-  | { kind: 'REPOSITORY'; repositoryRoot: string; exclusions: string[] } // 由 Lease 派生
+  | { kind: 'REPOSITORY'; repositoryRoot: string; exclusions: string[] } // 由 Lease 派生；规则见第 3.5 节
   | {
       kind: 'MODEL';
       provider: string;
@@ -1597,9 +1645,16 @@ type SystemFaultReporter = (fault: SystemFault) => void; // 进程内函数，�
 ```
 
 `SystemFault` 与 `SystemFaultReporter` 不是注册的 Schema，也不经 Fabric 传递：组合根把同一个上报函数注入
-Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即触发有界的故障关闭
+Kernel 核心、Workflow 与 UserInteraction（第 14 节），调用即进入组合根唯一 panic，触发有界的安全停机
 （[错误与系统故障处理](SystemFaultHandling.md) 第 5 节）。Executor 不持有它：
 Executor 的一切结局由 Supervisor 转成 ExecutionFact。
+
+上述名称为兼容既有接缝保留，不表示旧的异常等级。
+组合根内部实现唯一 panic；reportSystemFault 与 System.reportFault 均适配到它，不新增公共 panic Schema。
+入口在配置和模块构造前有效；构造中不能使用空上报函数。控制对象逐步登记 Core、Supervisor、
+ModuleHost 与子进程清理能力，组件未就绪时跳过不适用的操作。
+重复调用合并为同一个 faultId 和关闭操作；新增错误持续记录，诊断失败也不能阻断退出。
+Core 非停机语义使用既有结果、计时消息与 KERNEL_FAULT，不要求调用方修改现有消息格式。
 
 M1 的存储布局见 [Persistence](Infrastructure/Persistence.md) 与 [ArtifactStore](Infrastructure/ArtifactStore.md)。
 
@@ -1706,7 +1761,7 @@ interface KernelCoreDeps {
   registry: ProtocolRegistry;
   config: KernelConfig;
   dataDir: string;
-  reportSystemFault?: SystemFaultReporter; // 第 10 节；收敛自身失败时升级
+  reportSystemFault?: SystemFaultReporter; // 第 10 节；收敛自身失败时请求 panic
   now?: () => Date;
 }
 
@@ -1828,7 +1883,7 @@ function composeSystem(options: {
   parts?: Partial<SystemParts>; // 测试用 fake 替换其中任意几项
   catalog?: CatalogPort; // 缺省为仓库内的定义目录
   now?: () => Date;
-  timeouts?: Partial<ShutdownTimeouts>; // 关闭各步的期限，缺省由 KernelConfig 推出
+  timeouts?: Partial<ShutdownTimeouts>; // 引导与关闭期限；bootMs 初值 60000，其余按现有规则
   log?: (line: string) => void; // 系统故障的本地诊断，缺省为 stderr
 }): Promise<System>;
 
@@ -1838,12 +1893,13 @@ interface System {
   userInteraction: UserInteractionModule;
   whenStopped(): Promise<void>;
   run(command: (ui: UserInteractionModule) => Promise<number>): Promise<number>; // 全部模块停止后给出退出码
-  reportFault(fault: SystemFault): void; // 系统故障入口，触发有界的故障关闭
+  reportFault(fault: SystemFault): void; // 兼容名称；进入唯一 panic，立即返回且不抛错
   shutdown(): Promise<StopReport>; // 幂等；正常关闭之后只返回报告
   killSubprocesses(): void;
 }
 
 interface ShutdownTimeouts {
+  bootMs: number; // 引导总期限；建议初值 60000，须为正安全整数
   abortRunsMs: number; // 等待 abortAllRuns；缺省 2 ×（cancelGraceMs + convergenceMarginMs）
   stopMs: number; // 一次停止全部模块的期限
   settleMs: number; // 运行结束后，命令返回与正常关闭完成的期限
@@ -1861,9 +1917,21 @@ interface StopReport {
 [错误与系统故障处理](SystemFaultHandling.md) 第 5 节。
 
 进程入口是 `apps/control-plane` 的 `bin.ts`（命令名 `multiagentos`）：它只调用 `main(argv)` 并以返回值作为退出码，
-组合阶段抛错时写 stderr 并以 70 退出。`main` 安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；
+组合阶段失败进入已建立的 panic 控制，写 stderr、清理已登记资源并以 70 退出。`main` 在配置加载与装配之前安装的最后防线同时负责第二次 Ctrl+C（退出码 130）；
 第一次 Ctrl+C 经 `TerminalPort.onInterrupt` 交给 UserInteraction。
 
 尚未实现的产品工厂在被调用时抛出 `NOT_IMPLEMENTED`，不返回占位的成功结果。
 `packages/testing` 为每个工厂提供 fake，为 `CatalogPort` 与 `Executor` 提供共享 contract test；
 fake 只保证消息的形状与先后顺序符合本文，不实现任何权限、额度或业务逻辑。
+
+### 14.5 启动期限与实现迁移
+
+本次文档修订新增 ShutdownTimeouts.bootMs；沿用类型名以减少接缝改动，包含引导总期限。
+组合根在启动 Supervisor 前计时，覆盖临时目录准备、模块 start、afterStart 与启动失败回滚。
+ModuleHost 的构造配置增加 startTimeoutMs，建议初值 10000，覆盖单模块 start 与对应 afterStart；
+stopTimeoutMs 保持 5000。期限均为正安全整数，数值可在验收中校准。
+ModuleHost 不属于公共 Fabric 协议；具体失败和迟到完成规则见 [ModuleHost](Infrastructure/ModuleHost.md) 第 4 节。
+bootMs 到期后封锁 ready 并进入 panic，清理各步仍有独立期限，不无限等待原启动 Promise。
+
+以上是目标接口与行为，尚需同步源码、测试与 fake；本次只修订文档。
+不修改 Workflow、UserInteraction 工厂签名，不改变其既有报告入口。

@@ -11,6 +11,8 @@
 | [Style](Style.md) | 工程与文档协作规范 |
 
 目标平台为 Ubuntu LTS。Architecture 只描述长期规划，不穷尽实现；各 MVP 的具体机制在对应目录中明确。
+M1 Kernel 与 Infrastructure 的实现、阶段记录与归档说明见
+[M1KernelImplementationReport](M1KernelImplementationReport.md)。
 
 ## 2. 推荐阅读路线
 

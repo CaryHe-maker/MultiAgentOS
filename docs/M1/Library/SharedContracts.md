@@ -74,9 +74,10 @@ SharedContracts 是静态库 `@multiagentos/contracts`（`packages/libraries/con
 | `workflow.StatusFacts.v0` | WrapUpReason | `workflow/step-record.ts` | 6.6 |
 | `workflow.HandoffBrief.v0` | — | `workflow/handoff.ts` | 6.6 |
 | `workflow.AnalysisReportDraft.v0` | DraftConclusion、SourceRef | `workflow/report.ts` | 6.6 |
-| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry | `workflow/report.ts` | 6.6 |
+| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry、ReportLastIssue | `workflow/report.ts` | 6.6 |
 
 `WrapUpReason` 与 `AnalysisReport.wrapUp` 共用 `workflow/step-record.ts` 中的定义。
+`INVALID_ACTION_REASONS`（Workflow 第 5 节的非法动作原因）在 `workflow/report.ts` 中定义，供 `ReportLastIssue` 使用。
 
 ### 3.5 `catalog`
 
@@ -221,6 +222,10 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 
 第 14 节的模块装配接口（各 `createXxx` 工厂、`XxxDeps`、`TerminalPort` 等）由各模块包导出，不在 contracts 中。
 
+SystemFault 与 SystemFaultReporter 保留接口名称，表示停机异常及组合根唯一 panic 的适配入口；
+不编码异常等级。Core 的非停机异常语义属于 Kernel 私有逻辑，不新增公共异常 Schema。
+已有 reportSystemFault 注入统一进入同一个 panic，不要求其他模块立即改名。
+
 ### 4.3 工具
 
 | 导出 | 文件 | 用途 |
@@ -235,6 +240,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `EXECUTOR_KINDS`、`REPOSITORY_KINDS` | `platform-common/execution-kind.ts` | 会派发给 Supervisor 的五种执行，以及其中读取仓库的三种 |
 | `ProtocolRegistry`、`createM1ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema，并生成工具参数的 JSON Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
+| `DEFAULT_REPOSITORY_EXCLUSIONS`、`ExclusionRuleSchema`、`isValidExclusionRule`、`isExcluded`、`excludesDirectory` | `platform-common/repository-exclusions.ts` | 默认排除规则与唯一的匹配器（M1Interface 3.5）；Core 与 Executor 共用，使用户看到的范围等于实际读取的范围 |
 | `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
 
 ## 5. 文件依赖顺序

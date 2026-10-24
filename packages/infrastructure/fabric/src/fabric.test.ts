@@ -29,6 +29,118 @@ async function started(): Promise<InProcessFabric> {
 }
 
 describe('InProcessFabric', () => {
+  it('drains accepted sends and rejects new requests and sends after stop', async () => {
+    const fabric = await started();
+    let release: () => void = () => undefined;
+    let markStarted: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const subscriberStarted = new Promise<void>((resolve) => (markStarted = resolve));
+    fabric.client('gateway').subscribe('gateway.admission', async () => {
+      markStarted();
+      await gate;
+    });
+    fabric.client('gateway').register(SCHEMA_IDS.shutdown, () => Promise.resolve(undefined));
+    const sender = fabric.client('kernel-core');
+    const first = sender.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      context,
+    );
+    await subscriberStarted;
+
+    const stopping = fabric.stop();
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    await expect(
+      sender.send(
+        'gateway.admission',
+        SCHEMA_IDS.admissionProjection,
+        { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+        context,
+      ),
+    ).rejects.toThrow('NOT_RUNNING');
+    await expect(sender.request(SCHEMA_IDS.shutdown, request, context)).rejects.toThrow(
+      'NOT_RUNNING',
+    );
+
+    release();
+    await expect(first).resolves.toBeUndefined();
+    await stopping;
+    expect(stopped).toBe(true);
+    await expect(fabric.stop()).resolves.toBeUndefined();
+  });
+
+  it('reports missing subscribers and propagates request handler failures', async () => {
+    const fabric = await started();
+    await expect(
+      fabric
+        .client('kernel-core')
+        .send(
+          'gateway.admission',
+          SCHEMA_IDS.admissionProjection,
+          { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+          context,
+        ),
+    ).rejects.toThrow('NO_SUBSCRIBER');
+    fabric
+      .client('gateway')
+      .register(SCHEMA_IDS.shutdown, () => Promise.reject(new Error('handler failed')));
+    await expect(
+      fabric.client('user-interaction').request(SCHEMA_IDS.shutdown, request, context),
+    ).rejects.toThrow('handler failed');
+  });
+
+  it('delivers different addresses in parallel', async () => {
+    const fabric = await started();
+    let releaseAdmission: () => void = () => undefined;
+    let releaseWorkflow: () => void = () => undefined;
+    let markAdmission: () => void = () => undefined;
+    let markWorkflow: () => void = () => undefined;
+    const admissionGate = new Promise<void>((resolve) => (releaseAdmission = resolve));
+    const workflowGate = new Promise<void>((resolve) => (releaseWorkflow = resolve));
+    const admissionStarted = new Promise<void>((resolve) => (markAdmission = resolve));
+    const workflowStarted = new Promise<void>((resolve) => (markWorkflow = resolve));
+    fabric.client('gateway').subscribe('gateway.admission', async () => {
+      markAdmission();
+      await admissionGate;
+    });
+    fabric.client('workflow').subscribe('inbox.workflow', async () => {
+      markWorkflow();
+      await workflowGate;
+    });
+
+    const sender = fabric.client('kernel-core');
+    const admission = sender.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      context,
+    );
+    const workflow = sender.send(
+      'inbox.workflow',
+      SCHEMA_IDS.workflowInboxEvent,
+      {
+        eventId: 'evt_123456',
+        workflowRunId: 'wfr_123456',
+        seq: 1,
+        occurredAt: '2026-10-21T00:00:00.000Z',
+        event: { type: 'RunStart', goal: 'analyze' },
+      },
+      context,
+    );
+
+    await Promise.all([admissionStarted, workflowStarted]);
+    releaseAdmission();
+    releaseWorkflow();
+    await expect(Promise.all([admission, workflow])).resolves.toBeDefined();
+  });
+
   it('routes a request, fixes the producer and copies payload and response', async () => {
     const fabric = await started();
     const response: SyscallAck = { requestId: request.requestId, outcome: 'ACCEPTED' };

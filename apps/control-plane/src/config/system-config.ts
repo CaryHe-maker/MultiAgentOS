@@ -26,7 +26,7 @@ export function defaultSystemConfig(): SystemConfig {
 
 /**
  * Validates against `platform.config.SystemConfig.v0` and checks what a Schema cannot say.
- * The checks that need the catalog (provider match, budget versus prompts) belong to the Kernel.
+ * The composition root checks catalog-dependent relationships before creating any module.
  */
 export function assertSystemConfig(config: unknown): SystemConfig {
   const result = validate<SystemConfig>(SystemConfigSchema, config);

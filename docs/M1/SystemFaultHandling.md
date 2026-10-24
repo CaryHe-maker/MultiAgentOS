@@ -1,206 +1,193 @@
-# MultiAgentOS M1 错误与系统故障处理
+# MultiAgentOS M1 异常处理与安全停机
 
 ## 1. 目的与范围
 
-本文规定 M1 中跨组件的错误处理规则：错误分哪几级、每一级由谁处理、各角色的权限、关闭怎样保证完成，
-以及进程的退出码。它是这些规则的权威来源；各组件自身的行为见各自的文档，字段见 [M1Interface](M1Interface.md)：
+本文是 M1 异常分类、捕获边界、panic、关闭期限与退出码的权威来源。
+2026-10-17 修订采用非停机异常、停机异常两类；这是目标设计，不表示现有代码已完成迁移。
+运行收敛见 [Interaction](Kernel/Interaction.md) 第 6、7 节，执行中止见
+[Supervisor](Kernel/Supervisor.md)，生命周期见 [ModuleHost](Infrastructure/ModuleHost.md)，
+字段见 [M1Interface](M1Interface.md) 第 10、14 节。
 
-| 内容 | 权威文档 |
+本次仅修订 M1 与 Kernel 相关文档，不修改长期架构及 Workflow、UserInteraction 等其他模块文档。
+跨模块依赖仍通过既有接口连接；其他模块的历史分级描述后续由负责人协调同步。
+既有接口名 SystemFault、SystemFaultReporter、reportSystemFault、reportFault 保留，
+统一表示请求同一个 panic 流程，不代表保留旧的四级分类。
+
+M1 是单进程、单活动运行。只有 rg 是子进程，Executor 与各模块在同一 Node 进程内。
+事件循环卡死或进程崩溃时，进程内机制不提供保证；M1 不恢复未完成运行。
+没有完成的清理、结算或结果交付不得报告为成功，无法确认的效果按未知记录。
+
+## 2. 两类异常与处理语义
+
+| 分类 | 定义 | 例子 | 处理 |
+| --- | --- | --- | --- |
+| 非停机异常 | 可在系统继续工作的前提下处理；允许拒绝操作、结束尝试或结束当前任务 | 权限拒绝、预算不足、执行失败、授权超时、运行超时、受控安全违规、停止未确认 | 边界规范化后由 Core 处理运行语义 |
+| 停机异常 | 无法继续保证系统正确运行，必须安全停机 | 启动失败、基础设施不可用、收尾机制失败、Supervisor 失效、未捕获异常 | 组合根唯一 panic 入口，Supervisor 执行停止动作 |
+
+非停机不等于任务一定继续。M1 单任务结束后可正常关闭进程，这不等于 panic。
+两类按处理后果区分，不仅凭捕获位置决定。边界必须有确定的处理规则，不运行时猜测组件是否健康。
+
+非停机分类覆盖预期拒绝与运行异常；授权拒绝、额度不足等仍用结构化结果表达，不改成 JavaScript throw。
+契约内分支使用 SyscallRejected、UnitReport、ExecutionFact 或内部返回值。
+程序缺陷可以抛错，但必须在指定边界捕获，不把原始 Error 当作跨主体协议。
+
+### 2.1 Core 非停机异常入口
+
+Core 维护与 syscall 并列的私有异常语义处理逻辑，见 [Core](Kernel/Core.md) 第 9 节。
+它验证运行、尝试、execution 与来源，依据当前状态决定拒绝、记录、重试许可或任务收敛。
+现有 syscall 返回值、ExecutionFact、计时消息及 KERNEL_FAULT 保留，不新增公共异常总线。
+
+非停机处理自身失效或已知关键不变量无法维持时请求 panic。
+不得无限重复投递 KERNEL_FAULT；收尾中再次抛错直接请求 panic。
+普通技术重试仍按 Execution 的规则执行，不能把异常处理重试与执行重试混为一谈。
+
+### 2.2 捕获与规范化边界
+
+| 边界或事件 | 处理规则 |
 | --- | --- |
-| 分级、升级、捕获边界、角色权限、故障关闭步骤、退出码 | 本文 |
-| 模块生命周期账本 | [ModuleHost](Infrastructure/ModuleHost.md) 第 3 节 |
-| 运行的收敛、`abortAllRuns` 在 Kernel 核心内的处理 | [Kernel 内部交互](Kernel/Interaction.md) 第 6、7 节 |
-| 执行实例的终止与事实 | [Supervisor](Kernel/Supervisor.md) |
-| Workflow 与 UserInteraction 自身错误的处理 | [Workflow](Module/Workflow.md) 11.1、[UserInteraction](Module/UserInteraction.md) 6.1 |
-| `SystemFault`、`System`、`StopReport` 等类型 | [M1Interface](M1Interface.md) 第 10、14 节 |
+| CLI 参数错误 | 返回参数错误，不启动系统，不触发 panic |
+| 配置、Catalog、工厂构造失败 | 组合根记录并进入 panic；未构造的组件不参与清理 |
+| 非法传输请求、Gateway 准入拒绝 | 保持传输契约错误或结构化拒绝；不为无运行请求创建 Core 异常 |
+| Executor 抛错、超时、rg 失败 | Supervisor 形成唯一执行事实，由 Core 判断运行语义 |
+| actor 普通消息处理抛错 | 可归属运行且收尾机制仍可使用时投递 KERNEL_FAULT；已知状态不可信则请求 panic |
+| Inbox、OrderedSender、定时器失败 | 按是否有有效运行处理通道与明确的受控处理规则路由；通道失效时请求 panic |
+| 收尾处理自身抛错 | 请求 panic，不再次投递 KERNEL_FAULT |
+| 模块启停失败或超时 | ModuleHost 记录并回滚或继续清理；组合根进入或继续 panic |
+| 未捕获异常、未处理 Promise 拒绝 | 停机异常，执行第 6 节最小退出路径 |
 
-M1 是单进程、单活动运行的系统。Supervisor、Core、UserInteraction 等是同一 Node 进程内的模块，
-不是可由操作系统逐个监视的进程；只有 `rg` 是子进程。因此：
+catch 只放在上述边界或契约规定的错误转换处，不吞掉异常。
+Inbox.request 的拒绝必须显式接住，不能只依赖处理 enqueue 的失败观察者。
+Gateway 的拒绝记录在 Gateway；Core 的拒绝与结算异常记录在运行审计。
 
-- 进程内的处理只在事件循环仍能运行时有效；事件循环卡死或进程崩溃后，没有任何进程内机制能提供保证。
-- M1 不恢复崩溃前未完成的运行，也不承诺崩溃后生成正常的 RunFinished。
-- 没有完成的清理或结果交付不得报告为成功；无法确认的效果按未知记录。
+其他模块仍使用既有边界：Workflow 内部失败先 closeRun(FAILED, WORKFLOW_INTERNAL)，
+无法完成则经 reportSystemFault 请求 panic；UserInteraction 自身失效经同一入口上报。
+这些是本次的跨模块接入约束，未修改其他模块文件，也不表示对应实现已经验收。
+health 只是快照；静默失败通过执行、授权、运行、收尾和系统启停期限发现。
 
-## 2. 分级与升级
+## 3. 职责与 panic 所有权
 
-分界线不是“业务还是系统”，而是“是不是契约的一部分”。契约内的结果用返回值或消息表达；
-只有缺陷和不变量被破坏才用 `throw`，而且 `throw` 不跨通讯主体（[Kernel 内部交互](Kernel/Interaction.md) 第 11 节）。
-
-| 级别 | 含义 | 例子 | 形式 | 处理主体 |
-| --- | --- | --- | --- | --- |
-| L0 结果 | 契约内的预期分支，不是异常 | SyscallRejected、UnitReport(REJECTED/FAILED)、ExecutionFact(FAILED)、结算异常、额度不足 | 返回值或消息 | 契约的接收方 |
-| L1 Exception | 运行无法正常继续，但运行 actor 仍可信 | 运行超时、安全违规、停止未确认、处理函数抛错、发送器契约失败（[Kernel](Module/Kernel.md) 第 11 节） | 控制通道消息 | Core，按收敛三步结束该运行 |
-| L2 系统故障 | 无法归属某个运行，或处理 L1 的机制自身失效 | 模块启停失败、Fabric 或存储不可用、收敛过程抛错、Inbox 处理器崩溃、命令入口抛错 | 进程内函数 `SystemFaultReporter` | 组合根的系统控制 |
-| L3 进程级 | 进程内状态已不可信 | `uncaughtException`、`unhandledRejection`、事件循环卡死、进程崩溃 | — | 最后防线退出；进程外是用户 |
-
-L1、L2、L3 是升级阶梯：**处理某一级时再次失败，必须升到上一级，不得在同级重试。**
-Core 处理 `KERNEL_FAULT` 时收敛过程抛错，不再投递第二个 `KERNEL_FAULT`，而是调用 `reportSystemFault`；
-系统控制的关闭步骤超时，不重做该步骤，而是进入下一步，最终以非零退出码结束。
-
-故障的去向由**捕获位置**静态决定，不由某个协调者在运行时判断“Core 是否还能处理”：
-外部无法核实 Core 的状态是否可信。运行 actor 内捕获的走 L1；其他位置捕获的走 L2。
-L2 的关闭总是先请求 Core 收敛并等待一个期限，超时即继续强制停止，Core 能否处理由期限回答。
-
-### 2.1 不经过 Core 的错误
-
-Core 只对运行终态有权威，不是所有错误的必经之路。
-
-| 发生位置 | 处理主体 | 是否经 Core |
+| 主体 | 职责 | 边界 |
 | --- | --- | --- |
-| CLI 参数、系统配置、目录加载 | CLI 与组合根；此时模块尚未构造或启动 | 否 |
-| 缺失或非法 `requestId` 的传输契约错误 | Fabric 抛给发送方，属于发送方的缺陷 | 否 |
-| 畸形 syscall、调用方不符、准入封锁 | Gateway 结构化拒绝 | 否 |
-| Executor 抛错、超时、不响应中止、`rg` 崩溃 | Supervisor 转成该执行实例唯一的 ExecutionFact | 作为 L0 事实进入 |
-| 模块 `start()`、`stop()` 失败 | ModuleHost 回滚并记账，Supervisor 上抛，组合根决定退出码 | 否 |
-| 运行 actor 处理函数抛错、发送器失败 | actor 循环捕获，投递 `KERNEL_FAULT` | 是，L1 |
-| 收敛过程自身抛错 | 升级：`reportSystemFault` | 否，Core 已不可信 |
-| Workflow 发现自身内部错误 | Workflow 调用 `closeRun(FAILED)`，原因码 `WORKFLOW_INTERNAL` | 作为普通 syscall |
-| Workflow 连 `closeRun(FAILED)` 也无法完成 | 升级：Inbox 失败观察者调用 `reportSystemFault` | 仅被请求收敛（第 5 节） |
-| Workflow 静默卡死 | `RUN_TIMEOUT` | 是，L1 |
-| UserInteraction 的 Inbox 处理器、询问任务或命令抛错 | 系统控制；错误由组合根写到 stderr，因为 UserInteraction 可能已坏 | 仅被请求收敛（第 5 节） |
+| Core | syscall、非停机异常语义、任务状态、授权、结算、收敛 | 不决定进程退出码，不持有全系统停机权 |
+| Supervisor | 执行监管、取消、子进程管理；正常引导及 panic 中的模块停止 | 不改写任务结果，不接管未捕获进程异常 |
+| ModuleHost | 依赖顺序、启停期限、生命周期账本与回滚 | 不决定异常类别或是否停机 |
+| 组合根 | 唯一 panic 入口、错误汇总、用户诊断、停机期限、退出码与最后防线 | 不改写 Lease、预算或任务结果 |
 
-`health()` 只是调用时刻的快照，不是异步故障的通知，也不作为恢复路径。静默失败靠已有的期限发现：
-Unit 截止时间、授权超时、运行总时长、收敛兜底，以及第 5 节的关闭期限。
+组合根不是模块，不注册 ModuleHost、Fabric 或 Inbox。
+它只调用已登记的控制对象；Supervisor 自身失效时仍可独立报告、调用 ModuleHost 并清理子进程。
+panic 由组合根与 Supervisor 协作，但只有一份停机状态、一个 faultId 和一次关闭操作。
+SystemFaultReporter 是进程内、立即返回且不抛错的适配入口；停机任务的拒绝必须被内部观察。
+Executor 不持有 panic 或 SystemFaultReporter，其结局由 Supervisor 转换为执行事实。
 
-### 2.2 捕获边界
+## 4. 启动与生命周期契约
 
-`catch` 只出现在以下位置；其他位置不得捕获，除非是把错误转成契约规定的返回值。
+组合根在配置加载、Catalog 加载和模块构造前建立最小诊断、进程保护与有效的 panic 控制对象。
+不得先注入空的错误上报函数再等装配结束绑定。组件逐个登记；没有 run 时跳过任务收敛。
+工厂原则上只构造对象；取得资源就登记释放动作，装配失败只清理已取得的资源。
 
-| 边界 | 捕获后 |
-| --- | --- |
-| 组合根入口 `main()` 与 `System.run` | 记录系统故障，保证关闭，给出退出码 |
-| ModuleHost 的每次模块启停 | 记入账本，回滚或继续停其余模块，汇总抛出 |
-| 运行 actor 的每条消息 | 投递 `KERNEL_FAULT`；收敛中再失败则 `reportSystemFault` |
-| Supervisor 的每个执行实例 | 形成唯一终态事实，原因码 `INTERNAL` |
-| Kernel 核心的 Inbox、OrderedSender、定时器的失败观察者 | actor 内投递 `KERNEL_FAULT`；actor 外 `reportSystemFault` |
-| Workflow 的 Inbox 处理器 | 先 `closeRun(FAILED, WORKFLOW_INTERNAL)`；做不到时由失败观察者 `reportSystemFault` |
-| UserInteraction 的 Inbox 处理器、询问任务、中断处理 | `reportSystemFault` |
+模块顺序保持 fabric → artifact-store → persistence → kernel-core → gateway → workflow → user-interaction，
+由 Supervisor 驱动 ModuleHost。所有 start 完成且系统未进入 panic 才开放业务。
+start 期间不创建 run 或提交 Unit，迟到完成不得重新开放系统。
 
-`reportSystemFault` 是组合根注入的同一个进程内函数（`SystemFaultReporter`，[M1Interface](M1Interface.md) 第 10 节），
-Kernel 核心、Workflow 与 UserInteraction 各自经依赖清单取得。它不经 Fabric，不抛错。
-Executor 不持有它：Executor 的一切结局由 Supervisor 转成 ExecutionFact。
-Inbox 的处理器抛错而没有失败观察者时，错误只在模块停止时暴露，因此产品模块必须接入失败观察者。
+每个模块启动及 afterStart、系统引导总过程都必须有期限，具体契约见 ModuleHost。
+超时不等于底层 Promise 被取消：封锁继续启动，记录迟到完成或拒绝，
+模块必须在停止之后释放迟到取得的资源；panic 不无限等待该 Promise。
+stop 在启动前、部分启动后、启动与停止交错时均须安全且幂等。
+启动失败模块同样需要清理；一次停止失败记为 STOP_FAILED，继续其余清理，不重试失败步骤。
 
-## 3. 角色
+## 5. 正常关闭与 panic
 
-| 角色 | 拥有的状态与决定 | 不得做的事 |
-| --- | --- | --- |
-| ModuleHost | 依赖顺序、逐模块生命周期账本、每次停止的期限与结果 | 判断故障等级、决定是否关闭系统、重试失败的停止 |
-| Supervisor | 正常路径的启停顺序；执行实例、中止信号、`rg` 子进程；把 Executor 的一切结局转成事实 | 修改运行状态、裁决系统故障（它自己也可能失效） |
-| Core | 运行状态 `RUNNING → CONVERGING → CLOSED`、结束原因、预算与授权；L1 的唯一处理者 | 宣称整个进程或 UserInteraction 健康 |
-| 组合根的系统控制 | 关闭意图、各步期限、故障记录、进程退出码；L2 的唯一处理者 | 持有或改写任何领域状态 |
+正常关闭保持：
+UserInteraction → shutdown → Gateway → Core 收敛及 Outbox 排空 →
+SupervisorPort.shutdown → Supervisor 驱动 ModuleHost 逆序停止 → 清理残留资源。
 
-**组合根不是模块。** 它没有 `moduleId`，不注册进 ModuleHost，没有 Fabric 身份和 Inbox，不实现 `LifecyclePort`；
-否则就要再回答“谁来启停和监管它”。`composeSystem` 返回的 `System` 是一个带少量运行期状态的进程级控制对象，
-地位相当于 `main`。它受三条约束：
+panic 的业务顺序是“中止任务 → 收集错误 → 上报用户 → 安全停机”。
+实现必须先保存并输出原始错误，以免中止失败掩盖起因；停机中的错误持续追加和补报。
 
-1. 只对自己构造的对象做直接函数调用，不发送 Fabric 消息。
-2. 不持有、不改写运行状态、Lease、账本等领域状态。
-3. 只决定三件事：何时开始关闭、每一步等多久、进程退出码。
+1. 组合根登记原始错误、唯一 faultId，写 stderr，封锁启动和命令入口。
+2. 已就绪且可能有运行时，有期限地调用 kernelCore.abortAllRuns。
+   Core 封锁新运行，向未 CLOSED 的 actor 投递 KERNEL_FAULT，
+   RUNNING 按 FAILED(KERNEL_INTERNAL) 收敛，failure.detail 与审计关联 faultId。
+   等运行 CLOSED 且 Outbox 排空；无法完成或到期只记录，不阻止后续步骤。
+3. 汇总当前错误并上报用户。stderr 是不依赖 UI、Fabric、存储的基本通道；
+   UI 可用时可正常展示收尾事件，但不能以其应答作为继续清理的条件。
+4. 有期限地调用 supervisor.stop；失败或超时，直接调用 moduleHost.stop 兜底。
+   Supervisor 停止接收执行，对仍存活的执行发出中止，驱动模块停止并清理子进程及临时资源。
+   它不得把未确认停止伪造为完成，也不得在 Core 已关闭后修改已发布结果。
+5. 组合根直接清理残留子进程，汇总 StopReport，补报清理错误并非零退出。
+   系统不能仅因异步清理返回就假定失控执行已消失；必要时由入口结束进程。
 
-## 4. 模块生命周期契约
+每步有期限；失败只追加到同一次 panic 并继续，不递归启动另一轮 panic。
+在 panic 中收到重复故障共用 faultId；不遗漏来自不同步骤的失败证据。
+abortAllRuns 只交给组合根，不经 Gateway 或 Fabric，不停止模块，也不调用 Supervisor.shutdown。
+已收敛运行不因 panic 改写结束原因；收敛中确认 VIOLATION 的优先规则仍有效。
+引导未完成时没有运行，跳过任务中止，清理已登记且取得资源的对象。
+若 stderr 诊断自身失败，仍继续清理与非零退出，不允许诊断失败阻断停机。
 
-`LifecyclePort.stop()` 必须可重复调用；在 `start()` 之前、中途失败之后调用也必须安全；它只清理本模块已取得的资源。
-模块在取得每项资源后登记释放动作，按逆序释放。ModuleHost 不了解模块内部的句柄、定时器或任务。
-
-ModuleHost 为每个模块记录状态，启动失败的模块同样被停止，停止失败的模块保留为 `STOP_FAILED` 且不重试；
-状态机与规则见 [ModuleHost](Infrastructure/ModuleHost.md) 第 3 节。账本是事实，是否退出进程由组合根决定。
-
-## 5. 关闭路径
-
-**正常关闭**：UserInteraction → `shutdown` → Gateway → Core 运行管理 → 运行收敛、Outbox 排空 →
-`SupervisorPort.shutdown` → Supervisor 驱动 ModuleHost 逆序停止 → 终止残留子进程、清理临时目录
-（[ModuleHost](Infrastructure/ModuleHost.md) 第 2 节）。
-
-**故障关闭**：任何位置调用 `reportSystemFault`，或命令入口抛错、命令结束后系统未在期限内停止，都进入以下步骤。
-每一步有期限；失败或超时只追加到同一故障记录，然后继续下一步。
-
-```text
-1. 记录故障，生成本次关闭唯一的 faultId，写 stderr
-2. kernelCore.abortAllRuns({ faultId, deadlineMs })      期限 abortRunsMs
-     Core 封锁新运行，向每个未 CLOSED 的运行的控制通道投递 KERNEL_FAULT
-     RUNNING 的运行按 FAILED(KERNEL_INTERNAL) 收敛，faultId 写入 failure.detail 与审计
-     全部运行 CLOSED 且 Outbox 排空后返回
-3. supervisor.stop()                                     期限 stopMs
-4. 第 3 步失败或超时：moduleHost.stop()                  期限 stopMs
-5. 终止残留子进程
-6. 汇总 StopReport { intent, faults, modules }
-```
-
-- `abortAllRuns` 是组合根专用的受控维护入口，不经 Gateway：故障关闭不能依赖 UserInteraction 发起 shutdown，
-  它可能正是出故障的一方。该入口只交给组合根，不注册到 Fabric，不改变“外部主体必须经 Gateway”的规则。
-- 结束原因复用 `FAILED(KERNEL_INTERNAL)`，`failure.source = KERNEL`，不新增原因码；
-  真实来源由 `faultId` 关联到 stderr 与审计。运行已在 CONVERGING 或 CLOSED 时不改写其结束原因。
-- 引导未完成时跳过第 2 步。此时没有运行，只需停止已启动的模块。
-- 关闭意图由系统控制自己判定：Supervisor 只有两条停止路径（Core 的 shutdown 请求、被直接调用 `stop()`），
-  系统控制没有发起过故障关闭且没有任何故障记录时，才是 `REQUESTED`；否则是 `FAULT`。
-- UserInteraction 仍然可用时，它会收到这次收敛产生的 RunFinished 并照常展示；它不可用时用户只看到 stderr 的故障行。
-- 各步的期限（`ShutdownTimeouts`）见 [M1Interface](M1Interface.md) 14.4。
-
-**退出码**：
+RunSummary 发布失败是已有的受控分支：finalizationError，不伪造引用、不改原原因。
+已预期的终态事件发送失败按收尾规则记录；若通用存储或通信失效使受控处理无法完成，则进入 panic。
+任务收敛和 panic 不承诺在基础设施失效时一定交付 RunFinished。
 
 | 情况 | 退出码 |
 | --- | --- |
-| 命令行无法解析（此时不构造系统） | 64 |
-| 意图为 `REQUESTED` | UserInteraction 记录的退出码（[UserInteraction](Module/UserInteraction.md) 第 3 节） |
-| 意图为 `FAULT`，命令已返回非零退出码 | 该非零退出码 |
-| 意图为 `FAULT`，命令返回 0、抛错或没有返回 | 70 |
-| 组合阶段抛错（配置、目录、工厂），或引导失败 | 70 |
-| 未捕获异常、未处理的 Promise 拒绝 | 70，不尝试收敛 |
-| 用户第二次按 Ctrl+C | 130，不尝试收敛（第 6 节） |
+| CLI 参数错误 | 64 |
+| 正常关闭 | UserInteraction 的既有退出码 |
+| panic，命令已返回非零码 | 保留该非零码 |
+| panic，命令返回 0、抛错或未返回 | 70 |
+| 配置、装配或引导失败 | 70 |
+| 未捕获异常、未处理 Promise 拒绝 | 70，最小退出 |
+| 第二次 Ctrl+C | 130，最小退出 |
 
-出现过系统故障的进程不得以 0 退出。70 只由组合根产生，模块不使用它。
+出现停机异常不得以 0 退出。70 只由组合根产生；正常任务失败不自动等于 panic。
 
-## 6. 进程入口、中断与子进程
+## 6. 中断与最小退出
 
-- 进程入口是 `apps/control-plane` 的 `bin.ts`（命令名 `multiagentos`）：它只调用 `main()` 并设置退出码。
-  入口与进程信号归组合根；`apps/cli` 只做参数解析与终端适配。
-- 最后防线由 `main()` 安装。未捕获异常时它只做三件事：写诊断、同步终止子进程、非零退出。
-  此时进程内状态不可信，不调用 Core，也不等待任何异步清理。
-- Ctrl+C 分两段，两段的主体不同。第一次属于 UserInteraction：它经 `TerminalPort.onInterrupt` 调用 `cancelRun`，
-  运行按 CANCELLED 正常收敛，退出码 130；最后防线只计数。第二次属于最后防线：用户不再等待收敛，
-  它写诊断、同步终止子进程、以 130 退出，同样不调用任何模块。尚未创建运行时第一次没有可取消的对象，
-  用户再按一次即退出。`apps/cli` 的终端适配器只转发中断，不得自行退出进程。
-- 子进程在创建时登记到 `SubprocessRunner` 的存活集合。`killAll()` 是同步的，由 Supervisor 的 `stop()`、
-  系统控制的关闭末尾、进程的 `exit` 钩子和最后防线调用。组合根自己持有这个 runner 并注入 Supervisor，
-  因此不需要向可能已失效的 Supervisor 索取句柄。
-- 进程内 Executor 不响应中止信号时无法被强制终止：超过宽限期记为 `STOP_UNCONFIRMED`，效果标记为未知，
-  靠进程退出结束。
+进程入口与信号归组合根；CLI 仅负责参数和终端适配。
+首次 Ctrl+C 经 TerminalPort.onInterrupt 请求 cancelRun，任务按 CANCELLED 收敛，退出码 130。
+尚无运行时首次中断无可取消对象；第二次立即写诊断、同步清理子进程并退出 130。
+组合根保护从装配前生效，终端适配器不得自行退出进程。
 
-## 7. 故障决策示例
+uncaughtException、unhandledRejection 意味着进程状态不可信：
+记录诊断、尽可能同步清理已登记子进程、以 70 退出，不调用 Core，不等待异步停机。
+这是停机异常的最小执行路径，不是第三类异常。
+诊断或清理同步抛错也不得阻止最终退出；不得承诺事件循环卡死时处理器还能运行。
 
-| 情况 | 结果 |
-| --- | --- |
-| 模块 `start()` 部分成功后抛错 | ModuleHost 停该模块及此前模块；系统未就绪；组合根以 70 退出 |
-| Provider 返回普通失败 | L0：Execution 按重试规则处理，Core 交付 UnitReport，Workflow 决定业务结果 |
-| 发送器遇到契约缺陷 | L1：`KERNEL_FAULT`，运行按 `FAILED(KERNEL_INTERNAL)` 收敛，正常关闭，退出码 1 |
-| 收敛过程中再次抛错 | 升级到 L2：故障关闭；不保证 RunFinished；退出码 70 |
-| 命令入口在运行中抛错 | L2：`abortAllRuns` 使运行收敛，模块全部停止，退出码 70 |
-| Workflow 的 reducer 抛错 | Workflow 以 `closeRun(FAILED, WORKFLOW_INTERNAL)` 结束运行，正常关闭，退出码 1 |
-| UserInteraction 在 RunFinished 之后失败 | 运行结果不改写；记录系统故障；命令已返回非零码则保留，否则 70 |
-| RunSummary 写入失败 | `finalizationError` 规则：不伪造引用，不改结束原因；属于 L1 内的已定义分支，退出码至少为 1 |
-| Core 在期限内没有完成 `abortAllRuns` | 记录后继续停止模块；运行没有正常结束事件；退出码 70 |
-| 模块 `stop()` 失败或超时 | 账本保留 `STOP_FAILED`，其余模块照常停止；不重试；即使运行已完成也不以 0 退出 |
-| Supervisor 的 `stop()` 失败或超时 | 组合根直接调用 `moduleHost.stop()`，与进行中的停止共用同一次执行 |
-| 进程卡死或崩溃 | 进程内不保证；由用户终止；下次启动只清空 `<dataDir>/tmp/`，不恢复运行 |
+子进程创建时登记在 SubprocessRunner；组合根直接持有 runner 并注入 Supervisor。
+Supervisor.stop、panic 末尾、exit 钩子与最小退出均可幂等调用 killAll。
+进程内 Executor 无法被强制单独终止；宽限期后记 STOP_UNCONFIRMED，由进程退出最终结束。
+
+## 7. 事件、处理与验收映射
+
+| 事件 | 处理主体与动作 | 结果 | 开发阶段 |
+| --- | --- | --- | --- |
+| 授权超时、预算拒绝 | Core 返回结构化拒绝 | 运行可继续 | 一、二 |
+| 执行失败或 Unit 超时 | Supervisor 规范化，Execution 申请重试，Core 裁决 | UnitReport 或受控重试 | 一至四 |
+| 运行超时、受控违规、停止未确认 | Core 三步收敛，结算并记录未知效果 | 任务结束，正常关闭 | 一至四 |
+| actor 普通处理缺陷 | Core 接收 KERNEL_FAULT | 任务收敛；机制失败则 panic | 一、四 |
+| 收尾失败或运行消息通道失效 | 组合根 panic | 有期限停机，可能无终态事件 | 四至六 |
+| 模块启动、停止失败或超时 | ModuleHost 记账，组合根 panic | 回滚或继续清理，非零退出 | 三、五、六 |
+| 第一次、第二次 Ctrl+C | UI 请求取消；组合根最小退出 | 130 | 四、六，UI 接入为外部依赖 |
+| 未捕获异常 | 组合根最小退出 | 70 | 六 |
 
 ## 8. 验证要求
 
-故障注入测试必须使用真实的 Fabric、ModuleHost、存储和组合根，至少覆盖：正常结束、命令抛错、
-重复故障共用一个 `faultId`、Core 不收敛时超时继续、模块停止失败、引导失败时停止失败模块、启动中停止、
-停止超时、模块经注入的 `reportSystemFault` 上报、最后防线与第二次中断。
+- Core：拒绝不误停机；任务异常可收敛；异常处理失败进入同一次 panic。
+- 并发边界：取消与完成交错、重复取消、迟到事实、取消后收费、旧 epoch 仍结算、
+  STOP_UNCONFIRMED 保留容量至最终清理、收尾中违规升级。
+- Supervisor：抛错规范化、deadline、宽限期、忽略取消、唯一终态和子进程清理。
+- 启动：配置与工厂失败时可诊断、装配期间上报不丢失、ready 前无业务、启动超时、
+  afterStart 超时、停止中迟到启动不得重新 ready，迟到资源清理。
+- panic：重复调用共用 faultId、Core 超时后继续、Supervisor 失败走 ModuleHost、
+  模块停止失败后继续、UI/Fabric/存储不可用仍诊断退出、诊断失败仍退出。
+- 入口：首次/二次 Ctrl+C、未捕获异常、未处理拒绝、退出码与最小清理；
+  使用子进程测试真实退出，不能在测试主进程触发 exit。
 
-以 fake Kernel 运行这组测试只证明关闭步骤的顺序与期限，不证明 Kernel 核心的收敛正确；
-M1 验收必须以真实的 Kernel 核心重做同一组注入。
+故障注入使用真实 Kernel、Fabric、ModuleHost、存储与组合根。
+fake 仅证明局部顺序与期限，不证明任务收敛。
+其他模块尚未交付的行为明确记为外部依赖，不以 fake 通过宣称全系统验收。
 
 ## 9. M1 不实现
 
-- 崩溃后的运行恢复，以及独立的进程外监督者：进程卡死或崩溃由启动它的用户或 shell 处理。
-- 对失败的 `stop()` 重试，或绕过 Supervisor 的独立执行回收能力。
-- SIGTERM 等其他信号的处理：进程按 Node.js 的默认行为结束，不保证收敛。
-- 公开的系统级状态机协议：系统故障只在进程内以函数调用上报。
-
-参考：[Erlang/OTP Supervisor Behaviour](https://www.erlang.org/doc/system/sup_princ.html)、
-[ECMAScript Explicit Resource Management](https://tc39.es/proposal-explicit-resource-management/)、
-[Node.js v24 进程异常](https://nodejs.org/download/release/v24.19.0/docs/api/process.html)、
-[Kubernetes Pod 终止与宽限期](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination)。
+崩溃恢复、暂停恢复、独立进程外监督、失败停止的无限重试及公开的系统级状态机协议。
+SIGTERM 等其他信号按 Node 默认行为结束，不保证收敛。
+事件循环卡死或崩溃由用户或启动它的 shell 处理。

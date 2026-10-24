@@ -1,8 +1,10 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   AnalysisReportSchema,
+  ContextPackSchema,
+  MEDIA_TYPES,
   RunSummarySchema,
   newId,
   validate,
@@ -38,7 +40,7 @@ async function fakeSystem(kernel: FakeKernelOptions = {}, answer: 'YES' | 'NO' =
   const system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
     terminal: createFakeTerminal(),
-    credentials: { apiKeyFor: () => undefined },
+    credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
     parts: {
       createGateway: createFakeGateway(),
       createKernelCore: createFakeKernelCore(kernel),
@@ -55,6 +57,92 @@ async function fakeSystem(kernel: FakeKernelOptions = {}, answer: 'YES' | 'NO' =
 const command = { goal: 'Explain the README.', repositoryPath: tmpdir(), details: false };
 
 describe('fake vertical chain', () => {
+  it('runs fake Workflow and UserInteraction through the real Kernel core and Supervisor', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    const repository = await mkdtemp(join(tmpdir(), 'multiagentos-repo-'));
+    roots.push(dataDir, repository);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      parts: {
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+        createWorkflow: createFakeWorkflow(),
+        createUserInteraction: createFakeUserInteraction(),
+      },
+    });
+    await system.start();
+    expect(await system.userInteraction.analyze({ ...command, repositoryPath: repository })).toBe(
+      0,
+    );
+    await system.whenStopped();
+
+    const [run] = await readdir(join(dataDir, 'runs'));
+    const audit = await readFile(
+      join(dataDir, 'runs', run ?? '', 'kernel-core', 'audit.jsonl'),
+      'utf8',
+    );
+    const auditTypes = audit
+      .trimEnd()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as { type: string }).type);
+    expect(auditTypes).toEqual(
+      expect.arrayContaining(['RUN_STARTED', 'UNIT_ACCEPTED', 'UNIT_REPORTED', 'RUN_CLOSED']),
+    );
+  }, 60_000);
+
+  it('rolls back real infrastructure when an external module fails to start', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      log: () => undefined,
+      parts: {
+        createWorkflow: (deps) => ({
+          ...createFakeWorkflow()(deps),
+          start: () => Promise.reject(new Error('workflow start failed')),
+        }),
+        createUserInteraction: createFakeUserInteraction(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+      },
+    });
+
+    await expect(system.start()).rejects.toThrow('workflow start failed');
+    await expect(system.whenStopped()).resolves.toBeUndefined();
+    await expect(access(join(dataDir, 'tmp'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('continues stopping real infrastructure after an external module fails to stop', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      log: () => undefined,
+      parts: {
+        createWorkflow: (deps) => ({
+          ...createFakeWorkflow()(deps),
+          stop: () => Promise.reject(new Error('workflow stop failed')),
+        }),
+        createUserInteraction: createFakeUserInteraction(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+      },
+    });
+
+    await system.start();
+    const report = await system.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.modules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ moduleId: 'workflow', state: 'STOP_FAILED' }),
+        expect.objectContaining({ moduleId: 'fabric', state: 'STOPPED' }),
+      ]),
+    );
+  });
+
   it('gives Core and Workflow distinct namespace-limited persistence ports', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
     roots.push(dataDir);
@@ -63,7 +151,7 @@ describe('fake vertical chain', () => {
     await composeSystem({
       config: { ...defaultSystemConfig(), dataDir },
       terminal: createFakeTerminal(),
-      credentials: { apiKeyFor: () => undefined },
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
       parts: {
         createGateway: createFakeGateway(),
         createKernelCore: (deps) => {
@@ -121,10 +209,33 @@ describe('fake vertical chain', () => {
     // Five Unit artifacts (search and orient differ), the report and the RunSummary.
     const artifacts = join(dataDir, 'runs', run ?? '', 'artifacts');
     expect(await readdir(artifacts)).toHaveLength(7);
+
+    const contextRefs = workflow.events.flatMap((event) =>
+      event.type === 'UnitReport' &&
+      event.status === 'OK' &&
+      event.outputRef?.mediaType === MEDIA_TYPES.contextPack
+        ? [event.outputRef]
+        : [],
+    );
+    expect(contextRefs).toHaveLength(3);
+    const packs: unknown[] = await Promise.all(
+      contextRefs.map(
+        async (ref) => JSON.parse(await readFile(join(artifacts, ref.sha256), 'utf8')) as unknown,
+      ),
+    );
+    for (const pack of packs) expect(validate(ContextPackSchema, pack)).toMatchObject({ ok: true });
+    expect(packs.map((pack) => (pack as { operation: string }).operation).sort()).toEqual([
+      'ASSEMBLE',
+      'ORIENT',
+      'SEARCH',
+    ]);
+
     const finished = interaction.events.at(-1);
     expect(finished).toMatchObject({ type: 'RunFinished', closeReason: 'COMPLETED' });
-    if (finished?.type !== 'RunFinished') return;
+    if (finished?.type !== 'RunFinished' || finished.closeReason !== 'COMPLETED') return;
+    expect(finished.reportRef).toMatchObject({ mediaType: MEDIA_TYPES.analysisReport });
     if (!('runSummaryRef' in finished)) throw new Error('Expected a persisted RunSummary');
+    expect(finished.runSummaryRef).toMatchObject({ mediaType: MEDIA_TYPES.runSummary });
     const summary: unknown = JSON.parse(
       await readFile(join(artifacts, finished.runSummaryRef.sha256), 'utf8'),
     );
@@ -244,8 +355,62 @@ describe('fake vertical chain', () => {
       composeSystem({
         config: { ...defaultSystemConfig(), dataDir },
         terminal: createFakeTerminal(),
-        credentials: { apiKeyFor: () => undefined },
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
       }),
     ).rejects.toThrow('NOT_IMPLEMENTED');
+  });
+
+  it('kills the injected runner when composition fails after creating it', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const killed: string[] = [];
+    const subprocess = {
+      run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: '', truncated: false }),
+      killAll: () => void killed.push('kill'),
+    };
+
+    await expect(
+      composeSystem({
+        config: { ...defaultSystemConfig(), dataDir },
+        terminal: createFakeTerminal(),
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+        subprocess,
+        parts: {
+          createKernelCore: () => {
+            throw new Error('factory failed');
+          },
+        },
+      }),
+    ).rejects.toThrow('factory failed');
+    expect(killed).toEqual(['kill']);
+  });
+
+  it('rejects invalid bootMs after construction and kills the runner', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const killed: string[] = [];
+    const subprocess = {
+      run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: '', truncated: false }),
+      killAll: () => void killed.push('kill'),
+    };
+
+    await expect(
+      composeSystem({
+        config: { ...defaultSystemConfig(), dataDir },
+        terminal: createFakeTerminal(),
+        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+        subprocess,
+        timeouts: { bootMs: 0 },
+        parts: {
+          createGateway: createFakeGateway(),
+          createKernelCore: createFakeKernelCore(),
+          createSupervisor: createFakeSupervisor(),
+          createExecutorRegistry: () => createFakeExecutorRegistry(),
+          createWorkflow: createFakeWorkflow(),
+          createUserInteraction: createFakeUserInteraction(),
+        },
+      }),
+    ).rejects.toThrow('bootMs');
+    expect(killed).toEqual(['kill']);
   });
 });
