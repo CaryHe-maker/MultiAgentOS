@@ -348,16 +348,24 @@ describe('fake vertical chain', () => {
     expect(interaction.reportText).toBeDefined();
   });
 
-  it('fails fast while a product part is not implemented', async () => {
+  it('composes, starts and stops the real product parts', async () => {
+    // Every product part is implemented since ExecutorSet landed; until then this composition
+    // failed with NOT_IMPLEMENTED from createExecutorRegistry().
     const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
     roots.push(dataDir);
-    await expect(
-      composeSystem({
-        config: { ...defaultSystemConfig(), dataDir },
-        terminal: createFakeTerminal(),
-        credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
-      }),
-    ).rejects.toThrow('NOT_IMPLEMENTED');
+    const logged: string[] = [];
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      log: (line) => void logged.push(line),
+    });
+    await system.start();
+    // Without a run there is no UserInteraction shutdown request, so this is the fault path.
+    const report = await system.shutdown();
+    expect(report.intent).toBe('FAULT');
+    expect(report.modules.every((module) => module.state === 'STOPPED')).toBe(true);
+    expect(logged.join('')).toContain('stopped outside the normal shutdown path');
   });
 
   it('kills the injected runner when composition fails after creating it', async () => {

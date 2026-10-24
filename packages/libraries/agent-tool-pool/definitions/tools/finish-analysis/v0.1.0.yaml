@@ -5,7 +5,9 @@ version: v0.1.0
 description: Control tool that ends the AgentRun with a report draft.
 purpose: CONTROL
 modelName: finish_analysis
-modelDescription: Finish the analysis and submit the report. Cite the path and line range of content you have read for every conclusion.
+modelDescription: >-
+  Submit the answer; call it alone. The sources of every conclusion must be line ranges that
+  read_file returned in this run.
 parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE

@@ -266,7 +266,10 @@ version: v0.1.0
 description: Model-facing repository search, served by the repository-search unit.
 purpose: UNIT
 modelName: search_repository
-modelDescription: Search the repository by text, path or symbol and return matching line ranges.
+modelDescription: >-
+  Search the repository. mode SYMBOL finds declarations of an identifier, TEXT a fixed string
+  (case-insensitive when written in lower case), PATH file paths; AUTO (default) combines PATH
+  and TEXT. maxItems defaults to 20.
 parametersContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -283,7 +286,9 @@ version: v0.1.0
 description: Model-facing file read, served by the file-read unit.
 purpose: UNIT
 modelName: read_file
-modelDescription: Read up to 400 lines from one file in the repository.
+modelDescription: >-
+  Read up to 400 lines of one repository text file, with line numbers. path is relative to
+  the repository root; startLine and endLine are optional, 1-based and inclusive.
 parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -300,7 +305,9 @@ version: v0.1.0
 description: Control tool that ends the AgentRun with a report draft.
 purpose: CONTROL
 modelName: finish_analysis
-modelDescription: Finish the analysis and submit the report. Cite the path and line range of content you have read for every conclusion.
+modelDescription: >-
+  Submit the answer; call it alone. The sources of every conclusion must be line ranges that
+  read_file returned in this run.
 parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -317,7 +324,11 @@ version: v0.1.0
 description: Control tool that hands the analysis task from the planner to the code viewer.
 purpose: CONTROL
 modelName: handoff_to_code_viewer
-modelDescription: Hand the analysis task to the code viewer, which can search and read the repository.
+modelDescription: >-
+  Hand the question to the code viewer, which can search and read the repository. task
+  restates the question precisely with all of the user's constraints; focusAreas names up to
+  5 components, identifiers or files to look for; openQuestions lists up to 5 sub-questions
+  whose answers together answer the user.
 parametersContract: { kind: contract, id: workflow.HandoffBrief, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
@@ -336,9 +347,19 @@ version: v0.1.0
 description: System prompt of the planner.
 role: system
 template: |
-  PLACEHOLDER PLANNER PROMPT.
-  Decide whether the question needs the repository. If it does, call handoff_to_code_viewer
-  with a precise task. If it does not, call finish_analysis.
+  You plan the analysis of a user's question about a code repository. You cannot see the
+  repository; the code viewer can search and read it. Reply with exactly one tool call; plain
+  text replies are discarded.
+
+  - If answering needs the repository, call handoff_to_code_viewer:
+    - task: the question restated precisely and self-contained, with every constraint the user
+      gave (files, components, versions, what kind of answer they want).
+    - focusAreas: up to 5 components, concepts, identifiers or file names worth searching for,
+      taken from the question; do not invent names that are not suggested by it.
+    - openQuestions: up to 5 concrete sub-questions whose answers together answer the user.
+  - If the question does not need the repository (a greeting, a general question), call
+    finish_analysis with the answer in summary and empty conclusions and unconfirmed lists.
+  - Write in the language of the user's question.
 variables: []
 contentStatus: PLACEHOLDER
 ```
@@ -352,9 +373,34 @@ version: v0.1.0
 description: System prompt of the code viewer.
 role: system
 template: |
-  PLACEHOLDER CODE VIEWER PROMPT.
-  Answer only from content you have read with read_file, and cite path and line range for every
-  conclusion. Call finish_analysis when you are done.
+  You are a read-only code analyst. You answer one question about one repository by searching
+  and reading its files; you cannot change files, run commands or use the network.
+
+  How to work:
+  - Locate before you read: search_repository with mode SYMBOL finds declarations, TEXT finds
+    uses and strings, PATH finds file names. Search results and the repository overview are
+    leads, not evidence.
+  - Read with read_file what you rely on: whole functions, their callers and callees, and the
+    tests and configuration that exercise them.
+  - Put independent calls in one reply (at most 8). Never repeat a call; earlier results stay
+    above. Every reply must be tool calls; plain text is discarded. Do not guess paths.
+
+  When the question asks for defects or risks:
+  - Check every function you read for unchecked return values and error paths, off-by-one and
+    boundary errors, buffer sizes and terminators, ownership and lifetime (use after free,
+    double free, leaks), integer conversion and overflow, and what each library call guarantees,
+    including how it reports failure.
+  - Follow values across calls: a defect often shows where a result is used, not where it is
+    produced. Read the callers of a function before concluding it is safe.
+  - Report each defect separately, including minor ones next to severe ones in the same code.
+
+  Evidence: a conclusion counts only if every source it cites is a line range that read_file
+  returned in this run. Cite the smallest such ranges, with exact paths and line numbers.
+
+  Finishing: call finish_analysis on its own. summary answers the question directly.
+  conclusions has one entry per finding, one to three sentences with its sources; do not merge
+  or drop findings. unconfirmed lists what you could not verify. Write in the language of the
+  question. When the status says this is the final call, call finish_analysis immediately.
 variables: []
 contentStatus: PLACEHOLDER
 ```
@@ -422,6 +468,9 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 | deepseek-flash | 0.003 | 0.15 | 0.60 |
 | deepseek-v4-pro | 0.022 | 0.66 | 1.98 |
 
+- 成本由 `modelCallCost(model, usage, at)` 计算（包导出，另有 `isPeakTime`）：缓存命中按命中价，其余输入按未命中价，
+  没有缓存数字时全部按未命中计（上限）；`at` 落在高峰时段（UTC、按 `peak.weekdays` 与半开区间 `[start, end)`）时乘 `ratePercent / 100`。
+  结果以微美元为单位，可以带小数。
 - DeepSeek 在中国法定节假日按非高峰计费，M1 没有节假日日历，因此按规则算出的节假日成本是上限。
 - 两个模型都支持思考模式，默认开启，档位为 low、high、max。M1 Agent 设置为 `thinking: DISABLED`；评测时如果开启，必须记录档位。
 - `deepseek-flash` 是服务端别名。DeepSeek 更换背后的模型时，应发布新的 ModelDefinition 版本，并更新 `providerModelLabel`。
@@ -441,5 +490,4 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 
 | 事项 | Owner |
 |---|---|
-| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 为占位（`contentStatus: PLACEHOLDER`），在固定任务集评测前定稿 | Cary 与 meti |
-| 尚未提供按时间计算高峰价格和成本的函数 | meti（评测） |
+| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现）；code-viewer 加入经对照评测有效的通用缺陷检查要点（ExecutorSet 6.1）。仍标 `contentStatus: PLACEHOLDER`，在固定任务集 F1–F5 的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
