@@ -1855,6 +1855,7 @@ interface TerminalPort {
 interface SystemConfig {
   // platform.config.SystemConfig
   dataDir: string; // 绝对路径
+  portReturnTimeoutMs: number; // Workflow 与 UserInteraction 的端口响应期限；默认 30000，须为正安全整数
   kernel: KernelConfig; // platform.config.KernelConfig
   workflow: WorkflowConfig; // platform.config.WorkflowConfig
 }
@@ -1862,6 +1863,7 @@ interface SystemConfig {
 
 `KernelConfig` 的字段见 [Kernel/Interaction](Kernel/Interaction.md) 第 9 节与 [Monitor](Kernel/Monitor.md) 第 4 节，
 `WorkflowConfig` 的字段见 [Workflow](Module/Workflow.md) 第 12 节。组合根的读取与校验见 [M1TechStack](M1TechStack.md) 第 4 节。
+`portReturnTimeoutMs` 的执行方式见第 14.4 节。
 
 ### 14.4 组合根
 
@@ -1911,6 +1913,10 @@ interface StopReport {
   modules: { moduleId: ModuleId; state: ModuleLifecycleState; error?: unknown }[];
 }
 ```
+
+组合根用 `config.portReturnTimeoutMs` 创建 Workflow 与 UserInteraction 的 Fabric 客户端，并给交给 Workflow 的
+`CatalogPort`、`PersistencePort` 加同样的期限，到期以 `FabricError(REQUEST_TIMEOUT)` 拒绝（[Fabric](Infrastructure/Fabric.md) 第 3 节）；
+`FabricPort` 接口不变，Kernel 各主体的客户端不设期限。
 
 退出码：意图为 `REQUESTED` 时取 UserInteraction 记录的退出码；意图为 `FAULT` 时，命令已返回非零退出码则保留，
 否则为 70。出现过系统故障的进程不以 0 退出。完整规则见

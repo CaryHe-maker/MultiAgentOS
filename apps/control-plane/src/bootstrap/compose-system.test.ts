@@ -2,14 +2,23 @@ import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_DEFINITIONS_DIRECTORY,
+  DefinitionCatalog,
+  FileDefinitionSource,
+} from '@multiagentos/agent-tool-pool';
+import {
   AnalysisReportSchema,
   ContextPackSchema,
   MEDIA_TYPES,
   RunSummarySchema,
   newId,
   validate,
+  type BoundaryContext,
+  type CatalogPort,
+  type FabricPort,
   type PersistencePort,
 } from '@multiagentos/contracts';
+import { SCHEMA_IDS } from '@multiagentos/fabric';
 import {
   createFakeExecutorRegistry,
   createFakeGateway,
@@ -22,7 +31,7 @@ import {
   type FakeUserInteractionModule,
   type FakeWorkflowModule,
 } from '@multiagentos/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultSystemConfig } from '../config/system-config.js';
 import { composeSystem } from './compose-system.js';
 
@@ -176,6 +185,77 @@ describe('fake vertical chain', () => {
     expect(() => workflowPersistence?.auditLog('kernel-core', 'wfr_123456')).toThrow(
       'Namespace is not owned',
     );
+  });
+
+  it('bounds the ports of Workflow and UserInteraction by portReturnTimeoutMs only', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'multiagentos-'));
+    roots.push(dataDir);
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const never = () => new Promise<never>(() => undefined);
+    let coreFabric: FabricPort | undefined;
+    let workflowCatalog: CatalogPort | undefined;
+    let interactionShutdown: (() => Promise<unknown>) | undefined;
+    const context: BoundaryContext = {
+      correlationId: newId('cor'),
+      tenantId: 'local',
+      projectId: 'local',
+    };
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir, portReturnTimeoutMs: 50 },
+      terminal: createFakeTerminal(),
+      credentials: { apiKeyFor: () => 'offline-fake-placeholder' },
+      catalog,
+      parts: {
+        // A Gateway that never answers shutdown, so that every wait on it is held.
+        createGateway: (deps) =>
+          createFakeGateway()({
+            ...deps,
+            fabric: {
+              ...deps.fabric,
+              register: (schemaId, handler, onInvalid) =>
+                deps.fabric.register(
+                  schemaId,
+                  schemaId === SCHEMA_IDS.shutdown ? never : handler,
+                  onInvalid,
+                ),
+            },
+          }),
+        createKernelCore: (deps) => {
+          coreFabric = deps.fabric;
+          expect(deps.catalog).toBe(catalog);
+          return createFakeKernelCore()(deps);
+        },
+        createSupervisor: createFakeSupervisor(),
+        createExecutorRegistry: () => createFakeExecutorRegistry(),
+        createWorkflow: (deps) => {
+          workflowCatalog = deps.catalog;
+          return createFakeWorkflow()(deps);
+        },
+        createUserInteraction: (deps) => {
+          interactionShutdown = () => deps.gateway.shutdown({ requestId: newId('req') }, context);
+          return createFakeUserInteraction()(deps);
+        },
+      },
+    });
+    await system.start();
+    const timedOut = { name: 'FabricError', code: 'REQUEST_TIMEOUT' };
+
+    vi.spyOn(catalog, 'pinAgent').mockImplementation(never);
+    await expect(
+      workflowCatalog?.pinAgent({ id: 'planner', version: 'v1.0.0' }, context),
+    ).rejects.toMatchObject(timedOut);
+    await expect(interactionShutdown?.()).rejects.toMatchObject(timedOut);
+
+    // The Kernel's own clients have no deadline: the same held request is still waiting.
+    let settled = false;
+    void coreFabric
+      ?.request(SCHEMA_IDS.shutdown, { requestId: newId('req') }, context)
+      .finally(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(settled).toBe(false);
+    await system.shutdown();
   });
 
   it('runs createRun to RunFinished through every Unit and shuts down', async () => {

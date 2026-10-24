@@ -63,6 +63,11 @@ export const SystemConfigSchema = closed(
   {
     /** System data directory; an absolute path. */
     dataDir: text(4096),
+    /**
+     * How long Workflow and UserInteraction wait for a port to return (M1Interface 14.3);
+     * Fabric and the composition root enforce it.
+     */
+    portReturnTimeoutMs: ms(),
     kernel: KernelConfigSchema,
     workflow: WorkflowConfigSchema,
   },

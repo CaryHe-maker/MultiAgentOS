@@ -7,6 +7,7 @@ import {
   validate,
 } from '@multiagentos/contracts';
 import type { SystemFault, WorkflowInboxEvent } from '@multiagentos/contracts';
+import { FabricError } from '@multiagentos/fabric';
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkflow, DEFAULT_WORKFLOW_CONFIG } from '../index.js';
 import { definitions } from '../test-support/definitions.js';
@@ -16,6 +17,8 @@ import { ScriptedGateway } from '../test-support/scripted-gateway.js';
 import type { WorkflowDeps } from '../index.js';
 
 const now = () => new Date('2026-10-14T00:00:00.000Z');
+/** What Fabric or the composition root's wrapper rejects with once the port deadline passes. */
+const timedOut = (detail: string) => new FabricError('REQUEST_TIMEOUT', detail);
 
 function startEvent(): WorkflowInboxEvent {
   return {
@@ -298,45 +301,31 @@ describe('Workflow pinning and registration', () => {
     expect(catalog.requests).toEqual([]);
   });
 
-  it('times out a held acknowledgement and still records queued closure', async () => {
-    vi.useFakeTimers();
-    try {
-      const persistence = new MemoryPersistence();
-      const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
-      const { module, gateway } = setup({ persistence, reportSystemFault });
-      let rejectLate: (error: Error) => void = () => {};
-      gateway.scripts.push(
-        () =>
-          new Promise((_resolve, reject) => {
-            rejectLate = reject;
-          }),
-      );
-      const envelope = startEvent();
-      await module.start();
-      await module.inbox.deliver(envelope);
-      await module.inbox.deliver({
-        ...envelope,
-        eventId: newId('evt'),
-        seq: 2,
-        event: {
-          type: 'RunClosed',
-          closeReason: 'CANCELLED',
-          unknownEffects: [],
-          finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
-        },
-      });
-      const stopping = module.stop();
-      await vi.advanceTimersByTimeAsync(30_000);
-      await stopping;
-      expect(reportSystemFault).toHaveBeenCalledTimes(1);
-      expect(gateway.calls.map((call) => call.kind)).toEqual(['REGISTER']);
-      expect(persistence.writes).toHaveLength(1);
-      rejectLate(new Error('Late transport rejection'));
-      await vi.advanceTimersByTimeAsync(1);
-      expect(reportSystemFault).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('escalates a port deadline at once and still records queued closure', async () => {
+    const persistence = new MemoryPersistence();
+    const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
+    const { module, gateway } = setup({ persistence, reportSystemFault });
+    gateway.scripts.push(() => Promise.reject(timedOut('workflow-register')));
+    const envelope = startEvent();
+    await module.start();
+    await module.inbox.deliver(envelope);
+    await module.inbox.deliver({
+      ...envelope,
+      eventId: newId('evt'),
+      seq: 2,
+      event: {
+        type: 'RunClosed',
+        closeReason: 'CANCELLED',
+        unknownEffects: [],
+        finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+      },
+    });
+    await module.stop();
+    expect(reportSystemFault).toHaveBeenCalledTimes(1);
+    expect(gateway.calls.map((call) => call.kind)).toEqual(['REGISTER']);
+    expect(persistence.writes).toHaveLength(1);
+    // A deadline is escalated, not closed through a diagnostic and closeRun.
+    expect(persistence.entries).toEqual([]);
   });
 
   it('persists safe diagnostics when an internal failure can be closed', async () => {
@@ -351,56 +340,42 @@ describe('Workflow pinning and registration', () => {
     expect(gateway.calls.map((call) => call.kind)).toEqual(['REGISTER', 'CLOSE']);
   });
 
-  it('escalates a held catalog call without starting business requests', async () => {
-    vi.useFakeTimers();
-    try {
-      const catalog = new FixedCatalog([definitions()]);
-      vi.spyOn(catalog, 'pinAgent').mockImplementation(() => new Promise(() => {}));
-      const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
-      const { module, gateway } = setup({ catalog, reportSystemFault });
-      await module.start();
-      await module.inbox.deliver(startEvent());
-      const stopping = module.stop();
-      await vi.advanceTimersByTimeAsync(30_000);
-      await stopping;
-      expect(reportSystemFault).toHaveBeenCalledTimes(1);
-      expect(gateway.calls).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('escalates a catalog deadline without starting business requests', async () => {
+    const catalog = new FixedCatalog([definitions()]);
+    vi.spyOn(catalog, 'pinAgent').mockRejectedValue(timedOut('catalog.pinAgent'));
+    const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
+    const { module, gateway } = setup({ catalog, reportSystemFault });
+    await module.start();
+    await module.inbox.deliver(startEvent());
+    await module.stop();
+    expect(reportSystemFault).toHaveBeenCalledTimes(1);
+    expect(gateway.calls).toEqual([]);
   });
 
-  it('escalates a held terminal record write without reopening the run', async () => {
-    vi.useFakeTimers();
-    try {
-      const persistence = new MemoryPersistence();
-      vi.spyOn(persistence, 'repository').mockImplementation(() => ({
-        get: () => Promise.resolve(undefined),
-        put: () => new Promise(() => {}),
-      }));
-      const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
-      const { module, gateway } = setup({ persistence, reportSystemFault });
-      const envelope = startEvent();
-      await module.start();
-      await module.inbox.deliver(envelope);
-      await module.inbox.deliver({
-        ...envelope,
-        eventId: newId('evt'),
-        seq: 2,
-        event: {
-          type: 'RunClosed',
-          closeReason: 'CANCELLED',
-          unknownEffects: [],
-          finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
-        },
-      });
-      const stopping = module.stop();
-      await vi.advanceTimersByTimeAsync(30_000);
-      await stopping;
-      expect(reportSystemFault).toHaveBeenCalledTimes(1);
-      expect(gateway.calls.map((call) => call.kind)).toEqual(['REGISTER', 'SUBMIT']);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('escalates a terminal record write deadline without reopening the run', async () => {
+    const persistence = new MemoryPersistence();
+    vi.spyOn(persistence, 'repository').mockImplementation(() => ({
+      get: () => Promise.resolve(undefined),
+      put: () => Promise.reject(timedOut('persistence.repository.put')),
+    }));
+    const reportSystemFault = vi.fn<(fault: SystemFault) => void>();
+    const { module, gateway } = setup({ persistence, reportSystemFault });
+    const envelope = startEvent();
+    await module.start();
+    await module.inbox.deliver(envelope);
+    await module.inbox.deliver({
+      ...envelope,
+      eventId: newId('evt'),
+      seq: 2,
+      event: {
+        type: 'RunClosed',
+        closeReason: 'CANCELLED',
+        unknownEffects: [],
+        finalizationError: 'RUN_SUMMARY_WRITE_FAILED',
+      },
+    });
+    await module.stop();
+    expect(reportSystemFault).toHaveBeenCalledTimes(1);
+    expect(gateway.calls.map((call) => call.kind)).toEqual(['REGISTER', 'SUBMIT']);
   });
 });

@@ -21,7 +21,7 @@ import type { AnalyzeCommand, UserInteractionDeps, UserInteractionModule } from 
 import { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from '../domain/exit-codes.js';
 import { InteractionMessages as messages, describeReason } from '../domain/interaction-messages.js';
 import { renderQuestion, renderReport, renderSummary } from '../domain/report-view.js';
-import { awaitPort } from './port-deadline.js';
+import { awaitControl } from './control-wait.js';
 import { scheduleQuestionDeadline } from './question-deadline.js';
 
 /** Converts unexpected rejection of a locally valid control request into an invariant error. */
@@ -148,8 +148,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
 
   async function answerQuestion(questionId: string, answer: 'YES' | 'NO'): Promise<void> {
     if (workflowRunId === undefined) throw new Error('Authorization has no active run');
-    const result = await awaitPort(
-      'answerAuthorization',
+    const result = await awaitControl(
       deps.gateway.answerAuthorization(
         { requestId: newId('req'), workflowRunId, questionId, answer },
         context(),
@@ -203,9 +202,9 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
 
   async function readJson(ref: ArtifactRef): Promise<unknown> {
     if (workflowRunId === undefined) throw new Error('Artifact read has no active run');
-    const result = await awaitPort(
-      'readArtifact',
-      deps.gateway.readArtifact({ requestId: newId('req'), workflowRunId, ref }, context()),
+    const result = await deps.gateway.readArtifact(
+      { requestId: newId('req'), workflowRunId, ref },
+      context(),
     );
     if (result.outcome === 'REJECTED') return undefined;
     try {
@@ -273,8 +272,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
 
   async function cancel(): Promise<void> {
     if (workflowRunId === undefined || isFinished || hasFault || isStopping) return;
-    const result = await awaitPort(
-      'cancelRun',
+    const result = await awaitControl(
       deps.gateway.cancelRun({ requestId: newId('req'), workflowRunId }, context()),
       controlWaits.signal,
     );
@@ -302,12 +300,9 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
     command = { ...input };
     let commandFailure: { readonly error: unknown } | undefined;
     try {
-      const result = await awaitPort(
-        'createRun',
-        deps.gateway.createRun(
-          { requestId: newId('req'), goal: input.goal, repositoryPath: input.repositoryPath },
-          context(),
-        ),
+      const result = await deps.gateway.createRun(
+        { requestId: newId('req'), goal: input.goal, repositoryPath: input.repositoryPath },
+        context(),
       );
       if (result.outcome === 'REJECTED') {
         isFinished = true;
@@ -324,10 +319,7 @@ export function createInteractionRunner(deps: UserInteractionDeps): UserInteract
         return code;
       }
       try {
-        const shutdown = await awaitPort(
-          'shutdown',
-          deps.gateway.shutdown({ requestId: newId('req') }, context()),
-        );
+        const shutdown = await deps.gateway.shutdown({ requestId: newId('req') }, context());
         requireControlAck('shutdown', shutdown);
       } catch (error) {
         if (deps.reportSystemFault === undefined) throw error;

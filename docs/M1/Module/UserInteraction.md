@@ -132,7 +132,8 @@ UserInteraction 不尝试自行恢复，也不把自身错误写成运行结果�
 - 契约内的结果不是自身错误：createRun 被拒、`QUESTION_NOT_PENDING`、报告或摘要读取被拒、校验不通过，按第 3–5 节展示。
 - 按 Kernel 第 4.3 节，`cancelRun`、`shutdown` 总会得到 Ack，授权回答只会以 `QUESTION_NOT_PENDING` 被拒。
   出现其他拒绝时视为控制不变量失效：不伪造成功、不重试，按所在的捕获边界上报。
-- 每次 Gateway 调用最多等待 30 秒，超时按所在的捕获边界上报，不重试；用户输入不受这个期限约束。
+- 每次 Gateway 调用最多等待 `portReturnTimeoutMs`（默认 30 秒，M1Interface 14.3），期限由本模块的 Fabric 客户端执行；
+  超时按所在的捕获边界上报，不重试。用户输入不受这个期限约束；Ctrl+C 中止控制请求的等待仍由本模块处理。
 - 已经记录退出码之后，`shutdown` 失败或超时也只上报，并照常返回该退出码，以便组合根保留非零码。
 - 上报故障之后不再发出任何控制请求；之后到达的 RunFinished 仍会展示。
 

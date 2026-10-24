@@ -61,6 +61,7 @@ M1 不引入 HTTP Server、OpenAPI、SSE、Web UI 或浏览器运行时。
 | 部分 | 内容 | 定义 |
 |---|---|---|
 | `dataDir` | 系统数据目录，缺省 `~/.multiagentos` | [Persistence](Infrastructure/Persistence.md) 第 2 节 |
+| `portReturnTimeoutMs` | Workflow 与 UserInteraction 的端口响应期限，缺省 30000 毫秒 | [M1Interface](M1Interface.md) 第 14.3、14.4 节 |
 | `kernel` | `KernelConfig` | [Kernel/Interaction](Kernel/Interaction.md) 第 9 节、[Monitor](Kernel/Monitor.md) 第 4 节 |
 | `workflow` | `WorkflowConfig` | [Workflow](Module/Workflow.md) 第 12 节 |
 

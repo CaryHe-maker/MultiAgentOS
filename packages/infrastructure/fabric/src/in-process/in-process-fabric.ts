@@ -16,22 +16,16 @@ import {
   type Producer,
   type ProtocolRegistry,
 } from '@multiagentos/contracts';
+import { withinDeadline } from '../deadline/port-deadline.js';
 import { SCHEMA_IDS } from '../stubs/port-stubs.js';
+import { FabricError } from './fabric-error.js';
 
-/** A message could not be routed. Schema violations throw ContractValidationError instead. */
-export class FabricError extends Error {
-  public constructor(
-    public readonly code:
-      | 'NO_HANDLER'
-      | 'NO_SUBSCRIBER'
-      | 'ALREADY_REGISTERED'
-      | 'INVALID_REGISTRATION'
-      | 'NOT_RUNNING',
-    detail: string,
-  ) {
-    super(`${code}: ${detail}`);
-    this.name = 'FabricError';
-  }
+export interface FabricClientOptions {
+  /**
+   * How long `request` waits for the handler before it rejects with
+   * `FabricError(REQUEST_TIMEOUT)`; no deadline when absent (Fabric.md 3).
+   */
+  readonly requestTimeoutMs?: number;
 }
 
 type RequestHandler = (envelope: Envelope<unknown>) => Promise<unknown>;
@@ -109,7 +103,8 @@ export class InProcessFabric implements LifecyclePort {
   }
 
   /** The composition root calls this once per subject and hands the client to that subject. */
-  client(producer: Producer): FabricPort {
+  client(producer: Producer, options: FabricClientOptions = {}): FabricPort {
+    const { requestTimeoutMs } = options;
     return {
       register: (schemaId, handler, onInvalid) => {
         this.#registry.get(schemaId);
@@ -143,10 +138,16 @@ export class InProcessFabric implements LifecyclePort {
           )
             throw error;
           const malformed = this.#envelope(producer, 'command', schemaId, payload, context, false);
-          return structuredClone(await handler.onInvalid(malformed, error)) as TResponse;
+          const answer = await withinDeadline(
+            handler.onInvalid(malformed, error),
+            requestTimeoutMs,
+            schemaId,
+          );
+          return structuredClone(answer) as TResponse;
         }
         if (handler === undefined) throw new FabricError('NO_HANDLER', schemaId);
-        return structuredClone(await handler.handle(envelope)) as TResponse;
+        const response = await withinDeadline(handler.handle(envelope), requestTimeoutMs, schemaId);
+        return structuredClone(response) as TResponse;
       },
       send: async (address, schemaId, payload, context) => {
         const envelope = this.#envelope(producer, 'event', schemaId, payload, context);

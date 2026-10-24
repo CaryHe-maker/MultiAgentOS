@@ -213,6 +213,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R1.5 | 2026-10-24 | `fix: 按 #26 的答复修正被删除文件的拒绝原因与测试文件的检索得分` | 先增加复现用例；ExecutorSet.md 3.2 同步；WSL 上 1091 项测试通过 |
 | R1.6 | 2026-10-24 | 同上 | 增加固定得分的用例；ExecutorSet.md 3.3 同步 |
 | R1.1 | 2026-10-24 | `test: 修复关闭路径上的不稳定用例并补齐 rg 与工具调用应答的检查` | 两处 rg 相关测试在 `CI` 下增加“找到 rg”用例；`CI=1` 下运行通过 |
-| R1.2 | 2026-10-24 | 同上 | 原因：故障后假 Kernel 核心仍在执行的 Unit 在 Supervisor 开始停止后才提交，被拒绝后假核心把它记为自身错误，使 `stop()` 失败，多出 `supervisor`、`module-host` 两项故障。产品 Kernel 按 Kernel 4.4 把这种发送失败转为运行级 `KERNEL_FAULT`，假核心改为同样处理。增加确定性复现用例（修复前稳定失败）；两个用例的退出码按已有约定接受 1 或 70。CPU 压力下连续运行 50 次见下行 |
+| R1.2 | 2026-10-24 | 同上 | 原因：故障后假 Kernel 核心仍在执行的 Unit 在 Supervisor 开始停止后才提交，被拒绝后假核心把它记为自身错误，使 `stop()` 失败，多出 `supervisor`、`module-host` 两项故障。产品 Kernel 按 Kernel 4.4 把这种发送失败转为运行级 `KERNEL_FAULT`，假核心改为同样处理。增加确定性复现用例（修复前稳定失败）；两个用例的退出码按已有约定接受 1 或 70。CPU 压力下连续运行 50 次，0 次失败 |
 | R1.3 | 2026-10-24 | 同上 | fast-check 生成合法、未知、参数错误、重复、混入控制动作的工具调用与随机结果和额度状态，检查每次 context-assemble 输入与最终步骤；去掉对 FEEDBACK 的认可后性质立即失败，确认用例有效 |
 | R1.4 | 2026-10-24 | 不适用 | #24–#29 已答复的决定全部落实；#32 中未落实的事项已分别由 D3、R1.8、R3.2、D8 跟踪 |
+| R1.8 | 2026-10-25 | `feat: 端口响应期限改由系统配置与 Fabric 统一执行` | M1 文档修改经 2026-10-25 确认：M1Interface 14.3、14.4，Fabric.md 第 3 节，Workflow.md 11.1，UserInteraction.md 第 6 节，M1TechStack 第 4 节。`SystemConfig.portReturnTimeoutMs` 默认 30000；Workflow 与 UserInteraction 的 Fabric 客户端和交给 Workflow 的 Catalog、Persistence 到期以 `FabricError(REQUEST_TIMEOUT)` 拒绝，Kernel 的客户端不设期限；两个模块删除各自的计时器，原有期限用例改为注入超时拒绝，迟到返回的用例移到 Fabric。WSL 上 1101 项测试通过 |

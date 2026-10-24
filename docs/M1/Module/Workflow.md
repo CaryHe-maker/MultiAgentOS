@@ -295,8 +295,9 @@ Workflow 处理一条输入时发现自身内部错误（reducer 抛错、状态
 契约内的结果（SyscallRejected、UnitReport 的 REJECTED 与 FAILED）不属于内部错误，按第 7 节处理。
 没有注入上报函数时（单独测试本模块），错误留给 Inbox 记录，并使 `stop()` 失败。
 
-Gateway、Catalog 与 Persistence 的每次调用最多等待返回 30 秒；这是端口响应期限，
-不是 Unit 或模型执行时限。超时直接升级为系统故障，停止业务推进，释放 Inbox 处理已排队终态。
+Gateway、Catalog 与 Persistence 的每次调用最多等待返回 `portReturnTimeoutMs`（默认 30 秒，M1Interface 14.3）；
+这是端口响应期限，不是 Unit 或模型执行时限。期限由 Fabric 与组合根执行：Gateway 调用经 Workflow 的 Fabric 客户端，
+Catalog 与 Persistence 由组合根包装，到期都以 `FabricError(REQUEST_TIMEOUT)` 拒绝；Workflow 只负责识别并升级。超时直接升级为系统故障，停止业务推进，释放 Inbox 处理已排队终态。
 超时不证明远端工作已停止；迟到返回或拒绝均被观察，但不恢复业务、不重试。
 真正的收敛、停止确认与强制关闭由组合根和 Kernel 的既有机制负责。
 

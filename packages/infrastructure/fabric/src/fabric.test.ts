@@ -2,11 +2,15 @@ import {
   ContractValidationError,
   createM1ProtocolRegistry,
   type BoundaryContext,
+  type CatalogPort,
+  type PersistencePort,
   type ShutdownRequest,
   type SyscallAck,
 } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  catalogWithDeadline,
+  persistenceWithDeadline,
   FabricError,
   InProcessFabric,
   Inbox,
@@ -460,5 +464,123 @@ describe('OrderedSender', () => {
     sender.enqueue(2);
     await expect(sender.flushed()).rejects.toThrow('audit failed');
     expect(sent).toEqual([2]);
+  });
+});
+
+describe('request deadline (Fabric.md 3)', () => {
+  /** A Gateway handler whose answer the test releases by hand. */
+  function heldHandler(fabric: InProcessFabric) {
+    let answer: (value: SyscallAck) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    fabric.client('gateway').register(
+      SCHEMA_IDS.shutdown,
+      () =>
+        new Promise<SyscallAck>((resolve, reject) => {
+          answer = resolve;
+          fail = reject;
+        }),
+    );
+    return { answer: (value: SyscallAck) => answer(value), fail: (error: Error) => fail(error) };
+  }
+  const ack: SyscallAck = { requestId: request.requestId, outcome: 'ACCEPTED' };
+
+  it('rejects with REQUEST_TIMEOUT once the client deadline passes and drops the late answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const client = fabric.client('user-interaction', { requestTimeoutMs: 1_000 });
+      const pending = client.request(SCHEMA_IDS.shutdown, request, context);
+      const observed = expect(pending).rejects.toMatchObject({
+        name: 'FabricError',
+        code: 'REQUEST_TIMEOUT',
+      });
+      await vi.advanceTimersByTimeAsync(999);
+      let settled = false;
+      void pending.catch(() => (settled = true));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await observed;
+      // A late rejection is received and discarded: no unhandled rejection reaches the test.
+      handler.fail(new Error('Late handler failure'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases its timer when the answer arrives in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const client = fabric.client('workflow', { requestTimeoutMs: 1_000 });
+      const pending = client.request(SCHEMA_IDS.shutdown, request, context);
+      await vi.advanceTimersByTimeAsync(500);
+      handler.answer(ack);
+      await expect(pending).resolves.toEqual(ack);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sets no deadline on a client created without one', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const pending = fabric.client('kernel-core').request(SCHEMA_IDS.shutdown, request, context);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
+      handler.answer(ack);
+      await expect(pending).resolves.toEqual(ack);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives the Catalog and Persistence wrappers the same deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const never = () => new Promise<never>(() => undefined);
+      const catalog = catalogWithDeadline(
+        { pinAgent: never, getDefinition: never, capabilities: () => [] } as CatalogPort,
+        1_000,
+      );
+      const persistence = persistenceWithDeadline(
+        {
+          repository: () => ({ get: never, put: () => Promise.resolve() }),
+          auditLog: () => ({ append: never }),
+          capabilities: () => [],
+        } as PersistencePort,
+        1_000,
+      );
+      const timedOut = { name: 'FabricError', code: 'REQUEST_TIMEOUT' };
+      const waits = [
+        expect(
+          catalog.pinAgent({ id: 'planner', version: 'v1.0.0' }, context),
+        ).rejects.toMatchObject(timedOut),
+        expect(
+          catalog.getDefinition({ kind: 'MODEL', id: 'model', version: 'v1.0.0' }, context),
+        ).rejects.toMatchObject(timedOut),
+        expect(persistence.repository('workflow', 'wfr_123456').get('x')).rejects.toMatchObject(
+          timedOut,
+        ),
+        expect(persistence.auditLog('workflow', 'wfr_123456').append({})).rejects.toMatchObject(
+          timedOut,
+        ),
+        expect(
+          persistence.repository('workflow', 'wfr_123456').put({ id: 'x' }),
+        ).resolves.toBeUndefined(),
+      ];
+      await vi.advanceTimersByTimeAsync(1_000);
+      await Promise.all(waits);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

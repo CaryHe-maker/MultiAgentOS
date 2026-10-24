@@ -16,8 +16,10 @@ import {
 import { createExecutorRegistry } from '@multiagentos/executor-set';
 import {
   InProcessFabric,
+  catalogWithDeadline,
   createInteractionGatewayPort,
   createWorkflowGatewayPort,
+  persistenceWithDeadline,
   serveInteractionInbox,
   serveWorkflowInbox,
 } from '@multiagentos/fabric';
@@ -156,11 +158,17 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     });
     const gateway = parts.createGateway({ fabric: fabric.client('gateway'), now });
 
-    const workflowFabric = fabric.client('workflow');
+    // Workflow and UserInteraction wait for their ports at most this long (M1Interface 14.4);
+    // the Kernel's own clients have no deadline.
+    const deadline = { requestTimeoutMs: config.portReturnTimeoutMs };
+    const workflowFabric = fabric.client('workflow', deadline);
     const workflow = parts.createWorkflow({
       gateway: createWorkflowGatewayPort(workflowFabric),
-      catalog,
-      persistence: forPersistenceNamespace(persistence, 'workflow'),
+      catalog: catalogWithDeadline(catalog, config.portReturnTimeoutMs),
+      persistence: persistenceWithDeadline(
+        forPersistenceNamespace(persistence, 'workflow'),
+        config.portReturnTimeoutMs,
+      ),
       registry,
       config: config.workflow,
       reportSystemFault,
@@ -168,7 +176,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     });
     serveWorkflowInbox(workflowFabric, workflow.inbox);
 
-    const interactionFabric = fabric.client('user-interaction');
+    const interactionFabric = fabric.client('user-interaction', deadline);
     const userInteraction = parts.createUserInteraction({
       gateway: createInteractionGatewayPort(interactionFabric),
       terminal: options.terminal,

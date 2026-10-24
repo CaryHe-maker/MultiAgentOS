@@ -6,11 +6,24 @@ import type {
   RunFinished,
   SystemFault,
 } from '@multiagentos/contracts';
+import { FabricError } from '@multiagentos/fabric';
 import { describe, expect, it, vi } from 'vitest';
 import { createUserInteraction } from '../index.js';
 import type { TerminalPort } from '../index.js';
 
 const now = () => new Date('2026-10-14T00:00:00.000Z');
+/** What the module's Fabric client rejects with once the port deadline passes. */
+const timedOut = (detail: string) => new FabricError('REQUEST_TIMEOUT', detail);
+
+/** A Gateway response that stays pending until `expire` gives the deadline's rejection. */
+function heldUntilDeadline(operation: string) {
+  let expire: () => void = () => {};
+  const held = () =>
+    new Promise<never>((_resolve, reject) => {
+      expire = () => reject(timedOut(operation));
+    });
+  return { held, expire: () => expire() };
+}
 const command = { goal: '分析仓库', repositoryPath: '/repo', details: false };
 const ref: ArtifactRef = {
   artifactId: 'art_' + 'a'.repeat(64),
@@ -144,7 +157,6 @@ describe('UserInteraction session and fault boundaries', () => {
         });
       await vi.advanceTimersByTimeAsync(0);
       expect(test.gateway[operation]).toHaveBeenCalledTimes(1);
-      expect(vi.getTimerCount()).toBe(1);
       test.terminal.write.mockImplementation(() => {
         throw new Error('Independent terminal failure');
       });
@@ -194,7 +206,8 @@ describe('UserInteraction session and fault boundaries', () => {
       vi.useFakeTimers();
       try {
         const test = setup();
-        test.gateway[operation].mockImplementation(() => new Promise<never>(() => {}));
+        const deadline = heldUntilDeadline(operation);
+        test.gateway[operation].mockImplementation(deadline.held);
         test.terminal.askYesNo.mockResolvedValue('YES');
         await test.module.start();
         let hasReturned = false;
@@ -221,7 +234,8 @@ describe('UserInteraction session and fault boundaries', () => {
         await vi.advanceTimersByTimeAsync(0);
         expect(hasReturned).toBe(false);
         expect(test.gateway.shutdown).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(30_000);
+        deadline.expire();
+        await vi.advanceTimersByTimeAsync(0);
         expect(await result).toBe(130);
         expect(test.reportSystemFault).toHaveBeenCalledTimes(1);
         expect(test.gateway.shutdown).not.toHaveBeenCalled();
@@ -267,16 +281,18 @@ describe('UserInteraction session and fault boundaries', () => {
     vi.useFakeTimers();
     try {
       const test = setup(false);
-      test.gateway.cancelRun.mockImplementation(() => new Promise<never>(() => {}));
+      const deadline = heldUntilDeadline('cancelRun');
+      test.gateway.cancelRun.mockImplementation(deadline.held);
       await test.module.start();
       const result = test.module.analyze(command);
       void result.catch(() => undefined);
       await vi.advanceTimersByTimeAsync(0);
       test.interrupt();
       await test.deliver(stopped());
-      await vi.advanceTimersByTimeAsync(30_000);
-      await expect(result).rejects.toThrow('Interaction port return deadline exceeded');
-      await expect(test.module.stop()).rejects.toThrow('Interaction port return deadline exceeded');
+      deadline.expire();
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(result).rejects.toThrow('REQUEST_TIMEOUT');
+      await expect(test.module.stop()).rejects.toThrow('REQUEST_TIMEOUT');
       expect(test.gateway.shutdown).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -329,18 +345,13 @@ describe('UserInteraction session and fault boundaries', () => {
   });
 
   it.each(['createRun', 'cancelRun', 'answerAuthorization', 'readArtifact', 'shutdown'] as const)(
-    'bounds a held %s response and observes late rejection',
+    'reports a %s that reaches the port deadline at its capture boundary',
     async (operation) => {
       vi.useFakeTimers();
       try {
         const test = setup();
-        let rejectLate: (error: Error) => void = () => {};
-        test.gateway[operation].mockImplementation(
-          () =>
-            new Promise<never>((_resolve, reject) => {
-              rejectLate = reject;
-            }),
-        );
+        const deadline = heldUntilDeadline(operation);
+        test.gateway[operation].mockImplementation(deadline.held);
         test.terminal.askYesNo.mockResolvedValue('YES');
         await test.module.start();
         const result = test.module.analyze(command);
@@ -366,13 +377,14 @@ describe('UserInteraction session and fault boundaries', () => {
             runSummaryRef: ref,
           });
         if (operation === 'shutdown') await test.deliver(stopped());
-        await vi.advanceTimersByTimeAsync(30_000);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(test.gateway[operation]).toHaveBeenCalledTimes(1);
+        deadline.expire();
+        await vi.advanceTimersByTimeAsync(0);
         if (operation === 'shutdown') expect(await result).toBe(130);
-        else await expect(result).rejects.toThrow('Interaction port return deadline exceeded');
+        else await expect(result).rejects.toThrow('REQUEST_TIMEOUT');
         expect(test.reportSystemFault).toHaveBeenCalledTimes(operation === 'createRun' ? 0 : 1);
         await test.module.stop();
-        rejectLate(new Error('Late gateway failure'));
-        await vi.advanceTimersByTimeAsync(1);
         expect(test.reportSystemFault).toHaveBeenCalledTimes(operation === 'createRun' ? 0 : 1);
       } finally {
         vi.useRealTimers();

@@ -1,11 +1,14 @@
 import { WorkflowInboxEventSchema, newId, validate } from '@multiagentos/contracts';
 import type { BoundaryContext, WorkflowInboxEvent } from '@multiagentos/contracts';
-import { Inbox } from '@multiagentos/fabric';
+import { FabricError, Inbox } from '@multiagentos/fabric';
 import type { WorkflowDeps, WorkflowModule } from '../index.js';
 import { reduceWorkflow } from '../domain/reducer.js';
 import type { WorkflowAction, WorkflowInput } from '../domain/reducer.js';
 import type { WorkflowState } from '../domain/state.js';
-import { awaitPort, PortDeadlineError } from './port-deadline.js';
+
+/** Fabric and the composition root enforce the port deadline (Workflow.md 11.1). */
+const isPortTimeout = (error: unknown): boolean =>
+  error instanceof FabricError && error.code === 'REQUEST_TIMEOUT';
 
 /** Builds the consumer without starting it; all effects use public ports. */
 export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
@@ -69,7 +72,7 @@ export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
 
   async function execute(action: WorkflowAction, workflowRunId: string): Promise<WorkflowInput> {
     try {
-      return await awaitPort(action.kind, executeUnchecked(action, workflowRunId));
+      return await executeUnchecked(action, workflowRunId);
     } catch (error) {
       operationErrors.set(workflowRunId, { operation: action.kind, error });
       throw error;
@@ -105,7 +108,7 @@ export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
       const state = states.get(envelope.workflowRunId);
       // Escalate errors after closure or from the close action; never retry at this level.
       if (
-        error instanceof PortDeadlineError ||
+        isPortTimeout(error) ||
         state === undefined ||
         state.phase === 'CLOSING' ||
         state.closed !== undefined
@@ -117,17 +120,14 @@ export function createWorkflowRunner(deps: WorkflowDeps): WorkflowModule {
       const diagnostic = operationErrors.get(envelope.workflowRunId);
       try {
         // Never persist exception text, stacks, provider responses or source content.
-        await awaitPort(
-          'WRITE_DIAGNOSTIC',
-          deps.persistence.auditLog('workflow', envelope.workflowRunId).append({
-            diagnosticId: newId('cor'),
-            workflowRunId: envelope.workflowRunId,
-            operation: diagnostic?.operation ?? 'REDUCE',
-            code: diagnostic === undefined ? 'INTERNAL_ERROR' : 'PORT_FAILURE',
-            phase: state.phase,
-            occurredAt: now().toISOString(),
-          }),
-        );
+        await deps.persistence.auditLog('workflow', envelope.workflowRunId).append({
+          diagnosticId: newId('cor'),
+          workflowRunId: envelope.workflowRunId,
+          operation: diagnostic?.operation ?? 'REDUCE',
+          code: diagnostic === undefined ? 'INTERNAL_ERROR' : 'PORT_FAILURE',
+          phase: state.phase,
+          occurredAt: now().toISOString(),
+        });
         await advance(envelope.workflowRunId, { kind: 'INTERNAL_ERROR' });
       } catch (closureError) {
         hasFault = true;

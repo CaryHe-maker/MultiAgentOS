@@ -29,7 +29,9 @@ M1 的 Fabric 是同进程实现 `InProcessFabric`，为每个通讯主体创建
 - 每次投递先按 `schemaName` 的 Schema 校验 payload，再以 `structuredClone` 复制，使误传对象引用、函数或类实例在 M1 即可被发现。
   Gateway 的九种 syscall 路由允许 Gateway 注册无效正文处理器：只在 `requestId` 仍合法时调用，
   由 Gateway 返回结构化 `INVALID_REQUEST`；其他路由与非法 requestId 仍直接报告传输契约错误。
-- `request`：调用方等待处理方返回；超时不证明操作未发生。M1 不设 Fabric 级超时，由各请求的业务时限兜底。
+- `request`：调用方等待处理方返回。组合根可以为某个通讯主体的客户端设置请求期限；M1 只为 Workflow 与 UserInteraction
+  设置（`SystemConfig.portReturnTimeoutMs`，M1Interface 14.3），Kernel 内部的请求不设期限。到期时 `request` 以
+  `FabricError(REQUEST_TIMEOUT)` 拒绝；之后迟到的返回或拒绝被接收并丢弃。超时不证明操作未发生。
 - `send` / `subscribe`：单向消息；`send` 返回表示已进入接收方队列。同一地址的并发投递按调用登记顺序串行受理，
   一次投递失败不阻断后续投递；不同地址可并行。
 - `send` 失败可能来自订阅者、缺失订阅者或停止期间的 `NOT_RUNNING`，不一律是契约缺陷；
