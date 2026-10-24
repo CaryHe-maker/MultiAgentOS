@@ -9,7 +9,13 @@ import {
   newId,
   validate,
 } from '@multiagentos/contracts';
-import type { ModelCallOutput, SubmitUnitRequest, UnitReport } from '@multiagentos/contracts';
+import type {
+  ModelCallOutput,
+  StepRecord,
+  SubmitUnitRequest,
+  UnitReport,
+} from '@multiagentos/contracts';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_WORKFLOW_CONFIG } from '../index.js';
 import { cycleDefinitions } from '../test-support/cycle-definitions.js';
@@ -139,6 +145,27 @@ function failure(
     reasonCode: 'PROVIDER_AUTH',
     budgetState,
   };
+}
+
+function rejected(
+  request: SubmitUnitRequest,
+  executionKind: 'REPOSITORY_ORIENT' | 'FILE_READ' | 'REPOSITORY_SEARCH',
+  reasonCode: 'USER_DECLINED' | 'NOT_FOUND',
+  budgetState: UnitReport['budgetState'] = 'NORMAL',
+): UnitReport {
+  const checked = validate<UnitReport>(UnitReportSchema, {
+    type: 'UnitReport',
+    requestId: request.requestId,
+    agentRunId: request.agentRunId,
+    unitRef: request.unitRef,
+    executionKind,
+    status: 'REJECTED',
+    reasonCode,
+    budgetState,
+    ...(reasonCode === 'USER_DECLINED' ? {} : { unitAttemptId: newId('una') }),
+  });
+  if (!checked.ok) throw new Error('Invalid UnitReport fixture');
+  return checked.value;
 }
 
 describe('registered Agent Unit cycle', () => {
@@ -529,5 +556,120 @@ describe('registered Agent Unit cycle', () => {
       reason: 'NO_PROGRESS',
       lastIssue: { kind: 'INVALID_OUTPUT', reason: 'OUTPUT_TRUNCATED' },
     });
+  });
+});
+
+/** M1Interface 6.6: every tool call of a MODEL_TURN is answered before the next MODEL_TURN. */
+function unansweredCalls(steps: readonly StepRecord[]): string[] {
+  const missing: string[] = [];
+  steps.forEach((step, index) => {
+    if (step.kind !== 'MODEL_TURN') return;
+    const next = steps.findIndex((later, at) => at > index && later.kind === 'MODEL_TURN');
+    const answers = steps.slice(index + 1, next === -1 ? undefined : next);
+    for (const call of step.toolCalls)
+      if (
+        !answers.some((answer) => 'toolCallId' in answer && answer.toolCallId === call.toolCallId)
+      )
+        missing.push(`round ${step.round}: ${call.toolCallId}`);
+  });
+  return missing;
+}
+
+const generatedCall = fc.constantFrom(
+  { toolName: 'read_file', arguments: { path: 'src/a.ts' } },
+  { toolName: 'read_file', arguments: { path: 'src/b.ts' } },
+  { toolName: 'read_file', arguments: {} },
+  { toolName: 'search_repository', arguments: { query: 'cache' } },
+  { toolName: 'run_shell', arguments: { command: 'ls' } },
+  { toolName: 'finish_analysis', arguments: { summary: 's', conclusions: [], unconfirmed: [] } },
+);
+
+const generatedTurn = fc.record({
+  // Providers reuse ids such as call_0 in every reply, so ids repeat across turns.
+  calls: fc.array(generatedCall, { maxLength: 10 }),
+  failed: fc.boolean(),
+  budgetState: fc.constantFrom('NORMAL', 'WRAP_UP', 'EXHAUSTED' as const),
+});
+
+const generatedToolReport = fc.record({
+  status: fc.constantFrom('OK', 'REJECTED', 'FAILED' as const),
+  budgetState: fc.constantFrom('NORMAL', 'WRAP_UP', 'EXHAUSTED' as const),
+});
+
+describe('tool call answers (M1Interface 6.6)', () => {
+  it('answers every tool call before the next model turn on generated runs', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.array(generatedTurn, { minLength: 1, maxLength: 6 }),
+        fc.array(generatedToolReport, { maxLength: 40 }),
+        (hasStartup, turns, toolReports) => {
+          const { run, environment } = setup(hasStartup);
+          let transition = startUnitCycle(run, environment());
+          const queue = [...transition.submissions];
+          let turnIndex = 0;
+          let toolIndex = 0;
+          for (let guard = 0; guard < 200 && transition.state.phase !== 'DECIDED'; guard += 1) {
+            const request = queue.shift();
+            if (request === undefined || request.unitRef.id === 'report-publish') break;
+            let report: UnitReport;
+            switch (request.unitRef.id) {
+              case 'repository-orient':
+                report = rejected(request, 'REPOSITORY_ORIENT', 'USER_DECLINED');
+                break;
+              case 'context-assemble': {
+                const input = request.input as { steps: readonly StepRecord[] };
+                expect(unansweredCalls(input.steps)).toEqual([]);
+                report = ok(request, 'CONTEXT_ASSEMBLE', contextOutput);
+                break;
+              }
+              case 'model-call': {
+                const turn = turns[Math.min(turnIndex, turns.length - 1)];
+                turnIndex += 1;
+                if (turn === undefined) throw new Error('no generated turn');
+                if (turn.failed) {
+                  report = failure(request, 'MODEL', turn.budgetState);
+                  break;
+                }
+                const toolCalls = turn.calls.map((call, index) => ({
+                  ...call,
+                  toolCallId: `call_${index}`,
+                }));
+                report = ok(
+                  request,
+                  'MODEL',
+                  {
+                    hasText: false,
+                    finishReason: toolCalls.length === 0 ? 'STOP' : 'TOOL_CALLS',
+                    toolCalls,
+                  },
+                  turn.budgetState,
+                );
+                break;
+              }
+              default: {
+                const generated = toolReports[toolIndex] ?? { status: 'OK', budgetState: 'NORMAL' };
+                toolIndex += 1;
+                const path = (request.input as { path?: string }).path ?? 'src/a.ts';
+                const isRead = request.unitRef.id === 'file-read';
+                const executionKind = isRead ? 'FILE_READ' : 'REPOSITORY_SEARCH';
+                if (isRead && generated.status === 'OK')
+                  report = ok(request, 'FILE_READ', { ...readOutput, path }, generated.budgetState);
+                else if (generated.status === 'FAILED')
+                  report = {
+                    ...failure(request, 'FILE_READ', generated.budgetState),
+                    executionKind,
+                  };
+                else report = rejected(request, executionKind, 'NOT_FOUND', generated.budgetState);
+              }
+            }
+            transition = receiveUnitReport(transition.state, report, environment());
+            queue.push(...transition.submissions);
+          }
+          expect(unansweredCalls(transition.state.run.steps)).toEqual([]);
+        },
+      ),
+      { seed: 20261024, numRuns: 300 },
+    );
   });
 });

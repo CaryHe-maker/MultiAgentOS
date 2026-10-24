@@ -11,6 +11,7 @@ import {
   createFakeWorkflow,
   type FakeWorkflowModule,
 } from '@multiagentos/testing';
+import { SCHEMA_IDS } from '@multiagentos/fabric';
 import type { KernelCoreModule, SupervisorModule } from '@multiagentos/kernel';
 import type { ModuleLedgerEntry } from '@multiagentos/module-host';
 import type { SystemFaultReporter } from '@multiagentos/contracts';
@@ -189,8 +190,51 @@ describe('system control', () => {
     await system.start();
     context.onRunning = () =>
       system.reportFault({ source: 'workflow', phase: 'RUN', error: new Error('inbox failed') });
-    expect(await system.run((interaction) => interaction.analyze(command))).toBe(
-      EXIT_CODE_SYSTEM_FAULT,
+    // 1 when UserInteraction still showed the run the Kernel closed, 70 when it could not.
+    expect([1, EXIT_CODE_SYSTEM_FAULT]).toContain(
+      await system.run((interaction) => interaction.analyze(command)),
+    );
+    const report = await system.shutdown();
+    expect(report.faults.map((fault) => fault.source)).toEqual(['workflow', 'kernel-core']);
+    expect(new Set(report.modules.map((entry) => entry.state))).toEqual(new Set(['STOPPED']));
+  });
+
+  it('closes the run, not the Kernel core, when an execution reaches a stopping Supervisor', async () => {
+    // Holds the core's execution request past the abort deadline, so that it arrives after the
+    // Supervisor started stopping: the order that made the test above fail under load.
+    const context = await fixture(
+      {
+        createKernelCore: (deps) =>
+          Object.assign(
+            createFakeKernelCore({
+              unitScript: () => {
+                context.onRunning();
+                context.onRunning = () => undefined;
+                return undefined;
+              },
+            })({
+              ...deps,
+              fabric: {
+                ...deps.fabric,
+                request: async (schemaId, payload, requestContext) => {
+                  if (schemaId === SCHEMA_IDS.execute)
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                  return deps.fabric.request(schemaId, payload, requestContext);
+                },
+              },
+            }),
+            { abortAllRuns: () => new Promise<void>(() => undefined) },
+          ),
+      },
+      { abortRunsMs: 20 },
+    );
+    const { system } = context;
+    await system.start();
+    context.onRunning = () =>
+      system.reportFault({ source: 'workflow', phase: 'RUN', error: new Error('inbox failed') });
+    // 1 when UserInteraction still showed the run the Kernel closed, 70 when it could not.
+    expect([1, EXIT_CODE_SYSTEM_FAULT]).toContain(
+      await system.run((interaction) => interaction.analyze(command)),
     );
     const report = await system.shutdown();
     expect(report.faults.map((fault) => fault.source)).toEqual(['workflow', 'kernel-core']);

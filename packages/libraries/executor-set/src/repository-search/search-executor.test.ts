@@ -171,6 +171,11 @@ describe('REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2)', () => {
   });
 });
 
+// quality-gate.yml installs rg; without this check a broken install only skips the tests below.
+it.runIf(process.env['CI'] !== undefined)('finds rg in CI', () => {
+  expect(ripgrep).toBe(true);
+});
+
 describe.skipIf(!ripgrep)('rg and the scan agree (ExecutorSet 6)', () => {
   it.each([
     ['parseConfig', 'AUTO'],

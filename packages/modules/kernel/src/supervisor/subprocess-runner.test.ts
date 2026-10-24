@@ -19,6 +19,11 @@ describe('SubprocessRunner', () => {
     else expect(version).toEqual({ exitCode: null, signal: null, stdout: '', truncated: false });
   });
 
+  // quality-gate.yml installs rg; in CI a missing rg must fail rather than pass either way.
+  it.runIf(process.env['CI'] !== undefined)('finds rg in CI', () => {
+    expect(hasRipgrep).toBe(true);
+  });
+
   it('does not start anything once the signal has fired', async () => {
     const result = await runner.run('rg', ['--version'], options({ signal: AbortSignal.abort() }));
     expect(result).toEqual({ exitCode: null, signal: null, stdout: '', truncated: false });

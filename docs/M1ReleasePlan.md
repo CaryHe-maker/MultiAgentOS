@@ -99,7 +99,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | D2 | 检索评分中“路径含 test 乘 0.9” | #26 E 要求去掉，代码（`search-executor.ts`）与 ExecutorSet.md 3.3 仍保留；F2、F4 要求找到测试文件 | 去掉。需请求（ExecutorSet.md 3.3） | 阶段一 | 2026-10-24 同意，含 ExecutorSet.md 修改 |
 | D3 | 收尾说明只保留一处 | Workflow 记录 `FEEDBACK(WRAP_UP_NOTICE)`，上下文组装器的状态行也写明最后一次调用及原因（#32 第 1 条） | 由阶段三的评测决定保留哪一处。需请求（Workflow.md 第 8 节或 ExecutorSet.md 4.4） | 阶段三 | 待定 |
 | D4 | 启动期额度校验的上界 | 现为 79156 / 80000。用户输入按每个字符都是二次转义的控制字符估算，约预留 58k token；Monitor 第 4 节还把 FILE_READ 的字节上限当作 token 相加。留给 Prompt 与工具说明的空间约 5k token | 在阶段三开始前决定是否放宽估算方法或调整 `perCallInputLimit`。需请求（Monitor.md 第 4 节） | 阶段三之前 | 待定 |
-| D5 | 30 秒端口期限是否改为系统级约定 | Workflow 与 UserInteraction 各有一个 `PORT_RETURN_TIMEOUT_MS`；#29 计划改为 `SystemConfig` 配置项、由 Fabric 统一执行。M1Plan 没有要求 | 端口期限已在两个模块中按 Workflow.md 与 UserInteraction.md 的规定执行；系统级化只是集中配置与执行的位置。M1 发布不做，作为已知限制记录 | 阶段一 | 2026-10-24 决定在阶段一实现（R1.8）；需修改的 M1 文档在实施前列出，按 2.1 第 3 条确认 |
+| D5 | 30 秒端口期限是否改为系统级约定 | Workflow 与 UserInteraction 各有一个 `PORT_RETURN_TIMEOUT_MS`；#29 计划改为 `SystemConfig` 配置项、由 Fabric 统一执行。M1Plan 没有要求 | 端口期限已在两个模块中按 Workflow.md 与 UserInteraction.md 的规定执行；系统级化只是集中配置与执行的位置。M1 发布不做，作为已知限制记录 | 阶段一 | 2026-10-24 决定在阶段一实现（R1.8），采用方案 A：期限值进入 `SystemConfig`，Fabric 执行 Gateway 请求的期限，组合根为 Catalog 与 Persistence 适配器加同样的期限，模块内不再有期限逻辑；需修改的 M1 文档在实施前列出，按 2.1 第 3 条确认 |
 | D6 | CI 的 `pull_request` 分支过滤 | 只匹配 `main` 与 `feat/**`，与 M1TechStack 第 11 节一致；`feature/M1/main` 上的提交靠 push 事件触发 | 保持现状 | 阶段一 | 2026-10-24 同意保持现状 |
 | D7 | “兼容矩阵”的含义 | M1Plan 第 7 节要求兼容矩阵全部通过，但 M1 文档没有定义它包含哪些维度 | 阶段二开始时提出定义（例如协议族的 major 版本正反例、Node 与 Ubuntu 版本）。需请求（M1Plan 第 7 节） | 阶段二 | 待定 |
 | D8 | 评测脚本的 Agent 循环 | `executor-set/eval/agent-loop.ts` 自己实现了简化的 Workflow，评测结果不能代表产品（#32 第 4 条） | M1 验收只采用阶段二的验收工具经产品调用链得到的结果；`agent-loop.ts` 保留为开发工具 | 阶段二 | 待定 |
@@ -212,3 +212,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R0.5 | 2026-10-24 | 同上 | 本文件入库 |
 | R1.5 | 2026-10-24 | `fix: 按 #26 的答复修正被删除文件的拒绝原因与测试文件的检索得分` | 先增加复现用例；ExecutorSet.md 3.2 同步；WSL 上 1091 项测试通过 |
 | R1.6 | 2026-10-24 | 同上 | 增加固定得分的用例；ExecutorSet.md 3.3 同步 |
+| R1.1 | 2026-10-24 | `test: 修复关闭路径上的不稳定用例并补齐 rg 与工具调用应答的检查` | 两处 rg 相关测试在 `CI` 下增加“找到 rg”用例；`CI=1` 下运行通过 |
+| R1.2 | 2026-10-24 | 同上 | 原因：故障后假 Kernel 核心仍在执行的 Unit 在 Supervisor 开始停止后才提交，被拒绝后假核心把它记为自身错误，使 `stop()` 失败，多出 `supervisor`、`module-host` 两项故障。产品 Kernel 按 Kernel 4.4 把这种发送失败转为运行级 `KERNEL_FAULT`，假核心改为同样处理。增加确定性复现用例（修复前稳定失败）；两个用例的退出码按已有约定接受 1 或 70。CPU 压力下连续运行 50 次见下行 |
+| R1.3 | 2026-10-24 | 同上 | fast-check 生成合法、未知、参数错误、重复、混入控制动作的工具调用与随机结果和额度状态，检查每次 context-assemble 输入与最终步骤；去掉对 FEEDBACK 的认可后性质立即失败，确认用例有效 |
+| R1.4 | 2026-10-24 | 不适用 | #24–#29 已答复的决定全部落实；#32 中未落实的事项已分别由 D3、R1.8、R3.2、D8 跟踪 |

@@ -568,7 +568,7 @@ export function createFakeKernelCore(
       const limit = deps.config.executionLimits[kind];
       const final = (request.input as { final?: boolean }).final === true;
       const fact = new Promise<ExecutionFact>((resolve) => awaitedFacts.set(executionId, resolve));
-      await supervisor.execute({
+      const accepted = supervisor.execute({
         workflowRunId: target.workflowRunId,
         unitAttemptId: newId('una'),
         executionId,
@@ -588,6 +588,21 @@ export function createFakeKernelCore(
           ...(kind === 'REPOSITORY_ORIENT' ? { maxFiles: deps.config.maxSnapshotFiles } : {}),
         },
       } as ExecutionRequest);
+      try {
+        await accepted;
+      } catch {
+        // Like the run actor's egress (Kernel 4.4): a send the Supervisor refuses, for example
+        // because it is stopping, closes the run as a Kernel fault; the core itself has not failed.
+        awaitedFacts.delete(executionId);
+        finish(target, 'FAILED', {
+          failure: {
+            code: 'KERNEL_INTERNAL',
+            category: REASON_CODE_CATEGORY.KERNEL_INTERNAL,
+            source: 'KERNEL',
+          },
+        });
+        return { status: 'FAILED', reasonCode: 'INTERNAL' };
+      }
       const result = await fact;
       if (result.outcome === 'COMPLETED') return result.result;
       if (result.outcome === 'VIOLATION') {
