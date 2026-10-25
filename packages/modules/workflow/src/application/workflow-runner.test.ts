@@ -56,8 +56,8 @@ describe('Workflow pinning and registration', () => {
     await module.start();
     await module.stop();
     expect(catalog.requests).toEqual([
-      { id: 'planner', version: 'v1.0.0' },
-      { id: 'code-viewer', version: 'v1.0.0' },
+      { id: 'planner', version: 'v1.1.0' },
+      { id: 'code-viewer', version: 'v1.1.0' },
     ]);
     expect(gateway.calls).toHaveLength(2);
     const call = gateway.calls[0];

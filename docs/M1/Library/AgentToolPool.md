@@ -48,12 +48,12 @@ packages/libraries/agent-tool-pool/definitions/
 
 ## 4. M1 定义实例
 
-M1 目录恰好包含以下 16 个定义文件和 `status.yaml`（`entries: []`），全部为已封存的 `v1.0.0`，`schemaVersion` 为 `v0`。Prompt 与 Tool 经固定任务集 F1–F5 的真实模型评测后定稿（`contentStatus: FINAL`）；此前的 `v0.1.0` 草稿只保留在 git 历史中。
+M1 目录包含以下 16 个当前定义，全部已封存，`schemaVersion` 为 `v0`；另有被取代的 `planner`、`code-viewer`、`code-viewer-system` 的 `v1.0.0`，保留不动以对应引用它们的运行记录，并在 `status.yaml` 中标为 DEPRECATED。Prompt 与 Tool 经固定任务集 F1–F5 的真实模型评测后定稿（`contentStatus: FINAL`）；此前的 `v0.1.0` 草稿只保留在 git 历史中。
 
 | kind | id | version | 状态 |
 |---|---|---|---|
-| AGENT | `planner` | `v1.0.0` | 已封存 |
-| AGENT | `code-viewer` | `v1.0.0` | 已封存 |
+| AGENT | `planner` | `v1.1.0` | 已封存（取代 `v1.0.0`） |
+| AGENT | `code-viewer` | `v1.1.0` | 已封存（取代 `v1.0.0`） |
 | UNIT | `repository-orient` | `v1.0.0` | 已封存 |
 | UNIT | `repository-search` | `v1.0.0` | 已封存 |
 | UNIT | `file-read` | `v1.0.0` | 已封存 |
@@ -67,19 +67,19 @@ M1 目录恰好包含以下 16 个定义文件和 `status.yaml`（`entries: []`�
 | MODEL | `deepseek-flash` | `v1.0.0` | 已封存 |
 | MODEL | `deepseek-v4-pro` | `v1.0.0` | 已封存 |
 | PROMPT | `planner-system` | `v1.0.0` | 已封存 |
-| PROMPT | `code-viewer-system` | `v1.0.0` | 已封存 |
+| PROMPT | `code-viewer-system` | `v1.1.0` | 已封存（取代 `v1.0.0`） |
 
-运行的入口 Agent 由 Workflow 配置 `entryAgentRef = { id: planner, version: v1.0.0 }` 指定（见 [Workflow](../Module/Workflow.md) 12）。
+运行的入口 Agent 由 Workflow 配置 `entryAgentRef = { id: planner, version: v1.1.0 }` 指定（见 [Workflow](../Module/Workflow.md) 12）。
 
 ### 4.1 Agent
 
 ```yaml
-# agents/planner/v1.0.0.yaml
+# agents/planner/v1.1.0.yaml
 schemaVersion: v0
 kind: AGENT
 id: planner
-version: v1.0.0
-digest: c8929b1a8b7fb3bb47c1fd10e8072da6908a272e2646bb13696ec52d4011d5f8
+version: v1.1.0
+digest: 377c67e0326b3cc5bd89c0b87c40f4c80d85d17d89268a6e3ec72b2951fb9a6d
 description: Plans the repository analysis and hands it to the code viewer; never reads the repository.
 role: analysis planner
 modelRef: { id: deepseek-flash, version: v1.0.0 }
@@ -94,22 +94,22 @@ actions:
   finish: { toolRef: { id: finish-analysis, version: v1.0.0 } }
   handoff:
     toolRef: { id: handoff-to-code-viewer, version: v1.0.0 }
-    targetAgentRef: { id: code-viewer, version: v1.0.0 }
+    targetAgentRef: { id: code-viewer, version: v1.1.0 }
 limits: { maxRounds: 3, maxToolCallsPerRound: 0 }
 ```
 
 ```yaml
-# agents/code-viewer/v1.0.0.yaml
+# agents/code-viewer/v1.1.0.yaml
 schemaVersion: v0
 kind: AGENT
 id: code-viewer
-version: v1.0.0
-digest: 6fde30a62896b0af10ee6db0b5069b71437b7446b34ca55ee635ed0714669b16
+version: v1.1.0
+digest: 9c0d42d5cd8fe234bcd17670ec9336a83c1c7729140bb8f7cc4ad7d36b054d60
 description: Reads the repository through orient, search and read units and writes the analysis report.
 role: read-only code analyst
 modelRef: { id: deepseek-flash, version: v1.0.0 }
 modelSettings: { thinking: DISABLED }
-promptRef: { id: code-viewer-system, version: v1.0.0 }
+promptRef: { id: code-viewer-system, version: v1.1.0 }
 unitRefs:
   - { id: repository-orient, version: v1.0.0 }
   - { id: repository-search, version: v1.0.0 }
@@ -378,11 +378,12 @@ contentStatus: FINAL
 ```
 
 ```yaml
+# prompts/code-viewer-system/v1.1.0.yaml
 schemaVersion: v0
 kind: PROMPT
 id: code-viewer-system
-version: v1.0.0
-digest: f517d8ff6d65ae8c98269fb747703053eed6634338e963fa80dbedb01219e85d
+version: v1.1.0
+digest: 8bf080a2c1e4e7dc1896adb55edfcccea4ee8340dc59af11def19713cea8b300
 description: System prompt of the code viewer.
 role: system
 template: |
@@ -414,7 +415,8 @@ template: |
   range in one call when you need to cite it. Search results, the overview and empty files are
   never sources. Cite the smallest such ranges, with exact paths and line numbers.
 
-  Finishing: call finish_analysis on its own. summary answers the question directly.
+  Finishing: call finish_analysis on its own. summary answers the question directly in two
+  to four sentences; leave details, numbers and file references to the conclusions.
   conclusions has one entry per finding, one to three sentences with its sources; do not merge
   or drop findings. unconfirmed lists what you could not verify. Write in the language of the
   question. When the status says this is the final call, call finish_analysis immediately. If
@@ -507,4 +509,4 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 
 ## 9. 遗留事项
 
-无。两个 Prompt 与四个 Tool 的 `modelDescription` 已在 2026-10-25 经 F1–F5 的真实模型评测定稿为 `FINAL` 并封存为 `v1.0.0`（M1ReleasePlan R3.5）。
+无。两个 Prompt 与四个 Tool 的 `modelDescription` 已在 2026-10-25 经 F1–F5 的真实模型评测定稿为 `FINAL` 并封存为 `v1.0.0`（M1ReleasePlan R3.5）；`code-viewer-system` 随后以 `v1.1.0` 把 summary 限制为两到四句，`code-viewer`、`planner` 随之发布 `v1.1.0`（R5.7）。

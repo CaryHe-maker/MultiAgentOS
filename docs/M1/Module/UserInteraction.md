@@ -87,6 +87,7 @@ Ctrl+C 只有第一次由 UserInteraction 处理：运行中调用 `cancelRun`�
   正常报告展示模型的 `summary` 原文；降级报告的 `summary` 是占位文本，不展示，改为按 `wrapUp.reason`
   从 `InteractionMessages` 给出说明；带 `wrapUp.lastIssue` 时，按原因码或非法输出的原因补充最后一次调用为何没有结束。
   报告带 `emptyReads` 时说明另有若干空文件未列入来源。
+  正常报告分三段：“回答”（`summary`）、“结论”（逐条编号，每条下方缩进列出来源，写成“路径 第 a–b 行”）、“未查证的问题”（逐条编号，每条下方说明原因：模型提出但没有查证，或来源未通过核验而未被采纳为结论）；段之间空一行，多行文字的后续行与首行对齐。
   报告的全部说明文字只由本模块生成，Workflow 不在报告中写入面向用户的文字。
 - 没有 `reportRef` 时按 `closeReason` 展示结束说明；`failure` 存在时，按 `failure.code` 从 UserInteraction 自有的文案表
   （`InteractionMessages`）给出说明，未收录的原因码使用通用说明。`failure.detail` 不展示。

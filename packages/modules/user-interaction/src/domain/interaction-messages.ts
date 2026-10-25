@@ -50,9 +50,12 @@ export const InteractionMessages = Object.freeze({
   authorize: '是否允许读取仓库？',
   reportTitle: '分析报告',
   summaryTitle: '运行摘要',
-  conclusion: (statement: string) => `结论：${statement}`,
-  source: (path: string, start: number, end: number) => `来源：${path}:${start}-${end}`,
-  unconfirmedItem: (statement: string, reason: string) => `未确认项：${statement}（${reason}）`,
+  answerTitle: '回答',
+  conclusionsTitle: '结论',
+  unconfirmedTitle: '未查证的问题',
+  sourceLabel: '来源：',
+  source: (path: string, start: number, end: number) =>
+    start === end ? `${path} 第 ${start} 行` : `${path} 第 ${start}–${end} 行`,
   wrapUpLine: (reason: string) => `收尾原因：${reason}`,
   repository: (path: string) => `仓库：${path}`,
   exclusions: (patterns: readonly string[]) => `排除规则：${patterns.join('、') || '无'}`,
@@ -67,10 +70,11 @@ export const InteractionMessages = Object.freeze({
   duration: (durationMs: number) => `耗时：${durationMs} 毫秒`,
   failureCategory: (category: string) => `失败分类：${category}`,
   unknownCategory: '未知',
+  /** Why an item is not a conclusion: the model said so, or the source check refused it. */
   unconfirmedReason: {
-    NO_SOURCE: '未提供来源',
-    SOURCE_NOT_READ: '来源未被有效读取',
-    MODEL_UNCONFIRMED: '模型未确认',
+    NO_SOURCE: '模型没有给出来源，系统未采纳为结论',
+    SOURCE_NOT_READ: '引用的代码没有被实际读取，系统未采纳为结论',
+    MODEL_UNCONFIRMED: '模型提出、但没有查证',
   },
   category: FAILURE_CATEGORIES,
   close: {

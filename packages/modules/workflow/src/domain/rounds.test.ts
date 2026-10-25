@@ -159,7 +159,7 @@ describe('Round and final-call decisions', () => {
       reasonCode: 'PROVIDER_AUTH',
       executionKind: 'MODEL',
       budgetState: 'EXHAUSTED',
-      unitRef: { kind: 'UNIT', id: 'model-call', version: 'v1.0.0', digest: 'a'.repeat(64) },
+      unitRef: { kind: 'UNIT', id: 'model-call', version: 'v1.1.0', digest: 'a'.repeat(64) },
     };
     expect(validate(UnitReportSchema, report).ok).toBe(true);
     const unit = definitions().units[0];

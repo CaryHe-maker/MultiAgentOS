@@ -202,6 +202,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R5.3 | 整理仍开着的 Issue（#4–#32），草拟每个 Issue 的处理意见（关闭、记录结论或转入后续） | 意见经 Cary 确认后执行 |
 | R5.4 | 草拟 `feature/M1/main -> feat/M1` 的 PR，经 Cary 确认后发布；使用 merge commit | PR 合并，`feat/M1` 上 CI 通过 |
 | R5.5 | 草拟 `feat/M1 -> main` 的发布 PR，按 Style 4.5 与 6.2 列出 M1 的最低验收标准与对应验证结果，经 Cary 确认后发布；使用 merge commit | PR 合并 |
+| R5.7 | 改进终端报告的可读性（2026-10-25 Cary 提出）：报告分“回答、结论、未能确认”三段，结论与未确认项编号，来源缩进并写明行号，未确认项说明原因；Prompt 把 summary 限制为两到四句，以 `v1.1.0` 发布 `code-viewer-system`、`code-viewer`、`planner`，旧版本标为 DEPRECATED，并重跑真实模型基线 | 修改 UserInteraction.md 第 5 节、AgentToolPool.md、Workflow.md 第 12 节（已同意）；基线不低于 R3.6 |
 | R5.6 | 记录发布：版本标识 `M1`、发布 PR 与对应的 `main` 提交 | 记录完成，本计划标记为已完成 |
 
 退出条件：M1 已通过发布 PR 合入 `main`。
@@ -247,6 +248,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R5.1 | 2026-10-25 | 同上 | 经 Cary 决定写入 `docs/M1/`：新增 `M1Limitations.md` 与 `M1Usage.md`，验收证据去掉草稿标记，限制清单移出；核对时修正一处说法：拒绝授权以 FAILED 结束（退出码 1），与测试一致 |
 | R5.2 | 2026-10-25 | 同上 | 根 README 更新实现状态与运行说明入口，`docs/README.md`、`docs/M1/README.md` 加入两份新文档；仓库内 Markdown 相对链接检查 0 处失效 |
 | R5.3 | 2026-10-25 | 不适用 | Cary 决定已有 Issue 保持现状，不专门回复、关闭或整理；验收证据中的处理意见草稿已删除 |
+| R5.7 | 2026-10-25 | `feat: 改进终端报告的版式并以 v1.1.0 缩短报告摘要` | 报告分“回答、结论、未能确认”三段，结论与未确认项编号，来源缩进并写成“路径 第 a–b 行”，未确认项写明是模型自己没能核实还是来源未通过核验；UserInteraction.md 第 5 节补充版式。`code-viewer-system`、`code-viewer`、`planner` 以 `v1.1.0` 发布，旧版本在 `status.yaml` 中标为 DEPRECATED，入口改为 `planner@v1.1.0`，AgentToolPool.md 与 Workflow.md 同步。真实模型重跑 15/15，summary 长度中位数 1173→453 个字符，见验收证据第 8 节。随后按 Cary 的要求把“未能确认”改为“未查证的问题”，模型列出的条目标为“模型提出、但没有查证”。另评测了收紧 unconfirmed（只列会影响回答的点）与两种引用规则：条目从约 2.9 降到约 2.1 条/次，但模型更常在结论中引用未读文件，F4 在 15 次与 25 次运行中分别失败 3 次与 1 次；经 Cary 选择只保留 summary 限制，引用未读文件的问题记入 M1Limitations（来源核验粒度）。这些实验版本均未推送，`v1.1.0` 即只限制 summary 的版本 |
 
 ## 6. 自主执行期间的决定（待 Cary 复核）
 

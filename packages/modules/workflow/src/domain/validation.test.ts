@@ -31,7 +31,7 @@ const context = (extra: Partial<ValidationContext> = {}): ValidationContext => (
   ...extra,
 });
 const previous: SuccessfulToolCall = {
-  unitRef: { kind: 'UNIT', id: 'file-read', version: 'v1.0.0', digest: 'a'.repeat(64) },
+  unitRef: { kind: 'UNIT', id: 'file-read', version: 'v1.1.0', digest: 'a'.repeat(64) },
   argumentsCanonical: canonicalJson({ path: 'src/index.ts', startLine: 2, endLine: 5 }),
   requestId: newId('req'),
 };

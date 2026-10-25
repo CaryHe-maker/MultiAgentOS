@@ -313,7 +313,7 @@ Catalog 与 Persistence 由组合根包装，到期都以 `FabricError(REQUEST_T
 
 | 配置 | 位置 | 建议初值 |
 |---|---|---|
-| `entryAgentRef` | Workflow 配置 | `{ id: planner, version: v1.0.0 }` |
+| `entryAgentRef` | Workflow 配置 | `{ id: planner, version: v1.1.0 }` |
 | `regenerationLimit` | Workflow 配置 | 3 |
 | `noProgressRounds` | Workflow 配置 | 2 |
 | `limits.maxRounds` | Agent 定义 | CodeViewer 20；Planner 3（需评测校准） |

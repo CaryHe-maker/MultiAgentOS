@@ -52,7 +52,7 @@ const check = (config = defaultSystemConfig(), source = catalog, keys = credenti
 
 async function viewer(): Promise<PinnedDefinitionSet> {
   const result = await catalog.pinAgent(
-    { id: 'code-viewer', version: 'v1.0.0' },
+    { id: 'code-viewer', version: 'v1.1.0' },
     { correlationId: 'cor_startup', tenantId: 'local', projectId: 'local' },
   );
   if (!result.ok) throw new Error('test Agent missing');
@@ -63,7 +63,7 @@ function viewerConfig(budget: Partial<BudgetConfig> = {}): SystemConfig {
   const config = withBudget(budget);
   return {
     ...config,
-    workflow: { ...config.workflow, entryAgentRef: { id: 'code-viewer', version: 'v1.0.0' } },
+    workflow: { ...config.workflow, entryAgentRef: { id: 'code-viewer', version: 'v1.1.0' } },
   };
 }
 

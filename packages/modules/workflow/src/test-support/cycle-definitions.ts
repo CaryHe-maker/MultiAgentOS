@@ -39,7 +39,7 @@ export function cycleDefinitions(hasStartup = false): PinnedDefinitionSet {
     agent: {
       ...base.agent,
       unitRefs: units.map(({ id, version }) => ({ id, version })),
-      startUnitRefs: hasStartup ? [{ id: 'repository-orient', version: 'v1.0.0' }] : [],
+      startUnitRefs: hasStartup ? [{ id: 'repository-orient', version: 'v1.1.0' }] : [],
     },
     units,
     refs: [

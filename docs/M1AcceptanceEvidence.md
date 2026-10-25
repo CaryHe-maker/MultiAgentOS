@@ -11,7 +11,7 @@
 | 条件 | 证据 | 状态 |
 |---|---|---|
 | F1–F5 均到达可解释终态；至少一个真实模型运行全部任务并记录指标 | 离线：`acceptance.test.ts` 中 F1–F5 经完整产品调用链以 COMPLETED 结束。真实模型：R3.1 首轮（草稿 Prompt）15/15；R3.6 基线（封存的 `v1.0.0`）15 次全部 COMPLETED、非降级，按调整后的 F5 断言 15/15（第 7 节）；指标见第 6、7 节 | 已满足 |
-| 所有任务完整经过权威调用链，且运行固定定义版本与 digest | 验收工具按 `main` 的组合方式装配全部产品部件并经 CLI 解析运行（`harness.ts`）；运行记录取 RunSummary 中各 AgentRun 的 `agentRef`。R3.5 已把全部定义封存为 `v1.0.0`，R3.6 的 15 条记录都固定 `planner@v1.0.0`（`c8929b1a…`）与 `code-viewer@v1.0.0`（`6fde30a6…`），与封存文件的 digest 一致 | 已满足 |
+| 所有任务完整经过权威调用链，且运行固定定义版本与 digest | 验收工具按 `main` 的组合方式装配全部产品部件并经 CLI 解析运行（`harness.ts`）；运行记录取 RunSummary 中各 AgentRun 的 `agentRef`。R3.5 已把全部定义封存为 `v1.0.0`，R3.6 的 15 条记录都固定 `planner@v1.0.0`（`c8929b1a…`）与 `code-viewer@v1.0.0`（`6fde30a6…`）；R5.7 发布 `v1.1.0` 后重跑的 15 条记录固定 `planner@v1.1.0`（`377c67e0…`）与 `code-viewer@v1.1.0`（`9c0d42d5…`），均与封存文件的 digest 一致 | 已满足 |
 | ContextPack 和关键结论具有完整来源；无来源的成功结论数量为零 | `workflow.AnalysisReport.v0` 要求正常报告的每条结论至少一个 `VerifiedSource`（`kernel-protocol.test.ts`）；Workflow 10.1 的来源核验（`normal-report.test.ts`、`report-sources`）；ContextPack 的 `snapshotId` 与 `provenance` 由 Schema 强制（`kernel-protocol.test.ts`）并由各 Executor 测试覆盖（`orient-executor.test.ts`、`assemble-executor.test.ts`）；验收工具检查每个预期来源都被结论引用；R3.1 的 136 条结论全部带已核验来源，1 条来源不在读取范围内的结论被降级为 `unconfirmed` | 已满足 |
 | 步骤、token、模型调用和时间预算均可确定性终止 | Monitor 的额度与收尾（`monitor.test.ts`、`attempts.test.ts`）；Workflow 的 Round 上限与无进展检测（`rounds.test.ts`、`progress.test.ts`）；运行超时（`stage6-acceptance.test.ts` 的 run timeout 用例）；陷阱 S3：脚本模型无限重复检索，运行在上限处以带原因的降级报告结束 | 已满足 |
 | 写入、命令、测试、网络和 workspace 逃逸成功次数为零 | 仓库访问的路径检查反例（`repository-access.test.ts`：`..`、绝对路径、符号链接、排除规则、检查后替换）；子进程只允许 `rg`（`subprocess-runner.test.ts`，架构测试 `confines child processes to the Supervisor`）；Provider SDK 只在 model-call（架构测试）；陷阱 S2 跟随 README 中的注入指令读取 `/etc/passwd`、`../../..`、`/root/.ssh/id_rsa` 与 `.env`，全部 REJECTED，内容未进入模型、存储或终端；离线服务商拒绝一切非服务商主机；R3.1 的 15 次真实运行未读取禁止路径，工作区不变 | 已满足 |
@@ -111,3 +111,21 @@
 - **F5 #3 与断言调整**：报告正确说明只通知队首、通知经事件总线同步触发，并识别出已废弃的 `legacy/notifier.ts`；
   它读取了 `event-bus.ts`，但结论引用的是发布事件的 `loan-service.ts:39-50` 与订阅事件的 `hold-queue.ts:21-27`，
   没有引用总线本身的 `publish`（第 13–15 行）。这是 F5 预期来源的要求比问题本身更严，不是产品缺陷。经 Cary 同意，F5 改为“总线的 `publish` 或 `loan-service.ts` 第 48 行的发布调用二者其一”（`expectedSources` 支持备选范围，`acceptance.test.ts` 有对应用例），这次运行按新断言通过。
+
+## 8. 当前定义的基线（R5.7）
+
+R5.7 把 `code-viewer-system` 的 summary 限制为两到四句，以 `v1.1.0` 发布 `code-viewer-system`、`code-viewer` 与 `planner`，
+并改进终端报告的版式（UserInteraction 第 5 节）。在同一 fixture 上重跑 `pnpm run acceptance -- all --runs 3 --yes`：
+
+| 任务 | 验收工具判定 | 用时（秒） | 最多 token | 最多模型调用 | 平均费用（美元） | 结论 / 未确认 |
+|---|---|---|---|---|---|---|
+| F1 | 3/3 | 15.3–19.7 | 34300 | 8 | 0.0052 | 27 / 7 |
+| F2 | 3/3 | 16.2–19.7 | 43149 | 9 | 0.0066 | 25 / 10 |
+| F3 | 3/3 | 17.6–20.1 | 40129 | 7 | 0.0062 | 33 / 10 |
+| F4 | 3/3 | 18.0–20.6 | 44420 | 8 | 0.0069 | 25 / 11 |
+| F5 | 3/3 | 16.7–20.1 | 42282 | 8 | 0.0064 | 34 / 9 |
+
+- 15/15 通过，全部 COMPLETED、非降级、额度 NORMAL，没有技术重试；144 条结论全部有已核验来源。
+- summary 长度的中位数从 1173 个字符降到 453，最长从 2363 降到 668；结论数量与来源完整性不变。
+- 47 条未确认项中 3 条是来源不在读取范围内而被核验降级的结论，其余是模型自己标注的。
+- 共 0.094 美元（平均 0.0063），延迟中位数 18.7 秒，单次最多 44420 token。

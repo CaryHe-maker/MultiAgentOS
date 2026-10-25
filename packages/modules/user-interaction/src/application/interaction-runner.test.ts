@@ -671,7 +671,7 @@ describe('UserInteraction session and fault boundaries', () => {
       runSummaryRef: ref,
     });
     expect(await result).toBe(0);
-    expect(test.output.join('')).toContain('分析报告\n已完成分析。');
+    expect(test.output.join('')).toContain('分析报告\n\n回答\n  已完成分析。');
     expect(test.gateway.readArtifact).toHaveBeenCalledTimes(1);
     await test.module.stop();
   });

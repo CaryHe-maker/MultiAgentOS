@@ -339,7 +339,7 @@ describe('Product Workflow and UserInteraction through the composition root', ()
       agentRuns: [{ ending: 'HANDOFF' }, { ending: 'FINISH' }],
       reads: [{ output: { path: 'README.md', totalLines: 3 } }],
     });
-    expect(run.text).toContain('来源：README.md:1-3');
+    expect(run.text).toContain('来源：README.md 第 1–3 行');
     expect(run.text).toContain('运行摘要');
   });
 

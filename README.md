@@ -128,7 +128,7 @@ pnpm run check
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
 Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，可以组成完整系统；
-Agent、Unit、Tool 与 Prompt 已定稿并封存为 `v1.0.0`，协议已冻结。固定任务集 F1–F5 在真实模型（`deepseek-flash`）上
+Agent、Unit、Tool 与 Prompt 已定稿并封存，协议已冻结。固定任务集 F1–F5 在真实模型（`deepseek-flash`）上
 15/15 通过，验收结果见 [M1 验收证据](docs/M1AcceptanceEvidence.md)。
 
 ### 运行与演示

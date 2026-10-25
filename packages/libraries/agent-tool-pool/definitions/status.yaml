@@ -2,4 +2,19 @@
 # published version turns out to be risky, list it here instead (DEPRECATED, QUARANTINED or
 # REVOKED). QUARANTINED and REVOKED versions cannot be looked up or pinned.
 schemaVersion: v0
-entries: []
+entries:
+  - kind: PROMPT
+    id: code-viewer-system
+    version: v1.0.0
+    status: DEPRECATED
+    reason: Superseded by v1.1.0, which keeps the summary to two to four sentences.
+  - kind: AGENT
+    id: code-viewer
+    version: v1.0.0
+    status: DEPRECATED
+    reason: Superseded by v1.1.0, which uses code-viewer-system v1.1.0.
+  - kind: AGENT
+    id: planner
+    version: v1.0.0
+    status: DEPRECATED
+    reason: Superseded by v1.1.0, which hands off to code-viewer v1.1.0.

@@ -54,7 +54,7 @@ describe('Chinese report views', () => {
     };
     const original = structuredClone(input);
     const text = renderReport(input);
-    expect(text).toContain('中文 English 🙂\n第二行\\u001b[2J\\u000d\\u0008\\u0009');
+    expect(text).toContain('中文 English 🙂\n  第二行\\u001b[2J\\u000d\\u0008\\u0009');
     expect(text).toContain('\\u0000\\u007f\\u009b31m');
     expect(text).toContain('结论\\u001b[31m');
     expect(text).toContain('src/\\u001b[2J.ts');
@@ -82,14 +82,66 @@ describe('Chinese report views', () => {
     expect(question).toEqual(original);
   });
 
-  it('fixes conclusion, source, unconfirmed and wrap-up formatting', () => {
+  it('fixes the answer, conclusion, source, unconfirmed and wrap-up layout', () => {
     expect(renderReport(report)).toMatchInlineSnapshot(`
       "分析报告
-      已读取文件。
-      结论：入口定义明确。
-      来源：src/index.ts:1-3
-      未确认项：尚未确认启动行为。（来源未被有效读取）
+
+      回答
+        已读取文件。
+
+      结论
+        1. 入口定义明确。
+           来源：src/index.ts 第 1–3 行
+
+      未查证的问题
+        1. 尚未确认启动行为。
+           （引用的代码没有被实际读取，系统未采纳为结论）
+
       收尾原因：已达到轮次上限。
+      "
+    `);
+  });
+
+  it('numbers entries and aligns multi-line text and further sources under them', () => {
+    const source = report.conclusions[0]!.sources[0]!;
+    const withoutWrapUp = structuredClone(report);
+    Reflect.deleteProperty(withoutWrapUp, 'wrapUp');
+    const text = renderReport({
+      ...withoutWrapUp,
+      summary: '第一行\n第二行',
+      conclusions: [
+        {
+          statement: '甲',
+          sources: [source, { ...source, path: 'b.ts', startLine: 7, endLine: 7 }],
+        },
+        { statement: '乙\n续行', sources: [source] },
+      ],
+      unconfirmed: [
+        { statement: '丙', reason: 'MODEL_UNCONFIRMED' },
+        { statement: '丁', reason: 'NO_SOURCE' },
+      ],
+    });
+    expect(text).toMatchInlineSnapshot(`
+      "分析报告
+
+      回答
+        第一行
+        第二行
+
+      结论
+        1. 甲
+           来源：src/index.ts 第 1–3 行
+                 b.ts 第 7 行
+        2. 乙
+           续行
+           来源：src/index.ts 第 1–3 行
+
+      未查证的问题
+        1. 丙
+           （模型提出、但没有查证）
+        2. 丁
+           （模型没有给出来源，系统未采纳为结论）
+
       "
     `);
   });

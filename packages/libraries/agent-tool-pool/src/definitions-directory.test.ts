@@ -20,15 +20,18 @@ describe('shipped definitions', () => {
     expect(planSeal(snapshot).patches).toEqual([]);
   });
 
-  it('are exactly the 16 sealed definitions of AgentToolPool section 4', async () => {
+  it('are exactly the definitions of AgentToolPool section 4, older versions included', async () => {
     const result = buildCatalogIndex(await load());
     if (!result.ok) throw new Error('catalog did not load');
     expect([...result.index.definitions.keys()].sort()).toEqual([
       'AGENT:code-viewer@v1.0.0',
+      'AGENT:code-viewer@v1.1.0',
       'AGENT:planner@v1.0.0',
+      'AGENT:planner@v1.1.0',
       'MODEL:deepseek-flash@v1.0.0',
       'MODEL:deepseek-v4-pro@v1.0.0',
       'PROMPT:code-viewer-system@v1.0.0',
+      'PROMPT:code-viewer-system@v1.1.0',
       'PROMPT:planner-system@v1.0.0',
       'TOOL:finish-analysis@v1.0.0',
       'TOOL:handoff-to-code-viewer@v1.0.0',
