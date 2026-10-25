@@ -5,11 +5,11 @@
 | 目录 | 内容 |
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
-| [M1](M1/README.md) | M1 交付范围、机制设计与接口；进度由 GitHub Issues 跟踪 |
+| [M1](M1/README.md) | M1 交付范围、机制设计与接口，以及 [运行说明](M1/M1Usage.md) 与 [限制清单](M1/M1Limitations.md) |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [M1ReleasePlan](M1ReleasePlan.md) | 从合并到 M1 发布的工作计划与进度记录 |
-| [M1AcceptanceEvidence](M1AcceptanceEvidence.md) | M1 完成定义与阻断项的验证证据（草稿） |
+| [M1AcceptanceEvidence](M1AcceptanceEvidence.md) | M1 完成定义与阻断项的验证证据、真实模型基线 |
 | [History](History/) | 已归档的阶段工作文档，不作为规范 |
 | [Style](Style.md) | 工程与文档协作规范 |
 

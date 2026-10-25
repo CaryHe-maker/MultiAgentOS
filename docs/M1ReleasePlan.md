@@ -240,7 +240,13 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R3.7 | 2026-10-25 | `fix: 真实模型联调：总额度校准、收尾说明只留一处、收尾调用按已知用量重试` | M1 文档修改经 2026-10-25 同意：ExecutorSet.md 4.5、M1Interface（原因码 `PROVIDER_TOOL_CHOICE_IGNORED`）、Execution.md 第 6 节、Core.md 5.1、Interaction.md 的 `retryExecution`。model-call Executor 在 `final = true` 时，回复不是恰好一次强制控制工具的调用或参数不是合法 JSON，返回可重试的失败并带用量；Core 在 MODEL 请求未发出、或已发出且用量已知时允许重试，按实际用量结算旧预留。开发评测工具 `agent-loop.ts` 按 Workflow 7.2 把收尾失败改为降级。验证：同样把额度压到 196384，F1–F5 × 3 共 15 次全部进入收尾、全部正常出报告（修复前 30 次中 5 次收尾失败），其中 2 次经技术重试恢复；0.073 美元 |
 | R3.5 | 2026-10-25 | `feat: Prompt 与工具说明定稿，全部定义封存为 v1.0.0 并取得真实模型基线` | 依据 R3.1、R3.3 与 R3.7 的评测，两个 Prompt 与四个 Tool 的说明不再修改，`contentStatus` 改为 `FINAL`。封存的定义只能引用已封存的版本，因此 14 个草稿全部以 `v1.0.0` 发布并运行 `pnpm run catalog:seal`，`v0.1.0` 草稿删除（保留在 git 历史中）；Workflow 的 `entryAgentRef` 与引用实际目录的测试随之更新，AgentToolPool.md 第 4 节逐行对应封存文件（文档比对测试通过），第 9 节遗留事项清空，Workflow.md 第 12 节同步。封存时发现 `catalog:seal` 会重新序列化 YAML、改掉作者的格式（`[repo.read]` 变为 `[ repo.read ]`，`format:check` 不通过），改为只插入 `digest` 一行，并增加回归用例（去掉修复后失败） |
 | R3.6 | 2026-10-25 | `feat: Prompt 与工具说明定稿，全部定义封存为 v1.0.0 并取得真实模型基线` | 提交 `49efce0` 上运行 F1–F5 各 3 次：15 次全部 COMPLETED、非降级、额度 NORMAL，142 条结论全部有已核验来源，无来源的成功结论为 0；运行记录中的 digest 为封存版本。运行时验收工具判定 14/15：F5 一次报告正确但未引用 `event-bus.ts` 的 `publish`，属于预期来源断言比问题更严；经 Cary 同意，F5 改为接受总线的 `publish` 或发布调用二者其一，按新断言 15/15。成本共 0.086 美元（平均 0.0058），延迟中位数 19.0 秒、最长 30.4 秒，单次最多 44797 token。基线见验收证据第 7 节 |
-| R4.5（未完成） | 2026-10-25 | 不适用 | 第 1 轮 `pnpm run check` 通过（88 个文件、1126 项）；随后的 `test:coverage` 因本机内存不足被 Claude Code 中止，按要求未自动重跑。待 Cary 回来后再运行连续三轮 |
+| R4.5 | 2026-10-25 | 不适用 | 此前一次因本机内存不足中止；改为单独运行后，在 WSL Ubuntu 24.04 上对 `d5022d9` 连续三轮全部通过：主格 check、diff 检查、coverage（1137 项，0 跳过，行覆盖 95.54%）与 demo；无 rg 格 test（1124 项通过、14 项 rg 专属跳过）与 demo。Node 24 最新格由 CI 验证。见验收证据第 4 节 |
+| R4.1、R4.2、R4.4 | 2026-10-25 | `docs: 冻结协议、完成阶段四核对并把限制清单与运行说明写入 docs/M1` | 按最终代码逐条核对 M1Plan 第 7、8 节：完成定义全部满足，发布阻断项全部未发现；逃逸成功次数为 0、Unsupported 无状态变化、预算可确定性终止均有测试与 F1–F5 运行记录证明。见 `M1AcceptanceEvidence.md` 第 1、2 节 |
+| R4.3 | 2026-10-25 | 同上 | 正式核对无差异：SharedContracts 的 90 个 Schema ID 全部注册（另 11 个 opaque Ref 按 family 列出），提到的 42 个文件都存在；M1Interface 的原因码（43）与反馈码（7）与代码一致；AgentToolPool 的 14 个 YAML 与封存文件逐行一致。见验收证据第 5 节 |
+| R4.6 | 2026-10-25 | 同上 | `frozen` 置为 `true`，`contracts:snapshot` 拒绝改写；守卫在冻结状态下通过。反向验证：删掉一个原因码后守卫报告 `removed` 并失败 |
+| R5.1 | 2026-10-25 | 同上 | 经 Cary 决定写入 `docs/M1/`：新增 `M1Limitations.md` 与 `M1Usage.md`，验收证据去掉草稿标记，限制清单移出；核对时修正一处说法：拒绝授权以 FAILED 结束（退出码 1），与测试一致 |
+| R5.2 | 2026-10-25 | 同上 | 根 README 更新实现状态与运行说明入口，`docs/README.md`、`docs/M1/README.md` 加入两份新文档；仓库内 Markdown 相对链接检查 0 处失效 |
+| R5.3 | 2026-10-25 | 不适用 | Cary 决定已有 Issue 保持现状，不专门回复、关闭或整理；验收证据中的处理意见草稿已删除 |
 
 ## 6. 自主执行期间的决定（待 Cary 复核）
 

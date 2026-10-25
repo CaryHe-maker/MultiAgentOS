@@ -1,5 +1,5 @@
 {
-  "frozen": false,
+  "frozen": true,
   "schemas": {
     "catalog.AgentDefinition.v0": {
       "type": "object",

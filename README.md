@@ -3,6 +3,35 @@
 MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS，规范版本为 24.04。
 长期文档定义概念、职责与安全边界，各 MVP 再明确实现和验收。
 
+## 快速开始
+
+M1 对一个本地仓库回答问题：先询问是否允许读取，再检索、读取文件，输出每条结论都附文件路径与行号的报告。
+系统只读，不修改仓库、不执行命令、不调用 git。以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、
+pnpm 11.25.0 与 DeepSeek 的 API key。
+
+```bash
+# 1. 安装与构建（在 MultiAgentOS 目录下）
+sudo apt-get install -y ripgrep          # 可选，有 rg 时检索更快
+pnpm install --frozen-lockfile
+pnpm run build
+
+# 2. 提供 API key（只从环境变量或本目录下不入库的 .env 读取）
+export DEEPSEEK_API_KEY=<你的 key>
+
+# 3. 提问：--repo 是要分析的仓库的绝对路径，问题放在最后
+node apps/control-plane/dist/bin.js analyze --repo /home/me/projects/my-app "登录失败时错误信息是在哪里生成的？"
+```
+
+运行时：
+
+1. 终端列出仓库路径与不会读取的文件（`.env*`、私钥、`.git`、`node_modules` 等），询问是否允许读取，输入 `y` 回车。
+2. 等待十几秒到一两分钟，终端展示报告：结论、每条结论的来源（文件与行号）、未能确认的事项。
+3. 加 `--details` 可同时看到轮数与 token 用量；按一次 Ctrl+C 取消运行，再按一次立即退出。
+
+提问时写清楚想知道什么，例如“某函数在边界情况下返回什么”“某个规则在哪里判断、有没有测试”“改某个功能要动哪些文件”；
+不需要提前知道答案在哪个文件。退出码、配置与验收命令见 [M1 运行说明](docs/M1/M1Usage.md)，
+已知限制见 [M1 限制清单](docs/M1/M1Limitations.md)。
+
 ## 架构
 
 ```text
@@ -76,7 +105,7 @@ docs/
   Meetings/             原始会议记录
   History/              已归档的阶段工作文档
   M1ReleasePlan.md      M1 发布工作计划
-  M1AcceptanceEvidence.md  M1 验收证据（草稿）
+  M1AcceptanceEvidence.md  M1 验收证据
   Style.md              工程协作规范
 ```
 
@@ -98,40 +127,14 @@ pnpm run check
 检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
-Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，
-可以组成完整系统。固定任务集（F1–F5）与 #6 的安全陷阱已能离线通过；真实模型下的运行与发布验收尚未完成，
-Prompt 与工具说明仍是 `PLACEHOLDER` 草稿。进度见 [M1 验收证据（草稿）](docs/M1AcceptanceEvidence.md)。
+Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，可以组成完整系统；
+Agent、Unit、Tool 与 Prompt 已定稿并封存为 `v1.0.0`，协议已冻结。固定任务集 F1–F5 在真实模型（`deepseek-flash`）上
+15/15 通过，验收结果见 [M1 验收证据](docs/M1AcceptanceEvidence.md)。
 
-### 运行
+### 运行与演示
 
-```bash
-pnpm run build
-export DEEPSEEK_API_KEY=<key>
-node apps/control-plane/dist/bin.js analyze --repo <仓库绝对路径> "<问题>"
-```
-
-- API key 只从环境变量读取（也可以写在 MultiAgentOS 自身工作目录下不入库的 `.env` 中），不读取被分析仓库的文件。
-- 开始读取仓库前会询问授权（`y`/`n`）；按一次 Ctrl+C 取消运行，再按一次立即退出。
-- `--details` 额外展示运行摘要（轮次、Unit 统计、token 用量）。
-- 系统配置写在 JSON 文件中，由环境变量 `MULTIAGENTOS_CONFIG` 指定，只需写要改动的项；数据目录缺省为 `~/.multiagentos`。
-  可配置项见 [M1TechStack](docs/M1/M1TechStack.md) 第 4 节。
-
-| 退出码 | 含义 |
-|---|---|
-| 0 | 运行完成并展示了报告 |
-| 1 | 运行失败（含拒绝授权、报告无法读取） |
-| 2 | 运行超时 |
-| 3 | 安全违规，运行被停止 |
-| 4 | 运行没有被创建（如仓库路径无效） |
-| 64 | 命令行参数错误 |
-| 70 | 系统故障 |
-| 130 | 被用户取消 |
-
-### 演示与验收
-
-- `pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
-- 离线的 F1–F5 与安全陷阱 S1–S5 包含在 `pnpm run test` 中（`apps/control-plane/test/acceptance/`）。
-- `pnpm run acceptance -- [F1 … | all] [--runs N] --yes` 用真实模型运行固定任务集；不加 `--yes` 时只列出次数与费用上限，不发起请求。
+使用方法见上文的[快速开始](#快速开始)。`pnpm run demo:fake` 用 fake 演示整条装配链路；
+`pnpm run acceptance` 用真实模型运行固定任务集（不加 `--yes` 只列出费用上限）。
 
 Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
 [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)。
@@ -147,7 +150,9 @@ Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
 - [运行实例](docs/Architecture/Instance.md)
 - [M1 指南](docs/M1/README.md)
 - [M1 发布工作计划](docs/M1ReleasePlan.md)
-- [M1 验收证据（草稿）](docs/M1AcceptanceEvidence.md)
+- [M1 运行说明](docs/M1/M1Usage.md)
+- [M1 限制清单](docs/M1/M1Limitations.md)
+- [M1 验收证据](docs/M1AcceptanceEvidence.md)
 - [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)
 
 所有合并到 `feat/M1` 或 `main` 的变更都必须通过 Pull Request。

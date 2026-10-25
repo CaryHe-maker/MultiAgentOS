@@ -35,6 +35,7 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 6. [SystemFaultHandling](SystemFaultHandling.md)：两类异常语义、捕获边界、panic 与安全停机与退出码。
 7. [SharedContracts](Library/SharedContracts.md)、[AgentToolPool](Library/AgentToolPool.md)：Schema 清单、定义实例。
 8. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
+9. [M1Usage](M1Usage.md)、[M1Limitations](M1Limitations.md)：安装、配置与运行方法，以及发布版本的已知限制。
 
 | 分类 | 文档 |
 |---|---|
@@ -59,6 +60,8 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 | Kernel/ | Kernel 组件职责、私有接口与内部交互 | 不定义 Workflow 业务逻辑 |
 | Library/ExecutorSet、Infrastructure/ | 静态库与基础设施的 M1 实现说明 | 不替代长期架构 |
 | M1TechStack | M1 使用的技术、版本用途和引入限制 | 不替代依赖 manifest |
+| M1Usage | 安装、API key、命令、常用配置、退出码与验收命令 | 配置项的定义以各机制文档为准 |
+| M1Limitations | 发布版本的已知限制与边界 | 不新增或改变范围，范围以 M1Plan 为准 |
 
 ## 5. 权威关系
 
