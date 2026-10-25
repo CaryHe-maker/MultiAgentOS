@@ -25,29 +25,53 @@ export interface CodeViewerSetup {
   readonly digests: Readonly<Record<string, string>>;
 }
 
+/** `v1.10.0` sorts after `v1.9.0`. */
+function compareVersions(left: string, right: string): number {
+  const parts = (version: string) => version.slice(1).split('.').map(Number);
+  const [a, b] = [parts(left), parts(right)];
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * The newest code viewer, with exactly the versions it references. The catalog keeps
+ * superseded versions, so a lookup by id alone could mix versions.
+ */
 export async function loadCodeViewer(modelId?: string): Promise<CodeViewerSetup> {
   const digests: Record<string, string> = {};
   const index = await loadCatalogIndex(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY));
-  const find = <D extends Definition>(kind: D['kind'], id: string): D => {
-    const found = [...index.definitions.values()].find(
-      (definition) => definition.kind === kind && definition.id === id,
-    );
-    if (found === undefined) throw new Error(`${kind} ${id} is not in the catalog`);
+  const find = <D extends Definition>(kind: D['kind'], id: string, version?: string): D => {
+    const found = [...index.definitions.values()]
+      .filter(
+        (definition) =>
+          definition.kind === kind &&
+          definition.id === id &&
+          (version === undefined || definition.version === version),
+      )
+      .sort((left, right) => compareVersions(right.version, left.version))[0];
+    if (found === undefined)
+      throw new Error(`${kind} ${id} ${version ?? ''} is not in the catalog`);
     digests[`${found.kind}:${found.id}@${found.version}`] = found.digest;
     return found as D;
   };
   const agent = find<AgentDefinition>('AGENT', 'code-viewer');
-  const model = find<ModelDefinition>('MODEL', modelId ?? agent.modelRef.id);
-  const prompt = find<PromptDefinition>('PROMPT', agent.promptRef.id);
+  const model =
+    modelId === undefined
+      ? find<ModelDefinition>('MODEL', agent.modelRef.id, agent.modelRef.version)
+      : find<ModelDefinition>('MODEL', modelId);
+  const prompt = find<PromptDefinition>('PROMPT', agent.promptRef.id, agent.promptRef.version);
   const registry = createM1ProtocolRegistry();
   const byName = new Map<
     string,
     LoopTools['byName'] extends ReadonlyMap<string, infer V> ? V : never
   >();
   for (const unitRef of agent.unitRefs) {
-    const unit = find<UnitDefinition>('UNIT', unitRef.id);
+    const unit = find<UnitDefinition>('UNIT', unitRef.id, unitRef.version);
     for (const toolRef of unit.toolRefs) {
-      const tool = find<ToolDefinition>('TOOL', toolRef.id);
+      const tool = find<ToolDefinition>('TOOL', toolRef.id, toolRef.version);
       byName.set(tool.modelName, {
         kind: unit.executionKind as ExecutorKind,
         schema: registry.resolveContract(tool.parametersContract),
@@ -60,7 +84,11 @@ export async function loadCodeViewer(modelId?: string): Promise<CodeViewerSetup>
       });
     }
   }
-  const finishTool = find<ToolDefinition>('TOOL', agent.actions.finish.toolRef.id);
+  const finishTool = find<ToolDefinition>(
+    'TOOL',
+    agent.actions.finish.toolRef.id,
+    agent.actions.finish.toolRef.version,
+  );
   return {
     digests,
     agent,

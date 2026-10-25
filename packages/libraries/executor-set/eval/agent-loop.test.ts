@@ -26,6 +26,17 @@ function scripted(replies: (() => Response)[], requests: unknown[][]): typeof fe
 }
 
 describe('evaluation loop (offline)', () => {
+  it('loads the newest code viewer with exactly the versions it references', async () => {
+    const setup = await loadCodeViewer();
+    // The catalog keeps superseded versions; a lookup by id alone once picked v1.0.0.
+    expect(setup.agent.version).toBe('v1.1.0');
+    expect(setup.digests).toHaveProperty(
+      `PROMPT:code-viewer-system@${setup.agent.promptRef.version}`,
+    );
+    expect(Object.keys(setup.digests).filter((key) => key.startsWith('PROMPT:'))).toHaveLength(1);
+    expect(setup.instructions).toContain('to four sentences');
+  });
+
   it('searches, reads, finishes and verifies the cited sources', async () => {
     const setup = await loadCodeViewer();
     const requests: unknown[][] = [];
