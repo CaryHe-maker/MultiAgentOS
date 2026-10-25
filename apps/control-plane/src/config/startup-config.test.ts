@@ -141,7 +141,8 @@ describe('startup configuration', () => {
   it.each(['ordinary', 'final'] as const)(
     'checks the %s model window independently, allowing equality',
     async (mode) => {
-      const config = withBudget(mode === 'final' ? { finalInputBudget: 90_000 } : {});
+      // A final window larger than the ordinary one, so that it is the one that binds.
+      const config = withBudget(mode === 'final' ? { finalInputBudget: 110_000 } : {});
       const budget = config.kernel.budget;
       const window =
         mode === 'final'

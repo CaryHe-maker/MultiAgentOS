@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ModelDefinition } from '@multiagentos/contracts';
 import { FileDefinitionSource } from './adapters/file/file-definition-source.js';
@@ -60,5 +62,48 @@ describe('shipped definitions', () => {
           { start: '06:00', end: '10:00' },
         ],
       });
+  });
+
+  it('match every definition file that AgentToolPool quotes', async () => {
+    const document = await readFile(
+      join(
+        DEFAULT_DEFINITIONS_DIRECTORY,
+        '..',
+        '..',
+        '..',
+        '..',
+        'docs',
+        'M1',
+        'Library',
+        'AgentToolPool.md',
+      ),
+      'utf8',
+    );
+    // Comments and blank lines may differ; every other line must be the same.
+    const lines = (text: string) =>
+      text
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('#'));
+    const quoted = [...document.matchAll(/```yaml\n([\s\S]*?)```/gu)].map(
+      (match) => match[1] ?? '',
+    );
+    let compared = 0;
+    for (const block of quoted) {
+      const kind = /^kind: (\w+)$/mu.exec(block)?.[1];
+      const id = /^id: ([\w-]+)$/mu.exec(block)?.[1];
+      const version = /^version: (v[\d.]+)$/mu.exec(block)?.[1];
+      if (kind === undefined || id === undefined || version === undefined) continue;
+      const file = join(
+        DEFAULT_DEFINITIONS_DIRECTORY,
+        `${kind.toLowerCase()}s`,
+        id,
+        `${version}.yaml`,
+      );
+      expect(lines(block), `${kind} ${id}@${version}`).toEqual(lines(await readFile(file, 'utf8')));
+      compared += 1;
+    }
+    // Every definition but the two sealed models, which the document lists in a table.
+    expect(compared).toBe(14);
   });
 });

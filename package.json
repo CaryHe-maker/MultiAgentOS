@@ -20,6 +20,7 @@
     "test:coverage": "vitest run --coverage",
     "lint:fix": "eslint apps packages --fix",
     "catalog:seal": "tsc -b packages/libraries/agent-tool-pool --pretty false && node packages/libraries/agent-tool-pool/dist/cli/seal-definitions.js",
+    "acceptance": "tsc -b --pretty false && tsx apps/control-plane/test/acceptance/run-acceptance.ts",
     "contracts:snapshot": "tsc -b packages/libraries/contracts --pretty false && node packages/libraries/contracts/dist/cli/write-schema-snapshot.js",
     "demo:fake": "tsc -b --pretty false && node apps/control-plane/dist/demo/fake-demo.js"
   },

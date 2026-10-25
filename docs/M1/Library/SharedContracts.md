@@ -186,6 +186,22 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 
 缺省值不属于契约：`DEFAULT_KERNEL_CONFIG` 由 `@multiagentos/kernel` 导出，`DEFAULT_WORKFLOW_CONFIG` 由 `@multiagentos/workflow` 导出。
 
+### 3.11 没有单独 Schema ID 的类型
+
+M1Interface 中以下类型是联合或共用片段，不单独注册，按下表落在各自 Schema 的定义里：
+
+| 类型 | 落点 | 文件 |
+|---|---|---|
+| `RunEnd` | `RunClosed`、`RunFinished` 与 `RunSummary` 共用的结束字段，由 `runOutcomeVariants` 生成各变体 | `kernel-control/run-outcome.ts` |
+| `KernelToWorkflowEvent` | `WorkflowInboxEvent.event` 的联合 | `kernel-unit/workflow-events.ts` |
+| `KernelToInteractionEvent` | `InteractionInboxEvent.event` 的联合 | `kernel-control/interaction-events.ts` |
+| `InboxEvent<T>` | 两个 Inbox 信封的共同形状 | `ports.ts` |
+| `ExecutorInput` | `ExecutionRequest.input` 的联合；按种类取值的映射 `ExecutorInputByKind` 在 `ports.ts` | `kernel-execution/execution-request.ts` |
+| `DefinitionHeader<K>` | 五种定义共用的头部字段 | `catalog/definition-schemas.ts` |
+| `DefinitionByKind` | 定义种类到定义类型的映射 | `catalog/definition-schemas.ts` |
+| `InvalidActionReason` | `INVALID_ACTION_REASONS` 的取值 | `workflow/report.ts` |
+| `PersistenceNamespace` | `PERSISTENCE_NAMESPACES` 的取值 | `ports.ts` |
+
 ## 4. 标识、Port 与工具
 
 ### 4.1 标识

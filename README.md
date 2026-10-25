@@ -76,6 +76,7 @@ docs/
   Meetings/             原始会议记录
   History/              已归档的阶段工作文档
   M1ReleasePlan.md      M1 发布工作计划
+  M1AcceptanceEvidence.md  M1 验收证据（草稿）
   Style.md              工程协作规范
 ```
 
@@ -98,8 +99,10 @@ pnpm run check
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
 Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，
-可以组成完整系统。真实模型下的固定任务集（F1–F5）与发布验收尚未完成；
-Prompt 与工具说明仍是 `PLACEHOLDER` 草稿。
+可以组成完整系统。固定任务集（F1–F5）与 #6 的安全陷阱已能离线通过；真实模型下的运行与发布验收尚未完成，
+Prompt 与工具说明仍是 `PLACEHOLDER` 草稿。进度见 [M1 验收证据（草稿）](docs/M1AcceptanceEvidence.md)。
+
+### 运行
 
 ```bash
 pnpm run build
@@ -107,8 +110,28 @@ export DEEPSEEK_API_KEY=<key>
 node apps/control-plane/dist/bin.js analyze --repo <仓库绝对路径> "<问题>"
 ```
 
-API key 只从环境变量读取（也可以写在 MultiAgentOS 自身工作目录下不入库的 `.env` 中）。
-`pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
+- API key 只从环境变量读取（也可以写在 MultiAgentOS 自身工作目录下不入库的 `.env` 中），不读取被分析仓库的文件。
+- 开始读取仓库前会询问授权（`y`/`n`）；按一次 Ctrl+C 取消运行，再按一次立即退出。
+- `--details` 额外展示运行摘要（轮次、Unit 统计、token 用量）。
+- 系统配置写在 JSON 文件中，由环境变量 `MULTIAGENTOS_CONFIG` 指定，只需写要改动的项；数据目录缺省为 `~/.multiagentos`。
+  可配置项见 [M1TechStack](docs/M1/M1TechStack.md) 第 4 节。
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 运行完成并展示了报告 |
+| 1 | 运行失败（含拒绝授权、报告无法读取） |
+| 2 | 运行超时 |
+| 3 | 安全违规，运行被停止 |
+| 4 | 运行没有被创建（如仓库路径无效） |
+| 64 | 命令行参数错误 |
+| 70 | 系统故障 |
+| 130 | 被用户取消 |
+
+### 演示与验收
+
+- `pnpm run demo:fake` 用 `packages/testing` 的 fake 运行整条装配链路，回复全部是固定值，只用于演示接线。
+- 离线的 F1–F5 与安全陷阱 S1–S5 包含在 `pnpm run test` 中（`apps/control-plane/test/acceptance/`）。
+- `pnpm run acceptance -- [F1 … | all] [--runs N] --yes` 用真实模型运行固定任务集；不加 `--yes` 时只列出次数与费用上限，不发起请求。
 
 Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
 [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)。
@@ -124,6 +147,7 @@ Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
 - [运行实例](docs/Architecture/Instance.md)
 - [M1 指南](docs/M1/README.md)
 - [M1 发布工作计划](docs/M1ReleasePlan.md)
+- [M1 验收证据（草稿）](docs/M1AcceptanceEvidence.md)
 - [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)
 
 所有合并到 `feat/M1` 或 `main` 的变更都必须通过 Pull Request。

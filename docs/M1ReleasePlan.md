@@ -100,11 +100,11 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | D1 | 检查后文件被删除时返回什么 | `guarded-file.ts` 打开文件遇到 ENOENT 时返回 `VIOLATION(PATH_ESCAPE)`，ExecutorSet.md 3.2 第 7 步也这样写；#26 A1 的答复是改为 `NOT_FOUND`。不改的话，分析期间仓库内文件被正常删除会让运行以安全违规结束 | 改为 `REJECTED(NOT_FOUND)`；`ENOTDIR`、`ELOOP` 与身份不符仍为违规。需请求（ExecutorSet.md 3.2） | 阶段一 | 2026-10-24 同意，含 ExecutorSet.md 修改 |
 | D2 | 检索评分中“路径含 test 乘 0.9” | #26 E 要求去掉，代码（`search-executor.ts`）与 ExecutorSet.md 3.3 仍保留；F2、F4 要求找到测试文件 | 去掉。需请求（ExecutorSet.md 3.3） | 阶段一 | 2026-10-24 同意，含 ExecutorSet.md 修改 |
 | D3 | 收尾说明只保留一处 | Workflow 记录 `FEEDBACK(WRAP_UP_NOTICE)`，上下文组装器的状态行也写明最后一次调用及原因（#32 第 1 条） | 由阶段三的评测决定保留哪一处。需请求（Workflow.md 第 8 节或 ExecutorSet.md 4.4） | 阶段三 | 待定 |
-| D4 | 启动期额度校验的上界 | 现为 79156 / 80000。用户输入按每个字符都是二次转义的控制字符估算，约预留 58k token；Monitor 第 4 节还把 FILE_READ 的字节上限当作 token 相加。留给 Prompt 与工具说明的空间约 5k token | 在阶段三开始前决定是否放宽估算方法或调整 `perCallInputLimit`。需请求（Monitor.md 第 4 节） | 阶段三之前 | 待定 |
+| D4 | 启动期额度校验的上界 | 现为 79156 / 80000。用户输入按每个字符都是二次转义的控制字符估算，约预留 58k token；Monitor 第 4 节还把 FILE_READ 的字节上限当作 token 相加。留给 Prompt 与工具说明的空间约 5k token | 在阶段三开始前决定是否放宽估算方法或调整 `perCallInputLimit`。需请求（Monitor.md 第 4 节） | 阶段三之前 | 2026-10-25 自主执行期间定论（见第 6 节 A5，待 Cary 复核） |
 | D5 | 30 秒端口期限是否改为系统级约定 | Workflow 与 UserInteraction 各有一个 `PORT_RETURN_TIMEOUT_MS`；#29 计划改为 `SystemConfig` 配置项、由 Fabric 统一执行。M1Plan 没有要求 | 端口期限已在两个模块中按 Workflow.md 与 UserInteraction.md 的规定执行；系统级化只是集中配置与执行的位置。M1 发布不做，作为已知限制记录 | 阶段一 | 2026-10-24 决定在阶段一实现（R1.8），采用方案 A：期限值进入 `SystemConfig`，Fabric 执行 Gateway 请求的期限，组合根为 Catalog 与 Persistence 适配器加同样的期限，模块内不再有期限逻辑；需修改的 M1 文档在实施前列出，按 2.1 第 3 条确认 |
 | D6 | CI 的 `pull_request` 分支过滤 | 只匹配 `main` 与 `feat/**`，与 M1TechStack 第 11 节一致；`feature/M1/main` 上的提交靠 push 事件触发 | 保持现状 | 阶段一 | 2026-10-24 同意保持现状 |
 | D7 | “兼容矩阵”的含义 | M1Plan 第 7 节要求兼容矩阵全部通过，但 M1 文档没有定义它包含哪些维度 | 阶段二开始时提出定义（例如协议族的 major 版本正反例、Node 与 Ubuntu 版本）。需请求（M1Plan 第 7 节） | 阶段二 | 2026-10-25 决定：Ubuntu 版本定为 24.04 LTS（项目规范版本），只测这一版；矩阵为主格（`.node-version`、有 rg）、Node 上界（最新 24.x、有 rg）、无 rg 三格，外加协议冻结守卫，全部放入 CI；定义写入 M1Plan 第 7 节与 M1TechStack 第 11 节 |
-| D8 | 评测脚本的 Agent 循环 | `executor-set/eval/agent-loop.ts` 自己实现了简化的 Workflow，评测结果不能代表产品（#32 第 4 条） | M1 验收只采用阶段二的验收工具经产品调用链得到的结果；`agent-loop.ts` 保留为开发工具 | 阶段二 | 待定 |
+| D8 | 评测脚本的 Agent 循环 | `executor-set/eval/agent-loop.ts` 自己实现了简化的 Workflow，评测结果不能代表产品（#32 第 4 条） | M1 验收只采用阶段二的验收工具经产品调用链得到的结果；`agent-loop.ts` 保留为开发工具 | 阶段二 | 2026-10-25 自主执行期间按建议定论（见第 6 节 A3，待 Cary 复核） |
 
 ## 4. 阶段规划
 
@@ -223,3 +223,28 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R1.8 | 2026-10-25 | `feat: 端口响应期限改由系统配置与 Fabric 统一执行` | M1 文档修改经 2026-10-25 确认：M1Interface 14.3、14.4，Fabric.md 第 3 节，Workflow.md 11.1，UserInteraction.md 第 6 节，M1TechStack 第 4 节。`SystemConfig.portReturnTimeoutMs` 默认 30000；Workflow 与 UserInteraction 的 Fabric 客户端和交给 Workflow 的 Catalog、Persistence 到期以 `FabricError(REQUEST_TIMEOUT)` 拒绝，Kernel 的客户端不设期限；两个模块删除各自的计时器，原有期限用例改为注入超时拒绝，迟到返回的用例移到 Fabric。WSL 上 1101 项测试通过 |
 | R2.5 | 2026-10-25 | `ci: 确定 Ubuntu 24.04 并建立兼容矩阵与协议冻结守卫` | D7 结论写入 M1Plan 第 7 节、M1TechStack 第 11 节；README、Style、docs/README 与 M1 文档中的 Ubuntu LTS 统一为 24.04。CI 增加 Node 上界与无 rg 两格；两处 rg 检查改为按 `MULTIAGENTOS_RIPGREP` 断言。协议快照 101 个 Schema。WSL：主格 1112 项通过；无 rg 格（PATH 中去掉 rg）1101 项通过、14 项 rg 专属用例跳过，demo 通过；有 rg 而格子声明无 rg 时检查失败。Node 上界格本机没有其他 Node 版本，由 CI 验证 |
 | R1.9 | 2026-10-25 | `fix: 异步构造的执行请求派发后立即发出，不再等下一条消息` | 原因：Execution 的 FIFO 在 `#pump` 中以不等待的方式启动下一个尝试；构造请求要先读取产物，派发可能发生在启动它的那条消息已经 flush 之后，`execute` 请求便留在 egress 的待发队列里，直到下一条无关消息到来。正常负载下 stage6 的 CONTEXT_ASSEMBLE 偶尔落在这个窗口（CPU 满载约 1/50）；验收工具的 F2 在一轮两次读文件之后每次都会卡住。修复：异步启动结束后调用 `onSettled`（即 `flushPending`）。Execution 增加回归用例；去掉修复后该用例与 F2–F5 立即失败。CPU 满载下 stage6 连续 100 次 0 失败 |
+| R2.1 | 2026-10-25 | `test: 建立固定任务集的验收工具、离线 F1–F5 与 #6 的安全陷阱` | fixture 已写好（`repos/bookshelf` 与 `tasks.ts`），见第 6 节 A4；按完成标准仍需 Cary 审阅 |
+| R2.2 | 2026-10-25 | 同上 | `harness.ts`：准备仓库并比对前后摘要，经 CLI 解析与全部产品部件运行，检查终态、来源、禁止路径、检索次数与密钥，生成运行记录；`pnpm run acceptance` 运行真实模型（本机无 key，未实际运行，见 A1） |
+| R2.3 | 2026-10-25 | 同上 | 离线 F1–F5 进入 `pnpm run test`，因此也进入兼容矩阵三格；脚本化的服务商拒绝一切非服务商主机 |
+| R2.4 | 2026-10-25 | 同上，以及 `fix: 非 UTF-8 文本按不支持的文件处理，不再以乱码进入上下文` | S1 密钥、S2 注入、S3 死循环、S4 超大与二进制文件、S5 GBK 与中文文件名全部通过；S5 暴露的乱码按 A2 修复。WSL 质量门：88 个文件、1125 项通过，2 项为 CI 专属 rg 检查 |
+| R3.2 | 2026-10-25 | `feat: 按 Workflow 的规则补充 planner 与 code-viewer 的 Prompt` | #32 第 3 节逐条落实：单次读取覆盖来源、概览与检索不作来源、同一回复不重复调用、已成功的调用只在结果被省略后重做、空文件不作来源、未获授权时立即如实结束（code-viewer）；planner 只能交接或结束。Prompt 仍为 v0.1.0 草稿，定稿与封存属于 R3.5 |
+| R4.3（预检） | 2026-10-25 | `docs: 同步 AgentToolPool 引用的 Prompt 并补全 SharedContracts 的类型落点` | SharedContracts 第 3 节的 90 个 Schema ID 与注册表一致（另 11 个 opaque Ref 按 family 列出）；它提到的 39 个文件、全部目录都存在；AgentToolPool 第 4 节的 16 个定义与文件逐一对应。发现两处不一致并修正（A6）：AgentToolPool.md 引用的两份 Prompt 未随 R3.2 更新；M1Interface 中 9 个没有单独 Schema ID 的类型未在 SharedContracts 中给出落点。新增文档与定义文件逐行比对的测试。阶段四正式核对时重做 |
+| R1.7 | 2026-10-25 | `docs: 新增 M1 验收证据草稿并补充 README 的运行说明` | D6 写入限制清单草稿（`M1AcceptanceEvidence.md` 第 3 节），R5.1 定稿 |
+| R4.1、R4.2、R4.4（草稿） | 2026-10-25 | 同上 | `M1AcceptanceEvidence.md` 第 1、2 节逐条列出证据与状态：离线条件全部满足，真实模型相关的条件待 A1；阶段四正式核对时重做 |
+| R5.3（草稿） | 2026-10-25 | 同上 | 处理意见草稿见 `M1AcceptanceEvidence.md` 第 5 节；未在 GitHub 上执行任何操作 |
+| R5.1（部分） | 2026-10-25 | 同上 | README 增加授权与取消、`--details`、`MULTIAGENTOS_CONFIG`、退出码表与验收命令；限制清单与验收证据见 `M1AcceptanceEvidence.md`。是否需要写入 `docs/M1/` 待 Cary 决定 |
+| R4.5（未完成） | 2026-10-25 | 不适用 | 第 1 轮 `pnpm run check` 通过（88 个文件、1126 项）；随后的 `test:coverage` 因本机内存不足被 Claude Code 中止，按要求未自动重跑。待 Cary 回来后再运行连续三轮 |
+
+## 6. 自主执行期间的决定（待 Cary 复核）
+
+2026-10-25 起 Cary 离开期间，按其授权自主推进：有歧义处尽量按 M1 规划实现；认为必须修改 M1 文档时按最推荐的方式修改，
+并在此逐条记录，供 Cary 回来后二次选择。所有提交只保存在本地，不推送远端；不发布、评论或关闭任何 Issue 与 PR。
+
+| ID | 日期 | 事项 | 采用的做法 | 其他可选做法 | 涉及的文件与提交 |
+|---|---|---|---|---|---|
+| A1 | 2026-10-25 | 本机与 WSL 都没有 `DEEPSEEK_API_KEY`，阶段三的真实模型运行（R3.1、R3.6 及依赖它们的 R3.3、R3.4）无法进行 | 跳过真实模型运行，其余不依赖模型的任务照常推进；阶段三中依赖评测结果的决定保持待定 | 由 Cary 提供 key 后补跑 | 无 |
+| A2 | 2026-10-25 | #6 要求 GBK 编码文件不导致乱码；原实现把任何不含 NUL 的文件按 UTF-8 解码，GBK 内容变成替换字符进入上下文 | 把“文本文件”定义为不是二进制且能按 UTF-8 完整解码：这类文件不进入文件集合（概览、检索与快照），`read_file` 返回 `REJECTED(UNSUPPORTED_FILE)`，模型看到的说明改为“目录、二进制或非 UTF-8 文本”。修改 ExecutorSet.md 3.1、3.2 第 6 步与 M1Interface 原因码表中 `UNSUPPORTED_FILE` 的说明 | ① 识别 GBK 等编码并转成 UTF-8（需要编码探测，误判风险高）；② 保持原样，把乱码记为已知限制 | ExecutorSet `text-document.ts`、`file-set.ts`、`guarded-file.ts`、`history-render.ts` 与测试；提交见第 5 节 R2.4 |
+| A3 | 2026-10-25 | D8：`executor-set/eval/agent-loop.ts` 自带简化的 Agent 循环，评测结果不代表产品 | 按 D8 的建议定论：M1 验收只采用验收工具（`apps/control-plane/test/acceptance/`）经产品调用链得到的结果；`agent-loop.ts` 保留为 ExecutorSet 的开发工具，不作为验收证据 | 删除 `agent-loop.ts`；或改造它复用产品调用链 | 第 3 节 D8 结论列 |
+| A4 | 2026-10-25 | R2.1 要求五个 fixture 由 Cary 审阅；验收工具的形态（M1Plan 只说“经权威调用链”） | fixture 用一个固定的小型 TypeScript 仓库 `bookshelf` 承载 F1–F5，问题不含答案文件名；验收工具在进程内按 `main` 的同一组合方式装配全部产品部件，经 CLI 解析运行，离线时只替换模型服务商的 HTTP 接口，真实模型时用 `pnpm run acceptance`（先列出次数与费用上限，加 `--yes` 才运行）。#6 的五条风险落实为同一工具下的陷阱任务 S1–S5（仓库 `traps`，超大、二进制与 GBK 文件在运行前生成，不入库） | 每个任务一个独立仓库；验收工具以子进程运行 `bin.js analyze`（离线时需要可替换服务商地址的产品接口） | `apps/control-plane/test/acceptance/`；待 Cary 审阅 fixture 后 R2.1 才算完成 |
+| A5 | 2026-10-25 | D4：启动检查中 code-viewer 的普通调用为 79156 / 80000（固定段 62772 + FILE_READ 16384），收尾调用 61777 / 64000；按 #32 第 3 节补充 Prompt 几乎没有余量 | 保留最坏转义的估算方法（它保证不可裁剪段在任何输入下都放得下），把建议值 `perCallInputLimit` 上调到 96000、`finalInputBudget` 上调到 72000；`tokenLimit` 600000 仍满足 `≥ finalReserve + wrapUpMargin`（184384）。修改 Monitor.md 第 4 节的表与说明、`DEFAULT_KERNEL_CONFIG` | ① 改用不那么悲观的估算（如按原始 UTF-8 长度），需修改 Monitor.md 的估算规则，且失去最坏情况保证；② 维持 80000/64000，Prompt 只能压缩 | `kernel-config.ts`、Monitor.md、`startup-config.test.ts`（收尾窗口用例的取值随之调大）；按 R3.2 补充 Prompt 后为 79557 / 96000 与 62178 / 72000。R3.4 用真实模型校准时可再调整 |
+| A6 | 2026-10-25 | R4.3 预检发现的文档不一致：AgentToolPool.md 第 4 节引用的 Prompt 与文件不同（R3.2 只改了文件）；M1Interface 的 `RunEnd`、`KernelToWorkflowEvent`、`KernelToInteractionEvent`、`InboxEvent`、`ExecutorInput`、`DefinitionHeader`、`DefinitionByKind`、`InvalidActionReason`、`PersistenceNamespace` 没有单独的 Schema ID，SharedContracts 也没有说明它们落在哪里 | 按 M1Interface 1.1“发现不一致时以本文为准，并修正另外两份”：AgentToolPool.md 改为与定义文件一致；SharedContracts 新增 3.11 节列出这 9 个类型的落点；agent-tool-pool 增加文档引用与定义文件逐行比对的测试，防止再次漂移 | 把这些类型注册为单独的 Schema（会改变 Schema 清单与快照，不必要） | AgentToolPool.md、SharedContracts.md、`definitions-directory.test.ts` |

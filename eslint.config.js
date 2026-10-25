@@ -29,7 +29,14 @@ const componentInternals = {
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/.multiagentos/**'],
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/.multiagentos/**',
+      // Repositories under analysis in the acceptance tasks, not code of this project.
+      'apps/control-plane/test/acceptance/repos/**',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

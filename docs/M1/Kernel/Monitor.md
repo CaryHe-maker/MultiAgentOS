@@ -98,8 +98,8 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 | 配置                   | 读取者    | 用途                                    | 建议初值             |
 | ---------------------- | --------- | --------------------------------------- | -------------------- |
 | `tokenLimit`           | Monitor   | L                                       | 600000（需评测校准） |
-| `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 80000                |
-| `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 64000                |
+| `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 96000                |
+| `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 72000                |
 | `maxOutputTokens`      | Execution | 普通 model-call 的 `max_tokens`         | 8192                 |
 | `finalMaxOutputTokens` | Execution | final-call 的 `max_tokens`              | 8192                 |
 | `orientBudget`         | Execution | repository-orient 的 `tokenBudget`      | 4000                 |
@@ -140,8 +140,8 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 - STATUS 的说明文字最多 512 个原始 UTF-8 字节；启动估算用 512 个 U+0001，
   连同 JSON 转义计入。上下文组装不得产生超过该上界的说明文字。
 
-此规则不改变输入 Schema；普通与收尾输入建议值上调至 80000、64000，以容纳现有定义在
-最坏转义下的固定段，并为 file-read 留出空间。总额度及两类输出预算保持不变；
+此规则不改变输入 Schema；普通与收尾输入建议值上调至 96000、72000，以容纳现有定义在
+最坏转义下的固定段（约 6.3 万与 6.2 万），为 file-read 留出空间，并给 Prompt 与工具说明的定稿留出余量。总额度及两类输出预算保持不变；
 后续更换 Prompt 或工具定义后仍必须重新通过启动检查。
 
 ## 5. M1 不实现
