@@ -1,0 +1,54 @@
+# MultiAgentOS 文档索引
+
+## 1. 文档分区
+
+| 目录 | 内容 |
+|---|---|
+| [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
+| [M1](M1/README.md) | M1 交付范围、机制设计与接口，以及 [运行说明](M1/M1Usage.md) 与 [限制清单](M1/M1Limitations.md) |
+| [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
+| [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
+| [M1ReleasePlan](M1ReleasePlan.md) | 从合并到 M1 发布的工作计划与进度记录 |
+| [M1AcceptanceEvidence](M1AcceptanceEvidence.md) | M1 完成定义与阻断项的验证证据、真实模型基线 |
+| [History](History/) | 已归档的阶段工作文档，不作为规范 |
+| [Style](Style.md) | 工程与文档协作规范 |
+
+目标平台为 Ubuntu LTS，规范版本为 24.04（M1 起）。Architecture 只描述长期规划，不穷尽实现；各 MVP 的具体机制在对应目录中明确。
+M1 Kernel 与 Infrastructure 的实现与阶段记录已归档，见
+[M1KernelImplementationReport](History/M1KernelImplementationReport.md)。
+
+## 2. 推荐阅读路线
+
+1. [Overall](Architecture/Overall.md)：整体职责、对象与执行闭环。
+2. [Kernel](Architecture/Module/Kernel.md)：六组件、通讯主体、运行组织、syscall、Lease 与额度。
+3. [Execution](Architecture/Kernel/Execution.md)：Kernel 内的尝试、执行与产物发布。
+4. [Supervisor](Architecture/Kernel/Supervisor.md)：系统生命周期、Executor 子进程与执行事实。
+5. [Protocol](Architecture/Protocol.md)：请求、事实、结果、事件与恢复的共同语义。
+6. [Instance](Architecture/Instance.md)：运行、控制与恢复示例。
+7. [Architecture 指南](Architecture/README.md)：全部长期文档入口。
+8. [M1 指南](M1/README.md)：M1 的范围、机制与接口。
+
+## 3. 模块、静态库与基础设施
+
+| 文档 | 内容 |
+|---|---|
+| [UserInteraction](Architecture/Module/UserInteraction.md) | 会话、意图、审核交互与展示 |
+| [Workflow](Architecture/Module/Workflow.md) | 业务图、AgentRun、验收、恢复与补偿 |
+| [Kernel](Architecture/Module/Kernel.md) | Gateway、Core、Scheduler、Execution、Supervisor、Monitor |
+| [Execution](Architecture/Kernel/Execution.md) | Kernel 内的尝试、步骤、效果与产物发布 |
+| [Supervisor](Architecture/Kernel/Supervisor.md) | 独立的通讯主体：系统生命周期、Executor 子进程、派发与监管 |
+| [AgentToolPool](Architecture/Library/AgentToolPool.md) | Agent、Unit、Tool 等模板定义 |
+| [ExecutorSet](Architecture/Library/ExecutorSet.md) | Executor 行为代码 |
+| [SharedContracts](Architecture/Library/SharedContracts.md) | 公共数据、版本及兼容验证 |
+| [ModuleHost](Architecture/Infrastructure/ModuleHost.md) | Supervisor 管理的装配与生命周期 |
+| [Fabric](Architecture/Infrastructure/Fabric.md) | 通讯主体，以及 Core 管理的通信与事实交接 |
+| [Persistence](Architecture/Infrastructure/Persistence.md) | 分属各 Owner 的状态保存与恢复原语 |
+| [ArtifactStore](Architecture/Infrastructure/ArtifactStore.md) | 不可变大对象、访问与保留 |
+| [TechStack](Architecture/TechStack.md) | 长期目标技术栈 |
+
+## 4. 如何判断文档状态
+
+Architecture 是长期规划，不代表某个 MVP 必须全部实现。
+M1 目录定义 M1 的范围与机制；与 Architecture 存在差异时，以 M1 文档对 M1 的规定为准，
+但 M1 不得违反 Architecture 的安全约束与状态所有权。
+代码 Schema 说明已实现接口，GitHub Issues 跟踪进度与证据，文档更新不代表实现已经完成。

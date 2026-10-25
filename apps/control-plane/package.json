@@ -1,0 +1,30 @@
+{
+  "name": "@multiagentos/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "multiagentos": "./dist/bin.js"
+  },
+  "dependencies": {
+    "@multiagentos/agent-tool-pool": "workspace:*",
+    "@multiagentos/artifacts": "workspace:*",
+    "@multiagentos/cli": "workspace:*",
+    "@multiagentos/contracts": "workspace:*",
+    "@multiagentos/executor-set": "workspace:*",
+    "@multiagentos/fabric": "workspace:*",
+    "@multiagentos/kernel": "workspace:*",
+    "@multiagentos/module-host": "workspace:*",
+    "@multiagentos/persistence": "workspace:*",
+    "@multiagentos/user-interaction": "workspace:*",
+    "@multiagentos/workflow": "workspace:*",
+    "dotenv": "18.0.1"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json --pretty false",
+    "check": "tsc -b tsconfig.json --pretty false"
+  },
+  "devDependencies": {
+    "@multiagentos/testing": "workspace:*"
+  }
+}

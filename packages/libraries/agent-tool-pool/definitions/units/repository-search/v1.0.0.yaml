@@ -1,0 +1,20 @@
+schemaVersion: v0
+kind: UNIT
+id: repository-search
+version: v1.0.0
+digest: db72f5b56284b3990695502377e1fe231de86546c6fdd815d88d7bb95ab18fad
+description: Search the repository snapshot and build a SEARCH ContextPack.
+executionKind: REPOSITORY_SEARCH
+protectedCapabilities: [repo.read]
+inputContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
+outputContract: { kind: contract, id: context.RepositorySearchOutput, version: v0 }
+toolRefs:
+  - { id: search-repository, version: v1.0.0 }
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  USER_DECLINED: FINAL_CALL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  INVALID_QUERY: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

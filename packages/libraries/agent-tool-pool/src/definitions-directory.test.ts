@@ -1,0 +1,112 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { ModelDefinition } from '@multiagentos/contracts';
+import { FileDefinitionSource } from './adapters/file/file-definition-source.js';
+import { buildCatalogIndex, planSeal } from './domain/catalog-index.js';
+import { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
+
+/**
+ * Guards the catalog shipped in the repository. If someone edits a sealed file, this test
+ * fails with DIGEST_MISMATCH; the fix is a new version, not a new digest.
+ */
+describe('shipped definitions', () => {
+  const load = async () => await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load();
+
+  it('load without issues and every published version is sealed', async () => {
+    const snapshot = await load();
+    const result = buildCatalogIndex(snapshot);
+    expect(result.ok ? [] : result.issues).toEqual([]);
+    expect(planSeal(snapshot).patches).toEqual([]);
+  });
+
+  it('are exactly the definitions of AgentToolPool section 4, older versions included', async () => {
+    const result = buildCatalogIndex(await load());
+    if (!result.ok) throw new Error('catalog did not load');
+    expect([...result.index.definitions.keys()].sort()).toEqual([
+      'AGENT:code-viewer@v1.0.0',
+      'AGENT:code-viewer@v1.1.0',
+      'AGENT:planner@v1.0.0',
+      'AGENT:planner@v1.1.0',
+      'MODEL:deepseek-flash@v1.0.0',
+      'MODEL:deepseek-v4-pro@v1.0.0',
+      'PROMPT:code-viewer-system@v1.0.0',
+      'PROMPT:code-viewer-system@v1.1.0',
+      'PROMPT:planner-system@v1.0.0',
+      'TOOL:finish-analysis@v1.0.0',
+      'TOOL:handoff-to-code-viewer@v1.0.0',
+      'TOOL:read-file@v1.0.0',
+      'TOOL:search-repository@v1.0.0',
+      'UNIT:context-assemble@v1.0.0',
+      'UNIT:file-read@v1.0.0',
+      'UNIT:model-call@v1.0.0',
+      'UNIT:report-publish@v1.0.0',
+      'UNIT:repository-orient@v1.0.0',
+      'UNIT:repository-search@v1.0.0',
+    ]);
+  });
+
+  it('price DeepSeek models as published on 2026-09-28', async () => {
+    const result = buildCatalogIndex(await load());
+    if (!result.ok) throw new Error('catalog did not load');
+    const model = (id: string) =>
+      result.index.definitions.get(`MODEL:${id}@v1.0.0`) as ModelDefinition;
+    // USD per 1M tokens, off-peak: cache hit / cache miss / output.
+    const usd = (definition: ModelDefinition) =>
+      Object.values(definition.pricing.offPeak).map((micro) => micro / 1_000_000);
+    expect(usd(model('deepseek-flash'))).toEqual([0.003, 0.15, 0.6]);
+    expect(usd(model('deepseek-v4-pro'))).toEqual([0.022, 0.66, 1.98]);
+    for (const id of ['deepseek-flash', 'deepseek-v4-pro'])
+      expect(model(id).pricing.peak).toMatchObject({
+        ratePercent: 200,
+        weekdays: [1, 2, 3, 4, 5],
+        windows: [
+          { start: '01:00', end: '04:00' },
+          { start: '06:00', end: '10:00' },
+        ],
+      });
+  });
+
+  it('match every definition file that AgentToolPool quotes', async () => {
+    const document = await readFile(
+      join(
+        DEFAULT_DEFINITIONS_DIRECTORY,
+        '..',
+        '..',
+        '..',
+        '..',
+        'docs',
+        'M1',
+        'Library',
+        'AgentToolPool.md',
+      ),
+      'utf8',
+    );
+    // Comments and blank lines may differ; every other line must be the same.
+    const lines = (text: string) =>
+      text
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('#'));
+    const quoted = [...document.matchAll(/```yaml\n([\s\S]*?)```/gu)].map(
+      (match) => match[1] ?? '',
+    );
+    let compared = 0;
+    for (const block of quoted) {
+      const kind = /^kind: (\w+)$/mu.exec(block)?.[1];
+      const id = /^id: ([\w-]+)$/mu.exec(block)?.[1];
+      const version = /^version: (v[\d.]+)$/mu.exec(block)?.[1];
+      if (kind === undefined || id === undefined || version === undefined) continue;
+      const file = join(
+        DEFAULT_DEFINITIONS_DIRECTORY,
+        `${kind.toLowerCase()}s`,
+        id,
+        `${version}.yaml`,
+      );
+      expect(lines(block), `${kind} ${id}@${version}`).toEqual(lines(await readFile(file, 'utf8')));
+      compared += 1;
+    }
+    // Every definition but the two sealed models, which the document lists in a table.
+    expect(compared).toBe(14);
+  });
+});

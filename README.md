@@ -1,85 +1,158 @@
 # MultiAgentOS
 
-MultiAgentOS 是一个面向全栈开发的 coding agent：用户只需描述目标，系统负责把目标拆成可验证的任务图，按依赖关系并行调用多个 coding agent/API，在隔离的工作区中执行，并通过契约、测试和人工审批完成集成。
+MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS，规范版本为 24.04。
+长期文档定义概念、职责与安全边界，各 MVP 再明确实现和验收。
 
-它不是简单地“打开多个聊天窗口”。核心目标是让并行工作可控、可恢复、可审计，同时尽量减少重复上下文和协调 token。
+## 快速开始
 
-## 可行性结论
+M1 对一个本地仓库回答问题：先询问是否允许读取，再检索、读取文件，输出每条结论都附文件路径与行号的报告。
+系统只读，不修改仓库、不执行命令、不调用 git。以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、
+pnpm 11.25.0 与 DeepSeek 的 API key。
 
-项目在工程上可实现，建议分阶段落地：
+```bash
+# 1. 安装与构建（在 MultiAgentOS 目录下）
+sudo apt-get install -y ripgrep          # 可选，有 rg 时检索更快
+pnpm install --frozen-lockfile
+pnpm run build
 
-1. **MVP**：单机 CLI + Python 调度器 + `asyncio` 并发 + Git worktree + LiteLLM + SQLite。先支持“规划 → 后端/前端并行 → 集成测试”。
-2. **Beta**：引入 LangGraph/Temporal 风格的持久化 DAG、Redis/Postgres、Docker 沙箱、OpenTelemetry、预算与速率控制。
-3. **Production**：多租户权限、远程 worker、故障恢复、策略引擎、gVisor/Firecracker 隔离、可观测性和评测集。
+# 2. 提供 API key（只从环境变量或本目录下不入库的 .env 读取）
+export DEEPSEEK_API_KEY=<你的 key>
 
-开源项目已经分别验证了这条路线：MCO 验证了 CLI-first 的多 provider 并行与显式确认；Pane 验证了 worktree/终端会话管理；multi-agent-shogun 验证了层级式 manager-worker；Maestro 验证了分阶段工作流、持久状态和质量门；LangGraph 与 Temporal 验证了长任务的状态持久化和恢复；LiteLLM 验证了多模型统一网关。**但没有证据表明“并行必然比单 agent 更省 token”**，因此 MultiAgentOS 必须内置 token/延迟/质量基准，并根据收益动态决定是否并行。
-
-## 解决的问题
-
-- **安全性**：最小权限、工作区白名单、容器/沙箱、命令审批、密钥隔离、完整审计日志。
-- **并行冲突**：任务 DAG、文件/模块 ownership、每个 worker 独立 worktree、结构化接口契约、合并前测试和冲突回退。
-- **token 成本**：只传任务卡、接口契约、摘要和 diff；不广播完整对话；设置每任务 token/美元预算；按任务路由模型。
-- **完成速度**：只有无依赖节点并行；集成节点在前置任务完成后自动触发；失败任务可重试或降级为串行。
-- **上下文过长**：短期上下文、持久化摘要、文件索引和按需检索；每个阶段可新建会话而不丢失结构化状态。
-- **资源堵塞**：监控 CPU、内存、GPU、队列、API 延迟和速率限制；根据资源和预算动态限流。
-
-## 典型流程
-
-```text
-用户目标
-  ↓
-Planner：生成架构、接口契约、任务 DAG、预算
-  ↓
-Scheduler：按依赖和资源选择并行度
-  ├─ Backend worker（独立 worktree/容器）
-  ├─ Frontend worker（独立 worktree/容器）
-  └─ Contract/Test worker（只读或低权限）
-  ↓
-Artifact Bus：传递契约、摘要、diff、测试报告
-  ↓
-Integrator：合并、解决冲突、运行端到端测试
-  ↓
-Reviewer + Human Gate：高风险操作需批准
-  ↓
-交付 PR/补丁/报告
+# 3. 提问：--repo 是要分析的仓库的绝对路径，问题放在最后
+node apps/control-plane/dist/bin.js analyze --repo /home/me/projects/my-app "登录失败时错误信息是在哪里生成的？"
 ```
 
-## 当前文档
+运行时：
 
-- [初始设计方案](docs/InitialPlan.md)：架构、技术栈、阶段计划和借鉴项目。
-- [难点与实现路径](docs/Difficulty.md)：安全、冲突、token、恢复和性能方面的风险与验证方法。
+1. 终端列出仓库路径与不会读取的文件（`.env*`、私钥、`.git`、`node_modules` 等），询问是否允许读取，输入 `y` 回车。
+2. 等待十几秒到一两分钟，终端展示报告：结论、每条结论的来源（文件与行号）、未能确认的事项。
+3. 加 `--details` 可同时看到轮数与 token 用量；按一次 Ctrl+C 取消运行，再按一次立即退出。
 
-## 设计原则
+提问时写清楚想知道什么，例如“某函数在边界情况下返回什么”“某个规则在哪里判断、有没有测试”“改某个功能要动哪些文件”；
+不需要提前知道答案在哪个文件。退出码、配置与验收命令见 [M1 运行说明](docs/M1/M1Usage.md)，
+已知限制见 [M1 限制清单](docs/M1/M1Limitations.md)。
 
-1. **Planner 不直接修改代码**：规划结果先落为版本化的 `TaskCard`、`Contract` 和 `Policy`。
-2. **默认隔离，显式共享**：worker 默认只能看到自己的 worktree；共享内容通过 artifact 引用传递。
-3. **数据优先于自然语言**：跨 agent 通信使用 JSON Schema/Pydantic 对象，文本仅用于解释。
-4. **可恢复而非一次性脚本**：每个节点有输入快照、输出摘要、重试策略和幂等键。
-5. **高风险动作必须停下来**：删除、发布、改权限、读取密钥、联网写操作等进入人工审批。
-6. **自调用权限集中管理**：只有 Orchestrator 能创建 worker/API 调用；worker 不能递归生成新 agent，所有调用受预算、并发和策略限制。
+## 架构
 
-## 调研依据（访问：2026-08-23）
+```text
+CLI
+ |
+UserInteraction -> Kernel.Gateway -> Workflow
+Workflow -> submitUnit -> Gateway 准入 -> Core（定义核验、Lease、额度）
+Kernel 核心（模块化单体）: Core · Scheduler · Execution · Monitor；Supervisor 独立；Gateway 逻辑独立
+Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
+执行事实 -> Core 结果检查 -> Outbox -> Workflow 验收 -> 用户视图
 
-| 项目 | 可借鉴能力 | 对 MultiAgentOS 的启示 |
-|---|---|---|
-| [openai/codex](https://github.com/openai/codex) | 本地终端 coding agent | 作为 CLI/会话和权限模型的参考基线 |
-| [mco-org/mco](https://github.com/mco-org/mco) | 多 provider 并行、原始答案留存、显式选择与确认 | 不隐式猜测 agent 团队；保留可审计证据 |
-| [dcouple/Pane](https://github.com/dcouple/Pane) | worktree、终端 pane、跨会话上下文 | 并行隔离和人机协作 UX |
-| [yohey-w/multi-agent-shogun](https://github.com/yohey-w/multi-agent-shogun) | tmux 层级 manager-worker、实时 dashboard | 层级调度可行，但要避免 shell/tmux 强耦合 |
-| [josstei/maestro-orchestrate](https://github.com/josstei/maestro-orchestrate) | Express/Standard 分流、39 个 specialist、质量门、持久 session | 采用“短任务快速路径 + 复杂任务标准路径” |
-| [OpenHands/OpenHands](https://github.com/All-Hands-AI/OpenHands) | 本地/远程/Docker/VM backend、自动化和 ACP | 执行后端可插拔；默认使用沙箱，避免直接暴露主机 |
-| [langchain-ai/langgraph](https://github.com/langchain-ai/langgraph) | durable execution、HITL、memory、trace | 用状态图表达 DAG、暂停/恢复和人工介入 |
-| [crewAIInc/crewAI](https://github.com/crewAIInc/crewAI) | role-based Crews、event-driven Flows | 角色协作与事件驱动可作为上层 API |
-| [temporalio/temporal](https://github.com/temporalio/temporal) | 重试、持久化、故障恢复 | 生产版可替换自研调度器的可靠性底座 |
-| [BerriAI/litellm](https://github.com/BerriAI/litellm) | 100+ provider 统一接口、预算、负载均衡、guardrails | 统一 API、成本控制和 provider 故障转移 |
-| [microsoft/autogen](https://github.com/microsoft/autogen) | 多 agent 对话模式 | 当前处于 maintenance mode，不作为核心依赖；关注其迁移到 Microsoft Agent Framework 的经验 |
+静态库：AgentToolPool · ExecutorSet · SharedContracts
+基础设施：ArtifactStore · ModuleHost · Fabric · Persistence
+```
 
-## 非目标（首版）
+系统遵守以下核心约束：
 
-- 不承诺所有任务都并行；有写冲突或强顺序依赖的任务必须串行。
-- 不允许 agent 自行扩大文件系统、网络、云账号或发布权限。
-- 不把多个模型的回答简单拼接成“共识”；质量由测试、diff 和 reviewer 决定。
+- 每类领域状态只有一个写入 Owner。
+- Workflow 决定业务推进与验收，Kernel 负责授权、调度、执行、资源和监管。
+- 每个 WorkflowRun 由一个 Kernel 核心实例按顺序处理；Executor 子进程中的执行可以并行。
+- Kernel 核心内的组件只读写自己的数据，Lease 只由 Core 维护和使用。
+- Lease 只存在于 Core，其他组件只取得裁决与派生的范围约束。
+- Syscall、Interruption 与 Exception 由 Core 统一处理。
+- 模型只提出动作，不能绕过 Kernel 直接执行工具。
+- Executor 返回物理执行事实，不判断 Task 或 Workflow 是否成功。
+- 上下文与检索由 ExecutorSet 中的 Executor 完成，ContextPack 不可变并带仓库快照摘要、provenance 与 token 预算。
+- 跨模块数据经过运行时 Schema 校验，大对象通过 ArtifactRef 传递。
+- 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
-## 下一步
+完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。
+M1 与 Architecture 的关系列于 [M1 指南](docs/M1/README.md) 第 7 节。文档更新不表示对应能力已经实现。
 
-先实现一个可测的纵向切片：`plan` 生成任务图，`run` 并行执行两个 worktree，`integrate` 合并并运行测试，`report` 输出 token、延迟、失败和冲突指标。然后用同一组前后端样例与“手工两个窗口”基线比较，而不是凭感觉判断收益。
+## 当前交付范围
+
+项目只确定 M1：交付本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。系统接收仓库分析问题，通过受控的概览、搜索与读取路径生成包含仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。
+
+M1 不执行文件写入、项目命令、项目测试或其他副作用。其他交付目标只能在 M1 完成验收后另行定义。范围、机制和接口见 [M1 指南](docs/M1/README.md)，任务进度由 GitHub Issues 跟踪：
+
+- [M1Plan](docs/M1/M1Plan.md)
+- [M1TechStack](docs/M1/M1TechStack.md)
+- [M1Interface](docs/M1/M1Interface.md)
+
+M1 的全部产品部件已经实现，正在进行真实模型联调与发布验收，进度见
+[M1 发布工作计划](docs/M1ReleasePlan.md)。不应将架构文档中的长期能力理解为已经交付。
+
+## 仓库结构
+
+```text
+apps/
+  cli/                    UserInteraction 的 CLI Adapter
+  control-plane/          唯一组合根与进程入口
+packages/
+  modules/
+    kernel/               Kernel：core、execution、monitor、scheduler、gateway、supervisor
+    workflow/             Workflow
+    user-interaction/     UserInteraction
+  libraries/
+    contracts/            SharedContracts：Schema、Port、Protocol Registry
+    agent-tool-pool/      AgentToolPool：Agent、Unit、Tool、Model、Prompt 定义目录
+    executor-set/         ExecutorSet：仓库访问、检索、文件读取、上下文组装与模型调用
+  infrastructure/
+    fabric/               Fabric：同进程通信、Inbox 与有序发送器
+    module-host/          ModuleHost：装配与生命周期
+    persistence/          Persistence：运行目录文件存储
+    artifacts/            ArtifactStore：本地内容寻址存储
+  testing/                Fakes、Contract tests、架构测试和 fixtures
+docs/
+  Architecture/         长期概念与架构
+  M1/                   当前交付范围、机制与接口
+  Requirements/         当前依赖
+  Meetings/             原始会议记录
+  History/              已归档的阶段工作文档
+  M1ReleasePlan.md      M1 发布工作计划
+  M1AcceptanceEvidence.md  M1 验收证据
+  Style.md              工程协作规范
+```
+
+## 开发环境
+
+以下是仓库现有工程环境；项目规范平台为 Ubuntu 24.04 LTS。
+
+- Node.js `24.19.0`，允许 `>=24.19.0 <25`
+- pnpm `11.25.0`
+- TypeScript `6.0.3`
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run check
+```
+
+开发平台不限，最终验收在 Ubuntu 24.04 LTS 上执行，CI 的兼容矩阵见 [M1TechStack](docs/M1/M1TechStack.md) 第 11 节。
+检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
+Ubuntu 上为 `sudo apt-get install -y ripgrep`。
+
+Kernel、四类基础设施、Workflow、UserInteraction、CLI、ExecutorSet 与 AgentToolPool 均已实现，可以组成完整系统；
+Agent、Unit、Tool 与 Prompt 已定稿并封存，协议已冻结。固定任务集 F1–F5 在真实模型（`deepseek-flash`）上
+15/15 通过，验收结果见 [M1 验收证据](docs/M1AcceptanceEvidence.md)。
+
+### 运行与演示
+
+使用方法见上文的[快速开始](#快速开始)。`pnpm run demo:fake` 用 fake 演示整条装配链路；
+`pnpm run acceptance` 用真实模型运行固定任务集（不加 `--yes` 只列出费用上限）。
+
+Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的
+[M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)。
+
+精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
+
+## 文档入口
+
+- [总文档索引](docs/README.md)
+- [Architecture 指南](docs/Architecture/README.md)
+- [整体架构](docs/Architecture/Overall.md)
+- [协议架构](docs/Architecture/Protocol.md)
+- [运行实例](docs/Architecture/Instance.md)
+- [M1 指南](docs/M1/README.md)
+- [M1 发布工作计划](docs/M1ReleasePlan.md)
+- [M1 运行说明](docs/M1/M1Usage.md)
+- [M1 限制清单](docs/M1/M1Limitations.md)
+- [M1 验收证据](docs/M1AcceptanceEvidence.md)
+- [M1 Kernel 与 Infrastructure 总实现报告](docs/History/M1KernelImplementationReport.md)
+
+所有合并到 `feat/M1` 或 `main` 的变更都必须通过 Pull Request。

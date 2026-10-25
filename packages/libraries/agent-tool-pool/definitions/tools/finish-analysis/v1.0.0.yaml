@@ -1,0 +1,16 @@
+schemaVersion: v0
+kind: TOOL
+id: finish-analysis
+version: v1.0.0
+digest: 1a971e5e1cfad9497ff5609a5967d05861a0da0db1e5a5e2be2b99dba24141b4
+description: Control tool that ends the AgentRun with a report draft.
+purpose: CONTROL
+modelName: finish_analysis
+modelDescription: >-
+  Submit the answer; call it alone. The sources of every conclusion must be line ranges that
+  read_file returned in this run.
+parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version: v0 }
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

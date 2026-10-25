@@ -1,0 +1,39 @@
+{
+  "name": "multiagentos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.19.0 <25",
+    "pnpm": "11.25.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "eslint apps packages",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint:fix": "eslint apps packages --fix",
+    "catalog:seal": "tsc -b packages/libraries/agent-tool-pool --pretty false && node packages/libraries/agent-tool-pool/dist/cli/seal-definitions.js",
+    "acceptance": "tsc -b --pretty false && tsx apps/control-plane/test/acceptance/run-acceptance.ts",
+    "contracts:snapshot": "tsc -b packages/libraries/contracts --pretty false && node packages/libraries/contracts/dist/cli/write-schema-snapshot.js",
+    "demo:fake": "tsc -b --pretty false && node apps/control-plane/dist/demo/fake-demo.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.6",
+    "@vitest/coverage-v8": "5.0.1",
+    "eslint": "10.11.0",
+    "fast-check": "4.10.2",
+    "prettier": "3.9.8",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.1"
+  }
+}
