@@ -5,7 +5,7 @@
 本目录定义 M1 的交付目标、技术选择、机制、跨模块接口和验收要求。任务进度与验证证据由 GitHub Issues 跟踪。
 M1 面向本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析，由 Planner 与 CodeViewer
 两个 Agent 单向交接完成，输出包含仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。
-M1 的验收平台为 Ubuntu LTS；开发平台不限，但代码必须能在 Ubuntu LTS 上运行。
+M1 的验收平台为 Ubuntu 24.04 LTS（项目规范版本）；开发平台不限，但代码必须能在 Ubuntu 24.04 LTS 上运行。
 
 长期概念、模块职责与安全边界见 [Architecture 指南](../Architecture/README.md)。
 本目录说明这些能力在 M1 中的具体交付范围，不将长期架构中的全部能力视为 M1 要求。
@@ -32,8 +32,10 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 3. [Workflow](Module/Workflow.md)：模型返回的解释、Validation、失败处理、Round、final-call、交接与报告。
 4. [Kernel 内部交互](Kernel/Interaction.md)：运行 actor、内部接口、执行路径、收敛、关闭与 panic。
 5. [M1Interface](M1Interface.md)：全部跨模块类型与 Port 的字段级定义。
-6. [SharedContracts](Library/SharedContracts.md)、[AgentToolPool](Library/AgentToolPool.md)：Schema 清单、定义实例。
-7. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
+6. [SystemFaultHandling](SystemFaultHandling.md)：两类异常语义、捕获边界、panic 与安全停机与退出码。
+7. [SharedContracts](Library/SharedContracts.md)、[AgentToolPool](Library/AgentToolPool.md)：Schema 清单、定义实例。
+8. [M1TechStack](M1TechStack.md)：运行环境、技术选择、允许依赖与明确排除项。
+9. [M1Usage](M1Usage.md)、[M1Limitations](M1Limitations.md)：安装、配置与运行方法，以及发布版本的已知限制。
 
 | 分类 | 文档 |
 |---|---|
@@ -51,12 +53,15 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 |---|---|---|
 | M1Plan | 交付范围、任务、验收和降级策略 | 不重新定义长期模块所有权 |
 | M1Interface | 每个跨模块类型与 Port 的名称、字段与语义 | 不因长期设计存在某能力就自动纳入交付 |
+| SystemFaultHandling | 跨组件的两类异常语义、捕获边界、角色权限、panic 与安全停机步骤与退出码 | 不重复各组件自身的行为与字段 |
 | Library/SharedContracts | Schema ID、文件位置、owner、迁移与测试 | 字段以 M1Interface 为准 |
 | Library/AgentToolPool | 目录机制、加载校验与全部定义实例 | 字段以 M1Interface 为准 |
 | Module/ | 各 Module 的 M1 机制；Kernel 的对外行为 | 不重复定义字段 |
 | Kernel/ | Kernel 组件职责、私有接口与内部交互 | 不定义 Workflow 业务逻辑 |
 | Library/ExecutorSet、Infrastructure/ | 静态库与基础设施的 M1 实现说明 | 不替代长期架构 |
 | M1TechStack | M1 使用的技术、版本用途和引入限制 | 不替代依赖 manifest |
+| M1Usage | 安装、API key、命令、常用配置、退出码与验收命令 | 配置项的定义以各机制文档为准 |
+| M1Limitations | 发布版本的已知限制与边界 | 不新增或改变范围，范围以 M1Plan 为准 |
 
 ## 5. 权威关系
 
@@ -64,6 +69,7 @@ ArtifactStore、ModuleHost、Fabric、Persistence 保持独立基础设施地位
 - M1 的范围和完成条件以 M1Plan 为准。
 - 跨模块字段以 M1Interface 为准；SharedContracts 与 AgentToolPool 必须与其一致，代码中的 Schema 是已实现协议的可执行事实源。
 - Kernel 对外行为以 Module/Kernel 为准，Kernel 组件职责与内部交互以 Kernel/ 下的文档为准。
+- 跨组件的两类异常语义、panic 与安全停机与进程退出码以 SystemFaultHandling 为准。
 - 目标与实现的差距在 GitHub Issues 中跟踪，完成状态应有测试、报告或 PR 证据。
 
 ## 6. 维护要求

@@ -3,5 +3,11 @@
  * `multiagentos analyze` with Commander under `commands/`, talks to the terminal under
  * `presentation/`, and calls only the public entry of `@multiagentos/user-interaction`.
  */
-export { runCli, type CliTarget } from './commands/run-cli.js';
+export {
+  parseCli,
+  runCli,
+  runParsedCli,
+  type CliParseResult,
+  type CliTarget,
+} from './commands/run-cli.js';
 export { createNodeTerminal } from './presentation/node-terminal.js';

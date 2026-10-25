@@ -6,7 +6,7 @@
 
 ## 1. 目标与范围权威
 
-M1 交付一个本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。用户提交仓库分析问题后，系统通过受控的概览、搜索与读取路径生成带仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。M1 的验收平台为 Ubuntu LTS。
+M1 交付一个本地、单用户、单项目、单进程、单活动 Task 的只读仓库分析系统，由 Planner 与 CodeViewer 两个 Agent 单向交接完成。用户提交仓库分析问题后，系统通过受控的概览、搜索与读取路径生成带仓库快照摘要（`snapshotId`）、路径、行范围和 provenance 的结构化报告。M1 的验收平台为 Ubuntu 24.04 LTS。
 
 本文件是 M1 范围和验收的权威来源。除 M1 外，不定义其他里程碑的范围、排期、接口或完成承诺。任何超出 M1 的能力只作为非目标记录；必须在 M1 完成验收后，依据实测结果另行立项和评审。
 
@@ -40,6 +40,38 @@ M1 不实现文件写入、项目命令、项目测试、任何 git 调用（含
 Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容说明、正反例和 contract test。
 任务、进度与验证证据由 GitHub Issues 跟踪，每个 Issue 只有一个负责人；完成时在 Issue 中关联 PR 与测试证据。
 
+### 4.1 分支与共享目录
+
+M1 的实现在三个工作分支上并行进行，都合入 `feature/M1/main`，全部完成后再由它合入 `feat/M1`：
+
+| 分支 | 可以直接修改的目录 |
+|---|---|
+| `feature/M1/kernel-infrasturcture` | `packages/modules/kernel`、`packages/infrastructure/**`、`apps/control-plane` |
+| `feature/M1/workflow-UserInteraction` | `packages/modules/workflow`、`packages/modules/user-interaction`、`apps/cli` |
+| `feature/M1/pool-executor` | `packages/libraries/executor-set`、`packages/libraries/agent-tool-pool` |
+
+以下是三个分支共用的接缝，任何一个分支都不得把对它们的修改夹在功能提交里：
+
+| 共享内容 | 说明 |
+|---|---|
+| `packages/libraries/contracts` | Schema、Port 与跨模块类型 |
+| `packages/testing` | fake、fixture 与共享 contract test；fake 只跟随规范，不用来重新定义被替代方的行为 |
+| 各模块包的 `XxxDeps` 与工厂签名 | [M1Interface](M1Interface.md) 第 14 节 |
+| `docs/M1/M1Interface.md`、`docs/M1/Library/SharedContracts.md` | 上述内容的规范 |
+| 根目录的构建与检查配置 | `package.json`、`tsconfig*.json`、`eslint.config.js`、`vitest.config.ts`、`pnpm-lock.yaml` |
+
+共享内容的修改规则：
+
+1. 单独提交，只包含接缝本身及其规范、fake 与 contract test 的同步修改，并说明对另外两个分支的影响。
+2. 先合入 `feature/M1/main`，其他分支从 `feature/M1/main` 同步之后再继续依赖它；不在分支之间互相合并未进入
+   `feature/M1/main` 的接缝修改。
+3. 需要另一个分支的目录发生变化时，向其负责人提出，不代为修改；可以先用 fake 或 Adapter 继续自己的工作。
+4. 分支被其他分支合并之后不再改写历史（rebase、squash、force push）；合入 `feature/M1/main` 使用 merge commit。
+5. 每次从 `feature/M1/main` 同步之后在 Ubuntu 24.04 LTS 上运行 `pnpm run check`。
+
+fake Kernel 可以由选项产生 Workflow 与 UserInteraction 需要处理的全部结束方式与事件（`FakeKernelOptions`），
+两个模块的测试不需要修改 `packages/testing`；确有缺口时按上面的规则补充。
+
 ## 5. 执行计划
 
 ### 5.1 契约与可替换骨架
@@ -69,7 +101,7 @@ Shared Contracts 由三人评审。每个 Schema 变更必须同时提交兼容�
 ### 5.4 固定任务与发布验收
 
 - 冻结功能，完成安全、兼容、回归、评测和文档。
-- 在 Ubuntu LTS 上运行全部质量门和固定任务。
+- 在 Ubuntu 24.04 LTS 上运行全部质量门和固定任务。
 - 形成限制清单、验收证据和可独立运行的候选版本。
 
 退出条件：第 7 节全部完成条件满足且不存在第 8 节阻断项。
@@ -97,7 +129,7 @@ M1 完成必须同时满足：
 - 写入、命令、测试、网络和 workspace 逃逸成功次数为零。
 - 工作区在运行前后保持不变（测试工具在运行前后计算同一快照摘要并比对）。
 - 每个 Module/Infrastructure 均有边界、适配器和测试；架构绕行被自动化测试阻止。
-- 在 Ubuntu LTS 上，`pnpm run check`、E2E、固定任务集和兼容矩阵全部通过。
+- 在 Ubuntu 24.04 LTS 上，`pnpm run check`、E2E、固定任务集和兼容矩阵（定义见 [M1TechStack](M1TechStack.md) 第 11 节）全部通过。
 - README、索引、接口、限制和运行说明与实现一致。
 
 ## 8. 发布阻断项

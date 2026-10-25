@@ -21,6 +21,7 @@ export {
 } from './domain/catalog-index.js';
 export { computeDefinitionDigest, definitionKey } from './domain/definition-digest.js';
 export { loadCatalogIndex } from './domain/load-catalog-index.js';
+export { isPeakTime, modelCallCost, type CallCost } from './domain/model-cost.js';
 export { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
 export type {
   DefinitionSource,

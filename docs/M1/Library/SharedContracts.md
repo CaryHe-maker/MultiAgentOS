@@ -74,9 +74,10 @@ SharedContracts 是静态库 `@multiagentos/contracts`（`packages/libraries/con
 | `workflow.StatusFacts.v0` | WrapUpReason | `workflow/step-record.ts` | 6.6 |
 | `workflow.HandoffBrief.v0` | — | `workflow/handoff.ts` | 6.6 |
 | `workflow.AnalysisReportDraft.v0` | DraftConclusion、SourceRef | `workflow/report.ts` | 6.6 |
-| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry | `workflow/report.ts` | 6.6 |
+| `workflow.AnalysisReport.v0` | VerifiedConclusion、VerifiedSource、UnconfirmedItem、AgentRoundsEntry、ReportLastIssue | `workflow/report.ts` | 6.6 |
 
 `WrapUpReason` 与 `AnalysisReport.wrapUp` 共用 `workflow/step-record.ts` 中的定义。
+`INVALID_ACTION_REASONS`（Workflow 第 5 节的非法动作原因）在 `workflow/report.ts` 中定义，供 `ReportLastIssue` 使用。
 
 ### 3.5 `catalog`
 
@@ -185,6 +186,22 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 
 缺省值不属于契约：`DEFAULT_KERNEL_CONFIG` 由 `@multiagentos/kernel` 导出，`DEFAULT_WORKFLOW_CONFIG` 由 `@multiagentos/workflow` 导出。
 
+### 3.11 没有单独 Schema ID 的类型
+
+M1Interface 中以下类型是联合或共用片段，不单独注册，按下表落在各自 Schema 的定义里：
+
+| 类型 | 落点 | 文件 |
+|---|---|---|
+| `RunEnd` | `RunClosed`、`RunFinished` 与 `RunSummary` 共用的结束字段，由 `runOutcomeVariants` 生成各变体 | `kernel-control/run-outcome.ts` |
+| `KernelToWorkflowEvent` | `WorkflowInboxEvent.event` 的联合 | `kernel-unit/workflow-events.ts` |
+| `KernelToInteractionEvent` | `InteractionInboxEvent.event` 的联合 | `kernel-control/interaction-events.ts` |
+| `InboxEvent<T>` | 两个 Inbox 信封的共同形状 | `ports.ts` |
+| `ExecutorInput` | `ExecutionRequest.input` 的联合；按种类取值的映射 `ExecutorInputByKind` 在 `ports.ts` | `kernel-execution/execution-request.ts` |
+| `DefinitionHeader<K>` | 五种定义共用的头部字段 | `catalog/definition-schemas.ts` |
+| `DefinitionByKind` | 定义种类到定义类型的映射 | `catalog/definition-schemas.ts` |
+| `InvalidActionReason` | `INVALID_ACTION_REASONS` 的取值 | `workflow/report.ts` |
+| `PersistenceNamespace` | `PERSISTENCE_NAMESPACES` 的取值 | `ports.ts` |
+
 ## 4. 标识、Port 与工具
 
 ### 4.1 标识
@@ -215,10 +232,15 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `PersistencePort`、`RepositoryPort`、`AuditLogPort` | 10 | Persistence | Workflow、Kernel 核心 |
 | `FabricPort`、`FabricAddress` | 10 | Fabric | 全部通讯主体 |
 | `LifecyclePort`、`ModuleId`、`HealthStatus` | 10 | 各模块 | ModuleHost |
+| `SystemFault`、`SystemFaultReporter` | 10 | 组合根 | Kernel 核心、Workflow、UserInteraction |
 | `ExecutorRegistry` | 8 | ExecutorSet | 组合根、Supervisor |
 | `PortResult` | 3.3 | — | 同步 Port 的返回 |
 
 第 14 节的模块装配接口（各 `createXxx` 工厂、`XxxDeps`、`TerminalPort` 等）由各模块包导出，不在 contracts 中。
+
+SystemFault 与 SystemFaultReporter 保留接口名称，表示停机异常及组合根唯一 panic 的适配入口；
+不编码异常等级。Core 的非停机异常语义属于 Kernel 私有逻辑，不新增公共异常 Schema。
+已有 reportSystemFault 注入统一进入同一个 panic，不要求其他模块立即改名。
 
 ### 4.3 工具
 
@@ -234,6 +256,7 @@ Core 再按该 Unit 定义的 `inputContract` 做精确校验。
 | `EXECUTOR_KINDS`、`REPOSITORY_KINDS` | `platform-common/execution-kind.ts` | 会派发给 Supervisor 的五种执行，以及其中读取仓库的三种 |
 | `ProtocolRegistry`、`createM1ProtocolRegistry` | `protocol-registry.ts` | 按 `schemaName + major` 注册与查找；拒绝重复与未知 major；为 `ContractRef` 解析 Schema，并生成工具参数的 JSON Schema |
 | `MEDIA_TYPES` | `platform-common/media-types.ts` | M1Interface 6.1 的五种产物 mediaType 与 RunSummary 的 mediaType |
+| `DEFAULT_REPOSITORY_EXCLUSIONS`、`ExclusionRuleSchema`、`isValidExclusionRule`、`isExcluded`、`excludesDirectory` | `platform-common/repository-exclusions.ts` | 默认排除规则与唯一的匹配器（M1Interface 3.5）；Core 与 Executor 共用，使用户看到的范围等于实际读取的范围 |
 | `estimateTextTokens`、`estimateItemTokens`、`estimatePackTokens` | `context/token-estimate.ts` | 统一的输入 token 上界估算（M1Interface 6.3）；上下文 Executor、Execution 与启动校验共用，放在 contracts 中使 Kernel 不必导入 ExecutorSet |
 
 ## 5. 文件依赖顺序

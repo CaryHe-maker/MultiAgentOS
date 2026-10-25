@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
+import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { closed, count, text } from '../platform-common/schema-helpers.js';
 
 const ms = () => count(1);
@@ -16,7 +17,7 @@ export const KernelConfigSchema = closed(
     technicalRetryLimit: count(),
     retryBackoffBaseMs: ms(),
     /** Appended to the default exclusion rules; it can never remove one of them. */
-    repositoryExclusions: Type.Array(text(512)),
+    repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
     maxReportBytes: count(1),
     /** Token budget of one WorkflowRun (docs/M1/Kernel/Monitor.md 4). */
@@ -62,6 +63,11 @@ export const SystemConfigSchema = closed(
   {
     /** System data directory; an absolute path. */
     dataDir: text(4096),
+    /**
+     * How long Workflow and UserInteraction wait for a port to return (M1Interface 14.3);
+     * Fabric and the composition root enforce it.
+     */
+    portReturnTimeoutMs: ms(),
     kernel: KernelConfigSchema,
     workflow: WorkflowConfigSchema,
   },

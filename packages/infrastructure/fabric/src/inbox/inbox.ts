@@ -28,7 +28,9 @@ export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
   readonly #seen = new Set<string>();
   #handler: ((message: T) => Promise<R>) | undefined;
   #busy = false;
-  #idleWaiters: (() => void)[] = [];
+  #idleWaiters: { resolve: () => void; reject: (error: unknown) => void }[] = [];
+  #unobservedError: Error | undefined;
+  #hasUnobservedError = false;
 
   public constructor(options: InboxOptions<T, C>) {
     this.#options = options;
@@ -37,6 +39,7 @@ export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
 
   /** Starts consuming; messages enqueued earlier are handled first. */
   start(handler: (message: T) => Promise<R>): void {
+    if (this.#handler !== undefined) throw new Error('Inbox already started');
     this.#handler = handler;
     void this.#pump();
   }
@@ -49,7 +52,8 @@ export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
   /** Enqueues a message and resolves with what the handler returns for it. */
   request(message: T, channel?: C): Promise<R> {
     return new Promise<R>((resolve, reject) => {
-      this.#push({ message, resolve, reject }, channel);
+      if (!this.#push({ message, resolve, reject }, channel))
+        reject(new Error('Duplicate inbox request'));
     });
   }
 
@@ -61,18 +65,21 @@ export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
 
   /** Resolves once every queued message has been handled. */
   idle(): Promise<void> {
-    if (!this.#busy && (this.size === 0 || this.#handler === undefined)) return Promise.resolve();
-    return new Promise((resolve) => this.#idleWaiters.push(resolve));
+    if (!this.#busy && this.size === 0)
+      return this.#hasUnobservedError
+        ? Promise.reject(this.#unobservedError ?? new Error('Unobserved inbox failure'))
+        : Promise.resolve();
+    return new Promise((resolve, reject) => this.#idleWaiters.push({ resolve, reject }));
   }
 
   #push(entry: Entry<T, R>, channel: C = this.#options.channels[0]): boolean {
+    const queue = this.#queues.get(channel);
+    if (queue === undefined) throw new Error(`Unknown inbox channel: ${channel}`);
     const key = this.#options.dedupeKey?.(entry.message);
     if (key !== undefined) {
       if (this.#seen.has(key)) return false;
       this.#seen.add(key);
     }
-    const queue = this.#queues.get(channel);
-    if (queue === undefined) throw new Error(`Unknown inbox channel: ${channel}`);
     queue.push(entry);
     void this.#pump();
     return true;
@@ -90,20 +97,40 @@ export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
     if (this.#busy || this.#handler === undefined) return;
     this.#busy = true;
     try {
-      for (let entry = this.#next(); entry !== undefined; entry = this.#next()) {
+      while (true) {
+        const entry = this.#next();
+        if (entry === undefined) break;
         try {
           const result = await this.#handler(entry.message);
           entry.resolve?.(result);
         } catch (error) {
           if (entry.reject !== undefined) entry.reject(error);
-          else this.#options.onError?.(error, entry.message);
+          else if (this.#options.onError === undefined) this.#recordUnobserved(error);
+          else {
+            try {
+              this.#options.onError(error, entry.message);
+            } catch (observerError) {
+              this.#recordUnobserved(observerError);
+            }
+          }
         }
       }
     } finally {
       this.#busy = false;
       const waiters = this.#idleWaiters;
       this.#idleWaiters = [];
-      for (const waiter of waiters) waiter();
+      for (const waiter of waiters) {
+        if (this.#hasUnobservedError)
+          waiter.reject(this.#unobservedError ?? new Error('Unobserved inbox failure'));
+        else waiter.resolve();
+      }
     }
+  }
+
+  #recordUnobserved(error: unknown): void {
+    if (this.#hasUnobservedError) return;
+    this.#unobservedError =
+      error instanceof Error ? error : new Error('Unobserved inbox failure', { cause: error });
+    this.#hasUnobservedError = true;
   }
 }

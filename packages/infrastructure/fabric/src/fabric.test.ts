@@ -2,11 +2,15 @@ import {
   ContractValidationError,
   createM1ProtocolRegistry,
   type BoundaryContext,
+  type CatalogPort,
+  type PersistencePort,
   type ShutdownRequest,
   type SyscallAck,
 } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  catalogWithDeadline,
+  persistenceWithDeadline,
   FabricError,
   InProcessFabric,
   Inbox,
@@ -29,6 +33,118 @@ async function started(): Promise<InProcessFabric> {
 }
 
 describe('InProcessFabric', () => {
+  it('drains accepted sends and rejects new requests and sends after stop', async () => {
+    const fabric = await started();
+    let release: () => void = () => undefined;
+    let markStarted: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const subscriberStarted = new Promise<void>((resolve) => (markStarted = resolve));
+    fabric.client('gateway').subscribe('gateway.admission', async () => {
+      markStarted();
+      await gate;
+    });
+    fabric.client('gateway').register(SCHEMA_IDS.shutdown, () => Promise.resolve(undefined));
+    const sender = fabric.client('kernel-core');
+    const first = sender.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      context,
+    );
+    await subscriberStarted;
+
+    const stopping = fabric.stop();
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    await expect(
+      sender.send(
+        'gateway.admission',
+        SCHEMA_IDS.admissionProjection,
+        { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+        context,
+      ),
+    ).rejects.toThrow('NOT_RUNNING');
+    await expect(sender.request(SCHEMA_IDS.shutdown, request, context)).rejects.toThrow(
+      'NOT_RUNNING',
+    );
+
+    release();
+    await expect(first).resolves.toBeUndefined();
+    await stopping;
+    expect(stopped).toBe(true);
+    await expect(fabric.stop()).resolves.toBeUndefined();
+  });
+
+  it('reports missing subscribers and propagates request handler failures', async () => {
+    const fabric = await started();
+    await expect(
+      fabric
+        .client('kernel-core')
+        .send(
+          'gateway.admission',
+          SCHEMA_IDS.admissionProjection,
+          { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+          context,
+        ),
+    ).rejects.toThrow('NO_SUBSCRIBER');
+    fabric
+      .client('gateway')
+      .register(SCHEMA_IDS.shutdown, () => Promise.reject(new Error('handler failed')));
+    await expect(
+      fabric.client('user-interaction').request(SCHEMA_IDS.shutdown, request, context),
+    ).rejects.toThrow('handler failed');
+  });
+
+  it('delivers different addresses in parallel', async () => {
+    const fabric = await started();
+    let releaseAdmission: () => void = () => undefined;
+    let releaseWorkflow: () => void = () => undefined;
+    let markAdmission: () => void = () => undefined;
+    let markWorkflow: () => void = () => undefined;
+    const admissionGate = new Promise<void>((resolve) => (releaseAdmission = resolve));
+    const workflowGate = new Promise<void>((resolve) => (releaseWorkflow = resolve));
+    const admissionStarted = new Promise<void>((resolve) => (markAdmission = resolve));
+    const workflowStarted = new Promise<void>((resolve) => (markWorkflow = resolve));
+    fabric.client('gateway').subscribe('gateway.admission', async () => {
+      markAdmission();
+      await admissionGate;
+    });
+    fabric.client('workflow').subscribe('inbox.workflow', async () => {
+      markWorkflow();
+      await workflowGate;
+    });
+
+    const sender = fabric.client('kernel-core');
+    const admission = sender.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      context,
+    );
+    const workflow = sender.send(
+      'inbox.workflow',
+      SCHEMA_IDS.workflowInboxEvent,
+      {
+        eventId: 'evt_123456',
+        workflowRunId: 'wfr_123456',
+        seq: 1,
+        occurredAt: '2026-10-21T00:00:00.000Z',
+        event: { type: 'RunStart', goal: 'analyze' },
+      },
+      context,
+    );
+
+    await Promise.all([admissionStarted, workflowStarted]);
+    releaseAdmission();
+    releaseWorkflow();
+    await expect(Promise.all([admission, workflow])).resolves.toBeDefined();
+  });
+
   it('routes a request, fixes the producer and copies payload and response', async () => {
     const fabric = await started();
     const response: SyscallAck = { requestId: request.requestId, outcome: 'ACCEPTED' };
@@ -65,6 +181,50 @@ describe('InProcessFabric', () => {
     );
   });
 
+  it('allows only Gateway to handle malformed syscall bodies with a valid requestId', async () => {
+    const fabric = await started();
+    let handled = false;
+    fabric.client('gateway').register(
+      SCHEMA_IDS.shutdown,
+      () => {
+        handled = true;
+        return Promise.resolve(undefined);
+      },
+      (envelope) =>
+        Promise.resolve({
+          requestId: (envelope.payload as { requestId: string }).requestId,
+          outcome: 'REJECTED',
+          issuer: 'GATEWAY',
+          reasonCode: 'INVALID_REQUEST',
+        }),
+    );
+    const caller = fabric.client('user-interaction');
+    await expect(
+      caller.request(SCHEMA_IDS.shutdown, { requestId: request.requestId, extra: true }, context),
+    ).resolves.toMatchObject({ reasonCode: 'INVALID_REQUEST' });
+    await expect(
+      caller.request(SCHEMA_IDS.shutdown, { requestId: 'bad' }, context),
+    ).rejects.toThrow(ContractValidationError);
+    await expect(
+      caller.request(SCHEMA_IDS.shutdown, Object.create({ requestId: request.requestId }), context),
+    ).rejects.toThrow(ContractValidationError);
+    expect(handled).toBe(false);
+    await expect(
+      caller.request(
+        SCHEMA_IDS.shutdown,
+        { requestId: request.requestId, extra: true },
+        { ...context, correlationId: 'bad' },
+      ),
+    ).rejects.toThrow(ContractValidationError);
+    expect(() =>
+      fabric.client('workflow').register(
+        SCHEMA_IDS.createRun,
+        () => Promise.resolve(),
+        () => Promise.resolve(),
+      ),
+    ).toThrow('INVALID_REGISTRATION');
+  });
+
   it('reports missing handlers, double registration and use while stopped', async () => {
     const fabric = await started();
     const client = fabric.client('user-interaction');
@@ -81,6 +241,49 @@ describe('InProcessFabric', () => {
       'NOT_RUNNING',
     );
     expect((await fabric.health()).status).toBe('DOWN');
+  });
+
+  it('serializes concurrent sends to one address and still delivers after a failed subscriber', async () => {
+    const fabric = await started();
+    const seen: string[] = [];
+    let releaseFirst: () => void = () => undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markStarted: () => void = () => undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    fabric
+      .client('gateway')
+      .subscribe<{ runState: string }>('gateway.admission', async (envelope) => {
+        seen.push(envelope.payload.runState);
+        if (envelope.payload.runState === 'RUNNING') {
+          markStarted();
+          await firstGate;
+          throw new Error('subscriber failed');
+        }
+      });
+    const client = fabric.client('kernel-core');
+    const first = client.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      context,
+    );
+    const firstResult = first.catch((error: unknown) => error);
+    const second = client.send(
+      'gateway.admission',
+      SCHEMA_IDS.admissionProjection,
+      { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+      context,
+    );
+    await firstStarted;
+    expect(seen).toEqual(['RUNNING']);
+    releaseFirst();
+    await expect(firstResult).resolves.toMatchObject({ message: 'subscriber failed' });
+    await second;
+    expect(seen).toEqual(['RUNNING', 'CLOSED']);
   });
 });
 
@@ -130,6 +333,85 @@ describe('Inbox', () => {
     const inbox = new Inbox<number, number>({ channels: ['default'] });
     inbox.start((message) => Promise.resolve(message * 2));
     expect(await inbox.request(21)).toBe(42);
+    expect(() => inbox.start(() => Promise.resolve(0))).toThrow('Inbox already started');
+  });
+
+  it('drains after an error observer throws and reports that observer failure at idle', async () => {
+    const handled: number[] = [];
+    const inbox = new Inbox<number>({
+      channels: ['default'],
+      onError: () => {
+        throw new Error('observer failed');
+      },
+    });
+    inbox.enqueue(1);
+    inbox.enqueue(2);
+    inbox.start((message) => {
+      if (message === 1) return Promise.reject(new Error('handler failed'));
+      handled.push(message);
+      return Promise.resolve();
+    });
+    await expect(inbox.idle()).rejects.toThrow('observer failed');
+    expect(handled).toEqual([2]);
+  });
+
+  it('rejects a duplicate request promptly and does not consume a key on invalid channel', async () => {
+    const inbox = new Inbox<{ id: string }, string, 'control' | 'work'>({
+      channels: ['control', 'work'],
+      dedupeKey: (message) => message.id,
+    });
+    expect(() => inbox.enqueue({ id: 'first' }, 'missing' as 'work')).toThrow(
+      'Unknown inbox channel',
+    );
+    const first = inbox.request({ id: 'first' }, 'work');
+    await expect(inbox.request({ id: 'first' }, 'work')).rejects.toThrow('Duplicate inbox request');
+    let idle = false;
+    const waiting = inbox.idle().then(() => {
+      idle = true;
+    });
+    await Promise.resolve();
+    expect(idle).toBe(false);
+    inbox.start((message) => Promise.resolve(message.id));
+    expect(await first).toBe('first');
+    await waiting;
+    expect(idle).toBe(true);
+  });
+
+  it('defers an actor outbox until handling ends while control messages take priority', async () => {
+    const inbox = new Inbox<string, void, 'control' | 'work'>({
+      channels: ['control', 'work'],
+    });
+    const trace: string[] = [];
+    const sender = new OrderedSender<string>(
+      (item) => {
+        trace.push(`sent:${item}`);
+        return Promise.resolve();
+      },
+      () => undefined,
+    );
+    inbox.enqueue('work-1', 'work');
+    inbox.enqueue('work-2', 'work');
+    inbox.enqueue('cancel', 'control');
+    inbox.start(async (message) => {
+      trace.push(`begin:${message}`);
+      const pending = [message];
+      await Promise.resolve();
+      trace.push(`end:${message}`);
+      for (const item of pending) sender.enqueue(item);
+    });
+    await inbox.idle();
+    await sender.flushed();
+    expect(trace).toEqual([
+      'begin:cancel',
+      'end:cancel',
+      'sent:cancel',
+      'begin:work-1',
+      'end:work-1',
+      'sent:work-1',
+      'begin:work-2',
+      'end:work-2',
+      'sent:work-2',
+    ]);
   });
 });
 
@@ -149,5 +431,156 @@ describe('OrderedSender', () => {
     await sender.flushed();
     expect(sent).toEqual([1, 3]);
     expect(failed).toEqual([2]);
+  });
+
+  it('can send an undefined item without losing the rest of its queue', async () => {
+    const sent: (number | undefined)[] = [];
+    const sender = new OrderedSender<number | undefined>(
+      (item) => {
+        sent.push(item);
+        return Promise.resolve();
+      },
+      () => undefined,
+    );
+    sender.enqueue(undefined);
+    sender.enqueue(2);
+    await sender.flushed();
+    expect(sent).toEqual([undefined, 2]);
+  });
+
+  it('continues sending after failure reporting itself fails and exposes that failure', async () => {
+    const sent: number[] = [];
+    const sender = new OrderedSender<number>(
+      (item) => {
+        if (item === 1) return Promise.reject(new Error('delivery failed'));
+        sent.push(item);
+        return Promise.resolve();
+      },
+      () => {
+        throw new Error('audit failed');
+      },
+    );
+    sender.enqueue(1);
+    sender.enqueue(2);
+    await expect(sender.flushed()).rejects.toThrow('audit failed');
+    expect(sent).toEqual([2]);
+  });
+});
+
+describe('request deadline (Fabric.md 3)', () => {
+  /** A Gateway handler whose answer the test releases by hand. */
+  function heldHandler(fabric: InProcessFabric) {
+    let answer: (value: SyscallAck) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    fabric.client('gateway').register(
+      SCHEMA_IDS.shutdown,
+      () =>
+        new Promise<SyscallAck>((resolve, reject) => {
+          answer = resolve;
+          fail = reject;
+        }),
+    );
+    return { answer: (value: SyscallAck) => answer(value), fail: (error: Error) => fail(error) };
+  }
+  const ack: SyscallAck = { requestId: request.requestId, outcome: 'ACCEPTED' };
+
+  it('rejects with REQUEST_TIMEOUT once the client deadline passes and drops the late answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const client = fabric.client('user-interaction', { requestTimeoutMs: 1_000 });
+      const pending = client.request(SCHEMA_IDS.shutdown, request, context);
+      const observed = expect(pending).rejects.toMatchObject({
+        name: 'FabricError',
+        code: 'REQUEST_TIMEOUT',
+      });
+      await vi.advanceTimersByTimeAsync(999);
+      let settled = false;
+      void pending.catch(() => (settled = true));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await observed;
+      // A late rejection is received and discarded: no unhandled rejection reaches the test.
+      handler.fail(new Error('Late handler failure'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases its timer when the answer arrives in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const client = fabric.client('workflow', { requestTimeoutMs: 1_000 });
+      const pending = client.request(SCHEMA_IDS.shutdown, request, context);
+      await vi.advanceTimersByTimeAsync(500);
+      handler.answer(ack);
+      await expect(pending).resolves.toEqual(ack);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sets no deadline on a client created without one', async () => {
+    vi.useFakeTimers();
+    try {
+      const fabric = await started();
+      const handler = heldHandler(fabric);
+      const pending = fabric.client('kernel-core').request(SCHEMA_IDS.shutdown, request, context);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
+      handler.answer(ack);
+      await expect(pending).resolves.toEqual(ack);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives the Catalog and Persistence wrappers the same deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const never = () => new Promise<never>(() => undefined);
+      const catalog = catalogWithDeadline(
+        { pinAgent: never, getDefinition: never, capabilities: () => [] } as CatalogPort,
+        1_000,
+      );
+      const persistence = persistenceWithDeadline(
+        {
+          repository: () => ({ get: never, put: () => Promise.resolve() }),
+          auditLog: () => ({ append: never }),
+          capabilities: () => [],
+        } as PersistencePort,
+        1_000,
+      );
+      const timedOut = { name: 'FabricError', code: 'REQUEST_TIMEOUT' };
+      const waits = [
+        expect(
+          catalog.pinAgent({ id: 'planner', version: 'v1.0.0' }, context),
+        ).rejects.toMatchObject(timedOut),
+        expect(
+          catalog.getDefinition({ kind: 'MODEL', id: 'model', version: 'v1.0.0' }, context),
+        ).rejects.toMatchObject(timedOut),
+        expect(persistence.repository('workflow', 'wfr_123456').get('x')).rejects.toMatchObject(
+          timedOut,
+        ),
+        expect(persistence.auditLog('workflow', 'wfr_123456').append({})).rejects.toMatchObject(
+          timedOut,
+        ),
+        expect(
+          persistence.repository('workflow', 'wfr_123456').put({ id: 'x' }),
+        ).resolves.toBeUndefined(),
+      ];
+      await vi.advanceTimersByTimeAsync(1_000);
+      await Promise.all(waits);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

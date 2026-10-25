@@ -37,10 +37,18 @@ describe('system configuration', () => {
     expect(config.workflow).toEqual(defaults.workflow);
   });
 
+  it('defaults the port deadline to 30 seconds and lets a file change it', async () => {
+    expect(defaultSystemConfig().portReturnTimeoutMs).toBe(30_000);
+    const path = await configFile(JSON.stringify({ portReturnTimeoutMs: 5_000 }));
+    expect((await loadSystemConfig({ MULTIAGENTOS_CONFIG: path })).portReturnTimeoutMs).toBe(5_000);
+  });
+
   it.each([
     ['an unknown key', JSON.stringify({ kernel: { providr: 'typo' } })],
     ['a value of the wrong type', JSON.stringify({ kernel: { runTimeoutMs: 'soon' } })],
     ['a relative dataDir', JSON.stringify({ dataDir: 'relative/dir' })],
+    ['a zero port deadline', JSON.stringify({ portReturnTimeoutMs: 0 })],
+    ['a fractional port deadline', JSON.stringify({ portReturnTimeoutMs: 1.5 })],
     ['a file that is not JSON', '{'],
   ])('rejects %s', async (_label, content) => {
     const path = await configFile(content);

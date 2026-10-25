@@ -1,6 +1,27 @@
-/**
- * Kernel.Core (docs/M1/Kernel/Core.md): run management, AgentRun registry, authorization and
- * Lease, result check, convergence, Outbox and audit. Implements `CoreSyscalls` and
- * `RunRegistry`; Lease and the other private data are never exported.
- */
-export {};
+export { AttemptIdentityRegistry } from './attempt-identity.js';
+export { CoreAttempts, type AttemptStarter, type CoreAttemptsDeps } from './attempts.js';
+export { type AuditSink, type CoreAuditEntry, type CoreAuditType } from './audit.js';
+export type { CoreEvent, CoreEventSink } from './events.js';
+export type { CoreException, CoreExceptionOutcome } from './exceptions.js';
+export {
+  CoreRequestHandler,
+  type CoreExecutionPort,
+  type CoreRequestHandlerDeps,
+  type CoreSupervisorPort,
+} from './request-handler.js';
+export {
+  RunRegistry,
+  type RunActorPort,
+  type RunRegistryDeps,
+  type RunRequestHandler,
+  type RunResponse,
+} from './run-registry.js';
+export {
+  createRunState,
+  type AgentRunRecord,
+  type AwaitingAuthorization,
+  type NewRunState,
+  type RunState,
+  type UnitCounters,
+  type UnitDecision,
+} from './run-state.js';

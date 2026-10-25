@@ -8,8 +8,10 @@ import type {
   InteractionGatewayPort,
   InteractionInboxPort,
   LifecyclePort,
+  SystemFaultReporter,
 } from '@multiagentos/contracts';
 import type { TerminalPort } from './ports/terminal-port.js';
+import { createInteractionRunner } from './application/interaction-runner.js';
 
 export { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from './domain/exit-codes.js';
 export type { TerminalPort } from './ports/terminal-port.js';
@@ -26,6 +28,11 @@ export interface UserInteractionDeps {
   /** UserInteraction's only way into the Kernel. */
   readonly gateway: InteractionGatewayPort;
   readonly terminal: TerminalPort;
+  /**
+   * Where an error thrown by the Inbox handler, the question task or the interrupt handler goes
+   * (docs/M1/Module/UserInteraction.md 6.1). UserInteraction does not try to recover by itself.
+   */
+  readonly reportSystemFault?: SystemFaultReporter;
   readonly now?: () => Date;
 }
 
@@ -40,6 +47,5 @@ export interface UserInteractionModule extends LifecyclePort {
 }
 
 export function createUserInteraction(deps: UserInteractionDeps): UserInteractionModule {
-  void deps;
-  throw new Error('NOT_IMPLEMENTED: UserInteraction');
+  return createInteractionRunner(deps);
 }

@@ -11,7 +11,7 @@ import { FakeCatalogPort } from '../fakes/fake-catalog-port.js';
 import { describeCatalogPortContract } from './catalog-port-contract.js';
 
 /** The entry agent of the shipped catalog; it declares a handoff, so pinning covers it. */
-const SHIPPED_AGENT = { id: 'planner', version: 'v0.1.0' } as const;
+const SHIPPED_AGENT = { id: 'planner', version: 'v1.1.0' } as const;
 
 /** The shipped catalog is the shared fixture for both implementations. */
 const snapshot = await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load();

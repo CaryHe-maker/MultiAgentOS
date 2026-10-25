@@ -1,0 +1,22 @@
+schemaVersion: v0
+kind: UNIT
+id: file-read
+version: v1.0.0
+digest: efb15813f75f4faa6271a828faff126c3e0baccf0c6ca880dc9cd82e45df6365
+description: Read a line range of one repository file.
+executionKind: FILE_READ
+protectedCapabilities: [repo.read]
+inputContract: { kind: contract, id: executor.FileReadInput, version: v0 }
+outputContract: { kind: contract, id: executor.FileReadOutput, version: v0 }
+toolRefs:
+  - { id: read-file, version: v1.0.0 }
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  USER_DECLINED: FINAL_CALL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  NOT_FOUND: RETURN_TO_MODEL
+  UNSUPPORTED_FILE: RETURN_TO_MODEL
+  INVALID_RANGE: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

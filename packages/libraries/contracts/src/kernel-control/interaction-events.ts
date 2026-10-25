@@ -1,16 +1,17 @@
 import { Type, type Static } from 'typebox';
 import { IdSchemas } from '../platform-common/ids.js';
+import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { runEndVariants } from './run-outcome.js';
 
-/** `repositoryPath` is the realpath of the repository root; `exclusions` are globs. */
+/** `repositoryPath` is the realpath of the repository root; `exclusions` follow M1Interface 3.5. */
 export const AuthorizationRequestSchema = closed(
   {
     type: Type.Literal('AuthorizationRequest'),
     questionId: IdSchemas.questionId,
     capability: Type.Literal('repo.read'),
     repositoryPath: text(4096),
-    exclusions: Type.Array(text(512)),
+    exclusions: Type.Array(ExclusionRuleSchema),
     provider: text(64),
     expiresAt: TimestampSchema,
   },

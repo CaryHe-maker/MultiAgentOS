@@ -15,10 +15,14 @@ export class ConfigError extends Error {
   }
 }
 
+/** The port response deadline of Workflow and UserInteraction (M1Interface 14.3). */
+export const DEFAULT_PORT_RETURN_TIMEOUT_MS = 30_000;
+
 /** Built-in defaults, used when `MULTIAGENTOS_CONFIG` is not set. */
 export function defaultSystemConfig(): SystemConfig {
   return {
     dataDir: join(homedir(), '.multiagentos'),
+    portReturnTimeoutMs: DEFAULT_PORT_RETURN_TIMEOUT_MS,
     kernel: DEFAULT_KERNEL_CONFIG,
     workflow: DEFAULT_WORKFLOW_CONFIG,
   };
@@ -26,7 +30,7 @@ export function defaultSystemConfig(): SystemConfig {
 
 /**
  * Validates against `platform.config.SystemConfig.v0` and checks what a Schema cannot say.
- * The checks that need the catalog (provider match, budget versus prompts) belong to the Kernel.
+ * The composition root checks catalog-dependent relationships before creating any module.
  */
 export function assertSystemConfig(config: unknown): SystemConfig {
   const result = validate<SystemConfig>(SystemConfigSchema, config);

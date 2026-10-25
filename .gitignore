@@ -19,6 +19,7 @@ coverage/
 .DS_Store
 Thumbs.db
 Desktop.ini
+opencode.json
 
 # MultiAgentOS system data directory
 .multiagentos/

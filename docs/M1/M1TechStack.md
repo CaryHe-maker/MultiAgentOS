@@ -1,7 +1,7 @@
 # MultiAgentOS M1 技术栈
 
 > 架构衔接说明（2026-10-08）：本文已按三 Module、六组件宏内核、运行 actor 与内存版 Outbox/Inbox 更新。
-> M1 验收平台为 Ubuntu LTS；开发平台不限，但代码必须能在 Ubuntu LTS 上运行。
+> M1 验收平台为 Ubuntu 24.04 LTS，这是项目规范版本；开发平台不限，但代码必须能在 Ubuntu 24.04 LTS 上运行。
 
 ## 1. 目的与权威
 
@@ -61,6 +61,7 @@ M1 不引入 HTTP Server、OpenAPI、SSE、Web UI 或浏览器运行时。
 | 部分 | 内容 | 定义 |
 |---|---|---|
 | `dataDir` | 系统数据目录，缺省 `~/.multiagentos` | [Persistence](Infrastructure/Persistence.md) 第 2 节 |
+| `portReturnTimeoutMs` | Workflow 与 UserInteraction 的端口响应期限，缺省 30000 毫秒 | [M1Interface](M1Interface.md) 第 14.3、14.4 节 |
 | `kernel` | `KernelConfig` | [Kernel/Interaction](Kernel/Interaction.md) 第 9 节、[Monitor](Kernel/Monitor.md) 第 4 节 |
 | `workflow` | `WorkflowConfig` | [Workflow](Module/Workflow.md) 第 12 节 |
 
@@ -100,7 +101,7 @@ M1 使用 Node.js `fs/path/crypto` 构建只读仓库快照、分块、hash、�
 ExecutorSet 3.3），取消时终止子进程；不可用时使用确定性 Node.js 文件扫描，扫描分块执行并在块之间让出事件循环，使取消与超时能够及时处理。
 
 仓库当前未声明 ripgrep npm 包，因此不得在源码中导入未安装的二进制包。引入固定 ripgrep 分发依赖时，必须先更新 workspace manifest、lockfile、
-依赖文档和 Ubuntu LTS 上的 Contract tests。
+依赖文档和 Ubuntu 24.04 LTS 上的 Contract tests。
 
 M1 不使用 tree-sitter、SCIP、向量数据库、embedding、reranker 或跨会话记忆。符号检索使用明确记录限制的正则策略。
 
@@ -127,6 +128,9 @@ M1 不安装 PostgreSQL、Kysely、DBOS、NATS、Redis、S3 SDK 或 Migration �
 ## 11. 测试与质量门
 
 测试分为 Schema/Contract、Module 单元、Adapter、架构依赖、组合和固定任务评测。`packages/testing` 只使用 workspace devDependency 和根测试工具。
+架构测试只约束 `dependencies`。`executor-set` 的测试与评测另有三个 devDependency：`@multiagentos/testing`（共享 contract test）、
+`@multiagentos/kernel`（只取 `createSubprocessRunner` 真实运行 `rg`，因为只有 Supervisor 可以创建子进程）与
+`@multiagentos/agent-tool-pool`（评测读取目录中的定义）；产品代码仍只依赖 `contracts`。
 
 提交前必须执行：
 
@@ -137,10 +141,30 @@ pnpm run check
 git diff --check
 ```
 
-最终验收必须在 Ubuntu LTS 上执行上述命令。
+最终验收必须在 Ubuntu 24.04 LTS 上执行上述命令。
 
 `.github/workflows/quality-gate.yml` 在 `ubuntu-24.04` 上对每次 push 和每个指向 `main`、`feat/*` 的 Pull Request 执行上述命令，
 并运行一次 `pnpm run demo:fake`。它不使用任何 Secret，不调用真实模型。
+
+M1Plan 第 7 节的兼容矩阵由下列格子组成，全部在 Ubuntu 24.04 LTS 上离线运行，同样由 `quality-gate.yml` 在每次 push 和 Pull Request 上执行：
+
+| 格子 | Node.js | `rg` | 运行内容 |
+|---|---|---|---|
+| 主格 | `.node-version`（`24.19.0`，`engines` 的下界） | 有 | 上述全部命令与 `pnpm run demo:fake` |
+| Node 上界 | 当时最新的 `24.x` | 有 | `pnpm run build`、`pnpm run test`、`pnpm run demo:fake` |
+| 无 rg | `.node-version` | 无 | `pnpm run build`、`pnpm run test`、`pnpm run demo:fake` |
+
+组合测试、离线 E2E 与固定任务的离线 fixture 都必须放在 `pnpm run test` 中，因此每个格子都跑完整的离线链路；无 rg 的格子验证检索退回内置扫描时的行为。
+每个格子都断言 `rg` 是否存在与格子的设定一致（环境变量 `MULTIAGENTOS_RIPGREP` 为 `absent` 时必须不存在，其他情况必须存在），
+避免安装失败时测试静默跳过。
+
+协议冻结守卫也属于兼容矩阵，在主格的 `pnpm run check` 中执行：`packages/libraries/contracts/test/compatibility/schema-snapshot.json`
+记录全部已注册 Schema（`schemaName + major`）的快照。冻结前（`frozen: false`）当前 Schema 必须与快照完全一致，
+任何 Schema 修改都要用 `pnpm run contracts:snapshot` 重新生成快照，使改动出现在评审的 diff 中；M1 验收时把 `frozen` 置为 `true`，
+此后快照中的每个 Schema 必须仍然注册，并且只允许按 [M1Interface](M1Interface.md) 1.2 增加可选字段，
+新增 Schema 或新 major 不受限制，生成脚本拒绝改写已冻结的快照。
+
+兼容矩阵不包含 Windows、macOS、其他 Ubuntu 版本、其他模型服务商或真实模型；真实模型的运行属于固定任务评测。
 
 `pnpm run demo:fake` 用 `packages/testing` 的 fake 替换全部 Module 与 ExecutorSet，运行真实的装配、Fabric、ModuleHost 与存储。
 它只用于演示与联调接线，回复全部是固定值，不属于产品入口，也不计入任何验收。
