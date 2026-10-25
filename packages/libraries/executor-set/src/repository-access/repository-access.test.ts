@@ -8,6 +8,9 @@ import { readGuardedFile } from './guarded-file.js';
 import { resolveRepositoryScope, type RepositoryScope } from './repository-scope.js';
 import { normalizeRequestPath } from './request-path.js';
 
+/** “中文说明” in GBK: not valid UTF-8. */
+const GBK_TEXT = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xcb, 0xb5, 0xc3, 0xf7, 0x0a]);
+
 async function writeTree(root: string, files: Record<string, string | Buffer>): Promise<void> {
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -146,6 +149,17 @@ describe('guarded read (ExecutorSet 3.2)', () => {
     });
   });
 
+  it('refuses a file that is not UTF-8 text instead of returning replacement characters', async () => {
+    const root = await emptyDirectory('guard');
+    await writeTree(root, { 'gbk.txt': GBK_TEXT, '中文.md': '中文说明\n' });
+    const scope = await scopeOf(root);
+    expect(await readGuardedFile(scope, 'gbk.txt')).toMatchObject({
+      ok: false,
+      outcome: { outcome: 'REJECTED', reasonCode: 'UNSUPPORTED_FILE' },
+    });
+    expect(await readGuardedFile(scope, '中文.md')).toMatchObject({ ok: true });
+  });
+
   it('treats a NUL beyond the first 8 KiB as text', async () => {
     const root = await emptyDirectory('guard');
     await writeTree(root, {
@@ -200,6 +214,14 @@ describe('file set and snapshot (ExecutorSet 3.1)', () => {
     ]);
     await writeTree(root, { 'src/a.ts': 'export const a = 2;\n' });
     expect((await snapshot(root)).snapshotId).not.toBe(before.snapshotId);
+  });
+
+  it('leaves files that are not UTF-8 text out, however their characters fall on reads', async () => {
+    const root = await emptyDirectory('snap');
+    // The three bytes of 中 straddle the 1 MiB read chunk of the digest.
+    const straddling = Buffer.concat([Buffer.alloc(1024 * 1024 - 1, 0x61), Buffer.from('中\n')]);
+    await writeTree(root, { 'gbk.txt': GBK_TEXT, 'big.txt': straddling, '中文.md': '中文\n' });
+    expect((await snapshot(root)).files.map((file) => file.path)).toEqual(['big.txt', '中文.md']);
   });
 
   it('sorts by UTF-16 code units, not by locale', async () => {

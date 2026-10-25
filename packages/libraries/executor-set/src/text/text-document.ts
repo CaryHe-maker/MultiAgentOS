@@ -1,3 +1,5 @@
+import { isUtf8 } from 'node:buffer';
+
 /**
  * Line handling shared by every Executor that returns repository text. A file is decoded as
  * UTF-8 and split on LF; a CR before the LF is dropped, so returned text always uses LF
@@ -13,8 +15,12 @@ export interface TextDocument {
 /** Binary per ExecutorSet 3.1: a NUL byte within the first 8 KiB. */
 export const BINARY_PROBE_BYTES = 8 * 1024;
 
-export function isBinary(content: Uint8Array): boolean {
-  return content.subarray(0, BINARY_PROBE_BYTES).includes(0);
+/**
+ * A text file per ExecutorSet 3.1: not binary, and valid UTF-8 throughout, so text in another
+ * encoding is refused instead of being returned with replacement characters.
+ */
+export function isText(content: Uint8Array): boolean {
+  return !content.subarray(0, BINARY_PROBE_BYTES).includes(0) && isUtf8(content);
 }
 
 export function parseText(content: Buffer | string): TextDocument {

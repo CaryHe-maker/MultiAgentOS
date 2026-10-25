@@ -45,9 +45,11 @@ export interface ExecutionDeps {
   readonly newAttemptId?: () => string;
   readonly newExecutionId?: () => string;
   /**
-   * Called after Execution settles an attempt outside the actor's current dispatch. The actor
-   * uses it to flush events produced by asynchronous built-in Units (report-publish) and late
-   * dispatch failures; while a handler is running the actor defers to its normal flush.
+   * Called after Execution settles or dispatches an attempt outside the actor's current
+   * dispatch. The actor uses it to flush what asynchronous work queued: events of built-in
+   * Units (report-publish), late dispatch failures and the execute request of an attempt whose
+   * start had to read artifacts first; while a handler is running the actor defers to its
+   * normal flush.
    */
   readonly onSettled?: () => void;
 }
@@ -406,7 +408,10 @@ export class Execution implements ExecutionDuties {
     }
     next.state = 'STARTING';
     this.#active = next;
-    void this.#startAttempt(next);
+    // Building the request reads artifacts, so the attempt may dispatch after the message that
+    // started it was already flushed; without this its execute request would wait for the next
+    // unrelated message.
+    void this.#startAttempt(next).finally(() => this.#onSettled?.());
   }
 
   async #startAttempt(attempt: UnitAttempt): Promise<void> {

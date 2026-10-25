@@ -50,7 +50,8 @@ const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
     'the path is outside the readable repository (absolute, `..`, or a protected file such as .env, keys or node_modules); use a relative path inside the repository',
   NOT_FOUND:
     'no file at this path; use search_repository with mode PATH to find the right path, and do not guess paths',
-  UNSUPPORTED_FILE: 'the path is a directory or a binary file; read a text file instead',
+  UNSUPPORTED_FILE:
+    'the path is a directory, a binary file or not UTF-8 text; read a UTF-8 text file instead',
   INVALID_RANGE:
     'the line range is outside the file; check totalLines and ask for an existing range',
   INVALID_QUERY:

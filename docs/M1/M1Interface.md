@@ -316,7 +316,7 @@ interface CapabilityDescriptor {
 | `FINAL_CALL_USED`            | UnitReport                  | Core                | 本运行已经发起过 final-call                                                                                                 | `RESOURCE`   |
 | `OUT_OF_SCOPE`               | UnitReport                  | Executor            | 路径越出仓库根目录、命中排除规则或为危险文件                                                                                | `POLICY`     |
 | `NOT_FOUND`                  | UnitReport                  | Executor            | 路径不存在                                                                                                                  | `EXECUTION`  |
-| `UNSUPPORTED_FILE`           | UnitReport                  | Executor            | 不是普通文本文件（目录、二进制、特殊文件）                                                                                  | `EXECUTION`  |
+| `UNSUPPORTED_FILE`           | UnitReport                  | Executor            | 不是普通文本文件（目录、二进制、非 UTF-8 文本、特殊文件）                                                                       | `EXECUTION`  |
 | `INVALID_RANGE`              | UnitReport                  | Executor            | 行范围不合法（`startLine > endLine` 或起始行超出文件）                                                                      | `VALIDATION` |
 | `INVALID_QUERY`              | UnitReport                  | Executor            | 检索表达式不合法                                                                                                            | `VALIDATION` |
 | `LIMIT_EXCEEDED`             | UnitReport                  | Executor、Execution | 输出、文件数或报告大小超出限制                                                                                              | `RESOURCE`   |

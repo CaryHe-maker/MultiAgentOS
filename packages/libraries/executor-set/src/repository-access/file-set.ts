@@ -31,13 +31,13 @@ export type FileSetResult = { readonly ok: true; readonly set: FileSet } | { rea
  * timestamps restored, which the read-only analysis does not do.
  */
 export class FileDigestCache {
-  private readonly entries = new Map<string, { sha256: string; binary: boolean }>();
+  private readonly entries = new Map<string, { sha256: string; text: boolean }>();
 
-  public get(key: string): { sha256: string; binary: boolean } | undefined {
+  public get(key: string): { sha256: string; text: boolean } | undefined {
     return this.entries.get(key);
   }
 
-  public set(key: string, value: { sha256: string; binary: boolean }): void {
+  public set(key: string, value: { sha256: string; text: boolean }): void {
     if (this.entries.size >= 200_000) this.entries.clear();
     this.entries.set(key, value);
   }
@@ -48,8 +48,9 @@ const PARALLEL_READS = 8;
 
 /**
  * Walks the repository without following links and builds the file set and its snapshot:
- * regular files only, minus excluded paths and binary files. `ok: false` means the set has more
- * than `maxFiles` files (LIMIT_EXCEEDED); the walk stops as soon as that is known.
+ * regular files only, minus excluded paths and files that are not UTF-8 text. `ok: false` means
+ * the set has more than `maxFiles` files (LIMIT_EXCEEDED); the walk stops as soon as that is
+ * known.
  */
 export async function buildFileSet(
   scope: RepositoryScope,
@@ -70,7 +71,7 @@ export async function buildFileSet(
       throwIfAborted(options.signal);
       const path = candidates[index] as string;
       const digest = await digestFile(join(scope.root, path), options.cache);
-      if (digest === undefined || digest.binary) continue;
+      if (digest === undefined || !digest.text) continue;
       results[index] = { path, size: digest.size, sha256: digest.sha256 };
       textFiles += 1;
       if (options.maxFiles !== undefined && textFiles > options.maxFiles) overLimit = true;
@@ -112,7 +113,7 @@ async function listCandidates(scope: RepositoryScope, signal: AbortSignal): Prom
 async function digestFile(
   absolute: string,
   cache: FileDigestCache,
-): Promise<{ sha256: string; binary: boolean; size: number } | undefined> {
+): Promise<{ sha256: string; text: boolean; size: number } | undefined> {
   let handle: FileHandle;
   try {
     handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -128,18 +129,25 @@ async function digestFile(
     if (cached !== undefined) return { ...cached, size };
     const hash = createHash('sha256');
     const buffer = Buffer.allocUnsafe(HASH_CHUNK_BYTES);
+    // Text per ExecutorSet 3.1: no NUL in the first 8 KiB and valid UTF-8 throughout.
+    const utf8 = new TextDecoder('utf-8', { fatal: true });
     let position = 0;
-    let binary = false;
+    let text = true;
     for (;;) {
       const { bytesRead } = await handle.read(buffer, 0, HASH_CHUNK_BYTES, position);
       if (bytesRead === 0) break;
       const chunk = buffer.subarray(0, bytesRead);
-      if (position < BINARY_PROBE_BYTES)
-        binary ||= chunk.subarray(0, BINARY_PROBE_BYTES - position).includes(0);
+      if (
+        position < BINARY_PROBE_BYTES &&
+        chunk.subarray(0, BINARY_PROBE_BYTES - position).includes(0)
+      )
+        text = false;
+      if (text) text = decodes(utf8, chunk);
       hash.update(chunk);
       position += bytesRead;
     }
-    const digest = { sha256: hash.digest('hex'), binary };
+    if (text) text = decodes(utf8);
+    const digest = { sha256: hash.digest('hex'), text };
     cache.set(key, digest);
     return { ...digest, size: position };
   } finally {
@@ -172,5 +180,16 @@ export async function readSnapshotFile(
     }
   } catch {
     return undefined;
+  }
+}
+
+/** Feeds one chunk (or, without one, the end of input) to a fatal UTF-8 decoder. */
+function decodes(decoder: TextDecoder, chunk?: Uint8Array): boolean {
+  try {
+    if (chunk === undefined) decoder.decode();
+    else decoder.decode(chunk, { stream: true });
+    return true;
+  } catch {
+    return false;
   }
 }

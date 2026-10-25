@@ -38,7 +38,8 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 ### 3.1 文件集合与快照
 
 - 文件集合：仓库根目录（`scope.repositoryRoot` 的 realpath）下的全部普通文件；不跟随符号链接；排除命中 `scope.exclusions`
-  或 `DEFAULT_REPOSITORY_EXCLUSIONS` 的路径；排除二进制文件（前 8 KiB 含 NUL 字节）。M1 不读取 `.gitignore`，也不调用 git。
+  或 `DEFAULT_REPOSITORY_EXCLUSIONS` 的路径；排除不是文本的文件：二进制文件（前 8 KiB 含 NUL 字节）与不能按 UTF-8 完整解码的文件
+  （如 GBK 编码的文件），使返回的内容不出现替换字符造成的乱码。M1 不读取 `.gitignore`，也不调用 git。
   遍历时跳过整棵被排除的目录（规则形如 `<前缀>/**`），不可读的目录与文件不进入集合。
 - 文件数超过 `limits.maxFiles` 时返回 `REJECTED(LIMIT_EXCEEDED)`，遍历在超出时立即停止。
 - 快照摘要：对文件集合按路径的 UTF-16 码元顺序排序（不使用 locale 排序），取每个文件的 `{ path, size, sha256 }`，
@@ -55,7 +56,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | 3 | 命中 `DEFAULT_REPOSITORY_EXCLUSIONS` 或 `scope.exclusions` | `REJECTED(OUT_OF_SCOPE)` |
 | 4 | 路径存在 | `REJECTED(NOT_FOUND)` |
 | 5 | `realpath` 位于 `repositoryRoot` 内，且其相对路径同样不命中排除规则 | `REJECTED(OUT_OF_SCOPE)` |
-| 6 | 是普通文本文件 | `REJECTED(UNSUPPORTED_FILE)` |
+| 6 | 是普通文本文件（按第 3.1 节的定义，不是二进制且能按 UTF-8 完整解码） | `REJECTED(UNSUPPORTED_FILE)` |
 | 7 | 以 `O_NOFOLLOW` 打开；描述符的 `(dev, ino)` 与第 5 步 `stat` 的结果一致；Linux 上 `/proc/self/fd/<fd>` 指向的路径也与第 5 步一致 | `VIOLATION(PATH_ESCAPE)` |
 
 默认排除规则 `DEFAULT_REPOSITORY_EXCLUSIONS` 与匹配器 `isExcluded`、`excludesDirectory` 由 contracts 提供

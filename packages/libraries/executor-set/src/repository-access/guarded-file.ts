@@ -3,7 +3,7 @@ import { open, readlink, realpath, stat, type FileHandle } from 'node:fs/promise
 import { join, relative, sep } from 'node:path';
 import { isExcluded, type ExecutorOutcome } from '@multiagentos/contracts';
 import { rejected, violation } from '../outcome/outcomes.js';
-import { isBinary } from '../text/text-document.js';
+import { isText } from '../text/text-document.js';
 import { normalizeRequestPath } from './request-path.js';
 import type { RepositoryScope } from './repository-scope.js';
 
@@ -96,7 +96,7 @@ export async function readGuardedFile(
       if (behind !== real) return refuse(violation('PATH_ESCAPE'));
     }
     const content = await handle.readFile();
-    if (isBinary(content)) return refuse(rejected('UNSUPPORTED_FILE'));
+    if (!isText(content)) return refuse(rejected('UNSUPPORTED_FILE'));
     return { ok: true, file: { path, content } };
   } finally {
     await handle.close();

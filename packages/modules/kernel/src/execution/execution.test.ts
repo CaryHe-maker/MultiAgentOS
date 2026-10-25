@@ -21,7 +21,7 @@ import {
   type ToolDefinition,
   type UnitDefinition,
 } from '@multiagentos/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_KERNEL_CONFIG,
   type AttemptRegistration,
@@ -379,7 +379,9 @@ class FakeArtifactStore implements ArtifactStorePort {
   }
 }
 
-function harness(options: { readonly maxReportBytes?: number } = {}): {
+function harness(
+  options: { readonly maxReportBytes?: number; readonly onSettled?: () => void } = {},
+): {
   readonly core: FakeCore;
   readonly dispatcher: RecordingDispatcher;
   readonly artifacts: FakeArtifactStore;
@@ -407,6 +409,7 @@ function harness(options: { readonly maxReportBytes?: number } = {}): {
     now: () => new Date('2026-10-19T00:00:00.000Z'),
     newAttemptId: () => `una_${String((attemptSequence += 1)).padStart(6, '0')}`,
     newExecutionId: () => `exe_${String((executionSequence += 1)).padStart(6, '0')}`,
+    ...(options.onSettled === undefined ? {} : { onSettled: options.onSettled }),
   });
   return { core, dispatcher, artifacts, ownership, execution };
 }
@@ -604,6 +607,20 @@ describe('Execution attempts and FIFO', () => {
     expect(test.dispatcher.requests[0]?.executionKind).toBe('FILE_READ');
     expect(test.dispatcher.requests[0]?.unitAttemptId).toBe('una_000001');
     expect(test.dispatcher.requests[0]?.executionId).toBe('exe_000001');
+  });
+
+  it('asks the actor to flush once an attempt has dispatched after its own start', async () => {
+    // The request is built after asynchronous reads, so the execute request can be queued after
+    // the message that created the attempt was flushed (F2 of the fixed task set hung on this).
+    const events: string[] = [];
+    const test = harness({ onSettled: () => events.push('flush') });
+    const dispatch = test.dispatcher.dispatch.bind(test.dispatcher);
+    test.dispatcher.dispatch = (request) => {
+      events.push(`dispatch ${request.executionKind}`);
+      dispatch(request);
+    };
+    await test.execution.createAttempt(spec('req_000001'));
+    await vi.waitFor(() => expect(events).toEqual(['dispatch FILE_READ', 'flush']));
   });
 
   it('is idempotent by requestId', async () => {

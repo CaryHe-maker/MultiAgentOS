@@ -49,7 +49,7 @@ jobs:
             node: '24.x'
             ripgrep: present
           - cell: without-rg
-            # Empty: setup-node falls back to .node-version.
+            # Empty: the Node.js of .node-version, as in the main cell.
             node: ''
             ripgrep: absent
     env:
@@ -59,8 +59,9 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
+          # Exactly one of the two inputs is set, so setup-node has nothing to override.
           node-version: ${{ matrix.node }}
-          node-version-file: .node-version
+          node-version-file: ${{ matrix.node == '' && '.node-version' || '' }}
           cache: pnpm
       - run: node --version
       - if: matrix.ripgrep == 'present'
