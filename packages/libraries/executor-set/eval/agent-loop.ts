@@ -216,7 +216,9 @@ export async function runAgentLoop(options: LoopOptions): Promise<LoopResult> {
     roundsUsed += 1;
     const round = roundsUsed;
     if (answered.outcome !== 'COMPLETED') {
-      // Workflow 7: PROVIDER_ERROR returns to the model; the others end the run.
+      // Workflow 7.2: any failure of the final call degrades; otherwise PROVIDER_ERROR returns
+      // to the model and the others end the run.
+      if (final) return degraded(wrapUpReason, round, calls);
       if (answered.outcome === 'FAILED' && answered.reasonCode === 'PROVIDER_ERROR' && !final) {
         steps.push({
           step: {

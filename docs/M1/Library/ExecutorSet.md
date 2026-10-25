@@ -179,6 +179,7 @@ Core 已把默认规则写入每个范围，Executor 仍再次加上它们，作
 - DeepSeek（`provider = 'deepseek'`）的思考开关由传给 SDK 的 `fetch` 写入请求体（`thinking: { type }`，开启时附 `reasoning_effort`）；
   Anthropic 协议使用 SDK 的 `reasoning` 选项。用量中的缓存命中优先取 SDK 的 `cacheRead`，否则取 DeepSeek 的 `prompt_cache_hit_tokens`。
 - `final = true` 时按名称强制调用控制工具。Anthropic 协议开启 extended thinking 时不允许强制工具，M1 的 Agent 都关闭思考，此限制不会出现。
+  provider 不一定遵守强制选择（R3.3 评测中 DeepSeek 曾返回请求未提供的工具）：`final = true` 的回复不是恰好一个该控制工具的调用、或其参数不是合法 JSON 时，返回可重试的 `PROVIDER_TOOL_CHOICE_IGNORED` 并带上用量，由 Execution 技术重试（[Execution](../Kernel/Execution.md) 第 6 节）。
 - 凭据只经 `environment.credentials.apiKeyFor(scope.provider)` 取得，不写入输出、日志或产物。
 - 成功时输出 `ModelCallOutput`（工具调用参数按 JSON 解析，解析失败时 `arguments = null`、`argumentsError = 'INVALID_JSON'`），
   产物为 `ModelRawOutput`，`requestState = 'SENT'`，并带 provider 返回的用量。
@@ -195,6 +196,7 @@ Core 已把默认规则写入每个范围，Executor 仍再次加上它们，作
 | HTTP 404、413、422 等其他 4xx | FAILED | `INTERNAL` | `NOT_SENT` | false |
 | HTTP 408 | FAILED | `PROVIDER_ERROR` | `UNKNOWN` | false |
 | 状态 200 但响应体无法解析 | FAILED | `PROVIDER_ERROR` | `UNKNOWN` | false |
+| `final = true` 而回复不是恰好一个强制控制工具的调用，或其参数不是合法 JSON | FAILED（带用量） | `PROVIDER_TOOL_CHOICE_IGNORED` | `SENT` | true |
 | 正常返回 | COMPLETED | — | `SENT` | — |
 
 “请求发出前失败”指 `fetch` 因名称解析、连接或 TLS 握手失败（`ENOTFOUND`、`EAI_AGAIN`、`ECONNREFUSED`、`ENETUNREACH`、`EHOSTUNREACH`、

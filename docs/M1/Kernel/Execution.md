@@ -78,10 +78,11 @@ Execution 不判断报告内容是否合格；报告的来源核验由 Workflow 
 
 技术重试对 Workflow 不可见，不计 Round；每个尝试最多 `technicalRetryLimit` 次（3）。
 
-- 只有 `outcome = FAILED` 且 `retryable = true` 的执行事实可以重试。MODEL 还要求 `requestState = NOT_SENT`，
-  请求可能已发出时不重试，避免同一次调用的未知消耗被多次计入。
-- 每次重试都先调用 `CoreSyscalls.retryExecution`。Core 检查运行仍为 RUNNING、次数未超限、MODEL 的请求未发出；
-  MODEL 时 Core 先以 `NOT_SENT` 结算旧预留并释放旧调用机会，再重新申请（见 [Core](Core.md) 5.1）。
+- 只有 `outcome = FAILED` 且 `retryable = true` 的执行事实可以重试。MODEL 还要求消耗已知：`requestState = NOT_SENT`，
+  或 `requestState = SENT` 且带 `usage`（如 `PROVIDER_TOOL_CHOICE_IGNORED`）。消耗未知（`UNKNOWN`，或 `SENT` 而无用量）时不重试，
+  避免同一次调用的未知消耗被多次计入。
+- 每次重试都先调用 `CoreSyscalls.retryExecution`，MODEL 时带上 `requestState` 与 `usage`。Core 检查运行仍为 RUNNING、次数未超限、
+  MODEL 的消耗已知；MODEL 时 Core 先结算旧预留（未发出按 `NOT_SENT`，已发出按实际用量）并释放旧调用机会，再重新申请（见 [Core](Core.md) 5.1）。
 - 允许时 Execution 生成新的 `executionId`，以 `notBefore = 当前时间 + retryBackoffBaseMs × 2^(retryCount − 1)` 重新派发。
 - 不允许时，以最后一次执行事实提交结果检查；额度类拒绝由 Core 直接交付 UnitReport，尝试结束。
 

@@ -97,7 +97,7 @@ Execution 计算 est 时对 ContextPack 重新调用同一函数，不采信 Exe
 
 | 配置                   | 读取者    | 用途                                    | 建议初值             |
 | ---------------------- | --------- | --------------------------------------- | -------------------- |
-| `tokenLimit`           | Monitor   | L                                       | 600000（需评测校准） |
+| `tokenLimit`           | Monitor   | L                                       | 300000（按固定任务集校准） |
 | `perCallInputLimit`    | Execution | 普通 context-assemble 的 `tokenBudget`  | 96000                |
 | `finalInputBudget`     | Execution | final context-assemble 的 `tokenBudget` | 72000                |
 | `maxOutputTokens`      | Execution | 普通 model-call 的 `max_tokens`         | 8192                 |

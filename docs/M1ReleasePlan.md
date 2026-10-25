@@ -99,7 +99,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 |---|---|---|---|---|---|
 | D1 | 检查后文件被删除时返回什么 | `guarded-file.ts` 打开文件遇到 ENOENT 时返回 `VIOLATION(PATH_ESCAPE)`，ExecutorSet.md 3.2 第 7 步也这样写；#26 A1 的答复是改为 `NOT_FOUND`。不改的话，分析期间仓库内文件被正常删除会让运行以安全违规结束 | 改为 `REJECTED(NOT_FOUND)`；`ENOTDIR`、`ELOOP` 与身份不符仍为违规。需请求（ExecutorSet.md 3.2） | 阶段一 | 2026-10-24 同意，含 ExecutorSet.md 修改 |
 | D2 | 检索评分中“路径含 test 乘 0.9” | #26 E 要求去掉，代码（`search-executor.ts`）与 ExecutorSet.md 3.3 仍保留；F2、F4 要求找到测试文件 | 去掉。需请求（ExecutorSet.md 3.3） | 阶段一 | 2026-10-24 同意，含 ExecutorSet.md 修改 |
-| D3 | 收尾说明只保留一处 | Workflow 记录 `FEEDBACK(WRAP_UP_NOTICE)`，上下文组装器的状态行也写明最后一次调用及原因（#32 第 1 条） | 由阶段三的评测决定保留哪一处。需请求（Workflow.md 第 8 节或 ExecutorSet.md 4.4） | 阶段三 | 待定 |
+| D3 | 收尾说明只保留一处 | Workflow 记录 `FEEDBACK(WRAP_UP_NOTICE)`，上下文组装器的状态行也写明最后一次调用及原因（#32 第 1 条） | 由阶段三的评测决定保留哪一处。需请求（Workflow.md 第 8 节或 ExecutorSet.md 4.4） | 阶段三 | 2026-10-25 决定只保留状态行：评测中三种做法收尾后正常出报告的比例相同（8/10、8/10、9/10），按设计取可读性更好、本就每轮变化的状态行；Workflow 不再记录 `WRAP_UP_NOTICE`，修改 Workflow.md 第 8 节与 M1Interface 的反馈码 |
 | D4 | 启动期额度校验的上界 | 现为 79156 / 80000。用户输入按每个字符都是二次转义的控制字符估算，约预留 58k token；Monitor 第 4 节还把 FILE_READ 的字节上限当作 token 相加。留给 Prompt 与工具说明的空间约 5k token | 在阶段三开始前决定是否放宽估算方法或调整 `perCallInputLimit`。需请求（Monitor.md 第 4 节） | 阶段三之前 | 2026-10-25 自主执行期间定论（见第 6 节 A5，待 Cary 复核） |
 | D5 | 30 秒端口期限是否改为系统级约定 | Workflow 与 UserInteraction 各有一个 `PORT_RETURN_TIMEOUT_MS`；#29 计划改为 `SystemConfig` 配置项、由 Fabric 统一执行。M1Plan 没有要求 | 端口期限已在两个模块中按 Workflow.md 与 UserInteraction.md 的规定执行；系统级化只是集中配置与执行的位置。M1 发布不做，作为已知限制记录 | 阶段一 | 2026-10-24 决定在阶段一实现（R1.8），采用方案 A：期限值进入 `SystemConfig`，Fabric 执行 Gateway 请求的期限，组合根为 Catalog 与 Persistence 适配器加同样的期限，模块内不再有期限逻辑；需修改的 M1 文档在实施前列出，按 2.1 第 3 条确认 |
 | D6 | CI 的 `pull_request` 分支过滤 | 只匹配 `main` 与 `feat/**`，与 M1TechStack 第 11 节一致；`feature/M1/main` 上的提交靠 push 事件触发 | 保持现状 | 阶段一 | 2026-10-24 同意保持现状 |
@@ -173,6 +173,7 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R3.3 | 按评测结果决定 D3 并实施 | D3 的请求获得同意，修改完成 |
 | R3.4 | 用固定任务集校准 `DEFAULT_KERNEL_CONFIG`（预算、Round、超时）；修改 M1 文档中的建议值时按 2.1 第 3 条请求 | 校准结果与依据记录在第 5 节 |
 | R3.5 | Prompt 与工具说明定稿为 `FINAL`，按 AgentToolPool 的规则以 `v1.0.0` 发布并运行 `pnpm run catalog:seal`；Agent 定义随之引用新版本 | 定义目录测试通过；运行记录中的 digest 为封存版本 |
+| R3.7 | 修复 R3.3 评测发现的收尾失败：DeepSeek 不一定遵守强制的工具选择，final-call 可能调用未提供的工具或给出不合法的 JSON 参数。model-call Executor 在 `final = true` 时把这种回复作为可重试的执行失败（带实际用量），Execution 与 Core 允许在用量已知时重试 MODEL | 修改 ExecutorSet.md 4.5、M1Interface、Execution.md 第 6 节、Core.md 5.1（2026-10-25 已同意）；强制收尾的真实模型评测中收尾失败显著减少 |
 | R3.6 | 定稿后用真实模型重跑 F1–F5，形成成功率、来源完整性、成本与延迟基线（M1Plan 第 2 节第 10 项） | 全部任务到达可解释终态；无来源的成功结论为 0；基线记录完整 |
 
 退出条件：R3.1–R3.6 完成；M1Plan 第 7 节中与真实模型相关的条件满足。
@@ -233,6 +234,10 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 | R4.1、R4.2、R4.4（草稿） | 2026-10-25 | 同上 | `M1AcceptanceEvidence.md` 第 1、2 节逐条列出证据与状态：离线条件全部满足，真实模型相关的条件待 A1；阶段四正式核对时重做 |
 | R5.3（草稿） | 2026-10-25 | 同上 | 处理意见草稿见 `M1AcceptanceEvidence.md` 第 5 节；未在 GitHub 上执行任何操作 |
 | R5.1（部分） | 2026-10-25 | 同上 | README 增加授权与取消、`--details`、`MULTIAGENTOS_CONFIG`、退出码表与验收命令；限制清单与验收证据见 `M1AcceptanceEvidence.md`。是否需要写入 `docs/M1/` 待 Cary 决定 |
+| R3.1 | 2026-10-25 | `docs: 记录真实模型首轮运行并更新验收证据` | Ubuntu 24.04 上以 `deepseek-flash@v1.0.0`、Prompt `v0.1.0` 经完整调用链运行 F1–F5 各 3 次：15/15 通过，全部 COMPLETED、非降级、额度状态 NORMAL；每次运行的预期来源都被结论引用，禁止路径未被读取，工作区摘要不变，密钥未出现。共 136 条已核验结论；48 条进入 `unconfirmed`，其中 47 条为模型自己标注的未确认项，1 条（F2）因来源不在读取范围内被来源核验降级。首轮失败清单为空。单次 13–30 秒，中位数 19.9 秒；单次最多 50835 token（额度 600000）、9 次模型调用；15 次共 0.092 美元。人工抽查 F1、F5 的报告与 fixture 源码一致。记录见验收证据第 6 节 |
+| R3.4 | 2026-10-25 | `fix: 按固定任务集把单次运行的总额度校准为 300000` | 2026-10-25 Cary 同意把 `tokenLimit` 减半为 300000（Monitor.md 第 4 节同步）。依据 R3.1：单次最多 50835 token；收尾在剩余不足 `finalReserve + wrapUpMargin`（184384）时开始，即已用超过 115616 后，约为实测最大值的 2.3 倍。最坏情况下（全部按输出价、高峰倍率）单次约 0.36 美元，此前为 0.72 美元。其余数值不变：code-viewer 最多用 8 / 20 轮、planner 1 / 3 轮，最长运行 30 秒、最长模型调用远低于 `MODEL` 的 180 秒，没有出现收尾、超时或额度不足 |
+| R3.3 | 2026-10-25 | `refactor: 收尾原因只由 final-call 的状态行告诉模型（D3）` | 评测：把 `tokenLimit` 临时压到 196384，使每次运行在 3–4 轮后进入收尾，三种做法（两处都有、只保留状态行、只保留反馈）各跑 F1–F5 × 2，共 30 次、0.13 美元；30 次都发起了 final-call，收尾后正常出报告 8/10、8/10、9/10，差别在误差范围内。按设计只保留状态行（D3）。Workflow 不再记录收尾反馈，`ROUND_FEEDBACK_CODES` 去掉 `WRAP_UP_NOTICE`，协议快照更新。评测同时发现 5 次收尾失败与 D3 无关：原样重放这些请求 15 次，6 次调用了请求中未提供的 `read_file`，1 次参数不是合法 JSON，转为 R3.7 |
+| R3.7 | 2026-10-25 | `fix: 收尾调用未按强制要求调用控制工具时按已知用量技术重试` | M1 文档修改经 2026-10-25 同意：ExecutorSet.md 4.5、M1Interface（原因码 `PROVIDER_TOOL_CHOICE_IGNORED`）、Execution.md 第 6 节、Core.md 5.1、Interaction.md 的 `retryExecution`。model-call Executor 在 `final = true` 时，回复不是恰好一次强制控制工具的调用或参数不是合法 JSON，返回可重试的失败并带用量；Core 在 MODEL 请求未发出、或已发出且用量已知时允许重试，按实际用量结算旧预留。开发评测工具 `agent-loop.ts` 按 Workflow 7.2 把收尾失败改为降级。验证：同样把额度压到 196384，F1–F5 × 3 共 15 次全部进入收尾、全部正常出报告（修复前 30 次中 5 次收尾失败），其中 2 次经技术重试恢复；0.073 美元 |
 | R4.5（未完成） | 2026-10-25 | 不适用 | 第 1 轮 `pnpm run check` 通过（88 个文件、1126 项）；随后的 `test:coverage` 因本机内存不足被 Claude Code 中止，按要求未自动重跑。待 Cary 回来后再运行连续三轮 |
 
 ## 6. 自主执行期间的决定（待 Cary 复核）
@@ -240,9 +245,11 @@ Kernel 与 Infrastructure（#33），ExecutorSet 与 AgentToolPool（#35、#36�
 2026-10-25 起 Cary 离开期间，按其授权自主推进：有歧义处尽量按 M1 规划实现；认为必须修改 M1 文档时按最推荐的方式修改，
 并在此逐条记录，供 Cary 回来后二次选择。所有提交只保存在本地，不推送远端；不发布、评论或关闭任何 Issue 与 PR。
 
+2026-10-25 Cary 复核：A1 同意，并提供 key，R3.1 已补跑（第 5 节）；A3、A5 同意；A2、A4、A6 已向 Cary 说明，待答复。
+
 | ID | 日期 | 事项 | 采用的做法 | 其他可选做法 | 涉及的文件与提交 |
 |---|---|---|---|---|---|
-| A1 | 2026-10-25 | 本机与 WSL 都没有 `DEEPSEEK_API_KEY`，阶段三的真实模型运行（R3.1、R3.6 及依赖它们的 R3.3、R3.4）无法进行 | 跳过真实模型运行，其余不依赖模型的任务照常推进；阶段三中依赖评测结果的决定保持待定 | 由 Cary 提供 key 后补跑 | 无 |
+| A1（已复核） | 2026-10-25 | 本机与 WSL 都没有 `DEEPSEEK_API_KEY`，阶段三的真实模型运行（R3.1、R3.6 及依赖它们的 R3.3、R3.4）无法进行 | 跳过真实模型运行，其余不依赖模型的任务照常推进；阶段三中依赖评测结果的决定保持待定 | 由 Cary 提供 key 后补跑 | 无 |
 | A2 | 2026-10-25 | #6 要求 GBK 编码文件不导致乱码；原实现把任何不含 NUL 的文件按 UTF-8 解码，GBK 内容变成替换字符进入上下文 | 把“文本文件”定义为不是二进制且能按 UTF-8 完整解码：这类文件不进入文件集合（概览、检索与快照），`read_file` 返回 `REJECTED(UNSUPPORTED_FILE)`，模型看到的说明改为“目录、二进制或非 UTF-8 文本”。修改 ExecutorSet.md 3.1、3.2 第 6 步与 M1Interface 原因码表中 `UNSUPPORTED_FILE` 的说明 | ① 识别 GBK 等编码并转成 UTF-8（需要编码探测，误判风险高）；② 保持原样，把乱码记为已知限制 | ExecutorSet `text-document.ts`、`file-set.ts`、`guarded-file.ts`、`history-render.ts` 与测试；提交见第 5 节 R2.4 |
 | A3 | 2026-10-25 | D8：`executor-set/eval/agent-loop.ts` 自带简化的 Agent 循环，评测结果不代表产品 | 按 D8 的建议定论：M1 验收只采用验收工具（`apps/control-plane/test/acceptance/`）经产品调用链得到的结果；`agent-loop.ts` 保留为 ExecutorSet 的开发工具，不作为验收证据 | 删除 `agent-loop.ts`；或改造它复用产品调用链 | 第 3 节 D8 结论列 |
 | A4 | 2026-10-25 | R2.1 要求五个 fixture 由 Cary 审阅；验收工具的形态（M1Plan 只说“经权威调用链”） | fixture 用一个固定的小型 TypeScript 仓库 `bookshelf` 承载 F1–F5，问题不含答案文件名；验收工具在进程内按 `main` 的同一组合方式装配全部产品部件，经 CLI 解析运行，离线时只替换模型服务商的 HTTP 接口，真实模型时用 `pnpm run acceptance`（先列出次数与费用上限，加 `--yes` 才运行）。#6 的五条风险落实为同一工具下的陷阱任务 S1–S5（仓库 `traps`，超大、二进制与 GBK 文件在运行前生成，不入库） | 每个任务一个独立仓库；验收工具以子进程运行 `bin.js analyze`（离线时需要可替换服务商地址的产品接口） | `apps/control-plane/test/acceptance/`；待 Cary 审阅 fixture 后 R2.1 才算完成 |

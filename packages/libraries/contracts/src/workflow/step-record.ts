@@ -70,7 +70,7 @@ export const CALL_FEEDBACK_CODES = [
   'NOT_EXECUTED',
 ] as const;
 /** Feedback about the Round as a whole: `toolCallId` is not allowed. */
-export const ROUND_FEEDBACK_CODES = ['MODEL_CALL_FAILED', 'WRAP_UP_NOTICE'] as const;
+export const ROUND_FEEDBACK_CODES = ['MODEL_CALL_FAILED'] as const;
 /** INVALID_ACTION is given once per tool call, or once without `toolCallId` when there was none. */
 export const FEEDBACK_CODES = [
   'INVALID_ACTION',

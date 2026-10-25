@@ -451,7 +451,7 @@ export function receiveUnitReport(
       next.run.wrapUpReason,
     );
     // Only a failure handed back to the model is explained in its history (Workflow 7.2);
-    // a wrap-up is already stated by WRAP_UP_NOTICE and the final-call status.
+    // a wrap-up is already stated by the final-call status.
     if (state.phase === 'MODEL' && failure.kind === 'RETURN_TO_MODEL')
       next = {
         ...next,

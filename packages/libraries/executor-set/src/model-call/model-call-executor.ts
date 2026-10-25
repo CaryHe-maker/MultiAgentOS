@@ -82,7 +82,7 @@ async function callModel(
   } catch (error) {
     return classify(error, progress, environment.signal);
   }
-  return completedCall(result, scope, environment);
+  return completedCall(result, scope, environment, input.final ? finishOf(specs) : undefined);
 }
 
 function reasoningOf(scope: ModelScope): 'none' | 'provider-default' | 'low' | 'medium' | 'high' {
@@ -97,11 +97,24 @@ function failure(
     | 'PROVIDER_RATE_LIMITED'
     | 'PROVIDER_AUTH'
     | 'PROVIDER_ERROR'
+    | 'PROVIDER_TOOL_CHOICE_IGNORED'
     | 'INTERNAL',
   retryable: boolean,
   requestState: RequestState,
+  usage?: TokenUsage,
 ): ExecutorOutcome {
-  return { outcome: 'FAILED', reasonCode, retryable, requestState };
+  return {
+    outcome: 'FAILED',
+    reasonCode,
+    retryable,
+    requestState,
+    ...(usage === undefined ? {} : { usage }),
+  };
+}
+
+/** The control tool a final-call forces, as `toToolChoice` names it. */
+function finishOf(specs: readonly { readonly name: string; readonly purpose: string }[]) {
+  return specs.find((spec) => spec.purpose === 'CONTROL')?.name;
 }
 
 /** The table of ExecutorSet 4.5, completed by issue #26 C. */
@@ -129,6 +142,7 @@ function completedCall(
   result: GenerateResult,
   scope: ModelScope,
   environment: ExecutorEnvironment,
+  forced: string | undefined,
 ): ExecutorOutcome {
   const text = result.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('');
   const rawCalls = result.content.flatMap((part) =>
@@ -138,6 +152,15 @@ function completedCall(
   );
   const toolCalls = rawCalls.slice(0, MAX_TOOL_CALLS).map(parseCall);
   const usage = usageOf(result);
+  // A final-call forces its control tool, but some providers (DeepSeek) may still answer with
+  // another tool, several calls or arguments that are not JSON. That reply is the provider's
+  // fault, not a model decision, so it is a retryable failure carrying the usage (4.5).
+  const call = toolCalls[0];
+  if (
+    forced !== undefined &&
+    (rawCalls.length !== 1 || call?.toolName !== forced || call.arguments === null)
+  )
+    return failure('PROVIDER_TOOL_CHOICE_IGNORED', true, 'SENT', usage);
   const raw: ModelRawOutput = {
     provider: scope.provider,
     apiModelId: scope.apiModelId,

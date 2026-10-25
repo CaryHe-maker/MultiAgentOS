@@ -97,6 +97,8 @@ export interface CoreSyscalls {
     readonly unitAttemptId: string;
     readonly previousExecutionId: string;
     readonly requestState?: RequestState;
+    /** MODEL: the provider's usage of the failed request, when it reported one. */
+    readonly usage?: TokenUsage;
   }): RetryDecision;
   currentRunEpoch(): number;
 }

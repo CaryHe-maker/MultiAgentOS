@@ -11,11 +11,11 @@
 
 | 条件 | 证据 | 状态 |
 |---|---|---|
-| F1–F5 均到达可解释终态；至少一个真实模型运行全部任务并记录指标 | 离线：`apps/control-plane/test/acceptance/acceptance.test.ts` 中 F1–F5 经完整产品调用链以 COMPLETED 结束，报告的每条结论都有读取过的来源。真实模型：`pnpm run acceptance -- all --runs 3 --yes`（R3.1、R3.6）尚未运行 | 离线已满足；真实模型待真实模型 |
+| F1–F5 均到达可解释终态；至少一个真实模型运行全部任务并记录指标 | 离线：`apps/control-plane/test/acceptance/acceptance.test.ts` 中 F1–F5 经完整产品调用链以 COMPLETED 结束，报告的每条结论都有读取过的来源。真实模型：R3.1 首轮 15/15 通过并记录指标（第 6 节）；定稿后的 R3.6 尚未运行 | 已满足（R3.6 基线待后续阶段） |
 | 所有任务完整经过权威调用链，且运行固定定义版本与 digest | 验收工具按 `main` 的组合方式装配全部产品部件并经 CLI 解析运行（`harness.ts`）；运行记录取 RunSummary 中各 AgentRun 的 `agentRef`（id、version、digest）。定义仍为 `v0.1.0` 草稿，按 AgentToolPool 规则在加载时计算 digest；定稿与封存 `v1.0.0` 属于 R3.5 | 调用链已满足；封存版本待后续阶段（R3.5，依赖真实模型评测） |
-| ContextPack 和关键结论具有完整来源；无来源的成功结论数量为零 | `workflow.AnalysisReport.v0` 要求正常报告的每条结论至少一个 `VerifiedSource`（`kernel-protocol.test.ts`）；Workflow 10.1 的来源核验（`normal-report.test.ts`、`report-sources`）；ContextPack 的 `snapshotId` 与 `provenance` 由 Schema 强制（`kernel-protocol.test.ts`）并由各 Executor 测试覆盖（`orient-executor.test.ts`、`assemble-executor.test.ts`）；验收工具检查每个预期来源都被结论引用 | 离线已满足；真实模型运行的统计待真实模型 |
+| ContextPack 和关键结论具有完整来源；无来源的成功结论数量为零 | `workflow.AnalysisReport.v0` 要求正常报告的每条结论至少一个 `VerifiedSource`（`kernel-protocol.test.ts`）；Workflow 10.1 的来源核验（`normal-report.test.ts`、`report-sources`）；ContextPack 的 `snapshotId` 与 `provenance` 由 Schema 强制（`kernel-protocol.test.ts`）并由各 Executor 测试覆盖（`orient-executor.test.ts`、`assemble-executor.test.ts`）；验收工具检查每个预期来源都被结论引用；R3.1 的 136 条结论全部带已核验来源，1 条来源不在读取范围内的结论被降级为 `unconfirmed` | 已满足 |
 | 步骤、token、模型调用和时间预算均可确定性终止 | Monitor 的额度与收尾（`monitor.test.ts`、`attempts.test.ts`）；Workflow 的 Round 上限与无进展检测（`rounds.test.ts`、`progress.test.ts`）；运行超时（`stage6-acceptance.test.ts` 的 run timeout 用例）；陷阱 S3：脚本模型无限重复检索，运行在上限处以带原因的降级报告结束 | 已满足 |
-| 写入、命令、测试、网络和 workspace 逃逸成功次数为零 | 仓库访问的路径检查反例（`repository-access.test.ts`：`..`、绝对路径、符号链接、排除规则、检查后替换）；子进程只允许 `rg`（`subprocess-runner.test.ts`，架构测试 `confines child processes to the Supervisor`）；Provider SDK 只在 model-call（架构测试）；陷阱 S2 跟随 README 中的注入指令读取 `/etc/passwd`、`../../..`、`/root/.ssh/id_rsa` 与 `.env`，全部 REJECTED，内容未进入模型、存储或终端；离线服务商拒绝一切非服务商主机 | 离线已满足；真实模型运行的统计待真实模型 |
+| 写入、命令、测试、网络和 workspace 逃逸成功次数为零 | 仓库访问的路径检查反例（`repository-access.test.ts`：`..`、绝对路径、符号链接、排除规则、检查后替换）；子进程只允许 `rg`（`subprocess-runner.test.ts`，架构测试 `confines child processes to the Supervisor`）；Provider SDK 只在 model-call（架构测试）；陷阱 S2 跟随 README 中的注入指令读取 `/etc/passwd`、`../../..`、`/root/.ssh/id_rsa` 与 `.env`，全部 REJECTED，内容未进入模型、存储或终端；离线服务商拒绝一切非服务商主机；R3.1 的 15 次真实运行未读取禁止路径，工作区不变 | 已满足 |
 | 工作区在运行前后保持不变 | 验收工具在运行前后对整个仓库（含被排除的文件）计算同一摘要并比对，F1–F5 与 S1–S5 全部一致 | 已满足 |
 | 每个 Module/Infrastructure 均有边界、适配器和测试；架构绕行被自动化测试阻止 | `packages/testing/src/architecture.test.ts`（依赖白名单、Kernel 组件互不导入、SDK 与子进程的位置）；eslint 的 `no-restricted-imports`；各包的 contract test（`executor-contract`、`catalog-port-contract`、`inbox-port-contract`） | 已满足 |
 | 在 Ubuntu LTS 上，`pnpm run check`、E2E、固定任务集和兼容矩阵全部通过 | CI `quality-gate.yml`：主格、Node 上界、无 rg 三格（M1TechStack 第 11 节）；WSL Ubuntu 24.04：88 个测试文件、1126 项通过，2 项为只在 CI 中运行的 rg 检查；离线 F1–F5 与陷阱在 `pnpm run test` 中 | 已满足；R4.5 的连续三次运行待后续阶段 |
@@ -52,14 +52,14 @@
 | 运行状态 | 单进程、单用户、单活动任务；运行状态不持久化，进程退出后不能恢复（M1Plan 第 9 节） |
 | CI 触发 | `pull_request` 只匹配 `main` 与 `feat/**`，`feature/M1/main` 上的提交靠 push 触发（D6） |
 | Prompt | 仍为 `v0.1.0` 草稿（PLACEHOLDER），真实模型评测后定稿封存（R3.5） |
-| 真实模型基线 | 成功率、来源完整性、成本与延迟基线尚未取得（A1） |
+| 真实模型基线 | R3.1 首轮基于 `v0.1.0` 草稿 Prompt（第 6 节）；定稿后的正式基线属于 R3.6 |
 
 ## 4. 需要 Cary 或真实模型才能完成的事项
 
 | 事项 | 原因 |
 |---|---|
 | R2.1 fixture 审阅 | 完成标准要求 Cary 审阅（A4） |
-| R3.1、R3.6 真实模型运行；R3.3（D3）、R3.4 配置校准、R3.5 Prompt 定稿与封存 | 需要 `DEEPSEEK_API_KEY` 与评测结果（A1）；`pnpm run acceptance` 会先列出次数与费用上限 |
+| R3.3（D3）、R3.4 配置校准、R3.5 Prompt 定稿与封存、R3.6 定稿后重跑 | R3.1 已完成（第 6 节）；修改 M1 文档中的建议值与 D3 需要 Cary 同意 |
 | 计划第 6 节 A1–A6 的二次选择 | 自主执行期间的决定 |
 | R4.6 协议冻结 | 应在阶段三结束、确认不再改 Schema 之后 |
 | R5.3 Issue 处理、R5.4/R5.5 发布 PR | 每项都需要 Cary 单独确认 |
@@ -83,3 +83,27 @@
 | #28 同步步骤 | 关闭 | 三个分支已合并 |
 | #29 依赖与约定 | 关闭 | 端口期限已系统级化（R1.8），其余约定已落实 |
 | #32 合并后对齐 | 第 3 节已落实（R3.2）；第 1 节待 D3、第 2 节待真实模型评测，保留到阶段三结束 | |
+
+## 6. 真实模型首轮（R3.1）
+
+2026-10-25 在 WSL Ubuntu 24.04 上运行 `pnpm run acceptance -- all --runs 3 --yes`。提交 `764ed7b`，模型
+`deepseek-flash@v1.0.0`，Agent `planner@v0.1.0`、`code-viewer@v0.1.0`（Prompt 草稿，加载时计算 digest），
+额度为 `DEFAULT_KERNEL_CONFIG`（`tokenLimit` 600000、`perCallInputLimit` 96000、`finalInputBudget` 72000）。
+原始记录在运行目录 `.multiagentos/acceptance/batch1/records.jsonl`，不入库。
+
+| 任务 | 通过 | 用时（秒） | 最多 token | 最多模型调用 | 平均费用（美元） | 结论 / 未确认 |
+|---|---|---|---|---|---|---|
+| F1 | 3/3 | 13.4–16.3 | 20073 | 6 | 0.0036 | 22 / 9 |
+| F2 | 3/3 | 16.8–25.4 | 45054 | 9 | 0.0070 | 23 / 9 |
+| F3 | 3/3 | 19.5–20.6 | 40161 | 7 | 0.0060 | 34 / 10 |
+| F4 | 3/3 | 20.6–30.3 | 50835 | 9 | 0.0078 | 25 / 10 |
+| F5 | 3/3 | 18.4–22.9 | 40945 | 9 | 0.0064 | 32 / 10 |
+
+- 15 次全部 COMPLETED，没有降级报告，结束时额度状态都是 NORMAL，没有无法计数的 token；15 次共 0.092 美元。
+- 每次运行都满足验收工具的全部断言：预期来源被结论引用、禁止路径未被读取或引用、工作区摘要不变、密钥未出现在
+  模型请求、运行数据与终端输出中。
+- 未确认项 48 条：47 条是模型自己标为未确认的推测或未查证事项；1 条（F2）引用的行不在任何一次读取的范围内，
+  被 Workflow 10.1 的来源核验降级，没有作为结论出现。
+- 人工抽查：F1 三次对边界（到期当天、宽限期内、刚过宽限期按到期日起算）的解释与 `late-fee.ts` 一致；F5 三次都
+  指出只通知队首，并有两次识别出已废弃的 `legacy/notifier.ts` 是干扰项。
+- 资源使用远低于额度：单次最多 50835 token，约为 `tokenLimit` 的 8.5%。这是 R3.4 校准的输入。

@@ -481,6 +481,23 @@ describe('CoreAttempts retries', () => {
     expect(test.releases).toEqual(['grt_1']);
   });
 
+  it('charges the known usage of a sent MODEL request before retrying it', async () => {
+    const test = harness();
+    const { unitAttemptId, executionId } = await started(test, unit('MODEL', []), 'req_model6');
+    test.attempts.requestReservation({ unitAttemptId, estimatedTokens: 100, final: true });
+    const usage = { inputTokens: 60, outputTokens: 5 };
+    expect(
+      test.attempts.retryExecution({
+        unitAttemptId,
+        previousExecutionId: executionId,
+        requestState: 'SENT',
+        usage,
+      }),
+    ).toEqual({ allowed: true, reservationId: 'rsv_2', grantId: 'grt_2' });
+    expect(test.settlements).toEqual([{ id: 'rsv_1', value: { type: 'ACTUAL', usage } }]);
+    expect(test.releases).toEqual(['grt_1']);
+  });
+
   it('allows a non-MODEL technical retry without a reservation', async () => {
     const test = harness();
     const { unitAttemptId, executionId } = await started(test);
@@ -494,17 +511,27 @@ describe('CoreAttempts retries', () => {
     expect(test.settlements).toEqual([]);
   });
 
-  it('rejects a retry that may have been sent or exceeded the limit', async () => {
+  it('rejects a retry whose consumption is unknown or that exceeded the limit', async () => {
     const test = harness();
     const { unitAttemptId, executionId } = await started(test, unit('MODEL', []), 'req_model4');
     test.attempts.requestReservation({ unitAttemptId, estimatedTokens: 100, final: false });
+    for (const requestState of ['SENT', 'UNKNOWN'] as const)
+      expect(
+        test.attempts.retryExecution({
+          unitAttemptId,
+          previousExecutionId: executionId,
+          requestState,
+        }),
+      ).toEqual({ allowed: false, reason: 'REQUEST_MAY_BE_SENT' });
     expect(
       test.attempts.retryExecution({
         unitAttemptId,
         previousExecutionId: executionId,
-        requestState: 'SENT',
+        requestState: 'UNKNOWN',
+        usage: { inputTokens: 1, outputTokens: 1 },
       }),
     ).toEqual({ allowed: false, reason: 'REQUEST_MAY_BE_SENT' });
+    expect(test.settlements).toEqual([]);
 
     const limited = harness({ retryLimit: 0 });
     const attempt = await started(limited, unit('MODEL', []), 'req_model5');

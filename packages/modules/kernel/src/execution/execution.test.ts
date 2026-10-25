@@ -18,6 +18,7 @@ import {
   type PromptDefinition,
   type RunSummary,
   type StepRecord,
+  type TokenUsage,
   type ToolDefinition,
   type UnitDefinition,
 } from '@multiagentos/contracts';
@@ -280,6 +281,7 @@ class FakeCore implements CoreSyscalls {
     unitAttemptId: string;
     previousExecutionId: string;
     requestState?: 'NOT_SENT' | 'SENT' | 'UNKNOWN';
+    usage?: TokenUsage;
   }[] = [];
   public reservationDecision: ReservationDecision = {
     granted: true,
@@ -322,11 +324,13 @@ class FakeCore implements CoreSyscalls {
     readonly unitAttemptId: string;
     readonly previousExecutionId: string;
     readonly requestState?: 'NOT_SENT' | 'SENT' | 'UNKNOWN';
+    readonly usage?: TokenUsage;
   }): RetryDecision {
     this.retries.push({
       unitAttemptId: request.unitAttemptId,
       previousExecutionId: request.previousExecutionId,
       ...(request.requestState === undefined ? {} : { requestState: request.requestState }),
+      ...(request.usage === undefined ? {} : { usage: request.usage }),
     });
     return this.retryDecision;
   }
@@ -1275,6 +1279,26 @@ describe('Execution facts, retry and convergence', () => {
     const ref = outputRefOf(test.core.checks[0]);
     expect(ref.mediaType).toBe(MEDIA_TYPES.modelOutput);
     expect(test.execution.ownsArtifact(ref)).toBe(true);
+  });
+
+  it('hands Core the usage of a sent MODEL request it asks to retry', async () => {
+    const test = harness();
+    const unitAttemptId = await test.execution.createAttempt(await modelSpec(test, 'req_000001'));
+    await flush();
+    const executionId = test.dispatcher.requests[0]?.executionId ?? '';
+    const usage = { inputTokens: 900, outputTokens: 40 };
+
+    await test.execution.handleExecutionFact({
+      ...retryableModelFact(unitAttemptId, executionId),
+      reasonCode: 'PROVIDER_TOOL_CHOICE_IGNORED',
+      requestState: 'SENT',
+      usage,
+    } as ExecutionFact);
+
+    expect(test.core.retries).toEqual([
+      { unitAttemptId, previousExecutionId: executionId, requestState: 'SENT', usage },
+    ]);
+    expect(test.dispatcher.requests).toHaveLength(2);
   });
 
   it('ignores a second fact for the previous execution after a retry', async () => {

@@ -173,6 +173,50 @@ describe('MODEL (ExecutorSet 4.5)', () => {
     });
   });
 
+  it('completes a final call that answers with exactly the forced tool', async () => {
+    const { outcome } = await call(
+      () => chatCompletion([{ id: 'c', name: 'finish_analysis', arguments: '{"summary":"s"}' }]),
+      { final: true },
+    );
+    expect(outcome).toMatchObject({
+      outcome: 'COMPLETED',
+      result: { output: { toolCalls: [{ toolName: 'finish_analysis' }] } },
+    });
+  });
+
+  // DeepSeek has answered forced final calls with read_file, which the request did not even offer.
+  it.each([
+    ['another tool', [{ id: 'c', name: 'read_file', arguments: '{"path":"a"}' }]],
+    ['no tool call', []],
+    ['arguments that are not JSON', [{ id: 'c', name: 'finish_analysis', arguments: '{"summ' }]],
+    [
+      'a second call',
+      [
+        { id: 'c', name: 'finish_analysis', arguments: '{"summary":"s"}' },
+        { id: 'd', name: 'finish_analysis', arguments: '{"summary":"s"}' },
+      ],
+    ],
+  ])(
+    'turns a final call answered with %s into a retryable failure with its usage',
+    async (_, calls) => {
+      const { outcome } = await call(() => chatCompletion(calls), { final: true });
+      expect(outcome).toEqual({
+        outcome: 'FAILED',
+        reasonCode: 'PROVIDER_TOOL_CHOICE_IGNORED',
+        retryable: true,
+        requestState: 'SENT',
+        usage: { inputTokens: 1200, outputTokens: 80 },
+      });
+    },
+  );
+
+  it('leaves an ordinary call with any tool to Workflow', async () => {
+    const { outcome } = await call(() =>
+      chatCompletion([{ id: 'c', name: 'finish_analysis', arguments: '{"summ' }]),
+    );
+    expect(outcome).toMatchObject({ outcome: 'COMPLETED' });
+  });
+
   it('maps a text-only answer to STOP without tool calls', async () => {
     const { outcome } = await call(() => chatCompletion([], { text: 'Done.' }));
     expect(outcome).toMatchObject({

@@ -92,6 +92,7 @@ interface CoreSyscalls {
     unitAttemptId: string;
     previousExecutionId: string;
     requestState?: RequestState;
+    usage?: TokenUsage; // MODEL 已发出且 provider 报告了用量时提供
   }): RetryDecision;
   currentRunEpoch(): number; // 只读值
 }

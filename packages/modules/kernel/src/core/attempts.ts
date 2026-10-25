@@ -2,6 +2,7 @@ import type {
   ExecutionScope,
   PinnedDefinitionSet,
   ReasonCode,
+  TokenUsage,
   UnitDefinition,
   UnitInput,
   UnitReport,
@@ -269,18 +270,31 @@ export class CoreAttempts implements CoreSyscalls {
     readonly unitAttemptId: string;
     readonly previousExecutionId: string;
     readonly requestState?: 'NOT_SENT' | 'SENT' | 'UNKNOWN';
+    readonly usage?: TokenUsage;
   }): RetryDecision {
     if (this.#run.runState !== 'RUNNING') return { allowed: false, reason: 'RUN_CONVERGING' };
     const meta = this.#requireMeta(request.unitAttemptId);
     if (meta.retries >= this.#technicalRetryLimit) return { allowed: false, reason: 'RETRY_LIMIT' };
 
     if (meta.unit.executionKind === 'MODEL') {
-      if (request.requestState !== 'NOT_SENT')
-        return { allowed: false, reason: 'REQUEST_MAY_BE_SENT' };
+      // A sent request may be retried only when its consumption is known, so it is charged once.
+      const settlement: Settlement | undefined =
+        request.requestState === 'NOT_SENT'
+          ? { type: 'NOT_SENT' }
+          : request.requestState === 'SENT' && request.usage !== undefined
+            ? { type: 'ACTUAL', usage: request.usage }
+            : undefined;
+      if (settlement === undefined) return { allowed: false, reason: 'REQUEST_MAY_BE_SENT' };
       this.#identity.authorizeRetry(request.unitAttemptId, request.previousExecutionId);
       const previous = meta.reservation;
       if (previous === undefined) throw new Error('A MODEL attempt has no reservation to retry');
-      this.#monitor.settle(previous.reservationId, { type: 'NOT_SENT' });
+      const settled = this.#monitor.settle(previous.reservationId, settlement);
+      for (const anomaly of settled.anomalies)
+        this.#recordAudit({
+          type: 'SETTLEMENT_ANOMALY',
+          unitAttemptId: request.unitAttemptId,
+          anomaly: anomaly.type,
+        });
       this.#scheduler.release(previous.grantId);
       meta.reservation = undefined;
 

@@ -121,6 +121,7 @@ export const InteractionMessages = Object.freeze({
     PROVIDER_RATE_LIMITED: '模型服务限制了请求频率。',
     PROVIDER_AUTH: '模型服务认证失败，请检查凭据与权限设置。',
     PROVIDER_ERROR: '模型服务返回错误。',
+    PROVIDER_TOOL_CHOICE_IGNORED: '模型没有按要求调用结束工具。',
     UNIT_TIMEOUT: '操作执行超时。',
     INTERNAL: '操作发生内部错误。',
     EXECUTION_CANCELLED: '操作执行已取消。',

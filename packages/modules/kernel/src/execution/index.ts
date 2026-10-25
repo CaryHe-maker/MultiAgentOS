@@ -219,6 +219,9 @@ export class Execution implements ExecutionDuties {
         unitAttemptId: attempt.unitAttemptId,
         previousExecutionId: execution.executionId,
         ...(fact.executionKind === 'MODEL' ? { requestState: fact.requestState } : {}),
+        ...(fact.executionKind === 'MODEL' && fact.usage !== undefined
+          ? { usage: fact.usage }
+          : {}),
       });
     } catch {
       return false;

@@ -97,7 +97,7 @@ requestReservation(unitAttemptId, estimatedTokens, final)
 ```
 
 同一尝试的技术重试再次申请 final 预留不算第二次 final-call。技术重试见 [Execution](Execution.md) 第 6 节：
-`retryExecution` 先以 `NOT_SENT` 结算旧预留并释放旧机会，再按上述流程重新申请。
+`retryExecution` 先结算旧预留（请求未发出按 `NOT_SENT`，已发出且用量已知按实际用量，结算异常照常审计）并释放旧机会，再按上述流程重新申请；重新预留被拒时照常交付额度类 UnitReport。
 
 ## 6. AgentRun 登记
 

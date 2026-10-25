@@ -15,7 +15,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   maxSnapshotFiles: 20_000,
   maxReportBytes: 262_144,
   budget: {
-    tokenLimit: 600_000,
+    tokenLimit: 300_000,
     perCallInputLimit: 96_000,
     finalInputBudget: 72_000,
     maxOutputTokens: 8_192,

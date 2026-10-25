@@ -154,10 +154,8 @@ final-call 的 model-call 失败仍适用本节既定的降级例外，不等于
 
 final-call 的规则：
 
-- 确定下一次 model-call 为 final-call 后，在其 context-assemble 提交前，向当前 AgentRun 的
-  steps 记录一条 `FEEDBACK(WRAP_UP_NOTICE)`：不带 `toolCallId`，`round = roundsUsed + 1`，
-  message 说明已确定的 `wrapUpReason`。同一次 final-call 只记录一次；
-  不发起 final-call 的降级路径不记录该反馈。
+- 收尾原因只经 context-assemble 的 `status`（`final = true` 与 `wrapUpReason`）告诉模型，
+  由组装器写在状态行中（ExecutorSet 4.4）；Workflow 不为收尾记录反馈步骤（D3）。
 - context-assemble 与 model-call 的 `final` 都为 true；Kernel 按 `finalInputBudget` 组装，
   只提供 finish 控制工具；计入 1 个 Round。
 - 返回合法 FINISH：进入第 10.1 节；其他任何结果（INVALID、失败）：不再重新生成，生成降级报告。

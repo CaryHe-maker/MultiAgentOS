@@ -63,7 +63,7 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 | `SyscallRejected`，`issuer = 'CORE'`                  | 第 3.4 节中出现位置含 SyscallRejected 的其余原因码，以及 `RUN_NOT_FOUND`、`RUN_BLOCKED`                                                                                                                                |
 | `SyscallRejected.closeReason`                         | 当且仅当原因码为 `RUN_BLOCKED` 时存在                                                                                                                                                                                  |
 | `UnitReport`、`ToolResultStep`，`status = 'REJECTED'` | `INVALID_INPUT`、`INVALID_ARTIFACT_REF`、`USER_DECLINED`、`BUDGET_WRAP_UP`、`BUDGET_EXHAUSTED`、`FINAL_CALL_USED`、`OUT_OF_SCOPE`、`NOT_FOUND`、`UNSUPPORTED_FILE`、`INVALID_RANGE`、`INVALID_QUERY`、`LIMIT_EXCEEDED` |
-| `UnitReport`、`ToolResultStep`，`status = 'FAILED'`   | `PROVIDER_UNREACHABLE`、`PROVIDER_RATE_LIMITED`、`PROVIDER_AUTH`、`PROVIDER_ERROR`、`INTERNAL`、`UNIT_TIMEOUT`                                                                                                         |
+| `UnitReport`、`ToolResultStep`，`status = 'FAILED'`   | `PROVIDER_UNREACHABLE`、`PROVIDER_RATE_LIMITED`、`PROVIDER_AUTH`、`PROVIDER_ERROR`、`PROVIDER_TOOL_CHOICE_IGNORED`、`INTERNAL`、`UNIT_TIMEOUT`                                                                                                         |
 | `ExecutionFact` 与 `ExecutorOutcome`                  | 按 `outcome` 取第 7.3 节表中的集合                                                                                                                                                                                     |
 | `failurePolicy` 的键                                  | 上面 UnitReport 两行的并集                                                                                                                                                                                             |
 | `RunFailure`                                          | `category` 必须等于 `REASON_CODE_CATEGORY[code]`                                                                                                                                                                       |
@@ -112,7 +112,7 @@ AgentToolPool 的定义实例只使用本文第 9 节定义的字段。发现不
 | 对象             | 约束                                                                                                                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ToolResultStep` | `status = 'OK'` 时 `output` 与 `outputRef` 必填且类型相配（检索输出配 ContextPack，读取输出配文本）；否则只带该状态的 `reasonCode`                                                          |
-| `FeedbackStep`   | `UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`、`NOT_EXECUTED` 必须带 `toolCallId`；`MODEL_CALL_FAILED`、`WRAP_UP_NOTICE` 不得带；`INVALID_ACTION` 可带可不带 |
+| `FeedbackStep`   | `UNKNOWN_TOOL`、`INVALID_ARGUMENTS`、`TOO_MANY_TOOL_CALLS`、`DUPLICATE_CALL`、`NOT_EXECUTED` 必须带 `toolCallId`；`MODEL_CALL_FAILED` 不得带；`INVALID_ACTION` 可带可不带                    |
 | `AnalysisReport` | `degraded = false`：每条结论至少一个来源，`wrapUp` 可选且不得带 `lastIssue`；`degraded = true`：`wrapUp` 必填，`conclusions` 与 `unconfirmed` 必须为空；`emptyReads` 中的路径不得重复 |
 
 **执行请求与执行事实**
@@ -324,6 +324,7 @@ interface CapabilityDescriptor {
 | `PROVIDER_RATE_LIMITED`      | UnitReport                  | Executor            | provider 返回 429                                                                                                           | `DEPENDENCY` |
 | `PROVIDER_AUTH`              | UnitReport                  | Executor            | provider 返回 401 或 403                                                                                                    | `DEPENDENCY` |
 | `PROVIDER_ERROR`             | UnitReport                  | Executor            | provider 返回 5xx 或响应流中断                                                                                              | `DEPENDENCY` |
+| `PROVIDER_TOOL_CHOICE_IGNORED` | UnitReport | Executor | final-call 的回复没有按强制要求恰好调用一次控制工具，或参数不是合法 JSON；可技术重试 | `DEPENDENCY` |
 | `UNIT_TIMEOUT`               | UnitReport、ExecutionFact   | Supervisor          | 执行到达截止时间被终止                                                                                                      | `TIMEOUT`    |
 | `INTERNAL`                   | UnitReport                  | Executor、Execution | 其他内部错误                                                                                                                | `INTERNAL`   |
 | `EXECUTION_CANCELLED`        | ExecutionFact               | Supervisor          | 执行因运行收敛被取消；不出现在 UnitReport                                                                                   | `EXECUTION`  |
@@ -372,6 +373,7 @@ type ReasonCode =
   | 'PROVIDER_RATE_LIMITED'
   | 'PROVIDER_AUTH'
   | 'PROVIDER_ERROR'
+  | 'PROVIDER_TOOL_CHOICE_IGNORED'
   | 'UNIT_TIMEOUT'
   | 'INTERNAL'
   | 'EXECUTION_CANCELLED'
@@ -983,8 +985,7 @@ type FeedbackCode =
   | 'TOO_MANY_TOOL_CALLS' // 超过 maxToolCallsPerRound 的部分
   | 'DUPLICATE_CALL' // 本 AgentRun 已成功执行过相同调用
   | 'NOT_EXECUTED' // 因额度进入 EXHAUSTED 而未执行
-  | 'MODEL_CALL_FAILED' // 上一次 model-call 失败，原因码见 message
-  | 'WRAP_UP_NOTICE'; // 即将收尾的说明
+  | 'MODEL_CALL_FAILED'; // 上一次 model-call 失败，原因码见 message
 
 interface StatusFacts {
   roundsUsed: number;
@@ -1233,7 +1234,7 @@ interface TokenUsage {
 | outcome                          | reasonCode                                                                                          |
 | -------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `REJECTED`                       | `OUT_OF_SCOPE`、`NOT_FOUND`、`UNSUPPORTED_FILE`、`INVALID_RANGE`、`INVALID_QUERY`、`LIMIT_EXCEEDED` |
-| `FAILED`                         | `PROVIDER_UNREACHABLE`、`PROVIDER_RATE_LIMITED`、`PROVIDER_AUTH`、`PROVIDER_ERROR`、`INTERNAL`      |
+| `FAILED`                         | `PROVIDER_UNREACHABLE`、`PROVIDER_RATE_LIMITED`、`PROVIDER_AUTH`、`PROVIDER_ERROR`、`PROVIDER_TOOL_CHOICE_IGNORED`、`INTERNAL`      |
 | `TERMINATED`、`STOP_UNCONFIRMED` | `UNIT_TIMEOUT`、`EXECUTION_CANCELLED`                                                               |
 | `VIOLATION`                      | `SCOPE_MISSING`、`PATH_ESCAPE`、`GUARD_FAILURE`                                                     |
 

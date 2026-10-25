@@ -64,6 +64,7 @@ const FAILED_HINTS: Record<UnitFailedCode, string> = {
   PROVIDER_RATE_LIMITED: 'the model provider is rate limiting',
   PROVIDER_AUTH: 'the model provider refused the credentials',
   PROVIDER_ERROR: 'the model provider returned an error',
+  PROVIDER_TOOL_CHOICE_IGNORED: 'the model did not call the required tool',
   INTERNAL: 'the tool failed internally; try a different request',
   UNIT_TIMEOUT: 'the tool took too long; try a narrower request',
 };

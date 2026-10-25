@@ -1,4 +1,4 @@
-import { StepRecordSchema, UnitReportSchema, newId, validate } from '@multiagentos/contracts';
+import { UnitReportSchema, newId, validate } from '@multiagentos/contracts';
 import type { AnalysisReportDraft, UnitReport } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
@@ -127,21 +127,17 @@ describe('Round and final-call decisions', () => {
     );
   });
 
-  it('records one Schema-valid notice and cannot reserve a second final-call', () => {
+  it('reserves one final-call without adding a step and cannot reserve a second', () => {
     const prepared = prepareRound(run({ roundsUsed: 2 }), 'NORMAL', false);
     if (prepared.kind !== 'CALL') throw new Error('Expected a final-call');
     expect(prepared.final).toBe(true);
     expect(prepared.finalCallUsed).toBe(true);
-    expect(prepared.run.steps).toHaveLength(1);
-    const notice = prepared.run.steps[0];
-    expect(notice).toMatchObject({ kind: 'FEEDBACK', round: 3, code: 'WRAP_UP_NOTICE' });
-    expect(validate(StepRecordSchema, notice).ok).toBe(true);
-    expect(notice).not.toHaveProperty('toolCallId');
+    expect(prepared.run.wrapUpReason).toBe('ROUND_LIMIT');
+    expect(prepared.run.steps).toEqual([]);
     expect(prepareRound(prepared.run, 'NORMAL', true)).toEqual({
       kind: 'DEGRADED_REPORT',
       reason: 'ROUND_LIMIT',
     });
-    expect(prepared.run.steps).toHaveLength(1);
   });
 
   it('EXHAUSTED degrades directly without recording a final-call notice', () => {

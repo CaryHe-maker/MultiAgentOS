@@ -363,7 +363,11 @@ describe('workflow values', () => {
       { ...feedback, code: 'UNKNOWN_TOOL', toolCallId: 'c' },
       {
         'call feedback without toolCallId': { ...feedback, code: 'UNKNOWN_TOOL' },
-        'round feedback with toolCallId': { ...feedback, code: 'WRAP_UP_NOTICE', toolCallId: 'c' },
+        'round feedback with toolCallId': {
+          ...feedback,
+          code: 'MODEL_CALL_FAILED',
+          toolCallId: 'c',
+        },
       },
     );
     expect(ok(StepRecordSchema, { ...feedback, code: 'INVALID_ACTION' })).toBe(true);

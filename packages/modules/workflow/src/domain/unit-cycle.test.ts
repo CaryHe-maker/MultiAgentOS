@@ -240,7 +240,7 @@ describe('registered Agent Unit cycle', () => {
       final: true,
       status: { roundsUsed: 0, wrapUpReason: 'USER_DECLINED' },
     });
-    expect(next.state.run.steps).toMatchObject([{ code: 'WRAP_UP_NOTICE', round: 1 }]);
+    expect(next.state.run.steps).toEqual([]);
   });
 
   it('keeps fatal exhausted model failures on the error path with no report submission', () => {
@@ -500,8 +500,8 @@ describe('registered Agent Unit cycle', () => {
     };
     const next = receiveUnitReport(model.state, rejected, environment());
     expect(next.state.run.roundsUsed).toBe(0);
-    // A wrap-up is explained once, by the notice; no MODEL_CALL_FAILED feedback is added.
-    expect(next.state.run.steps).toMatchObject([{ code: 'WRAP_UP_NOTICE', round: 1 }]);
+    // A wrap-up is explained by the final-call status alone; no MODEL_CALL_FAILED feedback is added.
+    expect(next.state.run.steps).toEqual([]);
     expect(requestOf(next).input).toMatchObject({ final: true });
   });
 

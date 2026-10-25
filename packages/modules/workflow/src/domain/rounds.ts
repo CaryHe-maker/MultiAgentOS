@@ -1,4 +1,4 @@
-import type { BudgetState, FeedbackStep, UnitReport, WrapUpReason } from '@multiagentos/contracts';
+import type { BudgetState, UnitReport, WrapUpReason } from '@multiagentos/contracts';
 import type { AnalysisAction } from './analysis-action.js';
 import type { AgentRunState } from './state.js';
 
@@ -60,7 +60,10 @@ export type RoundPreparation =
     }
   | { readonly kind: 'DEGRADED_REPORT'; readonly reason: WrapUpReason };
 
-/** Reserves final-call once, before assembling its context, and appends exactly one notice. */
+/**
+ * Reserves final-call once, before assembling its context. The model learns of the wrap-up from
+ * the final-call status line alone (D3), so no step is added.
+ */
 export function prepareRound(
   run: AgentRunState,
   budgetState: BudgetState,
@@ -81,16 +84,10 @@ export function prepareRound(
   );
   if (!mode.final) return { kind: 'CALL', run, final: false, finalCallUsed: false };
   if (mode.wrapUpReason === undefined) throw new Error('A final-call must have a wrap-up reason');
-  const notice: FeedbackStep = {
-    kind: 'FEEDBACK',
-    round: run.roundsUsed + 1,
-    code: 'WRAP_UP_NOTICE',
-    message: `Finish the analysis in this final-call. Reason: ${mode.wrapUpReason}.`,
-  };
   return {
     kind: 'CALL',
     final: true,
     finalCallUsed: true,
-    run: { ...run, wrapUpReason: mode.wrapUpReason, steps: [...run.steps, notice] },
+    run: { ...run, wrapUpReason: mode.wrapUpReason },
   };
 }

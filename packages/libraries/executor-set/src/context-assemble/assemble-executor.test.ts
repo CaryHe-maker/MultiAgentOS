@@ -92,7 +92,7 @@ function rejected(round: number, toolCallId: string): ResolvedStep {
 }
 
 const roundFeedback = (round: number): ResolvedStep => ({
-  step: { kind: 'FEEDBACK', round, code: 'WRAP_UP_NOTICE', message: 'Wrap up soon.' },
+  step: { kind: 'FEEDBACK', round, code: 'MODEL_CALL_FAILED', message: 'PROVIDER_ERROR' },
 });
 
 function input(

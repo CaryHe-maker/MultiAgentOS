@@ -888,6 +888,14 @@
                     "FATAL"
                   ]
                 },
+                "PROVIDER_TOOL_CHOICE_IGNORED": {
+                  "enum": [
+                    "RETURN_TO_MODEL",
+                    "FINAL_CALL",
+                    "DEGRADED_REPORT",
+                    "FATAL"
+                  ]
+                },
                 "INTERNAL": {
                   "enum": [
                     "RETURN_TO_MODEL",
@@ -2853,6 +2861,14 @@
                       "FATAL"
                     ]
                   },
+                  "PROVIDER_TOOL_CHOICE_IGNORED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "INTERNAL": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -3633,6 +3649,14 @@
                 "FATAL"
               ]
             },
+            "PROVIDER_TOOL_CHOICE_IGNORED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "INTERNAL": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -4240,6 +4264,7 @@
                           "PROVIDER_RATE_LIMITED",
                           "PROVIDER_AUTH",
                           "PROVIDER_ERROR",
+                          "PROVIDER_TOOL_CHOICE_IGNORED",
                           "INTERNAL",
                           "UNIT_TIMEOUT"
                         ]
@@ -4315,8 +4340,7 @@
                       },
                       "code": {
                         "enum": [
-                          "MODEL_CALL_FAILED",
-                          "WRAP_UP_NOTICE"
+                          "MODEL_CALL_FAILED"
                         ]
                       }
                     },
@@ -7101,6 +7125,7 @@
                                           "PROVIDER_RATE_LIMITED",
                                           "PROVIDER_AUTH",
                                           "PROVIDER_ERROR",
+                                          "PROVIDER_TOOL_CHOICE_IGNORED",
                                           "INTERNAL",
                                           "UNIT_TIMEOUT"
                                         ]
@@ -7176,8 +7201,7 @@
                                       },
                                       "code": {
                                         "enum": [
-                                          "MODEL_CALL_FAILED",
-                                          "WRAP_UP_NOTICE"
+                                          "MODEL_CALL_FAILED"
                                         ]
                                       }
                                     },
@@ -7737,6 +7761,7 @@
                                                 "PROVIDER_RATE_LIMITED",
                                                 "PROVIDER_AUTH",
                                                 "PROVIDER_ERROR",
+                                                "PROVIDER_TOOL_CHOICE_IGNORED",
                                                 "UNIT_TIMEOUT",
                                                 "INTERNAL",
                                                 "EXECUTION_CANCELLED",
@@ -7990,6 +8015,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -8697,6 +8723,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -9274,6 +9301,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -9673,6 +9701,7 @@
             "PROVIDER_RATE_LIMITED",
             "PROVIDER_AUTH",
             "PROVIDER_ERROR",
+            "PROVIDER_TOOL_CHOICE_IGNORED",
             "UNIT_TIMEOUT",
             "INTERNAL",
             "EXECUTION_CANCELLED",
@@ -10025,6 +10054,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -10602,6 +10632,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -11470,6 +11501,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -12999,6 +13031,7 @@
                               "PROVIDER_RATE_LIMITED",
                               "PROVIDER_AUTH",
                               "PROVIDER_ERROR",
+                              "PROVIDER_TOOL_CHOICE_IGNORED",
                               "INTERNAL",
                               "UNIT_TIMEOUT"
                             ]
@@ -13074,8 +13107,7 @@
                           },
                           "code": {
                             "enum": [
-                              "MODEL_CALL_FAILED",
-                              "WRAP_UP_NOTICE"
+                              "MODEL_CALL_FAILED"
                             ]
                           }
                         },
@@ -14119,6 +14151,7 @@
                 "PROVIDER_RATE_LIMITED",
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
+                "PROVIDER_TOOL_CHOICE_IGNORED",
                 "INTERNAL"
               ]
             },
@@ -14479,6 +14512,7 @@
                 "PROVIDER_RATE_LIMITED",
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
+                "PROVIDER_TOOL_CHOICE_IGNORED",
                 "INTERNAL"
               ]
             },
@@ -15893,6 +15927,7 @@
                                       "PROVIDER_RATE_LIMITED",
                                       "PROVIDER_AUTH",
                                       "PROVIDER_ERROR",
+                                      "PROVIDER_TOOL_CHOICE_IGNORED",
                                       "INTERNAL",
                                       "UNIT_TIMEOUT"
                                     ]
@@ -15968,8 +16003,7 @@
                                   },
                                   "code": {
                                     "enum": [
-                                      "MODEL_CALL_FAILED",
-                                      "WRAP_UP_NOTICE"
+                                      "MODEL_CALL_FAILED"
                                     ]
                                   }
                                 },
@@ -18342,6 +18376,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -18895,6 +18930,7 @@
                                 "PROVIDER_RATE_LIMITED",
                                 "PROVIDER_AUTH",
                                 "PROVIDER_ERROR",
+                                "PROVIDER_TOOL_CHOICE_IGNORED",
                                 "UNIT_TIMEOUT",
                                 "INTERNAL",
                                 "EXECUTION_CANCELLED",
@@ -19290,6 +19326,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -19867,6 +19904,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "UNIT_TIMEOUT",
                     "INTERNAL",
                     "EXECUTION_CANCELLED",
@@ -20817,6 +20855,7 @@
                                   "PROVIDER_RATE_LIMITED",
                                   "PROVIDER_AUTH",
                                   "PROVIDER_ERROR",
+                                  "PROVIDER_TOOL_CHOICE_IGNORED",
                                   "INTERNAL",
                                   "UNIT_TIMEOUT"
                                 ]
@@ -20892,8 +20931,7 @@
                               },
                               "code": {
                                 "enum": [
-                                  "MODEL_CALL_FAILED",
-                                  "WRAP_UP_NOTICE"
+                                  "MODEL_CALL_FAILED"
                                 ]
                               }
                             },
@@ -21453,6 +21491,7 @@
                                         "PROVIDER_RATE_LIMITED",
                                         "PROVIDER_AUTH",
                                         "PROVIDER_ERROR",
+                                        "PROVIDER_TOOL_CHOICE_IGNORED",
                                         "UNIT_TIMEOUT",
                                         "INTERNAL",
                                         "EXECUTION_CANCELLED",
@@ -22129,6 +22168,7 @@
                               "PROVIDER_RATE_LIMITED",
                               "PROVIDER_AUTH",
                               "PROVIDER_ERROR",
+                              "PROVIDER_TOOL_CHOICE_IGNORED",
                               "INTERNAL",
                               "UNIT_TIMEOUT"
                             ]
@@ -22204,8 +22244,7 @@
                           },
                           "code": {
                             "enum": [
-                              "MODEL_CALL_FAILED",
-                              "WRAP_UP_NOTICE"
+                              "MODEL_CALL_FAILED"
                             ]
                           }
                         },
@@ -22765,6 +22804,7 @@
                                     "PROVIDER_RATE_LIMITED",
                                     "PROVIDER_AUTH",
                                     "PROVIDER_ERROR",
+                                    "PROVIDER_TOOL_CHOICE_IGNORED",
                                     "UNIT_TIMEOUT",
                                     "INTERNAL",
                                     "EXECUTION_CANCELLED",
@@ -24588,6 +24628,7 @@
                 "PROVIDER_RATE_LIMITED",
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
+                "PROVIDER_TOOL_CHOICE_IGNORED",
                 "INTERNAL",
                 "UNIT_TIMEOUT"
               ]
@@ -25975,6 +26016,7 @@
                         "PROVIDER_RATE_LIMITED",
                         "PROVIDER_AUTH",
                         "PROVIDER_ERROR",
+                        "PROVIDER_TOOL_CHOICE_IGNORED",
                         "INTERNAL",
                         "UNIT_TIMEOUT"
                       ]
@@ -26290,6 +26332,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -26867,6 +26910,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -27555,6 +27599,7 @@
         "PROVIDER_RATE_LIMITED",
         "PROVIDER_AUTH",
         "PROVIDER_ERROR",
+        "PROVIDER_TOOL_CHOICE_IGNORED",
         "UNIT_TIMEOUT",
         "INTERNAL",
         "EXECUTION_CANCELLED",
@@ -28664,6 +28709,7 @@
                             "PROVIDER_RATE_LIMITED",
                             "PROVIDER_AUTH",
                             "PROVIDER_ERROR",
+                            "PROVIDER_TOOL_CHOICE_IGNORED",
                             "UNIT_TIMEOUT",
                             "INTERNAL",
                             "EXECUTION_CANCELLED",
@@ -29330,6 +29376,7 @@
                     "PROVIDER_RATE_LIMITED",
                     "PROVIDER_AUTH",
                     "PROVIDER_ERROR",
+                    "PROVIDER_TOOL_CHOICE_IGNORED",
                     "INTERNAL",
                     "UNIT_TIMEOUT"
                   ]
@@ -29405,8 +29452,7 @@
                 },
                 "code": {
                   "enum": [
-                    "MODEL_CALL_FAILED",
-                    "WRAP_UP_NOTICE"
+                    "MODEL_CALL_FAILED"
                   ]
                 }
               },
