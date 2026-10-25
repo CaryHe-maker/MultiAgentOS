@@ -18,7 +18,7 @@ export type { WorkflowConfig } from '@multiagentos/contracts';
 
 /** Suggested initial configuration (docs/M1/Module/Workflow.md section 12). */
 export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
-  entryAgentRef: Object.freeze({ id: 'planner', version: 'v0.1.0' }),
+  entryAgentRef: Object.freeze({ id: 'planner', version: 'v1.0.0' }),
   regenerationLimit: 3,
   noProgressRounds: 2,
 });

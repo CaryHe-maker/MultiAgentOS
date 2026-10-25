@@ -48,77 +48,79 @@ packages/libraries/agent-tool-pool/definitions/
 
 ## 4. M1 定义实例
 
-M1 目录恰好包含以下 16 个定义文件和 `status.yaml`（`entries: []`）。所有草稿的 `schemaVersion` 为 `v0`。
+M1 目录恰好包含以下 16 个定义文件和 `status.yaml`（`entries: []`），全部为已封存的 `v1.0.0`，`schemaVersion` 为 `v0`。Prompt 与 Tool 经固定任务集 F1–F5 的真实模型评测后定稿（`contentStatus: FINAL`）；此前的 `v0.1.0` 草稿只保留在 git 历史中。
 
 | kind | id | version | 状态 |
 |---|---|---|---|
-| AGENT | `planner` | `v0.1.0` | 草稿 |
-| AGENT | `code-viewer` | `v0.1.0` | 草稿 |
-| UNIT | `repository-orient` | `v0.1.0` | 草稿 |
-| UNIT | `repository-search` | `v0.1.0` | 草稿 |
-| UNIT | `file-read` | `v0.1.0` | 草稿 |
-| UNIT | `context-assemble` | `v0.1.0` | 草稿 |
-| UNIT | `model-call` | `v0.1.0` | 草稿 |
-| UNIT | `report-publish` | `v0.1.0` | 草稿 |
-| TOOL | `search-repository` | `v0.1.0` | 草稿 |
-| TOOL | `read-file` | `v0.1.0` | 草稿 |
-| TOOL | `finish-analysis` | `v0.1.0` | 草稿 |
-| TOOL | `handoff-to-code-viewer` | `v0.1.0` | 草稿 |
+| AGENT | `planner` | `v1.0.0` | 已封存 |
+| AGENT | `code-viewer` | `v1.0.0` | 已封存 |
+| UNIT | `repository-orient` | `v1.0.0` | 已封存 |
+| UNIT | `repository-search` | `v1.0.0` | 已封存 |
+| UNIT | `file-read` | `v1.0.0` | 已封存 |
+| UNIT | `context-assemble` | `v1.0.0` | 已封存 |
+| UNIT | `model-call` | `v1.0.0` | 已封存 |
+| UNIT | `report-publish` | `v1.0.0` | 已封存 |
+| TOOL | `search-repository` | `v1.0.0` | 已封存 |
+| TOOL | `read-file` | `v1.0.0` | 已封存 |
+| TOOL | `finish-analysis` | `v1.0.0` | 已封存 |
+| TOOL | `handoff-to-code-viewer` | `v1.0.0` | 已封存 |
 | MODEL | `deepseek-flash` | `v1.0.0` | 已封存 |
 | MODEL | `deepseek-v4-pro` | `v1.0.0` | 已封存 |
-| PROMPT | `planner-system` | `v0.1.0` | 草稿 |
-| PROMPT | `code-viewer-system` | `v0.1.0` | 草稿 |
+| PROMPT | `planner-system` | `v1.0.0` | 已封存 |
+| PROMPT | `code-viewer-system` | `v1.0.0` | 已封存 |
 
-运行的入口 Agent 由 Workflow 配置 `entryAgentRef = { id: planner, version: v0.1.0 }` 指定（见 [Workflow](../Module/Workflow.md) 12）。
+运行的入口 Agent 由 Workflow 配置 `entryAgentRef = { id: planner, version: v1.0.0 }` 指定（见 [Workflow](../Module/Workflow.md) 12）。
 
 ### 4.1 Agent
 
 ```yaml
-# agents/planner/v0.1.0.yaml
+# agents/planner/v1.0.0.yaml
 schemaVersion: v0
 kind: AGENT
 id: planner
-version: v0.1.0
+version: v1.0.0
+digest: c8929b1a8b7fb3bb47c1fd10e8072da6908a272e2646bb13696ec52d4011d5f8
 description: Plans the repository analysis and hands it to the code viewer; never reads the repository.
 role: analysis planner
 modelRef: { id: deepseek-flash, version: v1.0.0 }
 modelSettings: { thinking: DISABLED }
-promptRef: { id: planner-system, version: v0.1.0 }
+promptRef: { id: planner-system, version: v1.0.0 }
 unitRefs:
-  - { id: context-assemble, version: v0.1.0 }
-  - { id: model-call, version: v0.1.0 }
-  - { id: report-publish, version: v0.1.0 }
+  - { id: context-assemble, version: v1.0.0 }
+  - { id: model-call, version: v1.0.0 }
+  - { id: report-publish, version: v1.0.0 }
 startUnitRefs: []
 actions:
-  finish: { toolRef: { id: finish-analysis, version: v0.1.0 } }
+  finish: { toolRef: { id: finish-analysis, version: v1.0.0 } }
   handoff:
-    toolRef: { id: handoff-to-code-viewer, version: v0.1.0 }
-    targetAgentRef: { id: code-viewer, version: v0.1.0 }
+    toolRef: { id: handoff-to-code-viewer, version: v1.0.0 }
+    targetAgentRef: { id: code-viewer, version: v1.0.0 }
 limits: { maxRounds: 3, maxToolCallsPerRound: 0 }
 ```
 
 ```yaml
-# agents/code-viewer/v0.1.0.yaml
+# agents/code-viewer/v1.0.0.yaml
 schemaVersion: v0
 kind: AGENT
 id: code-viewer
-version: v0.1.0
+version: v1.0.0
+digest: 6fde30a62896b0af10ee6db0b5069b71437b7446b34ca55ee635ed0714669b16
 description: Reads the repository through orient, search and read units and writes the analysis report.
 role: read-only code analyst
 modelRef: { id: deepseek-flash, version: v1.0.0 }
 modelSettings: { thinking: DISABLED }
-promptRef: { id: code-viewer-system, version: v0.1.0 }
+promptRef: { id: code-viewer-system, version: v1.0.0 }
 unitRefs:
-  - { id: repository-orient, version: v0.1.0 }
-  - { id: repository-search, version: v0.1.0 }
-  - { id: file-read, version: v0.1.0 }
-  - { id: context-assemble, version: v0.1.0 }
-  - { id: model-call, version: v0.1.0 }
-  - { id: report-publish, version: v0.1.0 }
+  - { id: repository-orient, version: v1.0.0 }
+  - { id: repository-search, version: v1.0.0 }
+  - { id: file-read, version: v1.0.0 }
+  - { id: context-assemble, version: v1.0.0 }
+  - { id: model-call, version: v1.0.0 }
+  - { id: report-publish, version: v1.0.0 }
 startUnitRefs:
-  - { id: repository-orient, version: v0.1.0 }
+  - { id: repository-orient, version: v1.0.0 }
 actions:
-  finish: { toolRef: { id: finish-analysis, version: v0.1.0 } }
+  finish: { toolRef: { id: finish-analysis, version: v1.0.0 } }
 limits: { maxRounds: 20, maxToolCallsPerRound: 8 }
 ```
 
@@ -127,11 +129,12 @@ limits: { maxRounds: 20, maxToolCallsPerRound: 8 }
 ### 4.2 Unit
 
 ```yaml
-# units/repository-orient/v0.1.0.yaml
+# units/repository-orient/v1.0.0.yaml
 schemaVersion: v0
 kind: UNIT
 id: repository-orient
-version: v0.1.0
+version: v1.0.0
+digest: db37f606190031ae4fa1da05c4413df776d6783802106ca27807334c4d2deefe
 description: Snapshot the repository and build an ORIENT ContextPack.
 executionKind: REPOSITORY_ORIENT
 protectedCapabilities: [repo.read]
@@ -145,18 +148,19 @@ failurePolicy:
 ```
 
 ```yaml
-# units/repository-search/v0.1.0.yaml
+# units/repository-search/v1.0.0.yaml
 schemaVersion: v0
 kind: UNIT
 id: repository-search
-version: v0.1.0
+version: v1.0.0
+digest: db72f5b56284b3990695502377e1fe231de86546c6fdd815d88d7bb95ab18fad
 description: Search the repository snapshot and build a SEARCH ContextPack.
 executionKind: REPOSITORY_SEARCH
 protectedCapabilities: [repo.read]
 inputContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
 outputContract: { kind: contract, id: context.RepositorySearchOutput, version: v0 }
 toolRefs:
-  - { id: search-repository, version: v0.1.0 }
+  - { id: search-repository, version: v1.0.0 }
 effect: READ_ONLY
 isIdempotent: true
 failurePolicy:
@@ -168,18 +172,19 @@ failurePolicy:
 ```
 
 ```yaml
-# units/file-read/v0.1.0.yaml
+# units/file-read/v1.0.0.yaml
 schemaVersion: v0
 kind: UNIT
 id: file-read
-version: v0.1.0
+version: v1.0.0
+digest: efb15813f75f4faa6271a828faff126c3e0baccf0c6ca880dc9cd82e45df6365
 description: Read a line range of one repository file.
 executionKind: FILE_READ
 protectedCapabilities: [repo.read]
 inputContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 outputContract: { kind: contract, id: executor.FileReadOutput, version: v0 }
 toolRefs:
-  - { id: read-file, version: v0.1.0 }
+  - { id: read-file, version: v1.0.0 }
 effect: READ_ONLY
 isIdempotent: true
 failurePolicy:
@@ -193,11 +198,12 @@ failurePolicy:
 ```
 
 ```yaml
-# units/context-assemble/v0.1.0.yaml
+# units/context-assemble/v1.0.0.yaml
 schemaVersion: v0
 kind: UNIT
 id: context-assemble
-version: v0.1.0
+version: v1.0.0
+digest: ca1748c04a2822f705c2dc91ba91d4dc7254c766e790bc01323cc96a75ee963f
 description: Assemble the model input from instructions, tools, objective and the AgentRun history.
 executionKind: CONTEXT_ASSEMBLE
 protectedCapabilities: []
@@ -210,13 +216,14 @@ failurePolicy: {}
 ```
 
 ```yaml
-# units/model-call/v0.1.0.yaml
+# units/model-call/v1.0.0.yaml
 # The model receives data but changes no state, so the effect is READ_ONLY.
 # Repeating a call can give a different answer, so it is not idempotent.
 schemaVersion: v0
 kind: UNIT
 id: model-call
-version: v0.1.0
+version: v1.0.0
+digest: 888337249a963a70a5aa7314d0f8d19f786a4faae0d73f8a309cd169b98aaeed
 description: One call to the pinned model with an assembled ContextPack.
 executionKind: MODEL
 protectedCapabilities: []
@@ -233,11 +240,12 @@ failurePolicy:
 ```
 
 ```yaml
-# units/report-publish/v0.1.0.yaml
+# units/report-publish/v1.0.0.yaml
 schemaVersion: v0
 kind: UNIT
 id: report-publish
-version: v0.1.0
+version: v1.0.0
+digest: 71b9b0253c42ff33e30ece9ef8e1deee55b803b2f148ab248fe6ebe6fb1335d9
 description: Publish the verified AnalysisReport as an artifact; executed by Kernel Execution itself.
 executionKind: REPORT_PUBLISH
 protectedCapabilities: []
@@ -258,11 +266,12 @@ final-call 的 model-call 例外：无论原因码，Workflow 都生成降级报
 ### 4.3 Tool
 
 ```yaml
-# tools/search-repository/v0.1.0.yaml
+# tools/search-repository/v1.0.0.yaml
 schemaVersion: v0
 kind: TOOL
 id: search-repository
-version: v0.1.0
+version: v1.0.0
+digest: 1c49383cbb06f82390194546bbdb57a31d74030499dd585f5d416040e8b852ca
 description: Model-facing repository search, served by the repository-search unit.
 purpose: UNIT
 modelName: search_repository
@@ -274,15 +283,16 @@ parametersContract: { kind: contract, id: context.RepositorySearchInput, version
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 ```yaml
-# tools/read-file/v0.1.0.yaml
+# tools/read-file/v1.0.0.yaml
 schemaVersion: v0
 kind: TOOL
 id: read-file
-version: v0.1.0
+version: v1.0.0
+digest: ce6b956149f703169637e3e695da0b569a00707b203f2fb92c0e17a6c3253d4d
 description: Model-facing file read, served by the file-read unit.
 purpose: UNIT
 modelName: read_file
@@ -293,15 +303,16 @@ parametersContract: { kind: contract, id: executor.FileReadInput, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 ```yaml
-# tools/finish-analysis/v0.1.0.yaml
+# tools/finish-analysis/v1.0.0.yaml
 schemaVersion: v0
 kind: TOOL
 id: finish-analysis
-version: v0.1.0
+version: v1.0.0
+digest: 1a971e5e1cfad9497ff5609a5967d05861a0da0db1e5a5e2be2b99dba24141b4
 description: Control tool that ends the AgentRun with a report draft.
 purpose: CONTROL
 modelName: finish_analysis
@@ -312,15 +323,16 @@ parametersContract: { kind: contract, id: workflow.AnalysisReportDraft, version:
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 ```yaml
-# tools/handoff-to-code-viewer/v0.1.0.yaml
+# tools/handoff-to-code-viewer/v1.0.0.yaml
 schemaVersion: v0
 kind: TOOL
 id: handoff-to-code-viewer
-version: v0.1.0
+version: v1.0.0
+digest: 559522ab9fea4cb46cdaabe2175f7e6aa52c36d97debeeadc7941bba9f40ac15
 description: Control tool that hands the analysis task from the planner to the code viewer.
 purpose: CONTROL
 modelName: handoff_to_code_viewer
@@ -333,7 +345,7 @@ parametersContract: { kind: contract, id: workflow.HandoffBrief, version: v0 }
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 ### 4.4 Prompt
@@ -342,7 +354,8 @@ contentStatus: PLACEHOLDER
 schemaVersion: v0
 kind: PROMPT
 id: planner-system
-version: v0.1.0
+version: v1.0.0
+digest: dce6147df7c2b941dfd20c8c7b2cb90cffbb04a11ac746c7578e33f84c062996
 description: System prompt of the planner.
 role: system
 template: |
@@ -361,14 +374,15 @@ template: |
     finish_analysis with the answer in summary and empty conclusions and unconfirmed lists.
   - Write in the language of the user's question.
 variables: []
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 ```yaml
 schemaVersion: v0
 kind: PROMPT
 id: code-viewer-system
-version: v0.1.0
+version: v1.0.0
+digest: f517d8ff6d65ae8c98269fb747703053eed6634338e963fa80dbedb01219e85d
 description: System prompt of the code viewer.
 role: system
 template: |
@@ -407,7 +421,7 @@ template: |
   repository access was not granted, finish at once: say so in summary and put what you could
   not verify in unconfirmed.
 variables: []
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
 ```
 
 Prompt 正文是每次 model-call 的缓存前缀，不得包含时间戳、计数器或其他随运行变化的值。
@@ -493,6 +507,4 @@ Workflow 读取 `limits`、`startUnitRefs`、`actions`、工具的 `purpose` 与
 
 ## 9. 遗留事项
 
-| 事项 | Owner |
-|---|---|
-| 两个 Prompt 正文与四个 Tool 的 `modelDescription` 已写出依据 M0 实验的初稿（只追加的消息、证据只认 `read_file` 读过的范围、按用户语言作答、不合并发现）；code-viewer 加入经对照评测有效的通用缺陷检查要点（ExecutorSet 6.1）。仍标 `contentStatus: PLACEHOLDER`，在固定任务集 F1–F5 的真实模型评测后定稿为 `FINAL` | Cary 与 meti |
+无。两个 Prompt 与四个 Tool 的 `modelDescription` 已在 2026-10-25 经 F1–F5 的真实模型评测定稿为 `FINAL` 并封存为 `v1.0.0`（M1ReleasePlan R3.5）。

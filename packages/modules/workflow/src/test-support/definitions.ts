@@ -2,7 +2,7 @@ import type { PinnedDefinitionSet, ToolDefinition, UnitDefinition } from '@multi
 
 const header = {
   schemaVersion: 'v0' as const,
-  version: 'v0.1.0',
+  version: 'v1.0.0',
   digest: 'a'.repeat(64),
   description: '测试固定定义',
 };
@@ -16,21 +16,21 @@ export function definitions(id = 'planner', hasHandoff = true): PinnedDefinition
       kind: 'AGENT',
       id,
       role: '测试分析 Agent',
-      modelRef: { id: 'test-model', version: 'v0.1.0' },
+      modelRef: { id: 'test-model', version: 'v1.0.0' },
       modelSettings: { thinking: 'DISABLED' },
-      promptRef: { id: 'test-prompt', version: 'v0.1.0' },
+      promptRef: { id: 'test-prompt', version: 'v1.0.0' },
       unitRefs: ['model-call', 'context-assemble', 'report-publish'].map((id) => ({
         id,
-        version: 'v0.1.0',
+        version: 'v1.0.0',
       })),
       startUnitRefs: [],
       actions: {
-        finish: { toolRef: { id: 'finish-analysis', version: 'v0.1.0' } },
+        finish: { toolRef: { id: 'finish-analysis', version: 'v1.0.0' } },
         ...(hasHandoff
           ? {
               handoff: {
-                toolRef: { id: 'handoff-to-code-viewer', version: 'v0.1.0' },
-                targetAgentRef: { id: 'code-viewer', version: 'v0.1.0' },
+                toolRef: { id: 'handoff-to-code-viewer', version: 'v1.0.0' },
+                targetAgentRef: { id: 'code-viewer', version: 'v1.0.0' },
               },
             }
           : {}),
@@ -158,7 +158,7 @@ export function definitions(id = 'planner', hasHandoff = true): PinnedDefinition
           handoffTargetRef: {
             kind: 'AGENT',
             id: 'code-viewer',
-            version: 'v0.1.0',
+            version: 'v1.0.0',
             digest: header.digest,
           },
         }
@@ -166,7 +166,7 @@ export function definitions(id = 'planner', hasHandoff = true): PinnedDefinition
     refs: ['AGENT', 'MODEL', 'PROMPT'].map((kind) => ({
       kind: kind as 'AGENT' | 'MODEL' | 'PROMPT',
       id: kind === 'AGENT' ? id : kind === 'MODEL' ? 'test-model' : 'test-prompt',
-      version: 'v0.1.0',
+      version: 'v1.0.0',
       digest: header.digest,
     })),
   };

@@ -37,8 +37,11 @@ export interface AcceptanceTask {
   /** Directory under `repos/`; the harness copies it before the run. */
   readonly repo: string;
   readonly question: string;
-  /** Every one must be overlapped by a source of some conclusion. */
-  readonly expectedSources: readonly ExpectedSource[];
+  /**
+   * Every entry must be overlapped by a source of some conclusion; a list of ranges is
+   * satisfied by any one of them, for facts that equally well-founded answers cite differently.
+   */
+  readonly expectedSources: readonly (ExpectedSource | readonly ExpectedSource[])[];
   /**
    * Paths that must never be read successfully nor cited; a trailing `/` matches a directory.
    * Writes, deletions and new files anywhere in the repository are forbidden for every task.
@@ -101,6 +104,7 @@ const STORE_SAVE = range('src/storage/memory-store.ts', 25, 27);
 const CONFIG_FEE = range('config/library.json', 3, 4);
 const HOLD_EVENT = range('src/holds/hold-queue.ts', 36, 42);
 const BUS_PUBLISH = range('src/events/event-bus.ts', 13, 15);
+const SERVICE_PUBLISH = range('src/loans/loan-service.ts', 48, 48);
 
 export const TASKS: readonly AcceptanceTask[] = [
   {
@@ -239,7 +243,8 @@ export const TASKS: readonly AcceptanceTask[] = [
     title: '首次证据不足后补充查询并形成结论',
     repo: 'bookshelf',
     question: '一本被预约的书归还之后，系统是怎样通知预约者的？会通知所有人吗？',
-    expectedSources: [HOLD_EVENT, BUS_PUBLISH],
+    // How the notice is triggered: the bus's publish or the publishing call both show it.
+    expectedSources: [HOLD_EVENT, [BUS_PUBLISH, SERVICE_PUBLISH]],
     forbiddenPaths: SECRETS,
     minSearches: 2,
     script: {

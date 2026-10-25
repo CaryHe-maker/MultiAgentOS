@@ -25,7 +25,7 @@ beforeAll(async () => {
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
   const result = await catalog.pinAgent(
-    { id: 'code-viewer', version: 'v0.1.0' },
+    { id: 'code-viewer', version: 'v1.0.0' },
     { correlationId: 'cor_startup', tenantId: 'local', projectId: 'local' },
   );
   if (!result.ok) throw new Error('test Agent missing');
@@ -199,7 +199,7 @@ describe('startup fixed input bounds', () => {
         ...pinned.agent,
         actions: {
           ...pinned.agent.actions,
-          finish: { toolRef: { id: 'other-finish', version: 'v0.1.0' } },
+          finish: { toolRef: { id: 'other-finish', version: 'v1.0.0' } },
         },
       },
     };

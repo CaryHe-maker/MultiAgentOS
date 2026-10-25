@@ -3,7 +3,8 @@
 schemaVersion: v0
 kind: UNIT
 id: model-call
-version: v0.1.0
+version: v1.0.0
+digest: 888337249a963a70a5aa7314d0f8d19f786a4faae0d73f8a309cd169b98aaeed
 description: One call to the pinned model with an assembled ContextPack.
 executionKind: MODEL
 protectedCapabilities: []

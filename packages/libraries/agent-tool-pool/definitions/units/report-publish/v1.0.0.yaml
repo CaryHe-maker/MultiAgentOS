@@ -1,7 +1,8 @@
 schemaVersion: v0
 kind: UNIT
 id: report-publish
-version: v0.1.0
+version: v1.0.0
+digest: 71b9b0253c42ff33e30ece9ef8e1deee55b803b2f148ab248fe6ebe6fb1335d9
 description: Publish the verified AnalysisReport as an artifact; executed by Kernel Execution itself.
 executionKind: REPORT_PUBLISH
 protectedCapabilities: []

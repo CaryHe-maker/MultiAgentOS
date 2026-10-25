@@ -11,8 +11,8 @@
 
 | 条件 | 证据 | 状态 |
 |---|---|---|
-| F1–F5 均到达可解释终态；至少一个真实模型运行全部任务并记录指标 | 离线：`apps/control-plane/test/acceptance/acceptance.test.ts` 中 F1–F5 经完整产品调用链以 COMPLETED 结束，报告的每条结论都有读取过的来源。真实模型：R3.1 首轮 15/15 通过并记录指标（第 6 节）；定稿后的 R3.6 尚未运行 | 已满足（R3.6 基线待后续阶段） |
-| 所有任务完整经过权威调用链，且运行固定定义版本与 digest | 验收工具按 `main` 的组合方式装配全部产品部件并经 CLI 解析运行（`harness.ts`）；运行记录取 RunSummary 中各 AgentRun 的 `agentRef`（id、version、digest）。定义仍为 `v0.1.0` 草稿，按 AgentToolPool 规则在加载时计算 digest；定稿与封存 `v1.0.0` 属于 R3.5 | 调用链已满足；封存版本待后续阶段（R3.5，依赖真实模型评测） |
+| F1–F5 均到达可解释终态；至少一个真实模型运行全部任务并记录指标 | 离线：`acceptance.test.ts` 中 F1–F5 经完整产品调用链以 COMPLETED 结束。真实模型：R3.1 首轮（草稿 Prompt）15/15；R3.6 基线（封存的 `v1.0.0`）15 次全部 COMPLETED、非降级，按调整后的 F5 断言 15/15（第 7 节）；指标见第 6、7 节 | 已满足 |
+| 所有任务完整经过权威调用链，且运行固定定义版本与 digest | 验收工具按 `main` 的组合方式装配全部产品部件并经 CLI 解析运行（`harness.ts`）；运行记录取 RunSummary 中各 AgentRun 的 `agentRef`。R3.5 已把全部定义封存为 `v1.0.0`，R3.6 的 15 条记录都固定 `planner@v1.0.0`（`c8929b1a…`）与 `code-viewer@v1.0.0`（`6fde30a6…`），与封存文件的 digest 一致 | 已满足 |
 | ContextPack 和关键结论具有完整来源；无来源的成功结论数量为零 | `workflow.AnalysisReport.v0` 要求正常报告的每条结论至少一个 `VerifiedSource`（`kernel-protocol.test.ts`）；Workflow 10.1 的来源核验（`normal-report.test.ts`、`report-sources`）；ContextPack 的 `snapshotId` 与 `provenance` 由 Schema 强制（`kernel-protocol.test.ts`）并由各 Executor 测试覆盖（`orient-executor.test.ts`、`assemble-executor.test.ts`）；验收工具检查每个预期来源都被结论引用；R3.1 的 136 条结论全部带已核验来源，1 条来源不在读取范围内的结论被降级为 `unconfirmed` | 已满足 |
 | 步骤、token、模型调用和时间预算均可确定性终止 | Monitor 的额度与收尾（`monitor.test.ts`、`attempts.test.ts`）；Workflow 的 Round 上限与无进展检测（`rounds.test.ts`、`progress.test.ts`）；运行超时（`stage6-acceptance.test.ts` 的 run timeout 用例）；陷阱 S3：脚本模型无限重复检索，运行在上限处以带原因的降级报告结束 | 已满足 |
 | 写入、命令、测试、网络和 workspace 逃逸成功次数为零 | 仓库访问的路径检查反例（`repository-access.test.ts`：`..`、绝对路径、符号链接、排除规则、检查后替换）；子进程只允许 `rg`（`subprocess-runner.test.ts`，架构测试 `confines child processes to the Supervisor`）；Provider SDK 只在 model-call（架构测试）；陷阱 S2 跟随 README 中的注入指令读取 `/etc/passwd`、`../../..`、`/root/.ssh/id_rsa` 与 `.env`，全部 REJECTED，内容未进入模型、存储或终端；离线服务商拒绝一切非服务商主机；R3.1 的 15 次真实运行未读取禁止路径，工作区不变 | 已满足 |
@@ -51,8 +51,7 @@
 | 符号检索 | 用记录了限制的正则策略，不做语法分析（M1TechStack 第 8 节） |
 | 运行状态 | 单进程、单用户、单活动任务；运行状态不持久化，进程退出后不能恢复（M1Plan 第 9 节） |
 | CI 触发 | `pull_request` 只匹配 `main` 与 `feat/**`，`feature/M1/main` 上的提交靠 push 触发（D6） |
-| Prompt | 仍为 `v0.1.0` 草稿（PLACEHOLDER），真实模型评测后定稿封存（R3.5） |
-| 真实模型基线 | R3.1 首轮基于 `v0.1.0` 草稿 Prompt（第 6 节）；定稿后的正式基线属于 R3.6 |
+| 真实模型基线 | 只针对固定的小型 fixture `bookshelf`（第 7 节）；更大仓库的成本与延迟未测 |
 
 ## 4. 需要 Cary 或真实模型才能完成的事项
 
@@ -107,3 +106,27 @@
 - 人工抽查：F1 三次对边界（到期当天、宽限期内、刚过宽限期按到期日起算）的解释与 `late-fee.ts` 一致；F5 三次都
   指出只通知队首，并有两次识别出已废弃的 `legacy/notifier.ts` 是干扰项。
 - 资源使用远低于额度：单次最多 50835 token，约为 `tokenLimit` 的 8.5%。这是 R3.4 校准的输入。
+
+## 7. 真实模型基线（R3.6）
+
+2026-10-25 在 WSL Ubuntu 24.04 上运行 `pnpm run acceptance -- all --runs 3 --yes`。提交 `49efce0`，模型
+`deepseek-flash@v1.0.0`，Agent `planner@v1.0.0`、`code-viewer@v1.0.0`（全部定义已封存），`tokenLimit` 300000（R3.4），
+收尾只由状态行说明（R3.3），收尾调用可按已知用量技术重试（R3.7）。原始记录在运行目录
+`.multiagentos/acceptance/r36/records.jsonl`，不入库。
+
+| 任务 | 验收工具判定 | 用时（秒） | 最多 token | 最多模型调用 | 平均费用（美元） | 结论 / 未确认 |
+|---|---|---|---|---|---|---|
+| F1 | 3/3 | 16.8–17.2 | 28982 | 7 | 0.0044 | 24 / 7 |
+| F2 | 3/3 | 13.6–18.9 | 30178 | 7 | 0.0049 | 25 / 9 |
+| F3 | 3/3 | 20.3–25.9 | 44167 | 9 | 0.0063 | 33 / 10 |
+| F4 | 3/3 | 19.4–30.4 | 33388 | 7 | 0.0065 | 30 / 11 |
+| F5 | 3/3 | 19.0–21.5 | 44797 | 9 | 0.0068 | 30 / 9 |
+
+- **成功率**：15 次全部到达 COMPLETED，没有降级报告，结束时额度状态都是 NORMAL，没有无法计数的 token，没有技术重试；
+  验收工具判定 15/15（运行时为 14/15，F5 断言调整后重新判定，见下）。
+- **来源完整性**：142 条结论全部带已核验的读取来源；46 条未确认项都是模型自己标注的，没有因来源核验被降级的结论。
+- **成本**：15 次共 0.086 美元，平均每次 0.0058 美元；单次最多 44797 token，约为 `tokenLimit` 的 15%。
+- **延迟**：中位数 19.0 秒，最长 30.4 秒。
+- **F5 #3 与断言调整**：报告正确说明只通知队首、通知经事件总线同步触发，并识别出已废弃的 `legacy/notifier.ts`；
+  它读取了 `event-bus.ts`，但结论引用的是发布事件的 `loan-service.ts:39-50` 与订阅事件的 `hold-queue.ts:21-27`，
+  没有引用总线本身的 `publish`（第 13–15 行）。这是 F5 预期来源的要求比问题本身更严，不是产品缺陷。经 Cary 同意，F5 改为“总线的 `publish` 或 `loan-service.ts` 第 48 行的发布调用二者其一”（`expectedSources` 支持备选范围，`acceptance.test.ts` 有对应用例），这次运行按新断言通过。

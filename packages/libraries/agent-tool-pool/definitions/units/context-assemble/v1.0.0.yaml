@@ -1,7 +1,8 @@
 schemaVersion: v0
 kind: UNIT
 id: context-assemble
-version: v0.1.0
+version: v1.0.0
+digest: ca1748c04a2822f705c2dc91ba91d4dc7254c766e790bc01323cc96a75ee963f
 description: Assemble the model input from instructions, tools, objective and the AgentRun history.
 executionKind: CONTEXT_ASSEMBLE
 protectedCapabilities: []

@@ -1,7 +1,8 @@
 schemaVersion: v0
 kind: PROMPT
 id: planner-system
-version: v0.1.0
+version: v1.0.0
+digest: dce6147df7c2b941dfd20c8c7b2cb90cffbb04a11ac746c7578e33f84c062996
 description: System prompt of the planner.
 role: system
 template: |
@@ -20,4 +21,4 @@ template: |
     finish_analysis with the answer in summary and empty conclusions and unconfirmed lists.
   - Write in the language of the user's question.
 variables: []
-contentStatus: PLACEHOLDER
+contentStatus: FINAL

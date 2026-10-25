@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { stringify } from 'yaml';
+import { Document, stringify, visit } from 'yaml';
 import { buildCatalogIndex, planSeal } from '../../domain/catalog-index.js';
 import { draftDocuments } from '../../test-support/definition-fixtures.js';
 import { FileDefinitionSource } from './file-definition-source.js';
@@ -55,15 +55,32 @@ describe('FileDefinitionSource', () => {
     ]);
   });
 
-  it('seals drafts in place, keeps comments and then loads cleanly', async () => {
-    const root = await writeCatalog();
+  it('seals drafts in place, keeps comments and formatting and then loads cleanly', async () => {
+    const files = draftFiles();
+    const origin = 'tools/read-file/v1.0.0.yaml';
+    // Flow mappings without padding: re-serializing the document would rewrite them as `{ a: b }`.
+    const tool = new Document(
+      draftDocuments().find((document) => document.origin === origin)?.content,
+    );
+    visit(tool, {
+      Map: (key, node) => {
+        if (key !== null) node.flow = true;
+      },
+    });
+    const written = `# ${origin}\n${tool.toString({ flowCollectionPadding: false })}`;
+    files[origin] = written;
+    const root = await writeCatalog(files);
     const source = new FileDefinitionSource(root);
     const plan = planSeal(await source.load());
     expect(plan.issues).toEqual([]);
     await source.writeDigests(plan.patches);
     const toolText = await readFile(join(root, 'tools', 'read-file', 'v1.0.0.yaml'), 'utf8');
-    expect(toolText).toMatch(/^# tools\/read-file\/v1\.0\.0\.yaml\n/u);
-    expect(toolText).toMatch(/version: v1\.0\.0\ndigest: [a-f0-9]{64}\n/u);
+    const digest = plan.patches.find((patch) => patch.origin === origin)?.digest ?? '';
+    expect(written).toMatch(/: \{\w/u);
+    // Exactly one line is added; everything the author wrote stays as it was.
+    expect(toolText).toBe(
+      written.replace(/^version: v1\.0\.0\n/mu, `version: v1.0.0\ndigest: ${digest}\n`),
+    );
     const result = buildCatalogIndex(await new FileDefinitionSource(root).load());
     expect(result.ok).toBe(true);
     expect(planSeal(await source.load()).patches).toEqual([]);

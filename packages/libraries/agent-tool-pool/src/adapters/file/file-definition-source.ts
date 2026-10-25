@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, relative, sep } from 'node:path';
-import { isMap, isScalar, parseDocument } from 'yaml';
+import { isMap, parseDocument } from 'yaml';
 import type { DefinitionKind } from '@multiagentos/contracts';
 import type { CatalogIssue } from '../../domain/catalog-issue.js';
 import type {
@@ -145,11 +145,13 @@ function insertDigest(text: string, extension: string, digest: string): string {
     return `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`;
   }
   const document = parseDocument(text, { version: '1.2', schema: 'core', uniqueKeys: true });
-  const root = document.contents;
-  if (!isMap(root)) throw new Error('definition YAML must be a mapping');
-  const index = root.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === 'version');
-  root.items.splice(index + 1, 0, document.createPair('digest', digest));
-  return document.toString({ lineWidth: 0 });
+  if (!isMap(document.contents)) throw new Error('definition YAML must be a mapping');
+  // Insert one line instead of re-serializing, so the author's formatting stays as written.
+  const lines = text.split('\n');
+  const index = lines.findIndex((line) => /^version:\s/u.test(line));
+  if (index < 0) throw new Error('definition YAML needs a top-level version line');
+  lines.splice(index + 1, 0, `digest: ${digest}`);
+  return lines.join('\n');
 }
 
 function checkLocation(document: SourceDocument, issues: CatalogIssue[]): boolean {

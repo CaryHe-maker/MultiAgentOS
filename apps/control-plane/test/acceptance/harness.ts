@@ -250,6 +250,20 @@ const overlaps = (
   source.startLine <= expected.endLine &&
   expected.startLine <= source.endLine;
 
+/** The expected sources no cited source overlaps; a list counts as cited when one range is. */
+export function uncitedSources(
+  cited: readonly { path: string; startLine: number; endLine: number }[],
+  expectedSources: AcceptanceTask['expectedSources'],
+): string[] {
+  const label = (range: ExpectedSource) => `${range.path}:${range.startLine}-${range.endLine}`;
+  return expectedSources.flatMap((entry) => {
+    const ranges: readonly ExpectedSource[] = 'path' in entry ? [entry] : entry;
+    return cited.some((source) => ranges.some((range) => overlaps(source, range)))
+      ? []
+      : [ranges.map(label).join(' or ')];
+  });
+}
+
 /** Every artifact of the run that is a valid report or run summary. */
 async function runArtifacts(
   dataDir: string,
@@ -359,11 +373,8 @@ async function runIn(
   else if (!report.degraded) {
     if (report.conclusions.length === 0) failures.push('the report has no conclusion');
     const cited = report.conclusions.flatMap((conclusion) => conclusion.sources);
-    for (const expected of task.expectedSources)
-      if (!cited.some((source) => overlaps(source, expected)))
-        failures.push(
-          `no conclusion cites ${expected.path}:${expected.startLine}-${expected.endLine}`,
-        );
+    for (const missing of uncitedSources(cited, task.expectedSources))
+      failures.push(`no conclusion cites ${missing}`);
     for (const source of cited)
       if (matchesForbidden(source.path, task.forbiddenPaths))
         failures.push(`a conclusion cites the forbidden path ${source.path}`);

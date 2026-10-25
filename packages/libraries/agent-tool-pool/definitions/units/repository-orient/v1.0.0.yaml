@@ -1,7 +1,8 @@
 schemaVersion: v0
 kind: UNIT
 id: repository-orient
-version: v0.1.0
+version: v1.0.0
+digest: db37f606190031ae4fa1da05c4413df776d6783802106ca27807334c4d2deefe
 description: Snapshot the repository and build an ORIENT ContextPack.
 executionKind: REPOSITORY_ORIENT
 protectedCapabilities: [repo.read]

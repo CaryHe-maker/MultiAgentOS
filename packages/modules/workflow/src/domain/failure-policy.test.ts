@@ -26,7 +26,7 @@ import {
  */
 async function shippedUnit(id: string): Promise<UnitDefinition> {
   const text = await readFile(
-    join(process.cwd(), 'packages/libraries/agent-tool-pool/definitions/units', id, 'v0.1.0.yaml'),
+    join(process.cwd(), 'packages/libraries/agent-tool-pool/definitions/units', id, 'v1.0.0.yaml'),
     'utf8',
   );
   const kindName = /^executionKind: (\w+)$/m.exec(text)?.[1];

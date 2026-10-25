@@ -1,7 +1,8 @@
 schemaVersion: v0
 kind: PROMPT
 id: code-viewer-system
-version: v0.1.0
+version: v1.0.0
+digest: f517d8ff6d65ae8c98269fb747703053eed6634338e963fa80dbedb01219e85d
 description: System prompt of the code viewer.
 role: system
 template: |
@@ -40,4 +41,4 @@ template: |
   repository access was not granted, finish at once: say so in summary and put what you could
   not verify in unconfirmed.
 variables: []
-contentStatus: PLACEHOLDER
+contentStatus: FINAL
