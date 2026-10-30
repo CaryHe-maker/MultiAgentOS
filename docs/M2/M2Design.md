@@ -1,9 +1,9 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.0 定稿（2026-10-30）。作者：CaryHe-maker。此后的修改须发布新版本，并在 [M2DesignDraftRevisions](../History/M2DesignDraftRevisions.md) 中记录。
+> 状态：v1.1 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
-> 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以 [docs/M1](../M1/README.md) 为准，
+> 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
 > 本文只写 M2 的变化。本文未提到的 M1 机制在 M2 中保持不变。
 
 ## 1. 目标与范围
@@ -133,6 +133,8 @@ Turn-chat 是 Orchestration 的子集：`chat` 模板只用到 AGENT 与 HUMAN �
 
 **Session**
 
+0. **进程绑定一个仓库**：启动时的工作目录（或 `--repo` 参数）决定本进程的仓库，取其 realpath 作为仓库根目录，进程运行期间不变。
+   每个 Session 属于创建它时的仓库；`/sessions` 与 `/resume` 只列出、只打开本仓库的 Session。Kernel 打开 Session 时检查引用中的仓库根目录与本进程的一致，不一致时拒绝。
 1. **打开已有 Session**（`/resume`、启动时选择）：UserInteraction 把选择交给 Kernel，由 Kernel 向 Workflow 发出 `SessionOpen` 事件。
    Workflow 收到后取得 Session 锁、校验并修复日志、重建投影（第 10.3 节）。
 2. **新建与 Fork 都延迟到第一条提示词提交时才创建**：
@@ -205,7 +207,7 @@ Turn 由 Kernel.Core 依据开放输入开启与结束（第 2.1 节），Workfl
 |---|---|---|
 | TaskGraph、节点状态、推进、上下文组装输入、会话日志（SessionLogStore） | Workflow | Kernel 只看到 AgentRun 登记与 UnitIntent |
 | 人类请求（HUMAN 节点）的业务含义 | Workflow | Kernel 转发请求与答复，只区分开放输入与局部询问 |
-| Session 列表（标题、Fork 来源、Turn 数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId` 与状态），经 Session 级处理（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
+| Session 列表（标题、Fork 来源、Turn 数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId`、状态与仓库根目录），经 Session 级处理（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
 | 界面上显示的一切 Session 信息 | 不归 UserInteraction | UserInteraction 不保存 Session 列表、标题或 Fork 关系，只展示 Kernel 交来的结果；输入历史等纯界面偏好除外 |
 | Turn 的开启与结束、静止检查 | Kernel.Core（Turn 额度归 Monitor，快照归 Execution） | Workflow 从 `HumanAnswered`、`TurnClosed` 得知 Turn 并记入日志 |
 | 授权询问、能力上限、授权条目、Lease、SandboxProfile | Kernel.Core | Workflow 只得到裁决与原因码 |
@@ -1199,7 +1201,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 <dataDir>/
   instance.lock/                           实例锁：同一 dataDir 只运行一个实例（组合根，见下）
   artifacts/<sha256>                       ArtifactStore：内容寻址的正文，跨 Session 共享（Kernel.Execution）
-  kernel-core/session-refs.jsonl           Session 引用：sessionId 与状态（Kernel.Core，第 10.3 节）
+  kernel-core/session-refs.jsonl           Session 引用：sessionId、状态与仓库根目录（Kernel.Core，第 10.3 节）
   workflow/session-index.jsonl             Session 列表（Workflow，第 10.3 节）
   kernel-core/trusted-instructions.jsonl   用户信任过的 AGENTS.md 内容（Kernel.Core，第 9.5 节）
   sessions/<sessionId>/
@@ -1313,10 +1315,12 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 | Turn 数、最后活动时间 | Workflow 收到 `TurnClosed` 时更新 |
 | 状态 | 正常、已删除 |
 
-**Kernel 只保存引用**：Kernel.Core 在 `<dataDir>/kernel-core/session-refs.jsonl` 中只记录 `sessionId` 与状态，用来校验 `openSession`、定位自己命名空间中该 Session 的审计、快照与产物归属，以及删除时清理这些数据；不保存标题、Fork 关系等列表内容。
+**Kernel 只保存引用**：Kernel.Core 在 `<dataDir>/kernel-core/session-refs.jsonl` 中只记录 `sessionId`、状态与仓库根目录的 realpath。
+仓库根目录是 Kernel 履行自己职责所需的事实（`repo.read` 的询问、工作区快照、沙盒的可写路径），由 Kernel 在创建 Session 时依据本进程的仓库写入，不依赖 Workflow 提供。
+引用用来校验 `openSession`（包括仓库是否与本进程一致）、定位自己命名空间中该 Session 的审计、快照与产物归属，以及删除时清理这些数据；不保存标题、Fork 关系等列表内容。
 索引损坏或缺失时，Workflow 可以由各 Session 的日志重建 Session 列表，Kernel 可以由各 Session 目录重建引用。
 
-**UserInteraction 不保存任何 Session 信息**：`/sessions` 经 Gateway 向 Kernel 发出 `listSessions`，Kernel 在 Session 级处理（第 2.6 节）中向 Workflow 查询列表，校验其中每个 Session 都有引用后交给 UserInteraction；界面只展示这次的结果。
+**UserInteraction 不保存任何 Session 信息**：`/sessions` 经 Gateway 向 Kernel 发出 `listSessions`，Kernel 在 Session 级处理（第 2.6 节）中向 Workflow 查询列表，只保留引用存在、且仓库与本进程一致的 Session，再交给 UserInteraction；界面只展示这次的结果。
 
 ### 10.4 Fork
 
@@ -1489,7 +1493,6 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 **M2 的配套文档**：M2Plan（按第 15 节的阶段排期）、M2Interface（字段级）、各组件文档、Library 文档（新的 Agent、Unit、Tool、Prompt、模板定义）、技术栈、使用说明、限制清单（含威胁模型）、验收证据。
 
-本文在评审中相对初稿的修改记录在 [M2DesignDraftRevisions](../History/M2DesignDraftRevisions.md)。
 
 ### 14.2 待决事项
 
@@ -1497,9 +1500,9 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | # | 事项 | 建议方向 | 在哪里解决 |
 |---|---|---|---|
-| 1 | `analyze` 回归与 M1"一致"的标准：M2 的额度逐级委派，每个 AgentRun 各有一次 final-call | 为 `analyze` 固定一套 M1 额度档案（运行级 300,000，planner 与 code-viewer 共用一份账本、一次 final-call），在此档案下比较 F1–F5 的结果 | M2Plan、验收证据 |
+| 1 | `analyze` 回归与 M1"一致"的标准：M2 的额度逐级委派，每个 AgentRun 各有一次 final-call | 为 `analyze` 固定一套 M1 额度档案（运行级 300,000，planner 与 code-viewer 共用一份账本、一次 final-call），在此档案下比较 F1–F5 的结果 | **已决定**，见 M2Plan |
 | 2 | `ask`、`confirm`、`review` 询问 10 分钟超时后自动继续，与"无人值守是非目标"有冲突 | 不自动继续：缺省不超时；只有其他工作都在等待人类时，Turn 超时才暂停计时 | Workflow 文档 |
-| 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | M2Plan、验收证据 |
+| 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2Plan |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
 | 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | 评估是否为 `web.fetch` 增加"本运行内全部域名均允许"选项，并衡量它对信息外泄的影响 | Core 文档、限制清单 |
 
@@ -1524,12 +1527,21 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 阶段 | 内容 | 依赖 | 退出条件（第 13 节） |
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
-| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（只用依赖边）；上下文投影与思考模式；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`、`git_inspect`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6 |
+| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（只用依赖边）；上下文投影与思考模式；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6 |
 | 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异 | 1 | A 组的写入部分、H5、H8–H10、S4 |
-| 3 命令与沙盒 | bwrap、`run_command`、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
+| 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断 | 3 | P1–P6、B、D |
 | 5 人类在环控制 | 暂停、继续、`steer`、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4 |
 | 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W |
 | 7 Orchestration | 使用者模板与校验、条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
 
 阶段 6 只依赖阶段 1，可以与阶段 2–5 并行开发。
+
+## 版本记录
+
+| 版本 | 日期 | 内容 |
+|---|---|---|
+| v1.0 | 2026-10-30 | 定稿 |
+| v1.0（编辑性） | 2026-10-30 | M1 文档归档到 `docs/History/M1/`，更新相应链接；初稿对照记录不再保留，版本记录改在本节 |
+| v1.0（编辑性） | 2026-10-30 | 第 15 节：`git_inspect` 依赖只读沙盒（第 8.1 节），从阶段 1 移到阶段 3，与第 8.1 节一致；第 14.2 节待决 #1、#3 已在 M2Plan 中决定 |
+| v1.1 | 2026-10-30 | 第 2.3 节新增 Session 第 0 条：进程绑定一个仓库，`/sessions`、`/resume` 只涉及本仓库；第 2.4、10.1、10.3 节：Kernel 的 Session 引用增加仓库根目录 |
