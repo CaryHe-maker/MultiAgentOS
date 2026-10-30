@@ -6,6 +6,7 @@
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
 | [M1](M1/README.md) | M1 交付范围、机制设计与接口，以及 [运行说明](M1/M1Usage.md) 与 [限制清单](M1/M1Limitations.md) |
+| [M2](M2/M2Design.md) | M2 总体设计（v1.0）：能力、机制与 Owner、验收、交付顺序与待决事项；各组件文档在此基础上展开 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [M1ReleasePlan](M1ReleasePlan.md) | 从合并到 M1 发布的工作计划与进度记录 |
@@ -32,8 +33,8 @@ M1 Kernel 与 Infrastructure 的实现与阶段记录已归档，见
 
 | 文档 | 内容 |
 |---|---|
-| [UserInteraction](Architecture/Module/UserInteraction.md) | 会话、意图、审核交互与展示 |
-| [Workflow](Architecture/Module/Workflow.md) | 业务图、AgentRun、验收、恢复与补偿 |
+| [UserInteraction](Architecture/Module/UserInteraction.md) | 意图、审核交互与展示；不保存 Session 信息 |
+| [Workflow](Architecture/Module/Workflow.md) | 业务图、AgentRun、会话日志与 Session 列表、验收、恢复与补偿 |
 | [Kernel](Architecture/Module/Kernel.md) | Gateway、Core、Scheduler、Execution、Supervisor、Monitor |
 | [Execution](Architecture/Kernel/Execution.md) | Kernel 内的尝试、步骤、效果与产物发布 |
 | [Supervisor](Architecture/Kernel/Supervisor.md) | 独立的通讯主体：系统生命周期、Executor 子进程、派发与监管 |
