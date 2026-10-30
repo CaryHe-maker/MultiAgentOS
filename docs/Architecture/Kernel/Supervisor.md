@@ -25,7 +25,7 @@ Supervisor 不维护执行队列，不作授权、额度或结果接受的裁决
 
 ```text
 Execution  → Supervisor   execute(workflowRunId, unitAttemptId, executionId, runEpoch, 行为, 输入, 范围约束, 限制)
-Core       → Supervisor   cancelRun(workflowRunId, runEpoch) / 关闭
+Core       → Supervisor   cancelRun(workflowRunId, runEpoch) / cancelExecution(executionId, 原因) / 关闭
 Supervisor → Kernel 核心   fact(workflowRunId, unitAttemptId, executionId, runEpoch, 终态, 输出, 用量, 请求状态)
 Kernel 核心 ↔ Supervisor   心跳
 ```
@@ -39,13 +39,15 @@ ACCEPTED → RUNNING ─┬→ COMPLETED / REJECTED / FAILED / VIOLATION
 ```
 
 - 每个执行实例（`executionId`）只上报一个终态；技术重试产生新的执行实例。进程先完成还是先被终止，由 Supervisor 依据操作系统事实给出唯一结论。
-- 宽限期从发出中止信号的时刻起算；宽限期内未结束的执行上报 `STOP_UNCONFIRMED`。Kernel 核心在收敛时另设兜底时限，
+- 宽限期从发出中止信号的时刻起算；宽限期内未结束的子进程组先被强制终止（SIGKILL），再等待一段确认时间，仍无法确认时上报 `STOP_UNCONFIRMED`。
+  Kernel 收到后按 [Kernel](../Module/Kernel.md) 第 12 节安全停机，不在停止未确认的状态下继续推进。
+- 取消既可以作用于整个运行（`cancelRun`，用于收敛），也可以作用于单个执行（`cancelExecution`，用于暂停与中止当前工作）。Kernel 核心在收敛时另设兜底时限，
   Supervisor 未按时上报时由 Core 判定停止未确认，使运行的结束不依赖 Supervisor 一定按时回复。
-- 执行事实携带 `workflowRunId`，按运行送回所属的 Kernel 核心实例与运行 actor。
+- 执行事实携带 `sessionId` 与 `workflowRunId`，送回所属的 Kernel 核心实例与 Session actor。
 - `workflowRunId`、`unitAttemptId`、`executionId` 与 `runEpoch` 原样带回；是否接受结果由 Core 核对运行控制状态版本后决定，过期结果只作为证据。
 - 取消由 Core 决定并以消息发给 Supervisor，不跨进程传递运行时句柄；Supervisor 记录取消时的 runEpoch，
   之后到达的、runEpoch 更小的执行请求不再启动。Kernel 核心发往同一通讯主体的消息按登记顺序发出。
-- 执行事实作为消息进入所属运行的队列，由 Kernel 核心的运行 actor 按顺序处理。
+- 执行事实作为消息进入所属 Session 的队列，由 Kernel 核心的 Session actor 按顺序处理。
 - Kernel 核心与 Supervisor 互相以心跳检测存活：Supervisor 失联时，Kernel 核心把在途尝试标记为效果未知；
   Kernel 核心失效时，Supervisor 终止并回收其执行，必要时重新拉起 Kernel 核心。
 
@@ -73,6 +75,7 @@ Supervisor 是可信的 Kernel 组件，它上报的执行事实可以作为依�
 
 ## 6. 演进
 
-单进程部署时，Supervisor 可以与 Kernel 核心同进程，Executor 也可以在进程内运行，
+单进程部署时，Supervisor 可以与 Kernel 核心同进程，Executor 也可以在进程内运行
+（包括第 4 节列为不可信的文件修改：由可信的内置 Executor 在进程内完成，范围由统一的可写判定保证；命令执行仍在 OS 沙盒的子进程中运行，见 [Evolution](../Evolution.md) 第 5 节），
 但 Supervisor 与 Kernel 核心之间仍按第 3 节的可序列化接口协作，取消以消息表达。
 Supervisor 独立成进程后，Executor 改在其子进程中运行。

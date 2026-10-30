@@ -21,9 +21,12 @@ Workflow 使用 AgentToolPool 模板创建运行，向 Gateway 提交 UnitIntent
 | AgentRun | 基于固定模板的一次智能行为过程 |
 | AgentStep | 上下文、模型、动作与观察的业务推进边界 |
 | IntegrationAttempt | 对变更产物进行集成和质量验收的业务尝试 |
+| HUMAN 节点 | TaskGraph 上的一次业务输入（提示、补充说明、询问的回答、确认、审阅）；不是 Unit，也不是授权 |
+| 会话日志与 Session 列表 | 一个 Session 的只追加日志（拓扑、业务输入、Unit 的提交与结果、Turn 与运行的边界）与全部 Session 的列表（含 Fork 关系）；Workflow 是唯一写入者，日志只保存结构化记录与产物引用，正文在 ArtifactStore |
 
 TaskGraph 决定业务是否就绪，MissionScope 限定工作边界，
-UserInteraction 的 SessionTree 决定用户如何组织运行。三者不能互相替代。
+Session 列表中的派生关系记录用户如何组织运行。三者不能互相替代。
+Kernel 只保存 Session 的引用并决定其生命周期；UserInteraction 不保存 Session 信息，经 Kernel 取得。
 Kernel.Execution 拥有 UnitAttempt，与 Workflow 的 TaskAttempt 分开。
 
 ## 3. 模板与动作
@@ -37,7 +40,9 @@ Workflow 检查模型动作是否存在、是否属于固定组合及是否满�
 受保护能力声明由可信模板决定，模型不能自行省略。
 
 Agent 定义中的运行上限（如每次 AgentRun 的轮次上限）与 Unit 定义中的失败处理策略由 Workflow 读取、计数并判断；
-达到上限时 Workflow 组织收尾，Kernel 不解释这些业务上限。
+重复意图、连续出错等业务熔断同样由 Workflow 判断。达到上限时 Workflow 组织收尾，Kernel 不解释这些业务上限。
+工具调用次数、墙钟与 token 额度属于资源，由 Kernel 计量；触顶时 Kernel 只拒绝预留并告知，由 Workflow 收尾并报告结束，
+正常的额度触顶一律留下可交付的结果。
 
 ## 4. Agent 行为闭环
 
@@ -72,12 +77,15 @@ Workflow 消费 Kernel 的确认结果，核对业务尝试、输入、来源和
 
 代码或其他修改以可核验变更产物交付。Workflow 决定集成顺序和质量要求，
 Kernel 执行物化、应用、检查等操作。单个 Executor 的自测不能替代整体集成验收。
+在变更产物与集成落地之前，Agent 直接改写工作区，过渡做法见 [Evolution](../Evolution.md) 第 5 节。
 发布和其他外部影响仍是独立获准的工作。
 
 ## 7. 人工参与
 
 权限审批由 Core 管理，UserInteraction 收集用户响应，Workflow 保存业务等待。
 信息补充、方案选择和结果验收同样可以触发交互，不限定在权限审核节点。
+这些业务输入一律记为 TaskGraph 上的 HUMAN 节点，可以由用户主动发起、由模板预设，或由 Agent 主动询问；
+它们的回答不产生授权，授权询问只由 Core 在准入判定中被动发起（Overall 第 10 节）。
 
 用户响应必须适用于当前目标和决策上下文；条件变化后不能复用旧批准。
 批准后仍须回到适用的 Kernel 检查，超时不自动批准。

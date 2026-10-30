@@ -9,7 +9,7 @@ ModuleHost 在 Supervisor 管辖下完成装配与基础设施就绪，
 按需要启动 Executor 子进程。静态库参与定义和行为装配，不作为独立 Module 启动。
 
 用户经 UserInteraction 提交目标，外部 syscall 进入 Gateway。Gateway 生成运行标识并交给
-负责该运行的 Kernel 核心，Core 的运行管理为运行建立运行 actor；actor 处理的第一条消息开始运行计时，经 Outbox 通知 Workflow。
+负责该 Session 的 Kernel 核心，Core 的 Session 管理为 Session 建立 Session actor（Session 已打开时沿用）；运行开启后，actor 处理的第一条消息开始运行计时，经 Outbox 通知 Workflow。
 Kernel 协调 Workflow 建立业务运行与范围；Workflow 依据 AgentToolPool 模板创建 AgentRun，
 并固定本次运行采用的定义。受理回执与后续运行结果分开交付。
 
@@ -44,7 +44,7 @@ Workflow 决定下一步业务动作。
 ## 4. 并行、模型调用与集成
 
 Workflow 决定可并行任务和汇合条件，Scheduler 在资源与控制约束下安排执行。
-同一运行的控制消息由其运行 actor 按顺序处理，Executor 子进程中的执行可以并行。
+同一 Session 的控制消息由其 Session actor 按顺序处理，Executor 子进程中的执行可以并行。
 模型与工具的实际调用由 Execution 管理，API 资源的可用性、安排和消耗
 分别由相应 Kernel 职责协作维护，不能把请求结束直接当作资源已正确结算。
 
@@ -86,7 +86,7 @@ Supervisor 上报的执行事实经执行事实通道进入 Kernel 核心，不�
 
 Supervisor 协调故障处置，ModuleHost 管理生命周期。Supervisor 或其 Executor 子进程失联时，
 相关在途尝试标记为效果未知；Kernel 核心实例失效时，Supervisor 终止并回收其执行，
-其负责的运行在分片转移后由新实例恢复。
+其负责的 Session 在分片转移后由新实例恢复。
 恢复先核对权威状态和外部效果，避免把断连当作未执行而重复产生效果。
 UserInteraction 重连后查询正式状态，流式展示缺失不改变执行结论。
 
