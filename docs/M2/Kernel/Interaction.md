@@ -56,6 +56,7 @@ interface ExecutionDuties {            // 增加的部分
   readProjectFile(path: string, scope: ExecutionScope): Promise<ProjectFileRead>;
   publishMessage(input: MessagePublishInput): Promise<ArtifactRef>;   // 内建 Unit message-publish
   removeSessionFiles(sessionId: string): Promise<void>;  // 删除 Session 或新建失败时删除 kernel-execution 目录
+  startArtifactSweep(): { started: boolean };            // 定期回收：登记后台回收，上一次未完成时返回 false（Execution 第 6 节）
   inheritArtifacts(refs: ArtifactRef[]): Promise<void>;  // Fork（阶段 2）
   estimateAssembly(unitAttemptId: string): number;       // 阶段 8：组装后的输入估算，供压缩检查点使用
   startCompactionSummary(request: CompactionSummaryRequest): { summaryAttemptId: string };
@@ -89,6 +90,8 @@ Monitor 在阶段 1 只有运行级与 Turn 两级账本，main 直接使用 Tur
   再以系统级事件向 UserInteraction 发出 `SessionList`、`SessionDeleted`。Session 管理的处理同样串行：一个请求处理完（包括等待回复）才处理下一个 Session 请求。
 - **`SessionList` 的内容**：Workflow 交来的列表中，只保留 Session 引用存在、ACTIVE 且仓库与本进程一致的条目；标题由 Execution 读取 `titleRef` 的前 80 个字符。
 - **回收**：Session actor 关闭、Session 级 Outbox 投递完毕后移出，保留墓碑。
+- **产物回收**：启动时、开放服务之前由 Execution 完成一次（[ModuleHost](../Infrastructure/ModuleHost.md) 第 3 节）；之后 Session 管理的定时器每隔 `artifactRetention.sweepIntervalMinutes` 产生内部消息 `ARTIFACT_SWEEP_TICK`，
+  与 Session 请求一样按顺序处理：调用 `startArtifactSweep()` 后立即处理下一条，不等待回收完成（Execution 第 6 节）。
 
 ### 5.2 Session actor 的构成
 
@@ -189,7 +192,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 
 删除 Session（`deleteSession`）只能针对未打开的 Session（M2Design 第 2.3 节 Session 第 3 条），不经过 Session actor：Session 管理把引用改为 DELETED，
 以系统级事件 `SessionDelete` 让 Workflow 删除日志，收到回复后——不论 Workflow 成功与否——删除 Kernel 命名空间中该 Session 的文件（审计、产物归属），再发出 `SessionDeleted`；
-正文在下次启动时回收（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。回收只看 Session 引用是否 ACTIVE，所以删除失败而残留的文件不会让正文继续被保留。
+正文由下一次回收删除（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。回收只看 Session 引用是否 ACTIVE，所以删除失败而残留的文件不会让正文继续被保留。
 
 ### 6.5 运行状态与各请求的处理（阶段 1）
 
@@ -213,6 +216,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 - **权限**（第 5.2 节）：阶段 1 只有 `repo.read`，规则同 M1；阶段 2 起按 [Core](Core.md) 的两步判定。
 - **执行**（第 5.3 节）：增加内建 Unit `MESSAGE_PUBLISH`，与 `REPORT_PUBLISH` 一样由 Execution 直接完成；产物引用的归属检查改为"属于本 Session"。
 - **结果检查**（第 5.4 节）：UnitReport 带 `unitRunId` 与 `BudgetView`；工具 Unit 的结果分为预览（`outputRef`）与截断时的完整输出（`fullRef`），由 Execution 登记保留类别。
+- **`read_output`**（阶段 2）：Workflow 填入的 `fullRef` 在派发前由 Execution 检查归属与过期（Execution 第 5a 节）；过期时以 `REJECTED(ARTIFACT_EXPIRED)` 交付，不派发。
 - **压缩检查点**（阶段 8）：受理 `context-assemble` 之后、派发之前，Core 按 [Core](Core.md) 第 6a 节检查是否需要压缩；需要时这次尝试保持在途但不派发，
   直到压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 交付，否则照常派发）。摘要请求是 Kernel 内部的 MODEL 尝试，不对应任何 `submitUnit`，不产生 UnitReport。
 
@@ -244,5 +248,5 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 
 ## 11. 阶段
 
-本文全部内容属于阶段 1，标注了阶段的部分除外：阶段 2（快照、Fork、工作区差异、两步授权）、阶段 3（停机）、阶段 4（按 AgentRun 分队列、委派、等待调用机会）、
+本文全部内容属于阶段 1，标注了阶段的部分除外：阶段 2（快照、Fork、工作区差异、两步授权、`read_output` 的输入检查）、阶段 3（停机）、阶段 4（按 AgentRun 分队列、委派、等待调用机会）、
 阶段 5（暂停、中止、Turn 超时）、阶段 8（压缩检查点、压缩的消息与内部摘要尝试）。

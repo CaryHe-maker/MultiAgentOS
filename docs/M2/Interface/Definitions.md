@@ -148,11 +148,12 @@ interface UnitDefinitionV1 extends Omit<UnitDefinition, 'schemaVersion' | 'execu
   // 阶段 2：capabilities 与 resourceKeys；阶段 4：concurrencyClass
 }
 
-type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';
+type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
 ```
 
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；
-- `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）。
+- `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）；
+- `OUTPUT_READ`（阶段 2）：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
 
 其余字段与 M1Interface 第 9.2 节相同。M1 的 Unit 实例保持 `v0`，供 `analyze` 使用；M2 新写的 Unit 实例使用 `v1`。
 Tool 与 Prompt 沿用 `v0`。

@@ -12,12 +12,13 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 
 | M1 | M2 | 阶段 |
 |---|---|---|
-| 五个 Executor | 增加 `repository-list`；阶段 2–6 增加文件写入、命令、git、网页 | 1 起 |
-| 输出超过 `maxOutputBytes` 时截断，完整内容丢弃 | 工具 Executor 生成固定的预览，截断时同时交回完整输出（由 Execution 存为 7 天过期的产物）；共用模块 `retention/` | 1 |
+| 五个 Executor | 增加 `repository-list`；阶段 2–6 增加文件写入、`output-read`、命令、git、网页 | 1 起 |
+| 输出超过 `maxOutputBytes` 时截断，完整内容丢弃 | 工具 Executor 生成固定的预览，截断时同时交回完整输出（不超过 `maxFullOutputBytes`，由 Execution 存为 7 天过期的产物）；共用模块 `retention/` | 1 |
+| — | `output-read`：`read_output` 工具的执行，对完整输出分段读取 | 2 |
 | `context-assemble` 只组装一次运行内的历史，超出预算时每次按固定顺序裁剪 | 历史跨 Turn、跨 WorkflowRun；按日志顺序组装、不按调用裁剪；运行时上下文是历史条目；只有收尾调用保留确定性的保险；项目指令段；思考内容回传 | 1 |
 | `model-call` 关闭思考、收尾强制工具选择 | 按 Agent 与任务选择思考强度；回传 `reasoning_content`；收尾调用先不强制、失败后再强制 | 1 |
-| — | 压缩的摘要请求：复用普通请求的前缀，末尾追加摘要指令，`tool_choice = none` | 8 |
-| 目录按 Executor 平铺 | 新 Executor 按 M2Design 第 8.4 节组织：`retention/`、`fs/`、`git/`、`command/`、`web/`、`vendor/` | 1 起 |
+| — | 压缩的摘要请求：复用普通请求的前缀，末尾追加摘要指令，`tool_choice = none`，思考强度取 `summaryReasoningEffort` | 8 |
+| 目录按 Executor 平铺 | 新 Executor 按 M2Design 第 8.4 节组织：`retention/`、`output-read/`、`fs/`、`git/`、`command/`、`web/`、`vendor/` | 1 起 |
 
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
 见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）。
@@ -42,7 +43,8 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 - 两种保留器：按条目（路径、检索命中，保留前 N 个）与按字节（保留头部、尾部或头尾两端）；不切断 UTF-8 与 UTF-16 代理对；精确计数省略的条目数或字节数；
 - 只回答"保留了什么、省略了多少"；保留哪一端、预览中的说明文字由各 Executor 决定（检索结果建议缩小范围，文件建议指定行范围，命令输出保留头尾）；
 - 预览不超过该 Unit 的 `maxOutputBytes`；截断时 Executor 交回完整输出，未截断时不交回；
-- 预览中注明省略量，以及完整输出只供用户查看、7 天后删除，模型不能读取。
+- 完整输出不超过该 Unit 的 `maxFullOutputBytes`（缺省 8 MiB）；超出时以与预览相同的取舍保存，预览中注明完整输出也不完整；
+- 预览中注明省略量、完整输出保留 7 天，以及可用 `read_output` 按本次调用的 `toolCallId` 分段读取；不写引用或路径。
 
 预览由输入与完整输出确定性地得出，同一结果总是得到逐字节相同的预览。
 
@@ -52,6 +54,17 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 - 经 `repository-access` 执行：与概览、检索、读文件共用同一个文件集合、排除规则与路径检查；不跟随符号链接；不读取文件内容。
 - 复用 `repository-orient` 的目录树生成；输出目录树与每个目录的文件数；经 `retention/` 按条目生成预览，截断时说明省略了多少条目并建议缩小 `path` 或 `depth`。
 - 路径不存在或在排除规则内时返回 `REJECTED(NOT_FOUND)`，不说明是哪一种。
+
+## 5a. `OutputReadExecutor`（阶段 2）
+
+`read_output` 工具的执行（M2Design 第 8.2 节）。`executionKind` 为 `OUTPUT_READ`，`scope.kind` 为 `NONE`，在进程内运行，不进沙盒。
+
+- 输入 `executor.OutputReadInput`：`toolCallId`、`offset?`（起始行，从 1 开始，缺省 1）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（按字面匹配的文字，不是正则）；
+  另有 Execution 解析后的完整输出正文。`fullRef` 由 Workflow 填入 Unit 输入，Execution 解析并检查归属与过期，本 Executor 看不到引用。
+- 按行切分（`\r\n` 与 `\n` 都视为换行）；有 `pattern` 时先筛出含有它的行，再按 `offset`、`limit` 取段；每行前加原文件中的行号。
+- 结果经 `retention/` 限制在该 Unit 的 `maxOutputBytes` 内，按条目（行）保留前部，注明总行数、本段的行范围与省略量，并提示用 `offset` 继续读取；不交回完整输出。
+- `offset` 超出总行数时返回 `REJECTED(INVALID_RANGE)`，说明总行数；正文不是 UTF-8 文本时返回 `REJECTED(UNSUPPORTED_FILE)`（与 M1 `file-read` 相同的原因码）。
+- 不接触 ArtifactStore、文件系统与网络；同一输入总是得到逐字节相同的结果。
 
 ## 6. `ContextAssembleExecutor` 的变化
 
@@ -96,7 +109,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - 用量：思考 token 是否计入输出、如何计价，按阶段 0 的实测结果（M2TechStack 第 3.2 节第 7 项）写入。
 - 失败分类表与 M1 相同（M1 ExecutorSet 第 4.5 节）。provider 报告上下文过长时返回 `REJECTED(CONTEXT_OVERFLOW)`，带 provider 给出的长度（阶段 8 起触发压缩）。
 - **摘要请求**（阶段 8，M2Design 第 9.6 节）：Kernel 的压缩过程以 `purpose = 'COMPACTION'` 调用本 Executor。请求由 `context-assemble` 按该对象普通请求的方式组装，
-  末尾追加摘要指令；`tool_choice = none`，工具定义与思考设置保持不变，以复用提示词缓存；输出为摘要文本，思考内容丢弃；
+  末尾追加摘要指令；`tool_choice = none`，工具定义与消息前缀保持不变，以复用提示词缓存；思考强度取 Kernel 配置 `compaction.summaryReasoningEffort`（缺省 `none`）；输出为摘要文本，思考内容丢弃；
   检查摘要包含指令规定的各节，不合格时返回可重试的 `COMPACTION_SUMMARY_INVALID`（带用量），由 Kernel 追加更严格的指令重试一次。
 
 ## 8. 测试
@@ -104,6 +117,8 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 M1 的测试全部保留。增加：
 - `retention/`：两种保留器的省略计数精确；不切断 UTF-8 与代理对；同一输入得到逐字节相同的预览；M1 三个工具的预览与 M1 截断后的输出逐字节相同；
 - `repository-list`：排除规则与路径检查与 `file-read` 一致；深度与 glob；不读取内容；截断时交回完整输出；
+- 完整输出的上限：超过 `maxFullOutputBytes` 时按预览的取舍保存，预览注明完整输出也不完整；
+- `output-read`（阶段 2）：行号与原文一致；`pattern` 按字面匹配；`offset`、`limit` 的边界；结果不超过 `maxOutputBytes`；`\r\n` 与 `\n`；同一输入结果逐字节相同；
 - `context-assemble`：同一输入得到逐字节相同的 ContextPack；普通调用不去掉任何条目，追加条目后前一次的结果是新结果的前缀；system 段与运行时上下文无关；
   收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；未信任的 `AGENTS.md` 不进入 system 段；
 - `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；
@@ -113,8 +128,8 @@ M1 的测试全部保留。增加：
 
 | 阶段 | 本文增加的内容 |
 |---|---|
-| 1 | 第 3–8 节（摘要请求除外） |
-| 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1） |
+| 1 | 第 3–8 节（第 5a 节与摘要请求除外） |
+| 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1）；第 5a 节 `output-read` |
 | 3 | `command/`：`run-command`（输出预览保留头尾）；`git/`：`git-inspect`（提前任务 E-EX-3） |
 | 6 | `web/`：`web-search`（Tavily 适配器）、`web-fetch`（提前任务 E-EX-2） |
-| 8 | `model-call` 的摘要请求与 `COMPACTION_SUMMARY_INVALID` |
+| 8 | `model-call` 的摘要请求（思考强度按配置）与 `COMPACTION_SUMMARY_INVALID` |

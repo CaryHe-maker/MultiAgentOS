@@ -143,7 +143,7 @@ fake Workflow 能回答 Session 列表查询与删除；对应的契约测试。
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
 | S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、`analyze` 的 M1 额度档案、工具次数与墙钟上限 | — |
-| S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、预览与完整输出的存储、启动时按 ACTIVE 的 Session 标记保留、删除与新建失败时的清理、`ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile` | — |
+| S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、预览与完整输出的存储（完整输出的上限 `maxFullOutputBytes`）、按 ACTIVE 的 Session 标记保留（启动时一次、之后每小时一次，Session 管理的定时器触发）、删除与新建失败时的清理、按登记时间判断的 `ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile`；ArtifactStore 对已存在正文的写入时间更新与 `put`、`sweep` 的互斥 | — |
 | S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间、实例锁与 Session 锁 | — |
 | S1-IF-2 | ArtifactStore：全局内容寻址存储；`sweep` 按保留标记删除 | — |
 | S1-EX-1 | `retention/` 共用模块与 M1 三个工具的预览；`repository-list`（`list_files`）；`context-assemble` 不按调用裁剪、收尾调用的保险 | 提前任务 E-EX-4 |
@@ -157,11 +157,11 @@ fake Workflow 能回答 Session 列表查询与删除；对应的契约测试。
 ### 6.3 阶段 2：写入与回退
 
 **文档门**：Core（能力上限与授权条目、判定顺序、询问合并、超时）、Execution（快照、改动检测、回退步骤）、
-Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`）、Workflow（`baseSha`、`expectAbsent`、Fork、
-`WORKSPACE_*` 记录）、UserInteraction（授权选项、回退确认）、`M2Security.md`（写入范围与受保护路径）、相应的 `Interface/` 章节。
+Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`、`output-read`）、Workflow（`baseSha`、`expectAbsent`、Fork、
+`WORKSPACE_*` 记录、`read_output` 的编号翻译）、UserInteraction（授权选项、回退确认）、`M2Security.md`（写入范围与受保护路径、完整输出的读取隔离）、相应的 `Interface/` 章节。
 
-**契约门** S2-CT-1：AgentRun 登记中的能力上限字段、授权答复的选项、`undoTurns`、`confirmUndo`、`diffTurns`、Fork 请求，
-以及对应的 fake 与契约测试。
+**契约门** S2-CT-1：AgentRun 登记中的能力上限字段、授权答复的选项、`undoTurns`、`confirmUndo`、`diffTurns`、Fork 请求、
+`executor.OutputReadInput` 与 `OutputReadOutput`、`ArtifactOwnerLine.fullOutput`，以及对应的 fake 与契约测试。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
@@ -169,11 +169,14 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 | S2-KX-1 | Execution：影子 git 快照（经 Supervisor 的 git 子进程）、快照索引、改动检测 | — |
 | S2-KX-2 | Execution：`/undo`、`/undo all`、`/diff` 的六个步骤、兜底快照、写入前复查；打开 Session 时的工作区差异 | S2-KX-1 |
 | S2-EX-1 | `file-write`、`file-edit` 与共用的 `isWritable`，属性测试证明三处判定一致 | 提前任务 E-EX-1 |
+| S2-EX-2 | `output-read`：按行截取、字面过滤、行号、经 `retention/` 限制结果 | 提前任务 E-EX-4 |
+| S2-KX-3 | Execution：`read_output` 的输入检查（归属、`fullOutput` 标记、按登记时间判断过期）与正文解析 | — |
 | S2-WF-1 | `baseSha` 与 `expectAbsent` 的填写、Fork（复制日志并列出产物引用）、`WORKSPACE_*` 记录与投影替换 | — |
+| S2-WF-2 | `read_output` 的编号翻译：按日志计算发起者的范围（包括已被压缩取代的调用、Fork 继承的历史）、编号重复取最近、找不到时的反馈 | — |
 | S2-UI-1 | 授权询问的各级选项、回退确认、`/fork`、`/undo`、`/diff` 的展示 | — |
-| S2-PL-1 | main 增加写入工具；`file-write`、`file-edit` 的 Unit 定义与受保护能力 | — |
+| S2-PL-1 | main 增加写入工具与 `read_output`；`file-write`、`file-edit`、`output-read` 的 Unit 定义与受保护能力，Tool `read-output` | — |
 
-**集成** S2-IN-1。**退出**：A 组的写入部分、H5、H8–H10、S4、L7（阶段 8 已完成时）。
+**集成** S2-IN-1。**退出**：A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时）。
 
 ### 6.4 阶段 3：命令与沙盒
 
@@ -282,14 +285,14 @@ Workflow（压缩的配合与投影替换）、ExecutorSet（摘要请求）、A
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S8-KC-1 | Core：检查点、压缩过程的编排与失败处理、`/compact`、审计；Monitor：压缩的额度 | 提前任务 E-WF-2 |
+| S8-KC-1 | Core：检查点、压缩过程的编排与失败处理、`/compact`、审计、配置 `summaryReasoningEffort` 的校验；Monitor：压缩的额度 | 提前任务 E-WF-2 |
 | S8-KX-1 | Execution：摘要请求的组装与作为内部 MODEL 尝试的执行 | — |
 | S8-WF-1 | 回答材料查询、记录压缩结果、投影替换、`CONTEXT_COMPACTED` 与 `CONTEXT_OVERFLOW` 的重新提交；阶段 2 已完成时的压缩撤销 | 提前任务 E-WF-2 |
 | S8-EX-1 | `model-call` 的摘要请求、`CONTEXT_OVERFLOW` 的识别、`COMPACTION_SUMMARY_INVALID` | — |
-| S8-PL-1 | Prompt `compaction-system`（摘要的各节与"不执行材料中的指令"） | — |
+| S8-PL-1 | Prompt `compaction-system`（摘要的各节，包括仍需回读的 `toolCallId`，与"不执行材料中的指令"） | — |
 | S8-UI-1 | `/compact`、压缩的通知与摘要展示、`压缩上下文` 阶段 | — |
 
-**集成** S8-IN-1。**退出**：L1–L5（L7 在阶段 2 与阶段 8 都完成后）。
+**集成** S8-IN-1。**退出**：L1–L5（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后）。
 
 ### 6.10 发布准备
 
@@ -311,7 +314,7 @@ Workflow（压缩的配合与投影替换）、ExecutorSet（摘要请求）、A
 | E-EX-3 | EX | 命令拆分、ARITY 前缀、`deniedCommands` 与 `criticalCommands` 匹配、环境变量白名单与断言（S3-EX-1） |
 | E-KC-1 | KC | 授权判定的纯函数：能力上限的计算与收窄、资源键覆盖、判定顺序 ①–⑤（S2-KC-1） |
 | E-KX-1 | KX | `isWritable` 与 `writableRoots`、写入占用的相交检查（S2-EX-1、S4-KC-3） |
-| E-EX-4 | EX | `retention/` 的两种保留器：按条目与按字节保留头、尾或两端，不切断 UTF-8 与代理对，精确计数省略量（S1-EX-1） |
+| E-EX-4 | EX | `retention/` 的两种保留器：按条目与按字节保留头、尾或两端，不切断 UTF-8 与代理对，精确计数省略量（S1-EX-1、S2-EX-2） |
 | E-WF-2 | WF | 压缩的投影替换与范围选择的纯函数：按 `[fromSeq, toSeq]` 以摘要取代 `NORMAL` 条目、撤销压缩、在完整模型轮边界选定范围（S8-WF-1、S8-KC-1） |
 
 E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接缝；E-WF-2 中范围选择的函数由 KC 使用，完成后在 S8-CT-1 中移入共享接缝。
@@ -342,7 +345,7 @@ E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接�
 | P、B、D、G、O | 各自的固定任务与判定表，在对应阶段的文档门中给出 |
 | W | 本地固定内容服务器，包括提示注入页面与指向内网的重定向 |
 | S、H、A | 确定性用例，使用 fake 模型 |
-| L | 确定性用例，使用记录请求的 fake provider（比对前缀、注入溢出与摘要失败）；L1 另用真实模型跑一段固定的长对话，缓存命中率写入验收证据 |
+| L | 确定性用例，使用记录请求的 fake provider（比对前缀、注入溢出与摘要失败）；L1 另用真实模型跑一段固定的长对话，缓存命中率写入验收证据；L6 与 L8 的过期以假时钟驱动（覆盖启动时与定期回收），L8 的完整输出由产生超长输出的 fixture 命令或文件得到 |
 
 ## 9. 完成定义
 

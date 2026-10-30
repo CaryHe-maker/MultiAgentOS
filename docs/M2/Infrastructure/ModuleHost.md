@@ -26,7 +26,7 @@ ModuleHost 提供系统装配、就绪与生命周期机制，Supervisor 承担�
 2. 组合根在 bootMs 总期限内调用 supervisor.start()
 3. Supervisor 清空 <dataDir>/tmp/，再驱动 ModuleHost 按依赖启动：
      fabric → artifact-store → persistence → kernel-core → gateway → workflow → user-interaction
-   kernel-core 启动时，Execution 完成一次产物回收（ArtifactStore 第 4 节）后才开放服务
+   kernel-core 启动时，Execution 完成一次产物回收（ArtifactStore 第 4 节）后才开放服务；此后每小时一次，由 Session 管理触发（Kernel/Interaction 第 5.1 节）
 4. 全部就绪且未进入 panic 后，组合根执行已解析的 CLI 命令：交互模式进入 Session 选择或草稿；mas run 发出 startRun
 ```
 

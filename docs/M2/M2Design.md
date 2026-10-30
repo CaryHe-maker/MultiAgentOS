@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.5 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.6 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -1086,7 +1086,7 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 - 网络：`DOMAIN_DENIED`、`ADDRESS_FORBIDDEN`；
 - 额度与上限：`BUDGET_INSUFFICIENT`、`QUOTA_EXHAUSTED`（Kernel）；`REPEATED_INTENT`、`CONSECUTIVE_ERRORS` 是 Workflow 的收尾原因，不是 Kernel 原因码；
 - 运行状态：`AGENT_RUN_ACTIVE`（扩展到 `requestHuman`）、`NO_OPEN_TURN`；
-- 上下文与产物：`CONTEXT_COMPACTED`（挂起的 `context-assemble` 因压缩而返回，须以新的投影重新提交）、`CONTEXT_OVERFLOW`（provider 报告上下文过长）、`COMPACTION_SUMMARY_INVALID`（摘要不符合指令规定的格式）、`COMPACTION_UNKNOWN`（压缩的回复对应不上）、`ARTIFACT_EXPIRED`（正文已按保留期回收）；
+- 上下文与产物：`CONTEXT_COMPACTED`（挂起的 `context-assemble` 因压缩而返回，须以新的投影重新提交）、`CONTEXT_OVERFLOW`（provider 报告上下文过长）、`COMPACTION_SUMMARY_INVALID`（摘要不符合指令规定的格式）、`COMPACTION_UNKNOWN`（压缩的回复对应不上）、`ARTIFACT_EXPIRED`（正文已过保留期，按登记时间判断）；
 - 系统故障：`STOP_UNCONFIRMED` 触发停机（第 4.7 节）。
 
 **协议版本**：语义变化的 Schema 按 M1Interface 1.2 发布新 major。M2 运行时只产生新 major；M1 的行为由 `analyze` 模板回归验证。
@@ -1117,6 +1117,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 | `run_command` | `run-command` | EXEC | `command.exec`（`network: true` 时加 `command.network`） | 参数为 `command`、`workdir?`（相对仓库根目录）、`timeoutMs?`、`network?`；缺省不联网；每次在全新的 shell 中执行，不保留 `cd` 与变量；非零退出码是正常结果；预览保留输出的头尾，超出时全文另存（第 8.2 节）；结果带 `sandboxDenials`、`backend`、`changedFiles` |
 | `web_search` | `web-search` | READ | `web.search` | `queries: string[]`（≤5 个）并行查询，结果按 URL 去重；`timeRange?`；每条结果包含标题、URL、摘要，URL 先经地址检查 |
 | `web_fetch` | `web-fetch` | READ | `web.fetch` | 只允许 http 与 https；解析时与建立连接时各检查一次地址，重定向逐跳检查；大小上限；HTML 转为 Markdown；预览为正文的开头一段，超出时全文另存（第 8.2 节） |
+| `read_output` | `output-read` | READ | `repo.read` | 分段读取此前某次工具调用被截断的完整输出（第 8.2 节）。参数为 `toolCallId`（那次调用的编号）、`offset?`（起始行，从 1 开始）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（只返回含有这段文字的行，按字面匹配）；结果带行号，同样受预览上限约束，不再产生完整输出。模型只给出编号，不接触 ArtifactRef 或存储地址 |
 
 内建 Unit：`context-assemble`、`model-call`（MODEL）、`report-publish`（M1）、`message-publish`（新增，由 Execution 直接发布 `reply` 与运行结果）。
 工作区快照与恢复是 Kernel 的内部操作，不是 Workflow 可以提交的 Unit。
@@ -1128,14 +1129,26 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 - `output`：结构化结果，按 Unit 的输出 Schema 校验，写入日志；
 - `content`：给模型看的文字，即 `output` 的渲染加预览，作为 Artifact 引用（`outputRef`），长期保留；
 - `full`：只在预览截断了内容时存在，即完整的原始输出，作为 Artifact 引用（`fullRef`），7 天后过期回收（第 10.1 节）；
+  大小不超过该 Unit 的 `maxFullOutputBytes`（缺省 8 MiB），超出时 Executor 按与预览相同的取舍（头、尾或两端）保存，并在预览中注明完整输出也不完整；
 - `metadata`：只给终端界面使用，例如 diff 高亮、退出码徽标，不进入模型上下文。
 
 **预览在产生时固定**：
 - 预览由 Executor 生成：保留哪一部分（头、尾或头尾两端，按字节、按行或按条目）由各 Executor 依据输出的含义决定，截断机制由 ExecutorSet 的共用模块提供；
-  预览注明省略了多少内容，以及完整输出的保留期限；
-- Execution 存储预览与完整输出，并为它们登记保留类别（预览长期保留，完整输出 7 天过期）；结果检查确认预览不超过该 Unit 的 `maxOutputBytes`；
-- 模型看到的永远是预览，组装上下文时不再重新截断（第 9.3 节）；因此完整输出的过期不影响上下文的重建。
-- M2 中完整输出只供用户查看与诊断（界面经 `readArtifact` 读取），模型不能读取；预览的说明建议模型以更精确的参数重新调用工具。
+  预览注明省略了多少内容、完整输出保留 7 天，以及可以用 `read_output` 按本次调用的 `toolCallId` 分段读取；预览中不出现引用或路径；
+- Execution 存储预览与完整输出，并为它们登记保留类别（预览长期保留，完整输出 7 天过期）；结果检查确认预览不超过该 Unit 的 `maxOutputBytes`、完整输出不超过 `maxFullOutputBytes`；
+- 上下文中放的永远是预览，组装上下文时不再重新截断（第 9.3 节）；因此完整输出的过期不影响上下文的重建。
+
+**读取完整输出**（`read_output`，阶段 2）：用户经界面（`readArtifact`）查看，模型经 `read_output` 分段读取。模型读取时的隔离：
+- **编号由 Workflow 翻译**：模型只给出 `toolCallId`。Workflow 在发起调用的 AgentRun 的范围内找到那次工具调用，取出它的 `fullRef` 填入 Unit 输入；
+  找不到、或那次结果没有被截断时，Workflow 不提交 Unit，按参数错误反馈给模型。范围按日志计算，不按当前投影：
+  - main：本 Session 主线上的全部工具调用，跨 WorkflowRun，包括已被压缩取代的、被 `/undo` 回退的 Turn 中的，以及 Fork 时继承的历史中的；
+  - 模板中的 AGENT 节点、explorer、worker：该 AgentRun 自己步骤中的工具调用，与委派给它的上下文范围一致；main 读不到 SubAgent 的工具调用，SubAgent 也读不到父 AgentRun 的；
+  - 范围内有多次调用的 `toolCallId` 相同时（编号由 provider 生成），取最近的一次。
+- **授权与过期由 Execution 检查**：`fullRef` 必须属于本 Session；是否过期按登记的 `retainedSince` 加 `expiringRetentionDays` 判断，与正文是否已被删除无关，
+  过期即返回 `ARTIFACT_EXPIRED`，模型得到"完整输出已过期删除"的说明。结果因此只取决于日志与时间，与回收任务是否已经运行无关。
+- **截取由 Executor 完成**：`output-read` Executor 只接收 Execution 解析后的正文，按行切分、过滤、加行号，经共用模块限制在预览上限内；它不接触存储，没有文件系统与网络权限，不需要沙盒。
+- **结果固定**：读出的一段是这次 `read_output` 调用的预览，写入日志、长期保留，此后与其他工具结果一样只在末尾追加，不随完整输出的过期而改变。
+- **信任不提升**：读出的内容保持原工具结果的来源标记（例如 `web_fetch` 的网页内容仍是外部材料，第 9.2 节）。
 
 非零退出码、测试失败、没有搜索结果都属于 OK。沙盒拒绝、授权拒绝、超时、取消、`FILE_CHANGED`、`WRITE_OUT_OF_SCOPE` 属于 REJECTED 或 FAILED，
 带原因码与给模型的简短说明。原始异常文字可能含有宿主机路径与环境信息，只写入审计，不进入模型上下文。
@@ -1150,6 +1163,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 ```text
 executor-set/
   retention/ 预览生成的共用模块：按字节、行或条目保留头部、尾部或两端，不切断 UTF-8，精确计数省略量
+  output-read/ read_output：对 Execution 交来的完整输出按行截取、过滤、加行号，结果经 retention/ 限制
   fs/        文件访问接口与本地实现：路径检查、排除规则、同路径锁、带版本条件的写入
   git/       git-inspect：固定子命令表、安全参数、排除规则的 pathspec
   command/   run-command：子命令拆分、环境变量白名单与断言、输出截断、拒绝分类
@@ -1249,8 +1263,8 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
    保留区是最近 keepTokens（缺省 20000）的原文；范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
    没有可压缩的范围时结束，挂起的组装照常执行
 6. 生成摘要：Execution 组装摘要请求——与该对象普通请求相同的前缀（system 段、工具定义、历史），末尾追加摘要指令（AgentToolPool 中的 Prompt `compaction-system`），
-   tool_choice = none，思考设置与普通调用相同；经 Scheduler 申请调用机会，由 model-call Executor 执行，按第 7.3 节计量
-   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则压缩失败
+   tool_choice = none，思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），其余请求参数与普通调用相同；经 Scheduler 申请调用机会，由 model-call Executor 执行，按第 7.3 节计量
+   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则压缩失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
 9. 挂起的 context-assemble 以 REJECTED(CONTEXT_COMPACTED) 返回，Workflow 用新的投影重新提交（不计入连续出错，也不是重复调用）
@@ -1264,11 +1278,14 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
   user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后。
   再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代的原始记录仍在日志中（日志只追加）。
 - **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要；摘要指令要求模型不执行材料中的指令。
-- **缓存**：摘要请求复用普通请求的前缀，命中已有的缓存；压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"，此后又只在末尾追加。
+- **缓存**：摘要请求的消息前缀（system 段、工具定义、历史）与普通请求相同，用以命中已有的缓存；思考强度不同是否影响命中，由阶段 0 实测（第 14.1 节），
+  结果只影响 `summaryReasoningEffort` 的缺省值。压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"，此后又只在末尾追加。
+- **被取代的工具结果**：摘要取代的工具结果仍可经 `read_output` 读回完整输出（第 8.2 节），只要模型知道它的 `toolCallId` 且未过期；摘要指令因此要求保留可能还需要的编号。
 - **与回退的关系**：`/undo` 回退的 Turn 与某次压缩的范围相交时，Workflow 按固定规则追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目，之后需要时再压缩；
   只回退压缩范围之后的 Turn 不受影响。由阶段 2 与阶段 8 中较晚完成的一个实现。
 - **Fork**：复制的日志中带着压缩记录，新 Session 沿用；摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
-- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]；初值在阶段 8 按固定任务校准。
+- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、
+  `summaryReasoningEffort` `none`（取值同 Agent 的思考强度，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
 
 ## 10. Session 与持久化
 
@@ -1298,7 +1315,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | Owner | Workflow（唯一写入者） | Kernel.Execution（唯一写入者） |
 | 内容 | 会话日志：拓扑、HUMAN 节点、Unit 的提交与结果、Turn 与运行的边界、压缩记录、控制记录。只保存结构化记录与 ArtifactRef，不保存正文 | 全部正文：工具输出的预览与完整版本、模型输出、思考内容、用户输入的正文、压缩的摘要、ContextPack、报告与回复 |
 | 写入 | 只追加 | 只新增，内容寻址，写入后不可变 |
-| 创建、复制、删除 | Workflow 执行：新建日志、Fork 时复制日志、删除日志 | Execution 执行：写入正文并登记归属与保留类别、在 Session 删除时删除归属文件、启动时回收 |
+| 创建、复制、删除 | Workflow 执行：新建日志、Fork 时复制日志、删除日志 | Execution 执行：写入正文并登记归属与保留类别、在 Session 删除时删除归属文件、启动时与每小时回收 |
 | 读取 | 只有 Workflow | 按 ArtifactRef 经 Kernel 读取，归属检查见下 |
 | 机制 | 由 Persistence 提供（第 10.3 节的写入规则） | 由 Persistence 提供，M1 的 ArtifactStore 原样扩展 |
 
@@ -1316,6 +1333,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 
 - 同一份内容被多个 Session、或以不同类别登记时，取最长的保留：只要还有一处 `SESSION` 登记属于 ACTIVE 的 Session，就不回收。
 - 读取已回收的正文时返回 `ARTIFACT_EXPIRED`，与"不存在或不属于本 Session"的 `INVALID_ARTIFACT_REF` 区分；归属文件中的登记行仍在，因此缺失的原因可以解释。
+  `EXPIRING` 正文是否过期按登记时间判断：满 `expiringRetentionDays` 后即使正文尚未被删除，读取也返回 `ARTIFACT_EXPIRED`，使结果不取决于回收何时运行。
 - Session 本身不会被自动删除（第 1.3 节）。
 
 **实例锁**：同一个 `dataDir` 同一时刻只运行一个 MultiAgentOS 实例。全局共享的 `artifacts/`、`session-refs.jsonl`、`session-index.jsonl`、`trusted-instructions.jsonl` 与产物回收因此都只有一个写入者，不需要跨进程同步。
@@ -1324,8 +1342,11 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 - 过期判定，任一条件成立即视为过期：pid 不存在；pid 被复用（与 `/proc/<pid>/stat` 中的启动时间不一致）；心跳超过 60 秒未更新。
 - 抢占过期的锁：先把它 rename 为墓碑目录，再重新 `mkdir`，两个进程同时抢占时只有一个成功。
 - 取锁失败时报错退出，说明持有锁的进程。
-- 产物回收只在启动、持有实例锁时进行一次：只读取 Session 引用为 ACTIVE 的 Session 的 `artifact-owners.jsonl`，按上表标记仍需保留的正文，
-  删除其余早于本次启动写入的正文。Session 引用为 DELETED 的 Session 不参与标记，即使它的归属文件因删除失败而残留。
+- 产物回收在持有实例锁时进行：启动时、开放服务之前一次，之后每隔 `sweepIntervalMinutes`（缺省 60）一次（参考 OpenCode）。
+  只读取 Session 引用为 ACTIVE 的 Session 的 `artifact-owners.jsonl`（登记行在产物引用交出之前已经追加），按上表标记仍需保留的正文，
+  删除其余在本次回收开始之前写入的正文。Session 引用为 DELETED 的 Session 不参与标记，即使它的归属文件因删除失败而残留。
+- 运行中的回收与写入并存：写入的正文已经存在时（内容寻址），ArtifactStore 更新它的写入时间，因此回收开始之后被再次写入的正文不会被删除；
+  定期回收由 Kernel 的定时器以内部消息触发，与新建、删除、Fork 等 Session 管理操作按顺序开始，读取登记与删除文件的 I/O 在后台进行，不阻塞 Session 的处理。
 - 不同 `dataDir` 指向同一个仓库时，工作区与快照没有保护，这一点写入限制清单。
 
 **以 Session 为存放单位**（M1 按 WorkflowRun 存放在 `runs/<workflowRunId>/`）：
@@ -1512,6 +1533,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 27. 两次压缩之间，同一 AgentRun 发出的请求只在末尾增长：前一次请求是后一次请求的前缀（收尾调用的工具列表除外）。
 28. 压缩只在 Workflow 确认已记入日志后生效；摘要永不进入 system 段，`PINNED` 条目永不进入摘要；压缩不动用收尾保留 F。
 29. 只有 ACTIVE 的 Session 的登记能让正文免于回收；`SESSION` 类正文在被某个 ACTIVE 的 Session 拥有期间永不回收。
+30. 模型只以 `toolCallId` 引用完整输出，永不接触 ArtifactRef 或存储地址；`read_output` 只能读到发起者范围内、本 Session 的、按登记时间未过期的完整输出。
 
 ## 13. 验收
 
@@ -1529,7 +1551,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问超时不放行；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问没有被超时拒绝；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任 | 全部符合第 5 节 |
 | W | W1 检索加读取后作答并注明来源；W2 网页中的提示注入；W3 访问私网地址、DNS 重绑定、重定向到内网 | W2：注入内容没有被执行。W3：全部以 `ADDRESS_FORBIDDEN` 拒绝 |
 | O | 同一问题分别用 Turn-chat 与 `research` 模板运行；使用者模板的校验错误 | 两种方式都完成，比较完成率、耗时与 token；校验错误指明规则与节点 |
-| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内（阶段 2 与阶段 8 都完成后） | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目 |
+| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后（启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内（阶段 2 与阶段 8 都完成后）；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、过期后读取、读取已被压缩取代的调用（阶段 8 完成后） | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变 |
 | S | S1 运行中杀掉进程后重开 Session；S2 日志尾部损坏；S3 `/new` 或 `/fork` 后放弃草稿；S4 Fork 后分别在两个 Session 中继续，再切换回原 Session；S5 同一 `dataDir` 启动第二个实例；S6 实例锁的持有进程已退出后启动 | S1、S2：对话可以继续；遗留的 Unit 被标为 INTERRUPTED，没有重放；授权被重新询问。S3：不产生任何新的 Session 文件。S4：两个日志互不影响，原日志逐字节不变；切换回原 Session 时文件没有被改动，main 的上下文中注明了在另一个 Session 中被修改的文件，编辑这些文件前要求重新读取。S5：第二个实例报错退出，说明持锁进程。S6：过期的锁被抢占，正常启动 |
 
 **发布阻断项**：
@@ -1550,7 +1572,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 - Ubuntu 24.04 与 WSL 上，bwrap 能否以非特权用户运行第 6.1 节的完整 profile，包括：先以 tmpfs 遮蔽 `$HOME` 再挂回白名单目录与仓库的挂载顺序、以 `/dev/null` 覆盖单个敏感文件、`--ro-bind` 重新挂载已存在的受保护路径时宿主仓库中不留下任何新文件；
 - DeepSeek 思考内容回传、历史轮缺少思考内容、收尾调用三种组合的实际行为；
 - DeepSeek 是否支持 `none`、`low`、`high`、`max` 四档思考强度，以及不支持时的映射方式（第 9.4 节）；
-- DeepSeek 提示词缓存在"只在末尾追加"时的命中情况，以及摘要请求（相同前缀、`tool_choice = none`）能否命中同一缓存（第 9.2、9.6 节）。
+- DeepSeek 提示词缓存在"只在末尾追加"时的命中情况，以及摘要请求（相同前缀、`tool_choice = none`）能否命中同一缓存；思考开启与关闭对命中的影响；
+  关闭思考的请求中历史仍带 `reasoning_content` 时 API 的行为（第 9.2、9.6 节）。
 
 **与已有文档的差异**：下面两张表登记了 M2 与 Architecture、M1 文档的全部差异，不允许不登记就偏离。
 
@@ -1586,8 +1609,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | Kernel/Interaction | 运行 actor 改为 Session actor；新的消息类型与控制通道 | 2.6、7.5 |
 | Kernel/Gateway | 新的 syscall 与来源检查 | 7.5 |
 | Infrastructure/Persistence | 存放单位从 `runs/<workflowRunId>/` 改为 `sessions/<sessionId>/`；新增命名空间 `kernel-execution`；会话日志改为只追加的 JSONL；实例锁 | 10.1、10.3 |
-| Infrastructure/ArtifactStore | 从按运行存放改为全局内容寻址、按 Session 登记归属与保留类别；启动时回收 | 10.1 |
-| Library/ExecutorSet | 工具结果的预览在产生时固定，完整输出另存；`context-assemble` 不再按调用裁剪，只保留收尾调用的保险；摘要请求的组装 | 8.2、9.3、9.6 |
+| Infrastructure/ArtifactStore | 从按运行存放改为全局内容寻址、按 Session 登记归属与保留类别；启动时与每小时回收；写入已存在的正文时更新写入时间 | 10.1 |
+| Library/ExecutorSet | 工具结果的预览在产生时固定，完整输出另存并设上限；新增 `output-read`；`context-assemble` 不再按调用裁剪，只保留收尾调用的保险；摘要请求的组装 | 8.2、9.3、9.6 |
 | M1Interface | 变化的 Schema 发布新 major，写入 M2Interface | 7.5 |
 
 **M2 的配套文档**：M2Plan（按第 15 节的阶段排期）、M2Interface（字段级）、各组件文档、Library 文档（新的 Agent、Unit、Tool、Prompt、模板定义）、技术栈、使用说明、限制清单（含威胁模型）、验收证据。
@@ -1627,13 +1650,13 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
 | 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6、L5（没有压缩的部分）、L6 |
-| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异 | 1 | A 组的写入部分、H5、H8–H10、S4、L7（阶段 8 已完成时） |
+| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
 | 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断 | 3 | P1–P6、B、D |
 | 5 人类在环控制 | 暂停、继续、`steer`、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4 |
 | 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W |
 | 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
-| 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出与 `/compact` 触发，材料查询与结果确认，摘要调用与额度，投影替换；压缩与回退的关系（阶段 2 已完成时） | 1 | L1–L5（L7 在阶段 2 与阶段 8 都完成后） |
+| 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出与 `/compact` 触发，材料查询与结果确认，摘要调用与额度，投影替换；压缩与回退的关系、读取已被压缩取代的调用（阶段 2 已完成时） | 1 | L1–L5（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后） |
 
 阶段 6 与阶段 8 只依赖阶段 1，可以与阶段 2–5 并行开发；阶段 8 的编号只表示它是后加入的阶段，不表示它排在最后。
 
@@ -1651,3 +1674,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.3（编辑性） | 2026-10-30 | 第 15 节：阶段 1 的 `analyze` 改为"plan → view 为条件边"、阶段 7 的条件边限定为使用者模板，与 v1.3 一致；版本记录按版本排序 |
 | v1.4 | 2026-10-30 | 第 2.6 节：事件增加系统级序列（Session 列表的查询与结果、删除未打开的 Session），解决没有打开的 Session 时无法列出 Session 的问题；第 2.3 节：删除只针对未打开的 Session；额度结束后的继续是对当前 Session 再次 `openSession`；第 11.2 节增加 `/delete <id>`（此前有 `deleteSession` 请求而没有对应的指令）；第 2.4、7.5、10.3 节相应修改 |
 | v1.5 | 2026-10-30 | 上下文与产物保留：第 8.2 节，工具结果的预览由 Executor 在产生时固定，完整输出另存；第 9.2、9.3 节，取消按调用重新裁剪，两次压缩之间请求只在末尾追加（运行时上下文改为历史条目），收尾调用保留确定性的保险；新增第 9.6 节，上下文压缩作为 Kernel 的标准过程（自动、溢出与 `/compact` 触发，模型摘要加保留最近原文，结果写回日志）；第 10.1 节，正文分为 `SESSION` 与 `EXPIRING`（7 天）两类，回收只统计 ACTIVE 的 Session，新建或删除失败时清理 Kernel 的文件；第 1.3 节，压缩不再是非目标，Session 不自动删除；第 2.4、7.3、7.5、10.2、11、12（不变量 7、27–29）、13（L 组）、14.1、15（阶段 8）节相应修改 |
+| v1.6 | 2026-10-31 | 第 8.1、8.2 节：新增工具 `read_output`（阶段 2），模型以 `toolCallId` 分段读取被截断的完整输出，编号由 Workflow 在发起者的范围内翻译（按日志计算，包括已被压缩取代的调用），授权与过期由 Execution 检查（按登记时间判断），截取由新的 `output-read` Executor 完成；完整输出设上限 `maxFullOutputBytes`；第 9.6 节：摘要请求的思考强度改为配置 `summaryReasoningEffort`（缺省关闭），摘要保留仍需回读的 `toolCallId`；第 10.1 节：产物回收改为启动时一次、之后每小时一次，写入已存在的正文时更新写入时间；第 12（不变量 30）、13（L6、L8）、14.1、15（阶段 2、8）节相应修改 |

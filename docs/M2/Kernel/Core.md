@@ -129,7 +129,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | `KernelConfig.authorizationTimeoutMs` | Core | 300000 |
 | `KernelConfig.provider`、`repositoryExclusions`、`convergenceMarginMs` | Core | 与 M1 相同 |
 | `KernelConfig.preset` | Core | `standard`；`readonly` 由 CLI 参数设置（M2Design 第 5.2 节） |
-| `KernelConfig.compaction` | Core | `triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]（阶段 8） |
+| `KernelConfig.compaction` | Core | `triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryReasoningEffort` `none`（摘要请求的思考强度，启动时按所用模型的 `effortMapping` 校验，不合法时拒绝启动）（阶段 8） |
 
 ## 9. 不变量与测试
 

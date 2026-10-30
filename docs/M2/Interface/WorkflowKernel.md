@@ -230,7 +230,7 @@ interface UnitReport {
   reasonCode?: ReasonCode;           // REJECTED、FAILED 时必填
   output?: UnitOutput;               // OK 时必填
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
-  fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不得进入上下文
+  fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不进入投影，只作为 read_output 的输入（M2Design 第 8.2 节）
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
   budget: BudgetView;
   // 阶段 2：changedFiles；阶段 4：quota
@@ -388,7 +388,7 @@ interface ContextCompacted {
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
 
-| `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已按保留期回收（M2Design 第 10.1 节）；只可能出现在引用了 `fullRef` 的输入中，Workflow 视为内部错误 |
+| `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中（阶段 2），Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
 | `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 阶段 8：组装期间完成了压缩，须以新的投影重新提交 |
 | `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | 阶段 8：provider 报告上下文过长 |
 | `COMPACTION_UNKNOWN` | `SyscallRejected`（`reportCompactionSource`、`ackCompaction`） | 阶段 8：`compactionId` 不存在或已回复 |

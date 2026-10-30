@@ -17,7 +17,7 @@
 | 只读约束 | 不修改被分析仓库，不执行项目命令，不调用 git（阶段 2、3 起分别开放写入、命令与只读 git） |
 | 人类参与 | 开放输入（每条用户消息）与授权询问；阶段 5 起增加暂停、中止与局部询问 |
 | 资源 | 运行、Turn 两级额度；每个 AgentRun 的工具次数与墙钟上限；额度不触发 Kernel 收敛 |
-| 产物 | 工具结果的预览长期保留，完整输出与 ContextPack 7 天后回收；只有 ACTIVE 的 Session 的登记能让正文免于回收 |
+| 产物 | 工具结果的预览长期保留，完整输出与 ContextPack 7 天后回收（启动时与每小时回收）；模型经 `read_output` 按 `toolCallId` 分段读取完整输出（阶段 2）；只有 ACTIVE 的 Session 的登记能让正文免于回收 |
 
 ## 3. 术语
 
@@ -93,7 +93,7 @@ M1 的原因码及其处理（M1 第 10 节）保留。阶段 1 新增：
 | `NO_OPEN_TURN` | SyscallRejected | 内部错误 |
 | `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 为触顶项 |
 | `LIMIT_EXCEEDED`（普通调用的 `context-assemble`） | UnitReport | 上下文超出窗口：进入收尾，main 的回复提示 `/new`（阶段 8 起由压缩避免，M2Design 第 9.3 节） |
-| `ARTIFACT_EXPIRED` | UnitReport、`readArtifact` 的拒绝 | 正文已按保留期回收；Workflow 从不引用 `fullRef`，出现即内部错误 |
+| `ARTIFACT_EXPIRED` | UnitReport、`readArtifact` 的拒绝 | 正文已过保留期；UnitReport 中只出现在 `read_output` 的结果里（阶段 2），作为给模型的工具结果 |
 
 阶段 8 增加 `CONTEXT_COMPACTED`、`CONTEXT_OVERFLOW`（处理见 [Workflow](Workflow.md) 第 8.4 节）与 `COMPACTION_UNKNOWN`。
 
@@ -102,7 +102,7 @@ M1 的原因码及其处理（M1 第 10 节）保留。阶段 1 新增：
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 2–9 节 |
-| 2 | 两步授权、写入 Unit、回退与差异、Fork |
+| 2 | 两步授权、写入 Unit、回退与差异、Fork、`read_output` 的 Unit 与输入检查 |
 | 3 | 命令与只读 git 的 Unit、沙盒、停机 |
 | 4 | 多个 ACTIVE 的 AgentRun、委派、并行执行 |
 | 5 | 暂停、中止、局部询问、`CANCELLED`、`TIMEOUT` |
