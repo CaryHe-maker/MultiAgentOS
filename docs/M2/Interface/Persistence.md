@@ -61,13 +61,15 @@ interface LogRecordBase {
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
-| `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`、`budget` | 1 |
+| `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期，不进入上下文）、`budget` | 1 |
 | `UNIT_INTERRUPTED` | `requestId`、`reason`（打开 Session 时的修复，或阶段 5 的暂停与中止） | 1 |
-| `MODEL_TURN` | `requestId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`usage` | 1 |
+| `MODEL_TURN` | `requestId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?` | 1 |
-| `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContextDigest` | 1 |
-| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`elidedEntries` | 1 |
+| `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
+| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
+| `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`summaryRef`、`usage` | 8 |
+| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'` | 8（阶段 2 已完成时） |
 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 | 1 |
 | `LOG_TAIL_REPAIRED` | `truncatedBytes` | 1 |
 | `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` | 1 |
@@ -136,10 +138,15 @@ interface ArtifactOwnerLine {
   mediaType: string;
   sha256: string;
   size: number;
+  retention: 'SESSION' | 'EXPIRING';  // M2Design 第 10.1 节
   source: 'PRODUCED' | 'INHERITED';   // INHERITED：Fork 时从原 Session 继承（阶段 2）
+  retainedSince: string;              // 保留期的起点：PRODUCED 为写入时间，INHERITED 沿用原 Session 的登记
   at: string;
 }
 ```
+
+- `EXPIRING` 的正文在 `retainedSince` 之后满 `expiringRetentionDays`（缺省 7 天）即可回收；`SESSION` 的正文只在没有任何 ACTIVE 的 Session 拥有时回收。
+- 只有 Session 引用为 ACTIVE 的 Session 的归属文件参与回收的标记（[Infrastructure/ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
 
 ## 5. Kernel 审计
 

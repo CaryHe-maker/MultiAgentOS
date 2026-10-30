@@ -51,6 +51,16 @@ minShare(agent)     = F(agent) + 2 × wrapUpMargin(agent)
 `F` 与 `wrapUpMargin` 取 M1 的全局值（M1 Monitor 第 4 节）；整个运行至多一次 final-call（由 Core 按运行而不是按 AgentRun 计）。
 档案由 `budget.profiles.analyze` 配置，按模板 ID 选用。
 
+### 3.5 压缩的额度（阶段 8）
+
+M2Design 第 7.3 节"压缩的额度"：
+
+- 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前 Turn 账本（阶段 4 起模板节点为该 AgentRun 的账本）；
+- 预留量 = 摘要请求的输入估算（与普通调用同一估算方法）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不压缩，
+  按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮）；
+- 用户 `/compact` 的压缩没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝；
+- 结算按实际用量（M1 的方式）；缓存命中的输入按模型定义的计价计入。
+
 ## 4. 资源上限
 
 | 上限 | 计数 | 触顶时 |
@@ -81,7 +91,7 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 1. 每个 Agent 的四个额度参数为正安全整数，求和不溢出；
 2. 每个 Agent 的普通调用与收尾调用的估算不超过其模型的上下文窗口与输出上限；
 3. `turnTokenLimit ≥ minShare(main)`；`runTokenLimit ≥ turnTokenLimit`；
-4. 不可裁剪段的估算严格小于该 Agent 的 `perCallInputLimit` 与 `finalInputBudget`（M1 的第 4、5 条，改为按 Agent 计算）。
+4. 固定部分（system 段、`PINNED` 条目的上限、STATUS 与收尾提示）的估算严格小于该 Agent 的 `perCallInputLimit` 与 `finalInputBudget`（M1 的第 4、5 条，改为按 Agent 计算）。
 
 ## 7. 不变量与测试
 
@@ -95,7 +105,8 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 
 | 阶段 | 本文增加的内容 |
 |---|---|
-| 1 | 第 3–7 节 |
+| 1 | 第 3–7 节（第 3.5 节除外） |
 | 4 | AgentRun 级账本与逐级委派、委派保留、`minShare` 的派生检查、等待子任务时墙钟暂停 |
 | 5 | 暂停时墙钟暂停 |
 | 7 | 模板节点从 Turn 账本划出份额 |
+| 8 | 第 3.5 节：压缩的额度 |

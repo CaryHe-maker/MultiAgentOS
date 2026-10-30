@@ -56,6 +56,7 @@
 | `inputId` | `inp` | UserInteraction | ULID | 一次用户输入；重复提交按它去重（M2Design 第 10.3 节写入规则第 5 条） |
 | `commandId` | `scm` | Core | ULID | Kernel 下达给 Workflow 的一条 Session 命令（包括系统级的 `DELETE`） |
 | `queryId` | `slq` | Core | ULID | 一次 Session 列表查询 |
+| `compactionId` | `cmp` | Core | ULID | 一次上下文压缩（阶段 8，M2Design 第 9.6 节） |
 
 - 由路径派生的 ID：路径按 UTF-8 编码后计算 SHA-256，取前 32 位小写十六进制。可读路径作为同一记录中的 `path` 字段保存。
 - `workflowRunId` 在 M1 中由 Gateway 在 `createRun` 时生成；M2 中由 Core 在开启 WorkflowRun 时生成，随该运行的事件信封交给接收方。
@@ -136,6 +137,7 @@ interface SystemInboxEvent<T> {        // 系统级事件：不属于任何 Sess
 | 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 草稿（阶段 1） |
 | Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 1 起 | 草稿（阶段 1） |
 | Kernel 核心与 Supervisor 的消息 | `KernelSupervisor.md` | 2 起 | 未开始 |
+| 上下文压缩的请求、事件与日志记录 | [WorkflowKernel](WorkflowKernel.md) 第 2.4、3.4 节；[InteractionKernel](InteractionKernel.md) 第 2.4、3.4 节；[Persistence](Persistence.md) 第 2.2 节 | 8 | 草稿（字段已列出，阶段 8 的文档门中评审） |
 
 ## 6. 原因码
 

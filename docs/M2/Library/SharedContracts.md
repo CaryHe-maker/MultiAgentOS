@@ -63,11 +63,12 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 
 | Schema ID | 文件 | 定义 |
 |---|---|---|
-| `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 4 节 |
+| `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 5 节 |
 | `executor.FileReadOutput.v1` | `executor/file-read.ts` | 增加内容的 SHA-256 |
-| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回（ExecutorSet 第 6 节） |
-| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（第 5.1 节）、条目的 `turnId` 与裁剪类别 |
-| `context.ContextPack.v1` | `context/context-pack.ts` | 增加 `elidedEntries`，取代 `elidedRequestIds` |
+| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`） |
+| `context.ContextPack.v1` | `context/context-pack.ts` | 增加 `elidedEntries`（只在收尾调用的保险中出现），取代 `elidedRequestIds` |
+| `executor.RetentionNotice.v1` | `executor/retention.ts` | 预览的截断说明：策略、单位、上限、保留量、省略量（ExecutorSet 第 4 节） |
 
 ### 3.6 `workflow`、`catalog`
 
@@ -100,3 +101,5 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 ## 5. 阶段
 
 本文第 3 节为阶段 1 的清单；后续阶段的 Schema 在各自的契约门中加入本文。
+阶段 8 加入压缩相关的类型：`CompactionSourceQuery`、`ContextCompacted`、`CompactionFailed`（运行级事件）、`ReportCompactionSourceRequest`、`AckCompactionRequest`、`CompactContextRequest`，
+以及日志记录 `CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED`（Interface/WorkflowKernel 第 3.4 节、InteractionKernel、Persistence 第 2.2 节）。

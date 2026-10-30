@@ -82,7 +82,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
 | Ctrl+C | RUNNING | 阶段 1：提示"再按一次退出"，2 秒内再按则 `shutdown`（当前运行以 `SHUTDOWN` 收敛）；阶段 5 改为暂停 |
 
-`/fork`、`/undo`、`/diff`（阶段 2），`/continue`（阶段 5），`/run`、`/timeline`、`/thinking`（阶段 4、7）在对应阶段加入。
+`/fork`、`/undo`、`/diff`（阶段 2），`/continue`（阶段 5），`/run`、`/timeline`、`/thinking`（阶段 4、7），`/compact`（阶段 8，只在 AWAITING_INPUT 时可用）在对应阶段加入。
 
 ## 6. 界面
 
@@ -92,7 +92,9 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | 活动区 | 每个 ACTIVE 的 AgentRun 一行：阶段、计时（每秒刷新）、转动指示（100 毫秒）；正在执行的工具作为子行 |
 | 输入区 | 输入框与待处理队列 |
 
-- 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`。
+- 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`；阶段 8 增加 `压缩上下文`。
+- 工具结果被截断时，折叠行注明"输出已截断"；展开时经 `readArtifact` 读取完整输出（`fullRef`），已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
+- 阶段 8：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn）"，可展开查看摘要；`CompactionFailed` 显示原因。
 - 思考内容与回复都不流式显示。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
 - 展示文本中的控制字符按 M1 的规则转义。
 
@@ -139,3 +141,4 @@ RunFinished → 展示运行结果（analyze 为报告）→ shutdown → 进程
 | 4 | SubAgent 树、`/timeline` |
 | 5 | Ctrl+C 暂停与中止、`/continue`、`ask_user` 的问题与结构化字段 |
 | 7 | `mas run` 的使用者模板、`/run` |
+| 8 | `/compact`、压缩的通知与摘要展示、`压缩上下文` 阶段 |

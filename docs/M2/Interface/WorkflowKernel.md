@@ -17,6 +17,7 @@ Workflow 只持有 `WorkflowGatewayPort`；Gateway 以 `Envelope.producer = 'wor
 | Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 | 1 |
 | Kernel → Workflow，运行级 | 工作区回退与差异 | 2 |
 | Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 | 5 |
+| 双向，运行级 | 上下文压缩：材料查询与回答、压缩结果与确认 | 8 |
 
 ## 2. Workflow → Kernel
 
@@ -33,6 +34,7 @@ interface WorkflowGatewayPort {
   reportSessionCommand(request: ReportSessionCommandRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(request: ReportSessionListRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   // 阶段 4：reserveDelegation、releaseDelegation
+  // 阶段 8：reportCompactionSource、ackCompaction（第 2.4 节）
 }
 ```
 
@@ -169,6 +171,31 @@ interface SessionListEntry {
   日志中最后一个人类请求没有答复时（M2Design 第 10.3 节第 6 步），Workflow 在新的运行中重新发起这个请求；Kernel 不保留、不转发上一个运行的请求。
 - `FAILED` 时 Kernel 不开启运行，把失败原因以 Session 级事件（`DELETE` 为系统级事件）告知 UserInteraction。
 
+### 2.4 压缩的材料与确认（阶段 8）
+
+压缩过程见 M2Design 第 9.6 节；Workflow 只按固定规则回答，不决定是否压缩。
+
+```ts
+interface ReportCompactionSourceRequest {
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+  compactionId: string;              // 来自 CompactionSourceQuery
+  entries: ContextHistoryEntry[];    // 该对象当前的投影条目，与 context-assemble 输入中的历史条目同一结构（带 seq、turnId、类别）
+}
+
+interface AckCompactionRequest {
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+  compactionId: string;
+  outcome: 'RECORDED' | 'FAILED';    // RECORDED：已追加 CONTEXT_COMPACTED；FAILED：日志追加失败（随后按内部错误处理）
+}
+```
+
+- Workflow 在追加 `CONTEXT_COMPACTED` 成功之后才发出 `ackCompaction(RECORDED)`；Kernel 收到之前，压缩不生效。
+- 回答查询与确认都不改变节点状态，也不计入任何 AgentRun 的 Round。
+
 ## 3. Kernel → Workflow
 
 ### 3.1 运行级事件
@@ -180,6 +207,7 @@ type KernelToWorkflowEvent =
   | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
   // 阶段 2：WorkspaceReverted、WorkspaceDiverged
   // 阶段 5：RunPaused、RunResumed、RunInterrupted、HumanCancelled
+  // 阶段 8：CompactionSourceQuery、ContextCompacted（第 3.4 节）
 
 interface RunStart {
   type: 'RunStart';
@@ -201,8 +229,9 @@ interface UnitReport {
   status: 'OK' | 'REJECTED' | 'FAILED';   // 阶段 5 增加 'INTERRUPTED'
   reasonCode?: ReasonCode;           // REJECTED、FAILED 时必填
   output?: UnitOutput;               // OK 时必填
-  outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填
-  reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 6 节）
+  outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
+  fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不得进入上下文
+  reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
   budget: BudgetView;
   // 阶段 2：changedFiles；阶段 4：quota
 }
@@ -308,6 +337,34 @@ interface SessionDelete {
 - `SessionDelete`：Workflow 删除该 Session 目录中 `workflow` 命名空间的文件，并在 Session 列表中追加 `status: DELETED`，
   以 `reportSessionCommand({ command: 'DELETE', ... })` 回复。
 
+### 3.4 压缩事件（阶段 8）
+
+运行级事件，属于 `KernelToWorkflowEvent`。
+
+```ts
+type CompactionTarget = { kind: 'MAIN' } | { kind: 'AGENT_RUN'; agentRunId: string };
+
+interface CompactionSourceQuery {
+  type: 'CompactionSourceQuery';
+  compactionId: string;              // 前缀 cmp，Core 生成
+  target: CompactionTarget;          // MAIN：Turn-chat 中 main 的投影（整个 Session）；AGENT_RUN：模板中 AGENT 节点的投影
+}
+
+interface ContextCompacted {
+  type: 'ContextCompacted';
+  compactionId: string;
+  target: CompactionTarget;
+  fromSeq: number;                   // 被摘要取代的日志范围（含两端）
+  toSeq: number;
+  summaryRef: ArtifactRef;           // 长期保留
+  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number };
+}
+```
+
+- Workflow 收到 `ContextCompacted` 后追加 `CONTEXT_COMPACTED`（Interface/Persistence 第 2.2 节），再 `ackCompaction`；投影规则见 M2Design 第 9.6 节。
+- 触发压缩的 `context-assemble` 随后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
+- `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；第三次溢出后按收尾处理。
+
 ## 4. Schema 强制的约束
 
 | 对象 | 约束 |
@@ -330,6 +387,11 @@ interface SessionDelete {
 | `SESSION_COMMAND_UNKNOWN` | `SyscallRejected`（`reportSessionCommand`） | `commandId` 不存在或已回复 |
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
+
+| `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已按保留期回收（M2Design 第 10.1 节）；只可能出现在引用了 `fullRef` 的输入中，Workflow 视为内部错误 |
+| `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 阶段 8：组装期间完成了压缩，须以新的投影重新提交 |
+| `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | 阶段 8：provider 报告上下文过长 |
+| `COMPACTION_UNKNOWN` | `SyscallRejected`（`reportCompactionSource`、`ackCompaction`） | 阶段 8：`compactionId` 不存在或已回复 |
 
 M1 的 `AGENT_RUN_ACTIVE` 原本用于"已有 ACTIVE 的 AgentRun 时再次登记"，M2 允许多个 ACTIVE 的 AgentRun，该用法删除，只保留上表的含义。
 其余阶段的原因码在对应阶段补充。

@@ -16,7 +16,8 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 一条运行记录（`WorkflowRunRecord`），按 id 整体覆盖 | 以 Session 为单位的只追加会话日志；状态是日志的投影 | M2Design 第 10 节 | 1 |
 | 固定两步：planner 交接给 code-viewer | TaskGraph：AGENT 与 HUMAN 节点、GraphRevision、就绪即推进；M1 的两步成为内置模板 `analyze` | M2Design 第 3 节 | 1 |
 | 一次输入、一次报告 | `chat` 生长规则：每条用户消息一个 Turn，main 以 `reply` 回复 | M2Design 第 2.2、3.8 节 | 1 |
-| 上下文只在一次运行内 | 由会话日志投影，跨 Turn、跨 WorkflowRun；裁剪按 Turn 标注 | M2Design 第 9 节 | 1 |
+| 上下文只在一次运行内，组装时每次按固定顺序裁剪 | 由会话日志投影，跨 Turn、跨 WorkflowRun；只在末尾追加，不按调用裁剪；工具结果使用产生时固定的预览 | M2Design 第 9 节 | 1 |
+| — | 应 Kernel 的查询交出压缩材料，把压缩结果记入日志，投影以摘要取代被压缩的范围 | M2Design 第 9.6 节 | 8 |
 | 不处理 Session | 执行 Kernel 下达的 Session 命令：新建、打开（修复日志）、关闭、删除；维护 Session 列表 | M2Design 第 2.3、10.3 节 | 1 |
 | 每个运行至多一次 final-call | 每个 AgentRun 至多一次（`analyze` 仍按运行，见 Monitor 第 3.4 节） | M2Design 第 7.3 节 | 1 |
 | `budgetState` 一个值 | `BudgetView`：AgentRun、Turn、运行三级；额度触顶时进入最后一轮，必有报告 | M2Design 第 7.3 节 | 1 |
@@ -119,6 +120,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
 6. **final-call**：每个 AgentRun 至多一次；收尾调用的模型参数（`tool_choice`、思考设置、失败后的重试）由 `context-assemble` 与 `model-call` 按 M2Design 第 9.4 节处理，Workflow 只设置 `final`。
 7. M1 的 `DUPLICATE_CALL` 检查保留；它与重复意图不同：前者拒绝同一 AgentRun 内已成功执行过的相同调用，后者计数最近 20 个 UnitIntent。
+   M1 中"先前结果已被裁剪时不算重复"的例外改为：先前结果已被压缩的摘要取代（阶段 8），或在本次收尾调用的保险中被去掉时，不算重复。
 
 ## 8. 上下文
 
@@ -133,21 +135,43 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 ### 8.2 组成与项目指令
 
-- system 段：人设与职责、可用工具说明、项目指令（`AGENTS.md`，仅当 `trusted`）、运行时上下文（M2Design 第 9.2 节）。
+- system 段：人设与职责、可用工具说明、项目指令（`AGENTS.md`，仅当 `trusted`）（M2Design 第 9.2 节）；在一个 AgentRun 内不变，不放任何会变化的内容。
+- 运行时上下文（工作目录、沙盒状态、当前日期）是历史条目：每个 WorkflowRun 开始时，以及它变化时（例如日期变化），追加 `REQUEST_CONTEXT`，投影在该位置加入一条说明。
+- 用户批准修改 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明。
 - `trusted = false` 的 `AGENTS.md` 以 user 角色、标明"仓库材料，未经用户信任"放在 history 的开头。
-- 外部输入（用户输入、工具结果）一律以 user 或 tool 角色出现并标明来源。
+- 外部输入（用户输入、工具结果、压缩的摘要）一律以 user 或 tool 角色出现并标明来源。
 
-### 8.3 裁剪与可重建性
+### 8.3 只在末尾追加与可重建性
 
-- 交给 `context-assemble` 的每个条目带所属 Turn 与裁剪类别：`PINNED`、`BODY_ELIDABLE`、`TURN_DROPPABLE`（M2Design 第 9.3 节）。
-- `context-assemble` 返回实际去掉的条目，Workflow 追加 `CONTEXT_ASSEMBLED`，记录 `projectionDigest` 与被去掉的条目。
+- 交给 `context-assemble` 的每个条目带所属 Turn、日志中的 `seq` 与类别：`PINNED`（未被信任的 `AGENTS.md`、main 投影中当前 Turn 的人类输入、模板节点的目标与交接输入、SubAgent 的目标与验收标准）或 `NORMAL`（M2Design 第 9.3 节）。
+- 工具结果在条目中只用预览（`UNIT_COMPLETED.outputRef`），永不使用 `fullRef`。
+- 已投影出的条目不再改写：两次压缩之间，同一对象的投影只在末尾增长（不变量 27）。思考内容是否可回传，在追加 `MODEL_TURN` 时写入 `replayable`。
+- 每次组装追加 `CONTEXT_ASSEMBLED`，记录 `projectionDigest`；只有收尾调用的保险去掉了条目时才带 `elidedEntries`。
 - 模型、思考设置、工具列表、运行时上下文变化时追加 `REQUEST_CONTEXT`。
+- 普通调用以 `LIMIT_EXCEEDED` 被拒（阶段 8 之前上下文超出窗口）：该 AgentRun 进入最后一轮，`wrapUpReason = CONTEXT_LIMIT`；main 的回复中提示用户用 `/new` 开始新的对话。
 
-### 8.4 思考内容
+### 8.4 压缩（阶段 8）
+
+压缩由 Kernel 决定与执行（M2Design 第 9.6 节），Workflow 只按固定规则配合，不做判断：
+
+| 输入 | Workflow 的处理 |
+|---|---|
+| `CompactionSourceQuery { compactionId, target }` | 按 `target` 计算当前投影（`MAIN` 为 main 的 Session 级投影，`AGENT_RUN` 为该 AgentRun 的投影），以 `reportCompactionSource` 交回全部历史条目；不写日志 |
+| `ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef }` | 追加 `CONTEXT_COMPACTED`，成功后 `ackCompaction(RECORDED)`；追加失败时 `ackCompaction(FAILED)`，按内部错误处理（第 10 节） |
+| `context-assemble` 以 `CONTEXT_COMPACTED` 被拒 | 用新的投影重新提交（同一轮，提交路径的次数加一）；不计入连续出错，不是重复调用 |
+| `context-assemble` 以 `BUDGET_WRAP_UP` 被拒（压缩的额度不足） | 与 M1 的 `BUDGET_WRAP_UP` 相同：设置 `wrapUpReason`，以 `final` 重新组装，进入最后一轮 |
+| `model-call` 以 `CONTEXT_OVERFLOW` 被拒 | 重新提交 `context-assemble`（Kernel 据此压缩）；同一轮第三次溢出时按收尾处理 |
+| `/undo` 回退的 Turn 与某次压缩的范围相交（阶段 2 已完成时） | 追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目 |
+
+投影规则（M2Design 第 9.6 节）：`CONTEXT_COMPACTED` 之后，该对象投影中 `seq` 在 `[fromSeq, toSeq]` 内的 `NORMAL` 条目由一条摘要条目取代，摘要放在第一个被取代条目的位置
+（user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"）；范围内的 `PINNED` 条目保持相对顺序，排在摘要之后。
+被撤销的压缩不再取代任何条目。投影仍是日志的纯函数（不变量 7）。
+
+### 8.5 思考内容
 
 - 每次模型调用的思考内容由 `model-call` 存为产物，`MODEL_TURN.reasoningRef` 记录引用；不显示、不流式输出。
 - 回传规则取决于阶段 0 的实测（Interface/Definitions 第 3 节 `ThinkingFeature`）：`replayReasoning = 'REQUIRED'` 时，
-  带工具的请求回传之前各轮的思考内容；回传条件为同一模型、该轮没有出错；缺少思考内容的历史轮按 `missingReasoningFill` 处理。
+  带工具的请求回传之前各轮的思考内容；回传条件为同一模型、该轮 `replayable`（没有被打断、没有出错，写入 `MODEL_TURN` 时决定）；缺少思考内容的历史轮按 `missingReasoningFill` 处理。
 
 ## 9. 结束
 
@@ -192,7 +216,8 @@ reply(text) 合法 → 追加 MODEL_TURN
 
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
-| 7：节点状态、就绪集合、模型上下文都是日志的纯函数 | 属性测试：对任意日志前缀重放，就绪集合与 `context-assemble` 输入与运行时一致 |
+| 7：节点状态、就绪集合、模型上下文都是日志的纯函数 | 属性测试：对任意日志前缀重放，就绪集合与 `context-assemble` 输入与运行时一致（包括压缩与撤销压缩的记录）；投影不引用任何 `fullRef` |
+| 27：两次压缩之间只在末尾追加 | 属性测试：同一对象相邻两次组装的输入，前一次是后一次的前缀；运行时上下文变化只产生新的末尾条目 |
 | 8：日志只追加 | 单元测试：任何处理只产生追加；修复以追加记录表达 |
 | 13：每次用户输入都对应一个 HUMAN 节点 | 单元测试：初始提示、后续消息都形成 HUMAN 节点 |
 | 15：日志中只有引用，没有正文 | 单元测试：扫描日志记录，不出现用户输入、回复与工具参数的正文 |
@@ -203,8 +228,9 @@ reply(text) 合法 → 追加 MODEL_TURN
 
 | 阶段 | 本文增加的内容 |
 |---|---|
-| 1 | 第 3–12 节 |
+| 1 | 第 3–12 节（第 8.4 节除外） |
 | 2 | Fork、`baseSha` 与 `expectAbsent`、`WORKSPACE_*` 记录与投影替换 |
 | 4 | `run_subagents`、汇合、结果契约与改动对账、完成检查、SubAgent 的投影 |
 | 5 | `steer`、`ask_user`、暂停后重新提交、中止后的收敛、Turn 超时后的 `closeRun(TIMEOUT)` |
 | 7 | 使用者模板（含其中的条件边）、有界循环、`all_done` 的一般使用、确定性运行报告、`/run` |
+| 8 | 第 8.4 节：压缩的配合与投影替换 |

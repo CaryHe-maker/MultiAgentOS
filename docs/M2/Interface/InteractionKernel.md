@@ -16,6 +16,8 @@ UserInteraction 的请求不携带仓库路径。
 | UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 | 1（Fork 为 2） |
 | UserInteraction → Kernel | 回退与差异 | 2 |
 | UserInteraction → Kernel | 暂停、继续、中止 | 5 |
+| UserInteraction → Kernel | `/compact` | 8 |
+| Kernel → UserInteraction | 压缩完成的通知 | 8 |
 | Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件；系统级事件（Session 列表、删除结果） | 1 |
 
 ## 2. UserInteraction → Kernel
@@ -35,6 +37,7 @@ interface InteractionGatewayPort {
   shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   // 阶段 2：undoTurns、confirmUndo、diffTurns
   // 阶段 5：pauseRun、resumeRun、interruptRun
+  // 阶段 8：compactContext（第 2.4 节）
 }
 ```
 
@@ -122,6 +125,20 @@ interface ReadArtifactRequest {
 ```
 
 `ArtifactContent`、`ShutdownRequest` 沿用 M1Interface 第 4.2、4.3 节的 major 0。
+`readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
+
+### 2.4 `/compact`（阶段 8）
+
+```ts
+interface CompactContextRequest {
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+}
+```
+
+- 只在 Turn-chat 运行处于 AWAITING_INPUT 时受理，对象为 main 的投影（M2Design 第 9.6 节）；其他状态以 `REQUEST_CONFLICT` 拒绝。
+- 受理即返回 `SyscallAck`；结果以运行级事件 `ContextCompacted` 告知，没有可压缩的范围、额度不足或失败时以 `CompactionFailed` 告知。
 
 ## 3. Kernel → UserInteraction
 
@@ -134,6 +151,7 @@ type KernelToInteractionEvent =
   | AuthorizationRequest | AuthorizationResolved
   | HumanRequest | HumanResolved
   | MessagePublished | RunStateChanged | ActivityEvent | RunFinished;
+  // 阶段 8：ContextCompacted、CompactionFailed（第 3.4 节）
 
 type AuthorizationRequest =
   | {
@@ -190,7 +208,7 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
 type ActivityPhase =
   | 'ASSEMBLING' | 'THINKING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
   | 'QUEUED' | 'WRAPPING_UP' | 'ENDED';
-  // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER、PAUSED
+  // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER、PAUSED；阶段 8：COMPACTING
 
 interface RunFinished extends RunEnd {   // RunEnd 见 WorkflowKernel 第 3.1 节
   type: 'RunFinished';
@@ -254,7 +272,26 @@ interface SessionDeleted {
   type: 'SessionDeleted';
   requestId: string;                 // 对应的 deleteSession
   sessionId: string;
-  outcome: 'DELETED' | 'FAILED';     // FAILED：Workflow 删除日志失败；Session 引用仍标为已删除，不再出现在列表中
+  outcome: 'DELETED' | 'FAILED';     // FAILED：Workflow 删除日志失败；Session 引用仍标为已删除，Kernel 照常删除自己的文件，不再出现在列表中
+}
+```
+
+### 3.4 压缩的通知（阶段 8）
+
+运行级事件，属于 `KernelToInteractionEvent`。
+
+```ts
+interface ContextCompacted {         // 压缩生效（Workflow 已记入日志）之后发出
+  type: 'ContextCompacted';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
+  summaryRef: ArtifactRef;           // 界面可以经 readArtifact 展示摘要
+  compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）
+}
+
+interface CompactionFailed {
+  type: 'CompactionFailed';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
+  reason: 'NOTHING_TO_COMPACT' | 'BUDGET_INSUFFICIENT' | 'SUMMARY_FAILED' | 'NOT_RECORDED';
 }
 ```
 
@@ -276,3 +313,5 @@ interface SessionDeleted {
 | `TEMPLATE_UNSUPPORTED` | `SyscallRejected`（`startRun`） | 阶段 1 只接受 `analyze` |
 | `QUESTION_NOT_PENDING` | `SyscallRejected`（`answerAuthorization`） | 沿用 M1 |
 | `HUMAN_REQUEST_NOT_PENDING` | `SyscallRejected`（`answerHuman`） | 请求不存在或已答复 |
+| `ARTIFACT_EXPIRED` | `SyscallRejected`（`readArtifact`） | 正文已按保留期回收 |
+| `REQUEST_CONFLICT` | `SyscallRejected`（`compactContext`） | 阶段 8：不是 Turn-chat，或运行不处于 AWAITING_INPUT（沿用 M1 的原因码） |

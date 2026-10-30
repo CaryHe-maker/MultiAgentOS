@@ -19,6 +19,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 | Lease = Agent 定义的能力 ∩ 用户授权 ∩ 系统策略，绑定运行 | 能力上限与授权条目两步判定；Lease 是为一次执行签发的许可 | M2Design 第 5 节 | 2 |
 | 每个运行至多一次 final-call | 每个 AgentRun 至多一次 | M2Design 第 7.3 节 | 1 |
 | 运行超时由 Core 计时 | 删除；Turn 超时在阶段 5 加入 | M2Design 第 7.4 节 | 5 |
+| 上下文规模只由 Executor 裁剪 | Core 在受理 `context-assemble` 时检查规模，决定并组织压缩（第 6a 节） | M2Design 第 9.6 节 | 8 |
 
 ## 3. 职责（阶段 1）
 
@@ -87,6 +88,26 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
   （防御性情况），Turn 账本状态直接为 WRAP_UP，Workflow 让 main 只做收尾调用，额度不足以收尾时以降级回复结束，然后报告结束（M2Design 第 7.3 节）。
 - `answerHuman` 以 `inputId` 去重：同一 `inputId` 重复提交返回第一次的响应。
 
+## 6a. 上下文压缩（阶段 8）
+
+Core 是压缩过程（M2Design 第 9.6 节）的组织者：
+
+| 步骤 | Core 的动作 |
+|---|---|
+| 检查点 | 受理普通调用的 `context-assemble` 时，请 Execution 估算组装后的输入；超过 `compaction.triggerRatio × perCallInputLimit`，或该 AgentRun 上一次 `model-call` 以 `CONTEXT_OVERFLOW` 返回，即开始压缩，挂起这次组装 |
+| 用户触发 | 受理 `compactContext`：运行为 Turn-chat 且处于 AWAITING_INPUT，对象为 main 的投影 |
+| 额度 | 请 Monitor 预留（Monitor 第 3.5 节）；被拒时不压缩：挂起的组装以 `BUDGET_WRAP_UP` 返回；用户触发时发出 `CompactionFailed(BUDGET_INSUFFICIENT)` |
+| 材料 | 审计 `COMPACTION_STARTED`；Outbox 发出 `CompactionSourceQuery`，按 `compactionId` 等待 `reportCompactionSource` |
+| 范围 | 按 M2Design 第 9.6 节第 5 步选定；没有可压缩的范围时结束（自动触发时挂起的组装照常执行；用户触发时发出 `CompactionFailed(NOTHING_TO_COMPACT)`） |
+| 摘要 | 请 Execution 组装并执行摘要请求（Execution 第 6a 节）；`COMPACTION_SUMMARY_INVALID` 时追加更严格的指令重试一次 |
+| 写回 | Outbox 发出 `ContextCompacted`，等待 `ackCompaction(RECORDED)`；收到后审计 `COMPACTION_ENDED`，向 UserInteraction 发出 `ContextCompacted`，挂起的组装以 `REJECTED(CONTEXT_COMPACTED)` 返回 |
+| 失败 | 任何一步失败：结算预留，审计 `COMPACTION_FAILED`，自动触发时挂起的组装照常执行（仍超出时 `LIMIT_EXCEEDED`），用户触发时发出 `CompactionFailed` |
+
+- 压缩进行期间，该对象不会有新的模型调用：触发它的组装被挂起，Workflow 在收到这次组装的结果之前不会提交下一次 `model-call`。
+- 同一对象同一时刻至多一次压缩；同一轮中至多因自动触发压缩一次，之后重新提交的组装照常执行（M2Design 第 9.6 节"不循环"）；
+  溢出触发按 `overflowTargets` 依次缩小目标，第三次后不再压缩。
+- 压缩不改变运行控制状态与 Turn；它占用的时间计入 AgentRun 的墙钟。
+
 ## 7. 审计
 
 条目公共字段与 M1 Core 第 7 节相同，增加 `sessionId`。M1 的条目类型全部保留（`RUN_TIMEOUT` 相关的除外），M2 新增：
@@ -98,6 +119,7 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 | `TURN_OPENED`、`TURN_CLOSED` | Turn 的开启与结束，附用量 | 1 |
 | `HUMAN_REQUESTED`、`HUMAN_ANSWERED` | 只记录 `humanRequestId`、`inputId` 与产物引用，不记录正文 | 1 |
 | `INSTRUCTIONS_TRUSTED` | 追加信任记录 | 1 |
+| `COMPACTION_STARTED`、`COMPACTION_ENDED`、`COMPACTION_FAILED` | 压缩的开始、生效与失败，附对象、范围、用量与失败原因 | 8 |
 
 ## 8. 配置
 
@@ -107,6 +129,7 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 | `KernelConfig.authorizationTimeoutMs` | Core | 300000 |
 | `KernelConfig.provider`、`repositoryExclusions`、`convergenceMarginMs` | Core | 与 M1 相同 |
 | `KernelConfig.preset` | Core | `standard`；`readonly` 由 CLI 参数设置（M2Design 第 5.2 节） |
+| `KernelConfig.compaction` | Core | `triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]（阶段 8） |
 
 ## 9. 不变量与测试
 
@@ -117,6 +140,7 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 | 13：HUMAN 节点的答复不产生授权 | 单元测试：`answerHuman` 不改变任何授权记录 |
 | 18：Turn 由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
 | 20：只有用户信任过的确切内容的 `AGENTS.md` 进入 system 段 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
+| 28：压缩只在确认后生效，不动用 F（阶段 8） | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时不压缩；压缩期间该对象没有模型调用 |
 
 ## 10. 阶段
 
@@ -128,3 +152,4 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 5 | PAUSING、PAUSED、INTERRUPTING，计时冻结，Turn 超时，人类请求的取消 |
 | 6 | `web.search`、`web.fetch` |
+| 8 | 第 6a 节：压缩过程；压缩的审计与配置 |

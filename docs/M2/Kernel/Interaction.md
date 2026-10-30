@@ -55,7 +55,11 @@ interface ExecutionDuties {            // 增加的部分
   storeUserInput(input: { inputId: string; text: string }): Promise<ArtifactRef>;
   readProjectFile(path: string, scope: ExecutionScope): Promise<ProjectFileRead>;
   publishMessage(input: MessagePublishInput): Promise<ArtifactRef>;   // 内建 Unit message-publish
+  removeSessionFiles(sessionId: string): Promise<void>;  // 删除 Session 或新建失败时删除 kernel-execution 目录
   inheritArtifacts(refs: ArtifactRef[]): Promise<void>;  // Fork（阶段 2）
+  estimateAssembly(unitAttemptId: string): number;       // 阶段 8：组装后的输入估算，供压缩检查点使用
+  startCompactionSummary(request: CompactionSummaryRequest): { summaryAttemptId: string };
+                                                         // 阶段 8：登记内部 MODEL 尝试（Execution 第 6a 节）；结果经 COMPACTION_SUMMARY_DONE 回到处理循环
 }
 
 interface MonitorDuties {              // 账本由一份改为运行 → Turn 两级（阶段 4 增加 AgentRun 级）
@@ -64,6 +68,8 @@ interface MonitorDuties {              // 账本由一份改为运行 → Turn �
   reserve(request: { turnId: string; agentRunId: string; estimatedTokens: number; final: boolean }): ReserveResult;
   settle(reservationId: string, settlement: Settlement): SettlementResult;
   budgetView(agentRunId: string): BudgetView;            // 取代 budgetState()
+  reserveCompaction(request: { ledger: 'TURN' | 'RUN'; turnId?: string; estimatedTokens: number }): ReserveResult;
+                                                         // 阶段 8：压缩的额度（Monitor 第 3.5 节）
   finalize(): BudgetSummary;
 }
 ```
@@ -109,6 +115,9 @@ M1 的消息全部保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由
 | `HUMAN_ANSWER` | 控制 | UserInteraction | Core | 1 |
 | `TURN_TIMEOUT` | 控制 | Core 定时器 | Core | 5 |
 | `PAUSE_RUN`、`RESUME_RUN`、`INTERRUPT_RUN` | 控制 | UserInteraction | Core | 5 |
+| `COMPACTION_SOURCE_REPORT`、`COMPACTION_ACK` | 工作 | Workflow（`reportCompactionSource`、`ackCompaction`） | Core | 8 |
+| `COMPACT_CONTEXT` | 控制 | UserInteraction（`compactContext`） | Core | 8 |
+| `COMPACTION_SUMMARY_DONE` | 工作 | Execution（摘要请求完成，作为执行事实回到处理循环） | Core | 8 |
 
 M1 的 `CANCEL_RUN` 在 M2 中只由 Session 管理投递（切换、新建、关闭时收敛当前运行），UserInteraction 不再直接取消运行。
 
@@ -134,7 +143,8 @@ Session actor：
   → 等待 SESSION_COMMAND_REPORT：
        READY  → 向 UserInteraction 发出 SessionOpened；开启运行（第 6.3 节，RunStart(initialInput: true)），
                 把第一条输入以 HumanAnswered(origin: initial) 交给 Workflow，开启第一个 Turn
-       FAILED → Session 引用改为 DELETED；向 UserInteraction 发出 SessionFailed（该 Session 序列的最后一个事件），关闭 actor
+       FAILED → Session 引用改为 DELETED；删除 Kernel 已为它写入的文件（removeSessionFiles 与 Core 的审计）；
+                向 UserInteraction 发出 SessionFailed（该 Session 序列的最后一个事件），关闭 actor
 ```
 
 ### 6.2 打开 Session（`openSession`）
@@ -178,8 +188,8 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 ```
 
 删除 Session（`deleteSession`）只能针对未打开的 Session（M2Design 第 2.3 节 Session 第 3 条），不经过 Session actor：Session 管理把引用改为 DELETED，
-以系统级事件 `SessionDelete` 让 Workflow 删除日志，收到回复后删除 Kernel 命名空间中该 Session 的文件（审计、产物归属），再发出 `SessionDeleted`；
-正文在下次启动时回收（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
+以系统级事件 `SessionDelete` 让 Workflow 删除日志，收到回复后——不论 Workflow 成功与否——删除 Kernel 命名空间中该 Session 的文件（审计、产物归属），再发出 `SessionDeleted`；
+正文在下次启动时回收（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。回收只看 Session 引用是否 ACTIVE，所以删除失败而残留的文件不会让正文继续被保留。
 
 ### 6.5 运行状态与各请求的处理（阶段 1）
 
@@ -202,7 +212,9 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 - **受理**（第 5.1 节）：在第 2 步之后检查尝试所属的 Turn 处于开启状态，否则 `NO_OPEN_TURN`；第 5 步的 `UNSUPPORTED_CAPABILITY` 改为依据 Unit 定义的能力判断（阶段 2）。
 - **权限**（第 5.2 节）：阶段 1 只有 `repo.read`，规则同 M1；阶段 2 起按 [Core](Core.md) 的两步判定。
 - **执行**（第 5.3 节）：增加内建 Unit `MESSAGE_PUBLISH`，与 `REPORT_PUBLISH` 一样由 Execution 直接完成；产物引用的归属检查改为"属于本 Session"。
-- **结果检查**（第 5.4 节）：UnitReport 带 `unitRunId` 与 `BudgetView`。
+- **结果检查**（第 5.4 节）：UnitReport 带 `unitRunId` 与 `BudgetView`；工具 Unit 的结果分为预览（`outputRef`）与截断时的完整输出（`fullRef`），由 Execution 登记保留类别。
+- **压缩检查点**（阶段 8）：受理 `context-assemble` 之后、派发之前，Core 按 [Core](Core.md) 第 6a 节检查是否需要压缩；需要时这次尝试保持在途但不派发，
+  直到压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 交付，否则照常派发）。摘要请求是 Kernel 内部的 MODEL 尝试，不对应任何 `submitUnit`，不产生 UnitReport。
 
 ## 8. 关闭与故障关闭
 
@@ -233,4 +245,4 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 ## 11. 阶段
 
 本文全部内容属于阶段 1，标注了阶段的部分除外：阶段 2（快照、Fork、工作区差异、两步授权）、阶段 3（停机）、阶段 4（按 AgentRun 分队列、委派、等待调用机会）、
-阶段 5（暂停、中止、Turn 超时）。
+阶段 5（暂停、中止、Turn 超时）、阶段 8（压缩检查点、压缩的消息与内部摘要尝试）。

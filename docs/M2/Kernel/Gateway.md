@@ -31,6 +31,8 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 | `readArtifact` | `user-interaction` | `sessionId` | 1 |
 | `undoTurns`、`confirmUndo`、`diffTurns` | `user-interaction` | `sessionId`、`workflowRunId` | 2 |
 | `pauseRun`、`resumeRun`、`interruptRun` | `user-interaction` | `sessionId`、`workflowRunId` | 5 |
+| `reportCompactionSource`、`ackCompaction` | `workflow` | `sessionId`、`workflowRunId` | 8 |
+| `compactContext` | `user-interaction` | `sessionId`、`workflowRunId` | 8 |
 
 | 检查 | 不通过时的原因码 |
 |---|---|

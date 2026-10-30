@@ -57,6 +57,7 @@ Agent 定义中的运行上限（如每次 AgentRun 的轮次上限）与 Unit �
 ```
 
 上下文构建和模型调用均由 Kernel 执行，具体行为来自 ExecutorSet。
+Workflow 决定模型看到什么；唯一的例外是上下文压缩：由 Kernel 决定时机并生成摘要，Workflow 交出材料、把结果记入日志，此后摘要就是投影的一部分（[Overall](../Overall.md) 第 8 节）。
 架构不要求每个 Agent 固定包含同样数量或顺序的 Unit。
 无进展、非法输出和预算不足需要有明确结束或修正路径，不能无限循环。
 

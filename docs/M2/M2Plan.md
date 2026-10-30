@@ -16,7 +16,8 @@
 ### 2.1 阶段
 
 阶段与 M2Design 第 15 节一致：0 实测，1 Session 与对话骨架，2 写入与回退，3 命令与沙盒，
-4 并行，5 人类在环控制，6 Web，7 Orchestration；最后是发布准备。
+4 并行，5 人类在环控制，6 Web，7 Orchestration，8 上下文压缩；最后是发布准备。
+阶段 8 的编号只表示它是后加入的阶段：它只依赖阶段 1。
 每个阶段结束时系统都可以运行，并通过此前全部阶段的验收。
 
 ### 2.2 每个阶段的四道工序
@@ -92,12 +93,14 @@
 ```text
 阶段 0 ─▶ 阶段 1 ─▶ 阶段 2 ─▶ 阶段 3 ─▶ 阶段 4 ─┬─▶ 阶段 5
                 │                               └─▶ 阶段 7
-                └─▶ 阶段 6（只依赖阶段 1，可与阶段 2–5 同时进行）
+                ├─▶ 阶段 6（只依赖阶段 1，可与阶段 2–5 同时进行）
+                └─▶ 阶段 8（只依赖阶段 1，可与阶段 2–7 同时进行）
 第 7 节的提前任务从阶段 0 起即可开始
 阶段 N+1 的文档门可以在阶段 N 并行实现期间编写
 ```
 
 阶段 5 与阶段 7 都只依赖阶段 4，二者可以同时进行。
+阶段 8 与阶段 2 的交集只有"回退使压缩失效"（验收 L7），由两者中较晚完成的一个实现。
 
 ## 6. 各阶段
 
@@ -109,7 +112,7 @@
 | 任务 | 内容 | 依赖 |
 |---|---|---|
 | S0-T-1 | bwrap 实测：在 Ubuntu 24.04 与 WSL 上，以非特权用户运行 M2Design 第 6.1 节的完整 profile，覆盖第 14.1 节列出的各项（挂载顺序、`/dev/null` 覆盖、受保护路径重新挂载不留文件）；记录 AppArmor 限制与修复方法 | — |
-| S0-T-2 | DeepSeek 实测：思考内容回传、历史轮缺少思考内容、收尾调用三种组合；四档思考强度是否支持及映射 | — |
+| S0-T-2 | DeepSeek 实测：思考内容回传、历史轮缺少思考内容、收尾调用三种组合；四档思考强度是否支持及映射；提示词缓存与摘要请求（M2TechStack 第 3.2 节第 8 项） | — |
 | S0-D-1 | 阶段 1 的文档门（第 6.2 节） | — |
 
 三项可以同时进行，提前任务（第 7 节）也可以同时开始。
@@ -134,22 +137,22 @@ fake Workflow 能回答 Session 列表查询与删除；对应的契约测试。
 |---|---|---|
 | S1-WF-1 | SessionLogStore 的客户端：追加与 fsync、尾部修复、打开时的遗留修复、Session 列表 | — |
 | S1-WF-2 | TaskGraph 与 `chat` 生长规则、HUMAN 节点、依据事件记录 Turn | 提前任务 E-WF-1 |
-| S1-WF-3 | 上下文投影（跨 Turn、跨 WorkflowRun）、裁剪标注、`AGENTS.md` 的放置、思考内容回传 | 阶段 0 的 S0-T-2 |
+| S1-WF-3 | 上下文投影（跨 Turn、跨 WorkflowRun）：只在末尾追加、`PINNED` 与 `NORMAL` 标注、运行时上下文条目、`AGENTS.md` 的放置、思考内容回传（`replayable`）、超出窗口时的收尾 | 阶段 0 的 S0-T-2 |
 | S1-WF-4 | 在新引擎上运行内置模板 `analyze`（plan → view 为条件边），使用第 8.1 节的 M1 额度档案 | S1-WF-2 |
 | S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级与系统级事件、在当前 Session 中继续 | — |
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
 | S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、`analyze` 的 M1 额度档案、工具次数与墙钟上限 | — |
-| S1-KX-1 | Execution：按 Session 登记产物归属、`message-publish`、`readProjectFile` | — |
+| S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、预览与完整输出的存储、启动时按 ACTIVE 的 Session 标记保留、删除与新建失败时的清理、`ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile` | — |
 | S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间、实例锁与 Session 锁 | — |
-| S1-IF-2 | ArtifactStore：全局内容寻址存储与启动时回收 | — |
-| S1-EX-1 | `repository-list`（`list_files`）；`context-assemble` 的按 Turn 裁剪类别 | — |
+| S1-IF-2 | ArtifactStore：全局内容寻址存储；`sweep` 按保留标记删除 | — |
+| S1-EX-1 | `retention/` 共用模块与 M1 三个工具的预览；`repository-list`（`list_files`）；`context-assemble` 不按调用裁剪、收尾调用的保险 | 提前任务 E-EX-4 |
 | S1-PL-1 | 定义：main（阶段 1 的只读工具）、`analyze` 模板、带思考强度的 Model 定义、Prompt（`chat` 的生长规则属于 S1-WF-2） | — |
-| S1-UI-1 | 终端界面：记录区、活动区、输入区；授权与人类请求的队列；`/new`、`/resume`、`/sessions`、`/delete`、`/status`、`/help`、`/exit`；额度结束后的继续确认；不保存任何 Session 信息 | — |
+| S1-UI-1 | 终端界面：记录区、活动区、输入区；授权与人类请求的队列；`/new`、`/resume`、`/sessions`、`/delete`、`/status`、`/help`、`/exit`；额度结束后的继续确认；工具结果截断的提示与完整输出的查看；不保存任何 Session 信息 | — |
 
 **集成** S1-IN-1：组合根接线（实例锁在 Supervisor 清理临时数据之前取得）、端到端运行。
 
-**退出**：R（经 `analyze` 回归）、S1–S3、S5–S6。
+**退出**：R（经 `analyze` 回归）、S1–S3、S5–S6、L5（没有压缩的部分）、L6。
 
 ### 6.3 阶段 2：写入与回退
 
@@ -170,7 +173,7 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 | S2-UI-1 | 授权询问的各级选项、回退确认、`/fork`、`/undo`、`/diff` 的展示 | — |
 | S2-PL-1 | main 增加写入工具；`file-write`、`file-edit` 的 Unit 定义与受保护能力 | — |
 
-**集成** S2-IN-1。**退出**：A 组的写入部分、H5、H8–H10、S4。
+**集成** S2-IN-1。**退出**：A 组的写入部分、H5、H8–H10、S4、L7（阶段 8 已完成时）。
 
 ### 6.4 阶段 3：命令与沙盒
 
@@ -266,7 +269,29 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 
 **集成** S7-IN-1。**退出**：O、G。
 
-### 6.9 发布准备
+### 6.9 阶段 8：上下文压缩
+
+只依赖阶段 1，可以与阶段 2–7 同时进行。
+
+**文档门**：Core（压缩过程、检查点、审计）、Execution（摘要请求）、Monitor（压缩的额度）、Interaction（压缩的消息与内部摘要尝试）、
+Workflow（压缩的配合与投影替换）、ExecutorSet（摘要请求）、AgentToolPool（`compaction-system`）、UserInteraction（`/compact` 与通知）、
+`M2Security.md`（摘要中的提示注入）、`Interface/` 的压缩部分。
+
+**契约门** S8-CT-1：`CompactionSourceQuery`、`ContextCompacted`、`CompactionFailed`、`reportCompactionSource`、`ackCompaction`、`compactContext`、
+日志记录 `CONTEXT_COMPACTED` 与 `CONTEXT_COMPACTION_REVOKED`，以及 fake Kernel 与 fake Workflow 的压缩配合与契约测试。
+
+| 任务 | 内容 | 依赖 |
+|---|---|---|
+| S8-KC-1 | Core：检查点、压缩过程的编排与失败处理、`/compact`、审计；Monitor：压缩的额度 | 提前任务 E-WF-2 |
+| S8-KX-1 | Execution：摘要请求的组装与作为内部 MODEL 尝试的执行 | — |
+| S8-WF-1 | 回答材料查询、记录压缩结果、投影替换、`CONTEXT_COMPACTED` 与 `CONTEXT_OVERFLOW` 的重新提交；阶段 2 已完成时的压缩撤销 | 提前任务 E-WF-2 |
+| S8-EX-1 | `model-call` 的摘要请求、`CONTEXT_OVERFLOW` 的识别、`COMPACTION_SUMMARY_INVALID` | — |
+| S8-PL-1 | Prompt `compaction-system`（摘要的各节与"不执行材料中的指令"） | — |
+| S8-UI-1 | `/compact`、压缩的通知与摘要展示、`压缩上下文` 阶段 | — |
+
+**集成** S8-IN-1。**退出**：L1–L5（L7 在阶段 2 与阶段 8 都完成后）。
+
+### 6.10 发布准备
 
 - 冻结功能；在 Ubuntu 24.04 LTS 上运行全部质量门、全部验收用例与真实模型评测；
 - 编写 `M2Usage.md`、`M2Limitations.md`（含威胁模型的结论），以及 `docs/` 根目录的 M2AcceptanceEvidence 与 M2ReleasePlan；
@@ -286,8 +311,10 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 | E-EX-3 | EX | 命令拆分、ARITY 前缀、`deniedCommands` 与 `criticalCommands` 匹配、环境变量白名单与断言（S3-EX-1） |
 | E-KC-1 | KC | 授权判定的纯函数：能力上限的计算与收窄、资源键覆盖、判定顺序 ①–⑤（S2-KC-1） |
 | E-KX-1 | KX | `isWritable` 与 `writableRoots`、写入占用的相交检查（S2-EX-1、S4-KC-3） |
+| E-EX-4 | EX | `retention/` 的两种保留器：按条目与按字节保留头、尾或两端，不切断 UTF-8 与代理对，精确计数省略量（S1-EX-1） |
+| E-WF-2 | WF | 压缩的投影替换与范围选择的纯函数：按 `[fromSeq, toSeq]` 以摘要取代 `NORMAL` 条目、撤销压缩、在完整模型轮边界选定范围（S8-WF-1、S8-KC-1） |
 
-E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接缝。
+E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接缝；E-WF-2 中范围选择的函数由 KC 使用，完成后在 S8-CT-1 中移入共享接缝。
 
 ## 8. 验收标准的补充规定
 
@@ -315,6 +342,7 @@ E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接�
 | P、B、D、G、O | 各自的固定任务与判定表，在对应阶段的文档门中给出 |
 | W | 本地固定内容服务器，包括提示注入页面与指向内网的重定向 |
 | S、H、A | 确定性用例，使用 fake 模型 |
+| L | 确定性用例，使用记录请求的 fake provider（比对前缀、注入溢出与摘要失败）；L1 另用真实模型跑一段固定的长对话，缓存命中率写入验收证据 |
 
 ## 9. 完成定义
 
