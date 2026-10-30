@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.3 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.4 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -145,8 +145,8 @@ Turn-chat 是 Orchestration 的子集：`chat` 模板只用到 AGENT 与 HUMAN �
    - 用户放弃草稿（`Esc`、`/resume` 回到原对话、退出）时什么都不留下。
 
    因此每个 Session 至少有一个 `HUMAN(prompt)`，不会出现空的或重复的 Session 副本。
-3. 删除 Session、切换 Session 只能由 Kernel 下达：先收敛当前 WorkflowRun，再释放锁，再打开目标 Session。
-   删除时由 Workflow 删除 SessionLogStore 中的日志，并在 Session 列表中标为已删除；由 Kernel 删除审计、快照与快照索引，把 Session 引用标为已删除，并由 Execution 解除该 Session 对产物的归属（第 10.1 节）。
+3. 删除 Session、切换 Session 只能由 Kernel 下达。切换时先收敛当前 WorkflowRun，再释放锁，再打开目标 Session。
+   删除只针对未打开的 Session（要删除当前 Session，先切换或新建）：由 Workflow 删除 SessionLogStore 中的日志，并在 Session 列表中标为已删除；由 Kernel 删除审计、快照与快照索引，把 Session 引用标为已删除，并由 Execution 解除该 Session 对产物的归属（第 10.1 节）。
 4. 同一个 `dataDir` 同一时刻只运行一个 MultiAgentOS 实例（`instance.lock`，第 10.1 节）；第二个实例启动时报错，并说明哪个进程持有锁。
 5. 同一个 Session 同一时刻只能被一个进程打开（`session.lock`）。在第 4 条之下它不会被争用，保留它是为了以后放开多实例时不必修改 Session 的打开流程。
 6. **打开或切换 Session 不改动工作区**：切换的只是系统内部状态（Workflow 重建该 Session 的投影，Kernel 开启新的 WorkflowRun），文件保持原样（与 OpenCode、DeepSeek Harness 相同）。
@@ -158,7 +158,7 @@ Turn-chat 是 Orchestration 的子集：`chat` 模板只用到 AGENT 与 HUMAN �
 
 **WorkflowRun**
 
-1. WorkflowRun 的开启由 Kernel 下达：打开 Session 之后、`mas run`、因额度结束后用户确认继续时。Turn-chat 中的 `/run` 不开启新的 WorkflowRun（第 2.2 节）。
+1. WorkflowRun 的开启由 Kernel 下达：打开 Session 之后、`mas run`、因额度结束后用户确认继续时（对当前 Session 再次 `openSession`，在同一个 Session 中开启新的 WorkflowRun）。Turn-chat 中的 `/run` 不开启新的 WorkflowRun（第 2.2 节）。
    **`mas run <模板> "<目标>"` 总是新建一个 Session**，不复用已有的 Session：目标作为第一个 `HUMAN(prompt)`，整个运行是这个 Session 的第一个 Turn。
    运行收敛、发布结果后进程退出。之后可以用 `/resume` 打开这个 Session，以 Turn-chat 继续：main 的上下文中带有这次运行的结果，也可以用 `/undo` 回退整个运行。
    Workflow 追加 `WORKFLOW_RUN_STARTED`，用 `readProjectFile` 读取 `AGENTS.md`（使用者模板也在此时读取），编译模板，再启动第一个节点。
@@ -207,7 +207,7 @@ Turn 由 Kernel.Core 依据开放输入开启与结束（第 2.1 节），Workfl
 |---|---|---|
 | TaskGraph、节点状态、推进、上下文组装输入、会话日志（SessionLogStore） | Workflow | Kernel 只看到 AgentRun 登记与 UnitIntent |
 | 人类请求（HUMAN 节点）的业务含义 | Workflow | Kernel 转发请求与答复，只区分开放输入与局部询问 |
-| Session 列表（标题、Fork 来源、Turn 数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId`、状态与仓库根目录），经 Session 级处理（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
+| Session 列表（标题、Fork 来源、Turn 数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId`、状态与仓库根目录），由 Session 管理以系统级事件（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
 | 界面上显示的一切 Session 信息 | 不归 UserInteraction | UserInteraction 不保存 Session 列表、标题或 Fork 关系，只展示 Kernel 交来的结果；输入历史等纯界面偏好除外 |
 | Turn 的开启与结束、静止检查 | Kernel.Core（Turn 额度归 Monitor，快照归 Execution） | Workflow 从 `HumanAnswered`、`TurnClosed` 得知 Turn 并记入日志 |
 | 授权询问、能力上限、授权条目、Lease、SandboxProfile | Kernel.Core | Workflow 只得到裁决与原因码 |
@@ -254,7 +254,8 @@ M2 有一部分请求与状态不属于任何一个 WorkflowRun：
 - 它沿用运行 actor 的全部规则：一个 Inbox、控制通道优先、一条消息处理完才处理下一条、对其他通讯主体的调用只登记、由发送器按登记顺序发出；
 - 它的状态分块分两层：Session 级分块（Core：本 Session 的审计与 Session 级 Outbox；Execution：快照索引、产物归属、隔离目录），以及当前 WorkflowRun 的分块（与 M1 运行 actor 的分块相同：授权条目、能力上限、账本、尝试、队列、`runEpoch`、运行级 Outbox）；
 - WorkflowRun 的开启与收敛、Turn 的开启与结束、`/undo`、`/diff`、Session 的生命周期请求都在同一个串行循环中处理，因此"运行处于 AWAITING_INPUT 时才能回退"这类跨层检查不需要额外的同步；
-- 事件有两个序列：运行级事件仍按 WorkflowRun 编号，`RunClosed` 是该运行发给接收方的最后一个事件（Architecture Protocol 第 6 节不变）；Session 级事件（`SessionOpened`、`SessionList`、`SessionClosed`）按 Session 另行编号，`SessionClosed` 是最后一个。
+- 事件有三个序列：运行级事件仍按 WorkflowRun 编号，`RunClosed` 是该运行发给接收方的最后一个事件（Architecture Protocol 第 6 节不变）；Session 级事件（`SessionOpened`、`SessionClosed` 等）按 Session 另行编号，`SessionClosed` 是最后一个；
+  系统级事件不属于任何 Session（Session 列表的查询与结果、删除未打开的 Session），由 Session 管理发出，按进程编号——启动时还没有打开的 Session，`listSessions` 也必须能够完成。
 
 **系统级状态**：Session 引用、`AGENTS.md` 信任记录、ArtifactStore 正文与回收、实例锁跨越多个 Session，由 Session 管理在 Session actor 之外处理。
 实例锁（第 10.1 节）保证同一个 `dataDir` 只有一个进程，这些状态因此只有一个写入者。
@@ -1060,7 +1061,8 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 - `RunStateChanged`；
 - `ActivityEvent`：由 Kernel 依据 AgentRun 登记、父子关系与 UnitAttempt 的状态生成，Workflow 不需要另一条通道；
 - `RunFinished`；
-- Session 级事件：`SessionOpened`、`SessionList`、`SessionClosed`（按 Session 单独编号，第 2.6 节）。
+- Session 级事件：`SessionOpened`、`SessionFailed`、`SessionClosed`（按 Session 单独编号，第 2.6 节）；
+- 系统级事件：`SessionList`、`SessionDeleted`（按进程编号，第 2.6 节）。
 
 **新增原因码**：
 - 中断：`INTERRUPTED`（`PAUSED` / `ABORTED`）；
@@ -1322,7 +1324,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 引用用来校验 `openSession`（包括仓库是否与本进程一致）、定位自己命名空间中该 Session 的审计、快照与产物归属，以及删除时清理这些数据；不保存标题、Fork 关系等列表内容。
 索引损坏或缺失时，Workflow 可以由各 Session 的日志重建 Session 列表，Kernel 可以由各 Session 目录重建引用。
 
-**UserInteraction 不保存任何 Session 信息**：`/sessions` 经 Gateway 向 Kernel 发出 `listSessions`，Kernel 在 Session 级处理（第 2.6 节）中向 Workflow 查询列表，只保留引用存在、且仓库与本进程一致的 Session，再交给 UserInteraction；界面只展示这次的结果。
+**UserInteraction 不保存任何 Session 信息**：`/sessions` 经 Gateway 向 Kernel 发出 `listSessions`，Kernel 的 Session 管理以系统级事件（第 2.6 节）向 Workflow 查询列表，只保留引用存在、且仓库与本进程一致的 Session，再交给 UserInteraction；界面只展示这次的结果。
 
 ### 10.4 Fork
 
@@ -1386,7 +1388,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | `/run <模板> <目标>` | 第 3.8 节 |
 | `/thinking [N]` | 查看最近第 N 次模型调用的思考内容 |
 | `/timeline` | 当前运行中每个 AgentRun 的执行区间 |
-| `/sessions`、`/resume <id>` | 列出 Session（经 Kernel 向 Workflow 查询，含 Fork 来源）、打开已有 Session |
+| `/sessions`、`/resume <id>`、`/delete <id>` | 列出 Session（经 Kernel 向 Workflow 查询，含 Fork 来源）、打开已有 Session、删除未打开的 Session（第 2.3 节） |
 | `/new`、`/fork` | 进入新对话或 Fork 的草稿；Fork 只从当前 Session 的末端分出；提交第一条提示词时才创建 Session（第 2.3、10.4 节） |
 
 ## 12. 系统不变量
@@ -1529,13 +1531,13 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 阶段 | 内容 | 依赖 | 退出条件（第 13 节） |
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
-| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（只用依赖边）；上下文投影与思考模式；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6 |
+| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影与思考模式；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6 |
 | 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异 | 1 | A 组的写入部分、H5、H8–H10、S4 |
 | 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断 | 3 | P1–P6、B、D |
 | 5 人类在环控制 | 暂停、继续、`steer`、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4 |
 | 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W |
-| 7 Orchestration | 使用者模板与校验、条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
+| 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
 
 阶段 6 只依赖阶段 1，可以与阶段 2–5 并行开发。
 
@@ -1548,5 +1550,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.0（编辑性） | 2026-10-30 | 第 15 节：`git_inspect` 依赖只读沙盒（第 8.1 节），从阶段 1 移到阶段 3，与第 8.1 节一致；第 14.2 节待决 #1、#3 已在 M2Plan 中决定 |
 | v1.1 | 2026-10-30 | 第 2.3 节新增 Session 第 0 条：进程绑定一个仓库，`/sessions`、`/resume` 只涉及本仓库；第 2.4、10.1、10.3 节：Kernel 的 Session 引用增加仓库根目录 |
 | v1.1（编辑性） | 2026-10-30 | 第 1.4 节：M1 冻结的 Schema major 是 0（M1Interface 第 1.2 节），原写作"v1"；M2 的新 major 为 1 |
-| v1.3 | 2026-10-30 | 第 3.1、3.8 节：`analyze` 的 plan → view 改为条件边；M1 planner 的结束方式加入条件来源；条件边的求值随阶段 1 的内置模板实现 |
 | v1.2 | 2026-10-30 | 第 3.2 节：确定性 ID 改为"前缀 + 可读路径 SHA-256 的前 32 位"，符合 M1 的标识格式；可读路径作为 `path` 字段保存 |
+| v1.3 | 2026-10-30 | 第 3.1、3.8 节：`analyze` 的 plan → view 改为条件边；M1 planner 的结束方式加入条件来源；条件边的求值随阶段 1 的内置模板实现 |
+| v1.3（编辑性） | 2026-10-30 | 第 15 节：阶段 1 的 `analyze` 改为"plan → view 为条件边"、阶段 7 的条件边限定为使用者模板，与 v1.3 一致；版本记录按版本排序 |
+| v1.4 | 2026-10-30 | 第 2.6 节：事件增加系统级序列（Session 列表的查询与结果、删除未打开的 Session），解决没有打开的 Session 时无法列出 Session 的问题；第 2.3 节：删除只针对未打开的 Session；额度结束后的继续是对当前 Session 再次 `openSession`；第 11.2 节增加 `/delete <id>`（此前有 `deleteSession` 请求而没有对应的指令）；第 2.4、7.5、10.3 节相应修改 |

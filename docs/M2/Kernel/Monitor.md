@@ -24,7 +24,10 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 ### 3.1 运行级账本
 
 - `L_run = budget.runTokenLimit`；不直接发生模型调用，只为 Turn 划出份额、收回剩余。
-- 状态：剩余不足以为下一个 Turn 划出 main 的最小份额（`minShare(main)`）时为 WRAP_UP；剩余为 0 时为 EXHAUSTED。
+- 状态按"本 Turn 现在结束时运行级账本的余额"判定：`R = 运行级剩余 + 本 Turn 账本的余额 − 本 Turn 的在途预留`（没有开启中的 Turn 时就是运行级剩余）。
+  `R < minShare(main)` 时为 WRAP_UP，`R = 0` 时为 EXHAUSTED。
+- 这样判定的原因：Turn 开启时从运行级扣除的是整份 `L_turn`，Turn 中途的运行级剩余会低估 Turn 结束后的余额。Workflow 在请求下一个开放输入之前，
+  最后一个 UnitReport（Turn-chat 中是 `message-publish`）的 `BudgetView.run` 就是 Turn 结束后的准确状态，据此决定请求开放输入还是 `closeRun(BUDGET)`。
 
 ### 3.2 Turn 账本
 

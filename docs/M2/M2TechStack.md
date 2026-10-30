@@ -61,12 +61,12 @@ M2 沿用 M1 的工程基线（[M1TechStack](../History/M1/M1TechStack.md)），
 
 | 用途 | 阶段 | 状态 |
 |---|---|---|
-| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink（及其依赖 React），版本在阶段 1 的契约门中确定；只在 `apps/cli` 与 UserInteraction 的展示层使用 |
+| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink（及其依赖 React），版本在阶段 1 的契约门中确定；只在 `apps/cli` 中使用，UserInteraction 经 `TerminalPort` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
 | 网页检索提供方 Tavily 的客户端 | 6 | 待定 |
 | HTML 转 Markdown | 6 | 待定：M2Design 第 8.4 节倾向于把纯函数复制到 `vendor/` 并注明来源与许可证 |
-| 模板 YAML 解析 | 7 | 待定 |
+| 模板 YAML 解析 | 1 | 不新增：沿用 AgentToolPool 已有的 YAML 1.2 core schema 解析（M1），内置模板与使用者模板都由它解析 |
 
 ## 5. 测试环境
 

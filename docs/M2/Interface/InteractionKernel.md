@@ -16,7 +16,7 @@ UserInteraction 的请求不携带仓库路径。
 | UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 | 1（Fork 为 2） |
 | UserInteraction → Kernel | 回退与差异 | 2 |
 | UserInteraction → Kernel | 暂停、继续、中止 | 5 |
-| Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件 | 1 |
+| Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件；系统级事件（Session 列表、删除结果） | 1 |
 
 ## 2. UserInteraction → Kernel
 
@@ -73,18 +73,21 @@ interface SessionAccepted {
 }
 
 interface ListSessionsRequest {
-  requestId: string;                 // 结果以 Session 级事件 SessionList 返回，与本 requestId 对应
+  requestId: string;                 // 结果以系统级事件 SessionList 返回，与本 requestId 对应
 }
 
 interface DeleteSessionRequest {
   requestId: string;
-  sessionId: string;                 // 不能是当前打开的 Session
+  sessionId: string;                 // 不能是当前打开的 Session；结果以系统级事件 SessionDeleted 返回
 }
 ```
 
 - `startSession`、`openSession`、`startRun` 受理时，Kernel 依次收敛当前运行、关闭当前 Session，再打开或新建目标 Session；
   结果以 Session 级事件 `SessionOpened` 或 `SessionFailed` 告知。
 - `openSession` 只接受引用存在、未删除、且仓库与本进程一致的 Session，否则以 `SESSION_NOT_FOUND` 拒绝，不说明是哪一种情况。
+- **对当前 Session 的 `openSession`** 用于运行结束后在同一 Session 中继续（M2Design 第 2.3 节 WorkflowRun 第 1 条，例如因额度结束后用户确认继续）：
+  当前运行已经 CLOSED 时，Kernel 不关闭 Session、不再下达 Session 命令，直接开启新的运行（`RunStart(initialInput: false)`），
+  不再发出 `SessionOpened`，结果以新运行的 `RunStateChanged` 告知；当前运行尚未 CLOSED 时以 `SESSION_IN_USE` 拒绝。
 
 ### 2.3 运行内的请求
 
@@ -202,7 +205,7 @@ interface RunFinished extends RunEnd {   // RunEnd 见 WorkflowKernel 第 3.1 �
 
 ```ts
 type KernelToInteractionSessionEvent =
-  | SessionOpened | SessionFailed | SessionList | SessionClosed;
+  | SessionOpened | SessionFailed | SessionClosed;
 
 interface SessionOpened {
   type: 'SessionOpened';
@@ -219,6 +222,21 @@ interface SessionFailed {
   code: 'SESSION_LOCKED' | 'SESSION_LOG_CORRUPT' | 'SESSION_FORMAT_UNSUPPORTED' | 'SESSION_STORAGE_FAILED';
 }
 
+interface SessionClosed {
+  type: 'SessionClosed';             // 该 Session 序列的最后一个事件（失败时为 SessionFailed）
+  reason: 'SWITCHED' | 'SHUTDOWN';
+}
+```
+
+- 一个 Session 序列以 `SessionClosed` 或 `SessionFailed` 结束：打开或新建失败时 `SessionFailed` 是最后一个事件，不再发出 `SessionClosed`。
+
+### 3.3 系统级事件
+
+信封为 `SystemInboxEvent<KernelToInteractionSystemEvent>`（Interface 第 4 节），Schema `kernel.session.InteractionSystemEvent.v1`。
+
+```ts
+type KernelToInteractionSystemEvent = SessionList | SessionDeleted;
+
 interface SessionList {
   type: 'SessionList';
   requestId: string;                 // 对应的 listSessions
@@ -232,9 +250,11 @@ interface SessionList {
   }[];                               // 只含本仓库、未删除的 Session，按最后活动时间倒序
 }
 
-interface SessionClosed {
-  type: 'SessionClosed';             // 该 Session 序列的最后一个事件
-  reason: 'SWITCHED' | 'DELETED' | 'SHUTDOWN';
+interface SessionDeleted {
+  type: 'SessionDeleted';
+  requestId: string;                 // 对应的 deleteSession
+  sessionId: string;
+  outcome: 'DELETED' | 'FAILED';     // FAILED：Workflow 删除日志失败；Session 引用仍标为已删除，不再出现在列表中
 }
 ```
 
@@ -252,7 +272,7 @@ interface SessionClosed {
 | 原因码 | 出现位置 | 含义 |
 |---|---|---|
 | `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在、已删除，或仓库与本进程不一致 |
-| `SESSION_IN_USE` | `SyscallRejected`（`deleteSession`） | 不能删除当前打开的 Session |
+| `SESSION_IN_USE` | `SyscallRejected`（`deleteSession`、对当前 Session 的 `openSession`） | 不能删除当前打开的 Session；当前 Session 的运行尚未结束时不能在其中开启新的运行 |
 | `TEMPLATE_UNSUPPORTED` | `SyscallRejected`（`startRun`） | 阶段 1 只接受 `analyze` |
 | `QUESTION_NOT_PENDING` | `SyscallRejected`（`answerAuthorization`） | 沿用 M1 |
 | `HUMAN_REQUEST_NOT_PENDING` | `SyscallRejected`（`answerHuman`） | 请求不存在或已答复 |

@@ -11,7 +11,7 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 
 | M1 | M2 | 依据 |
 |---|---|---|
-| `createRun` 时生成 `workflowRunId` 与 `correlationId` | `startSession`、`startRun` 时生成 `sessionId` 与 `correlationId`；`workflowRunId` 由 Core 生成 | Interface 第 3 节 |
+| `createRun` 时生成 `workflowRunId` 与 `correlationId` | `startSession`、`startRun` 时生成 `sessionId`；`startSession`、`openSession`、`startRun` 时生成 `correlationId`；`workflowRunId` 由 Core 生成 | Interface 第 2.1、3 节 |
 | 按 `workflowRunId` 缓存准入状态与 `correlationId` | 按 `sessionId` 缓存 `correlationId`；按 `workflowRunId` 缓存准入状态 | — |
 | 九种 syscall | 增加 M2 的 syscall（第 3 节） | Interface 第 4 节 |
 
@@ -23,7 +23,7 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 | 请求 | 允许的 producer | 需要已知的标识 | 阶段 |
 |---|---|---|---|
 | `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun`、`requestHuman`、`readProjectFile` | `workflow` | `sessionId`、`workflowRunId` | 1 |
-| `reportSessionCommand`、`reportSessionList` | `workflow` | `sessionId`（列表查询没有打开的 Session 时除外） | 1 |
+| `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） | 1 |
 | `reserveDelegation`、`releaseDelegation` | `workflow` | `sessionId`、`workflowRunId` | 4 |
 | `startSession`、`startRun` | `user-interaction` | 无 | 1 |
 | `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 | 1 |
@@ -36,7 +36,7 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 |---|---|
 | producer 与请求类型不匹配 | `CALLER_FORBIDDEN` |
 | 请求不符合 Schema | `INVALID_REQUEST` |
-| `sessionId` 不是当前打开的 Session | `SESSION_NOT_FOUND` |
+| 需要已知 `sessionId` 的请求中，`sessionId` 不是当前打开的 Session | `SESSION_NOT_FOUND` |
 | `workflowRunId` 不在准入状态缓存中 | `RUN_NOT_FOUND` |
 | 准入封锁 | `RUN_BLOCKED`，附 `closeReason` |
 

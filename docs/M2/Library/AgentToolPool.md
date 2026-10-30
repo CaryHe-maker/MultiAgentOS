@@ -53,7 +53,7 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节），只作用于 `v
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
 | Unit `v1` | `REPOSITORY_LIST` 必须声明 `repo.read`；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具 |
 | Model `v1` | `effortMapping` 恰好覆盖四档，每档一项 |
-| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个声明了 `handoff` 的 Agent 节点 |
+| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个声明了 `handoff` 的 Agent 节点，且自身的 Agent 等于该交接的 `targetAgentRef` |
 | 引用 | `v1` 定义可以引用 `v0` 的 Tool 与 Prompt；`v0` 定义不得引用 `v1` 定义 |
 
 跨配置校验（组合根）：每个可登记 Agent 的额度参数通过 Monitor 的启动检查（[Kernel/Monitor](../Kernel/Monitor.md) 第 6 节）。

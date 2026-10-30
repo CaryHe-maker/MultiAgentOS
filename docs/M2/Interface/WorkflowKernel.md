@@ -12,7 +12,8 @@ Workflow 只持有 `WorkflowGatewayPort`；Gateway 以 `Envelope.producer = 'wor
 |---|---|---|
 | Workflow → Kernel | AgentRun 登记与结束、Unit 提交、运行结束报告、人类请求、读取项目文件、Session 命令的回复 | 1 |
 | Workflow → Kernel | 委派保留与返还 | 4 |
-| Kernel → Workflow，Session 级 | 打开、新建、关闭、删除 Session，Session 列表查询 | 1 |
+| Kernel → Workflow，Session 级 | 打开、新建、关闭 Session（Fork 为 2） | 1 |
+| Kernel → Workflow，系统级 | Session 列表查询、删除未打开的 Session | 1 |
 | Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 | 1 |
 | Kernel → Workflow，运行级 | 工作区回退与差异 | 2 |
 | Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 | 5 |
@@ -125,16 +126,17 @@ type ProjectFileContent =
 
 ### 2.3 Session 命令的回复
 
-Kernel 以 Session 级事件（第 3.2 节）向 Workflow 下达 Session 命令，Workflow 完成后以本节的请求回复。
-命令按 `commandId` 一一对应；同一个 Session 同一时刻至多一条未回复的命令。
+Kernel 以 Session 级事件（第 3.2 节）或系统级事件（第 3.3 节）向 Workflow 下达 Session 命令与列表查询，Workflow 完成后以本节的请求回复。
+命令按 `commandId`、查询按 `queryId` 一一对应；同一个 Session 同一时刻至多一条未回复的命令。
+这两个请求不属于任何运行，`BoundaryContext` 中没有 `workflowRunId`；`DELETE` 与列表查询针对的不是打开的 Session，由 Core 按 `commandId`、`queryId` 核对。
 
 ```ts
 interface ReportSessionCommandRequest {
   requestId: string;
-  sessionId: string;
+  sessionId: string;                // 命令所针对的 Session
   commandId: string;                // 前缀 scm，来自事件
   result:
-    | { command: 'OPEN'; outcome: 'READY'; pendingHumanRequestId?: string; lastTurnId?: string }
+    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string }
     | { command: 'CREATE'; outcome: 'READY' }
     | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[] }   // 复制的日志中出现的全部产物引用
     | { command: 'CLOSE' | 'DELETE'; outcome: 'DONE' }
@@ -163,9 +165,9 @@ interface SessionListEntry {
 }
 ```
 
-- `OPEN` 的 `pendingHumanRequestId`：日志中最后一个 `HUMAN_REQUESTED` 没有答复时给出（M2Design 第 10.3 节第 6 步），
-  Kernel 开启运行后重新转发这个请求。
-- `FAILED` 时 Kernel 不开启运行，把失败原因以 Session 级事件告知 UserInteraction。
+- `OPEN` 之后 Kernel 开启的运行以 `RunStart(initialInput: false)` 开始：没有初始输入，由 Workflow 请求开放输入。
+  日志中最后一个人类请求没有答复时（M2Design 第 10.3 节第 6 步），Workflow 在新的运行中重新发起这个请求；Kernel 不保留、不转发上一个运行的请求。
+- `FAILED` 时 Kernel 不开启运行，把失败原因以 Session 级事件（`DELETE` 为系统级事件）告知 UserInteraction。
 
 ## 3. Kernel → Workflow
 
@@ -181,9 +183,11 @@ type KernelToWorkflowEvent =
 
 interface RunStart {
   type: 'RunStart';
-  templateRef: DefinitionRef;        // chat、analyze 或使用者模板
   mode: 'CHAT' | 'ORCHESTRATION';
+  templateRef?: DefinitionRef;       // ORCHESTRATION 时必填（analyze 或使用者模板）；CHAT 是代码中的生长规则，不得有
   preset: 'standard' | 'readonly';
+  initialInput: boolean;             // true：Kernel 随后以 HumanAnswered(origin: 'initial') 交来第一条输入（startSession、startRun）；
+                                     // false：没有初始输入，由 Workflow 请求开放输入（openSession，包括额度结束后的继续）
 }
 
 interface UnitReport {
@@ -206,7 +210,7 @@ interface UnitReport {
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
   agentRun: BudgetState;
   turn: BudgetState;
-  run: BudgetState;
+  run: BudgetState;                  // 按"本 Turn 现在结束时运行级账本的余额"判定（Kernel/Monitor 第 3.1 节）
 }
 
 interface HumanAnswered {
@@ -266,27 +270,43 @@ M1 的 `RUN_TIMEOUT` 在 major 1 中删除：超时先由 Kernel 按中止处理
 信封为 `SessionInboxEvent<KernelToWorkflowSessionEvent>`，Schema `kernel.session.WorkflowSessionEvent.v1`。
 
 ```ts
-type KernelToWorkflowSessionEvent =
-  | SessionCommand | SessionListQuery;
+type KernelToWorkflowSessionEvent = SessionCommand;
 
 type SessionCommand =
   | { type: 'SessionCommand'; commandId: string; command: 'OPEN'; repositoryRoot: string }
   | { type: 'SessionCommand'; commandId: string; command: 'CREATE'; repositoryRoot: string }
-  | { type: 'SessionCommand'; commandId: string; command: 'FORK'; repositoryRoot: string; fromSessionId: string }
-  | { type: 'SessionCommand'; commandId: string; command: 'CLOSE' }
-  | { type: 'SessionCommand'; commandId: string; command: 'DELETE' };
+  | { type: 'SessionCommand'; commandId: string; command: 'FORK'; repositoryRoot: string; fromSessionId: string }   // 阶段 2
+  | { type: 'SessionCommand'; commandId: string; command: 'CLOSE' };
+```
+
+- `SessionCommand` 对应 M2Design 第 7.5 节的 `SessionOpen` 等：`OPEN` 时 Workflow 取得 `session.lock`、修复日志、重建投影；
+  `CREATE` 时新建日志；`FORK` 时复制 `fromSessionId` 的整个日志；`CLOSE` 时释放锁。
+- `repositoryRoot` 来自 Kernel 的 Session 引用，Workflow 写入 `SESSION_STARTED`，不用于任何授权判断。
+- Session 的事件序列从 `OPEN`、`CREATE` 或 `FORK` 开始，以 `CLOSE` 结束。
+
+### 3.3 系统级事件
+
+信封为 `SystemInboxEvent<KernelToWorkflowSystemEvent>`（Interface 第 4 节），Schema `kernel.session.WorkflowSystemEvent.v1`。
+系统级事件由 Session 管理发出，不属于任何 Session：启动时还没有打开的 Session，删除的也只能是未打开的 Session（M2Design 第 2.3 节 Session 第 3 条）。
+
+```ts
+type KernelToWorkflowSystemEvent = SessionListQuery | SessionDelete;
 
 interface SessionListQuery {
   type: 'SessionListQuery';
   queryId: string;
   repositoryRoot: string;            // 只列出这个仓库的 Session（M2Design 第 2.3 节 Session 第 0 条）
 }
+
+interface SessionDelete {
+  type: 'SessionDelete';
+  commandId: string;
+  sessionId: string;                 // 未打开的 Session
+}
 ```
 
-- `SessionCommand` 对应 M2Design 第 7.5 节的 `SessionOpen` 等：`OPEN` 时 Workflow 取得 `session.lock`、修复日志、重建投影；
-  `CREATE` 时新建日志；`FORK` 时复制 `fromSessionId` 的整个日志；`CLOSE` 时释放锁；`DELETE` 时删除日志并在 Session 列表中标为已删除。
-- `repositoryRoot` 来自 Kernel 的 Session 引用，Workflow 写入 `SESSION_STARTED`，不用于任何授权判断。
-- Session 的事件序列从 `OPEN`、`CREATE` 或 `FORK` 开始，以 `CLOSE` 或 `DELETE` 结束。
+- `SessionDelete`：Workflow 删除该 Session 目录中 `workflow` 命名空间的文件，并在 Session 列表中追加 `status: DELETED`，
+  以 `reportSessionCommand({ command: 'DELETE', ... })` 回复。
 
 ## 4. Schema 强制的约束
 
@@ -297,6 +317,7 @@ interface SessionListQuery {
 | `ReadProjectFileRequest.path` | 只能是 `AGENTS.md` 或匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$` |
 | `CloseRunRequest` | `outcome = 'FAILED'` 时必须有 `failure` 且不得有 `resultRef` |
 | `ReportSessionCommandRequest.result` | `command` 与事件中的命令一致；`FAILED` 时必须有 `failure` |
+| `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |
 | `HumanAnswered` | `origin = 'requested'` 时必须有 `humanRequestId`；`origin = 'initial'` 时不得有 |
 | `RunEnd` | `runSummaryRef` 与 `finalizationError` 恰好出现一个（同 M1） |
 

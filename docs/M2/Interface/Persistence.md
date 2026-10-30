@@ -14,7 +14,7 @@
   kernel-core/trusted-instructions.jsonl   项目指令的信任记录（第 4.2 节）
   workflow/session-index.jsonl             Session 列表（第 3 节）
   sessions/<sessionId>/
-    session.lock                           Session 锁（第 6 节）
+    session.lock/                          Session 锁（第 6 节）
     workflow/log.v1.jsonl                  会话日志（第 2 节）
     kernel-core/audit.jsonl                Kernel 审计（第 5 节）
     kernel-execution/artifact-owners.jsonl 本 Session 拥有的产物（第 4.3 节）
@@ -49,7 +49,7 @@ interface LogRecordBase {
 | 类型 | 字段（除公共字段外） | 阶段 |
 |---|---|---|
 | `SESSION_STARTED` | `formatVersion: 1`、`repositoryRoot`、`definitionsDigest`、`definitionVersions`（Agent、Unit、Tool、Model、Prompt 与模板的 `id@version` 列表） | 1 |
-| `WORKFLOW_RUN_STARTED` | `templateRef`、`mode`、`preset` | 1 |
+| `WORKFLOW_RUN_STARTED` | `mode`、`templateRef?`（与 `RunStart` 相同：`ORCHESTRATION` 时必填）、`preset`、`initialInput` | 1 |
 | `WORKFLOW_RUN_ENDED` | `closeReason`（含 `PROCESS_EXITED`、`FORKED`） | 1 |
 | `TURN_STARTED` | `promptNodeId`、`template?` | 1 |
 | `TURN_ENDED` | `reason`（含 `PROCESS_EXITED`）、`usage?` | 1 |
@@ -157,7 +157,7 @@ interface InstanceLockInfo {      // <dataDir>/instance.lock/owner.json
   acquiredAt: string;
 }
 
-interface SessionLockInfo {       // sessions/<sessionId>/session.lock
+interface SessionLockInfo {       // sessions/<sessionId>/session.lock/owner.json
   pid: number;
   processStartedAt: string;
   acquiredAt: string;

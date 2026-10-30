@@ -15,7 +15,7 @@
 | 运行管理 `RunRegistry`：`workflowRunId → 运行 actor` | Session 管理：`sessionId → Session actor`，另外持有系统级状态 | M2Design 第 2.6 节 |
 | 运行 actor：一个运行的队列与状态分块 | Session actor：一个 Session 的队列，Session 级状态分块与当前运行的状态分块 | 同上 |
 | 只有 `createRun` 能创建 actor；一个进程一个运行 | `startSession`、`openSession`、`startRun` 建立 actor；Session 中的运行先后进行 | M2Design 第 2.3 节 |
-| 事件只有运行级序列 | 增加 Session 级序列 | Interface 第 4 节 |
+| 事件只有运行级序列 | 增加 Session 级序列与系统级序列 | Interface 第 4 节 |
 | 没有 Turn | Core 依据开放输入开启与结束 Turn | M2Design 第 2.3 节 |
 | 运行超时、额度耗尽都由 Kernel 收敛运行 | 额度不触发收敛；超时按中止处理（阶段 5），结束由 Workflow 报告 | M2Design 第 2.3、7.3 节 |
 | `STOP_UNCONFIRMED` 使运行以 FAILED 收敛 | 系统停机 | M2Design 第 4.7 节（阶段 3） |
@@ -27,7 +27,7 @@
 
 | 术语 | 定义 |
 |---|---|
-| Session 管理 | Core 中跨 Session 的部分：创建与回收 Session actor、按 `sessionId` 分发消息、处理 Session 请求与 `shutdown`，并持有系统级状态 |
+| Session 管理 | Core 中跨 Session 的部分：创建与回收 Session actor、按 `sessionId` 分发消息、处理 Session 请求与 `shutdown`，持有系统级状态与系统级 Outbox |
 | Session actor | 一个 Session 的 Inbox（Session Inbox）、串行处理循环，以及 Session 级与当前运行的状态分块；不是第七个组件 |
 | 系统级状态 | Session 引用、项目指令的信任记录、产物正文的回收；只由 Session 管理写入 |
 | Session 级状态 | 跨越同一 Session 中多个运行的状态：Core 的审计写入器与 Session 级 Outbox，Execution 的产物归属（阶段 2 起还有快照索引） |
@@ -59,7 +59,7 @@ interface ExecutionDuties {            // 增加的部分
 }
 
 interface MonitorDuties {              // 账本由一份改为运行 → Turn 两级（阶段 4 增加 AgentRun 级）
-  openTurnLedger(turnId: string, limit: number): { ok: true } | { ok: false; reasonCode: 'BUDGET_WRAP_UP' };
+  openTurnLedger(turnId: string): { state: BudgetState };  // 总是开启；份额不足 minShare(main) 时状态为 WRAP_UP（Monitor 第 3.2 节）
   closeTurnLedger(turnId: string): TurnUsage;            // 剩余返还运行级账本
   reserve(request: { turnId: string; agentRunId: string; estimatedTokens: number; final: boolean }): ReserveResult;
   settle(reservationId: string, settlement: Settlement): SettlementResult;
@@ -78,8 +78,10 @@ Monitor 在阶段 1 只有运行级与 Turn 两级账本，main 直接使用 Tur
 - **建立 actor**：只有 `startSession`、`openSession`、`startRun` 能建立 Session actor。同一时刻至多一个打开的 Session：
   已有 Session 时，先在当前 actor 中完成关闭（第 6.4 节），再建立新的 actor。
 - **分发**：按 `sessionId` 把 `GatewayForward` 与 `ExecutionFact` 投递给对应 actor；Session 已关闭时按墓碑处理（只写审计，请求返回 `SESSION_NOT_FOUND`）。
-- **`listSessions`、`deleteSession`**：在 Session 管理中处理；需要与 Workflow 交互时，借用当前打开的 Session actor 的 Session 级 Outbox 发出事件，
-  没有打开的 Session 时由 Session 管理自己的 Outbox 发出（同样按 Session 级序列编号，`sessionId` 为被操作的 Session）。
+- **`listSessions`、`deleteSession`**：在 Session 管理中处理，与 Session actor 无关。Session 管理有自己的系统级 Outbox（每个接收方一个 `seq` 计数），
+  以系统级事件向 Workflow 发出 `SessionListQuery`、`SessionDelete`，在系统级待回复表中按 `queryId`、`commandId` 核对 `reportSessionList`、`reportSessionCommand(DELETE)`，
+  再以系统级事件向 UserInteraction 发出 `SessionList`、`SessionDeleted`。Session 管理的处理同样串行：一个请求处理完（包括等待回复）才处理下一个 Session 请求。
+- **`SessionList` 的内容**：Workflow 交来的列表中，只保留 Session 引用存在、ACTIVE 且仓库与本进程一致的条目；标题由 Execution 读取 `titleRef` 的前 80 个字符。
 - **回收**：Session actor 关闭、Session 级 Outbox 投递完毕后移出，保留墓碑。
 
 ### 5.2 Session actor 的构成
@@ -88,7 +90,7 @@ Monitor 在阶段 1 只有运行级与 Turn 两级账本，main 直接使用 Tur
 |---|---|
 | Session Inbox | 控制与工作两个通道，控制优先（与 M1 相同） |
 | 处理循环 | `while (m = 取下一条) { await dispatch(m); await core.settleConvergence(); await execution.drainCapacityWaiters(); }`；三步合起来是一次处理 |
-| Session 级分块 | Core：审计写入器、Session 级 Outbox、Session 命令与查询的待回复表；Execution：产物归属索引 |
+| Session 级分块 | Core：审计写入器、Session 级 Outbox、Session 命令的待回复表；Execution：产物归属索引 |
 | 运行级分块 | 当前运行（至多一个）的 Core、Execution、Monitor、Scheduler 分块；已结束的运行只保留墓碑 |
 
 `execution.drainCapacityWaiters()` 在阶段 4 引入（M2Design 第 7.2 节），阶段 1 为空操作。
@@ -100,8 +102,9 @@ M1 的消息全部保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由
 | kind | 通道 | 来源 | 处理者 | 阶段 |
 |---|---|---|---|---|
 | `SESSION_START`、`SESSION_OPEN`、`RUN_START` | 控制 | Session 管理（`startSession`、`openSession`、`startRun`） | Core | 1 |
+| `RUN_CONTINUE` | 控制 | Session 管理（对当前 Session 的 `openSession`） | Core | 1 |
 | `SESSION_CLOSE` | 控制 | Session 管理（切换、新建、`shutdown`） | Core | 1 |
-| `SESSION_COMMAND_REPORT`、`SESSION_LIST_REPORT` | 工作 | Workflow | Core | 1 |
+| `SESSION_COMMAND_REPORT` | 工作 | Workflow（`OPEN`、`CREATE`、`FORK`、`CLOSE` 的回复；`DELETE` 与列表查询的回复由 Session 管理直接处理） | Core | 1 |
 | `REQUEST_HUMAN`、`READ_PROJECT_FILE` | 工作 | Workflow | Core | 1 |
 | `HUMAN_ANSWER` | 控制 | UserInteraction | Core | 1 |
 | `TURN_TIMEOUT` | 控制 | Core 定时器 | Core | 5 |
@@ -113,7 +116,7 @@ M1 的 `CANCEL_RUN` 在 M2 中只由 Session 管理投递（切换、新建、�
 
 与 M1 Interaction 第 4.4 节相同：不可重入；跨主体 I/O 只登记为待发送；结果检查同步；定时器只入队；请求的响应在处理结束时返回。M2 补充：
 
-1. **两个 Outbox，一个发送器**：运行级与 Session 级事件对同一接收方使用同一个有序发送器，按登记顺序发出（[Fabric](../Infrastructure/Fabric.md) 第 3 节）。
+1. **三个 Outbox，一个发送器**：运行级、Session 级与系统级事件对同一接收方使用同一个有序发送器，按登记顺序发出（[Fabric](../Infrastructure/Fabric.md) 第 3 节）。
 2. **本地 I/O 可以等待**：读写系统级状态与 Session 目录中的 Kernel 文件、ArtifactStore、目录定义，可以在处理函数中 `await`。
 3. **持久化**：M2 不按消息持久化运行状态（与 M1 相同）；持久写入的只有审计、Session 引用、信任记录与产物归属。
 
@@ -122,15 +125,16 @@ M1 的 `CANCEL_RUN` 在 M2 中只由 Session 管理投递（切换、新建、�
 ### 6.1 新建 Session（`startSession`、`startRun`）
 
 ```text
-Session 管理受理请求：生成 sessionId；若有打开的 Session，先按第 6.4 节关闭
+Gateway 生成 sessionId 与 correlationId（Interface 第 3 节）；Session 管理受理请求：若有打开的 Session，先按第 6.4 节关闭
   → 写入 Session 引用（ACTIVE，仓库根目录取本进程的仓库）
   → 建立 Session actor，投递 SESSION_START
 Session actor：
   → Execution 把第一条输入存为产物（storeUserInput），登记归属
   → Session 级 Outbox 发出 SessionCommand(CREATE)（Fork 时为 FORK，阶段 2）
   → 等待 SESSION_COMMAND_REPORT：
-       READY  → 开启运行（第 6.3 节），把第一条输入作为开放输入的答复交给 Workflow，开启第一个 Turn
-       FAILED → Session 引用改为 DELETED；向 UserInteraction 发出 SessionFailed，关闭 actor
+       READY  → 向 UserInteraction 发出 SessionOpened；开启运行（第 6.3 节，RunStart(initialInput: true)），
+                把第一条输入以 HumanAnswered(origin: initial) 交给 Workflow，开启第一个 Turn
+       FAILED → Session 引用改为 DELETED；向 UserInteraction 发出 SessionFailed（该 Session 序列的最后一个事件），关闭 actor
 ```
 
 ### 6.2 打开 Session（`openSession`）
@@ -141,11 +145,14 @@ Session 管理检查引用存在、ACTIVE、仓库与本进程一致，否则 SE
 Session actor：
   → 读入本 Session 的产物归属索引
   → 发出 SessionCommand(OPEN)，等待回复
-       READY  → （阶段 2：比较工作区并发出 WorkspaceDiverged）开启运行；
-                有 pendingHumanRequestId 时重新转发该人类请求，否则请求下一个开放输入由 Workflow 发起
-       FAILED → 发出 SessionFailed，关闭 actor（引用保持 ACTIVE）
-  → 向 UserInteraction 发出 SessionOpened
+       READY  → 向 UserInteraction 发出 SessionOpened；（阶段 2：比较工作区并发出 WorkspaceDiverged）
+                开启运行（RunStart(initialInput: false)）；由 Workflow 请求开放输入，或重新发起上一个进程中未答复的人类请求
+       FAILED → 发出 SessionFailed（该 Session 序列的最后一个事件），关闭 actor（引用保持 ACTIVE）
 ```
+
+**在当前 Session 中继续**（对当前 Session 的 `openSession`，例如因额度结束后用户确认继续）：Session 管理向当前 actor 投递 `RUN_CONTINUE`；
+当前运行已 CLOSED 时，直接按第 6.3 节开启新的运行（`RunStart(initialInput: false)`），不下达 Session 命令、不发出 `SessionOpened`；
+否则以 `SESSION_IN_USE` 拒绝。
 
 ### 6.3 运行
 
@@ -153,6 +160,7 @@ Session actor：
 - **Turn**：开放输入得到答复时开启、下一次请求开放输入或运行收敛时结束（M2Design 第 2.3 节）。阶段 1 中：
   - 开启：Core 分配 `turnId`，调用 `Monitor.openTurnLedger`，在 `HumanAnswered` 中带上 `turnId`；
   - 结束：`REQUEST_HUMAN(prompt)` 到达时检查没有 ACTIVE 的 AgentRun 与在途尝试，通过后调用 `Monitor.closeTurnLedger`，Outbox 发出 `TurnClosed`；
+    没有开启中的 Turn 时（`initialInput: false` 的运行请求第一个开放输入）不结束任何 Turn，直接进入 AWAITING_INPUT；
   - 阶段 2 增加开始与结束快照；阶段 5 增加 Turn 超时。阶段 5 之前，Turn 的时长由每次执行的截止时间（M1 的 `executionLimits`）间接约束。
 - **结束**：收敛过程与 M1 Interaction 第 6 节的三步相同。差别：
   - 触发来源：`CLOSE_RUN`（COMPLETED、FAILED、BUDGET、CANCELLED、TIMEOUT）、Session 管理的 `CANCEL_RUN`（ENDED_BY_USER、SHUTDOWN）、
@@ -163,14 +171,15 @@ Session actor：
 ### 6.4 关闭 Session
 
 ```text
-SESSION_CLOSE（原因：SWITCHED、DELETED、SHUTDOWN）
+SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
   → 有运行且不在 CLOSED：按第 6.3 节收敛（closeReason：ENDED_BY_USER 或 SHUTDOWN），等待 CLOSED 与运行级 Outbox 投递完毕
   → 发出 SessionCommand(CLOSE)，等待回复（Workflow 释放 Session 锁）
   → 发出 SessionClosed；Session 级 Outbox 投递完毕后通知 Session 管理回收
 ```
 
-删除 Session（`deleteSession`）只能针对未打开的 Session：Session 管理把引用改为 DELETED，经 `SessionCommand(DELETE)` 让 Workflow 删除日志，
-再删除 Kernel 命名空间中该 Session 的文件；正文在下次启动时回收（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
+删除 Session（`deleteSession`）只能针对未打开的 Session（M2Design 第 2.3 节 Session 第 3 条），不经过 Session actor：Session 管理把引用改为 DELETED，
+以系统级事件 `SessionDelete` 让 Workflow 删除日志，收到回复后删除 Kernel 命名空间中该 Session 的文件（审计、产物归属），再发出 `SessionDeleted`；
+正文在下次启动时回收（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
 
 ### 6.5 运行状态与各请求的处理（阶段 1）
 
@@ -179,7 +188,7 @@ SESSION_CLOSE（原因：SWITCHED、DELETED、SHUTDOWN）
 | `REGISTER_AGENT_RUN`、`SUBMIT_UNIT` | 处理；没有开启中的 Turn 时 `NO_OPEN_TURN` | `NO_OPEN_TURN` | `RUN_BLOCKED` | `RUN_BLOCKED` |
 | `END_AGENT_RUN` | 处理 | 处理 | SyscallAck，无效果 | SyscallAck，无效果 |
 | `CLOSE_RUN` | 进入收敛 | 进入收敛 | SyscallAck，无效果 | SyscallAck，无效果 |
-| `REQUEST_HUMAN(prompt)` | 静止时结束 Turn，进入 AWAITING_INPUT；否则 `AGENT_RUN_ACTIVE` | `REQUEST_CONFLICT`（已有待答复的开放输入） | `RUN_BLOCKED` | `RUN_BLOCKED` |
+| `REQUEST_HUMAN(prompt)` | 静止时结束开启中的 Turn（没有时不结束），进入 AWAITING_INPUT；否则 `AGENT_RUN_ACTIVE` | `REQUEST_CONFLICT`（已有待答复的开放输入） | `RUN_BLOCKED` | `RUN_BLOCKED` |
 | `HUMAN_ANSWER` | `HUMAN_REQUEST_NOT_PENDING` | 开启 Turn，回到 RUNNING | `HUMAN_REQUEST_NOT_PENDING` | 同左 |
 | `READ_PROJECT_FILE` | 处理 | 处理 | `RUN_BLOCKED` | `RUN_BLOCKED` |
 | `AUTHORIZATION_ANSWER`、`READ_ARTIFACT`、`EXECUTION_FACT`、`KERNEL_FAULT` | 与 M1 的 RUNNING 列相同 | 同左 | 与 M1 的 CONVERGING 列相同 | 与 M1 的 CLOSED 列相同 |
@@ -219,7 +228,7 @@ SESSION_CLOSE（原因：SWITCHED、DELETED、SHUTDOWN）
 | 5：每个受理的 `submitUnit` 恰好得到一个 UnitReport，或随 RunClosed 结束 | 状态机测试：在各状态下提交、关闭、切换 Session |
 | 18：Turn 只由 Kernel 依据开放输入开启与结束；结束时没有 ACTIVE 的 AgentRun 与在途尝试 | 单元测试：`REQUEST_HUMAN(prompt)` 在非静止时被拒；运行收敛时开启中的 Turn 以 `RUN_CLOSED` 结束 |
 | 4（阶段 1 部分）：AWAITING_INPUT 时没有 ACTIVE 的 AgentRun 与在途尝试 | 同上 |
-| 事件顺序 | 集成测试：`SessionOpened` 先于 `RunStart`；`TurnClosed` 先于 `RunClosed`；`SessionClosed` 是 Session 序列的最后一个 |
+| 事件顺序 | 集成测试：`SessionOpened` 先于 `RunStart`；`TurnClosed` 先于 `RunClosed`；`SessionClosed` 或 `SessionFailed` 是 Session 序列的最后一个；没有打开的 Session 时 `listSessions`、`deleteSession` 经系统级序列完成 |
 
 ## 11. 阶段
 

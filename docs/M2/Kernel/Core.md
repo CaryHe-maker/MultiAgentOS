@@ -24,7 +24,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 
 - **Session 管理**：处理 `startSession`、`openSession`、`startRun`、`listSessions`、`deleteSession`、`shutdown`；维护 Session 引用与信任记录；
   按 `sessionId` 分发消息；建立与回收 Session actor（Interaction 第 5、6 节）。
-- **Session 命令**：向 Workflow 下达 `SessionCommand`、`SessionListQuery`，按 `commandId`、`queryId` 等待并核对回复。
+- **Session 命令**：以 Session 级事件向 Workflow 下达 `SessionCommand`，以系统级事件下达 `SessionListQuery`、`SessionDelete`，按 `commandId`、`queryId` 等待并核对回复。
 - **运行**：开启运行（生成 `workflowRunId`）、处理 Workflow 的 syscall、维护运行控制状态（RUNNING、AWAITING_INPUT、CONVERGING、CLOSED）与 runEpoch、组织收敛。
 - **Turn**：开放输入得到答复时开启，请求开放输入或运行收敛时结束；结束时做静止检查；调用 Monitor 建立与结算 Turn 账本。
 - **人类请求**：受理 `requestHuman(prompt)`，转发为 `HumanRequest`；受理 `answerHuman`，由 Execution 存储正文后以 `HumanAnswered` 交给 Workflow。
@@ -39,7 +39,8 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 |---|---|---|
 | Session 引用 | 系统级 | `sessionId → { repositoryRoot, status }`（Interface/Persistence 第 4.1 节） |
 | 信任记录 | 系统级 | `(repositoryRoot, path, sha256)` 的集合（Interface/Persistence 第 4.2 节） |
-| Session 命令与查询 | Session 级 | 待回复的 `commandId`、`queryId` 及其用途 |
+| 系统级 Outbox 与待回复表 | 系统级 | 每个接收方一个 `seq` 计数与待发队列；待回复的列表查询（`queryId`）与删除（`commandId`） |
+| Session 命令 | Session 级 | 待回复的 `commandId` 及其用途 |
 | Session 级 Outbox | Session 级 | 每个接收方一个 `seq` 计数与待发队列 |
 | 运行控制状态 | 运行级 | `runState`、`runEpoch`、`closeReason`、`failure`、`resultRef`、开始与收敛时间、pending 集合 |
 | `TurnRecord` | 运行级 | `turnId`、序号、`OPEN` / `CLOSED`、开启时间、结束原因、用量（M2Design 第 2.3 节） |
@@ -77,12 +78,13 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 
 | 消息 | 检查 | 动作 |
 |---|---|---|
-| `REQUEST_HUMAN(prompt)` | 运行为 RUNNING；没有 ACTIVE 的 AgentRun；没有在途尝试 | 结束开启中的 Turn（`closeTurnLedger`，`TurnClosed(COMPLETED)`）；记录待答复的请求；Outbox 向 UserInteraction 发出 `HumanRequest`；运行进入 AWAITING_INPUT |
+| `REQUEST_HUMAN(prompt)` | 运行为 RUNNING；没有 ACTIVE 的 AgentRun；没有在途尝试 | 结束开启中的 Turn（如有；`closeTurnLedger`，`TurnClosed(COMPLETED)`）；记录待答复的请求；Outbox 向 UserInteraction 发出 `HumanRequest`；运行进入 AWAITING_INPUT |
 | `HUMAN_ANSWER` | 运行为 AWAITING_INPUT；`humanRequestId` 待答复 | `Execution.storeUserInput`；分配 `turnId`，`openTurnLedger`；Outbox 向 Workflow 发出 `HumanAnswered`，向 UserInteraction 发出 `HumanResolved(ANSWERED)`；运行回到 RUNNING |
-| 新建 Session 或 `startRun` 的第一条输入 | 运行刚开启 | 同上，`origin = 'initial'`，没有 `humanRequestId` |
+| 新建 Session 或 `startRun` 的第一条输入 | 运行刚开启（`RunStart(initialInput: true)`） | 同上，`origin = 'initial'`，没有 `humanRequestId` |
 
-- `openTurnLedger` 被拒（运行级账本不足以为 Turn 划出 main 的最小份额）时，Turn 照常开启，账本状态为 WRAP_UP；
-  Workflow 从 `BudgetView.run` 得知后，按 M2Design 第 7.3 节在本 Turn 收尾并报告结束。
+- `openTurnLedger` 总是开启 Turn。正常情况下运行级余额足够：上一个 Turn 中 `BudgetView.run` 已按"Turn 结束时的余额"告知 WRAP_UP，
+  Workflow 会以 `closeRun(BUDGET)` 结束运行而不是请求下一个开放输入（[Monitor](Monitor.md) 第 3.1 节）。份额仍不足 `minShare(main)` 时
+  （防御性情况），Turn 账本状态直接为 WRAP_UP，Workflow 让 main 只做收尾调用，额度不足以收尾时以降级回复结束，然后报告结束（M2Design 第 7.3 节）。
 - `answerHuman` 以 `inputId` 去重：同一 `inputId` 重复提交返回第一次的响应。
 
 ## 7. 审计

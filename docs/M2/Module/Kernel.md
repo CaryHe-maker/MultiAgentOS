@@ -34,12 +34,13 @@
 | 方向 | 定义 |
 |---|---|
 | Workflow 的 syscall 与 Session 命令的回复 | [Interface/WorkflowKernel](../Interface/WorkflowKernel.md) 第 2 节 |
-| 发给 Workflow 的运行级与 Session 级事件 | 同上，第 3 节 |
+| 发给 Workflow 的运行级、Session 级与系统级事件 | 同上，第 3 节 |
 | UserInteraction 的请求 | [Interface/InteractionKernel](../Interface/InteractionKernel.md) 第 2 节 |
-| 发给 UserInteraction 的运行级与 Session 级事件 | 同上，第 3 节 |
+| 发给 UserInteraction 的运行级、Session 级与系统级事件 | 同上，第 3 节 |
 
 各请求在不同运行状态下的处理见 [Kernel/Interaction](../Kernel/Interaction.md) 第 6.5 节。投递语义与 M1 相同：
-每个序列按 `seq` 顺序投递，按 `eventId` 去重；`RunClosed`、`RunFinished` 是该运行发给接收方的最后一个事件，`SessionClosed` 是该 Session 序列的最后一个。
+每个序列按 `seq` 顺序投递，按 `eventId` 去重；`RunClosed`、`RunFinished` 是该运行发给接收方的最后一个事件，`SessionClosed`（失败时为 `SessionFailed`）是该 Session 序列的最后一个；
+系统级事件（Session 列表、删除未打开的 Session）不属于任何 Session，按进程编号。
 
 ## 5. Unit（阶段 1）
 
@@ -63,7 +64,8 @@
 ## 7. 额度
 
 - Workflow 只从 `UnitReport.budget`（`BudgetView`）得知额度状态，不持有 token 数值。
-- 任一级为 WRAP_UP：该 AgentRun 进入最后一轮；运行级为 WRAP_UP：本 Turn 结束后由 Workflow `closeRun(BUDGET)`。
+- AgentRun 级或 Turn 级为 WRAP_UP：该 AgentRun 进入最后一轮；运行级为 WRAP_UP（按本 Turn 结束时的余额判定，[Monitor](../Kernel/Monitor.md) 第 3.1 节）：
+  本 Turn 的回复发布后由 Workflow `closeRun(BUDGET)`，用户确认后对当前 Session 再次 `openSession`，在同一 Session 中开启新的运行。
 - `QUOTA_EXHAUSTED`：工具次数或墙钟触顶，该 AgentRun 后续的非收尾 Unit 被拒绝，进入收尾。
 - 额度到达限制时 Kernel 只拒绝预留，不收敛运行；正常的额度触顶一律留下可交付的结果（M2Design 第 7.3 节）。
 

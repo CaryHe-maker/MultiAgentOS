@@ -24,7 +24,7 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 
 ## 3. 职责
 
-- 进入 Kernel 的唯一途径是 `InteractionGatewayPort`；实现运行级与 Session 级两种事件的 Inbox，按各自的序列逐条处理。
+- 进入 Kernel 的唯一途径是 `InteractionGatewayPort`；实现运行级、Session 级与系统级三种事件的 Inbox，按各自的序列逐条处理。
 - 终端的全部要求由 `TerminalPort` 表达；`apps/cli` 以 Ink 实现展示，UserInteraction 不依赖 Ink。
 - 分配 `requestId` 与 `inputId`；保存的只有界面偏好、草稿与输入历史（↑/↓）。
 - 不直接访问 ArtifactStore、Persistence 或 Workflow；正文经 `readArtifact` 读取。
@@ -43,7 +43,7 @@ mas run [--repo <路径>] [--readonly] <模板> "<目标>"   阶段 1 只接受�
 ## 5. 交互式流程
 
 ```text
-启动 → listSessions → 收到 SessionList
+启动 → listSessions → 收到 SessionList（系统级事件；此时还没有打开的 Session）
   有本仓库的 Session → 显示最近的几个，用户可选择打开（openSession）或开始新对话
   没有 → 进入新对话的草稿
 草稿中提交第一条提示词 → startSession({ mode: NEW, prompt })
@@ -54,7 +54,8 @@ SessionOpened → 记录区显示标题与 Turn 数（来自事件，不保存�
   AuthorizationRequest、HumanRequest → 进入输入区的待处理队列
   RunStateChanged    → 更新状态栏；AWAITING_INPUT 时输入框接收下一条消息
 AWAITING_INPUT 时输入普通消息 → answerHuman(prompt)
-RunFinished → 记录区显示结束说明；若运行因额度结束，提示用户确认是否在同一 Session 中继续（Kernel 开启新的运行）
+RunFinished → 记录区显示结束说明；若运行因额度结束，提示用户确认是否在同一 Session 中继续：
+  确认 → 对当前 Session 再次 openSession（Kernel 开启新的运行，不重新打开 Session）→ RunStateChanged(AWAITING_INPUT)
 ```
 
 ### 5.1 待处理队列
@@ -74,6 +75,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | `/new` | 任意 | 进入新对话的草稿；提交第一条提示词时才创建 Session |
 | `/sessions` | 任意 | `listSessions`，展示 `SessionList` |
 | `/resume <id>` | 任意 | `openSession` |
+| `/delete <id>` | 任意 | `deleteSession`；只能删除未打开的 Session，结果以 `SessionDeleted` 展示 |
 | `/status` | 任意 | 当前运行状态与额度状态（来自最近的事件） |
 | `/help`、`/exit` | 任意 | 帮助；`shutdown` |
 | Enter、`\` 加 Enter、Esc、↑/↓ | 任意 | 发送、换行、清空输入、浏览输入历史 |

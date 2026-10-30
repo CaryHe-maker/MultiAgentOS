@@ -49,12 +49,12 @@ M2Design 第 10.1 节的实现：
   mtime 距今超过 `staleAfterMs`（60 秒）。
 - **抢占**：把过期的锁目录 rename 为 `instance.lock.stale-<ULID>`，再重新 `mkdir`；两个进程同时抢占时只有一个 `mkdir` 成功。
   抢占成功后删除墓碑目录。
-- **释放**：进程退出时删除锁目录；包括第 4.7 节的停机。进程被强制杀死时，锁由下一个进程按过期规则抢占。
+- **释放**：进程退出时删除锁目录；包括 M2Design 第 4.7 节的停机。进程被强制杀死时，锁由下一个进程按过期规则抢占。
 - **失败**：取锁失败时返回持锁进程的信息，由组合根报错退出。
 
 ### 5.2 Session 锁
 
-`sessions/<sessionId>/session.lock`，由 Workflow 在打开 Session 时取得、关闭时释放（M2Design 第 10.3 节）。
+`sessions/<sessionId>/session.lock/`，由 Workflow 在打开 Session 时取得、关闭时释放（M2Design 第 10.3 节）。
 在实例锁之下不会被争用；实现方式与实例锁相同，但不需要心跳，只按 `pid` 与启动时间判定过期。
 
 ## 6. 不变量与测试

@@ -37,7 +37,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 
 ## 4. 处理模型
 
-- **单消费者**：按 Inbox 顺序逐条处理事件，一条处理完才处理下一条（M1 原样）。两个事件序列（运行级、Session 级）各自检查 `seq` 连续。
+- **单消费者**：按 Inbox 顺序逐条处理事件，一条处理完才处理下一条（M1 原样）。三个事件序列（运行级、Session 级、系统级）各自检查 `seq` 连续。
 - **先写日志**：每条输入先追加日志，再更新内存中的投影，再发起 syscall（M2Design 第 10.3 节写入规则）。
   `submitUnit` 之前先追加 `UNIT_SUBMITTED`；`requestHuman` 之前先追加 `HUMAN_REQUESTED`。
 - **状态是日志的投影**：节点状态、就绪集合、AgentRun 的计数器、模型上下文都由日志计算（不变量 7）；内存中的状态只是缓存，重开 Session 时由日志重建。
@@ -51,9 +51,9 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 命令 | 处理 | 回复 |
 |---|---|---|
 | `CREATE` | 创建 Session 目录与日志；追加 `SESSION_STARTED`；在 Session 列表追加一行；取得 Session 锁 | `READY` |
-| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影 | `READY`，带 `pendingHumanRequestId`、`lastTurnId` |
+| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId` |
 | `CLOSE` | 释放 Session 锁；清空内存投影 | `DONE` |
-| `DELETE` | 删除 Session 目录中 `workflow` 命名空间的文件；Session 列表追加 `status: DELETED` | `DONE` |
+| `DELETE`（系统级事件 `SessionDelete`，Session 未打开） | 删除 Session 目录中 `workflow` 命名空间的文件；Session 列表追加 `status: DELETED` | `DONE` |
 | `FORK` | 阶段 2 | — |
 
 失败时回复 `FAILED` 与 `SessionCommandFailure`（Interface/WorkflowKernel 第 2.3 节）：锁被持有为 `SESSION_LOCKED`，`seq` 不连续或记录不合法为 `SESSION_LOG_CORRUPT`，
@@ -61,7 +61,8 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 
 ### 5.2 打开时结算遗留记录
 
-M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"；`TURN_ENDED` 缺失且最后一条是停机审计时为"上一个进程故障停机"），
+M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"；Workflow 不读取 Kernel 的审计，
+"上一个进程故障停机"的区分在阶段 3 由 Kernel 随 `OPEN` 命令告知），
 对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`，对未结束的运行追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`，最后追加一条 `STALE_UNITS_SETTLED`。
 遗留的 Unit 不重新提交；被打断的节点记为 INTERRUPTED。
 
@@ -69,14 +70,16 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 每次 Session 的状态、标题、Turn 数、最后活动时间变化时，向 `session-index.jsonl` 追加一行（Interface/Persistence 第 3 节）：
 新建时、收到第一条 `HumanAnswered` 时（`titleRef`）、收到 `TurnClosed` 时（Turn 数、最后活动时间）、删除时。
-收到 `SessionListQuery` 时，按 `repositoryRoot` 筛选、按最后活动时间倒序，以 `reportSessionList` 回复。
+收到系统级事件 `SessionListQuery` 时，按 `repositoryRoot` 筛选、按最后活动时间倒序，以 `reportSessionList` 回复；不需要打开任何 Session。
 
 ## 6. TaskGraph
 
 ### 6.1 模板与生长
 
 - **运行开始**：收到 `RunStart` 后，追加 `WORKFLOW_RUN_STARTED`；以 `readProjectFile('AGENTS.md')` 读取项目指令，追加 `PROJECT_FILE_LOADED`；
-  编译模板为初始 GraphRevision，追加 `GRAPH_EXTENDED(source: TEMPLATE)`。
+  编译模板（`CHAT` 为生长规则的初始图）为初始 GraphRevision，追加 `GRAPH_EXTENDED(source: TEMPLATE)`。
+- **初始输入**：`RunStart.initialInput = true` 时，根节点 `HUMAN(prompt)` 等待随后的 `HumanAnswered(origin: initial)`；
+  为 `false` 时（打开 Session、额度结束后继续），根节点按 `requested` 处理：重新发起上一个进程中未答复的人类请求，没有时请求新的开放输入。
 - **`chat`**：初始图为 `HUMAN(prompt) → main`。每当 main 节点结束（不论成败），追加 `GRAPH_EXTENDED(source: CHAT_GROWTH)`：
   新的 `HUMAN(prompt, requested)`（触发规则 `all_done`，依赖刚结束的 main）与依赖它的新 main 节点。
 - **`analyze`**：模板 `plan → view`（Interface/Definitions 第 4 节）；根节点 `HUMAN(prompt, initial)` 由编译加入。
@@ -158,7 +161,8 @@ reply(text) 合法 → 追加 MODEL_TURN
 ```
 
 - final-call 不合法或失败时，以固定的降级回复结束（结构化的原因与触顶项，由 UserInteraction 生成文字）；节点结束为 FAILED，对话照常继续（`all_done`）。
-- 运行级账本为 WRAP_UP（`budget.run`）时，本 Turn 的回复发布后不再请求开放输入，而是 `closeRun(BUDGET)`（M2Design 第 7.3 节）。
+- `message-publish` 的 UnitReport 中 `budget.run` 为 WRAP_UP 或 EXHAUSTED 时（按 Turn 结束时的余额判定，Kernel/Monitor 第 3.1 节），
+  本 Turn 的回复发布后不再请求开放输入，而是 `closeRun(BUDGET)`（M2Design 第 7.3 节）；用户确认继续后，Kernel 在同一 Session 中开启新的运行。
 
 ### 9.2 `analyze` 的报告
 
@@ -203,4 +207,4 @@ reply(text) 合法 → 追加 MODEL_TURN
 | 2 | Fork、`baseSha` 与 `expectAbsent`、`WORKSPACE_*` 记录与投影替换 |
 | 4 | `run_subagents`、汇合、结果契约与改动对账、完成检查、SubAgent 的投影 |
 | 5 | `steer`、`ask_user`、暂停后重新提交、中止后的收敛、Turn 超时后的 `closeRun(TIMEOUT)` |
-| 7 | 使用者模板、条件边、有界循环、`all_done` 的一般使用、确定性运行报告、`/run` |
+| 7 | 使用者模板（含其中的条件边）、有界循环、`all_done` 的一般使用、确定性运行报告、`/run` |

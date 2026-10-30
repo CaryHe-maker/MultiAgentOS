@@ -121,14 +121,14 @@
 **文档门**：
 
 - `Interface/`：README（版本规则与 Schema 清单）、WorkflowKernel（Session、Turn、HUMAN、`readProjectFile`、Session 列表查询）、
-  InteractionKernel（Session 请求、人类请求与答复、Session 级事件）、Persistence（目录、日志记录、引用、实例锁）、
-  Definitions（Agent 额度参数与思考强度、`chat` 与 `analyze` 模板）；
+  InteractionKernel（Session 请求、人类请求与答复、Session 级与系统级事件）、Persistence（目录、日志记录、引用、实例锁）、
+  Definitions（Agent 额度参数与思考强度、`analyze` 模板；`chat` 是代码中的生长规则，不是定义）；
 - `Module/` 三篇；`Kernel/` 的 Interaction（Session actor）、Core、Gateway、Execution、Monitor；
 - `Library/` 三篇的阶段 1 部分；`Infrastructure/` 的 Persistence、ArtifactStore、ModuleHost、Fabric；
 - `M2Security.md` 中 `AGENTS.md` 信任的部分。
 
-**契约门** S1-CT-1：上述接口的 v1 Schema 与 Port；fake Kernel 能产生 Session、Turn、HUMAN 相关的全部事件，
-fake Workflow 能回答 Session 列表查询；对应的契约测试。
+**契约门** S1-CT-1：上述接口的 v1 Schema 与 Port；fake Kernel 能产生 Session、Turn、HUMAN 相关的全部事件（运行级、Session 级、系统级三个序列），
+fake Workflow 能回答 Session 列表查询与删除；对应的契约测试。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
@@ -136,16 +136,16 @@ fake Workflow 能回答 Session 列表查询；对应的契约测试。
 | S1-WF-2 | TaskGraph 与 `chat` 生长规则、HUMAN 节点、依据事件记录 Turn | 提前任务 E-WF-1 |
 | S1-WF-3 | 上下文投影（跨 Turn、跨 WorkflowRun）、裁剪标注、`AGENTS.md` 的放置、思考内容回传 | 阶段 0 的 S0-T-2 |
 | S1-WF-4 | 在新引擎上运行内置模板 `analyze`（plan → view 为条件边），使用第 8.1 节的 M1 额度档案 | S1-WF-2 |
-| S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级事件 | — |
+| S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级与系统级事件、在当前 Session 中继续 | — |
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
 | S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、`analyze` 的 M1 额度档案、工具次数与墙钟上限 | — |
 | S1-KX-1 | Execution：按 Session 登记产物归属、`message-publish`、`readProjectFile` | — |
-| S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间 | — |
-| S1-IF-2 | ArtifactStore：全局内容寻址存储与启动时回收；实例锁 | — |
+| S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间、实例锁与 Session 锁 | — |
+| S1-IF-2 | ArtifactStore：全局内容寻址存储与启动时回收 | — |
 | S1-EX-1 | `repository-list`（`list_files`）；`context-assemble` 的按 Turn 裁剪类别 | — |
-| S1-PL-1 | 定义：main（阶段 1 的只读工具）、`chat` 与 `analyze` 模板、带思考强度的 Model 定义、Prompt | — |
-| S1-UI-1 | 终端界面：记录区、活动区、输入区；授权与人类请求的队列；`/new`、`/resume`、`/sessions`、`/status`、`/help`、`/exit`；不保存任何 Session 信息 | — |
+| S1-PL-1 | 定义：main（阶段 1 的只读工具）、`analyze` 模板、带思考强度的 Model 定义、Prompt（`chat` 的生长规则属于 S1-WF-2） | — |
+| S1-UI-1 | 终端界面：记录区、活动区、输入区；授权与人类请求的队列；`/new`、`/resume`、`/sessions`、`/delete`、`/status`、`/help`、`/exit`；额度结束后的继续确认；不保存任何 Session 信息 | — |
 
 **集成** S1-IN-1：组合根接线（实例锁在 Supervisor 清理临时数据之前取得）、端到端运行。
 

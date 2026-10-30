@@ -31,8 +31,10 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 
 | Schema ID | 文件 | 定义 |
 |---|---|---|
-| `kernel.session.WorkflowSessionEvent.v1`（含 `SessionCommand`、`SessionListQuery`） | `kernel-session/workflow-session-events.ts` | WorkflowKernel 第 3.2 节 |
-| `kernel.session.InteractionSessionEvent.v1`（含 `SessionOpened`、`SessionFailed`、`SessionList`、`SessionClosed`） | `kernel-session/interaction-session-events.ts` | InteractionKernel 第 3.2 节 |
+| `kernel.session.WorkflowSessionEvent.v1`（含 `SessionCommand`） | `kernel-session/workflow-session-events.ts` | WorkflowKernel 第 3.2 节 |
+| `kernel.session.WorkflowSystemEvent.v1`（含 `SessionListQuery`、`SessionDelete`） | `kernel-session/workflow-session-events.ts` | WorkflowKernel 第 3.3 节 |
+| `kernel.session.InteractionSessionEvent.v1`（含 `SessionOpened`、`SessionFailed`、`SessionClosed`） | `kernel-session/interaction-session-events.ts` | InteractionKernel 第 3.2 节 |
+| `kernel.session.InteractionSystemEvent.v1`（含 `SessionList`、`SessionDeleted`） | `kernel-session/interaction-session-events.ts` | InteractionKernel 第 3.3 节 |
 
 ### 3.3 `kernel.unit`
 

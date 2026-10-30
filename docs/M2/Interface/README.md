@@ -54,7 +54,7 @@
 | `delegationId` | `dlg` | Core | ULID | 一次委派保留（阶段 4） |
 | `humanRequestId` | `hrq` | Workflow | 节点 ID 的 body | 一个人类请求，与 HUMAN 节点一一对应 |
 | `inputId` | `inp` | UserInteraction | ULID | 一次用户输入；重复提交按它去重（M2Design 第 10.3 节写入规则第 5 条） |
-| `commandId` | `scm` | Core | ULID | Kernel 下达给 Workflow 的一条 Session 命令 |
+| `commandId` | `scm` | Core | ULID | Kernel 下达给 Workflow 的一条 Session 命令（包括系统级的 `DELETE`） |
 | `queryId` | `slq` | Core | ULID | 一次 Session 列表查询 |
 
 - 由路径派生的 ID：路径按 UTF-8 编码后计算 SHA-256，取前 32 位小写十六进制。可读路径作为同一记录中的 `path` 字段保存。
@@ -88,11 +88,11 @@ interface BoundaryContext {
 |---|---|---|---|---|
 | Workflow 的 syscall（[WorkflowKernel](WorkflowKernel.md) 第 2 节） | request | workflow | gateway | 1 |
 | UserInteraction 的请求（[InteractionKernel](InteractionKernel.md) 第 2 节） | request | user-interaction | gateway | 1 |
-| 地址 `inbox.workflow`：运行级事件 `kernel.unit.WorkflowInboxEvent.v1`、Session 级事件 `kernel.session.WorkflowSessionEvent.v1` | send | kernel-core | workflow | 1 |
-| 地址 `inbox.user-interaction`：运行级事件 `kernel.control.InteractionInboxEvent.v1`、Session 级事件 `kernel.session.InteractionSessionEvent.v1` | send | kernel-core | user-interaction | 1 |
+| 地址 `inbox.workflow`：运行级事件 `kernel.unit.WorkflowInboxEvent.v1`、Session 级事件 `kernel.session.WorkflowSessionEvent.v1`、系统级事件 `kernel.session.WorkflowSystemEvent.v1` | send | kernel-core | workflow | 1 |
+| 地址 `inbox.user-interaction`：运行级事件 `kernel.control.InteractionInboxEvent.v1`、Session 级事件 `kernel.session.InteractionSessionEvent.v1`、系统级事件 `kernel.session.InteractionSystemEvent.v1` | send | kernel-core | user-interaction | 1 |
 | Kernel 核心与 Supervisor 之间的新消息（`KernelSupervisor.md`） | request / send | kernel-core、supervisor | supervisor、kernel-core | 2、3、5 |
 
-**事件的两个序列**（[M2Design](../M2Design.md) 第 2.6 节）：
+**事件的三个序列**（[M2Design](../M2Design.md) 第 2.6 节）：
 
 ```ts
 interface RunInboxEvent<T> {           // 运行级事件，取代 M1 的 InboxEvent
@@ -111,10 +111,18 @@ interface SessionInboxEvent<T> {       // Session 级事件
   occurredAt: string;
   event: T;
 }
+
+interface SystemInboxEvent<T> {        // 系统级事件：不属于任何 Session，由 Session 管理发出
+  eventId: string;
+  seq: number;                         // 每个进程、每个接收方从 1 连续递增
+  occurredAt: string;
+  event: T;
+}
 ```
 
-接收方按 `eventId` 去重，按各自序列的 `seq` 顺序处理；两个序列之间没有顺序保证，
-需要先后关系的地方由事件本身表达（例如 `RunStart` 一定在 `SessionOpen` 之后发出）。
+接收方按 `eventId` 去重，按各自序列的 `seq` 顺序处理。三个序列对同一接收方共用一个有序发送器，
+投递顺序与登记顺序一致（[Fabric](../Infrastructure/Fabric.md) 第 3 节），例如 `SessionOpened` 一定在该 Session 第一个运行的 `RunStart` 之前到达；
+接收方不依赖跨序列的 `seq` 比较。
 
 ## 5. Schema 清单
 
@@ -123,8 +131,8 @@ interface SessionInboxEvent<T> {       // Session 级事件
 | Schema | 定义位置 | 阶段 | 状态 |
 |---|---|---|---|
 | `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 1 | 草稿 |
-| Workflow 的 syscall 与运行级、Session 级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 草稿（阶段 1） |
-| UserInteraction 的请求与运行级、Session 级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 草稿（阶段 1） |
+| Workflow 的 syscall 与运行级、Session 级、系统级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 草稿（阶段 1） |
+| UserInteraction 的请求与运行级、Session 级、系统级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 草稿（阶段 1） |
 | 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 草稿（阶段 1） |
 | Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 1 起 | 草稿（阶段 1） |
 | Kernel 核心与 Supervisor 的消息 | `KernelSupervisor.md` | 2 起 | 未开始 |
