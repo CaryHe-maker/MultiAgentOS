@@ -14,7 +14,7 @@ M2 沿用 M1 的工程基线（[M1TechStack](../History/M1/M1TechStack.md)），
 |---|---|---|
 | 平台 | Ubuntu 24.04 LTS（验收平台）；WSL2 中的 Ubuntu 24.04 用于日常验证 | 不变；沙盒相关的测试只能在这两种环境中运行 |
 | Runtime、包管理、语言、Schema、测试、质量门 | Node.js `>=24.19.0 <25`、pnpm、TypeScript、TypeBox、Vitest 与 fast-check、ESLint 与 Prettier | 不变，版本见 M1TechStack 第 2 节 |
-| 协议版本 | 新的 Schema 发布为 v2；v1 冻结，供 `analyze` 回归 | 新增 v2 |
+| 协议版本 | 语义变化的 Schema 发布新 major 1（`.v1`）；M1 的 major 0（`.v0`）冻结，供 `analyze` 回归 | 新增 major 1 |
 | 系统依赖 | `bubblewrap`（`bwrap`）、`git`、`rg`（可选，M1 已有） | 新增 `bwrap` 与 `git` |
 
 ## 3. 阶段 0 实测

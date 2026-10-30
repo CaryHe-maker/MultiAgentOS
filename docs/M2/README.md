@@ -3,7 +3,7 @@
 ## 1. 目的与范围
 
 本目录定义 M2 的设计、交付阶段、各组件机制、跨模块接口与验收要求。
-M2 的范围与设计以 [M2Design](M2Design.md)（已冻结，当前 v1.1）为准；本目录其余文档在它的基础上展开，
+M2 的范围与设计以 [M2Design](M2Design.md)（已冻结，当前 v1.2）为准；本目录其余文档在它的基础上展开，
 可以细化，不得与它矛盾。需要改变设计时，先在 M2Design 中发布新版本，再修改组件文档。
 
 长期概念与安全边界见 [Architecture 指南](../Architecture/README.md)。
@@ -18,7 +18,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2Plan](M2Plan.md) | 阶段、工作流、任务与依赖、分支、各阶段的门与退出条件 |
 | `M2TechStack.md` | 阶段 0 的实测结果、运行环境、依赖与版本 |
 | `M2Security.md` | 威胁模型、沙盒与授权的分层防护、C5 拦截矩阵 |
-| `Interface/` | 字段级接口，按通讯边界拆分；协议版本为 v2 |
+| `Interface/` | 字段级接口，按通讯边界拆分；M2 的 Schema 为 major 1，M1 的 major 0 冻结 |
 | `Module/` | 三个 Module 的 M2 机制；Kernel 文档从外部视角描述 syscall 与事件 |
 | `Kernel/` | Kernel 各组件的 M2 职责，以及 Session actor 中的内部交互 |
 | `Library/` | 三个静态库：Agent、Unit、Tool、Prompt、模板定义，Executor，Schema |
@@ -49,7 +49,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 
 | 文档 | 状态 | 首次涉及的阶段 |
 |---|---|---|
-| [M2Design](M2Design.md) | v1.1 定稿 | — |
+| [M2Design](M2Design.md) | v1.2 定稿 | — |
 | [M2Plan](M2Plan.md) | 草稿 | — |
 | [M2TechStack](M2TechStack.md) | 草稿：阶段 0 实测待填 | 0 |
 | 其余文档 | 未开始 | 见 M2Plan 第 6 节各阶段的文档门 |

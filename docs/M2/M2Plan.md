@@ -27,7 +27,7 @@
 
 1. **文档门**：本阶段涉及的组件文档章节与 `Interface/` 章节写完并评审，状态改为"已评审"。
    下一阶段的文档门可以在本阶段并行实现期间同时编写。
-2. **契约门**：只修改共享接缝（第 4.2 节）：v2 Schema、Port、`packages/testing` 中的 fake
+2. **契约门**：只修改共享接缝（第 4.2 节）：新 major（v1）的 Schema、Port、`packages/testing` 中的 fake
    与契约测试。单独一个 PR，合入后才开始本阶段的并行实现。
 3. **并行实现**：本阶段的任务按工作流（第 3 节）同时进行。每个任务只改自己工作流的目录，
    只依赖已合入的契约，用 fake 替代其他组件，不等待其他任务的实现。
@@ -75,7 +75,7 @@
 
 | 共享内容 | 说明 |
 |---|---|
-| `packages/libraries/contracts` | v2 Schema、Port 与跨模块类型；v1 保持冻结 |
+| `packages/libraries/contracts` | v1 Schema、Port 与跨模块类型；M1 的 v0 Schema 保持冻结 |
 | `packages/testing` | fake、fixture 与共享契约测试；fake 只跟随 `Interface/`，不重新定义被替代方的行为 |
 | `packages/modules/kernel/src/interfaces` | Kernel 控制面与执行面之间的内部接口 |
 | 各包的 `XxxDeps` 与工厂签名 | 定义在 `Interface/` 中 |
@@ -120,14 +120,14 @@
 
 **文档门**：
 
-- `Interface/`：README（版本规则与 Schema 清单）、Workflow-Kernel（Session、Turn、HUMAN、`readProjectFile`、Session 列表查询）、
-  UI-Kernel（Session 请求、人类请求与答复、Session 级事件）、Persistence（目录、日志记录、引用、实例锁）、
+- `Interface/`：README（版本规则与 Schema 清单）、WorkflowKernel（Session、Turn、HUMAN、`readProjectFile`、Session 列表查询）、
+  InteractionKernel（Session 请求、人类请求与答复、Session 级事件）、Persistence（目录、日志记录、引用、实例锁）、
   Definitions（Agent 额度参数与思考强度、`chat` 与 `analyze` 模板）；
 - `Module/` 三篇；`Kernel/` 的 Interaction（Session actor）、Core、Gateway、Execution、Monitor；
 - `Library/` 三篇的阶段 1 部分；`Infrastructure/` 的 Persistence、ArtifactStore、ModuleHost、Fabric；
 - `M2Security.md` 中 `AGENTS.md` 信任的部分。
 
-**契约门** S1-CT-1：上述接口的 v2 Schema 与 Port；fake Kernel 能产生 Session、Turn、HUMAN 相关的全部事件，
+**契约门** S1-CT-1：上述接口的 v1 Schema 与 Port；fake Kernel 能产生 Session、Turn、HUMAN 相关的全部事件，
 fake Workflow 能回答 Session 列表查询；对应的契约测试。
 
 | 任务 | 内容 | 依赖 |
@@ -176,7 +176,7 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 
 **文档门**：`M2Security.md` 全文、Supervisor（bwrap、遮蔽、进程组、停止升级、`cancelExecution`）、
 SystemFaultHandling（`STOP_UNCONFIRMED` 停机）、Core（命令的级别与资源键、`approvalDigest`、名单、前缀、联网）、
-ExecutorSet（`run-command`、`git-inspect`）、`Interface/Kernel-Supervisor.md`。
+ExecutorSet（`run-command`、`git-inspect`）、`Interface/KernelSupervisor.md`。
 
 **契约门** S3-CT-1：SandboxProfile、按执行取消、执行事实的新字段，以及 fake Supervisor。
 
