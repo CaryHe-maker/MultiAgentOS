@@ -40,15 +40,20 @@ UnitAttempt 的状态机、技术重试、`ExecutionRequest` 的构建与上下�
 与 `report-publish` 相同，不派发给 Supervisor，由 Execution 在 Session actor 的处理中完成：
 
 ```text
-取到 message-publish 尝试
-  → 输入已在受理时按 Schema 校验：{ kind: 'REPLY' | 'RUN_RESULT', contentRef: ArtifactRef, agentLabel }
-  → contentRef 必须属于本 Session（第 3 节）
-  → 不复制正文；登记一条发布记录
-  → submitResultCheck(COMPLETED, output = { kind }, outputRef = contentRef)
-Core 在结果检查后向 UserInteraction 发出 MessagePublished
+取到 message-publish 尝试；输入已在受理时按 Schema 校验：
+  { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }      // 阶段 1
+  { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 阶段 7：确定性运行报告
+REPLY：
+  → modelOutputRef 必须属于本 Session（第 3 节）；从中取出 toolCallId 对应的 reply 调用的 text 参数
+  → 把 text 以 text/markdown 存为新的产物，登记归属
+RUN_RESULT：
+  → report 按 Schema 校验后以 JSON 存为产物，登记归属
+→ submitResultCheck(COMPLETED, output = { kind }, outputRef = 新产物)
+Core 在结果检查后向 UserInteraction 发出 MessagePublished(messageRef = 新产物)
 ```
 
-回复与运行结果的正文由 `model-call` 的输出或 Workflow 生成的确定性报告产生；后者经 Kernel 存为产物后再发布（M2Design 第 7.3 节"必有报告"）。
+回复的正文只存在于模型调用的输出中，Unit 输入只带引用与 `toolCallId`，因此会话日志中没有正文（M2Design 第 10.1 节）。
+确定性运行报告是结构化数据（节点的状态、结果引用、触顶项），可以作为 Unit 输入写入日志（M2Design 第 7.3 节"必有报告"）。
 
 ## 6. 启动时的产物回收
 

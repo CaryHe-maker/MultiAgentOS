@@ -135,7 +135,7 @@ fake Workflow 能回答 Session 列表查询；对应的契约测试。
 | S1-WF-1 | SessionLogStore 的客户端：追加与 fsync、尾部修复、打开时的遗留修复、Session 列表 | — |
 | S1-WF-2 | TaskGraph 与 `chat` 生长规则、HUMAN 节点、依据事件记录 Turn | 提前任务 E-WF-1 |
 | S1-WF-3 | 上下文投影（跨 Turn、跨 WorkflowRun）、裁剪标注、`AGENTS.md` 的放置、思考内容回传 | 阶段 0 的 S0-T-2 |
-| S1-WF-4 | 在新引擎上运行内置模板 `analyze`，使用第 8.1 节的 M1 额度档案 | S1-WF-2 |
+| S1-WF-4 | 在新引擎上运行内置模板 `analyze`（plan → view 为条件边），使用第 8.1 节的 M1 额度档案 | S1-WF-2 |
 | S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级事件 | — |
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
@@ -280,7 +280,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 
 | 任务 | 工作流 | 内容 |
 |---|---|---|
-| E-WF-1 | WF | 图的纯函数：`edgeState`、`readyNodes`、`skippedNodes`、循环展开、`validateExtension`；对任意日志前缀重放的属性测试（S1-WF-2、S7-WF-1） |
+| E-WF-1 | WF | 图的纯函数：`edgeState`（含条件边）、`readyNodes`、`skippedNodes`、循环展开、`validateExtension`；对任意日志前缀重放的属性测试（S1-WF-2、S1-WF-4、S7-WF-1） |
 | E-EX-1 | EX | 编辑匹配：唯一匹配、`replaceAll`、保持换行符、忽略排版引号与空白差异的重试（S2-EX-1） |
 | E-EX-2 | EX | 地址检查（私网、回环、链路本地、云元数据）、HTML 转 Markdown（S6-EX-2） |
 | E-EX-3 | EX | 命令拆分、ARITY 前缀、`deniedCommands` 与 `criticalCommands` 匹配、环境变量白名单与断言（S3-EX-1） |

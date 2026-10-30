@@ -108,7 +108,15 @@ type TemplateNode =
       // 阶段 7：request（ask、confirm、review）、dependsOn
     };
 
-type TemplateDependency = string;                  // 阶段 7 增加条件边 { node, when }
+type TemplateDependency =
+  | string                                         // 依赖边
+  | { node: string; when: EdgeCondition };         // 条件边；阶段 1 只允许内置模板使用，阶段 7 对使用者模板开放
+
+interface EdgeCondition {
+  field: string;                                   // 前驱结构化结果中的字段路径
+  equals?: string | boolean;
+  in?: (string | boolean)[];                       // equals 与 in 恰好出现一个
+}
 ```
 
 - 根节点 `HUMAN(prompt)`（`mas run` 的目标或 `/run` 的输入）不写在模板中，由 Workflow 在编译时加入，模板中没有前驱的节点都依赖它（M2Design 第 3.8 节）。
@@ -125,7 +133,8 @@ origin: BUILTIN
 nodes:
   - { name: plan, kind: AGENT, agent: { id: planner, version: v1.1.0 } }
   - { name: view, kind: AGENT, agent: { id: code-viewer, version: <M1 封存的版本> },
-      dependsOn: [plan], inputFrom: HANDOFF, output: true }
+      dependsOn: [{ node: plan, when: { field: action, equals: HANDOFF } }],
+      inputFrom: HANDOFF, output: true }
 ```
 
 `analyze` 运行时使用 M2Plan 第 8.1 节的 M1 额度档案；该档案写在 Monitor 的配置中，由模板 ID 选用，不写在模板里。

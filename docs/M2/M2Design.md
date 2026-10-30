@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.2 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.3 定稿（2026-10-30）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -294,6 +294,7 @@ Architecture 已据此修改（Module/Kernel 3.2、3.3，Evolution 第 2、4 节
 因此就绪判定仍然只依赖日志中的结构化记录，是纯函数（第 3.3 节）。可以作为条件来源的结果有：
 - HUMAN `confirm` 的答复（`confirmed: boolean`）与 `review` 的答复（`verdict: approve | reject`、`comment?`）；
 - explorer、worker 的结构化结果（第 3.7 节，如 `status`）；
+- M1 planner 的结束方式（`action: HANDOFF | FINISH`），只用于内置模板 `analyze`；
 - main 的 `reply` 是文字，不能作为条件来源；模板编译时引用不存在的字段或不可作为来源的节点，以 `GraphValidationError` 报告。
 
 `run_subagents` 只能使用依赖边与缺省触发规则；条件边、循环边与 `all_done` 只在模板中使用。
@@ -497,7 +498,7 @@ nodes:
 - **两类模板**：普通模板是一张有限的图，编译一次得到初始 Revision，之后只有循环展开与 `run_subagents` 会追加 Revision；`chat` 是一条生长规则：初始图为 `HUMAN(prompt) → main`，每当 main 结束（不论成败），发布它的回复（如有）并追加 `HUMAN(prompt, requested, trigger: all_done) → main`。这条规则写在内置代码中，不用 YAML 表达。
 - **内置模板**：
   - `chat`：Turn-chat；
-  - `analyze`：M1 的只读分析，planner → code-viewer。planner 的交接在图上表达为一条依赖边，交接内容（`HandoffBrief`）作为 code-viewer 的输入，M1 的 Agent 与 Prompt 定义原样使用；
+  - `analyze`：M1 的只读分析，planner → code-viewer。planner 可能交接，也可能直接以 `finish` 交出报告，因此交接在图上表达为一条条件边（`when: { field: action, equals: HANDOFF }`）：交接时 code-viewer 就绪，交接内容（`HandoffBrief`）作为它的输入；直接结束时 code-viewer 记为 `SKIPPED(NOT_TAKEN)`，planner 的报告即运行结果。M1 的 Agent 与 Prompt 定义原样使用；
   - `research`：上例，用于与 Turn-chat 对比的验收。
 - **运行方式**：`mas run <模板> "<目标>"` 新建一个 Session 并开启一个 Orchestration WorkflowRun（第 2.3 节）；在 Turn-chat 中使用 `/run <模板> <目标>`，在当前 WorkflowRun 中以模板实例作为本 Turn 的主体。
 
@@ -1547,4 +1548,5 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.0（编辑性） | 2026-10-30 | 第 15 节：`git_inspect` 依赖只读沙盒（第 8.1 节），从阶段 1 移到阶段 3，与第 8.1 节一致；第 14.2 节待决 #1、#3 已在 M2Plan 中决定 |
 | v1.1 | 2026-10-30 | 第 2.3 节新增 Session 第 0 条：进程绑定一个仓库，`/sessions`、`/resume` 只涉及本仓库；第 2.4、10.1、10.3 节：Kernel 的 Session 引用增加仓库根目录 |
 | v1.1（编辑性） | 2026-10-30 | 第 1.4 节：M1 冻结的 Schema major 是 0（M1Interface 第 1.2 节），原写作"v1"；M2 的新 major 为 1 |
+| v1.3 | 2026-10-30 | 第 3.1、3.8 节：`analyze` 的 plan → view 改为条件边；M1 planner 的结束方式加入条件来源；条件边的求值随阶段 1 的内置模板实现 |
 | v1.2 | 2026-10-30 | 第 3.2 节：确定性 ID 改为"前缀 + 可读路径 SHA-256 的前 32 位"，符合 M1 的标识格式；可读路径作为 `path` 字段保存 |
