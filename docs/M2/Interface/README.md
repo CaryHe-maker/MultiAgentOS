@@ -122,7 +122,7 @@ interface SessionInboxEvent<T> {       // Session 级事件
 
 | Schema | 定义位置 | 阶段 | 状态 |
 |---|---|---|---|
-| `platform.common.BoundaryContext.v1`、`platform.fabric.Envelope.v1` | 本文第 4 节 | 1 | 草稿 |
+| `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 1 | 草稿 |
 | Workflow 的 syscall 与运行级、Session 级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 草稿（阶段 1） |
 | UserInteraction 的请求与运行级、Session 级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 草稿（阶段 1） |
 | 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 草稿（阶段 1） |

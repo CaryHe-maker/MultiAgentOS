@@ -198,6 +198,7 @@ interface UnitReport {
   reasonCode?: ReasonCode;           // REJECTED、FAILED 时必填
   output?: UnitOutput;               // OK 时必填
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填
+  reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 6 节）
   budget: BudgetView;
   // 阶段 2：changedFiles；阶段 4：quota
 }
