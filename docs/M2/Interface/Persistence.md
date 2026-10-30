@@ -191,7 +191,17 @@ interface SessionDirectoryPort {
   create(): Promise<void>;                                // 已存在时失败
   copyLogFrom(fromSessionId: string): Promise<void>;      // Fork：复制整个会话日志（阶段 2）
   remove(): Promise<void>;                                // 删除本命名空间在该 Session 下的全部文件
+  lock(): Promise<LockResult>;                            // 只在 workflow 命名空间提供：Session 锁
 }
+
+interface InstanceLockPort {                              // 只注入组合根
+  acquire(): Promise<LockResult>;
+  release(): Promise<void>;                               // 可重复调用
+}
+
+type LockResult =
+  | { outcome: 'ACQUIRED'; release(): Promise<void> }
+  | { outcome: 'HELD'; owner: InstanceLockInfo | SessionLockInfo };
 ```
 
 - `StoragePath` 与命名空间的对应是固定的：`session-index`、`log` 只属于 `workflow`；`session-refs`、`trusted-instructions`、`audit` 只属于 `kernel-core`；
