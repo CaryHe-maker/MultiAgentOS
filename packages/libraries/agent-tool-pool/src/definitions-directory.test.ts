@@ -76,6 +76,7 @@ describe('shipped definitions', () => {
         '..',
         '..',
         'docs',
+        'History',
         'M1',
         'Library',
         'AgentToolPool.md',
