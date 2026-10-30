@@ -139,7 +139,7 @@ fake Workflow 能回答 Session 列表查询；对应的契约测试。
 | S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级事件 | — |
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
-| S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查 | — |
+| S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、`analyze` 的 M1 额度档案、工具次数与墙钟上限 | — |
 | S1-KX-1 | Execution：按 Session 登记产物归属、`message-publish`、`readProjectFile` | — |
 | S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间 | — |
 | S1-IF-2 | ArtifactStore：全局内容寻址存储与启动时回收；实例锁 | — |
@@ -205,7 +205,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 |---|---|---|
 | S4-KX-1 | Execution：按 AgentRun 分队列、并发类别与屏障、全局上限、`serialExecution`、改动归属 | — |
 | S4-KC-1 | Scheduler：`WAIT_CAPACITY` 与等待列表、`providerCapacity` | — |
-| S4-KC-2 | Monitor：逐级委派账本、`minShare` 启动检查、工具次数与墙钟上限 | — |
+| S4-KC-2 | Monitor：AgentRun 级账本与逐级委派、`minShare` 的派生检查、等待子任务时墙钟暂停 | — |
 | S4-KC-3 | Core：写入占用、委派保留、多个 ACTIVE 的 AgentRun、`agent.spawn` 只给顶层 | — |
 | S4-WF-1 | `run_subagents` 的校验与图扩展、汇合顺序、结果契约与改动对账、完成检查、业务熔断 | — |
 | S4-PL-1 | explorer、worker 的定义与额度参数；main 的派生准则 Prompt | — |
