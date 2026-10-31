@@ -377,7 +377,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
         await runToInteraction(current, {
           ...ending,
           type: 'RunFinished',
-        } as KernelToInteractionEventV1);
+        } as unknown as KernelToInteractionEventV1);
       });
       return Promise.resolve(ack(request.requestId));
     },

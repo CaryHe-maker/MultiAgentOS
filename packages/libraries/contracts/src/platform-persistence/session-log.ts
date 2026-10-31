@@ -50,8 +50,11 @@ const base = {
 };
 const inRun = { ...base, workflowRunId: IdSchemas.workflowRunId };
 const inTurn = { ...inRun, turnId: Type.Optional(IdSchemas.turnId) };
-const record = <T extends string, P extends TProperties>(type: T, common: TProperties, fields: P) =>
-  closed({ ...common, type: Type.Literal(type), ...fields });
+const record = <T extends string, C extends TProperties, P extends TProperties>(
+  type: T,
+  common: C,
+  fields: P,
+) => closed({ ...common, type: Type.Literal(type), ...fields });
 
 const InputSourceSchema = Type.Union([
   closed({
