@@ -43,7 +43,7 @@ Persistence、ArtifactStore 等基础设施提供存储机制，不作为通讯�
 主体代码不能修改，接收方不采信请求中自报的身份。
 Lease 内容不进入公共通信或观测通道，只由 Core 维护。
 
-进入 Kernel 核心的消息按运行排队，控制类消息（取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规）
+进入 Kernel 核心的消息按 Session 排队，控制类消息（取消、授权回答、超时到点、收敛兜底到点、Supervisor 上报的终止或违规）
 优先于工作类消息处理，见 [Kernel](../Module/Kernel.md) 3.2。
 
 ## 4. 受理与交接

@@ -238,12 +238,14 @@ reply(text) 合法 → 追加 MODEL_TURN
 | `repeatedIntent` | `{ window: 20, warnAt: 3, stopAt: 5 }` | 第 7 节第 5 条 |
 | `consecutiveErrorLimit` | 5 | 同上 |
 | `entryAgentRef` | — | 删除；入口由模板决定 |
+| `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节，阶段 2） |
 
 ## 12. 不变量与测试
 
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
 | 7：节点状态、就绪集合、模型上下文都是日志的纯函数 | 属性测试：对任意日志前缀重放，就绪集合与 `context-assemble` 输入与运行时一致（包括压缩与撤销压缩的记录）；投影不引用任何 `fullRef` |
+| 25：就绪集合只依赖日志中的结构化记录 | 属性测试：条件边只读前驱的结构化结果（`analyze` 的 `action`）；对任意日志前缀重放，就绪与跳过的集合与运行时一致；循环展开的部分在阶段 7 |
 | 27：两次压缩之间只在末尾追加 | 属性测试：同一对象相邻两次组装的输入，前一次是后一次的前缀；运行时上下文变化只产生新的末尾条目 |
 | 30：模型只以 `toolCallId` 引用完整输出（阶段 2） | 单元测试：编号翻译覆盖 main 跨 WorkflowRun、已被压缩取代、Fork 继承、被 `/undo` 回退的 Turn（找不到）、SubAgent 读父 AgentRun 的编号（找不到）、编号重复取最近、未截断的调用、未截断而被修剪的调用（阶段 8）；`FEEDBACK` 与投影中不出现 `fullRef` |
 | `update_todos`（阶段 2） | 单元测试：参数校验；与普通工具同一次返回时先处理且不触发 `CONTROL_MIXED`；`TODOS_UPDATED` 不含正文；只调用它的轮计入无进展检测 |

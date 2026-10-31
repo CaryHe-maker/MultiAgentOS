@@ -152,7 +152,7 @@ fake Workflow 能回答 Session 列表查询与删除；`ActivityEvent` 的 `RET
 
 **集成** S1-IN-1：组合根接线（实例锁在 Supervisor 清理临时数据之前取得）、端到端运行。
 
-**退出**：R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5）。
+**退出**：R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5）、A 组的 `repo.read` 与根目录 `AGENTS.md` 信任部分。
 
 ### 6.3 阶段 2：写入与回退
 
@@ -180,7 +180,7 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 | S2-UI-1 | 授权询问的各级选项、回退确认、`/fork`、`/undo`、`/diff` 的展示、活动区的待办进度 | — |
 | S2-PL-1 | main 增加写入工具、`read_output` 与 `update_todos`；`file-write`、`file-edit`、`output-read` 的 Unit 定义与受保护能力，Tool `read-output`、`update-todos` | — |
 
-**集成** S2-IN-1。**退出**：A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时）。
+**集成** S2-IN-1。**退出**：A 组的写入与子目录 `AGENTS.md` 部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时）。
 
 ### 6.4 阶段 3：命令与沙盒
 
@@ -201,7 +201,7 @@ ExecutorSet（`run-command`、`command/parse/` 的语法树拆分与 ARITY 表�
 | S3-PL-1 | main 增加 `run_command`、`git_inspect` 的定义 | — |
 | S3-UI-1 | 命令询问的四个选项、警示样式、"未隔离"提示、停机提示 | — |
 
-**集成** S3-IN-1。**退出**：C1–C5、H6–H7、A 组的命令部分。
+**集成** S3-IN-1。**退出**：C1–C5、H6–H7、A 组的命令部分（含命令的拆分）。
 
 ### 6.5 阶段 4：并行
 
@@ -221,7 +221,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 | S4-PL-1 | explorer、worker 的定义与额度参数（worker 带 `update_todos`）；main 的派生准则 Prompt | — |
 | S4-UI-1 | 活动区的 SubAgent 树、`/timeline` | — |
 
-**集成** S4-IN-1。**退出**：P1–P6、B、D；阶段 8 已完成时另加 L12（SubAgent 的压缩：S4-KC-2 从 SubAgent 的账本支出摘要额度，S4-WF-1 交出 SubAgent 投影的压缩材料）。
+**集成** S4-IN-1。**退出**：P1–P6、B、D、A 组的派生部分；阶段 8 已完成时另加 L12（SubAgent 的压缩：S4-KC-2 从 SubAgent 的账本支出摘要额度，S4-WF-1 交出 SubAgent 投影的压缩材料）。
 
 ### 6.6 阶段 5：人类在环控制
 
@@ -237,7 +237,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 | S5-WF-1 | `steer` 节点（暂停后附加与运行中插话，目标已结束时改投父 AgentRun）、`ask_user`、重新提交被取消的 READ、中止后的收敛 | — |
 | S5-UI-1 | 按键与 `/continue`、`/steer` 与 Alt+Enter、中止时排队消息的放回、待处理请求的队列 | — |
 
-**集成** S5-IN-1。**退出**：H1–H4、H11、H12 的中止部分、H13。
+**集成** S5-IN-1。**退出**：H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分。
 
 ### 6.7 阶段 6：Web
 
@@ -255,7 +255,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 | S6-KC-1 | Core：网络能力的资源键与询问 | — |
 | S6-PL-1 | main 增加网页工具；explorer 已存在时同时为它加上 | — |
 
-**集成** S6-IN-1。**退出**：W。
+**集成** S6-IN-1。**退出**：W、A 组的网页部分。
 
 ### 6.8 阶段 7：Orchestration
 

@@ -119,7 +119,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
   修剪后的结果存为 `SESSION` 类产物；没有截断的结果补登 `fullOutput: true`（第 3 节）；交回每项的 `toolCallId`、修剪后的引用与可读回的引用（截断时为 `fullRef`，否则为原预览）；
 - **组装**：前缀式用 Workflow 交回的投影条目中 `seq ≤ toSeq` 的部分，按该对象普通请求的方式经 `context-assemble` Executor 组装，末尾追加 Prompt `compaction-system` 的指令；
   前缀式的估算超出 `perCallInputLimit − summaryMaxTokens`，或 `model-call` 返回 `CONTEXT_OVERFLOW` 时，按 Core 给出的目标改用纯文本式（ExecutorSet 第 6.4 节）；
-- 执行：作为一次 Kernel 内部的 MODEL 尝试，经 Scheduler 申请调用机会，由 Supervisor 派发给 `model-call` Executor（`purpose = 'COMPACTION'`）；
+- 执行：作为一次 Kernel 内部的 MODEL 尝试，经 Core 申请调用机会与额度（与普通尝试相同的内部 syscall，Core 调用 Scheduler 与 Monitor），由 Supervisor 派发给 `model-call` Executor（`purpose = 'COMPACTION'`）；
   不属于任何 Workflow 提交的 Unit，不产生 UnitReport；用量按 Core 指定的账本结算（Monitor 第 3.5 节）；
 - 结果：摘要文本存为 `SESSION` 类产物，连同所用的方式与去掉的条目数（`summaryInput`）交回 Core；`COMPACTION_SUMMARY_INVALID` 时由 Core 决定重试一次，`CONTEXT_OVERFLOW` 时由 Core 按 `summaryFallbackTargets` 给出下一个目标。
 
@@ -140,6 +140,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
+| 12（阶段 1 部分）：凭据不进入模型上下文与普通日志 | 单元测试：provider 凭据只在执行时交给 `model-call` Executor；以带标记的假凭据运行，扫描审计、会话日志、ContextPack 与全部产物，不出现该标记；子进程环境的部分在阶段 3（Supervisor） |
 | 15：ArtifactStore 只由 Execution 写入；日志中只有引用 | 架构测试：只有 Execution 持有 `ArtifactStorePort` |
 | 产物引用只在本 Session 内有效 | 单元测试：另一 Session 的引用返回 `INVALID_ARTIFACT_REF`；重开 Session 后旧引用仍然有效 |
 | 29：只有 ACTIVE 的 Session 的登记能让正文免于回收 | 单元测试：`EXPIRING` 满 7 天后被回收（启动时与定期回收各一例，以假时钟驱动），读取得到 `ARTIFACT_EXPIRED`；到期而尚未回收的正文读取同样得到 `ARTIFACT_EXPIRED`；回收开始后再次写入的正文不被删除；`SESSION` 的正文在 ACTIVE 的 Session 拥有期间不被回收；DELETED 的 Session 残留的归属文件不影响回收；同一正文在两个 Session 中、以不同类别登记时取最长的保留 |

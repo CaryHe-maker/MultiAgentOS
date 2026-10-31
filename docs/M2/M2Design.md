@@ -1340,7 +1340,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
    范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
    没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
 6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），tool_choice = none；
-   经 Scheduler 申请调用机会，由 model-call Executor 执行，按第 7.3 节计量
+   经 Core 申请调用机会与额度（Core 调用 Scheduler 与 Monitor，第 7.2、7.3 节），由 model-call Executor 执行，按第 7.3 节计量
    摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, summaryInput, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
@@ -1692,6 +1692,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | Kernel/Supervisor 第 4 节 | 文件修改是不可信行为，每次在独立子进程中运行 | `file-write`、`file-edit` 在进程内执行，安全由 `isWritable` 保证 | 2.5、6.3 |
 | Module/UserInteraction 第 2、5 节；Infrastructure/Persistence 第 2 节 | WorkSession、SessionTree 归 UserInteraction；"会话关联、交互状态"归 UserInteraction | Session 列表与会话日志归 Workflow，Kernel 只保存引用，UserInteraction 不保存任何 Session 信息；Architecture 中含义不同的 `InteractionTurn` 等概念已删除 | 2.1、2.4、10.3 |
 | Infrastructure/Persistence 第 2 节 | 没有 SessionLogStore | 加入 SessionLogStore（归 Workflow），与 ArtifactStore（归 Execution）的边界：只经产物引用相连 | 10.1 |
+| Module/Kernel 3.2、第 10 节；Infrastructure/Fabric 第 3 节 | 运行总时长由 Core 计时，超时由 Core 按异常处理；控制消息为"运行超时" | 计时的单位是 Turn：Turn 超时按中止处理本 Turn（INTERRUPTING），Turn-chat 随后继续对话，Orchestration 由 Workflow 收敛后以 `closeRun(TIMEOUT)` 报告；全部工作都在等用户时暂停计时（2026-10-31 同步，v1.9） | 2.3、7.4 |
 | Module/Kernel 第 9 节 | 达到硬阈值时 Monitor 拒绝新的消耗型预留，不停止运行 | 与 M2 一致（额度不触发 Kernel 收敛），不需要修改；只补充"并行 AgentRun 的子额度以委派方式划出" | 7.3 |
 | Overall 第 8 节；Module/Workflow 第 4 节 | 上下文由 Workflow 请求、Kernel 按 Executor 的算法构建；没有说明谁决定压缩 | 压缩由 Kernel 作为标准过程决定与执行，Workflow 交出材料并把结果记入日志；压缩结果是写回的事实，不是每次重算的视图（v1.5 同步） | 9.6 |
 
@@ -1765,12 +1766,12 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 阶段 | 内容 | 依赖 | 退出条件（第 13 节） |
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
-| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定（预览上限 `previewMaxBytes`、`previewMaxLines`）、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`）；技术重试遵守 `Retry-After` 与"重试中"的活动；运行中消息的排队（界面） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5） |
-| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节）；main 的 `update_todos`（第 3.5 节）；子目录 `AGENTS.md` 的发现、信任与追加，任一 `AGENTS.md` 的极危险写入（第 9.5 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
-| 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
-| 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D |
-| 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`（询问不超时，等用户时 Turn 计时暂停）；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分、H13 |
-| 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W |
+| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定（预览上限 `previewMaxBytes`、`previewMaxLines`）、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`）；技术重试遵守 `Retry-After` 与"重试中"的活动；运行中消息的排队（界面） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5）、A 组的 `repo.read` 与根目录 `AGENTS.md` 信任部分 |
+| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节）；main 的 `update_todos`（第 3.5 节）；子目录 `AGENTS.md` 的发现、信任与追加，任一 `AGENTS.md` 的极危险写入（第 9.5 节） | 1 | A 组的写入与子目录 `AGENTS.md` 部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
+| 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分（含命令的拆分） |
+| 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D、A 组的派生部分（L12 在阶段 8 也完成后） |
+| 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`（询问不超时，等用户时 Turn 计时暂停）；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分 |
+| 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W、A 组的网页部分 |
 | 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
 | 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出、`/compact` 与空闲触发，实测加估算，材料查询，修剪与结果确认，摘要请求的两种输入与额度，投影替换；压缩与回退的关系、读取已被压缩取代或被修剪的调用（阶段 2 已完成时）；SubAgent 的压缩（阶段 4 已完成时） | 1 | L1–L5、L9–L11、L13（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后，L12 在阶段 4 与阶段 8 都完成后） |
 
@@ -1794,3 +1795,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.7 | 2026-10-31 | 对照 OpenCode 与 DeepSeek Harness 的修改：第 8.2 节，预览上限与执行上限分开（`previewMaxBytes` 50 KiB、`previewMaxLines` 2000，M1 的 `v0` Unit 不变）；`read_output` 的范围不再包括被 `/undo` 回退的 Turn，并可读回被修剪的结果；第 9.6 节，压缩的估算改为最近一次模型调用的实测输入加新增条目的估算，摘要之前先修剪较早的大工具结果（第 4.5 步，`TOOL_RESULTS_PRUNED`），摘要请求只包含到 `toSeq` 为止的历史并增加纯文本回退，增加空闲时的预先压缩，SubAgent 也压缩（额度不足时以收尾保留结束）；第 3.5 节，新增控制工具 `update_todos`；第 4.5、11 节，运行中可以插话（`/steer`、Alt+Enter），运行中输入的消息在界面中排队；第 5.2 节，命令按 tree-sitter-bash 语法树拆分，ARITY 改为表驱动，解析失败不提供"均允许"；第 7.4 节，技术重试以 `Retry-After` 为下限并显示"重试中"；第 14.2 节，长期保存的命令授权与长时间运行的命令列为 M2 实现后评估的事项；第 4.1、4.2、7.3、7.5、9.2、9.3、10.1、10.2、12（不变量 27、28、30）、13（A、H11–H12、L8–L13、S7）、14.1、14.3、15 节相应修改 |
 | v1.8 | 2026-10-31 | 第 9.5 节：增加子目录的 `AGENTS.md`（阶段 2）——`read_file` 返回沿途存在的 `AGENTS.md`，Workflow 以 `readProjectFile` 加载，信任规则与根目录相同（信任记录增加相对路径），加载结果作为 `PINNED` 条目追加在末尾，不进入 system 段，每个投影在一个 WorkflowRun 内每个路径至多加载一次、至多 8 份；本运行内对同一内容的"不信任"不再重复询问；第 5.2、6.1、6.3 节：任一目录中的 `AGENTS.md` 的写入为极危险级，命令无法写入或新建；第 7.5、8.1、9.2、9.3、10.2、12（不变量 16、20）、13（A、C5）、14.1、14.3、15 节相应修改 |
 | v1.9 | 2026-10-31 | 第 4.2、4.3、7.4 节：询问（`ask`、`confirm`、`review`）不再超时，删除 `humanRequestTimeoutMs` 与 `{ timedOut: true }`；全部工作都在等用户（没有已派发或待派发的尝试，且有待答复的人类请求或授权询问）时 Turn 超时暂停计时；授权询问仍 5 分钟后本次拒绝；第 14.2 节：待决 #2 已决定，新增参照 MAF 与 LangGraph 的预留事项 #8–#18（只预留，Turn-chat 完成后再定）；第 3.1、3.8、13（H13）、15 节相应修改 |
+| v1.9（编辑性） | 2026-10-31 | 发布前复查：第 15 节为 A 组验收按阶段分配，阶段 4 的退出条件注明 L12；第 9.6 节第 6 步改为经 Core 申请调用机会与额度（与 Architecture 的组件规则一致）；第 14.1 节登记 Turn 超时与 Architecture"运行超时按异常处理"的差异，并同步到 Architecture |

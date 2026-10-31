@@ -49,6 +49,7 @@ Supervisor 驱动 ModuleHost：按启动的相反顺序 stop，终止残留子�
 
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
+| 1：只有 Kernel 能产生外部副作用；Workflow 与 UserInteraction 只写自己命名空间的系统数据 | 架构测试：组合根只把 `SupervisorPort`、`ArtifactStorePort` 与 `kernel-core`、`kernel-execution` 命名空间的 Port 注入 Kernel 核心；Workflow 只得到 `WorkflowGatewayPort` 与 `workflow` 命名空间的 Port，UserInteraction 只得到 `InteractionGatewayPort`；依赖检查禁止 Workflow 与 UserInteraction 导入 ExecutorSet |
 | 24：同一个 `dataDir` 至多一个实例 | 集成测试：实例锁在任何模块启动之前取得；启动失败、正常关闭与停机后都释放 |
 | 关闭顺序 | 集成测试：`SessionClosed` 是 UserInteraction 收到的最后一个 Session 级事件，之后才停止模块 |
 

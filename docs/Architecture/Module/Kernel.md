@@ -66,7 +66,7 @@ Session actor 是并发模型，不是第七个组件。
 - **系统级状态的单一写入者**：系统级状态只由 Session 管理写入。单实例部署时，由部署层保证同一份数据只有一个 Kernel 核心实例（例如数据目录上的实例锁）；
   多实例部署时需要与全局 API 容量类似的全局服务，见 [Evolution](../Evolution.md) 第 4 节。
 - **消息**：Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，都作为消息进入 Session Inbox。
-  Session Inbox 与外部 Module 的 Inbox 是同一种接收队列，只是按消息类型分为控制通道与工作通道：取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
+  Session Inbox 与外部 Module 的 Inbox 是同一种接收队列，只是按消息类型分为控制通道与工作通道：取消、授权回答、超时到点、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
   优先处理；业务请求与正常的执行结果属于工作通道。同一来源在同一通道内保持顺序。
   执行事实交给 Execution 处理，其余消息交给 Core 处理。
 - **不可重入**：一条消息处理完之前不开始处理下一条，控制通道的优先只在两条消息之间生效。处理中可以等待本地存储 I/O；
@@ -244,7 +244,7 @@ Monitor 被 Core 调用时可以以返回值报告异常，由 Core 决定控制
 
 Supervisor 是独立的通讯主体，直接管理进程：负责系统生命周期，以及 Executor 子进程的派发、装配、
 截止时间、终止、回收与健康，向 Kernel 核心上报执行事实。它不维护执行队列，不作授权、额度或结果接受的裁决。
-详见 [Supervisor](../Kernel/Supervisor.md)。运行总时长由 Core 计时，超时由 Core 按异常处理。
+详见 [Supervisor](../Kernel/Supervisor.md)。时长限制由 Core 计时，计时单位由各 MVP 规定（M2 为 Turn）；超时时 Core 中止当前工作，由 Workflow 收敛后报告结果，不直接收敛整个运行；等待用户回答的时间可以不计入。
 
 产物发布等 Kernel 内建 Unit 由 Execution 直接完成，不派发给 Supervisor，也不经 Executor。
 
