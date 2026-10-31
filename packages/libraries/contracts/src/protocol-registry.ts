@@ -25,9 +25,21 @@ import * as unitIo from './kernel-unit/unit-io.js';
 import * as workflowEvents from './kernel-unit/workflow-events.js';
 import * as workflowSyscalls from './kernel-unit/workflow-syscalls.js';
 import * as artifactRefs from './platform-artifact/artifact-refs.js';
+import * as historyEntry from './context/history-entry.js';
+import * as repositoryList from './executor/repository-list.js';
+import * as retention from './executor/retention.js';
+import * as sessionRequests from './kernel-control/session-requests.js';
+import * as interactionSessionEvents from './kernel-session/interaction-session-events.js';
+import * as workflowSessionEvents from './kernel-session/workflow-session-events.js';
+import * as messagePublish from './kernel-unit/message-publish.js';
+import * as sessionReplies from './kernel-unit/session-replies.js';
+import * as sessionIndexes from './platform-persistence/indexes.js';
+import * as locks from './platform-persistence/locks.js';
+import * as sessionLog from './platform-persistence/session-log.js';
+import * as reply from './workflow/reply.js';
 import * as commonSchemas from './platform-common/common-schemas.js';
 import * as systemConfig from './platform-config/system-config.js';
-import { EnvelopeSchema } from './platform-common/common-schemas.js';
+import { EnvelopeSchema, EnvelopeV1Schema } from './platform-common/common-schemas.js';
 import * as executionKind from './platform-common/execution-kind.js';
 import * as opaqueRef from './platform-common/opaque-ref.js';
 import * as reasonCode from './platform-common/reason-code.js';
@@ -47,6 +59,7 @@ export const PROTOCOL_FAMILIES = {
   'kernel.control': { owner: 'kernel', status: 'SUPPORTED' },
   'kernel.unit': { owner: 'kernel', status: 'SUPPORTED' },
   'kernel.execution': { owner: 'kernel', status: 'SUPPORTED' },
+  'kernel.session': { owner: 'kernel', status: 'SUPPORTED' },
   context: { owner: 'executor-set', status: 'SUPPORTED' },
   executor: { owner: 'executor-set', status: 'SUPPORTED' },
   workflow: { owner: 'workflow', status: 'SUPPORTED' },
@@ -199,6 +212,18 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   fabricRefs,
   persistenceRefs,
   artifactRefs,
+  historyEntry,
+  repositoryList,
+  retention,
+  sessionRequests,
+  interactionSessionEvents,
+  workflowSessionEvents,
+  messagePublish,
+  sessionReplies,
+  sessionIndexes,
+  locks,
+  sessionLog,
+  reply,
 ];
 
 const hasSchemaId = (value: unknown): value is TSchema =>
@@ -210,6 +235,7 @@ const hasSchemaId = (value: unknown): value is TSchema =>
 export function createM1ProtocolRegistry(): ProtocolRegistry {
   const registry = new ProtocolRegistry();
   registry.register(EnvelopeSchema(Type.Unknown()));
+  registry.register(EnvelopeV1Schema(Type.Unknown()));
   for (const module of MODULES)
     for (const value of Object.values(module)) if (hasSchemaId(value)) registry.register(value);
   return registry;

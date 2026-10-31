@@ -5,5 +5,7 @@ export const MEDIA_TYPES = {
   modelOutput: 'application/vnd.multiagentos.model-output+json',
   analysisReport: 'application/vnd.multiagentos.analysis-report+json',
   runSummary: 'application/vnd.multiagentos.run-summary+json',
+  reasoning: 'application/vnd.multiagentos.reasoning+json',
+  markdown: 'text/markdown; charset=utf-8',
 } as const;
 export type MediaType = (typeof MEDIA_TYPES)[keyof typeof MEDIA_TYPES];

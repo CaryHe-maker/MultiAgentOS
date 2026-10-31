@@ -45,3 +45,24 @@ export const FileReadOutputSchema = Type.Refine(
   () => 'the returned range must lie inside the file, or be 1..0 for an empty file',
 );
 export type FileReadOutput = Static<typeof FileReadOutputSchema>;
+
+/** Major 1 is the same output; the content digest it adds is `fileSha256` (M2Design 8.1). */
+export const FileReadOutputV1Schema = Type.Refine(
+  closed(
+    {
+      path: text(1024),
+      startLine: count(1),
+      endLine: count(),
+      totalLines: count(),
+      contentSha256: Sha256Schema,
+      fileSha256: Sha256Schema,
+    },
+    'executor.FileReadOutput.v1',
+  ),
+  (output) =>
+    output.totalLines === 0
+      ? output.startLine === 1 && output.endLine === 0
+      : output.startLine <= output.endLine && output.endLine <= output.totalLines,
+  () => 'the returned range must lie inside the file, or be 1..0 for an empty file',
+);
+export type FileReadOutputV1 = Static<typeof FileReadOutputV1Schema>;

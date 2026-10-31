@@ -5,6 +5,34 @@ import type {
 } from './catalog/catalog-schemas.js';
 import type { DefinitionByKind, DefinitionKind } from './catalog/definition-schemas.js';
 import type { TokenUsage } from './executor/model-call.js';
+import type {
+  AnswerAuthorizationRequestV1,
+  AnswerHumanRequest,
+  ReadArtifactRequestV1,
+} from './kernel-control/interaction-requests.js';
+import type { SessionAccepted, SyscallRejectedV1 } from './kernel-control/responses.js';
+import type {
+  DeleteSessionRequest,
+  ListSessionsRequest,
+  OpenSessionRequest,
+  StartRunRequest,
+  StartSessionRequest,
+} from './kernel-control/session-requests.js';
+import type {
+  ReportSessionCommandRequest,
+  ReportSessionListRequest,
+} from './kernel-unit/session-replies.js';
+import type {
+  CloseRunRequestV1,
+  EndAgentRunRequestV1,
+  ProjectFileContent,
+  ReadProjectFileRequest,
+  RegisterAgentRunRequestV1,
+  RequestHumanRequest,
+  SubmitUnitRequestV1,
+} from './kernel-unit/workflow-syscalls.js';
+import type { BoundaryContextV1 } from './platform-common/common-schemas.js';
+import type { InstanceLockInfo, SessionLockInfo } from './platform-persistence/locks.js';
 import type { FileReadInput } from './executor/file-read.js';
 import type {
   KernelToInteractionEvent,
@@ -365,3 +393,151 @@ export interface SystemFault {
  * Fabric message and not a registered Schema: it starts a bounded shutdown and never throws.
  */
 export type SystemFaultReporter = (fault: SystemFault) => void;
+
+// --- Major 1 (Interface/WorkflowKernel, InteractionKernel, Persistence) ------------------------
+
+export interface RunInboxEvent<T> {
+  readonly eventId: string;
+  readonly sessionId: string;
+  readonly workflowRunId: string;
+  readonly seq: number;
+  readonly occurredAt: string;
+  readonly event: T;
+}
+
+/** Injected into Workflow only; the M1 port stays until the release, for `analyze`. */
+export interface WorkflowGatewayPortV1 {
+  registerAgentRun(
+    request: RegisterAgentRunRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  submitUnit(
+    request: SubmitUnitRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  endAgentRun(
+    request: EndAgentRunRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  closeRun(
+    request: CloseRunRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  requestHuman(
+    request: RequestHumanRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  readProjectFile(
+    request: ReadProjectFileRequest,
+    context: BoundaryContextV1,
+  ): Promise<ProjectFileContent | SyscallRejectedV1>;
+  reportSessionCommand(
+    request: ReportSessionCommandRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  reportSessionList(
+    request: ReportSessionListRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+}
+
+/** Injected into UserInteraction only. */
+export interface InteractionGatewayPortV1 {
+  startSession(
+    request: StartSessionRequest,
+    context: BoundaryContextV1,
+  ): Promise<SessionAccepted | SyscallRejectedV1>;
+  openSession(
+    request: OpenSessionRequest,
+    context: BoundaryContextV1,
+  ): Promise<SessionAccepted | SyscallRejectedV1>;
+  startRun(
+    request: StartRunRequest,
+    context: BoundaryContextV1,
+  ): Promise<SessionAccepted | SyscallRejectedV1>;
+  listSessions(
+    request: ListSessionsRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  deleteSession(
+    request: DeleteSessionRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  answerAuthorization(
+    request: AnswerAuthorizationRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  answerHuman(
+    request: AnswerHumanRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+  readArtifact(
+    request: ReadArtifactRequestV1,
+    context: BoundaryContextV1,
+  ): Promise<ArtifactContent | SyscallRejectedV1>;
+  shutdown(
+    request: ShutdownRequest,
+    context: BoundaryContextV1,
+  ): Promise<SyscallAck | SyscallRejectedV1>;
+}
+
+export const PERSISTENCE_NAMESPACES_V1 = ['workflow', 'kernel-core', 'kernel-execution'] as const;
+export type PersistenceNamespaceV1 = (typeof PERSISTENCE_NAMESPACES_V1)[number];
+
+export type StoragePath =
+  | {
+      readonly scope: 'SYSTEM';
+      readonly file: 'session-index' | 'session-refs' | 'trusted-instructions';
+    }
+  | {
+      readonly scope: 'SESSION';
+      readonly sessionId: string;
+      readonly file: 'log' | 'audit' | 'artifact-owners' | 'snapshot-index';
+    };
+
+export interface AppendLogPort<T> {
+  /** Returns only after the line is written and fsynced. */
+  append(record: T): Promise<void>;
+  /** Validates every line against the Schema. */
+  readAll(): AsyncIterable<T>;
+  /** Cuts back to the last complete line; 0 when nothing was incomplete. */
+  repairTail(): Promise<{ readonly truncatedBytes: number }>;
+}
+
+export type LockResult =
+  | { readonly outcome: 'ACQUIRED'; release(): Promise<void> }
+  | { readonly outcome: 'HELD'; readonly owner: InstanceLockInfo | SessionLockInfo };
+
+export interface SessionDirectoryPort {
+  create(): Promise<void>;
+  remove(): Promise<void>;
+  /** Provided in the `workflow` namespace only. */
+  lock(): Promise<LockResult>;
+}
+
+/** Limited to one namespace by the composition root; a foreign path is refused on the spot. */
+export interface SessionPersistencePort {
+  appendLog<T>(namespace: PersistenceNamespaceV1, path: StoragePath): AppendLogPort<T>;
+  sessionDirectory(namespace: PersistenceNamespaceV1, sessionId: string): SessionDirectoryPort;
+  capabilities(): readonly CapabilityDescriptor[];
+}
+
+/** Injected into the composition root only. */
+export interface InstanceLockPort {
+  acquire(): Promise<LockResult>;
+  /** May be called repeatedly. */
+  release(): Promise<void>;
+}
+
+/** Global and content-addressed; Execution records who owns what (Infrastructure/ArtifactStore). */
+export interface ArtifactStorePortV1 {
+  put(content: Uint8Array, mediaType: string): Promise<ArtifactRef>;
+  /** Verifies sha256 and size again and throws instead of returning damaged content. */
+  get(ref: ArtifactRef): Promise<Uint8Array>;
+  /** Removes bodies outside `retained` last written before `olderThan`. */
+  sweep(input: {
+    readonly retained: ReadonlySet<string>;
+    readonly olderThan: string;
+  }): Promise<{ readonly removed: number }>;
+  capabilities(): readonly CapabilityDescriptor[];
+}

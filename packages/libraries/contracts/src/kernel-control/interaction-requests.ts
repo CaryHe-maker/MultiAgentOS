@@ -2,6 +2,8 @@ import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
+import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
+import { UserInputSchema } from './session-requests.js';
 
 /**
  * `repositoryPath` must be an absolute path of an existing directory outside the system data
@@ -47,3 +49,40 @@ export const ShutdownRequestSchema = closed(
   'kernel.control.ShutdownRequest.v0',
 );
 export type ShutdownRequest = Static<typeof ShutdownRequestSchema>;
+
+// --- Major 1 (Interface/InteractionKernel 2.3) ------------------------------------------------
+
+const inRunV1 = {
+  requestId: IdSchemas.requestId,
+  sessionId: IdSchemas.sessionId,
+  workflowRunId: IdSchemas.workflowRunId,
+};
+
+/** Stage 2 adds the single-use answer, stage 3 the command and prefix answers. */
+export const AnswerAuthorizationRequestV1Schema = closed(
+  {
+    ...inRunV1,
+    questionId: IdSchemas.questionId,
+    answer: closed({ scope: Type.Enum(['ALLOW', 'DENY']) }),
+  },
+  'kernel.control.AnswerAuthorizationRequest.v1',
+);
+export type AnswerAuthorizationRequestV1 = Static<typeof AnswerAuthorizationRequestV1Schema>;
+
+export const AnswerHumanRequestSchema = closed(
+  {
+    ...inRunV1,
+    humanRequestId: IdSchemas.humanRequestId,
+    input: UserInputSchema,
+    template: Type.Optional(DefinitionRefSchema),
+  },
+  'kernel.control.AnswerHumanRequest.v1',
+);
+export type AnswerHumanRequest = Static<typeof AnswerHumanRequestSchema>;
+
+/** Artifacts belong to the Session in M2, so the run is no longer part of the request. */
+export const ReadArtifactRequestV1Schema = closed(
+  { requestId: IdSchemas.requestId, sessionId: IdSchemas.sessionId, ref: ArtifactRefSchema },
+  'kernel.control.ReadArtifactRequest.v1',
+);
+export type ReadArtifactRequestV1 = Static<typeof ReadArtifactRequestV1Schema>;

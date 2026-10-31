@@ -147,3 +147,45 @@ export const UNIT_REPORT_CODES = [...UNIT_REJECTED_CODES, ...UNIT_FAILED_CODES] 
 /** A closed set of reason codes as a Schema whose static type is the union of those codes. */
 export const reasonCodeOf = <const Codes extends readonly ReasonCode[]>(codes: Codes) =>
   Type.Unsafe<Codes[number]>(Type.Enum([...codes]));
+
+/** M1's codes are frozen in major 0; major 1 adds the codes of the M2 Interface documents. */
+export const REASON_CODE_CATEGORY_V1 = {
+  ...REASON_CODE_CATEGORY,
+  NO_OPEN_TURN: 'CONFLICT',
+  SESSION_COMMAND_UNKNOWN: 'CONFLICT',
+  SESSION_QUERY_UNKNOWN: 'CONFLICT',
+  PROJECT_FILE_FORBIDDEN: 'POLICY',
+  ARTIFACT_EXPIRED: 'RESOURCE',
+  SESSION_NOT_FOUND: 'VALIDATION',
+  SESSION_IN_USE: 'CONFLICT',
+  TEMPLATE_UNSUPPORTED: 'VALIDATION',
+  HUMAN_REQUEST_NOT_PENDING: 'CONFLICT',
+  CONTEXT_OVERFLOW: 'RESOURCE',
+  QUOTA_EXHAUSTED: 'RESOURCE',
+} as const satisfies Record<string, ErrorCategory>;
+export type ReasonCodeV1 = keyof typeof REASON_CODE_CATEGORY_V1;
+export const REASON_CODES_V1 = Object.keys(REASON_CODE_CATEGORY_V1) as ReasonCodeV1[];
+export const ReasonCodeV1Schema = Type.Unsafe<ReasonCodeV1>(
+  Type.Enum(REASON_CODES_V1, { $id: 'platform.common.ReasonCode.v1' }),
+);
+export const reasonCodeV1Of = <const Codes extends readonly ReasonCodeV1[]>(codes: Codes) =>
+  Type.Unsafe<Codes[number]>(Type.Enum([...codes]));
+
+export const CORE_REJECTED_CODES_V1 = [
+  ...CORE_REJECTED_CODES,
+  'NO_OPEN_TURN',
+  'SESSION_COMMAND_UNKNOWN',
+  'SESSION_QUERY_UNKNOWN',
+  'PROJECT_FILE_FORBIDDEN',
+  'SESSION_NOT_FOUND',
+  'SESSION_IN_USE',
+  'TEMPLATE_UNSUPPORTED',
+  'HUMAN_REQUEST_NOT_PENDING',
+  'ARTIFACT_EXPIRED',
+] as const satisfies readonly ReasonCodeV1[];
+/** A UnitReport with `status = 'REJECTED'` in major 1. */
+export const UNIT_REJECTED_CODES_V1 = [
+  ...UNIT_REJECTED_CODES,
+  'ARTIFACT_EXPIRED',
+  'QUOTA_EXHAUSTED',
+] as const satisfies readonly ReasonCodeV1[];

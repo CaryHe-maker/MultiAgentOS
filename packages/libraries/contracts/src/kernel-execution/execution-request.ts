@@ -1,12 +1,16 @@
 import { Type, type Static, type TSchema } from 'typebox';
 import {
   AssembleContextPackSchema,
+  AssembleContextPackV1Schema,
   ModelToolSpecSchema,
   OrientContextPackSchema,
 } from '../context/context-pack.js';
+import { StatusFactsV1Schema } from '../context/history-entry.js';
+import { ModelToolCallSchema } from '../executor/model-tool-call.js';
+import { RepositoryListInputSchema } from '../executor/repository-list.js';
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
-import { IdSchemas } from '../platform-common/ids.js';
+import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { HandoffBriefSchema } from '../workflow/handoff.js';
@@ -148,3 +152,137 @@ export const ExecutionRequestSchema = Type.Union(
 );
 export type ExecutionRequest = Static<typeof ExecutionRequestSchema>;
 export type ExecutorInput = ExecutionRequest['input'];
+
+// --- Major 1 (Library/SharedContracts 3.5) ----------------------------------------------------
+
+/** `maxLines` is absent for `v0` Units, whose preview limit is `maxOutputBytes` alone. */
+const PreviewLimitsSchema = closed({ maxBytes: count(1), maxLines: Type.Optional(count(1)) });
+const limitsV1 = {
+  ...limits,
+  preview: PreviewLimitsSchema,
+  maxFullOutputBytes: count(1),
+};
+const PlainLimitsV1Schema = closed(limitsV1);
+const OrientLimitsV1Schema = closed({ ...limitsV1, maxFiles: count(1) });
+const ModelLimitsV1Schema = closed({ ...limits, maxOutputTokens: count(1) });
+const AssembleLimitsV1Schema = closed(limits);
+export const ExecutionLimitsV1Schema = Type.Union(
+  [PlainLimitsV1Schema, OrientLimitsV1Schema, ModelLimitsV1Schema, AssembleLimitsV1Schema],
+  { $id: 'kernel.execution.ExecutionLimits.v1' },
+);
+export type ExecutionLimitsV1 = Static<typeof ExecutionLimitsV1Schema>;
+
+const ResolvedHistoryEntrySchema = Type.Union([
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Enum(['HUMAN', 'NOTE']),
+    text: Type.String(),
+  }),
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Literal('MODEL_TURN'),
+    text: Type.Optional(Type.String()),
+    toolCalls: Type.Array(ModelToolCallSchema),
+    reasoningContent: Type.Optional(Type.String()),
+  }),
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Literal('TOOL_RESULT'),
+    toolCallId: ToolCallIdSchema,
+    text: Type.String(),
+  }),
+]);
+export type ResolvedHistoryEntry = Static<typeof ResolvedHistoryEntrySchema>;
+
+/** ContextAssembleInput.v1 after Execution resolved references and pinned definitions. */
+export const AssembleExecutorInputV1Schema = Type.Refine(
+  closed(
+    {
+      final: Type.Boolean(),
+      tokenBudget: count(1),
+      instructions: Type.String({ maxLength: 100000 }),
+      toolSpecs: Type.Array(ModelToolSpecSchema),
+      projectInstructions: Type.Optional(closed({ text: Type.String(), trusted: Type.Boolean() })),
+      orientPack: Type.Optional(OrientContextPackSchema),
+      history: Type.Array(ResolvedHistoryEntrySchema),
+      status: StatusFactsV1Schema,
+    },
+    'kernel.execution.AssembleExecutorInput.v1',
+  ),
+  (input) => input.final === input.status.final,
+  () => 'final must equal status.final',
+);
+export type AssembleExecutorInputV1 = Static<typeof AssembleExecutorInputV1Schema>;
+
+export const ModelExecutorInputV1Schema = closed(
+  {
+    contextPack: AssembleContextPackV1Schema,
+    final: Type.Boolean(),
+    finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+  },
+  'kernel.execution.ModelExecutorInput.v1',
+);
+export type ModelExecutorInputV1 = Static<typeof ModelExecutorInputV1Schema>;
+
+const requestV1 = <K extends string, I extends TSchema, S extends TSchema, L extends TSchema>(
+  executionKind: K,
+  input: I,
+  scope: S,
+  limitsOf: L,
+) =>
+  closed({
+    sessionId: IdSchemas.sessionId,
+    workflowRunId: IdSchemas.workflowRunId,
+    unitAttemptId: IdSchemas.unitAttemptId,
+    executionId: IdSchemas.executionId,
+    runEpoch: count(1),
+    executionKind: Type.Literal(executionKind),
+    input,
+    scope,
+    limits: limitsOf,
+    notBefore: Type.Optional(TimestampSchema),
+  });
+
+export const ExecutionRequestV1Schema = Type.Union(
+  [
+    requestV1(
+      'REPOSITORY_ORIENT',
+      OrientExecutorInputSchema,
+      RepositoryScopeSchema,
+      OrientLimitsV1Schema,
+    ),
+    requestV1(
+      'REPOSITORY_SEARCH',
+      SearchExecutorInputSchema,
+      RepositoryScopeSchema,
+      PlainLimitsV1Schema,
+    ),
+    requestV1(
+      'REPOSITORY_LIST',
+      RepositoryListInputSchema,
+      RepositoryScopeSchema,
+      PlainLimitsV1Schema,
+    ),
+    requestV1('FILE_READ', FileReadInputSchema, RepositoryScopeSchema, PlainLimitsV1Schema),
+    requestV1(
+      'CONTEXT_ASSEMBLE',
+      Type.Union([AssembleExecutorInputSchema, AssembleExecutorInputV1Schema]),
+      NoScopeSchema,
+      AssembleLimitsV1Schema,
+    ),
+    requestV1(
+      'MODEL',
+      Type.Union([ModelExecutorInputSchema, ModelExecutorInputV1Schema]),
+      ModelScopeSchema,
+      ModelLimitsV1Schema,
+    ),
+  ],
+  { $id: 'kernel.execution.ExecutionRequest.v1' },
+);
+export type ExecutionRequestV1 = Static<typeof ExecutionRequestV1Schema>;

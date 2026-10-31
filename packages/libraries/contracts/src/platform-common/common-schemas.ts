@@ -135,3 +135,55 @@ export const BoundaryContextSchema = closed(
   'platform.common.BoundaryContext.v0',
 );
 export type BoundaryContext = Static<typeof BoundaryContextSchema>;
+
+const sessionScoped = (value: { sessionId?: string; workflowRunId?: string }) =>
+  value.workflowRunId === undefined || value.sessionId !== undefined;
+const SESSION_SCOPE_ERROR = () => 'a message of a run must also carry its sessionId';
+
+/** `workSessionId` is gone; a message of a run names its Session too (Interface 4). */
+export const EnvelopeV1Schema = <T extends TSchema>(payload: T) =>
+  Type.Refine(
+    closed(
+      {
+        schemaName: Type.String({ pattern: '^[a-z][a-z0-9-]*(?:\\.[A-Za-z][A-Za-z0-9-]*)+$' }),
+        schemaVersion: count(),
+        messageType: Type.Enum(['command', 'query', 'event', 'signal', 'result']),
+        messageId: IdSchemas.messageId,
+        producer: Type.Enum(PRODUCERS),
+        occurredAt: TimestampSchema,
+        tenantId: text(128),
+        projectId: text(128),
+        correlationId: IdSchemas.correlationId,
+        causationId: Type.Optional(IdSchemas.messageId),
+        sessionId: Type.Optional(IdSchemas.sessionId),
+        workflowRunId: Type.Optional(IdSchemas.workflowRunId),
+        missionScopeId: Type.Optional(IdSchemas.missionScopeId),
+        aggregateId: Type.Optional(text(160)),
+        aggregateVersion: Type.Optional(count()),
+        graphRevision: Type.Optional(count()),
+        traceparent: Type.Optional(text(256)),
+        payload,
+      },
+      'platform.common.Envelope.v1',
+    ),
+    sessionScoped,
+    SESSION_SCOPE_ERROR,
+  );
+
+export const BoundaryContextV1Schema = Type.Refine(
+  closed(
+    {
+      correlationId: IdSchemas.correlationId,
+      causationId: Type.Optional(IdSchemas.messageId),
+      tenantId: text(128),
+      projectId: text(128),
+      sessionId: Type.Optional(IdSchemas.sessionId),
+      workflowRunId: Type.Optional(IdSchemas.workflowRunId),
+      deadline: Type.Optional(TimestampSchema),
+    },
+    'platform.common.BoundaryContext.v1',
+  ),
+  sessionScoped,
+  SESSION_SCOPE_ERROR,
+);
+export type BoundaryContextV1 = Static<typeof BoundaryContextV1Schema>;

@@ -7,7 +7,21 @@ import {
   RepositorySearchOutputSchema,
 } from '../context/repository.js';
 import { FileReadInputSchema, FileReadOutputSchema } from '../executor/file-read.js';
-import { ModelCallInputSchema, ModelCallOutputSchema } from '../executor/model-call.js';
+import {
+  ContextAssembleInputV1Schema,
+  ContextAssembleOutputV1Schema,
+} from '../context/history-entry.js';
+import {
+  ModelCallInputSchema,
+  ModelCallInputV1Schema,
+  ModelCallOutputSchema,
+  ModelCallOutputV1Schema,
+} from '../executor/model-call.js';
+import {
+  RepositoryListInputSchema,
+  RepositoryListOutputSchema,
+} from '../executor/repository-list.js';
+import { MessagePublishInputSchema, MessagePublishOutputSchema } from './message-publish.js';
 import { ReportPublishInputSchema, ReportPublishOutputSchema } from './report-publish.js';
 
 /**
@@ -39,3 +53,28 @@ export const UnitOutputSchema = Type.Union(
   { $id: 'kernel.unit.UnitOutput.v0' },
 );
 export type UnitOutput = Static<typeof UnitOutputSchema>;
+
+/** Major 1 adds `list_files`, `message-publish` and main's context and model Units. */
+export const UnitInputV1Schema = Type.Union(
+  [
+    ...UnitInputSchema.anyOf,
+    RepositoryListInputSchema,
+    MessagePublishInputSchema,
+    ContextAssembleInputV1Schema,
+    ModelCallInputV1Schema,
+  ],
+  { $id: 'kernel.unit.UnitInput.v1' },
+);
+export type UnitInputV1 = Static<typeof UnitInputV1Schema>;
+
+export const UnitOutputV1Schema = Type.Union(
+  [
+    ...UnitOutputSchema.anyOf,
+    RepositoryListOutputSchema,
+    MessagePublishOutputSchema,
+    ContextAssembleOutputV1Schema,
+    ModelCallOutputV1Schema,
+  ],
+  { $id: 'kernel.unit.UnitOutput.v1' },
+);
+export type UnitOutputV1 = Static<typeof UnitOutputV1Schema>;

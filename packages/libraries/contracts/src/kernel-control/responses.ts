@@ -3,11 +3,13 @@ import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import {
   CORE_REJECTED_CODES,
+  CORE_REJECTED_CODES_V1,
   GATEWAY_REJECTED_CODES,
   reasonCodeOf,
+  reasonCodeV1Of,
 } from '../platform-common/reason-code.js';
 import { closed } from '../platform-common/schema-helpers.js';
-import { CloseReasonSchema } from './run-outcome.js';
+import { CloseReasonSchema, CloseReasonV1Schema } from './run-outcome.js';
 
 export const SyscallAckSchema = closed(
   { requestId: IdSchemas.requestId, outcome: Type.Literal('ACCEPTED') },
@@ -64,3 +66,37 @@ export const ArtifactContentSchema = closed(
   'kernel.control.ArtifactContent.v0',
 );
 export type ArtifactContent = Static<typeof ArtifactContentSchema>;
+
+/** Major 1 keeps the shape and widens Core's reason codes (Interface documents, section 5). */
+export const SyscallRejectedV1Schema = Type.Union(
+  [
+    closed({
+      ...rejected,
+      issuer: Type.Literal('GATEWAY'),
+      reasonCode: reasonCodeOf(GATEWAY_REJECTED_CODES),
+    }),
+    closed({
+      ...rejected,
+      issuer: Type.Literal('CORE'),
+      reasonCode: reasonCodeV1Of(CORE_REJECTED_CODES_V1),
+    }),
+    closed({
+      ...rejected,
+      issuer: Type.Enum(['GATEWAY', 'CORE']),
+      reasonCode: Type.Literal('RUN_BLOCKED'),
+      closeReason: CloseReasonV1Schema,
+    }),
+  ],
+  { $id: 'kernel.control.SyscallRejected.v1' },
+);
+export type SyscallRejectedV1 = Static<typeof SyscallRejectedV1Schema>;
+
+export const SessionAcceptedSchema = closed(
+  {
+    requestId: IdSchemas.requestId,
+    outcome: Type.Literal('ACCEPTED'),
+    sessionId: IdSchemas.sessionId,
+  },
+  'kernel.control.SessionAccepted.v1',
+);
+export type SessionAccepted = Static<typeof SessionAcceptedSchema>;

@@ -24,6 +24,15 @@ export const IdSchemas = {
   // Kept for the optional BoundaryContext and Envelope fields; M1 does not fill them.
   workSessionId: Id('wss'),
   missionScopeId: Id('msc'),
+  // M2 (Interface 3).
+  sessionId: Id('ses'),
+  turnId: Id('trn'),
+  nodeId: Id('nod'),
+  unitRunId: Id('unr'),
+  humanRequestId: Id('hrq'),
+  inputId: Id('inp'),
+  commandId: Id('scm'),
+  queryId: Id('slq'),
 } as const;
 
 /** Returned by the model provider and used as is. */

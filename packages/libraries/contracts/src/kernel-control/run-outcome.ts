@@ -1,5 +1,9 @@
 import { Type, type Static, type TProperties } from 'typebox';
-import { ErrorCategorySchema, artifactRefOf } from '../platform-common/common-schemas.js';
+import {
+  ArtifactRefSchema,
+  ErrorCategorySchema,
+  artifactRefOf,
+} from '../platform-common/common-schemas.js';
 import { EXECUTOR_KINDS } from '../platform-common/execution-kind.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
@@ -141,5 +145,45 @@ export const runEndVariants = <T extends string>(type: T) => {
     typeof writeFailedFailed,
     typeof writeFailedViolation,
     typeof writeFailedStopped,
+  ];
+};
+
+/** RUN_TIMEOUT is gone: a timeout is an interrupt, and Workflow reports TIMEOUT (M2Design 2.3). */
+export const CLOSE_REASONS_V1 = [
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'BUDGET',
+  'TIMEOUT',
+  'VIOLATION',
+  'ENDED_BY_USER',
+  'SHUTDOWN',
+] as const;
+export const CloseReasonV1Schema = Type.Enum(CLOSE_REASONS_V1, {
+  $id: 'kernel.control.CloseReason.v1',
+});
+export type CloseReasonV1 = Static<typeof CloseReasonV1Schema>;
+
+/** A failure is required exactly for FAILED and VIOLATION; one of the two summary fields is set. */
+export const runEndV1 = <T extends string>(type: T) => {
+  const common = {
+    type: Type.Literal(type),
+    unknownEffects: Type.Array(UnknownEffectSchema),
+    resultRef: Type.Optional(ArtifactRefSchema),
+  };
+  const withEnding = <P extends TProperties>(properties: P) => [
+    closed({ ...common, ...properties, runSummaryRef: RunSummaryRefSchema }),
+    closed({
+      ...common,
+      ...properties,
+      finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED'),
+    }),
+  ];
+  return [
+    ...withEnding({
+      closeReason: Type.Enum(CLOSE_REASONS_V1.filter((r) => r !== 'FAILED' && r !== 'VIOLATION')),
+    }),
+    ...withEnding({ closeReason: Type.Literal('FAILED'), failure: RunFailureSchema }),
+    ...withEnding({ closeReason: Type.Literal('VIOLATION'), failure: ViolationFailureSchema }),
   ];
 };

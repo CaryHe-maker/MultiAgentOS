@@ -394,6 +394,32 @@ interface ContextCompacted {
 - 触发压缩的 `context-assemble` 在修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
 - `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；第三次溢出后按收尾处理。
 
+### 3.5 上下文投影的条目
+
+`context-assemble`（`v1`）的输入是 `context.ContextAssembleInput.v1`，历史由 `ContextHistoryEntry` 组成（[Module/Workflow](../Module/Workflow.md) 第 8.3 节）。正文都在产物中，所以同一个日志前缀得到相同的输入。
+
+```ts
+type ContextHistoryEntry = EntryBase & (
+  | { kind: 'HUMAN'; contentRef: ArtifactRef }
+  | { kind: 'MODEL_TURN'; modelId: string; outputRef: ArtifactRef; reasoningRef?: ArtifactRef; replayable: boolean }
+  | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
+  | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
+);
+
+interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL' }
+
+interface ContextAssembleInputV1 {
+  final: boolean;                                  // 必须等于 status.final
+  effort: ThinkingEffort;
+  projectInstructions?: { ref: ArtifactRef; sha256: string; trusted: boolean };
+  orientPackRef?: ArtifactRef;
+  history: ContextHistoryEntry[];
+  status: { round: number; maxRounds: number; budget: BudgetView; final: boolean; wrapUpReason?: WrapUpReason };
+}
+```
+
+`GRAPH_EXTENDED` 的 `nodes`、`edges` 见 [Persistence](Persistence.md) 第 2.3 节。
+
 ## 4. Schema 强制的约束
 
 | 对象 | 约束 |

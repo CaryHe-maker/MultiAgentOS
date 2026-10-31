@@ -1,5 +1,5 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import { pinnedRefOf } from '../catalog/definition-schemas.js';
+import { DefinitionRefSchema, pinnedRefOf } from '../catalog/definition-schemas.js';
 import { ContextAssembleOutputSchema } from '../context/assemble.js';
 import {
   RepositoryOrientOutputSchema,
@@ -7,19 +7,22 @@ import {
 } from '../context/repository.js';
 import { FileReadOutputSchema } from '../executor/file-read.js';
 import { ModelCallOutputSchema } from '../executor/model-call.js';
-import { runEndVariants } from '../kernel-control/run-outcome.js';
-import { artifactRefOf } from '../platform-common/common-schemas.js';
-import { REPOSITORY_KINDS } from '../platform-common/execution-kind.js';
+import { runEndV1, runEndVariants } from '../kernel-control/run-outcome.js';
+import { ArtifactRefSchema, artifactRefOf } from '../platform-common/common-schemas.js';
+import { ExecutionKindV1Schema, REPOSITORY_KINDS } from '../platform-common/execution-kind.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import {
   UNIT_FAILED_CODES,
   UNIT_REJECTED_CODES,
+  UNIT_REJECTED_CODES_V1,
   reasonCodeOf,
+  reasonCodeV1Of,
 } from '../platform-common/reason-code.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { BudgetStateSchema } from './budget-state.js';
+import { BudgetStateSchema, BudgetViewSchema, TurnUsageSchema } from './budget-state.js';
 import { ReportPublishOutputSchema } from './report-publish.js';
+import { UnitOutputV1Schema } from './unit-io.js';
 
 export const RunStartSchema = closed(
   { type: Type.Literal('RunStart'), goal: text(4000) },
@@ -123,3 +126,120 @@ export const WorkflowInboxEventSchema = closed(
   'kernel.unit.WorkflowInboxEvent.v0',
 );
 export type WorkflowInboxEvent = Static<typeof WorkflowInboxEventSchema>;
+
+// --- Major 1 (Interface/WorkflowKernel 3.1) ---------------------------------------------------
+
+/** `templateRef` is required for ORCHESTRATION; CHAT is a growth rule in code and has none. */
+const runStart = {
+  type: Type.Literal('RunStart'),
+  preset: Type.Enum(['standard', 'readonly']),
+  initialInput: Type.Boolean(),
+};
+export const RunStartV1Schema = Type.Union(
+  [
+    closed({ ...runStart, mode: Type.Literal('CHAT') }),
+    closed({
+      ...runStart,
+      mode: Type.Literal('ORCHESTRATION'),
+      templateRef: DefinitionRefSchema,
+    }),
+  ],
+  { $id: 'kernel.unit.RunStart.v1' },
+);
+export type RunStartV1 = Static<typeof RunStartV1Schema>;
+
+const reportV1 = {
+  type: Type.Literal('UnitReport'),
+  requestId: IdSchemas.requestId,
+  agentRunId: IdSchemas.agentRunId,
+  unitRunId: IdSchemas.unitRunId,
+  unitRef: pinnedRefOf('UNIT'),
+  executionKind: ExecutionKindV1Schema,
+  budget: BudgetViewSchema,
+};
+export const UnitReportV1Schema = Type.Union(
+  [
+    closed({
+      ...reportV1,
+      unitAttemptId: IdSchemas.unitAttemptId,
+      status: Type.Literal('OK'),
+      output: UnitOutputV1Schema,
+      outputRef: Type.Optional(ArtifactRefSchema),
+      fullRef: Type.Optional(ArtifactRefSchema),
+      reasoningRef: Type.Optional(ArtifactRefSchema),
+    }),
+    closed({
+      ...reportV1,
+      unitAttemptId: Type.Optional(IdSchemas.unitAttemptId),
+      status: Type.Literal('REJECTED'),
+      reasonCode: reasonCodeV1Of(UNIT_REJECTED_CODES_V1),
+    }),
+    closed({
+      ...reportV1,
+      unitAttemptId: IdSchemas.unitAttemptId,
+      status: Type.Literal('FAILED'),
+      reasonCode: reasonCodeOf(UNIT_FAILED_CODES),
+    }),
+  ],
+  { $id: 'kernel.unit.UnitReport.v1' },
+);
+export type UnitReportV1 = Static<typeof UnitReportV1Schema>;
+
+const humanAnswered = {
+  type: Type.Literal('HumanAnswered'),
+  kind: Type.Literal('prompt'),
+  inputId: IdSchemas.inputId,
+  contentRef: ArtifactRefSchema,
+  turnId: IdSchemas.turnId,
+  template: Type.Optional(DefinitionRefSchema),
+};
+export const HumanAnsweredSchema = Type.Union(
+  [
+    closed({ ...humanAnswered, origin: Type.Literal('initial') }),
+    closed({
+      ...humanAnswered,
+      origin: Type.Literal('requested'),
+      humanRequestId: IdSchemas.humanRequestId,
+    }),
+  ],
+  { $id: 'kernel.unit.HumanAnswered.v1' },
+);
+export type HumanAnswered = Static<typeof HumanAnsweredSchema>;
+
+export const TurnClosedSchema = closed(
+  {
+    type: Type.Literal('TurnClosed'),
+    turnId: IdSchemas.turnId,
+    reason: Type.Enum(['COMPLETED', 'ABORTED', 'TIMEOUT', 'BUDGET', 'RUN_CLOSED']),
+    usage: TurnUsageSchema,
+  },
+  'kernel.unit.TurnClosed.v1',
+);
+export type TurnClosed = Static<typeof TurnClosedSchema>;
+
+export const RunClosedV1Schema = Type.Union(runEndV1('RunClosed'), {
+  $id: 'kernel.unit.RunClosed.v1',
+});
+export type RunClosedV1 = Static<typeof RunClosedV1Schema>;
+
+export const KernelToWorkflowEventV1Schema = Type.Union([
+  RunStartV1Schema,
+  UnitReportV1Schema,
+  HumanAnsweredSchema,
+  TurnClosedSchema,
+  RunClosedV1Schema,
+]);
+export type KernelToWorkflowEventV1 = Static<typeof KernelToWorkflowEventV1Schema>;
+
+export const WorkflowInboxEventV1Schema = closed(
+  {
+    eventId: IdSchemas.eventId,
+    sessionId: IdSchemas.sessionId,
+    workflowRunId: IdSchemas.workflowRunId,
+    seq: count(1),
+    occurredAt: TimestampSchema,
+    event: KernelToWorkflowEventV1Schema,
+  },
+  'kernel.unit.WorkflowInboxEvent.v1',
+);
+export type WorkflowInboxEventV1 = Static<typeof WorkflowInboxEventV1Schema>;

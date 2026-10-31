@@ -69,3 +69,41 @@ export const ModelRawOutputSchema = closed(
   'executor.ModelRawOutput.v0',
 );
 export type ModelRawOutput = Static<typeof ModelRawOutputSchema>;
+
+export const THINKING_EFFORTS = ['none', 'low', 'high', 'max'] as const;
+export const ThinkingEffortSchema = Type.Enum(THINKING_EFFORTS);
+export type ThinkingEffort = Static<typeof ThinkingEffortSchema>;
+
+/**
+ * `final` runs in two steps (M2Design 9.4): AUTO keeps thinking on and only offers the control
+ * tool; Execution's technical retry passes FORCED, which turns thinking off and names the tool.
+ */
+export const ModelCallInputV1Schema = closed(
+  {
+    contextPackRef: artifactRefOf(MEDIA_TYPES.contextPack),
+    final: Type.Boolean(),
+    effort: ThinkingEffortSchema,
+    finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+  },
+  'executor.ModelCallInput.v1',
+);
+export type ModelCallInputV1 = Static<typeof ModelCallInputV1Schema>;
+
+export const ModelCallOutputV1Schema = Type.Union(
+  [
+    closed({
+      ...callOutput,
+      finishReason: Type.Literal('TOOL_CALLS'),
+      toolCalls: Type.Array(ModelToolCallSchema, { minItems: 1, maxItems: 32 }),
+      hasReasoning: Type.Boolean(),
+    }),
+    closed({
+      ...callOutput,
+      finishReason: Type.Enum(['STOP', 'LENGTH', 'CONTENT_FILTER', 'OTHER']),
+      toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 0 }),
+      hasReasoning: Type.Boolean(),
+    }),
+  ],
+  { $id: 'executor.ModelCallOutput.v1' },
+);
+export type ModelCallOutputV1 = Static<typeof ModelCallOutputV1Schema>;

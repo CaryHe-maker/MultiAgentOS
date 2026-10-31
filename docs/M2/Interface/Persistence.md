@@ -84,6 +84,33 @@ interface LogRecordBase {
 - `AGENT_RUN_REGISTERED`、`AGENT_RUN_ENDED`、`MODEL_ATTEMPT_FAILED`、`CONTEXT_ASSEMBLED` 是 M2Design 第 10.2 节"Unit"类记录的展开，
   为重放上下文所必需（不变量 7）。
 
+### 2.3 图的节点与边
+
+```ts
+interface GraphNodeRecord {
+  nodeId: string;
+  path: string;                 // <workflowRunId>/<revision>/<名称>#<迭代号>
+  name: string;                 // ≤64
+  kind: 'AGENT' | 'HUMAN';
+  trigger: 'all_success' | 'all_done';
+  iteration: number;
+  loopId?: string;              // 所属循环；不在循环中时省略（阶段 7）
+  agentRef?: DefinitionRef;     // AGENT 必填
+  goal?: string;                // ≤4000
+  inputFrom?: 'HANDOFF';
+  output?: boolean;
+}
+
+interface GraphEdgeRecord {
+  from: string;                 // nodeId
+  to: string;                   // nodeId
+  kind: 'DEPENDS' | 'CONDITIONAL';
+  when?: EdgeCondition;         // Definitions 第 4 节；CONDITIONAL 时必填
+}
+```
+
+`NODE_ENDED` 另带 `result?`：条件边读取的结构化结果（如 planner 的 `action`），写入日志后重放时不需要读取产物。
+
 ## 3. Session 列表
 
 `workflow/session-index.jsonl`，Owner 为 Workflow。每次变化追加一行，读取时每个 `sessionId` 取最后一行。

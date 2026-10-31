@@ -1,5 +1,5 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import { ExecutionKindSchema } from '../platform-common/execution-kind.js';
+import { ExecutionKindSchema, ExecutionKindV1Schema } from '../platform-common/execution-kind.js';
 import { UNIT_REPORT_CODES } from '../platform-common/reason-code.js';
 
 /**
@@ -401,3 +401,180 @@ export const DEFINITION_DRAFT_SCHEMAS: { readonly [K in DefinitionKind]: TSchema
   MODEL: Type.Omit(ModelDefinitionSchema, ['digest'], { additionalProperties: false }),
   PROMPT: Type.Omit(PromptDefinitionSchema, ['digest'], { additionalProperties: false }),
 };
+
+// --- Major 1 (Interface/Definitions) ---------------------------------------------------------
+
+export const DEFINITION_KINDS_V1 = [...DEFINITION_KINDS, 'TEMPLATE'] as const;
+export type DefinitionKindV1 = (typeof DEFINITION_KINDS_V1)[number];
+
+export const PinnedDefinitionRefV1Schema = Type.Object(
+  {
+    kind: Type.Enum(DEFINITION_KINDS_V1),
+    id: DefinitionIdSchema,
+    version: DefinitionVersionTagSchema,
+    digest: Sha256HexSchema,
+  },
+  { additionalProperties: false, $id: 'catalog.PinnedDefinitionRef.v1' },
+);
+export type PinnedDefinitionRefV1 = Static<typeof PinnedDefinitionRefV1Schema>;
+
+const headerV1 = <K extends DefinitionKindV1>(kind: K) => ({
+  schemaVersion: Type.Literal('v1'),
+  kind: Type.Literal(kind),
+  id: DefinitionIdSchema,
+  version: DefinitionVersionTagSchema,
+  digest: Sha256HexSchema,
+  description: TextSchema(2_000),
+});
+
+const EffortSchema = Type.Enum(['none', 'low', 'high', 'max']);
+
+export const AgentDefinitionV1Schema = Type.Object(
+  {
+    ...headerV1('AGENT'),
+    role: TextSchema(200),
+    modelRef: DefinitionRefSchema,
+    thinking: Type.Object(
+      {
+        defaultEffort: EffortSchema,
+        allowedEfforts: Type.Array(EffortSchema, { minItems: 1, uniqueItems: true }),
+      },
+      { additionalProperties: false },
+    ),
+    promptRef: DefinitionRefSchema,
+    unitRefs: UniqueRefs({ minItems: 1 }),
+    startUnitRefs: UniqueRefs({ minItems: 0 }),
+    actions: Type.Object(
+      {
+        finish: Type.Object(
+          { toolRef: DefinitionRefSchema, kind: Type.Literal('REPLY') },
+          { additionalProperties: false },
+        ),
+      },
+      { additionalProperties: false },
+    ),
+    limits: Type.Object(
+      {
+        maxRounds: Type.Integer({ minimum: 1, maximum: 100 }),
+        maxToolCallsPerRound: Type.Integer({ minimum: 0, maximum: 32 }),
+        maxToolUnits: Type.Integer({ minimum: 1, maximum: 1000 }),
+        maxWallClockMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      },
+      { additionalProperties: false },
+    ),
+    budget: Type.Object(
+      {
+        perCallInputLimit: Type.Integer({ minimum: 1 }),
+        maxOutputTokens: Type.Integer({ minimum: 1 }),
+        finalInputBudget: Type.Integer({ minimum: 1 }),
+        finalMaxOutputTokens: Type.Integer({ minimum: 1 }),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false, $id: 'catalog.AgentDefinition.v1' },
+);
+export type AgentDefinitionV1 = DeepReadonly<Static<typeof AgentDefinitionV1Schema>>;
+
+const ThinkingRequestSchema = Type.Union([
+  Type.Object({ thinking: Type.Literal('DISABLED') }, { additionalProperties: false }),
+  Type.Object(
+    { thinking: Type.Literal('ENABLED'), providerEffort: Type.Optional(TextSchema(32)) },
+    { additionalProperties: false },
+  ),
+]);
+
+export const ModelDefinitionV1Schema = Type.Object(
+  {
+    ...ModelDefinitionSchema.properties,
+    schemaVersion: Type.Literal('v1'),
+    features: Type.Object(
+      {
+        hasJsonOutput: Type.Boolean(),
+        hasToolCalls: Type.Boolean(),
+        hasVision: Type.Boolean(),
+        thinking: Type.Object(
+          {
+            isSupported: Type.Boolean(),
+            effortMapping: Type.Array(
+              Type.Object(
+                { effort: EffortSchema, request: ThinkingRequestSchema },
+                { additionalProperties: false },
+              ),
+            ),
+            replayReasoning: Type.Enum(['REQUIRED', 'OPTIONAL', 'UNSUPPORTED']),
+            missingReasoningFill: Type.Enum(['EMPTY_STRING', 'OMIT']),
+            reasoningCountsAsOutput: Type.Boolean(),
+          },
+          { additionalProperties: false },
+        ),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false, $id: 'catalog.ModelDefinition.v1' },
+);
+export type ModelDefinitionV1 = DeepReadonly<Static<typeof ModelDefinitionV1Schema>>;
+
+export const UnitDefinitionV1Schema = Type.Object(
+  {
+    ...UnitDefinitionSchema.properties,
+    schemaVersion: Type.Literal('v1'),
+    executionKind: ExecutionKindV1Schema,
+  },
+  { additionalProperties: false, $id: 'catalog.UnitDefinition.v1' },
+);
+export type UnitDefinitionV1 = DeepReadonly<Static<typeof UnitDefinitionV1Schema>>;
+
+const NodeNameSchema = Type.String({ pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$', maxLength: 64 });
+const ScalarSchema = Type.Union([Type.String(), Type.Boolean()]);
+
+/** Exactly one of `equals` and `in`; the field is a path into the predecessor's result. */
+export const EdgeConditionSchema = Type.Refine(
+  Type.Object(
+    {
+      field: TextSchema(128),
+      equals: Type.Optional(ScalarSchema),
+      in: Type.Optional(Type.Array(ScalarSchema, { minItems: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+  (condition) => (condition.equals === undefined) !== (condition.in === undefined),
+  () => 'exactly one of equals and in must be present',
+);
+export type EdgeCondition = Static<typeof EdgeConditionSchema>;
+
+const TemplateDependencySchema = Type.Union([
+  NodeNameSchema,
+  Type.Object({ node: NodeNameSchema, when: EdgeConditionSchema }, { additionalProperties: false }),
+]);
+
+export const TemplateNodeSchema = Type.Union([
+  Type.Object(
+    {
+      name: NodeNameSchema,
+      kind: Type.Literal('AGENT'),
+      agent: DefinitionRefSchema,
+      goal: Type.Optional(TextSchema(4_000)),
+      dependsOn: Type.Optional(Type.Array(TemplateDependencySchema)),
+      inputFrom: Type.Optional(Type.Literal('HANDOFF')),
+      output: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { name: NodeNameSchema, kind: Type.Literal('HUMAN') },
+    { additionalProperties: false },
+  ),
+]);
+export type TemplateNode = Static<typeof TemplateNodeSchema>;
+
+export const TemplateDefinitionSchema = Type.Object(
+  {
+    ...headerV1('TEMPLATE'),
+    origin: Type.Enum(['BUILTIN', 'REPOSITORY']),
+    nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
+);
+export type TemplateDefinition = DeepReadonly<Static<typeof TemplateDefinitionSchema>>;

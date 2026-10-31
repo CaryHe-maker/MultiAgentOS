@@ -195,3 +195,68 @@ export const ContextPackSchema = Type.Union(
   { $id: 'context.ContextPack.v0' },
 );
 export type ContextPack = Static<typeof ContextPackSchema>;
+
+// --- Major 1 (ExecutorSet 6) ------------------------------------------------------------------
+
+/** System segments carry nothing that changes, so a pack is a prefix of the next one. */
+const ProjectInstructionsItemSchema = closed({
+  ...item,
+  segment: Type.Literal('PROJECT_INSTRUCTIONS'),
+  role: system,
+});
+const UntrustedInstructionsItemSchema = closed({
+  ...item,
+  segment: Type.Literal('UNTRUSTED_INSTRUCTIONS'),
+  role: user,
+});
+const historyV1 = {
+  ...item,
+  segment: Type.Literal('HISTORY'),
+  seq: count(1),
+  turnId: Type.Optional(IdSchemas.turnId),
+  category: Type.Enum(['PINNED', 'NORMAL']),
+};
+const HistoryItemV1Schema = Type.Union([
+  closed({
+    ...historyV1,
+    role: Type.Literal('assistant'),
+    toolCalls: Type.Optional(Type.Array(ModelToolCallSchema, { minItems: 1 })),
+    /** Replayed per the model's ThinkingFeature; an empty string fills a turn without it. */
+    reasoningContent: Type.Optional(Type.String()),
+  }),
+  closed({ ...historyV1, role: Type.Literal('tool'), toolCallId: ToolCallIdSchema }),
+  closed({ ...historyV1, role: user }),
+]);
+
+/** `elidedEntries` are the `seq` values the final-call safeguard removed, and nothing else does. */
+export const AssembleContextPackV1Schema = Type.Refine(
+  closed(
+    {
+      contextPackId: IdSchemas.contextPackId,
+      tokenCount: count(),
+      tokenBudget: count(1),
+      createdAt: TimestampSchema,
+      operation: Type.Literal('ASSEMBLE'),
+      snapshotId: Type.Optional(IdSchemas.snapshotId),
+      prefixSha256: Sha256Schema,
+      projectionDigest: Sha256Schema,
+      headDigest: Sha256Schema,
+      elidedEntries: Type.Array(count(1)),
+      items: Type.Array(
+        Type.Union([
+          InstructionsItemSchema,
+          ToolsItemSchema,
+          ProjectInstructionsItemSchema,
+          UntrustedInstructionsItemSchema,
+          PlainItemSchema,
+          OrientItemSchema,
+          HistoryItemV1Schema,
+        ]),
+      ),
+    },
+    'context.ContextPack.v1',
+  ),
+  hasOrderedItemIds,
+  ITEM_ID_ERROR,
+);
+export type AssembleContextPackV1 = Static<typeof AssembleContextPackV1Schema>;

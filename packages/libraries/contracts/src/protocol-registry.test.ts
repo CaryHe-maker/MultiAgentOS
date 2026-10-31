@@ -122,6 +122,7 @@ describe('protocol registry', () => {
     expect(
       registry
         .list()
+        .filter((entry) => entry.major === 0)
         .map((entry) => entry.schemaId)
         .sort(),
     ).toEqual(expected);
@@ -137,7 +138,7 @@ describe('protocol registry', () => {
   });
 
   it('rejects unknown majors, unknown names and duplicates', () => {
-    expect(() => registry.resolve('kernel.unit.SubmitUnitRequest', 1)).toThrow(
+    expect(() => registry.resolve('kernel.unit.SubmitUnitRequest', 2)).toThrow(
       'UNKNOWN_SCHEMA_MAJOR',
     );
     expect(() => registry.get('kernel.unit.Missing.v0')).toThrow('UNKNOWN_SCHEMA_MAJOR');
