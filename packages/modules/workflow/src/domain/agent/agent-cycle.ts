@@ -16,34 +16,39 @@ import type {
 import type { NewLogRecord } from '../../session/session-log-store.js';
 
 /**
- * One AgentRun of main as a pure state machine (Module/Workflow 7): every step returns the log
+ * One AgentRun as a pure state machine, the same for every Agent (Module/Workflow 7): every step returns the log
  * records to append first and the Units to submit afterwards. The Round order is M1's:
  * context-assemble, model-call, then all tool Units of that reply.
  */
 export type WrapUpReason = (typeof WRAP_UP_REASONS_V1)[number];
 type Schema = Parameters<typeof validate>[0];
 
-export interface MainUnit {
+export interface AgentUnit {
   readonly ref: PinnedDefinitionRef;
   readonly failurePolicy: Readonly<Partial<Record<string, FailureHandling>>>;
 }
-export interface MainTool {
+export interface AgentTool {
   readonly modelName: string;
-  readonly unit: MainUnit;
+  readonly unit: AgentUnit;
   readonly parameters: Schema;
 }
-export interface MainDefinitions {
+export interface AgentDefinitions {
   readonly label: string;
   readonly limits: { readonly maxRounds: number; readonly maxToolCallsPerRound: number };
-  readonly orient?: MainUnit;
-  readonly contextAssemble: MainUnit;
-  readonly modelCall: MainUnit;
-  readonly messagePublish: MainUnit;
-  readonly tools: readonly MainTool[];
-  readonly replyToolName: string;
-  readonly replyParameters: Schema;
+  readonly orient?: AgentUnit;
+  readonly contextAssemble: AgentUnit;
+  readonly modelCall: AgentUnit;
+  /** message-publish for a reply, report-publish for a report. */
+  readonly publish: AgentUnit;
+  readonly tools: readonly AgentTool[];
+  readonly finish: {
+    readonly kind: 'REPLY' | 'REPORT';
+    readonly toolName: string;
+    readonly parameters: Schema;
+  };
+  readonly handoff?: { readonly toolName: string; readonly parameters: Schema };
 }
-export interface MainConfig {
+export interface AgentConfig {
   readonly repeatedIntent: {
     readonly warnAt: number;
     readonly stopAt: number;
@@ -56,23 +61,23 @@ export interface MainConfig {
 
 type Pending =
   | {
-      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED';
-      readonly unit: MainUnit;
+      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED' | 'REPORT';
+      readonly unit: AgentUnit;
     }
   | {
       readonly role: 'TOOL';
-      readonly unit: MainUnit;
+      readonly unit: AgentUnit;
       readonly call: ModelToolCall;
       readonly intent: string;
     };
 
-export interface MainState {
+export interface AgentState {
   readonly workflowRunId: string;
   readonly sessionId: string;
   readonly turnId: string;
   readonly agentRunId: string;
   readonly effort: ThinkingEffort;
-  readonly definitions: MainDefinitions;
+  readonly definitions: AgentDefinitions;
   readonly round: number;
   readonly final: boolean;
   readonly finalUsed: boolean;
@@ -88,26 +93,40 @@ export interface MainState {
   readonly regenerations: number;
   readonly roundHadOk: boolean;
   readonly modelOutputRef?: ArtifactRef;
-  readonly degradedReason?: Extract<MainEnding, { kind: 'DEGRADED' }>['reason'];
+  readonly degradedReason?: Extract<AgentEnding, { kind: 'DEGRADED' }>['reason'];
 }
 
-export type MainEnding =
+export type AgentEnding =
   | { readonly kind: 'REPLIED'; readonly messageRef?: ArtifactRef; readonly budget: BudgetView }
   | {
       readonly kind: 'DEGRADED';
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
     }
+  | {
+      /** A valid finish or handoff: Workflow decides what follows from the arguments. */
+      readonly kind: 'FINISHED' | 'HANDED_OFF';
+      readonly arguments: unknown;
+      readonly source: ControlSource;
+    }
+  | { readonly kind: 'REPORTED'; readonly reportRef?: ArtifactRef; readonly budget: BudgetView }
   | { readonly kind: 'FAILED'; readonly code: ReasonCodeV1 };
 
-export interface MainTransition {
-  readonly state: MainState;
+/** Where a control call's arguments live; bodies stay in the model output artifact. */
+export interface ControlSource {
+  readonly modelTurnRequestId: string;
+  readonly modelOutputRef: ArtifactRef;
+  readonly toolCallId: string;
+}
+
+export interface AgentTransition {
+  readonly state: AgentState;
   readonly records: readonly NewLogRecord[];
   readonly submissions: readonly SubmitUnitRequestV1[];
-  readonly ending?: MainEnding;
+  readonly ending?: AgentEnding;
 }
 
 /** The facts context-assemble needs that the log, not this machine, supplies. */
-export interface MainContext {
+export interface AgentContext {
   readonly assembleInput: (
     status: ContextAssembleInputV1['status'],
     final: boolean,
@@ -118,10 +137,11 @@ export interface MainContext {
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
-  NO_ACTION: 'Your reply contained no tool call. Call a tool to continue, or call reply to answer.',
+  NO_ACTION: 'Your reply contained no tool call. Call a tool to continue, or finish.',
   OUTPUT_TRUNCATED: 'Your reply was cut off before a complete tool call. Send a shorter one.',
-  CONTROL_MIXED: 'reply must be the only tool call in a reply. Send it again on its own.',
-  CONTROL_ARGUMENTS_INVALID: 'The arguments of reply do not match its parameters. Fix them.',
+  CONTROL_MIXED: 'A finishing call must be the only tool call in a reply. Send it on its own.',
+  CONTROL_NOT_ALLOWED: 'That control tool is not available at this point.',
+  CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
   INVALID_ARGUMENTS: 'Not executed: the arguments do not match the tool parameters.',
   TOO_MANY_TOOL_CALLS: 'Not executed: this reply has more tool calls than allowed.',
@@ -130,9 +150,9 @@ const FEEDBACK = {
 } as const;
 type FeedbackCode = keyof typeof FEEDBACK;
 
-const base = (state: MainState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
+const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
-function feedback(state: MainState, code: FeedbackCode, toolCallId?: string): NewLogRecord {
+function feedback(state: AgentState, code: FeedbackCode, toolCallId?: string): NewLogRecord {
   return {
     ...base(state),
     type: 'FEEDBACK',
@@ -144,12 +164,12 @@ function feedback(state: MainState, code: FeedbackCode, toolCallId?: string): Ne
 }
 
 function submission(
-  state: MainState,
-  unit: MainUnit,
+  state: AgentState,
+  unit: AgentUnit,
   input: UnitInputV1,
   display: SubmitUnitRequestV1['display'],
 ): {
-  readonly state: MainState;
+  readonly state: AgentState;
   readonly request: SubmitUnitRequestV1;
   readonly record: NewLogRecord;
 } {
@@ -185,13 +205,13 @@ function submission(
 }
 
 function one(
-  state: MainState,
-  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED',
-  unit: MainUnit,
+  state: AgentState,
+  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED' | 'REPORT',
+  unit: AgentUnit,
   input: UnitInputV1,
   toolName: string,
   records: readonly NewLogRecord[] = [],
-): MainTransition {
+): AgentTransition {
   const made = submission(state, unit, input, { toolName, argsSummary: '' });
   return {
     state: {
@@ -204,10 +224,10 @@ function one(
 }
 
 const ended = (
-  state: MainState,
-  ending: MainEnding,
+  state: AgentState,
+  ending: AgentEnding,
   records: readonly NewLogRecord[] = [],
-): MainTransition => ({
+): AgentTransition => ({
   state: { ...state, pending: new Map() },
   records,
   submissions: [],
@@ -216,14 +236,17 @@ const ended = (
 
 /** The reason reaches the user as a message; ending the AgentRun waits for its report. */
 function degrade(
-  state: MainState,
-  reason: Extract<MainEnding, { kind: 'DEGRADED' }>['reason'],
+  state: AgentState,
+  reason: Extract<AgentEnding, { kind: 'DEGRADED' }>['reason'],
   records: readonly NewLogRecord[],
-): MainTransition {
+): AgentTransition {
+  // A report has its own degraded form, which Workflow builds from the ending.
+  if (state.definitions.finish.kind === 'REPORT')
+    return ended(state, { kind: 'DEGRADED', reason }, records);
   return one(
     { ...state, degradedReason: reason },
     'DEGRADED',
-    state.definitions.messagePublish,
+    state.definitions.publish,
     { kind: 'DEGRADED_REPLY', agentLabel: state.definitions.label, reason },
     'reply',
     records,
@@ -231,17 +254,17 @@ function degrade(
 }
 
 function nextRound(
-  state: MainState,
-  context: MainContext,
+  state: AgentState,
+  context: AgentContext,
   records: readonly NewLogRecord[] = [],
-): MainTransition {
+): AgentTransition {
   const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.turn === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
   const atLimit = state.round >= state.definitions.limits.maxRounds;
   const wrapUpReason = state.wrapUpReason ?? (atLimit ? 'ROUND_LIMIT' : undefined);
   const final = wrapUpReason !== undefined;
   if (final && state.finalUsed) return degrade(state, wrapUpReason, records);
-  const next: MainState = {
+  const next: AgentState = {
     ...state,
     round: state.round + 1,
     final,
@@ -266,9 +289,9 @@ function nextRound(
   );
 }
 
-export function startMain(
+export function startAgent(
   input: Pick<
-    MainState,
+    AgentState,
     | 'workflowRunId'
     | 'sessionId'
     | 'turnId'
@@ -277,9 +300,9 @@ export function startMain(
     | 'definitions'
     | 'orientPackRef'
   >,
-  context: MainContext,
-): MainTransition {
-  const state: MainState = {
+  context: AgentContext,
+): AgentTransition {
+  const state: AgentState = {
     ...input,
     round: 0,
     final: false,
@@ -299,26 +322,26 @@ export function startMain(
   return one(state, 'ORIENT', orient, { objectiveRef: context.objectiveRef }, 'repository_orient');
 }
 
-function wrapUp(state: MainState, reason: WrapUpReason): MainState {
+function wrapUp(state: AgentState, reason: WrapUpReason): AgentState {
   return state.wrapUpReason === undefined ? { ...state, wrapUpReason: reason } : state;
 }
 
-function applyBudget(state: MainState, report: UnitReportV1): MainState {
+function applyBudget(state: AgentState, report: UnitReportV1): AgentState {
   const next = { ...state, budget: report.budget };
   const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.turn !== 'NORMAL';
   return wrapping ? wrapUp(next, 'BUDGET_WRAP_UP') : next;
 }
 
-const handlingOf = (unit: MainUnit, code: string): FailureHandling =>
+const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
   unit.failurePolicy[code] ?? 'FATAL';
 
 function failed(
-  state: MainState,
+  state: AgentState,
   pending: Pending,
   code: ReasonCodeV1,
-  context: MainContext,
+  context: AgentContext,
   records: readonly NewLogRecord[] = [],
-): MainTransition {
+): AgentTransition {
   if (code === 'LIMIT_EXCEEDED' && pending.role === 'CONTEXT')
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
@@ -339,7 +362,7 @@ const intentOf = (call: ModelToolCall): string =>
   sha256Hex(new TextEncoder().encode(canonicalJson([call.toolName, call.arguments])));
 
 function modelTurnRecord(
-  state: MainState,
+  state: AgentState,
   report: Extract<UnitReportV1, { status: 'OK' }>,
   calls: readonly ModelToolCall[],
 ): NewLogRecord {
@@ -348,6 +371,7 @@ function modelTurnRecord(
     ...base(state),
     type: 'MODEL_TURN',
     requestId: report.requestId,
+    agentRunId: state.agentRunId,
     outputRef: report.outputRef,
     toolCalls: calls.map((call) => ({
       toolName: call.toolName,
@@ -360,11 +384,11 @@ function modelTurnRecord(
 }
 
 function afterTools(
-  state: MainState,
-  context: MainContext,
-  config: MainConfig,
+  state: AgentState,
+  context: AgentContext,
+  config: AgentConfig,
   records: readonly NewLogRecord[],
-): MainTransition {
+): AgentTransition {
   const noProgress = state.roundHadOk ? 0 : state.noProgress + 1;
   const next = { ...state, noProgress };
   return nextRound(
@@ -375,13 +399,13 @@ function afterTools(
 }
 
 function invalidReply(
-  state: MainState,
+  state: AgentState,
   code: FeedbackCode,
   calls: readonly ModelToolCall[],
-  context: MainContext,
-  config: MainConfig,
+  context: AgentContext,
+  config: AgentConfig,
   records: readonly NewLogRecord[],
-): MainTransition {
+): AgentTransition {
   if (state.final) return degrade(state, 'FINAL_CALL_INVALID', records);
   const regenerations = state.regenerations + 1;
   const next =
@@ -396,11 +420,11 @@ function invalidReply(
 }
 
 function handleModel(
-  state: MainState,
+  state: AgentState,
   report: Extract<UnitReportV1, { status: 'OK' }>,
-  context: MainContext,
-  config: MainConfig,
-): MainTransition {
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
   const output = report.output as {
     readonly finishReason: string;
     readonly toolCalls: readonly ModelToolCall[];
@@ -430,26 +454,44 @@ function handleModel(
       records,
     );
   }
-  const reply = calls.find((call) => call.toolName === state.definitions.replyToolName);
-  if (reply !== undefined) {
+  const { finish, handoff } = state.definitions;
+  const control = calls.find(
+    (call) => call.toolName === finish.toolName || call.toolName === handoff?.toolName,
+  );
+  if (control !== undefined) {
     if (calls.length > 1)
       return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
-    if (
-      reply.arguments === null ||
-      !validate(state.definitions.replyParameters, reply.arguments).ok
-    )
+    const isHandoff = control.toolName === handoff?.toolName;
+    if (isHandoff && state.final)
+      return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
+    const parameters = isHandoff ? handoff.parameters : finish.parameters;
+    if (control.arguments === null || !validate(parameters, control.arguments).ok)
       return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
-    return one(
-      { ...state, modelOutputRef: report.outputRef },
-      'PUBLISH',
-      state.definitions.messagePublish,
+    if (!isHandoff && finish.kind === 'REPLY')
+      return one(
+        { ...state, modelOutputRef: report.outputRef },
+        'PUBLISH',
+        state.definitions.publish,
+        {
+          kind: 'REPLY',
+          agentLabel: state.definitions.label,
+          source: { modelOutputRef: report.outputRef, toolCallId: control.toolCallId },
+        },
+        finish.toolName,
+        records,
+      );
+    return ended(
+      state,
       {
-        kind: 'REPLY',
-        agentLabel: state.definitions.label,
-        source: { modelOutputRef: report.outputRef, toolCallId: reply.toolCallId },
+        kind: isHandoff ? 'HANDED_OFF' : 'FINISHED',
+        arguments: control.arguments,
+        source: {
+          modelTurnRequestId: report.requestId,
+          modelOutputRef: report.outputRef,
+          toolCallId: control.toolCallId,
+        },
       },
-      'reply',
       records,
     );
   }
@@ -510,16 +552,16 @@ function handleModel(
 }
 
 function handleTool(
-  state: MainState,
+  state: AgentState,
   pending: Extract<Pending, { role: 'TOOL' }>,
   report: UnitReportV1,
-  context: MainContext,
-  config: MainConfig,
-): MainTransition {
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
   const records: NewLogRecord[] = [completion(state, report)];
   const ok = report.status === 'OK';
   const consecutiveErrors = ok ? 0 : state.consecutiveErrors + 1;
-  let next: MainState = {
+  let next: AgentState = {
     ...state,
     consecutiveErrors,
     roundHadOk: state.roundHadOk || ok,
@@ -537,7 +579,7 @@ function handleTool(
     : { state: next, records, submissions: [] };
 }
 
-function completion(state: MainState, report: UnitReportV1): NewLogRecord {
+function completion(state: AgentState, report: UnitReportV1): NewLogRecord {
   return {
     ...base(state),
     type: 'UNIT_COMPLETED',
@@ -554,12 +596,37 @@ function completion(state: MainState, report: UnitReportV1): NewLogRecord {
   };
 }
 
-export function receiveMainReport(
-  current: MainState,
+/** Publishes the report of a finished AgentRun; `source` keeps its text out of the log. */
+export function publishReport(
+  state: AgentState,
+  input: UnitInputV1,
+  source: ControlSource | undefined,
+): AgentTransition {
+  const made = one(state, 'REPORT', state.definitions.publish, input, 'report');
+  if (source === undefined) return made;
+  return {
+    ...made,
+    records: made.records.map((record) =>
+      record.type === 'UNIT_SUBMITTED'
+        ? {
+            ...record,
+            inputSource: {
+              kind: 'TOOL_CALL',
+              modelTurnRequestId: source.modelTurnRequestId,
+              toolCallId: source.toolCallId,
+            },
+          }
+        : record,
+    ),
+  };
+}
+
+export function receiveAgentReport(
+  current: AgentState,
   report: UnitReportV1,
-  context: MainContext,
-  config: MainConfig,
-): MainTransition {
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
   const pending = current.pending.get(report.requestId);
   if (pending === undefined) return { state: current, records: [], submissions: [] };
   const remaining = new Map(current.pending);
@@ -609,6 +676,16 @@ export function receiveMainReport(
       );
     case 'MODEL':
       return handleModel(state, report, context, config);
+    case 'REPORT':
+      return ended(
+        state,
+        {
+          kind: 'REPORTED',
+          budget: report.budget,
+          ...(report.outputRef === undefined ? {} : { reportRef: report.outputRef }),
+        },
+        records,
+      );
     case 'PUBLISH':
       return ended(
         state,

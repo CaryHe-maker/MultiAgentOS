@@ -162,6 +162,7 @@ export const SessionLogRecordSchema = Type.Union(
     record('UNIT_INTERRUPTED', inTurn, { requestId: IdSchemas.requestId, reason: text(200) }),
     record('MODEL_TURN', inTurn, {
       requestId: IdSchemas.requestId,
+      agentRunId: IdSchemas.agentRunId,
       outputRef: ArtifactRefSchema,
       toolCalls: Type.Array(
         closed({

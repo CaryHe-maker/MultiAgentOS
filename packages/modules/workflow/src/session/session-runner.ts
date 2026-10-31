@@ -22,15 +22,15 @@ import {
   type GraphRevision,
 } from '../domain/graph/session-graph.js';
 import {
-  receiveMainReport,
-  startMain,
-  type MainConfig,
-  type MainContext,
-  type MainDefinitions,
-  type MainEnding,
-  type MainState,
-  type MainTransition,
-} from '../domain/main/main-cycle.js';
+  receiveAgentReport,
+  startAgent,
+  type AgentConfig,
+  type AgentContext,
+  type AgentDefinitions,
+  type AgentEnding,
+  type AgentState,
+  type AgentTransition,
+} from '../domain/agent/agent-cycle.js';
 import {
   type SessionLogStore,
   SessionStoreFailure,
@@ -45,7 +45,7 @@ import {
 export interface SessionRunnerDeps {
   readonly gateway: WorkflowGatewayPortV1;
   readonly store: SessionLogStore;
-  readonly definitions: MainDefinitions;
+  readonly definitions: AgentDefinitions;
   readonly agent: {
     readonly ref: PinnedDefinitionRef;
     readonly modelRef: DefinitionRef;
@@ -54,7 +54,7 @@ export interface SessionRunnerDeps {
   };
   readonly definitionsDigest: string;
   readonly definitionVersions: readonly string[];
-  readonly config: MainConfig;
+  readonly config: AgentConfig;
   readonly runtime: () => { readonly sandbox: string; readonly currentDate: string };
   /** A failure Workflow cannot report through closeRun (Module/Workflow 10). */
   readonly reportFault: (error: unknown) => void;
@@ -79,8 +79,8 @@ export class SessionRunner {
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
   #turnId: string | undefined;
-  #main: { state: MainState; nodeId: string } | undefined;
-  #orientPackRef: MainState['orientPackRef'];
+  #main: { state: AgentState; nodeId: string } | undefined;
+  #orientPackRef: AgentState['orientPackRef'];
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
@@ -360,7 +360,7 @@ export class SessionRunner {
         },
       ]);
       if (node.kind === 'HUMAN') await this.#requestHuman(workflowRunId, node.nodeId);
-      else await this.#startMain(workflowRunId, node.nodeId);
+      else await this.#startAgent(workflowRunId, node.nodeId);
     }
   }
 
@@ -378,7 +378,7 @@ export class SessionRunner {
       throw new Error(`requestHuman refused: ${response.reasonCode}`);
   }
 
-  #context(workflowRunId: string): MainContext {
+  #context(workflowRunId: string): AgentContext {
     return {
       objectiveRef: this.#objectiveRef(),
       assembleInput: (status, final) => {
@@ -401,7 +401,7 @@ export class SessionRunner {
     return prompt.contentRef;
   }
 
-  async #startMain(workflowRunId: string, nodeId: string): Promise<void> {
+  async #startAgent(workflowRunId: string, nodeId: string): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     const turnId = this.#turnId;
     if (turnId === undefined) throw new Error('main needs an open Turn');
@@ -446,7 +446,7 @@ export class SessionRunner {
       await this.#endNode(workflowRunId, turnId, nodeId, 'FAILED');
       return;
     }
-    const transition = startMain(
+    const transition = startAgent(
       {
         workflowRunId,
         sessionId,
@@ -462,7 +462,7 @@ export class SessionRunner {
     await this.#apply(workflowRunId, transition);
   }
 
-  async #apply(workflowRunId: string, transition: MainTransition): Promise<void> {
+  async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
     await this.#append(transition.records);
     if (this.#main !== undefined) this.#main = { ...this.#main, state: transition.state };
     if (transition.state.orientPackRef !== undefined)
@@ -484,7 +484,7 @@ export class SessionRunner {
     report: Extract<KernelToWorkflowEventV1, { type: 'UnitReport' }>,
   ): Promise<void> {
     if (this.#main === undefined) return;
-    const transition = receiveMainReport(
+    const transition = receiveAgentReport(
       this.#main.state,
       report,
       this.#context(workflowRunId),
@@ -498,7 +498,7 @@ export class SessionRunner {
     turnId: string,
     nodeId: string,
     status: 'SUCCEEDED' | 'FAILED',
-    resultRef?: NonNullable<MainState['modelOutputRef']>,
+    resultRef?: NonNullable<AgentState['modelOutputRef']>,
   ): Promise<void> {
     await this.#append([
       {
@@ -512,7 +512,7 @@ export class SessionRunner {
     ]);
   }
 
-  async #finishMain(workflowRunId: string, ending: MainEnding): Promise<void> {
+  async #finishMain(workflowRunId: string, ending: AgentEnding): Promise<void> {
     const main = this.#main;
     if (main === undefined) return;
     const { agentRunId, turnId, wrapUpReason } = main.state;

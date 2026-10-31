@@ -85,6 +85,7 @@ const conversation = stamped([
   {
     type: 'MODEL_TURN',
     turnId: turn,
+    agentRunId: mainRun,
     requestId: newId('req'),
     outputRef: ref('1'),
     toolCalls: [{ toolName: 'read_file', toolCallId, argsDigest: digest }],

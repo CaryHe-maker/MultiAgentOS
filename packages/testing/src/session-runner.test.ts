@@ -15,8 +15,8 @@ import { FileSessionStore } from '@multiagentos/persistence';
 import {
   SessionLogStore,
   SessionRunner,
-  type MainDefinitions,
-  type MainUnit,
+  type AgentDefinitions,
+  type AgentUnit,
 } from '@multiagentos/workflow';
 import { describe, expect, it } from 'vitest';
 import { createFakeSessionKernel, type FakeUnitScript } from './fakes/fake-session-kernel.js';
@@ -28,17 +28,17 @@ const artifact = (digit: string, mediaType: string): ArtifactRef => {
 };
 const packRef = artifact('1', MEDIA_TYPES.contextPack);
 const modelRef = artifact('2', MEDIA_TYPES.modelOutput);
-const unit = (id: string): MainUnit => ({
+const unit = (id: string): AgentUnit => ({
   ref: { kind: 'UNIT', id, version: 'v1.0.0', digest },
   failurePolicy: { NOT_FOUND: 'RETURN_TO_MODEL' },
 });
-const definitions: MainDefinitions = {
+const definitions: AgentDefinitions = {
   label: 'main',
   limits: { maxRounds: 5, maxToolCallsPerRound: 4 },
   orient: unit('repository-orient'),
   contextAssemble: unit('context-assemble'),
   modelCall: unit('model-call'),
-  messagePublish: unit('message-publish'),
+  publish: unit('message-publish'),
   tools: [
     {
       modelName: 'list_files',
@@ -46,8 +46,7 @@ const definitions: MainDefinitions = {
       parameters: RepositoryListInputSchema,
     },
   ],
-  replyToolName: 'reply',
-  replyParameters: ReplyArgsSchema,
+  finish: { kind: 'REPLY', toolName: 'reply', parameters: ReplyArgsSchema },
 };
 
 type Ok = Extract<ReturnType<FakeUnitScript>, { output: unknown }>;

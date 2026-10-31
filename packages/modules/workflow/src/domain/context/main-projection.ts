@@ -71,6 +71,7 @@ export function projectMainHistory(
         }
         break;
       case 'MODEL_TURN':
+        if (!mainRuns.has(record.agentRunId)) break;
         for (const call of record.toolCalls) toolNames.set(call.toolCallId, call.toolName);
         entries.push({
           seq: record.seq,

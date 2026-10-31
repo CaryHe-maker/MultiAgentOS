@@ -63,7 +63,7 @@ interface LogRecordBase {
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
 | `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
 | `UNIT_INTERRUPTED` | `requestId`、`reason`（打开 Session 时的修复，或阶段 5 的暂停与中止） | 1 |
-| `MODEL_TURN` | `requestId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
+| `MODEL_TURN` | `requestId`、`agentRunId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
 | `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |

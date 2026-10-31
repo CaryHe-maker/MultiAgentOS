@@ -15,7 +15,12 @@ import type {
 import { createWorkflowRunner } from './application/workflow-runner.js';
 
 export type { WorkflowConfig } from '@multiagentos/contracts';
-export type { MainConfig, MainDefinitions, MainTool, MainUnit } from './domain/main/main-cycle.js';
+export type {
+  AgentConfig,
+  AgentDefinitions,
+  AgentTool,
+  AgentUnit,
+} from './domain/agent/agent-cycle.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { SessionRunner, type SessionRunnerDeps } from './session/session-runner.js';
 

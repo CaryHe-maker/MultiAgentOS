@@ -11,15 +11,16 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
-  receiveMainReport,
-  startMain,
-  type MainConfig,
-  type MainContext,
-  type MainDefinitions,
-  type MainState,
-  type MainTransition,
-  type MainUnit,
-} from './main-cycle.js';
+  publishReport,
+  receiveAgentReport,
+  startAgent,
+  type AgentConfig,
+  type AgentContext,
+  type AgentDefinitions,
+  type AgentState,
+  type AgentTransition,
+  type AgentUnit,
+} from './agent-cycle.js';
 
 const digest = 'a'.repeat(64);
 const ref = (digit: string): ArtifactRef => {
@@ -34,17 +35,17 @@ const modelRef: ArtifactRef = {
   ...ref('2'),
   mediaType: 'application/vnd.multiagentos.model-output+json',
 };
-const unit = (id: string, failurePolicy: MainUnit['failurePolicy'] = {}): MainUnit => ({
+const unit = (id: string, failurePolicy: AgentUnit['failurePolicy'] = {}): AgentUnit => ({
   ref: { kind: 'UNIT', id, version: 'v1.0.0', digest },
   failurePolicy,
 });
-const definitions: MainDefinitions = {
+const definitions: AgentDefinitions = {
   label: 'main',
   limits: { maxRounds: 4, maxToolCallsPerRound: 2 },
   orient: unit('repository-orient'),
   contextAssemble: unit('context-assemble'),
   modelCall: unit('model-call', { PROVIDER_ERROR: 'RETURN_TO_MODEL', PROVIDER_AUTH: 'FATAL' }),
-  messagePublish: unit('message-publish'),
+  publish: unit('message-publish'),
   tools: [
     {
       modelName: 'list_files',
@@ -52,21 +53,21 @@ const definitions: MainDefinitions = {
       parameters: RepositoryListInputSchema,
     },
   ],
-  replyToolName: 'reply',
-  replyParameters: ReplyArgsSchema,
+  finish: { kind: 'REPLY', toolName: 'reply', parameters: ReplyArgsSchema },
+  handoff: { toolName: 'handoff', parameters: ReplyArgsSchema },
 };
-const config: MainConfig = {
+const config: AgentConfig = {
   repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
   consecutiveErrorLimit: 5,
   noProgressRounds: 2,
   regenerationLimit: 3,
 };
-const context: MainContext = {
+const context: AgentContext = {
   objectiveRef: ref('9'),
   assembleInput: (status, final) => ({ final, effort: 'high', history: [], status }),
 };
-const start = (overrides: Partial<MainDefinitions> = {}) =>
-  startMain(
+const start = (overrides: Partial<AgentDefinitions> = {}) =>
+  startAgent(
     {
       workflowRunId: newId('wfr'),
       sessionId: newId('ses'),
@@ -80,7 +81,7 @@ const start = (overrides: Partial<MainDefinitions> = {}) =>
 
 const NORMAL: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
 function report(
-  state: MainState,
+  state: AgentState,
   requestId: string,
   result:
     | { ok: unknown; ref?: ArtifactRef; reasoningRef?: ArtifactRef; fullRef?: ArtifactRef }
@@ -116,15 +117,15 @@ function report(
         reasonCode: result.fail,
       } as UnitReportV1);
 }
-const receive = (from: MainTransition, r: UnitReportV1, cfg = config) =>
-  receiveMainReport(from.state, r, context, cfg);
-const only = (t: MainTransition): string => {
+const receive = (from: AgentTransition, r: UnitReportV1, cfg = config) =>
+  receiveAgentReport(from.state, r, context, cfg);
+const only = (t: AgentTransition): string => {
   const request = t.submissions[0];
   if (request === undefined) throw new Error('nothing submitted');
   return request.requestId;
 };
-const unitId = (t: MainTransition) => t.submissions.map((s) => s.unitRef.id);
-const types = (t: MainTransition) => t.records.map((r) => r.type);
+const unitId = (t: AgentTransition) => t.submissions.map((s) => s.unitRef.id);
+const types = (t: AgentTransition) => t.records.map((r) => r.type);
 
 const call = (toolName: string, args: unknown, toolCallId = 'call_1'): ModelToolCall =>
   ({ toolCallId, toolName, arguments: args }) as ModelToolCall;
@@ -137,7 +138,7 @@ const modelOutput = (
 });
 
 /** Runs orient and context, leaving the cycle waiting for the model. */
-function atModel(overrides: Partial<MainDefinitions> = {}): MainTransition {
+function atModel(overrides: Partial<AgentDefinitions> = {}): AgentTransition {
   const started = start(overrides);
   const assembled = receive(
     started,
@@ -146,14 +147,14 @@ function atModel(overrides: Partial<MainDefinitions> = {}): MainTransition {
   return receive(assembled, report(assembled.state, only(assembled), { ok: {}, ref: packRef }));
 }
 const replied = (
-  from: MainTransition,
+  from: AgentTransition,
   calls: readonly ModelToolCall[],
   result?: Parameters<typeof report>[2],
 ) => receive(from, report(from.state, only(from), result ?? modelOutput(calls)));
-const reassemble = (from: MainTransition, budget: BudgetView = NORMAL) =>
+const reassemble = (from: AgentTransition, budget: BudgetView = NORMAL) =>
   receive(from, report(from.state, only(from), { ok: {}, ref: packRef }, budget));
 
-function expectDegraded(from: MainTransition, reason: string): void {
+function expectDegraded(from: AgentTransition, reason: string): void {
   expect(from.ending).toBeUndefined();
   expect(from.submissions[0]?.input).toMatchObject({ kind: 'DEGRADED_REPLY', reason });
   const done = receive(
@@ -166,7 +167,7 @@ function expectDegraded(from: MainTransition, reason: string): void {
 describe('startup', () => {
   it('orients first, once per run', () => {
     expect(unitId(start())).toEqual(['repository-orient']);
-    const again = startMain(
+    const again = startAgent(
       {
         workflowRunId: newId('wfr'),
         sessionId: newId('ses'),
@@ -499,5 +500,57 @@ describe('model failures', () => {
       kind: 'FAILED',
       code: 'PROVIDER_AUTH',
     });
+  });
+});
+
+describe('reports and handoff', () => {
+  const reporting = {
+    finish: { kind: 'REPORT', toolName: 'reply', parameters: ReplyArgsSchema },
+  } as const;
+
+  it('hands the finish arguments to Workflow with their source', () => {
+    const done = replied(atModel(reporting), [call('reply', { text: 'draft' })]);
+    expect(done.ending).toMatchObject({
+      kind: 'FINISHED',
+      arguments: { text: 'draft' },
+      source: { modelOutputRef: modelRef, toolCallId: 'call_1' },
+    });
+    expect(JSON.stringify(done.records)).not.toContain('draft');
+  });
+
+  it('hands off, except in the final call', () => {
+    const done = replied(atModel(), [call('handoff', { text: 'brief' })]);
+    expect(done.ending).toMatchObject({ kind: 'HANDED_OFF', arguments: { text: 'brief' } });
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const final = reassemble(
+      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
+      low,
+    );
+    const refused = replied(final, [call('handoff', { text: 'brief' })]);
+    expect(refused.ending).toBeUndefined();
+    expect(refused.records.find((r) => r.type === 'FEEDBACK')).toBeUndefined();
+    expect(refused.submissions[0]?.input).toMatchObject({ kind: 'DEGRADED_REPLY' });
+  });
+
+  it('ends without a message when a reporting agent degrades', () => {
+    const tools = replied(atModel(reporting), [call('list_files', {})]);
+    const empty = { ...NORMAL, agentRun: 'EXHAUSTED' } as const;
+    const done = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, empty));
+    expect(done.ending).toEqual({ kind: 'DEGRADED', reason: 'BUDGET_EXHAUSTED' });
+  });
+
+  it('logs a report by its source, never by its text', () => {
+    const done = replied(atModel(reporting), [call('reply', { text: 'draft' })]);
+    if (done.ending?.kind !== 'FINISHED') throw new Error('not finished');
+    const input = { goalRef: ref('9'), report: { summary: 'secret summary' } };
+    const publishing = publishReport(done.state, input, done.ending.source);
+    expect(publishing.submissions[0]?.input).toEqual(input);
+    expect(JSON.stringify(publishing.records)).not.toContain('secret summary');
+    const reported = receive(
+      publishing,
+      report(publishing.state, only(publishing), { ok: {}, ref: ref('3') }),
+    );
+    expect(reported.ending).toMatchObject({ kind: 'REPORTED', reportRef: ref('3') });
   });
 });
