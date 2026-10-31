@@ -38,15 +38,22 @@ export interface AgentDefinitions {
   readonly orient?: AgentUnit;
   readonly contextAssemble: AgentUnit;
   readonly modelCall: AgentUnit;
-  /** message-publish for a reply, report-publish for a report. */
+  /** The Unit that publishes what an ended AgentRun leaves behind. */
   readonly publish: AgentUnit;
   readonly tools: readonly AgentTool[];
-  readonly finish: {
-    readonly kind: 'REPLY' | 'REPORT';
-    readonly toolName: string;
-    readonly parameters: Schema;
-  };
-  readonly handoff?: { readonly toolName: string; readonly parameters: Schema };
+  /** How this Agent may end: a tool it does not declare cannot end it. */
+  readonly endTools: readonly EndTool[];
+  /** What is published when no end tool was called validly. */
+  readonly onDegraded: DegradedAction;
+}
+/** What follows an end tool; only the runner reads it, never this machine. */
+export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';
+export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';
+export interface EndTool {
+  readonly toolName: string;
+  readonly parameters: Schema;
+  readonly allowedInFinal: boolean;
+  readonly action: EndAction;
 }
 export interface AgentConfig {
   readonly repeatedIntent: {
@@ -61,7 +68,7 @@ export interface AgentConfig {
 
 type Pending =
   | {
-      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED' | 'REPORT';
+      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'CLOSING';
       readonly unit: AgentUnit;
     }
   | {
@@ -92,24 +99,25 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
-  readonly modelOutputRef?: ArtifactRef;
-  readonly degradedReason?: Extract<AgentEnding, { kind: 'DEGRADED' }>['reason'];
 }
 
+/**
+ * How an AgentRun ends, the same for every Agent. ENDED says only that a declared end tool was
+ * called validly; what follows comes from the definition. CLOSED follows `closeAgent`.
+ */
 export type AgentEnding =
-  | { readonly kind: 'REPLIED'; readonly messageRef?: ArtifactRef; readonly budget: BudgetView }
+  | {
+      readonly kind: 'ENDED';
+      readonly tool: EndTool;
+      readonly arguments: unknown;
+      readonly source: ControlSource;
+    }
   | {
       readonly kind: 'DEGRADED';
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
     }
-  | {
-      /** A valid finish or handoff: Workflow decides what follows from the arguments. */
-      readonly kind: 'FINISHED' | 'HANDED_OFF';
-      readonly arguments: unknown;
-      readonly source: ControlSource;
-    }
-  | { readonly kind: 'REPORTED'; readonly reportRef?: ArtifactRef; readonly budget: BudgetView }
-  | { readonly kind: 'FAILED'; readonly code: ReasonCodeV1 };
+  | { readonly kind: 'FAILED'; readonly code: ReasonCodeV1 }
+  | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
 export interface ControlSource {
@@ -206,7 +214,7 @@ function submission(
 
 function one(
   state: AgentState,
-  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED' | 'REPORT',
+  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'CLOSING',
   unit: AgentUnit,
   input: UnitInputV1,
   toolName: string,
@@ -234,23 +242,12 @@ const ended = (
   ending,
 });
 
-/** The reason reaches the user as a message; ending the AgentRun waits for its report. */
 function degrade(
   state: AgentState,
   reason: Extract<AgentEnding, { kind: 'DEGRADED' }>['reason'],
   records: readonly NewLogRecord[],
 ): AgentTransition {
-  // A report has its own degraded form, which Workflow builds from the ending.
-  if (state.definitions.finish.kind === 'REPORT')
-    return ended(state, { kind: 'DEGRADED', reason }, records);
-  return one(
-    { ...state, degradedReason: reason },
-    'DEGRADED',
-    state.definitions.publish,
-    { kind: 'DEGRADED_REPLY', agentLabel: state.definitions.label, reason },
-    'reply',
-    records,
-  );
+  return ended(state, { kind: 'DEGRADED', reason }, records);
 }
 
 function nextRound(
@@ -454,37 +451,23 @@ function handleModel(
       records,
     );
   }
-  const { finish, handoff } = state.definitions;
-  const control = calls.find(
-    (call) => call.toolName === finish.toolName || call.toolName === handoff?.toolName,
-  );
-  if (control !== undefined) {
+  const endTool = (call: ModelToolCall) =>
+    state.definitions.endTools.find((tool) => tool.toolName === call.toolName);
+  const control = calls.find((call) => endTool(call) !== undefined);
+  const tool = control === undefined ? undefined : endTool(control);
+  if (control !== undefined && tool !== undefined) {
     if (calls.length > 1)
       return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
-    const isHandoff = control.toolName === handoff?.toolName;
-    if (isHandoff && state.final)
+    if (state.final && !tool.allowedInFinal)
       return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    const parameters = isHandoff ? handoff.parameters : finish.parameters;
-    if (control.arguments === null || !validate(parameters, control.arguments).ok)
+    if (control.arguments === null || !validate(tool.parameters, control.arguments).ok)
       return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
-    if (!isHandoff && finish.kind === 'REPLY')
-      return one(
-        { ...state, modelOutputRef: report.outputRef },
-        'PUBLISH',
-        state.definitions.publish,
-        {
-          kind: 'REPLY',
-          agentLabel: state.definitions.label,
-          source: { modelOutputRef: report.outputRef, toolCallId: control.toolCallId },
-        },
-        finish.toolName,
-        records,
-      );
     return ended(
       state,
       {
-        kind: isHandoff ? 'HANDED_OFF' : 'FINISHED',
+        kind: 'ENDED',
+        tool,
         arguments: control.arguments,
         source: {
           modelTurnRequestId: report.requestId,
@@ -596,13 +579,16 @@ function completion(state: AgentState, report: UnitReportV1): NewLogRecord {
   };
 }
 
-/** Publishes the report of a finished AgentRun; `source` keeps its text out of the log. */
-export function publishReport(
+/**
+ * Submits the last Unit of an ended AgentRun; its report ends the cycle with CLOSED. `source`
+ * keeps text the model wrote out of the log.
+ */
+export function closeAgent(
   state: AgentState,
   input: UnitInputV1,
   source: ControlSource | undefined,
 ): AgentTransition {
-  const made = one(state, 'REPORT', state.definitions.publish, input, 'report');
+  const made = one(state, 'CLOSING', state.definitions.publish, input, 'publish');
   if (source === undefined) return made;
   return {
     ...made,
@@ -633,10 +619,6 @@ export function receiveAgentReport(
   remaining.delete(report.requestId);
   const state = applyBudget({ ...current, pending: remaining }, report);
   if (pending.role === 'TOOL') return handleTool(state, pending, report, context, config);
-  if (pending.role === 'DEGRADED')
-    return ended(state, { kind: 'DEGRADED', reason: state.degradedReason ?? 'BUDGET_EXHAUSTED' }, [
-      completion(state, report),
-    ]);
   const records: NewLogRecord[] = [completion(state, report)];
   if (report.status !== 'OK') {
     if (pending.role === 'MODEL')
@@ -647,6 +629,8 @@ export function receiveAgentReport(
         reasonCode: report.reasonCode,
       });
     if (pending.role === 'ORIENT') return nextRound(state, context, records);
+    if (pending.role === 'CLOSING')
+      return ended(state, { kind: 'FAILED', code: report.reasonCode }, records);
     return failed(state, pending, report.reasonCode, context, records);
   }
   switch (pending.role) {
@@ -676,23 +660,13 @@ export function receiveAgentReport(
       );
     case 'MODEL':
       return handleModel(state, report, context, config);
-    case 'REPORT':
+    case 'CLOSING':
       return ended(
         state,
         {
-          kind: 'REPORTED',
+          kind: 'CLOSED',
           budget: report.budget,
-          ...(report.outputRef === undefined ? {} : { reportRef: report.outputRef }),
-        },
-        records,
-      );
-    case 'PUBLISH':
-      return ended(
-        state,
-        {
-          kind: 'REPLIED',
-          budget: report.budget,
-          ...(report.outputRef === undefined ? {} : { messageRef: report.outputRef }),
+          ...(report.outputRef === undefined ? {} : { outputRef: report.outputRef }),
         },
         records,
       );

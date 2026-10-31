@@ -11,7 +11,7 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
-  publishReport,
+  closeAgent,
   receiveAgentReport,
   startAgent,
   type AgentConfig,
@@ -53,8 +53,16 @@ const definitions: AgentDefinitions = {
       parameters: RepositoryListInputSchema,
     },
   ],
-  finish: { kind: 'REPLY', toolName: 'reply', parameters: ReplyArgsSchema },
-  handoff: { toolName: 'handoff', parameters: ReplyArgsSchema },
+  endTools: [
+    {
+      toolName: 'reply',
+      parameters: ReplyArgsSchema,
+      allowedInFinal: true,
+      action: 'PUBLISH_REPLY',
+    },
+    { toolName: 'handoff', parameters: ReplyArgsSchema, allowedInFinal: false, action: 'HANDOFF' },
+  ],
+  onDegraded: 'PUBLISH_NOTICE',
 };
 const config: AgentConfig = {
   repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
@@ -155,13 +163,7 @@ const reassemble = (from: AgentTransition, budget: BudgetView = NORMAL) =>
   receive(from, report(from.state, only(from), { ok: {}, ref: packRef }, budget));
 
 function expectDegraded(from: AgentTransition, reason: string): void {
-  expect(from.ending).toBeUndefined();
-  expect(from.submissions[0]?.input).toMatchObject({ kind: 'DEGRADED_REPLY', reason });
-  const done = receive(
-    from,
-    report(from.state, only(from), { ok: { kind: 'DEGRADED_REPLY' }, ref: ref('3') }),
-  );
-  expect(done.ending).toEqual({ kind: 'DEGRADED', reason });
+  expect(from.ending).toEqual({ kind: 'DEGRADED', reason });
 }
 
 describe('startup', () => {
@@ -197,26 +199,30 @@ describe('startup', () => {
   });
 });
 
-describe('reply', () => {
-  it('publishes and ends', () => {
-    const model = atModel();
-    const publish = replied(model, [call('reply', { text: 'hi' })]);
-    expect(types(publish).slice(0, 2)).toEqual(['UNIT_COMPLETED', 'MODEL_TURN']);
-    expect(unitId(publish)).toEqual(['message-publish']);
-    expect(publish.submissions[0]?.input).toMatchObject({
-      kind: 'REPLY',
-      source: { modelOutputRef: modelRef, toolCallId: 'call_1' },
-    });
-    const done = receive(
-      publish,
-      report(publish.state, only(publish), { ok: { kind: 'REPLY' }, ref: ref('3') }),
-    );
-    expect(done.ending).toMatchObject({ kind: 'REPLIED', messageRef: ref('3') });
+describe('ending', () => {
+  it('says only which declared tool ended it, whatever the tool is', () => {
+    for (const toolName of ['reply', 'handoff']) {
+      const done = replied(atModel(), [call(toolName, { text: 'hi' })]);
+      expect(done.ending).toMatchObject({
+        kind: 'ENDED',
+        tool: { toolName },
+        arguments: { text: 'hi' },
+        source: { modelOutputRef: modelRef, toolCallId: 'call_1' },
+      });
+      expect(types(done)).toEqual(['UNIT_COMPLETED', 'MODEL_TURN']);
+      expect(done.submissions).toEqual([]);
+    }
   });
 
-  it('keeps no reply text in the log', () => {
-    const publish = replied(atModel(), [call('reply', { text: 'secret reply body' })]);
-    expect(JSON.stringify(publish.records)).not.toContain('secret reply body');
+  it('keeps the text of an ending out of the log', () => {
+    const done = replied(atModel(), [call('reply', { text: 'secret reply body' })]);
+    expect(JSON.stringify(done.records)).not.toContain('secret reply body');
+  });
+
+  it('cannot end with a tool the Agent does not declare', () => {
+    const done = replied(atModel({ endTools: [] }), [call('reply', { text: 'hi' })]);
+    expect(done.ending).toBeUndefined();
+    expect(done.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({ code: 'UNKNOWN_TOOL' });
   });
 
   it.each([
@@ -237,14 +243,27 @@ describe('reply', () => {
     });
   });
 
-  it('reports the budget of the published reply', () => {
-    const publish = replied(atModel(), [call('reply', { text: 'hi' })]);
+  it('closes with the last Unit and logs it by its source', () => {
+    const done = replied(atModel(), [call('reply', { text: 'hi' })]);
+    if (done.ending?.kind !== 'ENDED') throw new Error('not ended');
+    const input = { goalRef: ref('9'), report: { summary: 'secret summary' } };
+    const closing = closeAgent(done.state, input, done.ending.source);
+    expect(unitId(closing)).toEqual(['message-publish']);
+    expect(closing.submissions[0]?.input).toEqual(input);
+    expect(JSON.stringify(closing.records)).not.toContain('secret summary');
     const low = { ...NORMAL, run: 'WRAP_UP' } as const;
-    const done = receive(
-      publish,
-      report(publish.state, only(publish), { ok: { kind: 'REPLY' }, ref: ref('3') }, low),
+    const closed = receive(
+      closing,
+      report(closing.state, only(closing), { ok: {}, ref: ref('3') }, low),
     );
-    expect(done.ending).toMatchObject({ kind: 'REPLIED', budget: low });
+    expect(closed.ending).toEqual({ kind: 'CLOSED', outputRef: ref('3'), budget: low });
+  });
+
+  it('fails when the closing Unit fails', () => {
+    const done = replied(atModel(), [call('reply', { text: 'hi' })]);
+    const closing = closeAgent(done.state, { goalRef: ref('9'), report: {} }, undefined);
+    const closed = receive(closing, report(closing.state, only(closing), { fail: 'INTERNAL' }));
+    expect(closed.ending).toEqual({ kind: 'FAILED', code: 'INTERNAL' });
   });
 });
 
@@ -384,7 +403,9 @@ describe('wrap-up', () => {
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
     );
     const model = reassemble(context_, low);
-    expect(unitId(replied(model, [call('reply', { text: 'done' })]))).toEqual(['message-publish']);
+    expect(replied(model, [call('reply', { text: 'done' })]).ending).toMatchObject({
+      kind: 'ENDED',
+    });
   });
 
   it('wraps up at maxRounds', () => {
@@ -503,54 +524,14 @@ describe('model failures', () => {
   });
 });
 
-describe('reports and handoff', () => {
-  const reporting = {
-    finish: { kind: 'REPORT', toolName: 'reply', parameters: ReplyArgsSchema },
-  } as const;
-
-  it('hands the finish arguments to Workflow with their source', () => {
-    const done = replied(atModel(reporting), [call('reply', { text: 'draft' })]);
-    expect(done.ending).toMatchObject({
-      kind: 'FINISHED',
-      arguments: { text: 'draft' },
-      source: { modelOutputRef: modelRef, toolCallId: 'call_1' },
-    });
-    expect(JSON.stringify(done.records)).not.toContain('draft');
-  });
-
-  it('hands off, except in the final call', () => {
-    const done = replied(atModel(), [call('handoff', { text: 'brief' })]);
-    expect(done.ending).toMatchObject({ kind: 'HANDED_OFF', arguments: { text: 'brief' } });
+describe('the final call', () => {
+  it('refuses an end tool that is not allowed in it', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
     const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    const refused = replied(final, [call('handoff', { text: 'brief' })]);
-    expect(refused.ending).toBeUndefined();
-    expect(refused.records.find((r) => r.type === 'FEEDBACK')).toBeUndefined();
-    expect(refused.submissions[0]?.input).toMatchObject({ kind: 'DEGRADED_REPLY' });
-  });
-
-  it('ends without a message when a reporting agent degrades', () => {
-    const tools = replied(atModel(reporting), [call('list_files', {})]);
-    const empty = { ...NORMAL, agentRun: 'EXHAUSTED' } as const;
-    const done = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, empty));
-    expect(done.ending).toEqual({ kind: 'DEGRADED', reason: 'BUDGET_EXHAUSTED' });
-  });
-
-  it('logs a report by its source, never by its text', () => {
-    const done = replied(atModel(reporting), [call('reply', { text: 'draft' })]);
-    if (done.ending?.kind !== 'FINISHED') throw new Error('not finished');
-    const input = { goalRef: ref('9'), report: { summary: 'secret summary' } };
-    const publishing = publishReport(done.state, input, done.ending.source);
-    expect(publishing.submissions[0]?.input).toEqual(input);
-    expect(JSON.stringify(publishing.records)).not.toContain('secret summary');
-    const reported = receive(
-      publishing,
-      report(publishing.state, only(publishing), { ok: {}, ref: ref('3') }),
-    );
-    expect(reported.ending).toMatchObject({ kind: 'REPORTED', reportRef: ref('3') });
+    expectDegraded(replied(final, [call('handoff', { text: 'brief' })]), 'FINAL_CALL_INVALID');
   });
 });

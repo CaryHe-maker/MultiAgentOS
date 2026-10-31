@@ -141,6 +141,8 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    - 随后调用 `updateActivity({ agentRunId, todos: { total, done, current? } })`（`current` 为进行中一项的前 80 个字符），只用于界面；
    - 可以与普通工具、结束控制工具在同一次返回中出现（`CONTROL_MIXED` 的例外），先于其他调用处理；只调用它的一轮计入无进展检测，不计入重复意图。
 
+**结束**：AgentRun 状态机对所有 Agent 相同，只有三种结局：调用了定义中声明的结束工具（`ENDED`）、没能合法结束（`DEGRADED`）、致命失败（`FAILED`）。它不知道结束工具的含义。结束后做什么由 Agent 定义的 `actions.end[].then` 与 `actions.onDegraded` 决定，运行器按这一张表执行，不按 Agent 分支。发布类动作提交最后一个 Unit，它的 UnitReport 之后 AgentRun 才结束；模板运行在图没有可启动的节点时结束，`chat` 由生长规则继续。
+
 ## 8. 上下文
 
 ### 8.1 投影

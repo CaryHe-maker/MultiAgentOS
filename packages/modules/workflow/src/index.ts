@@ -20,6 +20,9 @@ export type {
   AgentDefinitions,
   AgentTool,
   AgentUnit,
+  DegradedAction,
+  EndAction,
+  EndTool,
 } from './domain/agent/agent-cycle.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export {

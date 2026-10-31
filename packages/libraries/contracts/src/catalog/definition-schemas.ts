@@ -444,12 +444,21 @@ export const AgentDefinitionV1Schema = Type.Object(
     promptRef: DefinitionRefSchema,
     unitRefs: UniqueRefs({ minItems: 1 }),
     startUnitRefs: UniqueRefs({ minItems: 0 }),
+    /** How this Agent may end; a tool that is not declared here cannot end it. */
     actions: Type.Object(
       {
-        finish: Type.Object(
-          { toolRef: DefinitionRefSchema, kind: Type.Literal('REPLY') },
-          { additionalProperties: false },
+        end: Type.Array(
+          Type.Object(
+            {
+              toolRef: DefinitionRefSchema,
+              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF']),
+              allowedInFinal: Type.Boolean(),
+            },
+            { additionalProperties: false },
+          ),
+          { minItems: 1 },
         ),
+        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT']),
       },
       { additionalProperties: false },
     ),

@@ -12,13 +12,14 @@ import {
   type SessionLogRecord,
   type TemplateDefinition,
   type ThinkingEffort,
+  type UnitInputV1,
   type WorkflowGatewayPortV1,
   type WorkflowInboxEventV1,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
 import {
-  publishReport,
+  closeAgent,
   receiveAgentReport,
   startAgent,
   type AgentConfig,
@@ -28,6 +29,7 @@ import {
   type AgentState,
   type AgentTransition,
   type ControlSource,
+  type EndAction,
 } from '../domain/agent/agent-cycle.js';
 import {
   analysisFacts,
@@ -97,14 +99,22 @@ const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContextV1
 
 const asHumanRequestId = (nodeId: string): string => `hrq_${nodeId.slice('nod_'.length)}`;
 
-const BUDGET_REASONS: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
+/** How a node ends once its AgentRun closed. */
+interface NodeEnding {
+  readonly status: 'SUCCEEDED' | 'FAILED';
+  readonly result?: Record<string, unknown>;
+  /** The run's result when this node is its output. */
+  readonly runOutput: boolean;
+}
+
+const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
 
 interface ActiveAgent {
   readonly state: AgentState;
   readonly nodeId: string;
   readonly scope: ProjectionScope;
   readonly agentId: string;
-  readonly report?: { readonly degraded: boolean; readonly reason?: string };
+  readonly nodeEnding?: NodeEnding;
 }
 
 export class SessionRunner {
@@ -117,6 +127,9 @@ export class SessionRunner {
   #agent: ActiveAgent | undefined;
   #orientPackRef: AgentState['orientPackRef'];
   #rounds: AgentRounds[] = [];
+  #runResult: ArtifactRef | undefined;
+  #overBudget = false;
+  #runFailure: string | undefined;
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
@@ -184,8 +197,15 @@ export class SessionRunner {
     this.#records = [];
     this.#turnId = undefined;
     this.#agent = undefined;
+    this.#clearRun();
+  }
+
+  #clearRun(): void {
     this.#orientPackRef = undefined;
     this.#rounds = [];
+    this.#runResult = undefined;
+    this.#overBudget = false;
+    this.#runFailure = undefined;
   }
 
   async handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
@@ -246,8 +266,7 @@ export class SessionRunner {
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },
         ]);
         this.#agent = undefined;
-        this.#orientPackRef = undefined;
-        this.#rounds = [];
+        this.#clearRun();
         break;
     }
   }
@@ -417,6 +436,15 @@ export class SessionRunner {
         await this.#startAgent(workflowRunId, node.nodeId, record.agentRef.id, record.inputFrom);
       }
     }
+    if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agent === undefined)
+      await this.#closeFinishedRun(workflowRunId);
+  }
+
+  /** A template run ends when its graph has nothing left to start. */
+  async #closeFinishedRun(workflowRunId: string): Promise<void> {
+    if (this.#runFailure !== undefined) await this.#closeFailed(workflowRunId, this.#runFailure);
+    else
+      await this.#close(workflowRunId, this.#overBudget ? 'BUDGET' : 'COMPLETED', this.#runResult);
   }
 
   async #requestHuman(workflowRunId: string, nodeId: string): Promise<void> {
@@ -631,22 +659,15 @@ export class SessionRunner {
     );
   }
 
-  async #publishReport(
+  async #closeWith(
     workflowRunId: string,
     active: ActiveAgent,
-    body: Record<string, unknown>,
+    input: UnitInputV1,
     source: ControlSource | undefined,
-    report: NonNullable<ActiveAgent['report']>,
+    nodeEnding: NodeEnding,
   ): Promise<void> {
-    this.#agent = { ...active, report };
-    await this.#apply(
-      workflowRunId,
-      publishReport(
-        active.state,
-        { goalRef: this.#objectiveRef(workflowRunId), report: body },
-        source,
-      ),
-    );
+    this.#agent = { ...active, nodeEnding };
+    await this.#apply(workflowRunId, closeAgent(active.state, input, source));
   }
 
   #reportInput(workflowRunId: string, active: ActiveAgent) {
@@ -701,85 +722,110 @@ export class SessionRunner {
     );
   }
 
-  async #onEnding(workflowRunId: string, ending: AgentEnding): Promise<void> {
-    const active = this.#agent;
-    if (active === undefined) return;
-    const { turnId, wrapUpReason, definitions } = active.state;
-    const reports = definitions.finish.kind === 'REPORT';
-
-    if (ending.kind === 'FINISHED') {
-      const body = normalReportBody({
-        ...this.#reportInput(workflowRunId, active),
-        draft: ending.arguments as AnalysisReportDraft,
-        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
-      });
-      await this.#publishReport(workflowRunId, active, body, ending.source, { degraded: false });
-      return;
-    }
-    if (ending.kind === 'DEGRADED' && reports) {
-      const body = degradedReportBody({
-        ...this.#reportInput(workflowRunId, active),
-        reason: ending.reason,
-      });
-      await this.#publishReport(workflowRunId, active, body, undefined, {
-        degraded: true,
-        reason: ending.reason,
-      });
-      return;
-    }
-
-    await this.#endAgentRun(workflowRunId, active, ending.kind);
-    switch (ending.kind) {
-      case 'HANDED_OFF':
+  /** The one table of what follows each declared end action. */
+  async #runEndAction(
+    action: EndAction,
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    const { label } = active.state.definitions;
+    const { wrapUpReason } = active.state;
+    switch (action) {
+      case 'PUBLISH_REPLY':
+        return this.#closeWith(
+          workflowRunId,
+          active,
+          {
+            kind: 'REPLY',
+            agentLabel: label,
+            source: {
+              modelOutputRef: ending.source.modelOutputRef,
+              toolCallId: ending.source.toolCallId,
+            },
+          },
+          ending.source,
+          { status: 'SUCCEEDED', runOutput: false },
+        );
+      case 'PUBLISH_REPORT':
+        return this.#closeWith(
+          workflowRunId,
+          active,
+          {
+            goalRef: this.#objectiveRef(workflowRunId),
+            report: normalReportBody({
+              ...this.#reportInput(workflowRunId, active),
+              draft: ending.arguments as AnalysisReportDraft,
+              ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+            }),
+          },
+          ending.source,
+          { status: 'SUCCEEDED', result: { action: 'FINISH' }, runOutput: true },
+        );
+      case 'HANDOFF':
+        await this.#endAgentRun(workflowRunId, active, 'ENDED');
         await this.#endNode(
           workflowRunId,
-          turnId,
+          active.state.turnId,
           active.nodeId,
           'SUCCEEDED',
           { action: 'HANDOFF', toolCallId: ending.source.toolCallId },
           ending.source.modelOutputRef,
         );
-        await this.#advance(workflowRunId);
-        return;
-      case 'REPORTED': {
-        const budgetEnded =
-          active.report?.reason !== undefined && BUDGET_REASONS.includes(active.report.reason);
-        await this.#endNode(
-          workflowRunId,
-          turnId,
-          active.nodeId,
-          active.report?.degraded === true ? 'FAILED' : 'SUCCEEDED',
-          { action: 'FINISH' },
-          ending.reportRef,
-        );
-        await this.#advance(workflowRunId);
-        await this.#close(workflowRunId, budgetEnded ? 'BUDGET' : 'COMPLETED', ending.reportRef);
-        return;
-      }
-      case 'REPLIED':
-        await this.#endNode(
-          workflowRunId,
-          turnId,
-          active.nodeId,
-          'SUCCEEDED',
-          undefined,
-          ending.messageRef,
-        );
-        if (ending.budget.run !== 'NORMAL') {
-          await this.#close(workflowRunId, 'BUDGET');
-          return;
-        }
-        await this.#advance(workflowRunId);
-        return;
+        return this.#advance(workflowRunId);
+    }
+  }
+
+  async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
+    if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
+    if (active.state.definitions.onDegraded === 'PUBLISH_NOTICE') {
+      const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
+      await this.#closeWith(workflowRunId, active, input as UnitInputV1, undefined, {
+        status: 'FAILED',
+        runOutput: false,
+      });
+      return;
+    }
+    const report = degradedReportBody({ ...this.#reportInput(workflowRunId, active), reason });
+    await this.#closeWith(
+      workflowRunId,
+      active,
+      { goalRef: this.#objectiveRef(workflowRunId), report },
+      undefined,
+      { status: 'FAILED', result: { action: 'FINISH' }, runOutput: true },
+    );
+  }
+
+  async #onEnding(workflowRunId: string, ending: AgentEnding): Promise<void> {
+    const active = this.#agent;
+    if (active === undefined) return;
+    const { turnId } = active.state;
+    switch (ending.kind) {
+      case 'ENDED':
+        return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
       case 'DEGRADED':
-        await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
-        await this.#advance(workflowRunId);
-        return;
+        return this.#onDegraded(workflowRunId, active, ending.reason);
+      case 'CLOSED': {
+        const plan = active.nodeEnding ?? { status: 'SUCCEEDED', runOutput: false };
+        await this.#endAgentRun(workflowRunId, active, ending.kind);
+        await this.#endNode(
+          workflowRunId,
+          turnId,
+          active.nodeId,
+          plan.status,
+          plan.result,
+          ending.outputRef,
+        );
+        if (plan.runOutput) this.#runResult = ending.outputRef;
+        if (this.#mode === 'CHAT' && ending.budget.run !== 'NORMAL')
+          return this.#close(workflowRunId, 'BUDGET');
+        return this.#advance(workflowRunId);
+      }
       case 'FAILED':
+        await this.#endAgentRun(workflowRunId, active, ending.kind);
         await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
-        if (reports) await this.#closeFailed(workflowRunId, ending.code);
-        else await this.#advance(workflowRunId);
-        return;
+        this.#runFailure = ending.code;
+        return this.#advance(workflowRunId);
     }
   }
 }

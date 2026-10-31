@@ -49,7 +49,15 @@ const definitions: AgentDefinitions = {
       parameters: RepositoryListInputSchema,
     },
   ],
-  finish: { kind: 'REPLY', toolName: 'reply', parameters: ReplyArgsSchema },
+  endTools: [
+    {
+      toolName: 'reply',
+      parameters: ReplyArgsSchema,
+      allowedInFinal: true,
+      action: 'PUBLISH_REPLY',
+    },
+  ],
+  onDegraded: 'PUBLISH_NOTICE',
 };
 
 const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
@@ -59,6 +67,12 @@ const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
   toolsDigest: digest,
   definitions: agentDefinitions,
 });
+const finishTool = {
+  toolName: 'finish',
+  parameters: AnalysisReportDraftSchema,
+  allowedInFinal: true,
+  action: 'PUBLISH_REPORT',
+} as const;
 const reporting: AgentDefinitions = {
   limits: definitions.limits,
   contextAssemble: definitions.contextAssemble,
@@ -66,11 +80,20 @@ const reporting: AgentDefinitions = {
   tools: definitions.tools,
   label: 'analysis',
   publish: unit('report-publish'),
-  finish: { kind: 'REPORT', toolName: 'finish', parameters: AnalysisReportDraftSchema },
+  endTools: [finishTool],
+  onDegraded: 'PUBLISH_REPORT',
 };
 const plannerDefinitions: AgentDefinitions = {
   ...reporting,
-  handoff: { toolName: 'handoff', parameters: HandoffBriefSchema },
+  endTools: [
+    finishTool,
+    {
+      toolName: 'handoff',
+      parameters: HandoffBriefSchema,
+      allowedInFinal: false,
+      action: 'HANDOFF',
+    },
+  ],
 };
 const viewerDefinitions = reporting;
 const analyze: TemplateDefinition = {

@@ -29,7 +29,12 @@ interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersi
   unitRefs: DefinitionRef[];                     // 封闭集合；阶段 2 起与能力白名单一起决定能力上限
   startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 只在每个 WorkflowRun 的第一个 Turn 提交
   actions: {
-    finish: { toolRef: DefinitionRef; kind: 'REPLY' };   // 阶段 4 增加 'FINISH_SUBAGENT'
+    end: {                                       // 至少一项；没有声明的工具不能结束这个 Agent
+      toolRef: DefinitionRef;
+      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';   // 阶段 4 增加 'FINISH_SUBAGENT'
+      allowedInFinal: boolean;                   // 收尾调用中是否可用
+    }[];
+    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';   // 没有合法结束时发布什么
     // 阶段 2：todos（update_todos，M2Design 第 3.5 节）；阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
   };
   limits: {
