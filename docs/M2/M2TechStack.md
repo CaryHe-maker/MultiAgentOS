@@ -1,6 +1,6 @@
 # MultiAgentOS M2 技术栈
 
-> 状态：实测已填，待评审。第 3 节已填入 2026-10-31 的实测结果，其中第 3.1 节的原生 Ubuntu 一列尚未实测；第 4 节的新增依赖在所属阶段的文档门中确定。
+> 状态：实测已填，待评审。第 3 节已填入 2026-10-31 的实测结果；第 4 节的新增依赖在所属阶段的文档门中确定。
 
 ## 1. 目的与权威
 
@@ -24,25 +24,45 @@ M2 沿用 M1 的工程基线（[M1TechStack](../History/M1/M1TechStack.md)），
 **环境**：每一项分别在 Ubuntu 24.04（原生）与 WSL2 中的 Ubuntu 24.04 上，以非特权用户运行。
 WSL 的结果取自 2026-10-31：Ubuntu 24.04.5、内核 `6.18.33.2-microsoft-standard-WSL2`、`bubblewrap 0.9.0`；
 AppArmor 未启用（`/sys/module/apparmor/parameters/enabled` 为 `N`），`kernel.apparmor_restrict_unprivileged_userns` 不存在。
-原生环境尚未实测（当前没有可用的原生 Ubuntu 24.04 机器），AppArmor 的限制与修复步骤也因此尚未验证。
-检查写在 `scripts/sandbox-probe.sh`；工作流 `.github/workflows/sandbox-probe.yml` 在 GitHub Actions 的 `ubuntu-24.04` 上手动运行，覆盖 AppArmor 的原样状态、限制开启，以及两种修复方法。
+原生的结果取自同日 GitHub Actions 的 `ubuntu-24.04` 运行器（工作流 `sandbox-probe`，运行 41169485463）：Ubuntu 24.04.5、内核 `7.0.0-1017-azure`、`bubblewrap 0.9.0`；
+AppArmor 已启用，`kernel.apparmor_restrict_unprivileged_userns` 为 `1`，与 Ubuntu 24.04 的默认限制一致。它是 Azure 虚拟机，内核不是桌面版的 `generic`。
+检查写在 `scripts/sandbox-probe.sh`，共 65 项，覆盖仓库位于 `$HOME` 之外、之内与 `/tmp` 下三种布局；原生一列是下文"修复之后"的结果。
+
+| 原生场景 | 配置 | 结果 |
+|---|---|---|
+| 原样 | 限制为 `1`，没有修复 | **不可用**：`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`，完整 profile 启动失败 |
+| AppArmor profile | 限制仍为 `1`，只给 `/usr/bin/bwrap` 加 profile | 65 项全过 |
+| 放开限制 | `sysctl kernel.apparmor_restrict_unprivileged_userns=0` | 65 项全过 |
 
 | # | 检查项（M2Design 第 6.1、6.2、14.1 节） | 预期 | 原生结果 | WSL 结果 |
 |---|---|---|---|---|
-| 1 | 以完整 profile 运行 `/bin/true`（可用性探测） | 成功；不成功时记录原因与修复方法 | 待测 | 通过 |
-| 2 | 先以 tmpfs 遮蔽 `$HOME`，再只读挂回白名单目录与仓库，再以 `--bind` 挂载可写根目录 | 挂载顺序生效；白名单外的 `$HOME` 内容不可见 | 待测 | 通过；挂回目录只读，其中的凭据文件可遮蔽；只把 `src` 作为可写根目录时，其外部不可写。**`--tmpfs /tmp` 必须排在仓库挂载之前**，否则位于 `/tmp` 下的仓库被整个遮住 |
-| 3 | 以 `/dev/null` 只读覆盖单个敏感文件（如 `.env`）；以空 tmpfs 覆盖目录 | 命令读到空内容；写入失败 | 待测 | **不符**：`--ro-bind /dev/null` 读取返回 `Permission denied`（字符设备在 bwrap 的 `nodev` 挂载下不可用）；`--dev-bind /dev/null` 可读但写入静默成功。改用**空的普通文件**（`--ro-bind <空文件>` 或 `--ro-bind-data`）：读到空内容、退出码 0，写入报 `Read-only file system`，宿主文件不变；同一个空文件可以同时遮蔽多个路径。空 tmpfs 覆盖目录通过 |
-| 4 | 以 `--ro-bind` 重新挂载已存在的 `.git/`、`.multiagentos/`、`AGENTS.md` | 只读；运行结束后宿主仓库中没有新增文件或目录 | 待测 | 通过（含子目录的 `AGENTS.md`）；挂载目标不存在且父目录只读时，bwrap 报错退出（退出码 1），不留下文件 |
-| 5 | 命令在可写根目录中新建 `.git/hooks/x` 与 `AGENTS.md` | 能在沙盒内新建；运行后由事后检查发现（M2Design 第 6.1 节"新建保护"） | 待测 | 通过：新建的文件出现在宿主仓库中，符合设计中由事后检查处理的前提 |
-| 6 | `--unshare-net`：访问外部地址与回环地址 | 失败 | 待测 | 通过：两者 `curl` 退出码 7；宿主上同样的地址可以访问 |
-| 7 | `--unshare-pid`、`--die-with-parent`：杀死 bwrap 后，沙盒中的子进程全部结束 | 没有残留进程 | 待测 | 通过 |
-| 8 | 对进程组先 SIGTERM、再 SIGKILL（M2Design 第 4.7 节） | 在宽限期内结束；记录实际耗时 | 待测 | **不符**：`--new-session` 使沙盒内的进程处在新的会话与进程组中，发给外层 bwrap 进程组的 SIGTERM 到不了命令，命令的处理函数不运行（外层退出后整个命名空间被直接杀死）。应以 `--json-status-fd` 取得 `child-pid`，它就是内层进程组号：对它发 SIGTERM，处理函数运行；忽略 SIGTERM 的命令继续存活，对外层进程组发 SIGKILL 后 7 ms 内全部结束，无残留 |
-| 9 | 环境变量白名单：沙盒中 `env` 的输出 | 只有白名单中的变量 | 待测 | 通过：`--clearenv` 后只有 `HOME`、`LANG`、`PATH`、`TERM`，以及 shell 自己设置的 `PWD` |
-| 10 | 在仓库位于 `$HOME` 之内、之外两种布局下重复 2–4 | 结果相同 | 待测 | 通过（第 3 项的不符在两种布局下相同） |
+| 1 | 以完整 profile 运行 `/bin/true`（可用性探测） | 成功；不成功时记录原因与修复方法 | 修复之后通过；原样不可用（见上表） | 通过 |
+| 2 | 先以 tmpfs 遮蔽 `$HOME`，再只读挂回白名单目录与仓库，再以 `--bind` 挂载可写根目录 | 挂载顺序生效；白名单外的 `$HOME` 内容不可见 | 修复之后通过 | 通过；挂回目录只读，其中的凭据文件可遮蔽；只把 `src` 作为可写根目录时，其外部不可写。**`--tmpfs /tmp` 必须排在仓库挂载之前**，否则位于 `/tmp` 下的仓库被整个遮住 |
+| 3 | 以 `/dev/null` 只读覆盖单个敏感文件（如 `.env`）；以空 tmpfs 覆盖目录 | 命令读到空内容；写入失败 | 修复之后，空文件遮蔽通过；`/dev/null` 的写法未在原生上测 | **不符**：`--ro-bind /dev/null` 读取返回 `Permission denied`（字符设备在 bwrap 的 `nodev` 挂载下不可用）；`--dev-bind /dev/null` 可读但写入静默成功。改用**空的普通文件**（`--ro-bind <空文件>` 或 `--ro-bind-data`）：读到空内容、退出码 0，写入报 `Read-only file system`，宿主文件不变；同一个空文件可以同时遮蔽多个路径。空 tmpfs 覆盖目录通过 |
+| 4 | 以 `--ro-bind` 重新挂载已存在的 `.git/`、`.multiagentos/`、`AGENTS.md` | 只读；运行结束后宿主仓库中没有新增文件或目录 | 修复之后通过 | 通过（含子目录的 `AGENTS.md`）；挂载目标不存在且父目录只读时，bwrap 报错退出（退出码 1），不留下文件 |
+| 5 | 命令在可写根目录中新建 `.git/hooks/x` 与 `AGENTS.md` | 能在沙盒内新建；运行后由事后检查发现（M2Design 第 6.1 节"新建保护"） | 修复之后通过 | 通过：新建的文件出现在宿主仓库中，符合设计中由事后检查处理的前提 |
+| 6 | `--unshare-net`：访问外部地址与回环地址 | 失败 | 修复之后通过 | 通过：两者 `curl` 退出码 7；宿主上同样的地址可以访问 |
+| 7 | `--unshare-pid`、`--die-with-parent`：杀死 bwrap 后，沙盒中的子进程全部结束 | 没有残留进程 | 修复之后通过 | 通过 |
+| 8 | 对进程组先 SIGTERM、再 SIGKILL（M2Design 第 4.7 节） | 在宽限期内结束；记录实际耗时 | 修复之后通过，SIGTERM 发给外层同样到不了命令；发给内层时 11 ms 结束，SIGKILL 后 11 ms 结束 | **不符**：`--new-session` 使沙盒内的进程处在新的会话与进程组中，发给外层 bwrap 进程组的 SIGTERM 到不了命令，命令的处理函数不运行（外层退出后整个命名空间被直接杀死）。应以 `--json-status-fd` 取得 `child-pid`，它就是内层进程组号：对它发 SIGTERM，处理函数运行；忽略 SIGTERM 的命令继续存活，对外层进程组发 SIGKILL 后 7 ms 内全部结束，无残留 |
+| 9 | 环境变量白名单：沙盒中 `env` 的输出 | 只有白名单中的变量 | 修复之后通过 | 通过：`--clearenv` 后只有 `HOME`、`LANG`、`PATH`、`TERM`，以及 shell 自己设置的 `PWD` |
+| 10 | 在仓库位于 `$HOME` 之内、之外两种布局下重复 2–4 | 结果相同 | 修复之后通过（另加 `/tmp` 布局） | 通过（第 3 项的不符在两种布局下相同） |
 
-**结论**（WSL）：完整 profile 可以以非特权用户运行，隔离目标都能达到。三处写法需要按实测调整，已写入 M2Design v1.10：
+**结论**：两种环境中完整 profile 都能以非特权用户运行，隔离目标都能达到；原生 Ubuntu 24.04 必须先处理 AppArmor。三处写法需要按实测调整，已写入 M2Design v1.10：
 敏感文件用空的普通文件遮蔽，不用 `/dev/null`；`--tmpfs /tmp` 排在仓库挂载之前；SIGTERM 发给 `--json-status-fd` 报告的内层进程组，SIGKILL 发给外层。
-可用的最低配置与 AppArmor 的修复步骤要等原生环境实测后填写。
+
+可用的最低配置：`bubblewrap 0.9.0`。AppArmor 的修复步骤（写入使用说明）：首选在 `/etc/apparmor.d/bwrap` 写入下面的 profile，再运行 `sudo apparmor_parser -r /etc/apparmor.d/bwrap`，它只放开 bwrap，全局限制保持不变；
+
+```text
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+```
+
+后备方法是 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`，它放开整台机器，并且重启后失效。
 
 ### 3.2 DeepSeek 思考模式（任务 S0-T-2）
 

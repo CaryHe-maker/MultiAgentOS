@@ -7,7 +7,6 @@
 
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
-| Q1 | 原生 Ubuntu 的实测何时运行 | 脚本与工作流 `sandbox-probe` 已写好，WSL 上 65 项通过；工作流要推送后才能运行，还没有在 GitHub 上跑过 | 推送 `feature/phase0/main` 后由 `push` 触发一次，把结果填入 M2TechStack 第 3.1 节 | 阶段 3、使用说明 |
 
 ## 2. 已先行决定，请复核
 
@@ -16,3 +15,4 @@
 | A1 | 发布 M2Design v1.10，只含实测直接推翻的三处写法（空文件遮蔽、`/tmp` 挂载顺序、SIGTERM 目标）与第 9.4 节的说明修正 | M2Plan 第 6.1 节要求实测不符时先发布新版本；这几处是事实修正，没有改变设计意图 |
 | A2 | `replayReasoning` 定为 `REQUIRED`，尽管服务端记得的工具调用不回传也能成功 | 服务端记忆的保留时长未知，恢复旧 Session 时可能失败 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
+| A5 | 原生一列取自 GitHub Actions 的 `ubuntu-24.04` 运行器（Azure 虚拟机，内核 `7.0.0-1017-azure`），AppArmor 限制与默认一致；没有在 Ubuntu 的 `generic` 内核上再测 | 阻塞行为与修复都已验证；发布前可在实体机上复核 |

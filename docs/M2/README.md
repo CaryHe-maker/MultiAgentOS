@@ -51,7 +51,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 |---|---|---|
 | [M2Design](M2Design.md) | v1.11 定稿 | — |
 | [M2Plan](M2Plan.md) | 已评审 | — |
-| [M2TechStack](M2TechStack.md) | 实测已填，待评审（原生 Ubuntu 上的 bwrap 待测） | 0 |
+| [M2TechStack](M2TechStack.md) | 实测已填，待评审 | 0 |
 | [M2Security](M2Security.md) | 已评审（阶段 1 的部分） | 1 |
 | [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md) | 已评审（阶段 1 的部分） | 1 |
 | Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已评审（阶段 1） | 1 |
