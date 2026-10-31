@@ -15,6 +15,9 @@ import type {
 import { createWorkflowRunner } from './application/workflow-runner.js';
 
 export type { WorkflowConfig } from '@multiagentos/contracts';
+export type { MainConfig, MainDefinitions, MainTool, MainUnit } from './domain/main/main-cycle.js';
+export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
+export { SessionRunner, type SessionRunnerDeps } from './session/session-runner.js';
 
 /** Suggested initial configuration (docs/M1/Module/Workflow.md section 12). */
 export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({

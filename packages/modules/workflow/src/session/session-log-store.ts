@@ -79,12 +79,12 @@ export class SessionLogStore {
     readonly repositoryRoot: string;
     readonly definitionsDigest: string;
     readonly definitionVersions: readonly string[];
-  }): Promise<void> {
+  }): Promise<SessionLogRecord> {
     await this.#storage(() =>
       this.#persistence.sessionDirectory('workflow', input.sessionId).create(),
     );
     await this.#lock(input.sessionId);
-    await this.append({
+    const started = await this.append({
       type: 'SESSION_STARTED',
       formatVersion: FORMAT_VERSION,
       repositoryRoot: input.repositoryRoot,
@@ -102,6 +102,7 @@ export class SessionLogStore {
         status: 'ACTIVE',
       }),
     );
+    return started;
   }
 
   /** Steps 1-4 of M2Design 10.3: lock, repair the tail, check the log, settle what was left. */

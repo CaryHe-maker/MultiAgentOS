@@ -39,6 +39,13 @@ export const ContextHistoryEntrySchema = Type.Union(
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeV1Schema),
     }),
+    /** Answers a tool call that did not run, or corrects a reply without one. */
+    closed({
+      ...entry,
+      kind: Type.Literal('FEEDBACK'),
+      text: text(1000),
+      toolCallId: Type.Optional(ToolCallIdSchema),
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],
@@ -58,6 +65,9 @@ export const WRAP_UP_REASONS_V1 = [
   'REPEATED_INTENT',
   'CONSECUTIVE_ERRORS',
   'CONTEXT_LIMIT',
+  'NO_PROGRESS',
+  'ROUND_LIMIT',
+  'REGENERATION_LIMIT',
 ] as const;
 
 export const StatusFactsV1Schema = closed({

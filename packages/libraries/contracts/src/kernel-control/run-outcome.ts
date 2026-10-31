@@ -171,19 +171,19 @@ export const runEndV1 = <T extends string>(type: T) => {
     unknownEffects: Type.Array(UnknownEffectSchema),
     resultRef: Type.Optional(ArtifactRefSchema),
   };
-  const withEnding = <P extends TProperties>(properties: P) => [
-    closed({ ...common, ...properties, runSummaryRef: RunSummaryRefSchema }),
-    closed({
-      ...common,
-      ...properties,
-      finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED'),
-    }),
-  ];
+  const summary = { ...common, runSummaryRef: RunSummaryRefSchema };
+  const unsaved = { ...common, finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED') };
+  const normal = {
+    closeReason: Type.Enum(CLOSE_REASONS_V1.filter((r) => r !== 'FAILED' && r !== 'VIOLATION')),
+  };
+  const failed = { closeReason: Type.Literal('FAILED'), failure: RunFailureSchema };
+  const violation = { closeReason: Type.Literal('VIOLATION'), failure: ViolationFailureSchema };
   return [
-    ...withEnding({
-      closeReason: Type.Enum(CLOSE_REASONS_V1.filter((r) => r !== 'FAILED' && r !== 'VIOLATION')),
-    }),
-    ...withEnding({ closeReason: Type.Literal('FAILED'), failure: RunFailureSchema }),
-    ...withEnding({ closeReason: Type.Literal('VIOLATION'), failure: ViolationFailureSchema }),
-  ];
+    closed({ ...summary, ...normal }),
+    closed({ ...unsaved, ...normal }),
+    closed({ ...summary, ...failed }),
+    closed({ ...unsaved, ...failed }),
+    closed({ ...summary, ...violation }),
+    closed({ ...unsaved, ...violation }),
+  ] as const;
 };

@@ -217,7 +217,7 @@ export const TurnClosedSchema = closed(
 );
 export type TurnClosed = Static<typeof TurnClosedSchema>;
 
-export const RunClosedV1Schema = Type.Union(runEndV1('RunClosed'), {
+export const RunClosedV1Schema = Type.Union([...runEndV1('RunClosed')], {
   $id: 'kernel.unit.RunClosed.v1',
 });
 export type RunClosedV1 = Static<typeof RunClosedV1Schema>;

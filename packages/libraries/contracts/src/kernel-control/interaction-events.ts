@@ -169,7 +169,7 @@ export const ActivityEventSchema = Type.Union(
 );
 export type ActivityEvent = Static<typeof ActivityEventSchema>;
 
-export const RunFinishedV1Schema = Type.Union(runEndV1('RunFinished'), {
+export const RunFinishedV1Schema = Type.Union([...runEndV1('RunFinished')], {
   $id: 'kernel.control.RunFinished.v1',
 });
 export type RunFinishedV1 = Static<typeof RunFinishedV1Schema>;

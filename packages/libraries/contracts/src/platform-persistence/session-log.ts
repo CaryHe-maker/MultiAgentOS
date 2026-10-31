@@ -178,6 +178,13 @@ export const SessionLogRecordSchema = Type.Union(
       requestId: IdSchemas.requestId,
       reasonCode: ReasonCodeV1Schema,
     }),
+    /** What the model is told instead of a result; a call must always get an answer. */
+    record('FEEDBACK', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      code: text(64),
+      message: text(1000),
+      toolCallId: Type.Optional(ToolCallIdSchema),
+    }),
     record('PROJECT_FILE_LOADED', inRun, {
       path: text(512),
       ref: ArtifactRefSchema,

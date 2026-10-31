@@ -199,6 +199,9 @@ importers:
       '@multiagentos/kernel':
         specifier: workspace:*
         version: link:../modules/kernel
+      '@multiagentos/persistence':
+        specifier: workspace:*
+        version: link:../infrastructure/persistence
       '@multiagentos/user-interaction':
         specifier: workspace:*
         version: link:../modules/user-interaction

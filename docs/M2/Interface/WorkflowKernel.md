@@ -403,6 +403,7 @@ type ContextHistoryEntry = EntryBase & (
   | { kind: 'HUMAN'; contentRef: ArtifactRef }
   | { kind: 'MODEL_TURN'; modelId: string; outputRef: ArtifactRef; reasoningRef?: ArtifactRef; replayable: boolean }
   | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
+  | { kind: 'FEEDBACK'; text: string; toolCallId?: string }   // 没有执行的工具调用的回答，≤1000
   | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
 );
 

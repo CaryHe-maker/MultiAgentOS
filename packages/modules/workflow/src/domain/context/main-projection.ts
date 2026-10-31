@@ -113,6 +113,17 @@ export function projectMainHistory(
         });
         break;
       }
+      case 'FEEDBACK':
+        if (!mainRuns.has(record.agentRunId)) break;
+        entries.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: record.message,
+          ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
+        });
+        break;
       case 'STALE_UNITS_SETTLED':
         entries.push({
           seq: record.seq,

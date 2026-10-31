@@ -197,6 +197,14 @@ const ResolvedHistoryEntrySchema = Type.Union([
     toolCallId: ToolCallIdSchema,
     text: Type.String(),
   }),
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Literal('FEEDBACK'),
+    text: Type.String(),
+    toolCallId: Type.Optional(ToolCallIdSchema),
+  }),
 ]);
 export type ResolvedHistoryEntry = Static<typeof ResolvedHistoryEntrySchema>;
 

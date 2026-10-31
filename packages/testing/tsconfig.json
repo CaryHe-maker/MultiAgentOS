@@ -26,6 +26,9 @@
     },
     {
       "path": "../modules/workflow"
+    },
+    {
+      "path": "../infrastructure/persistence"
     }
   ]
 }
