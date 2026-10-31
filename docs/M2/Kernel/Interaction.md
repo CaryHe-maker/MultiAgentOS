@@ -108,7 +108,7 @@ Monitor 在阶段 1 只有运行级与 Turn 两级账本，main 直接使用 Tur
 
 ### 5.3 消息
 
-M1 的消息全部保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由 Session actor 在开启运行时自己投递。M2 新增：
+M1 的消息保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由 Session actor 在开启运行时自己投递；`RUN_TIMEOUT` 与 `AUTHORIZATION_TIMEOUT` 删除：运行不再有总时长，授权询问不超时（M2Design 第 5.3、7.4 节）。M2 新增：
 
 | kind | 通道 | 来源 | 处理者 | 阶段 |
 |---|---|---|---|---|
@@ -117,6 +117,7 @@ M1 的消息全部保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由
 | `SESSION_CLOSE` | 控制 | Session 管理（切换、新建、`shutdown`） | Core | 1 |
 | `SESSION_COMMAND_REPORT` | 工作 | Workflow（`OPEN`、`CREATE`、`FORK`、`CLOSE` 的回复；`DELETE` 与列表查询的回复由 Session 管理直接处理） | Core | 1 |
 | `REQUEST_HUMAN`、`READ_PROJECT_FILE` | 工作 | Workflow | Core | 1 |
+| `WALL_CLOCK_DUE` | 控制 | Core 定时器（最早可能到点的墙钟，[Monitor](Monitor.md) 第 3 节） | Core | 1 |
 | `HUMAN_ANSWER` | 控制 | UserInteraction | Core | 1 |
 | `TURN_TIMEOUT` | 控制 | Core 定时器 | Core | 5 |
 | `PAUSE_RUN`、`RESUME_RUN`、`INTERRUPT_RUN` | 控制 | UserInteraction | Core | 5 |
