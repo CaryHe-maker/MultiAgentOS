@@ -1,25 +1,37 @@
 import type {
+  ArtifactRef,
   ContextAssembleInputV1,
   ContextHistoryEntry,
   SessionLogRecord,
 } from '@multiagentos/contracts';
 
 /**
- * What main sees (Module/Workflow 8): every Turn of the Session, across runs, as a pure function
- * of the log, so the same prefix gives the same entries and a later call only appends to an
- * earlier one (invariants 7 and 27). Tool results name their preview only; `fullRef` never enters
+ * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
+ * the same entries and a later call only appends to an earlier one (invariants 7 and 27). main
+ * sees every Turn of the Session, across runs; a template node sees the run's goal, the handoff it
+ * takes as input and its own steps. Tool results name their preview only; `fullRef` never enters
  * a projection. The category is the one field that may change: a prompt is PINNED while its Turn
  * is the current one.
  */
-export const MAIN_AGENT_ID = 'main';
+const MAIN_AGENT_ID = 'main';
+
+export type ProjectionScope =
+  | { readonly kind: 'MAIN' }
+  | {
+      readonly kind: 'NODE';
+      readonly workflowRunId: string;
+      readonly agentRunId: string;
+      readonly handoff?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
+    };
 
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
   const { workingDirectory, sandbox, currentDate } = context.runtimeContext;
   return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}`;
 }
 
-export function projectMainHistory(
+export function projectHistory(
   records: readonly SessionLogRecord[],
+  scope: ProjectionScope,
 ): readonly ContextHistoryEntry[] {
   const mainRuns = new Set<string>();
   const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
@@ -37,9 +49,23 @@ export function projectMainHistory(
         currentTurn = record.turnId;
         break;
       case 'AGENT_RUN_REGISTERED':
-        if (record.agentRef.id === MAIN_AGENT_ID) mainRuns.add(record.agentRunId);
+        if (scope.kind === 'NODE') {
+          if (record.agentRunId !== scope.agentRunId) break;
+          mainRuns.add(record.agentRunId);
+          if (scope.handoff !== undefined)
+            entries.push({
+              seq: record.seq,
+              ...turnOf(record.turnId),
+              category: 'PINNED',
+              kind: 'HANDOFF',
+              ...scope.handoff,
+            });
+        } else if (record.agentRef.id === MAIN_AGENT_ID) {
+          mainRuns.add(record.agentRunId);
+        }
         break;
       case 'HUMAN_ANSWERED':
+        if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -138,7 +164,8 @@ export function projectMainHistory(
     }
   }
   return entries.map((entry) =>
-    entry.kind === 'HUMAN' && entry.turnId !== undefined && entry.turnId === currentTurn
+    entry.kind === 'HUMAN' &&
+    (scope.kind === 'NODE' || (entry.turnId !== undefined && entry.turnId === currentTurn))
       ? { ...entry, category: 'PINNED' }
       : entry,
   );

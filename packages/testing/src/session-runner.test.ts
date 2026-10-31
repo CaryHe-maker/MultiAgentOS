@@ -1,11 +1,14 @@
 import {
   MEDIA_TYPES,
+  AnalysisReportDraftSchema,
+  HandoffBriefSchema,
   ReplyArgsSchema,
   RepositoryListInputSchema,
   newId,
   type ArtifactRef,
   type SessionLogRecord,
   type SubmitUnitRequestV1,
+  type TemplateDefinition,
   type UnitReportV1,
 } from '@multiagentos/contracts';
 import { mkdtempSync } from 'node:fs';
@@ -49,6 +52,48 @@ const definitions: AgentDefinitions = {
   finish: { kind: 'REPLY', toolName: 'reply', parameters: ReplyArgsSchema },
 };
 
+const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
+  ref: { kind: 'AGENT', id, version: 'v1.0.0', digest } as const,
+  modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
+  effort: 'none' as const,
+  toolsDigest: digest,
+  definitions: agentDefinitions,
+});
+const reporting: AgentDefinitions = {
+  limits: definitions.limits,
+  contextAssemble: definitions.contextAssemble,
+  modelCall: definitions.modelCall,
+  tools: definitions.tools,
+  label: 'analysis',
+  publish: unit('report-publish'),
+  finish: { kind: 'REPORT', toolName: 'finish', parameters: AnalysisReportDraftSchema },
+};
+const plannerDefinitions: AgentDefinitions = {
+  ...reporting,
+  handoff: { toolName: 'handoff', parameters: HandoffBriefSchema },
+};
+const viewerDefinitions = reporting;
+const analyze: TemplateDefinition = {
+  schemaVersion: 'v1',
+  kind: 'TEMPLATE',
+  id: 'analyze',
+  version: 'v1.0.0',
+  digest,
+  description: 'analyze',
+  origin: 'BUILTIN',
+  nodes: [
+    { name: 'plan', kind: 'AGENT', agent: { id: 'planner', version: 'v1.0.0' } },
+    {
+      name: 'view',
+      kind: 'AGENT',
+      agent: { id: 'code-viewer', version: 'v1.0.0' },
+      dependsOn: [{ node: 'plan', when: { field: 'action', equals: 'HANDOFF' } }],
+      inputFrom: 'HANDOFF',
+      output: true,
+    },
+  ],
+};
+
 type Ok = Extract<ReturnType<FakeUnitScript>, { output: unknown }>;
 const modelReply = (toolName: string, args: unknown): Ok => ({
   output: {
@@ -71,6 +116,8 @@ function script(replies: readonly Ok[]): FakeUnitScript {
         if (reply === undefined) throw new Error('no scripted reply');
         return reply;
       }
+      case 'report-publish':
+        return { output: { kind: 'REPLY' }, outputRef: artifact('7', MEDIA_TYPES.analysisReport) };
       case 'message-publish':
         return { output: { kind: 'REPLY' }, outputRef: artifact('5', MEDIA_TYPES.markdown) };
       case 'repository-list':
@@ -84,19 +131,18 @@ function script(replies: readonly Ok[]): FakeUnitScript {
   };
 }
 
-function setup(replies: readonly Ok[]) {
+function setup(replies: readonly Ok[], units: FakeUnitScript = script(replies)) {
   const persistence = new FileSessionStore(mkdtempSync(join(tmpdir(), 'mao-runner-')));
-  const kernel = createFakeSessionKernel({ units: script(replies) });
+  const kernel = createFakeSessionKernel({ units });
   const runner = new SessionRunner({
     gateway: kernel.gateway,
     store: new SessionLogStore(persistence),
-    definitions,
-    agent: {
-      ref: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest },
-      modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
-      effort: 'high',
-      toolsDigest: digest,
-    },
+    agents: new Map([
+      ['main', binding('main', definitions)],
+      ['planner', binding('planner', plannerDefinitions)],
+      ['code-viewer', binding('code-viewer', viewerDefinitions)],
+    ]),
+    templates: new Map([['analyze', analyze]]),
     definitionsDigest: digest,
     definitionVersions: ['main@v1.0.0'],
     config: {
@@ -106,9 +152,6 @@ function setup(replies: readonly Ok[]) {
       regenerationLimit: 3,
     },
     runtime: () => ({ sandbox: 'none', currentDate: '2026-10-31' }),
-    reportFault: (error) => {
-      throw error;
-    },
   });
   kernel.onWorkflow(async (envelope) => {
     if ('workflowRunId' in envelope) await runner.handleRunEvent(envelope);
@@ -226,5 +269,62 @@ describe('Sessions', () => {
       type: 'SessionList',
       sessions: [{ turnCount: 1 }],
     });
+  });
+});
+
+describe('analyze', () => {
+  const start = async (kernel: ReturnType<typeof createFakeSessionKernel>) => {
+    await kernel.interaction.startRun(
+      { requestId: newId('req'), template: { id: 'analyze', version: 'v1.0.0' }, goal: prompt() },
+      context,
+    );
+    await kernel.idle();
+  };
+  const nodeEnds = (records: readonly SessionLogRecord[]) =>
+    records.flatMap((record) =>
+      record.type === 'NODE_ENDED' ? [[record.status, record.skipReason]] : [],
+    );
+  const draft = { summary: 'the summary', conclusions: [], unconfirmed: [] };
+
+  it('hands off from planner to code-viewer and closes with the report', async () => {
+    const { kernel, runner } = setup([
+      modelReply('handoff', { task: 'look', focusAreas: [], openQuestions: [] }),
+      modelReply('finish', draft),
+    ]);
+    await start(kernel);
+    expect(nodeEnds(runner.records)).toEqual([
+      ['SUCCEEDED', undefined],
+      ['SUCCEEDED', undefined],
+      ['SUCCEEDED', undefined],
+    ]);
+    expect(count(runner.records, 'AGENT_RUN_REGISTERED')).toBe(2);
+    expect(kernel.workflowEvents.at(-1)?.event).toMatchObject({
+      type: 'RunClosed',
+      closeReason: 'COMPLETED',
+    });
+    expect(JSON.stringify(runner.records)).not.toContain('the summary');
+  });
+
+  it('skips code-viewer when planner finishes by itself', async () => {
+    const { kernel, runner } = setup([modelReply('finish', draft)]);
+    await start(kernel);
+    expect(nodeEnds(runner.records)).toEqual([
+      ['SUCCEEDED', undefined],
+      ['SUCCEEDED', undefined],
+      ['SKIPPED', 'NOT_TAKEN'],
+    ]);
+  });
+
+  it('names the goal by reference only', async () => {
+    const seen: SubmitUnitRequestV1[] = [];
+    const replies = script([modelReply('finish', draft)]);
+    const { kernel } = setup([modelReply('finish', draft)], (request, index) => {
+      seen.push(request);
+      return replies(request, index);
+    });
+    await start(kernel);
+    const publish = seen.find((request) => request.unitRef.id === 'report-publish');
+    expect(publish?.input).toMatchObject({ goalRef: { mediaType: MEDIA_TYPES.fileText } });
+    expect(JSON.stringify(publish?.input)).not.toContain('"goal"');
   });
 });

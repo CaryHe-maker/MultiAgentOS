@@ -1,27 +1,24 @@
 import {
+  REASON_CODE_CATEGORY,
   newId,
+  type AnalysisReportDraft,
+  type ArtifactRef,
   type BoundaryContextV1,
   type DefinitionRef,
   type KernelToWorkflowEventV1,
   type PinnedDefinitionRef,
+  type ReasonCode,
   type SessionCommandFailure,
   type SessionLogRecord,
+  type TemplateDefinition,
   type ThinkingEffort,
   type WorkflowGatewayPortV1,
   type WorkflowInboxEventV1,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
-import { projectInstructions, projectMainHistory } from '../domain/context/main-projection.js';
 import {
-  advanceGraph,
-  chatGrowthPoint,
-  chatGrowthRevision,
-  initialChatRevision,
-  projectGraph,
-  type GraphRevision,
-} from '../domain/graph/session-graph.js';
-import {
+  publishReport,
   receiveAgentReport,
   startAgent,
   type AgentConfig,
@@ -30,36 +27,63 @@ import {
   type AgentEnding,
   type AgentState,
   type AgentTransition,
+  type ControlSource,
 } from '../domain/agent/agent-cycle.js';
 import {
-  type SessionLogStore,
+  analysisFacts,
+  degradedReportBody,
+  normalReportBody,
+  type AgentRounds,
+} from '../domain/agent/analysis-report.js';
+import {
+  projectHistory,
+  projectInstructions,
+  type ProjectionScope,
+} from '../domain/context/history-projection.js';
+import {
+  advanceGraph,
+  chatGrowthPoint,
+  chatGrowthRevision,
+  compileTemplate,
+  initialChatRevision,
+  projectGraph,
+  type GraphRevision,
+} from '../domain/graph/session-graph.js';
+import {
   SessionStoreFailure,
   type NewLogRecord,
+  type SessionLogStore,
 } from './session-log-store.js';
 
 /**
- * Turn-chat on top of the session log (Module/Workflow 4-6, 9): one event at a time, log first,
- * then the projection, then syscalls. All state that matters is in `#records`; a Session reopened
- * later rebuilds it from the same log. `analyze` joins in S1-WF-4.
+ * Every run of a Session on top of the session log (Module/Workflow 4-6, 9): one event at a time,
+ * log first, then the projection, then syscalls. Turn-chat and templates differ only in how the
+ * graph grows; all Agents share one AgentRun cycle and one kind of projection.
  */
+export interface AgentBinding {
+  readonly ref: PinnedDefinitionRef;
+  readonly modelRef: DefinitionRef;
+  readonly effort: ThinkingEffort;
+  readonly toolsDigest: string;
+  readonly definitions: AgentDefinitions;
+}
+
 export interface SessionRunnerDeps {
   readonly gateway: WorkflowGatewayPortV1;
   readonly store: SessionLogStore;
-  readonly definitions: AgentDefinitions;
-  readonly agent: {
-    readonly ref: PinnedDefinitionRef;
-    readonly modelRef: DefinitionRef;
-    readonly effort: ThinkingEffort;
-    readonly toolsDigest: string;
-  };
+  /** Built-in Agents by id; `chat` runs the one named `main`. */
+  readonly agents: ReadonlyMap<string, AgentBinding>;
+  /** Built-in templates by id. */
+  readonly templates: ReadonlyMap<string, TemplateDefinition>;
   readonly definitionsDigest: string;
   readonly definitionVersions: readonly string[];
   readonly config: AgentConfig;
   readonly runtime: () => { readonly sandbox: string; readonly currentDate: string };
-  /** A failure Workflow cannot report through closeRun (Module/Workflow 10). */
-  readonly reportFault: (error: unknown) => void;
+  readonly now?: () => Date;
   readonly newAgentRunId?: () => string;
 }
+
+const MAIN = 'main';
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
@@ -73,14 +97,26 @@ const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContextV1
 
 const asHumanRequestId = (nodeId: string): string => `hrq_${nodeId.slice('nod_'.length)}`;
 
+const BUDGET_REASONS: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
+
+interface ActiveAgent {
+  readonly state: AgentState;
+  readonly nodeId: string;
+  readonly scope: ProjectionScope;
+  readonly agentId: string;
+  readonly report?: { readonly degraded: boolean; readonly reason?: string };
+}
+
 export class SessionRunner {
   readonly #deps: SessionRunnerDeps;
   #sessionId: string | undefined;
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
+  #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
   #turnId: string | undefined;
-  #main: { state: AgentState; nodeId: string } | undefined;
+  #agent: ActiveAgent | undefined;
   #orientPackRef: AgentState['orientPackRef'];
+  #rounds: AgentRounds[] = [];
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
@@ -147,8 +183,9 @@ export class SessionRunner {
     this.#sessionId = undefined;
     this.#records = [];
     this.#turnId = undefined;
-    this.#main = undefined;
+    this.#agent = undefined;
     this.#orientPackRef = undefined;
+    this.#rounds = [];
   }
 
   async handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
@@ -208,7 +245,9 @@ export class SessionRunner {
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },
         ]);
-        this.#main = undefined;
+        this.#agent = undefined;
+        this.#orientPackRef = undefined;
+        this.#rounds = [];
         break;
     }
   }
@@ -236,16 +275,29 @@ export class SessionRunner {
     ]);
   }
 
+  #initialRevision(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEventV1, { type: 'RunStart' }>,
+  ): GraphRevision {
+    if (event.mode === 'CHAT') return initialChatRevision(workflowRunId, this.#mainRef());
+    const template = this.#deps.templates.get(event.templateRef.id);
+    if (template === undefined) throw new Error(`unknown template ${event.templateRef.id}`);
+    const compiled = compileTemplate(workflowRunId, template);
+    if (compiled.errors.length > 0) throw new Error('a built-in template does not compile');
+    return compiled.revision;
+  }
+
   async #onRunStart(
     workflowRunId: string,
     event: Extract<KernelToWorkflowEventV1, { type: 'RunStart' }>,
   ): Promise<void> {
-    if (event.mode !== 'CHAT') throw new Error('analyze joins the runner in S1-WF-4');
+    this.#mode = event.mode;
     await this.#append([
       {
         type: 'WORKFLOW_RUN_STARTED',
         workflowRunId,
         mode: event.mode,
+        ...(event.mode === 'ORCHESTRATION' ? { templateRef: event.templateRef } : {}),
         preset: event.preset,
         initialInput: event.initialInput,
       },
@@ -267,18 +319,19 @@ export class SessionRunner {
         },
       ]);
     }
-    await this.#extend(
-      workflowRunId,
-      1,
-      'TEMPLATE',
-      initialChatRevision(workflowRunId, this.#mainRef()),
-    );
+    await this.#extend(workflowRunId, 1, 'TEMPLATE', this.#initialRevision(workflowRunId, event));
     if (!event.initialInput) await this.#advance(workflowRunId);
   }
 
   #mainRef(): DefinitionRef {
-    const { id, version } = this.#deps.agent.ref;
+    const { id, version } = this.#binding(MAIN).ref;
     return { id, version };
+  }
+
+  #binding(agentId: string): AgentBinding {
+    const binding = this.#deps.agents.get(agentId);
+    if (binding === undefined) throw new Error(`unknown Agent ${agentId}`);
+    return binding;
   }
 
   async #onHumanAnswered(
@@ -307,12 +360,7 @@ export class SessionRunner {
         contentRef: event.contentRef,
         ...(event.origin === 'requested' ? { humanRequestId: event.humanRequestId } : {}),
       },
-      {
-        type: 'TURN_STARTED',
-        workflowRunId,
-        turnId: event.turnId,
-        promptNodeId: node.nodeId,
-      },
+      { type: 'TURN_STARTED', workflowRunId, turnId: event.turnId, promptNodeId: node.nodeId },
       {
         type: 'NODE_ENDED',
         workflowRunId,
@@ -326,15 +374,18 @@ export class SessionRunner {
   }
 
   async #advance(workflowRunId: string): Promise<void> {
-    const growth = chatGrowthPoint(projectGraph(this.#records, workflowRunId));
-    if (growth !== undefined) {
-      const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
-      await this.#extend(
-        workflowRunId,
-        revision,
-        'CHAT_GROWTH',
-        chatGrowthRevision(workflowRunId, revision, growth, this.#mainRef()),
-      );
+    if (this.#mode === 'CHAT') {
+      const projected = projectGraph(this.#records, workflowRunId);
+      const growth = chatGrowthPoint(projected);
+      if (growth !== undefined) {
+        const revision = projected.lastRevision + 1;
+        await this.#extend(
+          workflowRunId,
+          revision,
+          'CHAT_GROWTH',
+          chatGrowthRevision(workflowRunId, revision, growth, this.#mainRef()),
+        );
+      }
     }
     const projected = projectGraph(this.#records, workflowRunId);
     const { skipped, ready } = advanceGraph(projected.graph, projected.view);
@@ -359,8 +410,12 @@ export class SessionRunner {
           path: record.path,
         },
       ]);
-      if (node.kind === 'HUMAN') await this.#requestHuman(workflowRunId, node.nodeId);
-      else await this.#startAgent(workflowRunId, node.nodeId);
+      if (node.kind === 'HUMAN') {
+        await this.#requestHuman(workflowRunId, node.nodeId);
+      } else {
+        if (record.agentRef === undefined) throw new Error('an AGENT node names no Agent');
+        await this.#startAgent(workflowRunId, node.nodeId, record.agentRef.id, record.inputFrom);
+      }
     }
   }
 
@@ -378,35 +433,56 @@ export class SessionRunner {
       throw new Error(`requestHuman refused: ${response.reasonCode}`);
   }
 
-  #context(workflowRunId: string): AgentContext {
+  #objectiveRef(workflowRunId: string): HumanContentRef {
+    const prompt = [...this.#records]
+      .reverse()
+      .find((record) => record.type === 'HUMAN_ANSWERED' && record.workflowRunId === workflowRunId);
+    if (prompt?.type !== 'HUMAN_ANSWERED') throw new Error('an Agent needs a prompt');
+    return prompt.contentRef;
+  }
+
+  #context(workflowRunId: string, scope: ProjectionScope, effort: ThinkingEffort): AgentContext {
     return {
-      objectiveRef: this.#objectiveRef(),
+      objectiveRef: this.#objectiveRef(workflowRunId),
       assembleInput: (status, final) => {
         const instructions = projectInstructions(this.#records, workflowRunId);
         return {
           final,
-          effort: this.#deps.agent.effort,
+          effort,
           ...(instructions === undefined ? {} : { projectInstructions: instructions }),
           ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
-          history: [...projectMainHistory(this.#records)],
+          history: [...projectHistory(this.#records, scope)],
           status,
         };
       },
     };
   }
 
-  #objectiveRef(): HumanContentRef {
-    const prompt = [...this.#records].reverse().find((record) => record.type === 'HUMAN_ANSWERED');
-    if (prompt?.type !== 'HUMAN_ANSWERED') throw new Error('main needs a prompt');
-    return prompt.contentRef;
+  /** The handoff a node takes as input: the latest one of this run. */
+  #handoffInput(workflowRunId: string): Extract<ProjectionScope, { kind: 'NODE' }>['handoff'] {
+    const ended = [...this.#records]
+      .reverse()
+      .find(
+        (record) =>
+          record.type === 'NODE_ENDED' &&
+          record.workflowRunId === workflowRunId &&
+          record.result?.['action'] === 'HANDOFF',
+      );
+    if (ended?.type !== 'NODE_ENDED' || ended.resultRef === undefined) return undefined;
+    return { outputRef: ended.resultRef, toolCallId: String(ended.result?.['toolCallId']) };
   }
 
-  async #startAgent(workflowRunId: string, nodeId: string): Promise<void> {
+  async #startAgent(
+    workflowRunId: string,
+    nodeId: string,
+    agentId: string,
+    inputFrom: 'HANDOFF' | undefined,
+  ): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     const turnId = this.#turnId;
-    if (turnId === undefined) throw new Error('main needs an open Turn');
+    if (turnId === undefined) throw new Error('an AgentRun needs an open Turn');
     const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
-    const { agent } = this.#deps;
+    const binding = this.#binding(agentId);
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -414,17 +490,17 @@ export class SessionRunner {
         turnId,
         agentRunId,
         nodeId,
-        agentRef: agent.ref,
-        effort: agent.effort,
+        agentRef: binding.ref,
+        effort: binding.effort,
       },
       {
         type: 'REQUEST_CONTEXT',
         workflowRunId,
         turnId,
         agentRunId,
-        modelRef: agent.modelRef,
-        thinking: agent.effort,
-        toolsDigest: agent.toolsDigest,
+        modelRef: binding.modelRef,
+        thinking: binding.effort,
+        toolsDigest: binding.toolsDigest,
         runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
       },
     ]);
@@ -435,10 +511,10 @@ export class SessionRunner {
         workflowRunId,
         agentRunId,
         nodeId,
-        agentRef: agent.ref,
-        effort: agent.effort,
+        agentRef: binding.ref,
+        effort: binding.effort,
         workspaceViewId: 'main',
-        display: { label: this.#deps.definitions.label },
+        display: { label: binding.definitions.label },
       },
       contextOf(sessionId, workflowRunId),
     );
@@ -446,25 +522,35 @@ export class SessionRunner {
       await this.#endNode(workflowRunId, turnId, nodeId, 'FAILED');
       return;
     }
+    const handoff = inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
+    const scope: ProjectionScope =
+      this.#mode === 'CHAT'
+        ? { kind: 'MAIN' }
+        : {
+            kind: 'NODE',
+            workflowRunId,
+            agentRunId,
+            ...(handoff === undefined ? {} : { handoff }),
+          };
     const transition = startAgent(
       {
         workflowRunId,
         sessionId,
         turnId,
         agentRunId,
-        effort: agent.effort,
-        definitions: this.#deps.definitions,
+        effort: binding.effort,
+        definitions: binding.definitions,
         ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
       },
-      this.#context(workflowRunId),
+      this.#context(workflowRunId, scope, binding.effort),
     );
-    this.#main = { state: transition.state, nodeId };
+    this.#agent = { state: transition.state, nodeId, scope, agentId };
     await this.#apply(workflowRunId, transition);
   }
 
   async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
     await this.#append(transition.records);
-    if (this.#main !== undefined) this.#main = { ...this.#main, state: transition.state };
+    if (this.#agent !== undefined) this.#agent = { ...this.#agent, state: transition.state };
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
@@ -476,18 +562,19 @@ export class SessionRunner {
       if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
         throw new Error(`submitUnit refused: ${response.reasonCode}`);
     }
-    if (transition.ending !== undefined) await this.#finishMain(workflowRunId, transition.ending);
+    if (transition.ending !== undefined) await this.#onEnding(workflowRunId, transition.ending);
   }
 
   async #onUnitReport(
     workflowRunId: string,
     report: Extract<KernelToWorkflowEventV1, { type: 'UnitReport' }>,
   ): Promise<void> {
-    if (this.#main === undefined) return;
+    const active = this.#agent;
+    if (active === undefined) return;
     const transition = receiveAgentReport(
-      this.#main.state,
+      active.state,
       report,
-      this.#context(workflowRunId),
+      this.#context(workflowRunId, active.scope, active.state.effort),
       this.#deps.config,
     );
     await this.#apply(workflowRunId, transition);
@@ -498,7 +585,8 @@ export class SessionRunner {
     turnId: string,
     nodeId: string,
     status: 'SUCCEEDED' | 'FAILED',
-    resultRef?: NonNullable<AgentState['modelOutputRef']>,
+    result?: Record<string, unknown>,
+    resultRef?: ArtifactRef,
   ): Promise<void> {
     await this.#append([
       {
@@ -507,23 +595,32 @@ export class SessionRunner {
         turnId,
         nodeId,
         status,
+        ...(result === undefined ? {} : { result }),
         ...(resultRef === undefined ? {} : { resultRef }),
       },
     ]);
   }
 
-  async #finishMain(workflowRunId: string, ending: AgentEnding): Promise<void> {
-    const main = this.#main;
-    if (main === undefined) return;
-    const { agentRunId, turnId, wrapUpReason } = main.state;
-    this.#main = undefined;
+  async #endAgentRun(
+    workflowRunId: string,
+    active: ActiveAgent,
+    outcome: AgentEnding['kind'],
+  ): Promise<void> {
+    const { agentRunId, turnId, wrapUpReason, round, definitions } = active.state;
+    this.#agent = undefined;
+    this.#rounds.push({
+      agentId: active.agentId,
+      agentRunId,
+      roundsUsed: round,
+      maxRounds: definitions.limits.maxRounds,
+    });
     await this.#append([
       {
         type: 'AGENT_RUN_ENDED',
         workflowRunId,
         turnId,
         agentRunId,
-        outcome: ending.kind,
+        outcome,
         ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
       },
     ]);
@@ -532,21 +629,157 @@ export class SessionRunner {
       { requestId: newId('req'), sessionId, workflowRunId, agentRunId },
       contextOf(sessionId, workflowRunId),
     );
-    const messageRef = ending.kind === 'REPLIED' ? ending.messageRef : undefined;
-    await this.#endNode(
+  }
+
+  async #publishReport(
+    workflowRunId: string,
+    active: ActiveAgent,
+    body: Record<string, unknown>,
+    source: ControlSource | undefined,
+    report: NonNullable<ActiveAgent['report']>,
+  ): Promise<void> {
+    this.#agent = { ...active, report };
+    await this.#apply(
       workflowRunId,
-      turnId,
-      main.nodeId,
-      ending.kind === 'REPLIED' ? 'SUCCEEDED' : 'FAILED',
-      messageRef,
+      publishReport(
+        active.state,
+        { goalRef: this.#objectiveRef(workflowRunId), report: body },
+        source,
+      ),
     );
-    if (ending.kind === 'REPLIED' && ending.budget.run !== 'NORMAL') {
-      await this.#deps.gateway.closeRun(
-        { requestId: newId('req'), sessionId, workflowRunId, outcome: 'BUDGET' },
-        contextOf(sessionId, workflowRunId),
-      );
+  }
+
+  #reportInput(workflowRunId: string, active: ActiveAgent) {
+    const { round, agentRunId, definitions } = active.state;
+    return {
+      workflowRunId,
+      facts: analysisFacts(this.#records, workflowRunId),
+      agentRounds: [
+        ...this.#rounds,
+        {
+          agentId: active.agentId,
+          agentRunId,
+          roundsUsed: round,
+          maxRounds: definitions.limits.maxRounds,
+        },
+      ],
+      createdAt: (this.#deps.now?.() ?? new Date()).toISOString(),
+    };
+  }
+
+  async #close(
+    workflowRunId: string,
+    outcome: 'COMPLETED' | 'BUDGET',
+    resultRef?: ArtifactRef,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    await this.#deps.gateway.closeRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        outcome,
+        ...(resultRef === undefined ? {} : { resultRef }),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+  }
+
+  async #closeFailed(workflowRunId: string, reason: string): Promise<void> {
+    const code: ReasonCode =
+      reason in REASON_CODE_CATEGORY ? (reason as ReasonCode) : 'WORKFLOW_INTERNAL';
+    const sessionId = this.#sessionIdOrThrow();
+    await this.#deps.gateway.closeRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        outcome: 'FAILED',
+        failure: { code, category: REASON_CODE_CATEGORY[code], source: 'WORKFLOW' },
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+  }
+
+  async #onEnding(workflowRunId: string, ending: AgentEnding): Promise<void> {
+    const active = this.#agent;
+    if (active === undefined) return;
+    const { turnId, wrapUpReason, definitions } = active.state;
+    const reports = definitions.finish.kind === 'REPORT';
+
+    if (ending.kind === 'FINISHED') {
+      const body = normalReportBody({
+        ...this.#reportInput(workflowRunId, active),
+        draft: ending.arguments as AnalysisReportDraft,
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      });
+      await this.#publishReport(workflowRunId, active, body, ending.source, { degraded: false });
       return;
     }
-    await this.#advance(workflowRunId);
+    if (ending.kind === 'DEGRADED' && reports) {
+      const body = degradedReportBody({
+        ...this.#reportInput(workflowRunId, active),
+        reason: ending.reason,
+      });
+      await this.#publishReport(workflowRunId, active, body, undefined, {
+        degraded: true,
+        reason: ending.reason,
+      });
+      return;
+    }
+
+    await this.#endAgentRun(workflowRunId, active, ending.kind);
+    switch (ending.kind) {
+      case 'HANDED_OFF':
+        await this.#endNode(
+          workflowRunId,
+          turnId,
+          active.nodeId,
+          'SUCCEEDED',
+          { action: 'HANDOFF', toolCallId: ending.source.toolCallId },
+          ending.source.modelOutputRef,
+        );
+        await this.#advance(workflowRunId);
+        return;
+      case 'REPORTED': {
+        const budgetEnded =
+          active.report?.reason !== undefined && BUDGET_REASONS.includes(active.report.reason);
+        await this.#endNode(
+          workflowRunId,
+          turnId,
+          active.nodeId,
+          active.report?.degraded === true ? 'FAILED' : 'SUCCEEDED',
+          { action: 'FINISH' },
+          ending.reportRef,
+        );
+        await this.#advance(workflowRunId);
+        await this.#close(workflowRunId, budgetEnded ? 'BUDGET' : 'COMPLETED', ending.reportRef);
+        return;
+      }
+      case 'REPLIED':
+        await this.#endNode(
+          workflowRunId,
+          turnId,
+          active.nodeId,
+          'SUCCEEDED',
+          undefined,
+          ending.messageRef,
+        );
+        if (ending.budget.run !== 'NORMAL') {
+          await this.#close(workflowRunId, 'BUDGET');
+          return;
+        }
+        await this.#advance(workflowRunId);
+        return;
+      case 'DEGRADED':
+        await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
+        await this.#advance(workflowRunId);
+        return;
+      case 'FAILED':
+        await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
+        if (reports) await this.#closeFailed(workflowRunId, ending.code);
+        else await this.#advance(workflowRunId);
+        return;
+    }
   }
 }

@@ -39,6 +39,13 @@ export const ContextHistoryEntrySchema = Type.Union(
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeV1Schema),
     }),
+    /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
+    closed({
+      ...entry,
+      kind: Type.Literal('HANDOFF'),
+      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+      toolCallId: ToolCallIdSchema,
+    }),
     /** Answers a tool call that did not run, or corrects a reply without one. */
     closed({
       ...entry,

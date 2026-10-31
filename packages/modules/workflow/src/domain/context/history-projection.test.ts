@@ -1,7 +1,10 @@
 import { newId, type ArtifactRef, type SessionLogRecord } from '@multiagentos/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { projectInstructions, projectMainHistory } from './main-projection.js';
+import { projectHistory, projectInstructions } from './history-projection.js';
+
+const projectMainHistory = (records: readonly SessionLogRecord[]) =>
+  projectHistory(records, { kind: 'MAIN' });
 
 const at = '2026-10-31T00:00:00.000Z';
 const ref = (digit: string): ArtifactRef => {
@@ -223,5 +226,30 @@ describe('projectInstructions', () => {
     ]);
     expect(projectInstructions(records, run)).toMatchObject({ ref: ref('2'), trusted: false });
     expect(projectInstructions([], run)).toBeUndefined();
+  });
+});
+
+describe('a template node', () => {
+  const handoff = { outputRef: ref('7'), toolCallId: 'call_9' };
+
+  it('sees the goal, its handoff and its own steps only', () => {
+    const entries = projectHistory(conversation, {
+      kind: 'NODE',
+      workflowRunId: run,
+      agentRunId: viewerRun,
+      handoff,
+    });
+    expect(entries.map((entry) => entry.kind)).toEqual(['HUMAN', 'HANDOFF']);
+    expect(entries.every((entry) => entry.category === 'PINNED')).toBe(true);
+    expect(entries[1]).toMatchObject(handoff);
+  });
+
+  it('does not see the steps of another Agent', () => {
+    const entries = projectHistory(conversation, {
+      kind: 'NODE',
+      workflowRunId: run,
+      agentRunId: viewerRun,
+    });
+    expect(JSON.stringify(entries)).not.toContain('call_1');
   });
 });
