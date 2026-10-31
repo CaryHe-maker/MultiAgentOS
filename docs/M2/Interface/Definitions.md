@@ -30,7 +30,7 @@ interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersi
   startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 只在每个 WorkflowRun 的第一个 Turn 提交
   actions: {
     finish: { toolRef: DefinitionRef; kind: 'REPLY' };   // 阶段 4 增加 'FINISH_SUBAGENT'
-    // 阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
+    // 阶段 2：todos（update_todos，M2Design 第 3.5 节）；阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
   };
   limits: {
     maxRounds: number;                           // 1..100
@@ -154,6 +154,8 @@ type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；
 - `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）；
 - `OUTPUT_READ`（阶段 2）：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
+
+工具 Unit 的预览上限按定义的版本区分（M2Design 第 8.2 节）：`v1` Unit 使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`，`v0` Unit 使用 `maxOutputBytes`；上限不写在定义中。
 
 其余字段与 M1Interface 第 9.2 节相同。M1 的 Unit 实例保持 `v0`，供 `analyze` 使用；M2 新写的 Unit 实例使用 `v1`。
 Tool 与 Prompt 沿用 `v0`。

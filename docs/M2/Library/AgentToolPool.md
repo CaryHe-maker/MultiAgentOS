@@ -39,7 +39,7 @@ M1 的 16 个定义原样保留（`v0`，供 `analyze` 使用）。阶段 1 新�
 - 草稿（`v0.x`）在阶段 1 的退出评测之后定稿并封存为 `v1.0.0`（与 M1 的做法相同）。
 - main 的额度参数（Interface/Definitions 第 2 节）初值取 M1 的全局值：`perCallInputLimit = 96000`、`maxOutputTokens = 8192`、
   `finalInputBudget = 72000`、`finalMaxOutputTokens = 8192`；`limits` 为 `maxRounds = 40`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
-- 阶段 2 起 main 增加写入工具与 `read_output`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
+- 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
 
 ## 4. 加载校验
 
@@ -74,9 +74,9 @@ M1 的测试全部保留。增加：`v1` 各条规则的反例；`v0` 与 `v1` �
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 3–6 节 |
-| 2 | Unit 的能力与资源键；`file-write`、`file-edit` 与写入工具；UNIT `output-read`（`executionKind = OUTPUT_READ`，受保护能力 `repo.read`）与 TOOL `read-output`（`purpose = UNIT`，模型可见的名称 `read_output`，参数为 `executor.OutputReadInput` 中由模型填写的部分：`toolCallId`、`offset?`、`limit?`、`pattern?`）；Agent 的能力白名单 |
+| 2 | Unit 的能力与资源键；`file-write`、`file-edit` 与写入工具；TOOL `update-todos`（`purpose = CONTROL`，模型可见的名称 `update_todos`，参数为 `workflow.UpdateTodosArgs`，M2Design 第 3.5 节）与 Agent 的 `actions.todos`；UNIT `output-read`（`executionKind = OUTPUT_READ`，受保护能力 `repo.read`）与 TOOL `read-output`（`purpose = UNIT`，模型可见的名称 `read_output`，参数为 `executor.OutputReadInput` 中由模型填写的部分：`toolCallId`、`offset?`、`limit?`、`pattern?`）；Agent 的能力白名单 |
 | 3 | `run-command`、`git-inspect` 及其工具 |
-| 4 | explorer、worker（都带 `read_output`）、`finish_subagent` 的结果契约、`run_subagents` 工具、Unit 的并发类别 |
+| 4 | explorer、worker（都带 `read_output`，worker 另带 `update_todos`）、`finish_subagent` 的结果契约、`run_subagents` 工具、Unit 的并发类别 |
 | 5 | `ask_user` 工具 |
 | 6 | `web-search`、`web-fetch` 及其工具 |
 | 7 | 使用者模板的校验、`research` 模板 |

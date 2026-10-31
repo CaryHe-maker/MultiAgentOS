@@ -55,10 +55,11 @@ minShare(agent)     = F(agent) + 2 × wrapUpMargin(agent)
 
 M2Design 第 7.3 节"压缩的额度"：
 
-- 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前 Turn 账本（阶段 4 起模板节点为该 AgentRun 的账本）；
-- 预留量 = 摘要请求的输入估算（与普通调用同一估算方法）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不压缩，
-  按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮）；
-- 用户 `/compact` 的压缩没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝；
+- 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前 Turn 账本；阶段 4 起模板节点与 SubAgent 为该 AgentRun 自己的账本；
+- 修剪不调用模型，不预留；只有摘要请求预留，纯文本回退的每次请求各自预留与结算；
+- 预留量 = 摘要请求的输入估算（字节估算，与普通调用的预留同一方法，不用压缩检查点的实测加估算）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不写摘要，
+  按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮；SubAgent 以 `finish_subagent` 结束）；
+- 用户 `/compact` 与空闲时的预先压缩没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝，预先压缩不做；
 - 结算按实际用量（M1 的方式）；缓存命中的输入按模型定义的计价计入。
 
 ## 4. 资源上限
@@ -109,4 +110,4 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 | 4 | AgentRun 级账本与逐级委派、委派保留、`minShare` 的派生检查、等待子任务时墙钟暂停 |
 | 5 | 暂停时墙钟暂停 |
 | 7 | 模板节点从 Turn 账本划出份额 |
-| 8 | 第 3.5 节：压缩的额度 |
+| 8 | 第 3.5 节：压缩的额度（SubAgent 的部分在阶段 4 完成后） |

@@ -58,7 +58,9 @@ interface ExecutionDuties {            // 增加的部分
   removeSessionFiles(sessionId: string): Promise<void>;  // 删除 Session 或新建失败时删除 kernel-execution 目录
   startArtifactSweep(): { started: boolean };            // 定期回收：登记后台回收，上一次未完成时返回 false（Execution 第 6 节）
   inheritArtifacts(refs: ArtifactRef[]): Promise<void>;  // Fork（阶段 2）
-  estimateAssembly(unitAttemptId: string): number;       // 阶段 8：组装后的输入估算，供压缩检查点使用
+  estimateAssembly(unitAttemptId: string): number;       // 阶段 8：组装后的输入估算（实测加估算，Execution 第 6a 节），供压缩检查点使用
+  startPrune(request: PruneRequest): { pruneAttemptId: string };
+                                                         // 阶段 8：修剪工具结果（Execution 第 6a 节）；结果经 COMPACTION_PRUNE_DONE 回到处理循环
   startCompactionSummary(request: CompactionSummaryRequest): { summaryAttemptId: string };
                                                          // 阶段 8：登记内部 MODEL 尝试（Execution 第 6a 节）；结果经 COMPACTION_SUMMARY_DONE 回到处理循环
 }
@@ -118,9 +120,11 @@ M1 的消息全部保留（M1 Interaction 第 4.3 节），其中 `RUN_INIT` 由
 | `HUMAN_ANSWER` | 控制 | UserInteraction | Core | 1 |
 | `TURN_TIMEOUT` | 控制 | Core 定时器 | Core | 5 |
 | `PAUSE_RUN`、`RESUME_RUN`、`INTERRUPT_RUN` | 控制 | UserInteraction | Core | 5 |
+| `UPDATE_ACTIVITY` | 工作 | Workflow（`updateActivity`） | Core | 2 |
+| `STEER_RUN` | 控制 | UserInteraction（`steerRun`） | Core | 5 |
 | `COMPACTION_SOURCE_REPORT`、`COMPACTION_ACK` | 工作 | Workflow（`reportCompactionSource`、`ackCompaction`） | Core | 8 |
 | `COMPACT_CONTEXT` | 控制 | UserInteraction（`compactContext`） | Core | 8 |
-| `COMPACTION_SUMMARY_DONE` | 工作 | Execution（摘要请求完成，作为执行事实回到处理循环） | Core | 8 |
+| `COMPACTION_PRUNE_DONE`、`COMPACTION_SUMMARY_DONE` | 工作 | Execution（修剪、摘要请求完成，作为执行事实回到处理循环） | Core | 8 |
 
 M1 的 `CANCEL_RUN` 在 M2 中只由 Session 管理投递（切换、新建、关闭时收敛当前运行），UserInteraction 不再直接取消运行。
 
@@ -218,7 +222,9 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 - **结果检查**（第 5.4 节）：UnitReport 带 `unitRunId` 与 `BudgetView`；工具 Unit 的结果分为预览（`outputRef`）与截断时的完整输出（`fullRef`），由 Execution 登记保留类别。
 - **`read_output`**（阶段 2）：Workflow 填入的 `fullRef` 在派发前由 Execution 检查归属与过期（Execution 第 5a 节）；过期时以 `REJECTED(ARTIFACT_EXPIRED)` 交付，不派发。
 - **压缩检查点**（阶段 8）：受理 `context-assemble` 之后、派发之前，Core 按 [Core](Core.md) 第 6a 节检查是否需要压缩；需要时这次尝试保持在途但不派发，
-  直到压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 交付，否则照常派发）。摘要请求是 Kernel 内部的 MODEL 尝试，不对应任何 `submitUnit`，不产生 UnitReport。
+  直到压缩结束（修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 交付，否则照常派发）。修剪与摘要请求是 Kernel 内部的尝试，不对应任何 `submitUnit`，不产生 UnitReport。
+  空闲压缩进行中开启的新 Turn，main 的第一次 `context-assemble` 同样挂起到压缩结束。
+- **技术重试的等待**：按 Execution 第 4a 节计算 `notBefore`；等待期间 Core 发出 `RETRYING` 的 ActivityEvent。
 
 ## 8. 关闭与故障关闭
 
@@ -248,5 +254,5 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 
 ## 11. 阶段
 
-本文全部内容属于阶段 1，标注了阶段的部分除外：阶段 2（快照、Fork、工作区差异、两步授权、`read_output` 的输入检查）、阶段 3（停机）、阶段 4（按 AgentRun 分队列、委派、等待调用机会）、
-阶段 5（暂停、中止、Turn 超时）、阶段 8（压缩检查点、压缩的消息与内部摘要尝试）。
+本文全部内容属于阶段 1，标注了阶段的部分除外：阶段 2（快照、Fork、工作区差异、两步授权、`read_output` 的输入检查、`updateActivity`）、阶段 3（停机）、阶段 4（按 AgentRun 分队列、委派、等待调用机会）、
+阶段 5（暂停、中止、Turn 超时、运行中插话）、阶段 8（压缩检查点、空闲触发、压缩的消息与内部的修剪与摘要尝试）。

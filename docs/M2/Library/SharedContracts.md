@@ -56,7 +56,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | `kernel.control.StartSessionRequest.v1`、`OpenSessionRequest.v1`、`StartRunRequest.v1`、`ListSessionsRequest.v1`、`DeleteSessionRequest.v1` | `kernel-control/session-requests.ts` | InteractionKernel 第 2.2 节 |
 | `kernel.control.AnswerAuthorizationRequest.v1`、`AnswerHumanRequest.v1`、`ReadArtifactRequest.v1` | `kernel-control/interaction-requests.ts` | InteractionKernel 第 2.3 节 |
 | `kernel.control.SessionAccepted.v1` | `kernel-control/responses.ts` | InteractionKernel 第 2.2 节 |
-| `kernel.control.InteractionInboxEvent.v1`（含 `AuthorizationRequest`、`AuthorizationResolved`、`HumanRequest`、`HumanResolved`、`MessagePublished`、`RunStateChanged`、`ActivityEvent`、`RunFinished`） | `kernel-control/interaction-events.ts` | InteractionKernel 第 3.1 节 |
+| `kernel.control.InteractionInboxEvent.v1`（含 `AuthorizationRequest`、`AuthorizationResolved`、`HumanRequest`、`HumanResolved`、`MessagePublished`、`RunStateChanged`、`ActivityEvent`（含 `RETRYING` 与 `retry`）、`RunFinished`） | `kernel-control/interaction-events.ts` | InteractionKernel 第 3.1 节 |
 | `kernel.control.GatewayForward.v1` | `kernel-control/gateway-forward.ts` | 增加 M2 的请求类型 |
 
 ### 3.5 `executor`、`kernel.execution`、`context`
@@ -65,7 +65,8 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 |---|---|---|
 | `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 5 节 |
 | `executor.FileReadOutput.v1` | `executor/file-read.ts` | 增加内容的 SHA-256 |
-| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines? }`（按 Unit 定义的版本选取，M2Design 第 8.2 节） |
 | `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`） |
 | `context.ContextPack.v1` | `context/context-pack.ts` | 增加 `elidedEntries`（只在收尾调用的保险中出现），取代 `elidedRequestIds` |
 | `executor.RetentionNotice.v1` | `executor/retention.ts` | 预览的截断说明：策略、单位、上限、保留量、省略量、完整输出是否也被截断（超过 `maxFullOutputBytes`）（ExecutorSet 第 4 节） |
@@ -101,6 +102,8 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 ## 5. 阶段
 
 本文第 3 节为阶段 1 的清单；后续阶段的 Schema 在各自的契约门中加入本文。
-阶段 2 加入 `executor.OutputReadInput.v1`、`OutputReadOutput.v1`（`executor/output-read.ts`，ExecutorSet 第 5a 节）与日志记录 `ArtifactOwnerLine` 的 `fullOutput` 字段（Interface/Persistence 第 4.3 节）。
-阶段 8 加入压缩相关的类型：`CompactionSourceQuery`、`ContextCompacted`、`CompactionFailed`（运行级事件）、`ReportCompactionSourceRequest`、`AckCompactionRequest`、`CompactContextRequest`，
-以及日志记录 `CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED`（Interface/WorkflowKernel 第 3.4 节、InteractionKernel、Persistence 第 2.2 节）。
+阶段 2 加入 `executor.OutputReadInput.v1`、`OutputReadOutput.v1`（`executor/output-read.ts`，ExecutorSet 第 5a 节）与日志记录 `ArtifactOwnerLine` 的 `fullOutput` 字段（Interface/Persistence 第 4.3 节）；
+`workflow.UpdateTodosArgs.v1`（`workflow/update-todos.ts`）、`kernel.unit.UpdateActivityRequest.v1`（WorkflowKernel 第 2.5 节）、`ActivityEvent.todos` 与日志记录 `TODOS_UPDATED`。
+阶段 5 加入 `kernel.control.SteerRunRequest.v1` 与 `HumanAnswered` 的 `kind = 'steer'`、`HUMAN_ANSWERED.redirectedFrom`。
+阶段 8 加入压缩相关的类型：`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`（含 `summaryInput`）、`CompactionFailed`（运行级事件）、`ReportCompactionSourceRequest`（模型轮条目的 `measured`）、`AckCompactionRequest`（含 `stage`）、`CompactContextRequest`，
+修剪与纯文本式摘要请求的 Executor 输入输出（ExecutorSet 第 6.4 节），以及日志记录 `TOOL_RESULTS_PRUNED`、`CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED` 与 `CONTEXT_ASSEMBLED.headDigest`、`ContextPack.headDigest`（Interface/WorkflowKernel 第 3.4 节、InteractionKernel、Persistence 第 2.2 节）。

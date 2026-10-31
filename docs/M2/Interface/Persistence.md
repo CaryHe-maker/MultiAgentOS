@@ -57,7 +57,7 @@ interface LogRecordBase {
 | `NODE_STARTED` | `nodeId`、`path` | 1 |
 | `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?` | 1 |
 | `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind` | 1 |
-| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?` | 1 |
+| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
@@ -67,9 +67,11 @@ interface LogRecordBase {
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?` | 1 |
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
-| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
-| `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`summaryRef`、`usage` | 8 |
-| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'` | 8（阶段 2 已完成时） |
+| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
+| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` | 2 |
+| `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） | 8 |
+| `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` | 8 |
+| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'`；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 | 8（阶段 2 已完成时） |
 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 | 1 |
 | `LOG_TAIL_REPAIRED` | `truncatedBytes` | 1 |
 | `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` | 1 |
@@ -140,7 +142,7 @@ interface ArtifactOwnerLine {
   size: number;
   retention: 'SESSION' | 'EXPIRING';  // M2Design 第 10.1 节
   source: 'PRODUCED' | 'INHERITED';   // INHERITED：Fork 时从原 Session 继承（阶段 2）
-  fullOutput?: true;                  // 工具 Unit 截断时的完整输出；output-read 只接受带此标记的引用（阶段 2）
+  fullOutput?: true;                  // 某次工具调用的完整输出：截断时另存的完整输出（阶段 2），或修剪时为未截断的预览补登的一行（阶段 8）；output-read 只接受带此标记的引用
   retainedSince: string;              // 保留期的起点：PRODUCED 为写入时间，INHERITED 沿用原 Session 的登记
   at: string;
 }

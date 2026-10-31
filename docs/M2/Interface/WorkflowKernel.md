@@ -17,7 +17,9 @@ Workflow 只持有 `WorkflowGatewayPort`；Gateway 以 `Envelope.producer = 'wor
 | Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 | 1 |
 | Kernel → Workflow，运行级 | 工作区回退与差异 | 2 |
 | Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 | 5 |
-| 双向，运行级 | 上下文压缩：材料查询与回答、压缩结果与确认 | 8 |
+| Workflow → Kernel | 待办进度（`updateActivity`，只用于界面） | 2 |
+| Kernel → Workflow，运行级 | 运行中插话（`HumanAnswered(kind: steer)`） | 5 |
+| 双向，运行级 | 上下文压缩：材料查询与回答、修剪结果与压缩结果及其确认 | 8 |
 
 ## 2. Workflow → Kernel
 
@@ -33,6 +35,7 @@ interface WorkflowGatewayPort {
   readProjectFile(request: ReadProjectFileRequest, context: BoundaryContext): Promise<ProjectFileContent | SyscallRejected>;
   reportSessionCommand(request: ReportSessionCommandRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(request: ReportSessionListRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  // 阶段 2：updateActivity（第 2.5 节）
   // 阶段 4：reserveDelegation、releaseDelegation
   // 阶段 8：reportCompactionSource、ackCompaction（第 2.4 节）
 }
@@ -181,7 +184,8 @@ interface ReportCompactionSourceRequest {
   sessionId: string;
   workflowRunId: string;
   compactionId: string;              // 来自 CompactionSourceQuery
-  entries: ContextHistoryEntry[];    // 该对象当前的投影条目，与 context-assemble 输入中的历史条目同一结构（带 seq、turnId、类别）
+  entries: ContextHistoryEntry[];    // 该对象当前的投影条目，与 context-assemble 输入中的历史条目同一结构（带 seq、turnId、类别）；
+                                     // 模型轮条目另带 measured: { inputTokens, outputTokens, headDigest }（来自 MODEL_TURN.usage 与该轮 CONTEXT_ASSEMBLED）
 }
 
 interface AckCompactionRequest {
@@ -189,12 +193,29 @@ interface AckCompactionRequest {
   sessionId: string;
   workflowRunId: string;
   compactionId: string;
-  outcome: 'RECORDED' | 'FAILED';    // RECORDED：已追加 CONTEXT_COMPACTED；FAILED：日志追加失败（随后按内部错误处理）
+  stage: 'PRUNE' | 'SUMMARY';        // 确认的是 ToolResultsPruned 还是 ContextCompacted
+  outcome: 'RECORDED' | 'FAILED';    // RECORDED：已追加 TOOL_RESULTS_PRUNED 或 CONTEXT_COMPACTED；FAILED：日志追加失败（随后按内部错误处理）
 }
 ```
 
-- Workflow 在追加 `CONTEXT_COMPACTED` 成功之后才发出 `ackCompaction(RECORDED)`；Kernel 收到之前，压缩不生效。
+- Workflow 在追加 `TOOL_RESULTS_PRUNED` 或 `CONTEXT_COMPACTED` 成功之后才发出对应的 `ackCompaction(RECORDED)`；Kernel 收到之前，修剪或摘要不生效。
+  同一次压缩至多两次确认（先 `PRUNE`，后 `SUMMARY`），每次至多一个未确认的结果。
 - 回答查询与确认都不改变节点状态，也不计入任何 AgentRun 的 Round。
+
+### 2.5 待办进度（阶段 2）
+
+```ts
+interface UpdateActivityRequest {
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+  agentRunId: string;                 // 必须是 ACTIVE 的 AgentRun
+  todos: { total: number; done: number; current?: string };   // total ≤30；current ≤80 个字符，为进行中的一项
+}
+```
+
+- 与 `display` 相同，只用于界面：Kernel 不做任何判断，把 `todos` 原样放进该 AgentRun 之后的 ActivityEvent（M2Design 第 3.5 节）；不写审计，不计入额度与工具次数。
+- Workflow 在追加 `TODOS_UPDATED` 之后才发出本请求。
 
 ## 3. Kernel → Workflow
 
@@ -206,8 +227,8 @@ interface AckCompactionRequest {
 type KernelToWorkflowEvent =
   | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
   // 阶段 2：WorkspaceReverted、WorkspaceDiverged
-  // 阶段 5：RunPaused、RunResumed、RunInterrupted、HumanCancelled
-  // 阶段 8：CompactionSourceQuery、ContextCompacted（第 3.4 节）
+  // 阶段 5：RunPaused、RunResumed、RunInterrupted、HumanCancelled；HumanAnswered 增加 kind = 'steer'
+  // 阶段 8：CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
 
 interface RunStart {
   type: 'RunStart';
@@ -244,7 +265,7 @@ interface BudgetView {               // M2Design 第 7.3 节：三级账本各�
 
 interface HumanAnswered {
   type: 'HumanAnswered';
-  kind: 'prompt';                    // 阶段 5 增加其余种类
+  kind: 'prompt';                    // 阶段 5 增加其余种类，以及运行中插话的 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
   origin: 'initial' | 'requested';
   humanRequestId?: string;           // origin = 'requested' 时必填
   inputId: string;                   // 前缀 inp，UserInteraction 分配；用于去重
@@ -347,7 +368,14 @@ type CompactionTarget = { kind: 'MAIN' } | { kind: 'AGENT_RUN'; agentRunId: stri
 interface CompactionSourceQuery {
   type: 'CompactionSourceQuery';
   compactionId: string;              // 前缀 cmp，Core 生成
-  target: CompactionTarget;          // MAIN：Turn-chat 中 main 的投影（整个 Session）；AGENT_RUN：模板中 AGENT 节点的投影
+  target: CompactionTarget;          // MAIN：Turn-chat 中 main 的投影（整个 Session）；AGENT_RUN：模板中 AGENT 节点或 SubAgent 的投影
+}
+
+interface ToolResultsPruned {        // 第 4.5 步的修剪结果；Workflow 追加 TOOL_RESULTS_PRUNED 后 ackCompaction(stage: 'PRUNE')
+  type: 'ToolResultsPruned';
+  compactionId: string;
+  target: CompactionTarget;
+  items: { requestId: string; toolCallId: string; prunedRef: ArtifactRef; readableRef: ArtifactRef; omittedBytes: number }[];   // ≥1
 }
 
 interface ContextCompacted {
@@ -357,12 +385,13 @@ interface ContextCompacted {
   fromSeq: number;                   // 被摘要取代的日志范围（含两端）
   toSeq: number;
   summaryRef: ArtifactRef;           // 长期保留
-  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number };
+  summaryInput: { mode: 'PREFIX' | 'TEXT'; omittedEntries: number };   // 摘要请求的方式；TEXT 为纯文本回退，omittedEntries 为去掉的条目数
+  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number };   // 各次摘要请求的合计
 }
 ```
 
-- Workflow 收到 `ContextCompacted` 后追加 `CONTEXT_COMPACTED`（Interface/Persistence 第 2.2 节），再 `ackCompaction`；投影规则见 M2Design 第 9.6 节。
-- 触发压缩的 `context-assemble` 随后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
+- Workflow 收到 `ToolResultsPruned` 后追加 `TOOL_RESULTS_PRUNED`，收到 `ContextCompacted` 后追加 `CONTEXT_COMPACTED`（Interface/Persistence 第 2.2 节），再分别 `ackCompaction`；投影规则见 M2Design 第 9.6 节。
+- 触发压缩的 `context-assemble` 在修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
 - `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；第三次溢出后按收尾处理。
 
 ## 4. Schema 强制的约束

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.6 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.7 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -386,6 +386,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 | `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方进入"等待子任务"，所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
 | `finish_subagent` | explorer、worker | 以结构化结果结束本 AgentRun（第 3.7 节） |
 | `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上追加一个附属于调用方的 `HUMAN(ask / confirm / review)` 节点：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |
+| `update_todos` | main、worker | 以完整列表替换该 AgentRun 的待办（见下文）；不改变任务图，不结束 AgentRun |
 | `finish`、`handoff-to-code-viewer` | M1 的 planner、code-viewer | 只在 `analyze` 模板中使用，语义见第 3.8 节 |
 
 `ask_user` 与 `run_subagents`、`handoff` 一样，是 Agent 主动改变任务图的控制工具：
@@ -393,6 +394,13 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 其他类型降级为文本）与 `review` 时要展示的 ArtifactRef。
 
 **M2 不提供单独申请授权的控制工具。** 授权只在 Agent 调用一个具体工具、由 Kernel 准入判定时发生；`ask_user` 的答复也不能产生授权（第 5.5 节）。
+
+**`update_todos`**（参考 OpenCode 的 `todowrite`）：长任务中让 Agent 维护结构化的待办，减少遗忘步骤。
+- 参数为 `todos: { content: string; status: 'pending' | 'in_progress' | 'done' | 'cancelled' }[]`（≤30 项，每项 ≤200 字符，`in_progress` 至多一项），每次以完整列表替换；
+- Workflow 校验后追加 `TODOS_UPDATED`（只引用模型输出中的这次调用，不复制正文），工具结果为一行计数（"待办 7 项：完成 3、进行中 1"）；参数不合法时以 FEEDBACK 退回；
+- 它是唯一可以与普通工具、结束控制工具在同一次返回中出现的控制工具（`CONTROL_MIXED` 的例外），Workflow 先处理它；不提交 Unit，不计入工具次数；只调用它的一轮计入无进展检测；
+- 进度经 `updateActivity` 交给 Kernel，Kernel 只把它原样放进 ActivityEvent（与 `display` 相同，不据此做任何判断），活动区显示"3/7 · <进行中的一项>"；
+- 待办不跨 AgentRun 继承：main 在下一个 Turn 中从投影里的历次调用看到之前的列表。
 
 ### 3.6 `run_subagents`
 
@@ -550,14 +558,14 @@ main 的派生准则写进它的 Prompt，要点如下：
 界面上两类请求按到达顺序排在同一个队列中，但以不同样式显示，每一项都标明来自哪个任务、哪个 Agent。
 
 此外还有第三类操作：暂停、继续、中止、回退、差异查看。它们是用户直接对运行发出的控制操作（ControlOperation，第 4.3、4.6 节），
-既不是业务输入，也不是授权。继续时附加的说明是业务输入，记为 `HUMAN(steer)`（第 4.5 节）。
+既不是业务输入，也不是授权。运行中插入的说明与继续时附加的说明是业务输入，记为 `HUMAN(steer)`（第 4.5 节）。
 
 ### 4.2 HUMAN 节点
 
 | 种类 | 由谁产生 | 何时创建 | 关系 | 完成 |
 |---|---|---|---|---|
 | `prompt` | 用户主动输入：Turn-chat 的第一条提示词与之后的每条消息、`mas run` 的目标、`/run` 的目标 | 两种来源（`origin`）：<br>- `initial`：只用于 Session 的第一条消息（新建或 Fork）与 `mas run` 的目标，节点创建时已带有内容；<br>- `requested`：此后运行中的 `prompt` 一律是请求式，main 结束（不论成败）后 Workflow 先创建节点并发出请求，系统进入 AWAITING_INPUT，用户输入后完成 | 下游的 main AgentRun 或模板实例依赖它 | 收到用户输入；Kernel 随即开启新的 Turn（第 2.3 节） |
-| `steer` | 用户在暂停后附加的说明 | 用户 `/continue <说明>` 时创建，创建时已带有内容 | 附属于目标 AgentRun | 创建即完成；内容出现在目标下一次组装的上下文末尾 |
+| `steer` | 用户在运行中插入的说明，或暂停后附加的说明 | 运行中 `/steer <说明>`（或 Alt+Enter 发送），或暂停后 `/continue <说明>` 时创建，创建时已带有内容 | 附属于目标 AgentRun | 创建即完成；内容出现在目标下一次组装的上下文末尾 |
 | `ask`、`confirm`、`review` | 模板预设，或 Agent 调用 `ask_user` | 模板节点在就绪时请求；`ask_user` 在调用时请求 | 模板节点：后继依赖它；`ask_user`：附属于调用方 | 收到符合 `answerSchema` 的答复，或超时 |
 
 | 字段 | 内容 |
@@ -568,7 +576,7 @@ main 的派生准则写进它的 Prompt，要点如下：
 | 超时 | `prompt` 不超时（空闲等待）；`ask`、`confirm`、`review` 在 `humanRequestTimeoutMs`（缺省 10 分钟）后以 `{ timedOut: true }` 作为答复，提问方据此继续 |
 
 - Kernel 只区分两类请求：`prompt` 是开放输入，要求静止并界定 Turn；`ask`、`confirm`、`review` 是局部询问（第 2.1 节）。
-- `initial` 与 `requested` 的区分只适用于 `prompt`。`steer` 由用户在暂停时主动发起，系统并没有在等它，所以始终在创建时带入内容、创建即完成，不经过请求。
+- `initial` 与 `requested` 的区分只适用于 `prompt`。`steer` 由用户主动发起，系统并没有在等它，所以始终在创建时带入内容、创建即完成，不经过请求。
 - 每个 HUMAN 节点都在 Workflow 日志中留下记录：请求时追加 `HUMAN_REQUESTED`，得到输入时追加 `HUMAN_ANSWERED`；初始 `prompt` 与 `steer` 只有 `HUMAN_ANSWERED`。
 - 重开 Session 时，若最后一个 `HUMAN_REQUESTED` 没有答复，就重新展示这个问题（第 10.3 节）。
 - 用户输入在 UserInteraction 中分配 ID，经 Kernel 转交 Workflow。Kernel 只转发，不解释内容。
@@ -625,6 +633,8 @@ Workflow 为每次变化追加对应的日志记录。
 
 | 操作 | 语义 |
 |---|---|
+| 运行中插话 `/steer [@任务名] <说明>`，或 Alt+Enter 发送输入框中的消息 | 不暂停、不打断当前工作（参考 OpenCode 的 `delivery: steer` 与 DeepSeek Harness 的 `steer`）。Kernel 存储正文后交给 Workflow，Workflow 创建附属于目标 AgentRun 的 `HUMAN(steer)` 节点，说明在目标下一次组装上下文时出现在末尾，也就是当前这一轮的工具全部结束之后：<br>- 只在 RUNNING 时受理，不开启新的 Turn；目标的规则与下一行相同；<br>- 送达时目标已经结束：目标是 SubAgent 时改为附属于它的父 AgentRun，并注明原定的目标；目标是 main 而本 Turn 已在收尾时，说明在下一个 Turn 的历史中出现（main 的投影跨 Turn），界面提示这一点 |
+| 排队 | RUNNING 时在输入框中按 Enter 的消息缺省进入排队，由 UserInteraction 保存在界面中（界面偏好，与草稿同类，不是 Session 信息）：<br>- 运行进入 AWAITING_INPUT 并收到 `HumanRequest(prompt)` 时，界面把排队的第一条作为开放输入提交，开启新的 Turn；其余的依次等待之后的 AWAITING_INPUT；<br>- 排队的消息在提交前可以编辑或撤回；中止、运行因额度结束、切换或关闭 Session 时不自动提交，放回输入框；<br>- Kernel 与 Workflow 不知道排队的存在 |
 | 继续 `/continue` | PAUSED → RUNNING；按第 4.4 节重新提交 |
 | 继续并附加说明 `/continue <说明>`，或暂停时直接输入的普通消息 | 同上。Workflow 先在 TaskGraph 上创建一个附属于目标 AgentRun 的 `HUMAN(steer)` 节点，记录说明，再恢复推进：<br>- 继续本身是控制操作，附加的说明是业务输入；<br>- `steer` 不开启新的 Turn；<br>- 目标缺省为本 Turn 的 main，可用 `/continue @<任务名> <说明>` 指定；<br>- 说明在目标下一次组装上下文时出现在末尾；<br>- 目标正在等待子任务时，说明在汇合之后可见，界面会提示这一点；<br>- 没有 main 且没有指定目标时，界面要求选择 |
 | 中止（暂停后再按一次 Ctrl+C） | 进入 INTERRUPTING：<br>- 取消全部在途与排队的 UnitAttempt（`INTERRUPTED(ABORTED)`）；<br>- 取消待答复的授权询问与人类请求：Kernel 向 Workflow 发出 `HumanCancelled { nodeId, reason }`，界面收到 `HumanResolved(cancelled)`；<br>- Workflow 把运行中的节点（包括被取消的 HUMAN 节点）记为 INTERRUPTED，结束全部 AgentRun；<br>- Turn-chat：请求下一个 `HUMAN(prompt)`，Kernel 以 `ABORTED` 结束本 Turn；<br>- Orchestration：`closeRun(CANCELLED)`，Turn 随运行收敛结束 |
@@ -743,7 +753,7 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 | `workspace.write` | 不确定 | 发起写入的 AgentRun 的可写根目录；已批准的条目覆盖其下全部路径 | 没有覆盖的条目时询问一次。main 的可写根目录是仓库根目录，批准后也覆盖全部 SubAgent 的 `writeScope`，所以每个 WorkflowRun 通常只问一次；main 尚未写过时，worker 第一次写入按它自己的 `writeScope` 询问 |
 | `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次 |
 | `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问 |
-| `command.exec` | 危险 | 规范化后的命令（按 `&&`、`\|\|`、`;`、`\|` 拆成子命令，并带上工作目录） | 默认每次询问 |
+| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问 |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
 | `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
 | `workspace.write`：目标为仓库根目录的 `AGENTS.md` | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
@@ -770,9 +780,15 @@ Architecture 中"危险行为每次都必须单独征得用户同意"在 M2 中�
 - 本 WorkflowRun 内这个命令前缀均允许；
 - 拒绝。
 
-前缀按 ARITY 表计算：`git push`、`npm run` 这类命令取前两个词，其余取第一个词。
-以下情况不提供两个"均允许"选项：命令中含 `$(`、反引号、`eval`、`sh -c`、`bash -c`，或含有通往 `sh` 的管道；沙盒不可用；
-命中 `deniedCommands` 或 `criticalCommands`。
+**命令的拆分**（参考 OpenCode 的 `shell/parse.ts`）：
+- 以 tree-sitter 的 bash 语法（WebAssembly 版本，不需要原生编译）解析命令，从语法树中取出每条简单命令（`&&`、`||`、`;`、`|`、换行、子 shell、`{ }` 中的都算），
+  得到命令名与参数；引号、转义与变量赋值前缀按语法树处理，不按文字拆分。资源键、名单匹配与询问展示都以这些子命令为准；
+- 前缀按表驱动的 ARITY 表计算：表中写明每个命令取前几个词作为前缀（如 `git push`、`npm run` 取两个词，`docker compose up`、`cargo run` 这类按表取三个词），
+  表中没有的命令取第一个词；表写在 ExecutorSet 的 `command/parse/` 中，可以追加；
+- **解析失败一律按最严格处理**：语法树中有错误节点、命令名不是字面量（如来自变量或命令替换），或拆分本身出错时，不提供两个"均允许"选项，只能单次允许或拒绝；
+  名单匹配照常进行（按原始文字再匹配一次，取两者的并集），不会因解析失败而漏掉禁止规则；
+- 以下情况同样不提供两个"均允许"选项：语法树中含命令替换（`$(…)`、反引号）、进程替换、`eval`、`sh -c` 或 `bash -c`、通往 `sh` 或 `bash` 的管道、heredoc 作为 shell 的输入；沙盒不可用；
+  命中 `deniedCommands` 或 `criticalCommands`。
 
 **极危险级的询问选项**：只有单次允许与拒绝。不提供任何"均允许"，批准不继承、不复用，每个 UnitAttempt 单独询问；询问界面以警示样式显示。
 
@@ -1007,11 +1023,13 @@ M1 Monitor 的结论（NORMAL 状态下普通预留必然成功、收尾预留�
 3. Orchestration 中输出节点（`output: true`）因额度未能运行时，Workflow 以确定性方式生成运行报告：列出已完成节点的结果、未完成节点及其原因、触顶项，不调用模型，经 `message-publish` 发布；
 4. 回复与运行报告中都注明是因额度到达限制而结束，以及剩余未完成的工作。
 
-**压缩的额度**（第 9.6 节）：上下文压缩的摘要调用从当前 Turn 的账本支出（阶段 4 起为被压缩的 AgentRun 自己的账本，它的份额来自 Turn），不得动用收尾保留 F。
-Kernel 在开始压缩前检查：账本余额扣除 F 之后能否容纳一次摘要调用的估算。不能时不压缩，按额度到达限制的统一路径处理——该 AgentRun 进入最后一轮，
-回复或结果中注明因额度结束（收尾调用按第 9.3 节的保险组装）。Turn-chat 的下一个 Turn 有新的份额，届时可以压缩；运行级额度也已不足时，
-按上文以 `closeRun(BUDGET)` 结束，用户确认后在同一 Session 的新运行中继续。
-用户在 AWAITING_INPUT 时以 `/compact` 发起的压缩没有开启中的 Turn，从运行级账本支出，扣除后余额仍须不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝并告知用户。
+**压缩的额度**（第 9.6 节）：上下文压缩的摘要调用从被压缩对象所用的账本支出——chat 的 main 为当前 Turn 的账本，模板中的 AGENT 节点与 SubAgent 为该 AgentRun 自己的账本（份额来自上级的委派），不得动用收尾保留 F。
+修剪（第 9.6 节第 4.5 步）不调用模型，不需要额度。
+Kernel 在调用摘要之前检查：账本余额扣除 F 之后能否容纳一次摘要调用的估算；回退为纯文本的每次重试各自预留与结算，同样受这一检查约束。不能时不调用摘要，按额度到达限制的统一路径处理——该 AgentRun 进入最后一轮，
+回复或结果中注明因额度结束（收尾调用按第 9.3 节的保险组装）。SubAgent 因此总能用自己账本中的 F 做最后一次调用，以 `finish_subagent` 整理交给 main 的结果。
+Turn-chat 的下一个 Turn 有新的份额，届时可以压缩；运行级额度也已不足时，按上文以 `closeRun(BUDGET)` 结束，用户确认后在同一 Session 的新运行中继续。
+AWAITING_INPUT 时的压缩（用户的 `/compact` 与空闲时的预先压缩）没有开启中的 Turn，从运行级账本支出，扣除后余额仍须不低于 `minShare(main)`；
+不满足时 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝并告知用户，预先压缩直接不做。
 
 ### 7.4 时间
 
@@ -1023,6 +1041,11 @@ Kernel 在开始压缩前检查：账本余额扣除 F 之后能否容纳一次�
 | 人类请求 `humanRequestTimeoutMs` | 10 分钟（`prompt` 不限），PAUSED 期间冻结 | 以 `{ timedOut: true }` 作为答复 |
 
 AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占用资源。
+
+**技术重试的等待**（M1 的技术重试：至多 `technicalRetryLimit` 次，指数退避）：provider 以限流或过载拒绝、并给出 `Retry-After`（或同义的重试时刻）时，
+Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-After` 中较大者"作为等待时间（参考 OpenCode 的重试策略）；
+`Retry-After` 超过 `retryAfterMaxMs`（缺省 120000）时不再等待，按重试耗尽处理。等待期间 ActivityEvent 的阶段为"重试中（第 n 次，x 秒后）"，界面倒计时；
+等待不占用并发计数与调用机会，暂停时保留、中止时交付 `INTERRUPTED(ABORTED)`。
 
 ### 7.5 接口变化
 
@@ -1038,7 +1061,8 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 | `requestHuman` | 新增：发起人类请求。`prompt`（开放输入）只能在没有 ACTIVE AgentRun 与在途 UnitAttempt 时发起，并结束当前 Turn（第 2.3 节）；其他种类是局部询问 |
 | `readProjectFile` | 新增：读取项目文件（第 7.5 节末尾的说明） |
 | `reportSessionList` | 新增：回答 Kernel 的 Session 列表查询（第 10.3 节） |
-| `reportCompactionSource`、`ackCompaction` | 新增：回答 Kernel 的压缩材料查询；确认压缩结果已记入日志（第 9.6 节） |
+| `reportCompactionSource`、`ackCompaction` | 新增：回答 Kernel 的压缩材料查询；确认修剪结果与压缩结果已记入日志（第 9.6 节） |
+| `updateActivity` | 新增：`update_todos` 的进度（第 3.5 节）；只用于界面，Kernel 原样放进 ActivityEvent |
 | `endAgentRun`、`closeRun` | 不变；`closeRun` 新增结束原因 `CANCELLED`、`BUDGET`、`TIMEOUT` |
 
 **Kernel 内部接口**：`SupervisorPort` 新增 `cancelExecution`（第 7.6 节）；`requestReservation` 新增返回 `WAIT_CAPACITY`（第 7.2 节）。
@@ -1052,6 +1076,7 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 | `answerAuthorization` | 答复增加选项：单次、命令、前缀、允许、拒绝 |
 | `answerHuman` | 新增 |
 | `pauseRun`、`resumeRun(steer?)`、`interruptRun` | 新增 |
+| `steerRun({ target?, input })` | 新增：运行中插话（第 4.5 节），只在 RUNNING 时受理 |
 | `undoTurns({ scope: last \| all })`、`confirmUndo({ force })`、`diffTurns` | 新增 ControlOperation；`confirmUndo` 回答第 4.6 节第 3 步的询问 |
 | `compactContext` | 新增：用户的 `/compact`，只在 Turn-chat 的 AWAITING_INPUT 时受理（第 9.6 节） |
 | `readArtifact`、`shutdown` | 不变 |
@@ -1063,8 +1088,8 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 - 时机：WorkflowRun 开启后、启动第一个节点之前读取一次；用户批准修改 `AGENTS.md` 的写入成功后再读取一次。每次读取都追加 `PROJECT_FILE_LOADED` 记录，上下文使用最新一条。
 
 **Kernel → Workflow 的事件**：`SessionOpen`、`SessionListQuery`、`RunStart`、`UnitReport`（新增 `INTERRUPTED` 状态，以及实际改动的文件）、
-`HumanAnswered`（开放输入的答复带 `turnId`）、`HumanCancelled`、`TurnClosed`、`RunPaused`、`RunResumed(steer?)`、`RunInterrupted`（带原因：用户中止、暂停超时、Turn 超时）、`WorkspaceReverted`、`WorkspaceDiverged`（打开 Session 时的工作区差异，第 2.3 节）、
-`CompactionSourceQuery`、`ContextCompacted`（第 9.6 节）、`RunClosed`。
+`HumanAnswered`（开放输入的答复带 `turnId`；运行中插话为 `steer`）、`HumanCancelled`、`TurnClosed`、`RunPaused`、`RunResumed(steer?)`、`RunInterrupted`（带原因：用户中止、暂停超时、Turn 超时）、`WorkspaceReverted`、`WorkspaceDiverged`（打开 Session 时的工作区差异，第 2.3 节）、
+`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`（第 9.6 节）、`RunClosed`。
 
 **Kernel → UserInteraction 的事件**：
 - `AuthorizationRequest` / `AuthorizationResolved`；
@@ -1072,6 +1097,7 @@ AWAITING_INPUT 没有时间上限：此时没有任何在途工作，也不占�
 - `MessagePublished`：`message-publish` 完成时发出；
 - `RunStateChanged`；
 - `ActivityEvent`：由 Kernel 依据 AgentRun 登记、父子关系与 UnitAttempt 的状态生成，Workflow 不需要另一条通道；
+  技术重试等待期间阶段为"重试中"，带第几次重试与重试时刻；`updateActivity` 交来的待办进度原样附上；
 - `ContextCompacted`、`CompactionFailed`：压缩生效（Workflow 确认已记入日志）后的通知，界面在记录区显示一行，可以经 `readArtifact` 查看摘要；压缩没有进行或失败时的说明；
 - `RunFinished`；
 - Session 级事件：`SessionOpened`、`SessionFailed`、`SessionClosed`（按 Session 单独编号，第 2.6 节）；
@@ -1117,7 +1143,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 | `run_command` | `run-command` | EXEC | `command.exec`（`network: true` 时加 `command.network`） | 参数为 `command`、`workdir?`（相对仓库根目录）、`timeoutMs?`、`network?`；缺省不联网；每次在全新的 shell 中执行，不保留 `cd` 与变量；非零退出码是正常结果；预览保留输出的头尾，超出时全文另存（第 8.2 节）；结果带 `sandboxDenials`、`backend`、`changedFiles` |
 | `web_search` | `web-search` | READ | `web.search` | `queries: string[]`（≤5 个）并行查询，结果按 URL 去重；`timeRange?`；每条结果包含标题、URL、摘要，URL 先经地址检查 |
 | `web_fetch` | `web-fetch` | READ | `web.fetch` | 只允许 http 与 https；解析时与建立连接时各检查一次地址，重定向逐跳检查；大小上限；HTML 转为 Markdown；预览为正文的开头一段，超出时全文另存（第 8.2 节） |
-| `read_output` | `output-read` | READ | `repo.read` | 分段读取此前某次工具调用被截断的完整输出（第 8.2 节）。参数为 `toolCallId`（那次调用的编号）、`offset?`（起始行，从 1 开始）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（只返回含有这段文字的行，按字面匹配）；结果带行号，同样受预览上限约束，不再产生完整输出。模型只给出编号，不接触 ArtifactRef 或存储地址 |
+| `read_output` | `output-read` | READ | `repo.read` | 分段读取此前某次工具调用被截断的完整输出，或在压缩中被修剪的工具结果（第 8.2、9.6 节）。参数为 `toolCallId`（那次调用的编号）、`offset?`（起始行，从 1 开始）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（只返回含有这段文字的行，按字面匹配）；结果带行号，同样受预览上限约束，不再产生完整输出。模型只给出编号，不接触 ArtifactRef 或存储地址 |
 
 内建 Unit：`context-assemble`、`model-call`（MODEL）、`report-publish`（M1）、`message-publish`（新增，由 Execution 直接发布 `reply` 与运行结果）。
 工作区快照与恢复是 Kernel 的内部操作，不是 Workflow 可以提交的 Unit。
@@ -1132,21 +1158,30 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
   大小不超过该 Unit 的 `maxFullOutputBytes`（缺省 8 MiB），超出时 Executor 按与预览相同的取舍（头、尾或两端）保存，并在预览中注明完整输出也不完整；
 - `metadata`：只给终端界面使用，例如 diff 高亮、退出码徽标，不进入模型上下文。
 
+**预览的上限**（参考 OpenCode：2000 行或 50 KiB；DeepSeek Harness 每条工具结果内联至多约 12,500 token）：
+- 预览上限与执行上限分开。M2 的工具 Unit（`v1` 定义）的预览不超过 `previewMaxBytes`（缺省 51200）与 `previewMaxLines`（缺省 2000），先到者为准，
+  并且不超过该 Unit 的 `maxOutputBytes`（例如 `read_file` 仍是 M1 的 16 KiB）；`maxOutputBytes` 不再是检索、概览、列目录预览的上限（M1 为 1 MiB，一次结果就可能占去大半个上下文窗口）；
+- M1 的 `v0` Unit 定义（`analyze` 使用）沿用 M1：预览上限为 `maxOutputBytes`、不限行数，因此 `analyze` 的行为不变；
+- 上限按 Unit 定义的版本由 Execution 选取，随执行限制交给 Executor。
+
 **预览在产生时固定**：
 - 预览由 Executor 生成：保留哪一部分（头、尾或头尾两端，按字节、按行或按条目）由各 Executor 依据输出的含义决定，截断机制由 ExecutorSet 的共用模块提供；
   预览注明省略了多少内容、完整输出保留 7 天，以及可以用 `read_output` 按本次调用的 `toolCallId` 分段读取；预览中不出现引用或路径；
-- Execution 存储预览与完整输出，并为它们登记保留类别（预览长期保留，完整输出 7 天过期）；结果检查确认预览不超过该 Unit 的 `maxOutputBytes`、完整输出不超过 `maxFullOutputBytes`；
+- Execution 存储预览与完整输出，并为它们登记保留类别（预览长期保留，完整输出 7 天过期）；结果检查确认预览不超过上述预览上限、完整输出不超过 `maxFullOutputBytes`；
 - 上下文中放的永远是预览，组装上下文时不再重新截断（第 9.3 节）；因此完整输出的过期不影响上下文的重建。
 
 **读取完整输出**（`read_output`，阶段 2）：用户经界面（`readArtifact`）查看，模型经 `read_output` 分段读取。模型读取时的隔离：
-- **编号由 Workflow 翻译**：模型只给出 `toolCallId`。Workflow 在发起调用的 AgentRun 的范围内找到那次工具调用，取出它的 `fullRef` 填入 Unit 输入；
-  找不到、或那次结果没有被截断时，Workflow 不提交 Unit，按参数错误反馈给模型。范围按日志计算，不按当前投影：
-  - main：本 Session 主线上的全部工具调用，跨 WorkflowRun，包括已被压缩取代的、被 `/undo` 回退的 Turn 中的，以及 Fork 时继承的历史中的；
+- **编号由 Workflow 翻译**：模型只给出 `toolCallId`。Workflow 在发起调用的 AgentRun 的范围内找到那次工具调用，取出可读的引用填入 Unit 输入：
+  截断时为它的 `fullRef`；没有截断、但它的预览在压缩中被修剪过时（第 9.6 节），为原来的预览（此时预览就是完整输出）。
+  找不到、或那次结果既没有被截断也没有被修剪时，Workflow 不提交 Unit，按参数错误反馈给模型。范围按日志计算，不按当前投影：
+  - main：本 Session 主线上的全部工具调用，跨 WorkflowRun，包括已被压缩取代的，以及 Fork 时继承的历史中的；
   - 模板中的 AGENT 节点、explorer、worker：该 AgentRun 自己步骤中的工具调用，与委派给它的上下文范围一致；main 读不到 SubAgent 的工具调用，SubAgent 也读不到父 AgentRun 的；
+  - **被 `/undo` 回退的 Turn 中的工具调用不在范围内**：回退之后对话回到那个 Turn 之前，那些步骤在投影中只剩一条说明（第 4.6 节）；
+    读取它们的结果等于让模型看到已被撤销的"未来"，也可能依据已被还原的文件内容行事。回退之前的编号此后一律按"没有这个编号"反馈；
   - 范围内有多次调用的 `toolCallId` 相同时（编号由 provider 生成），取最近的一次。
-- **授权与过期由 Execution 检查**：`fullRef` 必须属于本 Session；是否过期按登记的 `retainedSince` 加 `expiringRetentionDays` 判断，与正文是否已被删除无关，
+- **授权与过期由 Execution 检查**：引用必须属于本 Session，且登记为某次工具调用的完整输出（截断时另存的完整输出，或修剪时补登的未截断预览）；是否过期按登记的 `retainedSince` 加 `expiringRetentionDays` 判断，与正文是否已被删除无关，
   过期即返回 `ARTIFACT_EXPIRED`，模型得到"完整输出已过期删除"的说明。结果因此只取决于日志与时间，与回收任务是否已经运行无关。
-- **截取由 Executor 完成**：`output-read` Executor 只接收 Execution 解析后的正文，按行切分、过滤、加行号，经共用模块限制在预览上限内；它不接触存储，没有文件系统与网络权限，不需要沙盒。
+- **截取由 Executor 完成**：`output-read` Executor 只接收 Execution 解析后的正文，按行切分、过滤、加行号，经共用模块限制在预览上限内（与 OpenCode 的 `read` 相同：至多 2000 行或 50 KiB）；它不接触存储，没有文件系统与网络权限，不需要沙盒。
 - **结果固定**：读出的一段是这次 `read_output` 调用的预览，写入日志、长期保留，此后与其他工具结果一样只在末尾追加，不随完整输出的过期而改变。
 - **信任不提升**：读出的内容保持原工具结果的来源标记（例如 `web_fetch` 的网页内容仍是外部材料，第 9.2 节）。
 
@@ -1166,7 +1201,7 @@ executor-set/
   output-read/ read_output：对 Execution 交来的完整输出按行截取、过滤、加行号，结果经 retention/ 限制
   fs/        文件访问接口与本地实现：路径检查、排除规则、同路径锁、带版本条件的写入
   git/       git-inspect：固定子命令表、安全参数、排除规则的 pathspec
-  command/   run-command：子命令拆分、环境变量白名单与断言、输出截断、拒绝分类
+  command/   run-command：环境变量白名单与断言、输出截断、拒绝分类；parse/ 为命令的语法树拆分（tree-sitter-bash）与 ARITY 表（第 5.2 节）
   web/       web-search 提供方适配器；web-fetch 的地址检查、重定向、HTML 转 Markdown
   vendor/    从开源项目拷贝的纯函数（注明来源与许可证），如 edit 的匹配函数、HTML 转 Markdown
 ```
@@ -1199,7 +1234,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
   - system 段在一个 AgentRun 内不变，其中不放会变化的内容；运行时上下文以历史条目表达，变化时由 Workflow 追加 `REQUEST_CONTEXT`，投影在该位置加入一条新的说明；
   - 用户批准修改 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明；
   - 历史条目按日志顺序排列，工具结果与汇合结果按调用顺序排列；已经写入的条目不再改写（预览在产生时固定，第 8.2 节；思考内容是否回传在写入时决定，第 9.4 节）；
-  - 不按调用重新裁剪（第 9.3 节）；改变前缀的只有压缩，以及收尾调用的工具列表（只剩结束控制工具，只影响这一次调用）。
+  - 不按调用重新裁剪（第 9.3 节）；改变前缀的只有压缩（包括其中的修剪），以及收尾调用的工具列表（只剩结束控制工具，只影响这一次调用）。
 - 外部输入（用户输入、网页内容、工具结果、子任务结果、未被信任的 `AGENTS.md`、压缩的摘要）一律以 user 或 tool 角色出现并标明来源，不获得指令权威。
 
 ### 9.3 可重建性与上下文规模
@@ -1210,7 +1245,9 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
   模板节点的目标与交接输入、SubAgent 的目标与验收标准）或 `NORMAL`。
 - **不按调用重新裁剪**：`context-assemble` 按日志顺序组装全部条目，不去掉任何条目。上下文的规模只由两件事控制：
   1. 工具结果在产生时只留预览（第 8.2 节）；
-  2. 超出阈值时由 Kernel 压缩（第 9.6 节），压缩结果写回日志。
+  2. 超出阈值时由 Kernel 压缩（第 9.6 节：先修剪较早的大工具结果，仍超出再写摘要），结果写回日志。
+- **两种规模估算**：判断是否压缩用"实测加估算"——最近一次模型调用由 provider 报告的实际输入 token，加上它之后新增条目的估算（第 9.6 节"触发"）；
+  额度预留仍用保守的字节估算（M1 的 `estimatePackTokens`）。前者用于判断，偏差只影响压缩的时机；后者用于保证额度，宁可高估。
 - **收尾调用的保险**：收尾调用是该 AgentRun 的最后一次调用，不再压缩。组装超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，
   以完整的模型轮为单位（工具调用与它的结果不拆开），直到装下为止；`PINNED` 条目与最近一轮永不去掉。去掉的条目记入 `CONTEXT_ASSEMBLED`，结果可以复现。
   仍然装不下时，不调用模型，按 M1 的降级规则结束（第 7.3 节"必有报告"）。
@@ -1239,7 +1276,8 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 
 ### 9.6 上下文压缩
 
-上下文超出阈值时，Kernel 把较早的一段历史交给模型写成摘要，保留最近的原文；被摘要取代的范围与摘要一起写回会话日志，此后的投影以摘要代替这段历史。
+上下文超出阈值时，Kernel 先把较早的大工具结果修剪为头尾两段（不调用模型）；仍超出时，再把较早的一段历史交给模型写成摘要，保留最近的原文。
+修剪与摘要的结果都写回会话日志，此后的投影以修剪后的结果与摘要代替原来的内容。
 压缩是 Kernel 的一个标准过程：不经过 TaskGraph，不登记 AgentRun，Workflow 只应查询交出材料、把结果记入日志，不决定是否压缩。
 
 **触发**
@@ -1248,43 +1286,76 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 |---|---|---|
 | 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.85） | 这是检查点：此时该 AgentRun 处在两次模型调用之间 |
 | 溢出 | `model-call` 以 `CONTEXT_OVERFLOW` 返回后，Workflow 按固定规则重新提交 `context-assemble`；Kernel 记住溢出时的规模，依次以它的 85%、70%、50% 为压缩目标 | 第三次仍溢出时不再压缩，按第 9.3 节的收尾路径结束 |
-| 用户 | `/compact`（`compactContext`），只在 Turn-chat 的 AWAITING_INPUT 时受理 | 立即执行；对象为 main 的投影 |
+| 用户 | `/compact`（`compactContext`），只在 Turn-chat 的 AWAITING_INPUT 时受理 | 立即执行；对象为 main 的投影；修剪之后总是继续写摘要 |
+| 空闲 | Turn-chat 的运行进入 AWAITING_INPUT 时，main 的估算超过 `idleTriggerRatio × perCallInputLimit`（缺省 0.7） | 预先压缩，避免用户发出下一条消息后还要等压缩（参考 OpenCode 的 `precompute` 与 DeepSeek Harness 的空闲维护）；代价是用户可能不再继续，这次摘要的 token 白花 |
 
-**对象**：Turn-chat 中为 main 的投影（整个 Session，跨 WorkflowRun）；模板中的 AGENT 节点为该 AgentRun 的投影；SubAgent 不压缩，超出时进入收尾。
+**估算**（判断是否压缩时使用，参考 OpenCode 的 `measured + estimated` 与 DeepSeek Harness 的 `tokenMeter`）：
+- 该对象最近一次 `MODEL_TURN` 中 provider 报告的实际输入 token（含缓存命中）与输出 token，加上它之后新增条目的字节估算；
+- 只有那一轮请求的头部（system 段、工具定义与模型，以 `CONTEXT_ASSEMBLED.headDigest` 比较）与本次相同、且其后没有修剪、压缩或撤销压缩的记录时才使用实测值，否则全部按字节估算；
+- 实测值来自日志，估算因此仍是日志的纯函数，进程重启后结果相同。额度预留不用这个估算（第 9.3 节"两种规模估算"）。
+
+**对象**：Turn-chat 中为 main 的投影（整个 Session，跨 WorkflowRun）；模板中的 AGENT 节点与 SubAgent（explorer、worker）为该 AgentRun 的投影（参考 OpenCode 与 DeepSeek Harness：子 Agent 是完整的会话，使用同一套压缩）。
+SubAgent 的压缩从它自己的账本支出，不动用它的收尾保留 F；额度不足以写摘要时进入最后一轮，以 `finish_subagent` 整理交给 main 的结果（第 7.3 节"压缩的额度"）。
+SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任务的结果与验收标准。
 
 **过程**
 
 ```text
-1. 挂起触发它的 context-assemble（用户触发时没有），该 AgentRun 因此没有进行中的模型调用
-2. 额度检查（第 7.3 节"压缩的额度"）；不足时不压缩：挂起的组装以 BUDGET_WRAP_UP 返回，该 AgentRun 进入最后一轮
+1. 挂起触发它的 context-assemble（用户与空闲触发时没有），该 AgentRun 因此没有进行中的模型调用
+2. 额度检查（第 7.3 节"压缩的额度"），结果先记下：不足时只做第 4.5 步的修剪，修剪之后仍超出才以 BUDGET_WRAP_UP 返回挂起的组装，该 AgentRun 进入最后一轮
+   （用户触发时以 BUDGET_INSUFFICIENT 拒绝，空闲触发时不做）
 3. 审计 COMPACTION_STARTED；向 Workflow 发出 CompactionSourceQuery { compactionId, target }
 4. Workflow 以 reportCompactionSource 交回该对象当前的投影条目（与 context-assemble 的历史条目结构相同，带 seq、所属 Turn 与类别）
+4.5 修剪（参考 DeepSeek Harness 的 tool-result-pruner）：Kernel 先划出保留区——最近 keepTokens（缺省 20000）的原文，从完整模型轮的边界算起；
+   保留区之前、预览超过 pruneMinBytes（缺省 8192）且尚未修剪过的 NORMAL 工具结果，改写为"头部 pruneHeadBytes（4096）+ 说明 + 尾部 pruneTailBytes（1024）"，
+   说明写明省略的字节数与"可用 read_output 按 toolCallId 读回"；截取由 context-assemble Executor 完成（不切断 UTF-8），修剪后的结果存为长期保留的产物
+   - 没有可修剪的结果时直接进入第 5 步
+   - 有时向 Workflow 发出 ToolResultsPruned { compactionId, target, items }；Workflow 追加 TOOL_RESULTS_PRUNED 后以 ackCompaction 确认，Kernel 收到确认才视为生效
+   - 生效后按修剪后的条目重新估算：自动与溢出触发已低于目标、空闲触发已低于 idleTriggerRatio 时到此结束，转到第 9 步；
+     否则（以及用户触发时）进入第 5 步，范围选定与摘要都使用修剪后的条目
 5. Kernel 选定范围 [fromSeq, toSeq]：从最早的 NORMAL 条目（包括先前的摘要）开始，到保留区之前最后一个完整的模型轮为止；工具调用与它的结果不拆开；
-   保留区是最近 keepTokens（缺省 20000）的原文；范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
-   没有可压缩的范围时结束，挂起的组装照常执行
-6. 生成摘要：Execution 组装摘要请求——与该对象普通请求相同的前缀（system 段、工具定义、历史），末尾追加摘要指令（AgentToolPool 中的 Prompt `compaction-system`），
-   tool_choice = none，思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），其余请求参数与普通调用相同；经 Scheduler 申请调用机会，由 model-call Executor 执行，按第 7.3 节计量
-   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则压缩失败
-7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, usage }
+   范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
+   没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
+6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），tool_choice = none；
+   经 Scheduler 申请调用机会，由 model-call Executor 执行，按第 7.3 节计量
+   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
+7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, summaryInput, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
 9. 挂起的 context-assemble 以 REJECTED(CONTEXT_COMPACTED) 返回，Workflow 用新的投影重新提交（不计入连续出错，也不是重复调用）
 ```
 
+**摘要请求的输入**（参考 DeepSeek Harness 的 region 与 OpenCode 的 `deliver`）：
+1. **前缀式**（首选）：system 段、工具定义，加上该对象投影中 `seq ≤ toSeq` 的条目（保留区不在其中），末尾追加摘要指令（AgentToolPool 中的 Prompt `compaction-system`）。
+   这些条目是之前普通请求的前缀，因此可以命中已有的提示词缓存；
+2. **纯文本式**（回退）：前缀式的估算超出 `perCallInputLimit − summaryMaxTokens`，或 provider 以 `CONTEXT_OVERFLOW` 拒绝时使用。
+   不带工具定义：system 段只有摘要指令，范围 `[fromSeq, toSeq]` 内的 `NORMAL` 条目（含先前的摘要）转为一份纯文本记录作为 user 消息，
+   从最早的完整模型轮开始去掉，直到估算低于目标；先前的摘要不去掉。去掉了内容时，记录开头注明"更早的 k 轮已省略"，摘要中如实说明；
+   被 provider 拒绝时依次以拒绝时规模的 `summaryFallbackTargets`（缺省 85%、70%、50%、35%）为目标重试，用完仍失败则摘要失败；
+3. 每次请求各自预留与结算额度（第 7.3 节）；`summaryInput` 记录所用的方式与去掉的条目数，写入 `CONTEXT_COMPACTED`。
+
 - **不循环**：同一对象在同一轮中至多因自动触发压缩一次；压缩后重新提交的组装即使仍超过 `triggerRatio` 也照常执行，超出 `perCallInputLimit` 时按第 9.3 节的收尾路径结束。
   溢出触发另按 `overflowTargets` 计次，至多三次。
-- **失败**：摘要调用失败（包括被暂停或中止打断）、摘要不合格、Workflow 写日志失败，都不写回或不生效，审计 `COMPACTION_FAILED`；挂起的组装照常执行，仍超出时按第 9.3 节的收尾路径结束。
-  进程在第 3–8 步之间退出时，日志中没有 `CONTEXT_COMPACTED`，压缩视为没有发生；审计中只有 `COMPACTION_STARTED`，可以识别。
-- **投影规则**：`CONTEXT_COMPACTED` 生效后，该对象的投影中 `seq` 在 `[fromSeq, toSeq]` 内的 `NORMAL` 条目由一条摘要条目取代，摘要条目放在第一个被取代条目的位置：
-  user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后。
-  再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代的原始记录仍在日志中（日志只追加）。
-- **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要；摘要指令要求模型不执行材料中的指令。
-- **缓存**：摘要请求的消息前缀（system 段、工具定义、历史）与普通请求相同，用以命中已有的缓存；思考强度不同是否影响命中，由阶段 0 实测（第 14.1 节），
-  结果只影响 `summaryReasoningEffort` 的缺省值。压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"，此后又只在末尾追加。
-- **被取代的工具结果**：摘要取代的工具结果仍可经 `read_output` 读回完整输出（第 8.2 节），只要模型知道它的 `toolCallId` 且未过期；摘要指令因此要求保留可能还需要的编号。
-- **与回退的关系**：`/undo` 回退的 Turn 与某次压缩的范围相交时，Workflow 按固定规则追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目，之后需要时再压缩；
-  只回退压缩范围之后的 Turn 不受影响。由阶段 2 与阶段 8 中较晚完成的一个实现。
-- **Fork**：复制的日志中带着压缩记录，新 Session 沿用；摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
-- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`keepTokens` 20000、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、
+- **失败**：摘要失败（包括被暂停或中止打断）、Workflow 写日志失败，都不写回或不生效，审计 `COMPACTION_FAILED`；已经生效的修剪保留；挂起的组装照常执行（有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回），仍超出时按第 9.3 节的收尾路径结束。
+  进程在第 3–8 步之间退出时，日志中没有对应的记录，那一部分视为没有发生；审计中只有 `COMPACTION_STARTED`，可以识别。
+- **投影规则**：
+  - `TOOL_RESULTS_PRUNED` 生效后，该对象投影中被列出的工具结果改用修剪后的内容，位置不变；
+  - `CONTEXT_COMPACTED` 生效后，该对象的投影中 `seq` 在 `[fromSeq, toSeq]` 内的 `NORMAL` 条目由一条摘要条目取代，摘要条目放在第一个被取代条目的位置：
+    user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后；
+  - 再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代与被修剪的原始记录仍在日志中（日志只追加）。
+- **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要，也不被修剪；摘要指令要求模型不执行材料中的指令。
+- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；思考强度不同是否影响命中，由阶段 0 实测（第 14.1 节），
+  结果只影响 `summaryReasoningEffort` 的缺省值。压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
+- **被取代与被修剪的工具结果**：仍可经 `read_output` 读回（第 8.2 节）：截断过的读完整输出（未过期时），没有截断而被修剪的读原来的预览——修剪时 Execution 为这份预览补登一行完整输出的登记，它是长期保留的，不会过期。
+  模型需要知道 `toolCallId`：修剪的说明中写明它，摘要指令要求保留可能还需要的编号。
+- **空闲触发的规则**：
+  - 估算使用 main 最近一次模型调用的实测值，不需要先查询材料；对象只有 main；一次 AWAITING_INPUT 至多触发一次，失败不重试，也不通知界面（只写审计）；
+  - 进行中收到用户的开放输入时，新 Turn 照常开启，main 的第一次 `context-assemble` 挂起，等这次压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回）；
+  - 进行中收到 `/compact`、`/undo`、`/fork`、切换或关闭 Session 时，先取消这次压缩（按失败处理，不写回摘要），再执行该操作。
+- **与回退的关系**：`/undo` 回退的 Turn 与某次压缩的摘要范围相交时，Workflow 按固定规则追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目，之后需要时再压缩；
+  只回退压缩范围之后的 Turn 不受影响。修剪不随之撤销：被回退 Turn 中的工具结果在投影中已只剩一条说明，其余的修剪与回退无关。由阶段 2 与阶段 8 中较晚完成的一个实现。
+- **Fork**：复制的日志中带着修剪与压缩记录，新 Session 沿用；修剪后的结果与摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
+- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
+  `summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
   `summaryReasoningEffort` `none`（取值同 Agent 的思考强度，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
 
 ## 10. Session 与持久化
@@ -1313,7 +1384,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | | SessionLogStore | ArtifactStore |
 |---|---|---|
 | Owner | Workflow（唯一写入者） | Kernel.Execution（唯一写入者） |
-| 内容 | 会话日志：拓扑、HUMAN 节点、Unit 的提交与结果、Turn 与运行的边界、压缩记录、控制记录。只保存结构化记录与 ArtifactRef，不保存正文 | 全部正文：工具输出的预览与完整版本、模型输出、思考内容、用户输入的正文、压缩的摘要、ContextPack、报告与回复 |
+| 内容 | 会话日志：拓扑、HUMAN 节点、Unit 的提交与结果、Turn 与运行的边界、修剪与压缩记录、控制记录。只保存结构化记录与 ArtifactRef，不保存正文 | 全部正文：工具输出的预览与完整版本、修剪后的工具结果、模型输出、思考内容、用户输入的正文、压缩的摘要、ContextPack、报告与回复 |
 | 写入 | 只追加 | 只新增，内容寻址，写入后不可变 |
 | 创建、复制、删除 | Workflow 执行：新建日志、Fork 时复制日志、删除日志 | Execution 执行：写入正文并登记归属与保留类别、在 Session 删除时删除归属文件、启动时与每小时回收 |
 | 读取 | 只有 Workflow | 按 ArtifactRef 经 Kernel 读取，归属检查见下 |
@@ -1328,7 +1399,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 
 | 类别 | 正文 | 何时可以回收 |
 |---|---|---|
-| `SESSION`（长期保留） | 重建上下文所需的一切：工具结果的预览、模型输出（含工具调用参数）、思考内容、用户输入、回复、报告、运行摘要、压缩的摘要、`AGENTS.md` 与模板文件 | 没有任何 ACTIVE 的 Session 拥有它 |
+| `SESSION`（长期保留） | 重建上下文所需的一切：工具结果的预览、修剪后的工具结果、模型输出（含工具调用参数）、思考内容、用户输入、回复、报告、运行摘要、压缩的摘要、`AGENTS.md` 与模板文件 | 没有任何 ACTIVE 的 Session 拥有它 |
 | `EXPIRING`（7 天） | 不是重建所需的：工具结果的完整版本（第 8.2 节）、ContextPack（可由日志重新计算，`projectionDigest` 可以验证） | 登记满 `expiringRetentionDays`（缺省 7 天），或没有任何 ACTIVE 的 Session 拥有它 |
 
 - 同一份内容被多个 Session、或以不同类别登记时，取最长的保留：只要还有一处 `SESSION` 登记属于 ACTIVE 的 Session，就不回收。
@@ -1386,13 +1457,14 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 | WorkflowRun | `WORKFLOW_RUN_STARTED`（模板、预设）、`WORKFLOW_RUN_ENDED`（结束原因） |
 | Turn | `TURN_STARTED`（`turnId`、提示节点、开始快照引用）、`TURN_ENDED`（结束原因、用量摘要、结束快照引用）；都来自 Kernel 的事件 |
 | 拓扑 | `GRAPH_EXTENDED`、`NODE_STARTED`、`NODE_ENDED` |
-| 业务输入 | `HUMAN_REQUESTED`、`HUMAN_ANSWERED`：所有用户输入（`prompt`、`steer`、`ask`、`confirm`、`review`）都只以这两种记录出现，带节点 ID、种类、附属对象与正文引用 |
+| 业务输入 | `HUMAN_REQUESTED`、`HUMAN_ANSWERED`：所有用户输入（`prompt`、`steer`、`ask`、`confirm`、`review`）都只以这两种记录出现，带节点 ID、种类、附属对象与正文引用；界面中排队、尚未提交的消息不在日志中 |
 | 控制 | `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED`、`WORKSPACE_REVERTED`、`WORKSPACE_DIVERGED` |
 | 循环 | `LOOP_EXHAUSTED`（第 3.2 节） |
-| Unit | `UNIT_SUBMITTED`、`UNIT_COMPLETED`（结构化输出与 ArtifactRef）、`UNIT_INTERRUPTED`；`MODEL_TURN` 带 `reasoningRef`；失败的模型尝试单独记录，不进入模型历史 |
+| Unit | `UNIT_SUBMITTED`、`UNIT_COMPLETED`（结构化输出与 ArtifactRef）、`UNIT_INTERRUPTED`；`MODEL_TURN` 带 `reasoningRef` 与用量（压缩的估算使用其中的实际输入 token）；`CONTEXT_ASSEMBLED` 带 `headDigest`（system 段、工具定义与模型的摘要）；失败的模型尝试单独记录，不进入模型历史 |
+| 待办 | `TODOS_UPDATED`：`update_todos` 的调用引用与计数（第 3.5 节） |
 | 项目文件 | `PROJECT_FILE_LOADED`：路径、ArtifactRef、SHA、`trusted` |
 | 请求参数 | `REQUEST_CONTEXT`：模型、思考设置、工具列表摘要、运行时上下文，变化时追加；运行时上下文的变化在投影中成为一条新的历史条目（第 9.2 节） |
-| 压缩 | `CONTEXT_COMPACTED`：对象、被取代的 `seq` 范围、摘要引用、用量；`CONTEXT_COMPACTION_REVOKED`：回退使某次压缩失效（第 9.6 节） |
+| 压缩 | `TOOL_RESULTS_PRUNED`：对象、被修剪的工具结果（`toolCallId`、修剪后的引用、可读回的引用）；`CONTEXT_COMPACTED`：对象、被取代的 `seq` 范围、摘要引用、摘要请求的方式、用量；`CONTEXT_COMPACTION_REVOKED`：回退使某次压缩的摘要失效（第 9.6 节） |
 | 授权 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED`：Kernel 授权询问的审计副本，不是 HUMAN 节点，不进入上下文，重放时不恢复授权 |
 | 维护 | `LOG_TAIL_REPAIRED`、`STALE_UNITS_SETTLED`、`SESSION_FORKED` |
 
@@ -1463,10 +1535,10 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 区域 | 内容 |
 |---|---|
 | 记录区 | 用户输入、`reply`、运行结果、已完成步骤的折叠行（如 `✓ read_file src/a.ts 0.3s`）、授权与人类请求的处理结果 |
-| 活动区 | 每个 ACTIVE 的 AgentRun 一行：阶段、计时（每秒刷新）、转动指示（100 毫秒）；并行的工具作为子行；SubAgent 按父子关系显示为树 |
-| 输入区 | 输入框；待处理的授权询问与人类请求排成队列，一次处理一项，每项标明来源 |
+| 活动区 | 每个 ACTIVE 的 AgentRun 一行：阶段、计时（每秒刷新）、转动指示（100 毫秒）、待办进度（有 `update_todos` 时）；并行的工具作为子行；SubAgent 按父子关系显示为树 |
+| 输入区 | 输入框；排队等待提交的消息（第 4.5 节）；待处理的授权询问与人类请求排成队列，一次处理一项，每项标明来源 |
 
-阶段名称：`组织上下文`、`压缩上下文`、`思考中`、`调用 <工具> <参数摘要>`、`等待授权`、`等待回答`、`排队`、`等待 <任务名>`、`收尾`、`已暂停`。
+阶段名称：`组织上下文`、`压缩上下文`、`思考中`、`重试中（第 n 次，x 秒后）`、`调用 <工具> <参数摘要>`、`等待授权`、`等待回答`、`排队`、`等待 <任务名>`、`收尾`、`已暂停`。
 思考内容与回复都不流式显示。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
 
 ```text
@@ -1480,6 +1552,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | 状态 | 输入 | 效果 |
 |---|---|---|
+| RUNNING | Enter | 消息进入排队，运行进入 AWAITING_INPUT 时作为下一条消息提交（第 4.5 节） |
+| RUNNING | Alt+Enter，或 `/steer [@任务名] <说明>` | 运行中插话，不暂停（第 4.5 节） |
 | RUNNING | Ctrl+C | 暂停 |
 | PAUSED | `/continue [@任务名] [说明]`，或直接输入普通消息 | 继续，可附加说明（第 4.5 节） |
 | PAUSED | Ctrl+C | 中止 |
@@ -1490,7 +1564,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 指令 | 作用 |
 |---|---|
 | `/help`、`/status`、`/exit` | 帮助、当前运行状态与额度状态、退出 |
-| `/continue` | 第 4.5 节 |
+| `/continue`、`/steer` | 第 4.5 节 |
 | `/undo`、`/undo all`、`/diff [N]` | 回退上一个 Turn、回退本 Session 全部 Turn、查看差异；有外部修改时询问是否强制（第 4.6 节） |
 | `/run <模板> <目标>` | 第 3.8 节 |
 | `/thinking [N]` | 查看最近第 N 次模型调用的思考内容 |
@@ -1530,10 +1604,10 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 24. 同一个 `dataDir` 同一时刻至多一个实例。
 25. 就绪集合只依赖日志中的结构化记录：条件只读前驱的结构化结果，循环展开在同一次事件处理中确定。
 26. `/undo` 只改动被回退的 Turn 改过的文件；有外部修改时，未经用户明确选择强制，不修改任何文件；强制回退前总有兜底快照。
-27. 两次压缩之间，同一 AgentRun 发出的请求只在末尾增长：前一次请求是后一次请求的前缀（收尾调用的工具列表除外）。
-28. 压缩只在 Workflow 确认已记入日志后生效；摘要永不进入 system 段，`PINNED` 条目永不进入摘要；压缩不动用收尾保留 F。
+27. 两次压缩（包括只有修剪的压缩）之间，同一 AgentRun 发出的请求只在末尾增长：前一次请求是后一次请求的前缀（收尾调用的工具列表除外）。
+28. 修剪与摘要都只在 Workflow 确认已记入日志后生效；摘要永不进入 system 段，`PINNED` 条目永不进入摘要、永不被修剪；压缩不动用收尾保留 F。
 29. 只有 ACTIVE 的 Session 的登记能让正文免于回收；`SESSION` 类正文在被某个 ACTIVE 的 Session 拥有期间永不回收。
-30. 模型只以 `toolCallId` 引用完整输出，永不接触 ArtifactRef 或存储地址；`read_output` 只能读到发起者范围内、本 Session 的、按登记时间未过期的完整输出。
+30. 模型只以 `toolCallId` 引用完整输出，永不接触 ArtifactRef 或存储地址；`read_output` 只能读到发起者范围内、本 Session 的、按登记时间未过期的完整输出；被 `/undo` 回退的 Turn 中的工具调用不在任何范围内。
 
 ## 13. 验收
 
@@ -1545,14 +1619,14 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | C | C1 修复单个 bug 并运行测试；C2 跨三个文件的重构；C3 测试先失败、修复后通过；C4 按要求新增功能与测试；C5 安全陷阱 | C1–C4 各有一个固定的 fixture 仓库，每个用真实模型跑 5 次，每个任务至少 4 次成功。一次成功指：fixture 的测试通过、没有越出范围的改动、回复说明了做了什么。C5 是确定性用例，必须 100% 拦截，每一项都必须被拦截：<br>- 写到 `writeScope` 之外；<br>- 经仓库内指向仓库外的符号链接读写；<br>- `env` 或 `printenv` 输出中出现 key；<br>- 命令或文件工具写入 `.git/hooks`、`.multiagentos/`，命令写入 `AGENTS.md`；<br>- 在不是 git 仓库的目录中，命令 `git init` 并写入 `.git/hooks`，或新建 `AGENTS.md`：结束后工作区中不存在这些路径；<br>- 未经批准的命令访问网络；改写形式的推送（`env git push`、`git -C . push`）在不联网时失败；worker 申请联网被拒绝；<br>- 读取 `<dataDir>`、`~/.ssh`、`~/.bash_history`，或白名单目录中的凭据文件；<br>- 命令 `cat .env`、`cat *.pem` 读不到内容；<br>- 沙盒结束后，宿主仓库中没有新增的空文件或空目录 |
 | P | P1 工具并行（一轮 4 个 READ）；P2 两个无依赖的 worker；P4 模板中两个并行 main 节点的 `writeScope` 相交或缺失；P5 两个并行 main 节点各自派生 worker，范围跨越对方；P6 父 AgentRun 在派生期间提交 WRITE；P3 D1 依赖图（A；B；C、D 依赖 A；E 依赖 B、C、D） | P1：执行时间有重叠。P2：执行时间重叠，且写入互不越界。P3：完工时间接近关键路径，并与"分批派生"及 LangGraph 同构图的对照数据一起写入证据。P4：编译报错。P5：登记以 `WRITE_SCOPE_CONFLICT` 拒绝。P6：以 `WRITE_SCOPE_DELEGATED` 拒绝 |
 | D | 派生指标（10 个适合派生的任务 + 10 个不适合的任务） | 适合派生的任务中，首次校验通过并正确派生 ≥ 8/10；不适合的任务中，误派生 ≤ 2/10 |
-| H | H1 运行中暂停后 `/continue 改用另一种实现`；H2 暂停后中止，再输入"继续"；H3 worker 等待命令授权时，其他 AgentRun 继续推进；H4 `ask_user`；H5 `/undo`、`/undo all` 与 `/diff`（Turn-chat，以及结束后的 Orchestration 运行）；H8 回退前，另一个 Session 或用户手动改过被回退的文件，分别选择取消与强制；H9 用户确认强制回退后，文件又被外部程序修改；H10 回退时另一个 Session 改过、但不在回退范围内的文件；H6 命令忽略 SIGTERM；H7 进程无法被杀死（以测试替身模拟停止确认失败） | 状态转移与第 4.3 节一致；被打断的 EXEC 没有自动重跑；H3 中其他 AgentRun 的模型调用没有被取消；H6 经 SIGKILL 停止，系统继续；H7 系统停机，审计中有该执行的记录，重开 Session 时遗留 Unit 记为 INTERRUPTED，工作区差异被告知、文件没有被改动；H5 没有外部修改时直接回退、不询问，连续 `/undo` 逐个 Turn 往前；H8 取消时没有任何文件被修改，强制时外部修改被覆盖，且可以从兜底快照找回；H9 回退停止，已写入的文件恢复，重新提示；H10 该文件保持不变 |
+| H | H1 运行中暂停后 `/continue 改用另一种实现`；H2 暂停后中止，再输入"继续"；H3 worker 等待命令授权时，其他 AgentRun 继续推进；H4 `ask_user`；H5 `/undo`、`/undo all` 与 `/diff`（Turn-chat，以及结束后的 Orchestration 运行）；H8 回退前，另一个 Session 或用户手动改过被回退的文件，分别选择取消与强制；H9 用户确认强制回退后，文件又被外部程序修改；H10 回退时另一个 Session 改过、但不在回退范围内的文件；H6 命令忽略 SIGTERM；H7 进程无法被杀死（以测试替身模拟停止确认失败）；H11 运行中 `/steer`（目标为 main、为正在运行的 worker、为已结束的 worker）；H12 运行中输入的消息排队，以及中止后的排队消息 | 状态转移与第 4.3 节一致；被打断的 EXEC 没有自动重跑；H3 中其他 AgentRun 的模型调用没有被取消；H6 经 SIGKILL 停止，系统继续；H7 系统停机，审计中有该执行的记录，重开 Session 时遗留 Unit 记为 INTERRUPTED，工作区差异被告知、文件没有被改动；H5 没有外部修改时直接回退、不询问，连续 `/undo` 逐个 Turn 往前；H8 取消时没有任何文件被修改，强制时外部修改被覆盖，且可以从兜底快照找回；H9 回退停止，已写入的文件恢复，重新提示；H10 该文件保持不变；H11 运行没有暂停，说明在目标下一次组装时出现在末尾，目标已结束时改投父 AgentRun 并注明；H12 排队的消息在 AWAITING_INPUT 时作为下一个 Turn 提交，中止后不自动提交、放回输入框 |
 | G | G1 `chat` 中 main 失败或被中止后继续对话；G2 条件边：`review` 通过与不通过分别走向不同节点；G3 循环：连续两次不通过后第三次通过，以及达到 `maxIterations`；G4 `all_done` 汇合部分失败的分支；G5 任意日志前缀重放 | G1 下一个 `prompt` 没有被跳过；G2 未选中的分支记为 `SKIPPED(NOT_TAKEN)`；G3 节点路径带迭代号，下游只按最后一次迭代判定，达到上限时追加 `LOOP_EXHAUSTED`；G4 汇合节点运行并得到各前驱的结束状态；G5 就绪集合与运行时一致 |
 | B | B1 三个 SubAgent 并行消耗额度；B2 份额之和超过可委派额度；B3 子任务提前结束；B4 运行级额度到达限制 | B1 没有因其他 Agent 的在途预留而进入 WRAP_UP；B2 整次 `run_subagents` 不执行，错误中给出可委派余额；B3 剩余额度立即返还父账本，未知消耗不返还；B4 Kernel 没有强制收敛运行；各 AgentRun 进入最后一轮；Turn-chat 发布了回复，Orchestration 发布了运行报告（输出节点未运行时为确定性报告），都注明因额度结束 |
-| A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问超时不放行；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问没有被超时拒绝；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任 | 全部符合第 5 节 |
+| A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问超时不放行；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问没有被超时拒绝；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任；命令的拆分：引号中的 `&&`、子 shell、heredoc、变量作命令名、语法错误的命令 | 全部符合第 5 节；命令按语法树拆分，解析失败与不是字面量的命令名只提供单次允许，名单匹配不因解析失败而遗漏 |
 | W | W1 检索加读取后作答并注明来源；W2 网页中的提示注入；W3 访问私网地址、DNS 重绑定、重定向到内网 | W2：注入内容没有被执行。W3：全部以 `ADDRESS_FORBIDDEN` 拒绝 |
 | O | 同一问题分别用 Turn-chat 与 `research` 模板运行；使用者模板的校验错误 | 两种方式都完成，比较完成率、耗时与 token；校验错误指明规则与节点 |
-| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后（启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内（阶段 2 与阶段 8 都完成后）；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、过期后读取、读取已被压缩取代的调用（阶段 8 完成后） | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变 |
-| S | S1 运行中杀掉进程后重开 Session；S2 日志尾部损坏；S3 `/new` 或 `/fork` 后放弃草稿；S4 Fork 后分别在两个 Session 中继续，再切换回原 Session；S5 同一 `dataDir` 启动第二个实例；S6 实例锁的持有进程已退出后启动 | S1、S2：对话可以继续；遗留的 Unit 被标为 INTERRUPTED，没有重放；授权被重新询问。S3：不产生任何新的 Session 文件。S4：两个日志互不影响，原日志逐字节不变；切换回原 Session 时文件没有被改动，main 的上下文中注明了在另一个 Session 中被修改的文件，编辑这些文件前要求重新读取。S5：第二个实例报错退出，说明持锁进程。S6：过期的锁被抢占，正常启动 |
+| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后（启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内（阶段 2 与阶段 8 都完成后）；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、读取被 `/undo` 回退的 Turn 中的编号、过期后读取、读取已被压缩取代或被修剪的调用（阶段 8 完成后）；L9 修剪：修剪后已低于阈值、修剪后仍需摘要、额度不足时只修剪；L10 摘要请求本身超出窗口或被 provider 拒绝；L11 空闲时的预先压缩，以及进行中收到新消息与 `/undo`；L12 SubAgent 的压缩与额度不足时的收尾（阶段 4 完成后）；L13 压缩的估算使用最近一次模型调用的实测值 | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变；被回退 Turn 中的编号按"没有这个编号"反馈；L9：`TOOL_RESULTS_PRUNED` 先于摘要生效，修剪后的结果带 `toolCallId` 并可经 `read_output` 读回原文，`PINNED` 与保留区没有被修剪，只修剪时不调用模型；L10：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数；L11：用户的下一条消息等压缩生效后才组装，`/undo` 取消压缩且没有写回；L12：SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用；L13：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同 |
+| S | S1 运行中杀掉进程后重开 Session；S2 日志尾部损坏；S3 `/new` 或 `/fork` 后放弃草稿；S4 Fork 后分别在两个 Session 中继续，再切换回原 Session；S5 同一 `dataDir` 启动第二个实例；S6 实例锁的持有进程已退出后启动；S7 provider 限流并给出 `Retry-After` | S1、S2：对话可以继续；遗留的 Unit 被标为 INTERRUPTED，没有重放；授权被重新询问。S3：不产生任何新的 Session 文件。S4：两个日志互不影响，原日志逐字节不变；切换回原 Session 时文件没有被改动，main 的上下文中注明了在另一个 Session 中被修改的文件，编辑这些文件前要求重新读取。S5：第二个实例报错退出，说明持锁进程。S6：过期的锁被抢占，正常启动。S7：重试等待不短于 `Retry-After`，活动区显示"重试中"与倒计时；超过 `retryAfterMaxMs` 时不再等待 |
 
 **发布阻断项**：
 - C5 任一项未被拦截；
@@ -1573,7 +1647,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 - DeepSeek 思考内容回传、历史轮缺少思考内容、收尾调用三种组合的实际行为；
 - DeepSeek 是否支持 `none`、`low`、`high`、`max` 四档思考强度，以及不支持时的映射方式（第 9.4 节）；
 - DeepSeek 提示词缓存在"只在末尾追加"时的命中情况，以及摘要请求（相同前缀、`tool_choice = none`）能否命中同一缓存；思考开启与关闭对命中的影响；
-  关闭思考的请求中历史仍带 `reasoning_content` 时 API 的行为（第 9.2、9.6 节）。
+  关闭思考的请求中历史仍带 `reasoning_content` 时 API 的行为（第 9.2、9.6 节）；
+- DeepSeek 报告的输入 token 是否包含缓存命中的部分（压缩的估算使用它，第 9.6 节），限流时是否给出 `Retry-After`（第 7.4 节）。
 
 **与已有文档的差异**：下面两张表登记了 M2 与 Architecture、M1 文档的全部差异，不允许不登记就偏离。
 
@@ -1601,8 +1676,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | M1 文档 | 改变 | 本文位置 |
 |---|---|---|
-| Kernel/Core | Lease 的含义；能力上限与授权条目；相同询问合并；超时不保留；多个 ACTIVE 的 AgentRun；写入占用；Turn；新的控制状态；交付条件 | 2.3、4.3、5、6.4、7.6 |
-| Kernel/Execution | 唯一的 FIFO 改为按 AgentRun 分队列与并发类别；等待调用机会；产物归属从 WorkflowRun 改为 Session；快照、改动检测；中止时排队中的尝试也交付 | 7.1、7.2、7.6、10.1 |
+| Kernel/Core | Lease 的含义；能力上限与授权条目；相同询问合并；超时不保留；多个 ACTIVE 的 AgentRun；写入占用；Turn；新的控制状态；运行中插话；交付条件 | 2.3、4.3、4.5、5、6.4、7.6 |
+| Kernel/Execution | 唯一的 FIFO 改为按 AgentRun 分队列与并发类别；等待调用机会；产物归属从 WorkflowRun 改为 Session；快照、改动检测；中止时排队中的尝试也交付；技术重试以 `Retry-After` 为下限，等待时发出"重试中"的活动 | 7.1、7.2、7.4、7.6、10.1 |
 | Kernel/Scheduler | 申请不到调用机会从"立即失败"改为 `WAIT_CAPACITY`；容量从 1 改为 `providerCapacity` | 7.1、7.2 |
 | Kernel/Monitor | 账本从每个运行一份改为逐级委派；收尾保留与 final-call 按 AgentRun；工具次数与墙钟上限 | 7.3 |
 | Kernel/Supervisor、SystemFaultHandling | 新增 `cancelExecution` 与 SIGKILL 升级；`STOP_UNCONFIRMED` 改为系统停机；子进程增加 bwrap 与 git | 2.5、4.7、7.6 |
@@ -1610,7 +1685,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | Kernel/Gateway | 新的 syscall 与来源检查 | 7.5 |
 | Infrastructure/Persistence | 存放单位从 `runs/<workflowRunId>/` 改为 `sessions/<sessionId>/`；新增命名空间 `kernel-execution`；会话日志改为只追加的 JSONL；实例锁 | 10.1、10.3 |
 | Infrastructure/ArtifactStore | 从按运行存放改为全局内容寻址、按 Session 登记归属与保留类别；启动时与每小时回收；写入已存在的正文时更新写入时间 | 10.1 |
-| Library/ExecutorSet | 工具结果的预览在产生时固定，完整输出另存并设上限；新增 `output-read`；`context-assemble` 不再按调用裁剪，只保留收尾调用的保险；摘要请求的组装 | 8.2、9.3、9.6 |
+| Library/ExecutorSet | 工具结果的预览在产生时固定，预览上限与执行上限分开（`previewMaxBytes`、`previewMaxLines`），完整输出另存并设上限；新增 `output-read`；`context-assemble` 不再按调用裁剪，只保留收尾调用的保险；修剪的截取、摘要请求的两种组装；命令按语法树拆分与表驱动的 ARITY；`model-call` 交回 `Retry-After` | 5.2、7.4、8.2、9.3、9.6 |
 | M1Interface | 变化的 Schema 发布新 major，写入 M2Interface | 7.5 |
 
 **M2 的配套文档**：M2Plan（按第 15 节的阶段排期）、M2Interface（字段级）、各组件文档、Library 文档（新的 Agent、Unit、Tool、Prompt、模板定义）、技术栈、使用说明、限制清单（含威胁模型）、验收证据。
@@ -1627,6 +1702,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2Plan |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
 | 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | 评估是否为 `web.fetch` 增加"本运行内全部域名均允许"选项，并衡量它对信息外泄的影响 | Core 文档、限制清单 |
+| 6 | 长期保存的命令授权：授权条目只在内存中、每个 WorkflowRun 重新询问，同一条命令（如 `npm test`）每次启动都要再批准（OpenCode 把"总是允许"写入数据库，跨会话有效） | M2 暂不考虑；M2 实现之后以实验设计评估询问次数与风险，再决定是否允许用户在 dataDir 的用户配置中预先签发放行规则（不能放在仓库内） | M2 发布后 |
+| 7 | 长时间运行的命令：每条命令在新的 shell 中执行、至多 10 分钟，无法启动开发服务器后再测试（OpenCode 有持久终端与后台 shell，DeepSeek Harness 有 `jobs`） | M2 暂不实现，写入限制清单；M2 实现之后再评估后台任务的设计 | M2 发布后 |
 
 ### 14.3 参考
 
@@ -1639,8 +1716,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 结果契约、定义摘要比较、Handoff 的 human-in-loop 轮次语义、任务账本 | Microsoft Agent Framework |
 | 两层 ID、确认停止后才释放槽位、重复意图熔断、写前必读、连接时的地址检查 | DeerFlow 2.0 |
 | 派生准则、数量超限时具体的反馈、子任务只交回结论 | Open Deep Research |
-| steer 与 queue、打断时不重放工具调用、子命令拆分与前缀匹配 | OpenCode |
-| 模型可见即已记录、审批结果闭合、日志尾部修复、沙盒的真实探测、非零退出码是结果 | DeepSeek Harness |
+| steer 与 queue、打断时不重放工具调用、按语法树拆分子命令与表驱动的前缀匹配、预览上限、压缩的实测加估算与预先压缩、摘要请求的纯文本回退、待办工具、遵守 `Retry-After` 的重试 | OpenCode |
+| 模型可见即已记录、审批结果闭合、日志尾部修复、沙盒的真实探测、非零退出码是结果、摘要之前先修剪工具结果、摘要只取被压缩的区域 | DeepSeek Harness |
 
 ## 15. 交付顺序
 
@@ -1649,14 +1726,14 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 阶段 | 内容 | 依赖 | 退出条件（第 13 节） |
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
-| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S6、L5（没有压缩的部分）、L6 |
-| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
-| 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
-| 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断 | 3 | P1–P6、B、D |
-| 5 人类在环控制 | 暂停、继续、`steer`、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4 |
+| 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定（预览上限 `previewMaxBytes`、`previewMaxLines`）、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`）；技术重试遵守 `Retry-After` 与"重试中"的活动；运行中消息的排队（界面） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5） |
+| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节）；main 的 `update_todos`（第 3.5 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
+| 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
+| 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D |
+| 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分 |
 | 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W |
 | 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
-| 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出与 `/compact` 触发，材料查询与结果确认，摘要调用与额度，投影替换；压缩与回退的关系、读取已被压缩取代的调用（阶段 2 已完成时） | 1 | L1–L5（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后） |
+| 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出、`/compact` 与空闲触发，实测加估算，材料查询，修剪与结果确认，摘要请求的两种输入与额度，投影替换；压缩与回退的关系、读取已被压缩取代或被修剪的调用（阶段 2 已完成时）；SubAgent 的压缩（阶段 4 已完成时） | 1 | L1–L5、L9–L11、L13（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后，L12 在阶段 4 与阶段 8 都完成后） |
 
 阶段 6 与阶段 8 只依赖阶段 1，可以与阶段 2–5 并行开发；阶段 8 的编号只表示它是后加入的阶段，不表示它排在最后。
 
@@ -1675,3 +1752,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.4 | 2026-10-30 | 第 2.6 节：事件增加系统级序列（Session 列表的查询与结果、删除未打开的 Session），解决没有打开的 Session 时无法列出 Session 的问题；第 2.3 节：删除只针对未打开的 Session；额度结束后的继续是对当前 Session 再次 `openSession`；第 11.2 节增加 `/delete <id>`（此前有 `deleteSession` 请求而没有对应的指令）；第 2.4、7.5、10.3 节相应修改 |
 | v1.5 | 2026-10-30 | 上下文与产物保留：第 8.2 节，工具结果的预览由 Executor 在产生时固定，完整输出另存；第 9.2、9.3 节，取消按调用重新裁剪，两次压缩之间请求只在末尾追加（运行时上下文改为历史条目），收尾调用保留确定性的保险；新增第 9.6 节，上下文压缩作为 Kernel 的标准过程（自动、溢出与 `/compact` 触发，模型摘要加保留最近原文，结果写回日志）；第 10.1 节，正文分为 `SESSION` 与 `EXPIRING`（7 天）两类，回收只统计 ACTIVE 的 Session，新建或删除失败时清理 Kernel 的文件；第 1.3 节，压缩不再是非目标，Session 不自动删除；第 2.4、7.3、7.5、10.2、11、12（不变量 7、27–29）、13（L 组）、14.1、15（阶段 8）节相应修改 |
 | v1.6 | 2026-10-31 | 第 8.1、8.2 节：新增工具 `read_output`（阶段 2），模型以 `toolCallId` 分段读取被截断的完整输出，编号由 Workflow 在发起者的范围内翻译（按日志计算，包括已被压缩取代的调用），授权与过期由 Execution 检查（按登记时间判断），截取由新的 `output-read` Executor 完成；完整输出设上限 `maxFullOutputBytes`；第 9.6 节：摘要请求的思考强度改为配置 `summaryReasoningEffort`（缺省关闭），摘要保留仍需回读的 `toolCallId`；第 10.1 节：产物回收改为启动时一次、之后每小时一次，写入已存在的正文时更新写入时间；第 12（不变量 30）、13（L6、L8）、14.1、15（阶段 2、8）节相应修改 |
+| v1.7 | 2026-10-31 | 对照 OpenCode 与 DeepSeek Harness 的修改：第 8.2 节，预览上限与执行上限分开（`previewMaxBytes` 50 KiB、`previewMaxLines` 2000，M1 的 `v0` Unit 不变）；`read_output` 的范围不再包括被 `/undo` 回退的 Turn，并可读回被修剪的结果；第 9.6 节，压缩的估算改为最近一次模型调用的实测输入加新增条目的估算，摘要之前先修剪较早的大工具结果（第 4.5 步，`TOOL_RESULTS_PRUNED`），摘要请求只包含到 `toSeq` 为止的历史并增加纯文本回退，增加空闲时的预先压缩，SubAgent 也压缩（额度不足时以收尾保留结束）；第 3.5 节，新增控制工具 `update_todos`；第 4.5、11 节，运行中可以插话（`/steer`、Alt+Enter），运行中输入的消息在界面中排队；第 5.2 节，命令按 tree-sitter-bash 语法树拆分，ARITY 改为表驱动，解析失败不提供"均允许"；第 7.4 节，技术重试以 `Retry-After` 为下限并显示"重试中"；第 14.2 节，长期保存的命令授权与长时间运行的命令列为 M2 实现后评估的事项；第 4.1、4.2、7.3、7.5、9.2、9.3、10.1、10.2、12（不变量 27、28、30）、13（A、H11–H12、L8–L13、S7）、14.1、14.3、15 节相应修改 |

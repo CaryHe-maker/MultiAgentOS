@@ -15,7 +15,7 @@ UserInteraction 的请求不携带仓库路径。
 |---|---|---|
 | UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 | 1（Fork 为 2） |
 | UserInteraction → Kernel | 回退与差异 | 2 |
-| UserInteraction → Kernel | 暂停、继续、中止 | 5 |
+| UserInteraction → Kernel | 暂停、继续、中止、运行中插话 | 5 |
 | UserInteraction → Kernel | `/compact` | 8 |
 | Kernel → UserInteraction | 压缩完成的通知 | 8 |
 | Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件；系统级事件（Session 列表、删除结果） | 1 |
@@ -36,7 +36,7 @@ interface InteractionGatewayPort {
   readArtifact(request: ReadArtifactRequest, context: BoundaryContext): Promise<ArtifactContent | SyscallRejected>;
   shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   // 阶段 2：undoTurns、confirmUndo、diffTurns
-  // 阶段 5：pauseRun、resumeRun、interruptRun
+  // 阶段 5：pauseRun、resumeRun、interruptRun、steerRun（运行中插话，只在 RUNNING 时受理，M2Design 第 4.5 节）
   // 阶段 8：compactContext（第 2.4 节）
 }
 ```
@@ -202,11 +202,13 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   parentAgentRunId?: string;         // 阶段 4
   phase: ActivityPhase;
   unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE' };
+  retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
+  todos?: { total: number; done: number; current?: string };   // 阶段 2：Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;
 }
 
 type ActivityPhase =
-  | 'ASSEMBLING' | 'THINKING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
+  | 'ASSEMBLING' | 'THINKING' | 'RETRYING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
   | 'QUEUED' | 'WRAPPING_UP' | 'ENDED';
   // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER、PAUSED；阶段 8：COMPACTING
 
@@ -283,14 +285,15 @@ interface SessionDeleted {
 ```ts
 interface ContextCompacted {         // 压缩生效（Workflow 已记入日志）之后发出
   type: 'ContextCompacted';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
-  summaryRef: ArtifactRef;           // 界面可以经 readArtifact 展示摘要
-  compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER' | 'IDLE';
+  summaryRef?: ArtifactRef;          // 界面可以经 readArtifact 展示摘要；只有修剪、没有写摘要时省略
+  compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）；只有修剪时为 0
+  prunedResults: number;            // 被修剪的工具结果数
 }
 
 interface CompactionFailed {
   type: 'CompactionFailed';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';   // 空闲触发的失败不通知界面（M2Design 第 9.6 节）
   reason: 'NOTHING_TO_COMPACT' | 'BUDGET_INSUFFICIENT' | 'SUMMARY_FAILED' | 'NOT_RECORDED';
 }
 ```
@@ -303,6 +306,7 @@ interface CompactionFailed {
 | `AuthorizationRequest` | 按 `capability` 取对应变体的字段 |
 | 运行内请求 | `sessionId`、`workflowRunId` 必须与 `BoundaryContext` 中的一致 |
 | `RunStateChanged` | `state = 'AWAITING_INPUT'` 时不得有 `turnId` |
+| `ActivityEvent` | `phase = 'RETRYING'` 时必须有 `retry`，其他阶段不得有 |
 
 ## 5. 原因码
 

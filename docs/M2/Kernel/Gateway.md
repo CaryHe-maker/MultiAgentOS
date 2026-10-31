@@ -24,13 +24,14 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 |---|---|---|---|
 | `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun`、`requestHuman`、`readProjectFile` | `workflow` | `sessionId`、`workflowRunId` | 1 |
 | `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） | 1 |
+| `updateActivity` | `workflow` | `sessionId`、`workflowRunId` | 2 |
 | `reserveDelegation`、`releaseDelegation` | `workflow` | `sessionId`、`workflowRunId` | 4 |
 | `startSession`、`startRun` | `user-interaction` | 无 | 1 |
 | `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 | 1 |
 | `answerAuthorization`、`answerHuman` | `user-interaction` | `sessionId`、`workflowRunId` | 1 |
 | `readArtifact` | `user-interaction` | `sessionId` | 1 |
 | `undoTurns`、`confirmUndo`、`diffTurns` | `user-interaction` | `sessionId`、`workflowRunId` | 2 |
-| `pauseRun`、`resumeRun`、`interruptRun` | `user-interaction` | `sessionId`、`workflowRunId` | 5 |
+| `pauseRun`、`resumeRun`、`interruptRun`、`steerRun` | `user-interaction` | `sessionId`、`workflowRunId` | 5 |
 | `reportCompactionSource`、`ackCompaction` | `workflow` | `sessionId`、`workflowRunId` | 8 |
 | `compactContext` | `user-interaction` | `sessionId`、`workflowRunId` | 8 |
 
