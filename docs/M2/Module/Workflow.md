@@ -21,6 +21,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | — | 控制工具 `update_todos`：校验、`TODOS_UPDATED`、经 `updateActivity` 交出进度 | M2Design 第 3.5 节 | 2（worker 为 4） |
 | `steer` 只在暂停后附加 | 运行中的 `steer`（`HumanAnswered(kind: steer)`），目标已结束时改投 | M2Design 第 4.5 节 | 5 |
 | — | 应 Kernel 的查询交出压缩材料（模型轮带实测用量与 `headDigest`），把修剪与压缩结果记入日志，投影以修剪后的结果与摘要取代原来的内容 | M2Design 第 9.6 节 | 8 |
+| 只读根目录的 `AGENTS.md` | `read_file` 触及的子目录 `AGENTS.md` 按投影加载，追加在末尾 | M2Design 第 9.5 节 | 2 |
 | 不处理 Session | 执行 Kernel 下达的 Session 命令：新建、打开（修复日志）、关闭、删除；维护 Session 列表 | M2Design 第 2.3、10.3 节 | 1 |
 | 每个运行至多一次 final-call | 每个 AgentRun 至多一次（`analyze` 仍按运行，见 Monitor 第 3.4 节） | M2Design 第 7.3 节 | 1 |
 | `budgetState` 一个值 | `BudgetView`：AgentRun、Turn、运行三级；额度触顶时进入最后一轮，必有报告 | M2Design 第 7.3 节 | 1 |
@@ -157,11 +158,18 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 - 运行时上下文（工作目录、沙盒状态、当前日期）是历史条目：每个 WorkflowRun 开始时，以及它变化时（例如日期变化），追加 `REQUEST_CONTEXT`，投影在该位置加入一条说明。
 - 用户批准修改 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明。
 - `trusted = false` 的 `AGENTS.md` 以 user 角色、标明"仓库材料，未经用户信任"放在 history 的开头。
+- **子目录的 `AGENTS.md`**（阶段 2，M2Design 第 9.5 节）：
+  - `read_file` 的 `UNIT_COMPLETED` 带 `nestedInstructions`（沿途存在的 `AGENTS.md` 路径）时，对其中本投影在本 WorkflowRun 内尚未加载的，从外层到内层逐个 `readProjectFile`，追加 `PROJECT_FILE_LOADED { path, ref, sha256, trusted, agentRunId }`；全部完成后才提交该 AgentRun 的下一次 `context-assemble`；
+  - 投影中，每条加载记录成为一个 `PINNED` 条目，位置就是记录的位置（那次 `read_file` 的结果之后），user 角色，按 `trusted` 标明"用户已信任的项目指令（<路径>）"或"仓库材料（<路径>），未经用户信任"；
+  - 之后的 WorkflowRun 再次触及时重新读取，SHA 与本投影最近一次加载相同时只追加记录、不产生新条目；
+  - 本投影已加载 `maxNestedInstructions`（缺省 8）份时，追加 `PROJECT_FILE_LOADED { path, skipped: 'LIMIT', agentRunId }`，投影中为一条说明；
+  - 用户批准的写入改动了某个子目录的 `AGENTS.md` 后，重新读取，在已加载过它的投影末尾追加；
+  - 各 AgentRun 按自己的投影判断是否已加载，SubAgent 不继承父 AgentRun 的条目；被回退 Turn 中的加载不算已加载。
 - 外部输入（用户输入、工具结果、压缩的摘要）一律以 user 或 tool 角色出现并标明来源。
 
 ### 8.3 只在末尾追加与可重建性
 
-- 交给 `context-assemble` 的每个条目带所属 Turn、日志中的 `seq` 与类别：`PINNED`（未被信任的 `AGENTS.md`、main 投影中当前 Turn 的人类输入、模板节点的目标与交接输入、SubAgent 的目标与验收标准）或 `NORMAL`（M2Design 第 9.3 节）。
+- 交给 `context-assemble` 的每个条目带所属 Turn、日志中的 `seq` 与类别：`PINNED`（未被信任的根目录 `AGENTS.md`、子目录 `AGENTS.md` 的条目、main 投影中当前 Turn 的人类输入、模板节点的目标与交接输入、SubAgent 的目标与验收标准）或 `NORMAL`（M2Design 第 9.3 节）。
 - 工具结果在条目中只用预览（`UNIT_COMPLETED.outputRef`），永不使用 `fullRef`；`fullRef` 只出现在 `read_output` 的 Unit 输入中（第 7 节第 8 条）。
 - 已投影出的条目不再改写：两次压缩之间，同一对象的投影只在末尾增长（不变量 27）。思考内容是否可回传，在追加 `MODEL_TURN` 时写入 `replayable`。
 - 每次组装追加 `CONTEXT_ASSEMBLED`，记录 `projectionDigest` 与 ContextPack 的 `headDigest`；只有收尾调用的保险去掉了条目时才带 `elidedEntries`。
@@ -250,7 +258,7 @@ reply(text) 合法 → 追加 MODEL_TURN
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 3–12 节（第 7 节第 8、9 条与第 8.4 节除外） |
-| 2 | Fork、`baseSha` 与 `expectAbsent`、`WORKSPACE_*` 记录与投影替换、`read_output` 的编号翻译（第 7 节第 8 条）、main 的 `update_todos`（第 7 节第 9 条） |
+| 2 | Fork、`baseSha` 与 `expectAbsent`、`WORKSPACE_*` 记录与投影替换、`read_output` 的编号翻译（第 7 节第 8 条）、main 的 `update_todos`（第 7 节第 9 条）、子目录 `AGENTS.md` 的加载（第 8.2 节） |
 | 4 | `run_subagents`、汇合、结果契约与改动对账、完成检查、SubAgent 的投影、worker 的 `update_todos` |
 | 5 | `steer`（暂停后附加与运行中插话）、`ask_user`、暂停后重新提交、中止后的收敛、Turn 超时后的 `closeRun(TIMEOUT)` |
 | 7 | 使用者模板（含其中的条件边）、有界循环、`all_done` 的一般使用、确定性运行报告、`/run` |

@@ -160,7 +160,7 @@ type AuthorizationRequest =
     }
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'project.instructions';
-      path: 'AGENTS.md'; contentRef: ArtifactRef; truncated: boolean; expiresAt: string;
+      path: string; contentRef: ArtifactRef; truncated: boolean; expiresAt: string;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
     };
   // 阶段 2：workspace.write；阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
 

@@ -65,7 +65,7 @@ interface LogRecordBase {
 | `UNIT_INTERRUPTED` | `requestId`、`reason`（打开 Session 时的修复，或阶段 5 的暂停与中止） | 1 |
 | `MODEL_TURN` | `requestId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
-| `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?` | 1 |
+| `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
 | `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
 | `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` | 2 |
@@ -123,7 +123,7 @@ interface SessionRefLine {
 ```ts
 interface TrustedInstructionLine {
   repositoryRoot: string;
-  path: 'AGENTS.md';
+  path: string;                // 'AGENTS.md'，阶段 2 起也可以是子目录中 AGENTS.md 的相对路径
   sha256: string;
   source: 'USER_CONFIRMED' | 'APPROVED_WRITE';
   at: string;

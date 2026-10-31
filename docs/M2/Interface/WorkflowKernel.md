@@ -115,7 +115,7 @@ interface ReadProjectFileRequest {
   requestId: string;
   sessionId: string;
   workflowRunId: string;
-  path: 'AGENTS.md' | `.multiagentos/workflows/${string}.yaml`;   // 白名单，Schema 以正则约束
+  path: 'AGENTS.md' | `${string}/AGENTS.md` | `.multiagentos/workflows/${string}.yaml`;   // 白名单，Schema 以正则约束；子目录的 AGENTS.md 在阶段 2 开放
 }
 
 type ProjectFileContent =
@@ -400,7 +400,7 @@ interface ContextCompacted {
 |---|---|
 | 运行内请求 | `sessionId`、`workflowRunId` 必须与 `BoundaryContext` 中的一致 |
 | `SubmitUnitRequest` | `requestId` 的 body 等于 `path` 的 SHA-256 前 32 位；`path` 以 `unitRunId` 对应的 UnitRun 路径开头 |
-| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md` 或匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$` |
+| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md`、匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$`，或（阶段 2）以 `/AGENTS.md` 结尾、不以 `/` 开头、不含 `..` 段与空段、≤512 字符的相对路径；是否在排除规则内由 Kernel 检查 |
 | `CloseRunRequest` | `outcome = 'FAILED'` 时必须有 `failure` 且不得有 `resultRef` |
 | `ReportSessionCommandRequest.result` | `command` 与事件中的命令一致；`FAILED` 时必须有 `failure` |
 | `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |

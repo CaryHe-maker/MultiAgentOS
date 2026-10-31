@@ -25,7 +25,8 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | 目录按 Executor 平铺 | 新 Executor 按 M2Design 第 8.4 节组织：`retention/`、`output-read/`、`fs/`、`git/`、`command/`、`web/`、`vendor/` | 1 起 |
 
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
-见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）。
+见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
+阶段 2 起，`v1` 的 `file-read` 另返回 `nestedInstructions`：从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 的相对路径，由外到内排列，经同一个 `RepositoryAccess` 检查（排除规则命中的目录不算，不跟随符号链接），不读取它们的内容（M2Design 第 9.5 节）。
 M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）；预览的内容与 M1 截断后的输出相同，所以 `analyze` 的行为不变。
 
 ## 3. Executor 清单（阶段 1）
@@ -81,8 +82,8 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 | INSTRUCTIONS | 人设与职责 | system | M1 原样 |
 | TOOLS | 实际可用的工具（final 时只有结束控制工具） | system | M1 原样 |
 | PROJECT_INSTRUCTIONS | `trusted = true` 的 `AGENTS.md`，≤64 KiB；在一个 AgentRun 内不变 | system | 新增 |
-| UNTRUSTED_INSTRUCTIONS | `trusted = false` 的 `AGENTS.md`，标明"仓库材料，未经用户信任" | user | 新增，位于 HISTORY 之前 |
-| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
+| UNTRUSTED_INSTRUCTIONS | `trusted = false` 的根目录 `AGENTS.md`，标明"仓库材料，未经用户信任" | user | 新增，位于 HISTORY 之前 |
+| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、子目录 `AGENTS.md` 的条目（按 `trusted` 标明，≤64 KiB，阶段 2）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
 | STATUS | 已用轮数、额度状态、收尾原因 | user | `budgetState` 改为 `BudgetView`；位于末尾 |
 
 `OBJECTIVE` 与 `HANDOFF` 只在 `analyze` 的 planner、code-viewer 中出现（M1 原样）；main 的目标就是 HISTORY 中的人类输入。
@@ -152,7 +153,7 @@ M1 的测试全部保留。增加：
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 3–8 节（第 5a、6.4 节与摘要请求除外） |
-| 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1）；第 5a 节 `output-read` |
+| 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1）；第 5a 节 `output-read`；`file-read` 的 `nestedInstructions` 与子目录 `AGENTS.md` 条目的组装 |
 | 3 | `command/`：`run-command`（输出预览保留头尾）、`command/parse/`（tree-sitter-bash 拆分与 ARITY 表，提前任务 E-EX-3）；`git/`：`git-inspect` |
 | 6 | `web/`：`web-search`（Tavily 适配器）、`web-fetch`（提前任务 E-EX-2） |
 | 8 | 第 6.4 节：修剪与摘要请求的两种组装；`model-call` 的摘要请求（思考强度按配置）与 `COMPACTION_SUMMARY_INVALID` |

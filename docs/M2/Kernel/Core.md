@@ -67,15 +67,19 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 ```text
 本运行没有 repo.read 的授权 → 先按第 5.1 节询问；拒绝时返回 USER_DECLINED
 Execution 读取文件（readProjectFile），不存在时返回 exists: false
-存在 → 计算 SHA；信任记录中有 (repositoryRoot, 'AGENTS.md', sha) → 返回 trusted: true
+存在 → 计算 SHA；信任记录中有 (repositoryRoot, path, sha) → 返回 trusted: true
        没有 → 预设为 readonly 时直接返回 trusted: false
+             本运行内已对 (path, sha) 选择过不信任 → 直接返回 trusted: false
              否则发起 AuthorizationRequest(project.instructions)，挂起本请求
                  ALLOW  → 追加信任记录（source: USER_CONFIRMED），返回 trusted: true
-                 DENY、超时、取消 → 返回 trusted: false
+                 DENY  → 在本运行的内存中记住 (path, sha)，返回 trusted: false
+                 超时、取消 → 返回 trusted: false
 ```
 
+`path` 为 `'AGENTS.md'`，阶段 2 起也可以是子目录的 `AGENTS.md`（M2Design 第 9.5 节）；规则相同，询问展示路径与全文。
+
 - 信任记录是系统级状态，跨运行、跨 Session 有效；它不授予任何执行能力，不是授权条目，也不是 Lease。
-- 用户批准的 `AGENTS.md` 写入成功后，新内容的 SHA 自动记为信任（`source: APPROVED_WRITE`，阶段 2）。
+- 用户批准的 `AGENTS.md` 写入（根目录或子目录）成功后，新内容的 SHA 自动记为信任（`source: APPROVED_WRITE`，阶段 2）。
 
 ## 6. Turn 与人类请求
 
@@ -153,7 +157,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 3–9 节 |
-| 2 | 能力上限与授权条目、判定顺序、询问合并、`workspace.write`、`AGENTS.md` 的极危险写入、回退的发起与确认 |
+| 2 | 能力上限与授权条目、判定顺序、询问合并、`workspace.write`、任一目录中 `AGENTS.md` 的极危险写入、子目录 `AGENTS.md` 的信任询问、回退的发起与确认 |
 | 3 | 命令的级别、资源键与询问选项、SandboxProfile、`approvalDigest`、`STOP_UNCONFIRMED` 停机 |
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 2 | `updateActivity` 的转发 |

@@ -104,6 +104,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 本文第 3 节为阶段 1 的清单；后续阶段的 Schema 在各自的契约门中加入本文。
 阶段 2 加入 `executor.OutputReadInput.v1`、`OutputReadOutput.v1`（`executor/output-read.ts`，ExecutorSet 第 5a 节）与日志记录 `ArtifactOwnerLine` 的 `fullOutput` 字段（Interface/Persistence 第 4.3 节）；
 `workflow.UpdateTodosArgs.v1`（`workflow/update-todos.ts`）、`kernel.unit.UpdateActivityRequest.v1`（WorkflowKernel 第 2.5 节）、`ActivityEvent.todos` 与日志记录 `TODOS_UPDATED`。
+子目录 `AGENTS.md`：`FileReadOutput.nestedInstructions`、`ReadProjectFileRequest.path` 的扩展、`PROJECT_FILE_LOADED` 的 `agentRunId` 与 `skipped`、`TrustedInstructionLine.path` 与 `AuthorizationRequest(project.instructions).path` 改为相对路径。
 阶段 5 加入 `kernel.control.SteerRunRequest.v1` 与 `HumanAnswered` 的 `kind = 'steer'`、`HUMAN_ANSWERED.redirectedFrom`。
 阶段 8 加入压缩相关的类型：`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`（含 `summaryInput`）、`CompactionFailed`（运行级事件）、`ReportCompactionSourceRequest`（模型轮条目的 `measured`）、`AckCompactionRequest`（含 `stage`）、`CompactContextRequest`，
 修剪与纯文本式摘要请求的 Executor 输入输出（ExecutorSet 第 6.4 节），以及日志记录 `TOOL_RESULTS_PRUNED`、`CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED` 与 `CONTEXT_ASSEMBLED.headDigest`、`ContextPack.headDigest`（Interface/WorkflowKernel 第 3.4 节、InteractionKernel、Persistence 第 2.2 节）。

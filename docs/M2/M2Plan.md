@@ -158,14 +158,14 @@ fake Workflow 能回答 Session 列表查询与删除；`ActivityEvent` 的 `RET
 
 **文档门**：Core（能力上限与授权条目、判定顺序、询问合并、超时）、Execution（快照、改动检测、回退步骤）、
 Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`、`output-read`）、Workflow（`baseSha`、`expectAbsent`、Fork、
-`WORKSPACE_*` 记录、`read_output` 的编号翻译、`update_todos`）、Core（`updateActivity`）、UserInteraction（授权选项、回退确认、待办进度）、`M2Security.md`（写入范围与受保护路径、完整输出的读取隔离）、相应的 `Interface/` 章节。
+`WORKSPACE_*` 记录、`read_output` 的编号翻译、`update_todos`、子目录 `AGENTS.md` 的加载）、Core（`updateActivity`、子目录 `AGENTS.md` 的信任与本运行内的不信任）、UserInteraction（授权选项、回退确认、待办进度）、`M2Security.md`（写入范围与受保护路径、完整输出的读取隔离）、相应的 `Interface/` 章节。
 
 **契约门** S2-CT-1：AgentRun 登记中的能力上限字段、授权答复的选项、`undoTurns`、`confirmUndo`、`diffTurns`、Fork 请求、
-`executor.OutputReadInput` 与 `OutputReadOutput`、`ArtifactOwnerLine.fullOutput`、`workflow.UpdateTodosArgs`、`updateActivity` 与 `ActivityEvent.todos`、日志记录 `TODOS_UPDATED`，以及对应的 fake 与契约测试。
+`executor.OutputReadInput` 与 `OutputReadOutput`、`ArtifactOwnerLine.fullOutput`、`workflow.UpdateTodosArgs`、`updateActivity` 与 `ActivityEvent.todos`、日志记录 `TODOS_UPDATED`、子目录 `AGENTS.md` 相关的字段（SharedContracts 第 5 节），以及对应的 fake 与契约测试。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S2-KC-1 | Core：能力上限与授权条目、判定顺序 ①–⑤、相同询问合并、`AGENTS.md` 的极危险写入 | — |
+| S2-KC-1 | Core：能力上限与授权条目、判定顺序 ①–⑤、相同询问合并、任一目录中 `AGENTS.md` 的极危险写入；子目录 `AGENTS.md` 的信任询问、本运行内的不信任 | — |
 | S2-KC-2 | Gateway 与 Core：`updateActivity` 的受理与转发到 ActivityEvent（不做判断、不计额度） | — |
 | S2-KX-1 | Execution：影子 git 快照（经 Supervisor 的 git 子进程）、快照索引、改动检测 | — |
 | S2-KX-2 | Execution：`/undo`、`/undo all`、`/diff` 的六个步骤、兜底快照、写入前复查；打开 Session 时的工作区差异 | S2-KX-1 |
@@ -174,6 +174,8 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 | S2-KX-3 | Execution：`read_output` 的输入检查（归属、`fullOutput` 标记、按登记时间判断过期）与正文解析 | — |
 | S2-WF-1 | `baseSha` 与 `expectAbsent` 的填写、Fork（复制日志并列出产物引用）、`WORKSPACE_*` 记录与投影替换 | — |
 | S2-WF-2 | `read_output` 的编号翻译：按日志计算发起者的范围（包括已被压缩取代的调用、Fork 继承的历史，不包括被 `/undo` 回退的 Turn）、编号重复取最近、找不到时的反馈 | — |
+| S2-WF-4 | 子目录 `AGENTS.md`：按 `nestedInstructions` 加载、按投影去重、数量上限、追加为 `PINNED` 条目、批准写入后重新读取 | — |
+| S2-EX-3 | `file-read` 的 `nestedInstructions`；`context-assemble` 中子目录 `AGENTS.md` 条目的标注 | — |
 | S2-WF-3 | `update_todos`：参数校验、`CONTROL_MIXED` 的例外、`TODOS_UPDATED`、无进展检测、`updateActivity` | — |
 | S2-UI-1 | 授权询问的各级选项、回退确认、`/fork`、`/undo`、`/diff` 的展示、活动区的待办进度 | — |
 | S2-PL-1 | main 增加写入工具、`read_output` 与 `update_todos`；`file-write`、`file-edit`、`output-read` 的 Unit 定义与受保护能力，Tool `read-output`、`update-todos` | — |
@@ -191,7 +193,7 @@ ExecutorSet（`run-command`、`command/parse/` 的语法树拆分与 ARITY 表�
 | 任务 | 内容 | 依赖 |
 |---|---|---|
 | S3-KX-1 | Supervisor：以 bwrap 施加 SandboxProfile、遮蔽、环境变量白名单、可用性探测、进程组、SIGKILL 升级、上报 `STOP_UNCONFIRMED` | 阶段 0 的 S0-T-1 |
-| S3-KX-2 | Execution：敏感文件列表、受保护路径的新建检查与隔离、EXEC 互斥 | — |
+| S3-KX-2 | Execution：敏感文件列表、受保护路径的新建检查与隔离（包括任一目录中的 `AGENTS.md`）、EXEC 互斥 | — |
 | S3-KC-1 | Core：计算 SandboxProfile、命令的资源键与询问选项（按语法树拆分的结果；解析失败时只提供单次允许）、`approvalDigest`、`command.network`、`ask-unisolated` | 提前任务 E-EX-3 |
 | S3-KC-2 | `STOP_UNCONFIRMED` 经 `reportSystemFault` 停机 | — |
 | S3-EX-1 | `run-command` | 提前任务 E-EX-3 |

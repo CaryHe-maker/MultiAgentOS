@@ -50,7 +50,7 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 ## 4. 用户输入与项目文件
 
 - `storeUserInput({ inputId, text })`：把正文以 `text/plain; charset=utf-8` 存为产物，登记归属；同一 `inputId` 再次调用返回同一引用。
-- `readProjectFile(path, scope)`：只接受 Interface/WorkflowKernel 第 2.2 节的白名单路径；经 `RepositoryAccess` 读取（与 `file-read` 共用路径检查与排除规则），
+- `readProjectFile(path, scope)`：只接受 Interface/WorkflowKernel 第 2.2 节的白名单路径（阶段 2 起包括子目录的 `AGENTS.md`，路径须不在排除规则内）；经 `RepositoryAccess` 读取（与 `file-read` 共用路径检查与排除规则），
   不跟随符号链接；文件不存在时返回 `exists: false`；存在时把正文存为产物并返回 SHA-256。不计入任何 AgentRun 的额度。
 
 ## 4a. 技术重试的等待
@@ -155,7 +155,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 |---|---|
 | 1 | 第 3–8 节（第 5a、6a 节除外），包括第 4a 节 |
 | 2 | 影子 git 快照、快照索引、改动检测、`/undo`、`/undo all`、`/diff` 的六个步骤、Fork 时继承产物（沿用原 Session 的保留类别、`retainedSince` 与 `fullOutput` 标记）、打开 Session 时比较工作区、第 5a 节 |
-| 3 | 敏感文件列表、受保护路径的新建检查与隔离、EXEC 互斥 |
+| 3 | 敏感文件列表、受保护路径的新建检查与隔离（包括任一目录中的 `AGENTS.md`：已存在的只读挂载，新建的由改动检测发现后隔离）、EXEC 互斥 |
 | 4 | 按 AgentRun 分队列、并发类别与屏障、全局上限、等待调用机会、改动归属 |
 | 5 | 按并发类别处理暂停、按执行取消、中止时排队中的尝试也交付 |
 | 8 | 第 6a 节：估算、修剪、摘要请求的两种组装与执行 |

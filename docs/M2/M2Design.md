@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.7 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.8 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -756,8 +756,8 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 | `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问 |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
 | `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
-| `workspace.write`：目标为仓库根目录的 `AGENTS.md` | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
-| `project.instructions` | 不确定 | `AGENTS.md` 内容的 SHA | 不是 Agent 的能力，由 `readProjectFile` 读到未被信任的 `AGENTS.md` 时询问，决定它能否进入 system 段（第 9.5 节）；不产生任何执行权限 |
+| `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
+| `project.instructions` | 不确定 | `AGENTS.md` 的相对路径与内容的 SHA | 不是 Agent 的能力，由 `readProjectFile` 读到未被信任的 `AGENTS.md` 时询问，决定它能否作为项目指令（第 9.5 节）；不产生任何执行权限 |
 | `agent.spawn` | 内部 | 无 | 不询问，也没有授权条目，只看能力上限。来自 Agent 定义的能力白名单；Kernel 只把它放进顶层 AgentRun（没有父 AgentRun 的）的能力上限，因此 SubAgent 不能再派生。`registerAgentRun` 带 `parentAgentRunId` 时，Kernel 检查父 AgentRun 的能力上限中有它，否则以 `CAPABILITY_NOT_GRANTED` 拒绝 |
 
 `network: true` 和 `web_fetch` 的 URL 一样，是操作本身的参数。Kernel 从中提取需要的能力，按同一顺序判定，与其他工具的逻辑相同。
@@ -871,8 +871,8 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 仓库 | 仓库根目录以只读挂回（仓库通常位于 `$HOME` 之内，挂载顺序在遮蔽之后） |
 | 可写路径 | 该 AgentRun 的可写根目录（main 为仓库根目录，worker 为 `writeScope`）以 `--bind` 挂载；私有 `/tmp`（`--tmpfs /tmp`） |
 | 敏感文件 | M1 默认排除规则中的秘密类规则（`.env*`、`*.pem`、`*.key`、`id_rsa*` 等私钥，不含 `.git` 与 `node_modules`）加上 `kernel.sandboxMaskedPatterns`（可追加）命中的仓库文件，以 `/dev/null` 只读覆盖，目录以空 tmpfs 覆盖。列表由 Execution 在派发 EXEC 前按同一个匹配器扫描得出，复用第 7.1 节的摘要缓存。这样文件工具与命令对秘密的可见性一致，命令输出不会把它们带进模型上下文 |
-| 只读保护 | 仓库内已存在的 `.git/`（任何位置）、`.multiagentos/`、根目录的 `AGENTS.md`，即使位于可写路径之内，也以 `--ro-bind` 重新挂载为只读 |
-| 新建保护 | 不存在的受保护路径不做占位挂载（bwrap 会在宿主仓库中真实创建挂载点，改动用户的仓库）。改为事后检查：Execution 在命令前后检查这些路径是否存在（任何位置的 `.git` 由改动检测发现），命令新建了其中任一路径时，Kernel 把它移入本 Session 的隔离目录（`kernel-execution/quarantine/`），结果以 `PROTECTED_PATH_CREATED` 报告并写审计。例如在不是 git 仓库的目录中 `git init` 后写入 `.git/hooks`，这些 hook 不会留到用户以后使用 git 时执行 |
+| 只读保护 | 仓库内已存在的 `.git/`（任何位置）、`.multiagentos/`、任一目录中的 `AGENTS.md`（排除规则命中的目录除外），即使位于可写路径之内，也以 `--ro-bind` 重新挂载为只读 |
+| 新建保护 | 不存在的受保护路径不做占位挂载（bwrap 会在宿主仓库中真实创建挂载点，改动用户的仓库）。改为事后检查：Execution 在命令前后检查这些路径是否存在（任何位置的 `.git` 与 `AGENTS.md` 由改动检测发现），命令新建了其中任一路径时，Kernel 把它移入本 Session 的隔离目录（`kernel-execution/quarantine/`），结果以 `PROTECTED_PATH_CREATED` 报告并写审计。例如在不是 git 仓库的目录中 `git init` 后写入 `.git/hooks`，这些 hook 不会留到用户以后使用 git 时执行 |
 | 遮蔽 | `<dataDir>` 位于 `$HOME` 之外时单独以空 tmpfs 遮蔽 |
 | 网络 | 缺省 `--unshare-net`；只有批准了 `command.network` 的那一条命令共享宿主网络 |
 | 进程 | `--unshare-pid`、`--die-with-parent`、`--new-session`；独立进程组 |
@@ -892,7 +892,7 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 
 `file-write`、`file-edit` 在进程内执行。它们与 Core 的第 ③ 步判定、沙盒的 `--bind` 使用同一个 `isWritable(profile, path)` 函数，
 并用属性测试证明三处判断一致。路径不跟随符号链接，不得越出仓库目录（M1 的 `guarded-file` 规则）。
-`isWritable` 对 `.git/`、`.multiagentos/` 之下的路径一律返回否（`PROTECTED_PATH`）；`AGENTS.md` 可写，但按极危险级逐次询问（第 5.2 节）。
+`isWritable` 对 `.git/`、`.multiagentos/` 之下的路径一律返回否（`PROTECTED_PATH`）；任一目录中的 `AGENTS.md` 可写，但按极危险级逐次询问（第 5.2 节）。
 文件工具同样不能读取敏感文件（M1 的排除规则），与第 6.1 节命令的可见性一致。
 
 ### 6.4 并行运行的安全条件
@@ -1082,10 +1082,10 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 | `readArtifact`、`shutdown` | 不变 |
 
 **`readProjectFile`**：Workflow 初始化时需要的仓库信息，以系统服务 syscall 向 Kernel 申请，而不是提交 Unit（Unit 是 Agent 的行为，必须属于某个 AgentRun）。
-- 路径只接受固定白名单：仓库根目录的 `AGENTS.md`、`.multiagentos/workflows/*.yaml`；
+- 路径只接受固定白名单：仓库根目录的 `AGENTS.md`、子目录中的 `AGENTS.md`（仓库内相对路径，不含 `..`，不在排除规则内，不跟随符号链接；阶段 2）、`.multiagentos/workflows/*.yaml`；
 - Kernel 查找本 WorkflowRun 中 `repo.read` 的授权条目，没有时照常询问；由 `RepositoryAccess` 读取，正文存入 ArtifactStore，写审计；不计入任何 AgentRun 的额度；
 - 返回：`AGENTS.md` 只返回 ArtifactRef、SHA 与 `trusted`（Workflow 不看内容，直接交给 context-assemble；`trusted` 的判定与询问见第 9.5 节）；模板文件同时返回文本，由 Workflow 解析与编译；
-- 时机：WorkflowRun 开启后、启动第一个节点之前读取一次；用户批准修改 `AGENTS.md` 的写入成功后再读取一次。每次读取都追加 `PROJECT_FILE_LOADED` 记录，上下文使用最新一条。
+- 时机：根目录的 `AGENTS.md` 在 WorkflowRun 开启后、启动第一个节点之前读取一次；子目录的 `AGENTS.md` 在 `read_file` 第一次触及该目录时读取（第 9.5 节）；用户批准修改某个 `AGENTS.md` 的写入成功后再读取一次。每次读取都追加 `PROJECT_FILE_LOADED` 记录。
 
 **Kernel → Workflow 的事件**：`SessionOpen`、`SessionListQuery`、`RunStart`、`UnitReport`（新增 `INTERRUPTED` 状态，以及实际改动的文件）、
 `HumanAnswered`（开放输入的答复带 `turnId`；运行中插话为 `steer`）、`HumanCancelled`、`TurnClosed`、`RunPaused`、`RunResumed(steer?)`、`RunInterrupted`（带原因：用户中止、暂停超时、Turn 超时）、`WorkspaceReverted`、`WorkspaceDiverged`（打开 Session 时的工作区差异，第 2.3 节）、
@@ -1137,7 +1137,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 | `search_repository` | `repository-search` | READ | `repo.read` | M1 原样 |
 | `list_files` | `repository-list` | READ | `repo.read` | 由 M1 的 `RepositoryAccess` 执行（与概览、检索、读文件共用同一个文件集合、排除规则与路径检查），复用 `repository-orient` 的目录树生成；参数为 `path?`、`depth?`（1–3）、`glob?`；返回目录树与每个目录的文件数，不读取文件内容 |
 | `git_inspect` | `git-inspect` | READ | `repo.read` | 只读、安全级、固定参数：`status`、`diff [--staged] [path]`、`log [-n ≤50] [path]`、`show <rev> [path]`、`blame <path> [行范围]`；不接受任意参数。经 Supervisor 在只读沙盒中运行，不联网；带 `--no-pager`、`--no-ext-diff`、`--no-textconv`，禁用 hooks 与 fsmonitor，忽略系统与全局 git 配置；以 pathspec 排除 M1 默认排除规则命中的文件，使 `.env` 等内容不会经 diff 泄露；仓库不是 git 仓库时返回 `UNSUPPORTED` |
-| `read_file` | `file-read` | READ | `repo.read` | M1 原样，另返回内容 SHA；找不到文件时列出同目录中名称最接近的几个文件 |
+| `read_file` | `file-read` | READ | `repo.read` | M1 原样，另返回内容 SHA；找不到文件时列出同目录中名称最接近的几个文件；另返回从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 路径，供加载子目录的项目指令（第 9.5 节，阶段 2） |
 | `write_file` | `file-write` | WRITE | `workspace.write` | 新建或整体覆盖。覆盖已有文件时 Workflow 填入 `baseSha`，新建时填入 `expectAbsent`（第 6.4 节）；`append: true` 追加，同样要求先读或文件不存在；读到"不存在"之后只允许新建 |
 | `edit_file` | `file-edit` | WRITE | `workspace.write` | `oldString` 必须唯一匹配，否则要求 `replaceAll`；保持原有换行符；精确匹配失败时依次忽略排版引号、空白差异重试；按 Workflow 填入的 `baseSha` 校验（第 6.4 节） |
 | `run_command` | `run-command` | EXEC | `command.exec`（`network: true` 时加 `command.network`） | 参数为 `command`、`workdir?`（相对仓库根目录）、`timeoutMs?`、`network?`；缺省不联网；每次在全新的 shell 中执行，不保留 `cd` 与变量；非零退出码是正常结果；预览保留输出的头尾，超出时全文另存（第 8.2 节）；结果带 `sandboxDenials`、`backend`、`changedFiles` |
@@ -1232,16 +1232,18 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 
 - **只在末尾追加**：两次压缩之间，同一 AgentRun 发出的请求只在末尾增长，前面的内容逐字节不变，使提示词缓存持续命中（DeepSeek 缓存命中的价格约为未命中的 1/50）。为此：
   - system 段在一个 AgentRun 内不变，其中不放会变化的内容；运行时上下文以历史条目表达，变化时由 Workflow 追加 `REQUEST_CONTEXT`，投影在该位置加入一条新的说明；
-  - 用户批准修改 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明；
+  - 用户批准修改根目录的 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明；
+  - 子目录的 `AGENTS.md` 不进入 system 段，在第一次被触及时作为新的历史条目追加在末尾（第 9.5 节）；
   - 历史条目按日志顺序排列，工具结果与汇合结果按调用顺序排列；已经写入的条目不再改写（预览在产生时固定，第 8.2 节；思考内容是否回传在写入时决定，第 9.4 节）；
   - 不按调用重新裁剪（第 9.3 节）；改变前缀的只有压缩（包括其中的修剪），以及收尾调用的工具列表（只剩结束控制工具，只影响这一次调用）。
 - 外部输入（用户输入、网页内容、工具结果、子任务结果、未被信任的 `AGENTS.md`、压缩的摘要）一律以 user 或 tool 角色出现并标明来源，不获得指令权威。
+  被信任的子目录 `AGENTS.md` 同样以 user 角色出现，但标明"用户已信任的项目指令"，与未被信任的仓库材料区分。
 
 ### 9.3 可重建性与上下文规模
 
 - **可重建性**：`projectionDigest` 的计算覆盖消息、请求参数（模型、思考设置）、工具列表摘要、运行时上下文条目、压缩记录、展开的 ArtifactRef 列表。
   这些内容一旦变化，就追加记录，从而保证模型看到的每份上下文都能由日志与长期保留的正文重建；过期的正文（完整输出、ContextPack，第 10.1 节）都不是重建所需的。
-- **条目的标注**：Workflow 交给 `context-assemble` 的每个历史条目都带所属 Turn、在日志中的 `seq`，以及类别 `PINNED`（固定保留，不进入压缩：未被信任的 `AGENTS.md`、main 投影中当前 Turn 的人类输入、
+- **条目的标注**：Workflow 交给 `context-assemble` 的每个历史条目都带所属 Turn、在日志中的 `seq`，以及类别 `PINNED`（固定保留，不进入压缩：未被信任的根目录 `AGENTS.md`、子目录的 `AGENTS.md` 条目、main 投影中当前 Turn 的人类输入、
   模板节点的目标与交接输入、SubAgent 的目标与验收标准）或 `NORMAL`。
 - **不按调用重新裁剪**：`context-assemble` 按日志顺序组装全部条目，不去掉任何条目。上下文的规模只由两件事控制：
   1. 工具结果在产生时只留预览（第 8.2 节）；
@@ -1273,6 +1275,19 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 3. **信任**：写入 `<dataDir>/kernel-core/trusted-instructions.jsonl`，跨 WorkflowRun、跨 Session 有效。它绑定确切内容，不授予任何执行能力，所以不是授权条目，也不是 Lease，不受"授权只在内存中"的约束；内容一变化（SHA 不同）就重新询问。
 4. **不信任、询问超时或 `readonly` 预设**：`AGENTS.md` 以 user 角色、标明"仓库材料，未经用户信任"出现在 history 的开头，不进入 system 段。
 5. **经批准的修改**：Agent 经 `write_file`、`edit_file` 修改 `AGENTS.md` 时，用户已逐次批准确切内容（极危险级），写入成功后新内容的 SHA 自动记为信任。命令无法写入或新建 `AGENTS.md`（第 6.1 节）。
+6. **本运行内的不信任**：用户对某个 `(路径, SHA)` 选择"不信任"后，本 WorkflowRun 内不再询问（Core 只在内存中记住，与授权条目相同）；下一个 WorkflowRun 重新询问。
+
+**子目录的 `AGENTS.md`**（阶段 2，参考 OpenCode 的 `read` 工具与 DeepSeek Harness 的 `agent-instructions`）：大仓库常在子目录中放自己的 `AGENTS.md`，只对该目录及其子目录有效。
+- **信任规则与根目录相同**：上面第 1–6 条同样适用，信任记录以 `(仓库根目录的 realpath, 相对路径, SHA)` 为键；询问时展示路径与全文；`readonly` 预设一律按未被信任处理；写入同样是极危险级，命令无法写入或新建（第 5.2、6.1 节）。
+- **发现**：`read_file` 的结果带上从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 路径（排除规则命中的目录不算，不跟随符号链接）。
+  Workflow 对其中本投影在本 WorkflowRun 内还没有加载过的，从外层到内层逐个以 `readProjectFile` 读取，追加 `PROJECT_FILE_LOADED`；读取与可能的信任询问完成后，才提交该 AgentRun 的下一次组装。
+- **追加在末尾**：每个加载结果在投影中成为一条新的历史条目，位于那次 `read_file` 的结果之后，类别 `PINNED`，user 角色：
+  被信任的标明"项目指令（<路径>，用户已信任，适用于该目录及其子目录）"；未被信任的标明"仓库材料（<路径>），未经用户信任"。超过 64 KiB 时只放开头并注明。
+  它不进入 system 段：运行中改变 system 段会破坏"只在末尾追加"与提示词缓存（第 9.2 节）。
+- **只加载一次**：同一投影中同一路径在一个 WorkflowRun 内至多加载一次；之后的 WorkflowRun 再次触及时重新读取，SHA 与投影中最近一次加载相同时不再追加条目。
+  用户批准修改某个子目录的 `AGENTS.md` 后，Workflow 重新读取，在已加载过它的投影末尾追加新的条目。外部程序的修改与删除不追踪。
+- **数量上限**：每个投影至多加载 `maxNestedInstructions`（缺省 8）份；超出时记录一条只有路径的 `PROJECT_FILE_LOADED(skipped: LIMIT)`，投影中注明"该目录有 AGENTS.md，因数量上限未加载，可以用 read_file 读取"。
+- **范围**：main、模板节点与 SubAgent 各按自己的投影加载，SubAgent 不继承父 AgentRun 加载过的条目（与第 9.1 节的投影隔离一致）。被 `/undo` 回退的 Turn 中的加载随该 Turn 的步骤一起只剩说明，之后再触及时重新加载。
 
 ### 9.6 上下文压缩
 
@@ -1462,7 +1477,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 | 循环 | `LOOP_EXHAUSTED`（第 3.2 节） |
 | Unit | `UNIT_SUBMITTED`、`UNIT_COMPLETED`（结构化输出与 ArtifactRef）、`UNIT_INTERRUPTED`；`MODEL_TURN` 带 `reasoningRef` 与用量（压缩的估算使用其中的实际输入 token）；`CONTEXT_ASSEMBLED` 带 `headDigest`（system 段、工具定义与模型的摘要）；失败的模型尝试单独记录，不进入模型历史 |
 | 待办 | `TODOS_UPDATED`：`update_todos` 的调用引用与计数（第 3.5 节） |
-| 项目文件 | `PROJECT_FILE_LOADED`：路径、ArtifactRef、SHA、`trusted` |
+| 项目文件 | `PROJECT_FILE_LOADED`：路径、ArtifactRef、SHA、`trusted`；子目录的 `AGENTS.md` 另带加载它的 AgentRun，或 `skipped: LIMIT`（第 9.5 节） |
 | 请求参数 | `REQUEST_CONTEXT`：模型、思考设置、工具列表摘要、运行时上下文，变化时追加；运行时上下文的变化在投影中成为一条新的历史条目（第 9.2 节） |
 | 压缩 | `TOOL_RESULTS_PRUNED`：对象、被修剪的工具结果（`toolCallId`、修剪后的引用、可读回的引用）；`CONTEXT_COMPACTED`：对象、被取代的 `seq` 范围、摘要引用、摘要请求的方式、用量；`CONTEXT_COMPACTION_REVOKED`：回退使某次压缩的摘要失效（第 9.6 节） |
 | 授权 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED`：Kernel 授权询问的审计副本，不是 HUMAN 节点，不进入上下文，重放时不恢复授权 |
@@ -1593,11 +1608,11 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 13. TaskGraph 上的每一次用户输入都对应一个 HUMAN 节点；HUMAN 节点的答复不产生授权条目，授权询问只由 Core 在准入判定中发起。
 14. 极危险级的操作每次都单独询问，没有任何可复用的批准。
 15. SessionLogStore 只由 Workflow 写入，ArtifactStore 只由 Execution 写入；日志中只有 ArtifactRef，没有正文。
-16. `.git/`、`.multiagentos/` 不能被任何工具或命令写入；`AGENTS.md` 不能被命令写入；命令新建的这些路径不会留在工作区中。
+16. `.git/`、`.multiagentos/` 不能被任何工具或命令写入；任一目录中的 `AGENTS.md` 不能被命令写入；命令新建的这些路径不会留在工作区中。
 17. 模板不携带权限：能力上限与派生能力只来自 Agent 定义，授权只来自人类签发的授权条目。
 18. Turn 只由 Kernel 依据开放输入开启与结束；Turn 结束时没有 ACTIVE 的 AgentRun 与在途 UnitAttempt。
 19. 沙盒中的命令读不到 `$HOME`（白名单目录中的非凭据文件除外）、`<dataDir>` 与仓库中的敏感文件；文件工具与命令对敏感文件的可见性一致。
-20. 只有用户信任过的确切内容的 `AGENTS.md` 进入 system 段。
+20. 只有用户信任过的确切内容的 `AGENTS.md` 作为项目指令出现（根目录的进入 system 段，子目录的以标明已信任的条目追加在末尾）；其余一律标明为未经信任的仓库材料。
 21. 安全不依赖命令名单：沙盒可用时，未获准 `command.network` 的命令无法联网。
 22. 每个账本的在途预留至多一份；下级的份额只来自上级的委派，上级的可委派额度不含它自己的收尾保留；AgentRun 结束时剩余全部返还。
 23. 出现无法确认停止的执行时系统停机，不在任何状态下继续推进。
@@ -1616,13 +1631,13 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 组 | 用例 | 通过条件 |
 |---|---|---|
 | R | M1 固定任务集 F1–F5，经 `analyze` 模板运行 | 与 M1 验收结果一致 |
-| C | C1 修复单个 bug 并运行测试；C2 跨三个文件的重构；C3 测试先失败、修复后通过；C4 按要求新增功能与测试；C5 安全陷阱 | C1–C4 各有一个固定的 fixture 仓库，每个用真实模型跑 5 次，每个任务至少 4 次成功。一次成功指：fixture 的测试通过、没有越出范围的改动、回复说明了做了什么。C5 是确定性用例，必须 100% 拦截，每一项都必须被拦截：<br>- 写到 `writeScope` 之外；<br>- 经仓库内指向仓库外的符号链接读写；<br>- `env` 或 `printenv` 输出中出现 key；<br>- 命令或文件工具写入 `.git/hooks`、`.multiagentos/`，命令写入 `AGENTS.md`；<br>- 在不是 git 仓库的目录中，命令 `git init` 并写入 `.git/hooks`，或新建 `AGENTS.md`：结束后工作区中不存在这些路径；<br>- 未经批准的命令访问网络；改写形式的推送（`env git push`、`git -C . push`）在不联网时失败；worker 申请联网被拒绝；<br>- 读取 `<dataDir>`、`~/.ssh`、`~/.bash_history`，或白名单目录中的凭据文件；<br>- 命令 `cat .env`、`cat *.pem` 读不到内容；<br>- 沙盒结束后，宿主仓库中没有新增的空文件或空目录 |
+| C | C1 修复单个 bug 并运行测试；C2 跨三个文件的重构；C3 测试先失败、修复后通过；C4 按要求新增功能与测试；C5 安全陷阱 | C1–C4 各有一个固定的 fixture 仓库，每个用真实模型跑 5 次，每个任务至少 4 次成功。一次成功指：fixture 的测试通过、没有越出范围的改动、回复说明了做了什么。C5 是确定性用例，必须 100% 拦截，每一项都必须被拦截：<br>- 写到 `writeScope` 之外；<br>- 经仓库内指向仓库外的符号链接读写；<br>- `env` 或 `printenv` 输出中出现 key；<br>- 命令或文件工具写入 `.git/hooks`、`.multiagentos/`，命令写入根目录或子目录中的 `AGENTS.md`；<br>- 在不是 git 仓库的目录中，命令 `git init` 并写入 `.git/hooks`，或在根目录、子目录中新建 `AGENTS.md`：结束后工作区中不存在这些路径；<br>- 未经批准的命令访问网络；改写形式的推送（`env git push`、`git -C . push`）在不联网时失败；worker 申请联网被拒绝；<br>- 读取 `<dataDir>`、`~/.ssh`、`~/.bash_history`，或白名单目录中的凭据文件；<br>- 命令 `cat .env`、`cat *.pem` 读不到内容；<br>- 沙盒结束后，宿主仓库中没有新增的空文件或空目录 |
 | P | P1 工具并行（一轮 4 个 READ）；P2 两个无依赖的 worker；P4 模板中两个并行 main 节点的 `writeScope` 相交或缺失；P5 两个并行 main 节点各自派生 worker，范围跨越对方；P6 父 AgentRun 在派生期间提交 WRITE；P3 D1 依赖图（A；B；C、D 依赖 A；E 依赖 B、C、D） | P1：执行时间有重叠。P2：执行时间重叠，且写入互不越界。P3：完工时间接近关键路径，并与"分批派生"及 LangGraph 同构图的对照数据一起写入证据。P4：编译报错。P5：登记以 `WRITE_SCOPE_CONFLICT` 拒绝。P6：以 `WRITE_SCOPE_DELEGATED` 拒绝 |
 | D | 派生指标（10 个适合派生的任务 + 10 个不适合的任务） | 适合派生的任务中，首次校验通过并正确派生 ≥ 8/10；不适合的任务中，误派生 ≤ 2/10 |
 | H | H1 运行中暂停后 `/continue 改用另一种实现`；H2 暂停后中止，再输入"继续"；H3 worker 等待命令授权时，其他 AgentRun 继续推进；H4 `ask_user`；H5 `/undo`、`/undo all` 与 `/diff`（Turn-chat，以及结束后的 Orchestration 运行）；H8 回退前，另一个 Session 或用户手动改过被回退的文件，分别选择取消与强制；H9 用户确认强制回退后，文件又被外部程序修改；H10 回退时另一个 Session 改过、但不在回退范围内的文件；H6 命令忽略 SIGTERM；H7 进程无法被杀死（以测试替身模拟停止确认失败）；H11 运行中 `/steer`（目标为 main、为正在运行的 worker、为已结束的 worker）；H12 运行中输入的消息排队，以及中止后的排队消息 | 状态转移与第 4.3 节一致；被打断的 EXEC 没有自动重跑；H3 中其他 AgentRun 的模型调用没有被取消；H6 经 SIGKILL 停止，系统继续；H7 系统停机，审计中有该执行的记录，重开 Session 时遗留 Unit 记为 INTERRUPTED，工作区差异被告知、文件没有被改动；H5 没有外部修改时直接回退、不询问，连续 `/undo` 逐个 Turn 往前；H8 取消时没有任何文件被修改，强制时外部修改被覆盖，且可以从兜底快照找回；H9 回退停止，已写入的文件恢复，重新提示；H10 该文件保持不变；H11 运行没有暂停，说明在目标下一次组装时出现在末尾，目标已结束时改投父 AgentRun 并注明；H12 排队的消息在 AWAITING_INPUT 时作为下一个 Turn 提交，中止后不自动提交、放回输入框 |
 | G | G1 `chat` 中 main 失败或被中止后继续对话；G2 条件边：`review` 通过与不通过分别走向不同节点；G3 循环：连续两次不通过后第三次通过，以及达到 `maxIterations`；G4 `all_done` 汇合部分失败的分支；G5 任意日志前缀重放 | G1 下一个 `prompt` 没有被跳过；G2 未选中的分支记为 `SKIPPED(NOT_TAKEN)`；G3 节点路径带迭代号，下游只按最后一次迭代判定，达到上限时追加 `LOOP_EXHAUSTED`；G4 汇合节点运行并得到各前驱的结束状态；G5 就绪集合与运行时一致 |
 | B | B1 三个 SubAgent 并行消耗额度；B2 份额之和超过可委派额度；B3 子任务提前结束；B4 运行级额度到达限制 | B1 没有因其他 Agent 的在途预留而进入 WRAP_UP；B2 整次 `run_subagents` 不执行，错误中给出可委派余额；B3 剩余额度立即返还父账本，未知消耗不返还；B4 Kernel 没有强制收敛运行；各 AgentRun 进入最后一轮；Turn-chat 发布了回复，Orchestration 发布了运行报告（输出节点未运行时为确定性报告），都注明因额度结束 |
-| A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问超时不放行；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问没有被超时拒绝；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任；命令的拆分：引号中的 `&&`、子 shell、heredoc、变量作命令名、语法错误的命令 | 全部符合第 5 节；命令按语法树拆分，解析失败与不是字面量的命令名只提供单次允许，名单匹配不因解析失败而遗漏 |
+| A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问超时不放行；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问没有被超时拒绝；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任；子目录的 `AGENTS.md`：第一次 `read_file` 触及时询问与加载、追加在末尾而不改变此前的请求前缀、同一 WorkflowRun 内不重复加载、超过数量上限、SubAgent 不继承；命令的拆分：引号中的 `&&`、子 shell、heredoc、变量作命令名、语法错误的命令 | 全部符合第 5 节；命令按语法树拆分，解析失败与不是字面量的命令名只提供单次允许，名单匹配不因解析失败而遗漏 |
 | W | W1 检索加读取后作答并注明来源；W2 网页中的提示注入；W3 访问私网地址、DNS 重绑定、重定向到内网 | W2：注入内容没有被执行。W3：全部以 `ADDRESS_FORBIDDEN` 拒绝 |
 | O | 同一问题分别用 Turn-chat 与 `research` 模板运行；使用者模板的校验错误 | 两种方式都完成，比较完成率、耗时与 token；校验错误指明规则与节点 |
 | L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后（启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内（阶段 2 与阶段 8 都完成后）；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、读取被 `/undo` 回退的 Turn 中的编号、过期后读取、读取已被压缩取代或被修剪的调用（阶段 8 完成后）；L9 修剪：修剪后已低于阈值、修剪后仍需摘要、额度不足时只修剪；L10 摘要请求本身超出窗口或被 provider 拒绝；L11 空闲时的预先压缩，以及进行中收到新消息与 `/undo`；L12 SubAgent 的压缩与额度不足时的收尾（阶段 4 完成后）；L13 压缩的估算使用最近一次模型调用的实测值 | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变；被回退 Turn 中的编号按"没有这个编号"反馈；L9：`TOOL_RESULTS_PRUNED` 先于摘要生效，修剪后的结果带 `toolCallId` 并可经 `read_output` 读回原文，`PINNED` 与保留区没有被修剪，只修剪时不调用模型；L10：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数；L11：用户的下一条消息等压缩生效后才组装，`/undo` 取消压缩且没有写回；L12：SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用；L13：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同 |
@@ -1664,7 +1679,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | Overall 第 6 节；Module/Kernel 第 5 节 | 危险行为每次都必须单独征得用户同意 | 对应极危险级；危险级可以在本运行内按命令或前缀放行 | 5.2 |
 | Module/Kernel 第 5 节 | 拒绝或超时不视为同意，并在本次运行内保留 | 用户明确拒绝在本运行内保留；询问超时只拒绝本次，不保留 | 5.3 |
 | Module/Kernel 3.2、第 13 节；Kernel/Supervisor 第 3 节 | `STOP_UNCONFIRMED` 是收敛时的正常结局（效果未知，先核对） | 出现即系统停机：M2 的暂停、Turn 结束与快照依赖"静止"，无法确认停止时没有可继续的一致状态 | 4.7 |
-| Overall 第 8 节 | 仓库材料不因进入上下文而获得指令权威 | 例外：用户按内容信任过的 `AGENTS.md` 进入 system 段 | 9.5 |
+| Overall 第 8 节 | 仓库材料不因进入上下文而获得指令权威 | 例外：用户按内容信任过的 `AGENTS.md`（根目录的进入 system 段，子目录的以标明已信任的条目追加） | 9.5 |
 | Overall 第 9 节；Module/Workflow 第 6 节 | 变更以可核验产物交付，Kernel 执行物化与应用，Workflow 决定集成 | Agent 直接改写工作区中的文件；以改动检测、写入占用与快照弥补；变更产物、隔离副本与集成留到 M3（已预留 `INTEGRATE`） | 6.4、6.5 |
 | Kernel/Supervisor 第 4 节 | 文件修改是不可信行为，每次在独立子进程中运行 | `file-write`、`file-edit` 在进程内执行，安全由 `isWritable` 保证 | 2.5、6.3 |
 | Module/UserInteraction 第 2、5 节；Infrastructure/Persistence 第 2 节 | WorkSession、SessionTree 归 UserInteraction；"会话关联、交互状态"归 UserInteraction | Session 列表与会话日志归 Workflow，Kernel 只保存引用，UserInteraction 不保存任何 Session 信息；Architecture 中含义不同的 `InteractionTurn` 等概念已删除 | 2.1、2.4、10.3 |
@@ -1716,8 +1731,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 结果契约、定义摘要比较、Handoff 的 human-in-loop 轮次语义、任务账本 | Microsoft Agent Framework |
 | 两层 ID、确认停止后才释放槽位、重复意图熔断、写前必读、连接时的地址检查 | DeerFlow 2.0 |
 | 派生准则、数量超限时具体的反馈、子任务只交回结论 | Open Deep Research |
-| steer 与 queue、打断时不重放工具调用、按语法树拆分子命令与表驱动的前缀匹配、预览上限、压缩的实测加估算与预先压缩、摘要请求的纯文本回退、待办工具、遵守 `Retry-After` 的重试 | OpenCode |
-| 模型可见即已记录、审批结果闭合、日志尾部修复、沙盒的真实探测、非零退出码是结果、摘要之前先修剪工具结果、摘要只取被压缩的区域 | DeepSeek Harness |
+| steer 与 queue、打断时不重放工具调用、按语法树拆分子命令与表驱动的前缀匹配、读文件时发现子目录的 `AGENTS.md`、预览上限、压缩的实测加估算与预先压缩、摘要请求的纯文本回退、待办工具、遵守 `Retry-After` 的重试 | OpenCode |
+| 模型可见即已记录、审批结果闭合、日志尾部修复、沙盒的真实探测、非零退出码是结果、摘要之前先修剪工具结果、摘要只取被压缩的区域、子目录项目指令的追加 | DeepSeek Harness |
 
 ## 15. 交付顺序
 
@@ -1727,7 +1742,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 |---|---|---|---|
 | 0 实测 | bwrap 完整 profile；DeepSeek 思考内容回传与思考强度（第 14.1 节） | — | 结果写入 M2TechStack |
 | 1 Session 与对话骨架 | SessionLogStore、Session 列表与引用、Session actor、实例锁；Turn 与开放输入；HUMAN 节点与 AWAITING_INPUT；`chat` 模板与生长规则；内置模板 `analyze` 的编译与运行（plan → view 为条件边）；上下文投影（只在末尾追加，收尾调用的保险）与思考模式；工具结果的预览在产生时固定（预览上限 `previewMaxBytes`、`previewMaxLines`）、正文的保留类别与回收；`AGENTS.md` 的信任；单个 main 使用只读工具（M1 的工具与 `list_files`）；技术重试遵守 `Retry-After` 与"重试中"的活动；运行中消息的排队（界面） | 0 | R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5） |
-| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节）；main 的 `update_todos`（第 3.5 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
+| 2 写入与回退 | 能力上限与授权条目、询问合并；`write_file`、`edit_file`；工作区快照、`/undo`、`/undo all`、`/diff`；Fork 与切换 Session 时告知差异；`read_output`（第 8.2 节）；main 的 `update_todos`（第 3.5 节）；子目录 `AGENTS.md` 的发现、信任与追加，任一 `AGENTS.md` 的极危险写入（第 9.5 节） | 1 | A 组的写入部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时） |
 | 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分 |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D |
 | 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分 |
@@ -1753,3 +1768,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.5 | 2026-10-30 | 上下文与产物保留：第 8.2 节，工具结果的预览由 Executor 在产生时固定，完整输出另存；第 9.2、9.3 节，取消按调用重新裁剪，两次压缩之间请求只在末尾追加（运行时上下文改为历史条目），收尾调用保留确定性的保险；新增第 9.6 节，上下文压缩作为 Kernel 的标准过程（自动、溢出与 `/compact` 触发，模型摘要加保留最近原文，结果写回日志）；第 10.1 节，正文分为 `SESSION` 与 `EXPIRING`（7 天）两类，回收只统计 ACTIVE 的 Session，新建或删除失败时清理 Kernel 的文件；第 1.3 节，压缩不再是非目标，Session 不自动删除；第 2.4、7.3、7.5、10.2、11、12（不变量 7、27–29）、13（L 组）、14.1、15（阶段 8）节相应修改 |
 | v1.6 | 2026-10-31 | 第 8.1、8.2 节：新增工具 `read_output`（阶段 2），模型以 `toolCallId` 分段读取被截断的完整输出，编号由 Workflow 在发起者的范围内翻译（按日志计算，包括已被压缩取代的调用），授权与过期由 Execution 检查（按登记时间判断），截取由新的 `output-read` Executor 完成；完整输出设上限 `maxFullOutputBytes`；第 9.6 节：摘要请求的思考强度改为配置 `summaryReasoningEffort`（缺省关闭），摘要保留仍需回读的 `toolCallId`；第 10.1 节：产物回收改为启动时一次、之后每小时一次，写入已存在的正文时更新写入时间；第 12（不变量 30）、13（L6、L8）、14.1、15（阶段 2、8）节相应修改 |
 | v1.7 | 2026-10-31 | 对照 OpenCode 与 DeepSeek Harness 的修改：第 8.2 节，预览上限与执行上限分开（`previewMaxBytes` 50 KiB、`previewMaxLines` 2000，M1 的 `v0` Unit 不变）；`read_output` 的范围不再包括被 `/undo` 回退的 Turn，并可读回被修剪的结果；第 9.6 节，压缩的估算改为最近一次模型调用的实测输入加新增条目的估算，摘要之前先修剪较早的大工具结果（第 4.5 步，`TOOL_RESULTS_PRUNED`），摘要请求只包含到 `toSeq` 为止的历史并增加纯文本回退，增加空闲时的预先压缩，SubAgent 也压缩（额度不足时以收尾保留结束）；第 3.5 节，新增控制工具 `update_todos`；第 4.5、11 节，运行中可以插话（`/steer`、Alt+Enter），运行中输入的消息在界面中排队；第 5.2 节，命令按 tree-sitter-bash 语法树拆分，ARITY 改为表驱动，解析失败不提供"均允许"；第 7.4 节，技术重试以 `Retry-After` 为下限并显示"重试中"；第 14.2 节，长期保存的命令授权与长时间运行的命令列为 M2 实现后评估的事项；第 4.1、4.2、7.3、7.5、9.2、9.3、10.1、10.2、12（不变量 27、28、30）、13（A、H11–H12、L8–L13、S7）、14.1、14.3、15 节相应修改 |
+| v1.8 | 2026-10-31 | 第 9.5 节：增加子目录的 `AGENTS.md`（阶段 2）——`read_file` 返回沿途存在的 `AGENTS.md`，Workflow 以 `readProjectFile` 加载，信任规则与根目录相同（信任记录增加相对路径），加载结果作为 `PINNED` 条目追加在末尾，不进入 system 段，每个投影在一个 WorkflowRun 内每个路径至多加载一次、至多 8 份；本运行内对同一内容的"不信任"不再重复询问；第 5.2、6.1、6.3 节：任一目录中的 `AGENTS.md` 的写入为极危险级，命令无法写入或新建；第 7.5、8.1、9.2、9.3、10.2、12（不变量 16、20）、13（A、C5）、14.1、14.3、15 节相应修改 |
