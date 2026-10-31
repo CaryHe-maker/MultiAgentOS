@@ -1,6 +1,6 @@
 # MultiAgentOS M2 接口
 
-> 状态：草稿（阶段 1 的部分）。本目录是 M2 全部跨模块数据结构与 Port 的字段级权威。
+> 状态：已评审（阶段 1 的部分）。本目录是 M2 全部跨模块数据结构与 Port 的字段级权威。
 > `packages/libraries/contracts` 按本目录实现 Schema 与 Port；二者不一致时以本目录为准，并在同一 PR 中修正代码。
 
 ## 1. 文档分工
@@ -131,11 +131,11 @@ interface SystemInboxEvent<T> {        // 系统级事件：不属于任何 Sess
 
 | Schema | 定义位置 | 阶段 | 状态 |
 |---|---|---|---|
-| `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 1 | 草稿 |
-| Workflow 的 syscall 与运行级、Session 级、系统级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 草稿（阶段 1） |
-| UserInteraction 的请求与运行级、Session 级、系统级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 草稿（阶段 1） |
-| 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 草稿（阶段 1） |
-| Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 1 起 | 草稿（阶段 1） |
+| `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 1 | 已评审 |
+| Workflow 的 syscall 与运行级、Session 级、系统级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 已评审（阶段 1） |
+| UserInteraction 的请求与运行级、Session 级、系统级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 已评审（阶段 1） |
+| 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 已评审（阶段 1） |
+| Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 1 起 | 已评审（阶段 1） |
 | Kernel 核心与 Supervisor 的消息 | `KernelSupervisor.md` | 2 起 | 未开始 |
 | 上下文压缩的请求、事件与日志记录 | [WorkflowKernel](WorkflowKernel.md) 第 2.4、3.4 节；[InteractionKernel](InteractionKernel.md) 第 2.4、3.4 节；[Persistence](Persistence.md) 第 2.2 节 | 8 | 草稿（字段已列出，阶段 8 的文档门中评审） |
 

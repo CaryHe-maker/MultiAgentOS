@@ -1,6 +1,6 @@
 # Workflow 与 Kernel 的接口
 
-> 状态：草稿（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 为准，本文只定义字段。
+> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 为准，本文只定义字段。
 > 标"阶段 N"的条目在该阶段的文档门中补全；major 1 冻结之前可以原地增加字段。
 
 ## 1. 范围

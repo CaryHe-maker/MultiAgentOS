@@ -1,6 +1,6 @@
 # 定义格式
 
-> 状态：草稿（阶段 1 的部分）。约定见 [Interface](README.md)。
+> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。
 > 定义的加载、校验与目录机制见 [Library/AgentToolPool](../Library/AgentToolPool.md)；本文只定义字段。
 
 ## 1. 范围与版本

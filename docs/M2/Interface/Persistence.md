@@ -1,6 +1,6 @@
 # 持久化接口
 
-> 状态：草稿（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 第 10 节为准。
+> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 第 10 节为准。
 > 存储机制与写入规则见 [Infrastructure/Persistence](../Infrastructure/Persistence.md)；本文只定义目录、记录格式与 Port。
 
 ## 1. 目录

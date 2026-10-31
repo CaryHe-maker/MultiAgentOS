@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Monitor
 
-> 状态：草稿（阶段 1）。
+> 状态：已评审（阶段 1）。
 
 ## 1. 定位
 
