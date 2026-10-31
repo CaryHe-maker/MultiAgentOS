@@ -8,7 +8,6 @@
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
 | Q4 | 阶段 1 其余部分怎样切换 | Kernel、Workflow、UserInteraction 的改写会替换现有可运行的 M1 链路（`run-actor` 改写为 Session actor）。M2Plan 的做法是先补齐 fake，再各工作流并行，最后 S1-IN-1 一次接线；这期间 `feature/phase1/main` 上 M1 链路继续可用，新代码只是未接线 | 按 M2Plan：先完成 fake Kernel 与 fake Workflow（S1-CT-1 的剩余部分），再按工作流推进，`analyze` 回归在 S1-IN-1 验证 | 阶段 1 其余全部 |
-| Q1 | 原生 Ubuntu 的实测何时运行 | 脚本与工作流 `sandbox-probe` 已写好，WSL 上 65 项通过；工作流要推送后才能运行，还没有在 GitHub 上跑过 | 推送 `feature/phase0/main` 后由 `push` 触发一次，把结果填入 M2TechStack 第 3.1 节 | 阶段 3、使用说明 |
 
 ## 2. 已先行决定，请复核
 
@@ -29,3 +28,4 @@
 
 阶段 1 尚未开始：S1-CT-1 的 fake 与契约测试、S1-WF-1–4、S1-KC-1–4、S1-KX-1、S1-EX-1 的其余部分（`v0` 预览接入 `retention/`、`context-assemble`、`model-call`）、S1-PL-1、S1-UI-1、S1-IN-1。
 新代码都未接入运行链路，所以现有的 M1 行为不变；阶段 1 的验收用例一个都还不能运行。
+| A5 | 原生一列取自 GitHub Actions 的 `ubuntu-24.04` 运行器（Azure 虚拟机，内核 `7.0.0-1017-azure`），AppArmor 限制与默认一致；没有在 Ubuntu 的 `generic` 内核上再测 | 阻塞行为与修复都已验证；发布前可在实体机上复核 |
