@@ -8,6 +8,16 @@ import type {
   SettlementResult,
 } from '../interfaces/index.js';
 
+/** What one ledger needs; a BudgetConfig is one. */
+export type LedgerConfig = Pick<
+  BudgetConfig,
+  | 'tokenLimit'
+  | 'perCallInputLimit'
+  | 'maxOutputTokens'
+  | 'finalInputBudget'
+  | 'finalMaxOutputTokens'
+>;
+
 interface Charge {
   readonly type: Settlement['type'];
   readonly amount: number;
@@ -29,7 +39,7 @@ export class MonitorInvariantError extends Error {
 
 /** One run's ledger. Core is the only caller and owns the audit of reported anomalies. */
 export class Monitor implements MonitorDuties {
-  readonly #config: BudgetConfig;
+  readonly #config: LedgerConfig;
   readonly #reservations = new Map<string, Reservation>();
   readonly #finalReserve: number;
   readonly #wrapUpMargin: number;
@@ -41,19 +51,26 @@ export class Monitor implements MonitorDuties {
   #state: BudgetState = 'NORMAL';
   #finalized = false;
 
-  constructor(config: BudgetConfig) {
+  /** `allowShortLimit`: a Turn's share may be smaller than the reserves; it opens wrapped up. */
+  constructor(config: LedgerConfig, options: { readonly allowShortLimit?: boolean } = {}) {
     this.#config = config;
     this.#finalReserve = config.finalInputBudget + config.finalMaxOutputTokens;
     this.#wrapUpMargin = config.perCallInputLimit + config.maxOutputTokens;
+    const { tokenLimit, ...parameters } = config;
     if (
-      Object.values(config).some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+      Object.values(parameters).some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+      !Number.isSafeInteger(tokenLimit) ||
+      tokenLimit < (options.allowShortLimit === true ? 0 : 1) ||
       !Number.isSafeInteger(this.#finalReserve + this.#wrapUpMargin)
     )
       throw new MonitorInvariantError('Invalid token budget configuration');
-    if (config.tokenLimit < this.#finalReserve + this.#wrapUpMargin)
-      throw new MonitorInvariantError(
-        'Token limit cannot cover the final reserve and wrap-up margin',
-      );
+    if (config.tokenLimit < this.#finalReserve + this.#wrapUpMargin) {
+      if (options.allowShortLimit !== true)
+        throw new MonitorInvariantError(
+          'Token limit cannot cover the final reserve and wrap-up margin',
+        );
+      this.#recalculateState();
+    }
   }
 
   reserve({
@@ -128,6 +145,11 @@ export class Monitor implements MonitorDuties {
 
   budgetState(): BudgetState {
     return this.#state;
+  }
+
+  /** The balance if nothing reserved were spent is not what counts: reservations are spent. */
+  remaining(): number {
+    return this.#config.tokenLimit - this.#used - this.#unknown - this.#reserved;
   }
 
   finalize(): BudgetSummary {

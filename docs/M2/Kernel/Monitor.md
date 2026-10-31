@@ -11,7 +11,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 | M1 | M2 | 阶段 |
 |---|---|---|
-| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → Turn → AgentRun；阶段 1 只有运行与 Turn 两级，main 直接使用 Turn 账本 | 1（AgentRun 级为 4） |
+| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → Turn → AgentRun；阶段 1 只有运行与 Turn 两级，AgentRun 直接使用 Turn 账本 | 1（AgentRun 级为 4） |
 | `finalReserve` 每个运行一份，至多一次 final-call | 每个 AgentRun 一份收尾保留、至多一次 final-call；收尾保留按该 Agent 的额度参数计算 | 1 |
 | 额度参数是全局配置 | 写在每个 Agent 定义中（Interface/Definitions 第 2 节） | 1 |
 | 额度只看 token | 增加工具 Unit 次数与墙钟两项资源上限（`QUOTA_EXHAUSTED`） | 1 |
@@ -76,7 +76,6 @@ Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monit
 |---|---|---|
 | `runTokenLimit` | 5000000 | 运行级上限 |
 | `turnTokenLimit` | 2000000 | 每个 Turn 的上限 |
-| `profiles.analyze` | `{ tokenLimit: 300000, finalReserve 与 wrapUpMargin 取 M1 的值 }` | 第 3.4 节 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。
