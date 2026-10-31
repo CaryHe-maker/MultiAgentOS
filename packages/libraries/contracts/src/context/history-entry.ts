@@ -66,9 +66,11 @@ export const ProjectInstructionsSchema = closed({
   trusted: Type.Boolean(),
 });
 
+/** Why the next model call is the final call; a quota names the limit it reached. */
 export const WRAP_UP_REASONS_V1 = [
   'BUDGET_WRAP_UP',
-  'QUOTA_EXHAUSTED',
+  'TOOL_UNIT_LIMIT',
+  'WALL_CLOCK_LIMIT',
   'REPEATED_INTENT',
   'CONSECUTIVE_ERRORS',
   'CONTEXT_LIMIT',

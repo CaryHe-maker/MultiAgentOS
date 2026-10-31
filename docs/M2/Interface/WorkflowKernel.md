@@ -421,6 +421,12 @@ interface ContextAssembleInputV1 {
   history: ContextHistoryEntry[];
   status: { round: number; maxRounds: number; budget: BudgetView; final: boolean; wrapUpReason?: WrapUpReason };
 }
+
+type WrapUpReason =                                // 下一次模型调用为什么是收尾调用（Module/Workflow 第 7 节）
+  | 'BUDGET_WRAP_UP'                               // BudgetView 为 WRAP_UP
+  | 'TOOL_UNIT_LIMIT' | 'WALL_CLOCK_LIMIT'         // QUOTA_EXHAUSTED 的 quota 为 TOOL_UNITS、WALL_CLOCK
+  | 'REPEATED_INTENT' | 'CONSECUTIVE_ERRORS'       // Workflow 的业务熔断（M2Design 第 3.4 节）
+  | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT';
 ```
 
 `GRAPH_EXTENDED` 的 `nodes`、`edges` 见 [Persistence](Persistence.md) 第 2.3 节。

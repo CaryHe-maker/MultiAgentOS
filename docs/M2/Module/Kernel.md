@@ -91,7 +91,7 @@ M1 的原因码及其处理（M1 第 10 节）保留。阶段 1 新增：
 |---|---|---|
 | `AGENT_RUN_ACTIVE`（`requestHuman`） | SyscallRejected | 内部错误：Workflow 只在静止时请求开放输入 |
 | `NO_OPEN_TURN` | SyscallRejected | 内部错误 |
-| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 为触顶项 |
+| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT` |
 | `LIMIT_EXCEEDED`（普通调用的 `context-assemble`） | UnitReport | 上下文超出窗口：进入收尾，main 的回复提示 `/new`（阶段 8 起由压缩避免，M2Design 第 9.3 节） |
 | `ARTIFACT_EXPIRED` | UnitReport、`readArtifact` 的拒绝 | 正文已过保留期；UnitReport 中只出现在 `read_output` 的结果里（阶段 2），作为给模型的工具结果 |
 

@@ -120,7 +120,8 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；`finish` 与 `handoff-to-code-viewer` 只在 `analyze` 中出现；`update_todos` 见第 9 条（阶段 2）。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；
    为 EXHAUSTED 时不再发起模型调用，按 M1 的规则结束该 AgentRun（main 为降级回复，见第 9.1 节）。
-   `QUOTA_EXHAUSTED`（工具次数、墙钟）同样进入收尾，`wrapUpReason` 为对应的触顶项。
+   `QUOTA_EXHAUSTED` 同样进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT`。这是固定规则，不经过 Unit 的 `failurePolicy`；
+   额度与上限只限制工具 Unit，收尾所需的 `context-assemble`、`model-call` 与发布 Unit 不受影响。
 5. **业务熔断**（M2Design 第 3.4 节）：重复意图在第 3 次时于工具结果中附加警告、第 5 次时不再提交并进入收尾（`REPEATED_INTENT`）；
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
    授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果写明"用户拒绝了这项能力，本运行内不会再询问"；它不结束 Turn，也不结束 AgentRun（M2Design 第 5.3 节）。

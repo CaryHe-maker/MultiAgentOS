@@ -357,6 +357,21 @@ describe('tools', () => {
     expect(fatal.ending).toEqual({ kind: 'FAILED', code: 'INTERNAL' });
   });
 
+  it.each([
+    ['TOOL_UNITS', 'TOOL_UNIT_LIMIT'],
+    ['WALL_CLOCK', 'WALL_CLOCK_LIMIT'],
+  ] as const)('wraps up on %s whatever the failurePolicy says', (quota, reason) => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const refused = {
+      ...report(tools.state, only(tools), { reject: 'QUOTA_EXHAUSTED' }),
+      quota,
+    } as UnitReportV1;
+    const next = receive(tools, refused);
+    expect(next.ending).toBeUndefined();
+    expect(next.state.wrapUpReason).toBe(reason);
+    expect(unitId(next)).toEqual(['context-assemble']);
+  });
+
   it('ignores a report it is not waiting for', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
     expect(receive(tools, report(tools.state, newId('req'), { ok: {} })).records).toEqual([]);

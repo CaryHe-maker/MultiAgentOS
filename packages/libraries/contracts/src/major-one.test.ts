@@ -167,7 +167,7 @@ describe('Schema-enforced constraints', () => {
       type: 'UnitReport',
       requestId: newId('req'),
       agentRunId: newId('agr'),
-      unitRunId: newId('unr'),
+      unitRunId: pathDerivedId('unr', 'agr_test0001/round-1/1'),
       unitRef: { kind: 'UNIT', id: 'file-read', version: 'v1.0.0', digest: 'd'.repeat(64) },
       executionKind: 'FILE_READ',
       budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },

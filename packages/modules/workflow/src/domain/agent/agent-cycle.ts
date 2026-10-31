@@ -567,7 +567,10 @@ function handleTool(
     succeeded: ok ? [...state.succeeded, pending.intent] : state.succeeded,
   };
   if (consecutiveErrors >= config.consecutiveErrorLimit) next = wrapUp(next, 'CONSECUTIVE_ERRORS');
-  if (!ok) {
+  if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
+    // A fixed rule, not the Unit's failurePolicy: the limit names the wrap-up (Module/Workflow 7).
+    next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
+  } else if (!ok) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
     if (handling === 'FINAL_CALL') next = wrapUp(next, 'BUDGET_WRAP_UP');
