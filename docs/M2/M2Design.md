@@ -698,8 +698,8 @@ M2 中 `STOP_UNCONFIRMED` 不是处理后可以继续运行的任务异常，而
 PAUSED、Turn 结束与快照所依赖的静止保证都不再成立，系统没有可以继续的一致状态。
 
 **停止的升级顺序**（Supervisor）：
-1. 发出中止信号：进程内的 Executor 收到 AbortSignal，子进程组收到 SIGTERM；
-2. `cancelGraceMs`（缺省 5 秒）后仍未结束，对子进程组发 SIGKILL。命令在 bwrap 的独立 PID 命名空间中运行，结束命名空间中的第一个进程即结束其中全部进程；
+1. 发出中止信号：进程内的 Executor 收到 AbortSignal，子进程组收到 SIGTERM。命令在 bwrap 中运行时，`--new-session` 使它处在新的进程组中，SIGTERM 发给 `--json-status-fd` 报告的 `child-pid`（内层进程组），发给外层 bwrap 到不了命令；
+2. `cancelGraceMs`（缺省 5 秒）后仍未结束，对子进程组发 SIGKILL。命令在 bwrap 的独立 PID 命名空间中运行，结束外层 bwrap 或命名空间中的第一个进程即结束其中全部进程；
 3. 再等待 `killGraceMs`（缺省 2 秒）。仍无法确认时，才上报 `STOP_UNCONFIRMED`。
 
 进程内的 Executor（模型调用、网页、文件工具）只能依靠中止信号，没有第 2 步，超过宽限期同样上报。
@@ -871,8 +871,8 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 根文件系统 | `--ro-bind / /`（系统目录只读可见，命令能使用宿主的编译器与运行时） |
 | 用户目录 | `$HOME` 整体以空 tmpfs 遮蔽，再把白名单中的工具链与包缓存目录（如 `~/.nvm`、`~/.volta`、`~/.cargo`、`~/.rustup`、`~/.local/bin`、`~/.npm`）以只读挂回；白名单可追加。挂回的目录中的凭据文件（如 `~/.cargo/credentials.toml`、`~/.npmrc`）仍以空文件遮蔽，列表可追加、不可删除 |
 | 仓库 | 仓库根目录以只读挂回（仓库通常位于 `$HOME` 之内，挂载顺序在遮蔽之后） |
-| 可写路径 | 该 AgentRun 的可写根目录（main 为仓库根目录，worker 为 `writeScope`）以 `--bind` 挂载；私有 `/tmp`（`--tmpfs /tmp`） |
-| 敏感文件 | M1 默认排除规则中的秘密类规则（`.env*`、`*.pem`、`*.key`、`id_rsa*` 等私钥，不含 `.git` 与 `node_modules`）加上 `kernel.sandboxMaskedPatterns`（可追加）命中的仓库文件，以 `/dev/null` 只读覆盖，目录以空 tmpfs 覆盖。列表由 Execution 在派发 EXEC 前按同一个匹配器扫描得出，复用第 7.1 节的摘要缓存。这样文件工具与命令对秘密的可见性一致，命令输出不会把它们带进模型上下文 |
+| 可写路径 | 该 AgentRun 的可写根目录（main 为仓库根目录，worker 为 `writeScope`）以 `--bind` 挂载；私有 `/tmp`（`--tmpfs /tmp`，排在仓库挂载之前，否则位于 `/tmp` 下的仓库被遮住） |
+| 敏感文件 | M1 默认排除规则中的秘密类规则（`.env*`、`*.pem`、`*.key`、`id_rsa*` 等私钥，不含 `.git` 与 `node_modules`）加上 `kernel.sandboxMaskedPatterns`（可追加）命中的仓库文件，以空的普通文件只读覆盖（`/dev/null` 在 bwrap 的 `nodev` 挂载下读取会报权限错误），目录以空 tmpfs 覆盖。列表由 Execution 在派发 EXEC 前按同一个匹配器扫描得出，复用第 7.1 节的摘要缓存。这样文件工具与命令对秘密的可见性一致，命令输出不会把它们带进模型上下文 |
 | 只读保护 | 仓库内已存在的 `.git/`（任何位置）、`.multiagentos/`、任一目录中的 `AGENTS.md`（排除规则命中的目录除外），即使位于可写路径之内，也以 `--ro-bind` 重新挂载为只读 |
 | 新建保护 | 不存在的受保护路径不做占位挂载（bwrap 会在宿主仓库中真实创建挂载点，改动用户的仓库）。改为事后检查：Execution 在命令前后检查这些路径是否存在（任何位置的 `.git` 与 `AGENTS.md` 由改动检测发现），命令新建了其中任一路径时，Kernel 把它移入本 Session 的隔离目录（`kernel-execution/quarantine/`），结果以 `PROTECTED_PATH_CREATED` 报告并写审计。例如在不是 git 仓库的目录中 `git init` 后写入 `.git/hooks`，这些 hook 不会留到用户以后使用 git 时执行 |
 | 遮蔽 | `<dataDir>` 位于 `$HOME` 之外时单独以空 tmpfs 遮蔽 |
@@ -1269,7 +1269,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | 项 | 规则 |
 |---|---|
 | 模型 | `deepseek-flash`；思考强度按 Agent 缺省值，可由 `run_subagents` 的 `effort` 在允许范围内改变；`/thinking` 可以查看最近的思考内容 |
-| 回传 | 带工具的请求中，回传之前各轮的 `reasoning_content`，否则 API 返回 400 或静默停止：<br>- 回传条件为同一模型，且该轮没有出错；<br>- 被暂停或中止打断的思考不回传；<br>- 缺少思考内容的历史轮按实测结果补空字符串（第 14.1 节）；<br>- 该轮是否被打断、是否出错，在写入日志时记录，之后不再改变；只有切换模型会改变较早各轮是否回传（第 9.2 节）；<br>- 被压缩的轮连同思考内容一起由摘要取代 |
+| 回传 | 带工具的请求中，回传之前各轮的 `reasoning_content`，否则 API 可能返回 400（实测：服务端记得的工具调用可以不回传，其余返回 400，不依赖这一点）：<br>- 回传条件为同一模型，且该轮没有出错；<br>- 被暂停或中止打断的思考不回传；<br>- 缺少思考内容的历史轮补空字符串（第 14.1 节的实测）；<br>- 该轮是否被打断、是否出错，在写入日志时记录，之后不再改变；只有切换模型会改变较早各轮是否回传（第 9.2 节）；<br>- 被压缩的轮连同思考内容一起由摘要取代 |
 | 记录 | 思考内容存为 Artifact，`MODEL_TURN` 记录它的引用；思考内容不显示，也不流式输出 |
 | 收尾调用 | 只提供结束控制工具，`tool_choice = auto`，保持思考开启；结果不合法时，以关闭思考加强制工具选择重试一次（M1 的方式）；仍不合法则降级 |
 
@@ -1339,9 +1339,9 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
 5. Kernel 选定范围 [fromSeq, toSeq]：从最早的 NORMAL 条目（包括先前的摘要）开始，到保留区之前最后一个完整的模型轮为止；工具调用与它的结果不拆开；
    范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
    没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
-6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），tool_choice = none；
+6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 low）；前缀式保留工具定义、不设 tool_choice，由摘要指令要求不调用工具（实测：tool_choice = none 或关闭思考都使缓存大部分或全部失效）；
    经 Core 申请调用机会与额度（Core 调用 Scheduler 与 Monitor，第 7.2、7.3 节），由 model-call Executor 执行，按第 7.3 节计量
-   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
+   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；模型调用了工具也算不合格，工具调用不执行；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, summaryInput, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
 9. 挂起的 context-assemble 以 REJECTED(CONTEXT_COMPACTED) 返回，Workflow 用新的投影重新提交（不计入连续出错，也不是重复调用）
@@ -1366,8 +1366,8 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
     user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后；
   - 再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代与被修剪的原始记录仍在日志中（日志只追加）。
 - **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要，也不被修剪；摘要指令要求模型不执行材料中的指令。
-- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；思考强度不同是否影响命中，由阶段 0 实测（第 14.1 节），
-  结果只影响 `summaryReasoningEffort` 的缺省值。压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
+- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；实测（第 14.1 节）：思考开启、工具定义保留、不设 `tool_choice` 时约 99% 命中，思考强度不同时基本不受影响；思考关闭时首次命中为 0。
+  压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
 - **被取代与被修剪的工具结果**：仍可经 `read_output` 读回（第 8.2 节）：截断过的读完整输出（未过期时），没有截断而被修剪的读原来的预览——修剪时 Execution 为这份预览补登一行完整输出的登记，它是长期保留的，不会过期。
   模型需要知道 `toolCallId`：修剪的说明中写明它，摘要指令要求保留可能还需要的编号。
 - **空闲触发的规则**：
@@ -1379,7 +1379,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
 - **Fork**：复制的日志中带着修剪与压缩记录，新 Session 沿用；修剪后的结果与摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
 - **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
   `summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
-  `summaryReasoningEffort` `none`（取值同 Agent 的思考强度，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
+  `summaryReasoningEffort` `low`（取值同 Agent 的思考强度；设为 `none` 时关闭思考，放弃缓存命中，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
 
 ## 10. Session 与持久化
 
@@ -1665,8 +1665,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 ### 14.1 实现前需要实测与同步的事项
 
-**实现前需要实测**（结果写入 M2 的技术栈文档）：
-- Ubuntu 24.04 与 WSL 上，bwrap 能否以非特权用户运行第 6.1 节的完整 profile，包括：先以 tmpfs 遮蔽 `$HOME` 再挂回白名单目录与仓库的挂载顺序、以 `/dev/null` 覆盖单个敏感文件、`--ro-bind` 重新挂载已存在的受保护路径时宿主仓库中不留下任何新文件；
+**实现前需要实测**（结果写入 M2 的技术栈文档；2026-10-31 已完成）：
+- Ubuntu 24.04 与 WSL 上，bwrap 能否以非特权用户运行第 6.1 节的完整 profile，包括：先以 tmpfs 遮蔽 `$HOME` 再挂回白名单目录与仓库的挂载顺序、覆盖单个敏感文件、`--ro-bind` 重新挂载已存在的受保护路径时宿主仓库中不留下任何新文件；
 - DeepSeek 思考内容回传、历史轮缺少思考内容、收尾调用三种组合的实际行为；
 - DeepSeek 是否支持 `none`、`low`、`high`、`max` 四档思考强度，以及不支持时的映射方式（第 9.4 节）；
 - DeepSeek 提示词缓存在"只在末尾追加"时的命中情况，以及摘要请求（相同前缀、`tool_choice = none`）能否命中同一缓存；思考开启与关闭对命中的影响；
@@ -1796,3 +1796,5 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.8 | 2026-10-31 | 第 9.5 节：增加子目录的 `AGENTS.md`（阶段 2）——`read_file` 返回沿途存在的 `AGENTS.md`，Workflow 以 `readProjectFile` 加载，信任规则与根目录相同（信任记录增加相对路径），加载结果作为 `PINNED` 条目追加在末尾，不进入 system 段，每个投影在一个 WorkflowRun 内每个路径至多加载一次、至多 8 份；本运行内对同一内容的"不信任"不再重复询问；第 5.2、6.1、6.3 节：任一目录中的 `AGENTS.md` 的写入为极危险级，命令无法写入或新建；第 7.5、8.1、9.2、9.3、10.2、12（不变量 16、20）、13（A、C5）、14.1、14.3、15 节相应修改 |
 | v1.9 | 2026-10-31 | 第 4.2、4.3、7.4 节：询问（`ask`、`confirm`、`review`）不再超时，删除 `humanRequestTimeoutMs` 与 `{ timedOut: true }`；全部工作都在等用户（没有已派发或待派发的尝试，且有待答复的人类请求或授权询问）时 Turn 超时暂停计时；授权询问仍 5 分钟后本次拒绝；第 14.2 节：待决 #2 已决定，新增参照 MAF 与 LangGraph 的预留事项 #8–#18（只预留，Turn-chat 完成后再定）；第 3.1、3.8、13（H13）、15 节相应修改 |
 | v1.9（编辑性） | 2026-10-31 | 发布前复查：第 15 节为 A 组验收按阶段分配，阶段 4 的退出条件注明 L12；第 9.6 节第 6 步改为经 Core 申请调用机会与额度（与 Architecture 的组件规则一致）；第 14.1 节登记 Turn 超时与 Architecture"运行超时按异常处理"的差异，并同步到 Architecture |
+| v1.10 | 2026-10-31 | 阶段 0 实测（M2TechStack 第 3 节）：第 6.1 节，敏感文件改用空的普通文件遮蔽，`--tmpfs /tmp` 排在仓库挂载之前；第 4.7 节，SIGTERM 发给内层进程组；第 9.4 节，回传的说明按实测修正；第 14.1 节注明实测状态 |
+| v1.11 | 2026-10-31 | 第 9.6 节：按阶段 0 的实测改写前缀式摘要请求：保留工具定义、不设 `tool_choice`，指令要求不调用工具，模型调用工具按摘要不合格处理；`summaryReasoningEffort` 缺省改为 `low` |

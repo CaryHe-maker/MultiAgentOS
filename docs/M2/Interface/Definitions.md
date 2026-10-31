@@ -80,7 +80,15 @@ type ThinkingRequest =
   | { thinking: 'ENABLED'; providerEffort?: string };
 ```
 
-`ThinkingFeature` 各字段的取值来自阶段 0 的实测（[M2TechStack](../M2TechStack.md) 第 3.2 节），实测完成前不定稿。
+`ThinkingFeature` 各字段的取值来自阶段 0 的实测（[M2TechStack](../M2TechStack.md) 第 3.2 节）。`deepseek-flash` 与 `deepseek-v4-pro` 的取值相同：
+
+| 字段 | 取值 |
+|---|---|
+| `isSupported` | `true` |
+| `effortMapping` | `none` → `{ thinking: 'DISABLED' }`；`low`、`high`、`max` → `{ thinking: 'ENABLED', providerEffort: <同名> }` |
+| `replayReasoning` | `'REQUIRED'` |
+| `missingReasoningFill` | `'EMPTY_STRING'` |
+| `reasoningCountsAsOutput` | `true` |
 其余字段（provider、计价、上下文窗口等）与 M1Interface 第 9.2 节相同。
 
 ## 4. Template（`v1`，新增）

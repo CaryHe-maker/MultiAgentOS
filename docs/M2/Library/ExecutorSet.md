@@ -21,7 +21,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | `model-call` 关闭思考、收尾强制工具选择 | 按 Agent 与任务选择思考强度；回传 `reasoning_content`；收尾调用先不强制、失败后再强制 | 1 |
 | — | `command/parse/`：命令按 tree-sitter-bash 语法树拆分、表驱动的 ARITY（取代按分隔符文字拆分） | 3 |
 | — | 压缩的修剪：较早的大工具结果截取为头尾两段 | 8 |
-| — | 压缩的摘要请求：前缀式（到 `toSeq` 为止的历史加摘要指令，`tool_choice = none`，思考强度取 `summaryReasoningEffort`）与纯文本式（回退） | 8 |
+| — | 压缩的摘要请求：前缀式（到 `toSeq` 为止的历史加摘要指令，保留工具定义、不设 `tool_choice`，思考强度取 `summaryReasoningEffort`）与纯文本式（回退） | 8 |
 | 目录按 Executor 平铺 | 新 Executor 按 M2Design 第 8.4 节组织：`retention/`、`output-read/`、`fs/`、`git/`、`command/`、`web/`、`vendor/` | 1 起 |
 
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
@@ -127,11 +127,11 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
   2. 回复不是恰好一个结束控制工具的调用、或参数不是合法 JSON 时，返回可重试的 `PROVIDER_TOOL_CHOICE_IGNORED`（带用量）；
   3. Execution 技术重试时传入 `finalMode = 'FORCED'`：关闭思考、按名称强制调用该工具（M1 的方式）；
   4. 仍不合法时以同一原因码失败，由 Workflow 按降级规则结束该 AgentRun。
-- 用量：思考 token 是否计入输出、如何计价，按阶段 0 的实测结果（M2TechStack 第 3.2 节第 7 项）写入。
+- 用量：思考 token 已包含在输出用量中（`completion_tokens`，M2TechStack 第 3.2 节第 7 项），不另外累加；思考用尽 `maxOutputTokens` 时没有回复内容，按输出被截断处理。
 - 失败分类表与 M1 相同（M1 ExecutorSet 第 4.5 节）。provider 报告上下文过长时返回 `REJECTED(CONTEXT_OVERFLOW)`，带 provider 给出的长度（阶段 8 起触发压缩）。
-- 限流与过载（可重试的失败）时，从响应头 `Retry-After`（秒数或 HTTP 日期）或 provider 的同义字段取得重试时刻，换算为 `retryAfterMs` 随失败交回；Execution 据此决定等待（M2Design 第 7.4 节）。
+- 限流与过载（可重试的失败）时，从响应头 `Retry-After`（秒数或 HTTP 日期）或 provider 的同义字段取得重试时刻，换算为 `retryAfterMs` 随失败交回（DeepSeek 的文档没有承诺这个头，实测也未观察到，没有时省略）；Execution 据此决定等待（M2Design 第 7.4 节）。
 - **摘要请求**（阶段 8，M2Design 第 9.6 节）：Kernel 的压缩过程以 `purpose = 'COMPACTION'` 调用本 Executor。请求由 `context-assemble` 组装（第 6.4 节）：
-  前缀式带原有的工具定义并设 `tool_choice = none`，以复用提示词缓存；纯文本式不带工具定义；思考强度取 Kernel 配置 `compaction.summaryReasoningEffort`（缺省 `none`）；输出为摘要文本，思考内容丢弃；
+  前缀式带原有的工具定义、不设 `tool_choice`，以复用提示词缓存，模型调用工具时不执行，按 `COMPACTION_SUMMARY_INVALID` 处理；纯文本式不带工具定义；思考强度取 Kernel 配置 `compaction.summaryReasoningEffort`（缺省 `low`）；输出为摘要文本，思考内容丢弃；
   检查摘要包含指令规定的各节，不合格时返回可重试的 `COMPACTION_SUMMARY_INVALID`（带用量），由 Kernel 追加更严格的指令重试一次；provider 以上下文过长拒绝时照常返回 `CONTEXT_OVERFLOW`，由 Kernel 改用纯文本式重试。
 
 ## 8. 测试

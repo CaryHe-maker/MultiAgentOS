@@ -1,0 +1,83 @@
+# The native column of M2TechStack 3.1: bubblewrap on a real Ubuntu 24.04 machine, with AppArmor
+# as found, restricted, and under each candidate fix. Separate from the quality gate because it
+# measures the platform, not the code. Needs no secrets and calls no model.
+name: sandbox-probe
+
+on:
+  workflow_dispatch:
+  # Lets a branch run it before the file reaches the default branch.
+  push:
+    paths:
+      - .github/workflows/sandbox-probe.yml
+      - scripts/sandbox-probe.sh
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Run every scenario
+        run: |
+          mkdir results
+          SYSCTL=kernel.apparmor_restrict_unprivileged_userns
+          set_restriction() { sudo sysctl -q -w "$SYSCTL=$1" || echo "cannot set $SYSCTL=$1"; }
+          scenario() {
+            local status=0
+            bash scripts/sandbox-probe.sh >"results/$1.log" 2>&1 || status=$?
+            echo "$1 $status" | tee -a results/status.txt
+          }
+
+          scenario as-found
+
+          # Whatever this runner ships with, measure the default of a stock Ubuntu 24.04 too.
+          set_restriction 1
+          scenario restricted
+
+          # Fix 1: an AppArmor profile that gives only bwrap the permission.
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+            include if exists <local/bwrap>
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap || echo 'cannot load the profile'
+          scenario profile-fix
+          sudo apparmor_parser -R /etc/apparmor.d/bwrap || true
+          sudo rm -f /etc/apparmor.d/bwrap
+
+          # Fix 2: lifting the restriction for the whole machine.
+          set_restriction 0
+          scenario sysctl-fix
+      - name: Write the summary
+        if: always()
+        run: |
+          {
+            echo '| scenario | exit status |'
+            echo '|---|---|'
+            sed 's/ / | /; s/^/| /; s/$/ |/' results/status.txt
+            echo
+            echo '0 passed, 1 a check failed, 2 the sandbox cannot start.'
+            echo
+            echo '```text'
+            sed -n '/== environment/,/== repository outside/p' results/as-found.log
+            grep -h '^FAIL\|^UNAVAILABLE' results/*.log | sort -u
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sandbox-probe-results
+          path: results/
+      # A check that fails is a finding; only a sandbox that no fix can start is acceptable as 2.
+      - name: Judge the result
+        run: |
+          if grep -q ' 1$' results/status.txt; then exit 1; fi
+          grep -qE '^(profile-fix|sysctl-fix) 0$' results/status.txt
