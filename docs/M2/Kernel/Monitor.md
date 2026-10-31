@@ -60,7 +60,7 @@ M2Design 第 7.3 节"压缩的额度"：
 
 | 上限 | 计数 | 触顶时 |
 |---|---|---|
-| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call`、`message-publish`） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
+| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call` 与两个发布 Unit `message-publish`、`report-publish`：它们用于结束 Agent，触顶后仍须可用） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
 | `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（阶段 5 起暂停也不计入，阶段 4 起等待子任务也不计入） | 同上，`quota = 'WALL_CLOCK'` |
 
 Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monitor。重复意图与连续出错是业务判断，归 Workflow（M2Design 第 3.4 节）。
