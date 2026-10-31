@@ -6,24 +6,32 @@ import { closed, text } from '../platform-common/schema-helpers.js';
 
 /**
  * The reply's text exists only in the model output, so the input carries a reference and a
- * `toolCallId` and the session log stays free of bodies (Kernel/Execution 5). RUN_RESULT comes
- * with stage 7.
+ * `toolCallId` and the session log stays free of bodies (Kernel/Execution 5). A degraded reply
+ * carries only the reason, as structured data; UserInteraction words it. RUN_RESULT comes with
+ * stage 7.
  */
-export const MessagePublishInputSchema = closed(
-  {
-    kind: Type.Literal('REPLY'),
-    agentLabel: text(80),
-    source: closed({
-      modelOutputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
-      toolCallId: ToolCallIdSchema,
+export const MessagePublishInputSchema = Type.Union(
+  [
+    closed({
+      kind: Type.Literal('REPLY'),
+      agentLabel: text(80),
+      source: closed({
+        modelOutputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+        toolCallId: ToolCallIdSchema,
+      }),
     }),
-  },
-  'kernel.unit.MessagePublishInput.v1',
+    closed({
+      kind: Type.Literal('DEGRADED_REPLY'),
+      agentLabel: text(80),
+      reason: text(64),
+    }),
+  ],
+  { $id: 'kernel.unit.MessagePublishInput.v1' },
 );
 export type MessagePublishInput = Static<typeof MessagePublishInputSchema>;
 
 export const MessagePublishOutputSchema = closed(
-  { kind: Type.Enum(['REPLY', 'RUN_RESULT']) },
+  { kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']) },
   'kernel.unit.MessagePublishOutput.v1',
 );
 export type MessagePublishOutput = Static<typeof MessagePublishOutputSchema>;

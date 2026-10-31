@@ -186,7 +186,7 @@ interface MessagePublished {         // message-publish 完成时发出
   type: 'MessagePublished';
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
-  kind: 'REPLY' | 'RUN_RESULT';
+  kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
 }
 
 interface RunStateChanged {

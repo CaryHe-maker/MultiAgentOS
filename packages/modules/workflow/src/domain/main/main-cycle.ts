@@ -55,7 +55,10 @@ export interface MainConfig {
 }
 
 type Pending =
-  | { readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH'; readonly unit: MainUnit }
+  | {
+      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED';
+      readonly unit: MainUnit;
+    }
   | {
       readonly role: 'TOOL';
       readonly unit: MainUnit;
@@ -85,6 +88,7 @@ export interface MainState {
   readonly regenerations: number;
   readonly roundHadOk: boolean;
   readonly modelOutputRef?: ArtifactRef;
+  readonly degradedReason?: Extract<MainEnding, { kind: 'DEGRADED' }>['reason'];
 }
 
 export type MainEnding =
@@ -181,7 +185,7 @@ function submission(
 
 function one(
   state: MainState,
-  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH',
+  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'PUBLISH' | 'DEGRADED',
   unit: MainUnit,
   input: UnitInputV1,
   toolName: string,
@@ -209,18 +213,33 @@ const ended = (
   ending,
 });
 
+/** The reason reaches the user as a message; ending the AgentRun waits for its report. */
+function degrade(
+  state: MainState,
+  reason: Extract<MainEnding, { kind: 'DEGRADED' }>['reason'],
+  records: readonly NewLogRecord[],
+): MainTransition {
+  return one(
+    { ...state, degradedReason: reason },
+    'DEGRADED',
+    state.definitions.messagePublish,
+    { kind: 'DEGRADED_REPLY', agentLabel: state.definitions.label, reason },
+    'reply',
+    records,
+  );
+}
+
 function nextRound(
   state: MainState,
   context: MainContext,
   records: readonly NewLogRecord[] = [],
 ): MainTransition {
   const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.turn === 'EXHAUSTED';
-  if (exhausted) return ended(state, { kind: 'DEGRADED', reason: 'BUDGET_EXHAUSTED' }, records);
+  if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
   const atLimit = state.round >= state.definitions.limits.maxRounds;
   const wrapUpReason = state.wrapUpReason ?? (atLimit ? 'ROUND_LIMIT' : undefined);
   const final = wrapUpReason !== undefined;
-  if (final && state.finalUsed)
-    return ended(state, { kind: 'DEGRADED', reason: wrapUpReason }, records);
+  if (final && state.finalUsed) return degrade(state, wrapUpReason, records);
   const next: MainState = {
     ...state,
     round: state.round + 1,
@@ -301,7 +320,7 @@ function failed(
 ): MainTransition {
   if (code === 'LIMIT_EXCEEDED' && pending.role === 'CONTEXT')
     return state.final
-      ? ended(state, { kind: 'DEGRADED', reason: 'CONTEXT_LIMIT' }, records)
+      ? degrade(state, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp(state, 'CONTEXT_LIMIT'), context, records);
   switch (handlingOf(pending.unit, code)) {
     case 'RETURN_TO_MODEL':
@@ -309,11 +328,7 @@ function failed(
     case 'FINAL_CALL':
       return nextRound(wrapUp(state, 'BUDGET_WRAP_UP'), context, records);
     case 'DEGRADED_REPORT':
-      return ended(
-        state,
-        { kind: 'DEGRADED', reason: state.wrapUpReason ?? 'BUDGET_WRAP_UP' },
-        records,
-      );
+      return degrade(state, state.wrapUpReason ?? 'BUDGET_WRAP_UP', records);
     case 'FATAL':
       return ended(state, { kind: 'FAILED', code }, records);
   }
@@ -366,7 +381,7 @@ function invalidReply(
   config: MainConfig,
   records: readonly NewLogRecord[],
 ): MainTransition {
-  if (state.final) return ended(state, { kind: 'DEGRADED', reason: 'FINAL_CALL_INVALID' }, records);
+  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', records);
   const regenerations = state.regenerations + 1;
   const next =
     regenerations >= config.regenerationLimit
@@ -437,7 +452,7 @@ function handleModel(
       records,
     );
   }
-  if (state.final) return ended(state, { kind: 'DEGRADED', reason: 'FINAL_CALL_INVALID' }, records);
+  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', records);
 
   let next = state;
   const pending = new Map<string, Pending>();
@@ -550,6 +565,10 @@ export function receiveMainReport(
   remaining.delete(report.requestId);
   const state = applyBudget({ ...current, pending: remaining }, report);
   if (pending.role === 'TOOL') return handleTool(state, pending, report, context, config);
+  if (pending.role === 'DEGRADED')
+    return ended(state, { kind: 'DEGRADED', reason: state.degradedReason ?? 'BUDGET_EXHAUSTED' }, [
+      completion(state, report),
+    ]);
   const records: NewLogRecord[] = [completion(state, report)];
   if (report.status !== 'OK') {
     if (pending.role === 'MODEL')

@@ -153,6 +153,16 @@ const replied = (
 const reassemble = (from: MainTransition, budget: BudgetView = NORMAL) =>
   receive(from, report(from.state, only(from), { ok: {}, ref: packRef }, budget));
 
+function expectDegraded(from: MainTransition, reason: string): void {
+  expect(from.ending).toBeUndefined();
+  expect(from.submissions[0]?.input).toMatchObject({ kind: 'DEGRADED_REPLY', reason });
+  const done = receive(
+    from,
+    report(from.state, only(from), { ok: { kind: 'DEGRADED_REPLY' }, ref: ref('3') }),
+  );
+  expect(done.ending).toEqual({ kind: 'DEGRADED', reason });
+}
+
 describe('startup', () => {
   it('orients first, once per run', () => {
     expect(unitId(start())).toEqual(['repository-orient']);
@@ -347,12 +357,10 @@ describe('wrap-up', () => {
   it('ends degraded when a ledger is exhausted', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
     const empty = { ...NORMAL, agentRun: 'EXHAUSTED' } as const;
-    expect(
-      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, empty)).ending,
-    ).toEqual({
-      kind: 'DEGRADED',
-      reason: 'BUDGET_EXHAUSTED',
-    });
+    expectDegraded(
+      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, empty)),
+      'BUDGET_EXHAUSTED',
+    );
   });
 
   it('ends degraded when the final call does not reply', () => {
@@ -364,10 +372,7 @@ describe('wrap-up', () => {
     );
     const model = reassemble(context_, low);
     expect(model.submissions[0]?.input).toMatchObject({ final: true, finalMode: 'AUTO' });
-    expect(replied(model, [call('list_files', { path: 'z' })]).ending).toEqual({
-      kind: 'DEGRADED',
-      reason: 'FINAL_CALL_INVALID',
-    });
+    expectDegraded(replied(model, [call('list_files', { path: 'z' })]), 'FINAL_CALL_INVALID');
   });
 
   it('still lets the final call reply', () => {
@@ -399,12 +404,10 @@ describe('wrap-up', () => {
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
     );
     expect(final.state).toMatchObject({ final: true, wrapUpReason: 'CONTEXT_LIMIT' });
-    expect(
-      receive(final, report(final.state, only(final), { reject: 'LIMIT_EXCEEDED' })).ending,
-    ).toEqual({
-      kind: 'DEGRADED',
-      reason: 'CONTEXT_LIMIT',
-    });
+    expectDegraded(
+      receive(final, report(final.state, only(final), { reject: 'LIMIT_EXCEEDED' })),
+      'CONTEXT_LIMIT',
+    );
   });
 
   it('wraps up after rounds without progress', () => {

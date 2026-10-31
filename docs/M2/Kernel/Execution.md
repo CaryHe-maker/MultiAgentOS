@@ -68,10 +68,13 @@ M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackof
 ```text
 取到 message-publish 尝试；输入已在受理时按 Schema 校验：
   { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }      // 阶段 1
+  { kind: 'DEGRADED_REPLY', agentLabel, reason }                              // 阶段 1：降级回复，只有结构化原因
   { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 阶段 7：确定性运行报告
 REPLY：
   → modelOutputRef 必须属于本 Session（第 3 节）；从中取出 toolCallId 对应的 reply 调用的 text 参数
   → 把 text 以 text/markdown 存为新的产物，登记归属
+DEGRADED_REPLY：
+  → 把 { reason } 以 JSON 存为产物，登记归属；不经过额度检查，额度耗尽时也要能发布
 RUN_RESULT：
   → report 按 Schema 校验后以 JSON 存为产物，登记归属
 → submitResultCheck(COMPLETED, output = { kind }, outputRef = 新产物)
