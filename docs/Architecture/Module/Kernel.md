@@ -41,20 +41,32 @@ Supervisor 直接管理操作系统进程，独立成进程使它与 Kernel 核�
 Kernel 核心失效时，Supervisor 仍可终止并回收 Executor 子进程、清理残余；
 Supervisor 失效时，其 Executor 子进程随之退出，Kernel 核心经心跳发现后把在途尝试标记为效果未知。
 
-Gateway 独立成进程的条件是：Kernel 核心按运行分片需要路由、系统对外开放给多用户，
+Gateway 独立成进程的条件是：Kernel 核心按 Session 分片需要路由、系统对外开放给多用户，
 或长连接需要与 Kernel 核心分开扩展。通信设施见 [Fabric](../Infrastructure/Fabric.md)。
 
-### 3.2 运行 actor
+### 3.2 Session actor
 
-每个 WorkflowRun 在任一时刻只有一个 Kernel 核心实例写入其状态。
-Kernel 核心为每个运行维护一个运行 actor：该运行的 Inbox（运行 Inbox）、串行处理循环，以及该运行在 Core、Execution、Monitor、Scheduler 中的状态分块
-（Lease、账本、尝试、队列、runEpoch 与 Outbox 都在其中）。运行 actor 是并发模型，不是第七个组件。
+Session 是用户在一个仓库上的持续工作档案（Overall 第 5 节），其中的 WorkflowRun 先后进行。
+每个 Session 在任一时刻只有一个 Kernel 核心实例写入其状态，其中每个 WorkflowRun 因此也只有一个写入者。
+Kernel 核心为每个打开的 Session 维护一个 Session actor：该 Session 的 Inbox（Session Inbox）、串行处理循环，以及下表中的运行级与 Session 级状态分块。
+Session actor 是并发模型，不是第七个组件。
 
-- **创建与回收**：Core 的运行管理是 Kernel 核心中唯一跨运行的部分，只保存 `workflowRunId → actor` 的映射与生命周期，不保存运行状态。
-  只有创建运行的请求能建立 actor；actor 处理的第一条消息完成初始化（开始计时、经 Outbox 通知 Workflow）。actor 结束后，
-  运行管理在其 Outbox 投递完毕后回收它，并保留记录结束原因的墓碑，用于拒绝或记录迟到的消息。
-- **消息**：Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，都作为消息进入运行 Inbox。
-  运行 Inbox 与外部 Module 的 Inbox 是同一种接收队列，只是按消息类型分为控制通道与工作通道：取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
+| 状态层次 | 内容 | 唯一写入者 |
+|---|---|---|
+| 运行级 | 一个 WorkflowRun 在 Core、Execution、Monitor、Scheduler 中的状态分块：授权、Lease、账本、尝试、队列、runEpoch 与运行级 Outbox | 所属 Session actor |
+| Session 级 | 跨越同一 Session 中多个 WorkflowRun 的状态，例如 Core 的 Session 级 Outbox，Execution 的工作区快照索引、产物归属与隔离数据 | 所属 Session actor |
+| 系统级 | 跨越多个 Session 的状态，例如 Session 引用的总表、用户按内容作出的长期信任决定、内容寻址产物正文及其回收 | Core 的 Session 管理 |
+
+需要跨运行保存的状态必须归入其中一层，并写明 Owner 组件与唯一写入者；不能有不属于任何一层、由多个 actor 共同写入的状态。
+运行级与 Session 级状态由同一个 Session actor 逐条处理，下文"按顺序处理消除竞态"的保证因此覆盖这两层。
+
+- **创建与回收**：Core 的 Session 管理只保存 `sessionId → actor` 的映射与生命周期，以及系统级状态，不保存运行级与 Session 级状态。
+  只有打开或新建 Session 的请求能建立 actor。WorkflowRun 的开启与收敛在 actor 内处理，开启后处理的第一条消息完成该运行的初始化（开始计时、经 Outbox 通知 Workflow）；
+  WorkflowRun 结束后，在运行级 Outbox 投递完毕后回收其运行级分块，并保留记录结束原因的墓碑，用于拒绝或记录迟到的消息。Session 关闭后，Session 管理回收 actor。
+- **系统级状态的单一写入者**：系统级状态只由 Session 管理写入。单实例部署时，由部署层保证同一份数据只有一个 Kernel 核心实例（例如数据目录上的实例锁）；
+  多实例部署时需要与全局 API 容量类似的全局服务，见 [Evolution](../Evolution.md) 第 4 节。
+- **消息**：Workflow、UserInteraction 的请求，Supervisor 上报的执行事实，以及 Kernel 核心内部的定时器到点，都作为消息进入 Session Inbox。
+  Session Inbox 与外部 Module 的 Inbox 是同一种接收队列，只是按消息类型分为控制通道与工作通道：取消、授权回答、超时到点、收敛兜底到点、Supervisor 上报的终止或违规属于控制通道，
   优先处理；业务请求与正常的执行结果属于工作通道。同一来源在同一通道内保持顺序。
   执行事实交给 Execution 处理，其余消息交给 Core 处理。
 - **不可重入**：一条消息处理完之前不开始处理下一条，控制通道的优先只在两条消息之间生效。处理中可以等待本地存储 I/O；
@@ -63,25 +75,33 @@ Kernel 核心为每个运行维护一个运行 actor：该运行的 Inbox（运�
 - **原子提交**：运行状态按组件分块（见第 3.4 节），一次消息处理中各组件的变化一起持久化，再经 Outbox 对外发出事件；
   不持久化运行状态的 MVP 省略持久化步骤，但发送顺序不变。
 
-运行控制状态为 RUNNING → CONVERGING → CLOSED，只能前进。正常结束、取消、超时、违规与 Kernel 异常共用同一收敛过程：
+运行控制状态分为两段。进入收敛之前，运行可以在 RUNNING 与 PAUSING、PAUSED、INTERRUPTING、AWAITING_INPUT 之间转换
+（暂停、继续、中止当前工作、等待开放输入）；这些转换不改变 runEpoch，被打断的执行仍交付明确的中断结果。
+一旦进入 CONVERGING，只能前进到 CLOSED。正常结束、取消、超时、违规与 Kernel 异常共用同一收敛过程：
 进入 CONVERGING 时封锁准入、runEpoch 前进并取消在途执行；等待在途执行的终态事实（Supervisor 在宽限期内给出，
 Core 另设兜底时限）；最后完成结算、计算未知效果、发出运行结束事件并进入 CLOSED。结束原因以先进入收敛者为准，安全违规例外，
-可以在收敛中升级结束原因。
+可以在收敛中升级结束原因。额度到达限制不是收敛的理由（第 9 节）。
+
+在途执行无法确认停止（`STOP_UNCONFIRMED`）时，Kernel 不再假定可以继续：暂停、Turn 结束与工作区快照都依赖"没有在途执行"，
+停止未确认意味着没有可以继续的一致状态，按第 12 节安全停机。
+
+**Turn**：一条开放输入（用户主动发起、要求全局静止的人类请求）引出的全部工作。Core 在开放输入得到答复时开启 Turn，在下一次请求开放输入或运行收敛时结束；
+结束时检查没有活动的 AgentRun 与在途执行。Turn 是额度、计时与工作区快照的单位。Kernel 只区分开放输入与局部询问，这是控制层面的约束，不理解请求的业务含义。
 
 按顺序处理消除了结果、取消与超时之间的竞态：先处理的消息决定结论，后到的消息按已有状态处理。
 Supervisor 对每个执行实例只上报一个终态，执行实例层面的结论由它给出；运行层面的裁决只在 Core。
 
-### 3.3 按运行分片
+### 3.3 按 Session 分片
 
-Kernel 核心可以部署为多个实例，按 WorkflowRun 分片：
+Kernel 核心可以部署为多个实例，按 Session 分片。Session 级状态跨越 Session 中的多个 WorkflowRun，所以分片的单位是 Session，而不是 WorkflowRun：
 
-- `workflowRunId` 经哈希映射到固定数量的逻辑分片，逻辑分片由 Kernel 核心实例通过 Persistence 中的分片租约领取；
-- 每次状态写入携带分片 epoch，epoch 过期的写入被拒绝；分片转移时运行的 runEpoch 前进，旧尝试的结果只作为证据；
-- Gateway 生成 `workflowRunId` 并按分片路由，被旧 Owner 拒绝时刷新路由后重试，`requestId` 保证重试幂等；
-- 执行事实按 `workflowRunId` 送回所属的 Kernel 核心实例；
-- 跨运行的资源（如 Provider 级 API 容量）由全局容量服务以带期限的令牌分配。
+- `sessionId` 经哈希映射到固定数量的逻辑分片，逻辑分片由 Kernel 核心实例通过 Persistence 中的分片租约领取；
+- 每次状态写入携带分片 epoch，epoch 过期的写入被拒绝；分片转移时 Session 中运行的 runEpoch 前进，旧尝试的结果只作为证据；
+- Gateway 生成 `sessionId` 与 `workflowRunId`，按 `sessionId` 所在的分片路由，被旧 Owner 拒绝时刷新路由后重试，`requestId` 保证重试幂等；
+- 执行事实携带 `sessionId` 与 `workflowRunId`，送回所属的 Kernel 核心实例与 Session actor；
+- 跨 Session 的资源与系统级状态（如 Provider 级 API 容量）由全局服务分配或作为唯一写入者维护。
 
-单个运行不跨实例拆分。超大运行可拆为子运行，额度通过显式委派划给子运行。
+单个 Session 不跨实例拆分。超大运行可拆为子运行，额度通过显式委派划给子运行。
 
 ### 3.4 Kernel 核心内部的模块化隔离
 
@@ -99,7 +119,7 @@ Kernel 核心是模块化单体：Core、Monitor、Scheduler、Execution 同进�
 |---|---|
 | Gateway → Core | 移交外部 syscall |
 | Core → Monitor、Scheduler、Execution | 职责接口调用 |
-| 运行 actor → Execution | 分派执行事实；运行 actor 只编排顺序，不读写组件数据 |
+| Session actor → Execution | 分派执行事实；Session actor 只编排顺序，不读写组件数据 |
 | Execution → Core | 内部 syscall：申请预留、提交结果检查（含违规）、申请技术重试 |
 | Monitor、Scheduler → Core | 只在被 Core 调用时运行，只通过返回值给出结果或异常，不主动修改 Core 的状态 |
 | Execution → Monitor、Scheduler | 不允许；额度与调用机会一律经 Core |
@@ -107,7 +127,7 @@ Kernel 核心是模块化单体：Core、Monitor、Scheduler、Execution 同进�
 | 任何组件 → 其他组件的私有状态 | 不允许 |
 
 组件之间只传递派生值与只读结果，不传递内部实体。例如 Execution 需要仓库范围时，取得的是 Core 由 Lease
-派生的范围约束，而不是 Lease。运行 actor 只负责编排处理顺序，把每个组件的状态分块交给对应组件，不打通访问。
+派生的范围约束，而不是 Lease。Session actor 只负责编排处理顺序，把每个组件的状态分块交给对应组件，不打通访问。
 
 ## 4. Gateway 与 syscall
 
@@ -125,7 +145,7 @@ Gateway 检查调用来源、请求契约与准入封锁。准入被拒时，由
 Gateway 只读；Core 对封锁状态保留最终检查，复核不通过时返回同样的拒绝结果。
 
 受理、处理与完成必须区分，等待超时不证明操作未发生。
-事实报告不等于控制请求。Supervisor 上报的执行事实（含用量与违规）作为消息进入所属运行 actor，由 Execution 与 Core 处理；
+事实报告不等于控制请求。Supervisor 上报的执行事实（含用量与违规）作为消息进入所属 Session actor，由 Execution 与 Core 处理；
 Monitor 只在被 Core 调用时运行，不接收任何组件的直接上报。限流判断由 Monitor 在被 Core 调用时给出，
 Core 把结论随准入投影推送给 Gateway，由 Gateway 在入口执行。
 Fabric 归 Core 管辖，不意味着全部数据必须经过 Core 中转。
@@ -143,11 +163,16 @@ Gateway 依据该身份拒绝越权请求，不接受请求中自报的身份。
 Workflow 检查动作及模板组合是否合法，Core 判断权限。
 模型或 Workflow 不能移除受保护能力声明、替换行为或扩大参数范围来绕过授权。
 
-Core 保留用户的授权决定。后续申请若属于已同意范围的安全子集，可以直接签发 Lease；
-危险行为每次都必须单独征得用户同意。同一授权在等待用户回答期间，后续同类申请等待同一结果，
-不重复询问。拒绝或超时不视为同意，并在本次运行内保留。
+Core 对受保护操作按固定顺序分两步判定：
+1. **系统策略与能力上限**：命中禁止规则，或所需能力、写入范围不在该 AgentRun 的能力上限之内，直接拒绝，不询问。
+   能力上限来自可信定义，派生时只能收窄，不涉及人类；
+2. **授权条目**：本运行中有覆盖该能力与资源键的条目时按条目处理；没有时询问用户，用户拒绝才拒绝。授权条目只能由人类签发，运行内的 AgentRun 共用。
 
-Lease 表示 Core 管理的使用资格，受主体、行为和工作条件约束。
+能力按后果分为安全、不确定、危险、极危险四级。极危险行为每次单独征得同意，批准不复用；危险行为可以在本运行内按确切命令或命令前缀放行。
+同一能力、同一资源键在等待用户回答期间，后续同类申请等待同一结果，不重复询问，极危险级除外。
+用户明确拒绝在本运行内保留；询问超时或无法送达只拒绝本次，不视为同意，也不形成持久的拒绝。
+
+Lease 是 Core 在能力上限与授权条目都满足时，为一次执行签发的使用资格，受主体、行为和工作条件约束，并由它派生范围约束。
 Core 负责签发、变更、失效与撤销；长期资格也不是不可撤销或跨范围通用的权限。
 
 Lease 内容唯一存在于 Core。外部 Module 和其他 Kernel 组件不得保存、直接读取或修改
@@ -207,7 +232,8 @@ Workflow 管业务预算的分配与步数，不成为实际资源用量的第�
 WRAP_UP 提示业务层收尾，不拒绝请求；Monitor 为收尾调用保留额度，普通消耗不能使用这部分额度。
 达到硬阈值时 Monitor 拒绝新的消耗型预留，不停止运行：已经发生的消耗照常结算，结果照常交付，
 业务层以已有材料收尾。运行的强制停止只来自超时、取消与安全违规。
-并行 AgentRun 使用子额度，每份子额度各自保留收尾额度。
+并行 AgentRun 使用子额度，每份子额度各自保留收尾额度。子额度由上级账本预先委派划出，下级结束时剩余返还；
+上级可委派的额度不含它自己的收尾保留。工具调用次数与墙钟属于资源，由 Monitor 计量；轮次、重复意图、连续出错等业务上限由 Workflow 判断。
 
 账本依据可核对事实维护，负载、延迟等观测可以采用相应采集策略。
 失败或取消不等于零消耗，重复事实不能重复结算。
@@ -218,7 +244,7 @@ Monitor 被 Core 调用时可以以返回值报告异常，由 Core 决定控制
 
 Supervisor 是独立的通讯主体，直接管理进程：负责系统生命周期，以及 Executor 子进程的派发、装配、
 截止时间、终止、回收与健康，向 Kernel 核心上报执行事实。它不维护执行队列，不作授权、额度或结果接受的裁决。
-详见 [Supervisor](../Kernel/Supervisor.md)。运行总时长由 Core 计时，超时由 Core 按异常处理。
+详见 [Supervisor](../Kernel/Supervisor.md)。时长限制由 Core 计时，计时单位由各 MVP 规定（M2 为 Turn）；超时时 Core 中止当前工作，由 Workflow 收敛后报告结果，不直接收敛整个运行；等待用户回答的时间可以不计入。
 
 产物发布等 Kernel 内建 Unit 由 Execution 直接完成，不派发给 Supervisor，也不经 Executor。
 
@@ -242,7 +268,7 @@ Supervisor 监管停止与清理，Monitor 核对资源。
 
 ## 12. panic 与安全停机
 
-panic 用于可信基础或关键安全不变量失守。
+panic 用于可信基础或关键安全不变量失守。在途执行无法确认停止（`STOP_UNCONFIRMED`）也属于此类，见第 3.2 节。
 Core 之外直接访问 Lease 实体，或外部主体绕过受保护入口执行内核操作，必须拒绝并进入
 panic 处置。合法权限检查、受控事实传递和普通权限不足不属于此类绕行。
 
@@ -253,7 +279,7 @@ Kernel 自身失效时不能依赖其必然发出最后通知，未知效果与�
 ## 13. 恢复、收敛与视图
 
 Workflow 组织业务恢复，Kernel 核对执行、效果、资源与当前权限。
-历史快照不能复活 Lease 或执行会话，未知效果先核对。
+历史快照不能复活 Lease 或执行会话，未知效果先核对。无法确认停止的执行不留到核对阶段，按第 12 节停机。
 
 最终完成前，Kernel 收敛本次范围的在途步骤、资源与执行资格，向 Workflow 提供确认事实。
 其他范围有效的授权不应单独阻止当前工作完成。

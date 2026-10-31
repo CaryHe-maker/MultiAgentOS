@@ -17,7 +17,7 @@ AgentToolPool、ExecutorSet 与 SharedContracts 是静态库，
 再由 Supervisor 协调 ModuleHost 启动通信设施、Kernel 核心与其他模块。Supervisor 的建立不能依赖一个已经完整运行的 Supervisor。
 
 Executor 子进程由 Supervisor 启动与回收，不由 ModuleHost 装配。
-多实例部署时，Kernel 核心实例由部署层或 Supervisor 启动，各实例经分片租约领取负责的运行。
+多实例部署时，Kernel 核心实例由部署层或 Supervisor 启动，各实例经分片租约领取负责的 Session。
 
 组件只获得履行职责所需的依赖。宏内核中的共同部署不允许任意访问他方内部状态，
 执行代码的可加载性也不代表其获得 Kernel 管理权限。
