@@ -182,6 +182,25 @@ describe('instance lock', () => {
     await next.release();
   });
 
+  it('never gives a stale lock to two of many simultaneous takeovers', async () => {
+    for (let round = 0; round < 30; round += 1) {
+      const dir = join(dataDir, `round-${String(round)}`);
+      await new FileInstanceLock(dir, {
+        ...options,
+        probe: probe({ pid: 200, startedAt: () => Promise.resolve('x') }),
+      }).acquire();
+      const locks = [1, 2, 3, 4].map(
+        () => new FileInstanceLock(dir, { ...options, probe: probe() }),
+      );
+      const results = await Promise.all(locks.map((lock) => lock.acquire()));
+      expect(results.filter((result) => result.outcome === 'ACQUIRED')).toHaveLength(1);
+      for (const result of results)
+        if (result.outcome === 'HELD') expect(result.owner.pid).toBe(100);
+      for (const [index, result] of results.entries())
+        if (result.outcome === 'ACQUIRED') await locks[index]?.release();
+    }
+  });
+
   it('lets one of two simultaneous takeovers win', async () => {
     await new FileInstanceLock(dataDir, {
       ...options,

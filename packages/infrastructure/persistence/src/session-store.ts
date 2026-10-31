@@ -252,30 +252,77 @@ async function readOwner<T>(directory: string): Promise<T | undefined> {
   }
 }
 
-/** `mkdir` is the atomic step; only one process wins, also while taking over a stale lock. */
+/**
+ * Publishes the lock with its owner in one atomic rename, so a lock directory always says who
+ * holds it. Renaming onto a lock that already exists fails, which is what makes one process win.
+ */
 async function tryAcquire(directory: string, owner: () => Promise<object>): Promise<boolean> {
   await mkdir(dirname(directory), { recursive: true });
+  const draft = `${directory}.new-${randomUUID()}`;
+  await mkdir(draft);
   try {
-    await mkdir(directory);
+    await writeFile(join(draft, 'owner.json'), JSON.stringify(await owner()), { flag: 'wx' });
+    await rename(draft, directory);
+    return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'EPERM') return false;
     throw error;
+  } finally {
+    await rm(draft, { recursive: true, force: true });
   }
-  await writeFile(join(directory, 'owner.json'), JSON.stringify(await owner()), { flag: 'wx' });
-  return true;
 }
 
-async function takeOver(directory: string, attempt: () => Promise<boolean>): Promise<boolean> {
-  const tombstone = `${directory}.stale-${randomUUID()}`;
-  try {
-    await rename(directory, tombstone);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return attempt();
-    throw error;
+const TAKEOVER_ATTEMPTS = 200;
+const TAKEOVER_WAIT_MS = 10;
+/** A takeover takes milliseconds; a marker this old was left by a process that died in one. */
+const TAKEOVER_STALE_MS = 10_000;
+
+async function enterTakeover(marker: string): Promise<void> {
+  for (let attempt = 0; attempt < TAKEOVER_ATTEMPTS; attempt += 1) {
+    try {
+      await mkdir(marker);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    const age = await stat(marker).then(
+      (info) => Date.now() - info.mtimeMs,
+      () => 0,
+    );
+    if (age > TAKEOVER_STALE_MS) await rm(marker, { recursive: true, force: true });
+    else await new Promise((resolve) => setTimeout(resolve, TAKEOVER_WAIT_MS));
   }
-  const acquired = await attempt();
-  await rm(tombstone, { recursive: true, force: true });
-  return acquired;
+  throw new Error(`takeover of ${marker} did not finish`);
+}
+
+/**
+ * Takeovers run one at a time, and each looks at the owner again once it is its turn: otherwise a
+ * process that judged the lock stale earlier would move away the fresh lock of the winner.
+ */
+async function takeOver<T>(
+  directory: string,
+  isStale: (owner: T) => Promise<boolean>,
+  attempt: () => Promise<boolean>,
+): Promise<boolean> {
+  const marker = `${directory}.takeover`;
+  await enterTakeover(marker);
+  try {
+    const owner = await readOwner<T>(directory);
+    if (owner !== undefined && !(await isStale(owner))) return false;
+    const tombstone = `${directory}.stale-${randomUUID()}`;
+    try {
+      await rename(directory, tombstone);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return await attempt();
+    }
+    const acquired = await attempt();
+    await rm(tombstone, { recursive: true, force: true });
+    return acquired;
+  } finally {
+    await rm(marker, { recursive: true, force: true });
+  }
 }
 
 export async function acquireSessionLock(
@@ -295,7 +342,8 @@ export async function acquireSessionLock(
   if (!(await attempt())) {
     const owner = await readOwner<SessionLockInfo>(directory);
     if (owner !== undefined && !(await ownerIsDead(owner, probe))) return held(owner);
-    if (!(await takeOver(directory, attempt))) {
+    const stale = (candidate: SessionLockInfo) => ownerIsDead(candidate, probe);
+    if (!(await takeOver(directory, stale, attempt))) {
       const winner = await readOwner<SessionLockInfo>(directory);
       if (winner !== undefined) return held(winner);
       throw new Error('session lock is held by an unknown owner');
@@ -353,7 +401,8 @@ export class FileInstanceLock implements InstanceLockPort {
     if (!(await attempt())) {
       const owner = await readOwner<InstanceLockInfo>(this.#directory);
       if (owner !== undefined && !(await this.#isStale(owner))) return { outcome: 'HELD', owner };
-      if (!(await takeOver(this.#directory, attempt))) {
+      const stale = (candidate: InstanceLockInfo) => this.#isStale(candidate);
+      if (!(await takeOver(this.#directory, stale, attempt))) {
         const winner = await readOwner<InstanceLockInfo>(this.#directory);
         if (winner !== undefined) return { outcome: 'HELD', owner: winner };
         throw new Error('instance lock is held by an unknown owner');
