@@ -48,10 +48,10 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节），只作用于 `v
 | 对象 | 规则 |
 |---|---|
 | Agent `v1` | `thinking.allowedEfforts` 包含 `defaultEffort`；模型不支持思考时只能为 `['none']`；每一档在模型的 `effortMapping` 中都有映射 |
-| Agent `v1` | `actions.finish.kind = 'REPLY'` 时，工具为 `purpose = CONTROL` 且 `parametersContract = workflow.ReplyArgs` |
+| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；`then = 'PUBLISH_REPLY'` 的工具 `parametersContract = workflow.ReplyArgs` |
 | Agent `v1` | `unitRefs` 中 `CONTEXT_ASSEMBLE`、`MODEL`、`MESSAGE_PUBLISH` 各恰好一个；`startUnitRefs` 只能是 `REPOSITORY_ORIENT` |
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
-| Unit `v1` | `REPOSITORY_LIST` 必须声明 `repo.read`；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具 |
+| Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具 |
 | Model `v1` | `effortMapping` 恰好覆盖四档，每档一项 |
 | Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个声明了 `handoff` 的 Agent 节点，且自身的 Agent 等于该交接的 `targetAgentRef` |
 | 引用 | `v1` 定义可以引用 `v0` 的 Tool 与 Prompt；`v0` 定义不得引用 `v1` 定义 |

@@ -329,7 +329,8 @@ export class RunAttempts {
 
   #identityHolds(attempt: Attempt, check: ResultCheck): boolean {
     if (attempt.checked) return false;
-    if (attempt.spec.scope.kind === 'REPOSITORY' && !this.#deps.leaseIsValid()) return false;
+    if (attempt.spec.unit.protectedCapabilities.includes('repo.read') && !this.#deps.leaseIsValid())
+      return false;
     if (attempt.executionId !== check.executionId) return false;
     if (check.executionId === undefined)
       return check.outcome === 'NOT_DISPATCHED' || BUILT_IN.has(attempt.spec.unit.executionKind);

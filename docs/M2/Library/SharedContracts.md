@@ -98,6 +98,8 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 - 未知 major 被拒绝。
 - 由路径派生的 ID：`requestId`、`nodeId`、`unitRunId` 的 body 等于路径 SHA-256 的前 32 位（属性测试）。
 - 协议快照守卫（M1 的做法）在删除 major 0 后重建，覆盖 major 1。
+- **测试数据**：各包的测试从子路径 `@multiagentos/contracts/test-support` 取得合法的定义、产物引用、输出与 ID；每个构造函数返回前按 Schema 校验，测试中不以类型断言编造契约值。
+  `testUnitDefinition` 按目录加载时的同一规则声明 `repo.read`（AgentToolPool 第 5 节）。
 
 ## 5. 阶段
 

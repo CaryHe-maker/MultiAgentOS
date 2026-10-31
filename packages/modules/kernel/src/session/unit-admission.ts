@@ -1,5 +1,4 @@
 import {
-  REPOSITORY_KINDS_V1,
   type ExecutionKindV1,
   type SubmitUnitRequestV1,
   type UnitDefinitionV1,
@@ -40,10 +39,11 @@ const UNCOUNTED_KINDS: ReadonlySet<ExecutionKindV1> = new Set([
   'REPORT_PUBLISH',
 ]);
 
-const REPOSITORY_KINDS: ReadonlySet<ExecutionKindV1> = new Set(REPOSITORY_KINDS_V1);
-
 /** The checks of `submitUnit`, in order (Kernel/Interaction 7). Idempotency is done before this. */
-export function admitUnit(request: SubmitUnitRequestV1, context: AdmissionContext): Admission {
+export function admitUnit(
+  request: Pick<SubmitUnitRequestV1, 'unitRef' | 'input'>,
+  context: AdmissionContext,
+): Admission {
   const admitted = admitWork(context.control);
   if (!admitted.accepted) return admitted;
   const { agentRun } = context;
@@ -65,8 +65,8 @@ export function admitUnit(request: SubmitUnitRequestV1, context: AdmissionContex
   return {
     accepted: true,
     unit,
-    needsRepoRead:
-      REPOSITORY_KINDS.has(unit.executionKind) || unit.protectedCapabilities.includes('repo.read'),
+    // The definition's declaration is the only source; loading the catalog checks it (AgentToolPool 5).
+    needsRepoRead: unit.protectedCapabilities.includes('repo.read'),
     countsAsTool: !UNCOUNTED_KINDS.has(unit.executionKind),
   };
 }

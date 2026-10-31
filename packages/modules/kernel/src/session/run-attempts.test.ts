@@ -2,11 +2,14 @@ import {
   UnitReportV1Schema,
   assertValid,
   type ExecutionKindV1,
-  type ExecutionScope,
-  type UnitDefinitionV1,
-  type UnitOutputV1,
   type UnitReportV1,
 } from '@multiagentos/contracts';
+import {
+  testArtifactRef,
+  testFileReadOutput,
+  testId,
+  testUnitDefinition,
+} from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { RunLedgers, finalReserve, minShare, type AgentBudget } from '../monitor/run-ledgers.js';
@@ -23,13 +26,9 @@ const main: AgentBudget = {
   finalInputBudget: 40,
   finalMaxOutputTokens: 20,
 };
-const digest = 'd'.repeat(64);
-const sha256 = 'a'.repeat(64);
-const outputRef = { artifactId: `art_${sha256}`, sha256, size: 1, mediaType: 'text/plain' };
-
-function unit(executionKind: ExecutionKindV1): UnitDefinitionV1 {
-  return { id: 'u', version: 'v1.0.0', digest, executionKind } as unknown as UnitDefinitionV1;
-}
+const outputRef = testArtifactRef();
+const fileOutput = testFileReadOutput();
+const unit = (kind: ExecutionKindV1) => testUnitDefinition(kind);
 
 function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boolean } = {}) {
   const ledger = new RunLedgers(
@@ -62,7 +61,7 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     scheduler,
     createAttempt: () => {
       attempts += 1;
-      return Promise.resolve(`una_attempt${attempts}`);
+      return Promise.resolve(testId('una', attempts));
     },
     isDeliverable: () => options.deliverable !== false,
     isConverging: () => options.deliverable === false,
@@ -74,9 +73,9 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
   });
   const start = (kind: ExecutionKindV1, over: Partial<AttemptSpec> = {}) =>
     run.start({
-      requestId: 'req_test01',
-      agentRunId: 'agr_main01',
-      unitRunId: 'unr_test01',
+      requestId: testId('req', 1),
+      agentRunId: testId('agr', 1),
+      unitRunId: testId('unr', 1),
       turnId: 'trn_1',
       unit: unit(kind),
       input: {},
@@ -86,15 +85,6 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     });
   return { run, start, reports, ended, faults, audits, grants };
 }
-
-const fileOutput: UnitOutputV1 = {
-  path: 'a.ts',
-  startLine: 1,
-  endLine: 1,
-  totalLines: 1,
-  contentSha256: sha256,
-  fileSha256: sha256,
-};
 
 describe('result checks', () => {
   it('delivers an OK report with unitRunId and BudgetView', async () => {
@@ -110,7 +100,7 @@ describe('result checks', () => {
     });
     expect(reports[0]).toMatchObject({
       status: 'OK',
-      unitRunId: 'unr_test01',
+      unitRunId: testId('unr', 1),
       budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
     });
     expect(ended).toEqual([id]);
@@ -142,14 +132,14 @@ describe('result checks', () => {
     expect(ended).toEqual([id]);
     expect(audits).toContainEqual({
       type: 'UNIT_NOT_DELIVERED',
-      requestId: 'req_test01',
+      requestId: testId('req', 1),
       reasonCode: 'INTERNAL',
     });
   });
 
   it('treats a second check, a wrong execution or a lost Lease as stale', async () => {
     const { run, start, reports, audits } = setup({ lease: false });
-    const id = await start('FILE_READ', { scope: { kind: 'REPOSITORY' } as ExecutionScope });
+    const id = await start('FILE_READ');
     run.registerExecution(id, 'exe_1');
     run.submitResultCheck({
       unitAttemptId: id,
@@ -158,7 +148,7 @@ describe('result checks', () => {
       output: fileOutput,
     });
     run.submitResultCheck({
-      unitAttemptId: 'una_attempt9',
+      unitAttemptId: testId('una', 9),
       outcome: 'NOT_DISPATCHED',
       reasonCode: 'INTERNAL',
     });
@@ -177,7 +167,7 @@ describe('result checks', () => {
       reasonCode: 'PATH_ESCAPE',
     });
     expect(faults).toEqual([
-      { kind: 'VIOLATION', reasonCode: 'PATH_ESCAPE', requestId: 'req_test01' },
+      { kind: 'VIOLATION', reasonCode: 'PATH_ESCAPE', requestId: testId('req', 1) },
     ]);
   });
 });
@@ -188,15 +178,18 @@ describe('reservations', () => {
     const first = await start('MODEL');
     const final = { estimatedTokens: finalReserve(main), final: true };
     expect(run.requestReservation({ unitAttemptId: first, ...final }).granted).toBe(true);
-    const other = await start('MODEL', { agentRunId: 'agr_other1', requestId: 'req_test02' });
+    const other = await start('MODEL', {
+      agentRunId: testId('agr', 2),
+      requestId: testId('req', 2),
+    });
     expect(run.requestReservation({ unitAttemptId: other, ...final }).granted).toBe(true);
-    const again = await start('MODEL', { requestId: 'req_test03' });
+    const again = await start('MODEL', { requestId: testId('req', 3) });
     expect(run.requestReservation({ unitAttemptId: again, ...final })).toEqual({
       granted: false,
       reason: 'FINAL_CALL_USED',
     });
     expect(reports.at(-1)).toMatchObject({ status: 'REJECTED', reasonCode: 'FINAL_CALL_USED' });
-    expect(run.usedFinalCall('agr_main01')).toBe(true);
+    expect(run.usedFinalCall(testId('agr', 1))).toBe(true);
   });
 
   it('delivers the budget refusal and gives the call opportunity back', async () => {
@@ -249,9 +242,9 @@ describe('refusals without an attempt', () => {
       const { run, reports } = setup();
       run.rejectWithoutAttempt(
         {
-          requestId: 'req_test01',
-          agentRunId: 'agr_main01',
-          unitRunId: 'unr_test01',
+          requestId: testId('req', 1),
+          agentRunId: testId('agr', 1),
+          unitRunId: testId('unr', 1),
           unit: unit('FILE_READ'),
         },
         reasonCode,
