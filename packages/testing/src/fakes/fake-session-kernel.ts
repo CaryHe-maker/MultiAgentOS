@@ -45,7 +45,13 @@ export type FakeUnitScript = (
       Extract<UnitReportV1, { status: 'OK' }>,
       'output' | 'outputRef' | 'fullRef' | 'reasoningRef'
     >
-  | { readonly reject: Extract<UnitReportV1, { status: 'REJECTED' }>['reasonCode'] }
+  | {
+      readonly reject: Exclude<
+        Extract<UnitReportV1, { status: 'REJECTED' }>['reasonCode'],
+        'QUOTA_EXHAUSTED'
+      >;
+    }
+  | { readonly quota: Extract<UnitReportV1, { reasonCode: 'QUOTA_EXHAUSTED' }>['quota'] }
   | { readonly fail: Extract<UnitReportV1, { status: 'FAILED' }>['reasonCode'] };
 
 export interface FakeSessionKernelOptions {
@@ -312,14 +318,21 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     const report =
       'reject' in scripted
         ? { ...common, status: 'REJECTED' as const, reasonCode: scripted.reject }
-        : 'fail' in scripted
+        : 'quota' in scripted
           ? {
               ...common,
-              unitAttemptId: newId('una'),
-              status: 'FAILED' as const,
-              reasonCode: scripted.fail,
+              status: 'REJECTED' as const,
+              reasonCode: 'QUOTA_EXHAUSTED' as const,
+              quota: scripted.quota,
             }
-          : { ...common, unitAttemptId: newId('una'), status: 'OK' as const, ...scripted };
+          : 'fail' in scripted
+            ? {
+                ...common,
+                unitAttemptId: newId('una'),
+                status: 'FAILED' as const,
+                reasonCode: scripted.fail,
+              }
+            : { ...common, unitAttemptId: newId('una'), status: 'OK' as const, ...scripted };
     await runToWorkflow(current, report);
     if ('input' in request && 'kind' in request.input && request.input.kind === 'REPLY') {
       await runToInteraction(current, {
