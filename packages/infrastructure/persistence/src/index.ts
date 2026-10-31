@@ -209,3 +209,4 @@ const PERSISTENCE_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze(
     reason: 'the M1 Outbox and Inbox live in memory',
   },
 ]);
+export * from './session-store.js';
