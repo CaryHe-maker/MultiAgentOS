@@ -183,6 +183,7 @@ export const CORE_REJECTED_CODES_V1 = [
   'HUMAN_REQUEST_NOT_PENDING',
   'ARTIFACT_EXPIRED',
 ] as const satisfies readonly ReasonCodeV1[];
+export type CoreRejectedCodeV1 = (typeof CORE_REJECTED_CODES_V1)[number];
 /** A UnitReport with `status = 'REJECTED'` in major 1. */
 export const UNIT_REJECTED_CODES_V1 = [
   ...UNIT_REJECTED_CODES,
