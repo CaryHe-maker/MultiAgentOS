@@ -41,7 +41,7 @@ interface WorkflowGatewayPort {
 }
 ```
 
-`SyscallAck` 与 `SyscallRejected` 沿用 M1Interface 第 4.3 节的 major 0；`SyscallRejected.reasonCode` 增加本文第 5 节的原因码。
+`SyscallAck` 与 `SyscallRejected` 的字段与 M1Interface 第 4.3 节相同，以 major 1 发布；`SyscallRejected.reasonCode` 增加本文第 5 节的原因码。
 
 ### 2.2 运行内的请求
 
@@ -128,6 +128,8 @@ type ProjectFileContent =
 - `AGENTS.md` 不返回正文，Workflow 只把引用交给 `context-assemble`；`trusted` 的判定与询问见 M2Design 第 9.5 节。
   询问进行中时本请求挂起，直到用户回答或超时（超时得到 `trusted: false`）。
 - 文件超过 64 KiB 时照常存为产物；截断只发生在上下文组装中。
+
+- **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要目标文字的 Unit 输入写 `objectiveRef` 或 `goalRef`，由 Execution 解析。没有例外。
 
 ### 2.3 Session 命令的回复
 

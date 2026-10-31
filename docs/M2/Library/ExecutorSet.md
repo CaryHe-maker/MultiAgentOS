@@ -14,7 +14,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 |---|---|---|
 | 五个 Executor | 增加 `repository-list`；阶段 2–6 增加文件写入、`output-read`、命令、git、网页 | 1 起 |
 | 输出超过 `maxOutputBytes` 时截断，完整内容丢弃 | 工具 Executor 生成固定的预览，截断时同时交回完整输出（不超过 `maxFullOutputBytes`，由 Execution 存为 7 天过期的产物）；共用模块 `retention/` | 1 |
-| 预览上限就是 `maxOutputBytes`（检索、概览为 1 MiB） | `v1` Unit 的预览上限为 `previewMaxBytes`（50 KiB）与 `previewMaxLines`（2000），并且不超过 `maxOutputBytes`；`v0` Unit 不变 | 1 |
+| 预览上限就是 `maxOutputBytes`（检索、概览为 1 MiB） | 预览上限为 `previewMaxBytes`（50 KiB）与 `previewMaxLines`（2000），并且不超过 `maxOutputBytes` | 1 |
 | 失败分类不带重试时刻 | `model-call` 在限流与过载的失败中交回 provider 给出的 `retryAfterMs` | 1 |
 | — | `output-read`：`read_output` 工具的执行，对完整输出分段读取 | 2 |
 | `context-assemble` 只组装一次运行内的历史，超出预算时每次按固定顺序裁剪 | 历史跨 Turn、跨 WorkflowRun；按日志顺序组装、不按调用裁剪；运行时上下文是历史条目；只有收尾调用保留确定性的保险；项目指令段；思考内容回传 | 1 |
@@ -27,7 +27,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
 见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
 阶段 2 起，`v1` 的 `file-read` 另返回 `nestedInstructions`：从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 的相对路径，由外到内排列，经同一个 `RepositoryAccess` 检查（排除规则命中的目录不算，不跟随符号链接），不读取它们的内容（M2Design 第 9.5 节）。
-M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）；预览的内容与 M1 截断后的输出相同，所以 `analyze` 的行为不变。
+三个仓库工具 Executor 经 `retention/` 生成预览（第 4 节）。
 
 ## 3. Executor 清单（阶段 1）
 
@@ -47,7 +47,7 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 
 - 两种保留器：按条目（路径、检索命中，保留前 N 个）与按字节（保留头部、尾部或头尾两端）；不切断 UTF-8 与 UTF-16 代理对；精确计数省略的条目数或字节数；
 - 只回答"保留了什么、省略了多少"；保留哪一端、预览中的说明文字由各 Executor 决定（检索结果建议缩小范围，文件建议指定行范围，命令输出保留头尾）；
-- 预览上限由 Execution 随执行限制交来（M2Design 第 8.2 节）：`v1` Unit 为 `min(previewMaxBytes, maxOutputBytes)` 字节且不超过 `previewMaxLines` 行；`v0` Unit 为 `maxOutputBytes`、不限行数；
+- 预览上限由 Execution 随执行限制交来（M2Design 第 8.2 节）：`min(previewMaxBytes, maxOutputBytes)` 字节且不超过 `previewMaxLines` 行；
   按条目保留时，行数按条目渲染后的行计算；
 - 预览不超过上述上限；截断时 Executor 交回完整输出，未截断时不交回；
 - 完整输出不超过该 Unit 的 `maxFullOutputBytes`（缺省 8 MiB）；超出时以与预览相同的取舍保存，预览中注明完整输出也不完整；
@@ -86,7 +86,7 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 | HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、子目录 `AGENTS.md` 的条目（按 `trusted` 标明，≤64 KiB，阶段 2）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
 | STATUS | 已用轮数、额度状态、收尾原因 | user | `budgetState` 改为 `BudgetView`；位于末尾 |
 
-`OBJECTIVE` 与 `HANDOFF` 只在 `analyze` 的 planner、code-viewer 中出现（M1 原样）；main 的目标就是 HISTORY 中的人类输入。
+`OBJECTIVE` 与 `HANDOFF` 段删除：目标是 HISTORY 中的人类输入，交接内容是目标节点投影中的 `PINNED` 条目。
 system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时上下文变化时，Workflow 在 HISTORY 末尾追加一条新的条目。
 
 ### 6.2 只在末尾追加，不按调用裁剪
@@ -137,7 +137,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 ## 8. 测试
 
 M1 的测试全部保留。增加：
-- `retention/`：两种保留器的省略计数精确；不切断 UTF-8 与代理对；同一输入得到逐字节相同的预览；`v0` Unit 下 M1 三个工具的预览与 M1 截断后的输出逐字节相同；`v1` Unit 的预览不超过 `previewMaxBytes` 与 `previewMaxLines`；
+- `retention/`：两种保留器的省略计数精确；不切断 UTF-8 与代理对；同一输入得到逐字节相同的预览；预览不超过 `previewMaxBytes` 与 `previewMaxLines`；
 - `repository-list`：排除规则与路径检查与 `file-read` 一致；深度与 glob；不读取内容；截断时交回完整输出；
 - 完整输出的上限：超过 `maxFullOutputBytes` 时按预览的取舍保存，预览注明完整输出也不完整；
 - `output-read`（阶段 2）：行号与原文一致；`pattern` 按字面匹配；`offset`、`limit` 的边界；结果不超过预览上限；`\r\n` 与 `\n`；同一输入结果逐字节相同；

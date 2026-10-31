@@ -108,6 +108,11 @@ describe('Schema-enforced constraints', () => {
     };
     const humanRequestId = `hrq_${'b'.repeat(32)}`;
     expect(isValid(HumanAnsweredSchema, { ...answer, origin: 'initial' })).toBe(true);
+    // User text only ever travels as a reference (M2Design 7.5).
+    expect(isValid(HumanAnsweredSchema, { ...answer, origin: 'initial', text: 'hi' })).toBe(false);
+    expect(isValid(HumanAnsweredSchema, { ...answer, origin: 'initial', goalText: 'hi' })).toBe(
+      false,
+    );
     expect(isValid(HumanAnsweredSchema, { ...answer, origin: 'initial', humanRequestId })).toBe(
       false,
     );

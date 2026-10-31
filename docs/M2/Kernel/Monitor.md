@@ -45,13 +45,7 @@ wrapUpMargin(agent) = perCallInputLimit + maxOutputTokens
 minShare(agent)     = F(agent) + 2 × wrapUpMargin(agent)
 ```
 
-### 3.4 `analyze` 的 M1 额度档案
-
-运行使用内置模板 `analyze` 时（M2Plan 第 8.1 节）：运行级与 Turn 账本合一，`L = 300000`；planner 与 code-viewer 共用这一份账本；
-`F` 与 `wrapUpMargin` 取 M1 的全局值（M1 Monitor 第 4 节）；整个运行至多一次 final-call（由 Core 按运行而不是按 AgentRun 计）。
-档案由 `budget.profiles.analyze` 配置，按模板 ID 选用。
-
-### 3.5 压缩的额度（阶段 8）
+### 3.4 压缩的额度（阶段 8）
 
 M2Design 第 7.3 节"压缩的额度"：
 
@@ -106,8 +100,8 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 
 | 阶段 | 本文增加的内容 |
 |---|---|
-| 1 | 第 3–7 节（第 3.5 节除外） |
+| 1 | 第 3–7 节（第 3.4 节除外） |
 | 4 | AgentRun 级账本与逐级委派、委派保留、`minShare` 的派生检查、等待子任务时墙钟暂停 |
 | 5 | 暂停时墙钟暂停 |
 | 7 | 模板节点从 Turn 账本划出份额 |
-| 8 | 第 3.5 节：压缩的额度（SubAgent 的部分在阶段 4 完成后） |
+| 8 | 第 3.4 节：压缩的额度（SubAgent 的部分在阶段 4 完成后） |

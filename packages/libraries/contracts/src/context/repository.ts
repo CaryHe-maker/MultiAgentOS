@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import {
   LINE_RANGE_ERROR,
@@ -63,3 +64,10 @@ export const RepositorySearchOutputSchema = closed(
   'context.RepositorySearchOutput.v0',
 );
 export type RepositorySearchOutput = Static<typeof RepositorySearchOutputSchema>;
+
+/** Major 1 names the goal by reference; Execution resolves it into `OrientExecutorInput`. */
+export const RepositoryOrientInputV1Schema = closed(
+  { objectiveRef: ArtifactRefSchema },
+  'context.RepositoryOrientInput.v1',
+);
+export type RepositoryOrientInputV1 = Static<typeof RepositoryOrientInputV1Schema>;

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.11 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.12 定稿（2026-10-31）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -75,7 +75,7 @@ M2 以工作流为中心：无论是开发者预设的对话（Turn-chat），�
 | 模型 | 关闭思考模式，收尾强制工具选择 | 按 Agent 与任务选择思考强度；回传 `reasoning_content`；收尾调用的新规则 | 9.4 |
 | 界面 | 一次输入、一次输出 | 记录区、活动区、输入区；Ctrl+C 暂停与中止；斜杠指令 | 11 |
 | 子进程 | 只有 `rg` | `rg`、命令（bwrap + sh）、git（工作区快照与只读查看） | 2.5 |
-| 协议 | Schema major 0 冻结 | 变化的 Schema 发布新 major 1；M1 固定任务集经内置模板 `analyze` 回归 | 7.5、13 |
+| 协议 | Schema major 0 | 发布版只有 major 1 一套契约，M1 的 major 0 在接线后删除；M1 固定任务集经内置模板 `analyze` 回归 | 7.5、13 |
 
 ## 2. 运行模型
 
@@ -511,7 +511,7 @@ nodes:
 - **两类模板**：普通模板是一张有限的图，编译一次得到初始 Revision，之后只有循环展开与 `run_subagents` 会追加 Revision；`chat` 是一条生长规则：初始图为 `HUMAN(prompt) → main`，每当 main 结束（不论成败），发布它的回复（如有）并追加 `HUMAN(prompt, requested, trigger: all_done) → main`。这条规则写在内置代码中，不用 YAML 表达。
 - **内置模板**：
   - `chat`：Turn-chat；
-  - `analyze`：M1 的只读分析，planner → code-viewer。planner 可能交接，也可能直接以 `finish` 交出报告，因此交接在图上表达为一条条件边（`when: { field: action, equals: HANDOFF }`）：交接时 code-viewer 就绪，交接内容（`HandoffBrief`）作为它的输入；直接结束时 code-viewer 记为 `SKIPPED(NOT_TAKEN)`，planner 的报告即运行结果。M1 的 Agent 与 Prompt 定义原样使用；
+  - `analyze`：M1 的只读分析，planner → code-viewer。planner 可能交接，也可能直接以 `finish` 交出报告，因此交接在图上表达为一条条件边（`when: { field: action, equals: HANDOFF }`）：交接时 code-viewer 就绪，交接内容（`HandoffBrief`）作为它的输入；直接结束时 code-viewer 记为 `SKIPPED(NOT_TAKEN)`，planner 的报告即运行结果。planner、code-viewer 是普通的 `v1` Agent，与 main 共用同一套 AgentRun 推进、投影与上下文组装，交接内容是目标节点投影中的 `PINNED` 条目；
   - `research`：上例，用于与 Turn-chat 对比的验收。
 - **预留**：节点显式引用祖先节点的结果、模板组合、询问的显式超时、编程用的内置模板 `implement`、模板的预检与可视化，见第 14.2 节第 9–13、17、18 条，Turn-chat 完成后再决定。
 - **运行方式**：`mas run <模板> "<目标>"` 新建一个 Session 并开启一个 Orchestration WorkflowRun（第 2.3 节）；在 Turn-chat 中使用 `/run <模板> <目标>`，在当前 WorkflowRun 中以模板实例作为本 Turn 的主体。
@@ -523,7 +523,7 @@ nodes:
 | `main` | 读、列目录、检索、只读 git、写、编辑、命令（可以联网，每次询问）、网页检索与读取 | `high`（允许 `none`–`max`） | 有（仅顶层 AgentRun） | `reply` | 40 / 200 / Turn 超时 |
 | `explorer` | 读、列目录、检索、只读 git、网页检索与读取 | `none`（允许 `none`、`low`） | 无 | `finish_subagent` | 20 / 60 / 10 分钟 |
 | `worker` | 读、列目录、检索、只读 git、在 `writeScope` 内写与编辑、命令（不联网） | `high`（允许 `low`–`max`） | 无 | `finish_subagent` | 30 / 120 / 20 分钟 |
-| `planner`、`code-viewer` | M1 原样 | 关闭 | 无 | M1 原样 | M1 原样 |
+| `planner`、`code-viewer` | 读、列目录、检索（只读） | `none` | 无 | planner：`handoff-to-code-viewer` 或 `finish`；code-viewer：`finish` | 定义中给出 |
 
 能力列表就是 Agent 定义中的能力白名单，是能力上限的来源；没有列出的一律不可用，调用时直接拒绝、不询问（第 5.1、5.3 节）。
 main 的启动 Unit 是 `repository-orient`，只在每个 WorkflowRun 的第一个 Turn 执行一次；之后由 main 按需调用 `list_files`。
@@ -1123,6 +1123,10 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 - 上下文与产物：`CONTEXT_COMPACTED`（挂起的 `context-assemble` 因压缩而返回，须以新的投影重新提交）、`CONTEXT_OVERFLOW`（provider 报告上下文过长）、`COMPACTION_SUMMARY_INVALID`（摘要不符合指令规定的格式）、`COMPACTION_UNKNOWN`（压缩的回复对应不上）、`ARTIFACT_EXPIRED`（正文已过保留期，按登记时间判断）；
 - 系统故障：`STOP_UNCONFIRMED` 触发停机（第 4.7 节）。
 
+**用户正文只以引用传递**：用户输入由 Execution 存为产物，Kernel 发给 Workflow 的事件与日志都只带引用，Workflow 没有读取正文的通道，没有例外。需要目标文字的 Unit 输入写引用，由 Execution 解析。
+
+**发布版只有一套契约**：M2 不为 M1 保留兼容路径。`analyze` 在统一路径上运行，M1 的 Kernel、Workflow、界面模块与全部 major 0 的 Schema、Port 在 S1-IN-1 接线后删除，代码中的 `V1` 后缀随之去掉，协议快照重建。回归只比较结果，不要求模型看到的内容与 M1 相同。
+
 **协议版本**：语义变化的 Schema 按 M1Interface 1.2 发布新 major。M2 运行时只产生新 major；M1 的行为由 `analyze` 模板回归验证。
 
 ### 7.6 取消与 runEpoch
@@ -1169,7 +1173,6 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 **预览的上限**（参考 OpenCode：2000 行或 50 KiB；DeepSeek Harness 每条工具结果内联至多约 12,500 token）：
 - 预览上限与执行上限分开。M2 的工具 Unit（`v1` 定义）的预览不超过 `previewMaxBytes`（缺省 51200）与 `previewMaxLines`（缺省 2000），先到者为准，
   并且不超过该 Unit 的 `maxOutputBytes`（例如 `read_file` 仍是 M1 的 16 KiB）；`maxOutputBytes` 不再是检索、概览、列目录预览的上限（M1 为 1 MiB，一次结果就可能占去大半个上下文窗口）；
-- M1 的 `v0` Unit 定义（`analyze` 使用）沿用 M1：预览上限为 `maxOutputBytes`、不限行数，因此 `analyze` 的行为不变；
 - 上限按 Unit 定义的版本由 Execution 选取，随执行限制交给 Executor。
 
 **预览在产生时固定**：
@@ -1721,7 +1724,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | # | 事项 | 建议方向 | 在哪里解决 |
 |---|---|---|---|
-| 1 | `analyze` 回归与 M1"一致"的标准：M2 的额度逐级委派，每个 AgentRun 各有一次 final-call | 为 `analyze` 固定一套 M1 额度档案（运行级 300,000，planner 与 code-viewer 共用一份账本、一次 final-call），在此档案下比较 F1–F5 的结果 | **已决定**，见 M2Plan |
+| 1 | `analyze` 回归与 M1"一致"的标准：M2 的额度逐级委派，每个 AgentRun 各有一次 final-call | `analyze` 不设特殊额度：与其他模板一样按 Agent 的额度参数运行，比较 F1–F5 的成功率与来源完整性 | **已决定**，见 M2Plan |
 | 2 | `ask`、`confirm`、`review` 询问 10 分钟超时后自动继续，与"无人值守是非目标"有冲突 | 询问不超时；全部工作都在等用户时 Turn 超时暂停计时；授权询问仍 5 分钟后本次拒绝 | **已决定**（v1.9），见第 4.2、7.4 节 |
 | 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2Plan |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
@@ -1798,3 +1801,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.9（编辑性） | 2026-10-31 | 发布前复查：第 15 节为 A 组验收按阶段分配，阶段 4 的退出条件注明 L12；第 9.6 节第 6 步改为经 Core 申请调用机会与额度（与 Architecture 的组件规则一致）；第 14.1 节登记 Turn 超时与 Architecture"运行超时按异常处理"的差异，并同步到 Architecture |
 | v1.10 | 2026-10-31 | 阶段 0 实测（M2TechStack 第 3 节）：第 6.1 节，敏感文件改用空的普通文件遮蔽，`--tmpfs /tmp` 排在仓库挂载之前；第 4.7 节，SIGTERM 发给内层进程组；第 9.4 节，回传的说明按实测修正；第 14.1 节注明实测状态 |
 | v1.11 | 2026-10-31 | 第 9.6 节：按阶段 0 的实测改写前缀式摘要请求：保留工具定义、不设 `tool_choice`，指令要求不调用工具，模型调用工具按摘要不合格处理；`summaryReasoningEffort` 缺省改为 `low` |
+| v1.12 | 2026-10-31 | 第 7.5 节：用户正文只以引用传递，没有例外；发布版只有 major 1 一套契约，M1 的模块与 major 0 在接线后删除；第 3.8、3.9 节：`analyze` 的 planner、code-viewer 改为普通 `v1` Agent，走统一路径，取消 M1 额度档案；第 8.2 节：预览上限不再按定义版本区分；第 14.2 节相应修改 |

@@ -138,19 +138,19 @@ fake Workflow 能回答 Session 列表查询与删除；`ActivityEvent` 的 `RET
 | S1-WF-1 | SessionLogStore 的客户端：追加与 fsync、尾部修复、打开时的遗留修复、Session 列表 | — |
 | S1-WF-2 | TaskGraph 与 `chat` 生长规则、HUMAN 节点、依据事件记录 Turn | 提前任务 E-WF-1 |
 | S1-WF-3 | 上下文投影（跨 Turn、跨 WorkflowRun）：只在末尾追加、`PINNED` 与 `NORMAL` 标注、运行时上下文条目、`AGENTS.md` 的放置、思考内容回传（`replayable`）、超出窗口时的收尾 | 阶段 0 的 S0-T-2 |
-| S1-WF-4 | 在新引擎上运行内置模板 `analyze`（plan → view 为条件边），使用第 8.1 节的 M1 额度档案 | S1-WF-2 |
+| S1-WF-4 | 在新引擎上运行内置模板 `analyze`（plan → view 为条件边），planner、code-viewer 走与 main 相同的 AgentRun 推进与投影 | S1-WF-2 |
 | S1-KC-1 | Session actor 与 Session 管理（由运行 actor 改写）、系统级状态（Session 引用、信任记录）、Session 级与系统级事件、在当前 Session 中继续 | — |
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
-| S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、`analyze` 的 M1 额度档案、工具次数与墙钟上限 | — |
+| S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、工具次数与墙钟上限 | — |
 | S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、按 Unit 定义的版本选取预览上限（`v1` 为 `previewMaxBytes`、`previewMaxLines`，`v0` 为 `maxOutputBytes`）、预览与完整输出的存储（完整输出的上限 `maxFullOutputBytes`）、技术重试以 `Retry-After` 为下限与 `RETRYING` 活动、按 ACTIVE 的 Session 标记保留（启动时一次、之后每小时一次，Session 管理的定时器触发）、删除与新建失败时的清理、按登记时间判断的 `ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile`；ArtifactStore 对已存在正文的写入时间更新与 `put`、`sweep` 的互斥 | — |
 | S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间、实例锁与 Session 锁 | — |
 | S1-IF-2 | ArtifactStore：全局内容寻址存储；`sweep` 按保留标记删除 | — |
-| S1-EX-1 | `retention/` 共用模块与 M1 三个工具的预览（按交来的预览上限，`v0` 下与 M1 逐字节相同）；`repository-list`（`list_files`）；`context-assemble` 不按调用裁剪、收尾调用的保险；`model-call` 交回 `retryAfterMs` | 提前任务 E-EX-4 |
+| S1-EX-1 | `retention/` 共用模块与三个仓库工具的预览（按交来的预览上限）；`repository-list`（`list_files`）；`context-assemble` 不按调用裁剪、收尾调用的保险；`model-call` 交回 `retryAfterMs` | 提前任务 E-EX-4 |
 | S1-PL-1 | 定义：main（阶段 1 的只读工具）、`analyze` 模板、带思考强度的 Model 定义、Prompt（`chat` 的生长规则属于 S1-WF-2） | — |
 | S1-UI-1 | 终端界面：记录区、活动区、输入区；授权与人类请求的队列；`/new`、`/resume`、`/sessions`、`/delete`、`/status`、`/help`、`/exit`；额度结束后的继续确认；工具结果截断的提示与完整输出的查看；运行中消息的排队（M2Design 第 4.5 节）；"重试中"的倒计时；不保存任何 Session 信息 | — |
 
-**集成** S1-IN-1：组合根接线（实例锁在 Supervisor 清理临时数据之前取得）、端到端运行。
+**集成** S1-IN-1：组合根接线（实例锁在 Supervisor 清理临时数据之前取得）、端到端运行；回归通过后删除 M1 的 Kernel、Workflow、界面模块与全部 major 0 的 Schema、Port，去掉代码中的 `V1` 后缀，重建协议快照。
 
 **退出**：R（经 `analyze` 回归）、S1–S3、S5–S7、L5（没有压缩的部分）、L6、H12（中止的部分在阶段 5）、A 组的 `repo.read` 与根目录 `AGENTS.md` 信任部分。
 
@@ -327,9 +327,8 @@ E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接�
 
 ### 8.1 `analyze` 回归（M2Design 第 14.2 节 #1）
 
-`analyze` 模板固定使用一套 M1 额度档案：运行级 300,000 token；planner 与 code-viewer 共用一份账本，
-整个运行只有一次 final-call；关闭思考模式。在这套档案下运行 M1 固定任务集 F1–F5，
-成功率与来源完整性不得低于 M1 的验收基线（[M1AcceptanceEvidence](../History/M1/M1AcceptanceEvidence.md)）。
+`analyze` 没有特殊额度，按 planner、code-viewer 定义中的额度参数运行，模型调用关闭思考。运行 M1 固定任务集 F1–F5，
+成功率与来源完整性不得低于 M1 的验收基线（[M1AcceptanceEvidence](../History/M1/M1AcceptanceEvidence.md)）。回归比较结果，不要求模型看到的内容与 M1 相同。
 
 ### 8.2 量化标准（M2Design 第 14.2 节 #3）
 

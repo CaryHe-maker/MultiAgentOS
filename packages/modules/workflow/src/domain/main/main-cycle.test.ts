@@ -62,7 +62,7 @@ const config: MainConfig = {
   regenerationLimit: 3,
 };
 const context: MainContext = {
-  objective: 'hello',
+  objectiveRef: ref('9'),
   assembleInput: (status, final) => ({ final, effort: 'high', history: [], status }),
 };
 const start = (overrides: Partial<MainDefinitions> = {}) =>

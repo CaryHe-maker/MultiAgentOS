@@ -124,7 +124,7 @@ interface ReadArtifactRequest {
 }
 ```
 
-`ArtifactContent`、`ShutdownRequest` 沿用 M1Interface 第 4.2、4.3 节的 major 0。
+`ArtifactContent`、`ShutdownRequest` 的字段与 M1Interface 第 4.2、4.3 节相同，以 major 1 发布。
 `readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
 
 ### 2.4 `/compact`（阶段 8）

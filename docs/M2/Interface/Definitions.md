@@ -7,11 +7,11 @@
 
 M1 的定义格式见 M1Interface 第 9 节（`DefinitionHeader.schemaVersion = 'v0'`）。M2 中：
 
-- 发生语义变化的定义种类发布 `schemaVersion = 'v1'`：Agent、Model、Unit；新增种类 Template；
+- 全部定义种类都发布 `schemaVersion = 'v1'`，新增种类 Template；
 - Unit 在阶段 1 就升到 `v1`，因为 `ExecutionKind` 要增加取值（第 5 节），在冻结的 `v0` 中增加枚举值属于破坏性变更；
   阶段 2 增加能力与资源键、阶段 4 增加并发类别，都在 `v1` 草稿期内原地增加；
-- Tool、Prompt 不变，继续使用 `v0`；
-- M1 的定义实例（`planner`、`code-viewer` 及其 Unit、Tool、Prompt、Model）原样保留，供 `analyze` 使用，不改写、不升版本。
+- Tool、Prompt 的字段不变；
+- `planner`、`code-viewer` 及其 Unit 全部改写为 `v1` 定义，与 main 使用同一种格式；Prompt 与 Tool 的内容可以按需调整。M1 的定义文件随 major 0 一起删除。
 
 `DefinitionRef`、`PinnedDefinitionRef`、`ContractRef` 沿用 M1Interface 第 9.1 节；`PinnedDefinitionRef.kind` 在 major 1 中增加 `'TEMPLATE'`。
 
@@ -149,7 +149,7 @@ nodes:
       inputFrom: HANDOFF, output: true }
 ```
 
-`analyze` 运行时使用 M2Plan 第 8.1 节的 M1 额度档案；该档案写在 Monitor 的配置中，由模板 ID 选用，不写在模板里。
+`analyze` 没有特殊额度，按 Agent 定义中的额度参数运行。
 
 ## 5. Unit（`v1`）、Tool、Prompt
 
@@ -166,7 +166,6 @@ type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   
 - `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）；
 - `OUTPUT_READ`（阶段 2）：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
 
-工具 Unit 的预览上限按定义的版本区分（M2Design 第 8.2 节）：`v1` Unit 使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`，`v0` Unit 使用 `maxOutputBytes`；上限不写在定义中。
+工具 Unit 的预览上限使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`；上限不写在定义中。
 
-其余字段与 M1Interface 第 9.2 节相同。M1 的 Unit 实例保持 `v0`，供 `analyze` 使用；M2 新写的 Unit 实例使用 `v1`。
-Tool 与 Prompt 沿用 `v0`。
+其余字段与 M1Interface 第 9.2 节相同。全部 Unit、Tool、Prompt 实例使用 `v1`。

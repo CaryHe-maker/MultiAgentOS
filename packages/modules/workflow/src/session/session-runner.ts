@@ -61,6 +61,8 @@ export interface SessionRunnerDeps {
   readonly newAgentRunId?: () => string;
 }
 
+type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
+
 const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContextV1 => ({
   correlationId: newId('cor'),
   tenantId: 'local',
@@ -378,7 +380,7 @@ export class SessionRunner {
 
   #context(workflowRunId: string): MainContext {
     return {
-      objective: 'Repository overview for the conversation',
+      objectiveRef: this.#objectiveRef(),
       assembleInput: (status, final) => {
         const instructions = projectInstructions(this.#records, workflowRunId);
         return {
@@ -391,6 +393,12 @@ export class SessionRunner {
         };
       },
     };
+  }
+
+  #objectiveRef(): HumanContentRef {
+    const prompt = [...this.#records].reverse().find((record) => record.type === 'HUMAN_ANSWERED');
+    if (prompt?.type !== 'HUMAN_ANSWERED') throw new Error('main needs a prompt');
+    return prompt.contentRef;
   }
 
   async #startMain(workflowRunId: string, nodeId: string): Promise<void> {

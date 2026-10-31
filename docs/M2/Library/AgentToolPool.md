@@ -22,7 +22,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3. 阶段 1 的定义实例
 
-M1 的 16 个定义原样保留（`v0`，供 `analyze` 使用）。阶段 1 新增：
+M1 的 16 个定义的文件保留；`analyze` 使用输入契约改为引用的新版本（[Definitions](../Interface/Definitions.md) 第 1 节）。阶段 1 新增：
 
 | kind | id | version | `schemaVersion` | 说明 |
 |---|---|---|---|---|

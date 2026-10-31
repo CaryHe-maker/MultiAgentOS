@@ -112,7 +112,8 @@ export interface MainContext {
     status: ContextAssembleInputV1['status'],
     final: boolean,
   ) => ContextAssembleInputV1;
-  readonly objective: string;
+  /** The first prompt of the run: no event or log record carries its text. */
+  readonly objectiveRef: ArtifactRef;
 }
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
@@ -295,7 +296,7 @@ export function startMain(
   };
   const { orient } = input.definitions;
   if (orient === undefined || input.orientPackRef !== undefined) return nextRound(state, context);
-  return one(state, 'ORIENT', orient, { objective: context.objective }, 'repository_orient');
+  return one(state, 'ORIENT', orient, { objectiveRef: context.objectiveRef }, 'repository_orient');
 }
 
 function wrapUp(state: MainState, reason: WrapUpReason): MainState {

@@ -23,7 +23,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | — | 应 Kernel 的查询交出压缩材料（模型轮带实测用量与 `headDigest`），把修剪与压缩结果记入日志，投影以修剪后的结果与摘要取代原来的内容 | M2Design 第 9.6 节 | 8 |
 | 只读根目录的 `AGENTS.md` | `read_file` 触及的子目录 `AGENTS.md` 按投影加载，追加在末尾 | M2Design 第 9.5 节 | 2 |
 | 不处理 Session | 执行 Kernel 下达的 Session 命令：新建、打开（修复日志）、关闭、删除；维护 Session 列表 | M2Design 第 2.3、10.3 节 | 1 |
-| 每个运行至多一次 final-call | 每个 AgentRun 至多一次（`analyze` 仍按运行，见 Monitor 第 3.4 节） | M2Design 第 7.3 节 | 1 |
+| 每个运行至多一次 final-call | 每个 AgentRun 至多一次 | M2Design 第 7.3 节 | 1 |
 | `budgetState` 一个值 | `BudgetView`：AgentRun、Turn、运行三级；额度触顶时进入最后一轮，必有报告 | M2Design 第 7.3 节 | 1 |
 | 无业务熔断 | 重复意图、连续出错由 Workflow 判断 | M2Design 第 3.4 节 | 1 |
 | 运行超时由 Kernel 收敛 | Turn 超时按中止处理，结束由 Workflow 以 `closeRun(TIMEOUT)` 报告 | M2Design 第 2.3 节 | 5 |
@@ -253,7 +253,7 @@ reply(text) 合法 → 追加 MODEL_TURN
 | 13：每次用户输入都对应一个 HUMAN 节点 | 单元测试：初始提示、后续消息都形成 HUMAN 节点 |
 | 15：日志中只有引用，没有正文 | 单元测试：扫描日志记录，不出现用户输入、回复与工具参数的正文 |
 | 6：每个 AgentRun 都能完成收尾 | 场景测试：额度触顶、工具次数触顶、连续出错都进入 final-call，final-call 失败时得到降级回复 |
-| 阶段 1 的回归 | `analyze` 在 M1 额度档案下运行 F1–F5（M2Plan 第 8.1 节） |
+| 阶段 1 的回归 | `analyze` 运行 F1–F5，成功率与来源完整性不低于 M1 基线（M2Plan 第 8.1 节） |
 
 ## 13. 阶段
 

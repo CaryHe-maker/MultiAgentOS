@@ -2,6 +2,7 @@ import { Type, type Static } from 'typebox';
 import { ContextAssembleInputSchema, ContextAssembleOutputSchema } from '../context/assemble.js';
 import {
   RepositoryOrientInputSchema,
+  RepositoryOrientInputV1Schema,
   RepositoryOrientOutputSchema,
   RepositorySearchInputSchema,
   RepositorySearchOutputSchema,
@@ -22,7 +23,11 @@ import {
   RepositoryListOutputSchema,
 } from '../executor/repository-list.js';
 import { MessagePublishInputSchema, MessagePublishOutputSchema } from './message-publish.js';
-import { ReportPublishInputSchema, ReportPublishOutputSchema } from './report-publish.js';
+import {
+  ReportPublishInputSchema,
+  ReportPublishInputV1Schema,
+  ReportPublishOutputSchema,
+} from './report-publish.js';
 
 /**
  * Union of the Unit inputs of M1Interface 6.1. Gateway validates `SubmitUnitRequest.input`
@@ -57,11 +62,14 @@ export type UnitOutput = Static<typeof UnitOutputSchema>;
 /** Major 1 adds `list_files`, `message-publish` and main's context and model Units. */
 export const UnitInputV1Schema = Type.Union(
   [
-    ...UnitInputSchema.anyOf,
-    RepositoryListInputSchema,
-    MessagePublishInputSchema,
+    RepositoryOrientInputV1Schema,
+    RepositorySearchInputSchema,
+    FileReadInputSchema,
     ContextAssembleInputV1Schema,
     ModelCallInputV1Schema,
+    ReportPublishInputV1Schema,
+    RepositoryListInputSchema,
+    MessagePublishInputSchema,
   ],
   { $id: 'kernel.unit.UnitInput.v1' },
 );
