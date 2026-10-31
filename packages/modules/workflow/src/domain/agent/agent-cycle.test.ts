@@ -372,6 +372,14 @@ describe('tools', () => {
     expect(unitId(next)).toEqual(['context-assemble']);
   });
 
+  it('returns a declined authorization to the model whatever the failurePolicy says', () => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const next = receive(tools, report(tools.state, only(tools), { reject: 'USER_DECLINED' }));
+    expect(next.ending).toBeUndefined();
+    expect(next.state.wrapUpReason).toBeUndefined();
+    expect(unitId(next)).toEqual(['context-assemble']);
+  });
+
   it('ignores a report it is not waiting for', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
     expect(receive(tools, report(tools.state, newId('req'), { ok: {} })).records).toEqual([]);

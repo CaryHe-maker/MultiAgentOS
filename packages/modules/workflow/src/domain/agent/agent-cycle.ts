@@ -567,9 +567,12 @@ function handleTool(
     succeeded: ok ? [...state.succeeded, pending.intent] : state.succeeded,
   };
   if (consecutiveErrors >= config.consecutiveErrorLimit) next = wrapUp(next, 'CONSECUTIVE_ERRORS');
+  // Kernel's refusals have fixed meanings, not the Unit's failurePolicy (Module/Workflow 7): a quota
+  // names the wrap-up, and a declined authorization is a tool result the model reads.
   if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
-    // A fixed rule, not the Unit's failurePolicy: the limit names the wrap-up (Module/Workflow 7).
     next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
+  } else if (report.status === 'REJECTED' && report.reasonCode === 'USER_DECLINED') {
+    // Returned to the model like any refused tool; it ends neither the Turn nor the AgentRun.
   } else if (!ok) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
