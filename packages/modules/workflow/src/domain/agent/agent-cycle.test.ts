@@ -31,6 +31,10 @@ const packRef: ArtifactRef = {
   ...ref('1'),
   mediaType: 'application/vnd.multiagentos.context-pack+json',
 };
+const assembledOutput = {
+  ok: { projectionDigest: digest, headDigest: digest, elidedEntries: [] },
+  ref: packRef,
+};
 const modelRef: ArtifactRef = {
   ...ref('2'),
   mediaType: 'application/vnd.multiagentos.model-output+json',
@@ -148,11 +152,8 @@ const modelOutput = (
 /** Runs orient and context, leaving the cycle waiting for the model. */
 function atModel(overrides: Partial<AgentDefinitions> = {}): AgentTransition {
   const started = start(overrides);
-  const assembled = receive(
-    started,
-    report(started.state, only(started), { ok: {}, ref: packRef }),
-  );
-  return receive(assembled, report(assembled.state, only(assembled), { ok: {}, ref: packRef }));
+  const assembled = receive(started, report(started.state, only(started), assembledOutput));
+  return receive(assembled, report(assembled.state, only(assembled), assembledOutput));
 }
 const replied = (
   from: AgentTransition,
@@ -160,7 +161,7 @@ const replied = (
   result?: Parameters<typeof report>[2],
 ) => receive(from, report(from.state, only(from), result ?? modelOutput(calls)));
 const reassemble = (from: AgentTransition, budget: BudgetView = NORMAL) =>
-  receive(from, report(from.state, only(from), { ok: {}, ref: packRef }, budget));
+  receive(from, report(from.state, only(from), assembledOutput, budget));
 
 function expectDegraded(from: AgentTransition, reason: string): void {
   expect(from.ending).toEqual({ kind: 'DEGRADED', reason });
@@ -417,10 +418,7 @@ describe('wrap-up', () => {
 
   it('wraps up a context over the limit, and degrades when the final call is too', () => {
     const started = start();
-    const assembling = receive(
-      started,
-      report(started.state, only(started), { ok: {}, ref: packRef }),
-    );
+    const assembling = receive(started, report(started.state, only(started), assembledOutput));
     const final = receive(
       assembling,
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
@@ -455,11 +453,7 @@ describe('wrap-up', () => {
         strict,
       );
       if (path === 'a')
-        current = receive(
-          current,
-          report(current.state, only(current), { ok: {}, ref: packRef }),
-          strict,
-        );
+        current = receive(current, report(current.state, only(current), assembledOutput), strict);
     }
     expect(current.state).toMatchObject({ final: true, wrapUpReason: 'CONSECUTIVE_ERRORS' });
   });
@@ -482,11 +476,7 @@ describe('wrap-up', () => {
       report(current.state, only(current), { reject: 'NOT_FOUND' }),
       strict,
     );
-    current = receive(
-      current,
-      report(current.state, only(current), { ok: {}, ref: packRef }),
-      strict,
-    );
+    current = receive(current, report(current.state, only(current), assembledOutput), strict);
     current = receive(
       current,
       report(current.state, only(current), modelOutput([call('list_files', {})])),
@@ -533,5 +523,81 @@ describe('the final call', () => {
       low,
     );
     expectDegraded(replied(final, [call('handoff', { text: 'brief' })]), 'FINAL_CALL_INVALID');
+  });
+});
+
+describe('every tool call gets an answer', () => {
+  const answered = (t: AgentTransition) =>
+    t.records.flatMap((r) =>
+      r.type === 'FEEDBACK' && r.toolCallId !== undefined ? [r.toolCallId] : [],
+    );
+  const atFinal = () => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    return reassemble(
+      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
+      low,
+    );
+  };
+
+  it('when the final call asks for a tool', () => {
+    const done = replied(atFinal(), [call('list_files', { path: 'x' }, 'late')]);
+    expect(done.ending).toMatchObject({ kind: 'DEGRADED' });
+    expect(answered(done)).toEqual(['late']);
+  });
+
+  it('when the final call misuses an end tool', () => {
+    const done = replied(atFinal(), [call('handoff', { text: 'x' }, 'late')]);
+    expect(answered(done)).toEqual(['late']);
+  });
+
+  it('when one tool of a batch fails fatally', () => {
+    const tools = replied(atModel(), [
+      call('list_files', { path: 'a' }, 'a'),
+      call('list_files', { path: 'b' }, 'b'),
+    ]);
+    const [first, second] = tools.submissions;
+    if (first === undefined || second === undefined) throw new Error('two expected');
+    const waiting = receive(tools, report(tools.state, first.requestId, { fail: 'INTERNAL' }));
+    expect(waiting.ending).toBeUndefined();
+    const done = receive(
+      waiting,
+      report(waiting.state, second.requestId, { ok: {}, ref: ref('4') }),
+    );
+    expect(done.ending).toEqual({ kind: 'FAILED', code: 'INTERNAL' });
+    expect(types(done)).toEqual(['UNIT_COMPLETED']);
+  });
+});
+
+describe('what the log keeps of an assembly', () => {
+  it('records the digests, and not the history it can rebuild', () => {
+    const started = start();
+    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const secret = 'history that must not repeat';
+    const withHistory: AgentContext = {
+      ...context,
+      assembleInput: (status, final) => ({
+        final,
+        effort: 'high',
+        history: [{ seq: 1, category: 'NORMAL', kind: 'NOTE', text: secret }],
+        status,
+      }),
+    };
+    const next = receiveAgentReport(
+      assembling.state,
+      report(assembling.state, only(assembling), assembledOutput),
+      withHistory,
+      config,
+    );
+    expect(types(next)).toEqual(['UNIT_COMPLETED', 'CONTEXT_ASSEMBLED', 'UNIT_SUBMITTED']);
+    const tools = replied(next, [call('list_files', {})]);
+    const after = receiveAgentReport(
+      tools.state,
+      report(tools.state, only(tools), { ok: {}, ref: ref('4') }),
+      withHistory,
+      config,
+    );
+    expect(after.submissions[0]?.input).toMatchObject({ history: [{ text: secret }] });
+    expect(JSON.stringify(after.records)).not.toContain(secret);
   });
 });

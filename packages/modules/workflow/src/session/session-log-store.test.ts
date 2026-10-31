@@ -194,6 +194,77 @@ describe('opening', () => {
   });
 });
 
+describe('settling what was open', () => {
+  const agentRunId = newId('agr');
+  const nodeId = `nod_${'c'.repeat(32)}`;
+  const log = (entries: readonly object[]) =>
+    entries.map((entry, index) => ({
+      workflowRunId: run,
+      at: '2026-10-31T00:00:00.000Z',
+      ...entry,
+      seq: index + 1,
+    })) as unknown as Parameters<typeof settleStaleRecords>[0];
+  const registered = {
+    type: 'AGENT_RUN_REGISTERED',
+    turnId: turn,
+    agentRunId,
+    nodeId,
+    agentRef: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest },
+    effort: 'high',
+  };
+  const modelTurn = {
+    type: 'MODEL_TURN',
+    turnId: turn,
+    requestId: newId('req'),
+    agentRunId,
+    outputRef: { artifactId: `art_${digest}`, sha256: digest, size: 1, mediaType: 'x' },
+    toolCalls: [{ toolName: 'list_files', toolCallId: 'call_1', argsDigest: digest }],
+    replayable: true,
+  };
+
+  it('ends the AgentRun and its node: it is never resumed', () => {
+    const settled = settleStaleRecords(
+      log([registered, { type: 'NODE_STARTED', turnId: turn, nodeId, path: 'p' }]),
+    );
+    expect(settled).toMatchObject([
+      { type: 'AGENT_RUN_ENDED', agentRunId, outcome: 'INTERRUPTED' },
+      { type: 'NODE_ENDED', nodeId, status: 'INTERRUPTED' },
+      { type: 'STALE_UNITS_SETTLED' },
+    ]);
+  });
+
+  it('answers a tool call that was never submitted', () => {
+    const settled = settleStaleRecords(log([registered, modelTurn]));
+    expect(settled[0]).toMatchObject({
+      type: 'FEEDBACK',
+      code: 'INTERRUPTED',
+      toolCallId: 'call_1',
+      agentRunId,
+    });
+    for (const record of settled)
+      expect(
+        validate(SessionLogRecordSchema, { ...record, seq: 1, at: '2026-10-31T00:00:00.000Z' }).ok,
+      ).toBe(true);
+  });
+
+  it('leaves answered calls and finished AgentRuns alone', () => {
+    const closed = [
+      registered,
+      modelTurn,
+      {
+        type: 'FEEDBACK',
+        turnId: turn,
+        agentRunId,
+        code: 'UNKNOWN_TOOL',
+        message: 'x',
+        toolCallId: 'call_1',
+      },
+      { type: 'AGENT_RUN_ENDED', turnId: turn, agentRunId, outcome: 'ENDED' },
+    ];
+    expect(settleStaleRecords(log(closed))).toEqual([]);
+  });
+});
+
 describe('Session list', () => {
   it('keeps the last line per Session, newest first, for this repository only', async () => {
     let clock = 0;

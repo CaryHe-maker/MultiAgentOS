@@ -1510,6 +1510,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 2. 逐行解析日志：最后一行不完整时截断到最后一个完整换行，并追加 `LOG_TAIL_REPAIRED`；`seq` 不连续时拒绝打开；
 3. 比较 `definitionsDigest`：版本号相同但摘要不同时，提示"定义已修改，历史上下文的重建不再精确"，并写入审计；
 4. 对每个"已提交、未完成"的 UnitRun 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"，故障停机时为"上一个进程故障停机"），不重放；
+   没有得到回答的工具调用追加 `FEEDBACK`，使历史始终合法；未结束的 AgentRun 追加 `AGENT_RUN_ENDED(INTERRUPTED)`，未结束的节点追加 `NODE_ENDED(INTERRUPTED)`：被打断的 AgentRun 就此结束，不恢复，已经成功的结果全部保留，下一条输入开启新的 AgentRun；
    对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`（没有结束快照）；对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`；
    有上述修复时，最后追加一条 `STALE_UNITS_SETTLED`，记录修复了哪些 Unit、Turn 与运行；
 5. 重建投影；Kernel 比较工作区并告知差异（第 2.3 节 Session 第 6 条，不改动文件），再开启新的 WorkflowRun；
@@ -1802,3 +1803,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.10 | 2026-10-31 | 阶段 0 实测（M2TechStack 第 3 节）：第 6.1 节，敏感文件改用空的普通文件遮蔽，`--tmpfs /tmp` 排在仓库挂载之前；第 4.7 节，SIGTERM 发给内层进程组；第 9.4 节，回传的说明按实测修正；第 14.1 节注明实测状态 |
 | v1.11 | 2026-10-31 | 第 9.6 节：按阶段 0 的实测改写前缀式摘要请求：保留工具定义、不设 `tool_choice`，指令要求不调用工具，模型调用工具按摘要不合格处理；`summaryReasoningEffort` 缺省改为 `low` |
 | v1.12 | 2026-10-31 | 第 7.5 节：用户正文只以引用传递，没有例外；发布版只有 major 1 一套契约，M1 的模块与 major 0 在接线后删除；第 3.8、3.9 节：`analyze` 的 planner、code-viewer 改为普通 `v1` Agent，走统一路径，取消 M1 额度档案；第 8.2 节：预览上限不再按定义版本区分；第 14.2 节相应修改 |
+| v1.12（编辑性） | 2026-10-31 | 第 10.3 节第 4 步：补全被打断的 AgentRun、节点与工具调用的结算 |

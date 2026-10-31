@@ -68,7 +68,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 
 M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"；Workflow 不读取 Kernel 的审计，
 "上一个进程故障停机"的区分在阶段 3 由 Kernel 随 `OPEN` 命令告知），
-对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`，对未结束的运行追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`，最后追加一条 `STALE_UNITS_SETTLED`。
+没有得到回答的工具调用追加 `FEEDBACK`，未结束的 AgentRun 与节点以 `INTERRUPTED` 结束，不恢复；对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`，对未结束的运行追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`，最后追加一条 `STALE_UNITS_SETTLED`。
 遗留的 Unit 不重新提交；被打断的节点记为 INTERRUPTED。
 
 ### 5.3 Session 列表

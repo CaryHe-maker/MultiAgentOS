@@ -11,13 +11,15 @@ import {
   type TemplateDefinition,
   type UnitReportV1,
 } from '@multiagentos/contracts';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileSessionStore } from '@multiagentos/persistence';
 import {
   SessionLogStore,
   SessionRunner,
+  projectHistory,
+  settleStaleRecords,
   type AgentDefinitions,
   type AgentUnit,
 } from '@multiagentos/workflow';
@@ -118,10 +120,10 @@ const analyze: TemplateDefinition = {
 };
 
 type Ok = Extract<ReturnType<FakeUnitScript>, { output: unknown }>;
-const modelReply = (toolName: string, args: unknown): Ok => ({
+const modelReply = (toolName: string, args: unknown, toolCallId = 'call_1'): Ok => ({
   output: {
     finishReason: 'TOOL_CALLS',
-    toolCalls: [{ toolCallId: 'call_1', toolName, arguments: args }],
+    toolCalls: [{ toolCallId, toolName, arguments: args }],
     hasText: false,
     hasReasoning: false,
   } as UnitReportV1 extends { output: infer O } ? O : never,
@@ -148,6 +150,19 @@ function script(replies: readonly Ok[]): FakeUnitScript {
           output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
           outputRef: artifact('6', MEDIA_TYPES.fileText),
         };
+      case 'context-assemble':
+        return {
+          output: {
+            contextPackId: newId('ctx'),
+            tokenCount: 1,
+            tokenBudget: 10,
+            prefixSha256: digest,
+            projectionDigest: digest,
+            headDigest: digest,
+            elidedEntries: [],
+          },
+          outputRef: packRef,
+        };
       default:
         return { output: { kind: 'REPLY' }, outputRef: packRef };
     }
@@ -155,7 +170,8 @@ function script(replies: readonly Ok[]): FakeUnitScript {
 }
 
 function setup(replies: readonly Ok[], units: FakeUnitScript = script(replies)) {
-  const persistence = new FileSessionStore(mkdtempSync(join(tmpdir(), 'mao-runner-')));
+  const dataDir = mkdtempSync(join(tmpdir(), 'mao-runner-'));
+  const persistence = new FileSessionStore(dataDir);
   const kernel = createFakeSessionKernel({ units });
   const runner = new SessionRunner({
     gateway: kernel.gateway,
@@ -181,7 +197,7 @@ function setup(replies: readonly Ok[], units: FakeUnitScript = script(replies)) 
     else if ('sessionId' in envelope) await runner.handleSessionEvent(envelope);
     else await runner.handleSystemEvent(envelope);
   });
-  return { kernel, runner };
+  return { kernel, runner, dataDir };
 }
 
 const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
@@ -349,5 +365,110 @@ describe('analyze', () => {
     const publish = seen.find((request) => request.unitRef.id === 'report-publish');
     expect(publish?.input).toMatchObject({ goalRef: { mediaType: MEDIA_TYPES.fileText } });
     expect(JSON.stringify(publish?.input)).not.toContain('"goal"');
+  });
+});
+
+describe('an interrupted process', () => {
+  const tool = modelReply('list_files', {}, 'tool_call');
+  const reply = modelReply('reply', { text: 'done' }, 'reply_call');
+  const stamped = (records: readonly SessionLogRecord[]): SessionLogRecord[] => {
+    const settled = settleStaleRecords(records).map((record, index) => ({
+      ...record,
+      seq: records.length + index + 1,
+      at: '2026-10-31T00:00:00.000Z',
+    }));
+    return [...records, ...settled];
+  };
+
+  it('leaves a valid history at every point it could stop', async () => {
+    const { kernel, runner } = setup([tool, reply]);
+    await begin(kernel);
+    for (let length = 1; length <= runner.records.length; length += 1) {
+      const records = stamped(runner.records.slice(0, length));
+      const entries = projectHistory(records, { kind: 'MAIN' });
+      const answers = new Set(
+        entries.flatMap((entry) =>
+          (entry.kind === 'TOOL_RESULT' || entry.kind === 'FEEDBACK') &&
+          entry.toolCallId !== undefined
+            ? [entry.toolCallId]
+            : [],
+        ),
+      );
+      const calls = records.flatMap((record) =>
+        record.type === 'MODEL_TURN' ? record.toolCalls.map((call) => call.toolCallId) : [],
+      );
+      for (const call of calls) expect(answers.has(call), `prefix ${String(length)}`).toBe(true);
+      expect(settleStaleRecords(records)).toEqual([]);
+    }
+  });
+
+  it('keeps everything that finished, and starts a new AgentRun on the next prompt', async () => {
+    const seen: SubmitUnitRequestV1[] = [];
+    const replies = script([tool, reply, modelReply('reply', { text: 'again' })]);
+    const units: FakeUnitScript = (request, index) => {
+      seen.push(request);
+      return replies(request, index);
+    };
+    const { kernel, runner, dataDir } = setup([], units);
+    await begin(kernel);
+    const opened = kernel.workflowEvents.find((event) => 'workflowRunId' in event);
+    if (opened === undefined || !('workflowRunId' in opened)) throw new Error('no run');
+    const { sessionId } = opened;
+
+    // The process stops right after the second model turn asked to reply.
+    const file = join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl');
+    const lines = readFileSync(file, 'utf8').trimEnd().split('\n');
+    const secondTurn = lines.reduce<number[]>(
+      (found, line, index) => (line.includes('"type":"MODEL_TURN"') ? [...found, index] : found),
+      [],
+    )[1];
+    if (secondTurn === undefined) throw new Error('no second model turn');
+    writeFileSync(file, `${lines.slice(0, secondTurn + 1).join('\n')}\n`);
+    const firstAgentRun = runner.records.find((r) => r.type === 'AGENT_RUN_REGISTERED');
+
+    await runner.handleSessionEvent({
+      eventId: newId('evt'),
+      sessionId,
+      seq: 99,
+      occurredAt: '2026-10-31T00:00:00.000Z',
+      event: { type: 'SessionCommand', commandId: newId('scm'), command: 'CLOSE' },
+    });
+    await kernel.interaction.openSession({ requestId: newId('req'), sessionId }, context);
+    await kernel.idle();
+
+    const types_ = types(runner.records);
+    expect(types_).toContain('STALE_UNITS_SETTLED');
+    const interrupted = runner.records.find((r) => r.type === 'AGENT_RUN_ENDED');
+    expect(interrupted).toMatchObject({ outcome: 'INTERRUPTED' });
+    // The finished tool result survived, and the unfinished reply got an answer.
+    const history = projectHistory(runner.records, { kind: 'MAIN' });
+    expect(
+      history.filter((entry) => entry.kind === 'TOOL_RESULT' && entry.status === 'OK'),
+    ).toHaveLength(1);
+    expect(history.filter((entry) => entry.kind === 'FEEDBACK')).toHaveLength(1);
+
+    const ask = kernel.interactionEvents.at(-1);
+    if (ask?.event.type !== 'HumanRequest' || !('workflowRunId' in ask))
+      throw new Error('no prompt');
+    const before = seen.length;
+    await kernel.interaction.answerHuman(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId: ask.workflowRunId,
+        humanRequestId: ask.event.humanRequestId,
+        input: prompt(),
+      },
+      context,
+    );
+    await kernel.idle();
+    const registered = runner.records.filter((r) => r.type === 'AGENT_RUN_REGISTERED');
+    expect(registered).toHaveLength(2);
+    expect(registered[1]?.type === 'AGENT_RUN_REGISTERED' && registered[1].agentRunId).not.toBe(
+      firstAgentRun?.type === 'AGENT_RUN_REGISTERED' && firstAgentRun.agentRunId,
+    );
+    expect(
+      seen.slice(before).filter((request) => request.unitRef.id === 'repository-list'),
+    ).toEqual([]);
   });
 });

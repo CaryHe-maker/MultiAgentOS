@@ -3,6 +3,7 @@ import type {
   ArtifactRef,
   BudgetView,
   ContextAssembleInputV1,
+  ContextAssembleOutputV1,
   FailureHandling,
   ModelToolCall,
   PinnedDefinitionRef,
@@ -99,6 +100,7 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  readonly fatal?: ReasonCodeV1;
 }
 
 /**
@@ -155,6 +157,7 @@ const FEEDBACK = {
   TOO_MANY_TOOL_CALLS: 'Not executed: this reply has more tool calls than allowed.',
   DUPLICATE_CALL: 'Not executed: the same call already succeeded and its result is above.',
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
+  NOT_EXECUTED: 'Not executed: only the finishing call is available now.',
 } as const;
 type FeedbackCode = keyof typeof FEEDBACK;
 
@@ -221,12 +224,20 @@ function one(
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
   const made = submission(state, unit, input, { toolName, argsSummary: '' });
+  // The assembly input is the projection of this very log: recording it would repeat the history.
+  const record =
+    role === 'CONTEXT' && made.record.type === 'UNIT_SUBMITTED'
+      ? {
+          ...made.record,
+          inputSource: { kind: 'STRUCTURED' as const, input: { final: state.final } },
+        }
+      : made.record;
   return {
     state: {
       ...made.state,
       pending: new Map([[made.request.requestId, { role, unit }]]),
     },
-    records: [...records, made.record],
+    records: [...records, record],
     submissions: [made.request],
   };
 }
@@ -403,16 +414,17 @@ function invalidReply(
   config: AgentConfig,
   records: readonly NewLogRecord[],
 ): AgentTransition {
-  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', records);
+  // Every call gets its answer here, also when the AgentRun ends: the history must stay valid.
+  const notes =
+    calls.length === 0
+      ? [feedback(state, code)]
+      : calls.map((call) => feedback(state, code, call.toolCallId));
+  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', [...records, ...notes]);
   const regenerations = state.regenerations + 1;
   const next =
     regenerations >= config.regenerationLimit
       ? wrapUp({ ...state, regenerations }, 'REGENERATION_LIMIT')
       : { ...state, regenerations };
-  const notes =
-    calls.length === 0
-      ? [feedback(state, code)]
-      : calls.map((call) => feedback(state, code, call.toolCallId));
   return nextRound(next, context, [...records, ...notes]);
 }
 
@@ -478,7 +490,11 @@ function handleModel(
       records,
     );
   }
-  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', records);
+  if (state.final)
+    return degrade(state, 'FINAL_CALL_INVALID', [
+      ...records,
+      ...calls.map((call) => feedback(state, 'NOT_EXECUTED', call.toolCallId)),
+    ]);
 
   let next = state;
   const pending = new Map<string, Pending>();
@@ -553,13 +569,30 @@ function handleTool(
   if (consecutiveErrors >= config.consecutiveErrorLimit) next = wrapUp(next, 'CONSECUTIVE_ERRORS');
   if (!ok) {
     const handling = handlingOf(pending.unit, report.reasonCode);
-    if (handling === 'FATAL')
-      return ended(next, { kind: 'FAILED', code: report.reasonCode }, records);
+    if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
     if (handling === 'FINAL_CALL') next = wrapUp(next, 'BUDGET_WRAP_UP');
   }
+  // The batch finishes first, so every call of this reply has its result in the log.
+  if (next.fatal !== undefined && next.pending.size === 0)
+    return ended(next, { kind: 'FAILED', code: next.fatal }, records);
   return next.pending.size === 0
     ? afterTools(next, context, config, records)
     : { state: next, records, submissions: [] };
+}
+
+function assembled(
+  state: AgentState,
+  report: Extract<UnitReportV1, { status: 'OK' }>,
+): NewLogRecord {
+  const { projectionDigest, headDigest, elidedEntries } = report.output as ContextAssembleOutputV1;
+  return {
+    ...base(state),
+    type: 'CONTEXT_ASSEMBLED',
+    requestId: report.requestId,
+    projectionDigest,
+    headDigest,
+    ...(elidedEntries.length === 0 ? {} : { elidedEntries }),
+  };
 }
 
 function completion(state: AgentState, report: UnitReportV1): NewLogRecord {
@@ -645,6 +678,7 @@ export function receiveAgentReport(
       );
     case 'CONTEXT':
       if (report.outputRef === undefined) throw new Error('A context report has no reference');
+      records.push(assembled(state, report));
       return one(
         state,
         'MODEL',
