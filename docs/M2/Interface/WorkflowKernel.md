@@ -255,8 +255,9 @@ interface UnitReport {
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
   fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不进入投影，只作为 read_output 的输入（M2Design 第 8.2 节）
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
+  quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
-  // 阶段 2：changedFiles；阶段 4：quota
+  // 阶段 2：changedFiles
 }
 
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
@@ -436,6 +437,7 @@ interface ContextAssembleInputV1 {
 | `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |
 | `HumanAnswered` | `origin = 'requested'` 时必须有 `humanRequestId`；`origin = 'initial'` 时不得有 |
 | `RunEnd` | `runSummaryRef` 与 `finalizationError` 恰好出现一个（同 M1） |
+| `UnitReport` | `reasonCode = 'QUOTA_EXHAUSTED'` 时必须有 `quota`、不得有 `unitAttemptId`（在受理时拒绝，没有尝试）；其他情况不得有 `quota` |
 
 ## 5. 原因码
 
@@ -447,6 +449,7 @@ interface ContextAssembleInputV1 {
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
 
+| `QUOTA_EXHAUSTED` | UnitReport（`REJECTED`） | 该 AgentRun 的工具次数或墙钟已触顶（`quota` 说明是哪一项）；后续的非收尾 Unit 都以它拒绝，Workflow 进入收尾（Kernel/Monitor 第 3 节） |
 | `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中（阶段 2），Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
 | `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 阶段 8：组装期间完成了压缩，须以新的投影重新提交 |
 | `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | 阶段 8：provider 报告上下文过长 |

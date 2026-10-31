@@ -236,21 +236,22 @@ describe('reservations', () => {
 });
 
 describe('refusals without an attempt', () => {
-  it.each(['USER_DECLINED', 'QUOTA_EXHAUSTED'] as const)(
-    'delivers %s as a tool result',
-    (reasonCode) => {
-      const { run, reports } = setup();
-      run.rejectWithoutAttempt(
-        {
-          requestId: testId('req', 1),
-          agentRunId: testId('agr', 1),
-          unitRunId: testId('unr', 1),
-          unit: unit('FILE_READ'),
-        },
-        reasonCode,
-      );
-      expect(reports[0]).toMatchObject({ status: 'REJECTED', reasonCode });
-      expect(reports[0]).not.toHaveProperty('unitAttemptId');
-    },
-  );
+  it.each([
+    { reasonCode: 'USER_DECLINED' },
+    { reasonCode: 'QUOTA_EXHAUSTED', quota: 'TOOL_UNITS' },
+    { reasonCode: 'QUOTA_EXHAUSTED', quota: 'WALL_CLOCK' },
+  ] as const)('delivers $reasonCode $quota as a tool result', (refusal) => {
+    const { run, reports } = setup();
+    run.rejectWithoutAttempt(
+      {
+        requestId: testId('req', 1),
+        agentRunId: testId('agr', 1),
+        unitRunId: testId('unr', 1),
+        unit: unit('FILE_READ'),
+      },
+      refusal,
+    );
+    expect(reports[0]).toMatchObject({ status: 'REJECTED', ...refusal });
+    expect(reports[0]).not.toHaveProperty('unitAttemptId');
+  });
 });

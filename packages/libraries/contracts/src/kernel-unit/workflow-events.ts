@@ -172,7 +172,16 @@ export const UnitReportV1Schema = Type.Union(
       ...reportV1,
       unitAttemptId: Type.Optional(IdSchemas.unitAttemptId),
       status: Type.Literal('REJECTED'),
-      reasonCode: reasonCodeV1Of(UNIT_REJECTED_CODES_V1),
+      reasonCode: reasonCodeV1Of(
+        UNIT_REJECTED_CODES_V1.filter((code) => code !== 'QUOTA_EXHAUSTED'),
+      ),
+    }),
+    /** Refused at admission, so there is no attempt; `quota` names the limit (Kernel/Monitor 3). */
+    closed({
+      ...reportV1,
+      status: Type.Literal('REJECTED'),
+      reasonCode: Type.Literal('QUOTA_EXHAUSTED'),
+      quota: Type.Enum(['TOOL_UNITS', 'WALL_CLOCK']),
     }),
     closed({
       ...reportV1,

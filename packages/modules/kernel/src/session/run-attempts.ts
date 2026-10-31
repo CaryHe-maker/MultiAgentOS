@@ -306,7 +306,9 @@ export class RunAttempts {
   /** Delivers a refusal of a Unit that never got an attempt (authorization, quota). */
   rejectWithoutAttempt(
     spec: Pick<AttemptSpec, 'requestId' | 'agentRunId' | 'unitRunId' | 'unit'>,
-    reasonCode: 'USER_DECLINED' | 'QUOTA_EXHAUSTED',
+    refusal:
+      | { readonly reasonCode: 'USER_DECLINED' }
+      | { readonly reasonCode: 'QUOTA_EXHAUSTED'; readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' },
   ): void {
     this.#deliver({
       type: 'UnitReport',
@@ -317,7 +319,7 @@ export class RunAttempts {
       executionKind: spec.unit.executionKind,
       budget: this.#deps.ledger.budgetView(),
       status: 'REJECTED',
-      reasonCode,
+      ...refusal,
     });
   }
 

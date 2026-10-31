@@ -10,6 +10,7 @@ import {
   RunStateChangedSchema,
   SessionLogRecordSchema,
   SubmitUnitRequestV1Schema,
+  UnitReportV1Schema,
   createM1ProtocolRegistry,
   newId,
   pathDerivedId,
@@ -159,6 +160,30 @@ describe('Schema-enforced constraints', () => {
     };
     expect(isValid(ContextAssembleInputV1Schema, input)).toBe(false);
     expect(isValid(ContextAssembleInputV1Schema, { ...input, final: false })).toBe(true);
+  });
+
+  it('carries quota exactly with QUOTA_EXHAUSTED, and no attempt', () => {
+    const refused = {
+      type: 'UnitReport',
+      requestId: newId('req'),
+      agentRunId: newId('agr'),
+      unitRunId: newId('unr'),
+      unitRef: { kind: 'UNIT', id: 'file-read', version: 'v1.0.0', digest: 'd'.repeat(64) },
+      executionKind: 'FILE_READ',
+      budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      status: 'REJECTED',
+      reasonCode: 'QUOTA_EXHAUSTED',
+      quota: 'TOOL_UNITS',
+    };
+    const withoutQuota: Record<string, unknown> = { ...refused };
+    delete withoutQuota.quota;
+    expect(isValid(UnitReportV1Schema, refused)).toBe(true);
+    expect(isValid(UnitReportV1Schema, withoutQuota)).toBe(false);
+    expect(isValid(UnitReportV1Schema, { ...refused, unitAttemptId: newId('una') })).toBe(false);
+    expect(isValid(UnitReportV1Schema, { ...refused, reasonCode: 'USER_DECLINED' })).toBe(false);
+    expect(isValid(UnitReportV1Schema, { ...withoutQuota, reasonCode: 'USER_DECLINED' })).toBe(
+      true,
+    );
   });
 });
 
