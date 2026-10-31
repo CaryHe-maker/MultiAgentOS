@@ -5,7 +5,7 @@
 | 目录 | 内容 |
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
-| [M2](M2/README.md) | 当前里程碑：总体设计 [M2Design](M2/M2Design.md)（v1.10）、阶段计划与各组件文档 |
+| [M2](M2/README.md) | 当前里程碑：总体设计 [M2Design](M2/M2Design.md)（v1.11）、阶段计划与各组件文档 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [History](History/) | 已归档的文档，不作为当前规范；其中 [M1](History/M1/README.md) 是已发布的 M1 的规范、发布计划与验收证据 |

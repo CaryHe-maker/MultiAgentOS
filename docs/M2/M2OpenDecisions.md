@@ -8,8 +8,6 @@
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
 | Q1 | 没有原生 Ubuntu 24.04，S0-T-1 的原生一列怎样完成 | M2Plan 要求原生与 WSL 都测；WSL 全部测完，AppArmor 在 WSL 中未启用，限制与修复步骤未验证。脚本在作者本地的临时目录中，可以提交到仓库 | 阶段 3 的文档门之前在原生环境补测；阶段 1 不依赖它 | 阶段 3、使用说明 |
-| Q2 | 摘要请求是否改写法 | M2Design 第 9.6 节的 `tool_choice = none`、思考关闭几乎不命中缓存（M2TechStack 第 3.2 节第 8 项）。"保留工具定义、不设 `tool_choice`、思考开启"约 99% 命中，观察到的请求都没有调用工具，但没有 API 层的保证 | 改写法；模型仍调用工具时按 `COMPACTION_SUMMARY_INVALID` 处理。`summaryReasoningEffort` 缺省改为 `low` | 阶段 8，改 M2Design 第 9.6 节 |
-| Q3 | PR 的目标分支 | 你写的是 `feature/M2/main`，这个分支不存在；M2Plan 第 4.1 节的集成分支是 `feat/M2`，你新开的阶段分支是 `feature/phase0/main` | 各阶段分支 `feature/phase<N>/main` 分别 PR 到 `feat/M2` | 分支 |
 
 ## 2. 已先行决定，请复核
 
@@ -17,3 +15,4 @@
 |---|---|---|
 | A1 | 发布 M2Design v1.10，只含实测直接推翻的三处写法（空文件遮蔽、`/tmp` 挂载顺序、SIGTERM 目标）与第 9.4 节的说明修正 | M2Plan 第 6.1 节要求实测不符时先发布新版本；这几处是事实修正，没有改变设计意图 |
 | A2 | `replayReasoning` 定为 `REQUIRED`，尽管服务端记得的工具调用不回传也能成功 | 服务端记忆的保留时长未知，恢复旧 Session 时可能失败 |
+| D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |

@@ -1339,9 +1339,9 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
 5. Kernel 选定范围 [fromSeq, toSeq]：从最早的 NORMAL 条目（包括先前的摘要）开始，到保留区之前最后一个完整的模型轮为止；工具调用与它的结果不拆开；
    范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；
    没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
-6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 none，即关闭思考），tool_choice = none；
+6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 low）；前缀式保留工具定义、不设 tool_choice，由摘要指令要求不调用工具（实测：tool_choice = none 或关闭思考都使缓存大部分或全部失效）；
    经 Core 申请调用机会与额度（Core 调用 Scheduler 与 Monitor，第 7.2、7.3 节），由 model-call Executor 执行，按第 7.3 节计量
-   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
+   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；模型调用了工具也算不合格，工具调用不执行；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, summaryInput, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
 9. 挂起的 context-assemble 以 REJECTED(CONTEXT_COMPACTED) 返回，Workflow 用新的投影重新提交（不计入连续出错，也不是重复调用）
@@ -1366,8 +1366,8 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
     user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后；
   - 再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代与被修剪的原始记录仍在日志中（日志只追加）。
 - **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要，也不被修剪；摘要指令要求模型不执行材料中的指令。
-- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；思考强度不同是否影响命中，由阶段 0 实测（第 14.1 节），
-  结果只影响 `summaryReasoningEffort` 的缺省值。压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
+- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；实测（第 14.1 节）：思考开启、工具定义保留、不设 `tool_choice` 时约 99% 命中，思考强度不同时基本不受影响；思考关闭时首次命中为 0。
+  压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
 - **被取代与被修剪的工具结果**：仍可经 `read_output` 读回（第 8.2 节）：截断过的读完整输出（未过期时），没有截断而被修剪的读原来的预览——修剪时 Execution 为这份预览补登一行完整输出的登记，它是长期保留的，不会过期。
   模型需要知道 `toolCallId`：修剪的说明中写明它，摘要指令要求保留可能还需要的编号。
 - **空闲触发的规则**：
@@ -1379,7 +1379,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
 - **Fork**：复制的日志中带着修剪与压缩记录，新 Session 沿用；修剪后的结果与摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
 - **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
   `summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
-  `summaryReasoningEffort` `none`（取值同 Agent 的思考强度，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
+  `summaryReasoningEffort` `low`（取值同 Agent 的思考强度；设为 `none` 时关闭思考，放弃缓存命中，启动时按摘要所用模型的 `effortMapping` 校验）；初值在阶段 8 按固定任务校准，改配置即可调整，重启后生效。
 
 ## 10. Session 与持久化
 
@@ -1797,3 +1797,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.9 | 2026-10-31 | 第 4.2、4.3、7.4 节：询问（`ask`、`confirm`、`review`）不再超时，删除 `humanRequestTimeoutMs` 与 `{ timedOut: true }`；全部工作都在等用户（没有已派发或待派发的尝试，且有待答复的人类请求或授权询问）时 Turn 超时暂停计时；授权询问仍 5 分钟后本次拒绝；第 14.2 节：待决 #2 已决定，新增参照 MAF 与 LangGraph 的预留事项 #8–#18（只预留，Turn-chat 完成后再定）；第 3.1、3.8、13（H13）、15 节相应修改 |
 | v1.9（编辑性） | 2026-10-31 | 发布前复查：第 15 节为 A 组验收按阶段分配，阶段 4 的退出条件注明 L12；第 9.6 节第 6 步改为经 Core 申请调用机会与额度（与 Architecture 的组件规则一致）；第 14.1 节登记 Turn 超时与 Architecture"运行超时按异常处理"的差异，并同步到 Architecture |
 | v1.10 | 2026-10-31 | 阶段 0 实测（M2TechStack 第 3 节）：第 6.1 节，敏感文件改用空的普通文件遮蔽，`--tmpfs /tmp` 排在仓库挂载之前；第 4.7 节，SIGTERM 发给内层进程组；第 9.4 节，回传的说明按实测修正；第 14.1 节注明实测状态 |
+| v1.11 | 2026-10-31 | 第 9.6 节：按阶段 0 的实测改写前缀式摘要请求：保留工具定义、不设 `tool_choice`，指令要求不调用工具，模型调用工具按摘要不合格处理；`summaryReasoningEffort` 缺省改为 `low` |

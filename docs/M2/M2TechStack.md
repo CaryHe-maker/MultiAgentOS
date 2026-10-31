@@ -65,7 +65,7 @@ AppArmor 未启用（`/sys/module/apparmor/parameters/enabled` 为 `N`），`ker
 - `ThinkingFeature`（两个模型相同）：`replayReasoning = 'REQUIRED'`，`missingReasoningFill = 'EMPTY_STRING'`，`reasoningCountsAsOutput = true`；`effortMapping` 见第 6 项。第 3、6、7、9 项的结果已写入 Definitions 与 ExecutorSet。
 - 收尾调用按 M2Design 第 9.4 节的两步可行，第二步必须关闭思考。
 - `retryAfterMs`：按 ExecutorSet 第 7 节解析 `Retry-After`（两种格式），没有这个头时省略，按指数退避重试。这是对未观察到的响应的防御性实现。
-- 摘要请求：M2Design 现行写法（`tool_choice = none`、关闭思考）可以工作，但几乎不命中缓存，约 3 万 token 输入的成本约为命中时的 50 倍。建议改为"保留工具定义、不设 `tool_choice`、思考开启"，这改变 M2Design 第 9.6 节的写法，留待决定；只影响阶段 8。
+- 摘要请求：原写法（`tool_choice = none`、关闭思考）首次不命中缓存，约 3 万 token 输入的成本约为命中时的 50 倍。M2Design v1.11 改为保留工具定义、不设 `tool_choice`、思考开启，`summaryReasoningEffort` 缺省 `low`；API 不保证模型不调用工具，调用时按摘要不合格处理。
 
 ## 4. 新增依赖
 
