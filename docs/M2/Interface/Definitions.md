@@ -89,6 +89,7 @@ type ThinkingRequest =
 | `replayReasoning` | `'REQUIRED'` |
 | `missingReasoningFill` | `'EMPTY_STRING'` |
 | `reasoningCountsAsOutput` | `true` |
+
 其余字段（provider、计价、上下文窗口等）与 M1Interface 第 9.2 节相同。
 
 ## 4. Template（`v1`，新增）

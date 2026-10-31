@@ -272,7 +272,7 @@ Architecture 已据此修改（Module/Kernel 3.2、3.3，Evolution 第 2、4 节
 | 节点种类 | 含义 | 完成条件 |
 |---|---|---|
 | `AGENT` | 一个 AgentRun：引用一个内置 Agent 定义，带目标、可写范围、额度份额与思考强度 | 该 AgentRun 调用结束控制工具（`reply`、`finish_subagent`、M1 的 `finish`），或以失败结束 |
-| `HUMAN` | 一次业务层的用户输入，种类见第 4.2 节：`prompt`、`steer`、`ask`、`confirm`、`review` | 收到符合答复 Schema 的答复，或询问超时；初始 `prompt` 与 `steer` 在创建时就已带有用户输入，创建即完成 |
+| `HUMAN` | 一次业务层的用户输入，种类见第 4.2 节：`prompt`、`steer`、`ask`、`confirm`、`review` | 收到符合答复 Schema 的答复；初始 `prompt` 与 `steer` 在创建时就已带有用户输入，创建即完成 |
 | `INTEGRATE`（预留） | 合并各隔离副本中的改动（第 6.5 节） | M2 不支持：模板或扩展中出现即以 `GraphValidationError(UNSUPPORTED_NODE_KIND)` 拒绝 |
 
 | 关系 | 含义 |
