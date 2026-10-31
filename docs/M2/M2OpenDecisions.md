@@ -8,8 +8,6 @@
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
 | Q1 | 没有原生 Ubuntu 24.04，S0-T-1 的原生一列怎样完成 | M2Plan 要求原生与 WSL 都测；WSL 全部测完，AppArmor 在 WSL 中未启用，限制与修复步骤未验证。脚本在作者本地的临时目录中，可以提交到仓库 | 阶段 3 的文档门之前在原生环境补测；阶段 1 不依赖它 | 阶段 3、使用说明 |
-| Q2 | 摘要请求是否改写法 | M2Design 第 9.6 节的 `tool_choice = none`、思考关闭几乎不命中缓存（M2TechStack 第 3.2 节第 8 项）。"保留工具定义、不设 `tool_choice`、思考开启"约 99% 命中，观察到的请求都没有调用工具，但没有 API 层的保证 | 改写法；模型仍调用工具时按 `COMPACTION_SUMMARY_INVALID` 处理。`summaryReasoningEffort` 缺省改为 `low` | 阶段 8，改 M2Design 第 9.6 节 |
-| Q3 | PR 的目标分支 | 你写的是 `feature/M2/main`，这个分支不存在；M2Plan 第 4.1 节的集成分支是 `feat/M2`，你新开的阶段分支是 `feature/phase0/main` | 各阶段分支 `feature/phase<N>/main` 分别 PR 到 `feat/M2` | 分支 |
 | Q4 | 阶段 1 其余部分怎样切换 | Kernel、Workflow、UserInteraction 的改写会替换现有可运行的 M1 链路（`run-actor` 改写为 Session actor）。M2Plan 的做法是先补齐 fake，再各工作流并行，最后 S1-IN-1 一次接线；这期间 `feature/phase1/main` 上 M1 链路继续可用，新代码只是未接线 | 按 M2Plan：先完成 fake Kernel 与 fake Workflow（S1-CT-1 的剩余部分），再按工作流推进，`analyze` 回归在 S1-IN-1 验证 | 阶段 1 其余全部 |
 
 ## 2. 已先行决定，请复核
@@ -30,3 +28,4 @@
 
 阶段 1 尚未开始：S1-CT-1 的 fake 与契约测试、S1-WF-1–4、S1-KC-1–4、S1-KX-1、S1-EX-1 的其余部分（`v0` 预览接入 `retention/`、`context-assemble`、`model-call`）、S1-PL-1、S1-UI-1、S1-IN-1。
 新代码都未接入运行链路，所以现有的 M1 行为不变；阶段 1 的验收用例一个都还不能运行。
+| D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
