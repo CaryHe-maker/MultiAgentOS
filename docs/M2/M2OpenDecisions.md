@@ -7,8 +7,8 @@
 
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
-| Q1 | 没有原生 Ubuntu 24.04，S0-T-1 的原生一列怎样完成 | M2Plan 要求原生与 WSL 都测；WSL 全部测完，AppArmor 在 WSL 中未启用，限制与修复步骤未验证。脚本在作者本地的临时目录中，可以提交到仓库 | 阶段 3 的文档门之前在原生环境补测；阶段 1 不依赖它 | 阶段 3、使用说明 |
 | Q4 | 阶段 1 其余部分怎样切换 | Kernel、Workflow、UserInteraction 的改写会替换现有可运行的 M1 链路（`run-actor` 改写为 Session actor）。M2Plan 的做法是先补齐 fake，再各工作流并行，最后 S1-IN-1 一次接线；这期间 `feature/phase1/main` 上 M1 链路继续可用，新代码只是未接线 | 按 M2Plan：先完成 fake Kernel 与 fake Workflow（S1-CT-1 的剩余部分），再按工作流推进，`analyze` 回归在 S1-IN-1 验证 | 阶段 1 其余全部 |
+| Q1 | 原生 Ubuntu 的实测何时运行 | 脚本与工作流 `sandbox-probe` 已写好，WSL 上 65 项通过；工作流要推送后才能运行，还没有在 GitHub 上跑过 | 推送 `feature/phase0/main` 后由 `push` 触发一次，把结果填入 M2TechStack 第 3.1 节 | 阶段 3、使用说明 |
 
 ## 2. 已先行决定，请复核
 
