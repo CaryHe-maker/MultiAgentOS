@@ -7,9 +7,8 @@
 
 | # | 问题 | 背景 | 建议 | 影响 |
 |---|---|---|---|---|
-| Q4 | 阶段 1 其余部分怎样切换 | Kernel、Workflow、UserInteraction 的改写会替换现有可运行的 M1 链路（`run-actor` 改写为 Session actor）。M2Plan 的做法是先补齐 fake，再各工作流并行，最后 S1-IN-1 一次接线；这期间 `feature/phase1/main` 上 M1 链路继续可用，新代码只是未接线 | 按 M2Plan：先完成 fake Kernel 与 fake Workflow（S1-CT-1 的剩余部分），再按工作流推进，`analyze` 回归在 S1-IN-1 验证 | 阶段 1 其余全部 |
 
-## 2. 已先行决定，请复核
+## 2. 已决定
 
 | # | 决定 | 依据 |
 |---|---|---|
@@ -18,6 +17,7 @@
 | A3 | Interface 没有写到字段级的 `ContextHistoryEntry`、`ContextAssembleInput.v1`、`GraphNodeRecord`、`GraphEdgeRecord`，按 Workflow 第 8.3 节与 M2Design 第 3 节的语义定义，已回填到 Interface/WorkflowKernel 第 3.5 节与 Interface/Persistence 第 2.3 节；`NODE_ENDED` 增加 `result?` | 契约门需要这些类型；条件边的判定必须是日志的纯函数 |
 | A4 | 冻结的 major 0 不能增加枚举值，所以原因码、`ExecutionKind`、定义种类等都另发 `.v1`，代码中以 `V1` 后缀并存 | Interface 第 2.2 节、协议快照守卫 |
 | A5 | 原生一列取自 GitHub Actions 的 `ubuntu-24.04` 运行器（Azure 虚拟机，内核 `7.0.0-1017-azure`），AppArmor 限制与默认一致；没有在 Ubuntu 的 `generic` 内核上再测 | 阻塞行为与修复都已验证；发布前可在实体机上复核 |
+| D2 | 阶段 1 的新代码与 M1 并存，S1-IN-1 接线并通过 `analyze` 回归后删除 M1 的模块；A1–A5 全部确认（Cary 2026-10-31 决定） | 已执行 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 
 ## 3. 当前进度

@@ -260,9 +260,10 @@ describe('settling is a pure function of the log', () => {
         expect(settled.filter((record) => record.type === 'UNIT_INTERRUPTED')).toHaveLength(
           requestIds.length - completed.length,
         );
-        const after = [...records, ...settled.map((record) => stamp(record))] as Parameters<
-          typeof settleStaleRecords
-        >[0];
+        const after = [
+          ...records,
+          ...settled.map((record) => stamp(record)),
+        ] as unknown as Parameters<typeof settleStaleRecords>[0];
         expect(settleStaleRecords(after)).toEqual([]);
       }),
     );

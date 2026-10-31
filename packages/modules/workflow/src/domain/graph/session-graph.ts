@@ -1,0 +1,251 @@
+import type {
+  DefinitionRef,
+  GraphEdgeRecord,
+  GraphNodeRecord,
+  SessionLogRecord,
+  TemplateDefinition,
+} from '@multiagentos/contracts';
+import {
+  nodeIdOf,
+  nodePath,
+  readyNodes,
+  settleSkips,
+  validateExtension,
+  type Graph,
+  type GraphNode,
+  type GraphValidationError,
+  type NodeRecord,
+  type NodeView,
+  type SkippedNode,
+} from './graph.js';
+
+/**
+ * The TaskGraph as the session log records it (M2Design 3.2, 3.8): building revisions for `chat`
+ * and built-in templates, and reading the graph and node states back from the records.
+ */
+export interface GraphRevision {
+  readonly nodes: readonly GraphNodeRecord[];
+  readonly edges: readonly GraphEdgeRecord[];
+}
+
+interface NodeSpec {
+  readonly name: string;
+  readonly kind: 'AGENT' | 'HUMAN';
+  readonly trigger?: GraphNodeRecord['trigger'];
+  readonly agentRef?: DefinitionRef;
+  readonly goal?: string;
+  readonly inputFrom?: 'HANDOFF';
+  readonly output?: boolean;
+}
+
+function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
+  const path = nodePath(workflowRunId, revision, spec.name, 1);
+  return {
+    nodeId: nodeIdOf(path),
+    path,
+    name: spec.name,
+    kind: spec.kind,
+    trigger: spec.trigger ?? 'all_success',
+    iteration: 1,
+    ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
+    ...(spec.goal === undefined ? {} : { goal: spec.goal }),
+    ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
+    ...(spec.output === undefined ? {} : { output: spec.output }),
+  };
+}
+
+const depends = (from: GraphNodeRecord, to: GraphNodeRecord): GraphEdgeRecord => ({
+  from: from.nodeId,
+  to: to.nodeId,
+  kind: 'DEPENDS',
+});
+
+/** `HUMAN(prompt) -> main`, the first revision of a Turn-chat run. */
+export function initialChatRevision(workflowRunId: string, mainRef: DefinitionRef): GraphRevision {
+  const prompt = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
+  const main = nodeOf(workflowRunId, 1, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  return { nodes: [prompt, main], edges: [depends(prompt, main)] };
+}
+
+/**
+ * The pair `chat` adds whenever main ended, however it ended: the next open input runs under
+ * `all_done`, so a failed or interrupted main does not end the conversation (M2Design 3.1).
+ */
+export function chatGrowthRevision(
+  workflowRunId: string,
+  revision: number,
+  endedMainNodeId: string,
+  mainRef: DefinitionRef,
+): GraphRevision {
+  const prompt = nodeOf(workflowRunId, revision, {
+    name: 'prompt',
+    kind: 'HUMAN',
+    trigger: 'all_done',
+  });
+  const main = nodeOf(workflowRunId, revision, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  return {
+    nodes: [prompt, main],
+    edges: [{ from: endedMainNodeId, to: prompt.nodeId, kind: 'DEPENDS' }, depends(prompt, main)],
+  };
+}
+
+/** Adds the root `HUMAN(prompt)`, which every node without a predecessor depends on (3.8). */
+export function compileTemplate(
+  workflowRunId: string,
+  template: TemplateDefinition,
+): { readonly revision: GraphRevision; readonly errors: readonly GraphValidationError[] } {
+  const root = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
+  const byName = new Map<string, GraphNodeRecord>();
+  for (const node of template.nodes) {
+    byName.set(
+      node.name,
+      node.kind === 'AGENT'
+        ? nodeOf(workflowRunId, 1, {
+            name: node.name,
+            kind: 'AGENT',
+            agentRef: node.agent,
+            ...(node.goal === undefined ? {} : { goal: node.goal }),
+            ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
+            ...(node.output === undefined ? {} : { output: node.output }),
+          })
+        : nodeOf(workflowRunId, 1, { name: node.name, kind: 'HUMAN' }),
+    );
+  }
+  const edges: GraphEdgeRecord[] = [];
+  const errors: GraphValidationError[] = [];
+  for (const node of template.nodes) {
+    const target = byName.get(node.name);
+    if (target === undefined) continue;
+    const dependencies = node.kind === 'AGENT' ? (node.dependsOn ?? []) : [];
+    if (dependencies.length === 0) edges.push(depends(root, target));
+    for (const dependency of dependencies) {
+      const name = typeof dependency === 'string' ? dependency : dependency.node;
+      const source = byName.get(name);
+      if (source === undefined) {
+        errors.push({ code: 'UNKNOWN_DEPENDENCY', node: node.name });
+      } else if (typeof dependency === 'string') {
+        edges.push(depends(source, target));
+      } else {
+        const { field, equals, in: anyOf } = dependency.when;
+        edges.push({
+          from: source.nodeId,
+          to: target.nodeId,
+          kind: 'CONDITIONAL',
+          when: {
+            field,
+            ...(equals === undefined ? {} : { equals }),
+            ...(anyOf === undefined ? {} : { in: [...anyOf] }),
+          },
+        });
+      }
+    }
+  }
+  return { revision: { nodes: [root, ...byName.values()], edges }, errors };
+}
+
+const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
+  nodeId: node.nodeId,
+  name: node.name,
+  kind: node.kind,
+  trigger: node.trigger,
+  iteration: node.iteration,
+  ...(node.loopId === undefined ? {} : { loopId: node.loopId }),
+});
+
+/** Stage 1 rules; later stages widen them in the same function (Module/Workflow 6.1). */
+export function validateRevision(
+  current: Graph,
+  revision: GraphRevision,
+  rules: { readonly builtInAgents: ReadonlySet<string>; readonly allowConditions: boolean },
+): readonly GraphValidationError[] {
+  return validateExtension(
+    current,
+    {
+      nodes: revision.nodes.map((node) => ({
+        node: toGraphNode(node),
+        ...(node.agentRef === undefined ? {} : { agentId: node.agentRef.id }),
+      })),
+      edges: revision.edges.map(({ from, to, kind, when }) => ({
+        from,
+        to,
+        kind,
+        ...(when === undefined ? {} : { when }),
+      })),
+    },
+    rules,
+  );
+}
+
+export interface ProjectedGraph {
+  readonly graph: Graph;
+  readonly view: NodeView;
+  readonly nodes: ReadonlyMap<string, GraphNodeRecord>;
+  readonly lastRevision: number;
+}
+
+/** The graph of one run at any log prefix: a pure function of the records. */
+export function projectGraph(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+): ProjectedGraph {
+  const nodes = new Map<string, GraphNodeRecord>();
+  const edges: GraphEdgeRecord[] = [];
+  const view = new Map<string, NodeRecord>();
+  let lastRevision = 0;
+  for (const record of records) {
+    if (!('workflowRunId' in record) || record.workflowRunId !== workflowRunId) continue;
+    if (record.type === 'GRAPH_EXTENDED') {
+      lastRevision = record.revision;
+      for (const node of record.nodes) nodes.set(node.nodeId, node);
+      edges.push(...record.edges);
+    } else if (record.type === 'NODE_STARTED') {
+      view.set(record.nodeId, { status: 'RUNNING' });
+    } else if (record.type === 'NODE_ENDED') {
+      view.set(record.nodeId, {
+        status: record.status,
+        ...(record.skipReason === undefined ? {} : { skipReason: record.skipReason }),
+        ...(record.result === undefined ? {} : { result: record.result }),
+      });
+    }
+  }
+  return {
+    graph: {
+      nodes: [...nodes.values()].map(toGraphNode),
+      edges: edges.map(({ from, to, kind, when }) => ({
+        from,
+        to,
+        kind,
+        ...(when === undefined ? {} : { when }),
+      })),
+    },
+    view,
+    nodes,
+    lastRevision,
+  };
+}
+
+export interface Advance {
+  readonly skipped: readonly SkippedNode[];
+  readonly ready: readonly GraphNode[];
+}
+
+/** Steps 4 and 5 of M2Design 3.3: skips first, because they can change what is ready. */
+export function advanceGraph(graph: Graph, view: NodeView): Advance {
+  const settled = settleSkips(graph, view);
+  return { skipped: settled.skipped, ready: readyNodes(graph, settled.view) };
+}
+
+/** The main node that ended without a next prompt yet, which is when `chat` grows. */
+export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
+  const { graph, view, nodes } = projected;
+  return graph.nodes.find((node) => {
+    const ended = !['PENDING', 'READY', 'RUNNING'].includes(
+      view.get(node.nodeId)?.status ?? 'PENDING',
+    );
+    return (
+      ended &&
+      nodes.get(node.nodeId)?.kind === 'AGENT' &&
+      !graph.edges.some((edge) => edge.from === node.nodeId)
+    );
+  })?.nodeId;
+}
