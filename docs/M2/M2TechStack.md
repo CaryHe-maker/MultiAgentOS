@@ -25,6 +25,7 @@ M2 沿用 M1 的工程基线（[M1TechStack](../History/M1/M1TechStack.md)），
 WSL 的结果取自 2026-10-31：Ubuntu 24.04.5、内核 `6.18.33.2-microsoft-standard-WSL2`、`bubblewrap 0.9.0`；
 AppArmor 未启用（`/sys/module/apparmor/parameters/enabled` 为 `N`），`kernel.apparmor_restrict_unprivileged_userns` 不存在。
 原生环境尚未实测（当前没有可用的原生 Ubuntu 24.04 机器），AppArmor 的限制与修复步骤也因此尚未验证。
+检查写在 `scripts/sandbox-probe.sh`；工作流 `.github/workflows/sandbox-probe.yml` 在 GitHub Actions 的 `ubuntu-24.04` 上手动运行，覆盖 AppArmor 的原样状态、限制开启，以及两种修复方法。
 
 | # | 检查项（M2Design 第 6.1、6.2、14.1 节） | 预期 | 原生结果 | WSL 结果 |
 |---|---|---|---|---|
