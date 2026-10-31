@@ -22,6 +22,7 @@
 | D4 | 用户正文只以引用传递，没有例外（M2Design v1.12，Cary 2026-10-31 决定） | 契约已改，Execution 在 S1-KX-1 实现 |
 | D5 | 不留历史包袱：`analyze` 并入统一路径，发布版只有 major 1，M1 模块在 S1-IN-1 后删除（Cary 2026-10-31 决定） | 文档已改 |
 | D6 | AgentRun 状态机对所有 Agent 相同，结束方式由定义声明的结束工具决定，运行器按表执行（Cary 2026-10-31 决定） | 已执行 |
+| D7 | 授权询问不超时，一直等到用户回答，只在运行收敛时取消；拒绝作为被拒 Unit 的工具结果交还 Agent，不结束 Turn（M2Design v1.13，Cary 2026-10-31 决定） | 文档与 major 1 契约已改；M1 的 `authorizationTimeoutMs` 随 S1-IN-1 删除 M1 模块时一起删除 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 
 ## 3. 当前进度
@@ -31,5 +32,6 @@
 | `feature/phase0/main` | 阶段 0：实测结果、M2Design v1.10、本文 | 文档改动 |
 | `feature/phase1/main`（基于上一行） | E-EX-4、E-WF-1；S1-CT-1 的 Schema 与 Port；S1-IF-1；S1-IF-2；`repository-list` 的列表与预览（未注册为 Executor） | Ubuntu 24.04（WSL）完整质量门 |
 
-阶段 1 尚未开始：S1-CT-1 的 fake 与契约测试、S1-WF-1–4、S1-KC-1–4、S1-KX-1、S1-EX-1 的其余部分（`v0` 预览接入 `retention/`、`context-assemble`、`model-call`）、S1-PL-1、S1-UI-1、S1-IN-1。
+阶段 1 已完成：S1-CT-1 的 fake 与契约测试、S1-WF-1–4（对 fake Kernel）、S1-KC-4 的两级账本；S1-KC-1–2 已有 Session actor、Outbox、运行控制、Session 引用、运行级授权与 `submitUnit` 的受理检查。
+阶段 1 尚未完成：Unit 的尝试与结果检查接入 Session actor、S1-KC-3、S1-KX-1、S1-EX-1 的其余部分、S1-PL-1、S1-UI-1、S1-IN-1。
 新代码都未接入运行链路，所以现有的 M1 行为不变；阶段 1 的验收用例一个都还不能运行。

@@ -126,7 +126,7 @@ type ProjectFileContent =
 ```
 
 - `AGENTS.md` 不返回正文，Workflow 只把引用交给 `context-assemble`；`trusted` 的判定与询问见 M2Design 第 9.5 节。
-  询问进行中时本请求挂起，直到用户回答或超时（超时得到 `trusted: false`）。
+  询问进行中时本请求挂起，直到用户回答；询问不超时，运行收敛时本请求随运行结束。
 - 文件超过 64 KiB 时照常存为产物；截断只发生在上下文组装中。
 
 - **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要目标文字的 Unit 输入写 `objectiveRef` 或 `goalRef`，由 Execution 解析。没有例外。

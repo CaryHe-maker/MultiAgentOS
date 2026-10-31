@@ -240,7 +240,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 |---|---|---|---|
 | `repositoryRoot` | Core | 组合根依据工作目录或 `--repo` 写入 | 本进程的仓库，realpath |
 | `runTimeoutMs` | — | — | 删除；阶段 5 由 `turnTimeoutSeconds` 取代 |
-| `authorizationTimeoutMs` | Core | 300000 | 不变 |
+| `authorizationTimeoutMs` | — | — | 删除：授权询问不超时（M2Design 第 5.3 节） |
 | 其余 | — | — | 与 M1 Interaction 第 9 节相同；`budget` 见 [Monitor](Monitor.md) |
 
 ## 10. 不变量与测试

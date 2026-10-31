@@ -156,7 +156,7 @@ fake Workflow 能回答 Session 列表查询与删除；`ActivityEvent` 的 `RET
 
 ### 6.3 阶段 2：写入与回退
 
-**文档门**：Core（能力上限与授权条目、判定顺序、询问合并、超时）、Execution（快照、改动检测、回退步骤）、
+**文档门**：Core（能力上限与授权条目、判定顺序、询问合并）、Execution（快照、改动检测、回退步骤）、
 Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`、`output-read`）、Workflow（`baseSha`、`expectAbsent`、Fork、
 `WORKSPACE_*` 记录、`read_output` 的编号翻译、`update_todos`、子目录 `AGENTS.md` 的加载）、Core（`updateActivity`、子目录 `AGENTS.md` 的信任与本运行内的不信任）、UserInteraction（授权选项、回退确认、待办进度）、`M2Security.md`（写入范围与受保护路径、完整输出的读取隔离）、相应的 `Interface/` 章节。
 
@@ -232,7 +232,7 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S5-KC-1 | 控制状态与转移、授权询问计时的冻结、`maxPauseSeconds`；Turn 超时，全部工作都在等用户时暂停计时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；人类请求不超时；`steerRun` 的受理与转发 | — |
+| S5-KC-1 | 控制状态与转移、`maxPauseSeconds`；Turn 超时，全部工作都在等用户时暂停计时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；`steerRun` 的受理与转发 | — |
 | S5-KX-1 | 按并发类别处理暂停、`cancelExecution`、中止时排队中的尝试也交付 | — |
 | S5-WF-1 | `steer` 节点（暂停后附加与运行中插话，目标已结束时改投父 AgentRun）、`ask_user`、重新提交被取消的 READ、中止后的收敛 | — |
 | S5-UI-1 | 按键与 `/continue`、`/steer` 与 Alt+Enter、中止时排队消息的放回、待处理请求的队列 | — |

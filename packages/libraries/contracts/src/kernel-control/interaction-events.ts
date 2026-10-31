@@ -57,10 +57,10 @@ export type InteractionInboxEvent = Static<typeof InteractionInboxEventSchema>;
 
 // --- Major 1 (Interface/InteractionKernel 3.1) ------------------------------------------------
 
+/** A question waits until the user answers or the run converges; it never times out (M2Design 5.3). */
 const question = {
   type: Type.Literal('AuthorizationRequest'),
   questionId: IdSchemas.questionId,
-  expiresAt: TimestampSchema,
 };
 export const AuthorizationRequestV1Schema = Type.Union(
   [
@@ -82,6 +82,17 @@ export const AuthorizationRequestV1Schema = Type.Union(
   { $id: 'kernel.control.AuthorizationRequest.v1' },
 );
 export type AuthorizationRequestV1 = Static<typeof AuthorizationRequestV1Schema>;
+
+/** CANCELLED only when the run converges or the answer can no longer reach the Kernel. */
+export const AuthorizationResolvedV1Schema = closed(
+  {
+    type: Type.Literal('AuthorizationResolved'),
+    questionId: IdSchemas.questionId,
+    resolution: Type.Enum(['GRANTED', 'DECLINED', 'CANCELLED']),
+  },
+  'kernel.control.AuthorizationResolved.v1',
+);
+export type AuthorizationResolvedV1 = Static<typeof AuthorizationResolvedV1Schema>;
 
 export const HumanRequestSchema = closed(
   {
@@ -176,7 +187,7 @@ export type RunFinishedV1 = Static<typeof RunFinishedV1Schema>;
 
 export const KernelToInteractionEventV1Schema = Type.Union([
   AuthorizationRequestV1Schema,
-  AuthorizationResolvedSchema,
+  AuthorizationResolvedV1Schema,
   HumanRequestSchema,
   HumanResolvedSchema,
   MessagePublishedSchema,

@@ -64,9 +64,9 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 - 授权询问与人类请求按到达顺序排成一个队列，一次只处理一项；两类以不同样式显示，每项标明来自哪个 Agent（阶段 4 起还有任务名）。
 - 授权询问的展示：
-  - `repo.read`：仓库路径、排除规则、"读取的内容会发送至 <provider>"、回答期限（M1 原样）；
+  - `repo.read`：仓库路径、排除规则、"读取的内容会发送至 <provider>"；询问不超时，不显示回答期限；
   - `project.instructions`：`AGENTS.md` 的全文（经 `readArtifact` 读取；`truncated` 时注明只展示开头）、"信任这份内容"与"不信任"两个选项。
-- 回答只是原始响应：授权以 `AuthorizationResolved` 为准，人类请求以 `HumanResolved` 为准；拒绝或超时不视为同意。
+- 回答只是原始响应：授权以 `AuthorizationResolved` 为准，人类请求以 `HumanResolved` 为准；没有回答不视为同意。
 - 询问的读取任务不阻塞 Inbox 的处理（M1 第 4 节的规则）。
 
 ### 5.2 排队的消息

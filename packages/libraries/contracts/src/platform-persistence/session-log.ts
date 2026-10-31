@@ -218,7 +218,7 @@ export const SessionLogRecordSchema = Type.Union(
       questionId: IdSchemas.questionId,
       capability: text(64),
       resourceKeyDigest: Sha256Schema,
-      resolution: Type.Enum(['GRANTED', 'DECLINED', 'TIMED_OUT', 'CANCELLED']),
+      resolution: Type.Enum(['GRANTED', 'DECLINED', 'CANCELLED']),
     }),
     record('LOG_TAIL_REPAIRED', base, { truncatedBytes: count(1) }),
     record('STALE_UNITS_SETTLED', base, {

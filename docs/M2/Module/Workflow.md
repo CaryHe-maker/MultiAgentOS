@@ -123,6 +123,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    `QUOTA_EXHAUSTED`（工具次数、墙钟）同样进入收尾，`wrapUpReason` 为对应的触顶项。
 5. **业务熔断**（M2Design 第 3.4 节）：重复意图在第 3 次时于工具结果中附加警告、第 5 次时不再提交并进入收尾（`REPEATED_INTENT`）；
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
+   授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果写明"用户拒绝了这项能力，本运行内不会再询问"；它不结束 Turn，也不结束 AgentRun（M2Design 第 5.3 节）。
 6. **final-call**：每个 AgentRun 至多一次；收尾调用的模型参数（`tool_choice`、思考设置、失败后的重试）由 `context-assemble` 与 `model-call` 按 M2Design 第 9.4 节处理，Workflow 只设置 `final`。
 7. M1 的 `DUPLICATE_CALL` 检查保留；它与重复意图不同：前者拒绝同一 AgentRun 内已成功执行过的相同调用，后者计数最近 20 个 UnitIntent。
    M1 中"先前结果已被裁剪时不算重复"的例外改为：先前结果已被压缩的摘要取代（阶段 8），或在本次收尾调用的保险中被去掉时，不算重复。

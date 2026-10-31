@@ -3,7 +3,7 @@ import {
   newId,
   type ArtifactRef,
   type AuthorizationRequestV1,
-  type AuthorizationResolved,
+  type AuthorizationResolvedV1,
 } from '@multiagentos/contracts';
 
 /** Lives in this run's memory only, and ends with the run (Kernel/Core 5, invariant 2). */
@@ -15,7 +15,7 @@ export interface Lease {
   readonly issuedAt: string;
 }
 
-export type Resolution = AuthorizationResolved['resolution'];
+export type Resolution = AuthorizationResolvedV1['resolution'];
 
 export type AccessDecision =
   | { readonly kind: 'ALLOWED' }
@@ -33,14 +33,13 @@ export interface QuestionResolved<W> {
   readonly resolution: Resolution;
   readonly capability: AuthorizationRequestV1['capability'];
   readonly waiters: readonly W[];
-  readonly resolved: AuthorizationResolved;
+  readonly resolved: AuthorizationResolvedV1;
 }
 
 export interface RunAuthorizationDeps {
   readonly repositoryRoot: string;
   readonly provider: string;
   readonly repositoryExclusions: readonly string[];
-  readonly authorizationTimeoutMs: number;
   readonly now: () => Date;
 }
 
@@ -54,10 +53,11 @@ interface Question<W> {
 const instructionKey = (path: string, sha256: string): string => `${path}\u0000${sha256}`;
 
 /**
- * Authorization of one run. `repo.read` is asked once: a grant and a refusal last for the run, and
- * a timeout or a cancellation refuses only the requests that waited. `project.instructions` is
- * asked per exact content; a refusal is remembered here and trust itself belongs to Session
- * management, because it outlives the run and grants nothing (Kernel/Core 5).
+ * Authorization of one run. A question waits until the user answers; it has no timeout, and only
+ * the run's convergence cancels it (M2Design 5.3). `repo.read` is asked once: a grant and a
+ * refusal last for the run. `project.instructions` is asked per exact content; a refusal is
+ * remembered here and trust itself belongs to Session management, because it outlives the run
+ * and grants nothing (Kernel/Core 5).
  */
 export class RunAuthorization<W> {
   readonly #deps: RunAuthorizationDeps;
@@ -78,10 +78,6 @@ export class RunAuthorization<W> {
 
   public get lease(): Readonly<Lease> | undefined {
     return this.#lease;
-  }
-
-  #expiresAt(): string {
-    return new Date(this.#deps.now().getTime() + this.#deps.authorizationTimeoutMs).toISOString();
   }
 
   requireRepoRead(waiter: W): AccessCheck {
@@ -107,7 +103,6 @@ export class RunAuthorization<W> {
         repositoryPath: this.#deps.repositoryRoot,
         exclusions: [...this.#exclusions],
         provider: this.#deps.provider,
-        expiresAt: this.#expiresAt(),
       },
     };
   }
@@ -145,7 +140,6 @@ export class RunAuthorization<W> {
         path: file.path,
         contentRef: file.contentRef,
         truncated: file.truncated,
-        expiresAt: this.#expiresAt(),
       },
     };
   }
@@ -182,11 +176,6 @@ export class RunAuthorization<W> {
         issuedAt: this.#deps.now().toISOString(),
       });
     return settled;
-  }
-
-  /** Refuses only those who waited: the next need asks again (M2Design 5.3). */
-  expire(questionId: string): QuestionResolved<W> | undefined {
-    return this.#settle(questionId, 'TIMED_OUT');
   }
 
   /** Convergence: nothing stays pending and the Lease ends with the run. */

@@ -16,7 +16,6 @@ const authorization = () =>
     repositoryRoot: '/repository',
     provider: 'deepseek',
     repositoryExclusions: [],
-    authorizationTimeoutMs: 1000,
     now: () => new Date('2026-10-31T00:00:00.000Z'),
   });
 
@@ -30,10 +29,8 @@ describe('repo.read', () => {
   it('asks once and releases everyone who waited, in order', () => {
     const auth = authorization();
     const first = auth.requireRepoRead('a');
-    expect(first.requested).toMatchObject({
-      capability: 'repo.read',
-      expiresAt: '2026-10-31T00:00:01.000Z',
-    });
+    expect(first.requested).toMatchObject({ capability: 'repo.read' });
+    expect(first.requested).not.toHaveProperty('expiresAt');
     const second = auth.requireRepoRead('b');
     expect(second.requested).toBeUndefined();
     if (first.decision.kind !== 'PENDING') throw new Error('not pending');
@@ -49,11 +46,11 @@ describe('repo.read', () => {
     expect(auth.lease).toBeUndefined();
   });
 
-  it('asks again after a timeout, which refused only this time', () => {
+  it('keeps waiting until the user answers', () => {
     const auth = authorization();
     const questionId = ask(auth, 'a');
-    expect(auth.expire(questionId)).toMatchObject({ resolution: 'TIMED_OUT', waiters: ['a'] });
-    expect(auth.requireRepoRead('b').requested).toBeDefined();
+    expect(auth.requireRepoRead('b').decision).toEqual({ kind: 'PENDING', questionId });
+    expect(auth.answer(questionId, 'ALLOW')?.waiters).toEqual(['a', 'b']);
   });
 
   it('answers a question once', () => {
@@ -61,7 +58,6 @@ describe('repo.read', () => {
     const questionId = ask(auth, 'a');
     auth.answer(questionId, 'ALLOW');
     expect(auth.answer(questionId, 'ALLOW')).toBeUndefined();
-    expect(auth.expire(questionId)).toBeUndefined();
   });
 });
 
@@ -93,7 +89,7 @@ describe('project.instructions', () => {
 });
 
 describe('closing', () => {
-  it('cancels every question and ends the Lease', () => {
+  it('cancels every pending question and ends the Lease', () => {
     const auth = authorization();
     auth.answer(ask(auth, 'a'), 'ALLOW');
     auth.askInstructions(file, 'b');

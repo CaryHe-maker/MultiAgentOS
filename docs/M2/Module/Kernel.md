@@ -57,7 +57,7 @@
 
 | 能力 | 何时询问 | 结果 |
 |---|---|---|
-| `repo.read` | 运行开启后第一次需要时；同意后本运行内有效 | 拒绝在本运行内保留；超时只拒绝本次 |
+| `repo.read` | 运行开启后第一次需要时；同意后本运行内有效 | 询问不超时，一直等到用户回答；拒绝在本运行内保留，被拒的 Unit 以 `REJECTED(USER_DECLINED)` 作为工具结果交还，不结束 Turn |
 | `project.instructions` | `readProjectFile('AGENTS.md')` 读到未被信任的内容时 | 信任记录跨 Session 有效，只决定 `AGENTS.md` 能否进入 system 段，不产生执行权限 |
 
 授权只由 Kernel 在准入或读取项目文件时被动发起；Workflow 的人类请求与 UserInteraction 的回答都不产生授权（M2Design 第 4.1 节）。

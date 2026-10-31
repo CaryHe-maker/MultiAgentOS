@@ -156,18 +156,18 @@ type KernelToInteractionEvent =
 type AuthorizationRequest =
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'repo.read';
-      repositoryPath: string; exclusions: string[]; provider: string; expiresAt: string;
+      repositoryPath: string; exclusions: string[]; provider: string;
     }
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'project.instructions';
-      path: string; contentRef: ArtifactRef; truncated: boolean; expiresAt: string;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
+      path: string; contentRef: ArtifactRef; truncated: boolean;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
     };
   // 阶段 2：workspace.write；阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
 
 interface AuthorizationResolved {
   type: 'AuthorizationResolved';
   questionId: string;
-  resolution: 'GRANTED' | 'DECLINED' | 'TIMED_OUT' | 'CANCELLED';
+  resolution: 'GRANTED' | 'DECLINED' | 'CANCELLED';   // 询问不超时；CANCELLED 只在运行收敛时（M2Design 第 5.3 节）
 }
 
 interface HumanRequest {
