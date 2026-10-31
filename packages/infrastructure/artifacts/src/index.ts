@@ -172,3 +172,4 @@ const ARTIFACT_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze([
     reason: 'M1 keeps artifacts with the run directory',
   },
 ]);
+export * from './global-store.js';

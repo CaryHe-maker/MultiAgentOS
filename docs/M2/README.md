@@ -25,6 +25,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | `Infrastructure/` | 四类基础设施的 M2 职责与边界 |
 | `SystemFaultHandling.md` | 异常语义、停机与退出码 |
 | `M2Usage.md`、`M2Limitations.md` | 发布前编写：运行说明与已知限制 |
+| [M2OpenDecisions](M2OpenDecisions.md) | 待负责人决定的问题、先行决定与当前进度 |
 
 验收证据与发布计划在发布阶段编写，放在 `docs/` 根目录，与 M1 的做法相同。
 
