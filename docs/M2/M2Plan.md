@@ -232,12 +232,12 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S5-KC-1 | 控制状态与转移、询问计时的冻结、`maxPauseSeconds`；Turn 超时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；`steerRun` 的受理与转发 | — |
+| S5-KC-1 | 控制状态与转移、授权询问计时的冻结、`maxPauseSeconds`；Turn 超时，全部工作都在等用户时暂停计时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；人类请求不超时；`steerRun` 的受理与转发 | — |
 | S5-KX-1 | 按并发类别处理暂停、`cancelExecution`、中止时排队中的尝试也交付 | — |
 | S5-WF-1 | `steer` 节点（暂停后附加与运行中插话，目标已结束时改投父 AgentRun）、`ask_user`、重新提交被取消的 READ、中止后的收敛 | — |
 | S5-UI-1 | 按键与 `/continue`、`/steer` 与 Alt+Enter、中止时排队消息的放回、待处理请求的队列 | — |
 
-**集成** S5-IN-1。**退出**：H1–H4、H11、H12 的中止部分。
+**集成** S5-IN-1。**退出**：H1–H4、H11、H12 的中止部分、H13。
 
 ### 6.7 阶段 6：Web
 

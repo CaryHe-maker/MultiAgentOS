@@ -161,6 +161,6 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 3 | 命令的级别、资源键与询问选项、SandboxProfile、`approvalDigest`、`STOP_UNCONFIRMED` 停机 |
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 2 | `updateActivity` 的转发 |
-| 5 | PAUSING、PAUSED、INTERRUPTING，计时冻结，Turn 超时，人类请求的取消，运行中插话 `steerRun` |
+| 5 | PAUSING、PAUSED、INTERRUPTING，授权询问计时的冻结，Turn 超时（全部工作都在等用户时暂停计时，M2Design 第 7.4 节），人类请求的取消（询问不超时），运行中插话 `steerRun` |
 | 6 | `web.search`、`web.fetch` |
 | 8 | 第 6a 节：压缩过程（检查点、空闲触发、修剪、摘要请求的回退）；压缩的审计与配置 |

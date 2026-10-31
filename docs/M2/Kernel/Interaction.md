@@ -178,7 +178,7 @@ Session actor：
   - 开启：Core 分配 `turnId`，调用 `Monitor.openTurnLedger`，在 `HumanAnswered` 中带上 `turnId`；
   - 结束：`REQUEST_HUMAN(prompt)` 到达时检查没有 ACTIVE 的 AgentRun 与在途尝试，通过后调用 `Monitor.closeTurnLedger`，Outbox 发出 `TurnClosed`；
     没有开启中的 Turn 时（`initialInput: false` 的运行请求第一个开放输入）不结束任何 Turn，直接进入 AWAITING_INPUT；
-  - 阶段 2 增加开始与结束快照；阶段 5 增加 Turn 超时。阶段 5 之前，Turn 的时长由每次执行的截止时间（M1 的 `executionLimits`）间接约束。
+  - 阶段 2 增加开始与结束快照；阶段 5 增加 Turn 超时：没有已派发或待派发的尝试（挂起在授权询问上的不算）且有待答复的人类请求或授权询问时暂停计时，每次处理消息的末尾重新判断（M2Design 第 7.4 节）。阶段 5 之前，Turn 的时长由每次执行的截止时间（M1 的 `executionLimits`）间接约束。
 - **结束**：收敛过程与 M1 Interaction 第 6 节的三步相同。差别：
   - 触发来源：`CLOSE_RUN`（COMPLETED、FAILED、BUDGET、CANCELLED、TIMEOUT）、Session 管理的 `CANCEL_RUN`（ENDED_BY_USER、SHUTDOWN）、
     `KERNEL_FAULT`、结果检查中的 VIOLATION；额度不触发收敛；

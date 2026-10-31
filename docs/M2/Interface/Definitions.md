@@ -101,18 +101,20 @@ type TemplateNode =
       inputFrom?: 'HANDOFF';                       // analyze：以前驱的交接内容（HandoffBrief）为输入
       output?: boolean;                            // 该节点的结果作为运行结果发布
       // 阶段 7：writeScope、effort、budget、trigger、loop
+      // 预留（M2Design 第 14.2 节第 9、10 条）：结构化结果、显式引用祖先节点的结果
     }
   | {
       name: string;
       kind: 'HUMAN';
-      // 阶段 7：request（ask、confirm、review）、dependsOn
+      // 阶段 7：request（ask、confirm、review）、dependsOn；预留：询问的显式超时与缺省答复（第 14.2 节第 18 条）
     };
+  // 预留：kind 以后可能增加取值，例如模板组合（M2Design 第 14.2 节第 17 条）
 
 type TemplateDependency =
   | string                                         // 依赖边
   | { node: string; when: EdgeCondition };         // 条件边；阶段 1 只允许内置模板使用，阶段 7 对使用者模板开放
 
-interface EdgeCondition {
+interface EdgeCondition {                         // 以后可能增加按前驱结束状态的谓词（失败边，M2Design 第 14.2 节第 8 条）
   field: string;                                   // 前驱结构化结果中的字段路径
   equals?: string | boolean;
   in?: (string | boolean)[];                       // equals 与 in 恰好出现一个

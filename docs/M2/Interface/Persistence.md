@@ -55,7 +55,7 @@ interface LogRecordBase {
 | `TURN_ENDED` | `reason`（含 `PROCESS_EXITED`）、`usage?` | 1 |
 | `GRAPH_EXTENDED` | `revision`、`source: 'TEMPLATE' \| 'CHAT_GROWTH' \| 'LOOP' \| 'SPAWN'`、`nodes`、`edges` | 1 |
 | `NODE_STARTED` | `nodeId`、`path` | 1 |
-| `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?` | 1 |
+| `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?`；以后可能增加失败原因（M2Design 第 14.2 节第 8 条） | 1 |
 | `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind` | 1 |
 | `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
