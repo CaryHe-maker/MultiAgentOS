@@ -143,7 +143,7 @@ fake Workflow 能回答 Session 列表查询与删除；`ActivityEvent` 的 `RET
 | S1-KC-2 | Turn 的开启与结束、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`project.instructions` 询问 | — |
 | S1-KC-3 | Gateway 的新 syscall 与来源检查 | — |
 | S1-KC-4 | Monitor：运行级与 Turn 账本、main 使用 Turn 账本、每个 Agent 的额度参数与启动检查、工具次数与墙钟上限 | — |
-| S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、按 Unit 定义的版本选取预览上限（`v1` 为 `previewMaxBytes`、`previewMaxLines`，`v0` 为 `maxOutputBytes`）、预览与完整输出的存储（完整输出的上限 `maxFullOutputBytes`）、技术重试以 `Retry-After` 为下限与 `RETRYING` 活动、按 ACTIVE 的 Session 标记保留（启动时一次、之后每小时一次，Session 管理的定时器触发）、删除与新建失败时的清理、按登记时间判断的 `ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile`；ArtifactStore 对已存在正文的写入时间更新与 `put`、`sweep` 的互斥 | — |
+| S1-KX-1 | Execution：按 Session 登记产物归属与保留类别、预览上限（`previewMaxBytes`、`previewMaxLines`，不按定义版本区分）、预览与完整输出的存储（完整输出的上限 `maxFullOutputBytes`）、技术重试以 `Retry-After` 为下限与 `RETRYING` 活动、按 ACTIVE 的 Session 标记保留（启动时一次、之后每小时一次，Session 管理的定时器触发）、删除与新建失败时的清理、按登记时间判断的 `ARTIFACT_EXPIRED`、`message-publish`、`readProjectFile`；ArtifactStore 对已存在正文的写入时间更新与 `put`、`sweep` 的互斥 | — |
 | S1-IF-1 | Persistence：只追加的 JSONL 存储、`sessions/` 目录结构、`kernel-execution` 命名空间、实例锁与 Session 锁 | — |
 | S1-IF-2 | ArtifactStore：全局内容寻址存储；`sweep` 按保留标记删除 | — |
 | S1-EX-1 | `retention/` 共用模块与三个仓库工具的预览（按交来的预览上限）；`repository-list`（`list_files`）；`context-assemble` 不按调用裁剪、收尾调用的保险；`model-call` 交回 `retryAfterMs` | 提前任务 E-EX-4 |

@@ -27,11 +27,23 @@
 
 ## 3. 当前进度
 
-| 分支 | 内容 | 验证 |
-|---|---|---|
-| `feature/phase0/main` | 阶段 0：实测结果、M2Design v1.10、本文 | 文档改动 |
-| `feature/phase1/main`（基于上一行） | E-EX-4、E-WF-1；S1-CT-1 的 Schema 与 Port；S1-IF-1；S1-IF-2；`repository-list` 的列表与预览（未注册为 Executor） | Ubuntu 24.04（WSL）完整质量门 |
+核对时间：2026-11-02，本地 `feature/phase1/main` 的 `735c745`；Ubuntu 24.04（WSL）完整质量门通过（1414 个测试通过，2 个跳过）。
+阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 的提交都还没有推送：远端 `feature/phase1/main` 停在 `6280d31`，本地领先 33 个提交。
 
-阶段 1 已完成：S1-CT-1 的 fake 与契约测试、S1-WF-1–4（对 fake Kernel）、S1-KC-4 的两级账本；S1-KC-1–2 已有 Session actor、Outbox、运行控制、Session 引用、运行级授权与 `submitUnit` 的受理检查。
-阶段 1 尚未完成：Unit 的尝试与结果检查接入 Session actor、S1-KC-3、S1-KX-1、S1-EX-1 的其余部分、S1-PL-1、S1-UI-1、S1-IN-1。
+| 任务 | 状态 | 已完成 | 未完成 |
+|---|---|---|---|
+| S1-CT-1 | 完成 | v1 Schema 与 Port；fake Kernel、fake Workflow 与契约测试 | — |
+| S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
+| S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
+| S1-KC-1 | 部分 | Session actor 的生命周期、三个序列的 Outbox、Session 引用、信任记录 | Session 管理（分发、列表、删除、系统级事件、产物回收的定时器）、审计 |
+| S1-KC-2 | 部分 | Turn、开放输入的静止检查、AWAITING_INPUT、运行级授权（含 `project.instructions` 的判定） | `requestHuman`、`answerHuman`、`answerAuthorization`、`readProjectFile` 的受理入口 |
+| S1-KC-3 | 未开始 | — | Gateway 的 major 1 syscall |
+| S1-KC-4 | 部分 | 两级账本、启动检查、工具次数、AgentRun 墙钟 | 接入 Session actor |
+| Core 的 Unit 路径 | 部分 | 受理检查、尝试、预留、结果检查（模块与单元测试） | 幂等记录、AgentRun 登记、接入 Session actor |
+| S1-KX-1 | 未开始 | — | 全部 |
+| S1-EX-1 | 部分 | `retention/`、`repository-list` 的列表与预览（未注册为 Executor） | 三个仓库工具的预览、`context-assemble` 与 `model-call` 的 major 1、`repository-list` 的注册 |
+| S1-PL-1 | 未开始 | — | v1 定义与加载校验（包括 `repo.read`、`failurePolicy` 两条规则） |
+| S1-UI-1 | 未开始 | — | 全部 |
+| S1-IN-1 | 未开始 | — | 接线、回归、删除 M1 与 major 0、去掉 `V1` 后缀 |
+
 新代码都未接入运行链路，所以现有的 M1 行为不变；阶段 1 的验收用例一个都还不能运行。

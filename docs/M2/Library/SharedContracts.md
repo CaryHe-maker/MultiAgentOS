@@ -90,7 +90,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 ### 3.8 Port
 
 `PersistencePort`、`InstanceLockPort`、`ArtifactStorePort`、`WorkflowGatewayPort`、`InteractionGatewayPort` 与两种 Inbox Port 的 M2 形式，
-按 Interface 各文档定义，放在 `ports.ts`；M1 的 Port 签名在同一文件中保留到 M2 发布，供 `analyze` 回归使用。
+按 Interface 各文档定义，放在 `ports.ts`；M1 的 Port 签名在同一文件中保留到 S1-IN-1 的回归通过，之后随 major 0 一起删除。
 
 ## 4. 测试
 
