@@ -5,7 +5,10 @@ import type {
   CloseReasonV1,
   CoreRejectedCodeV1,
   EndAgentRunRequestV1,
+  ArtifactRef,
   ExecutionScope,
+  ProjectFileContent,
+  ReadProjectFileRequest,
   RegisterAgentRunRequestV1,
   SubmitUnitRequestV1,
   SyscallAck,
@@ -25,7 +28,7 @@ import {
   type PinnedAgent,
 } from './run-attempts.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
-import { admitWork, type Decision, type RunControl } from './run-control.js';
+import { admitWork, readsProjectFile, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
 import { WallClocks } from './wall-clocks.js';
 
@@ -65,6 +68,10 @@ export interface RunWorkDeps {
   readonly repositoryExclusions: readonly string[];
   readonly pinAgent: (request: RegisterAgentRunRequestV1) => Promise<PinResult>;
   readonly inputIsValid: (unit: UnitDefinitionV1, input: unknown) => boolean;
+  readonly preset: 'standard' | 'readonly';
+  readonly readProjectFile: (path: string, scope: ExecutionScope) => Promise<ProjectFileRead>;
+  readonly isTrusted: (path: string, sha256: string) => boolean;
+  readonly trust: (path: string, sha256: string) => Promise<void>;
   /** Execution takes the attempt over and registers it through `attempts`. */
   readonly createAttempt: (spec: AttemptSpec, attempts: RunAttempts) => Promise<string>;
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
@@ -76,10 +83,29 @@ export interface RunWorkDeps {
 }
 
 type Response = SyscallAck | SyscallRejectedV1;
+type FileResponse = ProjectFileContent | SyscallRejectedV1;
+
+/** What Execution read; `truncated` says a question shows only the head of the file. */
+export type ProjectFileRead =
+  | { readonly exists: false }
+  | {
+      readonly exists: true;
+      readonly ref: ArtifactRef;
+      readonly sha256: string;
+      readonly text: string;
+      readonly truncated: boolean;
+    };
 
 interface AgentRunRecord {
   readonly agent: PinnedAgent;
   state: 'ACTIVE' | 'ENDED';
+}
+
+/** A request parked on a question: first `repo.read`, then trust in the exact content. */
+interface WaitingFile {
+  readonly request: ReadProjectFileRequest;
+  readonly done: (response: FileResponse) => void;
+  read?: Extract<ProjectFileRead, { exists: true }>;
 }
 
 interface WaitingUnit {
@@ -98,6 +124,7 @@ export class RunWork {
   readonly #requests = new RequestLedger();
   readonly #agentRuns = new Map<string, AgentRunRecord>();
   readonly #waiting = new Map<string, WaitingUnit>();
+  readonly #waitingFiles = new Map<string, WaitingFile>();
   readonly #inFlight = new Map<string, number>();
   readonly #authorization: RunAuthorization<string>;
   readonly #clocks: WallClocks;
@@ -340,6 +367,11 @@ export class RunWork {
 
   async #release(settled: QuestionResolved<string>): Promise<void> {
     for (const requestId of settled.waiters) {
+      const file = this.#waitingFiles.get(requestId);
+      if (file !== undefined) {
+        await this.#continueFile(file, settled.resolution === 'GRANTED');
+        continue;
+      }
       const waiting = this.#waiting.get(requestId);
       if (waiting === undefined) continue;
       this.#waiting.delete(requestId);
@@ -347,6 +379,102 @@ export class RunWork {
         await this.#startAttempt(waiting.request, waiting.unit, waiting.agent);
       else this.#refuseUnit(waiting.request, waiting.unit, { reasonCode: 'USER_DECLINED' });
     }
+  }
+
+  /**
+   * Answers later than the message that asked: the request may wait on the user, and a handler
+   * that waited here would block the answer behind it. The caller awaits `response` outside.
+   */
+  async readProjectFile(
+    request: ReadProjectFileRequest,
+  ): Promise<{ readonly response: Promise<FileResponse> }> {
+    const { requestId } = request;
+    const replay = this.#requests.lookup<FileResponse>(requestId, request);
+    if (replay.kind === 'replay') return { response: Promise.resolve(replay.response) };
+    const refused = (reasonCode: 'REQUEST_CONFLICT' | 'RUN_BLOCKED') => ({
+      response: Promise.resolve(this.#refuse(requestId, request, reasonCode) as SyscallRejectedV1),
+    });
+    if (replay.kind === 'conflict') return refused('REQUEST_CONFLICT');
+    if (!readsProjectFile(this.#host.control()).accepted) return refused('RUN_BLOCKED');
+
+    let done: WaitingFile['done'] = () => undefined;
+    const response = new Promise<FileResponse>((resolve) => {
+      done = (result) => {
+        this.#waitingFiles.delete(requestId);
+        this.#requests.remember(requestId, request, result);
+        resolve(result);
+      };
+    });
+    const file: WaitingFile = { request, done };
+    const { decision, requested } = this.#authorization.requireRepoRead(requestId);
+    if (requested !== undefined) this.#host.toInteraction(requested);
+    if (decision.kind === 'ALLOWED') await this.#continueFile(file, true);
+    else if (decision.kind === 'DECLINED') await this.#continueFile(file, false);
+    else this.#waitingFiles.set(requestId, file);
+    return { response };
+  }
+
+  async #continueFile(file: WaitingFile, granted: boolean): Promise<void> {
+    const { requestId, path } = file.request;
+    const accepted = { requestId, outcome: 'ACCEPTED' } as const;
+    if (file.read !== undefined) {
+      if (granted) await this.#deps.trust(path, file.read.sha256);
+      this.#answerInstructions(file, file.read, granted);
+      return;
+    }
+    if (!granted) {
+      file.done({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'USER_DECLINED' });
+      return;
+    }
+    const { lease } = this.#authorization;
+    if (lease === undefined) throw new Error('A project file needs a valid Lease');
+    const read = await this.#deps.readProjectFile(path, {
+      kind: 'REPOSITORY',
+      repositoryRoot: lease.repositoryRoot,
+      exclusions: [...lease.exclusions],
+    });
+    if (!read.exists) {
+      file.done({ ...accepted, path, exists: false });
+      return;
+    }
+    if (path !== 'AGENTS.md') {
+      const { ref, sha256, text } = read;
+      file.done({ ...accepted, path, exists: true, ref, sha256, text });
+      return;
+    }
+    if (this.#deps.isTrusted(path, read.sha256)) {
+      this.#answerInstructions(file, read, true);
+      return;
+    }
+    if (this.#deps.preset === 'readonly') {
+      this.#answerInstructions(file, read, false);
+      return;
+    }
+    const { decision, requested } = this.#authorization.askInstructions(
+      { path, sha256: read.sha256, contentRef: read.ref, truncated: read.truncated },
+      requestId,
+    );
+    if (requested !== undefined) this.#host.toInteraction(requested);
+    if (decision.kind === 'PENDING') {
+      file.read = read;
+      this.#waitingFiles.set(requestId, file);
+    } else this.#answerInstructions(file, read, false);
+  }
+
+  #answerInstructions(
+    file: WaitingFile,
+    read: Extract<ProjectFileRead, { exists: true }>,
+    trusted: boolean,
+  ): void {
+    file.done({
+      requestId: file.request.requestId,
+      outcome: 'ACCEPTED',
+      path: 'AGENTS.md',
+      exists: true,
+      ref: read.ref,
+      sha256: read.sha256,
+      trusted,
+    });
   }
 
   /**
@@ -365,6 +493,10 @@ export class RunWork {
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);
     this.#waiting.clear();
+    for (const file of [...this.#waitingFiles.values()])
+      file.done(
+        this.#refuse(file.request.requestId, file.request, 'RUN_BLOCKED') as SyscallRejectedV1,
+      );
     this.#clocks.stop();
     await this.#deps.cancelExecutions(this.#host.runEpoch());
   }

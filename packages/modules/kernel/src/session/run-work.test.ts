@@ -20,6 +20,7 @@ import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 import type { PinnedAgent } from './run-attempts.js';
+import type { ProjectFileRead } from './run-work.js';
 
 const sessionId = newId('ses');
 const fileRead = testUnitDefinition('FILE_READ');
@@ -36,7 +37,11 @@ const replyInput = {
  * The whole Kernel side of one Unit through the real Session actor: admission, authorization,
  * attempt and report. Only Execution is a stand-in, and every event must pass its Schema.
  */
-async function setup(agent: PinnedAgent = testPinnedAgent()) {
+async function setup(
+  agent: PinnedAgent = testPinnedAgent(),
+  options: { preset?: 'standard' | 'readonly'; file?: ProjectFileRead; trusted?: string[] } = {},
+) {
+  const trusted = new Set<string>(options.trusted ?? []);
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const faults: unknown[] = [];
@@ -73,6 +78,13 @@ async function setup(agent: PinnedAgent = testPinnedAgent()) {
           createAttempt: execution.createAttempt,
           cancelExecutions: execution.cancelExecutions,
           pinAgent: () => Promise.resolve({ ok: true, agent }),
+          preset: options.preset ?? 'standard',
+          readProjectFile: () => Promise.resolve(options.file ?? { exists: false }),
+          isTrusted: (_path, sha256) => trusted.has(sha256),
+          trust: (_path, sha256) => {
+            trusted.add(sha256);
+            return Promise.resolve();
+          },
           now: () => new Date(now),
           schedule: (delayMs, due) => {
             const timer = { delayMs, due };
@@ -179,6 +191,8 @@ async function setup(agent: PinnedAgent = testPinnedAgent()) {
       });
     });
   };
+  const readFile = (path = 'AGENTS.md') =>
+    actor.call(() => run().work.readProjectFile({ ...inRun, requestId: newId('req'), path }));
   const reports = () =>
     toWorkflow.flatMap((entry) => (entry.event.type === 'UnitReport' ? [entry.event] : []));
   const interactionTypes = () => toInteraction.map((entry) => entry.event.type);
@@ -192,6 +206,8 @@ async function setup(agent: PinnedAgent = testPinnedAgent()) {
     answer,
     finish,
     question,
+    readFile,
+    trusted,
     reports,
     interactionTypes,
     toWorkflow,
@@ -367,6 +383,80 @@ describe('quotas and requests', () => {
       ),
     ).toMatchObject({ reasonCode: 'AGENT_RUN_ENDED' });
     expect(await kernel.submit()).toMatchObject({ reasonCode: 'AGENT_RUN_ENDED' });
+  });
+});
+
+describe('project instructions', () => {
+  const ref = testArtifactRef();
+  const agents: ProjectFileRead = {
+    exists: true,
+    ref,
+    sha256: ref.sha256,
+    text: 'be careful',
+    truncated: false,
+  };
+  const noAgentRun = testPinnedAgent();
+
+  it('asks for the repository, then for this content, and remembers the trust', async () => {
+    const kernel = await setup(noAgentRun, { file: agents });
+    const pending = await kernel.readFile();
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.interactionTypes().filter((t) => t === 'AuthorizationRequest')).toHaveLength(2);
+    await kernel.answer('ALLOW');
+    expect(await pending.response).toMatchObject({ trusted: true, exists: true });
+    expect(kernel.trusted.has(ref.sha256)).toBe(true);
+  });
+
+  it('answers without asking for content it already trusts', async () => {
+    const kernel = await setup(noAgentRun, { file: agents, trusted: [ref.sha256] });
+    const pending = await kernel.readFile();
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    expect(await pending.response).toMatchObject({ trusted: true });
+    expect(kernel.interactionTypes().filter((t) => t === 'AuthorizationRequest')).toHaveLength(1);
+  });
+
+  it('does not ask under the readonly preset', async () => {
+    const kernel = await setup(noAgentRun, { file: agents, preset: 'readonly' });
+    const pending = await kernel.readFile();
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    expect(await pending.response).toMatchObject({ trusted: false });
+  });
+
+  it('remembers a refusal of this content for the run, and grants nothing', async () => {
+    const kernel = await setup(noAgentRun, { file: agents });
+    const first = await kernel.readFile();
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    await kernel.answer('DENY');
+    expect(await first.response).toMatchObject({ trusted: false });
+    expect(await (await kernel.readFile()).response).toMatchObject({ trusted: false });
+    expect(kernel.trusted.size).toBe(0);
+  });
+
+  it('refuses the file when the repository was refused', async () => {
+    const kernel = await setup(noAgentRun, { file: agents });
+    const pending = await kernel.readFile();
+    await kernel.settled();
+    await kernel.answer('DENY');
+    expect(await pending.response).toMatchObject({ reasonCode: 'USER_DECLINED' });
+  });
+
+  it('ends the request with the run', async () => {
+    const kernel = await setup(noAgentRun, { file: agents });
+    const pending = await kernel.readFile();
+    await kernel.settled();
+    await kernel.actor.call(() =>
+      kernel.actor.closeRun(kernel.run(), { closeReason: 'CANCELLED' }),
+    );
+    expect(await pending.response).toMatchObject({
+      reasonCode: 'RUN_BLOCKED',
+      closeReason: 'CANCELLED',
+    });
   });
 });
 

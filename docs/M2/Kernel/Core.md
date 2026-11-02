@@ -66,7 +66,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 `readProjectFile('AGENTS.md')` 的处理（M2Design 第 9.5 节）：
 
 ```text
-本运行没有 repo.read 的授权 → 先按第 5.1 节询问；拒绝时返回 USER_DECLINED
+本运行没有 repo.read 的授权 → 先按第 5.1 节询问；拒绝时返回 USER_DECLINED（模板文件同样要经过这一步）
 Execution 读取文件（readProjectFile），不存在时返回 exists: false
 存在 → 计算 SHA；信任记录中有 (repositoryRoot, path, sha) → 返回 trusted: true
        没有 → 预设为 readonly 时直接返回 trusted: false
@@ -74,7 +74,7 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
              否则发起 AuthorizationRequest(project.instructions)，挂起本请求
                  ALLOW  → 追加信任记录（source: USER_CONFIRMED），返回 trusted: true
                  DENY  → 在本运行的内存中记住 (path, sha)，返回 trusted: false
-                 运行收敛时取消 → 本请求随运行结束
+                 运行收敛时取消 → 本请求以 RUN_BLOCKED 结束
 ```
 
 `path` 为 `'AGENTS.md'`，阶段 2 起也可以是子目录的 `AGENTS.md`（M2Design 第 9.5 节）；规则相同，询问展示路径与全文。

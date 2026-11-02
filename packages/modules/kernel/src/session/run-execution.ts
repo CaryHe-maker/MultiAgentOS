@@ -1,6 +1,8 @@
 import {
+  MEDIA_TYPES,
   newId,
   type ArtifactRef,
+  type ExecutionScope,
   type CancelRunExecutionsRequest,
   type ExecutionFactV1,
   type ExecutionRequestV1,
@@ -13,7 +15,11 @@ import {
 } from './attempt-request.js';
 import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
 import type { AttemptSpec, ResultCheck, RunAttempts } from './run-attempts.js';
+import type { ProjectFileRead } from './run-work.js';
 import type { SessionArtifacts } from './session-artifacts.js';
+
+/** A question shows this much of `AGENTS.md` (M2Design 9.5). */
+const PROJECT_FILE_DISPLAY_BYTES = 64 * 1024;
 
 export interface RetryingActivity {
   readonly spec: AttemptSpec;
@@ -30,6 +36,8 @@ export interface RunExecutionDeps {
   readonly dispatch: (request: ExecutionRequestV1) => Promise<void>;
   readonly cancelRun: (request: CancelRunExecutionsRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
+  /** Undefined when the file does not exist. */
+  readonly readRepositoryFile: (path: string, scope: ExecutionScope) => Promise<string | undefined>;
   /** Runs `work` as a control message of the actor; a timer only does this. */
   readonly enqueue: (work: () => void) => void;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
@@ -294,6 +302,20 @@ export class RunExecution {
     });
     await this.#dispatch(attempt, retryAt);
     return true;
+  }
+
+  /** Goes through the same path and exclusion checks as `file-read` (Kernel/Execution 4). */
+  async readProjectFile(path: string, scope: ExecutionScope): Promise<ProjectFileRead> {
+    const text = await this.#deps.readRepositoryFile(path, scope);
+    if (text === undefined) return { exists: false };
+    const ref = await this.#deps.artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION');
+    return {
+      exists: true,
+      ref,
+      sha256: ref.sha256,
+      text,
+      truncated: Buffer.byteLength(text, 'utf8') > PROJECT_FILE_DISPLAY_BYTES,
+    };
   }
 
   /**

@@ -27,8 +27,8 @@
 
 ## 3. 当前进度
 
-核对时间：2026-11-02，本地 `feature/phase1/main` 的 `735c745`；Ubuntu 24.04（WSL）完整质量门通过（1414 个测试通过，2 个跳过）。
-阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 的提交都还没有推送：远端 `feature/phase1/main` 停在 `6280d31`，本地领先 33 个提交。
+核对时间：2026-11-02，`feature/phase1/main`；Ubuntu 24.04（WSL）完整质量门在阶段 1 的每次推进后运行。
+阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 在 `feature/phase1/main` 上，远端作为备份，尚未向 `feat/M2` 开 PR。
 
 | 任务 | 状态 | 已完成 | 未完成 |
 |---|---|---|---|
@@ -36,11 +36,11 @@
 | S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
 | S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
 | S1-KC-1 | 部分 | Session actor 的生命周期、三个序列的 Outbox、Session 引用、信任记录 | Session 管理（分发、列表、删除、系统级事件、产物回收的定时器）、审计 |
-| S1-KC-2 | 部分 | Turn、开放输入的静止检查、AWAITING_INPUT、运行级授权（含 `project.instructions` 的判定）、`answerAuthorization` | `requestHuman`、`answerHuman`、`readProjectFile` 的受理入口 |
+| S1-KC-2 | 完成，等 Gateway 接入 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
 | S1-KC-3 | 未开始 | — | Gateway 的 major 1 syscall |
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
-| Core 的 Unit 路径 | 完成，Execution 是替身 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入、收敛兜底的定时器；真实 Execution（S1-KX-1） |
-| S1-KX-1 | 未开始 | — | 全部 |
+| Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入；`RunExecution` 接入 `RunWork`（组合根） |
+| S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | `RETRYING` 活动的发出、启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |
 | S1-EX-1 | 部分 | `retention/`、`repository-list` 的列表与预览（未注册为 Executor） | 三个仓库工具的预览、`context-assemble` 与 `model-call` 的 major 1、`repository-list` 的注册 |
 | S1-PL-1 | 未开始 | — | v1 定义与加载校验（包括 `repo.read`、`failurePolicy` 两条规则） |
 | S1-UI-1 | 未开始 | — | 全部 |

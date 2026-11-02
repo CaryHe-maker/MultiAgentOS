@@ -137,6 +137,7 @@ function setup(options: { converging?: boolean } = {}) {
       return Promise.resolve();
     },
     retrying: (activity) => retries.push(activity),
+    readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
       work();
     },
@@ -438,6 +439,21 @@ describe('technical retries', () => {
     expect(run.reports[0]).toMatchObject({
       status: 'FAILED',
       reasonCode: 'PROVIDER_UNREACHABLE',
+    });
+  });
+});
+
+describe('project files', () => {
+  it('stores the file for the Session and reports a missing one', async () => {
+    const run = setup();
+    const read = await run.execution.readProjectFile('AGENTS.md', repository);
+    if (!read.exists) throw new Error('missing');
+    expect(await run.artifacts.read(read.ref)).toEqual({ ok: true, text: 'be careful' });
+    expect(read.truncated).toBe(false);
+    expect(
+      await run.execution.readProjectFile('.multiagentos/workflows/a.yaml', repository),
+    ).toEqual({
+      exists: false,
     });
   });
 });

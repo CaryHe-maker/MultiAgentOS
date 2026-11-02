@@ -126,7 +126,7 @@ type ProjectFileContent =
 ```
 
 - `AGENTS.md` 不返回正文，Workflow 只把引用交给 `context-assemble`；`trusted` 的判定与询问见 M2Design 第 9.5 节。
-  询问进行中时本请求挂起，直到用户回答；询问不超时，运行收敛时本请求随运行结束。
+  询问进行中时本请求挂起，直到用户回答；询问不超时，运行收敛时本请求以 `RUN_BLOCKED` 结束。
 - 文件超过 64 KiB 时照常存为产物；截断只发生在上下文组装中。
 
 - **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要目标文字的 Unit 输入写 `objectiveRef` 或 `goalRef`，由 Execution 解析。没有例外。
@@ -453,6 +453,7 @@ type WrapUpReason =                                // 下一次模型调用为�
 | `NO_OPEN_TURN` | `SyscallRejected`（`registerAgentRun`、`submitUnit`） | 没有开启中的 Turn，或尝试属于已结束的 Turn |
 | `SESSION_COMMAND_UNKNOWN` | `SyscallRejected`（`reportSessionCommand`） | `commandId` 不存在或已回复 |
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
+| `USER_DECLINED` | `SyscallRejected`（`readProjectFile`） | 用户拒绝了 `repo.read`，项目文件读不到（Kernel/Core 第 5.2 节）；Unit 被拒时走 UnitReport |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
 
 | `QUOTA_EXHAUSTED` | UnitReport（`REJECTED`） | 该 AgentRun 的工具次数或墙钟已触顶（`quota` 说明是哪一项）；后续的非收尾 Unit 都以它拒绝，Workflow 进入收尾（Kernel/Monitor 第 3 节） |
