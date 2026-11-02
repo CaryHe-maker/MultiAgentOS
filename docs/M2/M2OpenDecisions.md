@@ -35,7 +35,7 @@
 | S1-CT-1 | 完成 | v1 Schema 与 Port（`ExecutionFact.v1` 在 S1-KX-1 时补上）；fake Kernel、fake Workflow 与契约测试 | — |
 | S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
 | S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
-| S1-KC-1 | 部分 | Session actor 的生命周期、三个序列的 Outbox、Session 引用、信任记录 | Session 管理（分发、列表、删除、系统级事件、产物回收的定时器）、审计 |
+| S1-KC-1 | 部分 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭） | 产物回收的定时器、审计 |
 | S1-KC-2 | 完成，等 Gateway 接入 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
 | S1-KC-3 | 未开始 | — | Gateway 的 major 1 syscall |
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
