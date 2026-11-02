@@ -15,6 +15,15 @@ import { createInteractionRunner } from './application/interaction-runner.js';
 
 export { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from './domain/exit-codes.js';
 export type { TerminalPort } from './ports/terminal-port.js';
+export { Console, RUN_EXIT_CODES, type ConsoleDeps } from './console/console.js';
+export { ConsoleText, terminalText } from './console/console-text.js';
+export type {
+  ActivityLine,
+  ConsoleView,
+  LiveState,
+  PendingItem,
+  TranscriptRecord,
+} from './console/console-view.js';
 
 export interface AnalyzeCommand {
   readonly goal: string;
