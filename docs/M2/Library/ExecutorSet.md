@@ -27,13 +27,15 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
 见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
 阶段 2 起，`v1` 的 `file-read` 另返回 `nestedInstructions`：从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 的相对路径，由外到内排列，经同一个 `RepositoryAccess` 检查（排除规则命中的目录不算，不跟随符号链接），不读取它们的内容（M2Design 第 9.5 节）。
-三个仓库工具 Executor 经 `retention/` 生成预览（第 4 节）。
+`repository-search`、`repository-list` 经 `retention/` 生成预览（第 4 节）；预览是给模型看的文本，不是 JSON。`file-read` 的预览是带行号的文本，超出上限时说明可以按 `startLine` 继续读，不另存完整输出：文件本身就能按范围重读。`repository-orient` 的产物是后续调用读取的结构，由 `orientBudget` 限制，不是预览。
 
 ## 3. Executor 清单（阶段 1）
 
 | executionKind | 实现 | 目录（`src/`） | scope.kind | 产物 |
 |---|---|---|---|---|
-| `REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ` | M1 原样，预览经 `retention/` | M1 原样 | `REPOSITORY` | 预览（长期保留）；截断时另有完整输出（7 天过期） |
+| `REPOSITORY_ORIENT` | M1 原样 | M1 原样 | `REPOSITORY` | 概览（长期保留） |
+| `FILE_READ` | M1 原样，产物为带行号的文本 | M1 原样 | `REPOSITORY` | 预览（长期保留） |
+| `REPOSITORY_SEARCH` | M1 原样，预览经 `retention/` | M1 原样 | `REPOSITORY` | 预览（长期保留）；截断时另有完整输出（7 天过期） |
 | `REPOSITORY_LIST` | `RepositoryListExecutor` | `repository-list/` | `REPOSITORY` | 目录树文本的预览；截断时另有完整输出 |
 | `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `context-assemble/` | `NONE` | ASSEMBLE ContextPack（7 天过期） |
 | `MODEL` | `ModelCallExecutor` | `model-call/` | `MODEL` | 模型原始输出；思考内容单独一个产物（都长期保留） |
@@ -118,7 +120,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 
 ## 7. `ModelCallExecutor` 的变化
 
-- **思考强度**：由 `scope` 中的 `effort` 按模型的 `effortMapping` 转为请求参数（DeepSeek 为请求体中的 `thinking` 与 `reasoning_effort`，M1 的写法）。
+- **思考强度**：Core 在登记 AgentRun 时按模型的 `effortMapping` 转换，随 `scope` 交来（DeepSeek 为请求体中的 `thinking` 与 `reasoning_effort`，M1 的写法）。
 - **思考内容**：响应中的 `reasoning_content` 不放入 `ModelCallOutput`，而是作为单独的产物交回，Execution 写入后在 `UnitReport` 中给出 `reasoningRef`。
 - **收尾调用**（M2Design 第 9.4 节）：
   1. 第一次：只提供结束控制工具，`tool_choice = auto`，按 Agent 的设置开启思考；

@@ -51,6 +51,8 @@ export function trackedFetch(
   inner: typeof globalThis.fetch,
   scope: ModelScope,
   progress: RequestProgress,
+  /** `reasoning_content` of each assistant message, in order (ExecutorSet 6.3). */
+  replay: readonly (string | undefined)[] = [],
 ): typeof globalThis.fetch {
   return async (input, init) => {
     progress.started = true;
@@ -60,6 +62,16 @@ export function trackedFetch(
       parsed['thinking'] = { type: scope.thinking === 'ENABLED' ? 'enabled' : 'disabled' };
       if (scope.thinking === 'ENABLED' && scope.thinkingEffort !== undefined)
         parsed['reasoning_effort'] = scope.thinkingEffort;
+      let assistant = 0;
+      for (const message of (parsed['messages'] ?? []) as {
+        role?: string;
+        reasoning_content?: string;
+      }[]) {
+        if (message.role !== 'assistant') continue;
+        const reasoning = replay[assistant];
+        assistant += 1;
+        if (reasoning !== undefined) message.reasoning_content = reasoning;
+      }
       request = { ...init, body: JSON.stringify(parsed) };
     }
     try {

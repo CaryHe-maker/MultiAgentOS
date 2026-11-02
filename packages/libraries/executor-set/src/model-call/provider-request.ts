@@ -1,8 +1,13 @@
-import type { AssembleContextPack, ModelToolSpec } from '@multiagentos/contracts';
+import type {
+  AssembleContextPack,
+  AssembleContextPackV1,
+  ModelToolSpec,
+} from '@multiagentos/contracts';
 import type { LanguageModel } from './language-model.js';
 
 type CallOptions = Parameters<LanguageModel['doGenerate']>[0];
 type Prompt = CallOptions['prompt'];
+type PackItems = Pick<AssembleContextPack, 'items'> | Pick<AssembleContextPackV1, 'items'>;
 type Message = Prompt[number];
 type Tools = NonNullable<CallOptions['tools']>;
 type ToolChoice = NonNullable<CallOptions['toolChoice']>;
@@ -12,7 +17,7 @@ type ToolChoice = NonNullable<CallOptions['toolChoice']>;
  * parameter, and every other item a message of its role, in pack order. The mapping is purely
  * structural; what a tool means is Workflow's business (M1Interface 6.4).
  */
-export function toPrompt(pack: AssembleContextPack): Prompt {
+export function toPrompt(pack: PackItems): Prompt {
   const toolNames = new Map<string, string>();
   const messages: Message[] = [];
   for (const item of pack.items) {
@@ -61,7 +66,7 @@ export function toPrompt(pack: AssembleContextPack): Prompt {
   return messages;
 }
 
-export function toolSpecsOf(pack: AssembleContextPack): readonly ModelToolSpec[] {
+export function toolSpecsOf(pack: PackItems): readonly ModelToolSpec[] {
   return pack.items.flatMap((item) => (item.segment === 'TOOLS' ? item.toolSpecs : []));
 }
 

@@ -11,6 +11,7 @@ import { RepositoryListInputSchema } from '../executor/repository-list.js';
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
+import { ReasonCodeV1Schema } from '../platform-common/reason-code.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { HandoffBriefSchema } from '../workflow/handoff.js';
@@ -195,7 +196,11 @@ const ResolvedHistoryEntrySchema = Type.Union([
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('TOOL_RESULT'),
     toolCallId: ToolCallIdSchema,
-    text: Type.String(),
+    toolName: text(64),
+    status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
+    reasonCode: Type.Optional(ReasonCodeV1Schema),
+    /** The preview; a tool that gave none is worded by the Executor from its status. */
+    text: Type.Optional(Type.String()),
   }),
   closed({
     seq: count(1),

@@ -38,7 +38,7 @@ export function renderHandoff(handoff: HandoffBrief): string {
   ].join('\n');
 }
 
-const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
+export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   INVALID_INPUT: 'the arguments do not match the tool parameters; fix them and call again',
   INVALID_ARTIFACT_REF: 'an internal reference was invalid; continue with what you have',
   USER_DECLINED:
@@ -59,7 +59,7 @@ const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   LIMIT_EXCEEDED: 'the result would be too large; ask for a smaller range or a more specific query',
 };
 
-const FAILED_HINTS: Record<UnitFailedCode, string> = {
+export const FAILED_HINTS: Record<UnitFailedCode, string> = {
   PROVIDER_UNREACHABLE: 'the model provider could not be reached',
   PROVIDER_RATE_LIMITED: 'the model provider is rate limiting',
   PROVIDER_AUTH: 'the model provider refused the credentials',

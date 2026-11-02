@@ -3,7 +3,15 @@
  * `repository-access/` is shared by the three repository Executors. Provider SDKs may be
  * imported only under `model-call/`.
  */
-import type { ExecutorRegistry } from '@multiagentos/contracts';
+import type { ExecutorRegistry, ExecutorRegistryV1 } from '@multiagentos/contracts';
+import { createAssembleExecutorV1 } from './context-assemble/assemble-v1.js';
+import { createModelCallExecutorV1 } from './model-call/model-call-v1.js';
+import {
+  createFileReadExecutorV1,
+  createListExecutorV1,
+  createOrientExecutorV1,
+  createSearchExecutorV1,
+} from './tool-preview/tool-executors.js';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
@@ -24,5 +32,18 @@ export function createExecutorRegistry(): ExecutorRegistry {
     FILE_READ: createFileReadExecutor(),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
+  };
+}
+
+/** Major 1: what the Supervisor runs once M1 is gone. */
+export function createExecutorRegistryV1(): ExecutorRegistryV1 {
+  const cache = new FileDigestCache();
+  return {
+    REPOSITORY_ORIENT: createOrientExecutorV1(createOrientExecutor(cache)),
+    REPOSITORY_SEARCH: createSearchExecutorV1(createSearchExecutor({ cache })),
+    REPOSITORY_LIST: createListExecutorV1(cache),
+    FILE_READ: createFileReadExecutorV1(createFileReadExecutor()),
+    CONTEXT_ASSEMBLE: createAssembleExecutorV1(),
+    MODEL: createModelCallExecutorV1(),
   };
 }

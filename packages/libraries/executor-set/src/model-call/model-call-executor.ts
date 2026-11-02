@@ -40,7 +40,7 @@ export function createModelCallExecutor(options: ModelCallExecutorOptions = {}):
       try {
         return await callModel(input, environment, inner);
       } catch {
-        return failure('INTERNAL', false, 'UNKNOWN');
+        return failureOf('INTERNAL', false, 'UNKNOWN');
       }
     },
   };
@@ -53,10 +53,10 @@ async function callModel(
 ): Promise<ExecutorOutcome> {
   const scope = environment.scope;
   if (scope.kind !== 'MODEL') return violation('SCOPE_MISSING');
-  if (environment.signal.aborted) return failure('INTERNAL', false, 'NOT_SENT');
+  if (environment.signal.aborted) return failureOf('INTERNAL', false, 'NOT_SENT');
   const apiKey = environment.credentials.apiKeyFor(scope.provider);
   if (apiKey === undefined || apiKey.length === 0)
-    return failure('PROVIDER_AUTH', false, 'NOT_SENT');
+    return failureOf('PROVIDER_AUTH', false, 'NOT_SENT');
 
   const progress: RequestProgress = {
     started: false,
@@ -80,7 +80,7 @@ async function callModel(
       abortSignal: environment.signal,
     });
   } catch (error) {
-    return classify(error, progress, environment.signal);
+    return classifyCall(error, progress, environment.signal);
   }
   return completedCall(result, scope, environment, input.final ? finishOf(specs) : undefined);
 }
@@ -91,7 +91,7 @@ function reasoningOf(scope: ModelScope): 'none' | 'provider-default' | 'low' | '
   return effort === 'low' || effort === 'medium' || effort === 'high' ? effort : 'provider-default';
 }
 
-function failure(
+export function failureOf(
   reasonCode:
     | 'PROVIDER_UNREACHABLE'
     | 'PROVIDER_RATE_LIMITED'
@@ -118,24 +118,28 @@ function finishOf(specs: readonly { readonly name: string; readonly purpose: str
 }
 
 /** The table of ExecutorSet 4.5, completed by issue #26 C. */
-function classify(error: unknown, progress: RequestProgress, signal: AbortSignal): ExecutorOutcome {
+export function classifyCall(
+  error: unknown,
+  progress: RequestProgress,
+  signal: AbortSignal,
+): ExecutorOutcome {
   if (signal.aborted)
-    return failure(
+    return failureOf(
       'INTERNAL',
       false,
       progress.started && !progress.failedBeforeSending ? 'UNKNOWN' : 'NOT_SENT',
     );
   const status = APICallError.isInstance(error) ? error.statusCode : undefined;
   if (status !== undefined) {
-    if (status === 429) return failure('PROVIDER_RATE_LIMITED', true, 'NOT_SENT');
-    if (status === 401 || status === 403) return failure('PROVIDER_AUTH', false, 'NOT_SENT');
-    if (status === 408 || status >= 500) return failure('PROVIDER_ERROR', false, 'UNKNOWN');
-    if (status >= 400) return failure('INTERNAL', false, 'NOT_SENT');
+    if (status === 429) return failureOf('PROVIDER_RATE_LIMITED', true, 'NOT_SENT');
+    if (status === 401 || status === 403) return failureOf('PROVIDER_AUTH', false, 'NOT_SENT');
+    if (status === 408 || status >= 500) return failureOf('PROVIDER_ERROR', false, 'UNKNOWN');
+    if (status >= 400) return failureOf('INTERNAL', false, 'NOT_SENT');
   }
   if (!progress.started || progress.failedBeforeSending)
-    return failure('PROVIDER_UNREACHABLE', true, 'NOT_SENT');
+    return failureOf('PROVIDER_UNREACHABLE', true, 'NOT_SENT');
   // Reset connections, broken bodies and unreadable answers: the provider may have processed it.
-  return failure('PROVIDER_ERROR', false, 'UNKNOWN');
+  return failureOf('PROVIDER_ERROR', false, 'UNKNOWN');
 }
 
 function completedCall(
@@ -160,7 +164,7 @@ function completedCall(
     forced !== undefined &&
     (rawCalls.length !== 1 || call?.toolName !== forced || call.arguments === null)
   )
-    return failure('PROVIDER_TOOL_CHOICE_IGNORED', true, 'SENT', usage);
+    return failureOf('PROVIDER_TOOL_CHOICE_IGNORED', true, 'SENT', usage);
   const raw: ModelRawOutput = {
     provider: scope.provider,
     apiModelId: scope.apiModelId,
@@ -186,7 +190,7 @@ function completedCall(
   };
 }
 
-function parseCall(call: {
+export function parseCall(call: {
   toolCallId: string;
   toolName: string;
   argumentsText: string;
@@ -210,7 +214,7 @@ function parseCall(call: {
   };
 }
 
-function finishReasonOf(
+export function finishReasonOf(
   unified: GenerateResult['finishReason']['unified'],
 ): 'STOP' | 'LENGTH' | 'CONTENT_FILTER' | 'OTHER' {
   if (unified === 'stop') return 'STOP';
@@ -223,7 +227,7 @@ function finishReasonOf(
  * Provider usage. DeepSeek reports cache hits as `prompt_cache_hit_tokens`, which the OpenAI
  * adapter does not read, so the raw body is consulted when the adapter has no cache figure.
  */
-function usageOf(result: GenerateResult): TokenUsage | undefined {
+export function usageOf(result: GenerateResult): TokenUsage | undefined {
   const inputTokens = result.usage.inputTokens.total;
   const outputTokens = result.usage.outputTokens.total;
   if (inputTokens === undefined || outputTokens === undefined) return undefined;

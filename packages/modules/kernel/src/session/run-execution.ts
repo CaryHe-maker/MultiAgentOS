@@ -59,9 +59,12 @@ interface Attempt {
 type Completed = Extract<ExecutionFactV1, { outcome: 'COMPLETED' }>;
 type NotCompleted = Exclude<ExecutionFactV1, { outcome: 'COMPLETED' }>;
 
+/** The overview is a structure with its own token budget, not a preview of an output. */
 const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
   const { executionKind } = fact;
-  return executionKind === 'MODEL' || executionKind === 'CONTEXT_ASSEMBLE'
+  return executionKind === 'MODEL' ||
+    executionKind === 'CONTEXT_ASSEMBLE' ||
+    executionKind === 'REPOSITORY_ORIENT'
     ? undefined
     : config.executionLimits[executionKind];
 };
@@ -164,7 +167,7 @@ export class RunExecution {
         workflowRunId: this.#deps.workflowRunId,
         unitAttemptId: attempt.unitAttemptId,
         executionId,
-        ...(notBefore === undefined ? {} : { notBefore }),
+        ...(notBefore === undefined ? {} : { notBefore, retry: true }),
       });
     } catch (error) {
       await this.#finish(attempt, {

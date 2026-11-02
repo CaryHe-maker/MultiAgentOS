@@ -1,3 +1,11 @@
+import type { RepositoryListInput } from './executor/repository-list.js';
+import type { ExecutionResultV1 } from './kernel-execution/execution-fact.js';
+import type {
+  AssembleExecutorInputV1,
+  ExecutionLimitsV1,
+  ModelExecutorInputV1,
+} from './kernel-execution/execution-request.js';
+import type { ExecutorKindV1 } from './platform-common/execution-kind.js';
 import type {
   AgentPinRequest,
   DefinitionLookup,
@@ -184,6 +192,15 @@ export interface ExecutorInputByKind {
   readonly MODEL: ModelExecutorInput;
 }
 
+export interface ExecutorInputByKindV1 {
+  readonly REPOSITORY_ORIENT: OrientExecutorInput;
+  readonly REPOSITORY_SEARCH: SearchExecutorInput;
+  readonly REPOSITORY_LIST: RepositoryListInput;
+  readonly FILE_READ: FileReadInput;
+  readonly CONTEXT_ASSEMBLE: AssembleExecutorInputV1;
+  readonly MODEL: ModelExecutorInputV1;
+}
+
 /** Only `rg` may be run, and only by REPOSITORY_SEARCH. */
 export interface SubprocessRunner {
   run(
@@ -216,6 +233,31 @@ export interface ExecutorEnvironment {
   readonly credentials: ProviderCredentials;
   now(): Date;
 }
+
+export interface ExecutorEnvironmentV1 extends Omit<ExecutorEnvironment, 'limits'> {
+  readonly limits: ExecutionLimitsV1;
+}
+
+/** As ExecutorOutcome, with previews and thinking in the result and `retryAfterMs` on a failure. */
+export type ExecutorOutcomeV1 =
+  | {
+      readonly outcome: 'COMPLETED';
+      readonly result: ExecutionResultV1;
+      readonly usage?: TokenUsage;
+      readonly requestState?: RequestState;
+    }
+  | Extract<ExecutorOutcome, { outcome: 'REJECTED' | 'VIOLATION' }>
+  | (Extract<ExecutorOutcome, { outcome: 'FAILED' }> & { readonly retryAfterMs?: number });
+
+export interface ExecutorV1<K extends ExecutorKindV1> {
+  readonly executionKind: K;
+  execute(
+    input: ExecutorInputByKindV1[K],
+    environment: ExecutorEnvironmentV1,
+  ): Promise<ExecutorOutcomeV1>;
+}
+
+export type ExecutorRegistryV1 = { readonly [K in ExecutorKindV1]: ExecutorV1<K> };
 
 /** TERMINATED and STOP_UNCONFIRMED are decided by the Supervisor, never by an Executor. */
 export type ExecutorOutcome =

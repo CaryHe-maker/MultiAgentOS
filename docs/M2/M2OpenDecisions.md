@@ -44,7 +44,7 @@
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
 | Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入；`RunExecution` 接入 `RunWork`（组合根） |
 | S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | `RETRYING` 活动的发出、启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |
-| S1-EX-1 | 部分 | `retention/`、`repository-list` 的列表与预览（未注册为 Executor） | 三个仓库工具的预览、`context-assemble` 与 `model-call` 的 major 1、`repository-list` 的注册 |
+| S1-EX-1 | 完成，等 Supervisor 接入 | `retention/`、四个工具 Executor 的 major 1、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistryV1` | 真实 DeepSeek 联调 |
 | S1-PL-1 | 未开始 | — | v1 定义与加载校验（包括 `repo.read`、`failurePolicy` 两条规则） |
 | S1-UI-1 | 未开始 | — | 全部 |
 | S1-IN-1 | 未开始 | — | 接线、回归、删除 M1 与 major 0、去掉 `V1` 后缀 |

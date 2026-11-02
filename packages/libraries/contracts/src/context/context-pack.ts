@@ -198,17 +198,6 @@ export type ContextPack = Static<typeof ContextPackSchema>;
 
 // --- Major 1 (ExecutorSet 6) ------------------------------------------------------------------
 
-/** System segments carry nothing that changes, so a pack is a prefix of the next one. */
-const ProjectInstructionsItemSchema = closed({
-  ...item,
-  segment: Type.Literal('PROJECT_INSTRUCTIONS'),
-  role: system,
-});
-const UntrustedInstructionsItemSchema = closed({
-  ...item,
-  segment: Type.Literal('UNTRUSTED_INSTRUCTIONS'),
-  role: user,
-});
 const historyV1 = {
   ...item,
   segment: Type.Literal('HISTORY'),
@@ -246,8 +235,6 @@ export const AssembleContextPackV1Schema = Type.Refine(
         Type.Union([
           InstructionsItemSchema,
           ToolsItemSchema,
-          ProjectInstructionsItemSchema,
-          UntrustedInstructionsItemSchema,
           PlainItemSchema,
           OrientItemSchema,
           HistoryItemV1Schema,

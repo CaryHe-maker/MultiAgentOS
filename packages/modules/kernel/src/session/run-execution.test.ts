@@ -389,7 +389,12 @@ describe('resolving references', () => {
           text: 'reading',
           toolCalls: [{ toolCallId: 'call_1', arguments: { path: 'a' } }],
         },
-        { kind: 'TOOL_RESULT', text: 'the user rejected tool "read_file"' },
+        {
+          kind: 'TOOL_RESULT',
+          status: 'REJECTED',
+          reasonCode: 'USER_DECLINED',
+          toolName: 'read_file',
+        },
       ],
     });
     expect(JSON.stringify(run.last().input)).not.toContain('secret thoughts');

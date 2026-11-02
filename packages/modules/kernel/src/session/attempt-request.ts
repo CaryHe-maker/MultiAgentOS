@@ -89,6 +89,8 @@ export interface RequestIdentity {
   readonly unitAttemptId: string;
   readonly executionId: string;
   readonly notBefore?: string;
+  /** A technical retry: a final call is then forced (ExecutorSet 7). */
+  readonly retry?: boolean;
 }
 
 export interface RequestBuilderDeps {
@@ -227,9 +229,12 @@ export class AttemptRequestBuilder {
     input: unknown,
     limits: ExecutionLimitsV1,
   ): ExecutionRequestV1 {
-    const { notBefore, ...ids } = identity;
+    const { sessionId, workflowRunId, unitAttemptId, executionId, notBefore } = identity;
     const validated = validate<ExecutionRequestV1>(ExecutionRequestV1Schema, {
-      ...ids,
+      sessionId,
+      workflowRunId,
+      unitAttemptId,
+      executionId,
       runEpoch: spec.runEpoch,
       executionKind,
       input,
@@ -320,21 +325,19 @@ export class AttemptRequestBuilder {
       }
       case 'TOOL_RESULT': {
         const { toolCallId, toolName, outputRef, reasonCode, status } = entry;
-        if (outputRef !== undefined) {
-          // A full output reaches the model through read_output only (M2Design 8.2).
-          if (this.#deps.artifacts.isFullOutput(outputRef))
-            throw new RequestBuildError('INVALID_INPUT');
-          return { ...base, kind: 'TOOL_RESULT', toolCallId, text: await this.#text(outputRef) };
-        }
-        return {
+        const result = {
           ...base,
-          kind: 'TOOL_RESULT',
+          kind: 'TOOL_RESULT' as const,
           toolCallId,
-          text:
-            reasonCode === 'USER_DECLINED'
-              ? `the user rejected tool "${toolName}"`
-              : `[${status}] ${reasonCode ?? 'no output'}`,
+          toolName,
+          status,
+          ...(reasonCode === undefined ? {} : { reasonCode }),
         };
+        if (outputRef === undefined) return result;
+        // A full output reaches the model through read_output only (M2Design 8.2).
+        if (this.#deps.artifacts.isFullOutput(outputRef))
+          throw new RequestBuildError('INVALID_INPUT');
+        return { ...result, text: await this.#text(outputRef) };
       }
       case 'HANDOFF': {
         const raw = await this.#rawOutput(entry.outputRef);
@@ -357,7 +360,8 @@ export class AttemptRequestBuilder {
     const maxOutputTokens = input.final ? budget.finalMaxOutputTokens : budget.maxOutputTokens;
     const estimatedTokens = estimatePackTokens(contextPack) + maxOutputTokens;
     if (estimatedTokens > contextWindowTokens) throw new RequestBuildError('LIMIT_EXCEEDED');
-    const { final, finalMode } = input;
+    const { final } = input;
+    const finalMode = identity.retry === true && final ? 'FORCED' : input.finalMode;
     return {
       request: this.#request(
         spec,
