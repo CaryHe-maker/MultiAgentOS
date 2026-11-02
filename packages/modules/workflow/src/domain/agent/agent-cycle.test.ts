@@ -391,7 +391,7 @@ describe('tools', () => {
         message: 'the user rejected tool "list_files"',
       }),
     );
-    expect(again.state.wrapUpReason).toBeUndefined();
+    expect(again.state.wrapUpReason).toBe('NO_PROGRESS');
   });
 
   it('does not count a refusal as an error', () => {

@@ -25,7 +25,6 @@ import {
   type ModelRawOutput,
   type ModelToolCall,
   type OrientContextPack,
-  type ReasonCodeV1,
   type RepositoryListInput,
   type RepositoryOrientInputV1,
   type RepositorySearchInput,
