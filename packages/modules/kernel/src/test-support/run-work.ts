@@ -1,6 +1,6 @@
 import { testUnitDefinition } from '@multiagentos/contracts/test-support';
 import type { SchedulerDuties } from '../interfaces/index.js';
-import { RunLedgers, minShare, type AgentBudget } from '../monitor/run-ledgers.js';
+import { RunLedgers, minShare, type AgentBudget } from '../monitor/index.js';
 import type { AttemptSpec, PinnedAgent, RunAttempts } from '../session/run-attempts.js';
 import { RunWork, type RunHost, type RunWorkDeps } from '../session/run-work.js';
 

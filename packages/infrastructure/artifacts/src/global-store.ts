@@ -18,6 +18,8 @@ import {
   type ArtifactRef,
   type ArtifactStorePortV1,
   type CapabilityDescriptor,
+  type HealthStatus,
+  type LifecyclePort,
 } from '@multiagentos/contracts';
 import { ArtifactIntegrityError } from './index.js';
 
@@ -36,7 +38,8 @@ const SHA256_NAME = /^[a-f0-9]{64}$/u;
  * and removes bodies. `put` and the check-then-delete of `sweep` exclude each other per body, so
  * a returned reference never points at a body a sweep is about to remove.
  */
-export class GlobalArtifactStore implements ArtifactStorePortV1 {
+export class GlobalArtifactStore implements ArtifactStorePortV1, LifecyclePort {
+  readonly manifest = { moduleId: 'artifact-store', version: '0.2.0', dependencies: [] } as const;
   readonly #dataDir: string;
   readonly #directory: string;
   readonly #locks = new Map<string, Promise<unknown>>();
@@ -133,6 +136,19 @@ export class GlobalArtifactStore implements ArtifactStorePortV1 {
       if (deleted) removed += 1;
     }
     return { removed };
+  }
+
+  start(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** Waits for writes already started; nothing new is refused, the store has no open state. */
+  async stop(): Promise<void> {
+    await Promise.allSettled([...this.#locks.values()]);
+  }
+
+  health(): Promise<HealthStatus> {
+    return Promise.resolve({ status: 'UP', checkedAt: new Date().toISOString(), details: [] });
   }
 
   capabilities(): readonly CapabilityDescriptor[] {

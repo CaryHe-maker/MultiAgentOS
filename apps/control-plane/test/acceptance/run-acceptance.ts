@@ -9,7 +9,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalog,
+  DefinitionCatalogV1,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import dotenv from 'dotenv';
@@ -41,20 +41,20 @@ function parse(argv: readonly string[]): Options {
   return { ids: ids.length === 0 ? TASKS.map((task) => task.id) : ids, runs, yes, out };
 }
 
-/** The most one run can cost: the whole token budget at the dearer rate, at peak time. */
+/**
+ * The most one run can cost: an `analyze` run is one Turn, so the whole Turn budget at the
+ * dearer rate, at peak time.
+ */
 async function upperBoundUsdPerRun(): Promise<number> {
-  const catalog = await DefinitionCatalog.load(
+  const catalog = await DefinitionCatalogV1.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
-  const model = await catalog.getDefinition(
-    { kind: 'MODEL', id: 'deepseek-flash', version: 'v1.0.0' },
-    { correlationId: 'cor_acceptance', tenantId: 'local', projectId: 'local' },
-  );
-  if (!model.ok) throw new Error('the default model definition is missing');
-  const rates = model.value.pricing.offPeak;
+  const model = catalog.latest('MODEL', 'deepseek-flash');
+  if (model === undefined) throw new Error('the default model definition is missing');
+  const rates = model.pricing.offPeak;
   const microUsdPerToken = Math.max(rates.inputCacheMiss, rates.output) / 1_000_000;
-  const peak = model.value.pricing.peak.ratePercent / 100;
-  const tokens = defaultSystemConfig().kernel.budget.tokenLimit;
+  const peak = model.pricing.peak.ratePercent / 100;
+  const tokens = defaultSystemConfig().kernel.budget.turnTokenLimit;
   return (tokens * microUsdPerToken * peak) / 1_000_000;
 }
 

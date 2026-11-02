@@ -4,24 +4,24 @@ import { join } from 'node:path';
 import {
   createM1ProtocolRegistry,
   MEDIA_TYPES,
-  type BoundaryContext,
-  type Envelope,
-  type ExecutionFact,
-  type ExecutionRequest,
-  type Executor,
-  type ExecutorKind,
-  type ExecutorOutcome,
-  type ExecutorRegistry,
+  type BoundaryContextV1,
+  type EnvelopeV1,
+  type ExecutionFactV1,
+  type ExecutionRequestV1,
+  type ExecutorV1,
+  type ExecutorKindV1,
+  type ExecutorOutcomeV1,
+  type ExecutorRegistryV1,
 } from '@multiagentos/contracts';
 import { InProcessFabric, SCHEMA_IDS, createSupervisorPort } from '@multiagentos/fabric';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl, type SupervisorModule } from './index.js';
 
-type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
+type OrientRequest = Extract<ExecutionRequestV1, { executionKind: 'REPOSITORY_ORIENT' }>;
 
 const SHA = 'a'.repeat(64);
-const completed: ExecutorOutcome = {
+const completed: ExecutorOutcomeV1 = {
   outcome: 'COMPLETED',
   result: {
     output: {
@@ -47,6 +47,7 @@ afterEach(async () => {
 
 function request(executionId = 'exe_123456'): OrientRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
@@ -57,28 +58,34 @@ function request(executionId = 'exe_123456'): OrientRequest {
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
+      preview: { maxBytes: 1024, maxLines: 100 },
+      maxFullOutputBytes: 4096,
       maxFiles: 10,
     },
   };
 }
 
-function executor<K extends ExecutorKind>(kind: K, execute: Executor<K>['execute']): Executor<K> {
+function executor<K extends ExecutorKindV1>(
+  kind: K,
+  execute: ExecutorV1<K>['execute'],
+): ExecutorV1<K> {
   return { executionKind: kind, execute };
 }
 
-function registry(): ExecutorRegistry {
-  const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
+function registry(): ExecutorRegistryV1 {
+  const unused = <K extends ExecutorKindV1>(kind: K): ExecutorV1<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
     REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', () => Promise.resolve(completed)),
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
+    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
 }
 
-function abortingRegistry(): ExecutorRegistry {
+function abortingRegistry(): ExecutorRegistryV1 {
   const base = registry();
   return {
     ...base,
@@ -91,24 +98,25 @@ function abortingRegistry(): ExecutorRegistry {
   };
 }
 
-const context: BoundaryContext = {
+const context: BoundaryContextV1 = {
   correlationId: 'cor_123456',
   tenantId: 'local',
   projectId: 'local',
+  sessionId: 'ses_123456',
   workflowRunId: 'wfr_123456',
 };
 
-async function fixture(executors: ExecutorRegistry = registry()): Promise<{
+async function fixture(executors: ExecutorRegistryV1 = registry()): Promise<{
   readonly fabric: InProcessFabric;
-  readonly facts: Envelope<ExecutionFact>[];
+  readonly facts: EnvelopeV1<ExecutionFactV1>[];
   readonly supervisor: SupervisorModule;
 }> {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-execute-'));
   roots.push(dataDir);
   const fabric = new InProcessFabric(createM1ProtocolRegistry());
   const kernelCore = fabric.client('kernel-core');
-  const facts: Envelope<ExecutionFact>[] = [];
-  kernelCore.subscribe<ExecutionFact>('kernel-core.execution-facts', (envelope) => {
+  const facts: EnvelopeV1<ExecutionFactV1>[] = [];
+  kernelCore.subscribe<ExecutionFactV1>('kernel-core.execution-facts', (envelope) => {
     facts.push(envelope);
     return Promise.resolve();
   });
@@ -150,7 +158,7 @@ describe('Supervisor execute over Fabric', () => {
     await port.execute(request());
     await vi.waitFor(() => expect(facts).toHaveLength(1));
 
-    const envelope = facts[0] as Envelope<ExecutionFact>;
+    const envelope = facts[0] as EnvelopeV1<ExecutionFactV1>;
     expect(envelope.correlationId).toBe('cor_123456');
     expect(envelope.payload).toMatchObject({
       outcome: 'COMPLETED',
@@ -220,7 +228,7 @@ describe('Supervisor execute over Fabric', () => {
     await port.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
     await vi.waitFor(() => expect(facts).toHaveLength(1));
 
-    const envelope = facts[0] as Envelope<ExecutionFact>;
+    const envelope = facts[0] as EnvelopeV1<ExecutionFactV1>;
     expect(envelope.payload).toMatchObject({
       outcome: 'TERMINATED',
       reasonCode: 'EXECUTION_CANCELLED',
@@ -238,7 +246,7 @@ describe('Supervisor execute over Fabric', () => {
     await supervisor.stop();
     await vi.waitFor(() => expect(facts).toHaveLength(1));
 
-    expect((facts[0] as Envelope<ExecutionFact>).payload).toMatchObject({
+    expect((facts[0] as EnvelopeV1<ExecutionFactV1>).payload).toMatchObject({
       outcome: 'STOP_UNCONFIRMED',
       reasonCode: 'EXECUTION_CANCELLED',
       executionId: 'exe_123456',

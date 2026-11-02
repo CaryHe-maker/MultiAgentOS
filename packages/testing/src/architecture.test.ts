@@ -40,8 +40,12 @@ const WORKSPACE_GROUPS = [
   'packages/infrastructure',
 ];
 
-/** Kernel components whose data is isolated (docs/M1/Kernel/Interaction.md 3.2). */
-const KERNEL_COMPONENTS = ['core', 'execution', 'monitor', 'scheduler', 'gateway', 'supervisor'];
+/**
+ * Kernel components whose data is isolated (Kernel/Interaction 3.2). The Session layer holds
+ * Core and Execution and drives Monitor and Scheduler; none of those reaches back into it, and it
+ * reaches the Supervisor only through Fabric.
+ */
+const KERNEL_COMPONENTS = ['monitor', 'scheduler', 'supervisor'];
 const PROVIDER_SDK = /from '(?:ai|@ai-sdk\/[^']+)'/u;
 const CHILD_PROCESS = /from '(?:node:)?child_process'/u;
 
@@ -84,11 +88,16 @@ describe('architecture boundaries', () => {
 
   it('keeps Kernel components out of each other', async () => {
     for (const component of KERNEL_COMPONENTS) {
-      const others = [...KERNEL_COMPONENTS.filter((other) => other !== component), 'run-actor'];
+      const others = [...KERNEL_COMPONENTS.filter((other) => other !== component), 'session'];
       const sibling = new RegExp(`from '(?:\\.\\./)+(?:${others.join('|')})/`, 'u');
       for (const file of await sources(`packages/modules/kernel/src/${component}`))
         expect(sibling.test(file.text), file.path).toBe(false);
     }
+  });
+
+  it('keeps the Session layer away from the Supervisor', async () => {
+    for (const file of await sources('packages/modules/kernel/src/session'))
+      expect(/from '\.\.\/supervisor\//u.test(file.text), file.path).toBe(false);
   });
 
   it('confines provider SDKs to the model-call Executor', async () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SystemFault } from '@multiagentos/contracts';
-import type { KernelCoreModule, SupervisorModule } from '@multiagentos/kernel';
+import type { SessionKernelCoreModule, SupervisorModule } from '@multiagentos/kernel';
 import type { ModuleLedgerEntry } from '@multiagentos/module-host';
 
 /** Exit code of a process that ended on a system fault and has no non-zero run result. */
@@ -32,7 +32,7 @@ export interface StopReport {
 
 export interface SystemControlDeps {
   readonly supervisor: SupervisorModule;
-  readonly kernelCore: KernelCoreModule;
+  readonly kernelCore: SessionKernelCoreModule;
   readonly moduleHost: { stop(): Promise<void>; ledger(): readonly ModuleLedgerEntry[] };
   readonly killSubprocesses: () => void;
   readonly timeouts: ShutdownTimeouts;

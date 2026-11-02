@@ -21,3 +21,5 @@ failurePolicy:
   BUDGET_EXHAUSTED: DEGRADED_REPORT
   PROVIDER_ERROR: RETURN_TO_MODEL
   UNIT_TIMEOUT: RETURN_TO_MODEL
+  # A final call still invalid after the forced retry ends the AgentRun degraded (ExecutorSet 7).
+  PROVIDER_TOOL_CHOICE_IGNORED: DEGRADED_REPORT

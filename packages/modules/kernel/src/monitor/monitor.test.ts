@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_KERNEL_CONFIG } from '../interfaces/kernel-config.js';
-import { Monitor, MonitorInvariantError } from './index.js';
+import { Monitor, MonitorInvariantError, type LedgerConfig } from './index.js';
+
+/** The per-call budget of the built-in Agents with M1's run limit. */
+const LEDGER: LedgerConfig = {
+  tokenLimit: 300_000,
+  perCallInputLimit: 96_000,
+  maxOutputTokens: 8_192,
+  finalInputBudget: 72_000,
+  finalMaxOutputTokens: 8_192,
+};
 
 const grantedId = (decision: ReturnType<Monitor['reserve']>): string => {
   if (!decision.ok) throw new Error(`Unexpected rejection: ${decision.reasonCode}`);
@@ -9,7 +17,7 @@ const grantedId = (decision: ReturnType<Monitor['reserve']>): string => {
 
 describe('Monitor settlement', () => {
   const budget = {
-    ...DEFAULT_KERNEL_CONFIG.budget,
+    ...LEDGER,
     tokenLimit: 100,
     finalInputBudget: 20,
     finalMaxOutputTokens: 10,
@@ -56,7 +64,7 @@ describe('Monitor settlement', () => {
   });
 
   it('returns an over-estimate anomaly while keeping the actual usage and final reserve', () => {
-    const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
+    const monitor = new Monitor(LEDGER);
     const reservationId = grantedId(monitor.reserve({ estimatedTokens: 100, final: false }));
     expect(
       monitor.settle(reservationId, {
@@ -89,7 +97,7 @@ describe('Monitor settlement', () => {
   });
 
   it('keeps the larger charge when a duplicate settlement conflicts', () => {
-    const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
+    const monitor = new Monitor(LEDGER);
     const reservationId = grantedId(monitor.reserve({ estimatedTokens: 100, final: false }));
     monitor.settle(reservationId, { type: 'UNKNOWN' });
     expect(
@@ -111,8 +119,8 @@ describe('Monitor settlement', () => {
   });
 
   it('accounts for unreturned reservations as unknown and preserves monotonic budget state', () => {
-    const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
-    const config = DEFAULT_KERNEL_CONFIG.budget;
+    const monitor = new Monitor(LEDGER);
+    const config = LEDGER;
     const ordinaryAvailable =
       config.tokenLimit - config.finalInputBudget - config.finalMaxOutputTokens;
     grantedId(monitor.reserve({ estimatedTokens: ordinaryAvailable, final: false }));
@@ -128,7 +136,7 @@ describe('Monitor settlement', () => {
   });
 
   it('rejects invalid usage without changing an outstanding reservation', () => {
-    const monitor = new Monitor(DEFAULT_KERNEL_CONFIG.budget);
+    const monitor = new Monitor(LEDGER);
     const reservationId = grantedId(monitor.reserve({ estimatedTokens: 100, final: false }));
     expect(() =>
       monitor.settle(reservationId, {

@@ -27,8 +27,14 @@ import {
 } from '@multiagentos/contracts';
 import type { CoreResponse } from './session-core.js';
 
-type Caller = 'workflow' | 'user-interaction';
-type RequestType = GatewayForwardV1['requestType'];
+export type Caller = 'workflow' | 'user-interaction';
+export type RequestType = GatewayForwardV1['requestType'];
+
+/** The message a request arrived in, for the context Core sees (Kernel/Gateway 2). */
+export interface RequestOrigin {
+  readonly correlationId: string;
+  readonly messageId: string;
+}
 type Schema = Parameters<typeof validate>[0];
 
 interface Route {
@@ -107,7 +113,11 @@ interface Admission {
 }
 
 export interface SessionGatewayDeps {
-  readonly handle: (forward: GatewayForwardV1, sessionId?: string) => Promise<CoreResponse>;
+  readonly handle: (
+    forward: GatewayForwardV1,
+    sessionId?: string,
+    origin?: RequestOrigin,
+  ) => Promise<CoreResponse>;
   readonly isOpenSession: (sessionId: string) => boolean;
   readonly newSessionId?: () => string;
 }
@@ -141,27 +151,33 @@ export class SessionGateway {
     });
   }
 
-  #rejected(requestId: string, reasonCode: GatewayRejectedCodeV1): SyscallRejectedV1 {
+  rejected(requestId: string, reasonCode: GatewayRejectedCodeV1): SyscallRejectedV1 {
     return { requestId, outcome: 'REJECTED', issuer: 'GATEWAY', reasonCode };
   }
 
-  async #serve(caller: Caller, requestType: RequestType, request: unknown): Promise<CoreResponse> {
+  /** Checks one request from `caller` and hands it to Core; `origin` is set over Fabric. */
+  async serve(
+    caller: Caller,
+    requestType: RequestType,
+    request: unknown,
+    origin?: RequestOrigin,
+  ): Promise<CoreResponse> {
     const route = ROUTES[requestType];
     const requestId = (request as { readonly requestId: string }).requestId;
-    if (route.caller !== caller) return this.#rejected(requestId, 'CALLER_FORBIDDEN');
+    if (route.caller !== caller) return this.rejected(requestId, 'CALLER_FORBIDDEN');
     const parsed = validate<GatewayForwardV1['request']>(route.schema, request);
-    if (!parsed.ok) return this.#rejected(requestId, 'INVALID_REQUEST');
+    if (!parsed.ok) return this.rejected(requestId, 'INVALID_REQUEST');
     const body = parsed.value as { readonly sessionId?: string; readonly workflowRunId?: string };
 
     if (route.needs !== 'NOTHING') {
       if (body.sessionId === undefined || !this.#deps.isOpenSession(body.sessionId))
-        return this.#rejected(requestId, 'SESSION_NOT_FOUND');
+        return this.rejected(requestId, 'SESSION_NOT_FOUND');
     }
     if (route.needs === 'RUN') {
       const admission =
         body.workflowRunId === undefined ? undefined : this.#admissions.get(body.workflowRunId);
       if (admission === undefined || admission.sessionId !== body.sessionId)
-        return this.#rejected(requestId, 'RUN_NOT_FOUND');
+        return this.rejected(requestId, 'RUN_NOT_FOUND');
       if (route.blocked === true && admission.runState !== 'RUNNING') {
         if (admission.closeReason === undefined)
           throw new Error('A blocked run must carry closeReason');
@@ -184,12 +200,12 @@ export class SessionGateway {
       request: parsed.value,
       ...(generated === undefined ? {} : { sessionId: generated }),
     } as GatewayForwardV1;
-    return this.#deps.handle(forward, generated);
+    return this.#deps.handle(forward, generated, origin);
   }
 
   #port<K extends RequestType>(caller: Caller, requestType: K) {
     return (request: unknown): Promise<never> =>
-      this.#serve(caller, requestType, request) as Promise<never>;
+      this.serve(caller, requestType, request) as Promise<never>;
   }
 
   /** Injected into Workflow only; the caller is who holds the port. */

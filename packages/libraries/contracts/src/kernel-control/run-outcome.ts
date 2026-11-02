@@ -4,7 +4,7 @@ import {
   ErrorCategorySchema,
   artifactRefOf,
 } from '../platform-common/common-schemas.js';
-import { EXECUTOR_KINDS } from '../platform-common/execution-kind.js';
+import { EXECUTOR_KINDS, EXECUTOR_KINDS_V1 } from '../platform-common/execution-kind.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import {
@@ -52,7 +52,7 @@ export const WorkflowRunFailureSchema = Type.Unsafe<RunFailure>(
   ),
 );
 /** The failure of a run closed as VIOLATION: a security violation judged by the Kernel. */
-const ViolationFailureSchema = Type.Unsafe<RunFailure>(
+export const ViolationFailureSchema = Type.Unsafe<RunFailure>(
   closed({
     ...failure,
     code: Type.Enum(VIOLATION_CODES),
@@ -79,6 +79,24 @@ export const UnknownEffectSchema = Type.Union(
   { $id: 'kernel.control.UnknownEffect.v0' },
 );
 export type UnknownEffect = Static<typeof UnknownEffectSchema>;
+
+/** As v0, for every major 1 executor kind (`REPOSITORY_LIST` included). */
+export const UnknownEffectV1Schema = Type.Union(
+  [
+    closed({
+      ...effect,
+      executionKind: Type.Literal('MODEL'),
+      effect: Type.Literal('MODEL_REQUEST_UNCONFIRMED'),
+    }),
+    closed({
+      ...effect,
+      executionKind: Type.Enum(EXECUTOR_KINDS_V1),
+      effect: Type.Literal('EXECUTION_STOP_UNCONFIRMED'),
+    }),
+  ],
+  { $id: 'kernel.control.UnknownEffect.v1' },
+);
+export type UnknownEffectV1 = Static<typeof UnknownEffectV1Schema>;
 
 export const ReportRefSchema = artifactRefOf(MEDIA_TYPES.analysisReport);
 export const RunSummaryRefSchema = artifactRefOf(MEDIA_TYPES.runSummary);
@@ -168,7 +186,7 @@ export type CloseReasonV1 = Static<typeof CloseReasonV1Schema>;
 export const runEndV1 = <T extends string>(type: T) => {
   const common = {
     type: Type.Literal(type),
-    unknownEffects: Type.Array(UnknownEffectSchema),
+    unknownEffects: Type.Array(UnknownEffectV1Schema),
     resultRef: Type.Optional(ArtifactRefSchema),
   };
   const summary = { ...common, runSummaryRef: RunSummaryRefSchema };

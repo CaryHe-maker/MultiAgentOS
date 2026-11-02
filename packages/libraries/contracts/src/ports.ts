@@ -88,7 +88,7 @@ import type {
   ArtifactRef,
   BoundaryContext,
   CapabilityDescriptor,
-  Envelope,
+  EnvelopeV1,
   ModuleError,
 } from './platform-common/common-schemas.js';
 import type { ContractValidationError } from './platform-common/validation.js';
@@ -356,6 +356,7 @@ export const FABRIC_ADDRESSES = [
   'inbox.workflow',
   'inbox.user-interaction',
   'gateway.admission',
+  'gateway.session',
   'kernel-core.execution-facts',
 ] as const;
 export type FabricAddress = (typeof FABRIC_ADDRESSES)[number];
@@ -368,24 +369,27 @@ export type FabricAddress = (typeof FABRIC_ADDRESSES)[number];
 export interface FabricPort {
   register<TRequest, TResponse>(
     schemaId: string,
-    handler: (envelope: Envelope<TRequest>) => Promise<TResponse>,
+    handler: (envelope: EnvelopeV1<TRequest>) => Promise<TResponse>,
     /** Only Gateway syscall routes may turn a malformed body with a valid requestId into a rejection. */
-    onInvalid?: (envelope: Envelope<unknown>, error: ContractValidationError) => Promise<TResponse>,
+    onInvalid?: (
+      envelope: EnvelopeV1<unknown>,
+      error: ContractValidationError,
+    ) => Promise<TResponse>,
   ): void;
   /** Waits for the handler's response. */
   request<TRequest, TResponse>(
     schemaId: string,
     payload: TRequest,
-    context: BoundaryContext,
+    context: BoundaryContextV1,
   ): Promise<TResponse>;
   /** Returns once the message entered the receiver's queue. */
   send<T>(
     address: FabricAddress,
     schemaId: string,
     payload: T,
-    context: BoundaryContext,
+    context: BoundaryContextV1,
   ): Promise<void>;
-  subscribe<T>(address: FabricAddress, handler: (envelope: Envelope<T>) => Promise<void>): void;
+  subscribe<T>(address: FabricAddress, handler: (envelope: EnvelopeV1<T>) => Promise<void>): void;
   capabilities(): readonly CapabilityDescriptor[];
 }
 

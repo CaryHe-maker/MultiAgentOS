@@ -16,7 +16,7 @@ import type {
   ViolationCode,
 } from '@multiagentos/contracts';
 import type { SchedulerDuties, Settlement, SettlementResult } from '../interfaces/index.js';
-import type { AgentBudget } from '../monitor/run-ledgers.js';
+import type { AgentBudget } from '../monitor/index.js';
 
 /** What the catalog gives Core and Execution for one registered AgentRun. */
 export interface PinnedAgent {

@@ -12,7 +12,7 @@ import {
 } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
 import type { SchedulerDuties } from '../interfaces/index.js';
-import { RunLedgers, finalReserve, minShare, type AgentBudget } from '../monitor/run-ledgers.js';
+import { RunLedgers, finalReserve, minShare, type AgentBudget } from '../monitor/index.js';
 import { testPinnedAgent } from '../test-support/run-work.js';
 import {
   RunAttempts,

@@ -1,12 +1,17 @@
-import type {
-  ExecutionScope,
-  ModelToolSpec,
-  PinnedDefinitionSetV1,
-  ProtocolRegistry,
-  ThinkingEffort,
-  ToolDefinitionV1,
+import {
+  newId,
+  type BoundaryContextV1,
+  type ExecutionScope,
+  type ModelToolSpec,
+  type PinnedDefinitionSetV1,
+  type PortResult,
+  type ProtocolRegistry,
+  type RegisterAgentRunRequestV1,
+  type ThinkingEffort,
+  type ToolDefinitionV1,
 } from '@multiagentos/contracts';
 import type { PinnedAgent } from './run-attempts.js';
+import type { PinResult } from './run-work.js';
 
 export type PinFailure = 'FORBIDDEN';
 
@@ -66,5 +71,40 @@ export function pinnedAgentOf(
     instructions: prompt.template,
     // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
     toolSpecs: (isFinal) => (isFinal ? final : ordinary),
+  };
+}
+
+/** The catalog as Core reads it: one Agent and everything it runs with. */
+export interface AgentCatalog {
+  pinAgent(
+    ref: { readonly id: string; readonly version: string },
+    context: BoundaryContextV1,
+  ): PortResult<PinnedDefinitionSetV1>;
+}
+
+/**
+ * `RunWork.pinAgent` over the catalog: the Agent must exist, have exactly the digest Workflow
+ * pinned, and allow the effort it registered with (Kernel/Core 4).
+ */
+export function pinAgentFrom(
+  catalog: AgentCatalog,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+): (request: RegisterAgentRunRequestV1) => Promise<PinResult> {
+  return (request) => {
+    const { agentRef, effort, sessionId, workflowRunId } = request;
+    const set = catalog.pinAgent(agentRef, {
+      correlationId: newId('cor'),
+      tenantId: 'local',
+      projectId: 'local',
+      sessionId,
+      workflowRunId,
+    });
+    if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
+    if (set.value.agent.digest !== agentRef.digest)
+      return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
+    const agent = pinnedAgentOf(set.value, effort, registry);
+    return Promise.resolve(
+      agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
+    );
   };
 }

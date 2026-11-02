@@ -1,10 +1,10 @@
-import type { ExecutionRequest } from '@multiagentos/contracts';
+import type { ExecutionRequestV1 } from '@multiagentos/contracts';
 
 /** The Supervisor's view of one accepted execution. */
 export type ExecutionState = 'ACCEPTED' | 'RUNNING' | 'TERMINAL';
 
 export interface ExecutionEntry {
-  readonly request: ExecutionRequest;
+  readonly request: ExecutionRequestV1;
   readonly correlationId: string;
   /** Created per execution so a later stage can abort it without shared handles. */
   readonly abortController: AbortController;

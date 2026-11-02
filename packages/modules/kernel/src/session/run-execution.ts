@@ -6,8 +6,8 @@ import {
   type CancelRunExecutionsRequest,
   type ExecutionFactV1,
   type ExecutionRequestV1,
-  type ExecutorKind,
-  type UnknownEffect,
+  type ExecutorKindV1,
+  type UnknownEffectV1,
 } from '@multiagentos/contracts';
 import {
   AttemptRequestBuilder,
@@ -79,7 +79,7 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queue: Attempt[] = [];
   readonly #byId = new Map<string, Attempt>();
-  readonly #effects: UnknownEffect[] = [];
+  readonly #effects: UnknownEffectV1[] = [];
   #active: Attempt | undefined;
   #cancelFallback: (() => void) | undefined;
 
@@ -106,7 +106,7 @@ export class RunExecution {
     this.#effects.push({
       unitAttemptId: attempt.unitAttemptId,
       executionId,
-      executionKind: attempt.spec.unit.executionKind as ExecutorKind,
+      executionKind: attempt.spec.unit.executionKind as ExecutorKindV1,
       effect: 'EXECUTION_STOP_UNCONFIRMED',
     });
   }
@@ -121,7 +121,7 @@ export class RunExecution {
   }
 
   /** What may have happened without being confirmed; RunClosed reports it. */
-  unknownEffects(): UnknownEffect[] {
+  unknownEffects(): UnknownEffectV1[] {
     return [...this.#effects];
   }
 

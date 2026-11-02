@@ -1,34 +1,34 @@
 /**
- * The acceptance harness of docs/M1ReleasePlan.md R2.2. It runs one fixed task through the whole
- * product chain the `multiagentos analyze` entry builds: the CLI parser, the composition root
- * with every product part, the real Kernel, Workflow, UserInteraction and ExecutorSet. Offline,
- * only the provider's HTTP API is replaced by a script. The harness prepares the repository,
- * compares its snapshot digest before and after, and judges the run by the task's assertions.
+ * The acceptance harness (M1ReleasePlan R2.2, M2Plan 8.1). It runs one fixed task through the
+ * whole product chain `mas run analyze` builds: the CLI parser, the composition root, the real
+ * Kernel, Workflow, console and ExecutorSet. Offline, only the provider's HTTP API is replaced by
+ * a script. The harness prepares the repository, compares its digest before and after, answers
+ * every question with yes, and judges the run by the task's assertions.
  */
 import { createHash } from 'node:crypto';
-import { cp, mkdtemp, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalog,
+  DefinitionCatalogV1,
   FileDefinitionSource,
   modelCallCost,
 } from '@multiagentos/agent-tool-pool';
-import { parseCli, runParsedCli } from '@multiagentos/cli';
+import { parseCli, runCommand, type Terminal } from '@multiagentos/cli';
 import {
   AnalysisReportSchema,
-  RunSummarySchema,
+  RunSummaryV1Schema,
   validate,
   type AnalysisReport,
-  type ExecutorOutcome,
-  type ExecutorRegistry,
-  type RunSummary,
+  type ExecutorOutcomeV1,
+  type ExecutorRegistryV1,
+  type ModelDefinition,
+  type RunSummaryV1,
 } from '@multiagentos/contracts';
-import { createExecutorRegistry } from '@multiagentos/executor-set';
-import { createWorkflow, type WorkflowDeps, type WorkflowModule } from '@multiagentos/workflow';
-import { createFakeTerminal } from '@multiagentos/testing';
+import { createExecutorRegistryV1 } from '@multiagentos/executor-set';
+import type { Console, ConsoleView } from '@multiagentos/user-interaction';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
 import { credentialsFrom } from '../../src/index.js';
@@ -52,7 +52,7 @@ export interface RunOptions {
 
 /** One Executor call the run made, as the harness observed it at the registry. */
 export interface ExecutorCall {
-  readonly kind: keyof ExecutorRegistry;
+  readonly kind: keyof ExecutorRegistryV1;
   readonly input: unknown;
   readonly outcome: string;
 }
@@ -70,7 +70,7 @@ export interface RunRecord {
   readonly model?: string;
   readonly definitions: readonly { id: string; version: string; digest: string }[];
   readonly config: { readonly portReturnTimeoutMs: number; readonly budget: unknown };
-  readonly tokens?: RunSummary['tokens'];
+  readonly tokens?: RunSummaryV1['tokens'];
   readonly modelRequests?: number;
   /** Upper bound: cache hits are not reported per run, so all input is priced as misses. */
   readonly costMicroUsd?: number;
@@ -81,7 +81,7 @@ export interface TaskResult {
   readonly failures: readonly string[];
   readonly record: RunRecord;
   readonly report?: AnalysisReport;
-  readonly summary?: RunSummary;
+  readonly summary?: RunSummaryV1;
   readonly calls: readonly ExecutorCall[];
   readonly output: string;
 }
@@ -172,14 +172,17 @@ async function headCommit(): Promise<string> {
 }
 
 /** The product registry, with every call recorded on its way through. */
-function observedRegistry(calls: ExecutorCall[], trace?: (line: string) => void): ExecutorRegistry {
+function observedRegistry(
+  calls: ExecutorCall[],
+  trace?: (line: string) => void,
+): ExecutorRegistryV1 {
   type Untyped = {
     readonly executionKind: string;
-    execute(input: unknown, environment: unknown): Promise<ExecutorOutcome>;
+    execute(input: unknown, environment: unknown): Promise<ExecutorOutcomeV1>;
   };
-  const registry = createExecutorRegistry();
+  const registry = createExecutorRegistryV1();
   const observed = Object.fromEntries(
-    (Object.keys(registry) as (keyof ExecutorRegistry)[]).map((kind) => {
+    (Object.keys(registry) as (keyof ExecutorRegistryV1)[]).map((kind) => {
       const executor = registry[kind] as unknown as Untyped;
       const wrapped: Untyped = {
         executionKind: executor.executionKind,
@@ -194,46 +197,40 @@ function observedRegistry(calls: ExecutorCall[], trace?: (line: string) => void)
       return [kind, wrapped];
     }),
   );
-  return observed as unknown as ExecutorRegistry;
+  return observed as unknown as ExecutorRegistryV1;
 }
 
-/** The product Workflow, with its Gateway calls and Inbox events written to `trace`. */
-function tracedWorkflow(trace: (line: string) => void): (deps: WorkflowDeps) => WorkflowModule {
-  return (deps) => {
-    const traced =
-      <A extends unknown[], R>(name: string, call: (...args: A) => Promise<R>) =>
-      async (...args: A): Promise<R> => {
-        const result = await call(...args);
-        const outcome = (result as { outcome?: string; reasonCode?: string }) ?? {};
-        trace(`workflow ${name} -> ${outcome.outcome ?? '?'} ${outcome.reasonCode ?? ''}`);
-        return result;
+/**
+ * A terminal that writes the transcript to `written` and answers every question the console
+ * asks with yes, as a user who allows the repository and trusts its instructions would.
+ */
+export function answeringTerminal(): Terminal & { readonly written: string[] } {
+  const written: string[] = [];
+  let console: Pick<Console, 'submit'> | undefined;
+  let asked: string | undefined;
+  const view: ConsoleView = {
+    print: (record) => {
+      written.push(`${record.kind}: ${record.text}\n`);
+    },
+    update: (live) => {
+      const question = live.pending?.text;
+      if (question !== undefined && question !== asked && console !== undefined) {
+        written.push(`QUESTION: ${question}\n`);
+        void console.submit('y');
+      }
+      asked = question;
+    },
+    restoreInput: () => undefined,
+  };
+  return {
+    view,
+    written,
+    attach: (input) => {
+      console = input;
+      return () => {
+        console = undefined;
       };
-    const gateway = deps.gateway;
-    const module = createWorkflow({
-      ...deps,
-      gateway: {
-        registerAgentRun: traced('registerAgentRun', gateway.registerAgentRun.bind(gateway)),
-        submitUnit: traced('submitUnit', gateway.submitUnit.bind(gateway)),
-        endAgentRun: traced('endAgentRun', gateway.endAgentRun.bind(gateway)),
-        closeRun: traced('closeRun', gateway.closeRun.bind(gateway)),
-      },
-    });
-    return {
-      ...module,
-      manifest: module.manifest,
-      start: () => module.start(),
-      stop: () => module.stop(),
-      health: () => module.health(),
-      inbox: {
-        deliver: (envelope) => {
-          const event = envelope.event;
-          trace(
-            `workflow inbox ${event.type}${event.type === 'UnitReport' ? ` ${event.executionKind} ${event.status}` : ''}`,
-          );
-          return module.inbox.deliver(envelope);
-        },
-      },
-    };
+    },
   };
 }
 
@@ -267,23 +264,20 @@ export function uncitedSources(
 /** Every artifact of the run that is a valid report or run summary. */
 async function runArtifacts(
   dataDir: string,
-): Promise<{ report?: AnalysisReport; summary?: RunSummary }> {
-  const found: { report?: AnalysisReport; summary?: RunSummary } = {};
-  const runs = await readdir(join(dataDir, 'runs')).catch(() => [] as string[]);
-  for (const run of runs) {
-    const directory = join(dataDir, 'runs', run, 'artifacts');
-    for (const name of await readdir(directory).catch(() => [] as string[])) {
-      let value: unknown;
-      try {
-        value = JSON.parse(await readFile(join(directory, name), 'utf8'));
-      } catch {
-        continue;
-      }
-      const report = validate<AnalysisReport>(AnalysisReportSchema, value);
-      if (report.ok) found.report = report.value;
-      const summary = validate<RunSummary>(RunSummarySchema, value);
-      if (summary.ok) found.summary = summary.value;
+): Promise<{ report?: AnalysisReport; summary?: RunSummaryV1 }> {
+  const found: { report?: AnalysisReport; summary?: RunSummaryV1 } = {};
+  const directory = join(dataDir, 'artifacts');
+  for (const name of await readdir(directory).catch(() => [] as string[])) {
+    let value: unknown;
+    try {
+      value = JSON.parse(await readFile(join(directory, name), 'utf8'));
+    } catch {
+      continue;
     }
+    const report = validate<AnalysisReport>(AnalysisReportSchema, value);
+    if (report.ok) found.report = report.value;
+    const summary = validate<RunSummaryV1>(RunSummaryV1Schema, value);
+    if (summary.ok) found.summary = summary.value;
   }
   return found;
 }
@@ -326,7 +320,7 @@ async function runIn(
       ? scriptedProvider(task.script, options.trace)
       : recordingProvider(globalThis.fetch);
   const calls: ExecutorCall[] = [];
-  const terminal = createFakeTerminal('YES');
+  const terminal = answeringTerminal();
   const config = { ...defaultSystemConfig(), dataDir };
   const startedAt = new Date();
   const failures: string[] = [];
@@ -336,20 +330,24 @@ async function runIn(
   globalThis.fetch = provider.fetch;
   let exitCode: number;
   try {
-    const parsed = await parseCli(['analyze', '--repo', repository, task.question], terminal);
+    const parsed = await parseCli(
+      ['run', '--repo', repository, 'analyze', task.question],
+      (text) => void terminal.written.push(text),
+    );
     if (!parsed.ok) throw new Error(`the CLI refused the task: exit code ${parsed.exitCode}`);
+    const { command } = parsed;
     const system = await composeSystem({
       config,
-      terminal,
+      repositoryRoot: await realpath(repository),
+      preset: 'standard',
+      view: terminal.view,
       credentials,
-      log: (line) => terminal.write(line),
-      parts: {
-        createExecutorRegistry: () => observedRegistry(calls, options.trace),
-        ...(options.trace === undefined ? {} : { createWorkflow: tracedWorkflow(options.trace) }),
-      },
+      executors: observedRegistry(calls, options.trace),
+      log: (line) => void terminal.written.push(line),
     });
     await system.start();
-    exitCode = await system.run((userInteraction) => runParsedCli(parsed.command, userInteraction));
+    const template = system.templateRef('analyze');
+    exitCode = await system.run((console) => runCommand(command, console, terminal, template));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -438,9 +436,9 @@ async function recordOf(
   durationMs: number,
   exitCode: number,
   config: ReturnType<typeof defaultSystemConfig>,
-  summary: RunSummary | undefined,
+  summary: RunSummaryV1 | undefined,
 ): Promise<RunRecord> {
-  const catalog = await DefinitionCatalog.load(
+  const catalog = await DefinitionCatalogV1.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
   const definitions = (summary?.agentRuns ?? []).map((run) => ({
@@ -453,13 +451,9 @@ async function recordOf(
   let costMicroUsd: number | undefined;
   const agent = summary?.agentRuns[0]?.agentRef;
   if (agent !== undefined) {
-    const pinned = await catalog.pinAgent(
+    const pinned = catalog.pinAgent(
       { id: agent.id, version: agent.version },
-      {
-        correlationId: 'cor_acceptance',
-        tenantId: 'local',
-        projectId: 'local',
-      },
+      { correlationId: 'cor_acceptance', tenantId: 'local', projectId: 'local' },
     );
     if (pinned.ok) {
       const definition = pinned.value.model;
@@ -467,7 +461,7 @@ async function recordOf(
       model = `${definition.id}@${definition.version}`;
       if (summary !== undefined && mode.kind === 'real')
         costMicroUsd = modelCallCost(
-          definition,
+          definition as unknown as ModelDefinition,
           { inputTokens: summary.tokens.inputTokens, outputTokens: summary.tokens.outputTokens },
           startedAt,
         ).microUsd;

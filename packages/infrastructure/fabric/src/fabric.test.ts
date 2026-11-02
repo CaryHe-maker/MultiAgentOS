@@ -1,7 +1,7 @@
 import {
   ContractValidationError,
   createM1ProtocolRegistry,
-  type BoundaryContext,
+  type BoundaryContextV1,
   type CatalogPort,
   type PersistencePort,
   type ShutdownRequest,
@@ -19,7 +19,7 @@ import {
   createInteractionGatewayPort,
 } from './index.js';
 
-const context: BoundaryContext = {
+const context: BoundaryContextV1 = {
   correlationId: 'cor_123456',
   tenantId: 'local',
   projectId: 'local',
@@ -48,7 +48,7 @@ describe('InProcessFabric', () => {
     const first = sender.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     await subscriberStarted;
@@ -65,7 +65,12 @@ describe('InProcessFabric', () => {
       sender.send(
         'gateway.admission',
         SCHEMA_IDS.admissionProjection,
-        { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+        {
+          workflowRunId: 'wfr_123456',
+          sessionId: 'ses_123456',
+          runState: 'CLOSED',
+          closeReason: 'COMPLETED',
+        },
         context,
       ),
     ).rejects.toThrow('NOT_RUNNING');
@@ -88,7 +93,7 @@ describe('InProcessFabric', () => {
         .send(
           'gateway.admission',
           SCHEMA_IDS.admissionProjection,
-          { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+          { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
           context,
         ),
     ).rejects.toThrow('NO_SUBSCRIBER');
@@ -123,18 +128,17 @@ describe('InProcessFabric', () => {
     const admission = sender.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     const workflow = sender.send(
       'inbox.workflow',
-      SCHEMA_IDS.workflowInboxEvent,
+      SCHEMA_IDS.workflowSystemEvent,
       {
         eventId: 'evt_123456',
-        workflowRunId: 'wfr_123456',
         seq: 1,
         occurredAt: '2026-10-21T00:00:00.000Z',
-        event: { type: 'RunStart', goal: 'analyze' },
+        event: { type: 'SessionListQuery', queryId: 'slq_123456', repositoryRoot: '/repo' },
       },
       context,
     );
@@ -218,7 +222,7 @@ describe('InProcessFabric', () => {
     ).rejects.toThrow(ContractValidationError);
     expect(() =>
       fabric.client('workflow').register(
-        SCHEMA_IDS.createRun,
+        SCHEMA_IDS.startSession,
         () => Promise.resolve(),
         () => Promise.resolve(),
       ),
@@ -268,14 +272,19 @@ describe('InProcessFabric', () => {
     const first = client.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     const firstResult = first.catch((error: unknown) => error);
     const second = client.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+      {
+        workflowRunId: 'wfr_123456',
+        sessionId: 'ses_123456',
+        runState: 'CLOSED',
+        closeReason: 'COMPLETED',
+      },
       context,
     );
     await firstStarted;

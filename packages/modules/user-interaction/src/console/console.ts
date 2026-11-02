@@ -175,7 +175,7 @@ export class Console {
   async interrupt(): Promise<void> {
     const now = this.#now().getTime();
     if (this.#interruptedAt !== undefined && now - this.#interruptedAt <= INTERRUPT_WINDOW_MS) {
-      await this.#shutdown();
+      await this.shutdown();
       return;
     }
     this.#interruptedAt = now;
@@ -183,7 +183,8 @@ export class Console {
     this.#refresh();
   }
 
-  async #shutdown(): Promise<void> {
+  /** Asks the Kernel to close the Session and stop the system; `exited()` then resolves. */
+  async shutdown(): Promise<void> {
     await this.#deps.gateway.shutdown({ requestId: newId('req') }, this.#context());
     this.#exit?.();
   }
@@ -258,7 +259,7 @@ export class Console {
         this.#notice(text.help);
         break;
       case '/exit':
-        await this.#shutdown();
+        await this.shutdown();
         break;
       case '/status':
         this.#notice(text.status(text.runState[this.#runState] ?? this.#runState, this.#budget));

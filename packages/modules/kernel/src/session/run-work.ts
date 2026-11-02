@@ -10,17 +10,18 @@ import type {
   ProjectFileContent,
   ReadProjectFileRequest,
   RegisterAgentRunRequestV1,
+  RunSummaryV1,
   SubmitUnitRequestV1,
   SyscallAck,
   SyscallRejectedV1,
   TurnUsage,
   UnitDefinitionV1,
   UnitReportV1,
-  UnknownEffect,
+  UnknownEffectV1,
 } from '@multiagentos/contracts';
-import { RequestLedger } from '../core/request-ledger.js';
+import { RequestLedger } from './request-ledger.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
-import type { RunLedgers } from '../monitor/run-ledgers.js';
+import type { RunLedgers } from '../monitor/index.js';
 import {
   RunAttempts,
   type AttemptAudit,
@@ -47,6 +48,7 @@ export type PinResult =
 
 /** The run as the Session actor owns it: control state, ordering and the Outbox stay there. */
 export interface RunHost {
+  readonly workflowRunId: string;
   control(): RunControl;
   closeReason(): CloseReasonV1 | undefined;
   runEpoch(): number;
@@ -80,7 +82,7 @@ export interface RunWorkDeps {
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
   readonly cancelExecutions: (runEpoch: number) => void;
   readonly executionsClosed: () => void;
-  readonly unknownEffects: () => UnknownEffect[];
+  readonly unknownEffects: () => UnknownEffectV1[];
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
@@ -104,7 +106,17 @@ export type ProjectFileRead =
 interface AgentRunRecord {
   readonly agent: PinnedAgent;
   state: 'ACTIVE' | 'ENDED';
+  /** For the RunSummary. */
+  readonly agentRef: RegisterAgentRunRequestV1['agentRef'];
+  readonly registeredAt: string;
+  endedAt?: string;
+  rounds: number;
 }
+
+/** How a run ended, as the RunSummary repeats it. */
+export type RunEnding = Pick<RunSummaryV1, 'closeReason' | 'unknownEffects' | 'resultRef'> & {
+  readonly failure?: Extract<RunSummaryV1, { failure: unknown }>['failure'];
+};
 
 /** A request parked on a question: first `repo.read`, then trust in the exact content. */
 interface WaitingFile {
@@ -135,11 +147,16 @@ export class RunWork {
   readonly #clocks: WallClocks;
   readonly #attempts: RunAttempts;
   readonly #activity: RunActivity;
+  readonly #startedAt: string;
+  #turns = 0;
+  #modelRequests = 0;
+  readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
 
   public constructor(deps: RunWorkDeps) {
     this.#deps = deps;
     const { host } = deps;
     this.#host = host;
+    this.#startedAt = deps.now().toISOString();
     this.#authorization = new RunAuthorization<string>({
       repositoryRoot: deps.repositoryRoot,
       provider: deps.provider,
@@ -174,6 +191,7 @@ export class RunWork {
       deliver: (report, spec) => {
         host.toWorkflow(report);
         activity.reported(spec, report);
+        this.#counted(report);
       },
       attemptStarted: (spec, unitAttemptId) => {
         this.#countInFlight(spec.agentRunId, 1);
@@ -181,6 +199,7 @@ export class RunWork {
         activity.queued(spec, unitAttemptId);
       },
       attemptRunning: (spec, unitAttemptId, final) => {
+        if (spec.unit.executionKind === 'MODEL') this.#modelRequests += 1;
         activity.running(spec, unitAttemptId, final);
       },
       attemptEnded: (spec, unitAttemptId) => {
@@ -204,7 +223,43 @@ export class RunWork {
   }
 
   openTurn(turnId: string): void {
+    this.#turns += 1;
     this.#deps.ledgers.openTurnLedger(turnId);
+  }
+
+  #counted(report: UnitReportV1): void {
+    if (report.status === 'OK') this.#units.ok += 1;
+    else if (report.status === 'REJECTED') this.#units.rejected += 1;
+    else this.#units.failed += 1;
+    const record = this.#agentRuns.get(report.agentRunId);
+    if (record !== undefined && report.executionKind === 'MODEL' && report.status !== 'REJECTED')
+      record.rounds += 1;
+  }
+
+  /** The run record of Execution (RunSummary), once the run closed and its last Turn too. */
+  summary(ids: { readonly sessionId: string }, ending: RunEnding): RunSummaryV1 {
+    const closedAt = this.#deps.now();
+    const delivered = this.#units.ok + this.#units.rejected + this.#units.failed;
+    return {
+      workflowRunId: this.#host.workflowRunId,
+      sessionId: ids.sessionId,
+      startedAt: this.#startedAt,
+      closedAt: closedAt.toISOString(),
+      durationMs: Math.max(0, closedAt.getTime() - Date.parse(this.#startedAt)),
+      turns: this.#turns,
+      agentRuns: [...this.#agentRuns].map(([agentRunId, record]) => ({
+        agentRunId,
+        agentRef: record.agentRef,
+        registeredAt: record.registeredAt,
+        ...(record.endedAt === undefined ? {} : { endedAt: record.endedAt }),
+        rounds: record.rounds,
+        finalCallUsed: this.#attempts.usedFinalCall(agentRunId),
+      })),
+      units: { ...this.#units, notDelivered: this.#units.submitted - delivered },
+      model: { requests: this.#modelRequests },
+      tokens: this.#deps.ledgers.usage(),
+      ...ending,
+    } as RunSummaryV1;
   }
 
   closeTurn(turnId: string): TurnUsage {
@@ -270,7 +325,13 @@ export class RunWork {
     if (!pinned.ok) return this.#refuse(requestId, request, pinned.reasonCode);
     const registered = this.#host.registerAgentRun(agentRunId);
     if (!registered.accepted) return this.#refuse(requestId, request, registered.reasonCode);
-    this.#agentRuns.set(agentRunId, { agent: pinned.agent, state: 'ACTIVE' });
+    this.#agentRuns.set(agentRunId, {
+      agent: pinned.agent,
+      state: 'ACTIVE',
+      agentRef: request.agentRef,
+      registeredAt: this.#deps.now().toISOString(),
+      rounds: 0,
+    });
     this.#activity.registered(agentRunId, request.display.label);
     this.#clocks.register(agentRunId, pinned.agent.maxWallClockMs);
     return this.#accept(requestId, request);
@@ -286,6 +347,7 @@ export class RunWork {
     if (record === undefined) return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
     if (record.state === 'ENDED') return this.#refuse(requestId, request, 'AGENT_RUN_ENDED');
     record.state = 'ENDED';
+    record.endedAt = this.#deps.now().toISOString();
     this.#clocks.end(agentRunId);
     this.#activity.ended(agentRunId);
     const ended = this.#host.endAgentRun(agentRunId);
@@ -314,6 +376,7 @@ export class RunWork {
     if (record === undefined) throw new Error('An admitted Unit has no AgentRun');
     const { unit } = admission;
     const response = this.#accept(requestId, request);
+    this.#units.submitted += 1;
 
     if (admission.countsAsTool) {
       const quota = this.#deps.ledgers.countToolUnit(request.agentRunId, record.agent.maxToolUnits);
@@ -544,7 +607,7 @@ export class RunWork {
     this.#deps.cancelExecutions(this.#host.runEpoch());
   }
 
-  unknownEffects(): UnknownEffect[] {
+  unknownEffects(): UnknownEffectV1[] {
     return this.#deps.unknownEffects();
   }
 

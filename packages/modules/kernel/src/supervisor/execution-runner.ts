@@ -1,11 +1,10 @@
 import type {
   CancelRunExecutionsRequest,
-  ExecutionFact,
-  ExecutionFactSink,
-  ExecutionRequest,
-  ExecutorEnvironment,
-  ExecutorOutcome,
-  ExecutorRegistry,
+  ExecutionFactV1,
+  ExecutionRequestV1,
+  ExecutorEnvironmentV1,
+  ExecutorOutcomeV1,
+  ExecutorRegistryV1,
   ProviderCredentials,
   RequestState,
   SubprocessRunner,
@@ -16,10 +15,10 @@ import { ExecutionTable, type ExecutionEntry } from './execution-table.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
 
 export interface ExecutionRunnerDeps {
-  readonly executors: ExecutorRegistry;
+  readonly executors: ExecutorRegistryV1;
   readonly credentials: ProviderCredentials;
   readonly subprocess: SubprocessRunner;
-  readonly facts: ExecutionFactSink;
+  readonly facts: { report(fact: ExecutionFactV1): Promise<void> };
   readonly cancelGraceMs: number;
   readonly now: () => Date;
 }
@@ -36,10 +35,10 @@ interface TerminationExtras {
  * grace period, otherwise the execution becomes STOP_UNCONFIRMED.
  */
 export class ExecutionRunner {
-  readonly #executors: ExecutorRegistry;
+  readonly #executors: ExecutorRegistryV1;
   readonly #credentials: ProviderCredentials;
   readonly #subprocess: SubprocessRunner;
-  readonly #facts: ExecutionFactSink;
+  readonly #facts: { report(fact: ExecutionFactV1): Promise<void> };
   readonly #cancelGraceMs: number;
   readonly #now: () => Date;
   readonly #table = new ExecutionTable();
@@ -58,7 +57,7 @@ export class ExecutionRunner {
   }
 
   /** Returns after the request is accepted; the Executor starts outside this call. */
-  public execute(request: ExecutionRequest, correlationId: string): void {
+  public execute(request: ExecutionRequestV1, correlationId: string): void {
     if (this.#stopped) throw new Error('Supervisor execution runner has stopped');
     const entry: ExecutionEntry = {
       request,
@@ -219,13 +218,13 @@ export class ExecutionRunner {
     );
   }
 
-  #finishNormal(entry: ExecutionEntry, outcome: ExecutorOutcome): void {
+  #finishNormal(entry: ExecutionEntry, outcome: ExecutorOutcomeV1): void {
     this.#finalize(entry, (endedAt) =>
       toExecutionFact(entry.request, entry.startedAt ?? endedAt, endedAt, outcome),
     );
   }
 
-  #finishAborted(entry: ExecutionEntry, outcome: ExecutorOutcome): void {
+  #finishAborted(entry: ExecutionEntry, outcome: ExecutorOutcomeV1): void {
     const reason = entry.abortReason;
     if (reason === undefined) {
       this.#finishNormal(entry, outcome);
@@ -271,7 +270,7 @@ export class ExecutionRunner {
     );
   }
 
-  #finalize(entry: ExecutionEntry, buildFact: (endedAt: string) => ExecutionFact): void {
+  #finalize(entry: ExecutionEntry, buildFact: (endedAt: string) => ExecutionFactV1): void {
     if (entry.terminal) return;
     entry.terminal = true;
     entry.state = 'TERMINAL';
@@ -289,7 +288,7 @@ export class ExecutionRunner {
     entry.graceTimer = undefined;
   }
 
-  async #report(fact: ExecutionFact): Promise<void> {
+  async #report(fact: ExecutionFactV1): Promise<void> {
     try {
       await this.#facts.report(fact);
     } catch (error: unknown) {
@@ -299,7 +298,7 @@ export class ExecutionRunner {
   }
 }
 
-function terminationExtras(outcome: ExecutorOutcome): TerminationExtras {
+function terminationExtras(outcome: ExecutorOutcomeV1): TerminationExtras {
   switch (outcome.outcome) {
     case 'COMPLETED':
     case 'FAILED':
@@ -312,7 +311,7 @@ function terminationExtras(outcome: ExecutorOutcome): TerminationExtras {
   }
 }
 
-function failureOutcome(request: ExecutionRequest): ExecutorOutcome {
+function failureOutcome(request: ExecutionRequestV1): ExecutorOutcomeV1 {
   return {
     outcome: 'FAILED',
     reasonCode: 'INTERNAL',
@@ -322,15 +321,17 @@ function failureOutcome(request: ExecutionRequest): ExecutorOutcome {
 }
 
 function runExecutor(
-  registry: ExecutorRegistry,
-  request: ExecutionRequest,
-  environment: ExecutorEnvironment,
-): Promise<ExecutorOutcome> {
+  registry: ExecutorRegistryV1,
+  request: ExecutionRequestV1,
+  environment: ExecutorEnvironmentV1,
+): Promise<ExecutorOutcomeV1> {
   switch (request.executionKind) {
     case 'REPOSITORY_ORIENT':
       return registry.REPOSITORY_ORIENT.execute(request.input, environment);
     case 'REPOSITORY_SEARCH':
       return registry.REPOSITORY_SEARCH.execute(request.input, environment);
+    case 'REPOSITORY_LIST':
+      return registry.REPOSITORY_LIST.execute(request.input, environment);
     case 'FILE_READ':
       return registry.FILE_READ.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':

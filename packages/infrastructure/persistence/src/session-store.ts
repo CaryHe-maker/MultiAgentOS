@@ -21,6 +21,8 @@ import {
   validate,
   type AppendLogPort,
   type CapabilityDescriptor,
+  type HealthStatus,
+  type LifecyclePort,
   type InstanceLockInfo,
   type InstanceLockPort,
   type LockResult,
@@ -86,7 +88,8 @@ function assertSessionId(sessionId: string): void {
   if (!validate(IdSchemas.sessionId, sessionId).ok) throw new Error('invalid sessionId');
 }
 
-export class FileSessionStore implements SessionPersistencePort {
+export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
+  readonly manifest = { moduleId: 'persistence', version: '0.2.0', dependencies: [] } as const;
   readonly #dataDir: string;
   /** Appends to one file run in call order; a failed one does not poison the next. */
   readonly #tails = new Map<string, Promise<unknown>>();
@@ -193,6 +196,19 @@ export class FileSessionStore implements SessionPersistencePort {
         return acquireSessionLock(join(this.#dataDir, 'sessions', sessionId, 'session.lock'));
       },
     };
+  }
+
+  start(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** Completes every append that was started before it returns. */
+  async stop(): Promise<void> {
+    await Promise.allSettled([...this.#tails.values()]);
+  }
+
+  health(): Promise<HealthStatus> {
+    return Promise.resolve({ status: 'UP', checkedAt: new Date().toISOString(), details: [] });
   }
 
   capabilities(): readonly CapabilityDescriptor[] {

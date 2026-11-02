@@ -7,6 +7,7 @@ import {
   type ReportSessionCommandRequest,
   type RunFailure,
   type RunFinishedV1,
+  type RunSummaryV1,
   type UserInput,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
@@ -39,10 +40,8 @@ export interface SessionDuties {
   /** The Unit path of a new run. */
   openRunWork(host: RunHost): RunWork;
   /** Writes the RunSummary; undefined means the write failed and the run ends without one. */
-  writeRunSummary(
-    workflowRunId: string,
-    closeReason: CloseReasonV1,
-  ): Promise<ArtifactRef | undefined>;
+  /** Writes the run record; undefined when it could not be stored. */
+  writeRunSummary(summary: RunSummaryV1): Promise<ArtifactRef | undefined>;
   /** A new Session could not be created: its reference and everything written for it go. */
   discardSession(): Promise<void>;
 }
@@ -283,6 +282,7 @@ export class SessionActor {
     const { outbox, duties } = this.#deps;
     const sessionId = this.#sessionId;
     const host: RunHost = {
+      workflowRunId,
       control: () => run.control,
       closeReason: () => run.closing?.closeReason,
       runEpoch: () => run.runEpoch,
@@ -458,9 +458,12 @@ export class SessionActor {
     this.#deps.admission(run.workflowRunId, 'CLOSED', closing.closeReason);
     run.work.finishClosing();
     if (run.closingTurn !== undefined) this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
-    const summary = await this.#deps.duties.writeRunSummary(run.workflowRunId, closing.closeReason);
+    const unknownEffects = run.work.unknownEffects();
+    const summary = await this.#deps.duties.writeRunSummary(
+      run.work.summary({ sessionId: this.#sessionId }, { unknownEffects, ...closing }),
+    );
     const ending = {
-      unknownEffects: run.work.unknownEffects(),
+      unknownEffects,
       ...closing,
       ...(summary === undefined
         ? { finalizationError: 'RUN_SUMMARY_WRITE_FAILED' as const }

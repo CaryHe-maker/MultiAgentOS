@@ -1,13 +1,13 @@
 import {
   assertValid,
-  BoundaryContextSchema,
+  BoundaryContextV1Schema,
   ContractValidationError,
   IdSchemas,
   newId,
   validate,
-  type BoundaryContext,
+  type BoundaryContextV1,
   type CapabilityDescriptor,
-  type Envelope,
+  type EnvelopeV1,
   type FabricAddress,
   type FabricPort,
   type HealthStatus,
@@ -17,7 +17,7 @@ import {
   type ProtocolRegistry,
 } from '@multiagentos/contracts';
 import { withinDeadline } from '../deadline/port-deadline.js';
-import { SCHEMA_IDS } from '../stubs/port-stubs.js';
+import { GATEWAY_SYSCALL_SCHEMAS } from '../stubs/port-stubs.js';
 import { FabricError } from './fabric-error.js';
 
 export interface FabricClientOptions {
@@ -28,27 +28,15 @@ export interface FabricClientOptions {
   readonly requestTimeoutMs?: number;
 }
 
-type RequestHandler = (envelope: Envelope<unknown>) => Promise<unknown>;
-type MessageHandler = (envelope: Envelope<unknown>) => Promise<void>;
+type RequestHandler = (envelope: EnvelopeV1<unknown>) => Promise<unknown>;
+type MessageHandler = (envelope: EnvelopeV1<unknown>) => Promise<void>;
 interface RegisteredHandler {
   readonly handle: RequestHandler;
   readonly onInvalid?: (
-    envelope: Envelope<unknown>,
+    envelope: EnvelopeV1<unknown>,
     error: ContractValidationError,
   ) => Promise<unknown>;
 }
-
-const GATEWAY_REQUEST_SCHEMAS = new Set<string>([
-  SCHEMA_IDS.registerAgentRun,
-  SCHEMA_IDS.submitUnit,
-  SCHEMA_IDS.endAgentRun,
-  SCHEMA_IDS.closeRun,
-  SCHEMA_IDS.createRun,
-  SCHEMA_IDS.answerAuthorization,
-  SCHEMA_IDS.cancelRun,
-  SCHEMA_IDS.readArtifact,
-  SCHEMA_IDS.shutdown,
-]);
 
 function hasValidRequestId(payload: unknown): boolean {
   return (
@@ -61,7 +49,7 @@ function hasValidRequestId(payload: unknown): boolean {
 }
 
 /**
- * Same-process Fabric (docs/M1/Infrastructure/Fabric.md 3). Every communication subject gets
+ * Same-process Fabric (M1 Fabric 3, major 1 envelopes). Every communication subject gets
  * its own client, which fixes the Envelope's producer. Each delivery validates the payload
  * against its registered Schema and copies it with `structuredClone`, so object references,
  * functions and class instances cannot cross a subject boundary unnoticed.
@@ -111,7 +99,7 @@ export class InProcessFabric implements LifecyclePort {
         if (this.#handlers.has(schemaId)) throw new FabricError('ALREADY_REGISTERED', schemaId);
         if (
           onInvalid !== undefined &&
-          (producer !== 'gateway' || !GATEWAY_REQUEST_SCHEMAS.has(schemaId))
+          (producer !== 'gateway' || !GATEWAY_SYSCALL_SCHEMAS.has(schemaId))
         )
           throw new FabricError('INVALID_REGISTRATION', schemaId);
         this.#handlers.set(schemaId, {
@@ -122,12 +110,12 @@ export class InProcessFabric implements LifecyclePort {
       request: async <TRequest, TResponse>(
         schemaId: string,
         payload: TRequest,
-        context: BoundaryContext,
+        context: BoundaryContextV1,
       ) => {
         // A bad transport context is never a malformed Gateway syscall body.
-        assertValid(BoundaryContextSchema, context);
+        assertValid(BoundaryContextV1Schema, context);
         const handler = this.#handlers.get(schemaId);
-        let envelope: Envelope<unknown>;
+        let envelope: EnvelopeV1<unknown>;
         try {
           envelope = this.#envelope(producer, 'command', schemaId, payload, context);
         } catch (error) {
@@ -177,11 +165,11 @@ export class InProcessFabric implements LifecyclePort {
     messageType: MessageType,
     schemaId: string,
     payload: unknown,
-    context: BoundaryContext,
+    context: BoundaryContextV1,
     validatePayload = true,
-  ): Envelope<unknown> {
+  ): EnvelopeV1<unknown> {
     if (!this.#running) throw new FabricError('NOT_RUNNING', schemaId);
-    const checkedContext = assertValid<BoundaryContext>(BoundaryContextSchema, context);
+    const checkedContext = assertValid<BoundaryContextV1>(BoundaryContextV1Schema, context);
     const entry = this.#registry.get(schemaId);
     return {
       schemaName: entry.schemaName,
@@ -196,6 +184,7 @@ export class InProcessFabric implements LifecyclePort {
       ...(checkedContext.causationId === undefined
         ? {}
         : { causationId: checkedContext.causationId }),
+      ...(checkedContext.sessionId === undefined ? {} : { sessionId: checkedContext.sessionId }),
       ...(checkedContext.workflowRunId === undefined
         ? {}
         : { workflowRunId: checkedContext.workflowRunId }),

@@ -187,3 +187,7 @@ export const BoundaryContextV1Schema = Type.Refine(
   SESSION_SCOPE_ERROR,
 );
 export type BoundaryContextV1 = Static<typeof BoundaryContextV1Schema>;
+
+export interface EnvelopeV1<T> extends Envelope<T> {
+  readonly sessionId?: string;
+}

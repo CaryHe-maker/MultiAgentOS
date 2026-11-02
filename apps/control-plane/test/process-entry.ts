@@ -1,43 +1,32 @@
 /**
- * Test-only child-process entry for Stage 6.3. It uses real composition, SystemControl and
- * process guards, but fake external modules, so the process can exercise exit paths without
- * implementing Workflow, UserInteraction or ExecutorSet.
+ * Test-only child-process entry for the exit paths of the composition root. It runs the real
+ * composition, SystemControl and process guards on a copy of the `bookshelf` fixture; only the
+ * provider's HTTP API is scripted, and one mode replaces an Executor's verdict.
  */
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { parseCli, runCommand } from '@multiagentos/cli';
+import type { ExecutorRegistryV1 } from '@multiagentos/contracts';
+import { createExecutorRegistryV1 } from '@multiagentos/executor-set';
 import { createSubprocessRunner } from '@multiagentos/kernel';
-import {
-  createFakeExecutorRegistry,
-  createFakeGateway,
-  createFakeKernelCore,
-  createFakeSupervisor,
-  createFakeTerminal,
-  createFakeUserInteraction,
-  createFakeWorkflow,
-  type FakeKernelOptions,
-} from '@multiagentos/testing';
 import { composeSystem, type System } from '../src/bootstrap/compose-system.js';
 import { createDeferredFaultReporter } from '../src/bootstrap/deferred-fault-reporter.js';
 import { installProcessGuards } from '../src/bootstrap/process-guards.js';
 import { defaultSystemConfig } from '../src/config/system-config.js';
+import { answeringTerminal, prepareRepository } from './acceptance/harness.js';
+import { scriptedProvider } from './acceptance/scripted-provider.js';
+import { TASKS } from './acceptance/tasks.js';
 
 const mode = process.argv[2] ?? 'normal';
 const dataDir = process.env['ENTRY_DATA_DIR'] ?? join(tmpdir(), 'multiagentos-entry');
-const repository = process.env['ENTRY_REPO'] ?? dataDir;
+const repository = join(process.env['ENTRY_REPO'] ?? dataDir, 'repo');
 const subprocess = createSubprocessRunner();
 const faults = createDeferredFaultReporter(() => undefined);
 const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });
 
-const normalCodes: Record<string, number> = {
-  cancelled: 130,
-};
-
-const kernelOptions: Record<string, FakeKernelOptions> = {
-  normal: {},
-  failed: { summaryWriteFails: true },
-  timeout: { unitScript: () => ({ end: 'RUN_TIMEOUT' }) },
-  violation: { unitScript: () => ({ end: 'PATH_ESCAPE' }) },
-};
+/** Modes that run `mas run analyze` to its end; the others run a command of their own. */
+const RUNS = new Set(['normal', 'failed', 'violation']);
 
 function pending(): Promise<number> {
   setInterval(() => undefined, 1_000);
@@ -70,47 +59,68 @@ async function command(system: System): Promise<number> {
       return new Promise<number>((resolve) => {
         process.once('SIGINT', () => {
           clearInterval(timer);
-          void system.shutdown().then(
+          void system.console.shutdown().then(
             () => resolve(130),
             () => resolve(130),
           );
         });
       });
     }
-    case 'hang':
-      return pending();
     default:
-      await system.shutdown();
-      return normalCodes[mode] ?? 0;
+      await system.console.shutdown();
+      return mode === 'cancelled' ? 130 : 0;
   }
 }
 
+/** `violation` makes every read look like a path escape; the Kernel converges the run. */
+function executors(): ExecutorRegistryV1 {
+  const registry = createExecutorRegistryV1();
+  if (mode !== 'violation') return registry;
+  return {
+    ...registry,
+    FILE_READ: {
+      executionKind: 'FILE_READ',
+      execute: () => Promise.resolve({ outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' }),
+    },
+  };
+}
+
+/** The F1 script; `failed` answers every model request with an authentication error. */
+function provider(): typeof globalThis.fetch {
+  const task = TASKS.find((each) => each.id === 'F1');
+  if (task === undefined) throw new Error('the F1 task is missing');
+  if (mode !== 'failed') return scriptedProvider(task.script).fetch;
+  return () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ error: { message: 'invalid key' } }), { status: 401 }),
+    );
+}
+
 try {
+  await prepareRepository('bookshelf', repository);
+  globalThis.fetch = provider();
+  const terminal = answeringTerminal();
   const system = await composeSystem({
     config: { ...defaultSystemConfig(), dataDir },
-    terminal: createFakeTerminal(),
+    repositoryRoot: await realpath(repository),
+    preset: 'standard',
+    view: terminal.view,
     credentials: { apiKeyFor: () => 'offline-process-fixture' },
+    executors: executors(),
     log: () => undefined,
     subprocess,
     reportSystemFault: faults.report,
-    parts: {
-      createGateway: createFakeGateway(),
-      createKernelCore: createFakeKernelCore(kernelOptions[mode] ?? {}),
-      createSupervisor: createFakeSupervisor(),
-      createExecutorRegistry: () => createFakeExecutorRegistry(),
-      createWorkflow: createFakeWorkflow(),
-      createUserInteraction: createFakeUserInteraction(),
-    },
   });
   faults.bind((fault) => system.reportFault(fault));
   await system.start();
   process.stdout.write('READY\n');
-  if (mode === 'normal' || mode === 'failed' || mode === 'timeout' || mode === 'violation') {
-    process.exitCode = await system.userInteraction.analyze({
-      goal: 'process fixture',
-      repositoryPath: repository,
-      details: false,
-    });
+  if (RUNS.has(mode)) {
+    const parsed = await parseCli(['run', 'analyze', 'process fixture'], () => undefined);
+    if (!parsed.ok) throw new Error('the fixture command line is invalid');
+    const template = system.templateRef('analyze');
+    process.exitCode = await system.run((console) =>
+      runCommand(parsed.command, console, terminal, template),
+    );
   } else {
     process.exitCode = await system.run(() => command(system));
   }

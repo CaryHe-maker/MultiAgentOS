@@ -1,11 +1,14 @@
 import {
   InteractionInboxEventV1Schema,
+  MEDIA_TYPES,
+  RunSummaryV1Schema,
   WorkflowInboxEventV1Schema,
   assertValid,
   newId,
   pathDerivedId,
   type ArtifactRef,
   type EndAgentRunRequestV1,
+  type RunSummaryV1,
   type RegisterAgentRunRequestV1,
   type SubmitUnitRequestV1,
   type UnitDefinitionV1,
@@ -45,6 +48,7 @@ async function setup(
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const faults: unknown[] = [];
+  const summaries: RunSummaryV1[] = [];
   const execution = new TestExecution();
   let now = 0;
   const timers: { delayMs: number; due: () => void }[] = [];
@@ -94,7 +98,10 @@ async function setup(
             };
           },
         }),
-      writeRunSummary: () => Promise.resolve(undefined),
+      writeRunSummary: (summary) => {
+        summaries.push(assertValid(RunSummaryV1Schema, summary));
+        return Promise.resolve(testArtifactRef(MEDIA_TYPES.runSummary, 'e'));
+      },
       discardSession: () => Promise.resolve(),
     },
     onClosed: () => undefined,
@@ -214,6 +221,7 @@ async function setup(
     reports,
     interactionTypes,
     toWorkflow,
+    summaries,
     settled,
     faults,
     timers,
@@ -534,6 +542,29 @@ describe('convergence', () => {
     await kernel.settled();
     expect(kernel.reports()).toEqual([]);
     expect(types().slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+  });
+
+  it('writes a RunSummary that counts every accepted Unit once', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.submit();
+    await kernel.answer('ALLOW');
+    await kernel.finish();
+    await kernel.submit();
+    await kernel.actor.call(() =>
+      kernel.actor.closeRun(kernel.run(), { closeReason: 'CANCELLED' }),
+    );
+    // The open attempt settles without a report; only then does the run close.
+    await kernel.finish();
+    await kernel.settled();
+    const [summary] = kernel.summaries;
+    expect(summary).toMatchObject({
+      closeReason: 'CANCELLED',
+      turns: 1,
+      units: { submitted: 2, ok: 1, rejected: 0, failed: 0, notDelivered: 1 },
+      agentRuns: [{ agentRunId: kernel.agentRunId, rounds: 0, finalCallUsed: false }],
+    });
+    expect(summary?.agentRuns[0]?.endedAt).toBeUndefined();
   });
 
   it('converges with VIOLATION when an attempt breaks its scope', async () => {

@@ -1,6 +1,6 @@
 import type { BudgetState, BudgetView, TurnUsage } from '@multiagentos/contracts';
 import type { Settlement, SettlementResult } from '../interfaces/index.js';
-import { Monitor, MonitorInvariantError } from './index.js';
+import { Monitor, MonitorInvariantError } from './monitor.js';
 
 /** The four budget parameters of an Agent definition (Kernel/Monitor 3.3). */
 export interface AgentBudget {
@@ -65,6 +65,8 @@ export class RunLedgers {
   readonly #overTime = new Set<string>();
   #remaining: number;
   #turn: TurnLedger | undefined;
+  /** What the closed Turns used, for the RunSummary. */
+  readonly #closed = { used: 0, unknown: 0, inputTokens: 0, outputTokens: 0 };
 
   public constructor(budget: RunBudget, main: AgentBudget) {
     assertBudgetsConsistent(budget, main);
@@ -93,6 +95,10 @@ export class RunLedgers {
     if (turn.turnId !== turnId) throw new MonitorInvariantError('Another Turn ledger is open');
     const summary = turn.ledger.finalize();
     this.#remaining += turn.limit - summary.used - summary.unknown;
+    this.#closed.used += summary.used;
+    this.#closed.unknown += summary.unknown;
+    this.#closed.inputTokens += summary.inputTokens;
+    this.#closed.outputTokens += summary.outputTokens;
     this.#turn = undefined;
     return {
       inputTokens: summary.inputTokens,
@@ -132,6 +138,22 @@ export class RunLedgers {
           ? 'WRAP_UP'
           : turn.ledger.budgetState();
     return { agentRun: state, turn: state, run: this.#runState() };
+  }
+
+  /** The run's consumption over its closed Turns; the RunSummary is written after the last one. */
+  usage(): {
+    readonly limit: number;
+    readonly used: number;
+    readonly unknown: number;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly finalBudgetState: BudgetState;
+  } {
+    return {
+      limit: this.#budget.runTokenLimit,
+      ...this.#closed,
+      finalBudgetState: this.#runState(),
+    };
   }
 
   /** Counts an accepted tool Unit; the Unit that passes the limit is refused. */

@@ -34,7 +34,7 @@ import {
   StartRunRequestSchema,
   StartSessionRequestSchema,
 } from './session-requests.js';
-import { CloseReasonSchema } from './run-outcome.js';
+import { CloseReasonSchema, CloseReasonV1Schema } from './run-outcome.js';
 
 const forward = <C extends string, R extends string, S extends TSchema>(
   caller: C,
@@ -118,3 +118,32 @@ export const GatewayForwardV1Schema = Type.Union(
 );
 export type GatewayForwardV1 = Static<typeof GatewayForwardV1Schema>;
 export type GatewayRequestTypeV1 = GatewayForwardV1['requestType'];
+
+/**
+ * Pushed by Core for each run; Gateway only reads it (Kernel/Gateway 4). `sessionId` lets Gateway
+ * check that a request names the run's own Session.
+ */
+export const AdmissionProjectionV1Schema = Type.Union(
+  [
+    closed({
+      workflowRunId: IdSchemas.workflowRunId,
+      sessionId: IdSchemas.sessionId,
+      runState: Type.Literal('RUNNING'),
+    }),
+    closed({
+      workflowRunId: IdSchemas.workflowRunId,
+      sessionId: IdSchemas.sessionId,
+      runState: Type.Enum(['CONVERGING', 'CLOSED']),
+      closeReason: CloseReasonV1Schema,
+    }),
+  ],
+  { $id: 'kernel.control.AdmissionProjection.v1' },
+);
+export type AdmissionProjectionV1 = Static<typeof AdmissionProjectionV1Schema>;
+
+/** Pushed by Core when a Session opens or closes, for the `SESSION_NOT_FOUND` check (Kernel/Gateway 3). */
+export const SessionProjectionSchema = closed(
+  { sessionId: IdSchemas.sessionId, state: Type.Enum(['OPEN', 'CLOSED']) },
+  'kernel.control.SessionProjection.v1',
+);
+export type SessionProjection = Static<typeof SessionProjectionSchema>;

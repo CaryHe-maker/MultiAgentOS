@@ -21,7 +21,7 @@ import {
   testUnitDefinition,
 } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
-import { RunLedgers, minShare } from '../monitor/run-ledgers.js';
+import { RunLedgers, minShare } from '../monitor/index.js';
 import { testAgentBudget, testPinnedAgent, testScheduler } from '../test-support/run-work.js';
 import type { ExecutionConfig } from './attempt-request.js';
 import { RunAttempts, type AttemptFault, type AttemptSpec } from './run-attempts.js';

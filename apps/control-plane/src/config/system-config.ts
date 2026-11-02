@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { SystemConfigSchema, validate, type SystemConfig } from '@multiagentos/contracts';
+import { SystemConfigV1Schema, validate, type SystemConfigV1 } from '@multiagentos/contracts';
 import { DEFAULT_KERNEL_CONFIG } from '@multiagentos/kernel';
 import { DEFAULT_WORKFLOW_CONFIG } from '@multiagentos/workflow';
 
-export type { SystemConfig } from '@multiagentos/contracts';
+export type { SystemConfigV1 as SystemConfig } from '@multiagentos/contracts';
 
 /** The system configuration is wrong; the system must not start. */
 export class ConfigError extends Error {
@@ -19,7 +19,7 @@ export class ConfigError extends Error {
 export const DEFAULT_PORT_RETURN_TIMEOUT_MS = 30_000;
 
 /** Built-in defaults, used when `MULTIAGENTOS_CONFIG` is not set. */
-export function defaultSystemConfig(): SystemConfig {
+export function defaultSystemConfig(): SystemConfigV1 {
   return {
     dataDir: join(homedir(), '.multiagentos'),
     portReturnTimeoutMs: DEFAULT_PORT_RETURN_TIMEOUT_MS,
@@ -28,25 +28,22 @@ export function defaultSystemConfig(): SystemConfig {
   };
 }
 
-/**
- * Validates against `platform.config.SystemConfig.v0` and checks what a Schema cannot say.
- * The composition root checks catalog-dependent relationships before creating any module.
- */
-export function assertSystemConfig(config: unknown): SystemConfig {
-  const result = validate<SystemConfig>(SystemConfigSchema, config);
+/** Validates against `platform.config.SystemConfig.v1` and checks what a Schema cannot say. */
+export function assertSystemConfig(config: unknown): SystemConfigV1 {
+  const result = validate<SystemConfigV1>(SystemConfigV1Schema, config);
   if (!result.ok) throw new ConfigError(result.issues.join('; '));
   if (!isAbsolute(result.value.dataDir)) throw new ConfigError('dataDir must be an absolute path');
   return result.value;
 }
 
 /**
- * Loads the configuration (docs/M1/M1TechStack.md 4): the JSON file named by
- * `MULTIAGENTOS_CONFIG`, laid over the built-in defaults, or the defaults alone when the
- * variable is not set. A file may give any subset of the settings; an unknown key is an error.
+ * Loads the configuration: the JSON file named by `MULTIAGENTOS_CONFIG`, laid over the built-in
+ * defaults, or the defaults alone when the variable is not set. A file may give any subset of
+ * the settings; an unknown key is an error.
  */
 export async function loadSystemConfig(
   env: Readonly<Record<string, string | undefined>>,
-): Promise<SystemConfig> {
+): Promise<SystemConfigV1> {
   const path = env['MULTIAGENTOS_CONFIG'];
   if (path === undefined || path === '') return assertSystemConfig(defaultSystemConfig());
   let overrides: unknown;

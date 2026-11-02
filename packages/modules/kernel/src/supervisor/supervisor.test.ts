@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createM1ProtocolRegistry,
-  type BoundaryContext,
-  type ExecutorRegistry,
+  type BoundaryContextV1,
+  type ExecutorRegistryV1,
 } from '@multiagentos/contracts';
 import { InProcessFabric, SCHEMA_IDS } from '@multiagentos/fabric';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl } from './index.js';
 
-const context: BoundaryContext = {
+const context: BoundaryContextV1 = {
   tenantId: 'local',
   projectId: 'local',
   correlationId: 'cor_123456',
@@ -31,7 +31,7 @@ async function fixture(hostFactory: (fabric: InProcessFabric) => ModuleHostContr
   const host = hostFactory(fabric);
   const supervisor = createSupervisor({
     fabric: fabric.client('supervisor'),
-    executors: {} as ExecutorRegistry,
+    executors: {} as ExecutorRegistryV1,
     credentials: { apiKeyFor: () => undefined },
     moduleHost: host,
     config: DEFAULT_KERNEL_CONFIG,
@@ -129,6 +129,7 @@ describe('Supervisor bootstrap', () => {
       fabric.client('kernel-core').request(
         SCHEMA_IDS.execute,
         {
+          sessionId: 'ses_123456',
           workflowRunId: 'wfr_123456',
           unitAttemptId: 'una_123456',
           executionId: 'exe_123456',
@@ -139,6 +140,8 @@ describe('Supervisor bootstrap', () => {
           limits: {
             deadline: '2026-10-19T01:00:00.000Z',
             maxOutputBytes: 1024,
+            preview: { maxBytes: 1024, maxLines: 100 },
+            maxFullOutputBytes: 4096,
             maxFiles: 10,
           },
         },

@@ -4,7 +4,7 @@
  * acceptance assertions. Questions name no answer file. `script` drives the offline runs only;
  * a real-model run asks the same question and is judged by the same assertions.
  */
-import type { AnalysisReport, RunSummary } from '@multiagentos/contracts';
+import type { AnalysisReport, RunSummaryV1 as RunSummary } from '@multiagentos/contracts';
 import type { ModelScript, ScriptedCall, ScriptedTurn } from './scripted-provider.js';
 
 /** A line range of the prepared repository; a source counts when it overlaps the range. */

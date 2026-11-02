@@ -1,14 +1,13 @@
 import {
-  ExecutionFactSchema,
+  ExecutionFactV1Schema,
   MEDIA_TYPES,
   validate,
-  type ExecutionFact,
-  type ExecutionFactSink,
-  type ExecutionRequest,
-  type Executor,
-  type ExecutorKind,
-  type ExecutorOutcome,
-  type ExecutorRegistry,
+  type ExecutionFactV1,
+  type ExecutionRequestV1,
+  type ExecutorV1,
+  type ExecutorKindV1,
+  type ExecutorOutcomeV1,
+  type ExecutorRegistryV1,
   type ProviderCredentials,
   type SubprocessRunner,
 } from '@multiagentos/contracts';
@@ -17,11 +16,17 @@ import { createExecutorEnvironment } from './environment.js';
 import { ExecutionRunner } from './execution-runner.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
 
-type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
-type ModelRequest = Extract<ExecutionRequest, { executionKind: 'MODEL' }>;
+type OrientRequest = Extract<ExecutionRequestV1, { executionKind: 'REPOSITORY_ORIENT' }>;
+type ModelRequest = Extract<ExecutionRequestV1, { executionKind: 'MODEL' }>;
 
 const SHA = 'a'.repeat(64);
-const completedOrient: ExecutorOutcome = {
+const TOOL_LIMITS = {
+  deadline: '2026-10-19T01:00:00.000Z',
+  maxOutputBytes: 1024,
+  preview: { maxBytes: 1024, maxLines: 100 },
+  maxFullOutputBytes: 4096,
+};
+const completedOrient: ExecutorOutcomeV1 = {
   outcome: 'COMPLETED',
   result: {
     output: {
@@ -36,10 +41,10 @@ const completedOrient: ExecutorOutcome = {
   },
 };
 
-class RecordingSink implements ExecutionFactSink {
-  public readonly facts: ExecutionFact[] = [];
+class RecordingSink {
+  public readonly facts: ExecutionFactV1[] = [];
 
-  public report(fact: ExecutionFact): Promise<void> {
+  public report(fact: ExecutionFactV1): Promise<void> {
     this.facts.push(fact);
     return Promise.resolve();
   }
@@ -52,6 +57,7 @@ afterEach(() => {
 
 function orientRequest(executionId = 'exe_123456'): OrientRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
@@ -62,6 +68,8 @@ function orientRequest(executionId = 'exe_123456'): OrientRequest {
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
+      preview: { maxBytes: 1024, maxLines: 100 },
+      maxFullOutputBytes: 4096,
       maxFiles: 10,
     },
   };
@@ -69,6 +77,7 @@ function orientRequest(executionId = 'exe_123456'): OrientRequest {
 
 function modelRequest(): ModelRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId: 'exe_123456',
@@ -80,9 +89,10 @@ function modelRequest(): ModelRequest {
         operation: 'ASSEMBLE',
         tokenCount: 0,
         tokenBudget: 1000,
-        truncated: false,
-        droppedCount: 0,
         prefixSha256: SHA,
+        projectionDigest: SHA,
+        headDigest: SHA,
+        elidedEntries: [],
         items: [],
         createdAt: '2026-10-19T00:00:00.000Z',
       },
@@ -104,7 +114,7 @@ function modelRequest(): ModelRequest {
   };
 }
 
-function requestFor(kind: ExecutorKind): ExecutionRequest {
+function requestFor(kind: ExecutorKindV1): ExecutionRequestV1 {
   switch (kind) {
     case 'REPOSITORY_ORIENT':
       return orientRequest();
@@ -113,30 +123,42 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
         ...orientRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
+      };
+    case 'REPOSITORY_LIST':
+      return {
+        ...orientRequest(),
+        executionKind: 'REPOSITORY_LIST',
+        input: {},
+        limits: TOOL_LIMITS,
       };
     case 'FILE_READ':
       return {
         ...orientRequest(),
         executionKind: 'FILE_READ',
         input: { path: 'a.ts' },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
       };
     case 'CONTEXT_ASSEMBLE':
       return {
+        sessionId: 'ses_123456',
         workflowRunId: 'wfr_123456',
         unitAttemptId: 'una_123456',
         executionId: 'exe_123456',
         runEpoch: 1,
         executionKind: 'CONTEXT_ASSEMBLE',
         input: {
-          objective: 'analyze',
           final: false,
           tokenBudget: 1000,
           instructions: 'system',
           toolSpecs: [],
           history: [],
-          status: { roundsUsed: 0, maxRounds: 1, final: false, budgetState: 'NORMAL' },
+          status: {
+            round: 1,
+            maxRounds: 1,
+            final: false,
+            budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          },
         },
         scope: { kind: 'NONE' },
         limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
@@ -146,7 +168,7 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
   }
 }
 
-function completedFor(kind: ExecutorKind): ExecutorOutcome {
+function completedFor(kind: ExecutorKindV1): ExecutorOutcomeV1 {
   switch (kind) {
     case 'REPOSITORY_ORIENT':
       return completedOrient;
@@ -156,6 +178,14 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
         result: {
           output: { snapshotId: `snp_${SHA}`, hits: [], truncated: false },
           artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+        },
+      };
+    case 'REPOSITORY_LIST':
+      return {
+        outcome: 'COMPLETED',
+        result: {
+          output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
+          artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
         },
       };
     case 'FILE_READ':
@@ -181,10 +211,10 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
             contextPackId: 'ctx_123456',
             tokenCount: 0,
             tokenBudget: 1000,
-            truncated: false,
-            droppedCount: 0,
             prefixSha256: SHA,
-            elidedRequestIds: [],
+            projectionDigest: SHA,
+            headDigest: SHA,
+            elidedEntries: [],
           },
           artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
         },
@@ -193,7 +223,7 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
       return {
         outcome: 'COMPLETED',
         result: {
-          output: { finishReason: 'STOP', toolCalls: [], hasText: false },
+          output: { finishReason: 'STOP', toolCalls: [], hasText: false, hasReasoning: false },
           artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{}' },
         },
         usage: { inputTokens: 10, outputTokens: 5 },
@@ -209,23 +239,27 @@ const subprocess: SubprocessRunner = {
   run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: 'matched', truncated: false }),
 };
 
-function executor<K extends ExecutorKind>(kind: K, execute: Executor<K>['execute']): Executor<K> {
+function executor<K extends ExecutorKindV1>(
+  kind: K,
+  execute: ExecutorV1<K>['execute'],
+): ExecutorV1<K> {
   return { executionKind: kind, execute };
 }
 
-function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
-  const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
+function registry(orient: ExecutorV1<'REPOSITORY_ORIENT'>): ExecutorRegistryV1 {
+  const unused = <K extends ExecutorKindV1>(kind: K): ExecutorV1<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
     REPOSITORY_ORIENT: orient,
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
+    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
 }
 
-function makeRunner(orient: Executor<'REPOSITORY_ORIENT'>): {
+function makeRunner(orient: ExecutorV1<'REPOSITORY_ORIENT'>): {
   readonly runner: ExecutionRunner;
   readonly sink: RecordingSink;
 } {
@@ -233,7 +267,7 @@ function makeRunner(orient: Executor<'REPOSITORY_ORIENT'>): {
 }
 
 function makeRunnerWith(
-  executors: ExecutorRegistry,
+  executors: ExecutorRegistryV1,
   cancelGraceMs = 1000,
 ): {
   readonly runner: ExecutionRunner;
@@ -252,12 +286,12 @@ function makeRunnerWith(
   return { runner, sink };
 }
 
-function registryFor<K extends ExecutorKind>(kind: K, target: Executor<K>): ExecutorRegistry {
+function registryFor<K extends ExecutorKindV1>(kind: K, target: ExecutorV1<K>): ExecutorRegistryV1 {
   const base = registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)));
   return { ...base, [kind]: target };
 }
 
-function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_ORIENT'> {
+function pendingUntilAbort(outcome: ExecutorOutcomeV1): ExecutorV1<'REPOSITORY_ORIENT'> {
   return executor('REPOSITORY_ORIENT', (_input, environment) => {
     if (environment.signal.aborted) return Promise.resolve(outcome);
     return new Promise((resolve) => {
@@ -266,13 +300,13 @@ function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_ORIEN
   });
 }
 
-function hanging(): Executor<'REPOSITORY_ORIENT'> {
+function hanging(): ExecutorV1<'REPOSITORY_ORIENT'> {
   return executor('REPOSITORY_ORIENT', () => new Promise(() => undefined));
 }
 
-async function waitForFact(sink: RecordingSink): Promise<ExecutionFact> {
+async function waitForFact(sink: RecordingSink): Promise<ExecutionFactV1> {
   await vi.waitFor(() => expect(sink.facts).toHaveLength(1));
-  return sink.facts[0] as ExecutionFact;
+  return sink.facts[0] as ExecutionFactV1;
 }
 
 async function delay(ms: number): Promise<void> {
@@ -304,7 +338,7 @@ describe('ExecutionRunner', () => {
       startedAt: '2026-10-19T00:00:00.000Z',
       endedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('honours notBefore before starting the Executor', async () => {
@@ -326,7 +360,7 @@ describe('ExecutionRunner', () => {
     expect(fact.outcome).toBe('COMPLETED');
   });
 
-  it.each<ExecutorOutcome>([
+  it.each<ExecutorOutcomeV1>([
     completedOrient,
     { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' },
     { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: true },
@@ -344,7 +378,7 @@ describe('ExecutionRunner', () => {
     const fact = await waitForFact(sink);
     expect(fact.outcome).toBe(outcome.outcome);
     expect(calls).toBe(1);
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
     expect(sink.facts).toHaveLength(1);
   });
 
@@ -361,7 +395,7 @@ describe('ExecutionRunner', () => {
       retryable: false,
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('ignores a duplicate executionId and reports one fact', async () => {
@@ -382,7 +416,7 @@ describe('ExecutionRunner', () => {
     expect(sink.facts).toHaveLength(1);
   });
 
-  it.each<ExecutorKind>([
+  it.each<ExecutorKindV1>([
     'REPOSITORY_ORIENT',
     'REPOSITORY_SEARCH',
     'FILE_READ',
@@ -400,11 +434,11 @@ describe('ExecutionRunner', () => {
     runner.execute(requestFor(kind), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({ executionKind: kind, outcome: 'COMPLETED' });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('turns a missing executor into FAILED(INTERNAL)', async () => {
-    const { runner, sink } = makeRunnerWith({} as ExecutorRegistry);
+    const { runner, sink } = makeRunnerWith({} as ExecutorRegistryV1);
     runner.execute(orientRequest(), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({ outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false });
@@ -430,8 +464,8 @@ describe('ExecutionRunner', () => {
   });
 
   it('reports STOP_UNCONFIRMED when stop happens while the Executor is running', async () => {
-    let release: ((outcome: ExecutorOutcome) => void) | undefined;
-    const pending = new Promise<ExecutorOutcome>((resolve) => {
+    let release: ((outcome: ExecutorOutcomeV1) => void) | undefined;
+    const pending = new Promise<ExecutorOutcomeV1>((resolve) => {
       release = resolve;
     });
     const { runner, sink } = makeRunner(executor('REPOSITORY_ORIENT', () => pending));
@@ -480,7 +514,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a stop-time delivery failure without an unhandled rejection', async () => {
-    const sink: ExecutionFactSink = {
+    const sink: { report(fact: ExecutionFactV1): Promise<void> } = {
       report: () => Promise.reject(new Error('stop inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -504,7 +538,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a fact delivery failure without retrying the execution', async () => {
-    const sink: ExecutionFactSink = {
+    const sink: { report(fact: ExecutionFactV1): Promise<void> } = {
       report: () => Promise.reject(new Error('inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -543,7 +577,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
     });
     expect(fact).not.toHaveProperty('startedAt');
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('cancels a running execution and reports TERMINATED within grace', async () => {
@@ -559,7 +593,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('reports TERMINATED(UNIT_TIMEOUT) when the deadline aborts a running execution', async () => {
@@ -575,7 +609,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'UNIT_TIMEOUT',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('does not start an Executor whose deadline is already past', async () => {
@@ -594,7 +628,7 @@ describe('ExecutionRunner', () => {
 
     expect(calls).toBe(0);
     expect(fact).toMatchObject({ outcome: 'TERMINATED', reasonCode: 'UNIT_TIMEOUT' });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('treats an unparsable deadline as an immediate timeout', async () => {
@@ -646,12 +680,12 @@ describe('ExecutionRunner', () => {
       startedAt: '2026-10-19T00:00:00.000Z',
     });
     expect(fact).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('discards a late Executor result after STOP_UNCONFIRMED', async () => {
-    let release: ((outcome: ExecutorOutcome) => void) | undefined;
-    const pending = new Promise<ExecutorOutcome>((resolve) => {
+    let release: ((outcome: ExecutorOutcomeV1) => void) | undefined;
+    const pending = new Promise<ExecutorOutcomeV1>((resolve) => {
       release = resolve;
     });
     const { runner, sink } = makeRunnerWith(
@@ -685,7 +719,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('preserves VIOLATION when the Executor reports it during abort', async () => {
-    const violation: ExecutorOutcome = { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' };
+    const violation: ExecutorOutcomeV1 = { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(violation)), 50);
 
     runner.execute(orientRequest(), 'cor_123456');
@@ -699,7 +733,7 @@ describe('ExecutionRunner', () => {
   it('reports TERMINATED when the Executor rejects during abort', async () => {
     const failing = executor('REPOSITORY_ORIENT', (_input, environment) => {
       if (environment.signal.aborted) return Promise.reject(new Error('aborted'));
-      return new Promise<ExecutorOutcome>((_resolve, reject) => {
+      return new Promise<ExecutorOutcomeV1>((_resolve, reject) => {
         environment.signal.addEventListener('abort', () => reject(new Error('aborted')), {
           once: true,
         });
@@ -717,11 +751,11 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('reports TERMINATED without Executor extras when abort receives REJECTED', async () => {
-    const rejected: ExecutorOutcome = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
+    const rejected: ExecutorOutcomeV1 = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(rejected)), 50);
 
     runner.execute(orientRequest(), 'cor_123456');
@@ -757,7 +791,7 @@ describe('ExecutionRunner', () => {
   });
 });
 
-describe('ExecutionFact normalization', () => {
+describe('ExecutionFactV1 normalization', () => {
   const startedAt = '2026-10-19T00:00:00.000Z';
   const endedAt = '2026-10-19T00:00:01.000Z';
 
@@ -765,7 +799,7 @@ describe('ExecutionFact normalization', () => {
     const fact = toExecutionFact(modelRequest(), startedAt, endedAt, {
       outcome: 'COMPLETED',
       result: {
-        output: { finishReason: 'STOP', toolCalls: [], hasText: false },
+        output: { finishReason: 'STOP', toolCalls: [], hasText: false, hasReasoning: false },
         artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{}' },
       },
       usage: { inputTokens: 10, outputTokens: 5 },
@@ -784,7 +818,7 @@ describe('ExecutionFact normalization', () => {
       reasonCode: 'LIMIT_EXCEEDED',
     });
     expect(rejected).toMatchObject({ requestState: 'NOT_SENT' });
-    expect(validate(ExecutionFactSchema, rejected).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, rejected).ok).toBe(true);
 
     const failed = toExecutionFact(modelRequest(), startedAt, endedAt, {
       outcome: 'FAILED',
@@ -792,7 +826,7 @@ describe('ExecutionFact normalization', () => {
       retryable: false,
     });
     expect(failed).toMatchObject({ requestState: 'UNKNOWN' });
-    expect(validate(ExecutionFactSchema, failed).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, failed).ok).toBe(true);
   });
 
   it('drops usage and requestState for non-MODEL outcomes', () => {
@@ -812,7 +846,7 @@ describe('ExecutionFact normalization', () => {
     });
     expect(fact).toMatchObject({ requestState: 'NOT_SENT' });
     expect(fact).not.toHaveProperty('startedAt');
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 
   it('keeps MODEL usage for TERMINATED but not for STOP_UNCONFIRMED', () => {
@@ -825,7 +859,7 @@ describe('ExecutionFact normalization', () => {
       requestState: 'UNKNOWN',
       usage: { inputTokens: 10, outputTokens: 5 },
     });
-    expect(validate(ExecutionFactSchema, terminated).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, terminated).ok).toBe(true);
 
     const unconfirmed = toTerminationFact(modelRequest(), startedAt, endedAt, {
       outcome: 'STOP_UNCONFIRMED',
@@ -833,7 +867,7 @@ describe('ExecutionFact normalization', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     expect(unconfirmed).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactSchema, unconfirmed).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, unconfirmed).ok).toBe(true);
   });
 
   it('does not add requestState to a non-MODEL termination', () => {
@@ -845,7 +879,7 @@ describe('ExecutionFact normalization', () => {
     });
     expect(fact).not.toHaveProperty('requestState');
     expect(fact).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
   });
 });
 
@@ -879,7 +913,7 @@ describe('Executor environment', () => {
         ...orientRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
       },
       new AbortController().signal,
       { credentials, subprocess, now: () => new Date() },

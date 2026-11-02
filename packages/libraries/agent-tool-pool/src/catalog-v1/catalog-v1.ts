@@ -535,6 +535,27 @@ export class DefinitionCatalogV1 {
 
   public constructor(private readonly index: CatalogIndexV1) {}
 
+  /** Every loaded definition, in load order. */
+  list(): readonly DefinitionV1[] {
+    return [...this.index.definitions.values()];
+  }
+
+  /** The highest version of `id`, by its numeric parts; undefined when there is none. */
+  latest<K extends DefinitionKindV1>(kind: K, id: string): DefinitionByKindV1[K] | undefined {
+    const versions = this.list().filter((each) => each.kind === kind && each.id === id);
+    const parts = (version: string) => version.slice(1).split('.').map(Number);
+    const newer = (a: string, b: string) => {
+      const [x, y] = [parts(a), parts(b)];
+      for (let index = 0; index < 3; index += 1)
+        if ((x[index] ?? 0) !== (y[index] ?? 0)) return (x[index] ?? 0) > (y[index] ?? 0);
+      return false;
+    };
+    return versions.reduce<DefinitionV1 | undefined>(
+      (best, each) => (best === undefined || newer(each.version, best.version) ? each : best),
+      undefined,
+    ) as DefinitionByKindV1[K] | undefined;
+  }
+
   #find<K extends DefinitionKindV1>(
     kind: K,
     ref: DefinitionRef,

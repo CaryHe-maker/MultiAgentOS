@@ -1,7 +1,7 @@
 import type {
-  ExecutionFact,
-  ExecutionRequest,
-  ExecutorOutcome,
+  ExecutionFactV1,
+  ExecutionRequestV1,
+  ExecutorOutcomeV1,
   RequestState,
   TokenUsage,
 } from '@multiagentos/contracts';
@@ -20,19 +20,20 @@ export interface TerminationVerdict {
 
 /**
  * Maps an Executor verdict to the one terminal fact of an execution
- * (docs/M1/Kernel/Supervisor.md 4 and M1Interface 7.3).
+ * (M1 Supervisor 4; major 1 facts carry the Session and `retryAfterMs`).
  *
- * The ExecutionFact union is discriminated by executionKind and outcome. The
+ * The ExecutionFactV1 union is discriminated by executionKind and outcome. The
  * mapper keeps those two switches explicit; the cast is the necessary bridge
  * between the contract union and the Executor's untied result type.
  */
 export function toExecutionFact(
-  request: ExecutionRequest,
+  request: ExecutionRequestV1,
   startedAt: string,
   endedAt: string,
-  outcome: ExecutorOutcome,
-): ExecutionFact {
+  outcome: ExecutorOutcomeV1,
+): ExecutionFactV1 {
   const base = {
+    sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
     unitAttemptId: request.unitAttemptId,
     executionId: request.executionId,
@@ -51,7 +52,7 @@ export function toExecutionFact(
           result: outcome.result,
           requestState: 'SENT',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-        } as ExecutionFact;
+        } as ExecutionFactV1;
       case 'REJECTED':
         return {
           ...base,
@@ -59,7 +60,7 @@ export function toExecutionFact(
           reasonCode: outcome.reasonCode,
           // A rejection happens before the provider processes the request.
           requestState: 'NOT_SENT' satisfies RequestState,
-        } as ExecutionFact;
+        } as ExecutionFactV1;
       case 'FAILED':
         return {
           ...base,
@@ -68,31 +69,32 @@ export function toExecutionFact(
           retryable: outcome.retryable,
           requestState: outcome.requestState ?? 'UNKNOWN',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-        } as ExecutionFact;
+          ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
+        } as ExecutionFactV1;
       case 'VIOLATION':
         return {
           ...base,
           outcome: 'VIOLATION',
           reasonCode: outcome.reasonCode,
           requestState: 'UNKNOWN',
-        } as ExecutionFact;
+        } as ExecutionFactV1;
     }
   }
 
   switch (outcome.outcome) {
     case 'COMPLETED':
-      return { ...base, outcome: 'COMPLETED', result: outcome.result } as ExecutionFact;
+      return { ...base, outcome: 'COMPLETED', result: outcome.result } as ExecutionFactV1;
     case 'REJECTED':
-      return { ...base, outcome: 'REJECTED', reasonCode: outcome.reasonCode } as ExecutionFact;
+      return { ...base, outcome: 'REJECTED', reasonCode: outcome.reasonCode } as ExecutionFactV1;
     case 'FAILED':
       return {
         ...base,
         outcome: 'FAILED',
         reasonCode: outcome.reasonCode,
         retryable: outcome.retryable,
-      } as ExecutionFact;
+      } as ExecutionFactV1;
     case 'VIOLATION':
-      return { ...base, outcome: 'VIOLATION', reasonCode: outcome.reasonCode } as ExecutionFact;
+      return { ...base, outcome: 'VIOLATION', reasonCode: outcome.reasonCode } as ExecutionFactV1;
   }
 }
 
@@ -101,12 +103,13 @@ export function toExecutionFact(
  * `startedAt`; every other termination does. STOP_UNCONFIRMED never carries usage.
  */
 export function toTerminationFact(
-  request: ExecutionRequest,
+  request: ExecutionRequestV1,
   startedAt: string | undefined,
   endedAt: string,
   verdict: TerminationVerdict,
-): ExecutionFact {
+): ExecutionFactV1 {
   const base = {
+    sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
     unitAttemptId: request.unitAttemptId,
     executionId: request.executionId,
@@ -125,12 +128,12 @@ export function toTerminationFact(
       reasonCode: verdict.reasonCode,
       requestState,
       ...(usage === undefined ? {} : { usage }),
-    } as ExecutionFact;
+    } as ExecutionFactV1;
   }
 
   return {
     ...base,
     outcome: verdict.outcome,
     reasonCode: verdict.reasonCode,
-  } as ExecutionFact;
+  } as ExecutionFactV1;
 }
