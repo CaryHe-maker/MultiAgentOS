@@ -72,6 +72,12 @@ export interface SessionActorDeps {
   /** The actor is finished: Session management takes it out. */
   readonly onClosed: (sessionId: string) => void;
   readonly onFatal: (error: unknown) => void;
+  /** What Gateway may let in; pushed on every change of a run. */
+  readonly admission: (
+    workflowRunId: string,
+    runState: 'RUNNING' | 'CONVERGING' | 'CLOSED',
+    closeReason?: CloseReasonV1,
+  ) => void;
 }
 
 type Message =
@@ -262,6 +268,7 @@ export class SessionActor {
   ): Run {
     const run = this.#newRun();
     this.#run = run;
+    this.#deps.admission(run.workflowRunId, 'RUNNING');
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'RunStart',
       preset: 'standard',
@@ -432,6 +439,7 @@ export class SessionActor {
     run.control = decision.control;
     run.closing = closing;
     run.runEpoch += 1;
+    this.#deps.admission(run.workflowRunId, 'CONVERGING', closing.closeReason);
     const closed = decision.effect?.closedTurnId;
     if (closed !== undefined) run.closingTurn = closed;
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
@@ -447,6 +455,7 @@ export class SessionActor {
     const closing = run.closing;
     if (closing === undefined) return;
     run.control = closeRun(run.control);
+    this.#deps.admission(run.workflowRunId, 'CLOSED', closing.closeReason);
     run.work.finishClosing();
     if (run.closingTurn !== undefined) this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
     const summary = await this.#deps.duties.writeRunSummary(run.workflowRunId, closing.closeReason);

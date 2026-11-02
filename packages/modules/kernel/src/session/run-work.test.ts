@@ -98,6 +98,7 @@ async function setup(
       discardSession: () => Promise.resolve(),
     },
     onClosed: () => undefined,
+    admission: () => undefined,
     onFatal: (error) => faults.push(error),
   });
   const settled = async () => {

@@ -40,7 +40,7 @@
 | S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
 | S1-KC-1 | 部分 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭） | 产物回收的定时器、审计 |
 | S1-KC-2 | 完成，等 Gateway 接入 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
-| S1-KC-3 | 未开始 | — | Gateway 的 major 1 syscall |
+| S1-KC-3 | 部分 | `SessionGateway`（调用方、Schema、Session 与运行的已知检查、准入封锁）与 `SessionCore` 的分发 | 接到 Fabric（组合根） |
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
 | Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入；`RunExecution` 接入 `RunWork`（组合根） |
 | S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | `RETRYING` 活动的发出、启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |

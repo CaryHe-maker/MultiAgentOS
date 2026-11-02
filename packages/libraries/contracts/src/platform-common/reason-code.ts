@@ -171,6 +171,12 @@ export const ReasonCodeV1Schema = Type.Unsafe<ReasonCodeV1>(
 export const reasonCodeV1Of = <const Codes extends readonly ReasonCodeV1[]>(codes: Codes) =>
   Type.Unsafe<Codes[number]>(Type.Enum([...codes]));
 
+export const GATEWAY_REJECTED_CODES_V1 = [
+  ...GATEWAY_REJECTED_CODES,
+  'SESSION_NOT_FOUND',
+] as const satisfies readonly ReasonCodeV1[];
+export type GatewayRejectedCodeV1 = (typeof GATEWAY_REJECTED_CODES_V1)[number];
+
 export const CORE_REJECTED_CODES_V1 = [
   ...CORE_REJECTED_CODES,
   'NO_OPEN_TURN',

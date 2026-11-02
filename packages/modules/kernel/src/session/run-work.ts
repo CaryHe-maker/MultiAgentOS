@@ -85,6 +85,7 @@ export interface RunWorkDeps {
 }
 
 type Response = SyscallAck | SyscallRejectedV1;
+type Decided = { readonly accepted: true } | Extract<Decision, { accepted: false }>;
 type FileResponse = ProjectFileContent | SyscallRejectedV1;
 
 /** What Execution read; `truncated` says a question shows only the head of the file. */
@@ -228,6 +229,20 @@ export class RunWork {
     if (found.kind === 'conflict')
       return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'REQUEST_CONFLICT' };
     return undefined;
+  }
+
+  /** Idempotency for a request whose decision lives in the actor. */
+  async once(
+    requestId: string,
+    payload: unknown,
+    decide: () => Promise<Decided> | Decided,
+  ): Promise<Response> {
+    const replay = this.#replay(requestId, payload);
+    if (replay !== undefined) return replay;
+    const decision = await decide();
+    return decision.accepted
+      ? this.#accept(requestId, payload)
+      : this.#refuse(requestId, payload, decision.reasonCode);
   }
 
   async registerAgentRun(request: RegisterAgentRunRequestV1): Promise<Response> {

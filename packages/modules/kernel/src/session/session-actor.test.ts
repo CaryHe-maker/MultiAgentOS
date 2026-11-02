@@ -63,6 +63,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
       },
     },
     onClosed: (id) => closed.push(id),
+    admission: () => undefined,
     onFatal: (error) => faults.push(error),
   });
   const settled = async () => {

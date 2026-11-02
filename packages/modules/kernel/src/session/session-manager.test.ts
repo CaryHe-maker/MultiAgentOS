@@ -81,6 +81,7 @@ function setup(options: { removeFails?: boolean } = {}) {
             discardSession: discard,
           },
           onClosed,
+          admission: () => undefined,
           onFatal: (error) => {
             throw error;
           },

@@ -1,0 +1,219 @@
+import {
+  AnswerAuthorizationRequestV1Schema,
+  AnswerHumanRequestSchema,
+  CloseRunRequestV1Schema,
+  DeleteSessionRequestSchema,
+  EndAgentRunRequestV1Schema,
+  ListSessionsRequestSchema,
+  OpenSessionRequestSchema,
+  ReadArtifactRequestV1Schema,
+  ReadProjectFileRequestSchema,
+  RegisterAgentRunRequestV1Schema,
+  ReportSessionCommandRequestSchema,
+  ReportSessionListRequestSchema,
+  RequestHumanRequestSchema,
+  ShutdownRequestSchema,
+  StartRunRequestSchema,
+  StartSessionRequestSchema,
+  SubmitUnitRequestV1Schema,
+  newId,
+  validate,
+  type CloseReasonV1,
+  type GatewayForwardV1,
+  type GatewayRejectedCodeV1,
+  type InteractionGatewayPortV1,
+  type SyscallRejectedV1,
+  type WorkflowGatewayPortV1,
+} from '@multiagentos/contracts';
+import type { CoreResponse } from './session-core.js';
+
+type Caller = 'workflow' | 'user-interaction';
+type RequestType = GatewayForwardV1['requestType'];
+type Schema = Parameters<typeof validate>[0];
+
+interface Route {
+  readonly caller: Caller;
+  readonly schema: Schema;
+  /** What the request must name: Interface/Gateway table of Kernel/Gateway 3. */
+  readonly needs: 'NOTHING' | 'SESSION' | 'RUN';
+  /** Refused at the door once the run left RUNNING (Kernel/Gateway 4). */
+  readonly blocked?: true;
+}
+
+const ROUTES: Readonly<Record<RequestType, Route>> = {
+  registerAgentRun: {
+    caller: 'workflow',
+    schema: RegisterAgentRunRequestV1Schema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  submitUnit: {
+    caller: 'workflow',
+    schema: SubmitUnitRequestV1Schema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  requestHuman: {
+    caller: 'workflow',
+    schema: RequestHumanRequestSchema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  readProjectFile: {
+    caller: 'workflow',
+    schema: ReadProjectFileRequestSchema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  endAgentRun: { caller: 'workflow', schema: EndAgentRunRequestV1Schema, needs: 'RUN' },
+  closeRun: { caller: 'workflow', schema: CloseRunRequestV1Schema, needs: 'RUN' },
+  reportSessionCommand: {
+    caller: 'workflow',
+    schema: ReportSessionCommandRequestSchema,
+    needs: 'NOTHING',
+  },
+  reportSessionList: {
+    caller: 'workflow',
+    schema: ReportSessionListRequestSchema,
+    needs: 'NOTHING',
+  },
+  startSession: { caller: 'user-interaction', schema: StartSessionRequestSchema, needs: 'NOTHING' },
+  startRun: { caller: 'user-interaction', schema: StartRunRequestSchema, needs: 'NOTHING' },
+  openSession: { caller: 'user-interaction', schema: OpenSessionRequestSchema, needs: 'NOTHING' },
+  listSessions: { caller: 'user-interaction', schema: ListSessionsRequestSchema, needs: 'NOTHING' },
+  deleteSession: {
+    caller: 'user-interaction',
+    schema: DeleteSessionRequestSchema,
+    needs: 'NOTHING',
+  },
+  shutdown: { caller: 'user-interaction', schema: ShutdownRequestSchema, needs: 'NOTHING' },
+  answerAuthorization: {
+    caller: 'user-interaction',
+    schema: AnswerAuthorizationRequestV1Schema,
+    needs: 'RUN',
+  },
+  answerHuman: { caller: 'user-interaction', schema: AnswerHumanRequestSchema, needs: 'RUN' },
+  readArtifact: {
+    caller: 'user-interaction',
+    schema: ReadArtifactRequestV1Schema,
+    needs: 'SESSION',
+  },
+};
+
+interface Admission {
+  readonly sessionId: string;
+  readonly runState: 'RUNNING' | 'CONVERGING' | 'CLOSED';
+  readonly closeReason?: CloseReasonV1;
+}
+
+export interface SessionGatewayDeps {
+  readonly handle: (forward: GatewayForwardV1, sessionId?: string) => Promise<CoreResponse>;
+  readonly isOpenSession: (sessionId: string) => boolean;
+  readonly newSessionId?: () => string;
+}
+
+/**
+ * The only way into the Kernel core (Kernel/Gateway): caller, Schema and admission checks, nothing
+ * else. It keeps no Lease and no quota, and Core still decides everything it lets through.
+ */
+export class SessionGateway {
+  readonly #deps: SessionGatewayDeps;
+  readonly #admissions = new Map<string, Admission>();
+
+  public constructor(deps: SessionGatewayDeps) {
+    this.#deps = deps;
+  }
+
+  /** Pushed by Core. A run only moves forward, and a block is never lifted. */
+  admission(
+    workflowRunId: string,
+    sessionId: string,
+    runState: Admission['runState'],
+    closeReason?: CloseReasonV1,
+  ): void {
+    const known = this.#admissions.get(workflowRunId);
+    const rank = { RUNNING: 0, CONVERGING: 1, CLOSED: 2 } as const;
+    if (known !== undefined && rank[runState] < rank[known.runState]) return;
+    this.#admissions.set(workflowRunId, {
+      sessionId,
+      runState,
+      ...(closeReason === undefined ? {} : { closeReason }),
+    });
+  }
+
+  #rejected(requestId: string, reasonCode: GatewayRejectedCodeV1): SyscallRejectedV1 {
+    return { requestId, outcome: 'REJECTED', issuer: 'GATEWAY', reasonCode };
+  }
+
+  async #serve(caller: Caller, requestType: RequestType, request: unknown): Promise<CoreResponse> {
+    const route = ROUTES[requestType];
+    const requestId = (request as { readonly requestId: string }).requestId;
+    if (route.caller !== caller) return this.#rejected(requestId, 'CALLER_FORBIDDEN');
+    const parsed = validate<GatewayForwardV1['request']>(route.schema, request);
+    if (!parsed.ok) return this.#rejected(requestId, 'INVALID_REQUEST');
+    const body = parsed.value as { readonly sessionId?: string; readonly workflowRunId?: string };
+
+    if (route.needs !== 'NOTHING') {
+      if (body.sessionId === undefined || !this.#deps.isOpenSession(body.sessionId))
+        return this.#rejected(requestId, 'SESSION_NOT_FOUND');
+    }
+    if (route.needs === 'RUN') {
+      const admission =
+        body.workflowRunId === undefined ? undefined : this.#admissions.get(body.workflowRunId);
+      if (admission === undefined || admission.sessionId !== body.sessionId)
+        return this.#rejected(requestId, 'RUN_NOT_FOUND');
+      if (route.blocked === true && admission.runState !== 'RUNNING') {
+        if (admission.closeReason === undefined)
+          throw new Error('A blocked run must carry closeReason');
+        return {
+          requestId,
+          outcome: 'REJECTED',
+          issuer: 'GATEWAY',
+          reasonCode: 'RUN_BLOCKED',
+          closeReason: admission.closeReason,
+        };
+      }
+    }
+    const generated =
+      requestType === 'startSession' || requestType === 'startRun'
+        ? (this.#deps.newSessionId?.() ?? newId('ses'))
+        : undefined;
+    const forward = {
+      caller,
+      requestType,
+      request: parsed.value,
+      ...(generated === undefined ? {} : { sessionId: generated }),
+    } as GatewayForwardV1;
+    return this.#deps.handle(forward, generated);
+  }
+
+  #port<K extends RequestType>(caller: Caller, requestType: K) {
+    return (request: unknown): Promise<never> =>
+      this.#serve(caller, requestType, request) as Promise<never>;
+  }
+
+  /** Injected into Workflow only; the caller is who holds the port. */
+  readonly workflow: WorkflowGatewayPortV1 = {
+    registerAgentRun: this.#port('workflow', 'registerAgentRun'),
+    submitUnit: this.#port('workflow', 'submitUnit'),
+    endAgentRun: this.#port('workflow', 'endAgentRun'),
+    closeRun: this.#port('workflow', 'closeRun'),
+    requestHuman: this.#port('workflow', 'requestHuman'),
+    readProjectFile: this.#port('workflow', 'readProjectFile'),
+    reportSessionCommand: this.#port('workflow', 'reportSessionCommand'),
+    reportSessionList: this.#port('workflow', 'reportSessionList'),
+  };
+
+  /** Injected into UserInteraction only. */
+  readonly interaction: InteractionGatewayPortV1 = {
+    startSession: this.#port('user-interaction', 'startSession'),
+    openSession: this.#port('user-interaction', 'openSession'),
+    startRun: this.#port('user-interaction', 'startRun'),
+    listSessions: this.#port('user-interaction', 'listSessions'),
+    deleteSession: this.#port('user-interaction', 'deleteSession'),
+    answerAuthorization: this.#port('user-interaction', 'answerAuthorization'),
+    answerHuman: this.#port('user-interaction', 'answerHuman'),
+    readArtifact: this.#port('user-interaction', 'readArtifact'),
+    shutdown: this.#port('user-interaction', 'shutdown'),
+  };
+}

@@ -4,6 +4,7 @@ import { IdSchemas } from '../platform-common/ids.js';
 import {
   CORE_REJECTED_CODES,
   CORE_REJECTED_CODES_V1,
+  GATEWAY_REJECTED_CODES_V1,
   GATEWAY_REJECTED_CODES,
   reasonCodeOf,
   reasonCodeV1Of,
@@ -73,7 +74,7 @@ export const SyscallRejectedV1Schema = Type.Union(
     closed({
       ...rejected,
       issuer: Type.Literal('GATEWAY'),
-      reasonCode: reasonCodeOf(GATEWAY_REJECTED_CODES),
+      reasonCode: reasonCodeV1Of(GATEWAY_REJECTED_CODES_V1),
     }),
     closed({
       ...rejected,
