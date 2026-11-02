@@ -349,7 +349,6 @@ describe('resolving references', () => {
       'CONTEXT_ASSEMBLE',
       {
         final: false,
-        effort: 'high',
         history: [
           { ...entry, seq: 1, kind: 'HUMAN', contentRef },
           {
@@ -390,7 +389,7 @@ describe('resolving references', () => {
           text: 'reading',
           toolCalls: [{ toolCallId: 'call_1', arguments: { path: 'a' } }],
         },
-        { kind: 'TOOL_RESULT', text: expect.stringContaining('will not be asked again') as string },
+        { kind: 'TOOL_RESULT', text: expect.stringContaining('Do not ask for it again') as string },
       ],
     });
     expect(JSON.stringify(run.last().input)).not.toContain('secret thoughts');
@@ -416,7 +415,7 @@ describe('technical retries', () => {
       MEDIA_TYPES.contextPack,
       'EXPIRING',
     );
-    await run.submit('MODEL', { contextPackRef, final: false, effort: 'high' }, { ...modelScope });
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope });
   }
 
   it('waits for the longer of the back-off and Retry-After, and says so', async () => {
@@ -443,6 +442,19 @@ describe('technical retries', () => {
   });
 });
 
+describe('unknown effects', () => {
+  it('reports an execution that never stopped', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    run.execution.cancel(2);
+    run.timers[0]?.due();
+    await Promise.resolve();
+    expect(run.execution.unknownEffects()).toMatchObject([
+      { effect: 'EXECUTION_STOP_UNCONFIRMED', executionKind: 'FILE_READ' },
+    ]);
+  });
+});
+
 describe('project files', () => {
   it('stores the file for the Session and reports a missing one', async () => {
     const run = setup();
@@ -463,7 +475,7 @@ describe('cancelling', () => {
     const run = setup();
     await run.submit('FILE_READ', fileInput);
     await run.submit('FILE_READ', { path: 'b.ts' });
-    await run.execution.cancel(2);
+    run.execution.cancel(2);
     expect(run.cancelled).toEqual([2]);
     expect(run.ended).toHaveLength(1);
     await run.execution.handleFact(
@@ -481,7 +493,7 @@ describe('cancelling', () => {
   it('judges an execution that never stops as unconfirmed', async () => {
     const run = setup();
     await run.submit('FILE_READ', fileInput);
-    await run.execution.cancel(2);
+    run.execution.cancel(2);
     expect(run.timers[0]?.delayMs).toBe(30);
     run.timers[0]?.due();
     await Promise.resolve();

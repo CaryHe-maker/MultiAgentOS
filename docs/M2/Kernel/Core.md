@@ -57,7 +57,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 
 ### 5.1 `repo.read`
 
-运行开启后第一次需要时询问一次，同意后本运行内的 AgentRun 都可使用；拒绝在本运行内保留，之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问。
+第一个需要它的 Unit 询问一次，同意后本运行内的 AgentRun 都可使用；拒绝绑定提出请求的 AgentRun，它之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问，下一个 AgentRun 可以重新询问（M2Design 第 5.3 节）。
 询问不超时，一直等到用户回答；只在运行收敛时取消（M2Design 第 5.3 节）——这是相对 M1 的变化，M1 的询问计时器与 `authorizationTimeoutMs` 删除。
 拒绝作为被拒 Unit 的结果交给 Workflow，不改变运行控制状态与 Turn。
 
@@ -146,10 +146,10 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
 | 2（阶段 1 部分）：Lease 只在 Core 内存中；授权只由人类签发 | 架构测试：Lease 类型不导出；单元测试：信任记录不产生任何执行权限 |
-| 11：授权与检查出错时一律拒绝；询问一直等到用户回答 | 单元测试：询问没有计时器，待答复期间 Unit 保持挂起；收敛时询问以 `CANCELLED` 结束；拒绝在本运行内保留且不再询问 |
+| 11：授权与检查出错时一律拒绝；询问一直等到用户回答 | 单元测试：询问没有计时器，待答复期间 Unit 保持挂起；收敛时询问以 `CANCELLED` 结束；拒绝后同一 AgentRun 不再询问，下一个 AgentRun 可以询问 |
 | 13：HUMAN 节点的答复不产生授权 | 单元测试：`answerHuman` 不改变任何授权记录 |
 | 18：Turn 由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
-| 20：只有用户信任过的确切内容的 `AGENTS.md` 进入 system 段 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
+| 20：只有用户信任过的确切内容的 `AGENTS.md` 标明为项目指令 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
 | 28：修剪与摘要只在确认后生效，不动用 F（阶段 8） | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时只修剪、不写摘要；压缩期间该对象没有模型调用；空闲压缩进行中收到 `undoTurns` 时先取消且不写回；SubAgent 额度不足时进入收尾（阶段 4 完成后） |
 
 ## 10. 阶段

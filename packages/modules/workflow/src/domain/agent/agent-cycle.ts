@@ -9,7 +9,6 @@ import type {
   PinnedDefinitionRef,
   ReasonCodeV1,
   SubmitUnitRequestV1,
-  ThinkingEffort,
   UnitInputV1,
   UnitReportV1,
   WRAP_UP_REASONS_V1,
@@ -84,7 +83,6 @@ export interface AgentState {
   readonly sessionId: string;
   readonly turnId: string;
   readonly agentRunId: string;
-  readonly effort: ThinkingEffort;
   readonly definitions: AgentDefinitions;
   readonly round: number;
   readonly final: boolean;
@@ -100,6 +98,8 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  /** The round in which the user first declined; the model was told in the next one. */
+  readonly declinedInRound?: number;
   readonly fatal?: ReasonCodeV1;
 }
 
@@ -300,13 +300,7 @@ function nextRound(
 export function startAgent(
   input: Pick<
     AgentState,
-    | 'workflowRunId'
-    | 'sessionId'
-    | 'turnId'
-    | 'agentRunId'
-    | 'effort'
-    | 'definitions'
-    | 'orientPackRef'
+    'workflowRunId' | 'sessionId' | 'turnId' | 'agentRunId' | 'definitions' | 'orientPackRef'
   >,
   context: AgentContext,
 ): AgentTransition {
@@ -559,7 +553,13 @@ function handleTool(
 ): AgentTransition {
   const records: NewLogRecord[] = [completion(state, report)];
   const ok = report.status === 'OK';
-  const consecutiveErrors = ok ? 0 : state.consecutiveErrors + 1;
+  const declined = report.status === 'REJECTED' && report.reasonCode === 'USER_DECLINED';
+  // A refusal is the user's decision, not a mistake of the model.
+  const consecutiveErrors = ok
+    ? 0
+    : declined
+      ? state.consecutiveErrors
+      : state.consecutiveErrors + 1;
   let next: AgentState = {
     ...state,
     consecutiveErrors,
@@ -571,8 +571,12 @@ function handleTool(
   // names the wrap-up, and a declined authorization is a tool result the model reads.
   if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
     next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
-  } else if (report.status === 'REJECTED' && report.reasonCode === 'USER_DECLINED') {
-    // Returned to the model like any refused tool; it ends neither the Turn nor the AgentRun.
+  } else if (declined) {
+    // Calls of one reply were all waiting on the same answer. Coming back to it in a later
+    // round means the model ignored what it was told, so this AgentRun wraps up.
+    const first = next.declinedInRound ?? next.round;
+    next = { ...next, declinedInRound: first };
+    if (next.round > first) next = wrapUp(next, 'AUTHORIZATION_DECLINED');
   } else if (!ok) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
@@ -692,7 +696,6 @@ export function receiveAgentReport(
         {
           contextPackRef: report.outputRef,
           final: state.final,
-          effort: state.effort,
           ...(state.final ? { finalMode: 'AUTO' as const } : {}),
         },
         'model',

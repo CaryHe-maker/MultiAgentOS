@@ -39,11 +39,14 @@ describe('repo.read', () => {
     expect(auth.requireRepoRead('c').decision).toEqual({ kind: 'ALLOWED' });
   });
 
-  it('keeps a refusal for the run', () => {
+  it('keeps a refusal for the AgentRun that asked, and lets the next one ask', () => {
     const auth = authorization();
-    auth.answer(ask(auth, 'a'), 'DENY');
-    expect(auth.requireRepoRead('b').decision).toEqual({ kind: 'DECLINED' });
+    const asked = auth.requireRepoRead('a', 'agr_1');
+    if (asked.decision.kind !== 'PENDING') throw new Error('not pending');
+    auth.answer(asked.decision.questionId, 'DENY');
+    expect(auth.requireRepoRead('b', 'agr_1').decision).toEqual({ kind: 'DECLINED' });
     expect(auth.lease).toBeUndefined();
+    expect(auth.requireRepoRead('c', 'agr_2').requested).toBeDefined();
   });
 
   it('keeps waiting until the user answers', () => {

@@ -43,7 +43,8 @@ export interface SessionDuties {
     workflowRunId: string,
     closeReason: CloseReasonV1,
   ): Promise<ArtifactRef | undefined>;
-  removeSessionFiles(): Promise<void>;
+  /** A new Session could not be created: its reference and everything written for it go. */
+  discardSession(): Promise<void>;
 }
 
 export type SessionStart =
@@ -224,7 +225,7 @@ export class SessionActor {
     const contentRef = await duties.storeUserInput(start.input);
     this.#command({ command: 'CREATE', repositoryRoot }, async (result) => {
       if (result.outcome === 'FAILED') {
-        await duties.removeSessionFiles();
+        await duties.discardSession();
         this.#failed(start.requestId, result);
         return;
       }
@@ -437,7 +438,7 @@ export class SessionActor {
       type: 'RunStateChanged',
       state: 'CONVERGING',
     });
-    await run.work.beginClosing();
+    run.work.beginClosing();
     await this.#finishIfDrained(run);
   }
 
@@ -450,7 +451,7 @@ export class SessionActor {
     if (run.closingTurn !== undefined) this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
     const summary = await this.#deps.duties.writeRunSummary(run.workflowRunId, closing.closeReason);
     const ending = {
-      unknownEffects: [],
+      unknownEffects: run.work.unknownEffects(),
       ...closing,
       ...(summary === undefined
         ? { finalizationError: 'RUN_SUMMARY_WRITE_FAILED' as const }

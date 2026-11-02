@@ -6,6 +6,8 @@ import {
   type CancelRunExecutionsRequest,
   type ExecutionFactV1,
   type ExecutionRequestV1,
+  type ExecutorKind,
+  type UnknownEffect,
 } from '@multiagentos/contracts';
 import {
   AttemptRequestBuilder,
@@ -74,6 +76,7 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queue: Attempt[] = [];
   readonly #byId = new Map<string, Attempt>();
+  readonly #effects: UnknownEffect[] = [];
   #active: Attempt | undefined;
   #cancelFallback: (() => void) | undefined;
 
@@ -94,6 +97,29 @@ export class RunExecution {
     this.#queue.push(attempt);
     await this.#pump();
     return unitAttemptId;
+  }
+
+  #noteStop(attempt: Attempt, executionId: string): void {
+    this.#effects.push({
+      unitAttemptId: attempt.unitAttemptId,
+      executionId,
+      executionKind: attempt.spec.unit.executionKind as ExecutorKind,
+      effect: 'EXECUTION_STOP_UNCONFIRMED',
+    });
+  }
+
+  #noteUnconfirmed(attempt: Attempt, executionId: string): void {
+    this.#effects.push({
+      unitAttemptId: attempt.unitAttemptId,
+      executionId,
+      executionKind: 'MODEL',
+      effect: 'MODEL_REQUEST_UNCONFIRMED',
+    });
+  }
+
+  /** What may have happened without being confirmed; RunClosed reports it. */
+  unknownEffects(): UnknownEffect[] {
+    return [...this.#effects];
   }
 
   async #pump(): Promise<void> {
@@ -162,18 +188,19 @@ export class RunExecution {
     }
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
-    try {
-      await this.#deps.dispatch(built.request);
-    } catch {
-      await this.#finish(attempt, {
-        executionId,
-        outcome: 'FAILED',
-        reasonCode: 'INTERNAL',
-        ...(attempt.spec.unit.executionKind === 'MODEL'
-          ? { requestState: 'UNKNOWN' as const }
-          : {}),
+    // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
+    this.#deps.dispatch(built.request).catch(() => {
+      this.#deps.enqueue(() => {
+        const model = attempt.spec.unit.executionKind === 'MODEL';
+        if (model) this.#noteUnconfirmed(attempt, executionId);
+        void this.#finish(attempt, {
+          executionId,
+          outcome: 'FAILED',
+          reasonCode: 'INTERNAL',
+          ...(model ? { requestState: 'UNKNOWN' as const } : {}),
+        });
       });
-    }
+    });
   }
 
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
@@ -191,6 +218,9 @@ export class RunExecution {
       return;
     }
     if (fact.outcome === 'FAILED' && fact.retryable && (await this.#retried(attempt, fact))) return;
+    if (fact.outcome === 'STOP_UNCONFIRMED') this.#noteStop(attempt, fact.executionId);
+    if (fact.executionKind === 'MODEL' && fact.requestState === 'UNKNOWN')
+      this.#noteUnconfirmed(attempt, fact.executionId);
     await this.#finish(attempt, {
       executionId: fact.executionId,
       outcome: fact.outcome,
@@ -322,7 +352,7 @@ export class RunExecution {
    * The run started converging at `runEpoch`. Queued attempts end here; the one in flight is
    * cancelled, and when the Supervisor never confirms, the fallback judges it unconfirmed.
    */
-  async cancel(runEpoch: number): Promise<void> {
+  cancel(runEpoch: number): void {
     for (const attempt of this.#queue.splice(0)) attempt.attempts.abandon(attempt.unitAttemptId);
     const active = this.#active;
     if (active === undefined) return;
@@ -335,13 +365,14 @@ export class RunExecution {
     this.#cancelFallback = schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
       enqueue(() => {
         if (this.#active !== active || active.executionId === undefined) return;
+        this.#noteStop(active, active.executionId);
         void this.#finish(active, {
           executionId: active.executionId,
           outcome: 'STOP_UNCONFIRMED',
         });
       });
     });
-    await cancelRun({ workflowRunId, runEpoch });
+    cancelRun({ workflowRunId, runEpoch }).catch(() => undefined);
   }
 
   /** Nothing is in flight any more. */

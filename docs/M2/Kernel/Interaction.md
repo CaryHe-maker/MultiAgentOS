@@ -191,7 +191,7 @@ Session actor：
 ```text
 SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
   → 有运行且不在 CLOSED：按第 6.3 节收敛（closeReason：ENDED_BY_USER 或 SHUTDOWN），等待 CLOSED 与运行级 Outbox 投递完毕
-  → 发出 SessionCommand(CLOSE)，等待回复（Workflow 释放 Session 锁）
+  → 发出 SessionCommand(CLOSE)，等待回复（Workflow 释放 Session 锁）；等待不超过 sessionCloseTimeoutMs，超过时放弃这个 Session，后续请求照常处理，Session 锁按过期规则处理
   → 发出 SessionClosed；Session 级 Outbox 投递完毕后通知 Session 管理回收
 ```
 
@@ -242,6 +242,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 | `repositoryRoot` | Core | 组合根依据工作目录或 `--repo` 写入 | 本进程的仓库，realpath |
 | `runTimeoutMs` | — | — | 删除；阶段 5 由 `turnTimeoutSeconds` 取代 |
 | `authorizationTimeoutMs` | — | — | 删除：授权询问不超时（M2Design 第 5.3 节） |
+| `sessionCloseTimeoutMs` | Core | 10000 | 第 6.4 节：等待 Workflow 回复 `CLOSE` 的上限 |
 | 其余 | — | — | 与 M1 Interaction 第 9 节相同；`budget` 见 [Monitor](Monitor.md) |
 
 ## 10. 不变量与测试

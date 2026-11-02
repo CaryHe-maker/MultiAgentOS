@@ -51,9 +51,8 @@ export class TestExecution {
     return Promise.resolve(unitAttemptId);
   };
 
-  readonly cancelExecutions = (): Promise<void> => {
+  readonly cancelExecutions = (): void => {
     this.cancels += 1;
-    return Promise.resolve();
   };
 }
 
@@ -82,6 +81,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     createAttempt: execution.createAttempt,
     cancelExecutions: execution.cancelExecutions,
     executionsClosed: () => undefined,
+    unknownEffects: () => [],
     audit: () => undefined,
     now: () => new Date('2026-11-02T00:00:00.000Z'),
     schedule: () => () => undefined,

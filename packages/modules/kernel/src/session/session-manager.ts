@@ -23,10 +23,15 @@ export interface SessionManagerDeps {
   readonly refs: SessionRefs;
   readonly outbox: KernelOutbox;
   /** Builds a Session's actor; `onClosed` fires once when it is finished. */
-  readonly openActor: (sessionId: string, onClosed: () => void) => Promise<SessionActor>;
+  readonly openActor: (
+    sessionId: string,
+    session: { readonly onClosed: () => void; readonly discard: () => Promise<void> },
+  ) => Promise<SessionActor>;
   /** Removes what Kernel wrote for a deleted Session; a failure is reported, not raised. */
   readonly removeSessionFiles: (sessionId: string) => Promise<void>;
   readonly titleOf: (entry: SessionListEntry) => Promise<string | undefined>;
+  /** How long a closing Session may take before it is given up (Kernel/Interaction 6.4). */
+  readonly closeTimeoutMs: number;
 }
 
 type Refused = SyscallRejectedV1;
@@ -76,7 +81,13 @@ export class SessionManager {
     const open = this.#open;
     if (open === undefined) return;
     open.actor.close(reason);
-    await open.closed;
+    // A silent Workflow must not hold every later Session request; its lock expires on its own.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, this.#deps.closeTimeoutMs);
+    });
+    await Promise.race([open.closed, gaveUp]);
+    clearTimeout(timer);
     await this.#deps.outbox.drained();
     if (this.#open === open) this.#open = undefined;
   }
@@ -88,9 +99,15 @@ export class SessionManager {
     });
     const open: Open = {
       sessionId,
-      actor: await this.#deps.openActor(sessionId, () => {
-        if (this.#open === open) this.#open = undefined;
-        closed();
+      actor: await this.#deps.openActor(sessionId, {
+        onClosed: () => {
+          if (this.#open === open) this.#open = undefined;
+          closed();
+        },
+        discard: async () => {
+          await this.#deps.refs.markDeleted(sessionId);
+          await this.#deps.removeSessionFiles(sessionId);
+        },
       }),
       closed: finished,
     };

@@ -104,8 +104,8 @@ const OBJECTIVE_MAX = 4000;
 /** The model sees these instead of a preview when a tool did not run. */
 const REFUSED_TOOL_TEXT: Partial<Record<ReasonCodeV1, string>> = {
   USER_DECLINED:
-    'The user declined this capability. It will not be asked again in this run: do not retry it, ' +
-    'work without it or say so in your reply.',
+    'The user declined this capability. Do not ask for it again: another attempt ends your work. ' +
+    'Continue without it, or finish and say what you could not do.',
   QUOTA_EXHAUSTED: 'The tool limit of this agent is reached; finish with what you have.',
 };
 
@@ -268,7 +268,6 @@ export class AttemptRequestBuilder {
   async #assemble(spec: AttemptSpec): Promise<AssembleExecutorInputV1> {
     const input = inputOf<ContextAssembleInputV1>(ContextAssembleInputV1Schema, spec.input);
     const { agent } = spec;
-    const { projectInstructions: project } = input;
     const orientPack =
       input.orientPackRef === undefined
         ? undefined
@@ -280,11 +279,6 @@ export class AttemptRequestBuilder {
       tokenBudget: input.final ? agent.budget.finalInputBudget : agent.budget.perCallInputLimit,
       instructions: agent.instructions,
       toolSpecs: agent.toolSpecs(input.final),
-      ...(project === undefined
-        ? {}
-        : {
-            projectInstructions: { text: await this.#text(project.ref), trusted: project.trusted },
-          }),
       ...(orientPack === undefined ? {} : { orientPack }),
       history,
       status: input.status,
@@ -303,6 +297,14 @@ export class AttemptRequestBuilder {
         return { ...base, kind: 'HUMAN', text: await this.#text(entry.contentRef) };
       case 'NOTE':
         return { ...base, kind: 'NOTE', text: entry.text };
+      case 'PROJECT_INSTRUCTIONS':
+        return {
+          ...base,
+          kind: 'PROJECT_INSTRUCTIONS',
+          path: entry.path,
+          text: await this.#text(entry.ref),
+          trusted: entry.trusted,
+        };
       case 'FEEDBACK':
         return {
           ...base,

@@ -55,7 +55,7 @@ interface RegisterAgentRunRequest {
   agentRunId: string;              // 前缀 agr，Workflow 生成（ULID），写入日志后重放不变
   nodeId: string;                  // 该 AgentRun 对应的 AGENT 节点
   agentRef: PinnedDefinitionRef;   // kind = 'AGENT'
-  effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内
+  effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内；AgentRun 的思考强度只在这里给出，Unit 输入中没有
   workspaceViewId: 'main';         // M2Design 第 6.5 节
   display: { label: string };      // ≤80，只用于界面
   // 阶段 2：requestedCapabilities、writeRoots
@@ -408,6 +408,7 @@ type ContextHistoryEntry = EntryBase & (
   | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
   | { kind: 'FEEDBACK'; text: string; toolCallId?: string }   // 没有执行的工具调用的回答，≤1000
   | { kind: 'HANDOFF'; outputRef: ArtifactRef; toolCallId: string }   // 前驱节点的交接，PINNED；正文在该次模型输出中
+  | { kind: 'PROJECT_INSTRUCTIONS'; path: string; ref: ArtifactRef; trusted: boolean }   // AGENTS.md，PINNED，追加在读取它的位置（M2Design 第 9.5 节）
   | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
 );
 
@@ -415,8 +416,6 @@ interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL
 
 interface ContextAssembleInputV1 {
   final: boolean;                                  // 必须等于 status.final
-  effort: ThinkingEffort;
-  projectInstructions?: { ref: ArtifactRef; sha256: string; trusted: boolean };
   orientPackRef?: ArtifactRef;
   history: ContextHistoryEntry[];
   status: { round: number; maxRounds: number; budget: BudgetView; final: boolean; wrapUpReason?: WrapUpReason };
@@ -424,6 +423,7 @@ interface ContextAssembleInputV1 {
 
 type WrapUpReason =                                // 下一次模型调用为什么是收尾调用（Module/Workflow 第 7 节）
   | 'BUDGET_WRAP_UP'                               // BudgetView 为 WRAP_UP
+  | 'AUTHORIZATION_DECLINED'                       // 模型在之后的轮次又调用了用户拒绝的能力（M2Design 第 5.3 节）
   | 'TOOL_UNIT_LIMIT' | 'WALL_CLOCK_LIMIT'         // QUOTA_EXHAUSTED 的 quota 为 TOOL_UNITS、WALL_CLOCK
   | 'REPEATED_INTENT' | 'CONSECUTIVE_ERRORS'       // Workflow 的业务熔断（M2Design 第 3.4 节）
   | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT';

@@ -1,7 +1,7 @@
 import { newId, type ArtifactRef, type SessionLogRecord } from '@multiagentos/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { projectHistory, projectInstructions } from './history-projection.js';
+import { projectHistory } from './history-projection.js';
 
 const projectMainHistory = (records: readonly SessionLogRecord[]) =>
   projectHistory(records, { kind: 'MAIN' });
@@ -208,7 +208,7 @@ describe('projectMainHistory', () => {
   });
 });
 
-describe('projectInstructions', () => {
+describe('project instructions', () => {
   const loaded = (workflowRunId: string, digit: string, trusted?: boolean) => ({
     type: 'PROJECT_FILE_LOADED',
     workflowRunId,
@@ -217,15 +217,21 @@ describe('projectInstructions', () => {
     sha256: digit.repeat(64),
     ...(trusted === undefined ? {} : { trusted }),
   });
+  const instructions = (records: Parameters<typeof stamped>[0]) =>
+    projectHistory(stamped(records), { kind: 'MAIN' }).filter(
+      (entry) => entry.kind === 'PROJECT_INSTRUCTIONS',
+    );
 
-  it('takes the latest load of the run and treats unknown trust as untrusted', () => {
-    const records = stamped([
-      loaded(run, '1', true),
-      loaded(run, '2'),
-      loaded(secondRun, '3', true),
+  it('appends them where they were read, pinned, and treats unknown trust as untrusted', () => {
+    expect(instructions([loaded(run, '1')])).toMatchObject([
+      { category: 'PINNED', path: 'AGENTS.md', ref: ref('1'), trusted: false },
     ]);
-    expect(projectInstructions(records, run)).toMatchObject({ ref: ref('2'), trusted: false });
-    expect(projectInstructions([], run)).toBeUndefined();
+  });
+
+  it('repeats the same content once, and shows changed content again', () => {
+    expect(
+      instructions([loaded(run, '1', true), loaded(secondRun, '1', true), loaded(secondRun, '2')]),
+    ).toHaveLength(2);
   });
 });
 

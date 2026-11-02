@@ -27,7 +27,7 @@ interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersi
   };
   promptRef: DefinitionRef;
   unitRefs: DefinitionRef[];                     // 封闭集合；阶段 2 起与能力白名单一起决定能力上限
-  startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 只在每个 WorkflowRun 的第一个 Turn 提交
+  startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 为空：运行开启时不碰仓库
   actions: {
     end: {                                       // 至少一项；没有声明的工具不能结束这个 Agent
       toolRef: DefinitionRef;

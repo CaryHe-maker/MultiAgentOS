@@ -16,6 +16,7 @@ import type {
   TurnUsage,
   UnitDefinitionV1,
   UnitReportV1,
+  UnknownEffect,
 } from '@multiagentos/contracts';
 import { RequestLedger } from '../core/request-ledger.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
@@ -75,8 +76,9 @@ export interface RunWorkDeps {
   /** Execution takes the attempt over and registers it through `attempts`. */
   readonly createAttempt: (spec: AttemptSpec, attempts: RunAttempts) => Promise<string>;
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
-  readonly cancelExecutions: (runEpoch: number) => Promise<void>;
+  readonly cancelExecutions: (runEpoch: number) => void;
   readonly executionsClosed: () => void;
+  readonly unknownEffects: () => UnknownEffect[];
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
@@ -297,7 +299,10 @@ export class RunWork {
       await this.#startAttempt(request, unit, record.agent);
       return response;
     }
-    const { decision, requested } = this.#authorization.requireRepoRead(requestId);
+    const { decision, requested } = this.#authorization.requireRepoRead(
+      requestId,
+      request.agentRunId,
+    );
     if (requested !== undefined) this.#host.toInteraction(requested);
     if (decision.kind === 'ALLOWED') await this.#startAttempt(request, unit, record.agent);
     else if (decision.kind === 'DECLINED')
@@ -484,12 +489,14 @@ export class RunWork {
   reconcile(): void {
     const waitingFor = new Set([...this.#waiting.values()].map((w) => w.request.agentRunId));
     this.#clocks.reconcile(
-      (agentRunId) => waitingFor.has(agentRunId) && (this.#inFlight.get(agentRunId) ?? 0) === 0,
+      (agentRunId) =>
+        (waitingFor.has(agentRunId) || this.#waitingFiles.size > 0) &&
+        (this.#inFlight.get(agentRunId) ?? 0) === 0,
     );
   }
 
   /** The run started converging: Units on a question end with it and get no report. */
-  async beginClosing(): Promise<void> {
+  beginClosing(): void {
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);
     this.#waiting.clear();
@@ -498,7 +505,11 @@ export class RunWork {
         this.#refuse(file.request.requestId, file.request, 'RUN_BLOCKED') as SyscallRejectedV1,
       );
     this.#clocks.stop();
-    await this.#deps.cancelExecutions(this.#host.runEpoch());
+    this.#deps.cancelExecutions(this.#host.runEpoch());
+  }
+
+  unknownEffects(): UnknownEffect[] {
+    return this.#deps.unknownEffects();
   }
 
   /** Nothing is in flight any more, so the Lease can end. */

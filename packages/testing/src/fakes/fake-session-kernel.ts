@@ -311,7 +311,10 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       agentRunId: request.agentRunId,
       unitRunId: request.unitRunId,
       unitRef: request.unitRef,
-      executionKind: 'MODEL' as const,
+      executionKind:
+        request.unitRef.id === 'repository-list'
+          ? ('REPOSITORY_LIST' as const)
+          : ('MODEL' as const),
       budget,
     };
     current.pendingUnits -= 1;

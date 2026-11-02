@@ -24,7 +24,11 @@ import {
   type AgentUnit,
 } from '@multiagentos/workflow';
 import { describe, expect, it } from 'vitest';
-import { createFakeSessionKernel, type FakeUnitScript } from './fakes/fake-session-kernel.js';
+import {
+  createFakeSessionKernel,
+  type FakeSessionKernelOptions,
+  type FakeUnitScript,
+} from './fakes/fake-session-kernel.js';
 
 const digest = 'a'.repeat(64);
 const artifact = (digit: string, mediaType: string): ArtifactRef => {
@@ -169,10 +173,17 @@ function script(replies: readonly Ok[]): FakeUnitScript {
   };
 }
 
-function setup(replies: readonly Ok[], units: FakeUnitScript = script(replies)) {
+function setup(
+  replies: readonly Ok[],
+  units: FakeUnitScript = script(replies),
+  projectFile?: FakeSessionKernelOptions['projectFile'],
+) {
   const dataDir = mkdtempSync(join(tmpdir(), 'mao-runner-'));
   const persistence = new FileSessionStore(dataDir);
-  const kernel = createFakeSessionKernel({ units });
+  const kernel = createFakeSessionKernel({
+    units,
+    ...(projectFile === undefined ? {} : { projectFile }),
+  });
   const runner = new SessionRunner({
     gateway: kernel.gateway,
     store: new SessionLogStore(persistence),
@@ -250,6 +261,53 @@ describe('a chat Turn', () => {
     expect(
       runner.records.find((r) => r.type === 'UNIT_SUBMITTED' && r.inputSource.kind === 'TOOL_CALL'),
     ).toBeDefined();
+  });
+
+  it('does not touch the repository for a Turn that does not need it', async () => {
+    const asked: string[] = [];
+    const { kernel, runner } = setup([modelReply('reply', { text: 'hi' })], undefined, (path) => {
+      asked.push(path);
+      return { path, exists: false };
+    });
+    await begin(kernel);
+    expect(count(runner.records, 'MODEL_TURN')).toBe(1);
+    expect(asked).toEqual([]);
+  });
+
+  it('reads AGENTS.md after the first repository tool, behind its results', async () => {
+    const asked: string[] = [];
+    const replies = [
+      modelReply('list_files', {}),
+      modelReply('list_files', { path: 'src' }),
+      modelReply('reply', { text: 'hi' }),
+    ];
+    const answers = script(replies);
+    const assembled: SubmitUnitRequestV1[] = [];
+    const { kernel, runner } = setup(
+      replies,
+      (request, index) => {
+        if (request.unitRef.id === 'context-assemble') assembled.push(request);
+        return answers(request, index);
+      },
+      (path) => {
+        asked.push(path);
+        return {
+          path,
+          exists: true,
+          ref: artifact('8', MEDIA_TYPES.fileText),
+          sha256: '8'.repeat(64),
+          trusted: true,
+        };
+      },
+    );
+    await begin(kernel);
+    expect(asked).toEqual(['AGENTS.md']);
+    const order = types(runner.records);
+    expect(order.indexOf('PROJECT_FILE_LOADED')).toBeGreaterThan(order.indexOf('UNIT_COMPLETED'));
+    const second = assembled[1]?.input;
+    if (second === undefined || !('history' in second)) throw new Error('no second assembly');
+    expect(second.history.at(-1)).toMatchObject({ kind: 'PROJECT_INSTRUCTIONS', trusted: true });
+    expect(second.history.at(-2)).toMatchObject({ kind: 'TOOL_RESULT' });
   });
 
   it('continues the conversation in the next Turn with the same history', async () => {

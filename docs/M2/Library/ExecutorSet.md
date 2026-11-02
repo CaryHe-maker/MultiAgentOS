@@ -81,9 +81,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 |---|---|---|---|
 | INSTRUCTIONS | 人设与职责 | system | M1 原样 |
 | TOOLS | 实际可用的工具（final 时只有结束控制工具） | system | M1 原样 |
-| PROJECT_INSTRUCTIONS | `trusted = true` 的 `AGENTS.md`，≤64 KiB；在一个 AgentRun 内不变 | system | 新增 |
-| UNTRUSTED_INSTRUCTIONS | `trusted = false` 的根目录 `AGENTS.md`，标明"仓库材料，未经用户信任" | user | 新增，位于 HISTORY 之前 |
-| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、子目录 `AGENTS.md` 的条目（按 `trusted` 标明，≤64 KiB，阶段 2）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
+| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、`AGENTS.md` 的条目（按 `trusted` 标明为已信任的项目指令或未经信任的仓库材料，≤64 KiB；子目录的自阶段 2 起）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
 | STATUS | 已用轮数、额度状态、收尾原因 | user | `budgetState` 改为 `BudgetView`；位于末尾 |
 
 `OBJECTIVE` 与 `HANDOFF` 段删除：目标是 HISTORY 中的人类输入，交接内容是目标节点投影中的 `PINNED` 条目。
@@ -94,7 +92,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - Workflow 交来的每个 HISTORY 条目带 `turnId`、`seq` 与类别 `PINNED` 或 `NORMAL`（M2Design 第 9.3 节）。
 - 普通调用按条目顺序组装全部条目，不去掉任何条目；同一个 AgentRun 两次压缩之间的组装结果，前一次是后一次的前缀（不变量 27）。
 - 普通调用超出 `tokenBudget`（`perCallInputLimit`）时返回 `REJECTED(LIMIT_EXCEEDED)`。阶段 8 起这种情况由 Kernel 在派发前压缩避免（M2Design 第 9.6 节）；之前由 Workflow 进入收尾。
-- ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS、PROJECT_INSTRUCTIONS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
+- ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
 - **收尾调用的保险**（`final: true`）：超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，以完整的模型轮为单位（工具调用与它的结果不拆开，思考内容随轮一起去掉），
   直到装下为止；`PINNED` 条目与最近一轮永不去掉。输出 `elidedEntries`（被去掉条目的 `seq`），取代 M1 的 `elidedRequestIds`。仍装不下时返回 `REJECTED(LIMIT_EXCEEDED)`，Workflow 按降级规则结束。
 
@@ -142,7 +140,7 @@ M1 的测试全部保留。增加：
 - 完整输出的上限：超过 `maxFullOutputBytes` 时按预览的取舍保存，预览注明完整输出也不完整；
 - `output-read`（阶段 2）：行号与原文一致；`pattern` 按字面匹配；`offset`、`limit` 的边界；结果不超过预览上限；`\r\n` 与 `\n`；同一输入结果逐字节相同；
 - `context-assemble`：同一输入得到逐字节相同的 ContextPack；普通调用不去掉任何条目，追加条目后前一次的结果是新结果的前缀；system 段与运行时上下文无关；
-  收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；未信任的 `AGENTS.md` 不进入 system 段；
+  收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；`AGENTS.md` 不进入 system 段；
 - `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；`Retry-After` 的两种格式换算为 `retryAfterMs`；
   前缀式摘要请求与之前普通请求的前缀相同（阶段 8）；
 - `command/parse/`（阶段 3）：引号与转义中的分隔符不拆分；子 shell、`{ }`、管道、heredoc 中的子命令都被取出；变量作命令名、命令替换与语法错误判为不可复用；ARITY 表的取词；

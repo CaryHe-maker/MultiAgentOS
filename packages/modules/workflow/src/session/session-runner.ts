@@ -1,4 +1,5 @@
 import {
+  REPOSITORY_KINDS_V1,
   REASON_CODE_CATEGORY,
   newId,
   type AnalysisReportDraft,
@@ -11,6 +12,7 @@ import {
   type SessionCommandFailure,
   type SessionLogRecord,
   type TemplateDefinition,
+  type SubmitUnitRequestV1,
   type ThinkingEffort,
   type UnitInputV1,
   type WorkflowGatewayPortV1,
@@ -37,11 +39,7 @@ import {
   normalReportBody,
   type AgentRounds,
 } from '../domain/agent/analysis-report.js';
-import {
-  projectHistory,
-  projectInstructions,
-  type ProjectionScope,
-} from '../domain/context/history-projection.js';
+import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import {
   advanceGraph,
   chatGrowthPoint,
@@ -62,6 +60,8 @@ import {
  * log first, then the projection, then syscalls. Turn-chat and templates differ only in how the
  * graph grows; all Agents share one AgentRun cycle and one kind of projection.
  */
+const REPOSITORY_KINDS: ReadonlySet<string> = new Set(REPOSITORY_KINDS_V1);
+
 export interface AgentBinding {
   readonly ref: PinnedDefinitionRef;
   readonly modelRef: DefinitionRef;
@@ -126,6 +126,10 @@ export class SessionRunner {
   #turnId: string | undefined;
   #agent: ActiveAgent | undefined;
   #orientPackRef: AgentState['orientPackRef'];
+  /** A repository tool succeeded in the current run. */
+  #readRepository = false;
+  /** The run whose `AGENTS.md` was already asked for. */
+  #instructionsRun: string | undefined;
   #rounds: AgentRounds[] = [];
   #runResult: ArtifactRef | undefined;
   #overBudget = false;
@@ -202,6 +206,7 @@ export class SessionRunner {
 
   #clearRun(): void {
     this.#orientPackRef = undefined;
+    this.#readRepository = false;
     this.#rounds = [];
     this.#runResult = undefined;
     this.#overBudget = false;
@@ -321,23 +326,6 @@ export class SessionRunner {
         initialInput: event.initialInput,
       },
     ]);
-    const sessionId = this.#sessionIdOrThrow();
-    const file = await this.#deps.gateway.readProjectFile(
-      { requestId: newId('req'), sessionId, workflowRunId, path: 'AGENTS.md' },
-      contextOf(sessionId, workflowRunId),
-    );
-    if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file) {
-      await this.#append([
-        {
-          type: 'PROJECT_FILE_LOADED',
-          workflowRunId,
-          path: 'AGENTS.md',
-          ref: file.ref,
-          sha256: file.sha256,
-          trusted: file.trusted,
-        },
-      ]);
-    }
     await this.#extend(workflowRunId, 1, 'TEMPLATE', this.#initialRevision(workflowRunId, event));
     if (!event.initialInput) await this.#advance(workflowRunId);
   }
@@ -469,15 +457,12 @@ export class SessionRunner {
     return prompt.contentRef;
   }
 
-  #context(workflowRunId: string, scope: ProjectionScope, effort: ThinkingEffort): AgentContext {
+  #context(workflowRunId: string, scope: ProjectionScope): AgentContext {
     return {
       objectiveRef: this.#objectiveRef(workflowRunId),
       assembleInput: (status, final) => {
-        const instructions = projectInstructions(this.#records, workflowRunId);
         return {
           final,
-          effort,
-          ...(instructions === undefined ? {} : { projectInstructions: instructions }),
           ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
           history: [...projectHistory(this.#records, scope)],
           status,
@@ -566,11 +551,10 @@ export class SessionRunner {
         sessionId,
         turnId,
         agentRunId,
-        effort: binding.effort,
         definitions: binding.definitions,
         ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
       },
-      this.#context(workflowRunId, scope, binding.effort),
+      this.#context(workflowRunId, scope),
     );
     this.#agent = { state: transition.state, nodeId, scope, agentId };
     await this.#apply(workflowRunId, transition);
@@ -582,7 +566,8 @@ export class SessionRunner {
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
-    for (const request of transition.submissions) {
+    for (const planned of transition.submissions) {
+      const request = await this.#withInstructions(workflowRunId, planned);
       const response = await this.#deps.gateway.submitUnit(
         request,
         contextOf(sessionId, workflowRunId),
@@ -593,16 +578,55 @@ export class SessionRunner {
     if (transition.ending !== undefined) await this.#onEnding(workflowRunId, transition.ending);
   }
 
+  /**
+   * `AGENTS.md` is read when the run first needs the repository, like any document, and joins
+   * the context after the tool results of that round: a result must directly follow its call,
+   * so this waits for the next assembly and refreshes the history that was planned for it.
+   */
+  async #withInstructions(
+    workflowRunId: string,
+    request: SubmitUnitRequestV1,
+  ): Promise<SubmitUnitRequestV1> {
+    const active = this.#agent;
+    if (active === undefined || !('history' in request.input) || !this.#readRepository)
+      return request;
+    if (this.#instructionsRun !== workflowRunId) {
+      this.#instructionsRun = workflowRunId;
+      const sessionId = this.#sessionIdOrThrow();
+      const file = await this.#deps.gateway.readProjectFile(
+        { requestId: newId('req'), sessionId, workflowRunId, path: 'AGENTS.md' },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file)
+        await this.#append([
+          {
+            type: 'PROJECT_FILE_LOADED',
+            workflowRunId,
+            path: 'AGENTS.md',
+            ref: file.ref,
+            sha256: file.sha256,
+            trusted: file.trusted,
+          },
+        ]);
+    }
+    return {
+      ...request,
+      input: { ...request.input, history: [...projectHistory(this.#records, active.scope)] },
+    };
+  }
+
   async #onUnitReport(
     workflowRunId: string,
     report: Extract<KernelToWorkflowEventV1, { type: 'UnitReport' }>,
   ): Promise<void> {
     const active = this.#agent;
     if (active === undefined) return;
+    if (report.status === 'OK' && REPOSITORY_KINDS.has(report.executionKind))
+      this.#readRepository = true;
     const transition = receiveAgentReport(
       active.state,
       report,
-      this.#context(workflowRunId, active.scope, active.state.effort),
+      this.#context(workflowRunId, active.scope),
       this.#deps.config,
     );
     await this.#apply(workflowRunId, transition);

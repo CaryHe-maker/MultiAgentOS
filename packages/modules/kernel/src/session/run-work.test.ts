@@ -95,7 +95,7 @@ async function setup(
           },
         }),
       writeRunSummary: () => Promise.resolve(undefined),
-      removeSessionFiles: () => Promise.resolve(),
+      discardSession: () => Promise.resolve(),
     },
     onClosed: () => undefined,
     onFatal: (error) => faults.push(error),
@@ -129,11 +129,13 @@ async function setup(
   };
   const inRun = { requestId: newId('req'), sessionId, workflowRunId };
   const agentRunId = newId('agr');
-  const register = async () => {
+  let currentAgentRun = agentRunId;
+  const register = async (id = agentRunId) => {
+    currentAgentRun = id;
     const request: RegisterAgentRunRequestV1 = {
       ...inRun,
       requestId: newId('req'),
-      agentRunId,
+      agentRunId: id,
       nodeId: pathDerivedId('nod', 'main'),
       agentRef: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest: 'd'.repeat(64) },
       effort: 'high',
@@ -145,11 +147,11 @@ async function setup(
   let submissions = 0;
   const unitRequest = (unit: UnitDefinitionV1, input: unknown): SubmitUnitRequestV1 => {
     submissions += 1;
-    const unitPath = `${agentRunId}/round-1/${submissions}`;
+    const unitPath = `${currentAgentRun}/round-1/${submissions}`;
     return {
       ...inRun,
       requestId: pathDerivedId('req', `${unitPath}#1`),
-      agentRunId,
+      agentRunId: currentAgentRun,
       unitRunId: pathDerivedId('unr', unitPath),
       path: `${unitPath}#1`,
       unitRef: refOf(unit),
@@ -269,7 +271,7 @@ describe('one Unit through the Kernel', () => {
 });
 
 describe('a refusal', () => {
-  it('is a tool result that keeps the Turn open, and is not asked again', async () => {
+  it('is a tool result that keeps the Turn open, and the same AgentRun never asks again', async () => {
     const kernel = await setup();
     await kernel.register();
     await kernel.submit();
@@ -286,6 +288,28 @@ describe('a refusal', () => {
     expect(
       kernel.interactionTypes().filter((type) => type === 'AuthorizationRequest'),
     ).toHaveLength(1);
+  });
+});
+
+describe('the next AgentRun', () => {
+  it('may ask again, so the user can change their mind in the next message', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.submit();
+    await kernel.answer('DENY');
+    await kernel.actor.call(() =>
+      kernel.run().work.endAgentRun({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        agentRunId: kernel.agentRunId,
+      }),
+    );
+    await kernel.register(newId('agr'));
+    await kernel.submit();
+    await kernel.settled();
+    expect(
+      kernel.interactionTypes().filter((type) => type === 'AuthorizationRequest'),
+    ).toHaveLength(2);
   });
 });
 
@@ -317,6 +341,17 @@ describe('waiting for the user', () => {
     await kernel.answer('ALLOW');
     await kernel.settled();
     expect(kernel.timers.map((timer) => timer.delayMs)).toEqual([600]);
+  });
+
+  it('stops the wall clock while a project file waits for trust', async () => {
+    const ref = testArtifactRef();
+    const kernel = await setup(testPinnedAgent({ maxWallClockMs: 1000 }), {
+      file: { exists: true, ref, sha256: ref.sha256, text: 'x', truncated: false },
+    });
+    await kernel.register();
+    await kernel.readFile();
+    await kernel.settled();
+    expect(kernel.timers).toEqual([]);
   });
 
   it('refuses tool Units once the wall clock ran out, but not the closing ones', async () => {

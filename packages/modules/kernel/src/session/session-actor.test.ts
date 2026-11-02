@@ -57,7 +57,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
       storeUserInput: () => Promise.resolve(ref),
       openRunWork: (host) => testRunWork(host),
       writeRunSummary: () => Promise.resolve(options.summaryFails === true ? undefined : summary),
-      removeSessionFiles: () => {
+      discardSession: () => {
         removed.push(sessionId);
         return Promise.resolve();
       },

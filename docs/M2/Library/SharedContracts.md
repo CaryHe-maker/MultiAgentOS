@@ -65,7 +65,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 |---|---|---|
 | `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 5 节 |
 | `executor.FileReadOutput.v1` | `executor/file-read.ts` | 增加内容的 SHA-256 |
-| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `finalMode`（思考强度在登记时给出，随 `scope` 交给 Executor）；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
 | `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines }`（M2Design 第 8.2 节） |
 | `kernel.execution.ExecutionResult.v1`、`ExecutionFact.v1` | `kernel-execution/execution-fact.ts` | 带 `sessionId`，增加 `REPOSITORY_LIST`；工具结果分为预览 `artifact` 与截断时的 `fullOutput`；模型结果带 `reasoning`；模型的 `FAILED` 带 `retryAfterMs`（Kernel/Execution 第 3、4a 节） |
 | `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`） |

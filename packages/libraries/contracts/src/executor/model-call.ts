@@ -82,7 +82,6 @@ export const ModelCallInputV1Schema = closed(
   {
     contextPackRef: artifactRefOf(MEDIA_TYPES.contextPack),
     final: Type.Boolean(),
-    effort: ThinkingEffortSchema,
     finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
   },
   'executor.ModelCallInput.v1',

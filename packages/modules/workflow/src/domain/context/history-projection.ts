@@ -1,9 +1,4 @@
-import type {
-  ArtifactRef,
-  ContextAssembleInputV1,
-  ContextHistoryEntry,
-  SessionLogRecord,
-} from '@multiagentos/contracts';
+import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multiagentos/contracts';
 
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
@@ -37,6 +32,7 @@ export function projectHistory(
   const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
   const toolNames = new Map<string, string>();
   const entries: ContextHistoryEntry[] = [];
+  const instructions = new Set<string>();
   let modelId = 'unknown';
   let currentTurn: string | undefined;
   let lastNote: string | undefined;
@@ -140,6 +136,21 @@ export function projectHistory(
         });
         break;
       }
+      case 'PROJECT_FILE_LOADED':
+        // Appended at the end like any new fact, so a later call keeps the earlier prefix;
+        // the same content is not repeated in a later run.
+        if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        if (instructions.has(`${record.path}\0${record.sha256}`)) break;
+        instructions.add(`${record.path}\0${record.sha256}`);
+        entries.push({
+          seq: record.seq,
+          category: 'PINNED',
+          kind: 'PROJECT_INSTRUCTIONS',
+          path: record.path,
+          ref: record.ref,
+          trusted: record.trusted ?? false,
+        });
+        break;
       case 'FEEDBACK':
         if (!mainRuns.has(record.agentRunId)) break;
         entries.push({
@@ -169,22 +180,4 @@ export function projectHistory(
       ? { ...entry, category: 'PINNED' }
       : entry,
   );
-}
-
-/** The latest `AGENTS.md` of the run; trust decides its segment (ExecutorSet 6.1). */
-export function projectInstructions(
-  records: readonly SessionLogRecord[],
-  workflowRunId: string,
-): ContextAssembleInputV1['projectInstructions'] {
-  let latest: ContextAssembleInputV1['projectInstructions'];
-  for (const record of records) {
-    if (
-      record.type === 'PROJECT_FILE_LOADED' &&
-      record.workflowRunId === workflowRunId &&
-      record.path === 'AGENTS.md'
-    ) {
-      latest = { ref: record.ref, sha256: record.sha256, trusted: record.trusted ?? false };
-    }
-  }
-  return latest;
 }

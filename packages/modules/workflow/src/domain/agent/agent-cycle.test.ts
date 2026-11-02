@@ -76,7 +76,7 @@ const config: AgentConfig = {
 };
 const context: AgentContext = {
   objectiveRef: ref('9'),
-  assembleInput: (status, final) => ({ final, effort: 'high', history: [], status }),
+  assembleInput: (status, final) => ({ final, history: [], status }),
 };
 const start = (overrides: Partial<AgentDefinitions> = {}) =>
   startAgent(
@@ -85,7 +85,6 @@ const start = (overrides: Partial<AgentDefinitions> = {}) =>
       sessionId: newId('ses'),
       turnId: newId('trn'),
       agentRunId: 'agr_01ABCDEFGH',
-      effort: 'high',
       definitions: { ...definitions, ...overrides },
     },
     context,
@@ -176,7 +175,6 @@ describe('startup', () => {
         sessionId: newId('ses'),
         turnId: newId('trn'),
         agentRunId: newId('agr'),
-        effort: 'high',
         definitions,
         orientPackRef: packRef,
       },
@@ -378,6 +376,34 @@ describe('tools', () => {
     expect(next.ending).toBeUndefined();
     expect(next.state.wrapUpReason).toBeUndefined();
     expect(unitId(next)).toEqual(['context-assemble']);
+  });
+
+  it('wraps up when the model comes back to what the user declined', () => {
+    const decline = (from: AgentTransition) =>
+      receive(from, report(from.state, only(from), { reject: 'USER_DECLINED' }));
+    const first = decline(replied(atModel(), [call('list_files', {})]));
+    const told = reassemble(first);
+    const second = decline(replied(told, [call('list_files', { path: 'src' })]));
+    expect(second.state.wrapUpReason).toBe('AUTHORIZATION_DECLINED');
+  });
+
+  it('does not count calls of one reply as coming back, nor as errors', () => {
+    const tools = replied(atModel(), [
+      call('list_files', { path: 'a' }, 'call_1'),
+      call('list_files', { path: 'b' }, 'call_2'),
+    ]);
+    const [one, two] = tools.submissions;
+    if (one === undefined || two === undefined) throw new Error('two calls expected');
+    const firstReply = receive(
+      tools,
+      report(tools.state, one.requestId, { reject: 'USER_DECLINED' }),
+    );
+    const both = receive(
+      firstReply,
+      report(firstReply.state, two.requestId, { reject: 'USER_DECLINED' }),
+    );
+    expect(both.state.wrapUpReason).toBeUndefined();
+    expect(both.state.consecutiveErrors).toBe(0);
   });
 
   it('ignores a report it is not waiting for', () => {
@@ -601,7 +627,6 @@ describe('what the log keeps of an assembly', () => {
       ...context,
       assembleInput: (status, final) => ({
         final,
-        effort: 'high',
         history: [{ seq: 1, category: 'NORMAL', kind: 'NOTE', text: secret }],
         status,
       }),

@@ -149,7 +149,6 @@ describe('Schema-enforced constraints', () => {
   it('requires final to agree with the status', () => {
     const input = {
       final: true,
-      effort: 'high',
       history: [],
       status: {
         round: 1,

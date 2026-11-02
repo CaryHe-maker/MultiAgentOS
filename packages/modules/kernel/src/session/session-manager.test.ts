@@ -68,7 +68,7 @@ function setup(options: { removeFails?: boolean } = {}) {
     repositoryRoot: '/repository',
     refs,
     outbox,
-    openActor: (sessionId, onClosed) =>
+    openActor: (sessionId, { onClosed, discard }) =>
       Promise.resolve(
         new SessionActor({
           sessionId,
@@ -78,7 +78,7 @@ function setup(options: { removeFails?: boolean } = {}) {
             storeUserInput: () => Promise.resolve(testArtifactRef()),
             openRunWork: (host) => testRunWork(host),
             writeRunSummary: () => Promise.resolve(undefined),
-            removeSessionFiles: () => Promise.resolve(),
+            discardSession: discard,
           },
           onClosed,
           onFatal: (error) => {
@@ -90,6 +90,7 @@ function setup(options: { removeFails?: boolean } = {}) {
       removed.push(sessionId);
       return options.removeFails === true ? Promise.reject(new Error('disk')) : Promise.resolve();
     },
+    closeTimeoutMs: 20,
     titleOf: (entry) => Promise.resolve(entry.sessionId === 'x' ? undefined : 'a'.repeat(100)),
   });
   manager = instance;
@@ -260,6 +261,37 @@ describe('deleting', () => {
     expect(await manager.deleteSession({ requestId: newId('req'), sessionId })).toMatchObject({
       reasonCode: 'SESSION_IN_USE',
     });
+  });
+});
+
+describe('failure', () => {
+  it('gives up a Session that never closes, and later requests go on', async () => {
+    const { start, wait, manager, silence } = setup();
+    const first = newId('ses');
+    await start(first);
+    await wait();
+    silence();
+    expect(await start()).toMatchObject({ outcome: 'ACCEPTED' });
+    expect(manager.actor(first)).toBeUndefined();
+  });
+
+  it('deletes the reference of a Session Workflow could not create', async () => {
+    const { manager, refs, removed, silence, start, wait, toWorkflow } = setup();
+    silence();
+    const sessionId = newId('ses');
+    await start(sessionId);
+    await wait();
+    const command = toWorkflow[0]?.event;
+    if (command?.type !== 'SessionCommand') throw new Error('no command');
+    manager.reportSessionCommand({
+      requestId: newId('req'),
+      sessionId,
+      commandId: command.commandId,
+      result: { command: 'CREATE', outcome: 'FAILED', failure: { code: 'SESSION_STORAGE_FAILED' } },
+    });
+    await wait();
+    expect(refs.isOpenable(sessionId)).toBe(false);
+    expect(removed).toEqual([sessionId]);
   });
 });
 

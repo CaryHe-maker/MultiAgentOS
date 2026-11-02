@@ -1,5 +1,4 @@
 import { Type, type Static } from 'typebox';
-import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { BudgetViewSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema, artifactRefOf } from '../platform-common/common-schemas.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
@@ -53,6 +52,14 @@ export const ContextHistoryEntrySchema = Type.Union(
       text: text(1000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
+    /** `AGENTS.md`, appended when the run first reads the repository (M2Design 9.5). */
+    closed({
+      ...entry,
+      kind: Type.Literal('PROJECT_INSTRUCTIONS'),
+      path: text(512),
+      ref: ArtifactRefSchema,
+      trusted: Type.Boolean(),
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],
@@ -60,15 +67,10 @@ export const ContextHistoryEntrySchema = Type.Union(
 );
 export type ContextHistoryEntry = Static<typeof ContextHistoryEntrySchema>;
 
-export const ProjectInstructionsSchema = closed({
-  ref: ArtifactRefSchema,
-  sha256: Sha256Schema,
-  trusted: Type.Boolean(),
-});
-
 /** Why the next model call is the final call; a quota names the limit it reached. */
 export const WRAP_UP_REASONS_V1 = [
   'BUDGET_WRAP_UP',
+  'AUTHORIZATION_DECLINED',
   'TOOL_UNIT_LIMIT',
   'WALL_CLOCK_LIMIT',
   'REPEATED_INTENT',
@@ -93,8 +95,6 @@ export const ContextAssembleInputV1Schema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
-      effort: ThinkingEffortSchema,
-      projectInstructions: Type.Optional(ProjectInstructionsSchema),
       orientPackRef: Type.Optional(artifactRefOf(MEDIA_TYPES.contextPack)),
       history: Type.Array(ContextHistoryEntrySchema),
       status: StatusFactsV1Schema,

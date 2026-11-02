@@ -48,14 +48,16 @@ interface Question<W> {
   readonly capability: AuthorizationRequestV1['capability'];
   readonly instruction?: string;
   readonly waiters: W[];
+  /** The AgentRuns a refusal binds. */
+  readonly agentRuns: Set<string>;
 }
 
 const instructionKey = (path: string, sha256: string): string => `${path}\u0000${sha256}`;
 
 /**
  * Authorization of one run. A question waits until the user answers; it has no timeout, and only
- * the run's convergence cancels it (M2Design 5.3). `repo.read` is asked once: a grant and a
- * refusal last for the run. `project.instructions` is asked per exact content; a refusal is
+ * the run's convergence cancels it (M2Design 5.3). A `repo.read` grant lasts for the run; a refusal
+ * binds the AgentRuns that asked, which never ask again, and the next one may. `project.instructions` is asked per exact content; a refusal is
  * remembered here and trust itself belongs to Session management, because it outlives the run
  * and grants nothing (Kernel/Core 5).
  */
@@ -64,8 +66,8 @@ export class RunAuthorization<W> {
   readonly #exclusions: readonly string[];
   readonly #questions = new Map<string, Question<W>>();
   readonly #distrusted = new Set<string>();
+  readonly #repoReadDenied = new Set<string>();
   #repoReadQuestion: string | undefined;
-  #repoReadDenied = false;
   #lease: Readonly<Lease> | undefined;
 
   public constructor(deps: RunAuthorizationDeps) {
@@ -80,19 +82,26 @@ export class RunAuthorization<W> {
     return this.#lease;
   }
 
-  requireRepoRead(waiter: W): AccessCheck {
+  requireRepoRead(waiter: W, agentRunId?: string): AccessCheck {
     if (this.#lease !== undefined) return { decision: { kind: 'ALLOWED' } };
-    if (this.#repoReadDenied) return { decision: { kind: 'DECLINED' } };
+    if (agentRunId !== undefined && this.#repoReadDenied.has(agentRunId))
+      return { decision: { kind: 'DECLINED' } };
     const pending =
       this.#repoReadQuestion === undefined
         ? undefined
         : this.#questions.get(this.#repoReadQuestion);
     if (pending !== undefined) {
       pending.waiters.push(waiter);
+      if (agentRunId !== undefined) pending.agentRuns.add(agentRunId);
       return { decision: { kind: 'PENDING', questionId: pending.questionId } };
     }
     const questionId = newId('qst');
-    this.#questions.set(questionId, { questionId, capability: 'repo.read', waiters: [waiter] });
+    this.#questions.set(questionId, {
+      questionId,
+      capability: 'repo.read',
+      waiters: [waiter],
+      agentRuns: new Set(agentRunId === undefined ? [] : [agentRunId]),
+    });
     this.#repoReadQuestion = questionId;
     return {
       decision: { kind: 'PENDING', questionId },
@@ -130,6 +139,7 @@ export class RunAuthorization<W> {
       capability: 'project.instructions',
       instruction: key,
       waiters: [waiter],
+      agentRuns: new Set(),
     });
     return {
       decision: { kind: 'PENDING', questionId },
@@ -166,7 +176,8 @@ export class RunAuthorization<W> {
         this.#distrusted.add(question.instruction);
       return settled;
     }
-    if (scope === 'DENY') this.#repoReadDenied = true;
+    if (scope === 'DENY')
+      for (const agentRunId of question.agentRuns) this.#repoReadDenied.add(agentRunId);
     else
       this.#lease = Object.freeze({
         capability: 'repo.read',
