@@ -159,6 +159,8 @@ const activity = {
       toolName: text(64),
       argsSummary: text(80, 0),
       state: Type.Enum(['QUEUED', 'RUNNING', 'DONE']),
+      /** Only on DONE when the preview was truncated: the full output, readable for 7 days. */
+      fullRef: Type.Optional(ArtifactRefSchema),
     }),
   ),
   at: TimestampSchema,

@@ -7,6 +7,7 @@ import type {
   ModelToolSpec,
   ReasonCodeV1,
   RequestState,
+  SubmitUnitRequestV1,
   TokenUsage,
   UnitDefinitionV1,
   UnitInputV1,
@@ -43,6 +44,8 @@ export interface AttemptSpec {
   readonly scope: ExecutionScope;
   readonly runEpoch: number;
   readonly agent: PinnedAgent;
+  /** What the activity area shows for a tool Unit; nothing decides on it. */
+  readonly display: SubmitUnitRequestV1['display'];
 }
 
 /** What Execution hands back for one attempt (Kernel/Interaction 4). */
@@ -125,8 +128,11 @@ export interface RunAttemptsDeps {
   readonly isDeliverable: (runEpoch: number) => boolean;
   readonly isConverging: () => boolean;
   readonly leaseIsValid: () => boolean;
-  readonly deliver: (report: UnitReportV1) => void;
+  /** `spec` is absent for a Unit refused before it had an attempt. */
+  readonly deliver: (report: UnitReportV1, spec?: AttemptSpec) => void;
   readonly attemptStarted: (spec: AttemptSpec, unitAttemptId: string) => void;
+  /** The attempt was dispatched for the first time; a retry does not count. */
+  readonly attemptRunning: (spec: AttemptSpec, unitAttemptId: string, final: boolean) => void;
   /** The attempt is settled, delivered or not: the run may now finish converging. */
   readonly attemptEnded: (spec: AttemptSpec, unitAttemptId: string) => void;
   readonly onFault: (fault: AttemptFault) => void;
@@ -206,8 +212,11 @@ export class RunAttempts {
     if (attempt.executionId !== undefined && attempt.retryFrom !== attempt.executionId)
       throw new Error('Retry was not authorized');
     this.#executions.add(executionId);
+    const first = attempt.executionId === undefined;
     attempt.executionId = executionId;
     delete attempt.retryFrom;
+    if (first)
+      this.#deps.attemptRunning(attempt.spec, unitAttemptId, attempt.reservation?.final ?? false);
   }
 
   /** A delivered final call for this AgentRun, so the RunSummary can say so. */
@@ -297,7 +306,7 @@ export class RunAttempts {
       this.#ended(attempt);
       return;
     }
-    this.#deliver(this.#reportOf(attempt, check));
+    this.#deliver(this.#reportOf(attempt, check), attempt.spec);
     this.#ended(attempt);
   }
 
@@ -391,12 +400,15 @@ export class RunAttempts {
 
   #reject(attempt: Attempt, reasonCode: 'FINAL_CALL_USED' | 'BUDGET_WRAP_UP' | 'BUDGET_EXHAUSTED') {
     attempt.checked = true;
-    this.#deliver({
-      ...this.#base(attempt),
-      unitAttemptId: attempt.unitAttemptId,
-      status: 'REJECTED',
-      reasonCode,
-    });
+    this.#deliver(
+      {
+        ...this.#base(attempt),
+        unitAttemptId: attempt.unitAttemptId,
+        status: 'REJECTED',
+        reasonCode,
+      },
+      attempt.spec,
+    );
     this.#ended(attempt);
   }
 
@@ -433,8 +445,8 @@ export class RunAttempts {
     return { ...base, status, reasonCode } as UnitReportV1;
   }
 
-  #deliver(report: UnitReportV1): void {
-    this.#deps.deliver(report);
+  #deliver(report: UnitReportV1, spec?: AttemptSpec): void {
+    this.#deps.deliver(report, spec);
     this.#deps.audit({
       type: 'UNIT_REPORTED',
       requestId: report.requestId,

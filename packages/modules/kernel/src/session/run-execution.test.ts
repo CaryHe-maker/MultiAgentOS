@@ -163,6 +163,7 @@ function setup(options: { converging?: boolean } = {}) {
     leaseIsValid: () => true,
     deliver: (report) => reports.push(assertValid(UnitReportV1Schema, report)),
     attemptStarted: () => undefined,
+    attemptRunning: () => undefined,
     attemptEnded: (_spec, id) => ended.push(id),
     onFault: (fault) => faults.push(fault),
     audit: () => undefined,
@@ -180,6 +181,7 @@ function setup(options: { converging?: boolean } = {}) {
       scope,
       runEpoch: 1,
       agent: testPinnedAgent({ modelScope }),
+      display: { toolName: 'tool', argsSummary: '' },
     };
   };
   const submit = (

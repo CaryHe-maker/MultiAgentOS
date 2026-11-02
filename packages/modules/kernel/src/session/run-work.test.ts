@@ -560,3 +560,17 @@ describe('convergence', () => {
     });
   });
 });
+
+describe('activity of a run', () => {
+  it('tells the activity area about a tool Unit from authorization to its folded line', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.submit();
+    await kernel.answer('ALLOW');
+    await kernel.finish();
+    await kernel.settled();
+    const types = kernel.interactionTypes();
+    expect(types).toContain('ActivityEvent');
+    expect(types.indexOf('AuthorizationRequest')).toBeLessThan(types.lastIndexOf('ActivityEvent'));
+  });
+});

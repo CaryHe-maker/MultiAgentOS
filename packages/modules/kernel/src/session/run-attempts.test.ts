@@ -71,6 +71,7 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     leaseIsValid: () => options.lease !== false,
     deliver: (report) => reports.push(assertValid(UnitReportV1Schema, report)),
     attemptStarted: () => undefined,
+    attemptRunning: () => undefined,
     attemptEnded: (_spec, id) => ended.push(id),
     onFault: (fault) => faults.push(fault),
     audit: (entry) => audits.push(entry),
@@ -86,6 +87,7 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
       scope: { kind: 'NONE' },
       runEpoch: 0,
       agent: testPinnedAgent(),
+      display: { toolName: 'tool', argsSummary: '' },
       ...over,
     });
   return { run, start, reports, ended, faults, audits, grants };

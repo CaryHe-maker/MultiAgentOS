@@ -28,9 +28,11 @@ import {
   type AttemptSpec,
   type PinnedAgent,
 } from './run-attempts.js';
+import { RunActivity, type ActivityOutput } from './run-activity.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
 import { admitWork, readsProjectFile, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
+import type { RetryingActivity } from './run-execution.js';
 import { WallClocks } from './wall-clocks.js';
 
 export type PinResult =
@@ -53,7 +55,7 @@ export interface RunHost {
   attemptStarted(unitAttemptId: string): void;
   attemptEnded(unitAttemptId: string): void;
   toWorkflow(report: UnitReportV1): void;
-  toInteraction(event: AuthorizationRequestV1 | AuthorizationResolvedV1): void;
+  toInteraction(event: AuthorizationRequestV1 | AuthorizationResolvedV1 | ActivityOutput): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
   enqueue(work: () => void): void;
@@ -132,6 +134,7 @@ export class RunWork {
   readonly #authorization: RunAuthorization<string>;
   readonly #clocks: WallClocks;
   readonly #attempts: RunAttempts;
+  readonly #activity: RunActivity;
 
   public constructor(deps: RunWorkDeps) {
     this.#deps = deps;
@@ -143,6 +146,8 @@ export class RunWork {
       repositoryExclusions: deps.repositoryExclusions,
       now: deps.now,
     });
+    const activity = new RunActivity({ emit: (event) => host.toInteraction(event), now: deps.now });
+    this.#activity = activity;
     this.#clocks = new WallClocks({
       now: () => deps.now().getTime(),
       schedule: deps.schedule,
@@ -166,12 +171,17 @@ export class RunWork {
       isDeliverable: (runEpoch) => !closing() && runEpoch === host.runEpoch(),
       isConverging: closing,
       leaseIsValid: () => this.#authorization.lease !== undefined,
-      deliver: (report) => {
+      deliver: (report, spec) => {
         host.toWorkflow(report);
+        activity.reported(spec, report);
       },
       attemptStarted: (spec, unitAttemptId) => {
         this.#countInFlight(spec.agentRunId, 1);
         host.attemptStarted(unitAttemptId);
+        activity.queued(spec, unitAttemptId);
+      },
+      attemptRunning: (spec, unitAttemptId, final) => {
+        activity.running(spec, unitAttemptId, final);
       },
       attemptEnded: (spec, unitAttemptId) => {
         this.#countInFlight(spec.agentRunId, -1);
@@ -261,6 +271,7 @@ export class RunWork {
     const registered = this.#host.registerAgentRun(agentRunId);
     if (!registered.accepted) return this.#refuse(requestId, request, registered.reasonCode);
     this.#agentRuns.set(agentRunId, { agent: pinned.agent, state: 'ACTIVE' });
+    this.#activity.registered(agentRunId, request.display.label);
     this.#clocks.register(agentRunId, pinned.agent.maxWallClockMs);
     return this.#accept(requestId, request);
   }
@@ -276,6 +287,7 @@ export class RunWork {
     if (record.state === 'ENDED') return this.#refuse(requestId, request, 'AGENT_RUN_ENDED');
     record.state = 'ENDED';
     this.#clocks.end(agentRunId);
+    this.#activity.ended(agentRunId);
     const ended = this.#host.endAgentRun(agentRunId);
     if (!ended.accepted) return this.#refuse(requestId, request, ended.reasonCode);
     return this.#accept(requestId, request);
@@ -322,7 +334,10 @@ export class RunWork {
     if (decision.kind === 'ALLOWED') await this.#startAttempt(request, unit, record.agent);
     else if (decision.kind === 'DECLINED')
       this.#refuseUnit(request, unit, { reasonCode: 'USER_DECLINED' });
-    else this.#waiting.set(requestId, { request, unit, agent: record.agent });
+    else {
+      this.#waiting.set(requestId, { request, unit, agent: record.agent });
+      this.#activity.awaitingAuthorization(request.agentRunId);
+    }
     return response;
   }
 
@@ -371,7 +386,13 @@ export class RunWork {
       scope: this.#scopeOf(unit, agent),
       runEpoch: this.#host.runEpoch(),
       agent,
+      display: request.display,
     });
+  }
+
+  /** Execution waits before the next try; Core says so in the activity area (Kernel/Execution 4a). */
+  retrying(retry: RetryingActivity): void {
+    this.#activity.retrying(retry.spec, retry.unitAttemptId, retry.attempt, retry.retryAt);
   }
 
   async answerAuthorization(request: AnswerAuthorizationRequestV1): Promise<Response> {
