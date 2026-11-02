@@ -56,6 +56,8 @@ export class Console {
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
+  /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
+  readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
   #workflowRunId: string | undefined;
   #runState: RunState = 'NONE';
@@ -295,6 +297,12 @@ export class Console {
           );
         break;
       }
+      case '/output': {
+        const ref = this.#fullOutputs[Number(argument) - 1];
+        if (ref === undefined) this.#notice(text.notNow);
+        else await this.#showFullOutput(ref);
+        break;
+      }
       default:
         this.#notice(text.unknownCommand(name));
     }
@@ -421,12 +429,15 @@ export class Console {
         if (unit?.state === 'DONE' && tool !== undefined) {
           const started = this.#unitStarted.get(unit.unitAttemptId);
           this.#unitStarted.delete(unit.unitAttemptId);
+          const line =
+            started === undefined ? `✓ ${tool}` : `✓ ${tool} ${secondsBetween(started, event.at)}`;
+          if (unit.fullRef !== undefined) this.#fullOutputs.push(unit.fullRef);
           this.#deps.view.print({
             kind: 'STEP',
             text:
-              started === undefined
-                ? `✓ ${tool}`
-                : `✓ ${tool} ${secondsBetween(started, event.at)}`,
+              unit.fullRef === undefined
+                ? line
+                : `${line} · ${text.truncated(this.#fullOutputs.length)}`,
           });
         }
         if (event.phase === 'ENDED') this.#activity.delete(event.agentRunId);
@@ -450,6 +461,23 @@ export class Console {
       this.#context(),
     );
     return content.outcome === 'ACCEPTED' ? content.text : undefined;
+  }
+
+  /** A full output is kept 7 days; after that only the preview the model saw remains. */
+  async #showFullOutput(ref: ArtifactRef): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined) return;
+    const content = await this.#deps.gateway.readArtifact(
+      { requestId: newId('req'), sessionId, ref },
+      this.#context(),
+    );
+    if (content.outcome === 'ACCEPTED')
+      this.#deps.view.print({ kind: 'REPORT', text: terminalText(content.text) });
+    else
+      this.#deps.view.print({
+        kind: 'ERROR',
+        text: content.reasonCode === 'ARTIFACT_EXPIRED' ? text.fullOutputExpired : text.notNow,
+      });
   }
 
   async #published(

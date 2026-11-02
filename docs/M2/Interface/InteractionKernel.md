@@ -201,7 +201,7 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   label: string;                     // 登记时的 display.label
   parentAgentRunId?: string;         // 阶段 4
   phase: ActivityPhase;
-  unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE' };
+  unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE'; fullRef?: ArtifactRef };   // toolName 与 argsSummary 取自 submitUnit 的 display；fullRef 只在 DONE 且预览截断时给出
   retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
   todos?: { total: number; done: number; current?: string };   // 阶段 2：Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;

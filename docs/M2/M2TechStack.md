@@ -94,7 +94,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 | 用途 | 阶段 | 状态 |
 |---|---|---|
-| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink（及其依赖 React），版本在阶段 1 的契约门中确定；只在 `apps/cli` 中使用，UserInteraction 经 `TerminalPort` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
+| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink 8.0.0（及其依赖 React 19.3.1；测试用 ink-testing-library 4.0.0）；只在 `apps/cli` 中使用，UserInteraction 经 `ConsoleView` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
 | 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法文件（不需要原生编译），只在 ExecutorSet 的 `command/parse/` 中使用；版本在阶段 3 的文档门中确定；提前任务 E-EX-3 可先行引入 |

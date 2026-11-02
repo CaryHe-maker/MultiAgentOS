@@ -46,6 +46,8 @@ export const ConsoleText = Object.freeze({
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',
   queued: (count: number) => `已排队 ${String(count)} 条`,
   pressAgain: '再按一次 Ctrl+C 退出',
+  truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
+  fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
@@ -54,6 +56,7 @@ export const ConsoleText = Object.freeze({
     '/resume <编号>    打开对话',
     '/delete <编号>    删除未打开的对话',
     '/status           当前运行与额度状态',
+    '/output <编号>    查看被截断的工具输出',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
   ].join('\n'),

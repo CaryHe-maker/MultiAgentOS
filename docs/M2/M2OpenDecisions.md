@@ -38,15 +38,15 @@
 | S1-CT-1 | 完成 | v1 Schema 与 Port（`ExecutionFact.v1` 在 S1-KX-1 时补上）；fake Kernel、fake Workflow 与契约测试 | — |
 | S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
 | S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
-| S1-KC-1 | 部分 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭） | 产物回收的定时器、审计 |
+| S1-KC-1 | 部分 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭） | 产物回收的定时器、审计（`ActivityEvent` 与 `MessagePublished` 已由 `RunActivity` 发出） |
 | S1-KC-2 | 完成，等 Gateway 接入 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
 | S1-KC-3 | 部分 | `SessionGateway`（调用方、Schema、Session 与运行的已知检查、准入封锁）与 `SessionCore` 的分发 | 接到 Fabric（组合根） |
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
 | Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入；`RunExecution` 接入 `RunWork`（组合根） |
-| S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | `RETRYING` 活动的发出、启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |
+| S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | 启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |
 | S1-EX-1 | 完成，等 Supervisor 接入 | `retention/`、四个工具 Executor 的 major 1、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistryV1` | 真实 DeepSeek 联调 |
 | S1-PL-1 | 完成 | `DefinitionCatalogV1`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | 退出评测后定稿 main 的提示词并封存 |
-| S1-UI-1 | 未开始 | — | 全部 |
+| S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图 | 组合根接线在 S1-IN-1 |
 | S1-IN-1 | 未开始 | — | 接线、回归、删除 M1 与 major 0、去掉 `V1` 后缀 |
 
 新代码都未接入运行链路，所以现有的 M1 行为不变；阶段 1 的验收用例一个都还不能运行。

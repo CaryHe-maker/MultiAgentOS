@@ -182,6 +182,33 @@ describe('Console', () => {
     });
   });
 
+  it('notes a truncated result and shows its full output on /output', async () => {
+    const full = testArtifactRef('text/plain', 'e');
+    const expired = testArtifactRef('text/plain', 'f');
+    const t = setup({ artifacts: new Map([[full.artifactId, '全部输出']]) });
+    await t.console.submit('hi');
+    for (const [id, fullRef] of [
+      ['uat_1', full],
+      ['uat_2', expired],
+    ] as const)
+      await t.event({
+        type: 'ActivityEvent',
+        agentRunId: 'arn_1',
+        label: 'main',
+        phase: 'CALLING_TOOL',
+        at: new Date(0).toISOString(),
+        unit: { unitAttemptId: id, toolName: 'grep', argsSummary: 'x', state: 'DONE', fullRef },
+      });
+    expect(t.printed).toContainEqual({
+      kind: 'STEP',
+      text: '✓ grep x · 输出已截断（/output 1 查看完整输出）',
+    });
+    await t.console.submit('/output 1');
+    expect(t.printed).toContainEqual({ kind: 'REPORT', text: '全部输出' });
+    await t.console.submit('/output 2');
+    expect(t.printed.at(-1)?.kind).toBe('ERROR');
+  });
+
   it('tracks activity per AgentRun and clears it when the run waits', async () => {
     const t = setup();
     await t.console.submit('hi');
