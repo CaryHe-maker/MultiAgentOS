@@ -1,0 +1,19 @@
+schemaVersion: v1
+kind: TOOL
+id: list-files
+version: v0.1.0
+description: Model-facing directory listing, served by the repository-list unit.
+purpose: UNIT
+modelName: list_files
+modelDescription:
+  'List the files of the repository as a tree with file counts per directory. path is
+  relative to the repository root (default: the root); depth is 1 to 3 (default 2); glob filters file
+  paths below path, for example **/*.ts.'
+parametersContract:
+  kind: contract
+  id: executor.RepositoryListInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: PLACEHOLDER

@@ -1,17 +1,23 @@
 import { Type, type Static } from 'typebox';
 import {
   AgentDefinitionSchema,
+  AgentDefinitionV1Schema,
   type DeepReadonly,
   DefinitionIdSchema,
   DefinitionKindSchema,
   DefinitionStatusSchema,
   DefinitionVersionTagSchema,
   ModelDefinitionSchema,
+  ModelDefinitionV1Schema,
   PinnedDefinitionRefSchema,
+  PinnedDefinitionRefV1Schema,
   pinnedRefOf,
   PromptDefinitionSchema,
+  PromptDefinitionV1Schema,
   ToolDefinitionSchema,
+  ToolDefinitionV1Schema,
   UnitDefinitionSchema,
+  UnitDefinitionV1Schema,
 } from './definition-schemas.js';
 
 /** Exact lookup of one definition version. */
@@ -91,3 +97,20 @@ export const CATALOG_ERROR_CODES = {
   definitionUnavailable: 'CATALOG_DEFINITION_UNAVAILABLE',
 } as const;
 export type CatalogErrorCode = (typeof CATALOG_ERROR_CODES)[keyof typeof CATALOG_ERROR_CODES];
+
+// --- Major 1 (Library/AgentToolPool 5) ---------------------------------------------------------
+
+/** Everything one v1 AgentRun runs with; the end tools come from `agent.actions.end`. */
+export const PinnedDefinitionSetV1Schema = Type.Object(
+  {
+    schemaVersion: Type.Literal('v1'),
+    agent: AgentDefinitionV1Schema,
+    model: ModelDefinitionV1Schema,
+    prompt: PromptDefinitionV1Schema,
+    units: Type.Array(UnitDefinitionV1Schema, { minItems: 1 }),
+    tools: Type.Array(ToolDefinitionV1Schema),
+    refs: Type.Array(PinnedDefinitionRefV1Schema, { minItems: 3 }),
+  },
+  { additionalProperties: false, $id: 'catalog.PinnedDefinitionSet.v1' },
+);
+export type PinnedDefinitionSetV1 = DeepReadonly<Static<typeof PinnedDefinitionSetV1Schema>>;

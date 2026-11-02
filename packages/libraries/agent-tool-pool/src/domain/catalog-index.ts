@@ -183,6 +183,8 @@ function parseDocuments(
   const parsed: ParsedDocument[] = [];
   const seen = new Map<string, string>();
   for (const document of documents) {
+    // v1 documents belong to DefinitionCatalogV1, which reads the same directory.
+    if (isRecord(document.content) && document.content['schemaVersion'] === 'v1') continue;
     const kind = readKind(document.content);
     if (kind === undefined) {
       issues.push(

@@ -20,3 +20,6 @@ export {
   type SupervisorModule,
   type TrackedSubprocessRunner,
 } from './supervisor/index.js';
+/** The composition root turns a pinned v1 definition set into what one AgentRun runs with. */
+export { pinnedAgentOf, type PinFailure } from './session/pinned-agent.js';
+export type { PinnedAgent } from './session/run-attempts.js';

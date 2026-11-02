@@ -117,7 +117,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 沿用 M1 Workflow 第 5–8 节，变化如下：
 
 1. **登记**：AGENT 节点就绪时 `registerAgentRun`（带 `nodeId`、`effort`、`display.label`）；`effort` 取 Agent 定义的 `defaultEffort`。
-2. **启动 Unit**：main 没有启动 Unit，运行开启时不碰仓库；`analyze` 的 planner 提交 `repository-orient`（M2Design 第 3.9 节）。
+2. **启动 Unit**：main 没有启动 Unit，运行开启时不碰仓库；`analyze` 的 code-viewer 提交 `repository-orient`（M2Design 第 3.9 节）。
    **项目指令**：本运行第一个读取仓库的工具成功后，在下一次组装之前以 `readProjectFile` 读取 `AGENTS.md`，追加 `PROJECT_FILE_LOADED`；条目排在这一轮的工具结果之后，工具结果与它的调用不被隔开。
 3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；`finish` 与 `handoff-to-code-viewer` 只在 `analyze` 中出现；`update_todos` 见第 9 条（阶段 2）。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；

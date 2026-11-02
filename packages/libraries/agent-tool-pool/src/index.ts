@@ -30,3 +30,8 @@ export type {
   SourceDocument,
   SourceSnapshot,
 } from './ports/definition-source.js';
+export {
+  DefinitionCatalogV1,
+  buildCatalogIndexV1,
+  type CatalogIndexV1,
+} from './catalog-v1/catalog-v1.js';

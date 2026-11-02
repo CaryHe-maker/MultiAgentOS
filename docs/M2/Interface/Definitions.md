@@ -137,7 +137,7 @@ interface EdgeCondition {                         // 以后可能增加按前驱
 
 - 根节点 `HUMAN(prompt)`（`mas run` 的目标或 `/run` 的输入）不写在模板中，由 Workflow 在编译时加入，模板中没有前驱的节点都依赖它（M2Design 第 3.8 节）。
 - `chat` 是内置的生长规则，写在代码中，不是模板文件（M2Design 第 3.8 节）；因此 `RunStart` 与 `WORKFLOW_RUN_STARTED` 在 `mode = 'CHAT'` 时没有 `templateRef`。
-- `analyze` 引用的 Agent 版本与 M1 发布时一致（`planner@v1.1.0`，其交接目标为 `code-viewer@v1.1.0`）；加载校验要求 `view` 节点的 Agent 与 `plan` 的交接目标相同（[AgentToolPool](../Library/AgentToolPool.md) 第 4 节）。
+- `analyze` 引用 `v1` 的 planner 与 code-viewer；交接的目标由模板中的 `view` 节点决定（`inputFrom: HANDOFF` 且以条件边依赖 `plan`），`v1` Agent 定义中没有交接目标（[AgentToolPool](../Library/AgentToolPool.md) 第 4 节）。
 - 阶段 1 的内置模板只有 `analyze`：
 
 ```yaml

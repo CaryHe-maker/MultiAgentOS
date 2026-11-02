@@ -587,3 +587,45 @@ export const TemplateDefinitionSchema = Type.Object(
   { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
 );
 export type TemplateDefinition = DeepReadonly<Static<typeof TemplateDefinitionSchema>>;
+
+/** Tool and Prompt keep their fields; only `schemaVersion` changes (Interface/Definitions 1). */
+export const ToolDefinitionV1Schema = Type.Object(
+  { ...ToolDefinitionSchema.properties, schemaVersion: Type.Literal('v1') },
+  { additionalProperties: false, $id: 'catalog.ToolDefinition.v1' },
+);
+export type ToolDefinitionV1 = DeepReadonly<Static<typeof ToolDefinitionV1Schema>>;
+
+export const PromptDefinitionV1Schema = Type.Object(
+  { ...PromptDefinitionSchema.properties, schemaVersion: Type.Literal('v1') },
+  { additionalProperties: false, $id: 'catalog.PromptDefinition.v1' },
+);
+export type PromptDefinitionV1 = DeepReadonly<Static<typeof PromptDefinitionV1Schema>>;
+
+export interface DefinitionByKindV1 {
+  readonly AGENT: AgentDefinitionV1;
+  readonly UNIT: UnitDefinitionV1;
+  readonly TOOL: ToolDefinitionV1;
+  readonly MODEL: ModelDefinitionV1;
+  readonly PROMPT: PromptDefinitionV1;
+  readonly TEMPLATE: TemplateDefinition;
+}
+export type DefinitionV1 = DefinitionByKindV1[DefinitionKindV1];
+
+export const DEFINITION_SCHEMAS_V1: { readonly [K in DefinitionKindV1]: TSchema } = {
+  AGENT: AgentDefinitionV1Schema,
+  UNIT: UnitDefinitionV1Schema,
+  TOOL: ToolDefinitionV1Schema,
+  MODEL: ModelDefinitionV1Schema,
+  PROMPT: PromptDefinitionV1Schema,
+  TEMPLATE: TemplateDefinitionSchema,
+};
+
+/** As authored: drafts (v0.x) never store a digest, published versions only after sealing. */
+export const DEFINITION_DRAFT_SCHEMAS_V1: { readonly [K in DefinitionKindV1]: TSchema } = {
+  AGENT: Type.Omit(AgentDefinitionV1Schema, ['digest'], { additionalProperties: false }),
+  UNIT: Type.Omit(UnitDefinitionV1Schema, ['digest'], { additionalProperties: false }),
+  TOOL: Type.Omit(ToolDefinitionV1Schema, ['digest'], { additionalProperties: false }),
+  MODEL: Type.Omit(ModelDefinitionV1Schema, ['digest'], { additionalProperties: false }),
+  PROMPT: Type.Omit(PromptDefinitionV1Schema, ['digest'], { additionalProperties: false }),
+  TEMPLATE: Type.Omit(TemplateDefinitionSchema, ['digest'], { additionalProperties: false }),
+};

@@ -26,6 +26,8 @@ const KIND_DIRECTORIES: Readonly<Record<string, DefinitionKind>> = {
   tools: 'TOOL',
   models: 'MODEL',
   prompts: 'PROMPT',
+  // Templates are v1 only; the M1 catalog skips every v1 document.
+  templates: 'TEMPLATE' as DefinitionKind,
 };
 const STATUS_FILE = 'status.yaml';
 const IGNORED_ROOT_FILES = new Set(['README.md']);

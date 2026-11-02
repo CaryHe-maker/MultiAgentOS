@@ -526,7 +526,7 @@ nodes:
 | `planner`、`code-viewer` | 读、列目录、检索（只读） | `none` | 无 | planner：`handoff-to-code-viewer` 或 `finish`；code-viewer：`finish` | 定义中给出 |
 
 能力列表就是 Agent 定义中的能力白名单，是能力上限的来源；没有列出的一律不可用，调用时直接拒绝、不询问（第 5.1、5.3 节）。
-main 没有启动 Unit：用户可能只是聊天，要读哪些文件在收到任务之前都不知道，所以运行开启时不碰仓库，由 main 按需调用 `list_files` 等工具，第一次需要时才询问 `repo.read`。`analyze` 的目标本身就针对仓库，planner 保留启动 Unit `repository-orient`。
+main 没有启动 Unit：用户可能只是聊天，要读哪些文件在收到任务之前都不知道，所以运行开启时不碰仓库，由 main 按需调用 `list_files` 等工具，第一次需要时才询问 `repo.read`。`analyze` 的目标本身就针对仓库，code-viewer 保留启动 Unit `repository-orient`（planner 不读仓库，M1 原样）。
 上下文中标出概览对应的快照，提醒它概览可能已经过时。
 main 的派生准则写进它的 Prompt，要点如下：
 - 只有任务独立、或依赖明确时才派生；
