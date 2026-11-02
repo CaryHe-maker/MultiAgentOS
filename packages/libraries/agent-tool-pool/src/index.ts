@@ -1,9 +1,8 @@
 /**
- * AgentToolPool: immutable, versioned Agent / Unit / Tool / Model / Prompt definitions.
- * Composition roots call `DefinitionCatalog.load(new FileDefinitionSource(dir))` once at
- * startup and hand the result to consumers as a CatalogPort.
+ * AgentToolPool: immutable, versioned Agent / Unit / Tool / Model / Prompt / Template definitions.
+ * The composition root calls `DefinitionCatalogV1.load(new FileDefinitionSource(dir))` once at
+ * startup; Core pins Agents through it and Workflow takes its built-ins from it.
  */
-export { DefinitionCatalog } from './domain/definition-catalog.js';
 export { FileDefinitionSource } from './adapters/file/file-definition-source.js';
 export { InMemoryDefinitionSource } from './adapters/memory/in-memory-definition-source.js';
 export {
@@ -12,15 +11,6 @@ export {
   type CatalogIssue,
   type CatalogIssueCode,
 } from './domain/catalog-issue.js';
-export {
-  buildCatalogIndex,
-  planSeal,
-  type CatalogBuildResult,
-  type CatalogIndex,
-  type SealPlan,
-} from './domain/catalog-index.js';
-export { computeDefinitionDigest, definitionKey } from './domain/definition-digest.js';
-export { loadCatalogIndex } from './domain/load-catalog-index.js';
 export { isPeakTime, modelCallCost, type CallCost } from './domain/model-cost.js';
 export { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
 export type {
@@ -33,5 +23,7 @@ export type {
 export {
   DefinitionCatalogV1,
   buildCatalogIndexV1,
+  planSealV1,
   type CatalogIndexV1,
+  type SealPlanV1,
 } from './catalog-v1/catalog-v1.js';

@@ -1,10 +1,5 @@
 export * from './fixtures/canned.js';
-export { FakeCatalogPort } from './fakes/fake-catalog-port.js';
 export { createFakeExecutorRegistry } from './fakes/fake-executors.js';
-export {
-  describeCatalogPortContract,
-  type CatalogPortContractFixture,
-} from './harnesses/catalog-port-contract.js';
 export {
   describeExecutorContract,
   repositoryGuardExpectations,

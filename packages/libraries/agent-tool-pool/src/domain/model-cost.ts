@@ -33,7 +33,11 @@ export interface CallCost {
  * the rest of the input as misses; a call without cache figures is priced as all misses, which
  * is the upper bound.
  */
-export function modelCallCost(model: ModelDefinition, usage: TokenUsage, at: Date): CallCost {
+export function modelCallCost(
+  model: { readonly pricing: Pricing },
+  usage: TokenUsage,
+  at: Date,
+): CallCost {
   const rates = model.pricing.offPeak;
   const hit = Math.min(usage.inputCacheHitTokens ?? 0, usage.inputTokens);
   const offPeak =

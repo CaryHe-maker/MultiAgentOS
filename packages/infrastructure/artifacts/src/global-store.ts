@@ -21,7 +21,7 @@ import {
   type HealthStatus,
   type LifecyclePort,
 } from '@multiagentos/contracts';
-import { ArtifactIntegrityError } from './index.js';
+import { ArtifactIntegrityError } from './integrity-error.js';
 
 export class ArtifactMissingError extends Error {
   public constructor(artifactId: string) {

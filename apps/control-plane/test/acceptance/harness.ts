@@ -24,7 +24,6 @@ import {
   type AnalysisReport,
   type ExecutorOutcomeV1,
   type ExecutorRegistryV1,
-  type ModelDefinition,
   type RunSummaryV1,
 } from '@multiagentos/contracts';
 import { createExecutorRegistryV1 } from '@multiagentos/executor-set';
@@ -461,7 +460,7 @@ async function recordOf(
       model = `${definition.id}@${definition.version}`;
       if (summary !== undefined && mode.kind === 'real')
         costMicroUsd = modelCallCost(
-          definition as unknown as ModelDefinition,
+          definition,
           { inputTokens: summary.tokens.inputTokens, outputTokens: summary.tokens.outputTokens },
           startedAt,
         ).microUsd;

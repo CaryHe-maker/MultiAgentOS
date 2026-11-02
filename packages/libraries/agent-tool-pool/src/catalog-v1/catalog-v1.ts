@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
+  DefinitionStatusFileSchema,
+  type DefinitionStatus,
+  type DefinitionStatusFile,
   CATALOG_ERROR_CODES,
   DEFINITION_DRAFT_SCHEMAS_V1,
   DEFINITION_KINDS_V1,
@@ -25,6 +28,7 @@ import { CatalogLoadError } from '../domain/catalog-issue.js';
 import { deepFreeze } from '../domain/deep-freeze.js';
 import type {
   DefinitionSource,
+  SealPatch,
   SourceDocument,
   SourceSnapshot,
 } from '../ports/definition-source.js';
@@ -135,6 +139,8 @@ const contractOf = (ref: { readonly id: string; readonly version: string }) =>
 
 export interface CatalogIndexV1 {
   readonly definitions: ReadonlyMap<string, DefinitionV1>;
+  /** `status.yaml`; a version without an entry is ACTIVE. */
+  readonly statuses: ReadonlyMap<string, DefinitionStatus>;
 }
 
 interface Entry {
@@ -149,6 +155,34 @@ export function buildCatalogIndexV1(
 ):
   | { readonly ok: true; readonly index: CatalogIndexV1 }
   | { readonly ok: false; readonly issues: readonly CatalogIssue[] } {
+  return analyze(snapshot, false);
+}
+
+/** Which documents to seal; empty when the catalog has issues. */
+export interface SealPlanV1 {
+  readonly patches: readonly SealPatch[];
+  readonly issues: readonly CatalogIssue[];
+}
+
+/**
+ * Decides which unsealed published versions get their digest written. A document that already
+ * has one is never touched (a published definition is immutable, so a mismatch is reported,
+ * not "fixed"), and a draft never gets one: its digest is computed at load.
+ */
+export function planSealV1(snapshot: SourceSnapshot): SealPlanV1 {
+  const result = analyze(snapshot, true);
+  return result.ok
+    ? { patches: result.unsealed, issues: [] }
+    : { patches: [], issues: result.issues };
+}
+
+function analyze(
+  snapshot: SourceSnapshot,
+  sealing: boolean,
+):
+  | { readonly ok: true; readonly index: CatalogIndexV1; readonly unsealed: SealPatch[] }
+  | { readonly ok: false; readonly issues: readonly CatalogIssue[] } {
+  const unsealed: SealPatch[] = [];
   const issues: CatalogIssue[] = [];
   const report = (origin: string, code: CatalogIssueCode, message: string) =>
     issues.push({ origin, code, message });
@@ -190,11 +224,14 @@ export function buildCatalogIndexV1(
         failed.add(entryKey);
         continue;
       }
-      if (entry.declared === undefined && !isDraft(entry.body.version))
-        report(entry.origin, 'DEFINITION_UNSEALED', `missing digest (computed ${digest})`);
+      if (entry.declared === undefined && !isDraft(entry.body.version)) {
+        if (sealing) unsealed.push({ origin: entry.origin, digest });
+        else report(entry.origin, 'DEFINITION_UNSEALED', `missing digest (computed ${digest})`);
+      }
       digests.set(entryKey, digest);
     }
   if (failed.size === 0) checkRules(entries, report);
+  const statuses = parseStatuses(snapshot.statusDocument, entries, report);
   if (issues.length > 0) return { ok: false, issues };
   const definitions = new Map<string, DefinitionV1>();
   for (const [entryKey, entry] of entries)
@@ -202,8 +239,35 @@ export function buildCatalogIndexV1(
       entryKey,
       deepFreeze(structuredClone({ ...entry.body, digest: digests.get(entryKey) ?? '' })),
     );
-  return { ok: true, index: { definitions } };
+  return { ok: true, index: { definitions, statuses }, unsealed };
 }
+
+/** The status overrides of M1 AgentToolPool: each names a loaded version, at most once. */
+function parseStatuses(
+  document: SourceDocument | undefined,
+  entries: ReadonlyMap<string, Entry>,
+  report: (origin: string, code: CatalogIssueCode, message: string) => void,
+): ReadonlyMap<string, DefinitionStatus> {
+  const statuses = new Map<string, DefinitionStatus>();
+  if (document === undefined) return statuses;
+  const result = validate<DefinitionStatusFile>(DefinitionStatusFileSchema, document.content);
+  if (!result.ok) {
+    report(document.origin, 'STATUS_INVALID', result.issues.join('; '));
+    return statuses;
+  }
+  for (const entry of result.value.entries) {
+    const entryKey = key(entry.kind, entry.id, entry.version);
+    if (!entries.has(entryKey))
+      report(document.origin, 'STATUS_INVALID', `status set for unknown ${entryKey}`);
+    else if (statuses.has(entryKey))
+      report(document.origin, 'STATUS_INVALID', `status set twice for ${entryKey}`);
+    else statuses.set(entryKey, entry.status);
+  }
+  return statuses;
+}
+
+/** A QUARANTINED or REVOKED version can be neither looked up nor pinned. */
+const UNAVAILABLE: ReadonlySet<DefinitionStatus> = new Set(['QUARANTINED', 'REVOKED']);
 
 function parse(
   document: SourceDocument,
@@ -535,9 +599,12 @@ export class DefinitionCatalogV1 {
 
   public constructor(private readonly index: CatalogIndexV1) {}
 
-  /** Every loaded definition, in load order. */
+  /** Every definition that can be looked up, in load order. */
   list(): readonly DefinitionV1[] {
-    return [...this.index.definitions.values()];
+    return [...this.index.definitions].flatMap(([entryKey, definition]) => {
+      const status = this.index.statuses.get(entryKey);
+      return status !== undefined && UNAVAILABLE.has(status) ? [] : [definition];
+    });
   }
 
   /** The highest version of `id`, by its numeric parts; undefined when there is none. */
@@ -560,8 +627,10 @@ export class DefinitionCatalogV1 {
     kind: K,
     ref: DefinitionRef,
   ): DefinitionByKindV1[K] | undefined {
-    return this.index.definitions.get(key(kind, ref.id, ref.version)) as
-      DefinitionByKindV1[K] | undefined;
+    const found = key(kind, ref.id, ref.version);
+    const status = this.index.statuses.get(found);
+    if (status !== undefined && UNAVAILABLE.has(status)) return undefined;
+    return this.index.definitions.get(found) as DefinitionByKindV1[K] | undefined;
   }
 
   getDefinition<K extends DefinitionKindV1>(

@@ -1,12 +1,15 @@
-import type { ModelDefinition } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
-import { loadCatalogIndex } from './load-catalog-index.js';
+import { DefinitionCatalogV1 } from '../catalog-v1/catalog-v1.js';
+import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 import { isPeakTime, modelCallCost } from './model-cost.js';
 
-const index = await loadCatalogIndex(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY));
-const flash = index.definitions.get('MODEL:deepseek-flash@v1.0.0') as ModelDefinition;
+const catalog = await DefinitionCatalogV1.load(
+  new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+);
+const latest = catalog.latest('MODEL', 'deepseek-flash');
+if (latest === undefined) throw new Error('deepseek-flash is missing');
+const flash = latest;
 
 describe('model call cost (AgentToolPool 7)', () => {
   it.each([

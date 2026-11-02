@@ -2,15 +2,11 @@ import {
   ContractValidationError,
   createM1ProtocolRegistry,
   type BoundaryContextV1,
-  type CatalogPort,
-  type PersistencePort,
   type ShutdownRequest,
   type SyscallAck,
 } from '@multiagentos/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  catalogWithDeadline,
-  persistenceWithDeadline,
   FabricError,
   InProcessFabric,
   Inbox,
@@ -546,48 +542,6 @@ describe('request deadline (Fabric.md 3)', () => {
       await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
       handler.answer(ack);
       await expect(pending).resolves.toEqual(ack);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('gives the Catalog and Persistence wrappers the same deadline', async () => {
-    vi.useFakeTimers();
-    try {
-      const never = () => new Promise<never>(() => undefined);
-      const catalog = catalogWithDeadline(
-        { pinAgent: never, getDefinition: never, capabilities: () => [] } as CatalogPort,
-        1_000,
-      );
-      const persistence = persistenceWithDeadline(
-        {
-          repository: () => ({ get: never, put: () => Promise.resolve() }),
-          auditLog: () => ({ append: never }),
-          capabilities: () => [],
-        } as PersistencePort,
-        1_000,
-      );
-      const timedOut = { name: 'FabricError', code: 'REQUEST_TIMEOUT' };
-      const waits = [
-        expect(
-          catalog.pinAgent({ id: 'planner', version: 'v1.0.0' }, context),
-        ).rejects.toMatchObject(timedOut),
-        expect(
-          catalog.getDefinition({ kind: 'MODEL', id: 'model', version: 'v1.0.0' }, context),
-        ).rejects.toMatchObject(timedOut),
-        expect(persistence.repository('workflow', 'wfr_123456').get('x')).rejects.toMatchObject(
-          timedOut,
-        ),
-        expect(persistence.auditLog('workflow', 'wfr_123456').append({})).rejects.toMatchObject(
-          timedOut,
-        ),
-        expect(
-          persistence.repository('workflow', 'wfr_123456').put({ id: 'x' }),
-        ).resolves.toBeUndefined(),
-      ];
-      await vi.advanceTimersByTimeAsync(1_000);
-      await Promise.all(waits);
-      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }
