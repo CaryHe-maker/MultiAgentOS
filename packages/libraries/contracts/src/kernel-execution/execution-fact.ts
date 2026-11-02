@@ -5,7 +5,13 @@ import {
   RepositorySearchOutputSchema,
 } from '../context/repository.js';
 import { FileReadOutputSchema } from '../executor/file-read.js';
-import { ModelCallOutputSchema, TokenUsageSchema } from '../executor/model-call.js';
+import {
+  ModelCallOutputSchema,
+  ModelCallOutputV1Schema,
+  TokenUsageSchema,
+} from '../executor/model-call.js';
+import { RepositoryListOutputSchema } from '../executor/repository-list.js';
+import { ContextAssembleOutputV1Schema } from '../context/history-entry.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import {
@@ -15,7 +21,7 @@ import {
   VIOLATION_CODES,
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
-import { TimestampSchema, closed, count } from '../platform-common/schema-helpers.js';
+import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 
 const result = <O extends TSchema>(output: O, mediaType: string) =>
   closed({
@@ -159,3 +165,89 @@ export const ExecutionFactSchema = Type.Union(
   { $id: 'kernel.execution.ExecutionFact.v0' },
 );
 export type ExecutionFact = Static<typeof ExecutionFactSchema>;
+
+// --- Major 1 (Library/SharedContracts 3.5) ----------------------------------------------------
+
+const artifactV1 = closed({ mediaType: text(128), text: Type.String() });
+/** `artifact` is the preview; `fullOutput` is present only when the preview cut something. */
+const toolResultV1 = <O extends TSchema>(output: O) =>
+  closed({
+    output,
+    artifact: artifactV1,
+    fullOutput: Type.Optional(closed({ text: Type.String() })),
+  });
+const OrientResultV1Schema = toolResultV1(RepositoryOrientOutputSchema);
+const SearchResultV1Schema = toolResultV1(RepositorySearchOutputSchema);
+const ListResultV1Schema = toolResultV1(RepositoryListOutputSchema);
+const FileReadResultV1Schema = toolResultV1(FileReadOutputSchema);
+const AssembleResultV1Schema = closed({
+  output: ContextAssembleOutputV1Schema,
+  artifact: artifactV1,
+});
+/** `reasoning` is present when the model returned thinking; it is stored apart from the output. */
+const ModelResultV1Schema = closed({
+  output: ModelCallOutputV1Schema,
+  artifact: artifactV1,
+  reasoning: Type.Optional(closed({ text: Type.String() })),
+});
+
+export const ExecutionResultV1Schema = Type.Union(
+  [
+    OrientResultV1Schema,
+    SearchResultV1Schema,
+    ListResultV1Schema,
+    FileReadResultV1Schema,
+    AssembleResultV1Schema,
+    ModelResultV1Schema,
+  ],
+  { $id: 'kernel.execution.ExecutionResult.v1' },
+);
+export type ExecutionResultV1 = Static<typeof ExecutionResultV1Schema>;
+
+const inSession = { sessionId: IdSchemas.sessionId };
+const NON_MODEL_KINDS_V1 = Type.Enum([
+  'REPOSITORY_ORIENT',
+  'REPOSITORY_SEARCH',
+  'REPOSITORY_LIST',
+  'FILE_READ',
+  'CONTEXT_ASSEMBLE',
+]);
+const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = notCompleted(
+  Type.Literal('MODEL'),
+  { ...inSession, ...modelFields },
+);
+
+/** As v0, plus the Session, `list_files`, previews and the `retryAfterMs` of a model failure. */
+export const ExecutionFactV1Schema = Type.Union(
+  [
+    completed('REPOSITORY_ORIENT', OrientResultV1Schema, inSession),
+    completed('REPOSITORY_SEARCH', SearchResultV1Schema, inSession),
+    completed('REPOSITORY_LIST', ListResultV1Schema, inSession),
+    completed('FILE_READ', FileReadResultV1Schema, inSession),
+    completed('CONTEXT_ASSEMBLE', AssembleResultV1Schema, inSession),
+    completed('MODEL', ModelResultV1Schema, {
+      ...inSession,
+      requestState: Type.Literal('SENT'),
+      usage: Type.Optional(TokenUsageSchema),
+    }),
+    ...notCompleted(NON_MODEL_KINDS_V1, inSession),
+    modelRejected,
+    closed({
+      ...fact,
+      ...started,
+      ...inSession,
+      ...modelFields,
+      executionKind: Type.Literal('MODEL'),
+      outcome: Type.Literal('FAILED'),
+      reasonCode: reasonCodeOf(EXECUTOR_FAILED_CODES),
+      retryable: Type.Boolean(),
+      /** From Retry-After; the wait is the larger of this and the back-off (Execution 4a). */
+      retryAfterMs: Type.Optional(count()),
+    }),
+    modelTerminated,
+    modelUnconfirmed,
+    modelViolation,
+  ],
+  { $id: 'kernel.execution.ExecutionFact.v1' },
+);
+export type ExecutionFactV1 = Static<typeof ExecutionFactV1Schema>;

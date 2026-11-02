@@ -155,8 +155,8 @@ export type ExecutorInput = ExecutionRequest['input'];
 
 // --- Major 1 (Library/SharedContracts 3.5) ----------------------------------------------------
 
-/** `maxLines` is absent for `v0` Units, whose preview limit is `maxOutputBytes` alone. */
-const PreviewLimitsSchema = closed({ maxBytes: count(1), maxLines: Type.Optional(count(1)) });
+/** `maxBytes` is `min(previewMaxBytes, maxOutputBytes)` (M2Design 8.2). */
+const PreviewLimitsSchema = closed({ maxBytes: count(1), maxLines: count(1) });
 const limitsV1 = {
   ...limits,
   preview: PreviewLimitsSchema,
@@ -280,16 +280,11 @@ export const ExecutionRequestV1Schema = Type.Union(
     requestV1('FILE_READ', FileReadInputSchema, RepositoryScopeSchema, PlainLimitsV1Schema),
     requestV1(
       'CONTEXT_ASSEMBLE',
-      Type.Union([AssembleExecutorInputSchema, AssembleExecutorInputV1Schema]),
+      AssembleExecutorInputV1Schema,
       NoScopeSchema,
       AssembleLimitsV1Schema,
     ),
-    requestV1(
-      'MODEL',
-      Type.Union([ModelExecutorInputSchema, ModelExecutorInputV1Schema]),
-      ModelScopeSchema,
-      ModelLimitsV1Schema,
-    ),
+    requestV1('MODEL', ModelExecutorInputV1Schema, ModelScopeSchema, ModelLimitsV1Schema),
   ],
   { $id: 'kernel.execution.ExecutionRequest.v1' },
 );
