@@ -268,11 +268,11 @@ describe('closing a run', () => {
     const { actor, begin, settled, toWorkflow, currentRun } = setup();
     await begin();
     const run = currentRun();
-    actor.continueRun();
+    expect(await actor.continueIfClosed()).toBe(false);
     await settled();
     expect(workflowTypes(toWorkflow).filter((type) => type === 'RunStart')).toHaveLength(1);
     await actor.call(() => actor.closeRun(run, { closeReason: 'BUDGET' }));
-    actor.continueRun();
+    expect(await actor.continueIfClosed()).toBe(true);
     await settled();
     expect(workflowTypes(toWorkflow).filter((type) => type === 'RunStart')).toHaveLength(2);
     expect(toWorkflow.at(-1)?.event).toMatchObject({ initialInput: false });

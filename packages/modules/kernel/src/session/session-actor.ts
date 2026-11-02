@@ -76,7 +76,6 @@ export interface SessionActorDeps {
 type Message =
   | { readonly kind: 'SESSION_BEGIN'; readonly start: SessionStart }
   | { readonly kind: 'SESSION_CLOSE'; readonly reason: 'SWITCHED' | 'SHUTDOWN' }
-  | { readonly kind: 'RUN_CONTINUE' }
   | { readonly kind: 'COMMAND_REPORT'; readonly report: ReportSessionCommandRequest }
   | { readonly kind: 'CALL'; readonly work: () => Promise<unknown> };
 
@@ -129,8 +128,17 @@ export class SessionActor {
     this.#inbox.enqueue({ kind: 'SESSION_CLOSE', reason }, 'control');
   }
 
-  continueRun(): void {
-    this.#inbox.enqueue({ kind: 'RUN_CONTINUE' }, 'control');
+  /** Starts the next run of this Session; false while the current run is still live. */
+  continueIfClosed(): Promise<boolean> {
+    return this.call(() => {
+      if (this.#run?.control.phase !== 'CLOSED') return false;
+      this.#startRun({ mode: 'CHAT' }, false);
+      return true;
+    }, 'control');
+  }
+
+  expectsCommand(commandId: string): boolean {
+    return this.#pending.has(commandId);
   }
 
   reportCommand(report: ReportSessionCommandRequest): void {
@@ -172,9 +180,6 @@ export class SessionActor {
         return this.#begin(message.start);
       case 'SESSION_CLOSE':
         return this.#close(message.reason);
-      case 'RUN_CONTINUE':
-        if (this.#run?.control.phase === 'CLOSED') this.#startRun({ mode: 'CHAT' }, false);
-        return undefined;
       case 'COMMAND_REPORT': {
         const pending = this.#pending.get(message.report.commandId);
         this.#pending.delete(message.report.commandId);
