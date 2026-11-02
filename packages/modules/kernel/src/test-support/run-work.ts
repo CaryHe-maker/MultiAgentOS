@@ -1,8 +1,8 @@
 import { testUnitDefinition } from '@multiagentos/contracts/test-support';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { RunLedgers, minShare, type AgentBudget } from '../monitor/run-ledgers.js';
-import type { AttemptSpec, RunAttempts } from '../session/run-attempts.js';
-import { RunWork, type PinnedAgent, type RunHost, type RunWorkDeps } from '../session/run-work.js';
+import type { AttemptSpec, PinnedAgent, RunAttempts } from '../session/run-attempts.js';
+import { RunWork, type RunHost, type RunWorkDeps } from '../session/run-work.js';
 
 export const testAgentBudget: AgentBudget = {
   perCallInputLimit: 100,
@@ -28,6 +28,10 @@ export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAge
   units: [testUnitDefinition('FILE_READ'), testUnitDefinition('MESSAGE_PUBLISH')],
   maxToolUnits: 10,
   modelScope: { kind: 'NONE' },
+  budget: testAgentBudget,
+  contextWindowTokens: 100_000,
+  instructions: 'You are a test agent.',
+  toolSpecs: () => [],
   ...overrides,
 });
 
@@ -47,8 +51,9 @@ export class TestExecution {
     return Promise.resolve(unitAttemptId);
   };
 
-  readonly cancelExecutions = (): void => {
+  readonly cancelExecutions = (): Promise<void> => {
     this.cancels += 1;
+    return Promise.resolve();
   };
 }
 
@@ -72,6 +77,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     inputIsValid: () => true,
     createAttempt: execution.createAttempt,
     cancelExecutions: execution.cancelExecutions,
+    executionsClosed: () => undefined,
     audit: () => undefined,
     now: () => new Date('2026-11-02T00:00:00.000Z'),
     schedule: () => () => undefined,

@@ -22,20 +22,12 @@ import {
   type AttemptAudit,
   type AttemptFault,
   type AttemptSpec,
+  type PinnedAgent,
 } from './run-attempts.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
 import { admitWork, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
 import { WallClocks } from './wall-clocks.js';
-
-/** What the catalog gives Core for one registered AgentRun. */
-export interface PinnedAgent {
-  readonly units: readonly UnitDefinitionV1[];
-  readonly maxToolUnits: number;
-  readonly maxWallClockMs?: number;
-  /** The model scope for the effort this AgentRun registered with. */
-  readonly modelScope: ExecutionScope;
-}
 
 export type PinResult =
   | { readonly ok: true; readonly agent: PinnedAgent }
@@ -76,7 +68,8 @@ export interface RunWorkDeps {
   /** Execution takes the attempt over and registers it through `attempts`. */
   readonly createAttempt: (spec: AttemptSpec, attempts: RunAttempts) => Promise<string>;
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
-  readonly cancelExecutions: () => void;
+  readonly cancelExecutions: (runEpoch: number) => Promise<void>;
+  readonly executionsClosed: () => void;
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
@@ -330,6 +323,7 @@ export class RunWork {
       input: request.input,
       scope: this.#scopeOf(unit, agent),
       runEpoch: this.#host.runEpoch(),
+      agent,
     });
   }
 
@@ -367,16 +361,17 @@ export class RunWork {
   }
 
   /** The run started converging: Units on a question end with it and get no report. */
-  beginClosing(): void {
+  async beginClosing(): Promise<void> {
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);
     this.#waiting.clear();
     this.#clocks.stop();
-    this.#deps.cancelExecutions();
+    await this.#deps.cancelExecutions(this.#host.runEpoch());
   }
 
   /** Nothing is in flight any more, so the Lease can end. */
   finishClosing(): void {
     this.#authorization.endLease();
+    this.#deps.executionsClosed();
   }
 }

@@ -4,6 +4,7 @@ import type {
   ExecutionKindV1,
   ExecutionOutcome,
   ExecutionScope,
+  ModelToolSpec,
   ReasonCodeV1,
   RequestState,
   TokenUsage,
@@ -14,6 +15,22 @@ import type {
   ViolationCode,
 } from '@multiagentos/contracts';
 import type { SchedulerDuties, Settlement, SettlementResult } from '../interfaces/index.js';
+import type { AgentBudget } from '../monitor/run-ledgers.js';
+
+/** What the catalog gives Core and Execution for one registered AgentRun. */
+export interface PinnedAgent {
+  readonly units: readonly UnitDefinitionV1[];
+  readonly maxToolUnits: number;
+  readonly maxWallClockMs?: number;
+  /** The model scope for the effort this AgentRun registered with. */
+  readonly modelScope: ExecutionScope;
+  readonly budget: AgentBudget;
+  readonly contextWindowTokens: number;
+  /** The rendered Prompt of the Agent. */
+  readonly instructions: string;
+  /** The tools of a call: the Units' and the end tools, or only those allowed in a final call. */
+  readonly toolSpecs: (final: boolean) => ModelToolSpec[];
+}
 
 /** Core starts an attempt through Execution once admission and authorization allowed it. */
 export interface AttemptSpec {
@@ -25,6 +42,7 @@ export interface AttemptSpec {
   readonly input: UnitInputV1;
   readonly scope: ExecutionScope;
   readonly runEpoch: number;
+  readonly agent: PinnedAgent;
 }
 
 /** What Execution hands back for one attempt (Kernel/Interaction 4). */

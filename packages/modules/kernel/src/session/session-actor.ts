@@ -298,7 +298,7 @@ export class SessionActor {
       workflowRunId,
       work: duties.openRunWork(host),
       control: initialRunControl(),
-      runEpoch: 0,
+      runEpoch: 1,
     };
     return run;
   }
@@ -432,7 +432,7 @@ export class SessionActor {
       type: 'RunStateChanged',
       state: 'CONVERGING',
     });
-    run.work.beginClosing();
+    await run.work.beginClosing();
     await this.#finishIfDrained(run);
   }
 

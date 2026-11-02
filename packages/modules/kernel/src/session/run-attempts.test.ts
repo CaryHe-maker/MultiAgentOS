@@ -13,6 +13,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { RunLedgers, finalReserve, minShare, type AgentBudget } from '../monitor/run-ledgers.js';
+import { testPinnedAgent } from '../test-support/run-work.js';
 import {
   RunAttempts,
   type AttemptAudit,
@@ -84,6 +85,7 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
       input: {},
       scope: { kind: 'NONE' },
       runEpoch: 0,
+      agent: testPinnedAgent(),
       ...over,
     });
   return { run, start, reports, ended, faults, audits, grants };

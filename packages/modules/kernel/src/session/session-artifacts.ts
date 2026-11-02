@@ -93,6 +93,10 @@ export class SessionArtifacts {
     return this.#check(ref) === undefined;
   }
 
+  isFullOutput(ref: ArtifactRef): boolean {
+    return this.#owners.get(ref.artifactId)?.fullOutput === true;
+  }
+
   /** A body missing from the store counts as expired, whatever the registration says. */
   async read(ref: ArtifactRef): Promise<ArtifactRead> {
     const refusal = this.#check(ref);

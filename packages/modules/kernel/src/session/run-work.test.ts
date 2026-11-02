@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run-work.js';
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
-import type { PinnedAgent } from './run-work.js';
+import type { PinnedAgent } from './run-attempts.js';
 
 const sessionId = newId('ses');
 const fileRead = testUnitDefinition('FILE_READ');

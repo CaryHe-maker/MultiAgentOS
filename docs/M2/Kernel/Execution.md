@@ -37,7 +37,7 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
   | 工具 Unit 截断时的完整输出（`fullRef`）、ContextPack | `EXPIRING` |
 
 - 预览上限随 `ExecutionLimits` 交给 Executor：`min(previewMaxBytes, maxOutputBytes)` 字节与 `previewMaxLines` 行（M2Design 第 8.2 节）。
-- 工具 Unit 的结果检查：Executor 交回预览与（截断时的）完整输出；预览超过上述上限、或完整输出超过 `maxFullOutputBytes` 时以 `LIMIT_EXCEEDED` 失败，不写入；
+- 工具 Unit 的结果检查：Executor 交回预览与（截断时的）完整输出；预览超过上述上限、或完整输出超过 `maxFullOutputBytes` 时以 `REJECTED(LIMIT_EXCEEDED)` 结束，不写入；
   否则预览存为 `outputRef`，完整输出存为 `fullRef`（登记行带 `fullOutput: true`）。
 - 修剪（第 6a 节）时，没有截断的工具结果的预览就是完整输出：Execution 为它追加一行带 `fullOutput: true` 的登记（类别仍为 `SESSION`），使它可以经 `read_output` 读回。
 - 打开 Session 时从 `artifact-owners.jsonl` 读入归属索引。
