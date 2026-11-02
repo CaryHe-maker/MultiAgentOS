@@ -24,7 +24,7 @@
 | D6 | AgentRun 状态机对所有 Agent 相同，结束方式由定义声明的结束工具决定，运行器按表执行（Cary 2026-10-31 决定） | 已执行 |
 | D7 | 授权询问不超时，一直等到用户回答，只在运行收敛时取消；拒绝作为被拒 Unit 的工具结果交还 Agent，不结束 Turn（M2Design v1.13，Cary 2026-10-31 决定） | 文档与 major 1 契约已改；M1 的 `authorizationTimeoutMs` 随 S1-IN-1 删除 M1 模块时一起删除 |
 | D8 | `AGENTS.md` 与其他说明文档同级：第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit（M2Design v1.14，Cary 2026-11-02 决定） | 已执行 |
-| D9 | 用户拒绝绑定提出请求的 AgentRun：不重复申请，下一轮告诉模型，不计入连续出错，模型再次调用时收尾；参照 OpenCode 与 DeepSeek Harness 后定（Cary 2026-11-02 决定） | 已执行 |
+| D9 | 用户拒绝绑定提出请求的 AgentRun；工具结果为 `the user rejected tool "x"`（参照 DeepSeek Harness），不计入连续出错，之后的轮次不再提交相同的工具（M2Design v1.15，Cary 2026-11-02 决定） | 已执行 |
 | D10 | 思考强度只在 `registerAgentRun` 中给出（Cary 2026-11-02 决定） | 已执行 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 

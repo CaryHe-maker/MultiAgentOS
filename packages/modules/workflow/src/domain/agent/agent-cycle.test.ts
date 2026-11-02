@@ -378,16 +378,23 @@ describe('tools', () => {
     expect(unitId(next)).toEqual(['context-assemble']);
   });
 
-  it('wraps up when the model comes back to what the user declined', () => {
-    const decline = (from: AgentTransition) =>
-      receive(from, report(from.state, only(from), { reject: 'USER_DECLINED' }));
-    const first = decline(replied(atModel(), [call('list_files', {})]));
-    const told = reassemble(first);
-    const second = decline(replied(told, [call('list_files', { path: 'src' })]));
-    expect(second.state.wrapUpReason).toBe('AUTHORIZATION_DECLINED');
+  it('does not submit a tool the user rejected, and tells the model the same way', () => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const declined = receive(tools, report(tools.state, only(tools), { reject: 'USER_DECLINED' }));
+    expect(declined.state.declinedTools).toEqual(['list_files']);
+    const again = replied(reassemble(declined), [call('list_files', { path: 'src' })]);
+    expect(unitId(again)).toEqual(['context-assemble']);
+    expect(again.records).toContainEqual(
+      expect.objectContaining({
+        type: 'FEEDBACK',
+        code: 'TOOL_REJECTED',
+        message: 'the user rejected tool "list_files"',
+      }),
+    );
+    expect(again.state.wrapUpReason).toBeUndefined();
   });
 
-  it('does not count calls of one reply as coming back, nor as errors', () => {
+  it('does not count a refusal as an error', () => {
     const tools = replied(atModel(), [
       call('list_files', { path: 'a' }, 'call_1'),
       call('list_files', { path: 'b' }, 'call_2'),

@@ -423,7 +423,6 @@ interface ContextAssembleInputV1 {
 
 type WrapUpReason =                                // 下一次模型调用为什么是收尾调用（Module/Workflow 第 7 节）
   | 'BUDGET_WRAP_UP'                               // BudgetView 为 WRAP_UP
-  | 'AUTHORIZATION_DECLINED'                       // 模型在之后的轮次又调用了用户拒绝的能力（M2Design 第 5.3 节）
   | 'TOOL_UNIT_LIMIT' | 'WALL_CLOCK_LIMIT'         // QUOTA_EXHAUSTED 的 quota 为 TOOL_UNITS、WALL_CLOCK
   | 'REPEATED_INTENT' | 'CONSECUTIVE_ERRORS'       // Workflow 的业务熔断（M2Design 第 3.4 节）
   | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT';

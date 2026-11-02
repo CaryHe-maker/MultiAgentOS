@@ -70,7 +70,6 @@ export type ContextHistoryEntry = Static<typeof ContextHistoryEntrySchema>;
 /** Why the next model call is the final call; a quota names the limit it reached. */
 export const WRAP_UP_REASONS_V1 = [
   'BUDGET_WRAP_UP',
-  'AUTHORIZATION_DECLINED',
   'TOOL_UNIT_LIMIT',
   'WALL_CLOCK_LIMIT',
   'REPEATED_INTENT',

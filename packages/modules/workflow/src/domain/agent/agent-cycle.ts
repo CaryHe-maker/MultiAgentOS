@@ -98,8 +98,8 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
-  /** The round in which the user first declined; the model was told in the next one. */
-  readonly declinedInRound?: number;
+  /** Tools the user rejected in this AgentRun; they are not submitted again. */
+  readonly declinedTools: readonly string[];
   readonly fatal?: ReasonCodeV1;
 }
 
@@ -159,17 +159,24 @@ const FEEDBACK = {
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
   NOT_EXECUTED: 'Not executed: only the finishing call is available now.',
 } as const;
+/** Word for word the tool result of the refusal itself (M2Design 5.3). */
+const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
 type FeedbackCode = keyof typeof FEEDBACK;
 
 const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
-function feedback(state: AgentState, code: FeedbackCode, toolCallId?: string): NewLogRecord {
+function feedback(
+  state: AgentState,
+  code: FeedbackCode | 'TOOL_REJECTED',
+  toolCallId?: string,
+  message?: string,
+): NewLogRecord {
   return {
     ...base(state),
     type: 'FEEDBACK',
     agentRunId: state.agentRunId,
     code,
-    message: FEEDBACK[code],
+    message: message ?? (code === 'TOOL_REJECTED' ? '' : FEEDBACK[code]),
     ...(toolCallId === undefined ? {} : { toolCallId }),
   };
 }
@@ -313,6 +320,7 @@ export function startAgent(
     pending: new Map(),
     unitCounter: 0,
     succeeded: [],
+    declinedTools: [],
     intents: [],
     consecutiveErrors: 0,
     noProgress: 0,
@@ -502,6 +510,10 @@ function handleModel(
       continue;
     }
     accepted += 1;
+    if (next.declinedTools.includes(tool.modelName)) {
+      records.push(feedback(state, 'TOOL_REJECTED', call.toolCallId, rejectedText(tool.modelName)));
+      continue;
+    }
     if (accepted > state.definitions.limits.maxToolCallsPerRound) {
       records.push(feedback(state, 'TOO_MANY_TOOL_CALLS', call.toolCallId));
       continue;
@@ -572,11 +584,9 @@ function handleTool(
   if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
     next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
   } else if (declined) {
-    // Calls of one reply were all waiting on the same answer. Coming back to it in a later
-    // round means the model ignored what it was told, so this AgentRun wraps up.
-    const first = next.declinedInRound ?? next.round;
-    next = { ...next, declinedInRound: first };
-    if (next.round > first) next = wrapUp(next, 'AUTHORIZATION_DECLINED');
+    const { toolName } = pending.call;
+    if (!next.declinedTools.includes(toolName))
+      next = { ...next, declinedTools: [...next.declinedTools, toolName] };
   } else if (!ok) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };

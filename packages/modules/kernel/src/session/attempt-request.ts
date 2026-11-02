@@ -101,13 +101,6 @@ export interface RequestBuilderDeps {
 type Schema = Parameters<typeof validate>[0];
 
 const OBJECTIVE_MAX = 4000;
-/** The model sees these instead of a preview when a tool did not run. */
-const REFUSED_TOOL_TEXT: Partial<Record<ReasonCodeV1, string>> = {
-  USER_DECLINED:
-    'The user declined this capability. Do not ask for it again: another attempt ends your work. ' +
-    'Continue without it, or finish and say what you could not do.',
-  QUOTA_EXHAUSTED: 'The tool limit of this agent is reached; finish with what you have.',
-};
 
 function inputOf<T>(schema: Schema, value: unknown): T {
   const input = validate<T>(schema, value);
@@ -327,19 +320,21 @@ export class AttemptRequestBuilder {
         };
       }
       case 'TOOL_RESULT': {
-        const { toolCallId, outputRef, reasonCode, status } = entry;
+        const { toolCallId, toolName, outputRef, reasonCode, status } = entry;
         if (outputRef !== undefined) {
           // A full output reaches the model through read_output only (M2Design 8.2).
           if (this.#deps.artifacts.isFullOutput(outputRef))
             throw new RequestBuildError('INVALID_INPUT');
           return { ...base, kind: 'TOOL_RESULT', toolCallId, text: await this.#text(outputRef) };
         }
-        const refused = reasonCode === undefined ? undefined : REFUSED_TOOL_TEXT[reasonCode];
         return {
           ...base,
           kind: 'TOOL_RESULT',
           toolCallId,
-          text: refused ?? `[${status}] ${reasonCode ?? 'no output'}`,
+          text:
+            reasonCode === 'USER_DECLINED'
+              ? `the user rejected tool "${toolName}"`
+              : `[${status}] ${reasonCode ?? 'no output'}`,
         };
       }
       case 'HANDOFF': {
