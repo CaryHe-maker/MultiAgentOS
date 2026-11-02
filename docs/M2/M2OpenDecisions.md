@@ -36,10 +36,10 @@
 | S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
 | S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
 | S1-KC-1 | 部分 | Session actor 的生命周期、三个序列的 Outbox、Session 引用、信任记录 | Session 管理（分发、列表、删除、系统级事件、产物回收的定时器）、审计 |
-| S1-KC-2 | 部分 | Turn、开放输入的静止检查、AWAITING_INPUT、运行级授权（含 `project.instructions` 的判定） | `requestHuman`、`answerHuman`、`answerAuthorization`、`readProjectFile` 的受理入口 |
+| S1-KC-2 | 部分 | Turn、开放输入的静止检查、AWAITING_INPUT、运行级授权（含 `project.instructions` 的判定）、`answerAuthorization` | `requestHuman`、`answerHuman`、`readProjectFile` 的受理入口 |
 | S1-KC-3 | 未开始 | — | Gateway 的 major 1 syscall |
-| S1-KC-4 | 部分 | 两级账本、启动检查、工具次数、AgentRun 墙钟 | 接入 Session actor |
-| Core 的 Unit 路径 | 部分 | 受理检查、尝试、预留、结果检查（模块与单元测试） | 幂等记录、AgentRun 登记、接入 Session actor |
+| S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
+| Core 的 Unit 路径 | 完成，Execution 是替身 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入、收敛兜底的定时器；真实 Execution（S1-KX-1） |
 | S1-KX-1 | 未开始 | — | 全部 |
 | S1-EX-1 | 部分 | `retention/`、`repository-list` 的列表与预览（未注册为 Executor） | 三个仓库工具的预览、`context-assemble` 与 `model-call` 的 major 1、`repository-list` 的注册 |
 | S1-PL-1 | 未开始 | — | v1 定义与加载校验（包括 `repo.read`、`failurePolicy` 两条规则） |

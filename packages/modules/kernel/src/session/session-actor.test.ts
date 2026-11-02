@@ -8,6 +8,7 @@ import {
   type ArtifactRef,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
+import { testRunWork } from '../test-support/run-work.js';
 import { SessionActor, type SessionStart } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 
@@ -17,7 +18,6 @@ const summary: ArtifactRef = {
   ...ref,
   mediaType: 'application/vnd.multiagentos.run-summary+json',
 };
-const usage = { inputTokens: 0, outputTokens: 0, unknownTokens: 0, modelRequests: 0, toolUnits: 0 };
 const input = () => ({ inputId: newId('inp'), text: 'hello' });
 const sessionId = newId('ses');
 
@@ -55,8 +55,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
     outbox,
     duties: {
       storeUserInput: () => Promise.resolve(ref),
-      openTurnLedger: () => undefined,
-      closeTurnLedger: () => usage,
+      openRunWork: (host) => testRunWork(host),
       writeRunSummary: () => Promise.resolve(options.summaryFails === true ? undefined : summary),
       removeSessionFiles: () => {
         removed.push(sessionId);

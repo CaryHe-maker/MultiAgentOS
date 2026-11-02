@@ -59,15 +59,18 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     technicalRetryLimit: 1,
     ledger,
     scheduler,
-    createAttempt: () => {
+    createAttempt: (spec) => {
       attempts += 1;
-      return Promise.resolve(testId('una', attempts));
+      const id = testId('una', attempts);
+      run.registerAttempt(id, spec.requestId);
+      return Promise.resolve(id);
     },
     isDeliverable: () => options.deliverable !== false,
     isConverging: () => options.deliverable === false,
     leaseIsValid: () => options.lease !== false,
     deliver: (report) => reports.push(assertValid(UnitReportV1Schema, report)),
-    attemptEnded: (id) => ended.push(id),
+    attemptStarted: () => undefined,
+    attemptEnded: (_spec, id) => ended.push(id),
     onFault: (fault) => faults.push(fault),
     audit: (entry) => audits.push(entry),
   });
@@ -232,6 +235,30 @@ describe('reservations', () => {
         requestState: 'NOT_SENT',
       }),
     ).toEqual({ allowed: false, reason: 'RETRY_LIMIT' });
+  });
+});
+
+describe('attempts that end without a result', () => {
+  it('ends an attempt asking for a reservation while the run converges', async () => {
+    const { run, start, ended } = setup({ deliverable: false });
+    const id = await start('MODEL');
+    expect(
+      run.requestReservation({ unitAttemptId: id, estimatedTokens: 10, final: false }),
+    ).toEqual({
+      granted: false,
+      reason: 'RUN_CONVERGING',
+    });
+    expect(ended).toEqual([id]);
+  });
+
+  it('ends a queued attempt once, and gives its opportunity back', async () => {
+    const { run, start, ended, grants } = setup();
+    const id = await start('MODEL');
+    run.requestReservation({ unitAttemptId: id, estimatedTokens: 10, final: false });
+    run.abandon(id);
+    run.abandon(id);
+    expect(ended).toEqual([id]);
+    expect(grants.size).toBe(0);
   });
 });
 

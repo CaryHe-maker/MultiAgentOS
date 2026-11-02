@@ -7,7 +7,6 @@ import {
   type ReportSessionCommandRequest,
   type RunFailure,
   type RunFinishedV1,
-  type TurnUsage,
   type UserInput,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
@@ -26,6 +25,8 @@ import {
   type Decision,
   type RunControl,
 } from './run-control.js';
+import type { AttemptFault } from './run-attempts.js';
+import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
 
 /**
@@ -35,8 +36,8 @@ import type { KernelOutbox } from './session-outbox.js';
  */
 export interface SessionDuties {
   storeUserInput(input: UserInput): Promise<ArtifactRef>;
-  openTurnLedger(turnId: string): void;
-  closeTurnLedger(turnId: string): TurnUsage;
+  /** The Unit path of a new run. */
+  openRunWork(host: RunHost): RunWork;
   /** Writes the RunSummary; undefined means the write failed and the run ends without one. */
   writeRunSummary(
     workflowRunId: string,
@@ -55,8 +56,11 @@ export type SessionStart =
   | { readonly kind: 'OPEN'; readonly requestId: string };
 
 export type RunClosing =
-  | { readonly closeReason: Exclude<CloseReasonV1, 'FAILED'>; readonly resultRef?: ArtifactRef }
-  | { readonly closeReason: 'FAILED'; readonly failure: RunFailure };
+  | {
+      readonly closeReason: Exclude<CloseReasonV1, 'FAILED' | 'VIOLATION'>;
+      readonly resultRef?: ArtifactRef;
+    }
+  | { readonly closeReason: 'FAILED' | 'VIOLATION'; readonly failure: RunFailure };
 
 export interface SessionActorDeps {
   readonly sessionId: string;
@@ -78,8 +82,13 @@ type Message =
 
 interface Run {
   readonly workflowRunId: string;
+  readonly work: RunWork;
   control: RunControl;
+  runEpoch: number;
   closing?: RunClosing;
+  /** The Turn that ends once the run has drained, just before RunClosed. */
+  closingTurn?: string;
+  fault?: AttemptFault;
 }
 
 type Pending = (result: ReportSessionCommandRequest['result']) => Promise<void>;
@@ -106,7 +115,11 @@ export class SessionActor {
       try {
         return await this.#handle(message);
       } finally {
-        this.#deps.outbox.flush();
+        try {
+          await this.#settle();
+        } finally {
+          this.#deps.outbox.flush();
+        }
       }
     });
     this.#inbox.enqueue({ kind: 'SESSION_BEGIN', start: begin }, 'control');
@@ -138,6 +151,19 @@ export class SessionActor {
 
   get #sessionId(): string {
     return this.#deps.sessionId;
+  }
+
+  /** The end of every message: a fault converges, and a drained run finishes (Interaction 5.2). */
+  async #settle(): Promise<void> {
+    const run = this.#run;
+    if (run === undefined) return;
+    if (run.fault !== undefined) {
+      const { fault } = run;
+      delete run.fault;
+      await this.closeRun(run, closingOf(fault));
+    }
+    await this.#finishIfDrained(run);
+    if (run.control.phase !== 'CLOSED') run.work.reconcile();
   }
 
   async #handle(message: Message): Promise<unknown> {
@@ -228,7 +254,7 @@ export class SessionActor {
       | { readonly mode: 'ORCHESTRATION'; readonly templateRef: DefinitionRef },
     initialInput: boolean,
   ): Run {
-    const run: Run = { workflowRunId: newId('wfr'), control: initialRunControl() };
+    const run = this.#newRun();
     this.#run = run;
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'RunStart',
@@ -236,6 +262,44 @@ export class SessionActor {
       initialInput,
       ...runStart,
     });
+    return run;
+  }
+
+  #newRun(): Run {
+    const workflowRunId = newId('wfr');
+    const { outbox, duties } = this.#deps;
+    const sessionId = this.#sessionId;
+    const host: RunHost = {
+      control: () => run.control,
+      closeReason: () => run.closing?.closeReason,
+      runEpoch: () => run.runEpoch,
+      registerAgentRun: (agentRunId) => this.registerAgentRun(run, agentRunId),
+      endAgentRun: (agentRunId) => this.endAgentRun(run, agentRunId),
+      attemptStarted: (unitAttemptId) => {
+        this.attemptStarted(run, unitAttemptId);
+      },
+      attemptEnded: (unitAttemptId) => {
+        run.control = attemptEnded(run.control, unitAttemptId);
+      },
+      toWorkflow: (report) => {
+        outbox.runToWorkflow(sessionId, workflowRunId, report);
+      },
+      toInteraction: (event) => {
+        outbox.runToInteraction(sessionId, workflowRunId, event);
+      },
+      fault: (fault) => {
+        run.fault ??= fault;
+      },
+      enqueue: (work) => {
+        this.#inbox.enqueue({ kind: 'CALL', work: () => Promise.resolve(work()) }, 'control');
+      },
+    };
+    const run: Run = {
+      workflowRunId,
+      work: duties.openRunWork(host),
+      control: initialRunControl(),
+      runEpoch: 0,
+    };
     return run;
   }
 
@@ -255,7 +319,7 @@ export class SessionActor {
         : answerOpenInput(run.control, origin.humanRequestId, turnId);
     if (!opened.accepted) throw new Error(`a Turn cannot open: ${opened.reasonCode}`);
     run.control = opened.control;
-    this.#deps.duties.openTurnLedger(turnId);
+    run.work.openTurn(turnId);
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -278,7 +342,7 @@ export class SessionActor {
       type: 'TurnClosed',
       turnId,
       reason,
-      usage: this.#deps.duties.closeTurnLedger(turnId),
+      usage: run.work.closeTurn(turnId),
     });
   }
 
@@ -361,12 +425,14 @@ export class SessionActor {
     if (!decision.accepted || run.closing !== undefined) return;
     run.control = decision.control;
     run.closing = closing;
+    run.runEpoch += 1;
+    const closed = decision.effect?.closedTurnId;
+    if (closed !== undefined) run.closingTurn = closed;
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
       state: 'CONVERGING',
     });
-    const closed = decision.effect?.closedTurnId;
-    if (closed !== undefined) this.#closeTurn(run, closed, 'RUN_CLOSED');
+    run.work.beginClosing();
     await this.#finishIfDrained(run);
   }
 
@@ -375,6 +441,8 @@ export class SessionActor {
     const closing = run.closing;
     if (closing === undefined) return;
     run.control = closeRun(run.control);
+    run.work.finishClosing();
+    if (run.closingTurn !== undefined) this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
     const summary = await this.#deps.duties.writeRunSummary(run.workflowRunId, closing.closeReason);
     const ending = {
       unknownEffects: [],
@@ -415,4 +483,29 @@ export class SessionActor {
       return Promise.resolve();
     });
   }
+}
+
+function closingOf(fault: AttemptFault): RunClosing {
+  if (fault.kind === 'VIOLATION')
+    return {
+      closeReason: 'VIOLATION',
+      failure: {
+        code: fault.reasonCode,
+        category: 'INTEGRITY',
+        source: 'KERNEL',
+        unitRequestId: fault.requestId,
+      },
+    };
+  return {
+    closeReason: 'FAILED',
+    failure:
+      fault.kind === 'STOP_UNCONFIRMED'
+        ? {
+            code: 'EXECUTION_STOP_UNCONFIRMED',
+            category: 'INTERNAL',
+            source: 'KERNEL',
+            unitRequestId: fault.requestId,
+          }
+        : { code: 'KERNEL_INTERNAL', category: 'INTERNAL', source: 'KERNEL' },
+  };
 }

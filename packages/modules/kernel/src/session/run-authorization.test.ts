@@ -89,12 +89,14 @@ describe('project.instructions', () => {
 });
 
 describe('closing', () => {
-  it('cancels every pending question and ends the Lease', () => {
+  it('cancels every pending question and keeps the Lease until the run drains', () => {
     const auth = authorization();
     auth.answer(ask(auth, 'a'), 'ALLOW');
     auth.askInstructions(file, 'b');
-    const settled = auth.closeAll();
+    const settled = auth.cancelQuestions();
     expect(settled.map((entry) => entry.resolution)).toEqual(['CANCELLED']);
+    expect(auth.lease).toBeDefined();
+    auth.endLease();
     expect(auth.lease).toBeUndefined();
   });
 });

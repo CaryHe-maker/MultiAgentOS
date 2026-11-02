@@ -178,12 +178,15 @@ export class RunAuthorization<W> {
     return settled;
   }
 
-  /** Convergence: nothing stays pending and the Lease ends with the run. */
-  closeAll(): readonly QuestionResolved<W>[] {
-    const settled = [...this.#questions.keys()].flatMap(
+  /** The run started converging: nothing stays pending, and results in flight still settle. */
+  cancelQuestions(): readonly QuestionResolved<W>[] {
+    return [...this.#questions.keys()].flatMap(
       (questionId) => this.#settle(questionId, 'CANCELLED') ?? [],
     );
+  }
+
+  /** The run has drained: the Lease ends with it (Kernel/Interaction 6.3). */
+  endLease(): void {
     this.#lease = undefined;
-    return settled;
   }
 }

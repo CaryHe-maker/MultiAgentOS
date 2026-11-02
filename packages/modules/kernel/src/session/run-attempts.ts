@@ -11,6 +11,7 @@ import type {
   UnitInputV1,
   UnitOutputV1,
   UnitReportV1,
+  ViolationCode,
 } from '@multiagentos/contracts';
 import type { SchedulerDuties, Settlement, SettlementResult } from '../interfaces/index.js';
 
@@ -74,7 +75,7 @@ export type RetryDecision =
 
 /** Why the run must converge; the actor decides how (Kernel/Interaction 6.3). */
 export type AttemptFault =
-  | { readonly kind: 'VIOLATION'; readonly reasonCode: ReasonCodeV1; readonly requestId: string }
+  | { readonly kind: 'VIOLATION'; readonly reasonCode: ViolationCode; readonly requestId: string }
   | { readonly kind: 'STOP_UNCONFIRMED'; readonly requestId: string }
   | { readonly kind: 'KERNEL_INTERNAL' };
 
@@ -107,8 +108,9 @@ export interface RunAttemptsDeps {
   readonly isConverging: () => boolean;
   readonly leaseIsValid: () => boolean;
   readonly deliver: (report: UnitReportV1) => void;
+  readonly attemptStarted: (spec: AttemptSpec, unitAttemptId: string) => void;
   /** The attempt is settled, delivered or not: the run may now finish converging. */
-  readonly attemptEnded: (unitAttemptId: string) => void;
+  readonly attemptEnded: (spec: AttemptSpec, unitAttemptId: string) => void;
   readonly onFault: (fault: AttemptFault) => void;
   readonly audit: (entry: AttemptAudit) => void;
 }
@@ -132,11 +134,8 @@ interface Attempt {
 
 /** Built-in Units finish in Execution without an execution instance. */
 const BUILT_IN: ReadonlySet<ExecutionKindV1> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
-const VIOLATIONS: ReadonlySet<ReasonCodeV1> = new Set([
-  'SCOPE_MISSING',
-  'PATH_ESCAPE',
-  'GUARD_FAILURE',
-]);
+const isViolation = (code: ReasonCodeV1 | undefined): code is ViolationCode =>
+  code === 'SCOPE_MISSING' || code === 'PATH_ESCAPE' || code === 'GUARD_FAILURE';
 
 const unitRefOf = (unit: UnitDefinitionV1) =>
   ({ kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest }) as const;
@@ -148,6 +147,7 @@ const unitRefOf = (unit: UnitDefinitionV1) =>
  */
 export class RunAttempts {
   readonly #deps: RunAttemptsDeps;
+  readonly #byRequest = new Map<string, AttemptSpec>();
   readonly #attempts = new Map<string, Attempt>();
   readonly #executions = new Set<string>();
   readonly #finalCalls = new Map<string, string>();
@@ -156,12 +156,29 @@ export class RunAttempts {
     this.#deps = deps;
   }
 
-  /** Returns the unitAttemptId; Execution queues the attempt and starts it when idle. */
+  /** Execution queues the attempt, calls `registerAttempt` first and starts it when idle. */
   async start(spec: AttemptSpec): Promise<string> {
-    const unitAttemptId = await this.#deps.createAttempt(spec);
+    this.#byRequest.set(spec.requestId, spec);
+    return this.#deps.createAttempt(spec);
+  }
+
+  /** Must precede any reservation or result check, including for a built-in Unit. */
+  registerAttempt(unitAttemptId: string, requestId: string): void {
+    const spec = this.#byRequest.get(requestId);
+    if (spec === undefined) throw new Error('No attempt was started for this request');
     if (this.#attempts.has(unitAttemptId)) throw new Error('Duplicate unitAttemptId');
     this.#attempts.set(unitAttemptId, { spec, unitAttemptId, retries: 0, checked: false });
-    return unitAttemptId;
+    this.#deps.attemptStarted(spec, unitAttemptId);
+  }
+
+  /** An attempt that ends without a result, such as one still queued when the run converges. */
+  abandon(unitAttemptId: string): void {
+    const attempt = this.#attempts.get(unitAttemptId);
+    if (attempt === undefined || attempt.checked) return;
+    if (attempt.reservation !== undefined)
+      this.#deps.scheduler.release(attempt.reservation.grantId);
+    attempt.checked = true;
+    this.#ended(attempt);
   }
 
   /** Must precede the Supervisor.execute of this executionId. */
@@ -185,8 +202,11 @@ export class RunAttempts {
     readonly estimatedTokens: number;
     readonly final: boolean;
   }): ReservationDecision {
-    if (this.#deps.isConverging()) return { granted: false, reason: 'RUN_CONVERGING' };
     const attempt = this.#open(request.unitAttemptId);
+    if (this.#deps.isConverging()) {
+      this.abandon(request.unitAttemptId);
+      return { granted: false, reason: 'RUN_CONVERGING' };
+    }
     const { agentRunId } = attempt.spec;
     const usedBy = this.#finalCalls.get(agentRunId);
     if (request.final && usedBy !== undefined && usedBy !== request.unitAttemptId) {
@@ -202,6 +222,7 @@ export class RunAttempts {
   #reserve(attempt: Attempt, estimatedTokens: number, final: boolean): ReservationDecision {
     const grant = this.#deps.scheduler.acquire(this.#deps.provider);
     if (!grant.ok) {
+      this.abandon(attempt.unitAttemptId);
       this.#deps.onFault({ kind: 'KERNEL_INTERNAL' });
       return { granted: false, reason: 'RUN_CONVERGING' };
     }
@@ -235,7 +256,7 @@ export class RunAttempts {
 
     if (check.outcome === 'VIOLATION') {
       const reasonCode = check.reasonCode;
-      if (reasonCode === undefined || !VIOLATIONS.has(reasonCode))
+      if (!isViolation(reasonCode))
         throw new Error('Violation result has a non-violation reasonCode');
       this.#ended(attempt);
       this.#deps.onFault({ kind: 'VIOLATION', reasonCode, requestId });
@@ -404,7 +425,7 @@ export class RunAttempts {
   }
 
   #ended(attempt: Attempt): void {
-    this.#deps.attemptEnded(attempt.unitAttemptId);
+    this.#deps.attemptEnded(attempt.spec, attempt.unitAttemptId);
   }
 }
 
