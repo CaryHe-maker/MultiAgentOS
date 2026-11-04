@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXECUTION_KINDS,
+  COMMAND_KINDS,
   REPOSITORY_KINDS,
   WRITE_KINDS,
 } from '../platform-common/execution-kind.js';
@@ -15,8 +16,9 @@ describe('test fixtures', () => {
     const unit = testUnitDefinition(kind);
     const reads = (REPOSITORY_KINDS as readonly string[]).includes(kind);
     const writes = (WRITE_KINDS as readonly string[]).includes(kind);
+    const runs = (COMMAND_KINDS as readonly string[]).includes(kind);
     expect(unit.protectedCapabilities).toEqual(
-      reads ? ['repo.read'] : writes ? ['workspace.write'] : [],
+      reads ? ['repo.read'] : writes ? ['workspace.write'] : runs ? ['command.exec'] : [],
     );
   });
 

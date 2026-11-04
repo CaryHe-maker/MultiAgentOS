@@ -95,6 +95,7 @@ export class Console {
   #interruptedAt: number | undefined;
   #finished: ((code: number) => void) | undefined;
   #exit: (() => void) | undefined;
+  #exitCode = 0;
 
   public constructor(deps: ConsoleDeps) {
     this.#deps = deps;
@@ -150,6 +151,11 @@ export class Console {
     if (accepted.outcome === 'REJECTED') return 1;
     this.#sessionId = accepted.sessionId;
     return finished;
+  }
+
+  /** 0, or the code of an interrupt that ended the session (75: out of memory, resume later). */
+  get exitCode(): number {
+    return this.#exitCode;
   }
 
   /** Resolves when the user asked to leave; the composition root then shuts down. */
@@ -682,6 +688,12 @@ export class Console {
     }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
+    if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined) {
+      // The run was cut short from outside: the log is complete, so leave in control.
+      this.#exitCode = RUN_EXIT_CODES.INTERRUPTED;
+      await this.shutdown();
+      return;
+    }
     if (this.#finished !== undefined) {
       this.#finished(RUN_EXIT_CODES[event.closeReason]);
       return;

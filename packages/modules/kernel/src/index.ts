@@ -8,8 +8,10 @@ export { DEFAULT_KERNEL_CONFIG } from './interfaces/index.js';
 export {
   createSubprocessRunner,
   createSupervisor,
+  probeSandbox,
   type ModuleHostControl,
   type SupervisorDeps,
+  type SandboxProbe,
   type SupervisorModule,
   type TrackedSubprocessRunner,
 } from './supervisor/index.js';

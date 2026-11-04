@@ -51,7 +51,7 @@ export async function runCommand(
       const exited = console.exited();
       await console.start();
       await exited;
-      return 0;
+      return console.exitCode;
     }
     if (template === undefined) throw new Error('A run needs the template it starts');
     const code = await console.run(template, command.goal);

@@ -2,6 +2,7 @@ import { UnitDefinitionSchema, type UnitDefinition } from '../catalog/definition
 import { FileReadOutputSchema, type FileReadOutput } from '../executor/file-read.js';
 import { ArtifactRefSchema, type ArtifactRef } from '../platform-common/common-schemas.js';
 import {
+  COMMAND_KINDS,
   REPOSITORY_KINDS,
   WRITE_KINDS,
   type ExecutionKind,
@@ -32,6 +33,7 @@ export function testArtifactRef(mediaType = 'text/plain', seed = 'a'): ArtifactR
 
 const READS_REPOSITORY: ReadonlySet<ExecutionKind> = new Set(REPOSITORY_KINDS);
 const WRITES_WORKSPACE: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
+const RUNS_COMMANDS: ReadonlySet<ExecutionKind> = new Set(COMMAND_KINDS);
 
 /**
  * A `v1` Unit of the given kind. It declares `repo.read` exactly when the kind reads the
@@ -55,7 +57,9 @@ export function testUnitDefinition(
       ? ['repo.read']
       : WRITES_WORKSPACE.has(executionKind)
         ? ['workspace.write']
-        : [],
+        : RUNS_COMMANDS.has(executionKind)
+          ? ['command.exec']
+          : [],
     inputContract: { kind: 'contract', id: `test.${name}`, version: 'v1' },
     outputContract: { kind: 'contract', id: `test.${name}`, version: 'v1' },
     toolRefs: [],

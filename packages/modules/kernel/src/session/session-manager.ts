@@ -1,3 +1,4 @@
+import type { MemoryLevel } from '@multiagentos/contracts';
 import {
   newId,
   type CoreRejectedCode,
@@ -86,6 +87,16 @@ export class SessionManager {
       });
       this.startSweepTimer();
     });
+  }
+
+  /** Memory pressure reaches the open Session's run, if any; with none open, DANGER still exits. */
+  memoryPressure(level: MemoryLevel, noRun: () => void): Promise<void> {
+    const open = this.#open;
+    if (open === undefined) {
+      if (level === 'DANGER') noRun();
+      return Promise.resolve();
+    }
+    return open.actor.memoryPressure(level);
   }
 
   /** The open Session, when `sessionId` names it. */

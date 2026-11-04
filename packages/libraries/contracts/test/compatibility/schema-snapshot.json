@@ -5358,6 +5358,129 @@
       "additionalProperties": false,
       "$id": "context.RepositorySearchOutput.v1"
     },
+    "executor.CommandInput.v1": {
+      "type": "object",
+      "required": [
+        "command",
+        "workdir",
+        "timeoutMs",
+        "network"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "workdir": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "network": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.CommandInput.v1"
+    },
+    "executor.CommandOutput.v1": {
+      "type": "object",
+      "required": [
+        "exitCode",
+        "signal",
+        "timedOut",
+        "backend",
+        "sandboxDenials"
+      ],
+      "properties": {
+        "exitCode": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timedOut": {
+          "type": "boolean"
+        },
+        "backend": {
+          "enum": [
+            "BWRAP",
+            "UNISOLATED"
+          ]
+        },
+        "sandboxDenials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retention": {
+          "type": "object",
+          "required": [
+            "strategy",
+            "unit",
+            "limit",
+            "retained",
+            "omitted",
+            "fullOutputTruncated"
+          ],
+          "properties": {
+            "strategy": {
+              "enum": [
+                "HEAD",
+                "TAIL",
+                "BOTH",
+                "ITEMS"
+              ]
+            },
+            "unit": {
+              "enum": [
+                "BYTES",
+                "ITEMS"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retained": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "omitted": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "fullOutputTruncated": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.RetentionNotice.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.CommandOutput.v1"
+    },
     "executor.FileEditArgs.v1": {
       "type": "object",
       "required": [
@@ -5569,6 +5692,149 @@
       },
       "additionalProperties": false,
       "$id": "executor.FileWriteOutput.v1"
+    },
+    "executor.GitInspectArgs.v1": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "status",
+            "diff",
+            "log",
+            "show",
+            "blame"
+          ]
+        },
+        "staged": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "rev": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "lines": {
+          "type": "string",
+          "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.GitInspectArgs.v1"
+    },
+    "executor.GitInspectInput.v1": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "status",
+            "diff",
+            "log",
+            "show",
+            "blame"
+          ]
+        },
+        "staged": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "rev": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "lines": {
+          "type": "string",
+          "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.GitInspectInput.v1"
+    },
+    "executor.GitInspectOutput.v1": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "status",
+            "diff",
+            "log",
+            "show",
+            "blame"
+          ]
+        },
+        "retention": {
+          "type": "object",
+          "required": [
+            "strategy",
+            "unit",
+            "limit",
+            "retained",
+            "omitted",
+            "fullOutputTruncated"
+          ],
+          "properties": {
+            "strategy": {
+              "enum": [
+                "HEAD",
+                "TAIL",
+                "BOTH",
+                "ITEMS"
+              ]
+            },
+            "unit": {
+              "enum": [
+                "BYTES",
+                "ITEMS"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retained": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "omitted": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "fullOutputTruncated": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.RetentionNotice.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.GitInspectOutput.v1"
     },
     "executor.ModelCallInput.v1": {
       "type": "object",
@@ -6223,6 +6489,33 @@
       },
       "additionalProperties": false,
       "$id": "executor.RetentionNotice.v1"
+    },
+    "executor.RunCommandArgs.v1": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "workdir": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "network": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.RunCommandArgs.v1"
     },
     "executor.TokenUsage.v1": {
       "type": "object",
@@ -16274,6 +16567,27 @@
       },
       "additionalProperties": false,
       "$id": "kernel.execution.CancelRunExecutionsRequest.v1"
+    },
+    "kernel.execution.CommandExecutorInput.v1": {
+      "type": "object",
+      "required": [
+        "command",
+        "timeoutMs"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.CommandExecutorInput.v1"
     },
     "kernel.execution.ExecutionFact.v1": {
       "anyOf": [

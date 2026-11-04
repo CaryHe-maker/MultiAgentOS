@@ -95,7 +95,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
   const run: SandboxRunner['run'] = (options) =>
     new Promise<SandboxRunResult>((resolve, reject) => {
       const { scope, command, signal } = options;
-      if (scope.backend !== 'BWRAP' || process.platform === 'win32') {
+      if (process.platform === 'win32') {
         resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
         return;
       }
@@ -113,6 +113,9 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         resolve(ranNothing(scope));
         return;
       }
+      // `UNISOLATED` is what the user approved when the sandbox is not available: the same shell,
+      // the same whitelisted environment and the same work directory, but no isolation.
+      const unisolated = scope.backend === 'UNISOLATED';
       const args = buildBwrapArgs({
         profile: scope.profile,
         command,
@@ -125,13 +128,22 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       });
       let child: ChildProcess;
       try {
-        child = spawn(bwrap, args, {
-          detached: true,
-          shell: false,
-          windowsHide: true,
-          env: {},
-          stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
-        });
+        child = unisolated
+          ? spawn(deps.shell ?? '/bin/bash', ['-c', command], {
+              cwd: workdirOf(scope),
+              detached: true,
+              shell: false,
+              windowsHide: true,
+              env: environment.env,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            })
+          : spawn(bwrap, args, {
+              detached: true,
+              shell: false,
+              windowsHide: true,
+              env: {},
+              stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+            });
       } catch {
         resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
         return;
@@ -141,7 +153,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       const chunks: Buffer[] = [];
       let size = 0;
       let truncated = false;
-      let innerPid: number | undefined;
+      let innerPid: number | undefined = unisolated ? child.pid : undefined;
       let timedOut = false;
       let stopRequested = false;
       let exited = false;
@@ -224,7 +236,13 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         settle(() => {
           const text = output();
           // bwrap itself failing to set up its namespaces says so before the command prints.
-          if (!started && exitCode === 1 && /bwrap: /u.test(text) && innerPid === undefined) {
+          if (
+            !unisolated &&
+            !started &&
+            exitCode === 1 &&
+            /bwrap: /u.test(text) &&
+            innerPid === undefined
+          ) {
             resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
             return;
           }
@@ -257,6 +275,11 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
     active: () => live.size,
   };
 }
+
+const workdirOf = (scope: SandboxScope): string =>
+  scope.profile.workdir === '' || scope.profile.workdir === '.'
+    ? scope.profile.repositoryRoot
+    : posix.join(scope.profile.repositoryRoot, scope.profile.workdir);
 
 function ranNothing(scope: SandboxScope): SandboxRunResult {
   return {

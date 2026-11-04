@@ -27,6 +27,8 @@ import {
 } from '@multiagentos/contracts';
 import {
   createExecutorRegistry,
+  createCommandAnalyzer,
+  createCommandParser,
   createShadowFiles,
   createWorkspaceFiles,
   readRepositoryText,
@@ -44,6 +46,8 @@ import {
   createSubprocessRunner,
   createSupervisor,
   pinAgentFrom,
+  probeSandbox,
+  type SandboxProbe,
   type TrackedSubprocessRunner,
 } from '@multiagentos/kernel';
 import { ModuleHost } from '@multiagentos/module-host';
@@ -82,6 +86,8 @@ export interface ComposeOptions {
   readonly timeouts?: Partial<ShutdownTimeouts>;
   /** Local fault diagnostics; defaults to stderr. */
   readonly log?: (line: string) => void;
+  /** What the sandbox probe found; a test gives its own so that it does not depend on the host. */
+  readonly sandboxProbe?: SandboxProbe;
   /** The runner owned by the entry so it can kill children even if composition fails. */
   readonly subprocess?: TrackedSubprocessRunner;
   /** Composition-time fault entry; the entry buffers faults until SystemControl is bound. */
@@ -194,6 +200,12 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const preset = hasGit ? options.preset : 'readonly';
   if (!hasGit && options.preset !== 'readonly')
     log('git was not found, so this session is read-only: nothing can be written or undone.\n');
+  // Commands run isolated or not at all (M2Design 6.2): the probe decides once for the process.
+  const sandbox = options.sandboxProbe ?? (await probeSandbox(options.repositoryRoot));
+  if (!sandbox.available && preset !== 'readonly')
+    log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
+`);
+  const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
   const internalFaults =
@@ -232,6 +244,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
             },
           }),
       readRepositoryFile: readRepositoryText,
+      commands: {
+        analyze: analyzeCommand,
+        sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),
+      },
       reportSystemFault,
       diagnostic: log,
       now,

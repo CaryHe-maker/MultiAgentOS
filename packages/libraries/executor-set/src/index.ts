@@ -69,3 +69,8 @@ export { ARITY, commandPrefix } from './command/parse/arity.js';
 
 export { createRunCommandExecutor } from './command/run-command-executor.js';
 export { createGitInspectExecutor, gitArguments } from './git/git-inspect-executor.js';
+export {
+  createCommandAnalyzer,
+  DEFAULT_CRITICAL_COMMANDS,
+  type CommandAnalysisResult,
+} from './command/command-analyzer.js';

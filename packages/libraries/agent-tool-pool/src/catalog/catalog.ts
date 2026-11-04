@@ -7,6 +7,7 @@ import {
   DEFINITION_DRAFT_SCHEMAS,
   DEFINITION_KINDS,
   DEFINITION_SCHEMAS,
+  COMMAND_KINDS,
   REPOSITORY_KINDS,
   WRITE_KINDS,
   canonicalJson,
@@ -131,6 +132,8 @@ const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string
   FILE_WRITE: ['executor.FileWriteInput.v1', 'executor.FileWriteOutput.v1'],
   FILE_EDIT: ['executor.FileEditInput.v1', 'executor.FileWriteOutput.v1'],
   OUTPUT_READ: ['executor.OutputReadInput.v1', 'executor.OutputReadOutput.v1'],
+  COMMAND: ['executor.CommandInput.v1', 'executor.CommandOutput.v1'],
+  GIT_INSPECT: ['executor.GitInspectInput.v1', 'executor.GitInspectOutput.v1'],
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],
@@ -141,6 +144,7 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   FILE_WRITE: 'executor.FileWriteArgs.v1',
   FILE_EDIT: 'executor.FileEditArgs.v1',
   OUTPUT_READ: 'executor.OutputReadArgs.v1',
+  COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
 const END_CONTRACTS = {
@@ -158,6 +162,7 @@ const FIXED_CODES = [
 const EFFORTS = ['none', 'low', 'high', 'max'] as const;
 const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
 const WRITES_WORKSPACE: ReadonlySet<string> = new Set(WRITE_KINDS);
+const RUNS_COMMANDS: ReadonlySet<string> = new Set(COMMAND_KINDS);
 const contractOf = (ref: { readonly id: string; readonly version: string }) =>
   `${ref.id}.${ref.version}`;
 
@@ -404,6 +409,13 @@ function checkRules(
             origin,
             'UNIT_INVALID',
             `${body.executionKind} ${declaresWrite ? 'must not' : 'must'} declare workspace.write`,
+          );
+        const declaresCommand = body.protectedCapabilities.includes('command.exec');
+        if (RUNS_COMMANDS.has(body.executionKind) !== declaresCommand)
+          report(
+            origin,
+            'UNIT_INVALID',
+            `${body.executionKind} ${declaresCommand ? 'must not' : 'must'} declare command.exec`,
           );
         if (body.toolRefs.length > 1) report(origin, 'UNIT_INVALID', 'a unit has at most one tool');
         if (

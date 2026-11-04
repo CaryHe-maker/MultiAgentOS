@@ -61,7 +61,7 @@ describe('admitUnit', () => {
   });
 
   it('refuses kinds this stage cannot run, before reading the input', () => {
-    const command = unitOf('COMMAND');
+    const command = unitOf('TEST');
     expect(refusal({ agentRun: pinned(command), inputIsValid: () => false }, command)).toBe(
       'UNSUPPORTED_CAPABILITY',
     );

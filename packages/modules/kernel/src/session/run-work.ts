@@ -1,4 +1,10 @@
-import { isProjectInstructionPath, writableRoots } from '@multiagentos/contracts';
+import {
+  approvalDigestOf,
+  isProjectInstructionPath,
+  writableRoots,
+  type CommandInput,
+  type SandboxProfile,
+} from '@multiagentos/contracts';
 import type {
   AnswerAuthorizationRequest,
   AuthorizationRequest,
@@ -35,7 +41,13 @@ import { RunActivity, type ActivityOutput } from './run-activity.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
 import { admitWork, readsProjectFile, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
-import { ceilingOf, type CapabilityCeiling, type UnitDecision } from './unit-decision.js';
+import {
+  ceilingOf,
+  type CapabilityCeiling,
+  type CommandAnalysis,
+  type CommandDemand,
+  type UnitDecision,
+} from './unit-decision.js';
 import type { RetryingActivity } from './run-execution.js';
 import { WallClocks } from './wall-clocks.js';
 
@@ -66,7 +78,24 @@ export interface RunHost {
   enqueue(work: () => void): void;
 }
 
+/** What running commands needs from outside Core (Kernel/Core 5b); absent, no command runs. */
+export interface CommandSupport {
+  /** The line analysed with the lists applied; `text` is the line as the model wrote it. */
+  readonly analyze: (command: string) => CommandAnalysis;
+  /** What the probe at the start of the Session found. */
+  readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+  readonly unavailablePolicy: 'deny' | 'ask-unisolated';
+  readonly homeReadOnly: readonly string[];
+  readonly homeMaskedFiles: readonly string[];
+  readonly dataDir?: string;
+  /** The files to mask and the protected paths that exist, found by looking at the repository. */
+  readonly scan: () => Promise<
+    Pick<SandboxProfile, 'maskedFiles' | 'maskedDirs' | 'protectedExisting'>
+  >;
+}
+
 export interface RunWorkDeps {
+  readonly command?: CommandSupport;
   readonly host: RunHost;
   readonly ledgers: RunLedgers;
   readonly scheduler: SchedulerDuties;
@@ -166,6 +195,8 @@ export class RunWork {
   readonly #attempts: RunAttempts;
   readonly #activity: RunActivity;
   readonly #startedAt: string;
+  /** Memory is short (Kernel/Core 5c): no new AgentRun, and the tools of running ones stop. */
+  #memoryWarning = false;
   #turns = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
@@ -239,6 +270,10 @@ export class RunWork {
 
   #countInFlight(agentRunId: string, change: number): void {
     this.#inFlight.set(agentRunId, (this.#inFlight.get(agentRunId) ?? 0) + change);
+  }
+
+  setMemoryWarning(): void {
+    this.#memoryWarning = true;
   }
 
   openTurn(turnId: string): void {
@@ -337,6 +372,7 @@ export class RunWork {
     if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
     if (this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_EXISTS');
+    if (this.#memoryWarning) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
     if (this.#host.control().activeAgentRuns.size > 0)
       return this.#refuse(requestId, request, 'AGENT_RUN_ACTIVE');
 
@@ -406,6 +442,10 @@ export class RunWork {
     const response = this.#accept(requestId, request);
     this.#units.submitted += 1;
 
+    if (admission.countsAsTool && this.#memoryWarning) {
+      this.#refuseUnit(request, unit, { reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' });
+      return response;
+    }
     if (admission.countsAsTool) {
       const quota = this.#deps.ledgers.countToolUnit(request.agentRunId, record.agent.maxToolUnits);
       if (!quota.ok) {
@@ -422,12 +462,18 @@ export class RunWork {
     const { request, unit, record } = waiting;
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
+      const command = capability === 'command.exec' ? this.#commandDemand(request) : undefined;
+      if (capability === 'command.exec' && command === undefined) {
+        this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
+        return;
+      }
       const decision = this.#authorization.decide(
         {
           requestId: request.requestId,
           agentRunId: request.agentRunId,
           capability,
           ...(path === undefined ? {} : { path }),
+          ...(command === undefined ? {} : { command }),
         },
         record.ceiling,
       );
@@ -446,7 +492,8 @@ export class RunWork {
   async #ask(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
     const { requestId, agentRunId, input } = waiting.request;
     let check;
-    if (decision.capability === 'repo.read')
+    if (decision.capability === 'command.exec') check = this.#askCommand(waiting, decision);
+    else if (decision.capability === 'repo.read')
       check = this.#authorization.requireRepoRead(requestId, agentRunId);
     else if (decision.critical) {
       const path = pathOf(input);
@@ -468,6 +515,48 @@ export class RunWork {
     this.#activity.awaitingAuthorization(agentRunId);
   }
 
+  #commandDemand(request: SubmitUnitRequest): CommandDemand | undefined {
+    const support = this.#deps.command;
+    if (support === undefined || !('command' in request.input) || !('timeoutMs' in request.input))
+      return undefined;
+    const { input } = request as { input: CommandInput };
+    return {
+      analysis: support.analyze(input.command),
+      workdir: input.workdir,
+      network: input.network,
+      sandbox: support.sandbox(),
+      unavailablePolicy: support.unavailablePolicy,
+    };
+  }
+
+  #askCommand(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
+    const { request, record } = waiting;
+    const demand = this.#commandDemand(request);
+    if (demand === undefined) throw new Error('A command question has no command');
+    const input = request.input as CommandInput;
+    const unisolated = demand.sandbox === 'UNAVAILABLE';
+    const roots = [...writableRoots(record.ceiling)];
+    return this.#authorization.askCommand(
+      {
+        analysis: demand.analysis,
+        workdir: input.workdir,
+        writableRoots: roots,
+        network: input.network,
+        unisolated,
+        approvalDigest: approvalDigestOf({
+          command: input.command,
+          workdir: input.workdir,
+          network: input.network,
+          writableRoots: roots,
+          backend: unisolated ? 'UNISOLATED' : 'BWRAP',
+        }),
+      },
+      decision.critical,
+      request.requestId,
+      request.agentRunId,
+    );
+  }
+
   #refuseUnit(
     request: SubmitUnitRequest,
     unit: UnitDefinition,
@@ -482,6 +571,36 @@ export class RunWork {
       },
       refusal,
     );
+  }
+
+  /** Where a command runs and with what; the scanned lists are not part of what was approved. */
+  async #commandScope(request: SubmitUnitRequest, record: AgentRunRecord): Promise<ExecutionScope> {
+    const support = this.#deps.command;
+    if (support === undefined) throw new Error('A command needs the command support');
+    const input = request.input as CommandInput;
+    const backend = support.sandbox() === 'UNAVAILABLE' ? 'UNISOLATED' : 'BWRAP';
+    const roots = [...writableRoots(record.ceiling)];
+    return {
+      kind: 'SANDBOX',
+      backend,
+      approvalDigest: approvalDigestOf({
+        command: input.command,
+        workdir: input.workdir,
+        network: input.network,
+        writableRoots: roots,
+        backend,
+      }),
+      profile: {
+        repositoryRoot: this.#deps.repositoryRoot,
+        workdir: input.workdir,
+        writableRoots: roots,
+        network: input.network,
+        homeReadOnly: [...support.homeReadOnly],
+        homeMaskedFiles: [...support.homeMaskedFiles],
+        ...(support.dataDir === undefined ? {} : { dataDir: support.dataDir }),
+        ...(await support.scan()),
+      },
+    };
   }
 
   #scopeOf(unit: UnitDefinition, record: AgentRunRecord): ExecutionScope {
@@ -517,7 +636,10 @@ export class RunWork {
       turnId,
       unit,
       input: request.input,
-      scope: this.#scopeOf(unit, record),
+      scope:
+        unit.executionKind === 'COMMAND'
+          ? await this.#commandScope(request, record)
+          : this.#scopeOf(unit, record),
       runEpoch: this.#host.runEpoch(),
       agent: record.agent,
       display: request.display,

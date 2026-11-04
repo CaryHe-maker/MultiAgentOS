@@ -30,6 +30,7 @@ import {
   type Decision,
   type RunControl,
 } from './run-control.js';
+import type { MemoryLevel } from '@multiagentos/contracts';
 import type { AttemptFault } from './run-attempts.js';
 import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
@@ -92,6 +93,8 @@ export interface SessionActorDeps {
   /** The actor is finished: Session management takes it out. */
   readonly onClosed: (sessionId: string) => void;
   readonly onFatal: (error: unknown) => void;
+  /** A run ended because of memory pressure (Kernel/Core 5c): the system now exits in control. */
+  readonly onInterrupted?: () => void;
   /** What Gateway may let in; pushed on every change of a run. */
   readonly admission: (
     workflowRunId: string,
@@ -160,6 +163,30 @@ export class SessionActor {
     this.#inbox.enqueue({ kind: 'SESSION_BEGIN', start: begin }, 'control');
   }
 
+  /**
+   * The one entry of memory pressure (Kernel/Core 5c). WARNING takes the run to its wrap-up path
+   * and refuses new work; DANGER interrupts it: Workflow is told, in-flight work is cancelled, and
+   * the run closes as INTERRUPTED.
+   */
+  memoryPressure(level: MemoryLevel): Promise<void> {
+    return this.call(async () => {
+      const run = this.#run;
+      if (run === undefined || run.control.phase === 'CLOSED') {
+        if (level === 'DANGER') this.#deps.onInterrupted?.();
+        return;
+      }
+      if (level === 'WARNING') {
+        run.work.setMemoryWarning();
+        return;
+      }
+      this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+        type: 'RunInterrupted',
+        reason: 'MEMORY_PRESSURE',
+      });
+      await this.closeRun(run, { closeReason: 'INTERRUPTED' });
+    }, 'control');
+  }
+
   close(reason: 'SWITCHED' | 'SHUTDOWN'): void {
     this.#inbox.enqueue({ kind: 'SESSION_CLOSE', reason }, 'control');
   }
@@ -205,6 +232,12 @@ export class SessionActor {
       const { fault } = run;
       delete run.fault;
       await this.closeRun(run, closingOf(fault));
+      // A process that cannot be confirmed stopped may still be changing the workspace: nothing
+      // after it is safe, so the system stops (M2Design 4.7; SystemFaultHandling 2).
+      if (fault.kind === 'STOP_UNCONFIRMED')
+        this.#deps.onFatal(
+          new Error(`STOP_UNCONFIRMED: request ${fault.requestId} could not be confirmed stopped`),
+        );
     }
     await this.#finishIfDrained(run);
     if (run.control.phase !== 'CLOSED') run.work.reconcile();
@@ -651,6 +684,7 @@ export class SessionActor {
       ...ending,
       type: 'RunFinished',
     } as unknown as RunFinished);
+    if (closing.closeReason === 'INTERRUPTED') this.#deps.onInterrupted?.();
     if (this.#closeAfterRun !== undefined) this.#closeSession(this.#closeAfterRun);
   }
 

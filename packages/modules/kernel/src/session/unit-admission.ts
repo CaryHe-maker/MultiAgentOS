@@ -28,7 +28,7 @@ export type Admission =
     };
 
 /** The kinds this stage cannot run. */
-const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['COMMAND', 'TEST']);
+const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['TEST']);
 
 /** Model work and the Units that end an Agent stay available after the quota (Kernel/Monitor 3). */
 const UNCOUNTED_KINDS: ReadonlySet<ExecutionKind> = new Set([

@@ -802,7 +802,14 @@ function handleTool(
   // Kernel's refusals have fixed meanings, not the Unit's failurePolicy (Module/Workflow 7): a quota
   // names the wrap-up, and a declined authorization is a tool result the model reads.
   if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
-    next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
+    next = wrapUp(
+      next,
+      report.quota === 'TOOL_UNITS'
+        ? 'TOOL_UNIT_LIMIT'
+        : report.quota === 'MEMORY'
+          ? 'MEMORY_LIMIT'
+          : 'WALL_CLOCK_LIMIT',
+    );
   } else if (declined) {
     const { toolName } = pending.call;
     if (!next.declinedTools.includes(toolName))

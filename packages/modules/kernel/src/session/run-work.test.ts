@@ -18,12 +18,12 @@ import {
   testFileReadOutput,
   testUnitDefinition,
 } from '@multiagentos/contracts/test-support';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run-work.js';
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 import type { PinnedAgent } from './run-attempts.js';
-import type { ProjectFileRead } from './run-work.js';
+import type { CommandSupport, ProjectFileRead } from './run-work.js';
 
 const sessionId = newId('ses');
 const fileRead = testUnitDefinition('FILE_READ');
@@ -42,7 +42,13 @@ const replyInput = {
  */
 async function setup(
   agent: PinnedAgent = testPinnedAgent(),
-  options: { preset?: 'standard' | 'readonly'; file?: ProjectFileRead; trusted?: string[] } = {},
+  options: {
+    preset?: 'standard' | 'readonly';
+    file?: ProjectFileRead;
+    trusted?: string[];
+    command?: CommandSupport;
+    interrupted?: () => void;
+  } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
   const toWorkflow: ToWorkflow[] = [];
@@ -83,6 +89,7 @@ async function setup(
           cancelExecutions: execution.cancelExecutions,
           pinAgent: () => Promise.resolve({ ok: true, agent }),
           preset: options.preset ?? 'standard',
+          ...(options.command === undefined ? {} : { command: options.command }),
           readProjectFile: () => Promise.resolve(options.file ?? { exists: false }),
           isTrusted: (_path, sha256) => trusted.has(sha256),
           trust: (_path, sha256) => {
@@ -107,6 +114,7 @@ async function setup(
     onClosed: () => undefined,
     admission: () => undefined,
     onFatal: (error) => faults.push(error),
+    ...(options.interrupted === undefined ? {} : { onInterrupted: options.interrupted }),
   });
   const settled = async () => {
     await actor.idle();
@@ -186,7 +194,10 @@ async function setup(
     if (asked?.event.type !== 'AuthorizationRequest') throw new Error('no question');
     return asked.event.questionId;
   };
-  const answer = (scope: 'ALLOW' | 'ONCE' | 'DENY', questionId = question()) =>
+  const answer = (
+    scope: 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY',
+    questionId = question(),
+  ) =>
     actor.call(() =>
       run().work.answerAuthorization({
         ...inRun,
@@ -758,5 +769,172 @@ describe('activity of a run', () => {
     const types = kernel.interactionTypes();
     expect(types).toContain('ActivityEvent');
     expect(types.indexOf('AuthorizationRequest')).toBeLessThan(types.lastIndexOf('ActivityEvent'));
+  });
+});
+
+describe('a command', () => {
+  const commandUnit = testUnitDefinition('COMMAND');
+  const caps = ['repo.read', 'workspace.write', 'command.exec', 'command.network'] as const;
+  const runner = testPinnedAgent({
+    units: [fileRead, commandUnit, publish],
+    capabilities: [...caps],
+  });
+  const support = (over: Partial<CommandSupport> = {}): CommandSupport => ({
+    analyze: (text) => ({
+      text,
+      subcommands: text.split(' && ').map((part) => ({
+        text: part,
+        words: part.split(' '),
+        prefix: part.split(' ').slice(0, 2).join(' '),
+      })),
+      unreusable: [],
+      ...(text.startsWith('git push') ? { critical: 'git push' } : {}),
+      ...(text.startsWith('rm -rf') ? { denied: 'rm -rf' } : {}),
+    }),
+    sandbox: () => 'AVAILABLE',
+    unavailablePolicy: 'deny',
+    homeReadOnly: ['/home/me/.nvm'],
+    homeMaskedFiles: [],
+    scan: () =>
+      Promise.resolve({ maskedFiles: ['.env'], maskedDirs: [], protectedExisting: ['.git'] }),
+    ...over,
+  });
+  const input = (command: string) => ({ command, workdir: '', timeoutMs: 1000, network: false });
+  const commandQuestions = (kernel: Awaited<ReturnType<typeof setup>>) =>
+    kernel.questions().filter((q) => q.capability === 'command.exec');
+
+  it('asks, shows exactly what runs, and starts in a sandbox scope after the answer', async () => {
+    const kernel = await setup(runner, { command: support() });
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(commandUnit, input('npm test'));
+    await kernel.settled();
+    expect(commandQuestions(kernel)).toMatchObject([
+      {
+        command: 'npm test',
+        writableRoots: ['.'],
+        network: false,
+        critical: false,
+        options: ['ONCE', 'COMMAND', 'PREFIX', 'DENY'],
+      },
+    ]);
+    await kernel.answer('ONCE');
+    await kernel.settled();
+    const scope = kernel.execution.started.at(-1)?.spec.scope;
+    expect(scope).toMatchObject({
+      kind: 'SANDBOX',
+      backend: 'BWRAP',
+      profile: {
+        repositoryRoot: '/repository',
+        writableRoots: ['.'],
+        network: false,
+        maskedFiles: ['.env'],
+        protectedExisting: ['.git'],
+      },
+    });
+    expect(scope?.kind === 'SANDBOX' && scope.approvalDigest).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it('lets a prefix answer cover the next command without asking', async () => {
+    const kernel = await setup(runner, { command: support() });
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(commandUnit, input('npm run build'));
+    await kernel.settled();
+    await kernel.answer('PREFIX');
+    await kernel.settled();
+    await kernel.submit(commandUnit, input('npm run lint'));
+    await kernel.settled();
+    expect(commandQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started).toHaveLength(2);
+  });
+
+  it('refuses a denied command without asking', async () => {
+    const kernel = await setup(runner, { command: support() });
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(commandUnit, input('rm -rf /'));
+    await kernel.settled();
+    expect(kernel.questions()).toEqual([]);
+    expect(kernel.reports()).toMatchObject([{ status: 'REJECTED', reasonCode: 'COMMAND_DENIED' }]);
+  });
+
+  it('asks a critical command every time and takes only ONCE or DENY', async () => {
+    const kernel = await setup(runner, { command: support() });
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(commandUnit, input('git push'));
+    await kernel.settled();
+    expect(commandQuestions(kernel).at(-1)).toMatchObject({
+      critical: true,
+      options: ['ONCE', 'DENY'],
+    });
+    expect(await kernel.answer('PREFIX')).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'INVALID_INPUT',
+    });
+    await kernel.answer('ONCE');
+    await kernel.settled();
+    await kernel.submit(commandUnit, input('git push'));
+    await kernel.settled();
+    expect(commandQuestions(kernel)).toHaveLength(2);
+  });
+
+  it('refuses without a sandbox when the policy is deny, and asks about it when it is not', async () => {
+    const none = await setup(runner, { command: support({ sandbox: () => 'UNAVAILABLE' }) });
+    await none.register(undefined, [...caps]);
+    await none.submit(commandUnit, input('ls'));
+    await none.settled();
+    expect(none.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'SANDBOX_UNAVAILABLE' },
+    ]);
+    const asking = await setup(runner, {
+      command: support({ sandbox: () => 'UNAVAILABLE', unavailablePolicy: 'ask-unisolated' }),
+    });
+    await asking.register(undefined, [...caps]);
+    await asking.submit(commandUnit, input('ls'));
+    await asking.settled();
+    expect(commandQuestions(asking).at(-1)).toMatchObject({ unisolated: true, critical: true });
+    await asking.answer('ONCE');
+    await asking.settled();
+    expect(asking.execution.started.at(-1)?.spec.scope).toMatchObject({ backend: 'UNISOLATED' });
+  });
+
+  it('refuses a command when the agent has no command capability', async () => {
+    const kernel = await setup(runner, { command: support() });
+    await kernel.register(undefined, ['repo.read']);
+    await kernel.submit(commandUnit, input('ls'));
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'CAPABILITY_NOT_GRANTED' },
+    ]);
+  });
+});
+
+describe('memory pressure', () => {
+  it('WARNING refuses the next AgentRun and the tools of the running one', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.actor.memoryPressure('WARNING');
+    await kernel.submit();
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' },
+    ]);
+    expect(await kernel.register(newId('agr'))).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'MEMORY_PRESSURE',
+    });
+  });
+
+  it('DANGER tells Workflow, cancels the work and closes the run as INTERRUPTED', async () => {
+    const interrupted = vi.fn();
+    const kernel = await setup(testPinnedAgent(), { interrupted });
+    await kernel.register();
+    // A question is open and nothing runs, so the run can drain at once.
+    await kernel.submit();
+    await kernel.settled();
+    await kernel.actor.memoryPressure('DANGER');
+    await kernel.settled();
+    const types = kernel.toWorkflow.map((entry) => entry.event.type);
+    expect(types).toContain('RunInterrupted');
+    expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
+    expect(types.indexOf('RunInterrupted')).toBeLessThan(types.indexOf('RunClosed'));
   });
 });

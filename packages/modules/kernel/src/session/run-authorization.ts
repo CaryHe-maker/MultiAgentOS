@@ -1,5 +1,6 @@
 import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
+  normalizeRequestPath,
   REPOSITORY_ROOT_PATH,
   newId,
   type ArtifactRef,
@@ -9,6 +10,7 @@ import {
 import {
   decideUnit,
   type AuthorizationEntry,
+  type CommandAnalysis,
   type Capability,
   type CapabilityCeiling,
   type UnitDecision,
@@ -65,7 +67,22 @@ export type WriteQuestion =
       readonly contentRef: ArtifactRef;
     };
 
+/** What a command question shows and what an answer to it grants. */
+export interface CommandQuestion {
+  readonly analysis: CommandAnalysis;
+  readonly workdir: string;
+  readonly writableRoots: readonly string[];
+  readonly network: boolean;
+  readonly unisolated: boolean;
+  readonly approvalDigest: string;
+  /** ONCE is always there; COMMAND and PREFIX only when nothing makes the line unreusable. */
+  readonly options: readonly ('ONCE' | 'COMMAND' | 'PREFIX' | 'DENY')[];
+  /** Each simple command's prefix; empty when one of them has none. */
+  readonly prefixes: readonly string[];
+}
+
 interface Question {
+  readonly command?: CommandQuestion;
   readonly questionId: string;
   readonly capability: AuthorizationRequest['capability'];
   /** Asked again by this key is the same question; a critical one has none (Kernel/Core 5a.2). */
@@ -127,7 +144,7 @@ export class RunAuthorization {
   }
 
   #open(
-    fields: Pick<Question, 'capability' | 'critical'> & { readonly key?: string },
+    fields: Pick<Question, 'capability' | 'critical' | 'command'> & { readonly key?: string },
     waiter: string,
     agentRunId: string | undefined,
   ): string {
@@ -214,6 +231,71 @@ export class RunAuthorization {
     };
   }
 
+  /**
+   * A command (Kernel/Core 5b). A line that must be asked every time (critical, unreusable) is
+   * never merged; any other is one question per (work directory, line) for all who wait on it.
+   */
+  askCommand(
+    command: Omit<CommandQuestion, 'options' | 'prefixes'>,
+    perAttempt: boolean,
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const { analysis } = command;
+    const prefixes = analysis.subcommands.map((sub) => sub.prefix);
+    const reusable = !perAttempt && analysis.unreusable.length === 0;
+    const hasPrefixes = prefixes.length > 0 && prefixes.every((prefix) => prefix !== undefined);
+    const options: CommandQuestion['options'] = reusable
+      ? ['ONCE', 'COMMAND', ...(hasPrefixes ? (['PREFIX'] as const) : []), 'DENY']
+      : ['ONCE', 'DENY'];
+    const shown: CommandQuestion = {
+      ...command,
+      options,
+      prefixes: hasPrefixes ? [...new Set(prefixes)] : [],
+    };
+    const key = perAttempt
+      ? undefined
+      : resourceKey('command.exec', `${command.workdir}\u0000${analysis.text}`);
+    if (key !== undefined) {
+      const joined = this.#join(key, waiter, agentRunId);
+      if (joined !== undefined) return joined;
+    }
+    const questionId = this.#open(
+      {
+        capability: 'command.exec',
+        critical: perAttempt,
+        ...(key === undefined ? {} : { key }),
+        command: shown,
+      },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'command.exec',
+        command: analysis.text,
+        workdir: command.workdir,
+        writableRoots: [...command.writableRoots],
+        network: command.network,
+        unisolated: command.unisolated,
+        critical: perAttempt,
+        prefixes: [...shown.prefixes],
+        unreusable: [
+          ...analysis.unreusable,
+          ...(analysis.critical === undefined ? [] : (['CRITICAL_COMMAND'] as const)),
+          ...(command.network ? (['NETWORK'] as const) : []),
+          ...(command.unisolated ? (['UNISOLATED'] as const) : []),
+        ],
+        ...(analysis.critical === undefined ? {} : { matched: analysis.critical }),
+        approvalDigest: command.approvalDigest,
+        options: [...options],
+      },
+    };
+  }
+
   /** The caller has already looked in the trust records; this decides what remains. */
   askInstructions(
     file: {
@@ -262,7 +344,7 @@ export class RunAuthorization {
   offers(questionId: string, scope: AnswerScope): boolean {
     const question = this.#questions.get(questionId);
     if (question === undefined || scope === 'DENY') return true;
-    // Commands bring their own answers with the command questions.
+    if (question.command !== undefined) return question.command.options.includes(scope as 'ONCE');
     if (scope === 'COMMAND' || scope === 'PREFIX') return false;
     return question.critical === (scope === 'ONCE');
   }
@@ -280,6 +362,10 @@ export class RunAuthorization {
   }
 
   #remember(question: Question, capability: Capability, scope: AnswerScope): void {
+    if (question.command !== undefined && scope !== 'DENY') {
+      this.#rememberCommand(question, question.command, scope);
+      return;
+    }
     if (question.critical) {
       const [requestId] = question.waiters;
       if (requestId === undefined) throw new Error('A question has no one waiting on it');
@@ -315,6 +401,38 @@ export class RunAuthorization {
         provider: this.#deps.provider,
         issuedAt: this.#deps.now().toISOString(),
       });
+  }
+
+  /** ONCE covers the first who waits; COMMAND and PREFIX cover each simple command of the line. */
+  #rememberCommand(question: Question, command: CommandQuestion, scope: AnswerScope): void {
+    const [requestId] = question.waiters;
+    if (requestId === undefined) throw new Error('A question has no one waiting on it');
+    if (scope === 'ONCE') {
+      this.#entries = [
+        ...this.#entries,
+        { scope: 'ONCE', effect: 'ALLOW', capability: 'command.exec', requestId },
+      ];
+      return;
+    }
+    const kind = scope === 'PREFIX' ? 'PREFIX' : 'COMMAND';
+    const values =
+      kind === 'PREFIX' ? command.prefixes : command.analysis.subcommands.map((sub) => sub.text);
+    this.#entries = [
+      ...this.#entries,
+      ...values.map((value): AuthorizationEntry => ({
+        scope: 'RUN',
+        effect: 'ALLOW',
+        capability: 'command.exec',
+        command: {
+          kind,
+          workdir:
+            command.workdir === ''
+              ? '.'
+              : (normalizeRequestPath(command.workdir) ?? command.workdir),
+          value,
+        },
+      })),
+    ];
   }
 
   /** The attempt of this request ended: its single answer is spent (Kernel/Core 5a.4). */

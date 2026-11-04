@@ -128,9 +128,9 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 | S3-KX-1 | 大部分 | `buildBwrapArgs`（纯函数）、`createSandboxRunner`（启动前复核、SIGTERM/SIGKILL 升级、`StopUnconfirmedError`）；真实 bwrap 的 13 项测试在 Ubuntu 24.04（WSL）通过 | 可用性探测并写入 `SESSION_STARTED`；`cancelExecution` |
 | S3-EX-1、S3-EX-2 | 完成 | `run-command`（头尾预览）、`git-inspect`（固定子命令表、pathspec 排除） | `git-inspect` 的真实 git 用例 |
 | S3-UI-1 | 部分 | 命令询问的四个选项、警示文字、`INTERRUPTED` 的退出码 75 与提示 | 未隔离提示、停机提示、内存提示的完整展示 |
-| S3-KX-2 | 未开始 | — | 敏感文件列表、受保护路径的新建检查与隔离、EXEC 互斥 |
-| S3-KC-1 | 未开始 | — | Core 的命令判定（`command.exec`、`criticalCommands`、条目、`approvalDigest`、`ask-unisolated`）与 SandboxScope 的签发 |
-| S3-KC-2、S3-KC-3 | 未开始 | — | `STOP_UNCONFIRMED` 停机；Monitor 内存采样与 Core 的中断入口 |
-| S3-WF-1 | 未开始 | — | 中断后的收敛、`MEMORY_LIMIT` 的 Workflow 侧 |
+| S3-KX-2 | 完成 | 仓库扫描（敏感文件、已存在的受保护路径）；命令前后比较，新建的 `.git`、`AGENTS.md`、`.multiagentos` 移入 `kernel-execution/quarantine/`，结果为 `PROTECTED_PATH_CREATED` 并写审计；EXEC 互斥由每个运行一次只派发一个尝试保证 | 阶段 4 起按 AgentRun 分队列时的全局互斥 |
+| S3-KC-1 | 完成 | `decideUnit` 的命令判定（名单、能力上限、沙盒可用性、条目覆盖每个子命令、极危险级逐次询问）；命令询问（合并、四个选项、不可复用原因）；`ONCE`/`COMMAND`/`PREFIX` 条目；签发 `SandboxScope` 与 `approvalDigest`；`ask-unisolated` 的未隔离运行；启动探测 `probeSandbox` | 探测结果写入 `SESSION_STARTED` 与审计 |
+| S3-KC-2、S3-KC-3 | 大部分 | `STOP_UNCONFIRMED` 关闭运行后经 `onFatal` 请求停机；Monitor 内存采样器（只发 `MemoryPressure`，架构测试保证）；WARNING 拒绝新 AgentRun 并以 `QUOTA_EXHAUSTED(MEMORY)` 拒绝工具；DANGER 发 `RunInterrupted`、取消并以 `INTERRUPTED` 关闭运行，界面以退出码 75 退出 | 没有运行时的 DANGER 退出（`onMemoryExit` 尚未接到组合根）；`cancelExecution` 与 INTERRUPTING 状态（阶段 5 的暂停与中止共用） |
+| S3-WF-1 | 部分 | `RunInterrupted` 记入日志并在下一次打开时以说明出现在投影中；`QUOTA_EXHAUSTED(MEMORY)` 进入 `MEMORY_LIMIT` 收尾 | 中断时不经模型的确定性回复（现在直接以 `INTERRUPTED` 关闭运行，没有 `DEGRADED_REPLY`） |
 | S3-PL-1 | 未开始 | — | `run_command`、`git_inspect` 的 Unit 与 Tool 定义，main 增加这两个工具 |
 | S3-IN-1 | 未开始 | — | 组合根接线、`stage3-exit.test.ts`（C1–C5、H6–H7、内存压力的假采样与真实压力） |

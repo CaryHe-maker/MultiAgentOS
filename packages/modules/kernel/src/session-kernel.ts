@@ -39,11 +39,19 @@ import {
   createSupervisorPort,
   createWorkflowEventSender,
 } from '@multiagentos/fabric';
-import { RunLedgers, type AgentBudget } from './monitor/index.js';
+import { RunLedgers, createMemorySampler, type AgentBudget } from './monitor/index.js';
 import { InProcessProviderCapacity, Scheduler } from './scheduler/index.js';
 import type { ExecutionConfig } from './session/attempt-request.js';
 import { RunExecution, type RunExecutionDeps } from './session/run-execution.js';
-import { RunWork, type PinResult, type RunHost } from './session/run-work.js';
+import { RunWork, type CommandSupport, type PinResult, type RunHost } from './session/run-work.js';
+import {
+  protectedPathsOf,
+  quarantineNewProtected,
+  scanRepository,
+  type ScanOptions,
+} from './session/sandbox-scan.js';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { SessionActor } from './session/session-actor.js';
 import { SessionArtifacts } from './session/session-artifacts.js';
 import { WorkspaceSnapshots } from './session/workspace-snapshots.js';
@@ -85,6 +93,16 @@ export interface SessionKernelDeps {
   /** `readProjectFile` reads through the same guard as `file-read`. */
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
   readonly reportSystemFault?: SystemFaultReporter;
+  /**
+   * Memory is short and no run is open to carry it: the composition root exits in control
+   * (SystemFaultHandling 3). With a run, the run closes as INTERRUPTED and the interface exits.
+   */
+  readonly onMemoryExit?: () => void;
+  /** Commands (Kernel/Core 5b): the analysis of a line, and what the probe found. */
+  readonly commands?: {
+    readonly analyze: CommandSupport['analyze'];
+    readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+  };
   /** Local diagnostics of what does not stop the system; the composition root gives stderr. */
   readonly diagnostic?: (line: string) => void;
   readonly now?: () => Date;
@@ -191,6 +209,21 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const inputIsValid = (unit: UnitDefinition, input: unknown): boolean =>
     validate(deps.registry.resolveContract(unit.inputContract), input).ok;
 
+  const expandHome = (path: string): string =>
+    path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path;
+  /** What looking at the repository for a command uses: the same rules as the file tools. */
+  const scanOptions: ScanOptions = {
+    repositoryRoot,
+    extraSecretRules: [...config.repositoryExclusions, ...config.sandboxMaskedPatterns],
+    exclusions: [...DEFAULT_REPOSITORY_EXCLUSIONS, ...config.repositoryExclusions],
+    maxEntries: config.maxSnapshotFiles * 10,
+  };
+  /** Where a protected path a command made is moved (M2Design 6.1). */
+  const quarantineOf = (sessionId: string): string =>
+    deps.workspace === undefined
+      ? join(tmpdir(), 'mas-quarantine', sessionId)
+      : join(dirname(deps.workspace.directoryOf(sessionId)), 'quarantine');
+
   const openRunWork = (
     sessionId: string,
     host: RunHost,
@@ -212,6 +245,16 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
           ? trust.record(repositoryRoot, path, sha256, 'APPROVED_WRITE')
           : Promise.resolve(),
       readRepositoryFile: deps.readRepositoryFile,
+      ...(deps.commands === undefined
+        ? {}
+        : {
+            protectedPaths: {
+              snapshot: () => protectedPathsOf(scanOptions),
+              quarantine: (before) =>
+                quarantineNewProtected(scanOptions, before, quarantineOf(sessionId)),
+            },
+          }),
+      audit,
       enqueue: (work) => {
         host.enqueue(work);
       },
@@ -236,6 +279,18 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       pinAgent: deps.pinAgent,
       inputIsValid,
       preset: deps.preset,
+      ...(deps.commands === undefined
+        ? {}
+        : {
+            command: {
+              analyze: deps.commands.analyze,
+              sandbox: deps.commands.sandbox,
+              unavailablePolicy: config.sandbox.unavailable,
+              homeReadOnly: config.sandbox.homeReadOnly.map(expandHome),
+              homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),
+              scan: () => scanRepository(scanOptions),
+            },
+          }),
       readProjectFile: (path, scope) => execution.readProjectFile(path, scope),
       isTrusted: (path, sha256) => trust.isTrusted(repositoryRoot, path, sha256),
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
@@ -371,6 +426,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
           session.onClosed();
         },
         onFatal: fault,
+        onInterrupted: () => {
+          deps.diagnostic?.('memory pressure: the run was interrupted\n');
+        },
         admission: (workflowRunId, runState, closeReason) => {
           sendAdmission(sessionId, workflowRunId, runState, closeReason);
         },
@@ -384,6 +442,19 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   });
 
   let started = false;
+  // The sampler's only way out is this one message to Core (Kernel/Monitor 4a).
+  const sampler = createMemorySampler({
+    intervalMs: config.memory.sampleIntervalMs,
+    thresholds: {
+      warningRatio: config.memory.warningRatio,
+      dangerRatio: config.memory.dangerRatio,
+    },
+    send: (message) => {
+      void manager.memoryPressure(message.level, () => deps.onMemoryExit?.()).catch(fault);
+    },
+    ...(deps.diagnostic === undefined ? {} : { diagnostic: deps.diagnostic }),
+  });
+
   return {
     manifest: {
       moduleId: 'kernel-core',
@@ -397,6 +468,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       // Before any service opens (Infrastructure/ModuleHost 3); a failure does not block startup.
       await sweep.run();
       manager.startSweepTimer();
+      sampler.start();
       fabric.register<GatewayForward, CoreResponse>(SCHEMA_IDS.gatewayForward, async (envelope) => {
         if (envelope.producer !== 'gateway')
           throw new Error('Kernel core request has an invalid producer');
@@ -426,6 +498,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     stop: async () => {
       if (!started) return;
       started = false;
+      sampler.stop();
       await manager.shutdown();
       await outbox.drained();
       await sweep.finished();

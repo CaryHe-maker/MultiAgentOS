@@ -205,3 +205,4 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     whenStopped: () => stopped,
   };
 }
+export { probeSandbox, type SandboxProbe } from './sandbox/probe.js';

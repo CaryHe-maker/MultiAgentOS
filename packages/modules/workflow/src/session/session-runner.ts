@@ -307,6 +307,9 @@ export class SessionRunner {
           await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
         break;
       }
+      case 'RunInterrupted':
+        await this.#append([{ type: 'RUN_INTERRUPTED', workflowRunId, reason: event.reason }]);
+        break;
       case 'RunClosed':
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },

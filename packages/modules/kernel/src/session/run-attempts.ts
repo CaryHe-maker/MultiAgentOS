@@ -384,9 +384,14 @@ export class RunAttempts {
             | 'CAPABILITY_NOT_GRANTED'
             | 'WRITE_OUT_OF_SCOPE'
             | 'PROTECTED_PATH'
+            | 'COMMAND_DENIED'
+            | 'SANDBOX_UNAVAILABLE'
             | 'ADMISSION_CHECK_FAILED';
         }
-      | { readonly reasonCode: 'QUOTA_EXHAUSTED'; readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' },
+      | {
+          readonly reasonCode: 'QUOTA_EXHAUSTED';
+          readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' | 'MEMORY';
+        },
   ): void {
     this.#deliver({
       type: 'UnitReport',

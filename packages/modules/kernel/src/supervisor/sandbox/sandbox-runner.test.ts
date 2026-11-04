@@ -234,6 +234,43 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  it('runs the same command without isolation when the user approved that', async () => {
+    const { scope } = scopeFor('echo plain; pwd; touch /tmp/unisolated-probe-$ && echo wrote');
+    const command = 'echo plain; pwd';
+    const unisolated: SandboxScope = {
+      ...scope,
+      backend: 'UNISOLATED',
+      approvalDigest: approvalDigestOf({
+        command,
+        workdir: '',
+        network: false,
+        writableRoots: ['.'],
+        backend: 'UNISOLATED',
+      }),
+    };
+    const result = await runner().run({
+      scope: unisolated,
+      command,
+      timeoutMs: 10_000,
+      maxOutputBytes: 10_000,
+      signal: new AbortController().signal,
+    });
+    expect(result).toMatchObject({ kind: 'RAN', exitCode: 0, backend: 'UNISOLATED' });
+    expect(result.kind === 'RAN' && result.output).toContain(repo);
+  });
+
+  it('refuses an unisolated command whose approval does not match', async () => {
+    const { scope } = scopeFor('echo hi');
+    const result = await runner().run({
+      scope: { ...scope, backend: 'UNISOLATED' },
+      command: 'echo hi',
+      timeoutMs: 5_000,
+      maxOutputBytes: 1000,
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({ kind: 'REFUSED', reason: 'APPROVAL_MISMATCH' });
+  });
+
   it('never keeps more output than it was allowed', async () => {
     const { scope, command } = scopeFor('yes | head -c 200000');
     const result = await runner().run({

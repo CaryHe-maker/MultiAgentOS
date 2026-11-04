@@ -46,6 +46,15 @@ export interface RunExecutionDeps {
   readonly enqueue: (work: () => void) => void;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
+  /**
+   * Protected paths a command may not create (Kernel/Execution 9, M2Design 6.1): the set that
+   * exists before it runs, and the moving of whatever is new afterwards.
+   */
+  readonly protectedPaths?: {
+    readonly snapshot: () => Promise<ReadonlySet<string>>;
+    readonly quarantine: (before: ReadonlySet<string>) => Promise<readonly string[]>;
+  };
+  readonly audit?: (entry: object) => void;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
@@ -56,6 +65,8 @@ interface Attempt {
   readonly attempts: RunAttempts;
   executionId?: string;
   retries: number;
+  /** The protected paths that existed when a command was first dispatched. */
+  protectedBefore?: ReadonlySet<string>;
 }
 
 type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
@@ -161,6 +172,18 @@ export class RunExecution {
   }
 
   async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
+    const guard = this.#deps.protectedPaths;
+    if (
+      guard !== undefined &&
+      attempt.spec.unit.executionKind === 'COMMAND' &&
+      attempt.protectedBefore === undefined
+    ) {
+      try {
+        attempt.protectedBefore = await guard.snapshot();
+      } catch {
+        // Without a "before" there is nothing to compare; the sandbox still protects what exists.
+      }
+    }
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
     const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);
@@ -220,6 +243,7 @@ export class RunExecution {
       fact.executionKind !== attempt.spec.unit.executionKind
     )
       return;
+    if (await this.#createdProtected(attempt, fact)) return;
     if (fact.outcome === 'COMPLETED') {
       await this.#completed(attempt, fact);
       return;
@@ -239,6 +263,39 @@ export class RunExecution {
           }
         : {}),
     });
+  }
+
+  /**
+   * A command that made a protected path has it moved out, and its result is replaced by the
+   * refusal, whatever the command printed (M2Design 6.1, "new protection").
+   */
+  async #createdProtected(attempt: Attempt, fact: ExecutionFact): Promise<boolean> {
+    const guard = this.#deps.protectedPaths;
+    if (
+      guard === undefined ||
+      fact.executionKind !== 'COMMAND' ||
+      fact.outcome === 'STOP_UNCONFIRMED' ||
+      attempt.protectedBefore === undefined
+    )
+      return false;
+    let moved: readonly string[];
+    try {
+      moved = await guard.quarantine(attempt.protectedBefore);
+    } catch {
+      return false;
+    }
+    if (moved.length === 0) return false;
+    this.#deps.audit?.({
+      type: 'PROTECTED_PATH_CREATED',
+      unitAttemptId: attempt.unitAttemptId,
+      paths: moved,
+    });
+    await this.#finish(attempt, {
+      executionId: fact.executionId,
+      outcome: 'REJECTED',
+      reasonCode: 'PROTECTED_PATH_CREATED',
+    });
+    return true;
   }
 
   async #completed(attempt: Attempt, fact: Completed): Promise<void> {
