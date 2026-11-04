@@ -166,6 +166,9 @@ function stack() {
     refs: new SessionRefs(log, '/repository', () => new Date(0)),
     outbox,
     closeTimeoutMs: 100,
+    startArtifactSweep: () => undefined,
+    sweepIntervalMs: 60_000,
+    schedule: () => () => undefined,
     openActor: (sessionId, { onClosed, discard }) =>
       Promise.resolve(
         new SessionActor({

@@ -37,16 +37,18 @@
 |---|---|---|---|
 | S1-CT-1 | 完成 | v1 Schema 与 Port（`ExecutionFact.v1` 在 S1-KX-1 时补上）；fake Kernel、fake Workflow 与契约测试 | — |
 | S1-IF-1、S1-IF-2 | 完成 | Session 存储、实例锁与 Session 锁；全局 ArtifactStore | — |
-| S1-WF-1–4 | 完成，只对 fake Kernel 验证过 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径 | 与真实 Kernel 接线（S1-IN-1） |
-| S1-KC-1 | 部分 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭） | 产物回收的定时器、审计（`ActivityEvent` 与 `MessagePublished` 已由 `RunActivity` 发出） |
-| S1-KC-2 | 完成，等 Gateway 接入 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
-| S1-KC-3 | 部分 | `SessionGateway`（调用方、Schema、Session 与运行的已知检查、准入封锁）与 `SessionCore` 的分发 | 接到 Fabric（组合根） |
+| S1-WF-1–4 | 完成 | 日志客户端、TaskGraph 与 `chat` 生长规则、上下文投影、`analyze` 走统一路径；已与真实 Kernel 接线 | — |
+| S1-KC-1 | 完成 | Session actor、三个序列的 Outbox、Session 引用、信任记录、Session 管理（打开、切换、继续、列表、删除、关闭）、审计、产物回收的定时器（`ARTIFACT_SWEEP_TICK`） | — |
+| S1-KC-2 | 完成 | Turn、开放输入的静止检查、AWAITING_INPUT、人类请求的转发、`answerAuthorization`、`readProjectFile`（`repo.read` 与 `project.instructions` 两步询问） | — |
+| S1-KC-3 | 完成 | `SessionGateway`（调用方、Schema、Session 与运行的已知检查、准入封锁）与 `SessionCore` 的分发，已接到 Fabric | — |
 | S1-KC-4 | 完成 | 两级账本、启动检查、工具次数、AgentRun 墙钟，已接入 Session actor | — |
-| Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；经真实 Session actor 的端到端测试 | 审计写入；`RunExecution` 接入 `RunWork`（组合根） |
-| S1-KX-1 | 部分 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile` | 启动时与定期的产物回收、`removeSessionFiles`、`repository-list` 以外的 `RepositoryAccess` 接线 |
-| S1-EX-1 | 完成，等 Supervisor 接入 | `retention/`、四个工具 Executor 的 major 1、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistry` | 真实 DeepSeek 联调 |
+| Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；审计写入；`RunExecution` 已接入 | — |
+| S1-KX-1 | 完成 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile`、`removeSessionFiles`、启动时与定期的产物回收 | — |
+| S1-EX-1 | 完成 | `retention/`、工具 Executor、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistry`；已在真实 DeepSeek 上运行 | — |
 | S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | 退出评测后定稿 main 的提示词并封存 |
-| S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图 | 组合根接线在 S1-IN-1 |
-| S1-IN-1 | 部分 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`，136 个 Schema） | 真实模型上的 `analyze` 回归（`pnpm run acceptance --yes`） |
+| S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图；已接入组合根 | — |
+| S1-IN-1 | 部分 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；真实模型首轮回归 F1–F5 各一次，5/5 | 与 M1 基线同规模的回归（`--runs 3`）；退出验收用例 S1–S3、S5–S7、L5、L6、H12、A 组的核对 |
 
-运行链路已切到 M2，代码中只有 major 1 一套契约。阶段 1 的回归只经过 fake 与离线测试，还没有在真实模型上运行。
+运行链路已切到 M2，代码中只有 major 1 一套契约。
+
+真实模型首轮回归（2026-11-04，提交 `1b1e35c`，Ubuntu 24.04，`deepseek-flash@v0.1.0`，`--runs 1`）：5/5 到达 COMPLETED，没有降级报告，42 条结论全部带已核验来源，13 条未确认项，额度状态都是 NORMAL，没有无法计数的 token，共 0.029 美元。M1 基线是每项 3 次共 15/15，所以这一轮还不能算完成第 8.1 节的比较。

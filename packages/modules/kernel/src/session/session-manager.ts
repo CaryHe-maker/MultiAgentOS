@@ -32,6 +32,10 @@ export interface SessionManagerDeps {
   readonly titleOf: (entry: SessionListEntry) => Promise<string | undefined>;
   /** How long a closing Session may take before it is given up (Kernel/Interaction 6.4). */
   readonly closeTimeoutMs: number;
+  /** Begins a sweep in the background, unless one is still running. */
+  readonly startArtifactSweep: () => void;
+  readonly sweepIntervalMs: number;
+  readonly schedule: (delayMs: number, due: () => void) => () => void;
 }
 
 type Refused = SyscallRejected;
@@ -61,6 +65,7 @@ export class SessionManager {
   #open: Open | undefined;
   #turn: Promise<unknown> = Promise.resolve();
   #shuttingDown = false;
+  #cancelSweepTimer: (() => void) | undefined;
 
   public constructor(deps: SessionManagerDeps) {
     this.#deps = deps;
@@ -70,6 +75,17 @@ export class SessionManager {
     const result = this.#turn.then(work);
     this.#turn = result.catch(() => undefined);
     return result;
+  }
+
+  /** ARTIFACT_SWEEP_TICK: taken in turn with Session requests, which do not wait for the sweep. */
+  startSweepTimer(): void {
+    this.#cancelSweepTimer = this.#deps.schedule(this.#deps.sweepIntervalMs, () => {
+      void this.#inTurn(() => {
+        if (!this.#shuttingDown) this.#deps.startArtifactSweep();
+        return Promise.resolve();
+      });
+      this.startSweepTimer();
+    });
   }
 
   /** The open Session, when `sessionId` names it. */
@@ -240,6 +256,7 @@ export class SessionManager {
   /** Later Session requests are refused; the open Session closes with SHUTDOWN. */
   shutdown(): Promise<void> {
     this.#shuttingDown = true;
+    this.#cancelSweepTimer?.();
     return this.#inTurn(() => this.#closeOpen('SHUTDOWN'));
   }
 }

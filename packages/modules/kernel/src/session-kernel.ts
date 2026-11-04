@@ -6,6 +6,8 @@ import {
   newId,
   validate,
   type AdmissionProjection,
+  type AppendLogPort,
+  type ArtifactOwnerLine,
   type ArtifactStorePort,
   type BoundaryContext,
   type CloseReason,
@@ -46,6 +48,7 @@ import {
 } from './session/session-gateway.js';
 import { SessionManager } from './session/session-manager.js';
 import { KernelOutbox } from './session/session-outbox.js';
+import { ArtifactSweep } from './session/artifact-sweep.js';
 import { SessionRefs, TrustRecords } from './session/session-refs.js';
 
 export interface SessionKernelDeps {
@@ -67,6 +70,8 @@ export interface SessionKernelDeps {
   /** `readProjectFile` reads through the same guard as `file-read`. */
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
   readonly reportSystemFault?: SystemFaultReporter;
+  /** Local diagnostics of what does not stop the system; the composition root gives stderr. */
+  readonly diagnostic?: (line: string) => void;
   readonly now?: () => Date;
 }
 
@@ -230,6 +235,23 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     return work;
   };
 
+  const ownersOf = (sessionId: string): AppendLogPort<ArtifactOwnerLine> =>
+    persistence.appendLog('kernel-execution', {
+      scope: 'SESSION',
+      sessionId,
+      file: 'artifact-owners',
+    });
+  const sweep = new ArtifactSweep({
+    store: deps.artifacts,
+    activeSessionIds: () => refs.activeSessionIds(),
+    ownersOf,
+    expiringRetentionDays: config.artifactRetention.expiringRetentionDays,
+    now,
+    report: (error) => {
+      deps.diagnostic?.(`artifact sweep failed: ${String(error)}\n`);
+    },
+  });
+
   const removeSessionFiles = async (sessionId: string): Promise<void> => {
     await persistence.sessionDirectory('kernel-core', sessionId).remove();
     await persistence.sessionDirectory('kernel-execution', sessionId).remove();
@@ -250,15 +272,14 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       }
     },
     closeTimeoutMs: config.sessionCloseTimeoutMs,
+    startArtifactSweep: () => void sweep.run(),
+    sweepIntervalMs: config.artifactRetention.sweepIntervalMinutes * 60_000,
+    schedule,
     openActor: async (sessionId, session) => {
       correlations.set(sessionId, newId('cor'));
       const artifacts = new SessionArtifacts({
         store: deps.artifacts,
-        owners: persistence.appendLog('kernel-execution', {
-          scope: 'SESSION',
-          sessionId,
-          file: 'artifact-owners',
-        }),
+        owners: ownersOf(sessionId),
         expiringRetentionDays: config.artifactRetention.expiringRetentionDays,
         now,
       });
@@ -321,6 +342,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       if (started) return;
       await refs.load();
       await trust.load();
+      // Before any service opens (Infrastructure/ModuleHost 3); a failure does not block startup.
+      await sweep.run();
+      manager.startSweepTimer();
       fabric.register<GatewayForward, CoreResponse>(SCHEMA_IDS.gatewayForward, async (envelope) => {
         if (envelope.producer !== 'gateway')
           throw new Error('Kernel core request has an invalid producer');
@@ -352,6 +376,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       started = false;
       await manager.shutdown();
       await outbox.drained();
+      await sweep.finished();
     },
     health: (): Promise<HealthStatus> =>
       Promise.resolve({

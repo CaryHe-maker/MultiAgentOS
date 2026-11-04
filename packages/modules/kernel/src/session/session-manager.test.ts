@@ -16,6 +16,8 @@ function setup(options: { removeFails?: boolean } = {}) {
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const removed: string[] = [];
+  const sweeps = { count: 0 };
+  const timers: { delayMs: number; due: () => void }[] = [];
   let answering = true;
   const lines: SessionRefLine[] = [];
   const log: AppendLogPort<SessionRefLine> = {
@@ -92,6 +94,16 @@ function setup(options: { removeFails?: boolean } = {}) {
       return options.removeFails === true ? Promise.reject(new Error('disk')) : Promise.resolve();
     },
     closeTimeoutMs: 20,
+    startArtifactSweep: () => {
+      sweeps.count += 1;
+    },
+    sweepIntervalMs: 60_000,
+    schedule: (delayMs, due) => {
+      timers.push({ delayMs, due });
+      return () => {
+        timers.length = 0;
+      };
+    },
     titleOf: (entry) => Promise.resolve(entry.sessionId === 'x' ? undefined : 'a'.repeat(100)),
   });
   manager = instance;
@@ -107,6 +119,8 @@ function setup(options: { removeFails?: boolean } = {}) {
   const wait = () => new Promise((resolve) => setTimeout(resolve, 5));
   return {
     manager: instance,
+    sweeps,
+    timers,
     refs,
     outbox,
     toWorkflow,
@@ -172,6 +186,32 @@ describe('at most one open Session', () => {
       reason: 'SHUTDOWN',
     });
     expect(await start()).toMatchObject({ reasonCode: 'RUN_LIMIT' });
+  });
+});
+
+describe('ARTIFACT_SWEEP_TICK', () => {
+  it('starts a sweep each interval in turn with Session requests', async () => {
+    const { manager, sweeps, timers, wait } = setup();
+    manager.startSweepTimer();
+    expect(timers.map((timer) => timer.delayMs)).toEqual([60_000]);
+    timers.shift()?.due();
+    await wait();
+    expect(sweeps.count).toBe(1);
+    expect(timers).toHaveLength(1);
+    timers.shift()?.due();
+    await wait();
+    expect(sweeps.count).toBe(2);
+  });
+
+  it('stops at shutdown', async () => {
+    const { manager, sweeps, timers, wait } = setup();
+    manager.startSweepTimer();
+    const tick = timers[0];
+    await manager.shutdown();
+    expect(timers).toHaveLength(0);
+    tick?.due();
+    await wait();
+    expect(sweeps.count).toBe(0);
   });
 });
 

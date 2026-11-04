@@ -203,6 +203,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       preset: options.preset,
       readRepositoryFile: readRepositoryText,
       reportSystemFault,
+      diagnostic: options.log ?? ((line) => void process.stderr.write(line)),
       now,
     });
     const gateway = createSessionGatewayModule({ fabric: fabric.client('gateway'), now });

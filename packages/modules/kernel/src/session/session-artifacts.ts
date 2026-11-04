@@ -22,6 +22,12 @@ export interface SessionArtifactsDeps {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_INPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
 
+/** A SESSION registration never expires; an EXPIRING one does, whether or not its body is gone. */
+export function isExpired(line: ArtifactOwnerLine, retentionDays: number, now: Date): boolean {
+  if (line.retention === 'SESSION') return false;
+  return now.getTime() >= new Date(line.retainedSince).getTime() + retentionDays * DAY_MS;
+}
+
 /**
  * Which artifacts belong to this Session (Kernel/Execution 3). The owner line is appended before
  * a reference is handed out, so a sweep never removes a body somebody already holds, and the
@@ -83,10 +89,9 @@ export class SessionArtifacts {
   #check(ref: ArtifactRef): ArtifactRefusal | undefined {
     const line = this.#owners.get(ref.artifactId);
     if (line?.sha256 !== ref.sha256 || line.size !== ref.size) return 'INVALID_ARTIFACT_REF';
-    if (line.retention === 'SESSION') return undefined;
-    const expiresAt =
-      new Date(line.retainedSince).getTime() + this.#deps.expiringRetentionDays * DAY_MS;
-    return this.#deps.now().getTime() >= expiresAt ? 'ARTIFACT_EXPIRED' : undefined;
+    return isExpired(line, this.#deps.expiringRetentionDays, this.#deps.now())
+      ? 'ARTIFACT_EXPIRED'
+      : undefined;
   }
 
   owns(ref: ArtifactRef): boolean {
