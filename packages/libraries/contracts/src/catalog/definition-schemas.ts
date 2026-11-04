@@ -122,7 +122,12 @@ const header = <K extends DefinitionKind>(kind: K) => ({
 
 const EffortSchema = Type.Enum(['none', 'low', 'high', 'max']);
 
-export const PROTECTED_CAPABILITIES = ['repo.read', 'workspace.write'] as const;
+export const PROTECTED_CAPABILITIES = [
+  'repo.read',
+  'workspace.write',
+  'command.exec',
+  'command.network',
+] as const;
 export type ProtectedCapability = (typeof PROTECTED_CAPABILITIES)[number];
 
 /** Safe capabilities: asked at most once, for the repository as a whole (M2Design 5.2). */

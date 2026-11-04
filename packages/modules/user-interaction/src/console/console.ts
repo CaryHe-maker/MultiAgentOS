@@ -36,9 +36,33 @@ export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
   CANCELLED: 130,
   SHUTDOWN: 130,
   ENDED_BY_USER: 130,
+  INTERRUPTED: 75,
 };
 
 const INTERRUPT_WINDOW_MS = 2000;
+
+/** The answer a pending question gets from the user's input. */
+function commandChoice(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  input: string,
+): 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | undefined {
+  if (item.options === undefined) return undefined;
+  const answer = input.trim().toLowerCase();
+  if (/^(n|no|否|不)$/u.test(answer)) return 'DENY';
+  if (/^(1|y|yes|是|好)$/u.test(answer)) return 'ONCE';
+  if (/^(2|c)$/u.test(answer) && item.options.includes('COMMAND')) return 'COMMAND';
+  if (/^(3|p)$/u.test(answer) && item.options.includes('PREFIX')) return 'PREFIX';
+  return undefined;
+}
+
+function scopeOf(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  yes: boolean,
+  input = '',
+): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' {
+  if (!yes) return 'DENY';
+  return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
+}
 
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
@@ -227,8 +251,9 @@ export class Console {
   }
 
   async #answer(item: PendingItem, input: string): Promise<void> {
-    const yes = /^(y|yes|是|好)$/iu.test(input);
-    const no = /^(n|no|否|不)$/iu.test(input);
+    const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
+    const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
+    const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
     if (!yes && !no) {
       // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
       if (item.kind !== 'UNDO') return;
@@ -270,7 +295,7 @@ export class Console {
         sessionId,
         workflowRunId,
         questionId: item.questionId,
-        answer: { scope: !yes ? 'DENY' : item.once ? 'ONCE' : 'ALLOW' },
+        answer: { scope: scopeOf(item, yes, input) },
       },
       this.#context(),
     );
@@ -481,6 +506,7 @@ export class Console {
           kind: 'AUTHORIZATION',
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
+          ...(event.capability === 'command.exec' ? { options: event.options } : {}),
           text: await this.#questionText(event),
         });
         break;
@@ -579,6 +605,7 @@ export class Console {
         event.truncated,
         terminalText((await this.#read(event.contentRef)) ?? ''),
       );
+    if (event.capability === 'command.exec') return text.command(event);
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),

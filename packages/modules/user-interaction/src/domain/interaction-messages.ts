@@ -23,6 +23,7 @@ export const InteractionMessages = Object.freeze({
     CONTEXT_LIMIT: '本次分析的上下文已超出模型窗口，未形成可发布的分析结论。',
     NO_PROGRESS: '本次分析连续多轮未取得新的有效结果，收尾调用未形成可发布的分析结论。',
     REGENERATION_LIMIT: '模型输出连续未满足要求，收尾调用未形成可发布的分析结论。',
+    MEMORY_LIMIT: '系统内存紧张，本次分析提前收尾，未形成可发布的分析结论。',
     FINAL_CALL_INVALID: '收尾调用没有返回合法的结束结果，未形成可发布的分析结论。',
   } satisfies Record<ReportEndReason, string>,
   lastFailure: (reason: string) => `最后一次操作失败：${reason}`,
@@ -56,6 +57,7 @@ export const InteractionMessages = Object.freeze({
     CONTEXT_LIMIT: '上下文已超出模型窗口。',
     NO_PROGRESS: '连续多轮没有有效进展。',
     REGENERATION_LIMIT: '模型输出连续未满足要求。',
+    MEMORY_LIMIT: '系统内存紧张。',
     FINAL_CALL_INVALID: '收尾调用没有返回合法的结束结果。',
   } satisfies Record<ReportEndReason, string>,
   reason: {
@@ -124,6 +126,13 @@ export const InteractionMessages = Object.freeze({
     UNDO_NOT_AVAILABLE: '现在不能回退：只有等待输入时才可以。',
     NOTHING_TO_UNDO: '没有可以回退的改动。',
     UNDO_UNKNOWN: '该回退确认已失效。',
+    COMMAND_DENIED: '这条命令在禁止名单中，不会运行。',
+    SANDBOX_UNAVAILABLE: '沙盒不可用，命令无法运行。',
+    APPROVAL_MISMATCH: '要运行的命令与你批准的不一致，已拒绝。',
+    ENV_ASSERTION_FAILED: '命令的环境变量中含有疑似密钥的变量，已拒绝。',
+    PROTECTED_PATH_CREATED: '命令新建了受保护的路径，已移出仓库。',
+    NOT_A_GIT_REPOSITORY: '这里不是 git 仓库。',
+    MEMORY_PRESSURE: '系统内存紧张，暂不接受新的任务。',
   } satisfies Record<ReasonCode, string>,
 });
 

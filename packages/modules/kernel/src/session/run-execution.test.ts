@@ -44,6 +44,8 @@ const config: ExecutionConfig = {
     FILE_WRITE: tool,
     FILE_EDIT: tool,
     OUTPUT_READ: tool,
+    COMMAND: tool,
+    GIT_INSPECT: tool,
     CONTEXT_ASSEMBLE: { timeoutMs: 1000, maxOutputBytes: 1000 },
     MODEL: { timeoutMs: 1000, maxOutputBytes: 1000 },
   },

@@ -106,7 +106,9 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
     kind === 'REPOSITORY_LIST' ||
     kind === 'FILE_WRITE' ||
     kind === 'FILE_EDIT' ||
-    kind === 'OUTPUT_READ'
+    kind === 'OUTPUT_READ' ||
+    kind === 'COMMAND' ||
+    kind === 'GIT_INSPECT'
   ) {
     expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
     expect(artifact.text.length).toBeGreaterThan(0);

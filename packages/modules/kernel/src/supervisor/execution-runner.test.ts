@@ -1,4 +1,5 @@
 import {
+  DENY_SANDBOX,
   ExecutionFactSchema,
   MEDIA_TYPES,
   validate,
@@ -258,6 +259,8 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
     OUTPUT_READ: unused('OUTPUT_READ'),
+    COMMAND: unused('COMMAND'),
+    GIT_INSPECT: unused('GIT_INSPECT'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
@@ -282,8 +285,10 @@ function makeRunnerWith(
     executors,
     credentials,
     subprocess,
+    sandbox: DENY_SANDBOX,
     facts: sink,
     cancelGraceMs,
+    killGraceMs: 100,
     now: () => new Date('2026-10-19T00:00:00.000Z'),
   });
   runners.push(runner);
@@ -525,8 +530,10 @@ describe('ExecutionRunner', () => {
       executors: registry(pendingUntilAbort(completedOrient)),
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       facts: sink,
       cancelGraceMs: 50,
+      killGraceMs: 50,
       now: () => new Date('2026-10-19T00:00:00.000Z'),
     });
     runners.push(runner);
@@ -549,8 +556,10 @@ describe('ExecutionRunner', () => {
       executors: registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient))),
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       facts: sink,
       cancelGraceMs: 1000,
+      killGraceMs: 100,
       now: () => new Date('2026-10-19T00:00:00.000Z'),
     });
     runners.push(runner);
@@ -892,6 +901,7 @@ describe('Executor environment', () => {
     const environment = createExecutorEnvironment(orientRequest(), new AbortController().signal, {
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       now: () => new Date(),
     });
     expect(environment.credentials.apiKeyFor('deepseek')).toBeUndefined();
@@ -908,6 +918,7 @@ describe('Executor environment', () => {
     const model = createExecutorEnvironment(modelRequest(), new AbortController().signal, {
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       now: () => new Date(),
     });
     expect(model.credentials.apiKeyFor('deepseek')).toBe('test-key');
@@ -920,7 +931,7 @@ describe('Executor environment', () => {
         limits: TOOL_LIMITS,
       },
       new AbortController().signal,
-      { credentials, subprocess, now: () => new Date() },
+      { credentials, subprocess, sandbox: DENY_SANDBOX, now: () => new Date() },
     );
     await expect(
       search.subprocess.run('rg', [], {

@@ -2,6 +2,7 @@ import { Type, type Static, type TProperties } from 'typebox';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
+import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -243,6 +244,8 @@ export const SessionLogRecordSchema = Type.Union(
       tokenBudget: count(1),
     }),
     /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
+    /** The run was interrupted from outside the conversation (Module/Workflow 9.2a). */
+    record('RUN_INTERRUPTED', inRun, { reason: Type.Enum(INTERRUPT_REASONS) }),
     record('AGENT_WRAP_UP', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       reason: WrapUpReasonSchema,

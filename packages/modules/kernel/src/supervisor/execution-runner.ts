@@ -7,9 +7,11 @@ import type {
   ExecutorRegistry,
   ProviderCredentials,
   RequestState,
+  SandboxRunner,
   SubprocessRunner,
   TokenUsage,
 } from '@multiagentos/contracts';
+import { StopUnconfirmedError } from '@multiagentos/contracts';
 import { createExecutorEnvironment } from './environment.js';
 import { ExecutionTable, type ExecutionEntry } from './execution-table.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
@@ -18,8 +20,11 @@ export interface ExecutionRunnerDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly subprocess: SubprocessRunner;
+  readonly sandbox: SandboxRunner;
   readonly facts: { report(fact: ExecutionFact): Promise<void> };
   readonly cancelGraceMs: number;
+  /** After SIGKILL a command is waited for this long more (M2Design 4.7). */
+  readonly killGraceMs: number;
   readonly now: () => Date;
 }
 
@@ -38,6 +43,8 @@ export class ExecutionRunner {
   readonly #executors: ExecutorRegistry;
   readonly #credentials: ProviderCredentials;
   readonly #subprocess: SubprocessRunner;
+  readonly #sandbox: SandboxRunner;
+  readonly #killGraceMs: number;
   readonly #facts: { report(fact: ExecutionFact): Promise<void> };
   readonly #cancelGraceMs: number;
   readonly #now: () => Date;
@@ -51,6 +58,8 @@ export class ExecutionRunner {
     this.#executors = deps.executors;
     this.#credentials = deps.credentials;
     this.#subprocess = deps.subprocess;
+    this.#sandbox = deps.sandbox;
+    this.#killGraceMs = deps.killGraceMs;
     this.#facts = deps.facts;
     this.#cancelGraceMs = deps.cancelGraceMs;
     this.#now = deps.now;
@@ -164,6 +173,7 @@ export class ExecutionRunner {
     const environment = createExecutorEnvironment(entry.request, entry.abortController.signal, {
       credentials: this.#credentials,
       subprocess: this.#subprocess,
+      sandbox: this.#sandbox,
       now: this.#now,
     });
 
@@ -173,8 +183,14 @@ export class ExecutionRunner {
       if (entry.terminal || this.#stopped) return;
       if (entry.abortReason === undefined) this.#finishNormal(entry, outcome);
       else this.#finishAborted(entry, outcome);
-    } catch {
+    } catch (error: unknown) {
       if (entry.terminal || this.#stopped) return;
+      // The sandbox could not confirm the end of a process: a system fault, whatever came before.
+      if (error instanceof StopUnconfirmedError) {
+        entry.abortReason ??= 'EXECUTION_CANCELLED';
+        this.#stopUnconfirmed(entry);
+        return;
+      }
       if (entry.abortReason === undefined) this.#finalizeFailure(entry);
       else this.#finalizeTerminated(entry, entry.startedAt, entry.abortReason);
     } finally {
@@ -200,10 +216,15 @@ export class ExecutionRunner {
     if (entry.terminal || this.#stopped || entry.abortReason !== undefined) return;
     entry.abortReason = reason;
     entry.abortController.abort();
+    // A command in the sandbox has its own SIGTERM, SIGKILL and wait; this timer is the net below it.
+    const grace =
+      entry.request.executionKind === 'COMMAND'
+        ? this.#cancelGraceMs + this.#killGraceMs + 1_000
+        : this.#cancelGraceMs;
     const timer = setTimeout(() => {
       entry.graceTimer = undefined;
       this.#stopUnconfirmed(entry);
-    }, this.#cancelGraceMs);
+    }, grace);
     entry.graceTimer = timer;
   }
 
@@ -340,6 +361,10 @@ function runExecutor(
       return registry.FILE_EDIT.execute(request.input, environment);
     case 'OUTPUT_READ':
       return registry.OUTPUT_READ.execute(request.input, environment);
+    case 'COMMAND':
+      return registry.COMMAND.execute(request.input, environment);
+    case 'GIT_INSPECT':
+      return registry.GIT_INSPECT.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':
       return registry.CONTEXT_ASSEMBLE.execute(request.input, environment);
     case 'MODEL':

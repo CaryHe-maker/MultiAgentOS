@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DENY_SANDBOX,
   AssembleContextPackSchema,
   ExecutionResultSchema,
   assertValid,
@@ -24,6 +25,7 @@ const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment =>
   limits: { deadline, maxOutputBytes: 100_000 },
   signal: new AbortController().signal,
   subprocess: { run: () => Promise.reject(new Error('no subprocess')) },
+  sandbox: DENY_SANDBOX,
   credentials: { apiKeyFor: () => 'test-key' },
   now: () => NOW,
   ...over,

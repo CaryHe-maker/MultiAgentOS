@@ -26,6 +26,9 @@ export interface Lease {
 
 export type Resolution = AuthorizationResolved['resolution'];
 
+/** What the user answers: ALLOW and ONCE for the uncertain level, the four of a command otherwise. */
+export type AnswerScope = 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY';
+
 export type AccessDecision =
   | { readonly kind: 'ALLOWED' }
   | { readonly kind: 'PENDING'; readonly questionId: string }
@@ -256,13 +259,15 @@ export class RunAuthorization {
   }
 
   /** True when the question offers this answer: only a critical one takes ONCE, and only it. */
-  offers(questionId: string, scope: 'ALLOW' | 'ONCE' | 'DENY'): boolean {
+  offers(questionId: string, scope: AnswerScope): boolean {
     const question = this.#questions.get(questionId);
     if (question === undefined || scope === 'DENY') return true;
+    // Commands bring their own answers with the command questions.
+    if (scope === 'COMMAND' || scope === 'PREFIX') return false;
     return question.critical === (scope === 'ONCE');
   }
 
-  answer(questionId: string, scope: 'ALLOW' | 'ONCE' | 'DENY'): QuestionResolved | undefined {
+  answer(questionId: string, scope: AnswerScope): QuestionResolved | undefined {
     const question = this.#questions.get(questionId);
     const settled = this.#settle(questionId, scope === 'DENY' ? 'DECLINED' : 'GRANTED');
     if (question === undefined || settled === undefined) return undefined;
@@ -274,7 +279,7 @@ export class RunAuthorization {
     return settled;
   }
 
-  #remember(question: Question, capability: Capability, scope: 'ALLOW' | 'ONCE' | 'DENY'): void {
+  #remember(question: Question, capability: Capability, scope: AnswerScope): void {
     if (question.critical) {
       const [requestId] = question.waiters;
       if (requestId === undefined) throw new Error('A question has no one waiting on it');

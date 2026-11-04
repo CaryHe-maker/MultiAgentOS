@@ -1,5 +1,6 @@
 /** Kernel.Supervisor owns the system lifecycle and execution dispatch. */
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
   CancelRunExecutionsRequest,
@@ -17,10 +18,13 @@ import { newId } from '@multiagentos/contracts';
 import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
 import type { KernelConfig } from '@multiagentos/contracts';
 
+import { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 import { ExecutionRunner } from './execution-runner.js';
 
 export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
+export { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
+export { buildBwrapArgs } from './sandbox/bwrap-args.js';
 
 export interface ModuleHostControl {
   start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void>;
@@ -33,7 +37,7 @@ export interface SupervisorDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly moduleHost: ModuleHostControl;
-  readonly config: Pick<KernelConfig, 'cancelGraceMs'>;
+  readonly config: Pick<KernelConfig, 'cancelGraceMs' | 'killGraceMs'>;
   /** System data directory; the Supervisor empties `<dataDir>/tmp/` before anything starts. */
   readonly dataDir: string;
   /**
@@ -41,6 +45,8 @@ export interface SupervisorDeps {
    * end the child processes when the Supervisor cannot; the default is a private runner.
    */
   readonly subprocess?: TrackedSubprocessRunner;
+  /** Runs commands in `bwrap`; the default is made from the data directory and the user's home. */
+  readonly sandbox?: TrackedSandboxRunner;
   readonly now?: () => Date;
 }
 
@@ -61,6 +67,15 @@ function temporaryDirectory(dataDir: string): string {
 export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const now = deps.now ?? (() => new Date());
   const subprocess = deps.subprocess ?? createSubprocessRunner();
+  const emptyFile = join(temporaryDirectory(deps.dataDir), 'empty');
+  const sandbox =
+    deps.sandbox ??
+    createSandboxRunner({
+      emptyFile,
+      cancelGraceMs: deps.config.cancelGraceMs,
+      killGraceMs: deps.config.killGraceMs,
+      home: homedir(),
+    });
   const correlations = new Map<string, string>();
   const facts = createExecutionFactSink(deps.fabric, (fact) => ({
     correlationId: correlations.get(fact.workflowRunId) ?? newId('cor'),
@@ -73,8 +88,10 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     executors: deps.executors,
     credentials: deps.credentials,
     subprocess,
+    sandbox,
     facts,
     cancelGraceMs: deps.config.cancelGraceMs,
+    killGraceMs: deps.config.killGraceMs,
     now,
   });
   const registered = new Set<string>();
@@ -107,6 +124,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       }
       // Every run has converged by now on the normal path; on a fault path nothing else will.
       subprocess.killAll();
+      sandbox.killAll();
       try {
         await rm(temporaryDirectory(deps.dataDir), { recursive: true, force: true });
       } catch (error) {
@@ -165,6 +183,8 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
         const temporary = temporaryDirectory(deps.dataDir);
         await rm(temporary, { recursive: true, force: true });
         await mkdir(temporary, { recursive: true });
+        // Masks files in the sandbox: an empty regular file, not /dev/null (M2TechStack 3.1).
+        await writeFile(emptyFile, '');
         await deps.moduleHost.start((moduleId) => {
           if (moduleId === 'fabric') register();
         });

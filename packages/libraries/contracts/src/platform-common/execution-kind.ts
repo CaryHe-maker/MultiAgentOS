@@ -1,8 +1,8 @@
 import { Type, type Static } from 'typebox';
 
 /**
- * Every execution kind a Unit can have (Interface/Definitions 5). COMMAND and TEST are answered
- * with UNSUPPORTED_CAPABILITY until the stage that adds them.
+ * Every execution kind a Unit can have (Interface/Definitions 5). TEST is answered with
+ * UNSUPPORTED_CAPABILITY until the stage that adds it.
  */
 export const EXECUTION_KINDS = [
   'REPOSITORY_ORIENT',
@@ -18,6 +18,7 @@ export const EXECUTION_KINDS = [
   'MESSAGE_PUBLISH',
   'FILE_EDIT',
   'OUTPUT_READ',
+  'GIT_INSPECT',
 ] as const;
 export const ExecutionKindSchema = Type.Enum(EXECUTION_KINDS, {
   $id: 'platform.common.ExecutionKind.v1',
@@ -35,6 +36,8 @@ export const EXECUTOR_KINDS = [
   'FILE_WRITE',
   'FILE_EDIT',
   'OUTPUT_READ',
+  'COMMAND',
+  'GIT_INSPECT',
 ] as const;
 export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 
@@ -44,7 +47,11 @@ export const REPOSITORY_KINDS = [
   'REPOSITORY_SEARCH',
   'FILE_READ',
   'REPOSITORY_LIST',
+  'GIT_INSPECT',
 ] as const;
 
 /** The kinds whose Unit declares `workspace.write`. */
 export const WRITE_KINDS = ['FILE_WRITE', 'FILE_EDIT'] as const;
+
+/** The kinds whose Unit declares `command.exec`; they run in a sandbox (M2Design 6). */
+export const COMMAND_KINDS = ['COMMAND'] as const;

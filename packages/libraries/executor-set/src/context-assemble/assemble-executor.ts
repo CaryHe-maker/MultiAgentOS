@@ -44,6 +44,7 @@ const WRAP_UP_TEXT: Record<NonNullable<StatusFacts['wrapUpReason']>, string> = {
   NO_PROGRESS: 'the last rounds made no progress',
   ROUND_LIMIT: 'the round limit has been reached',
   REGENERATION_LIMIT: 'too many replies were invalid',
+  MEMORY_LIMIT: 'the system is short of memory',
 };
 
 function renderContextWarning(used: number, limit: number): string {

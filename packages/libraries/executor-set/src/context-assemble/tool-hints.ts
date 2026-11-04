@@ -37,6 +37,14 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   INVALID_QUERY:
     'the query is empty or not usable for this mode (SYMBOL needs a plain identifier such as parseConfig); change it',
   LIMIT_EXCEEDED: 'the result would be too large; ask for a smaller range or a more specific query',
+  COMMAND_DENIED:
+    'this command is on the list of commands that are never run; do the work another way',
+  PROTECTED_PATH_CREATED:
+    'the command created a protected path (.git, .multiagentos, AGENTS.md); it was moved out of the repository',
+  APPROVAL_MISMATCH: 'the command is not the one the user approved, so it did not run',
+  ENV_ASSERTION_FAILED: 'the command environment held a secret, so it did not run',
+  SANDBOX_UNAVAILABLE: 'commands cannot run here because the sandbox is unavailable; tell the user',
+  NOT_A_GIT_REPOSITORY: 'this directory is not a git repository',
 };
 
 export const FAILED_HINTS: Record<UnitFailedCode, string> = {

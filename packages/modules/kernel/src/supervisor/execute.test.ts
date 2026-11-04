@@ -80,6 +80,8 @@ function registry(): ExecutorRegistry {
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
     OUTPUT_READ: unused('OUTPUT_READ'),
+    COMMAND: unused('COMMAND'),
+    GIT_INSPECT: unused('GIT_INSPECT'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };

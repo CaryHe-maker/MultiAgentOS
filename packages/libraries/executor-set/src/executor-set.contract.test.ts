@@ -8,6 +8,8 @@ import type {
   ExecutorKind,
   ExecutorRegistry,
   AssembleContextPack,
+  SandboxRunner,
+  SubprocessRunner,
 } from '@multiagentos/contracts';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import {
@@ -30,7 +32,33 @@ const base = await emptyDirectory('executor-set-contract');
 const root = join(base, 'repository');
 await mkdir(root);
 const repository = await createFixtureRepository(root, join(base, 'outside.txt'));
-const runner = createSubprocessRunner();
+const realRunner = createSubprocessRunner();
+/** `git` answers with a fixed status, so the fixture need not be a repository. */
+const runner: SubprocessRunner = {
+  run: (command, args, options) =>
+    command === 'git'
+      ? Promise.resolve({ exitCode: 0, signal: null, stdout: '## main', truncated: false })
+      : realRunner.run(command, args, options),
+};
+const gitOnly: SubprocessRunner = {
+  run: (command, args, options) =>
+    command === 'git'
+      ? runner.run(command, args, options)
+      : Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
+};
+const sandbox: SandboxRunner = {
+  run: () =>
+    Promise.resolve({
+      kind: 'RAN',
+      exitCode: 0,
+      signal: null,
+      output: 'hello',
+      truncated: false,
+      timedOut: false,
+      denials: 0,
+      backend: 'BWRAP',
+    }),
+};
 
 const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
   final: false,
@@ -83,6 +111,8 @@ const INPUTS: ExecutorInputByKind = {
   OUTPUT_READ: { toolCallId: 'call_1', content: 'one\ntwo\n' },
   CONTEXT_ASSEMBLE: assembleInput,
   MODEL: { contextPack: pack, final: false },
+  COMMAND: { command: 'echo hello', timeoutMs: 1_000 },
+  GIT_INSPECT: { action: 'status' },
 };
 
 /** The cases share one repository, so each write has a file of its own. */
@@ -114,23 +144,43 @@ const scopeOf = (kind: ExecutorKind): ExecutionScope =>
             writableRoots: ['.'],
             exclusions: [],
           }
-        : repositoryScope(repository.root);
+        : kind === 'COMMAND'
+          ? {
+              kind: 'SANDBOX' as const,
+              backend: 'BWRAP' as const,
+              approvalDigest: 'a'.repeat(64),
+              profile: {
+                repositoryRoot: repository.root,
+                workdir: '',
+                writableRoots: ['.'],
+                network: false,
+                homeReadOnly: [],
+                homeMaskedFiles: [],
+                maskedFiles: [],
+                maskedDirs: [],
+                protectedExisting: [],
+              },
+            }
+          : repositoryScope(repository.root);
 
 describeExecutorContract('ExecutorSet', {
   create: registryUnderTest,
   caseFor: (kind) => ({
     input: inputFor(kind),
-    environment: environmentFor(kind, scopeOf(kind), { subprocess: runner }),
+    environment: environmentFor(kind, scopeOf(kind), { subprocess: runner, sandbox }),
   }),
   expectations: repositoryGuardExpectations(repository, (kind, scope) =>
-    environmentFor(kind, scope, { subprocess: runner }),
+    environmentFor(kind, scope, { subprocess: runner, sandbox }),
   ),
 });
 
 describeExecutorContract('ExecutorSet registry without rg', {
   create: registryUnderTest,
-  caseFor: (kind) => ({ input: inputFor(kind), environment: environmentFor(kind, scopeOf(kind)) }),
+  caseFor: (kind) => ({
+    input: inputFor(kind),
+    environment: environmentFor(kind, scopeOf(kind), { subprocess: gitOnly, sandbox }),
+  }),
   expectations: repositoryGuardExpectations(repository, (kind, scope) =>
-    environmentFor(kind, scope),
+    environmentFor(kind, scope, { subprocess: gitOnly, sandbox }),
   ),
 });

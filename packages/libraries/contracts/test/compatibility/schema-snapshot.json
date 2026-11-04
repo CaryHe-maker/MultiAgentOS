@@ -269,7 +269,9 @@
           "items": {
             "enum": [
               "repo.read",
-              "workspace.write"
+              "workspace.write",
+              "command.exec",
+              "command.network"
             ]
           },
           "uniqueItems": true
@@ -1186,7 +1188,9 @@
               "items": {
                 "enum": [
                   "repo.read",
-                  "workspace.write"
+                  "workspace.write",
+                  "command.exec",
+                  "command.network"
                 ]
               },
               "uniqueItems": true
@@ -1725,7 +1729,8 @@
                   "REPOSITORY_LIST",
                   "MESSAGE_PUBLISH",
                   "FILE_EDIT",
-                  "OUTPUT_READ"
+                  "OUTPUT_READ",
+                  "GIT_INSPECT"
                 ],
                 "$id": "platform.common.ExecutionKind.v1"
               },
@@ -1734,7 +1739,9 @@
                 "items": {
                   "enum": [
                     "repo.read",
-                    "workspace.write"
+                    "workspace.write",
+                    "command.exec",
+                    "command.network"
                   ]
                 },
                 "uniqueItems": true
@@ -1891,6 +1898,22 @@
                       "FATAL"
                     ]
                   },
+                  "COMMAND_DENIED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "PROTECTED_PATH_CREATED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "OUT_OF_SCOPE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -1972,6 +1995,38 @@
                     ]
                   },
                   "EDIT_NOT_UNIQUE": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "APPROVAL_MISMATCH": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "ENV_ASSERTION_FAILED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "SANDBOX_UNAVAILABLE": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "NOT_A_GIT_REPOSITORY": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -2724,7 +2779,8 @@
             "REPOSITORY_LIST",
             "MESSAGE_PUBLISH",
             "FILE_EDIT",
-            "OUTPUT_READ"
+            "OUTPUT_READ",
+            "GIT_INSPECT"
           ],
           "$id": "platform.common.ExecutionKind.v1"
         },
@@ -2733,7 +2789,9 @@
           "items": {
             "enum": [
               "repo.read",
-              "workspace.write"
+              "workspace.write",
+              "command.exec",
+              "command.network"
             ]
           },
           "uniqueItems": true
@@ -2890,6 +2948,22 @@
                 "FATAL"
               ]
             },
+            "COMMAND_DENIED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "PROTECTED_PATH_CREATED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "OUT_OF_SCOPE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -2971,6 +3045,38 @@
               ]
             },
             "EDIT_NOT_UNIQUE": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "APPROVAL_MISMATCH": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "ENV_ASSERTION_FAILED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "SANDBOX_UNAVAILABLE": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "NOT_A_GIT_REPOSITORY": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3435,7 +3541,14 @@
                       "EDIT_NOT_UNIQUE",
                       "UNDO_NOT_AVAILABLE",
                       "NOTHING_TO_UNDO",
-                      "UNDO_UNKNOWN"
+                      "UNDO_UNKNOWN",
+                      "COMMAND_DENIED",
+                      "SANDBOX_UNAVAILABLE",
+                      "APPROVAL_MISMATCH",
+                      "ENV_ASSERTION_FAILED",
+                      "PROTECTED_PATH_CREATED",
+                      "NOT_A_GIT_REPOSITORY",
+                      "MEMORY_PRESSURE"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   }
@@ -3721,7 +3834,8 @@
                 "CONTEXT_LIMIT",
                 "NO_PROGRESS",
                 "ROUND_LIMIT",
-                "REGENERATION_LIMIT"
+                "REGENERATION_LIMIT",
+                "MEMORY_LIMIT"
               ]
             }
           },
@@ -4081,7 +4195,14 @@
                 "EDIT_NOT_UNIQUE",
                 "UNDO_NOT_AVAILABLE",
                 "NOTHING_TO_UNDO",
-                "UNDO_UNKNOWN"
+                "UNDO_UNKNOWN",
+                "COMMAND_DENIED",
+                "SANDBOX_UNAVAILABLE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "PROTECTED_PATH_CREATED",
+                "NOT_A_GIT_REPOSITORY",
+                "MEMORY_PRESSURE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -6531,6 +6652,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "VIOLATION",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
@@ -6579,6 +6701,8 @@
               "enum": [
                 "ALLOW",
                 "ONCE",
+                "COMMAND",
+                "PREFIX",
                 "DENY"
               ]
             }
@@ -6862,6 +6986,114 @@
             "type",
             "questionId",
             "capability",
+            "command",
+            "workdir",
+            "writableRoots",
+            "network",
+            "unisolated",
+            "critical",
+            "prefixes",
+            "unreusable",
+            "approvalDigest",
+            "options"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "command.exec"
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "workdir": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "writableRoots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "minItems": 1
+            },
+            "network": {
+              "type": "boolean"
+            },
+            "unisolated": {
+              "type": "boolean"
+            },
+            "critical": {
+              "type": "boolean"
+            },
+            "prefixes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "unreusable": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "PARSE_ERROR",
+                  "DYNAMIC_COMMAND_NAME",
+                  "COMMAND_SUBSTITUTION",
+                  "PROCESS_SUBSTITUTION",
+                  "EVAL",
+                  "SHELL_C",
+                  "PIPE_TO_SHELL",
+                  "HEREDOC_TO_SHELL",
+                  "NO_COMMAND",
+                  "CRITICAL_COMMAND",
+                  "NETWORK",
+                  "UNISOLATED"
+                ]
+              }
+            },
+            "matched": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "approvalDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "ONCE",
+                  "COMMAND",
+                  "PREFIX",
+                  "DENY"
+                ]
+              },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
             "path",
             "contentRef",
             "critical"
@@ -6958,6 +7190,7 @@
         "CANCELLED",
         "BUDGET",
         "TIMEOUT",
+        "INTERRUPTED",
         "VIOLATION",
         "ENDED_BY_USER",
         "SHUTDOWN"
@@ -7156,7 +7389,9 @@
                   "items": {
                     "enum": [
                       "repo.read",
-                      "workspace.write"
+                      "workspace.write",
+                      "command.exec",
+                      "command.network"
                     ]
                   },
                   "uniqueItems": true
@@ -7697,7 +7932,14 @@
                                       "EDIT_NOT_UNIQUE",
                                       "UNDO_NOT_AVAILABLE",
                                       "NOTHING_TO_UNDO",
-                                      "UNDO_UNKNOWN"
+                                      "UNDO_UNKNOWN",
+                                      "COMMAND_DENIED",
+                                      "SANDBOX_UNAVAILABLE",
+                                      "APPROVAL_MISMATCH",
+                                      "ENV_ASSERTION_FAILED",
+                                      "PROTECTED_PATH_CREATED",
+                                      "NOT_A_GIT_REPOSITORY",
+                                      "MEMORY_PRESSURE"
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
                                   }
@@ -7983,7 +8225,8 @@
                                 "CONTEXT_LIMIT",
                                 "NO_PROGRESS",
                                 "ROUND_LIMIT",
-                                "REGENERATION_LIMIT"
+                                "REGENERATION_LIMIT",
+                                "MEMORY_LIMIT"
                               ]
                             }
                           },
@@ -8182,7 +8425,8 @@
                                 "CONTEXT_LIMIT",
                                 "NO_PROGRESS",
                                 "ROUND_LIMIT",
-                                "REGENERATION_LIMIT"
+                                "REGENERATION_LIMIT",
+                                "MEMORY_LIMIT"
                               ]
                             }
                           },
@@ -8337,6 +8581,76 @@
                       },
                       "additionalProperties": false,
                       "$id": "executor.OutputReadInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "command",
+                        "workdir",
+                        "timeoutMs",
+                        "network"
+                      ],
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 8000
+                        },
+                        "workdir": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "timeoutMs": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 600000
+                        },
+                        "network": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.CommandInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "action"
+                      ],
+                      "properties": {
+                        "action": {
+                          "enum": [
+                            "status",
+                            "diff",
+                            "log",
+                            "show",
+                            "blame"
+                          ]
+                        },
+                        "staged": {
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        },
+                        "rev": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 50
+                        },
+                        "lines": {
+                          "type": "string",
+                          "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.GitInspectInput.v1"
                     }
                   ],
                   "$id": "kernel.unit.UnitInput.v1"
@@ -8460,7 +8774,8 @@
                         "COMPLETED",
                         "BUDGET",
                         "CANCELLED",
-                        "TIMEOUT"
+                        "TIMEOUT",
+                        "INTERRUPTED"
                       ]
                     },
                     "resultRef": {
@@ -8596,7 +8911,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -9508,6 +9830,8 @@
                       "enum": [
                         "ALLOW",
                         "ONCE",
+                        "COMMAND",
+                        "PREFIX",
                         "DENY"
                       ]
                     }
@@ -10094,6 +10418,114 @@
                     "type",
                     "questionId",
                     "capability",
+                    "command",
+                    "workdir",
+                    "writableRoots",
+                    "network",
+                    "unisolated",
+                    "critical",
+                    "prefixes",
+                    "unreusable",
+                    "approvalDigest",
+                    "options"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "command.exec"
+                    },
+                    "command": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 8000
+                    },
+                    "workdir": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "writableRoots": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      },
+                      "minItems": 1
+                    },
+                    "network": {
+                      "type": "boolean"
+                    },
+                    "unisolated": {
+                      "type": "boolean"
+                    },
+                    "critical": {
+                      "type": "boolean"
+                    },
+                    "prefixes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "unreusable": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "PARSE_ERROR",
+                          "DYNAMIC_COMMAND_NAME",
+                          "COMMAND_SUBSTITUTION",
+                          "PROCESS_SUBSTITUTION",
+                          "EVAL",
+                          "SHELL_C",
+                          "PIPE_TO_SHELL",
+                          "HEREDOC_TO_SHELL",
+                          "NO_COMMAND",
+                          "CRITICAL_COMMAND",
+                          "NETWORK",
+                          "UNISOLATED"
+                        ]
+                      }
+                    },
+                    "matched": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "approvalDigest": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "ONCE",
+                          "COMMAND",
+                          "PREFIX",
+                          "DENY"
+                        ]
+                      },
+                      "minItems": 2
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
                     "path",
                     "contentRef",
                     "critical"
@@ -10298,7 +10730,8 @@
                     "CONTEXT_LIMIT",
                     "NO_PROGRESS",
                     "ROUND_LIMIT",
-                    "REGENERATION_LIMIT"
+                    "REGENERATION_LIMIT",
+                    "MEMORY_LIMIT"
                   ]
                 }
               },
@@ -10701,7 +11134,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -10779,6 +11214,7 @@
                         "CANCELLED",
                         "BUDGET",
                         "TIMEOUT",
+                        "INTERRUPTED",
                         "ENDED_BY_USER",
                         "SHUTDOWN"
                       ]
@@ -10858,7 +11294,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -10912,6 +11350,7 @@
                         "CANCELLED",
                         "BUDGET",
                         "TIMEOUT",
+                        "INTERRUPTED",
                         "ENDED_BY_USER",
                         "SHUTDOWN"
                       ]
@@ -10992,7 +11431,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -11142,7 +11583,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -11256,7 +11704,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -11382,7 +11832,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -11496,7 +11953,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -11683,7 +12142,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -11976,7 +12437,8 @@
             "CONTEXT_LIMIT",
             "NO_PROGRESS",
             "ROUND_LIMIT",
-            "REGENERATION_LIMIT"
+            "REGENERATION_LIMIT",
+            "MEMORY_LIMIT"
           ]
         }
       },
@@ -12126,7 +12588,14 @@
             "EDIT_NOT_UNIQUE",
             "UNDO_NOT_AVAILABLE",
             "NOTHING_TO_UNDO",
-            "UNDO_UNKNOWN"
+            "UNDO_UNKNOWN",
+            "COMMAND_DENIED",
+            "SANDBOX_UNAVAILABLE",
+            "APPROVAL_MISMATCH",
+            "ENV_ASSERTION_FAILED",
+            "PROTECTED_PATH_CREATED",
+            "NOT_A_GIT_REPOSITORY",
+            "MEMORY_PRESSURE"
           ],
           "$id": "platform.common.ReasonCode.v1"
         },
@@ -12238,7 +12707,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -12316,6 +12787,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
               ]
@@ -12395,7 +12867,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -12449,6 +12923,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
               ]
@@ -12529,7 +13004,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -12679,7 +13156,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -12793,7 +13277,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -12919,7 +13405,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -13033,7 +13526,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -13220,7 +13715,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -13614,7 +14111,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -13664,6 +14163,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
               ]
@@ -13924,7 +14424,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -14046,7 +14548,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -14340,7 +14849,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -14733,7 +15244,8 @@
                 "CAPABILITY_NOT_SUBSET",
                 "UNDO_NOT_AVAILABLE",
                 "NOTHING_TO_UNDO",
-                "UNDO_UNKNOWN"
+                "UNDO_UNKNOWN",
+                "MEMORY_PRESSURE"
               ]
             }
           },
@@ -14774,6 +15286,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "VIOLATION",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
@@ -15029,7 +15542,9 @@
                 "REPOSITORY_LIST",
                 "FILE_WRITE",
                 "FILE_EDIT",
-                "OUTPUT_READ"
+                "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT"
               ]
             },
             "effect": {
@@ -15545,7 +16060,14 @@
                       "EDIT_NOT_UNIQUE",
                       "UNDO_NOT_AVAILABLE",
                       "NOTHING_TO_UNDO",
-                      "UNDO_UNKNOWN"
+                      "UNDO_UNKNOWN",
+                      "COMMAND_DENIED",
+                      "SANDBOX_UNAVAILABLE",
+                      "APPROVAL_MISMATCH",
+                      "ENV_ASSERTION_FAILED",
+                      "PROTECTED_PATH_CREATED",
+                      "NOT_A_GIT_REPOSITORY",
+                      "MEMORY_PRESSURE"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
@@ -15705,7 +16227,8 @@
                 "CONTEXT_LIMIT",
                 "NO_PROGRESS",
                 "ROUND_LIMIT",
-                "REGENERATION_LIMIT"
+                "REGENERATION_LIMIT",
+                "MEMORY_LIMIT"
               ]
             }
           },
@@ -16733,6 +17256,350 @@
             },
             "executionKind": {
               "type": "string",
+              "const": "COMMAND"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "exitCode",
+                    "signal",
+                    "timedOut",
+                    "backend",
+                    "sandboxDenials"
+                  ],
+                  "properties": {
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signal": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "backend": {
+                      "enum": [
+                        "BWRAP",
+                        "UNISOLATED"
+                      ]
+                    },
+                    "sandboxDenials": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retention": {
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "unit",
+                        "limit",
+                        "retained",
+                        "omitted",
+                        "fullOutputTruncated"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "enum": [
+                            "HEAD",
+                            "TAIL",
+                            "BOTH",
+                            "ITEMS"
+                          ]
+                        },
+                        "unit": {
+                          "enum": [
+                            "BYTES",
+                            "ITEMS"
+                          ]
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "retained": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "omitted": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fullOutputTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.RetentionNotice.v1"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.CommandOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "GIT_INSPECT"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "action"
+                  ],
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "status",
+                        "diff",
+                        "log",
+                        "show",
+                        "blame"
+                      ]
+                    },
+                    "retention": {
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "unit",
+                        "limit",
+                        "retained",
+                        "omitted",
+                        "fullOutputTruncated"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "enum": [
+                            "HEAD",
+                            "TAIL",
+                            "BOTH",
+                            "ITEMS"
+                          ]
+                        },
+                        "unit": {
+                          "enum": [
+                            "BYTES",
+                            "ITEMS"
+                          ]
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "retained": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "omitted": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fullOutputTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.RetentionNotice.v1"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.GitInspectOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
               "const": "CONTEXT_ASSEMBLE"
             },
             "outcome": {
@@ -17205,6 +18072,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -17228,7 +18097,11 @@
                 "PROTECTED_PATH",
                 "FILE_CHANGED",
                 "EDIT_NO_MATCH",
-                "EDIT_NOT_UNIQUE"
+                "EDIT_NOT_UNIQUE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "SANDBOX_UNAVAILABLE",
+                "NOT_A_GIT_REPOSITORY"
               ]
             }
           },
@@ -17283,6 +18156,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -17357,6 +18232,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -17425,6 +18302,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -17493,6 +18372,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -17608,7 +18489,11 @@
                 "PROTECTED_PATH",
                 "FILE_CHANGED",
                 "EDIT_NO_MATCH",
-                "EDIT_NOT_UNIQUE"
+                "EDIT_NOT_UNIQUE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "SANDBOX_UNAVAILABLE",
+                "NOT_A_GIT_REPOSITORY"
               ]
             }
           },
@@ -19195,7 +20080,14 @@
                               "EDIT_NOT_UNIQUE",
                               "UNDO_NOT_AVAILABLE",
                               "NOTHING_TO_UNDO",
-                              "UNDO_UNKNOWN"
+                              "UNDO_UNKNOWN",
+                              "COMMAND_DENIED",
+                              "SANDBOX_UNAVAILABLE",
+                              "APPROVAL_MISMATCH",
+                              "ENV_ASSERTION_FAILED",
+                              "PROTECTED_PATH_CREATED",
+                              "NOT_A_GIT_REPOSITORY",
+                              "MEMORY_PRESSURE"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
@@ -19355,7 +20247,8 @@
                         "CONTEXT_LIMIT",
                         "NO_PROGRESS",
                         "ROUND_LIMIT",
-                        "REGENERATION_LIMIT"
+                        "REGENERATION_LIMIT",
+                        "MEMORY_LIMIT"
                       ]
                     }
                   },
@@ -20644,6 +21537,380 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "COMMAND"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeoutMs"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8000
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600000
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.execution.CommandExecutorInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind",
+                "backend",
+                "profile",
+                "approvalDigest"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "SANDBOX"
+                },
+                "backend": {
+                  "enum": [
+                    "BWRAP",
+                    "UNISOLATED"
+                  ]
+                },
+                "profile": {
+                  "type": "object",
+                  "required": [
+                    "repositoryRoot",
+                    "workdir",
+                    "writableRoots",
+                    "network",
+                    "homeReadOnly",
+                    "homeMaskedFiles",
+                    "maskedFiles",
+                    "maskedDirs",
+                    "protectedExisting"
+                  ],
+                  "properties": {
+                    "repositoryRoot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "workdir": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "writableRoots": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      },
+                      "minItems": 1
+                    },
+                    "network": {
+                      "type": "boolean"
+                    },
+                    "homeReadOnly": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "homeMaskedFiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "dataDir": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "maskedFiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
+                    },
+                    "maskedDirs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
+                    },
+                    "protectedExisting": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.SandboxProfile.v1"
+                },
+                "approvalDigest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.SandboxScope.v1"
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "GIT_INSPECT"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "enum": [
+                    "status",
+                    "diff",
+                    "log",
+                    "show",
+                    "blame"
+                  ]
+                },
+                "staged": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "rev": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "lines": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.GitInspectInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind",
+                "repositoryRoot",
+                "exclusions"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "REPOSITORY"
+                },
+                "repositoryRoot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "exclusions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.execution.ExecutionRequest.v1"
@@ -21147,6 +22414,242 @@
             "output": {
               "type": "object",
               "required": [
+                "exitCode",
+                "signal",
+                "timedOut",
+                "backend",
+                "sandboxDenials"
+              ],
+              "properties": {
+                "exitCode": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "signal": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "timedOut": {
+                  "type": "boolean"
+                },
+                "backend": {
+                  "enum": [
+                    "BWRAP",
+                    "UNISOLATED"
+                  ]
+                },
+                "sandboxDenials": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retention": {
+                  "type": "object",
+                  "required": [
+                    "strategy",
+                    "unit",
+                    "limit",
+                    "retained",
+                    "omitted",
+                    "fullOutputTruncated"
+                  ],
+                  "properties": {
+                    "strategy": {
+                      "enum": [
+                        "HEAD",
+                        "TAIL",
+                        "BOTH",
+                        "ITEMS"
+                      ]
+                    },
+                    "unit": {
+                      "enum": [
+                        "BYTES",
+                        "ITEMS"
+                      ]
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retained": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omitted": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "fullOutputTruncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.RetentionNotice.v1"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.CommandOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "enum": [
+                    "status",
+                    "diff",
+                    "log",
+                    "show",
+                    "blame"
+                  ]
+                },
+                "retention": {
+                  "type": "object",
+                  "required": [
+                    "strategy",
+                    "unit",
+                    "limit",
+                    "retained",
+                    "omitted",
+                    "fullOutputTruncated"
+                  ],
+                  "properties": {
+                    "strategy": {
+                      "enum": [
+                        "HEAD",
+                        "TAIL",
+                        "BOTH",
+                        "ITEMS"
+                      ]
+                    },
+                    "unit": {
+                      "enum": [
+                        "BYTES",
+                        "ITEMS"
+                      ]
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retained": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omitted": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "fullOutputTruncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.RetentionNotice.v1"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.GitInspectOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
                 "contextPackId",
                 "tokenCount",
                 "tokenBudget",
@@ -21540,6 +23043,117 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "backend",
+            "profile",
+            "approvalDigest"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "SANDBOX"
+            },
+            "backend": {
+              "enum": [
+                "BWRAP",
+                "UNISOLATED"
+              ]
+            },
+            "profile": {
+              "type": "object",
+              "required": [
+                "repositoryRoot",
+                "workdir",
+                "writableRoots",
+                "network",
+                "homeReadOnly",
+                "homeMaskedFiles",
+                "maskedFiles",
+                "maskedDirs",
+                "protectedExisting"
+              ],
+              "properties": {
+                "repositoryRoot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "workdir": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "writableRoots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "minItems": 1
+                },
+                "network": {
+                  "type": "boolean"
+                },
+                "homeReadOnly": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "homeMaskedFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "dataDir": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "maskedFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "maskedDirs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "protectedExisting": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.SandboxProfile.v1"
+            },
+            "approvalDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.SandboxScope.v1"
         },
         {
           "anyOf": [
@@ -22909,7 +24523,8 @@
                 "COMPLETED",
                 "BUDGET",
                 "CANCELLED",
-                "TIMEOUT"
+                "TIMEOUT",
+                "INTERRUPTED"
               ]
             },
             "resultRef": {
@@ -23045,7 +24660,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -23365,7 +24987,8 @@
                 "CONTEXT_LIMIT",
                 "NO_PROGRESS",
                 "ROUND_LIMIT",
-                "REGENERATION_LIMIT"
+                "REGENERATION_LIMIT",
+                "MEMORY_LIMIT"
               ]
             }
           },
@@ -23422,7 +25045,8 @@
             "CONTEXT_LIMIT",
             "NO_PROGRESS",
             "ROUND_LIMIT",
-            "REGENERATION_LIMIT"
+            "REGENERATION_LIMIT",
+            "MEMORY_LIMIT"
           ]
         }
       },
@@ -23727,7 +25351,9 @@
           "items": {
             "enum": [
               "repo.read",
-              "workspace.write"
+              "workspace.write",
+              "command.exec",
+              "command.network"
             ]
           },
           "uniqueItems": true
@@ -24226,7 +25852,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -24304,6 +25932,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
               ]
@@ -24383,7 +26012,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -24437,6 +26068,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "ENDED_BY_USER",
                 "SHUTDOWN"
               ]
@@ -24517,7 +26149,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -24667,7 +26301,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -24781,7 +26422,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -24907,7 +26550,14 @@
                     "EDIT_NOT_UNIQUE",
                     "UNDO_NOT_AVAILABLE",
                     "NOTHING_TO_UNDO",
-                    "UNDO_UNKNOWN"
+                    "UNDO_UNKNOWN",
+                    "COMMAND_DENIED",
+                    "SANDBOX_UNAVAILABLE",
+                    "APPROVAL_MISMATCH",
+                    "ENV_ASSERTION_FAILED",
+                    "PROTECTED_PATH_CREATED",
+                    "NOT_A_GIT_REPOSITORY",
+                    "MEMORY_PRESSURE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -25021,7 +26671,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -25208,7 +26860,9 @@
                           "REPOSITORY_LIST",
                           "FILE_WRITE",
                           "FILE_EDIT",
-                          "OUTPUT_READ"
+                          "OUTPUT_READ",
+                          "COMMAND",
+                          "GIT_INSPECT"
                         ]
                       },
                       "effect": {
@@ -25300,6 +26954,26 @@
         }
       ],
       "$id": "kernel.unit.RunClosed.v1"
+    },
+    "kernel.unit.RunInterrupted.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "RunInterrupted"
+        },
+        "reason": {
+          "enum": [
+            "MEMORY_PRESSURE"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.RunInterrupted.v1"
     },
     "kernel.unit.RunStart.v1": {
       "anyOf": [
@@ -25890,7 +27564,14 @@
                               "EDIT_NOT_UNIQUE",
                               "UNDO_NOT_AVAILABLE",
                               "NOTHING_TO_UNDO",
-                              "UNDO_UNKNOWN"
+                              "UNDO_UNKNOWN",
+                              "COMMAND_DENIED",
+                              "SANDBOX_UNAVAILABLE",
+                              "APPROVAL_MISMATCH",
+                              "ENV_ASSERTION_FAILED",
+                              "PROTECTED_PATH_CREATED",
+                              "NOT_A_GIT_REPOSITORY",
+                              "MEMORY_PRESSURE"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           }
@@ -26176,7 +27857,8 @@
                         "CONTEXT_LIMIT",
                         "NO_PROGRESS",
                         "ROUND_LIMIT",
-                        "REGENERATION_LIMIT"
+                        "REGENERATION_LIMIT",
+                        "MEMORY_LIMIT"
                       ]
                     }
                   },
@@ -26375,7 +28057,8 @@
                         "CONTEXT_LIMIT",
                         "NO_PROGRESS",
                         "ROUND_LIMIT",
-                        "REGENERATION_LIMIT"
+                        "REGENERATION_LIMIT",
+                        "MEMORY_LIMIT"
                       ]
                     }
                   },
@@ -26530,6 +28213,76 @@
               },
               "additionalProperties": false,
               "$id": "executor.OutputReadInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "command",
+                "workdir",
+                "timeoutMs",
+                "network"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8000
+                },
+                "workdir": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600000
+                },
+                "network": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.CommandInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "enum": [
+                    "status",
+                    "diff",
+                    "log",
+                    "show",
+                    "blame"
+                  ]
+                },
+                "staged": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "rev": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "lines": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.GitInspectInput.v1"
             }
           ],
           "$id": "kernel.unit.UnitInput.v1"
@@ -27107,7 +28860,14 @@
                           "EDIT_NOT_UNIQUE",
                           "UNDO_NOT_AVAILABLE",
                           "NOTHING_TO_UNDO",
-                          "UNDO_UNKNOWN"
+                          "UNDO_UNKNOWN",
+                          "COMMAND_DENIED",
+                          "SANDBOX_UNAVAILABLE",
+                          "APPROVAL_MISMATCH",
+                          "ENV_ASSERTION_FAILED",
+                          "PROTECTED_PATH_CREATED",
+                          "NOT_A_GIT_REPOSITORY",
+                          "MEMORY_PRESSURE"
                         ],
                         "$id": "platform.common.ReasonCode.v1"
                       }
@@ -27393,7 +29153,8 @@
                     "CONTEXT_LIMIT",
                     "NO_PROGRESS",
                     "ROUND_LIMIT",
-                    "REGENERATION_LIMIT"
+                    "REGENERATION_LIMIT",
+                    "MEMORY_LIMIT"
                   ]
                 }
               },
@@ -27592,7 +29353,8 @@
                     "CONTEXT_LIMIT",
                     "NO_PROGRESS",
                     "ROUND_LIMIT",
-                    "REGENERATION_LIMIT"
+                    "REGENERATION_LIMIT",
+                    "MEMORY_LIMIT"
                   ]
                 }
               },
@@ -27747,6 +29509,76 @@
           },
           "additionalProperties": false,
           "$id": "executor.OutputReadInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "command",
+            "workdir",
+            "timeoutMs",
+            "network"
+          ],
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "workdir": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 600000
+            },
+            "network": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.CommandInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "diff",
+                "log",
+                "show",
+                "blame"
+              ]
+            },
+            "staged": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "rev": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./~^@-]{1,200}$"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "lines": {
+              "type": "string",
+              "pattern": "^[0-9]{1,7},[0-9]{1,7}$"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.GitInspectInput.v1"
         }
       ],
       "$id": "kernel.unit.UnitInput.v1"
@@ -27978,7 +29810,8 @@
                 "CONTEXT_LIMIT",
                 "NO_PROGRESS",
                 "ROUND_LIMIT",
-                "REGENERATION_LIMIT"
+                "REGENERATION_LIMIT",
+                "MEMORY_LIMIT"
               ]
             }
           },
@@ -28317,6 +30150,162 @@
           },
           "additionalProperties": false,
           "$id": "executor.OutputReadOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "exitCode",
+            "signal",
+            "timedOut",
+            "backend",
+            "sandboxDenials"
+          ],
+          "properties": {
+            "exitCode": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timedOut": {
+              "type": "boolean"
+            },
+            "backend": {
+              "enum": [
+                "BWRAP",
+                "UNISOLATED"
+              ]
+            },
+            "sandboxDenials": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retention": {
+              "type": "object",
+              "required": [
+                "strategy",
+                "unit",
+                "limit",
+                "retained",
+                "omitted",
+                "fullOutputTruncated"
+              ],
+              "properties": {
+                "strategy": {
+                  "enum": [
+                    "HEAD",
+                    "TAIL",
+                    "BOTH",
+                    "ITEMS"
+                  ]
+                },
+                "unit": {
+                  "enum": [
+                    "BYTES",
+                    "ITEMS"
+                  ]
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retained": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "omitted": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "fullOutputTruncated": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.RetentionNotice.v1"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.CommandOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "diff",
+                "log",
+                "show",
+                "blame"
+              ]
+            },
+            "retention": {
+              "type": "object",
+              "required": [
+                "strategy",
+                "unit",
+                "limit",
+                "retained",
+                "omitted",
+                "fullOutputTruncated"
+              ],
+              "properties": {
+                "strategy": {
+                  "enum": [
+                    "HEAD",
+                    "TAIL",
+                    "BOTH",
+                    "ITEMS"
+                  ]
+                },
+                "unit": {
+                  "enum": [
+                    "BYTES",
+                    "ITEMS"
+                  ]
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retained": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "omitted": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "fullOutputTruncated": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.RetentionNotice.v1"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.GitInspectOutput.v1"
         }
       ],
       "$id": "kernel.unit.UnitOutput.v1"
@@ -28397,7 +30386,8 @@
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
-                "OUTPUT_READ"
+                "OUTPUT_READ",
+                "GIT_INSPECT"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -28672,7 +30662,8 @@
                         "CONTEXT_LIMIT",
                         "NO_PROGRESS",
                         "ROUND_LIMIT",
-                        "REGENERATION_LIMIT"
+                        "REGENERATION_LIMIT",
+                        "MEMORY_LIMIT"
                       ]
                     }
                   },
@@ -29011,6 +31002,162 @@
                   },
                   "additionalProperties": false,
                   "$id": "executor.OutputReadOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "exitCode",
+                    "signal",
+                    "timedOut",
+                    "backend",
+                    "sandboxDenials"
+                  ],
+                  "properties": {
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signal": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "backend": {
+                      "enum": [
+                        "BWRAP",
+                        "UNISOLATED"
+                      ]
+                    },
+                    "sandboxDenials": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retention": {
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "unit",
+                        "limit",
+                        "retained",
+                        "omitted",
+                        "fullOutputTruncated"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "enum": [
+                            "HEAD",
+                            "TAIL",
+                            "BOTH",
+                            "ITEMS"
+                          ]
+                        },
+                        "unit": {
+                          "enum": [
+                            "BYTES",
+                            "ITEMS"
+                          ]
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "retained": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "omitted": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fullOutputTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.RetentionNotice.v1"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.CommandOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "action"
+                  ],
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "status",
+                        "diff",
+                        "log",
+                        "show",
+                        "blame"
+                      ]
+                    },
+                    "retention": {
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "unit",
+                        "limit",
+                        "retained",
+                        "omitted",
+                        "fullOutputTruncated"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "enum": [
+                            "HEAD",
+                            "TAIL",
+                            "BOTH",
+                            "ITEMS"
+                          ]
+                        },
+                        "unit": {
+                          "enum": [
+                            "BYTES",
+                            "ITEMS"
+                          ]
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "retained": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "omitted": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fullOutputTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.RetentionNotice.v1"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.GitInspectOutput.v1"
                 }
               ],
               "$id": "kernel.unit.UnitOutput.v1"
@@ -29189,7 +31336,8 @@
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
-                "OUTPUT_READ"
+                "OUTPUT_READ",
+                "GIT_INSPECT"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -29248,6 +31396,8 @@
                 "ARTIFACT_EXPIRED",
                 "CAPABILITY_NOT_GRANTED",
                 "ADMISSION_CHECK_FAILED",
+                "COMMAND_DENIED",
+                "PROTECTED_PATH_CREATED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
                 "UNSUPPORTED_FILE",
@@ -29258,7 +31408,11 @@
                 "PROTECTED_PATH",
                 "FILE_CHANGED",
                 "EDIT_NO_MATCH",
-                "EDIT_NOT_UNIQUE"
+                "EDIT_NOT_UNIQUE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "SANDBOX_UNAVAILABLE",
+                "NOT_A_GIT_REPOSITORY"
               ]
             }
           },
@@ -29338,7 +31492,8 @@
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
-                "OUTPUT_READ"
+                "OUTPUT_READ",
+                "GIT_INSPECT"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -29389,7 +31544,8 @@
             "quota": {
               "enum": [
                 "TOOL_UNITS",
-                "WALL_CLOCK"
+                "WALL_CLOCK",
+                "MEMORY"
               ]
             }
           },
@@ -29469,7 +31625,8 @@
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
-                "OUTPUT_READ"
+                "OUTPUT_READ",
+                "GIT_INSPECT"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -29782,7 +31939,8 @@
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
-                        "OUTPUT_READ"
+                        "OUTPUT_READ",
+                        "GIT_INSPECT"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -30057,7 +32215,8 @@
                                 "CONTEXT_LIMIT",
                                 "NO_PROGRESS",
                                 "ROUND_LIMIT",
-                                "REGENERATION_LIMIT"
+                                "REGENERATION_LIMIT",
+                                "MEMORY_LIMIT"
                               ]
                             }
                           },
@@ -30396,6 +32555,162 @@
                           },
                           "additionalProperties": false,
                           "$id": "executor.OutputReadOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "exitCode",
+                            "signal",
+                            "timedOut",
+                            "backend",
+                            "sandboxDenials"
+                          ],
+                          "properties": {
+                            "exitCode": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "signal": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 32
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "timedOut": {
+                              "type": "boolean"
+                            },
+                            "backend": {
+                              "enum": [
+                                "BWRAP",
+                                "UNISOLATED"
+                              ]
+                            },
+                            "sandboxDenials": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "retention": {
+                              "type": "object",
+                              "required": [
+                                "strategy",
+                                "unit",
+                                "limit",
+                                "retained",
+                                "omitted",
+                                "fullOutputTruncated"
+                              ],
+                              "properties": {
+                                "strategy": {
+                                  "enum": [
+                                    "HEAD",
+                                    "TAIL",
+                                    "BOTH",
+                                    "ITEMS"
+                                  ]
+                                },
+                                "unit": {
+                                  "enum": [
+                                    "BYTES",
+                                    "ITEMS"
+                                  ]
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "retained": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "omitted": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "fullOutputTruncated": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "$id": "executor.RetentionNotice.v1"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.CommandOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "action"
+                          ],
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "status",
+                                "diff",
+                                "log",
+                                "show",
+                                "blame"
+                              ]
+                            },
+                            "retention": {
+                              "type": "object",
+                              "required": [
+                                "strategy",
+                                "unit",
+                                "limit",
+                                "retained",
+                                "omitted",
+                                "fullOutputTruncated"
+                              ],
+                              "properties": {
+                                "strategy": {
+                                  "enum": [
+                                    "HEAD",
+                                    "TAIL",
+                                    "BOTH",
+                                    "ITEMS"
+                                  ]
+                                },
+                                "unit": {
+                                  "enum": [
+                                    "BYTES",
+                                    "ITEMS"
+                                  ]
+                                },
+                                "limit": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "retained": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "omitted": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "fullOutputTruncated": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "$id": "executor.RetentionNotice.v1"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.GitInspectOutput.v1"
                         }
                       ],
                       "$id": "kernel.unit.UnitOutput.v1"
@@ -30574,7 +32889,8 @@
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
-                        "OUTPUT_READ"
+                        "OUTPUT_READ",
+                        "GIT_INSPECT"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -30633,6 +32949,8 @@
                         "ARTIFACT_EXPIRED",
                         "CAPABILITY_NOT_GRANTED",
                         "ADMISSION_CHECK_FAILED",
+                        "COMMAND_DENIED",
+                        "PROTECTED_PATH_CREATED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
                         "UNSUPPORTED_FILE",
@@ -30643,7 +32961,11 @@
                         "PROTECTED_PATH",
                         "FILE_CHANGED",
                         "EDIT_NO_MATCH",
-                        "EDIT_NOT_UNIQUE"
+                        "EDIT_NOT_UNIQUE",
+                        "APPROVAL_MISMATCH",
+                        "ENV_ASSERTION_FAILED",
+                        "SANDBOX_UNAVAILABLE",
+                        "NOT_A_GIT_REPOSITORY"
                       ]
                     }
                   },
@@ -30723,7 +33045,8 @@
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
-                        "OUTPUT_READ"
+                        "OUTPUT_READ",
+                        "GIT_INSPECT"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -30774,7 +33097,8 @@
                     "quota": {
                       "enum": [
                         "TOOL_UNITS",
-                        "WALL_CLOCK"
+                        "WALL_CLOCK",
+                        "MEMORY"
                       ]
                     }
                   },
@@ -30854,7 +33178,8 @@
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
-                        "OUTPUT_READ"
+                        "OUTPUT_READ",
+                        "GIT_INSPECT"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -31249,7 +33574,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -31327,6 +33654,7 @@
                         "CANCELLED",
                         "BUDGET",
                         "TIMEOUT",
+                        "INTERRUPTED",
                         "ENDED_BY_USER",
                         "SHUTDOWN"
                       ]
@@ -31406,7 +33734,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -31460,6 +33790,7 @@
                         "CANCELLED",
                         "BUDGET",
                         "TIMEOUT",
+                        "INTERRUPTED",
                         "ENDED_BY_USER",
                         "SHUTDOWN"
                       ]
@@ -31540,7 +33871,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -31690,7 +34023,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -31804,7 +34144,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -31930,7 +34272,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -32044,7 +34393,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -32231,7 +34582,9 @@
                                   "REPOSITORY_LIST",
                                   "FILE_WRITE",
                                   "FILE_EDIT",
-                                  "OUTPUT_READ"
+                                  "OUTPUT_READ",
+                                  "COMMAND",
+                                  "GIT_INSPECT"
                                 ]
                               },
                               "effect": {
@@ -32388,6 +34741,26 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.WorkspaceDiverged.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "reason"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "RunInterrupted"
+                },
+                "reason": {
+                  "enum": [
+                    "MEMORY_PRESSURE"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.RunInterrupted.v1"
             }
           ]
         }
@@ -32684,7 +35057,8 @@
         "REPOSITORY_LIST",
         "MESSAGE_PUBLISH",
         "FILE_EDIT",
-        "OUTPUT_READ"
+        "OUTPUT_READ",
+        "GIT_INSPECT"
       ],
       "$id": "platform.common.ExecutionKind.v1"
     },
@@ -32860,7 +35234,14 @@
         "EDIT_NOT_UNIQUE",
         "UNDO_NOT_AVAILABLE",
         "NOTHING_TO_UNDO",
-        "UNDO_UNKNOWN"
+        "UNDO_UNKNOWN",
+        "COMMAND_DENIED",
+        "SANDBOX_UNAVAILABLE",
+        "APPROVAL_MISMATCH",
+        "ENV_ASSERTION_FAILED",
+        "PROTECTED_PATH_CREATED",
+        "NOT_A_GIT_REPOSITORY",
+        "MEMORY_PRESSURE"
       ],
       "$id": "platform.common.ReasonCode.v1"
     },
@@ -32903,6 +35284,12 @@
         "repositoryExclusions",
         "maxSnapshotFiles",
         "maxReportBytes",
+        "sandbox",
+        "sandboxMaskedPatterns",
+        "command",
+        "killGraceMs",
+        "maxConcurrentExec",
+        "memory",
         "budget",
         "executionLimits",
         "artifactRetention"
@@ -32953,6 +35340,106 @@
           "type": "integer",
           "minimum": 1
         },
+        "sandbox": {
+          "type": "object",
+          "required": [
+            "unavailable",
+            "homeReadOnly",
+            "homeMaskedFiles"
+          ],
+          "properties": {
+            "unavailable": {
+              "enum": [
+                "deny",
+                "ask-unisolated"
+              ]
+            },
+            "homeReadOnly": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "homeMaskedFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "sandboxMaskedPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "command": {
+          "type": "object",
+          "required": [
+            "deniedCommands",
+            "criticalCommands"
+          ],
+          "properties": {
+            "deniedCommands": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "criticalCommands": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "killGraceMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxConcurrentExec": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory": {
+          "type": "object",
+          "required": [
+            "sampleIntervalMs",
+            "warningRatio",
+            "dangerRatio"
+          ],
+          "properties": {
+            "sampleIntervalMs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "warningRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "dangerRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
         "budget": {
           "type": "object",
           "required": [
@@ -32991,6 +35478,8 @@
             "FILE_WRITE",
             "FILE_EDIT",
             "OUTPUT_READ",
+            "COMMAND",
+            "GIT_INSPECT",
             "CONTEXT_ASSEMBLE",
             "MODEL"
           ],
@@ -33226,6 +35715,72 @@
               },
               "additionalProperties": false
             },
+            "COMMAND": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "GIT_INSPECT": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "CONTEXT_ASSEMBLE": {
               "type": "object",
               "required": [
@@ -33318,6 +35873,12 @@
             "repositoryExclusions",
             "maxSnapshotFiles",
             "maxReportBytes",
+            "sandbox",
+            "sandboxMaskedPatterns",
+            "command",
+            "killGraceMs",
+            "maxConcurrentExec",
+            "memory",
             "budget",
             "executionLimits",
             "artifactRetention"
@@ -33368,6 +35929,106 @@
               "type": "integer",
               "minimum": 1
             },
+            "sandbox": {
+              "type": "object",
+              "required": [
+                "unavailable",
+                "homeReadOnly",
+                "homeMaskedFiles"
+              ],
+              "properties": {
+                "unavailable": {
+                  "enum": [
+                    "deny",
+                    "ask-unisolated"
+                  ]
+                },
+                "homeReadOnly": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "homeMaskedFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "sandboxMaskedPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "command": {
+              "type": "object",
+              "required": [
+                "deniedCommands",
+                "criticalCommands"
+              ],
+              "properties": {
+                "deniedCommands": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "criticalCommands": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "killGraceMs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxConcurrentExec": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory": {
+              "type": "object",
+              "required": [
+                "sampleIntervalMs",
+                "warningRatio",
+                "dangerRatio"
+              ],
+              "properties": {
+                "sampleIntervalMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "warningRatio": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
+                "dangerRatio": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "budget": {
               "type": "object",
               "required": [
@@ -33406,6 +36067,8 @@
                 "FILE_WRITE",
                 "FILE_EDIT",
                 "OUTPUT_READ",
+                "COMMAND",
+                "GIT_INSPECT",
                 "CONTEXT_ASSEMBLE",
                 "MODEL"
               ],
@@ -33609,6 +36272,72 @@
                   "additionalProperties": false
                 },
                 "OUTPUT_READ": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "COMMAND": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "GIT_INSPECT": {
                   "type": "object",
                   "required": [
                     "timeoutMs",
@@ -34221,6 +36950,7 @@
                 "CANCELLED",
                 "BUDGET",
                 "TIMEOUT",
+                "INTERRUPTED",
                 "VIOLATION",
                 "ENDED_BY_USER",
                 "SHUTDOWN",
@@ -35220,7 +37950,14 @@
                 "EDIT_NOT_UNIQUE",
                 "UNDO_NOT_AVAILABLE",
                 "NOTHING_TO_UNDO",
-                "UNDO_UNKNOWN"
+                "UNDO_UNKNOWN",
+                "COMMAND_DENIED",
+                "SANDBOX_UNAVAILABLE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "PROTECTED_PATH_CREATED",
+                "NOT_A_GIT_REPOSITORY",
+                "MEMORY_PRESSURE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
@@ -35627,7 +38364,14 @@
                 "EDIT_NOT_UNIQUE",
                 "UNDO_NOT_AVAILABLE",
                 "NOTHING_TO_UNDO",
-                "UNDO_UNKNOWN"
+                "UNDO_UNKNOWN",
+                "COMMAND_DENIED",
+                "SANDBOX_UNAVAILABLE",
+                "APPROVAL_MISMATCH",
+                "ENV_ASSERTION_FAILED",
+                "PROTECTED_PATH_CREATED",
+                "NOT_A_GIT_REPOSITORY",
+                "MEMORY_PRESSURE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -36195,6 +38939,40 @@
             "at",
             "workflowRunId",
             "type",
+            "reason"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "RUN_INTERRUPTED"
+            },
+            "reason": {
+              "enum": [
+                "MEMORY_PRESSURE"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
             "agentRunId",
             "reason",
             "round"
@@ -36234,7 +39012,8 @@
                 "CONTEXT_LIMIT",
                 "NO_PROGRESS",
                 "ROUND_LIMIT",
-                "REGENERATION_LIMIT"
+                "REGENERATION_LIMIT",
+                "MEMORY_LIMIT"
               ]
             },
             "round": {
@@ -36914,6 +39693,7 @@
                     "NO_PROGRESS",
                     "ROUND_LIMIT",
                     "REGENERATION_LIMIT",
+                    "MEMORY_LIMIT",
                     "BUDGET_EXHAUSTED",
                     "FINAL_CALL_INVALID"
                   ]
@@ -37074,6 +39854,7 @@
                     "NO_PROGRESS",
                     "ROUND_LIMIT",
                     "REGENERATION_LIMIT",
+                    "MEMORY_LIMIT",
                     "BUDGET_EXHAUSTED",
                     "FINAL_CALL_INVALID"
                   ]
@@ -37157,7 +39938,14 @@
                             "EDIT_NOT_UNIQUE",
                             "UNDO_NOT_AVAILABLE",
                             "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN"
+                            "UNDO_UNKNOWN",
+                            "COMMAND_DENIED",
+                            "SANDBOX_UNAVAILABLE",
+                            "APPROVAL_MISMATCH",
+                            "ENV_ASSERTION_FAILED",
+                            "PROTECTED_PATH_CREATED",
+                            "NOT_A_GIT_REPOSITORY",
+                            "MEMORY_PRESSURE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         }

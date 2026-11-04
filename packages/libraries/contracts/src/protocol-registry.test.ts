@@ -19,6 +19,7 @@ const EXPECTED = {
   'kernel.unit': [
     'UpdateActivityRequest',
     'WorkspaceDiverged',
+    'RunInterrupted',
     'BudgetState',
     'BudgetView',
     'CloseRunRequest',

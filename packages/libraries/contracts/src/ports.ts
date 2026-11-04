@@ -1,5 +1,7 @@
 import type { RepositoryListInput } from './executor/repository-list.js';
 import type { FileEditInput, FileWriteInput } from './executor/file-write.js';
+import type { CommandExecutorInput, GitInspectInput } from './executor/command.js';
+import type { SandboxBackend, SandboxScope } from './platform-common/sandbox.js';
 import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
   AssembleExecutorInput,
@@ -103,6 +105,8 @@ export interface ExecutorInputByKind {
   readonly FILE_WRITE: FileWriteInput;
   readonly FILE_EDIT: FileEditInput;
   readonly OUTPUT_READ: OutputReadExecutorInput;
+  readonly COMMAND: CommandExecutorInput;
+  readonly GIT_INSPECT: GitInspectInput;
 }
 
 /**
@@ -162,12 +166,64 @@ export interface ProviderCredentials {
   apiKeyFor(provider: string): string | undefined;
 }
 
+/**
+ * Why a command was not started. The Supervisor decides these, from what it checks again before it
+ * starts anything (Interface/KernelSupervisor 3, 6).
+ */
+export type SandboxRefusal =
+  'APPROVAL_MISMATCH' | 'ENV_ASSERTION_FAILED' | 'SANDBOX_UNAVAILABLE' | 'WORKDIR_INVALID';
+
+export type SandboxRunResult =
+  | {
+      readonly kind: 'RAN';
+      readonly exitCode: number | null;
+      readonly signal: string | null;
+      /** stdout and stderr in the order they came; the head and the tail when it was cut. */
+      readonly output: string;
+      readonly truncated: boolean;
+      readonly timedOut: boolean;
+      readonly denials: number;
+      readonly backend: SandboxBackend;
+    }
+  | { readonly kind: 'REFUSED'; readonly reason: SandboxRefusal };
+
+/**
+ * Runs one command in the sandbox of its scope. Only the Executor of COMMAND gets a working one.
+ * When the process cannot be confirmed stopped it throws `StopUnconfirmedError`, which the
+ * Supervisor turns into a STOP_UNCONFIRMED fact.
+ */
+export interface SandboxRunner {
+  run(options: {
+    readonly scope: SandboxScope;
+    readonly command: string;
+    readonly timeoutMs: number;
+    readonly maxOutputBytes: number;
+    readonly signal: AbortSignal;
+  }): Promise<SandboxRunResult>;
+}
+
+/** What every execution but COMMAND gets: nothing runs, whatever is asked. */
+export const DENY_SANDBOX: SandboxRunner = {
+  run: () => Promise.resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' }),
+};
+
+export class StopUnconfirmedError extends Error {
+  public constructor(
+    public readonly pid: number | undefined,
+    message = 'a command could not be confirmed stopped',
+  ) {
+    super(message);
+    this.name = 'StopUnconfirmedError';
+  }
+}
+
 export interface ExecutorEnvironment {
   readonly scope: ExecutionScope;
   readonly limits: ExecutionLimits;
   /** Fires at the deadline or when the run is cancelled. */
   readonly signal: AbortSignal;
   readonly subprocess: SubprocessRunner;
+  readonly sandbox: SandboxRunner;
   readonly credentials: ProviderCredentials;
   now(): Date;
 }

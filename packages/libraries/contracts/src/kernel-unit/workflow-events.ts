@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { DefinitionRefSchema, pinnedRefOf } from '../catalog/definition-schemas.js';
 import { WorkspaceRevertedSchema } from '../kernel-control/interaction-events.js';
+import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { runEnd } from '../kernel-control/run-outcome.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { ExecutionKindSchema } from '../platform-common/execution-kind.js';
@@ -66,7 +67,7 @@ export const UnitReportSchema = Type.Union(
       ...report,
       status: Type.Literal('REJECTED'),
       reasonCode: Type.Literal('QUOTA_EXHAUSTED'),
-      quota: Type.Enum(['TOOL_UNITS', 'WALL_CLOCK']),
+      quota: Type.Enum(['TOOL_UNITS', 'WALL_CLOCK', 'MEMORY']),
     }),
     closed({
       ...report,
@@ -127,6 +128,16 @@ export const WorkspaceDivergedSchema = closed(
 );
 export type WorkspaceDiverged = Static<typeof WorkspaceDivergedSchema>;
 
+/**
+ * The run is being interrupted (Kernel/Core 5c): what was in flight has been answered with
+ * INTERRUPTED, and Workflow must not call a model again; it ends the run with what it has.
+ */
+export const RunInterruptedSchema = closed(
+  { type: Type.Literal('RunInterrupted'), reason: Type.Enum(INTERRUPT_REASONS) },
+  'kernel.unit.RunInterrupted.v1',
+);
+export type RunInterrupted = Static<typeof RunInterruptedSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   UnitReportSchema,
@@ -135,6 +146,7 @@ export const KernelToWorkflowEventSchema = Type.Union([
   RunClosedSchema,
   WorkspaceRevertedSchema,
   WorkspaceDivergedSchema,
+  RunInterruptedSchema,
 ]);
 export type KernelToWorkflowEvent = Static<typeof KernelToWorkflowEventSchema>;
 

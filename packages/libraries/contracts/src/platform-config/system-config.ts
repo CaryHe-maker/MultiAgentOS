@@ -31,6 +31,26 @@ export const KernelConfigSchema = closed(
     repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
     maxReportBytes: count(1),
+    /** The sandbox of commands (Interface/KernelSupervisor 9). */
+    sandbox: closed({
+      unavailable: Type.Enum(['deny', 'ask-unisolated']),
+      homeReadOnly: Type.Array(text(4096)),
+      homeMaskedFiles: Type.Array(text(4096)),
+    }),
+    /** Appended to the default secret rules; it can never remove one of them. */
+    sandboxMaskedPatterns: Type.Array(ExclusionRuleSchema),
+    command: closed({
+      deniedCommands: Type.Array(text(200)),
+      /** Appended to the defaults; a default cannot be removed. */
+      criticalCommands: Type.Array(text(200)),
+    }),
+    killGraceMs: ms(),
+    maxConcurrentExec: count(1),
+    memory: closed({
+      sampleIntervalMs: ms(),
+      warningRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+      dangerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+    }),
     /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
       runTokenLimit: count(1),
@@ -46,6 +66,8 @@ export const KernelConfigSchema = closed(
       FILE_WRITE: ToolLimitSchema,
       FILE_EDIT: ToolLimitSchema,
       OUTPUT_READ: ToolLimitSchema,
+      COMMAND: ToolLimitSchema,
+      GIT_INSPECT: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),

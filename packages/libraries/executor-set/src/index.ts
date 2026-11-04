@@ -3,6 +3,8 @@
  * `repository-access/` is shared by the repository Executors. Provider SDKs may be imported only
  * under `model-call/`.
  */
+import { createRunCommandExecutor } from './command/run-command-executor.js';
+import { createGitInspectExecutor } from './git/git-inspect-executor.js';
 import type { ExecutionScope, ExecutorRegistry } from '@multiagentos/contracts';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
@@ -34,6 +36,8 @@ export function createExecutorRegistry(): ExecutorRegistry {
     FILE_WRITE: createFileWriteExecutor(locks),
     FILE_EDIT: createFileEditExecutor(locks),
     OUTPUT_READ: createOutputReadExecutor(),
+    COMMAND: createRunCommandExecutor(),
+    GIT_INSPECT: createGitInspectExecutor(),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
   };
@@ -62,3 +66,6 @@ export type {
 } from './command/parse/command-parser.js';
 export { firstMatchingPattern, matchesCommandPattern } from './command/parse/command-match.js';
 export { ARITY, commandPrefix } from './command/parse/arity.js';
+
+export { createRunCommandExecutor } from './command/run-command-executor.js';
+export { createGitInspectExecutor, gitArguments } from './git/git-inspect-executor.js';

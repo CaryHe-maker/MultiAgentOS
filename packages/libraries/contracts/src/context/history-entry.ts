@@ -78,6 +78,7 @@ export const WRAP_UP_REASONS = [
   'NO_PROGRESS',
   'ROUND_LIMIT',
   'REGENERATION_LIMIT',
+  'MEMORY_LIMIT',
 ] as const;
 
 /** Shared with `AnalysisReport.wrapUp`, which adds the endings that are not wrap-ups. */
