@@ -1,6 +1,6 @@
 # Workflow 与 Kernel 的接口
 
-> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 为准，本文只定义字段。
+> 状态：已评审（阶段 1 的部分）；阶段 2 的部分为草稿（待评审）。约定见 [Interface](README.md)。
 > 标"阶段 N"的条目在该阶段的文档门中补全；major 1 冻结之前可以原地增加字段。
 
 ## 1. 范围
@@ -35,7 +35,7 @@ interface WorkflowGatewayPort {
   readProjectFile(request: ReadProjectFileRequest, context: BoundaryContext): Promise<ProjectFileContent | SyscallRejected>;
   reportSessionCommand(request: ReportSessionCommandRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(request: ReportSessionListRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  // 阶段 2：updateActivity（第 2.5 节）
+  updateActivity(request: UpdateActivityRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 阶段 2，第 2.5 节
   // 阶段 4：reserveDelegation、releaseDelegation
   // 阶段 8：reportCompactionSource、ackCompaction（第 2.4 节）
 }
@@ -58,7 +58,8 @@ interface RegisterAgentRunRequest {
   effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内；AgentRun 的思考强度只在这里给出，Unit 输入中没有
   workspaceViewId: 'main';         // M2Design 第 6.5 节
   display: { label: string };      // ≤80，只用于界面
-  // 阶段 2：requestedCapabilities、writeRoots
+  requestedCapabilities: string[]; // 阶段 2：不超出能力上限，否则 CAPABILITY_NOT_SUBSET（Kernel/Core 第 5a.1 节）
+  writeRoots: string[];            // 阶段 2：相对仓库根目录；main 为 ['.']；没有 workspace.write 时为空
   // 阶段 4：parentAgentRunId、delegationId、budget
 }
 
@@ -228,7 +229,7 @@ interface UpdateActivityRequest {
 ```ts
 type KernelToWorkflowEvent =
   | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
-  // 阶段 2：WorkspaceReverted、WorkspaceDiverged
+  | WorkspaceReverted | WorkspaceDiverged;   // 阶段 2：字段见 InteractionKernel 第 3 节；WorkspaceDiverged 为 { type, files: string[] }
   // 阶段 5：RunPaused、RunResumed、RunInterrupted、HumanCancelled；HumanAnswered 增加 kind = 'steer'
   // 阶段 8：CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
 
@@ -257,7 +258,7 @@ interface UnitReport {
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
   quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
-  // 阶段 2：changedFiles
+  changedFiles?: string[];           // 阶段 2：写入工具改动的文件
 }
 
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
@@ -282,7 +283,9 @@ interface TurnClosed {
   turnId: string;
   reason: 'COMPLETED' | 'ABORTED' | 'TIMEOUT' | 'BUDGET' | 'RUN_CLOSED';
   usage: TurnUsage;
-  // 阶段 2：startSnapshot、endSnapshot、changedFileCount
+  startSnapshot?: string;            // 阶段 2：快照失败时没有
+  endSnapshot?: string;
+  changedFileCount?: number;
 }
 
 interface TurnUsage {
@@ -462,4 +465,17 @@ type WrapUpReason =                                // 下一次模型调用为�
 | `COMPACTION_UNKNOWN` | `SyscallRejected`（`reportCompactionSource`、`ackCompaction`） | 阶段 8：`compactionId` 不存在或已回复 |
 
 M1 的 `AGENT_RUN_ACTIVE` 原本用于"已有 ACTIVE 的 AgentRun 时再次登记"，M2 允许多个 ACTIVE 的 AgentRun，该用法删除，只保留上表的含义。
+阶段 2 增加：
+
+| 原因码 | 出现位置 | 含义 |
+|---|---|---|
+| `CAPABILITY_NOT_SUBSET` | `SyscallRejected`（`registerAgentRun`） | 请求的能力或可写根目录超出能力上限 |
+| `CAPABILITY_NOT_GRANTED` | UnitReport（`REJECTED`） | 所需能力不在能力上限中，不询问 |
+| `WRITE_OUT_OF_SCOPE` | UnitReport（`REJECTED`） | 写入路径不在可写根目录内，不询问 |
+| `PROTECTED_PATH` | UnitReport（`REJECTED`） | `.git/`、`.multiagentos/` 或排除规则命中的路径，不询问 |
+| `ADMISSION_CHECK_FAILED` | UnitReport（`REJECTED`） | 判定过程本身出错，一律拒绝 |
+| `FILE_CHANGED` | UnitReport（`REJECTED`） | `baseSha` 或 `expectAbsent` 不成立：文件在读取之后被改动 |
+| `EDIT_NO_MATCH`、`EDIT_NOT_UNIQUE` | UnitReport（`REJECTED`） | `oldString` 没有匹配，或匹配不唯一 |
+| `UNDO_NOT_AVAILABLE`、`NOTHING_TO_UNDO`、`UNDO_UNKNOWN` | `SyscallRejected`（`undoTurns`、`confirmUndo`、`diffTurns`） | 不在 AWAITING_INPUT、没有可回退的 Turn、`undoId` 不存在 |
+
 其余阶段的原因码在对应阶段补充。

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 ExecutorSet
 
-> 状态：已评审（阶段 1）。
+> 状态：已评审（阶段 1）；阶段 2 的部分为草稿（待评审）。
 
 ## 1. 定位
 
@@ -75,6 +75,30 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 - `offset` 超出总行数时返回 `REJECTED(INVALID_RANGE)`，说明总行数；正文不是 UTF-8 文本时返回 `REJECTED(UNSUPPORTED_FILE)`（与 M1 `file-read` 相同的原因码）。
 - 不接触 ArtifactStore、文件系统与网络；同一输入总是得到逐字节相同的结果。
 
+## 5b. `fs/`：`file-write`、`file-edit`（阶段 2）
+
+在进程内执行（M2Design 第 2.5、6.3 节）。`scope.kind` 为 `WORKSPACE`：`{ repositoryRoot, writableRoots, exclusions }`，由 Core 从 Lease 派生。
+
+**写入路径的检查**，每次写入都按顺序执行，任何一步不通过都不触碰文件：
+
+1. 请求路径规范化：拒绝绝对路径、`..`、空段；
+2. `isWritable(profile, path)`：越出可写根目录为 `WRITE_OUT_OF_SCOPE`，受保护路径或排除规则命中为 `PROTECTED_PATH`；
+3. 从仓库根目录逐段 `lstat` 到父目录，任何一段是符号链接时为 `OUT_OF_SCOPE`；目标本身是符号链接时同样拒绝；不存在的中间目录按需创建；
+4. 持有按规范化路径的锁，比较 `baseSha` 与 `expectAbsent`，不一致时为 `FILE_CHANGED`；
+5. 写入同目录下的临时文件（`O_CREAT | O_EXCL | O_NOFOLLOW`），`fsync` 后再比较一次，然后 `rename`，保留原文件的权限；
+6. `rename` 之后校验父目录的 realpath 仍在仓库内；不在时记为 `GUARD_FAILURE`，上报安全违规。
+
+**`file-write`**：输入 `executor.FileWriteInput`（`path`、`content`、`append?`、`baseSha?`、`expectAbsent?`）。覆盖要求 `baseSha`，新建要求 `expectAbsent`，二者都没有时为 `INVALID_INPUT`。
+
+**`file-edit`**：输入 `executor.FileEditInput`（`path`、`oldString`、`newString`、`replaceAll?`、`baseSha`）。
+
+- `oldString` 必须唯一匹配，否则 `EDIT_NOT_UNIQUE`，除非 `replaceAll`；没有匹配时 `EDIT_NO_MATCH`；
+- 精确匹配失败时依次按"排版引号归一"与"空白差异"重试，仍要求唯一；
+- 保持文件原有的换行符（CRLF 与 LF）。
+
+两者的输出带 `path`、`operation`、`sha256`（新内容的 SHA），预览是一行结果说明。
+`baseSha`、`expectAbsent` 由 Workflow 填写，不在模型看到的工具参数中（`FileWriteArgs`、`FileEditArgs`）。
+
 ## 6. `ContextAssembleExecutor` 的变化
 
 ### 6.1 段
@@ -145,6 +169,7 @@ M1 的测试全部保留。增加：
   收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；`AGENTS.md` 不进入 system 段；
 - `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；`Retry-After` 的两种格式换算为 `retryAfterMs`；
   前缀式摘要请求与之前普通请求的前缀相同（阶段 8）；
+- `fs/`（阶段 2）：`isWritable` 与 Core、沙盒三处判定一致（属性测试）；对抗测试：越界路径（绝对路径、`..`、大小写与 Unicode 变体）、符号链接与符号链接替换（目标与中间目录，含检查与写入之间的替换）、竞争写入、`baseSha` 与 `expectAbsent`、受保护路径与排除规则；编辑匹配的唯一性、归一重试、换行符保持；写入失败不留下临时文件；
 - `command/parse/`（阶段 3）：引号与转义中的分隔符不拆分；子 shell、`{ }`、管道、heredoc 中的子命令都被取出；变量作命令名、命令替换与语法错误判为不可复用；ARITY 表的取词；
 - 修剪与纯文本式（阶段 8）：头尾字节数精确、不切断 UTF-8、说明中带 `toolCallId`；纯文本式按目标去掉最早的完整模型轮，先前的摘要不去掉，`omittedEntries` 正确。
 

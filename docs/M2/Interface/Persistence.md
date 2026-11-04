@@ -1,6 +1,6 @@
 # 持久化接口
 
-> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 第 10 节为准。
+> 状态：已评审（阶段 1 的部分）；阶段 2 的部分为草稿（待评审）。约定见 [Interface](README.md)。
 > 存储机制与写入规则见 [Infrastructure/Persistence](../Infrastructure/Persistence.md)；本文只定义目录、记录格式与 Port。
 
 ## 1. 目录
@@ -76,7 +76,10 @@ interface LogRecordBase {
 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 | 1 |
 | `LOG_TAIL_REPAIRED` | `truncatedBytes` | 1 |
 | `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` | 1 |
-| `WORKSPACE_REVERTED`、`WORKSPACE_DIVERGED`、`SESSION_FORKED` | 见阶段 2 | 2 |
+| `WORKSPACE_REVERTED` | `revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?` | 2 |
+| `WORKSPACE_DIVERGED` | `files` | 2 |
+| `SESSION_FORKED` | `fromSessionId`、`fromSeq` | 2 |
+| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` | 2 |
 | `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED` | 见阶段 5 | 5 |
 | `LOOP_EXHAUSTED` | 见阶段 7 | 7 |
 
@@ -178,6 +181,20 @@ interface ArtifactOwnerLine {
 
 - `EXPIRING` 的正文在 `retainedSince` 之后满 `expiringRetentionDays`（缺省 7 天）即可回收，此后读取一律返回 `ARTIFACT_EXPIRED`，不论正文是否已被删除；`SESSION` 的正文只在没有任何 ACTIVE 的 Session 拥有时回收。
 - 只有 Session 引用为 ACTIVE 的 Session 的归属文件参与回收的标记（[Infrastructure/ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
+
+### 4.4 快照索引（阶段 2）
+
+`sessions/<sessionId>/kernel-execution/snapshot-index.jsonl`，只追加，最后一行为准：
+
+```ts
+type SnapshotIndexLine =
+  | { kind: 'TURN_STARTED'; turnId: string; turnSeq: number; viewId: 'main'; startSnapshot?: string; at: string }
+  | { kind: 'TURN_ENDED'; turnId: string; endSnapshot?: string;
+      changedFiles: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[]; at: string }
+  | { kind: 'REVERTED'; revertedTurnIds: string[]; forced: boolean; backupSnapshot?: string; at: string };
+```
+
+没有 `TURN_ENDED` 的 Turn 是进程退出或停机留下的（M2Design 第 4.6 节）。
 
 ## 5. Kernel 审计
 

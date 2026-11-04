@@ -50,7 +50,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 
 | 文档 | 状态 | 首次涉及的阶段 |
 |---|---|---|
-| [M2Design](M2Design.md) | v1.12 定稿 | — |
+| [M2Design](M2Design.md) | v1.16 定稿 | — |
 | [M2Plan](M2Plan.md) | 已评审 | — |
 | [M2TechStack](M2TechStack.md) | 实测已填，待评审 | 0 |
 | [M2Security](M2Security.md) | 已评审（阶段 1 的部分） | 1 |
@@ -59,7 +59,8 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | Kernel：[Interaction](Kernel/Interaction.md)、[Core](Kernel/Core.md)、[Gateway](Kernel/Gateway.md)、[Execution](Kernel/Execution.md)、[Monitor](Kernel/Monitor.md) | 已评审（阶段 1） | 1 |
 | Library：[AgentToolPool](Library/AgentToolPool.md)、[ExecutorSet](Library/ExecutorSet.md)、[SharedContracts](Library/SharedContracts.md) | 已评审（阶段 1） | 1 |
 | Infrastructure：[Persistence](Infrastructure/Persistence.md)、[ArtifactStore](Infrastructure/ArtifactStore.md)、[ModuleHost](Infrastructure/ModuleHost.md)、[Fabric](Infrastructure/Fabric.md) | 已评审（阶段 1） | 1 |
-| Kernel：Scheduler、Supervisor；SystemFaultHandling；`Interface/KernelSupervisor.md` | 未开始 | 2–4 |
+| Kernel：[Supervisor](Kernel/Supervisor.md) | 草稿（阶段 2，待评审） | 2 |
+| Kernel：Scheduler；SystemFaultHandling；`Interface/KernelSupervisor.md` | 未开始 | 3–4 |
 | M2Usage、M2Limitations | 未开始 | 发布准备 |
 
 状态取值：未开始、草稿、已评审、已实现。实现合入集成分支后，对应文档改为"已实现"。

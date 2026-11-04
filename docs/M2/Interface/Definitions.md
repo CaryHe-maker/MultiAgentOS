@@ -1,6 +1,6 @@
 # 定义格式
 
-> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。
+> 状态：已评审（阶段 1 的部分）；阶段 2 的部分为草稿（待评审）。约定见 [Interface](README.md)。
 > 定义的加载、校验与目录机制见 [Library/AgentToolPool](../Library/AgentToolPool.md)；本文只定义字段。
 
 ## 1. 范围与版本
@@ -35,7 +35,8 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
       allowedInFinal: boolean;                   // 收尾调用中是否可用
     }[];
     onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';   // 没有合法结束时发布什么
-    // 阶段 2：todos（update_todos，M2Design 第 3.5 节）；阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
+    todos?: { toolRef: DefinitionRef };          // 阶段 2：update_todos（M2Design 第 3.5 节）
+    // 阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
   };
   limits: {
     maxRounds: number;                           // 1..100
@@ -44,7 +45,8 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
     maxWallClockMs?: number;                     // 省略时以 Turn 超时为上限（main）
   };
   budget: AgentBudgetProfile;
-  // 阶段 2：capabilities（能力白名单）；阶段 4：spawnable、defaultShare、resultContract
+  capabilities: string[];                        // 阶段 2：能力白名单，能力上限的来源（M2Design 第 5.1 节）
+  // 阶段 4：spawnable、defaultShare、resultContract
 }
 
 type ThinkingEffort = 'none' | 'low' | 'high' | 'max';
@@ -164,7 +166,7 @@ interface UnitDefinition extends Omit<M1UnitDefinition, 'schemaVersion' | 'execu
   // 阶段 2：capabilities 与 resourceKeys；阶段 4：concurrencyClass
 }
 
-type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
+type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH' | 'OUTPUT_READ' | 'FILE_EDIT';   // 阶段 2；M1 的 FILE_WRITE 开放；阶段 3–6 增加各新工具的类别
 ```
 
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；

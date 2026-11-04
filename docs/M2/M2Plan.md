@@ -180,7 +180,7 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 | S2-UI-1 | 授权询问的各级选项、回退确认、`/fork`、`/undo`、`/diff` 的展示、活动区的待办进度 | — |
 | S2-PL-1 | main 增加写入工具、`read_output` 与 `update_todos`；`file-write`、`file-edit`、`output-read` 的 Unit 定义与受保护能力，Tool `read-output`、`update-todos` | — |
 
-**集成** S2-IN-1。**退出**：A 组的写入与子目录 `AGENTS.md` 部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时）。
+**集成** S2-IN-1。**退出**：A 组的写入与子目录 `AGENTS.md` 部分、H5、H8–H10、S4、L8（读取已被压缩取代的调用除外）、L7（阶段 8 已完成时）；文件工具的对抗测试（越界路径、符号链接替换、竞争条件，M2Design v1.16）。
 
 ### 6.4 阶段 3：命令与沙盒
 

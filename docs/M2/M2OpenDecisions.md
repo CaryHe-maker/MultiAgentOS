@@ -26,13 +26,16 @@
 | D8 | `AGENTS.md` 与其他说明文档同级：第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit（M2Design v1.14，Cary 2026-11-02 决定） | 已执行 |
 | D9 | 用户拒绝绑定提出请求的 AgentRun；工具结果为 `the user rejected tool "x"`（参照 DeepSeek Harness），不计入连续出错，之后的轮次不再提交相同的工具（M2Design v1.15，Cary 2026-11-02 决定） | 已执行 |
 | D10 | 思考强度只在 `registerAgentRun` 中给出（Cary 2026-11-02 决定） | 已执行 |
+| D12 | 文件工具拒绝写入排除规则命中的路径（`.env*`、私钥、`node_modules` 等），返回 `PROTECTED_PATH`（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
+| D13 | 系统没有 `git` 时，启动预设降为 `readonly` 并提示用户（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
+| D14 | 写文件保持进程内执行；越界路径、符号链接替换与竞争条件的对抗测试是阶段 2 的退出条件（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
 | D11 | main 的提示词暂不定稿：等阶段 2 实现写入能力之后再考虑。阶段 1 退出不再要求评测、定稿与封存 main，`main-system` 保持 `PLACEHOLDER`，`v1` 定义保持 `v0.1.0` 草稿（Cary 2026-11-04 决定） | 已写入 AgentToolPool 第 3 节 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 
 ## 3. 当前进度
 
 核对时间：2026-11-04，`feature/phase1/main`；Ubuntu 24.04（WSL）完整质量门在阶段 1 的每次推进后运行。
-阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 在 `feature/phase1/main` 上，远端作为备份，尚未向 `feat/M2` 开 PR。
+阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 已由 PR #41 合入 `feat/M2`。阶段 2 在 `feature/phase2/main` 上，文档门的草稿已写完，待评审。
 
 | 任务 | 状态 | 已完成 | 未完成 |
 |---|---|---|---|
