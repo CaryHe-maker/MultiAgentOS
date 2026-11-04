@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { EXECUTION_KINDS, REPOSITORY_KINDS, WRITE_KINDS } from '../platform-common/execution-kind.js';
+import {
+  EXECUTION_KINDS,
+  REPOSITORY_KINDS,
+  WRITE_KINDS,
+} from '../platform-common/execution-kind.js';
 import { testArtifactRef, testFileReadOutput, testId, testUnitDefinition } from './index.js';
 
 describe('test fixtures', () => {

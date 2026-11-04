@@ -37,7 +37,7 @@ export type WriteAccess =
   | { readonly writable: false; readonly reasonCode: 'WRITE_OUT_OF_SCOPE' | 'PROTECTED_PATH' };
 
 /** Never writable, whatever the user answers: a snapshot does not cover them (M2Design 6.3). */
-const PROTECTED_WRITE_RULES: readonly string[] = Object.freeze([
+export const PROTECTED_WRITE_RULES: readonly string[] = Object.freeze([
   '**/.multiagentos',
   '**/.multiagentos/**',
 ]);

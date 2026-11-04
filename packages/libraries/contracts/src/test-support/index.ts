@@ -1,7 +1,11 @@
 import { UnitDefinitionSchema, type UnitDefinition } from '../catalog/definition-schemas.js';
 import { FileReadOutputSchema, type FileReadOutput } from '../executor/file-read.js';
 import { ArtifactRefSchema, type ArtifactRef } from '../platform-common/common-schemas.js';
-import { REPOSITORY_KINDS, WRITE_KINDS, type ExecutionKind } from '../platform-common/execution-kind.js';
+import {
+  REPOSITORY_KINDS,
+  WRITE_KINDS,
+  type ExecutionKind,
+} from '../platform-common/execution-kind.js';
 import { assertValid } from '../platform-common/validation.js';
 
 /**

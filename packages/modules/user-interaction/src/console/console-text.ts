@@ -45,6 +45,17 @@ export const ConsoleText = Object.freeze({
     `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
   writeCritical: (path: string, text: string) =>
     `允许 Agent 写入 ${path} 吗？写入后它会作为可信的项目指令。只对这一次写入有效。\n${text}\n[y/n]`,
+  undoConfirm: (files: readonly string[]) =>
+    `这些文件在之后被别处改过：\n${files.join('\n')}\n仍要回退吗？被覆盖的内容会保留在快照中。[y/n]`,
+  undoCancelled: {
+    USER_CANCELLED: '已取消回退，没有修改任何文件。',
+    NEW_INPUT: '已取消回退，没有修改任何文件。',
+    SESSION_CLOSED: '已取消回退，没有修改任何文件。',
+    FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
+  },
+  undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
+  noDiff: '没有可以显示的改动。',
+  diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
   granted: '已允许。',
   declined: '已拒绝。',
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',
@@ -61,6 +72,8 @@ export const ConsoleText = Object.freeze({
     '/delete <编号>    删除未打开的对话',
     '/status           当前运行与额度状态',
     '/output <编号>    查看被截断的工具输出',
+    '/undo [all]       回退最近一轮（或全部）的文件改动',
+    '/diff [N]         查看倒数第 N 轮改动了什么',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
   ].join('\n'),

@@ -136,6 +136,29 @@ export function projectHistory(
         });
         break;
       }
+      case 'WORKSPACE_REVERTED': {
+        // The log keeps every record; only what the model is shown goes (Module/Workflow 7).
+        const reverted = new Set(record.revertedTurnIds);
+        for (let i = entries.length - 1; i >= 0; i -= 1) {
+          const { turnId } = entries[i] ?? {};
+          if (turnId !== undefined && reverted.has(turnId)) entries.splice(i, 1);
+        }
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `The user undid the last ${String(reverted.size)} turn(s): their messages and steps are gone from this history, and the files they changed are back as they were.`,
+        });
+        break;
+      }
+      case 'WORKSPACE_DIVERGED':
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `These files changed outside this session since its last turn; read them again before relying on them: ${record.files.join(', ')}`,
+        });
+        break;
       case 'PROJECT_FILE_LOADED':
         // Appended at the end like any new fact, so a later call keeps the earlier prefix;
         // the same content is not repeated in a later run.

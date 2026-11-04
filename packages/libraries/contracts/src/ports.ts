@@ -119,6 +119,8 @@ export interface SubprocessRunner {
       readonly maxOutputBytes: number;
       readonly env?: Readonly<Record<string, string>>;
       readonly stdin?: string;
+      /** How `stdout` comes back; `base64` for what may not be text. */
+      readonly encoding?: 'utf8' | 'base64';
     },
   ): Promise<{
     readonly exitCode: number | null;
@@ -126,6 +128,26 @@ export interface SubprocessRunner {
     readonly stdout: string;
     readonly truncated: boolean;
   }>;
+}
+
+export interface WorkspaceFile {
+  /** Relative to the repository root, `/`-separated. */
+  readonly path: string;
+  readonly size: number;
+}
+
+/**
+ * The repository as Execution's snapshots and undo see it; implemented by ExecutorSet. Nothing
+ * follows a link, and a write lands by rename.
+ */
+export interface WorkspaceFiles {
+  /** Regular files only, the given exclusion rules left out. */
+  list(rules: readonly string[]): Promise<readonly WorkspaceFile[]>;
+  /** Undefined when the file is not there. */
+  read(path: string): Promise<Buffer | undefined>;
+  /** `mode` when the snapshot asks for one; otherwise an existing file keeps its own. */
+  write(path: string, content: Buffer, mode?: number): Promise<void>;
+  remove(path: string): Promise<void>;
 }
 
 /** Only MODEL uses it; the key never enters outputs, logs or artifacts. */

@@ -268,6 +268,21 @@ export class SessionRunner {
         ]);
         await this.#deps.store.recordTurnClosed();
         break;
+      case 'WorkspaceReverted':
+        await this.#append([
+          {
+            type: 'WORKSPACE_REVERTED',
+            workflowRunId,
+            revertedTurnIds: event.revertedTurnIds,
+            forced: event.forced,
+            externalFiles: event.externalFiles,
+            ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+          },
+        ]);
+        break;
+      case 'WorkspaceDiverged':
+        await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
+        break;
       case 'RunClosed':
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },

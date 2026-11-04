@@ -8,7 +8,11 @@ import {
   type RunFailure,
   type RunFinished,
   type RunSummary,
+  type SyscallRejected,
+  type TurnDiff,
+  type UndoCancelled,
   type UserInput,
+  type WorkspaceReverted,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
 import {
@@ -29,6 +33,7 @@ import {
 import type { AttemptFault } from './run-attempts.js';
 import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
+import type { UndoPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
 
 /**
  * One Session's Inbox and serial loop (Kernel/Interaction 5.2). The actor owns ordering, the
@@ -37,6 +42,13 @@ import type { KernelOutbox } from './session-outbox.js';
  */
 export interface SessionDuties {
   storeUserInput(input: UserInput): Promise<ArtifactRef>;
+  /** Absent when writes are off (`readonly`, or no git): nothing is captured or undone. */
+  readonly snapshots?: Pick<
+    WorkspaceSnapshots,
+    'turnStarted' | 'turnEnded' | 'planUndo' | 'applyUndo' | 'diffTurn' | 'divergedFiles'
+  >;
+  /** Keeps the text of a diff; the answer only refers to it. */
+  storeDiff?(text: string): Promise<ArtifactRef>;
   /** The Unit path of a new run. */
   openRunWork(host: RunHost): RunWork;
   /** Writes the RunSummary; undefined means the write failed and the run ends without one. */
@@ -67,6 +79,7 @@ export interface SessionActorDeps {
   readonly repositoryRoot: string;
   readonly outbox: KernelOutbox;
   readonly duties: SessionDuties;
+  readonly preset?: 'standard' | 'readonly';
   readonly newTurnId?: () => string;
   /** The actor is finished: Session management takes it out. */
   readonly onClosed: (sessionId: string) => void;
@@ -98,12 +111,21 @@ interface Run {
 
 type Pending = (result: ReportSessionCommandRequest['result']) => Promise<void>;
 
+export type UndoDecision =
+  | { readonly accepted: true }
+  | {
+      readonly accepted: false;
+      readonly reasonCode: 'UNDO_NOT_AVAILABLE' | 'NOTHING_TO_UNDO' | 'UNDO_UNKNOWN';
+    };
+
 export class SessionActor {
   readonly #deps: SessionActorDeps;
   readonly #inbox: Inbox<Message, unknown, 'control' | 'work'>;
   readonly #pending = new Map<string, Pending>();
   #run: Run | undefined;
   #closeAfterRun: 'SWITCHED' | 'SHUTDOWN' | undefined;
+  /** An undo waiting for the user because of external changes; it has no timer (M2Design 4.6). */
+  #pendingUndo: { readonly undoId: string; readonly plan: UndoPlan } | undefined;
 
   public constructor(deps: SessionActorDeps) {
     this.#deps = deps;
@@ -214,16 +236,24 @@ export class SessionActor {
   async #begin(start: SessionStart): Promise<void> {
     const { sessionId, repositoryRoot, outbox, duties } = this.#deps;
     if (start.kind === 'OPEN') {
-      this.#command({ command: 'OPEN', repositoryRoot }, (result) => {
-        if (result.outcome === 'FAILED')
-          return Promise.resolve(this.#failed(start.requestId, result));
+      this.#command({ command: 'OPEN', repositoryRoot }, async (result) => {
+        if (result.outcome === 'FAILED') {
+          this.#failed(start.requestId, result);
+          return;
+        }
+        const diverged = (await duties.snapshots?.divergedFiles()) ?? [];
         outbox.sessionToInteraction(sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
           turnCount: 0,
+          ...(diverged.length === 0 ? {} : { divergedFiles: [...diverged] }),
         });
-        this.#startRun({ mode: 'CHAT' }, false);
-        return Promise.resolve();
+        const run = this.#startRun({ mode: 'CHAT' }, false);
+        if (diverged.length > 0)
+          outbox.runToWorkflow(sessionId, run.workflowRunId, {
+            type: 'WorkspaceDiverged',
+            files: [...diverged],
+          });
       });
       return;
     }
@@ -245,7 +275,7 @@ export class SessionActor {
           : { mode: 'ORCHESTRATION', templateRef: start.template },
         true,
       );
-      this.#openTurn(run, start.input.inputId, contentRef, { origin: 'initial' });
+      await this.#openTurn(run, start.input.inputId, contentRef, { origin: 'initial' });
     });
   }
 
@@ -270,7 +300,7 @@ export class SessionActor {
     this.#deps.admission(run.workflowRunId, 'RUNNING');
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'RunStart',
-      preset: 'standard',
+      preset: this.#deps.preset ?? 'standard',
       initialInput,
       ...runStart,
     });
@@ -316,7 +346,7 @@ export class SessionActor {
     return run;
   }
 
-  #openTurn(
+  async #openTurn(
     run: Run,
     inputId: string,
     contentRef: ArtifactRef,
@@ -324,8 +354,10 @@ export class SessionActor {
       | { readonly origin: 'initial' }
       | { readonly origin: 'requested'; readonly humanRequestId: string },
     template?: DefinitionRef,
-  ): void {
+  ): Promise<void> {
     const turnId = this.#deps.newTurnId?.() ?? newId('trn');
+    // The actor holds every message meanwhile, so no Unit runs before the start is captured.
+    await this.#deps.duties.snapshots?.turnStarted(turnId);
     const opened =
       origin.origin === 'initial'
         ? openInitialTurn(run.control, turnId)
@@ -350,12 +382,14 @@ export class SessionActor {
     });
   }
 
-  #closeTurn(run: Run, turnId: string, reason: 'COMPLETED' | 'RUN_CLOSED'): void {
+  async #closeTurn(run: Run, turnId: string, reason: 'COMPLETED' | 'RUN_CLOSED'): Promise<void> {
+    const captured = await this.#deps.duties.snapshots?.turnEnded(turnId);
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'TurnClosed',
       turnId,
       reason,
       usage: run.work.closeTurn(turnId),
+      ...captured,
     });
   }
 
@@ -391,11 +425,14 @@ export class SessionActor {
     return decision;
   }
 
-  requestOpenInput(run: Run, humanRequestId: string): Decision<{ readonly closedTurnId?: string }> {
+  async requestOpenInput(
+    run: Run,
+    humanRequestId: string,
+  ): Promise<Decision<{ readonly closedTurnId?: string }>> {
     const decision = this.#apply(run, requestOpenInput(run.control, humanRequestId));
     if (!decision.accepted) return decision;
     const closed = decision.effect?.closedTurnId;
-    if (closed !== undefined) this.#closeTurn(run, closed, 'COMPLETED');
+    if (closed !== undefined) await this.#closeTurn(run, closed, 'COMPLETED');
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -417,13 +454,14 @@ export class SessionActor {
   ): Promise<Decision> {
     if (run.control.phase !== 'AWAITING_INPUT' || run.control.humanRequestId !== humanRequestId)
       return { accepted: false, reasonCode: 'HUMAN_REQUEST_NOT_PENDING' };
+    this.#cancelUndo(run, 'NEW_INPUT');
     const contentRef = await this.#deps.duties.storeUserInput(input);
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'HumanResolved',
       humanRequestId,
       resolution: 'ANSWERED',
     });
-    this.#openTurn(
+    await this.#openTurn(
       run,
       input.inputId,
       contentRef,
@@ -433,9 +471,110 @@ export class SessionActor {
     return { accepted: true, control: run.control };
   }
 
+  #cancelUndo(run: Run, reason: UndoCancelled['reason'], undoId?: string): void {
+    const pending = this.#pendingUndo;
+    if (pending === undefined) return;
+    this.#pendingUndo = undefined;
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'UndoCancelled',
+      undoId: undoId ?? pending.undoId,
+      reason,
+    });
+  }
+
+  #confirmUndoOf(run: Run, plan: UndoPlan): void {
+    const undoId = newId('und');
+    this.#pendingUndo = { undoId, plan };
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'UndoConfirmationRequested',
+      undoId,
+      files: plan.external.map((file) => ({ ...file })),
+    });
+  }
+
+  /** Kernel/Core 5a.5. Only while the run waits for input: nothing else can be writing then. */
+  async undoTurns(run: Run, scope: 'LAST' | 'ALL'): Promise<UndoDecision> {
+    const { snapshots } = this.#deps.duties;
+    if (snapshots === undefined || run.control.phase !== 'AWAITING_INPUT')
+      return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+    this.#cancelUndo(run, 'USER_CANCELLED');
+    const planned = await snapshots.planUndo(scope);
+    if (planned.kind === 'NOTHING_TO_UNDO')
+      return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
+    if (planned.kind === 'NOT_UNDOABLE')
+      return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+    if (planned.plan.external.length > 0) this.#confirmUndoOf(run, planned.plan);
+    else await this.#applyUndo(run, planned.plan, false, scope);
+    return { accepted: true };
+  }
+
+  async confirmUndo(run: Run, undoId: string, decision: 'FORCE' | 'CANCEL'): Promise<UndoDecision> {
+    const pending = this.#pendingUndo;
+    if (pending?.undoId !== undoId) return { accepted: false, reasonCode: 'UNDO_UNKNOWN' };
+    if (run.control.phase !== 'AWAITING_INPUT')
+      return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+    if (decision === 'CANCEL') {
+      this.#cancelUndo(run, 'USER_CANCELLED');
+      return { accepted: true };
+    }
+    this.#pendingUndo = undefined;
+    await this.#applyUndo(run, pending.plan, true);
+    return { accepted: true };
+  }
+
+  async #applyUndo(
+    run: Run,
+    plan: UndoPlan,
+    forced: boolean,
+    scope: 'LAST' | 'ALL' = plan.turnIds.length > 1 ? 'ALL' : 'LAST',
+  ): Promise<void> {
+    const { snapshots } = this.#deps.duties;
+    if (snapshots === undefined) return;
+    const applied = await snapshots.applyUndo(plan, forced).catch(() => ({ ok: false }) as const);
+    const { outbox } = this.#deps;
+    if (applied.ok) {
+      const reverted: WorkspaceReverted = {
+        type: 'WorkspaceReverted',
+        revertedTurnIds: [...plan.turnIds],
+        forced,
+        externalFiles: plan.external.map((file) => file.path),
+        ...(applied.backupSnapshot === undefined ? {} : { backupSnapshot: applied.backupSnapshot }),
+      };
+      outbox.runToInteraction(this.#sessionId, run.workflowRunId, reverted);
+      outbox.runToWorkflow(this.#sessionId, run.workflowRunId, reverted);
+      return;
+    }
+    // Something outside this system changed a file after the plan: ask again what it found now.
+    const again = await snapshots.planUndo(scope);
+    if (again.kind === 'PLAN' && again.plan.external.length > 0)
+      this.#confirmUndoOf(run, again.plan);
+    else
+      outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+        type: 'UndoCancelled',
+        undoId: newId('und'),
+        reason: 'FILE_CHANGED',
+      });
+  }
+
+  /** Any time: looking changes nothing (M2Design 4.6). */
+  async diffTurn(requestId: string, n: number): Promise<TurnDiff | SyscallRejected> {
+    const { duties } = this.#deps;
+    const found = await duties.snapshots?.diffTurn(n);
+    if (found === undefined || duties.storeDiff === undefined)
+      return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'NOTHING_TO_UNDO' };
+    return {
+      requestId,
+      outcome: 'ACCEPTED',
+      turnId: found.turnId,
+      files: found.files.map((file) => ({ ...file })),
+      diffRef: await duties.storeDiff(found.diff),
+    };
+  }
+
   async closeRun(run: Run, closing: RunClosing): Promise<void> {
     const decision = beginConvergence(run.control);
     if (!decision.accepted || run.closing !== undefined) return;
+    this.#cancelUndo(run, 'SESSION_CLOSED');
     run.control = decision.control;
     run.closing = closing;
     run.runEpoch += 1;
@@ -457,7 +596,7 @@ export class SessionActor {
     run.control = closeRun(run.control);
     this.#deps.admission(run.workflowRunId, 'CLOSED', closing.closeReason);
     run.work.finishClosing();
-    if (run.closingTurn !== undefined) this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
+    if (run.closingTurn !== undefined) await this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
     const unknownEffects = run.work.unknownEffects();
     const summary = await this.#deps.duties.writeRunSummary(
       run.work.summary({ sessionId: this.#sessionId }, { unknownEffects, ...closing }),

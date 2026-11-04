@@ -122,7 +122,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 ```text
 环境：GIT_DIR=<影子目录>、GIT_WORK_TREE=<仓库>、GIT_INDEX_FILE=<临时文件>、GIT_CONFIG_NOSYSTEM=1、GIT_CONFIG_GLOBAL=/dev/null
 拍摄：按排除规则遍历工作区（不跟随符号链接，不读仓库的 .gitignore）
-      → git read-tree --empty → git update-index --add --stdin -z → git write-tree，得到快照 ID（tree）
+      → git read-tree --empty → git update-index --add --remove -z --stdin → git write-tree，得到快照 ID（tree）
 跳过：超过 2 MiB、且不在上一个快照中的文件
 ```
 

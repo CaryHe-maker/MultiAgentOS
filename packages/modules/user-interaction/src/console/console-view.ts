@@ -31,6 +31,7 @@ export type PendingItem =
       readonly questionId: string;
       readonly text: string;
     }
+  | { readonly kind: 'UNDO'; readonly undoId: string; readonly text: string }
   | { readonly kind: 'CONTINUE'; readonly text: string };
 
 /** Everything that changes in place: redrawn whenever it changes. */

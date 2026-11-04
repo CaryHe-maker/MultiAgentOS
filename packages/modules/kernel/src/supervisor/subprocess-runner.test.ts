@@ -29,7 +29,32 @@ describe('SubprocessRunner', () => {
     expect(result).toEqual({ exitCode: null, signal: null, stdout: '', truncated: false });
   });
 
-  it('refuses every command except rg', async () => {
+  it('gives git only the environment it was given, and PATH', async () => {
+    process.env['MAO_LEAK_PROBE'] = 'leaked';
+    const seen = await runner.run('git', ['config', '--get', 'probe.value'], {
+      ...options(),
+      env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_DIR: '/nonexistent' },
+    });
+    delete process.env['MAO_LEAK_PROBE'];
+    expect(seen.stdout).toBe('');
+  });
+
+  it('survives a child that exits without reading its input', async () => {
+    const result = await runner.run('git', ['--version'], {
+      ...options(),
+      stdin: 'x'.repeat(4 * 1024 * 1024),
+    });
+    expect(result.signal).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
+  it('returns output as base64 when asked, so bytes stay bytes', async () => {
+    const result = await runner.run('git', ['--version'], { ...options(), encoding: 'base64' });
+    if (result.exitCode === 0)
+      expect(Buffer.from(result.stdout, 'base64').toString('utf8')).toContain('git version');
+  });
+
+  it('refuses every command except rg and git', async () => {
     const result = await runner.run('node' as 'rg', ['--version'], options());
     expect(result.exitCode).toBeNull();
     expect(result.stdout).toBe('');

@@ -13,6 +13,7 @@ import {
   type KernelToInteractionEvent,
   type RunFinished,
 } from '@multiagentos/contracts';
+import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, terminalText } from './console-text.js';
 import type { ActivityLine, ConsoleView, LiveState, PendingItem } from './console-view.js';
@@ -235,6 +236,20 @@ export class Console {
     const sessionId = this.#sessionId;
     const workflowRunId = this.#workflowRunId;
     if (sessionId === undefined || workflowRunId === undefined) return;
+    if (item.kind === 'UNDO') {
+      await this.#deps.gateway.confirmUndo(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          undoId: item.undoId,
+          decision: yes ? 'FORCE' : 'CANCEL',
+        },
+        this.#context(),
+      );
+      this.#refresh();
+      return;
+    }
     this.#notice(yes ? text.granted : text.declined);
     await this.#deps.gateway.answerAuthorization(
       {
@@ -299,6 +314,28 @@ export class Console {
           );
         break;
       }
+      case '/undo': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (sessionId === undefined || workflowRunId === undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const undone = await this.#deps.gateway.undoTurns(
+          {
+            requestId: newId('req'),
+            sessionId,
+            workflowRunId,
+            scope: argument === 'all' ? 'ALL' : 'LAST',
+          },
+          this.#context(),
+        );
+        if (undone.outcome === 'REJECTED') this.#notice(describeReason(undone.reasonCode));
+        break;
+      }
+      case '/diff':
+        await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        break;
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
         if (ref === undefined) this.#notice(text.notNow);
@@ -309,6 +346,24 @@ export class Console {
         this.#notice(text.unknownCommand(name));
     }
     this.#refresh();
+  }
+
+  async #showDiff(n: number): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined || !Number.isSafeInteger(n) || n < 1) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const diff = await this.#deps.gateway.diffTurns(
+      { requestId: newId('req'), sessionId, n },
+      this.#context(),
+    );
+    if (diff.outcome === 'REJECTED') {
+      this.#notice(text.noDiff);
+      return;
+    }
+    const body = await this.#read(diff.diffRef);
+    this.#notice(diff.files.length === 0 ? text.noDiff : terminalText(body ?? ''));
   }
 
   /** Switching, a new Session or a run that ended: queued messages go back to the input box. */
@@ -358,6 +413,8 @@ export class Console {
         this.#notice(
           text.sessionOpened(terminalText(event.title ?? text.untitled), event.turnCount),
         );
+        if (event.divergedFiles !== undefined)
+          this.#notice(text.diverged(event.divergedFiles.length));
         break;
       case 'SessionFailed':
         if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
@@ -395,6 +452,24 @@ export class Console {
           once: event.capability === 'workspace.write' && event.critical,
           text: await this.#questionText(event),
         });
+        break;
+      case 'UndoConfirmationRequested':
+        this.#pending.push({
+          kind: 'UNDO',
+          undoId: event.undoId,
+          text: text.undoConfirm(event.files.map((file) => terminalText(file.path))),
+        });
+        break;
+      case 'UndoCancelled': {
+        const index = this.#pending.findIndex(
+          (item) => item.kind === 'UNDO' && item.undoId === event.undoId,
+        );
+        if (index >= 0) this.#pending.splice(index, 1);
+        this.#notice(text.undoCancelled[event.reason]);
+        break;
+      }
+      case 'WorkspaceReverted':
+        this.#notice(text.undone(event.revertedTurnIds.length));
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(

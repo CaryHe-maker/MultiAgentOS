@@ -156,15 +156,26 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.updateActivity(forward.request)),
         );
-      case 'undoTurns':
-      case 'confirmUndo':
-      case 'diffTurns':
-        return Promise.resolve({
-          requestId: forward.request.requestId,
-          outcome: 'REJECTED',
-          issuer: 'CORE',
-          reasonCode: 'UNDO_NOT_AVAILABLE',
-        });
+      case 'undoTurns': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => actor.undoTurns(run, request.scope)),
+        );
+      }
+      case 'confirmUndo': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () =>
+            actor.confirmUndo(run, request.undoId, request.decision),
+          ),
+        );
+      }
+      case 'diffTurns': {
+        const { requestId, sessionId, n } = forward.request;
+        const actor = manager.actor(sessionId);
+        if (actor === undefined) return Promise.resolve(refused(requestId, 'SESSION_NOT_FOUND'));
+        return actor.call(() => actor.diffTurn(requestId, n ?? 1));
+      }
     }
   }
 }

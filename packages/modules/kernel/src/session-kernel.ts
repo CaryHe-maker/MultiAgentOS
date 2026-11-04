@@ -1,6 +1,11 @@
 import {
+  DEFAULT_REPOSITORY_EXCLUSIONS,
   MEDIA_TYPES,
+  PROTECTED_WRITE_RULES,
   isProjectInstructionPath,
+  type SnapshotIndexLine,
+  type SubprocessRunner,
+  type WorkspaceFiles,
   RunSummarySchema,
   assertValid,
   canonicalJson,
@@ -40,6 +45,7 @@ import { RunExecution, type RunExecutionDeps } from './session/run-execution.js'
 import { RunWork, type PinResult, type RunHost } from './session/run-work.js';
 import { SessionActor } from './session/session-actor.js';
 import { SessionArtifacts } from './session/session-artifacts.js';
+import { WorkspaceSnapshots } from './session/workspace-snapshots.js';
 import { SessionCore, type CoreResponse } from './session/session-core.js';
 import {
   SessionGateway,
@@ -68,6 +74,12 @@ export interface SessionKernelDeps {
   /** This process's repository: a realpath. */
   readonly repositoryRoot: string;
   readonly preset: 'standard' | 'readonly';
+  /** What snapshots need; without it (`readonly`, or no git) nothing is captured or undone. */
+  readonly workspace?: {
+    readonly files: WorkspaceFiles;
+    readonly git: SubprocessRunner;
+    readonly directoryOf: (sessionId: string) => string;
+  };
   /** `readProjectFile` reads through the same guard as `file-read`. */
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
   readonly reportSystemFault?: SystemFaultReporter;
@@ -292,6 +304,27 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       });
       await artifacts.load();
       sessionArtifacts.set(sessionId, artifacts);
+      const snapshots =
+        deps.workspace === undefined
+          ? undefined
+          : new WorkspaceSnapshots({
+              repositoryRoot,
+              directory: deps.workspace.directoryOf(sessionId),
+              index: persistence.appendLog<SnapshotIndexLine>('kernel-execution', {
+                scope: 'SESSION',
+                sessionId,
+                file: 'snapshot-index',
+              }),
+              git: deps.workspace.git,
+              files: deps.workspace.files,
+              rules: [
+                ...PROTECTED_WRITE_RULES,
+                ...DEFAULT_REPOSITORY_EXCLUSIONS,
+                ...config.repositoryExclusions,
+              ],
+              now,
+            });
+      await snapshots?.load();
       const auditLog = persistence.appendLog<object>('kernel-core', {
         scope: 'SESSION',
         sessionId,
@@ -306,7 +339,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         sessionId,
         repositoryRoot,
         outbox,
+        preset: deps.preset,
         duties: {
+          ...(snapshots === undefined ? {} : { snapshots }),
+          storeDiff: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
           storeUserInput: (input) => artifacts.storeUserInput(input),
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {

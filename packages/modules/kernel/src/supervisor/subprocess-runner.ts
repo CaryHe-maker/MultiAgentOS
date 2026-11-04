@@ -26,7 +26,7 @@ export function createSubprocessRunner(): TrackedSubprocessRunner {
     killAll: () => {
       for (const child of live) child.kill('SIGKILL');
     },
-    run: (command, args, { cwd, signal, maxOutputBytes, env, stdin }) =>
+    run: (command, args, { cwd, signal, maxOutputBytes, env, stdin, encoding }) =>
       new Promise<RunResult>((resolve) => {
         if ((command !== 'rg' && command !== 'git') || signal.aborted) {
           resolve(NOT_RUN);
@@ -40,6 +40,8 @@ export function createSubprocessRunner(): TrackedSubprocessRunner {
           ...(env === undefined ? {} : { env: { ...env, PATH: process.env['PATH'] ?? '' } }),
         });
         live.add(child);
+        // A child that exits without reading is answered by its exit code, not by an EPIPE here.
+        child.stdin?.on('error', () => undefined);
         if (stdin !== undefined) child.stdin?.end(stdin);
         const chunks: Buffer[] = [];
         let size = 0;
@@ -54,7 +56,7 @@ export function createSubprocessRunner(): TrackedSubprocessRunner {
           resolve({
             exitCode,
             signal: exitSignal,
-            stdout: Buffer.concat(chunks).toString('utf8'),
+            stdout: Buffer.concat(chunks).toString(encoding ?? 'utf8'),
             truncated,
           });
         };

@@ -94,7 +94,9 @@ export interface RunWorkDeps {
 }
 
 type Response = SyscallAck | SyscallRejected;
-type Decided = { readonly accepted: true } | Extract<Decision, { accepted: false }>;
+type Decided =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reasonCode: CoreRejectedCode | 'RUN_BLOCKED' };
 type FileResponse = ProjectFileContent | SyscallRejected;
 
 /** What Execution read; `truncated` says a question shows only the head of the file. */
