@@ -688,6 +688,7 @@ export class SessionRunner {
       scope,
       workflowRunId,
       agentRunId,
+      this.#deps.config.maxNestedInstructions,
     )) {
       if (skip) {
         await this.#append([
@@ -946,6 +947,8 @@ export class SessionRunner {
         return this.#advance(workflowRunId);
       }
       case 'FAILED':
+        // In a chat the run goes on with the next prompt, so the user must hear of it here.
+        if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
         await this.#endAgentRun(workflowRunId, active, ending.kind);
         await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
         this.#runFailure = ending.code;

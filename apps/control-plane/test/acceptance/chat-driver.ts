@@ -4,6 +4,7 @@
  * replaced. It stands where the user stands: it types lines and reads what the console shows.
  */
 import { realpath } from 'node:fs/promises';
+import type { SystemConfig } from '@multiagentos/contracts';
 import type { TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
@@ -113,6 +114,8 @@ export interface ChatOptions {
   readonly provider: ScriptedChat;
   readonly answer?: (question: string) => Answer;
   readonly now?: () => Date;
+  /** Changes the defaults, for a limit a case must reach. */
+  readonly configure?: (config: SystemConfig) => SystemConfig;
   readonly subprocess?: TrackedSubprocessRunner;
   /** A real run's key; scripted runs use a key that goes nowhere. */
   readonly credentials?: { apiKeyFor(provider: string): string | undefined };
@@ -164,7 +167,10 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
   let system: System;
   try {
     system = await composeSystem({
-      config: { ...defaultSystemConfig(), dataDir: options.dataDir },
+      config: (options.configure ?? ((config) => config))({
+        ...defaultSystemConfig(),
+        dataDir: options.dataDir,
+      }),
       repositoryRoot: await realpath(options.repository),
       preset: 'standard',
       view,

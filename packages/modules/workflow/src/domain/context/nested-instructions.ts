@@ -1,9 +1,6 @@
 import { isProjectInstructionPath, type SessionLogRecord } from '@multiagentos/contracts';
 import type { ProjectionScope } from './history-projection.js';
 
-/** A projection loads at most this many `AGENTS.md` below the root (M2Design 9.5). */
-export const MAX_NESTED_INSTRUCTIONS = 8;
-
 export interface InstructionsToLoad {
   readonly path: string;
   /** Beyond the limit it is only noted; the model can still read it as a file. */
@@ -26,6 +23,8 @@ export function instructionsToLoad(
   scope: ProjectionScope,
   workflowRunId: string,
   agentRunId: string,
+  /** `maxNestedInstructions`: how many below the root a projection loads (M2Design 9.5). */
+  limit: number,
 ): readonly InstructionsToLoad[] {
   const mine = new Set<string>([agentRunId]);
   const owners = new Map<string, string>();
@@ -98,6 +97,6 @@ export function instructionsToLoad(
   return [...wanted].map((path) => {
     if (loadedEver.has(path) || !path.includes('/')) return { path, skip: false };
     nestedCount += 1;
-    return { path, skip: nestedCount > MAX_NESTED_INSTRUCTIONS };
+    return { path, skip: nestedCount > limit };
   });
 }

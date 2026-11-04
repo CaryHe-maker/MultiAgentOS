@@ -33708,7 +33708,8 @@
             "regenerationLimit",
             "noProgressRounds",
             "repeatedIntent",
-            "consecutiveErrorLimit"
+            "consecutiveErrorLimit",
+            "maxNestedInstructions"
           ],
           "properties": {
             "regenerationLimit": {
@@ -33745,6 +33746,10 @@
             "consecutiveErrorLimit": {
               "type": "integer",
               "minimum": 1
+            },
+            "maxNestedInstructions": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false,
@@ -33760,7 +33765,8 @@
         "regenerationLimit",
         "noProgressRounds",
         "repeatedIntent",
-        "consecutiveErrorLimit"
+        "consecutiveErrorLimit",
+        "maxNestedInstructions"
       ],
       "properties": {
         "regenerationLimit": {
@@ -33795,6 +33801,10 @@
           "additionalProperties": false
         },
         "consecutiveErrorLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxNestedInstructions": {
           "type": "integer",
           "minimum": 1
         }

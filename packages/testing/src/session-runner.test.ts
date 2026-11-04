@@ -200,6 +200,7 @@ function setup(
     definitionVersions: ['main@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
+      maxNestedInstructions: 8,
       consecutiveErrorLimit: 5,
       noProgressRounds: 2,
       regenerationLimit: 3,

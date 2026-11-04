@@ -1,7 +1,9 @@
 import { newId, type SessionLogRecord } from '@multiagentos/contracts';
 import { testArtifactRef } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
-import { MAX_NESTED_INSTRUCTIONS, instructionsToLoad } from './nested-instructions.js';
+import { instructionsToLoad } from './nested-instructions.js';
+
+const MAX_NESTED_INSTRUCTIONS = 8;
 
 const workflowRunId = newId('wfr');
 const agentRunId = newId('agr');
@@ -44,7 +46,9 @@ const loaded = (path: string, run = workflowRunId) =>
     run,
   );
 const toLoad = (records: readonly SessionLogRecord[]) =>
-  instructionsToLoad(records, main, workflowRunId, agentRunId).map((item) => item.path);
+  instructionsToLoad(records, main, workflowRunId, agentRunId, MAX_NESTED_INSTRUCTIONS).map(
+    (item) => item.path,
+  );
 
 describe('instructionsToLoad', () => {
   it('asks for what a read passed, outermost first, once', () => {
@@ -72,7 +76,13 @@ describe('instructionsToLoad', () => {
     const other = newId('agr');
     const node = { kind: 'NODE', workflowRunId, agentRunId } as const;
     expect(
-      instructionsToLoad(read(['a/AGENTS.md'], other), node, workflowRunId, agentRunId),
+      instructionsToLoad(
+        read(['a/AGENTS.md'], other),
+        node,
+        workflowRunId,
+        agentRunId,
+        MAX_NESTED_INSTRUCTIONS,
+      ),
     ).toEqual([]);
   });
 
@@ -81,7 +91,13 @@ describe('instructionsToLoad', () => {
       { length: MAX_NESTED_INSTRUCTIONS + 2 },
       (_, i) => `d${String(i)}/AGENTS.md`,
     );
-    const items = instructionsToLoad(read(paths), main, workflowRunId, agentRunId);
+    const items = instructionsToLoad(
+      read(paths),
+      main,
+      workflowRunId,
+      agentRunId,
+      MAX_NESTED_INSTRUCTIONS,
+    );
     expect(items.filter((item) => item.skip).map((item) => item.path)).toEqual(paths.slice(-2));
     const noted = line({
       type: 'PROJECT_FILE_LOADED',

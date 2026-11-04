@@ -69,6 +69,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 `read_output` 工具的执行（M2Design 第 8.2 节）。`executionKind` 为 `OUTPUT_READ`，`scope.kind` 为 `NONE`，在进程内运行，不进沙盒。
 
 - 输入 `executor.OutputReadInput`：`toolCallId`、`offset?`（起始行，从 1 开始，缺省 1）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（按字面匹配的文字，不是正则）；
+- 结果（含首尾说明）不超过预览上限；一行超过上限时截断这一行并写明省略的字节数，下一次从下一行继续，不会停在同一行。
   另有 Execution 解析后的完整输出正文。`fullRef`（截断时另存的完整输出，或修剪时补登的未截断预览）由 Workflow 填入 Unit 输入，Execution 解析并检查归属与过期，本 Executor 看不到引用。
 - 按行切分（`\r\n` 与 `\n` 都视为换行）；有 `pattern` 时先筛出含有它的行，再按 `offset`、`limit` 取段；每行前加原文件中的行号。
 - 结果经 `retention/` 限制在该 Unit 的预览上限内（缺省至多 2000 行或 50 KiB），按条目（行）保留前部，注明总行数、本段的行范围与省略量，并提示用 `offset` 继续读取；不交回完整输出。
@@ -118,6 +119,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - Workflow 交来的每个 HISTORY 条目带 `turnId`、`seq` 与类别 `PINNED` 或 `NORMAL`（M2Design 第 9.3 节）。
 - 普通调用按条目顺序组装全部条目，不去掉任何条目；同一个 AgentRun 两次压缩之间的组装结果，前一次是后一次的前缀（不变量 27）。
 - 普通调用超出 `tokenBudget`（`perCallInputLimit`）时返回 `REJECTED(LIMIT_EXCEEDED)`。阶段 8 起这种情况由 Kernel 在派发前压缩避免（M2Design 第 9.6 节）；之前由 Workflow 进入收尾。
+- 判断上限用校准后的值（M2Design 第 9.3 节）；达到上限的 85% 时，STATUS 写入预警。
 - ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
 - **收尾调用的保险**（`final: true`）：超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，以完整的模型轮为单位（工具调用与它的结果不拆开，思考内容随轮一起去掉），
   直到装下为止；`PINNED` 条目与最近一轮永不去掉。输出 `elidedEntries`（被去掉条目的 `seq`），取代 M1 的 `elidedRequestIds`。仍装不下时返回 `REJECTED(LIMIT_EXCEEDED)`，Workflow 按降级规则结束。

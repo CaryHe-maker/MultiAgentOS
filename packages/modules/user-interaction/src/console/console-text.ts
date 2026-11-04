@@ -11,6 +11,11 @@ const DEGRADED: Readonly<Record<string, string>> = {
   CONSECUTIVE_ERRORS: '工具连续出错，没能完成回复。',
   CONTEXT_LIMIT: '上下文太长，没能完成回复；可以用 /new 开始新对话。',
   REGENERATION_LIMIT: '模型的回复连续不合要求，没能完成回复。',
+  PROVIDER_AUTH: '模型服务拒绝了 API 密钥，没能完成回复。',
+  PROVIDER_RATE_LIMITED: '模型服务限流，重试后仍然失败，没能完成回复。',
+  PROVIDER_UNREACHABLE: '连不上模型服务，没能完成回复。',
+  PROVIDER_ERROR: '模型服务出错，没能完成回复。',
+  UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
 };
 
 /** The reply above is complete as far as it goes, but the Turn stopped before the task did. */

@@ -65,6 +65,7 @@ export const WorkflowConfigSchema = closed(
     noProgressRounds: count(1),
     repeatedIntent: closed({ window: count(1), warnAt: count(1), stopAt: count(1) }),
     consecutiveErrorLimit: count(1),
+    maxNestedInstructions: count(1),
   },
   'platform.config.WorkflowConfig.v1',
 );

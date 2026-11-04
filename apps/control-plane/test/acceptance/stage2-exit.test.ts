@@ -601,6 +601,130 @@ describe('L8: read_output', () => {
   );
 });
 
+describe('L8: an output that cannot be read', () => {
+  const idOfFirstCall = (provider: ReturnType<typeof scriptedChat>): string => {
+    const calls = (provider.requests.at(-1)?.messages ?? []).flatMap(
+      (message) => (message as { tool_calls?: readonly { id: string }[] }).tool_calls ?? [],
+    );
+    return calls[0]?.id ?? '';
+  };
+  const many = (): Record<string, string> => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 2200; i += 1) files[`many/f${String(i)}.txt`] = 'x';
+    return files;
+  };
+
+  it(
+    'says the output has expired, once its seven days are over',
+    async () => {
+      const place = await roots(many());
+      let now = new Date('2026-11-04T00:00:00.000Z');
+      const provider = scriptedChat(tool('list_files', { path: 'many' }), reply('listed'));
+      const chat = await openChat({ ...place, provider, now: () => now });
+      open.push(chat);
+      await chat.say('list');
+      await turnEnded(chat);
+      const listId = idOfFirstCall(provider);
+
+      now = new Date('2026-11-12T00:00:00.000Z');
+      provider.add(tool('read_output', { toolCallId: listId }), reply('gone'));
+      await chat.say('read it');
+      expect(contents(lastRequest(provider)).join('\n')).toContain('no longer kept');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'refuses an output over maxFullOutputBytes instead of keeping it',
+    async () => {
+      const place = await roots(many());
+      const provider = scriptedChat(tool('list_files', { path: 'many' }), reply('too much'));
+      const chat = await openChat({
+        ...place,
+        provider,
+        configure: (config) => ({
+          ...config,
+          kernel: {
+            ...config.kernel,
+            executionLimits: {
+              ...config.kernel.executionLimits,
+              REPOSITORY_LIST: {
+                ...config.kernel.executionLimits.REPOSITORY_LIST,
+                maxFullOutputBytes: 1_000,
+              },
+            },
+          },
+        }),
+      });
+      open.push(chat);
+      await chat.say('list');
+      const [sessionId = ''] = await sessionsIn(place.dataDir);
+      expect(await logOf(place.dataDir, sessionId)).toContain('"reasonCode":"LIMIT_EXCEEDED"');
+      expect(contents(lastRequest(provider)).join('\n')).not.toContain('f2199');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a Turn that cannot go on', () => {
+  it(
+    'tells the user, and the next message still works',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat({
+        response: () => new Response('{"error":{"message":"no"}}', { status: 401 }),
+      });
+      const chat = await chatOn(place, provider);
+      await chat.console.submit('hello');
+      await until(() => chat.printed('ERROR').some((e) => e.includes('API 密钥')), 'the error');
+      await turnEnded(chat);
+      provider.add(reply('back'));
+      await chat.say('again');
+      expect(chat.printed('REPLY')).toContain('back');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('H5: an Orchestration run that has ended', () => {
+  it(
+    'can be undone from the Session it leaves behind',
+    async () => {
+      const place = await roots({ 'a.txt': 'one\n' });
+      const file = join(place.repository, 'a.txt');
+      const handoff = scriptedChat(
+        tool('handoff_to_code_viewer', { task: 'look', focusAreas: [], openQuestions: [] }),
+      );
+      const provider = scriptedChat(
+        {
+          // No Agent of the analyze template writes yet (stage 7), so the change comes from here.
+          response: async () => {
+            await writeFile(file, 'two\n');
+            return handoff.fetch('https://api.invalid', { body: '{}' });
+          },
+        },
+        tool('finish_analysis', { summary: 'done', conclusions: [], unconfirmed: [] }),
+      );
+      const first = await chatOn(place, provider);
+      await first.console.run({ id: 'analyze', version: 'v0.1.0' }, 'look around');
+      await first.close();
+      expect(await readFile(file, 'utf8')).toBe('two\n');
+
+      const [sessionId = ''] = await sessionsIn(place.dataDir);
+      const chat = await chatOn(place, scriptedChat());
+      await chat.console.submit('/sessions');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await chat.console.submit(`/resume ${sessionId}`);
+      await until(() => chat.console.sessionId === sessionId, 'the Session');
+      await turnEnded(chat);
+      await chat.console.submit('/undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      expect(await readFile(file, 'utf8')).toBe('one\n');
+    },
+    TIMEOUT,
+  );
+});
+
 describe('update_todos', () => {
   it(
     'goes with other tools, answers with a count, and reaches the activity area',

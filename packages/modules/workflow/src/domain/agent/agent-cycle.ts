@@ -74,6 +74,7 @@ export interface AgentConfig {
   };
   readonly consecutiveErrorLimit: number;
   readonly noProgressRounds: number;
+  readonly maxNestedInstructions: number;
   readonly regenerationLimit: number;
 }
 
@@ -193,6 +194,7 @@ const WRITES: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
 const CORE_REFUSALS: ReadonlySet<string> = new Set([
   'CAPABILITY_NOT_GRANTED',
   'ADMISSION_CHECK_FAILED',
+  'ARTIFACT_EXPIRED',
 ]);
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
