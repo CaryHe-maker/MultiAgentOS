@@ -115,3 +115,22 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 | D15 | 额度按价格折算缓存命中的输入；单次输出上限 64000，输入上限 880000（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |
 | D16 | 估算与 provider 的计数相差不到 5%；模型运行代码的问题留到阶段 3 有运行指令能力之后；提前收尾必须有报告与日志，接近上限时预警（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |
 | D17 | main 的 `maxRounds` 提到 80：上下文放开后，轮次成为长任务的下一个瓶颈（Cary 2026-11-04 决定） | 已执行 |
+
+## 4. 阶段 3 进度（`feature/phase3/main`，2026-11-05）
+
+阶段 3 的文档门是草稿，待评审（[KernelSupervisor](Interface/KernelSupervisor.md)、[SystemFaultHandling](SystemFaultHandling.md)、Core 第 5b、5c 节、Supervisor 第 5、6 节、ExecutorSet 第 5c 节、M2Security 第 3b 节、Workflow 第 9.2a 节）。
+
+| 任务 | 状态 | 已完成 | 未完成 |
+|---|---|---|---|
+| 轮次上限（D17 的补充） | 完成 | `maxRounds` 含最后一轮：第 `maxRounds` 轮就是 final-call；提前 5 轮在 STATUS 预警；`ROUND_LIMIT` 的收尾要求列出已完成、未完成与可接着发送的提示词 | — |
+| E-EX-3 | 完成 | `web-tree-sitter` 0.27.1 + `tree-sitter-bash` 0.25.1；子命令拆分、不可复用原因、ARITY 前缀、名单匹配（语法树与原始文字的并集） | — |
+| S3-CT-1 | 完成 | SandboxProfile/Scope、`approvalDigest`、环境变量白名单与断言、COMMAND/GIT_INSPECT 的 Schema、`SandboxRunner`、`StopUnconfirmedError`、`RunInterrupted`、`MemoryPressure`、`quota = MEMORY`、`MEMORY_LIMIT`、`closeRun(INTERRUPTED)`、新原因码、配置、协议快照 | `cancelExecution` 与 fake Supervisor |
+| S3-KX-1 | 大部分 | `buildBwrapArgs`（纯函数）、`createSandboxRunner`（启动前复核、SIGTERM/SIGKILL 升级、`StopUnconfirmedError`）；真实 bwrap 的 13 项测试在 Ubuntu 24.04（WSL）通过 | 可用性探测并写入 `SESSION_STARTED`；`cancelExecution` |
+| S3-EX-1、S3-EX-2 | 完成 | `run-command`（头尾预览）、`git-inspect`（固定子命令表、pathspec 排除） | `git-inspect` 的真实 git 用例 |
+| S3-UI-1 | 部分 | 命令询问的四个选项、警示文字、`INTERRUPTED` 的退出码 75 与提示 | 未隔离提示、停机提示、内存提示的完整展示 |
+| S3-KX-2 | 未开始 | — | 敏感文件列表、受保护路径的新建检查与隔离、EXEC 互斥 |
+| S3-KC-1 | 未开始 | — | Core 的命令判定（`command.exec`、`criticalCommands`、条目、`approvalDigest`、`ask-unisolated`）与 SandboxScope 的签发 |
+| S3-KC-2、S3-KC-3 | 未开始 | — | `STOP_UNCONFIRMED` 停机；Monitor 内存采样与 Core 的中断入口 |
+| S3-WF-1 | 未开始 | — | 中断后的收敛、`MEMORY_LIMIT` 的 Workflow 侧 |
+| S3-PL-1 | 未开始 | — | `run_command`、`git_inspect` 的 Unit 与 Tool 定义，main 增加这两个工具 |
+| S3-IN-1 | 未开始 | — | 组合根接线、`stage3-exit.test.ts`（C1–C5、H6–H7、内存压力的假采样与真实压力） |
