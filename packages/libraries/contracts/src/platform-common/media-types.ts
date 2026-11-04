@@ -1,4 +1,4 @@
-/** Artifact media types of M1Interface 6.1 and the RunSummary media type. */
+/** The media types of artifacts. */
 export const MEDIA_TYPES = {
   contextPack: 'application/vnd.multiagentos.context-pack+json',
   fileText: 'text/plain; charset=utf-8',

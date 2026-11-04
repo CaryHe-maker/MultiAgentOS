@@ -66,7 +66,7 @@ export const ReasonCodeSchema = Type.Unsafe<ReasonCode>(
 );
 
 /**
- * Where each reason code may appear (the "出现位置" and "产生者" columns of M1Interface 3.4).
+ * Where each reason code may appear.
  * Every Schema that carries a reason code accepts only the codes of its own list.
  */
 
@@ -108,10 +108,6 @@ export const CORE_REJECTED_CODES = [
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
 /** Every reason code a SyscallRejected may carry; RUN_BLOCKED may come from either issuer. */
-export const SYSCALL_REJECTED_CODES = [
-  ...new Set<ReasonCode>([...GATEWAY_REJECTED_CODES, 'RUN_BLOCKED', ...CORE_REJECTED_CODES]),
-];
-
 /** An Executor's `REJECTED` outcome: a normal out-of-bounds request (ExecutorSet 5). */
 export const EXECUTOR_REJECTED_CODES = [
   'OUT_OF_SCOPE',
@@ -166,7 +162,6 @@ export const UNIT_FAILED_CODES = [
 export type UnitRejectedCode = (typeof UNIT_REJECTED_CODES)[number];
 export type UnitFailedCode = (typeof UNIT_FAILED_CODES)[number];
 /** Every reason code a UnitReport may carry, and therefore every key of a failurePolicy. */
-export const UNIT_REPORT_CODES = [...UNIT_REJECTED_CODES, ...UNIT_FAILED_CODES] as const;
 
 /** What a definition may decide; a quota and an expired artifact mean the same for every Unit. */
 export const FAILURE_POLICY_CODES = [

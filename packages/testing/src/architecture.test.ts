@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
 
-/** Internal dependencies each workspace may declare (docs/M1/M1TechStack.md 3). */
+/** Internal dependencies each workspace may declare. */
 const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   'packages/libraries/contracts': [],
   'packages/libraries/agent-tool-pool': ['contracts'],

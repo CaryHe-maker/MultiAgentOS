@@ -21,7 +21,7 @@ export type CliParseResult =
   | { readonly ok: true; readonly command: MasCommand }
   | { readonly ok: false; readonly exitCode: number };
 
-/** Exit code of a command line that could not be parsed (M1's rule). */
+/** Exit code of a command line that could not be parsed. */
 export const EXIT_CODE_USAGE = 64;
 
 interface CommonOptions {

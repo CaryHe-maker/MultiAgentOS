@@ -20,7 +20,7 @@ import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
 
 type GenerateResult = Awaited<ReturnType<LanguageModel['doGenerate']>>;
 
-/** ModelCallOutput holds at most this many calls; the artifact keeps all of them (issue #26). */
+/** ModelCallOutput holds at most this many calls; the artifact keeps all of them. */
 export const MAX_TOOL_CALLS = 32;
 
 export interface ModelCallExecutorOptions {
@@ -161,7 +161,7 @@ export function failureOf(
   };
 }
 
-/** The table of ExecutorSet 4.5, completed by issue #26 C. */
+/** What each way a call can go wrong means for the Unit. */
 export function classifyCall(
   error: unknown,
   progress: RequestProgress,

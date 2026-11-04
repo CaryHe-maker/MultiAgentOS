@@ -199,12 +199,12 @@ const FABRIC_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze([
     capability: 'fabric.cross-process',
     status: 'UNSUPPORTED',
     schemaNames: [],
-    reason: 'M1 runs every communication subject in one process',
+    reason: 'every communication subject runs in one process',
   },
   {
     capability: 'fabric.durable-delivery',
     status: 'UNSUPPORTED',
     schemaNames: ['platform.fabric.ConsumerOffsetRef.v1'],
-    reason: 'the M1 Outbox and Inbox live in memory',
+    reason: 'the Outbox and the Inbox live in memory',
   },
 ]);

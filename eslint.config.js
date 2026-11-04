@@ -1,7 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-// Kernel components keep their data isolated (docs/M1/Kernel/Interaction.md 3.2): a component
+// Kernel components keep their data isolated (Kernel/Interaction): a component
 // imports `interfaces/` only, never a sibling; only `run-actor/` and the package entry wire
 // components together, and only through each component's `index.ts`.
 const kernelComponents = ['core', 'execution', 'monitor', 'scheduler', 'gateway', 'supervisor'];

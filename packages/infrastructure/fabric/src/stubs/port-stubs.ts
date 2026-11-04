@@ -240,7 +240,7 @@ export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInbo
   });
 }
 
-/** What the Kernel core asks of the Supervisor (M1 KernelSupervisor, major 1 requests). */
+/** What the Kernel core asks of the Supervisor. */
 export interface SupervisorPort {
   execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;

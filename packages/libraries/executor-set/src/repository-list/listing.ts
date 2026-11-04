@@ -7,7 +7,7 @@ const DEFAULT_DEPTH = 2;
 export interface Listing {
   readonly output: RepositoryListOutput;
   readonly preview: string;
-  /** Present exactly when the preview left something out (ExecutorSet 4). */
+  /** Present exactly when the preview left something out. */
   readonly full?: string;
 }
 

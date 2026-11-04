@@ -5,11 +5,11 @@ import {
   newId,
   sha256Hex,
   type AssembleContextPack,
-  type ContextItem,
   type ContextPack,
+  type OrientContextPack,
 } from '@multiagentos/contracts';
 
-type AnyItem = ContextItem | AssembleContextPack['items'][number];
+type AnyItem = OrientContextPack['items'][number] | AssembleContextPack['items'][number];
 
 /** A ContextItem before the fields derived from its content and its place in the pack. */
 export type ItemDraft<Item extends AnyItem = AnyItem> = Item extends unknown
@@ -46,7 +46,7 @@ export function packTokens(items: readonly { readonly tokenCount: number }[]): n
 }
 
 /** The artifact of a ContextPack: its canonical JSON (SharedContracts 4.3). */
-export function packArtifact(pack: ContextPack | AssembleContextPack): {
+export function packArtifact(pack: ContextPack): {
   mediaType: string;
   text: string;
 } {
@@ -54,7 +54,7 @@ export function packArtifact(pack: ContextPack | AssembleContextPack): {
 }
 
 /**
- * Greedy fit used by orient and search: keeps the drafts in order while they fit the budget and
+ * Greedy fit used by orient: keeps the drafts in order while they fit the budget and
  * skips the ones that do not, so a large item never hides smaller ones after it.
  */
 export function fitToBudget<Draft extends ItemDraft>(

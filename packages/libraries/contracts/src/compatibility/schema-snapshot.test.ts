@@ -10,7 +10,7 @@ import {
   type SchemaSnapshot,
 } from './schema-snapshot.js';
 
-const ID = 'platform.config.Example.v0';
+const ID = 'platform.config.Example.v1';
 const registryWith = (schema: ReturnType<typeof closed>) => {
   const registry = new ProtocolRegistry();
   registry.register(schema);
@@ -23,7 +23,7 @@ const frozenFrom = (registry: ProtocolRegistry): SchemaSnapshot => ({
 const base = { name: text(16), limit: count(1) };
 const frozen = frozenFrom(registryWith(closed(base, ID)));
 
-describe('protocol freeze guard (M1TechStack 11)', () => {
+describe('protocol freeze guard', () => {
   it('keeps the registered Schemas equal to the snapshot', async () => {
     expect(snapshotIssues(await readSchemaSnapshot(), createProtocolRegistry())).toEqual([]);
   });
@@ -60,7 +60,7 @@ describe('protocol freeze guard (M1TechStack 11)', () => {
 
   it('allows a new Schema or a new major after the freeze', () => {
     const registry = registryWith(closed(base, ID));
-    registry.register(closed(base, 'platform.config.Example.v1'));
+    registry.register(closed(base, 'platform.config.Example.v2'));
     expect(snapshotIssues(frozen, registry)).toEqual([]);
   });
 
@@ -71,8 +71,8 @@ describe('protocol freeze guard (M1TechStack 11)', () => {
       `${ID}: differs from the snapshot; run pnpm run contracts:snapshot`,
     ]);
     const added = registryWith(closed(base, ID));
-    added.register(closed(base, 'platform.config.Other.v0'));
-    expect(snapshotIssues(draft, added)).toEqual(['platform.config.Other.v0: not in the snapshot']);
+    added.register(closed(base, 'platform.config.Other.v1'));
+    expect(snapshotIssues(draft, added)).toEqual(['platform.config.Other.v1: not in the snapshot']);
   });
 
   it('rejects a changed union variant, which is not an added optional field', () => {

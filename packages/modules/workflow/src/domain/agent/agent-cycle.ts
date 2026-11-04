@@ -17,7 +17,7 @@ import type { NewLogRecord } from '../../session/session-log-store.js';
 
 /**
  * One AgentRun as a pure state machine, the same for every Agent (Module/Workflow 7): every step returns the log
- * records to append first and the Units to submit afterwards. The Round order is M1's:
+ * records to append first and the Units to submit afterwards. The Round order is
  * context-assemble, model-call, then all tool Units of that reply.
  */
 type Schema = Parameters<typeof validate>[0];

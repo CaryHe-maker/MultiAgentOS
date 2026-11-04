@@ -8,13 +8,17 @@ import {
 import { completed, guarded, rejected, throwIfAborted, violation } from '../outcome/outcomes.js';
 import { readGuardedFile, type GuardHooks } from '../repository-access/guarded-file.js';
 import { resolveRepositoryScope } from '../repository-access/repository-scope.js';
-import { lineRangeText, parseText } from '../text/text-document.js';
+import { previewLimitsOf } from '../retention/retention.js';
+import { lineRangeText, numberLines, parseText } from '../text/text-document.js';
 
-/** At most this many lines per read (ExecutorSet 4.3). */
+/** At most this many lines per read. */
 export const MAX_READ_LINES = 400;
 
+/** Numbered lines take room the raw text does not: at most 400 lines of 8 bytes, and the header. */
+export const RENDERING_BYTES = 4096;
+
 /**
- * FILE_READ (ExecutorSet 4.3): one guarded file, lines `startLine..endLine` (default 1..400),
+ * FILE_READ: one guarded file, lines `startLine..endLine` (default 1..400),
  * cut back to the last whole line that fits both 400 lines and `limits.maxOutputBytes`. The
  * artifact is exactly the returned text, LF-terminated, and `contentSha256` is its digest.
  */
@@ -48,7 +52,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
         contentSha256: sha256Hex(''),
         fileSha256,
       },
-      artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
+      artifact: { mediaType: MEDIA_TYPES.fileText, text: `${read.file.path} (empty file)` },
     });
   }
 
@@ -57,8 +61,8 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
   if (input.endLine !== undefined && input.endLine < startLine) return rejected('INVALID_RANGE');
   let endLine = Math.min(input.endLine ?? totalLines, totalLines, startLine + MAX_READ_LINES - 1);
 
-  // Cut to the last whole line within maxOutputBytes; the first line alone must fit.
-  const limit = environment.limits.maxOutputBytes;
+  // Cut to the last whole line within the preview; the first line alone must fit.
+  const limit = Math.max(1, previewLimitsOf(environment).maxBytes - RENDERING_BYTES);
   let bytes = 0;
   for (let line = startLine; line <= endLine; line += 1) {
     bytes += Buffer.byteLength(lineRangeText(document, line, line), 'utf8');
@@ -69,16 +73,22 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
     }
   }
 
-  const text = lineRangeText(document, startLine, endLine);
+  const rest =
+    endLine < totalLines
+      ? `\n[Lines ${String(endLine + 1)}-${String(totalLines)} not shown; call read_file with startLine ${String(endLine + 1)} to continue.]`
+      : '';
   return completed({
     output: {
       path: read.file.path,
       startLine,
       endLine,
       totalLines,
-      contentSha256: sha256Hex(text),
+      contentSha256: sha256Hex(lineRangeText(document, startLine, endLine)),
       fileSha256,
     },
-    artifact: { mediaType: MEDIA_TYPES.fileText, text },
+    artifact: {
+      mediaType: MEDIA_TYPES.fileText,
+      text: `${read.file.path} (lines ${String(startLine)}-${String(endLine)} of ${String(totalLines)})\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}${rest}`,
+    },
   });
 }

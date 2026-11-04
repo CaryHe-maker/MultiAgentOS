@@ -1,7 +1,7 @@
 import type { ModelScope } from './language-model.js';
 
 /**
- * Where the one HTTP request of a model call got to. ExecutorSet 4.5 needs this to tell
+ * Where the one HTTP request of a model call got to. ExecutorSet needs this to tell
  * NOT_SENT (the provider cannot have processed the request) from UNKNOWN.
  */
 export interface RequestProgress {
@@ -45,7 +45,7 @@ export function failedBeforeSending(error: unknown): boolean {
 /**
  * Wraps the fetch handed to the provider SDK. It records how far the request got and, for
  * DeepSeek's OpenAI-compatible API, writes the thinking switch into the body, which the OpenAI
- * adapter has no option for (M0 sent the same field: `thinking: { type: 'disabled' }`).
+ * adapter has no option for (`thinking: { type: 'disabled' }`).
  */
 export function trackedFetch(
   inner: typeof globalThis.fetch,

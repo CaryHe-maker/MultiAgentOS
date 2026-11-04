@@ -32,7 +32,7 @@ export type IdPrefix =
   | 'scm'
   | 'slq';
 
-/** A new random identifier `<prefix>_<ULID>` (M1Interface 3.1). */
+/** A new random identifier `<prefix>_<ULID>`. */
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${ulid()}`;
 }

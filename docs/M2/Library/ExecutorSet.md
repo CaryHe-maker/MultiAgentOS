@@ -36,7 +36,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | `REPOSITORY_ORIENT` | M1 原样 | M1 原样 | `REPOSITORY` | 概览（长期保留） |
 | `FILE_READ` | M1 原样，产物为带行号的文本 | M1 原样 | `REPOSITORY` | 预览（长期保留） |
 | `REPOSITORY_SEARCH` | M1 原样，预览经 `retention/` | M1 原样 | `REPOSITORY` | 预览（长期保留）；截断时另有完整输出（7 天过期） |
-| `REPOSITORY_LIST` | `RepositoryListExecutor` | `repository-list/` | `REPOSITORY` | 目录树文本的预览；截断时另有完整输出 |
+| `REPOSITORY_LIST` | `createListExecutor` | `repository-list/` | `REPOSITORY` | 目录树文本的预览；截断时另有完整输出 |
 | `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `context-assemble/` | `NONE` | ASSEMBLE ContextPack（7 天过期） |
 | `MODEL` | `ModelCallExecutor` | `model-call/` | `MODEL` | 模型原始输出；思考内容单独一个产物（都长期保留） |
 

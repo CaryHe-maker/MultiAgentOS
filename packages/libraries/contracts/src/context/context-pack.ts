@@ -14,7 +14,7 @@ import {
 
 /**
  * Built from a Tool definition and the Protocol Registry. `parameters` is the second open JSON
- * value of the protocol (M1Interface 1.2): the JSON Schema of the tool's `parametersContract`.
+ * value of the protocol: the JSON Schema of the tool's `parametersContract`.
  */
 export const ModelToolSpecSchema = closed(
   {
@@ -27,32 +27,19 @@ export const ModelToolSpecSchema = closed(
 );
 export type ModelToolSpec = Static<typeof ModelToolSpecSchema>;
 
-/** Where a piece of repository content came from. */
+/** Where a piece of the repository overview came from. */
 export const ProvenanceSchema = Type.Refine(
   closed({
     path: text(1024),
     ...lineRange,
     contentSha256: Sha256Schema,
     snapshotId: Type.Optional(IdSchemas.snapshotId),
-    retrieval: Type.Enum(['TREE', 'TEXT', 'PATH', 'SYMBOL', 'FILE_READ']),
+    retrieval: Type.Literal('TREE'),
   }),
   isLineRange,
   LINE_RANGE_ERROR,
 );
 export type Provenance = Static<typeof ProvenanceSchema>;
-
-/** ASSEMBLE packs keep this order; SEARCH_HIT appears only in SEARCH packs. */
-export const CONTEXT_SEGMENTS = [
-  'INSTRUCTIONS',
-  'TOOLS',
-  'OBJECTIVE',
-  'HANDOFF',
-  'ORIENT',
-  'SEARCH_HIT',
-  'HISTORY',
-  'STATUS',
-] as const;
-export type ContextSegment = (typeof CONTEXT_SEGMENTS)[number];
 
 const item = {
   /** `${contextPackId}:${index}`, with the index of the item in `items`. */
@@ -67,9 +54,8 @@ const user = Type.Literal('user');
 
 /**
  * One variant per segment, which fixes the role and the extra fields together: `toolSpecs`
- * only on TOOLS, `provenance` always on repository content (ORIENT, SEARCH_HIT), `score` only on
- * SEARCH_HIT, `toolCalls` only on an assistant HISTORY item and `toolCallId` on every tool
- * HISTORY item. A field outside its variant makes the item invalid.
+ * only on TOOLS, `provenance` always on ORIENT, `toolCalls` only on an assistant HISTORY item and
+ * `toolCallId` on every tool HISTORY item. A field outside its variant makes the item invalid.
  */
 const InstructionsItemSchema = closed({
   ...item,
@@ -82,25 +68,13 @@ const ToolsItemSchema = closed({
   role: system,
   toolSpecs: Type.Array(ModelToolSpecSchema),
 });
-const PlainItemSchema = closed({
-  ...item,
-  segment: Type.Enum(['OBJECTIVE', 'HANDOFF', 'STATUS']),
-  role: user,
-});
+const StatusItemSchema = closed({ ...item, segment: Type.Literal('STATUS'), role: user });
 const OrientItemSchema = closed({
   ...item,
   segment: Type.Literal('ORIENT'),
   role: user,
   provenance: ProvenanceSchema,
 });
-const SearchHitItemSchema = closed({
-  ...item,
-  segment: Type.Literal('SEARCH_HIT'),
-  role: user,
-  provenance: ProvenanceSchema,
-  score: Type.Number({ minimum: 0, maximum: 1 }),
-});
-
 const history = {
   ...item,
   segment: Type.Literal('HISTORY'),
@@ -119,16 +93,6 @@ const HistoryItemSchema = Type.Union([
   closed({ ...history, role: Type.Literal('tool'), toolCallId: ToolCallIdSchema }),
   closed({ ...history, role: user }),
 ]);
-
-export const ContextItemSchema = Type.Union([
-  InstructionsItemSchema,
-  ToolsItemSchema,
-  PlainItemSchema,
-  OrientItemSchema,
-  SearchHitItemSchema,
-  HistoryItemSchema,
-]);
-export type ContextItem = Static<typeof ContextItemSchema>;
 
 const pack = {
   contextPackId: IdSchemas.contextPackId,
@@ -155,19 +119,7 @@ export const OrientContextPackSchema = Type.Refine(
   hasOrderedItemIds,
   ITEM_ID_ERROR,
 );
-/** The artifact of repository-search: only SEARCH_HIT items, always with a snapshotId. */
-export const SearchContextPackSchema = Type.Refine(
-  closed({
-    ...pack,
-    operation: Type.Literal('SEARCH'),
-    snapshotId: IdSchemas.snapshotId,
-    items: Type.Array(SearchHitItemSchema),
-  }),
-  hasOrderedItemIds,
-  ITEM_ID_ERROR,
-);
 export type OrientContextPack = Static<typeof OrientContextPackSchema>;
-export type SearchContextPack = Static<typeof SearchContextPackSchema>;
 
 /** `elidedEntries` are the `seq` values the final-call safeguard removed, and nothing else does. */
 export const AssembleContextPackSchema = Type.Refine(
@@ -186,7 +138,7 @@ export const AssembleContextPackSchema = Type.Refine(
       Type.Union([
         InstructionsItemSchema,
         ToolsItemSchema,
-        PlainItemSchema,
+        StatusItemSchema,
         OrientItemSchema,
         HistoryItemSchema,
       ]),
@@ -198,8 +150,7 @@ export const AssembleContextPackSchema = Type.Refine(
 export type AssembleContextPack = Static<typeof AssembleContextPackSchema>;
 
 /** Immutable once published. */
-export const ContextPackSchema = Type.Union(
-  [OrientContextPackSchema, SearchContextPackSchema, AssembleContextPackSchema],
-  { $id: 'context.ContextPack.v1' },
-);
+export const ContextPackSchema = Type.Union([OrientContextPackSchema, AssembleContextPackSchema], {
+  $id: 'context.ContextPack.v1',
+});
 export type ContextPack = Static<typeof ContextPackSchema>;

@@ -9,7 +9,7 @@ const text = fc.string({ unit: 'binary', maxLength: 200 });
 
 describe('retainItems', () => {
   it('keeps everything that fits', () => {
-    expect(retainItems(['a', 'b'], { maxBytes: 3 })).toEqual({
+    expect(retainItems(['a', 'b'], { maxBytes: 3, maxLines: 1_000 })).toEqual({
       kept: ['a', 'b'],
       omittedItems: 0,
       totalItems: 2,
@@ -17,7 +17,7 @@ describe('retainItems', () => {
   });
 
   it('counts the newline between items against the byte limit', () => {
-    expect(retainItems(['a', 'b'], { maxBytes: 2 }).kept).toEqual(['a']);
+    expect(retainItems(['a', 'b'], { maxBytes: 2, maxLines: 1_000 }).kept).toEqual(['a']);
   });
 
   it('counts every line of a multi-line item against the line limit', () => {
@@ -26,7 +26,7 @@ describe('retainItems', () => {
   });
 
   it('never keeps a later item after an earlier one was left out', () => {
-    expect(retainItems(['long item', 'x'], { maxBytes: 3 }).kept).toEqual([]);
+    expect(retainItems(['long item', 'x'], { maxBytes: 3, maxLines: 1_000 }).kept).toEqual([]);
   });
 
   it('accounts for every item and stays within the limits', () => {

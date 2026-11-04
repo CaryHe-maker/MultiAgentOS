@@ -1,20 +1,12 @@
 import { posix } from 'node:path';
 import {
-  sha256Hex,
+  MEDIA_TYPES,
+  estimateItemTokens,
   type Executor,
   type ExecutorEnvironment,
-  type SearchContextPack,
   type SearchExecutorInput,
   type SearchHit,
 } from '@multiagentos/contracts';
-import {
-  draftTokens,
-  finishItems,
-  newContextPackId,
-  packArtifact,
-  packTokens,
-  type ItemDraft,
-} from '../context-pack/pack-builder.js';
 import { completed, guarded, rejected, throwIfAborted, violation } from '../outcome/outcomes.js';
 import {
   buildFileSet,
@@ -27,7 +19,8 @@ import {
   resolveRepositoryScope,
   type RepositoryScope,
 } from '../repository-access/repository-scope.js';
-import { lineRangeText, numberLines, parseText, type TextDocument } from '../text/text-document.js';
+import { previewLimitsOf, retainItems } from '../retention/retention.js';
+import { numberLines, parseText, type TextDocument } from '../text/text-document.js';
 import {
   hasRipgrep,
   ripgrepSearch,
@@ -44,15 +37,18 @@ import {
   type PreparedQuery,
 } from './search-query.js';
 
-type SearchDraft = ItemDraft<SearchContextPack['items'][number]>;
 type MatchKind = SearchHit['matchKind'];
 
-/** Lines of context on each side of a matching line (ExecutorSet 4.2). */
+/** Lines of context on each side of a matching line. */
 export const CONTEXT_LINES = 2;
 /** Matches closer than this merge into one hit; a merged hit never exceeds MAX_HIT_LINES. */
 const MAX_HIT_LINES = 15;
 /** A PATH hit shows the first lines of the file. */
 const PATH_HIT_LINES = 5;
+const NO_MATCHES =
+  'No matches. Try a shorter or different query, another mode (TEXT, PATH or SYMBOL), or a name you saw in a file.';
+const MORE_MATCHES =
+  '\n[More matches exist; refine the query or use read_file on the most relevant files.]';
 
 const BASE_SCORE: Record<MatchKind, number> = { SYMBOL: 1, PATH: 0.9, TEXT: 0.7 };
 /** Build output and vendored code usually repeat the source; their hits rank lower. */
@@ -68,7 +64,7 @@ export interface SearchExecutorOptions {
 }
 
 /**
- * REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2): matches from `rg` or the scan, merged into hits
+ * REPOSITORY_SEARCH: matches from `rg` or the scan, merged into hits
  * with two lines of context, scored only from match kind, match count and path, cut to
  * `maxItems` and `tokenBudget`.
  */
@@ -148,54 +144,38 @@ async function search(
   }
 
   // Greedy fit as in orient: a hit that does not fit is skipped, smaller ones after it may fit.
-  const kept: SearchDraft[] = [];
+  const kept: string[] = [];
   const keptHits: SearchHit[] = [];
   let used = 0;
   let overBudget = 0;
   for (const { candidate, endLine, document } of hits) {
     const { file, kind, startLine, score } = candidate;
-    const draft: SearchDraft = {
-      segment: 'SEARCH_HIT',
-      role: 'user',
-      content: `${file.path}:${startLine}-${endLine} [${kind}, score ${score}]\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}`,
-      reason: `${kind.toLowerCase()} match for the query`,
-      score,
-      provenance: {
-        path: file.path,
-        startLine,
-        endLine,
-        contentSha256: sha256Hex(lineRangeText(document, startLine, endLine)),
-        snapshotId: set.snapshotId,
-        retrieval: kind,
-      },
-    };
-    const tokens = draftTokens(draft);
+    const content = `${file.path}:${startLine}-${endLine} [${kind}, score ${score}]\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}`;
+    const tokens = estimateItemTokens({ role: 'user', content });
     if (used + tokens > input.tokenBudget) {
       overBudget += 1;
       continue;
     }
     used += tokens;
-    kept.push(draft);
+    kept.push(content);
     keptHits.push({ path: file.path, startLine, endLine, score, matchKind: kind });
   }
   const truncated = incomplete || skipped > 0 || overBudget > 0;
+  const output = { snapshotId: set.snapshotId, hits: keptHits, truncated };
+  const mediaType = MEDIA_TYPES.fileText;
+  if (kept.length === 0) return completed({ output, artifact: { mediaType, text: NO_MATCHES } });
 
-  const contextPackId = newContextPackId();
-  const items = finishItems<SearchContextPack['items'][number]>(contextPackId, kept);
-  const pack: SearchContextPack = {
-    contextPackId,
-    operation: 'SEARCH',
-    snapshotId: set.snapshotId,
-    tokenCount: packTokens(items),
-    tokenBudget: input.tokenBudget,
-    truncated,
-    droppedCount: skipped + overBudget,
-    items,
-    createdAt: environment.now().toISOString(),
-  };
+  const header = `${String(kept.length)} matches:\n\n`;
+  const more = truncated ? MORE_MATCHES : '';
+  const whole = `${header}${kept.join('\n\n')}${more}`;
+  const retained = retainItems(kept, previewLimitsOf(environment));
+  if (retained.omittedItems === 0)
+    return completed({ output, artifact: { mediaType, text: whole } });
+  const notice = `\n[${String(retained.omittedItems)} more matches omitted; narrow the query. The full output is kept for 7 days.]`;
   return completed({
-    output: { snapshotId: set.snapshotId, hits: keptHits, truncated },
-    artifact: packArtifact(pack),
+    output,
+    artifact: { mediaType, text: `${header}${retained.kept.join('\n\n')}${notice}` },
+    fullOutput: { text: whole },
   });
 }
 
@@ -210,7 +190,9 @@ async function findLines(
     const found = await ripgrepSearch(
       request,
       environment.subprocess,
-      environment.limits.maxOutputBytes,
+      'maxFullOutputBytes' in environment.limits
+        ? environment.limits.maxFullOutputBytes
+        : environment.limits.maxOutputBytes,
     );
     if (found !== undefined) return found;
   }
@@ -282,11 +264,11 @@ function declarationTester(query: PreparedQuery): ((text: string) => boolean) | 
   return (text) => expression.test(text);
 }
 
-/** Issue #26, E17: base(kind) × file-name factor × path factor × count factor, in 0..1. */
+/** base(kind) × file-name factor × path factor × count factor, in 0..1. */
 function score(kind: MatchKind, path: string, count: number, exactName: boolean): number {
   let value = BASE_SCORE[kind] * Math.min(1, 0.6 + 0.1 * count);
   if (exactName) value *= 1.1;
-  // Test files are not demoted: F2 and F4 ask for them (issue #26, E).
+  // Test files are not demoted: F2 and F4 ask for them.
   const lower = asciiLower(path);
   if (lower.split('/').some((segment) => GENERATED_DIRECTORIES.has(segment))) value *= 0.8;
   return Math.round(Math.min(1, value) * 10_000) / 10_000;

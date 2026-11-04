@@ -46,7 +46,7 @@ function entries(directory: Directory): Entry[] {
 }
 
 /**
- * The depth-2 tree of ExecutorSet 4.1 with at most `rootLimit` root entries and `childLimit`
+ * The depth-2 tree of ExecutorSet with at most `rootLimit` root entries and `childLimit`
  * entries per root directory; `elided` tells whether any entry was left out.
  */
 export function renderTree(

@@ -1,9 +1,8 @@
 import type { UnitFailedCode, UnitRejectedCode } from '@multiagentos/contracts';
 
 /**
- * What a tool that gave no output says to the model. Everything is plain text: M0 measured that
- * JSON tool results cost 18% more input tokens than numbered text for no gain
- * (`experiments/minimal-agent-loop/RUNS.md`, C4).
+ * What a tool that gave no output says to the model. Everything is plain text: JSON tool results
+ * cost 18% more input tokens than numbered text for no gain.
  */
 export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   INVALID_INPUT: 'the arguments do not match the tool parameters; fix them and call again',

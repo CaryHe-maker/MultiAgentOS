@@ -50,7 +50,7 @@ import * as handoff from './workflow/handoff.js';
 import * as report from './workflow/report.js';
 import { Type } from 'typebox';
 
-/** Protocol families, their owner and what M1 does with them (M1Interface 12). */
+/** Protocol families, their owner and whether this release implements them. */
 export const PROTOCOL_FAMILIES = {
   'platform.common': { owner: 'contracts', status: 'SUPPORTED' },
   'platform.config': { owner: 'contracts', status: 'SUPPORTED' },

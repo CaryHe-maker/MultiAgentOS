@@ -283,10 +283,7 @@ describe('ContextPack', () => {
     });
     const hit = { ...item, segment: 'SEARCH_HIT', role: 'user', provenance, score: 1 };
     const search = { ...pack, operation: 'SEARCH', snapshotId: `snp_${sha}`, items: [hit] };
-    expectRules(ContextPackSchema, search, {
-      'SEARCH_HIT without score': { ...search, items: [without(hit, 'score')] },
-      'ORIENT item in a SEARCH pack': { ...search, items: [orientItem] },
-    });
+    expect(ok(ContextPackSchema, search), 'a SEARCH pack').toBe(false);
     expectRules(ContextPackSchema, assemble(at0({ segment: 'INSTRUCTIONS', role: 'system' })), {
       'ASSEMBLE without prefixSha256': without(assemble([]), 'prefixSha256'),
       'ASSEMBLE that says it was truncated': { ...assemble([]), truncated: false },
@@ -298,7 +295,7 @@ describe('ContextPack', () => {
     const call = { toolCallId: 'call_1', toolName: 'read_file', arguments: {} };
     const valid = [
       { segment: 'TOOLS', role: 'system', toolSpecs: [] },
-      { segment: 'OBJECTIVE', role: 'user' },
+      { segment: 'STATUS', role: 'user' },
       { ...history, role: 'assistant', toolCalls: [call], reasoningContent: 'hmm' },
       { ...history, role: 'assistant' },
       { ...history, role: 'tool', toolCallId: 'call_1' },
@@ -309,7 +306,9 @@ describe('ContextPack', () => {
     const broken = [
       { segment: 'TOOLS', role: 'system' },
       { segment: 'TOOLS', role: 'user', toolSpecs: [] },
-      { segment: 'OBJECTIVE', role: 'user', toolSpecs: [] },
+      { segment: 'STATUS', role: 'user', toolSpecs: [] },
+      { segment: 'OBJECTIVE', role: 'user' },
+      { segment: 'HANDOFF', role: 'user' },
       { segment: 'INSTRUCTIONS', role: 'user' },
       { ...history, role: 'tool' },
       { ...history, role: 'user', toolCallId: 'call_1' },

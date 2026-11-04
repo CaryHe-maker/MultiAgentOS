@@ -76,7 +76,7 @@ export type UnknownEffect = Static<typeof UnknownEffectSchema>;
 
 export const RunSummaryRefSchema = artifactRefOf(MEDIA_TYPES.runSummary);
 
-/** RUN_TIMEOUT is gone: a timeout is an interrupt, and Workflow reports TIMEOUT (M2Design 2.3). */
+/** A timeout is an interrupt, and Workflow reports it as TIMEOUT (M2Design 2.3). */
 export const CLOSE_REASONS = [
   'COMPLETED',
   'FAILED',

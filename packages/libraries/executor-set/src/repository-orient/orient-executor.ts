@@ -31,11 +31,11 @@ import { renderTree, topLevelSummary } from './directory-tree.js';
 
 type OrientDraft = ItemDraft<OrientContextPack['items'][number]>;
 
-/** Lines of each README and manifest excerpt (ExecutorSet 4.1). */
+/** Lines of each README and manifest excerpt. */
 export const EXCERPT_LINES = 40;
 
 /**
- * Root-level files that say what a repository is and how it is built (issue #26, D16), in the
+ * Root-level files that say what a repository is and how it is built, in the
  * order their excerpts are offered to the budget.
  */
 const MANIFESTS = [
@@ -65,7 +65,7 @@ const TREE_SHAPES: readonly (readonly [number, number])[] = [
 ];
 
 /**
- * REPOSITORY_ORIENT (ExecutorSet 4.1): the snapshot, a depth-2 tree and the first lines of the
+ * REPOSITORY_ORIENT: the snapshot, a depth-2 tree and the first lines of the
  * README and the build manifests, as ORIENT items cut to `tokenBudget`.
  */
 export function createOrientExecutor(cache: FileDigestCache): Executor<'REPOSITORY_ORIENT'> {

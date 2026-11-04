@@ -9,7 +9,7 @@ import type { RepositoryScope } from '../repository-access/repository-scope.js';
 import { parseText } from '../text/text-document.js';
 import { lineTester, type LineQuery } from './search-query.js';
 
-/** Both backends skip larger files, as `rg --max-filesize 1M` does (issue #26, A4). */
+/** Both backends skip larger files, as `rg --max-filesize 1M` does. */
 export const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
 /** Files scanned between two yields to the event loop, so aborts and deadlines are seen. */
 const SCAN_CHUNK_FILES = 32;
@@ -31,7 +31,7 @@ export interface SearchRequest {
 const searchable = (file: RepositoryFile) => file.size > 0 && file.size <= MAX_SEARCH_FILE_BYTES;
 
 /**
- * The deterministic Node.js scan of ExecutorSet 3.3: every searchable file of the set, in path
+ * The deterministic Node.js scan of ExecutorSet: every searchable file of the set, in path
  * order, in chunks with a yield in between.
  */
 export async function scanSearch(request: SearchRequest): Promise<LineMatches> {
@@ -79,8 +79,8 @@ export function hasRipgrep(runner: SubprocessRunner): Promise<boolean> {
 }
 
 /**
- * The arguments of ExecutorSet 3.3, plus the ones that keep `rg` equivalent to the scan
- * (issue #26, A4): `--no-config` so a user's RIPGREP_CONFIG_PATH cannot change the search,
+ * The arguments of ExecutorSet, plus the ones that keep `rg` equivalent to the scan
+ *: `--no-config` so a user's RIPGREP_CONFIG_PATH cannot change the search,
  * `--text` so binary detection is left to the file set (rg would also skip files with a NUL
  * after the first 8 KiB), `--sort path` so an output cut at `maxOutputBytes` always keeps the
  * same matches (threaded rg emits files in any order), and for case folding the ASCII-only

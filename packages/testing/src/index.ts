@@ -1,5 +1,3 @@
-export * from './fixtures/canned.js';
-export { createFakeExecutorRegistry } from './fakes/fake-executors.js';
 export {
   describeExecutorContract,
   repositoryGuardExpectations,

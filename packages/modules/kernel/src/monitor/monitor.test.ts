@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Monitor, MonitorInvariantError, type LedgerConfig } from './index.js';
 
-/** The per-call budget of the built-in Agents with M1's run limit. */
+/** The per-call budget of the built-in Agents. */
 const LEDGER: LedgerConfig = {
   tokenLimit: 300_000,
   perCallInputLimit: 96_000,

@@ -1,6 +1,6 @@
 /**
  * `pnpm run acceptance -- [F1 F2 … | all] [--runs N] [--yes] [--out DIR]`: runs the fixed task
- * set against the real model (M1ReleasePlan R3.1, R3.6). It costs money, so it first prints the
+ * set against the real model. It costs money, so it first prints the
  * number of runs and an upper bound of the cost, and starts only with `--yes`. The API key comes
  * from `DEEPSEEK_API_KEY` or from `.env` in the MultiAgentOS working directory. Every run record
  * is appended to `<out>/records.jsonl` (default `.multiagentos/acceptance/<time>/`, ignored by git).

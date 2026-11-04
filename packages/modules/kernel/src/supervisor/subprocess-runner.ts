@@ -5,7 +5,7 @@ type RunResult = Awaited<ReturnType<SubprocessRunner['run']>>;
 const NOT_RUN: RunResult = { exitCode: null, signal: null, stdout: '', truncated: false };
 
 /**
- * The only place that starts a child process (docs/M1/M1TechStack.md 9): a thin wrapper of
+ * The only place that starts a child process: a thin wrapper of
  * `child_process.spawn` that runs `rg` and nothing else, with an argument array and no shell.
  * It never throws: a binary that is missing or cannot start resolves with `exitCode: null`.
  * The child is killed when `signal` fires or when its output passes `maxOutputBytes`, in which

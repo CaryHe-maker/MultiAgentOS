@@ -5,7 +5,7 @@ const Id = (prefix: string) =>
 /** An identifier whose body is a SHA-256 in lower-case hexadecimal. */
 const DigestId = (prefix: string) => Type.String({ pattern: `^${prefix}_[a-f0-9]{64}$` });
 
-/** Identifier formats; prefixes and generators are listed in M1Interface 3.1. */
+/** Identifier formats. */
 export const IdSchemas = {
   workflowRunId: Id('wfr'),
   agentRunId: Id('agr'),
@@ -21,7 +21,7 @@ export const IdSchemas = {
   contextPackId: Id('ctx'),
   /** `snp_` followed by the repository snapshot digest. */
   snapshotId: DigestId('snp'),
-  // Kept for the optional BoundaryContext and Envelope fields; M1 does not fill them.
+  // For the optional BoundaryContext and Envelope fields, which nothing fills yet.
   workSessionId: Id('wss'),
   missionScopeId: Id('msc'),
   // M2 (Interface 3).

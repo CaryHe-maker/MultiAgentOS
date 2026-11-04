@@ -8,7 +8,7 @@ import { BINARY_PROBE_BYTES } from '../text/text-document.js';
 import { isInside, relativeToRoot } from './guarded-file.js';
 import type { RepositoryScope } from './repository-scope.js';
 
-/** One file of the snapshot (ExecutorSet 3.1). */
+/** One file of the snapshot. */
 export interface RepositoryFile {
   readonly path: string;
   readonly size: number;
@@ -129,7 +129,7 @@ async function digestFile(
     if (cached !== undefined) return { ...cached, size };
     const hash = createHash('sha256');
     const buffer = Buffer.allocUnsafe(HASH_CHUNK_BYTES);
-    // Text per ExecutorSet 3.1: no NUL in the first 8 KiB and valid UTF-8 throughout.
+    // Text per ExecutorSet: no NUL in the first 8 KiB and valid UTF-8 throughout.
     const utf8 = new TextDecoder('utf-8', { fatal: true });
     let position = 0;
     let text = true;
@@ -157,7 +157,7 @@ async function digestFile(
 
 /**
  * Reads a file of the set again for orient excerpts and search snippets. The hit passes steps
- * 2–5 of ExecutorSet 3.2 by construction (it was found by a walk that never followed a link),
+ * 2–5 of ExecutorSet by construction (it was found by a walk that never followed a link),
  * and is checked once more here: its real path must be itself, inside the root, and its content
  * must still be the content the snapshot hashed. Otherwise undefined, and the caller drops it.
  */

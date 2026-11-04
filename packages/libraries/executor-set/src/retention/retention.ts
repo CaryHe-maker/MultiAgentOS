@@ -1,12 +1,20 @@
+import type { ExecutorEnvironment } from '@multiagentos/contracts';
+
 /**
- * The two retainers every tool preview goes through (ExecutorSet 4). They only answer what was
+ * The two retainers every tool preview goes through. They only answer what was
  * kept and how much was left out; which end to keep and the notice shown to the model belong to
  * each Executor. The same input always gives the same result, byte for byte.
  */
 export interface PreviewLimits {
   readonly maxBytes: number;
-  /** Absent for `v0` Units, which have no line limit. */
-  readonly maxLines?: number;
+  readonly maxLines: number;
+}
+
+/** The limits Execution hands a tool Executor (M2Design 8.2). */
+export function previewLimitsOf(environment: ExecutorEnvironment): PreviewLimits {
+  const { limits } = environment;
+  if (!('preview' in limits)) throw new Error('A tool Executor needs preview limits');
+  return limits.preview;
 }
 
 export interface RetainedItems {

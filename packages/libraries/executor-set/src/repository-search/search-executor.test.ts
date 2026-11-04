@@ -1,10 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  SearchContextPackSchema,
-  validate,
+  MEDIA_TYPES,
   type ExecutorOutcome,
-  type SearchContextPack,
   type SearchExecutorInput,
   type SubprocessRunner,
 } from '@multiagentos/contracts';
@@ -67,14 +65,14 @@ async function search(
   input: Partial<SearchExecutorInput> & { query: string },
   backend: SearchBackend = 'scan',
   subprocess: SubprocessRunner = runner,
-): Promise<{ outcome: ExecutorOutcome; pack?: SearchContextPack }> {
+): Promise<{ outcome: ExecutorOutcome; preview?: string }> {
   const executor = createSearchExecutor({ cache: new FileDigestCache(), backend });
   const outcome = await executor.execute(
     { mode: 'AUTO', maxItems: 20, tokenBudget: 8_000, ...input },
     environmentFor('REPOSITORY_SEARCH', repositoryScope(root), { subprocess }),
   );
   return outcome.outcome === 'COMPLETED'
-    ? { outcome, pack: JSON.parse(outcome.result.artifact.text) as SearchContextPack }
+    ? { outcome, preview: outcome.result.artifact.text }
     : { outcome };
 }
 
@@ -83,13 +81,13 @@ const hitsOf = (outcome: ExecutorOutcome) =>
     ? outcome.result.output.hits
     : [];
 
-describe('REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2)', () => {
+describe('REPOSITORY_SEARCH', () => {
   it('ranks the definition of a name above its uses', async () => {
-    const { outcome, pack } = await search({ query: 'parseConfig' });
-    expect(validate(SearchContextPackSchema, pack)).toMatchObject({ ok: true });
+    const { outcome, preview } = await search({ query: 'parseConfig' });
+    expect(outcome).toMatchObject({ result: { artifact: { mediaType: MEDIA_TYPES.fileText } } });
     const [first] = hitsOf(outcome);
     expect(first).toMatchObject({ path: 'src/config.ts', matchKind: 'SYMBOL' });
-    expect(pack?.items[0]?.content).toContain('6 | export function parseConfig');
+    expect(preview).toContain('6 | export function parseConfig');
   });
 
   it('never returns excluded files', async () => {
@@ -158,10 +156,38 @@ describe('REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2)', () => {
     expect(outcome).toMatchObject({ result: { output: { truncated: true } } });
   });
 
-  it('keeps the pack within the token budget', async () => {
-    const { pack } = await search({ query: 'e', mode: 'TEXT', tokenBudget: 300 });
-    expect(pack?.tokenCount).toBeLessThanOrEqual(300);
-    expect(pack?.truncated).toBe(true);
+  it('keeps the hits within the token budget', async () => {
+    const { outcome, preview } = await search({ query: 'e', mode: 'TEXT', tokenBudget: 300 });
+    expect(Buffer.byteLength(preview ?? '')).toBeLessThanOrEqual(500);
+    expect(outcome).toMatchObject({ result: { output: { truncated: true } } });
+  });
+
+  it('cuts the preview by hits and keeps the whole result as the full output', async () => {
+    const executor = createSearchExecutor({ cache: new FileDigestCache(), backend: 'scan' });
+    const environment = environmentFor('REPOSITORY_SEARCH', repositoryScope(root));
+    const outcome = await executor.execute(
+      { query: 'e', mode: 'TEXT', maxItems: 20, tokenBudget: 100_000 },
+      {
+        ...environment,
+        limits: {
+          deadline: '2099-01-01T00:00:00.000Z',
+          maxOutputBytes: 1_048_576,
+          preview: { maxBytes: 200, maxLines: 2_000 },
+          maxFullOutputBytes: 1_048_576,
+        },
+      },
+    );
+    if (outcome.outcome !== 'COMPLETED' || !('fullOutput' in outcome.result))
+      throw new Error('the preview was not cut');
+    expect(outcome.result.artifact.text).toContain('more matches omitted');
+    expect(outcome.result.fullOutput?.text.length).toBeGreaterThan(
+      outcome.result.artifact.text.length,
+    );
+  });
+
+  it('says so when nothing matches', async () => {
+    const { preview } = await search({ query: 'no_such_name_anywhere', mode: 'TEXT' });
+    expect(preview).toContain('No matches.');
   });
 
   it('gives identical results for identical input', async () => {
@@ -171,7 +197,7 @@ describe('REPOSITORY_SEARCH (ExecutorSet 3.3, 4.2)', () => {
   });
 });
 
-// Each cell of the CI matrix (M1TechStack 11) states whether it has rg; without this check a
+// Each cell of the CI matrix states whether it has rg; without this check a
 // broken install only skips the tests below.
 it.runIf(process.env['CI'] !== undefined)('has rg exactly when the CI cell says so', () => {
   expect(ripgrep).toBe(process.env['MULTIAGENTOS_RIPGREP'] !== 'absent');
@@ -194,12 +220,10 @@ describe.skipIf(!ripgrep)('rg and the scan agree (ExecutorSet 6)', () => {
     const scanned = await search({ query, mode }, 'scan');
     const searched = await search({ query, mode }, 'ripgrep');
     expect(hitsOf(searched.outcome)).toEqual(hitsOf(scanned.outcome));
-    expect(searched.pack?.items.map((item) => item.content)).toEqual(
-      scanned.pack?.items.map((item) => item.content),
-    );
+    expect(searched.preview).toEqual(scanned.preview);
   });
 
-  it('keeps the same matches when the rg output is cut at maxOutputBytes', async () => {
+  it('keeps the same matches when the rg output is cut at maxFullOutputBytes', async () => {
     const cut = async () => {
       const executor = createSearchExecutor({ cache: new FileDigestCache(), backend: 'ripgrep' });
       const environment = environmentFor('REPOSITORY_SEARCH', repositoryScope(root), {
@@ -208,7 +232,15 @@ describe.skipIf(!ripgrep)('rg and the scan agree (ExecutorSet 6)', () => {
       return hitsOf(
         await executor.execute(
           { query: 'e', mode: 'TEXT', maxItems: 50, tokenBudget: 100_000 },
-          { ...environment, limits: { ...environment.limits, maxOutputBytes: 1_500 } },
+          {
+            ...environment,
+            limits: {
+              deadline: '2099-01-01T00:00:00.000Z',
+              maxOutputBytes: 1_048_576,
+              preview: { maxBytes: 262_144, maxLines: 2_000 },
+              maxFullOutputBytes: 1_500,
+            },
+          },
         ),
       );
     };
@@ -241,5 +273,4 @@ describe.skipIf(!ripgrep)('rg and the scan agree (ExecutorSet 6)', () => {
   });
 });
 
-if (!ripgrep)
-  it.skip('rg is not installed: the parity tests did not run (see issue #25)', () => undefined);
+if (!ripgrep) it.skip('rg is not installed: the parity tests did not run ', () => undefined);

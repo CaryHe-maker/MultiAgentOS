@@ -12,7 +12,7 @@ interface LedgerEntry {
 
 /**
  * Request records of the Session manager. `startSession` and `shutdown` are recorded here because
- * they do not belong to a run actor. A run's own request records use the same rules inside the Core state block.
+ * they do not belong to a Session actor. A run's own request records use the same rules inside its Session actor.
  */
 export class RequestLedger {
   readonly #entries = new Map<string, LedgerEntry>();
@@ -29,7 +29,7 @@ export class RequestLedger {
   }
 }
 
-/** Canonical JSON SHA-256, as required for request idempotency (M1Interface 2.3). */
+/** Canonical JSON SHA-256, as required for request idempotency. */
 export function fingerprintOf(payload: unknown): string {
   return sha256Hex(canonicalJson(payload));
 }

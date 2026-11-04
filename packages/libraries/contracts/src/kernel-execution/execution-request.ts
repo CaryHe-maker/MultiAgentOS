@@ -60,8 +60,6 @@ export const SearchExecutorInputSchema = closed(
 );
 export type SearchExecutorInput = Static<typeof SearchExecutorInputSchema>;
 
-export type ExecutorInput = ExecutionRequest['input'];
-
 /** `maxBytes` is `min(previewMaxBytes, maxOutputBytes)` (M2Design 8.2). */
 const PreviewLimitsSchema = closed({ maxBytes: count(1), maxLines: count(1) });
 const toolLimits = {

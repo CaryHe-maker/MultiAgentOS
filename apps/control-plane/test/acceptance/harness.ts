@@ -1,5 +1,5 @@
 /**
- * The acceptance harness (M1ReleasePlan R2.2, M2Plan 8.1). It runs one fixed task through the
+ * The acceptance harness. It runs one fixed task through the
  * whole product chain `mas run analyze` builds: the CLI parser, the composition root, the real
  * Kernel, Workflow, console and ExecutorSet. Offline, only the provider's HTTP API is replaced by
  * a script. The harness prepares the repository, compares its digest before and after, answers
@@ -56,7 +56,7 @@ export interface ExecutorCall {
   readonly outcome: string;
 }
 
-/** The run record of M1ReleasePlan 2.4 rule 5. */
+/** What one run leaves behind. */
 export interface RunRecord {
   readonly taskId: string;
   readonly mode: RunMode['kind'];
@@ -323,7 +323,7 @@ async function runIn(
   const startedAt = new Date();
   const failures: string[] = [];
 
-  // The model-call Executor takes `fetch` when the registry is built (ExecutorSet 4.5).
+  // The model-call Executor takes `fetch` when the registry is built.
   const originalFetch = globalThis.fetch;
   globalThis.fetch = provider.fetch;
   let exitCode: number;

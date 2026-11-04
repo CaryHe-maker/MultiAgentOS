@@ -56,7 +56,7 @@ const NEEDS_STOP: readonly ModuleLifecycleState[] = ['STARTING', 'READY', 'START
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 
 /**
- * Assembly and lifecycle mechanism (docs/M1/Infrastructure/ModuleHost.md). The Supervisor
+ * Assembly and lifecycle mechanism. The Supervisor
  * drives it: modules start in dependency order and stop in the reverse order. When a start
  * fails, the failed module and the modules already started are stopped and the error is
  * rethrown, so the system never opens the Gateway half-started. It keeps a ledger of facts and

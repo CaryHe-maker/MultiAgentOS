@@ -16,7 +16,7 @@ export const ArtifactRefSchema = Type.Refine(
 export type ArtifactRef = Static<typeof ArtifactRefSchema>;
 
 /**
- * An ArtifactRef that must carry one given media type. Used wherever M1Interface 6.1 fixes the
+ * An ArtifactRef that must carry one given media type. Used wherever the Interface documents fix the
  * kind of artifact a field points at; the static type stays `ArtifactRef`.
  */
 export const artifactRefOf = (mediaType: string) =>
@@ -78,7 +78,7 @@ export const PRODUCERS = [
   'kernel-core',
   'supervisor',
 ] as const;
-/** A communication subject; Gateway decides the caller from it (M1Interface 2.1). */
+/** A communication subject; Gateway decides the caller from it. */
 export type Producer = (typeof PRODUCERS)[number];
 export type MessageType = 'command' | 'query' | 'event' | 'signal' | 'result';
 export interface Envelope<T> {

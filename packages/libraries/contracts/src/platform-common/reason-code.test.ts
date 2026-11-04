@@ -4,8 +4,9 @@ import {
   REASON_CODES,
   REASON_CODE_CATEGORY,
   ReasonCodeSchema,
-  SYSCALL_REJECTED_CODES,
-  UNIT_REPORT_CODES,
+  FAILURE_POLICY_CODES,
+  UNIT_FAILED_CODES,
+  UNIT_REJECTED_CODES,
 } from './reason-code.js';
 import { validate } from './validation.js';
 
@@ -19,8 +20,8 @@ describe('reason codes', () => {
     expect(validate(ReasonCodeSchema, 'NOT_A_CODE').ok).toBe(false);
   });
 
-  it('keeps the SyscallRejected and UnitReport subsets inside the enumeration', () => {
-    for (const code of [...SYSCALL_REJECTED_CODES, ...UNIT_REPORT_CODES])
+  it('keeps the UnitReport and failurePolicy subsets inside the enumeration', () => {
+    for (const code of [...UNIT_REJECTED_CODES, ...UNIT_FAILED_CODES, ...FAILURE_POLICY_CODES])
       expect(REASON_CODES).toContain(code);
   });
 });

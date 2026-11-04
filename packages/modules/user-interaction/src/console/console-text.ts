@@ -21,7 +21,7 @@ const RUN_STATE: Readonly<Record<string, string>> = {
   NONE: '未开始',
 };
 
-/** The words of the console; the logic never builds user text itself (M1 InteractionMessages). */
+/** The words of the console; the logic never builds user text itself. */
 export const ConsoleText = Object.freeze({
   welcome: '新对话。输入问题后按 Enter 开始；/help 查看指令。',
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
@@ -86,7 +86,7 @@ export const ConsoleText = Object.freeze({
   runState: RUN_STATE,
 });
 
-/** Escapes C0, DEL and C1 controls, keeping line feeds (M1 UserInteraction 5). */
+/** Escapes C0, DEL and C1 controls, keeping line feeds. */
 export function terminalText(text: string): string {
   return [...text]
     .map((character) => {

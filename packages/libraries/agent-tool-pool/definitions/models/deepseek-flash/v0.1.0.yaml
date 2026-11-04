@@ -3,7 +3,7 @@ schemaVersion: v1
 kind: MODEL
 id: deepseek-flash
 version: v0.1.0
-description: DeepSeek V4.1 Flash via the OpenAI-compatible API; the default low-cost model for M1.
+description: DeepSeek V4.1 Flash via the OpenAI-compatible API; the default low-cost model.
 provider: deepseek
 apiModelId: deepseek-flash
 providerModelLabel: DeepSeek-V4.1-Flash

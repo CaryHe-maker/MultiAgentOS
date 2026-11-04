@@ -4203,161 +4203,11 @@
                         "pattern": "^snp_[a-f0-9]{64}$"
                       },
                       "retrieval": {
-                        "enum": [
-                          "TREE",
-                          "TEXT",
-                          "PATH",
-                          "SYMBOL",
-                          "FILE_READ"
-                        ]
+                        "type": "string",
+                        "const": "TREE"
                       }
                     },
                     "additionalProperties": false
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "contextPackId",
-            "tokenCount",
-            "tokenBudget",
-            "truncated",
-            "droppedCount",
-            "createdAt",
-            "operation",
-            "snapshotId",
-            "items"
-          ],
-          "properties": {
-            "contextPackId": {
-              "type": "string",
-              "pattern": "^ctx_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "tokenCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "tokenBudget": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "truncated": {
-              "type": "boolean"
-            },
-            "droppedCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "operation": {
-              "type": "string",
-              "const": "SEARCH"
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "itemId",
-                  "content",
-                  "contentSha256",
-                  "tokenCount",
-                  "reason",
-                  "segment",
-                  "role",
-                  "provenance",
-                  "score"
-                ],
-                "properties": {
-                  "itemId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "content": {
-                    "type": "string"
-                  },
-                  "contentSha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "tokenCount": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "segment": {
-                    "type": "string",
-                    "const": "SEARCH_HIT"
-                  },
-                  "role": {
-                    "type": "string",
-                    "const": "user"
-                  },
-                  "provenance": {
-                    "type": "object",
-                    "required": [
-                      "path",
-                      "startLine",
-                      "endLine",
-                      "contentSha256",
-                      "retrieval"
-                    ],
-                    "properties": {
-                      "path": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                      },
-                      "startLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "endLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "contentSha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "snapshotId": {
-                        "type": "string",
-                        "pattern": "^snp_[a-f0-9]{64}$"
-                      },
-                      "retrieval": {
-                        "enum": [
-                          "TREE",
-                          "TEXT",
-                          "PATH",
-                          "SYMBOL",
-                          "FILE_READ"
-                        ]
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  "score": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
                   }
                 },
                 "additionalProperties": false
@@ -4588,11 +4438,8 @@
                         "maxLength": 200
                       },
                       "segment": {
-                        "enum": [
-                          "OBJECTIVE",
-                          "HANDOFF",
-                          "STATUS"
-                        ]
+                        "type": "string",
+                        "const": "STATUS"
                       },
                       "role": {
                         "type": "string",
@@ -4675,13 +4522,8 @@
                             "pattern": "^snp_[a-f0-9]{64}$"
                           },
                           "retrieval": {
-                            "enum": [
-                              "TREE",
-                              "TEXT",
-                              "PATH",
-                              "SYMBOL",
-                              "FILE_READ"
-                            ]
+                            "type": "string",
+                            "const": "TREE"
                           }
                         },
                         "additionalProperties": false
@@ -13528,13 +13370,8 @@
                         "pattern": "^snp_[a-f0-9]{64}$"
                       },
                       "retrieval": {
-                        "enum": [
-                          "TREE",
-                          "TEXT",
-                          "PATH",
-                          "SYMBOL",
-                          "FILE_READ"
-                        ]
+                        "type": "string",
+                        "const": "TREE"
                       }
                     },
                     "additionalProperties": false
@@ -16741,13 +16578,8 @@
                                 "pattern": "^snp_[a-f0-9]{64}$"
                               },
                               "retrieval": {
-                                "enum": [
-                                  "TREE",
-                                  "TEXT",
-                                  "PATH",
-                                  "SYMBOL",
-                                  "FILE_READ"
-                                ]
+                                "type": "string",
+                                "const": "TREE"
                               }
                             },
                             "additionalProperties": false
@@ -17492,11 +17324,8 @@
                                 "maxLength": 200
                               },
                               "segment": {
-                                "enum": [
-                                  "OBJECTIVE",
-                                  "HANDOFF",
-                                  "STATUS"
-                                ]
+                                "type": "string",
+                                "const": "STATUS"
                               },
                               "role": {
                                 "type": "string",
@@ -17579,13 +17408,8 @@
                                     "pattern": "^snp_[a-f0-9]{64}$"
                                   },
                                   "retrieval": {
-                                    "enum": [
-                                      "TREE",
-                                      "TEXT",
-                                      "PATH",
-                                      "SYMBOL",
-                                      "FILE_READ"
-                                    ]
+                                    "type": "string",
+                                    "const": "TREE"
                                   }
                                 },
                                 "additionalProperties": false
@@ -19055,11 +18879,8 @@
                         "maxLength": 200
                       },
                       "segment": {
-                        "enum": [
-                          "OBJECTIVE",
-                          "HANDOFF",
-                          "STATUS"
-                        ]
+                        "type": "string",
+                        "const": "STATUS"
                       },
                       "role": {
                         "type": "string",
@@ -19142,13 +18963,8 @@
                             "pattern": "^snp_[a-f0-9]{64}$"
                           },
                           "retrieval": {
-                            "enum": [
-                              "TREE",
-                              "TEXT",
-                              "PATH",
-                              "SYMBOL",
-                              "FILE_READ"
-                            ]
+                            "type": "string",
+                            "const": "TREE"
                           }
                         },
                         "additionalProperties": false

@@ -43,7 +43,7 @@ export interface ExecutorContractFixture {
   readonly caseFor: <K extends ExecutorKind>(kind: K) => ExecutorCase<K>;
   /**
    * Further cases, each with its required verdict. A real ExecutorSet passes the guard cases of
-   * `repositoryGuardExpectations` here; the fake registry cannot, because it reads nothing.
+   * `repositoryGuardExpectations` here.
    */
   readonly expectations?: readonly ExecutorExpectation[];
 }
@@ -192,7 +192,7 @@ export function describeExecutorContract(name: string, fixture: ExecutorContract
 }
 
 /**
- * The verdicts ExecutorSet 3.2, 3.3 and 4.3 require for the fixture repository of
+ * The verdicts ExecutorSet require for the fixture repository of
  * `createFixtureRepository`. `environment` builds the environment of a kind with the given
  * scope, so the same cases can run with any limits, clock and subprocess runner.
  */

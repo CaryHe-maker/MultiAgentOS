@@ -68,7 +68,7 @@ export interface SchedulerDuties {
   releaseAll(): number;
 }
 
-/** Capacity shared by all runs. In M1 it lives in the process, with capacity 1 per provider. */
+/** Capacity shared by all runs. It lives in the process, with capacity 1 per provider. */
 export interface ProviderCapacityPort {
   /** Returns a token, or null when the provider is busy. */
   tryAcquire(provider: string): string | null;

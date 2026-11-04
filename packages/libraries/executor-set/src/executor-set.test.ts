@@ -15,7 +15,7 @@ import { createAssembleExecutor } from './context-assemble/assemble-executor.js'
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createModelCallExecutor, retryAfterMsOf } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';
-import { createListExecutor, withFilePreview } from './tool-preview/tool-executors.js';
+import { createListExecutor } from './repository-list/list-executor.js';
 
 const NOW = new Date('2026-11-02T00:00:00.000Z');
 const deadline = '2026-11-02T01:00:00.000Z';
@@ -168,7 +168,7 @@ describe('tools', () => {
     });
 
   it('renders a file as numbered lines for the model', async () => {
-    const outcome = await withFilePreview(createFileReadExecutor()).execute(
+    const outcome = await createFileReadExecutor().execute(
       { path: 'a.ts' },
       toolEnvironment(repository()),
     );

@@ -26,6 +26,7 @@
 | D8 | `AGENTS.md` 与其他说明文档同级：第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit（M2Design v1.14，Cary 2026-11-02 决定） | 已执行 |
 | D9 | 用户拒绝绑定提出请求的 AgentRun；工具结果为 `the user rejected tool "x"`（参照 DeepSeek Harness），不计入连续出错，之后的轮次不再提交相同的工具（M2Design v1.15，Cary 2026-11-02 决定） | 已执行 |
 | D10 | 思考强度只在 `registerAgentRun` 中给出（Cary 2026-11-02 决定） | 已执行 |
+| D11 | main 的提示词暂不定稿：等阶段 2 实现写入能力之后再考虑。阶段 1 退出不再要求评测、定稿与封存 main，`main-system` 保持 `PLACEHOLDER`，`v1` 定义保持 `v0.1.0` 草稿（Cary 2026-11-04 决定） | 已写入 AgentToolPool 第 3 节 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 
 ## 3. 当前进度
@@ -45,9 +46,9 @@
 | Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；审计写入；`RunExecution` 已接入 | — |
 | S1-KX-1 | 完成 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile`、`removeSessionFiles`、启动时与定期的产物回收 | — |
 | S1-EX-1 | 完成 | `retention/`、工具 Executor、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistry`；已在真实 DeepSeek 上运行 | — |
-| S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | 退出评测后定稿 main 的提示词并封存 |
+| S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | main 的提示词等阶段 2 之后再定（D11） |
 | S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图；已接入组合根 | — |
-| S1-IN-1 | 部分 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；`analyze` 真实模型回归 15/15；退出用例的确定性测试（`stage1-exit.test.ts`） | main 提示词定稿后的回归 |
+| S1-IN-1 | 完成 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；`analyze` 真实模型回归 15/15；退出用例的确定性测试（`stage1-exit.test.ts`） | — |
 
 运行链路已切到 M2，代码中只有 major 1 一套契约。
 
@@ -65,7 +66,7 @@
 - 成功率：15/15 到达 COMPLETED，没有降级报告，额度状态都是 NORMAL，没有无法计数的 token（基线 15/15）。
 - 来源完整性：130 条结论全部带已核验来源（基线 144 条，同样全部带来源）。45 条未确认项中 3 条是来源不在读取范围内而被核验降级的结论，其余是模型自己标注的（基线 47 条，同样 3 条）。
 - 成本与延迟（按全部输入未命中缓存计算的上限，与基线同一算法）：共 0.088 美元，平均 0.0059；延迟中位数 16.6 秒（基线 0.094 美元、18.7 秒）。单次最多 54353 token，高于基线的 44420，出现在 F4。
-- 这次的定义还是 `v0.1.0` 草稿，main 的提示词定稿并封存后要再跑一次。运行记录没有技术重试的计数，这一项没有与基线比较。
+- 这次的定义还是 `v0.1.0` 草稿（D11）。运行记录没有技术重试的计数，这一项没有与基线比较。
 
 阶段 1 退出用例的核对（M2Plan 第 6.2、8.3 节）。确定性用例都经过真实的组合根、Kernel、Workflow、Console 与 ExecutorSet，只替换 provider 的 HTTP 接口，在 `apps/control-plane/test/acceptance/stage1-exit.test.ts`：
 
@@ -94,6 +95,10 @@
 | F5 | 9 | 50322 | 46243 | 36608 | 79.2% |
 | 合计 | | | 178620 | 137216 | 76.8% |
 
-这里的命中率来自 `analyze`，每个 AgentRun 的前缀不共享；长对话（L1）的命中率在阶段 8 另外记录。F4 的 token 高于 M1 基线的 44420，定稿提示词时再看。
+这里的命中率来自 `analyze`，每个 AgentRun 的前缀不共享；长对话（L1）的命中率在阶段 8 另外记录。F4 的 token 高于 M1 基线的 44420；主要来自模型读遍仓库并分多轮读取，提示词与 M1 相同。
 
 核对中发现并修复的问题：一次运行的第一个工具调用没有成功时（用户拒绝或文件不存在），下一次组装的历史缺少它的结果，组装失败，AgentRun 以 FAILED 结束，Turn 没有回复。15/15 的回归在修复之前的提交上运行；这个修复只改变第一个工具失败时的路径，修复之后又跑了上面的一轮。
+
+M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现在代码与注释中（`M1` 只作为归档文档的名字出现在 `docs/`）；
+`repository-search` 与 `file-read` 直接产出预览，不再经过 M1 Executor 外的适配层；`SearchContextPack`、`SEARCH_HIT`、`OBJECTIVE`、`HANDOFF` 段、只测试自己的 fake Executor 已删除。
+`M2Design` 与 `Module/`、`Kernel/`、`Library/` 各文档中的“相对 M1 的变化”与指向 `History/M1` 的链接有意保留：它们说明设计来由，部分行为仍以归档文档为准。

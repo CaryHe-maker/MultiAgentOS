@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { closed, count } from '../platform-common/schema-helpers.js';
 
-/** How a preview was cut (ExecutorSet 4); the Executor words the notice shown to the model. */
+/** How a preview was cut; the Executor words the notice shown to the model. */
 export const RetentionNoticeSchema = closed(
   {
     strategy: Type.Enum(['HEAD', 'TAIL', 'BOTH', 'ITEMS']),

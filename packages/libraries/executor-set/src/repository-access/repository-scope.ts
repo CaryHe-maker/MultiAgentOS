@@ -11,7 +11,7 @@ export interface RepositoryScope {
   /** `scope.repositoryRoot` resolved with `realpath`; every real path must stay inside it. */
   readonly root: string;
   /**
-   * The default rules of M1Interface 3.5 followed by the scope's own. Core already puts the
+   * The default rules followed by the scope's own. Core already puts the
    * defaults into every scope; they are added here again because the Executor is the last line
    * of defence and must not depend on that.
    */
@@ -19,7 +19,7 @@ export interface RepositoryScope {
 }
 
 /**
- * Step 1 of ExecutorSet 3.2. Undefined means the scope is missing or malformed (including an
+ * Step 1 of ExecutorSet. Undefined means the scope is missing or malformed (including an
  * exclusion rule the shared matcher cannot apply), which is a security violation
  * (SCOPE_MISSING) rather than a normal rejection: the Kernel must always derive a valid
  * repository scope for these kinds.

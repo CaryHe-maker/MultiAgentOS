@@ -13,7 +13,7 @@ import { validate } from './validation.js';
 const defaults = DEFAULT_REPOSITORY_EXCLUSIONS;
 
 describe('repository exclusions', () => {
-  it('excludes the dangerous files that path.matchesGlob lets through (issue #24)', () => {
+  it('excludes the dangerous files that path.matchesGlob lets through', () => {
     expect(isExcluded('.hidden/x.pem', defaults)).toBe(true);
     expect(isExcluded('.cfg/node_modules/a.js', defaults)).toBe(true);
     expect(isExcluded('src/.git/config', defaults)).toBe(true);

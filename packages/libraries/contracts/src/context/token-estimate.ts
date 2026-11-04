@@ -19,7 +19,7 @@ export function estimateTextTokens(text: string): number {
 }
 
 /**
- * Upper bound of the input tokens of one item (M1Interface 6.3). Context assembly, the
+ * Upper bound of the input tokens of one item. Context assembly, the
  * reservation and the start-up budget check all use this function, so they cannot disagree.
  */
 export function estimateItemTokens(item: CountedItem): number {

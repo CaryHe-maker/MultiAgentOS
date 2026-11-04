@@ -1,6 +1,6 @@
 /**
  * Sends registered items one after another, in registration order, the next one only after the
- * previous send returned (docs/M1/Kernel/Interaction.md 4.4). A failed send is reported,
+ * previous send returned. A failed send is reported,
  * skipped and never retried; later items are still sent. The caller decides whether the
  * failure is a contract defect, a stopped target or another delivery error.
  */

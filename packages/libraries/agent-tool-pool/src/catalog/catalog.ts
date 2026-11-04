@@ -34,9 +34,8 @@ import type {
 } from '../ports/definition-source.js';
 
 /**
- * The catalog of `v1` definitions (Library/AgentToolPool). It reads the same directory as the M1
- * catalog and takes only `schemaVersion: v1`, so the two live side by side until S1-IN-1 removes
- * M1. Everything that can be wrong is found at load; lookups only fail for unknown versions.
+ * The catalog of definitions (Library/AgentToolPool). Everything that can be wrong is found at
+ * load; lookups only fail for unknown versions.
  */
 
 type Body = { [K in DefinitionKind]: Omit<DefinitionByKind[K], 'digest'> }[DefinitionKind];
@@ -113,7 +112,7 @@ function digestOf(body: Body, digests: ReadonlyMap<string, string>): string | un
 const ORDER: readonly DefinitionKind[] = ['TOOL', 'PROMPT', 'MODEL', 'UNIT', 'AGENT', 'TEMPLATE'];
 const registry = createProtocolRegistry();
 
-/** The contracts of each kind's Unit; a v1 Unit must name exactly these. */
+/** The contracts of each kind's Unit; a Unit must name exactly these. */
 const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string] } = {
   REPOSITORY_ORIENT: ['context.RepositoryOrientInput.v1', 'context.RepositoryOrientOutput.v1'],
   REPOSITORY_SEARCH: ['context.RepositorySearchInput.v1', 'context.RepositorySearchOutput.v1'],
@@ -149,7 +148,7 @@ interface Entry {
   readonly declared?: string;
 }
 
-/** Takes the `v1` documents of a snapshot, checks them all and computes every digest. */
+/** Checks every document of a snapshot and computes every digest. */
 export function buildCatalogIndex(
   snapshot: SourceSnapshot,
 ):
@@ -242,7 +241,7 @@ function analyze(
   return { ok: true, index: { definitions, statuses }, unsealed };
 }
 
-/** The status overrides of M1 AgentToolPool: each names a loaded version, at most once. */
+/** The status overrides: each names a loaded version, at most once. */
 function parseStatuses(
   document: SourceDocument | undefined,
   entries: ReadonlyMap<string, Entry>,
@@ -588,7 +587,7 @@ function checkTemplate(
     report(origin, 'TEMPLATE_INVALID', 'dependencies form a cycle');
 }
 
-/** The v1 CatalogPort: lookups and run pinning over a validated, frozen index. */
+/** The CatalogPort: lookups and run pinning over a validated, frozen index. */
 export class DefinitionCatalog {
   static async load(source: DefinitionSource): Promise<DefinitionCatalog> {
     const result = buildCatalogIndex(await source.load());

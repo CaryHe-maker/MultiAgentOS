@@ -12,12 +12,7 @@ import { readGuardedFile } from './repository-access/guarded-file.js';
 import { resolveRepositoryScope } from './repository-access/repository-scope.js';
 import { createOrientExecutor } from './repository-orient/orient-executor.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
-import {
-  createListExecutor,
-  withFilePreview,
-  withOrientLimits,
-  withSearchPreview,
-} from './tool-preview/tool-executors.js';
+import { createListExecutor } from './repository-list/list-executor.js';
 
 /**
  * Called by the composition root, which injects the result into the Supervisor. The registry
@@ -27,10 +22,10 @@ import {
 export function createExecutorRegistry(): ExecutorRegistry {
   const cache = new FileDigestCache();
   return {
-    REPOSITORY_ORIENT: withOrientLimits(createOrientExecutor(cache)),
-    REPOSITORY_SEARCH: withSearchPreview(createSearchExecutor({ cache })),
+    REPOSITORY_ORIENT: createOrientExecutor(cache),
+    REPOSITORY_SEARCH: createSearchExecutor({ cache }),
     REPOSITORY_LIST: createListExecutor(cache),
-    FILE_READ: withFilePreview(createFileReadExecutor()),
+    FILE_READ: createFileReadExecutor(),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
   };
