@@ -329,7 +329,9 @@ function nextRound(
 ): AgentTransition {
   const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.turn === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
-  const atLimit = state.round >= state.definitions.limits.maxRounds;
+  // `maxRounds` counts the final round too: the round after `maxRounds - 1` is the final call, so a
+  // model never gets more calls than the limit says. One working round is always left.
+  const atLimit = state.round >= Math.max(state.definitions.limits.maxRounds - 1, 1);
   const wrapUpReason = state.wrapUpReason ?? (atLimit ? 'ROUND_LIMIT' : undefined);
   const final = wrapUpReason !== undefined;
   if (final && state.finalUsed) return degrade(state, wrapUpReason, records);

@@ -165,6 +165,28 @@ describe('context-assemble', () => {
     expect(pack.items.map((item) => item.content)).toContain('latest');
   });
 
+  it('warns a few rounds before the round limit and asks for a handover in the last one', async () => {
+    const statusOf = async (over: Partial<typeof status> & { wrapUpReason?: 'ROUND_LIMIT' }) => {
+      const pack = await packOf(assembleInput({ status: { ...status, ...over } }));
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    const far = await statusOf({ round: 4, maxRounds: 80 });
+    expect(far).not.toContain('round limit');
+    const near = await statusOf({ round: 77, maxRounds: 80 });
+    expect(near).toContain('After 2 more working rounds, round 80 is your final call');
+    const last = await statusOf({ round: 79, maxRounds: 80 });
+    expect(last).toContain('This is your last working round');
+    const final = await packOf(
+      assembleInput({
+        final: true,
+        status: { ...status, round: 80, maxRounds: 80, final: true, wrapUpReason: 'ROUND_LIMIT' },
+      }),
+    );
+    const text = final.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    expect(text).toContain('round limit has been reached');
+    expect(text).toContain('next prompt the user could send');
+  });
+
   it('fails on a call without an answer', async () => {
     const outcome = await createAssembleExecutor().execute(
       assembleInput({ history: conversation.slice(0, 2) }),

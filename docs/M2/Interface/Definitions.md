@@ -39,7 +39,7 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
     // 阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
   };
   limits: {
-    maxRounds: number;                           // 1..100
+    maxRounds: number;                           // 1..100，含最后一轮（final-call）；见 Module/Workflow 第 7 节 5a
     maxToolCallsPerRound: number;                // 0..32
     maxToolUnits: number;                        // 1..1000，Kernel 计量（M2Design 第 7.3 节）
     maxWallClockMs?: number;                     // 省略时以 Turn 超时为上限（main）
