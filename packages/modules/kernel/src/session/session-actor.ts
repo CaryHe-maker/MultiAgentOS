@@ -47,6 +47,8 @@ export interface SessionDuties {
     WorkspaceSnapshots,
     'turnStarted' | 'turnEnded' | 'planUndo' | 'applyUndo' | 'diffTurn' | 'divergedFiles'
   >;
+  /** A fork takes over what the copied log refers to. */
+  inheritArtifacts?(fromSessionId: string, refs: readonly ArtifactRef[]): Promise<void>;
   /** Keeps the text of a diff; the answer only refers to it. */
   storeDiff?(text: string): Promise<ArtifactRef>;
   /** The Unit path of a new run. */
@@ -64,6 +66,12 @@ export type SessionStart =
       readonly requestId: string;
       readonly input: UserInput;
       readonly template?: DefinitionRef;
+    }
+  | {
+      readonly kind: 'FORK';
+      readonly requestId: string;
+      readonly input: UserInput;
+      readonly fromSessionId: string;
     }
   | { readonly kind: 'OPEN'; readonly requestId: string };
 
@@ -221,6 +229,11 @@ export class SessionActor {
   #command(
     event:
       | { readonly command: 'CREATE' | 'OPEN'; readonly repositoryRoot: string }
+      | {
+          readonly command: 'FORK';
+          readonly repositoryRoot: string;
+          readonly fromSessionId: string;
+        }
       | { readonly command: 'CLOSE' },
     next: Pending,
   ): void {
@@ -258,6 +271,27 @@ export class SessionActor {
       return;
     }
     const contentRef = await duties.storeUserInput(start.input);
+    if (start.kind === 'FORK') {
+      const { fromSessionId } = start;
+      this.#command({ command: 'FORK', repositoryRoot, fromSessionId }, async (result) => {
+        if (result.outcome === 'FAILED') {
+          await duties.discardSession();
+          this.#failed(start.requestId, result);
+          return;
+        }
+        if (result.command !== 'FORK') throw new Error('a fork was answered by another command');
+        await duties.inheritArtifacts?.(fromSessionId, result.inheritedArtifacts);
+        outbox.sessionToInteraction(sessionId, {
+          type: 'SessionOpened',
+          repositoryRoot,
+          turnCount: result.fromTurnCount,
+          fork: { fromSessionId, fromTurnCount: result.fromTurnCount },
+        });
+        const run = this.#startRun({ mode: 'CHAT' }, true);
+        await this.#openTurn(run, start.input.inputId, contentRef, { origin: 'initial' });
+      });
+      return;
+    }
     this.#command({ command: 'CREATE', repositoryRoot }, async (result) => {
       if (result.outcome === 'FAILED') {
         await duties.discardSession();

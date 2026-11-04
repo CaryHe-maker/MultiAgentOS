@@ -40,6 +40,7 @@ import {
   normalReportBody,
   type AgentRounds,
 } from '../domain/agent/analysis-report.js';
+import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import {
@@ -174,6 +175,19 @@ export class SessionRunner {
         });
         this.#adopt(sessionId, event.repositoryRoot, [started]);
         await reply({ command: 'CREATE', outcome: 'READY' });
+      } else if (event.command === 'FORK') {
+        const forked = await this.#deps.store.fork({
+          sessionId,
+          fromSessionId: event.fromSessionId,
+          repositoryRoot: event.repositoryRoot,
+        });
+        this.#adopt(sessionId, event.repositoryRoot, forked.records);
+        await reply({
+          command: 'FORK',
+          outcome: 'READY',
+          inheritedArtifacts: [...forked.inheritedArtifacts],
+          fromTurnCount: forked.fromTurnCount,
+        });
       } else {
         const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
         this.#adopt(sessionId, event.repositoryRoot, opened.records);
@@ -583,6 +597,19 @@ export class SessionRunner {
   async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
     await this.#append(transition.records);
     if (this.#agent !== undefined) this.#agent = { ...this.#agent, state: transition.state };
+    if (transition.activity !== undefined) {
+      const sessionId = this.#sessionIdOrThrow();
+      await this.#deps.gateway.updateActivity(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          agentRunId: transition.state.agentRunId,
+          todos: transition.activity,
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
@@ -630,10 +657,49 @@ export class SessionRunner {
           },
         ]);
     }
+    await this.#loadNestedInstructions(workflowRunId, active.state.agentRunId, active.scope);
     return {
       ...request,
       input: { ...request.input, history: [...projectHistory(this.#records, active.scope)] },
     };
+  }
+
+  /** Done before the assembly, so the model sees them right after the read (M2Design 9.5). */
+  async #loadNestedInstructions(
+    workflowRunId: string,
+    agentRunId: string,
+    scope: ProjectionScope,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    for (const { path, skip } of instructionsToLoad(
+      this.#records,
+      scope,
+      workflowRunId,
+      agentRunId,
+    )) {
+      if (skip) {
+        await this.#append([
+          { type: 'PROJECT_FILE_LOADED', workflowRunId, path, agentRunId, skipped: 'LIMIT' },
+        ]);
+        continue;
+      }
+      const file = await this.#deps.gateway.readProjectFile(
+        { requestId: newId('req'), sessionId, workflowRunId, path },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file)
+        await this.#append([
+          {
+            type: 'PROJECT_FILE_LOADED',
+            workflowRunId,
+            path,
+            ref: file.ref,
+            sha256: file.sha256,
+            trusted: file.trusted,
+            agentRunId,
+          },
+        ]);
+    }
   }
 
   async #onUnitReport(

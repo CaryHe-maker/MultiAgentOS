@@ -343,6 +343,11 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         duties: {
           ...(snapshots === undefined ? {} : { snapshots }),
           storeDiff: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
+          inheritArtifacts: async (fromSessionId, refs) => {
+            const unknown = await artifacts.inherit(refs, ownersOf(fromSessionId));
+            for (const ref of unknown)
+              audit({ type: 'ARTIFACT_NOT_INHERITED', artifactId: ref.artifactId });
+          },
           storeUserInput: (input) => artifacts.storeUserInput(input),
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {

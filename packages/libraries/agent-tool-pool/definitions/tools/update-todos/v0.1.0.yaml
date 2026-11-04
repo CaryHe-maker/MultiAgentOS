@@ -1,0 +1,19 @@
+schemaVersion: v1
+kind: TOOL
+id: update-todos
+version: v0.1.0
+description: Control tool that replaces the todo list of an AgentRun; it ends nothing.
+purpose: CONTROL
+modelName: update_todos
+modelDescription: >-
+  Keep a todo list for a longer task, so no step is forgotten. Each call replaces the whole list:
+  at most 30 items of at most 200 characters, each pending, in_progress, done or cancelled, with at
+  most one in_progress. It may come with other tool calls in the same reply.
+parametersContract:
+  kind: contract
+  id: workflow.UpdateTodosArgs
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

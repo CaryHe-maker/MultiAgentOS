@@ -61,7 +61,12 @@ export function pinnedAgentOf(
     const tool = toolOf(end.toolRef);
     return tool === undefined ? [] : [{ tool, allowedInFinal: end.allowedInFinal }];
   });
-  const ordinary = [...unitTools, ...ends.map((end) => end.tool)].map(specOf);
+  const todos = agent.actions.todos === undefined ? undefined : toolOf(agent.actions.todos.toolRef);
+  const ordinary = [
+    ...unitTools,
+    ...(todos === undefined ? [] : [todos]),
+    ...ends.map((end) => end.tool),
+  ].map(specOf);
   const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
 
   return {

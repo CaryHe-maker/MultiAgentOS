@@ -141,7 +141,12 @@ export function projectHistory(
         const reverted = new Set(record.revertedTurnIds);
         for (let i = entries.length - 1; i >= 0; i -= 1) {
           const { turnId } = entries[i] ?? {};
-          if (turnId !== undefined && reverted.has(turnId)) entries.splice(i, 1);
+          if (turnId === undefined || !reverted.has(turnId)) continue;
+          const [gone] = entries.splice(i, 1);
+          // Touched again, it is loaded again.
+          if (gone?.kind === 'PROJECT_INSTRUCTIONS')
+            for (const key of instructions)
+              if (key.startsWith(`${gone.path}\0`)) instructions.delete(key);
         }
         entries.push({
           seq: record.seq,
@@ -163,11 +168,29 @@ export function projectHistory(
         // Appended at the end like any new fact, so a later call keeps the earlier prefix;
         // the same content is not repeated in a later run.
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
-        if (!('ref' in record)) break;
+        if (record.agentRunId !== undefined) {
+          const own =
+            scope.kind === 'NODE'
+              ? record.agentRunId === scope.agentRunId
+              : mainRuns.has(record.agentRunId);
+          if (!own) break;
+        }
+        if (!('ref' in record)) {
+          entries.push({
+            seq: record.seq,
+            ...turnOf(currentTurn),
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: `${record.path} exists but was not loaded, because of the limit on such files; read_file can read it.`,
+          });
+          break;
+        }
         if (instructions.has(`${record.path}\0${record.sha256}`)) break;
         instructions.add(`${record.path}\0${record.sha256}`);
         entries.push({
           seq: record.seq,
+          // A nested file goes with its Turn; the root one is read for the whole run.
+          ...(record.agentRunId === undefined ? {} : turnOf(currentTurn)),
           category: 'PINNED',
           kind: 'PROJECT_INSTRUCTIONS',
           path: record.path,

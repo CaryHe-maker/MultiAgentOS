@@ -1,3 +1,4 @@
+import type { ReportSessionCommandRequest } from '@multiagentos/contracts';
 import {
   newId,
   type AppendLogPort,
@@ -40,7 +41,7 @@ function setup(options: { removeFails?: boolean } = {}) {
       const result =
         body.command === 'CLOSE'
           ? ({ command: 'CLOSE', outcome: 'DONE' } as const)
-          : ({ command: body.command, outcome: 'READY' } as const);
+          : ({ command: body.command, outcome: 'READY' } as ReportSessionCommandRequest['result']);
       queueMicrotask(() => {
         (manager as unknown as SessionManager).reportSessionCommand({
           requestId: newId('req'),

@@ -8877,14 +8877,69 @@
                       ],
                       "properties": {
                         "command": {
-                          "enum": [
-                            "CREATE",
-                            "FORK"
-                          ]
+                          "type": "string",
+                          "const": "CREATE"
                         },
                         "outcome": {
                           "type": "string",
                           "const": "READY"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "command",
+                        "outcome",
+                        "inheritedArtifacts",
+                        "fromTurnCount"
+                      ],
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "const": "FORK"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "const": "READY"
+                        },
+                        "inheritedArtifacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "fromTurnCount": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "additionalProperties": false
@@ -23711,14 +23766,69 @@
               ],
               "properties": {
                 "command": {
-                  "enum": [
-                    "CREATE",
-                    "FORK"
-                  ]
+                  "type": "string",
+                  "const": "CREATE"
                 },
                 "outcome": {
                   "type": "string",
                   "const": "READY"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "command",
+                "outcome",
+                "inheritedArtifacts",
+                "fromTurnCount"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "const": "FORK"
+                },
+                "outcome": {
+                  "type": "string",
+                  "const": "READY"
+                },
+                "inheritedArtifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "fromTurnCount": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "additionalProperties": false

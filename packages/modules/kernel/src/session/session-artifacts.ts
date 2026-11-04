@@ -77,6 +77,35 @@ export class SessionArtifacts {
     return ref;
   }
 
+  /**
+   * A fork owns what the copied log refers to, under the original's terms: same retention, same
+   * clock (Kernel/Execution 6d). What the original never registered is returned, not taken on.
+   */
+  async inherit(
+    refs: readonly ArtifactRef[],
+    source: AppendLogPort<ArtifactOwnerLine>,
+  ): Promise<readonly ArtifactRef[]> {
+    const lines = new Map<string, ArtifactOwnerLine>();
+    await source.repairTail();
+    for await (const line of source.readAll()) lines.set(line.artifactId, line);
+    const unknown: ArtifactRef[] = [];
+    for (const ref of refs) {
+      const line = lines.get(ref.artifactId);
+      if (line === undefined) {
+        unknown.push(ref);
+        continue;
+      }
+      const inherited: ArtifactOwnerLine = {
+        ...line,
+        source: 'INHERITED',
+        at: this.#deps.now().toISOString(),
+      };
+      await this.#deps.owners.append(inherited);
+      this.#owners.set(ref.artifactId, inherited);
+    }
+    return unknown;
+  }
+
   /** The same `inputId` gives the same reference. */
   async storeUserInput(input: UserInput): Promise<ArtifactRef> {
     const known = this.#inputs.get(input.inputId);

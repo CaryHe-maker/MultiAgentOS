@@ -1,5 +1,8 @@
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   MEDIA_TYPES,
+  isExcluded,
   sha256Hex,
   type Executor,
   type ExecutorEnvironment,
@@ -7,7 +10,10 @@ import {
 } from '@multiagentos/contracts';
 import { completed, guarded, rejected, throwIfAborted, violation } from '../outcome/outcomes.js';
 import { readGuardedFile, type GuardHooks } from '../repository-access/guarded-file.js';
-import { resolveRepositoryScope } from '../repository-access/repository-scope.js';
+import {
+  resolveRepositoryScope,
+  type RepositoryScope,
+} from '../repository-access/repository-scope.js';
 import { previewLimitsOf } from '../retention/retention.js';
 import { lineRangeText, numberLines, parseText } from '../text/text-document.js';
 
@@ -29,6 +35,30 @@ export function createFileReadExecutor(hooks: GuardHooks = {}): Executor<'FILE_R
   };
 }
 
+/**
+ * The `AGENTS.md` between the file and the root, outermost first (ExecutorSet 3): only looked at,
+ * under the same rules as any read. An excluded directory or a link ends the way down.
+ */
+async function nestedInstructionsOf(
+  scope: RepositoryScope,
+  path: string,
+): Promise<readonly string[]> {
+  const found: string[] = [];
+  const segments = path.split('/').slice(0, -1);
+  let directory = '';
+  for (const segment of segments) {
+    directory = directory === '' ? segment : `${directory}/${segment}`;
+    if (isExcluded(directory, scope.rules)) break;
+    const entry = await lstat(join(scope.root, directory)).catch(() => undefined);
+    if (entry?.isDirectory() !== true) break;
+    const candidate = `${directory}/AGENTS.md`;
+    if (isExcluded(candidate, scope.rules)) continue;
+    const file = await lstat(join(scope.root, candidate)).catch(() => undefined);
+    if (file?.isFile() === true) found.push(candidate);
+  }
+  return found;
+}
+
 async function readFile(input: FileReadInput, environment: ExecutorEnvironment, hooks: GuardHooks) {
   throwIfAborted(environment.signal);
   const scope = await resolveRepositoryScope(environment.scope);
@@ -36,6 +66,8 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
   const read = await readGuardedFile(scope, input.path, hooks);
   if (!read.ok) return read.outcome;
   throwIfAborted(environment.signal);
+  const nested = await nestedInstructionsOf(scope, read.file.path);
+  const found = nested.length === 0 ? {} : { nestedInstructions: [...nested] };
   const document = parseText(read.file.content);
   const totalLines = document.lines.length;
   const fileSha256 = sha256Hex(read.file.content);
@@ -51,6 +83,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
         totalLines: 0,
         contentSha256: sha256Hex(''),
         fileSha256,
+        ...found,
       },
       artifact: { mediaType: MEDIA_TYPES.fileText, text: `${read.file.path} (empty file)` },
     });
@@ -85,6 +118,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
       totalLines,
       contentSha256: sha256Hex(lineRangeText(document, startLine, endLine)),
       fileSha256,
+      ...found,
     },
     artifact: {
       mediaType: MEDIA_TYPES.fileText,

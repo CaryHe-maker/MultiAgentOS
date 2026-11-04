@@ -18,6 +18,8 @@ import type {
   SubmitUnitRequest,
   UnitInput,
   UnitReport,
+  UpdateActivityRequest,
+  UpdateTodosArgs,
   WrapUpReason,
 } from '@multiagentos/contracts';
 import type { NewLogRecord } from '../../session/session-log-store.js';
@@ -52,6 +54,7 @@ export interface AgentDefinitions {
   readonly endTools: readonly EndTool[];
   /** What is published when no end tool was called validly. */
   readonly onDegraded: DegradedAction;
+  readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';
@@ -140,6 +143,8 @@ export interface AgentTransition {
   readonly records: readonly NewLogRecord[];
   readonly submissions: readonly SubmitUnitRequest[];
   readonly ending?: AgentEnding;
+  /** The todo progress for the interface, once the records are durable (WorkflowKernel 2.5). */
+  readonly activity?: UpdateActivityRequest['todos'];
 }
 
 /** The facts context-assemble needs that the log, not this machine, supplies. */
@@ -196,7 +201,7 @@ const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnI
 
 function feedback(
   state: AgentState,
-  code: FeedbackCode | 'TOOL_REJECTED',
+  code: FeedbackCode | 'TOOL_REJECTED' | 'TODOS_UPDATED',
   toolCallId?: string,
   message?: string,
 ): NewLogRecord {
@@ -205,7 +210,8 @@ function feedback(
     type: 'FEEDBACK',
     agentRunId: state.agentRunId,
     code,
-    message: message ?? (code === 'TOOL_REJECTED' ? '' : FEEDBACK[code]),
+    message:
+      message ?? (code === 'TOOL_REJECTED' || code === 'TODOS_UPDATED' ? '' : FEEDBACK[code]),
     ...(toolCallId === undefined ? {} : { toolCallId }),
   };
 }
@@ -494,6 +500,66 @@ function handleModel(
       records,
     );
   }
+  // The one control tool that goes with anything else, and it is handled first (M2Design 3.5).
+  const todoTool = state.final ? undefined : state.definitions.todoTool;
+  const isTodo = (call: ModelToolCall) => call.toolName === todoTool?.toolName;
+  let activity: AgentTransition['activity'];
+  if (todoTool !== undefined)
+    for (const call of calls.filter(isTodo)) {
+      const args =
+        call.arguments === null ? undefined : validate(todoTool.parameters, call.arguments);
+      if (args === undefined || !args.ok) {
+        records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+        continue;
+      }
+      const { todos } = call.arguments as unknown as UpdateTodosArgs;
+      const countOf = (status: UpdateTodosArgs['todos'][number]['status']) =>
+        todos.filter((todo) => todo.status === status).length;
+      const counts = {
+        total: todos.length,
+        pending: countOf('pending'),
+        inProgress: countOf('in_progress'),
+        done: countOf('done'),
+        cancelled: countOf('cancelled'),
+      };
+      records.push(
+        {
+          ...base(state),
+          type: 'TODOS_UPDATED',
+          agentRunId: state.agentRunId,
+          source: { modelTurnRequestId: report.requestId, toolCallId: call.toolCallId },
+          counts,
+        },
+        feedback(
+          state,
+          'TODOS_UPDATED',
+          call.toolCallId,
+          `Todos: ${String(counts.total)} items, ${String(counts.done)} done, ${String(counts.inProgress)} in progress.`,
+        ),
+      );
+      const current = todos.find((todo) => todo.status === 'in_progress')?.content.slice(0, 80);
+      activity = {
+        total: counts.total,
+        done: counts.done,
+        ...(current === undefined ? {} : { current }),
+      };
+    }
+  const acting = calls.filter((call) => !isTodo(call));
+  const transition =
+    acting.length === 0
+      ? afterTools(state, context, config, records)
+      : actOn(state, report, acting, context, config, records);
+  return activity === undefined ? transition : { ...transition, activity };
+}
+
+function actOn(
+  state: AgentState,
+  report: Extract<UnitReport, { status: 'OK' }>,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+  config: AgentConfig,
+  records: NewLogRecord[],
+): AgentTransition {
   const endTool = (call: ModelToolCall) =>
     state.definitions.endTools.find((tool) => tool.toolName === call.toolName);
   const control = calls.find((call) => endTool(call) !== undefined);

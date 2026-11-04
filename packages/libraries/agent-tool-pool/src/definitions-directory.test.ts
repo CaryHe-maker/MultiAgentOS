@@ -43,6 +43,7 @@ describe('shipped definitions', () => {
       'TOOL:read-output@v0.1.0',
       'TOOL:reply@v0.1.0',
       'TOOL:search-repository@v0.1.0',
+      'TOOL:update-todos@v0.1.0',
       'TOOL:write-file@v0.1.0',
       'UNIT:context-assemble@v0.1.0',
       'UNIT:file-edit@v0.1.0',

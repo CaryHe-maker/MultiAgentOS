@@ -1,8 +1,10 @@
 import {
+  ArtifactRefSchema,
   SessionIndexLineSchema,
   SessionLogRecordSchema,
   validate,
   type AppendLogPort,
+  type ArtifactRef,
   type SessionCommandFailure,
   type SessionIndexLine,
   type SessionListEntry,
@@ -37,6 +39,27 @@ export interface OpenedSession {
   readonly records: readonly SessionLogRecord[];
   /** Recorded digest and the current one differ, so rebuilt context is no longer exact. */
   readonly definitionsChanged: boolean;
+}
+
+export interface ForkedSession {
+  readonly records: readonly SessionLogRecord[];
+  readonly inheritedArtifacts: readonly ArtifactRef[];
+  readonly fromTurnCount: number;
+}
+
+/** Every artifact reference anywhere in the records, each once. */
+function artifactRefsIn(records: readonly SessionLogRecord[]): readonly ArtifactRef[] {
+  const found = new Map<string, ArtifactRef>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(visit);
+    else if (typeof value === 'object' && value !== null) {
+      const checked = validate<ArtifactRef>(ArtifactRefSchema, value);
+      if (checked.ok) found.set(checked.value.artifactId, checked.value);
+      else Object.values(value).forEach(visit);
+    }
+  };
+  visit(records);
+  return [...found.values()];
 }
 
 export class SessionLogStore {
@@ -103,6 +126,65 @@ export class SessionLogStore {
       }),
     );
     return started;
+  }
+
+  /**
+   * A fork begins as a copy of the whole log. A run the original left open ends here as FORKED,
+   * so replaying the copy never takes it for one that was interrupted.
+   */
+  async fork(input: {
+    readonly sessionId: string;
+    readonly fromSessionId: string;
+    readonly repositoryRoot: string;
+  }): Promise<ForkedSession> {
+    const directory = this.#persistence.sessionDirectory('workflow', input.sessionId);
+    await this.#storage(async () => {
+      await directory.create();
+      await directory.copyLogFrom(input.fromSessionId);
+    });
+    await this.#lock(input.sessionId);
+    const log = this.#requireLog();
+    await this.#storage(() => log.repairTail());
+    const records = await this.#readChecked(log);
+    this.#seq = records.length;
+    const appended: SessionLogRecord[] = [];
+    const ended = new Set(
+      records.flatMap((r) => (r.type === 'WORKFLOW_RUN_ENDED' ? [r.workflowRunId] : [])),
+    );
+    for (const record of records)
+      if (record.type === 'WORKFLOW_RUN_STARTED' && !ended.has(record.workflowRunId))
+        appended.push(
+          await this.append({
+            type: 'WORKFLOW_RUN_ENDED',
+            workflowRunId: record.workflowRunId,
+            closeReason: 'FORKED',
+          }),
+        );
+    appended.push(
+      await this.append({
+        type: 'SESSION_FORKED',
+        fromSessionId: input.fromSessionId,
+        fromSeq: records.length,
+      }),
+    );
+    const fromTurnCount = records.filter((r) => r.type === 'TURN_STARTED').length;
+    const at = this.#now().toISOString();
+    await this.#storage(() =>
+      this.#index.append({
+        sessionId: input.sessionId,
+        repositoryRoot: input.repositoryRoot,
+        createdAt: at,
+        lastActiveAt: at,
+        turnCount: fromTurnCount,
+        fork: { fromSessionId: input.fromSessionId, fromTurnCount },
+        status: 'ACTIVE',
+      }),
+    );
+    return {
+      records: [...records, ...appended],
+      inheritedArtifacts: artifactRefsIn(records),
+      fromTurnCount,
+    };
   }
 
   /** Steps 1-4 of M2Design 10.3: lock, repair the tail, check the log, settle what was left. */

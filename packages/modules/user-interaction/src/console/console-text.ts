@@ -56,6 +56,7 @@ export const ConsoleText = Object.freeze({
   undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
   noDiff: '没有可以显示的改动。',
   diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
+  forkDraft: '下一条消息会开始一个分出的新对话，它带着到目前为止的全部内容。',
   granted: '已允许。',
   declined: '已拒绝。',
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',
@@ -67,6 +68,7 @@ export const ConsoleText = Object.freeze({
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',
+    '/fork             从当前对话分出一个新对话',
     '/sessions         列出本仓库的对话',
     '/resume <编号>    打开对话',
     '/delete <编号>    删除未打开的对话',

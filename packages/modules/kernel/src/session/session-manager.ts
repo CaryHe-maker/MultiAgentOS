@@ -148,6 +148,17 @@ export class SessionManager {
   /** `sessionId` comes from Gateway, which owns generating it (Interface 3). */
   startSession(request: StartSessionRequest, sessionId: string): Promise<Accepted> {
     const { requestId, prompt } = request;
+    if (request.mode === 'FORK') {
+      const { fromSessionId } = request;
+      // A fork starts from the open Session, whose run this closes first.
+      if (this.actor(fromSessionId) === undefined)
+        return Promise.resolve(refused(requestId, 'SESSION_NOT_FOUND'));
+      return this.#startNew(
+        requestId,
+        { kind: 'FORK', requestId, input: prompt, fromSessionId },
+        sessionId,
+      );
+    }
     return this.#startNew(requestId, { kind: 'NEW', requestId, input: prompt }, sessionId);
   }
 

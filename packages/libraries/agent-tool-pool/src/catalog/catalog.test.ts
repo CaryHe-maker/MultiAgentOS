@@ -60,6 +60,7 @@ describe('the repository catalog', () => {
       'read_output',
       'reply',
       'search_repository',
+      'update_todos',
       'write_file',
     ]);
   });

@@ -83,6 +83,16 @@ export function agentBindingOf(
       };
     }),
     onDegraded: agent.actions.onDegraded,
+    ...(agent.actions.todos === undefined
+      ? {}
+      : {
+          todoTool: {
+            toolName: toolOf(agent.actions.todos.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.todos.toolRef).parametersContract,
+            ),
+          },
+        }),
   };
   return {
     ref: { kind: 'AGENT', id: agent.id, version: agent.version, digest: agent.digest },

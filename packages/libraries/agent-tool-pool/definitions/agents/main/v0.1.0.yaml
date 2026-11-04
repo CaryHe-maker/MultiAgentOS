@@ -45,6 +45,10 @@ actions:
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
+  todos:
+    toolRef:
+      id: update-todos
+      version: v0.1.0
 capabilities:
   - repo.read
   - workspace.write

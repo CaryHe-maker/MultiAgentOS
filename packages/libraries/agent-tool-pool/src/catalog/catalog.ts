@@ -68,6 +68,15 @@ function referencesOf(body: Body): readonly Reference[] {
           kind: 'TOOL' as const,
           ref: end.toolRef,
         })),
+        ...(body.actions.todos === undefined
+          ? []
+          : [
+              {
+                field: 'actions.todos.toolRef',
+                kind: 'TOOL' as const,
+                ref: body.actions.todos.toolRef,
+              },
+            ]),
       ];
     case 'UNIT':
       return body.toolRefs.map((ref, index) => ({
@@ -515,6 +524,9 @@ function checkAgent(
   const names = new Map<string, string>();
   const tools = [
     ...units.flatMap((unit) => unit.toolRefs.flatMap((ref) => get('TOOL', ref) ?? [])),
+    ...(body.actions.todos === undefined ? [] : [body.actions.todos.toolRef]).flatMap(
+      (ref) => get('TOOL', ref) ?? [],
+    ),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
   for (const tool of tools) {
@@ -545,6 +557,15 @@ function checkAgent(
         'AGENT_INVALID',
         `end tool ${end.toolRef.id} must be CONTROL with ${END_CONTRACTS[end.then]}`,
       );
+  }
+  if (body.actions.todos !== undefined) {
+    const tool = get('TOOL', body.actions.todos.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' ||
+        contractOf(tool.parametersContract) !== 'workflow.UpdateTodosArgs.v1')
+    )
+      report(origin, 'AGENT_INVALID', 'the todos tool must be CONTROL with UpdateTodosArgs');
   }
   for (const unit of units)
     for (const capability of unit.protectedCapabilities)
@@ -689,6 +710,7 @@ export class DefinitionCatalog {
     const toolRefs = [
       ...pinnedUnits.flatMap((unit) => unit.toolRefs),
       ...agent.actions.end.map((end) => end.toolRef),
+      ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

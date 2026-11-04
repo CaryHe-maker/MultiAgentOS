@@ -61,6 +61,8 @@ export class Console {
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
+  /** Set by /fork until the draft's first prompt. */
+  #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
   #runState: RunState = 'NONE';
   #budget = 'NORMAL';
@@ -150,8 +152,13 @@ export class Console {
     }
     if (this.#sessionId === undefined) {
       this.#deps.view.print({ kind: 'USER', text: terminalText(input) });
+      const prompt = { inputId: newId('inp'), text: input };
+      const from = this.#forkFrom;
+      this.#forkFrom = undefined;
       const accepted = await this.#deps.gateway.startSession(
-        { requestId: newId('req'), mode: 'NEW', prompt: { inputId: newId('inp'), text: input } },
+        from === undefined
+          ? { requestId: newId('req'), mode: 'NEW', prompt }
+          : { requestId: newId('req'), mode: 'FORK', prompt, fromSessionId: from },
         this.#context(),
       );
       if (accepted.outcome === 'ACCEPTED') this.#sessionId = accepted.sessionId;
@@ -283,8 +290,22 @@ export class Console {
       case '/sessions':
         await this.#deps.gateway.listSessions({ requestId: newId('req') }, this.#context());
         break;
+      case '/fork':
+        // Like /new, nothing is created until the first prompt; the open Session stays open.
+        if (this.#sessionId === undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        this.#putBack();
+        this.#forkFrom = this.#sessionId;
+        this.#sessionId = undefined;
+        this.#workflowRunId = undefined;
+        this.#runState = 'NONE';
+        this.#notice(text.forkDraft);
+        break;
       case '/new':
         // The new Session is created only when its first prompt is sent.
+        this.#forkFrom = undefined;
         this.#putBack();
         this.#sessionId = undefined;
         this.#workflowRunId = undefined;
@@ -484,12 +505,20 @@ export class Console {
           unit === undefined
             ? undefined
             : terminalText(`${unit.toolName} ${unit.argsSummary}`.trim());
+        const { todos } = event;
+        const progress =
+          todos === undefined
+            ? undefined
+            : terminalText(
+                `${String(todos.done)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
+              );
+        const shown = tool ?? progress;
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           since: event.at,
-          ...(tool === undefined ? {} : { tool }),
+          ...(shown === undefined ? {} : { tool: shown }),
           ...('retry' in event ? { retry: event.retry } : {}),
         });
         if (unit?.state === 'RUNNING') this.#unitStarted.set(unit.unitAttemptId, event.at);
