@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Supervisor
 
-> 状态：草稿（阶段 2，待评审）。阶段 3 补充 bwrap、遮蔽、进程组与停止升级。
+> 状态：已评审（阶段 2）。阶段 3 补充 bwrap、遮蔽、进程组与停止升级。
 
 ## 1. 定位
 

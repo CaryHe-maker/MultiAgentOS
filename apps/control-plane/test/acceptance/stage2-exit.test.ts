@@ -81,7 +81,7 @@ async function afterOneWrite(place: Awaited<ReturnType<typeof roots>>) {
     reply('written'),
   );
   const chat = await chatOn(place, provider);
-  await chat.say('change it');
+  await chat.say('first request zebra');
   await turnEnded(chat);
   return { chat, provider, file: join(place.repository, 'a.txt') };
 }
@@ -328,10 +328,10 @@ describe('H5: undo and diff', () => {
       await chat.say('anything left?');
       const seen = contents(lastRequest(provider)).join('\n');
       expect(seen).toContain('The user undid');
-      expect(seen).not.toContain('change it');
+      expect(seen).not.toContain('first request zebra');
       const [sessionId = ''] = await sessionsIn(place.dataDir);
       expect(await logOf(place.dataDir, sessionId)).toContain(
-        'change it'.length > 0 ? 'WORKSPACE_REVERTED' : '',
+        'first request zebra'.length > 0 ? 'WORKSPACE_REVERTED' : '',
       );
     },
     TIMEOUT,
@@ -428,7 +428,7 @@ describe('S4: forks', () => {
       expect(forked).not.toBe(fromHistory);
       expect(await readFile(file, 'utf8')).toBe('forked\n');
       // The fork carries the history: the model still sees the first message.
-      expect(contents(lastRequest(provider)).join('\n')).toContain('change it');
+      expect(contents(lastRequest(provider)).join('\n')).toContain('first request zebra');
 
       const forkLog = await logOf(place.dataDir, forked ?? '');
       expect(forkLog).toContain('SESSION_FORKED');

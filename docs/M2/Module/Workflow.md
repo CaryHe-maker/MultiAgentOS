@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Workflow
 
-> 状态：已评审（阶段 1）；阶段 2 的部分为草稿（待评审）。
+> 状态：已评审（阶段 1、2）。
 
 ## 1. 定位
 
@@ -153,7 +153,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 **回退与 Fork**（阶段 2）：
 
-- 收到 `WorkspaceReverted` 时追加 `WORKSPACE_REVERTED`；投影中，被回退各 Turn 的步骤替换为一条说明（"已回退：第 k 个 Turn，用户输入为……"）。日志不删除任何记录。
+- 收到 `WorkspaceReverted` 时追加 `WORKSPACE_REVERTED`；投影中，被回退各 Turn 的步骤替换为一条说明（回退了几个 Turn，文件已经还原；用户输入的正文在产物中，日志不复制，所以说明里不重复）。日志不删除任何记录。
 - 收到 `WorkspaceDiverged` 时追加 `WORKSPACE_DIVERGED { files }`；投影中为一条说明，这些文件此前的读取结果不再作为 `baseSha` 的依据。
 - `SessionCommand(FORK)`：复制原日志（`copyLogFrom`），对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(FORKED)`，追加 `SESSION_FORKED { fromSessionId, fromSeq }`；列出日志中的 ArtifactRef 交给 Kernel 继承。
 

@@ -1,6 +1,6 @@
 # 持久化接口
 
-> 状态：已评审（阶段 1 的部分）；阶段 2 的部分为草稿（待评审）。约定见 [Interface](README.md)。
+> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
 > 存储机制与写入规则见 [Infrastructure/Persistence](../Infrastructure/Persistence.md)；本文只定义目录、记录格式与 Port。
 
 ## 1. 目录

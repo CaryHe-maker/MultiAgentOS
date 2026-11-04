@@ -114,6 +114,8 @@ export interface ChatOptions {
   readonly answer?: (question: string) => Answer;
   readonly now?: () => Date;
   readonly subprocess?: TrackedSubprocessRunner;
+  /** A real run's key; scripted runs use a key that goes nowhere. */
+  readonly credentials?: { apiKeyFor(provider: string): string | undefined };
 }
 
 export interface Chat {
@@ -166,7 +168,7 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
       repositoryRoot: await realpath(options.repository),
       preset: 'standard',
       view,
-      credentials: { apiKeyFor: () => OFFLINE_KEY },
+      credentials: options.credentials ?? { apiKeyFor: () => OFFLINE_KEY },
       log: () => undefined,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.subprocess === undefined ? {} : { subprocess: options.subprocess }),

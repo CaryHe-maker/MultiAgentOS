@@ -1,6 +1,6 @@
 # UserInteraction 与 Kernel 的接口
 
-> 状态：已评审（阶段 1 的部分）；阶段 2 的部分为草稿（待评审）。约定见 [Interface](README.md)。
+> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
 > 标"阶段 N"的条目在该阶段的文档门中补全。
 
 ## 1. 范围

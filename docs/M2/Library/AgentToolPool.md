@@ -34,7 +34,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `read-file`、`search-repository`、`finish-analysis`、`handoff-to-code-viewer` | M1 内容的 `v1` 版本 |
 | TOOL | `list-files` | `purpose = UNIT`，参数为 `executor.RepositoryListInput` |
 | TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
-| PROMPT | `main-system` | main 的系统提示词（新写，`PLACEHOLDER`；暂不定稿，见下） |
+| PROMPT | `main-system` | main 的系统提示词（`FINAL`，见下） |
 | PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
 | UNIT | `file-write`、`file-edit`、`output-read`（阶段 2） | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
 | TOOL | `write-file`、`edit-file`、`read-output`（阶段 2） | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
@@ -42,8 +42,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 
-- **main 的提示词暂不定稿**：main 在阶段 2 才有写入工具，只读阶段的评测不代表它实际的工作方式，所以等阶段 2 实现写入能力之后再考虑定稿（Cary 2026-11-04 决定）。阶段 1 退出不要求评测、定稿与封存 main。
-- 草稿（`v0.x`）在 main 的提示词定稿之后一起封存为 `v1.0.0`（与 M1 的做法相同）。
+- **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后的阶段给 main 增加工具时，只增加对应工具的用法。
+- 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：阶段 3–6 还要改动 main，现在封存只会多出中间版本。
 - main 的额度参数（Interface/Definitions 第 2 节）初值取 M1 的全局值：`perCallInputLimit = 96000`、`maxOutputTokens = 8192`、
   `finalInputBudget = 72000`、`finalMaxOutputTokens = 8192`；`limits` 为 `maxRounds = 40`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
