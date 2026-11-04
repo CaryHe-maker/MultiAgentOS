@@ -59,6 +59,7 @@ interface LogRecordBase {
 | `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind` | 1 |
 | `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
+| `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） | 2 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
 | `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
@@ -68,7 +69,7 @@ interface LogRecordBase {
 | `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
-| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
+| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`tokenCount`、`tokenBudget`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
 | `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` | 2 |
 | `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） | 8 |
 | `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` | 8 |

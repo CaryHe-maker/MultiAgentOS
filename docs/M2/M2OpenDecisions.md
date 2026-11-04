@@ -109,3 +109,6 @@ main 写入的真实模型检查（`run-main-write.ts`，2026-11-04，`deepseek-
 M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现在代码与注释中（`M1` 只作为归档文档的名字出现在 `docs/`）；
 `repository-search` 与 `file-read` 直接产出预览，不再经过 M1 Executor 外的适配层；`SearchContextPack`、`SEARCH_HIT`、`OBJECTIVE`、`HANDOFF` 段、只测试自己的 fake Executor 已删除。
 `M2Design` 与 `Module/`、`Kernel/`、`Library/` 各文档中的“相对 M1 的变化”与指向 `History/M1` 的链接有意保留：它们说明设计来由，部分行为仍以归档文档为准。
+| D14 | 系统内存检测放入阶段 3：Monitor 定时采样，只向 Core 发控制消息，经统一收尾路径与中断入口处理，不设特例路径（M2Design v1.17，Cary 2026-11-04 决定） | 文档已改，S3-KC-3 实现 |
+| D15 | 额度按价格折算缓存命中的输入；单次输出上限 64000，输入上限 880000（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |
+| D16 | 估算与 provider 的计数相差不到 5%；模型运行代码的问题留到阶段 3 有运行指令能力之后；提前收尾必须有报告与日志，接近上限时预警（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |

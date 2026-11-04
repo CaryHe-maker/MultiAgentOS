@@ -244,6 +244,7 @@ interface HumanResolved {
 
 interface MessagePublished {         // message-publish 完成时发出
   type: 'MessagePublished';
+  wrapUpReason?: WrapUpReason;      // 回复来自提前收尾的 final-call 时带上；界面在回复后提示
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
   kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成

@@ -31,6 +31,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 ### 3.2 Turn 账本
 
+- 记账单位：结算额 = 未命中的输入 + 命中的输入 × 命中权重 + 输出；命中权重由预留时给出（模型定义的命中单价 ÷ 未命中单价）。预留额 = 校准后的输入估算 × 1.05 + 该次调用的输出上限（M2Design 第 7.3、9.3 节）。
 - 开启：`L_turn = min(budget.turnTokenLimit, 运行级剩余)`；从运行级账本扣除。`L_turn < minShare(main)` 时照常开启，状态直接为 WRAP_UP（[Core](Core.md) 第 6 节）。
 - 阶段 1 中 Turn 账本就是 main 的账本：`F = F(main)`，`wrapUpMargin = wrapUpMargin(main)`，预留与状态按 M1 Monitor 第 3.2、3.3 节计算。
 - 结束：未结算的预留按 UNKNOWN 结算（M1 的 `finalize` 规则），剩余返还运行级账本；返回 `TurnUsage`。
@@ -51,7 +52,7 @@ M2Design 第 7.3 节"压缩的额度"：
 
 - 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前 Turn 账本；阶段 4 起模板节点与 SubAgent 为该 AgentRun 自己的账本；
 - 修剪不调用模型，不预留；只有摘要请求预留，纯文本回退的每次请求各自预留与结算；
-- 预留量 = 摘要请求的输入估算（字节估算，与普通调用的预留同一方法，不用压缩检查点的实测加估算）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不写摘要，
+- 预留量 = 摘要请求的输入估算（与普通调用的预留同一方法，不用压缩检查点的实测加估算）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不写摘要，
   按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮；SubAgent 以 `finish_subagent` 结束）；
 - 用户 `/compact` 与空闲时的预先压缩没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝，预先压缩不做；
 - 结算按实际用量（M1 的方式）；缓存命中的输入按模型定义的计价计入。
@@ -95,8 +96,8 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
 
 | 配置 | 缺省（初值） | 说明 |
 |---|---|---|
-| `runTokenLimit` | 5000000 | 运行级上限 |
-| `turnTokenLimit` | 2000000 | 每个 Turn 的上限 |
+| `runTokenLimit` | 12000000 | 运行级上限 |
+| `turnTokenLimit` | 4000000 | 每个 Turn 的上限 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。
