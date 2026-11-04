@@ -1,18 +1,18 @@
 import type {
   ArtifactRef,
   BudgetView,
-  ExecutionKindV1,
+  ExecutionKind,
   ExecutionOutcome,
   ExecutionScope,
   ModelToolSpec,
-  ReasonCodeV1,
+  ReasonCode,
   RequestState,
-  SubmitUnitRequestV1,
+  SubmitUnitRequest,
   TokenUsage,
-  UnitDefinitionV1,
-  UnitInputV1,
-  UnitOutputV1,
-  UnitReportV1,
+  UnitDefinition,
+  UnitInput,
+  UnitOutput,
+  UnitReport,
   ViolationCode,
 } from '@multiagentos/contracts';
 import type { SchedulerDuties, Settlement, SettlementResult } from '../interfaces/index.js';
@@ -20,7 +20,7 @@ import type { AgentBudget } from '../monitor/index.js';
 
 /** What the catalog gives Core and Execution for one registered AgentRun. */
 export interface PinnedAgent {
-  readonly units: readonly UnitDefinitionV1[];
+  readonly units: readonly UnitDefinition[];
   readonly maxToolUnits: number;
   readonly maxWallClockMs?: number;
   /** The model scope for the effort this AgentRun registered with. */
@@ -39,13 +39,13 @@ export interface AttemptSpec {
   readonly agentRunId: string;
   readonly unitRunId: string;
   readonly turnId: string;
-  readonly unit: UnitDefinitionV1;
-  readonly input: UnitInputV1;
+  readonly unit: UnitDefinition;
+  readonly input: UnitInput;
   readonly scope: ExecutionScope;
   readonly runEpoch: number;
   readonly agent: PinnedAgent;
   /** What the activity area shows for a tool Unit; nothing decides on it. */
-  readonly display: SubmitUnitRequestV1['display'];
+  readonly display: SubmitUnitRequest['display'];
 }
 
 /** What Execution hands back for one attempt (Kernel/Interaction 4). */
@@ -54,8 +54,8 @@ export interface ResultCheck {
   /** Absent when the attempt ended before it was dispatched, or for a built-in Unit. */
   readonly executionId?: string;
   readonly outcome: ExecutionOutcome | 'NOT_DISPATCHED';
-  readonly reasonCode?: ReasonCodeV1;
-  readonly output?: UnitOutputV1;
+  readonly reasonCode?: ReasonCode;
+  readonly output?: UnitOutput;
   readonly outputRef?: ArtifactRef;
   readonly fullRef?: ArtifactRef;
   readonly reasoningRef?: ArtifactRef;
@@ -104,12 +104,12 @@ export type AttemptAudit =
   | {
       readonly type: 'UNIT_REPORTED';
       readonly requestId: string;
-      readonly reasonCode?: ReasonCodeV1;
+      readonly reasonCode?: ReasonCode;
     }
   | {
       readonly type: 'UNIT_NOT_DELIVERED';
       readonly requestId: string;
-      readonly reasonCode?: ReasonCodeV1;
+      readonly reasonCode?: ReasonCode;
     }
   | { readonly type: 'STALE_FACT'; readonly unitAttemptId: string }
   | {
@@ -129,7 +129,7 @@ export interface RunAttemptsDeps {
   readonly isConverging: () => boolean;
   readonly leaseIsValid: () => boolean;
   /** `spec` is absent for a Unit refused before it had an attempt. */
-  readonly deliver: (report: UnitReportV1, spec?: AttemptSpec) => void;
+  readonly deliver: (report: UnitReport, spec?: AttemptSpec) => void;
   readonly attemptStarted: (spec: AttemptSpec, unitAttemptId: string) => void;
   /** The attempt was dispatched for the first time; a retry does not count. */
   readonly attemptRunning: (spec: AttemptSpec, unitAttemptId: string, final: boolean) => void;
@@ -157,17 +157,17 @@ interface Attempt {
 }
 
 /** Built-in Units finish in Execution without an execution instance. */
-const BUILT_IN: ReadonlySet<ExecutionKindV1> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
-const isViolation = (code: ReasonCodeV1 | undefined): code is ViolationCode =>
+const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
+const isViolation = (code: ReasonCode | undefined): code is ViolationCode =>
   code === 'SCOPE_MISSING' || code === 'PATH_ESCAPE' || code === 'GUARD_FAILURE';
 
-const unitRefOf = (unit: UnitDefinitionV1) =>
+const unitRefOf = (unit: UnitDefinition) =>
   ({ kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest }) as const;
 
 /**
- * Core's attempt identity, reservations, result checks and retries for one run, migrated from M1
- * Core onto major 1: UnitReport carries `unitRunId` and `BudgetView`, the final call is per
- * AgentRun (M2Design 7.3), and budget never converges the run.
+ * Core's attempt identity, reservations, result checks and retries for one run: UnitReport
+ * carries `unitRunId` and `BudgetView`, the final call is per AgentRun (M2Design 7.3), and budget
+ * never converges the run.
  */
 export class RunAttempts {
   readonly #deps: RunAttemptsDeps;
@@ -425,7 +425,7 @@ export class RunAttempts {
     } as const;
   }
 
-  #reportOf(attempt: Attempt, check: ResultCheck): UnitReportV1 {
+  #reportOf(attempt: Attempt, check: ResultCheck): UnitReport {
     const base = { ...this.#base(attempt), unitAttemptId: attempt.unitAttemptId };
     if (check.outcome === 'COMPLETED') {
       if (check.output === undefined) throw new Error('COMPLETED result requires output');
@@ -442,10 +442,10 @@ export class RunAttempts {
     if (reasonCode === undefined) throw new Error('Result check requires a reasonCode');
     const status =
       check.outcome === 'REJECTED' || check.outcome === 'NOT_DISPATCHED' ? 'REJECTED' : 'FAILED';
-    return { ...base, status, reasonCode } as UnitReportV1;
+    return { ...base, status, reasonCode } as UnitReport;
   }
 
-  #deliver(report: UnitReportV1, spec?: AttemptSpec): void {
+  #deliver(report: UnitReport, spec?: AttemptSpec): void {
     this.#deps.deliver(report, spec);
     this.#deps.audit({
       type: 'UNIT_REPORTED',

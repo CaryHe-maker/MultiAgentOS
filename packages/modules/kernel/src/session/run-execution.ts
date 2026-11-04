@@ -4,10 +4,10 @@ import {
   type ArtifactRef,
   type ExecutionScope,
   type CancelRunExecutionsRequest,
-  type ExecutionFactV1,
-  type ExecutionRequestV1,
-  type ExecutorKindV1,
-  type UnknownEffectV1,
+  type ExecutionFact,
+  type ExecutionRequest,
+  type ExecutorKind,
+  type UnknownEffect,
 } from '@multiagentos/contracts';
 import {
   AttemptRequestBuilder,
@@ -35,7 +35,7 @@ export interface RunExecutionDeps {
   readonly workflowRunId: string;
   readonly config: ExecutionConfig;
   readonly artifacts: SessionArtifacts;
-  readonly dispatch: (request: ExecutionRequestV1) => Promise<void>;
+  readonly dispatch: (request: ExecutionRequest) => Promise<void>;
   readonly cancelRun: (request: CancelRunExecutionsRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
   /** Undefined when the file does not exist. */
@@ -56,8 +56,8 @@ interface Attempt {
   retries: number;
 }
 
-type Completed = Extract<ExecutionFactV1, { outcome: 'COMPLETED' }>;
-type NotCompleted = Exclude<ExecutionFactV1, { outcome: 'COMPLETED' }>;
+type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
+type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
 /** The overview is a structure with its own token budget, not a preview of an output. */
 const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
@@ -79,7 +79,7 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queue: Attempt[] = [];
   readonly #byId = new Map<string, Attempt>();
-  readonly #effects: UnknownEffectV1[] = [];
+  readonly #effects: UnknownEffect[] = [];
   #active: Attempt | undefined;
   #cancelFallback: (() => void) | undefined;
 
@@ -106,7 +106,7 @@ export class RunExecution {
     this.#effects.push({
       unitAttemptId: attempt.unitAttemptId,
       executionId,
-      executionKind: attempt.spec.unit.executionKind as ExecutorKindV1,
+      executionKind: attempt.spec.unit.executionKind as ExecutorKind,
       effect: 'EXECUTION_STOP_UNCONFIRMED',
     });
   }
@@ -121,7 +121,7 @@ export class RunExecution {
   }
 
   /** What may have happened without being confirmed; RunClosed reports it. */
-  unknownEffects(): UnknownEffectV1[] {
+  unknownEffects(): UnknownEffect[] {
     return [...this.#effects];
   }
 
@@ -207,7 +207,7 @@ export class RunExecution {
   }
 
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
-  async handleFact(fact: ExecutionFactV1): Promise<void> {
+  async handleFact(fact: ExecutionFact): Promise<void> {
     const attempt = this.#byId.get(fact.unitAttemptId);
     if (
       attempt === undefined ||

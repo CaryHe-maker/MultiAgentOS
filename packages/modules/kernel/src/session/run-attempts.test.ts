@@ -1,8 +1,8 @@
 import {
-  UnitReportV1Schema,
+  UnitReportSchema,
   assertValid,
-  type ExecutionKindV1,
-  type UnitReportV1,
+  type ExecutionKind,
+  type UnitReport,
 } from '@multiagentos/contracts';
 import {
   testArtifactRef,
@@ -29,7 +29,7 @@ const main: AgentBudget = {
 };
 const outputRef = testArtifactRef();
 const fileOutput = testFileReadOutput();
-const unit = (kind: ExecutionKindV1) => testUnitDefinition(kind);
+const unit = (kind: ExecutionKind) => testUnitDefinition(kind);
 
 function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boolean } = {}) {
   const ledger = new RunLedgers(
@@ -50,7 +50,7 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     stopGranting: () => undefined,
     releaseAll: () => 0,
   };
-  const reports: UnitReportV1[] = [];
+  const reports: UnitReport[] = [];
   const ended: string[] = [];
   const faults: AttemptFault[] = [];
   const audits: AttemptAudit[] = [];
@@ -69,14 +69,14 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
     isDeliverable: () => options.deliverable !== false,
     isConverging: () => options.deliverable === false,
     leaseIsValid: () => options.lease !== false,
-    deliver: (report) => reports.push(assertValid(UnitReportV1Schema, report)),
+    deliver: (report) => reports.push(assertValid(UnitReportSchema, report)),
     attemptStarted: () => undefined,
     attemptRunning: () => undefined,
     attemptEnded: (_spec, id) => ended.push(id),
     onFault: (fault) => faults.push(fault),
     audit: (entry) => audits.push(entry),
   });
-  const start = (kind: ExecutionKindV1, over: Partial<AttemptSpec> = {}) =>
+  const start = (kind: ExecutionKind, over: Partial<AttemptSpec> = {}) =>
     run.start({
       requestId: testId('req', 1),
       agentRunId: testId('agr', 1),

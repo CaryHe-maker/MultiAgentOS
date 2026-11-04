@@ -1,10 +1,10 @@
 import type {
   ArtifactContent,
-  GatewayForwardV1,
+  GatewayForward,
   ProjectFileContent,
   SessionAccepted,
   SyscallAck,
-  SyscallRejectedV1,
+  SyscallRejected,
 } from '@multiagentos/contracts';
 import type { RunWork } from './run-work.js';
 import type { RunClosing, SessionActor } from './session-actor.js';
@@ -12,15 +12,15 @@ import type { SessionArtifacts } from './session-artifacts.js';
 import type { SessionManager } from './session-manager.js';
 
 export type CoreResponse =
-  SyscallAck | SyscallRejectedV1 | SessionAccepted | ArtifactContent | ProjectFileContent;
+  SyscallAck | SyscallRejected | SessionAccepted | ArtifactContent | ProjectFileContent;
 
 export interface SessionCoreDeps {
   readonly manager: SessionManager;
   readonly artifactsOf: (sessionId: string) => SessionArtifacts | undefined;
 }
 
-type Forward<T extends GatewayForwardV1['requestType']> = Extract<
-  GatewayForwardV1,
+type Forward<T extends GatewayForward['requestType']> = Extract<
+  GatewayForward,
   { requestType: T }
 >['request'];
 type RunRequest = Forward<'submitUnit'> | Forward<'answerHuman'>;
@@ -28,7 +28,7 @@ type RunRequest = Forward<'submitUnit'> | Forward<'answerHuman'>;
 const refused = (
   requestId: string,
   reasonCode: 'RUN_NOT_FOUND' | 'SESSION_NOT_FOUND' | 'INVALID_ARTIFACT_REF' | 'ARTIFACT_EXPIRED',
-): SyscallRejectedV1 => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
+): SyscallRejected => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
 
 /**
  * What Gateway hands over, sent to the part of Core that owns it: Session requests to Session
@@ -49,7 +49,7 @@ export class SessionCore {
       actor: SessionActor,
       run: Parameters<SessionActor['closeRun']>[0],
     ) => Promise<R> | R,
-  ): Promise<R | SyscallRejectedV1> {
+  ): Promise<R | SyscallRejected> {
     const actor = this.#deps.manager.actor(request.sessionId);
     if (actor === undefined)
       return Promise.resolve(refused(request.requestId, 'SESSION_NOT_FOUND'));
@@ -60,7 +60,7 @@ export class SessionCore {
     });
   }
 
-  async #closeRun(request: Forward<'closeRun'>): Promise<SyscallAck | SyscallRejectedV1> {
+  async #closeRun(request: Forward<'closeRun'>): Promise<SyscallAck | SyscallRejected> {
     const { requestId, sessionId } = request;
     const resultRef = 'resultRef' in request ? request.resultRef : undefined;
     if (resultRef !== undefined && this.#deps.artifactsOf(sessionId)?.owns(resultRef) !== true)
@@ -95,7 +95,7 @@ export class SessionCore {
     return 'response' in reading ? reading.response : reading;
   }
 
-  handle(forward: GatewayForwardV1, generatedSessionId?: string): Promise<CoreResponse> {
+  handle(forward: GatewayForward, generatedSessionId?: string): Promise<CoreResponse> {
     const { manager } = this.#deps;
     const newSession = (): string => {
       if (generatedSessionId === undefined) throw new Error('Gateway generates the sessionId');

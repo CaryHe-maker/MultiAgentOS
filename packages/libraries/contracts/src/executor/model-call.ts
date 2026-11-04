@@ -13,7 +13,7 @@ export const TokenUsageSchema = Type.Refine(
       outputTokens: count(),
       inputCacheHitTokens: Type.Optional(count()),
     },
-    'executor.TokenUsage.v0',
+    'executor.TokenUsage.v1',
   ),
   (usage) =>
     usage.inputCacheHitTokens === undefined || usage.inputCacheHitTokens <= usage.inputTokens,
@@ -21,37 +21,10 @@ export const TokenUsageSchema = Type.Refine(
 );
 export type TokenUsage = Static<typeof TokenUsageSchema>;
 
-/**
- * `contextPackRef` is the artifact of a context-assemble Unit. `final` must equal the `final`
- * of the ContextAssembleInput that produced it; Execution checks that before dispatch.
- */
-export const ModelCallInputSchema = closed(
-  { contextPackRef: artifactRefOf(MEDIA_TYPES.contextPack), final: Type.Boolean() },
-  'executor.ModelCallInput.v0',
-);
-export type ModelCallInput = Static<typeof ModelCallInputSchema>;
-
 const callOutput = {
   toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 32 }),
   hasText: Type.Boolean(),
 };
-/** `finishReason` is TOOL_CALLS exactly when the model called at least one tool. */
-export const ModelCallOutputSchema = Type.Union(
-  [
-    closed({
-      ...callOutput,
-      finishReason: Type.Literal('TOOL_CALLS'),
-      toolCalls: Type.Array(ModelToolCallSchema, { minItems: 1, maxItems: 32 }),
-    }),
-    closed({
-      ...callOutput,
-      finishReason: Type.Enum(['STOP', 'LENGTH', 'CONTENT_FILTER', 'OTHER']),
-      toolCalls: Type.Array(ModelToolCallSchema, { maxItems: 0 }),
-    }),
-  ],
-  { $id: 'executor.ModelCallOutput.v0' },
-);
-export type ModelCallOutput = Static<typeof ModelCallOutputSchema>;
 
 /** Content of the model-call artifact. */
 export const ModelRawOutputSchema = closed(
@@ -66,7 +39,7 @@ export const ModelRawOutputSchema = closed(
     usage: Type.Optional(TokenUsageSchema),
     receivedAt: TimestampSchema,
   },
-  'executor.ModelRawOutput.v0',
+  'executor.ModelRawOutput.v1',
 );
 export type ModelRawOutput = Static<typeof ModelRawOutputSchema>;
 
@@ -78,7 +51,7 @@ export type ThinkingEffort = Static<typeof ThinkingEffortSchema>;
  * `final` runs in two steps (M2Design 9.4): AUTO keeps thinking on and only offers the control
  * tool; Execution's technical retry passes FORCED, which turns thinking off and names the tool.
  */
-export const ModelCallInputV1Schema = closed(
+export const ModelCallInputSchema = closed(
   {
     contextPackRef: artifactRefOf(MEDIA_TYPES.contextPack),
     final: Type.Boolean(),
@@ -86,9 +59,9 @@ export const ModelCallInputV1Schema = closed(
   },
   'executor.ModelCallInput.v1',
 );
-export type ModelCallInputV1 = Static<typeof ModelCallInputV1Schema>;
+export type ModelCallInput = Static<typeof ModelCallInputSchema>;
 
-export const ModelCallOutputV1Schema = Type.Union(
+export const ModelCallOutputSchema = Type.Union(
   [
     closed({
       ...callOutput,
@@ -105,4 +78,4 @@ export const ModelCallOutputV1Schema = Type.Union(
   ],
   { $id: 'executor.ModelCallOutput.v1' },
 );
-export type ModelCallOutputV1 = Static<typeof ModelCallOutputV1Schema>;
+export type ModelCallOutput = Static<typeof ModelCallOutputSchema>;

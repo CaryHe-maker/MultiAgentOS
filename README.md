@@ -133,7 +133,7 @@ Agent、Unit、Tool 与 Prompt 已定稿并封存，协议已冻结。固定任�
 
 ### 运行与演示
 
-使用方法见上文的[快速开始](#快速开始)。`pnpm run demo:fake` 用 fake 演示整条装配链路；
+使用方法见上文的[快速开始](#快速开始)。
 `pnpm run acceptance` 用真实模型运行固定任务集（不加 `--yes` 只列出费用上限）。
 
 Kernel 与 Infrastructure 的实现、验收矩阵和已知边界见已归档的

@@ -1,26 +1,26 @@
 import {
   MEDIA_TYPES,
-  RunSummaryV1Schema,
+  RunSummarySchema,
   assertValid,
   canonicalJson,
   newId,
   validate,
-  type AdmissionProjectionV1,
-  type ArtifactStorePortV1,
-  type BoundaryContextV1,
-  type CloseReasonV1,
-  type ExecutionFactV1,
+  type AdmissionProjection,
+  type ArtifactStorePort,
+  type BoundaryContext,
+  type CloseReason,
+  type ExecutionFact,
   type FabricPort,
-  type GatewayForwardV1,
+  type GatewayForward,
   type HealthStatus,
-  type KernelConfigV1,
+  type KernelConfig,
   type LifecyclePort,
   type ProtocolRegistry,
-  type RegisterAgentRunRequestV1,
+  type RegisterAgentRunRequest,
   type SessionPersistencePort,
   type SessionProjection,
   type SystemFaultReporter,
-  type UnitDefinitionV1,
+  type UnitDefinition,
 } from '@multiagentos/contracts';
 import {
   INTERACTION_SYSCALLS,
@@ -51,16 +51,16 @@ import { SessionRefs, TrustRecords } from './session/session-refs.js';
 export interface SessionKernelDeps {
   /** The Fabric client whose producer is `kernel-core`. */
   readonly fabric: FabricPort;
-  readonly artifacts: ArtifactStorePortV1;
+  readonly artifacts: ArtifactStorePort;
   /** Core and Execution take their own namespaces from it. */
   readonly persistence: SessionPersistencePort;
   /** Validates Unit inputs against their contracts. */
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
-  readonly pinAgent: (request: RegisterAgentRunRequestV1) => Promise<PinResult>;
+  readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
   /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
-  readonly config: KernelConfigV1;
+  readonly config: KernelConfig;
   /** This process's repository: a realpath. */
   readonly repositoryRoot: string;
   readonly preset: 'standard' | 'readonly';
@@ -80,7 +80,7 @@ export interface SessionKernelCoreModule extends LifecyclePort {
 
 const LOCAL = { tenantId: 'local', projectId: 'local' } as const;
 
-const executionConfigOf = (config: KernelConfigV1): ExecutionConfig => ({
+const executionConfigOf = (config: KernelConfig): ExecutionConfig => ({
   executionLimits: config.executionLimits,
   retryBackoffBaseMs: config.retryBackoffBaseMs,
   retryAfterMaxMs: config.retryAfterMaxMs,
@@ -115,7 +115,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const contextOf = (ids: {
     readonly sessionId?: string;
     readonly workflowRunId?: string;
-  }): BoundaryContextV1 => ({
+  }): BoundaryContext => ({
     ...LOCAL,
     correlationId: ids.sessionId === undefined ? newId('cor') : correlationOf(ids),
     ...(ids.sessionId === undefined ? {} : { sessionId: ids.sessionId }),
@@ -154,13 +154,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     sessionId: string,
     workflowRunId: string,
     runState: 'RUNNING' | 'CONVERGING' | 'CLOSED',
-    closeReason?: CloseReasonV1,
+    closeReason?: CloseReason,
   ): void => {
     const projection = (
       runState === 'RUNNING'
         ? { workflowRunId, sessionId, runState }
         : { workflowRunId, sessionId, runState, closeReason }
-    ) as AdmissionProjectionV1;
+    ) as AdmissionProjection;
     void fabric
       .send('gateway.admission', SCHEMA_IDS.admissionProjection, projection, {
         ...contextOf({ sessionId, workflowRunId }),
@@ -168,7 +168,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       .catch(fault);
   };
 
-  const inputIsValid = (unit: UnitDefinitionV1, input: unknown): boolean =>
+  const inputIsValid = (unit: UnitDefinition, input: unknown): boolean =>
     validate(deps.registry.resolveContract(unit.inputContract), input).ok;
 
   const openRunWork = (
@@ -283,7 +283,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {
             try {
-              const checked = assertValid(RunSummaryV1Schema, summary);
+              const checked = assertValid(RunSummarySchema, summary);
               return await artifacts.put(canonicalJson(checked), MEDIA_TYPES.runSummary, 'SESSION');
             } catch {
               // RunClosed then says RUN_SUMMARY_WRITE_FAILED instead of naming a summary.
@@ -321,24 +321,21 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       if (started) return;
       await refs.load();
       await trust.load();
-      fabric.register<GatewayForwardV1, CoreResponse>(
-        SCHEMA_IDS.gatewayForward,
-        async (envelope) => {
-          if (envelope.producer !== 'gateway')
-            throw new Error('Kernel core request has an invalid producer');
-          const forward = envelope.payload;
-          const response = await core.handle(
-            forward,
-            'sessionId' in forward ? forward.sessionId : undefined,
-          );
-          if (forward.requestType === 'shutdown' && response.outcome === 'ACCEPTED') {
-            await outbox.drained();
-            await supervisor.shutdown({ requestId: forward.request.requestId });
-          }
-          return response;
-        },
-      );
-      fabric.subscribe<ExecutionFactV1>('kernel-core.execution-facts', async (envelope) => {
+      fabric.register<GatewayForward, CoreResponse>(SCHEMA_IDS.gatewayForward, async (envelope) => {
+        if (envelope.producer !== 'gateway')
+          throw new Error('Kernel core request has an invalid producer');
+        const forward = envelope.payload;
+        const response = await core.handle(
+          forward,
+          'sessionId' in forward ? forward.sessionId : undefined,
+        );
+        if (forward.requestType === 'shutdown' && response.outcome === 'ACCEPTED') {
+          await outbox.drained();
+          await supervisor.shutdown({ requestId: forward.request.requestId });
+        }
+        return response;
+      });
+      fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', async (envelope) => {
         if (envelope.producer !== 'supervisor')
           throw new Error('Kernel core execution fact has an invalid producer');
         const fact = envelope.payload;
@@ -399,10 +396,10 @@ export function createSessionGatewayModule({
   let running = false;
 
   const contextOf = (
-    forward: GatewayForwardV1,
+    forward: GatewayForward,
     generated: string | undefined,
     origin: RequestOrigin | undefined,
-  ): BoundaryContextV1 => {
+  ): BoundaryContext => {
     const body = forward.request as {
       readonly sessionId?: string;
       readonly workflowRunId?: string;
@@ -425,7 +422,7 @@ export function createSessionGatewayModule({
   const gateway = new SessionGateway({
     isOpenSession: (sessionId) => openSessions.has(sessionId),
     handle: (forward, generated, origin) =>
-      fabric.request<GatewayForwardV1, CoreResponse>(
+      fabric.request<GatewayForward, CoreResponse>(
         SCHEMA_IDS.gatewayForward,
         forward,
         contextOf(forward, generated, origin),
@@ -452,7 +449,7 @@ export function createSessionGatewayModule({
           return Promise.resolve(gateway.rejected(requestId, reasonCode));
         },
       );
-    fabric.subscribe<AdmissionProjectionV1>('gateway.admission', (envelope) => {
+    fabric.subscribe<AdmissionProjection>('gateway.admission', (envelope) => {
       if (envelope.producer !== 'kernel-core')
         throw new Error('Admission projection has an invalid producer');
       const projection = envelope.payload;

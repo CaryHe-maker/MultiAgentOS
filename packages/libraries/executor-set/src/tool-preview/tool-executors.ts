@@ -4,10 +4,7 @@ import {
   validate,
   type Executor,
   type ExecutorEnvironment,
-  type ExecutorEnvironmentV1,
   type ExecutorOutcome,
-  type ExecutorOutcomeV1,
-  type ExecutorV1,
   type RepositoryListInput,
   type SearchContextPack,
 } from '@multiagentos/contracts';
@@ -18,16 +15,16 @@ import { renderListing } from '../repository-list/listing.js';
 import { retainItems, type PreviewLimits } from '../retention/retention.js';
 import { numberLines, parseText } from '../text/text-document.js';
 
-type ToolLimits = Extract<ExecutorEnvironmentV1['limits'], { preview: unknown }>;
+type ToolLimits = Extract<ExecutorEnvironment['limits'], { preview: unknown }>;
 
-function previewLimits(environment: ExecutorEnvironmentV1): PreviewLimits {
+function previewLimits(environment: ExecutorEnvironment): PreviewLimits {
   const { limits } = environment;
   if (!('preview' in limits)) throw new Error('A tool Executor needs preview limits');
   return limits.preview;
 }
 
-/** Runs an M1 Executor up to the size of the full output; the preview is cut from that. */
-function inner(environment: ExecutorEnvironmentV1, maxOutputBytes: number): ExecutorEnvironment {
+/** Runs the inner Executor up to the size of the full output; the preview is cut from that. */
+function inner(environment: ExecutorEnvironment, maxOutputBytes: number): ExecutorEnvironment {
   const { limits } = environment;
   const { deadline } = limits;
   return {
@@ -42,9 +39,9 @@ function inner(environment: ExecutorEnvironmentV1, maxOutputBytes: number): Exec
 const passThrough = (outcome: Exclude<ExecutorOutcome, { outcome: 'COMPLETED' }>) => outcome;
 
 /** Its pack is a structure later calls read, not text for the model, and has a token budget. */
-export function createOrientExecutorV1(
+export function withOrientLimits(
   executor: Executor<'REPOSITORY_ORIENT'>,
-): ExecutorV1<'REPOSITORY_ORIENT'> {
+): Executor<'REPOSITORY_ORIENT'> {
   return {
     executionKind: 'REPOSITORY_ORIENT',
     execute: async (input, environment) => {
@@ -53,7 +50,7 @@ export function createOrientExecutorV1(
         inner(environment, environment.limits.maxOutputBytes),
       );
       return outcome.outcome === 'COMPLETED'
-        ? ({ outcome: 'COMPLETED', result: outcome.result } as ExecutorOutcomeV1)
+        ? { outcome: 'COMPLETED', result: outcome.result }
         : passThrough(outcome);
     },
   };
@@ -62,7 +59,7 @@ export function createOrientExecutorV1(
 /** Numbered lines take room the raw text does not: at most 400 lines of 8 bytes, and the header. */
 const FILE_RENDERING_BYTES = 4096;
 
-export function createFileReadExecutorV1(executor: Executor<'FILE_READ'>): ExecutorV1<'FILE_READ'> {
+export function withFilePreview(executor: Executor<'FILE_READ'>): Executor<'FILE_READ'> {
   return {
     executionKind: 'FILE_READ',
     execute: async (input, environment) => {
@@ -97,9 +94,9 @@ const parsedPack = (text: string): SearchContextPack | undefined => {
   }
 };
 
-export function createSearchExecutorV1(
+export function withSearchPreview(
   executor: Executor<'REPOSITORY_SEARCH'>,
-): ExecutorV1<'REPOSITORY_SEARCH'> {
+): Executor<'REPOSITORY_SEARCH'> {
   return {
     executionKind: 'REPOSITORY_SEARCH',
     execute: async (input, environment) => {
@@ -145,7 +142,7 @@ export function createSearchExecutorV1(
 }
 
 /** Sees the same file set as the other repository Executors, so exclusions hold (ExecutorSet 5). */
-export function createListExecutorV1(cache: FileDigestCache): ExecutorV1<'REPOSITORY_LIST'> {
+export function createListExecutor(cache: FileDigestCache): Executor<'REPOSITORY_LIST'> {
   return {
     executionKind: 'REPOSITORY_LIST',
     execute: (input: RepositoryListInput, environment) =>
@@ -164,8 +161,8 @@ export function createListExecutorV1(cache: FileDigestCache): ExecutorV1<'REPOSI
           output: listing.output,
           artifact: { mediaType: MEDIA_TYPES.fileText, text: listing.preview },
           ...(listing.full === undefined ? {} : { fullOutput: { text: listing.full } }),
-        } as unknown as Parameters<typeof completed>[0]);
-      }) as unknown as Promise<ExecutorOutcomeV1>,
+        });
+      }),
   };
 }
 

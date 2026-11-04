@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
 import {
-  ExecutionFactV1Schema,
-  ExecutionRequestV1Schema,
+  ExecutionFactSchema,
+  ExecutionRequestSchema,
   MEDIA_TYPES,
-  UnitReportV1Schema,
+  UnitReportSchema,
   assertValid,
   canonicalJson,
   type AppendLogPort,
   type ArtifactOwnerLine,
-  type ArtifactStorePortV1,
-  type ExecutionFactV1,
-  type ExecutionKindV1,
-  type ExecutionRequestV1,
-  type UnitInputV1,
-  type UnitReportV1,
+  type ArtifactStorePort,
+  type ExecutionFact,
+  type ExecutionKind,
+  type ExecutionRequest,
+  type UnitInput,
+  type UnitReport,
 } from '@multiagentos/contracts';
 import {
   testFileReadOutput,
@@ -71,7 +71,7 @@ const modelScope = {
 function setup(options: { converging?: boolean } = {}) {
   const bodies = new Map<string, Uint8Array>();
   const lines: ArtifactOwnerLine[] = [];
-  const store: ArtifactStorePortV1 = {
+  const store: ArtifactStorePort = {
     put: (content, mediaType) => {
       const sha256 = createHash('sha256').update(content).digest('hex');
       bodies.set(sha256, content);
@@ -111,8 +111,8 @@ function setup(options: { converging?: boolean } = {}) {
     testAgentBudget,
   );
   ledgers.openTurnLedger('trn_1');
-  const dispatched: ExecutionRequestV1[] = [];
-  const reports: UnitReportV1[] = [];
+  const dispatched: ExecutionRequest[] = [];
+  const reports: UnitReport[] = [];
   const ended: string[] = [];
   const faults: AttemptFault[] = [];
   const retries: RetryingActivity[] = [];
@@ -129,7 +129,7 @@ function setup(options: { converging?: boolean } = {}) {
     config,
     artifacts,
     dispatch: (request) => {
-      dispatched.push(assertValid(ExecutionRequestV1Schema, request));
+      dispatched.push(assertValid(ExecutionRequestSchema, request));
       return Promise.resolve();
     },
     cancelRun: (request) => {
@@ -161,7 +161,7 @@ function setup(options: { converging?: boolean } = {}) {
     isDeliverable: () => options.converging !== true,
     isConverging: () => options.converging === true,
     leaseIsValid: () => true,
-    deliver: (report) => reports.push(assertValid(UnitReportV1Schema, report)),
+    deliver: (report) => reports.push(assertValid(UnitReportSchema, report)),
     attemptStarted: () => undefined,
     attemptRunning: () => undefined,
     attemptEnded: (_spec, id) => ended.push(id),
@@ -169,7 +169,7 @@ function setup(options: { converging?: boolean } = {}) {
     audit: () => undefined,
   });
   let requests = 0;
-  const specOf = (kind: ExecutionKindV1, input: unknown, scope: AttemptSpec['scope']) => {
+  const specOf = (kind: ExecutionKind, input: unknown, scope: AttemptSpec['scope']) => {
     requests += 1;
     return {
       requestId: testId('req', requests),
@@ -177,21 +177,18 @@ function setup(options: { converging?: boolean } = {}) {
       unitRunId: testId('unr', requests),
       turnId: testId('trn'),
       unit: testUnitDefinition(kind),
-      input: input as UnitInputV1,
+      input: input as UnitInput,
       scope,
       runEpoch: 1,
       agent: testPinnedAgent({ modelScope }),
       display: { toolName: 'tool', argsSummary: '' },
     };
   };
-  const submit = (
-    kind: ExecutionKindV1,
-    input: unknown,
-    scope: AttemptSpec['scope'] = repository,
-  ) => attempts.start(specOf(kind, input, scope));
+  const submit = (kind: ExecutionKind, input: unknown, scope: AttemptSpec['scope'] = repository) =>
+    attempts.start(specOf(kind, input, scope));
   const started = { startedAt: '2026-11-02T00:00:00.000Z', endedAt: '2026-11-02T00:00:01.000Z' };
-  const factFor = (request: ExecutionRequestV1, rest: object): ExecutionFactV1 =>
-    assertValid(ExecutionFactV1Schema, {
+  const factFor = (request: ExecutionRequest, rest: object): ExecutionFact =>
+    assertValid(ExecutionFactSchema, {
       sessionId: testId('ses'),
       workflowRunId: testId('wfr'),
       unitAttemptId: request.unitAttemptId,

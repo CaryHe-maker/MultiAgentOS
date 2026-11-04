@@ -1,14 +1,14 @@
 import {
-  type ExecutionKindV1,
-  type SubmitUnitRequestV1,
-  type UnitDefinitionV1,
+  type ExecutionKind,
+  type SubmitUnitRequest,
+  type UnitDefinition,
 } from '@multiagentos/contracts';
 import { admitWork, type Decision, type RunControl } from './run-control.js';
 
 /** What a registered AgentRun contributes to admission. */
 export interface AdmittedAgentRun {
   readonly state: 'ACTIVE' | 'ENDED';
-  readonly units: readonly UnitDefinitionV1[];
+  readonly units: readonly UnitDefinition[];
   readonly maxToolUnits: number;
 }
 
@@ -16,23 +16,23 @@ export interface AdmissionContext {
   readonly control: RunControl;
   readonly agentRun: AdmittedAgentRun | undefined;
   /** The input follows the contract that the Unit declares. */
-  readonly inputIsValid: (unit: UnitDefinitionV1, input: unknown) => boolean;
+  readonly inputIsValid: (unit: UnitDefinition, input: unknown) => boolean;
 }
 
 export type Admission =
   | Extract<Decision, { accepted: false }>
   | {
       readonly accepted: true;
-      readonly unit: UnitDefinitionV1;
+      readonly unit: UnitDefinition;
       readonly needsRepoRead: boolean;
       readonly countsAsTool: boolean;
     };
 
 /** The kinds this stage cannot run; stage 2 judges by the Unit's capabilities instead. */
-const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKindV1> = new Set(['FILE_WRITE', 'COMMAND', 'TEST']);
+const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['FILE_WRITE', 'COMMAND', 'TEST']);
 
 /** Model work and the Units that end an Agent stay available after the quota (Kernel/Monitor 3). */
-const UNCOUNTED_KINDS: ReadonlySet<ExecutionKindV1> = new Set([
+const UNCOUNTED_KINDS: ReadonlySet<ExecutionKind> = new Set([
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'MESSAGE_PUBLISH',
@@ -41,7 +41,7 @@ const UNCOUNTED_KINDS: ReadonlySet<ExecutionKindV1> = new Set([
 
 /** The checks of `submitUnit`, in order (Kernel/Interaction 7). Idempotency is done before this. */
 export function admitUnit(
-  request: Pick<SubmitUnitRequestV1, 'unitRef' | 'input'>,
+  request: Pick<SubmitUnitRequest, 'unitRef' | 'input'>,
   context: AdmissionContext,
 ): Admission {
   const admitted = admitWork(context.control);

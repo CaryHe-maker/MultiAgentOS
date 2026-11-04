@@ -3,7 +3,7 @@ import {
   MEDIA_TYPES,
   MessagePublishInputSchema,
   ModelRawOutputSchema,
-  ReportPublishInputV1Schema,
+  ReportPublishInputSchema,
   ReplyArgsSchema,
   canonicalJson,
   validate,
@@ -11,8 +11,8 @@ import {
   type MessagePublishInput,
   type ModelRawOutput,
   type ReplyArgs,
-  type ReportPublishInputV1,
-  type UnitInputV1,
+  type ReportPublishInput,
+  type UnitInput,
 } from '@multiagentos/contracts';
 import type { ResultCheck } from './run-attempts.js';
 import type { SessionArtifacts } from './session-artifacts.js';
@@ -46,7 +46,7 @@ async function replyText(
 
 /** The reply's text lives only in the model output; the log holds references (Execution 5). */
 export async function publishMessage(
-  unitInput: UnitInputV1,
+  unitInput: UnitInput,
   artifacts: SessionArtifacts,
 ): Promise<BuiltInResult> {
   const input = validate<MessagePublishInput>(MessagePublishInputSchema, unitInput);
@@ -65,11 +65,11 @@ export async function publishMessage(
 
 /** Fills in the goal from `goalRef`, because Workflow never holds the user's words. */
 export async function publishReport(
-  unitInput: UnitInputV1,
+  unitInput: UnitInput,
   artifacts: SessionArtifacts,
   maxReportBytes: number,
 ): Promise<BuiltInResult> {
-  const input = validate<ReportPublishInputV1>(ReportPublishInputV1Schema, unitInput);
+  const input = validate<ReportPublishInput>(ReportPublishInputSchema, unitInput);
   if (!input.ok) return notDispatched('INVALID_INPUT');
   const goal = await artifacts.read(input.value.goalRef);
   if (!goal.ok) return notDispatched('INVALID_ARTIFACT_REF');

@@ -7,9 +7,9 @@ import {
   newId,
   type ArtifactRef,
   type SessionLogRecord,
-  type SubmitUnitRequestV1,
+  type SubmitUnitRequest,
   type TemplateDefinition,
-  type UnitReportV1,
+  type UnitReport,
 } from '@multiagentos/contracts';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -130,14 +130,14 @@ const modelReply = (toolName: string, args: unknown, toolCallId = 'call_1'): Ok 
     toolCalls: [{ toolCallId, toolName, arguments: args }],
     hasText: false,
     hasReasoning: false,
-  } as UnitReportV1 extends { output: infer O } ? O : never,
+  } as UnitReport extends { output: infer O } ? O : never,
   outputRef: modelRef,
 });
 
 /** A scripted model: answers each model-call in turn, everything else succeeds. */
 function script(replies: readonly Ok[]): FakeUnitScript {
   let model = 0;
-  return (request: SubmitUnitRequestV1) => {
+  return (request: SubmitUnitRequest) => {
     switch (request.unitRef.id) {
       case 'model-call': {
         const reply = replies[Math.min(model, replies.length - 1)];
@@ -282,7 +282,7 @@ describe('a chat Turn', () => {
       modelReply('reply', { text: 'hi' }),
     ];
     const answers = script(replies);
-    const assembled: SubmitUnitRequestV1[] = [];
+    const assembled: SubmitUnitRequest[] = [];
     const { kernel, runner } = setup(
       replies,
       (request, index) => {
@@ -413,7 +413,7 @@ describe('analyze', () => {
   });
 
   it('names the goal by reference only', async () => {
-    const seen: SubmitUnitRequestV1[] = [];
+    const seen: SubmitUnitRequest[] = [];
     const replies = script([modelReply('finish', draft)]);
     const { kernel } = setup([modelReply('finish', draft)], (request, index) => {
       seen.push(request);
@@ -461,7 +461,7 @@ describe('an interrupted process', () => {
   });
 
   it('keeps everything that finished, and starts a new AgentRun on the next prompt', async () => {
-    const seen: SubmitUnitRequestV1[] = [];
+    const seen: SubmitUnitRequest[] = [];
     const replies = script([tool, reply, modelReply('reply', { text: 'again' })]);
     const units: FakeUnitScript = (request, index) => {
       seen.push(request);

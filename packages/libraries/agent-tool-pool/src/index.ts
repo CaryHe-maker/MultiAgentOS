@@ -1,6 +1,6 @@
 /**
  * AgentToolPool: immutable, versioned Agent / Unit / Tool / Model / Prompt / Template definitions.
- * The composition root calls `DefinitionCatalogV1.load(new FileDefinitionSource(dir))` once at
+ * The composition root calls `DefinitionCatalog.load(new FileDefinitionSource(dir))` once at
  * startup; Core pins Agents through it and Workflow takes its built-ins from it.
  */
 export { FileDefinitionSource } from './adapters/file/file-definition-source.js';
@@ -21,9 +21,9 @@ export type {
   SourceSnapshot,
 } from './ports/definition-source.js';
 export {
-  DefinitionCatalogV1,
-  buildCatalogIndexV1,
-  planSealV1,
-  type CatalogIndexV1,
-  type SealPlanV1,
-} from './catalog-v1/catalog-v1.js';
+  DefinitionCatalog,
+  buildCatalogIndex,
+  planSeal,
+  type CatalogIndex,
+  type SealPlan,
+} from './catalog/catalog.js';

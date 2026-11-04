@@ -1,7 +1,7 @@
 import type {
   AppendLogPort,
   LockResult,
-  PersistenceNamespaceV1,
+  PersistenceNamespace,
   SessionDirectoryPort,
   SessionPersistencePort,
   StoragePath,
@@ -15,7 +15,7 @@ export class MemorySessionPersistence implements SessionPersistencePort {
   readonly locks = new Set<string>();
   failAppends = false;
 
-  appendLog<T>(_namespace: PersistenceNamespaceV1, path: StoragePath): AppendLogPort<T> {
+  appendLog<T>(_namespace: PersistenceNamespace, path: StoragePath): AppendLogPort<T> {
     const key = MemorySessionPersistence.keyOf(path);
     return {
       append: (record) => {
@@ -40,7 +40,7 @@ export class MemorySessionPersistence implements SessionPersistencePort {
     };
   }
 
-  sessionDirectory(_namespace: PersistenceNamespaceV1, sessionId: string): SessionDirectoryPort {
+  sessionDirectory(_namespace: PersistenceNamespace, sessionId: string): SessionDirectoryPort {
     return {
       create: () => {
         if (this.directories.has(sessionId)) return Promise.reject(new Error('exists'));

@@ -76,7 +76,7 @@
 
 | 共享内容 | 说明 |
 |---|---|
-| `packages/libraries/contracts` | v1 Schema、Port 与跨模块类型；M1 的 v0 Schema 保持冻结 |
+| `packages/libraries/contracts` | v1 Schema、Port 与跨模块类型 |
 | `packages/testing` | fake、fixture 与共享契约测试；fake 只跟随 `Interface/`，不重新定义被替代方的行为 |
 | `packages/modules/kernel/src/interfaces` | Kernel 控制面与执行面之间的内部接口 |
 | 各包的 `XxxDeps` 与工厂签名 | 定义在 `Interface/` 中 |

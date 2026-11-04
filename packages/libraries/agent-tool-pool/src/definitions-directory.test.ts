@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FileDefinitionSource } from './adapters/file/file-definition-source.js';
-import { DefinitionCatalogV1, buildCatalogIndexV1, planSealV1 } from './catalog-v1/catalog-v1.js';
+import { DefinitionCatalog, buildCatalogIndex, planSeal } from './catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
 
 /**
@@ -12,13 +12,13 @@ describe('shipped definitions', () => {
 
   it('load without issues and every published version is sealed', async () => {
     const snapshot = await load();
-    const result = buildCatalogIndexV1(snapshot);
+    const result = buildCatalogIndex(snapshot);
     expect(result.ok ? [] : result.issues).toEqual([]);
-    expect(planSealV1(snapshot).patches).toEqual([]);
+    expect(planSeal(snapshot).patches).toEqual([]);
   });
 
   it('are exactly the definitions of AgentToolPool section 3', async () => {
-    const catalog = await DefinitionCatalogV1.load(
+    const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     expect(
@@ -53,7 +53,7 @@ describe('shipped definitions', () => {
   });
 
   it('price DeepSeek flash as published on 2026-09-28', async () => {
-    const catalog = await DefinitionCatalogV1.load(
+    const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     const model = catalog.latest('MODEL', 'deepseek-flash');

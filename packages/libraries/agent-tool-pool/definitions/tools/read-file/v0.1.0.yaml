@@ -11,7 +11,7 @@ modelDescription:
 parametersContract:
   kind: contract
   id: executor.FileReadInput
-  version: v0
+  version: v1
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true

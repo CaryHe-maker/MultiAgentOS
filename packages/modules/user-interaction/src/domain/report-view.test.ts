@@ -1,8 +1,8 @@
-import type { ReportLastIssue, AnalysisReport, RunSummary } from '@multiagentos/contracts';
+import type { ReportLastIssue, AnalysisReport } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { REASON_CODES } from '@multiagentos/contracts';
 import { describeReason } from './interaction-messages.js';
-import { renderQuestion, renderReport, renderSummary } from './report-view.js';
+import { renderReport } from './report-view.js';
 
 const report: AnalysisReport = {
   workflowRunId: 'wfr_123456',
@@ -61,25 +61,6 @@ describe('Chinese report views', () => {
     expect(text).toContain('待确认\\u0008');
     expectNoTerminalControls(text);
     expect(input).toEqual(original);
-  });
-
-  it('escapes terminal controls in authorization metadata without changing its values', () => {
-    const question = {
-      type: 'AuthorizationRequest' as const,
-      questionId: 'qst_123456',
-      capability: 'repo.read' as const,
-      repositoryPath: '/仓库\u001b[2J',
-      exclusions: ['目录\r覆盖'],
-      provider: '服务商\u009b31m',
-      expiresAt: '2026-10-14T00:01:00.000Z',
-    };
-    const original = structuredClone(question);
-    const text = renderQuestion(question);
-    expect(text).toContain('/仓库\\u001b[2J');
-    expect(text).toContain('目录\\u000d覆盖');
-    expect(text).toContain('服务商\\u009b31m');
-    expectNoTerminalControls(text);
-    expect(question).toEqual(original);
   });
 
   it('fixes the answer, conclusion, source, unconfirmed and wrap-up layout', () => {
@@ -182,53 +163,6 @@ describe('Chinese report views', () => {
     );
     expect(renderReport(degraded({ kind: 'NO_FINISH' }))).toContain('没有返回合法的结束结果');
     expect(renderReport({ ...report, emptyReads: ['a.txt'] })).toContain('1 个空文件');
-  });
-
-  it('renders counts and failure category without internal detail', () => {
-    const summary: RunSummary = {
-      workflowRunId: report.workflowRunId,
-      startedAt: report.createdAt,
-      closedAt: report.createdAt,
-      durationMs: 120,
-      agentRuns: [
-        {
-          agentRunId: 'agr_123456',
-          agentRef: { kind: 'AGENT', id: 'planner', version: 'v0.1.0', digest: 'a'.repeat(64) },
-          registeredAt: report.createdAt,
-          endedAt: report.createdAt,
-          rounds: 2,
-        },
-      ],
-      units: { submitted: 3, ok: 2, rejected: 0, failed: 1, notDelivered: 0 },
-      model: { requests: 2, finalCallUsed: false },
-      tokens: {
-        limit: 100,
-        used: 10,
-        unknown: 5,
-        inputTokens: 7,
-        outputTokens: 3,
-        finalBudgetState: 'NORMAL',
-      },
-      closeReason: 'FAILED',
-      unknownEffects: [],
-      failure: {
-        code: 'WORKFLOW_INTERNAL',
-        category: 'INTERNAL',
-        source: 'WORKFLOW',
-        detail: 'secret',
-      },
-    };
-    expect(renderSummary(summary)).toMatchInlineSnapshot(`
-      "运行摘要
-      代理 planner：2 轮
-      操作：提交 3，成功 2，拒绝 0，失败 1，未交付 0
-      模型调用：2
-      令牌：已使用 10，未知 5，上限 100
-      耗时：120 毫秒
-      失败分类：内部故障
-      分析流程发生内部错误。
-      "
-    `);
   });
 
   it('provides Chinese descriptions for every reason and a safe fallback', () => {

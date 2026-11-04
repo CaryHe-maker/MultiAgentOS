@@ -4,12 +4,12 @@ import {
   estimateItemTokens,
   newId,
   sha256Hex,
-  type AssembleContextPackV1,
+  type AssembleContextPack,
   type ContextItem,
   type ContextPack,
 } from '@multiagentos/contracts';
 
-type AnyItem = ContextItem | AssembleContextPackV1['items'][number];
+type AnyItem = ContextItem | AssembleContextPack['items'][number];
 
 /** A ContextItem before the fields derived from its content and its place in the pack. */
 export type ItemDraft<Item extends AnyItem = AnyItem> = Item extends unknown
@@ -46,7 +46,7 @@ export function packTokens(items: readonly { readonly tokenCount: number }[]): n
 }
 
 /** The artifact of a ContextPack: its canonical JSON (SharedContracts 4.3). */
-export function packArtifact(pack: ContextPack | AssembleContextPackV1): {
+export function packArtifact(pack: ContextPack | AssembleContextPack): {
   mediaType: string;
   text: string;
 } {

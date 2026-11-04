@@ -18,7 +18,7 @@ M1 的定义格式见 M1Interface 第 9 节（`DefinitionHeader.schemaVersion = 
 ## 2. Agent（`v1`）
 
 ```ts
-interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersion = 'v1'
+interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion = 'v1'
   role: string;                                  // ≤200
   modelRef: DefinitionRef;
   thinking: {
@@ -63,7 +63,7 @@ interface AgentBudgetProfile {                   // M2Design 第 7.3 节"每个 
 ## 3. Model（`v1`）
 
 ```ts
-interface ModelDefinitionV1 extends Omit<ModelDefinition, 'schemaVersion' | 'features'> {   // schemaVersion = 'v1'
+interface ModelDefinition extends Omit<M1ModelDefinition, 'schemaVersion' | 'features'> {   // schemaVersion = 'v1'；M1ModelDefinition 见归档的 M1Interface
   features: {
     hasJsonOutput: boolean;
     hasToolCalls: boolean;
@@ -159,12 +159,12 @@ nodes:
 ## 5. Unit（`v1`）、Tool、Prompt
 
 ```ts
-interface UnitDefinitionV1 extends Omit<UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'
-  executionKind: ExecutionKindV1;
+interface UnitDefinition extends Omit<M1UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'；M1UnitDefinition 见归档的 M1Interface
+  executionKind: ExecutionKind;
   // 阶段 2：capabilities 与 resourceKeys；阶段 4：concurrencyClass
 }
 
-type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
+type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
 ```
 
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；

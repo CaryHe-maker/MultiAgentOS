@@ -1,7 +1,7 @@
 import type {
   ArtifactRef,
-  InteractionGatewayPortV1,
-  KernelToInteractionEventV1,
+  InteractionGatewayPort,
+  KernelToInteractionEvent,
 } from '@multiagentos/contracts';
 import { testArtifactRef } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
@@ -40,7 +40,7 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
           : { outcome: 'ACCEPTED', text: body },
       );
     },
-  } as unknown as InteractionGatewayPortV1;
+  } as unknown as InteractionGatewayPort;
   const printed: TranscriptRecord[] = [];
   const restored: string[][] = [];
   let live: LiveState | undefined;
@@ -57,7 +57,7 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     now: () => new Date(clock.ms),
   });
   let seq = 0;
-  const event = (body: KernelToInteractionEventV1) =>
+  const event = (body: KernelToInteractionEvent) =>
     console.handleRunEvent({
       eventId: `evt_${String(++seq)}`,
       sessionId: SESSION,
@@ -247,7 +247,7 @@ describe('Console', () => {
     await t.console.submit('hi');
     await t.event({ type: 'RunStateChanged', state: 'RUNNING' });
     await t.console.submit('排队的');
-    await t.event({ type: 'RunFinished', closeReason: 'BUDGET' } as KernelToInteractionEventV1);
+    await t.event({ type: 'RunFinished', closeReason: 'BUDGET' } as KernelToInteractionEvent);
     expect(t.restored).toEqual([['排队的']]);
     expect(t.live()?.pending?.kind).toBe('CONTINUE');
     await t.console.submit('y');
@@ -258,7 +258,7 @@ describe('Console', () => {
     const t = setup();
     const exit = t.console.run({ id: 'analyze', version: 'v0.1.0' }, '分析');
     await Promise.resolve();
-    await t.event({ type: 'RunFinished', closeReason: 'VIOLATION' } as KernelToInteractionEventV1);
+    await t.event({ type: 'RunFinished', closeReason: 'VIOLATION' } as KernelToInteractionEvent);
     await expect(exit).resolves.toBe(3);
   });
 

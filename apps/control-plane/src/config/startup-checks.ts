@@ -1,9 +1,9 @@
 import {
   estimateItemTokens,
   estimatePackTokens,
-  type KernelConfigV1,
+  type KernelConfig,
   type ModelToolSpec,
-  type PinnedDefinitionSetV1,
+  type PinnedDefinitionSet,
   type ProtocolRegistry,
   type ProviderCredentials,
 } from '@multiagentos/contracts';
@@ -20,8 +20,8 @@ const STATUS_MAX_BYTES = 1024;
  * and `AGENTS.md` are not bounded here; a call they do not fit ends with CONTEXT_LIMIT at run time.
  */
 export function assertStartupChecks(
-  config: KernelConfigV1,
-  agents: readonly PinnedDefinitionSetV1[],
+  config: KernelConfig,
+  agents: readonly PinnedDefinitionSet[],
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
   credentials: ProviderCredentials,
 ): void {
@@ -45,8 +45,8 @@ export function assertStartupChecks(
 }
 
 function assertAgent(
-  config: KernelConfigV1,
-  set: PinnedDefinitionSetV1,
+  config: KernelConfig,
+  set: PinnedDefinitionSet,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
 ): void {
   const { agent, model, prompt, units, tools } = set;

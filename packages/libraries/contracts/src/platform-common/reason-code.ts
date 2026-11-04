@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import type { ErrorCategory } from './common-schemas.js';
 
-/** Closed enumeration of M1Interface 3.4; each code has exactly one category. */
+/** Closed enumeration of the Interface documents; each code has exactly one category. */
 export const REASON_CODE_CATEGORY = {
   INVALID_REQUEST: 'VALIDATION',
   CALLER_FORBIDDEN: 'POLICY',
@@ -46,12 +46,23 @@ export const REASON_CODE_CATEGORY = {
   PIN_FAILED: 'DEPENDENCY',
   WORKFLOW_INTERNAL: 'INTERNAL',
   KERNEL_INTERNAL: 'INTERNAL',
+  NO_OPEN_TURN: 'CONFLICT',
+  SESSION_COMMAND_UNKNOWN: 'CONFLICT',
+  SESSION_QUERY_UNKNOWN: 'CONFLICT',
+  PROJECT_FILE_FORBIDDEN: 'POLICY',
+  ARTIFACT_EXPIRED: 'RESOURCE',
+  SESSION_NOT_FOUND: 'VALIDATION',
+  SESSION_IN_USE: 'CONFLICT',
+  TEMPLATE_UNSUPPORTED: 'VALIDATION',
+  HUMAN_REQUEST_NOT_PENDING: 'CONFLICT',
+  CONTEXT_OVERFLOW: 'RESOURCE',
+  QUOTA_EXHAUSTED: 'RESOURCE',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
 export const REASON_CODES = Object.keys(REASON_CODE_CATEGORY) as ReasonCode[];
 export const ReasonCodeSchema = Type.Unsafe<ReasonCode>(
-  Type.Enum(REASON_CODES, { $id: 'platform.common.ReasonCode.v0' }),
+  Type.Enum(REASON_CODES, { $id: 'platform.common.ReasonCode.v1' }),
 );
 
 /**
@@ -64,6 +75,7 @@ export const GATEWAY_REJECTED_CODES = [
   'INVALID_REQUEST',
   'CALLER_FORBIDDEN',
   'RUN_NOT_FOUND',
+  'SESSION_NOT_FOUND',
 ] as const satisfies readonly ReasonCode[];
 /** SyscallRejected with `issuer = 'CORE'`. RUN_BLOCKED is listed separately below. */
 export const CORE_REJECTED_CODES = [
@@ -82,6 +94,16 @@ export const CORE_REJECTED_CODES = [
   'INVALID_INPUT',
   'QUESTION_NOT_PENDING',
   'INVALID_ARTIFACT_REF',
+  'NO_OPEN_TURN',
+  'SESSION_COMMAND_UNKNOWN',
+  'SESSION_QUERY_UNKNOWN',
+  'PROJECT_FILE_FORBIDDEN',
+  'SESSION_NOT_FOUND',
+  'SESSION_IN_USE',
+  'TEMPLATE_UNSUPPORTED',
+  'HUMAN_REQUEST_NOT_PENDING',
+  'ARTIFACT_EXPIRED',
+  'USER_DECLINED',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
@@ -124,7 +146,7 @@ export type ExecutorFailedCode = (typeof EXECUTOR_FAILED_CODES)[number];
 export type ViolationCode = (typeof VIOLATION_CODES)[number];
 export type TerminationCode = (typeof TERMINATION_CODES)[number];
 
-/** A UnitReport with `status = 'REJECTED'` (docs/M1/Kernel/Interaction.md 5.4). */
+/** A UnitReport with `status = 'REJECTED'` (Kernel/Interaction 5.4). */
 export const UNIT_REJECTED_CODES = [
   'INVALID_INPUT',
   'INVALID_ARTIFACT_REF',
@@ -132,6 +154,8 @@ export const UNIT_REJECTED_CODES = [
   'BUDGET_WRAP_UP',
   'BUDGET_EXHAUSTED',
   'FINAL_CALL_USED',
+  'ARTIFACT_EXPIRED',
+  'QUOTA_EXHAUSTED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */
@@ -144,56 +168,19 @@ export type UnitFailedCode = (typeof UNIT_FAILED_CODES)[number];
 /** Every reason code a UnitReport may carry, and therefore every key of a failurePolicy. */
 export const UNIT_REPORT_CODES = [...UNIT_REJECTED_CODES, ...UNIT_FAILED_CODES] as const;
 
+/** What a definition may decide; a quota and an expired artifact mean the same for every Unit. */
+export const FAILURE_POLICY_CODES = [
+  ...UNIT_REJECTED_CODES.filter(
+    (
+      code,
+    ): code is Exclude<
+      (typeof UNIT_REJECTED_CODES)[number],
+      'QUOTA_EXHAUSTED' | 'ARTIFACT_EXPIRED'
+    > => code !== 'QUOTA_EXHAUSTED' && code !== 'ARTIFACT_EXPIRED',
+  ),
+  ...UNIT_FAILED_CODES,
+];
+
 /** A closed set of reason codes as a Schema whose static type is the union of those codes. */
 export const reasonCodeOf = <const Codes extends readonly ReasonCode[]>(codes: Codes) =>
   Type.Unsafe<Codes[number]>(Type.Enum([...codes]));
-
-/** M1's codes are frozen in major 0; major 1 adds the codes of the M2 Interface documents. */
-export const REASON_CODE_CATEGORY_V1 = {
-  ...REASON_CODE_CATEGORY,
-  NO_OPEN_TURN: 'CONFLICT',
-  SESSION_COMMAND_UNKNOWN: 'CONFLICT',
-  SESSION_QUERY_UNKNOWN: 'CONFLICT',
-  PROJECT_FILE_FORBIDDEN: 'POLICY',
-  ARTIFACT_EXPIRED: 'RESOURCE',
-  SESSION_NOT_FOUND: 'VALIDATION',
-  SESSION_IN_USE: 'CONFLICT',
-  TEMPLATE_UNSUPPORTED: 'VALIDATION',
-  HUMAN_REQUEST_NOT_PENDING: 'CONFLICT',
-  CONTEXT_OVERFLOW: 'RESOURCE',
-  QUOTA_EXHAUSTED: 'RESOURCE',
-} as const satisfies Record<string, ErrorCategory>;
-export type ReasonCodeV1 = keyof typeof REASON_CODE_CATEGORY_V1;
-export const REASON_CODES_V1 = Object.keys(REASON_CODE_CATEGORY_V1) as ReasonCodeV1[];
-export const ReasonCodeV1Schema = Type.Unsafe<ReasonCodeV1>(
-  Type.Enum(REASON_CODES_V1, { $id: 'platform.common.ReasonCode.v1' }),
-);
-export const reasonCodeV1Of = <const Codes extends readonly ReasonCodeV1[]>(codes: Codes) =>
-  Type.Unsafe<Codes[number]>(Type.Enum([...codes]));
-
-export const GATEWAY_REJECTED_CODES_V1 = [
-  ...GATEWAY_REJECTED_CODES,
-  'SESSION_NOT_FOUND',
-] as const satisfies readonly ReasonCodeV1[];
-export type GatewayRejectedCodeV1 = (typeof GATEWAY_REJECTED_CODES_V1)[number];
-
-export const CORE_REJECTED_CODES_V1 = [
-  ...CORE_REJECTED_CODES,
-  'NO_OPEN_TURN',
-  'SESSION_COMMAND_UNKNOWN',
-  'SESSION_QUERY_UNKNOWN',
-  'PROJECT_FILE_FORBIDDEN',
-  'SESSION_NOT_FOUND',
-  'SESSION_IN_USE',
-  'TEMPLATE_UNSUPPORTED',
-  'HUMAN_REQUEST_NOT_PENDING',
-  'ARTIFACT_EXPIRED',
-  'USER_DECLINED',
-] as const satisfies readonly ReasonCodeV1[];
-export type CoreRejectedCodeV1 = (typeof CORE_REJECTED_CODES_V1)[number];
-/** A UnitReport with `status = 'REJECTED'` in major 1. */
-export const UNIT_REJECTED_CODES_V1 = [
-  ...UNIT_REJECTED_CODES,
-  'ARTIFACT_EXPIRED',
-  'QUOTA_EXHAUSTED',
-] as const satisfies readonly ReasonCodeV1[];

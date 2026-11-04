@@ -1,34 +1,34 @@
 import {
-  AnswerAuthorizationRequestV1Schema,
+  AnswerAuthorizationRequestSchema,
   AnswerHumanRequestSchema,
-  CloseRunRequestV1Schema,
+  CloseRunRequestSchema,
   DeleteSessionRequestSchema,
-  EndAgentRunRequestV1Schema,
+  EndAgentRunRequestSchema,
   ListSessionsRequestSchema,
   OpenSessionRequestSchema,
-  ReadArtifactRequestV1Schema,
+  ReadArtifactRequestSchema,
   ReadProjectFileRequestSchema,
-  RegisterAgentRunRequestV1Schema,
+  RegisterAgentRunRequestSchema,
   ReportSessionCommandRequestSchema,
   ReportSessionListRequestSchema,
   RequestHumanRequestSchema,
   ShutdownRequestSchema,
   StartRunRequestSchema,
   StartSessionRequestSchema,
-  SubmitUnitRequestV1Schema,
+  SubmitUnitRequestSchema,
   newId,
   validate,
-  type CloseReasonV1,
-  type GatewayForwardV1,
-  type GatewayRejectedCodeV1,
-  type InteractionGatewayPortV1,
-  type SyscallRejectedV1,
-  type WorkflowGatewayPortV1,
+  type CloseReason,
+  type GatewayForward,
+  type GatewayRejectedCode,
+  type InteractionGatewayPort,
+  type SyscallRejected,
+  type WorkflowGatewayPort,
 } from '@multiagentos/contracts';
 import type { CoreResponse } from './session-core.js';
 
 export type Caller = 'workflow' | 'user-interaction';
-export type RequestType = GatewayForwardV1['requestType'];
+export type RequestType = GatewayForward['requestType'];
 
 /** The message a request arrived in, for the context Core sees (Kernel/Gateway 2). */
 export interface RequestOrigin {
@@ -49,13 +49,13 @@ interface Route {
 const ROUTES: Readonly<Record<RequestType, Route>> = {
   registerAgentRun: {
     caller: 'workflow',
-    schema: RegisterAgentRunRequestV1Schema,
+    schema: RegisterAgentRunRequestSchema,
     needs: 'RUN',
     blocked: true,
   },
   submitUnit: {
     caller: 'workflow',
-    schema: SubmitUnitRequestV1Schema,
+    schema: SubmitUnitRequestSchema,
     needs: 'RUN',
     blocked: true,
   },
@@ -71,8 +71,8 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
     needs: 'RUN',
     blocked: true,
   },
-  endAgentRun: { caller: 'workflow', schema: EndAgentRunRequestV1Schema, needs: 'RUN' },
-  closeRun: { caller: 'workflow', schema: CloseRunRequestV1Schema, needs: 'RUN' },
+  endAgentRun: { caller: 'workflow', schema: EndAgentRunRequestSchema, needs: 'RUN' },
+  closeRun: { caller: 'workflow', schema: CloseRunRequestSchema, needs: 'RUN' },
   reportSessionCommand: {
     caller: 'workflow',
     schema: ReportSessionCommandRequestSchema,
@@ -95,13 +95,13 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   shutdown: { caller: 'user-interaction', schema: ShutdownRequestSchema, needs: 'NOTHING' },
   answerAuthorization: {
     caller: 'user-interaction',
-    schema: AnswerAuthorizationRequestV1Schema,
+    schema: AnswerAuthorizationRequestSchema,
     needs: 'RUN',
   },
   answerHuman: { caller: 'user-interaction', schema: AnswerHumanRequestSchema, needs: 'RUN' },
   readArtifact: {
     caller: 'user-interaction',
-    schema: ReadArtifactRequestV1Schema,
+    schema: ReadArtifactRequestSchema,
     needs: 'SESSION',
   },
 };
@@ -109,12 +109,12 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
 interface Admission {
   readonly sessionId: string;
   readonly runState: 'RUNNING' | 'CONVERGING' | 'CLOSED';
-  readonly closeReason?: CloseReasonV1;
+  readonly closeReason?: CloseReason;
 }
 
 export interface SessionGatewayDeps {
   readonly handle: (
-    forward: GatewayForwardV1,
+    forward: GatewayForward,
     sessionId?: string,
     origin?: RequestOrigin,
   ) => Promise<CoreResponse>;
@@ -139,7 +139,7 @@ export class SessionGateway {
     workflowRunId: string,
     sessionId: string,
     runState: Admission['runState'],
-    closeReason?: CloseReasonV1,
+    closeReason?: CloseReason,
   ): void {
     const known = this.#admissions.get(workflowRunId);
     const rank = { RUNNING: 0, CONVERGING: 1, CLOSED: 2 } as const;
@@ -151,7 +151,7 @@ export class SessionGateway {
     });
   }
 
-  rejected(requestId: string, reasonCode: GatewayRejectedCodeV1): SyscallRejectedV1 {
+  rejected(requestId: string, reasonCode: GatewayRejectedCode): SyscallRejected {
     return { requestId, outcome: 'REJECTED', issuer: 'GATEWAY', reasonCode };
   }
 
@@ -165,7 +165,7 @@ export class SessionGateway {
     const route = ROUTES[requestType];
     const requestId = (request as { readonly requestId: string }).requestId;
     if (route.caller !== caller) return this.rejected(requestId, 'CALLER_FORBIDDEN');
-    const parsed = validate<GatewayForwardV1['request']>(route.schema, request);
+    const parsed = validate<GatewayForward['request']>(route.schema, request);
     if (!parsed.ok) return this.rejected(requestId, 'INVALID_REQUEST');
     const body = parsed.value as { readonly sessionId?: string; readonly workflowRunId?: string };
 
@@ -199,7 +199,7 @@ export class SessionGateway {
       requestType,
       request: parsed.value,
       ...(generated === undefined ? {} : { sessionId: generated }),
-    } as GatewayForwardV1;
+    } as GatewayForward;
     return this.#deps.handle(forward, generated, origin);
   }
 
@@ -209,7 +209,7 @@ export class SessionGateway {
   }
 
   /** Injected into Workflow only; the caller is who holds the port. */
-  readonly workflow: WorkflowGatewayPortV1 = {
+  readonly workflow: WorkflowGatewayPort = {
     registerAgentRun: this.#port('workflow', 'registerAgentRun'),
     submitUnit: this.#port('workflow', 'submitUnit'),
     endAgentRun: this.#port('workflow', 'endAgentRun'),
@@ -221,7 +221,7 @@ export class SessionGateway {
   };
 
   /** Injected into UserInteraction only. */
-  readonly interaction: InteractionGatewayPortV1 = {
+  readonly interaction: InteractionGatewayPort = {
     startSession: this.#port('user-interaction', 'startSession'),
     openSession: this.#port('user-interaction', 'openSession'),
     startRun: this.#port('user-interaction', 'startRun'),

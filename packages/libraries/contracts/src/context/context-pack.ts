@@ -23,7 +23,7 @@ export const ModelToolSpecSchema = closed(
     parameters: Type.Record(Type.String(), Type.Unknown()),
     purpose: Type.Enum(['UNIT', 'CONTROL']),
   },
-  'context.ModelToolSpec.v0',
+  'context.ModelToolSpec.v1',
 );
 export type ModelToolSpec = Static<typeof ModelToolSpecSchema>;
 
@@ -100,19 +100,23 @@ const SearchHitItemSchema = closed({
   provenance: ProvenanceSchema,
   score: Type.Number({ minimum: 0, maximum: 1 }),
 });
-const history = { ...item, segment: Type.Literal('HISTORY') };
+
+const history = {
+  ...item,
+  segment: Type.Literal('HISTORY'),
+  seq: count(1),
+  turnId: Type.Optional(IdSchemas.turnId),
+  category: Type.Enum(['PINNED', 'NORMAL']),
+};
 const HistoryItemSchema = Type.Union([
   closed({
     ...history,
     role: Type.Literal('assistant'),
     toolCalls: Type.Optional(Type.Array(ModelToolCallSchema, { minItems: 1 })),
+    /** Replayed per the model's ThinkingFeature; an empty string fills a turn without it. */
+    reasoningContent: Type.Optional(Type.String()),
   }),
-  closed({
-    ...history,
-    role: Type.Literal('tool'),
-    toolCallId: ToolCallIdSchema,
-    provenance: Type.Optional(ProvenanceSchema),
-  }),
+  closed({ ...history, role: Type.Literal('tool'), toolCallId: ToolCallIdSchema }),
   closed({ ...history, role: user }),
 ]);
 
@@ -162,16 +166,22 @@ export const SearchContextPackSchema = Type.Refine(
   hasOrderedItemIds,
   ITEM_ID_ERROR,
 );
-/**
- * The artifact of context-assemble and the input of model-call: always with `prefixSha256`,
- * never with SEARCH_HIT items, and with a snapshotId when an orient pack was assembled in.
- */
+export type OrientContextPack = Static<typeof OrientContextPackSchema>;
+export type SearchContextPack = Static<typeof SearchContextPackSchema>;
+
+/** `elidedEntries` are the `seq` values the final-call safeguard removed, and nothing else does. */
 export const AssembleContextPackSchema = Type.Refine(
   closed({
-    ...pack,
+    contextPackId: IdSchemas.contextPackId,
+    tokenCount: count(),
+    tokenBudget: count(1),
+    createdAt: TimestampSchema,
     operation: Type.Literal('ASSEMBLE'),
     snapshotId: Type.Optional(IdSchemas.snapshotId),
     prefixSha256: Sha256Schema,
+    projectionDigest: Sha256Schema,
+    headDigest: Sha256Schema,
+    elidedEntries: Type.Array(count(1)),
     items: Type.Array(
       Type.Union([
         InstructionsItemSchema,
@@ -185,65 +195,11 @@ export const AssembleContextPackSchema = Type.Refine(
   hasOrderedItemIds,
   ITEM_ID_ERROR,
 );
-export type OrientContextPack = Static<typeof OrientContextPackSchema>;
-export type SearchContextPack = Static<typeof SearchContextPackSchema>;
 export type AssembleContextPack = Static<typeof AssembleContextPackSchema>;
 
-/** Immutable once published; segment order and trimming rules are in M1Interface 6.3. */
+/** Immutable once published. */
 export const ContextPackSchema = Type.Union(
   [OrientContextPackSchema, SearchContextPackSchema, AssembleContextPackSchema],
-  { $id: 'context.ContextPack.v0' },
+  { $id: 'context.ContextPack.v1' },
 );
 export type ContextPack = Static<typeof ContextPackSchema>;
-
-// --- Major 1 (ExecutorSet 6) ------------------------------------------------------------------
-
-const historyV1 = {
-  ...item,
-  segment: Type.Literal('HISTORY'),
-  seq: count(1),
-  turnId: Type.Optional(IdSchemas.turnId),
-  category: Type.Enum(['PINNED', 'NORMAL']),
-};
-const HistoryItemV1Schema = Type.Union([
-  closed({
-    ...historyV1,
-    role: Type.Literal('assistant'),
-    toolCalls: Type.Optional(Type.Array(ModelToolCallSchema, { minItems: 1 })),
-    /** Replayed per the model's ThinkingFeature; an empty string fills a turn without it. */
-    reasoningContent: Type.Optional(Type.String()),
-  }),
-  closed({ ...historyV1, role: Type.Literal('tool'), toolCallId: ToolCallIdSchema }),
-  closed({ ...historyV1, role: user }),
-]);
-
-/** `elidedEntries` are the `seq` values the final-call safeguard removed, and nothing else does. */
-export const AssembleContextPackV1Schema = Type.Refine(
-  closed(
-    {
-      contextPackId: IdSchemas.contextPackId,
-      tokenCount: count(),
-      tokenBudget: count(1),
-      createdAt: TimestampSchema,
-      operation: Type.Literal('ASSEMBLE'),
-      snapshotId: Type.Optional(IdSchemas.snapshotId),
-      prefixSha256: Sha256Schema,
-      projectionDigest: Sha256Schema,
-      headDigest: Sha256Schema,
-      elidedEntries: Type.Array(count(1)),
-      items: Type.Array(
-        Type.Union([
-          InstructionsItemSchema,
-          ToolsItemSchema,
-          PlainItemSchema,
-          OrientItemSchema,
-          HistoryItemV1Schema,
-        ]),
-      ),
-    },
-    'context.ContextPack.v1',
-  ),
-  hasOrderedItemIds,
-  ITEM_ID_ERROR,
-);
-export type AssembleContextPackV1 = Static<typeof AssembleContextPackV1Schema>;

@@ -2,16 +2,16 @@ import { canonicalJson, pathDerivedId, sha256Hex, validate } from '@multiagentos
 import type {
   ArtifactRef,
   BudgetView,
-  ContextAssembleInputV1,
-  ContextAssembleOutputV1,
+  ContextAssembleInput,
+  ContextAssembleOutput,
   FailureHandling,
   ModelToolCall,
   PinnedDefinitionRef,
-  ReasonCodeV1,
-  SubmitUnitRequestV1,
-  UnitInputV1,
-  UnitReportV1,
-  WRAP_UP_REASONS_V1,
+  ReasonCode,
+  SubmitUnitRequest,
+  UnitInput,
+  UnitReport,
+  WrapUpReason,
 } from '@multiagentos/contracts';
 import type { NewLogRecord } from '../../session/session-log-store.js';
 
@@ -20,7 +20,6 @@ import type { NewLogRecord } from '../../session/session-log-store.js';
  * records to append first and the Units to submit afterwards. The Round order is M1's:
  * context-assemble, model-call, then all tool Units of that reply.
  */
-export type WrapUpReason = (typeof WRAP_UP_REASONS_V1)[number];
 type Schema = Parameters<typeof validate>[0];
 
 export interface AgentUnit {
@@ -100,7 +99,7 @@ export interface AgentState {
   readonly roundHadOk: boolean;
   /** Tools the user rejected in this AgentRun; they are not submitted again. */
   readonly declinedTools: readonly string[];
-  readonly fatal?: ReasonCodeV1;
+  readonly fatal?: ReasonCode;
 }
 
 /**
@@ -118,7 +117,7 @@ export type AgentEnding =
       readonly kind: 'DEGRADED';
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
     }
-  | { readonly kind: 'FAILED'; readonly code: ReasonCodeV1 }
+  | { readonly kind: 'FAILED'; readonly code: ReasonCode }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -131,16 +130,16 @@ export interface ControlSource {
 export interface AgentTransition {
   readonly state: AgentState;
   readonly records: readonly NewLogRecord[];
-  readonly submissions: readonly SubmitUnitRequestV1[];
+  readonly submissions: readonly SubmitUnitRequest[];
   readonly ending?: AgentEnding;
 }
 
 /** The facts context-assemble needs that the log, not this machine, supplies. */
 export interface AgentContext {
   readonly assembleInput: (
-    status: ContextAssembleInputV1['status'],
+    status: ContextAssembleInput['status'],
     final: boolean,
-  ) => ContextAssembleInputV1;
+  ) => ContextAssembleInput;
   /** The first prompt of the run: no event or log record carries its text. */
   readonly objectiveRef: ArtifactRef;
 }
@@ -184,11 +183,11 @@ function feedback(
 function submission(
   state: AgentState,
   unit: AgentUnit,
-  input: UnitInputV1,
-  display: SubmitUnitRequestV1['display'],
+  input: UnitInput,
+  display: SubmitUnitRequest['display'],
 ): {
   readonly state: AgentState;
-  readonly request: SubmitUnitRequestV1;
+  readonly request: SubmitUnitRequest;
   readonly record: NewLogRecord;
 } {
   const counter = state.unitCounter + 1;
@@ -226,7 +225,7 @@ function one(
   state: AgentState,
   role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'CLOSING',
   unit: AgentUnit,
-  input: UnitInputV1,
+  input: UnitInput,
   toolName: string,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
@@ -287,7 +286,7 @@ function nextRound(
     roundHadOk: false,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
-  const status: ContextAssembleInputV1['status'] = {
+  const status: ContextAssembleInput['status'] = {
     round: next.round,
     maxRounds: next.definitions.limits.maxRounds,
     budget: next.budget,
@@ -336,7 +335,7 @@ function wrapUp(state: AgentState, reason: WrapUpReason): AgentState {
   return state.wrapUpReason === undefined ? { ...state, wrapUpReason: reason } : state;
 }
 
-function applyBudget(state: AgentState, report: UnitReportV1): AgentState {
+function applyBudget(state: AgentState, report: UnitReport): AgentState {
   const next = { ...state, budget: report.budget };
   const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.turn !== 'NORMAL';
   return wrapping ? wrapUp(next, 'BUDGET_WRAP_UP') : next;
@@ -348,7 +347,7 @@ const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
 function failed(
   state: AgentState,
   pending: Pending,
-  code: ReasonCodeV1,
+  code: ReasonCode,
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
@@ -373,7 +372,7 @@ const intentOf = (call: ModelToolCall): string =>
 
 function modelTurnRecord(
   state: AgentState,
-  report: Extract<UnitReportV1, { status: 'OK' }>,
+  report: Extract<UnitReport, { status: 'OK' }>,
   calls: readonly ModelToolCall[],
 ): NewLogRecord {
   if (report.outputRef === undefined) throw new Error('A model report has no output reference');
@@ -432,7 +431,7 @@ function invalidReply(
 
 function handleModel(
   state: AgentState,
-  report: Extract<UnitReportV1, { status: 'OK' }>,
+  report: Extract<UnitReport, { status: 'OK' }>,
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
@@ -500,7 +499,7 @@ function handleModel(
 
   let next = state;
   const pending = new Map<string, Pending>();
-  const submissions: SubmitUnitRequestV1[] = [];
+  const submissions: SubmitUnitRequest[] = [];
   const seen = new Set<string>();
   let accepted = 0;
   for (const call of calls) {
@@ -536,7 +535,7 @@ function handleModel(
       continue;
     }
     seen.add(intent);
-    const made = submission(next, tool.unit, call.arguments as UnitInputV1, {
+    const made = submission(next, tool.unit, call.arguments as UnitInput, {
       toolName: tool.modelName,
       argsSummary: '',
     });
@@ -559,7 +558,7 @@ function handleModel(
 function handleTool(
   state: AgentState,
   pending: Extract<Pending, { role: 'TOOL' }>,
-  report: UnitReportV1,
+  report: UnitReport,
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
@@ -600,11 +599,8 @@ function handleTool(
     : { state: next, records, submissions: [] };
 }
 
-function assembled(
-  state: AgentState,
-  report: Extract<UnitReportV1, { status: 'OK' }>,
-): NewLogRecord {
-  const { projectionDigest, headDigest, elidedEntries } = report.output as ContextAssembleOutputV1;
+function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK' }>): NewLogRecord {
+  const { projectionDigest, headDigest, elidedEntries } = report.output as ContextAssembleOutput;
   return {
     ...base(state),
     type: 'CONTEXT_ASSEMBLED',
@@ -615,7 +611,7 @@ function assembled(
   };
 }
 
-function completion(state: AgentState, report: UnitReportV1): NewLogRecord {
+function completion(state: AgentState, report: UnitReport): NewLogRecord {
   return {
     ...base(state),
     type: 'UNIT_COMPLETED',
@@ -638,7 +634,7 @@ function completion(state: AgentState, report: UnitReportV1): NewLogRecord {
  */
 export function closeAgent(
   state: AgentState,
-  input: UnitInputV1,
+  input: UnitInput,
   source: ControlSource | undefined,
 ): AgentTransition {
   const made = one(state, 'CLOSING', state.definitions.publish, input, 'publish');
@@ -662,7 +658,7 @@ export function closeAgent(
 
 export function receiveAgentReport(
   current: AgentState,
-  report: UnitReportV1,
+  report: UnitReport,
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {

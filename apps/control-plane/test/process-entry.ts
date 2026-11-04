@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { parseCli, runCommand } from '@multiagentos/cli';
-import type { ExecutorRegistryV1 } from '@multiagentos/contracts';
-import { createExecutorRegistryV1 } from '@multiagentos/executor-set';
+import type { ExecutorRegistry } from '@multiagentos/contracts';
+import { createExecutorRegistry } from '@multiagentos/executor-set';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { composeSystem, type System } from '../src/bootstrap/compose-system.js';
 import { createDeferredFaultReporter } from '../src/bootstrap/deferred-fault-reporter.js';
@@ -73,8 +73,8 @@ async function command(system: System): Promise<number> {
 }
 
 /** `violation` makes every read look like a path escape; the Kernel converges the run. */
-function executors(): ExecutorRegistryV1 {
-  const registry = createExecutorRegistryV1();
+function executors(): ExecutorRegistry {
+  const registry = createExecutorRegistry();
   if (mode !== 'violation') return registry;
   return {
     ...registry,

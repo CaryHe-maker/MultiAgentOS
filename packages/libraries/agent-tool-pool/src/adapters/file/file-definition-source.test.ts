@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Document, parse, stringify, visit } from 'yaml';
-import { buildCatalogIndexV1, planSealV1 } from '../../catalog-v1/catalog-v1.js';
+import { buildCatalogIndex, planSeal } from '../../catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../../definitions-directory.js';
 import { FileDefinitionSource } from './file-definition-source.js';
 
@@ -76,7 +76,7 @@ describe('FileDefinitionSource', () => {
     files[PUBLISHED] = written;
     const root = await writeCatalog(files);
     const source = new FileDefinitionSource(root);
-    const plan = planSealV1(await source.load());
+    const plan = planSeal(await source.load());
     expect(plan.issues).toEqual([]);
     expect(plan.patches.map((patch) => patch.origin)).toEqual([PUBLISHED]);
     await source.writeDigests(plan.patches);
@@ -87,8 +87,8 @@ describe('FileDefinitionSource', () => {
     expect(toolText).toBe(
       written.replace(/^version: v1\.0\.0\n/mu, `version: v1.0.0\ndigest: ${digest}\n`),
     );
-    expect(buildCatalogIndexV1(await new FileDefinitionSource(root).load()).ok).toBe(true);
-    expect(planSealV1(await source.load()).patches).toEqual([]);
+    expect(buildCatalogIndex(await new FileDefinitionSource(root).load()).ok).toBe(true);
+    expect(planSeal(await source.load()).patches).toEqual([]);
   });
 
   it('refuses to seal a file edited after it was loaded', async () => {
@@ -96,7 +96,7 @@ describe('FileDefinitionSource', () => {
     files[PUBLISHED] = stringify(await publishedTool());
     const root = await writeCatalog(files);
     const source = new FileDefinitionSource(root);
-    const plan = planSealV1(await source.load());
+    const plan = planSeal(await source.load());
     const toolPath = join(root, ...PUBLISHED.split('/'));
     await writeFile(toolPath, `${await readFile(toolPath, 'utf8')}# edited\n`, 'utf8');
     await expect(source.writeDigests(plan.patches)).rejects.toThrow(/changed since it was loaded/u);
@@ -107,22 +107,22 @@ describe('FileDefinitionSource', () => {
     files['tools/reply/v1.0.0.json'] = JSON.stringify(await publishedTool(), null, 2);
     const root = await writeCatalog(files);
     const source = new FileDefinitionSource(root);
-    await source.writeDigests(planSealV1(await source.load()).patches);
+    await source.writeDigests(planSeal(await source.load()).patches);
     const json = JSON.parse(
       await readFile(join(root, 'tools', 'reply', 'v1.0.0.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect(Object.keys(json)).toContain('digest');
     expect(Object.keys(json).indexOf('digest')).toBe(Object.keys(json).indexOf('version') + 1);
-    expect(buildCatalogIndexV1(await source.load()).ok).toBe(true);
+    expect(buildCatalogIndex(await source.load()).ok).toBe(true);
   });
 
   it('uses the YAML 1.2 core schema so words like `no` stay strings', async () => {
     const root = await writeCatalog({
-      'status.yaml': 'schemaVersion: v0\nentries: []\nflag: no\n',
+      'status.yaml': 'schemaVersion: v1\nentries: []\nflag: no\n',
     });
     const snapshot = await new FileDefinitionSource(root).load();
     expect(snapshot.statusDocument?.content).toEqual({
-      schemaVersion: 'v0',
+      schemaVersion: 'v1',
       entries: [],
       flag: 'no',
     });

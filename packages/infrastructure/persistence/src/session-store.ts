@@ -16,7 +16,7 @@ import { hostname } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import {
   IdSchemas,
-  PERSISTENCE_NAMESPACES_V1,
+  PERSISTENCE_NAMESPACES,
   assertValid,
   validate,
   type AppendLogPort,
@@ -26,7 +26,7 @@ import {
   type InstanceLockInfo,
   type InstanceLockPort,
   type LockResult,
-  type PersistenceNamespaceV1,
+  type PersistenceNamespace,
   type SessionDirectoryPort,
   type SessionLockInfo,
   type SessionPersistencePort,
@@ -45,7 +45,7 @@ type Schema = Parameters<typeof validate>[0];
  * A record reaches the caller's success only after fsync. The store never interprets records and
  * never decides when to repair or delete; those decisions belong to each Owner.
  */
-const FILE_OWNER: Readonly<Record<StoragePath['file'], PersistenceNamespaceV1>> = {
+const FILE_OWNER: Readonly<Record<StoragePath['file'], PersistenceNamespace>> = {
   'session-index': 'workflow',
   log: 'workflow',
   'session-refs': 'kernel-core',
@@ -104,7 +104,7 @@ export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
     this.#schemas = schemas;
   }
 
-  #segments(namespace: PersistenceNamespaceV1, path: StoragePath): string[] {
+  #segments(namespace: PersistenceNamespace, path: StoragePath): string[] {
     if (FILE_OWNER[path.file] !== namespace)
       throw new NamespaceViolationError(namespace, path.file);
     if (path.scope === 'SYSTEM') return [namespace, FILE_NAME[path.file]];
@@ -112,7 +112,7 @@ export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
     return ['sessions', path.sessionId, namespace, FILE_NAME[path.file]];
   }
 
-  appendLog<T>(namespace: PersistenceNamespaceV1, path: StoragePath): AppendLogPort<T> {
+  appendLog<T>(namespace: PersistenceNamespace, path: StoragePath): AppendLogPort<T> {
     const segments = this.#segments(namespace, path);
     const file = join(this.#dataDir, ...segments);
     const schema = this.#schemas[path.file];
@@ -177,7 +177,7 @@ export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
     }
   }
 
-  sessionDirectory(namespace: PersistenceNamespaceV1, sessionId: string): SessionDirectoryPort {
+  sessionDirectory(namespace: PersistenceNamespace, sessionId: string): SessionDirectoryPort {
     assertSessionId(sessionId);
     const segments = ['sessions', sessionId, namespace];
     const directory = join(this.#dataDir, ...segments);
@@ -212,7 +212,7 @@ export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
   }
 
   capabilities(): readonly CapabilityDescriptor[] {
-    return PERSISTENCE_NAMESPACES_V1.map((namespace) => ({
+    return PERSISTENCE_NAMESPACES.map((namespace) => ({
       capability: `persistence.${namespace}`,
       status: 'SUPPORTED',
       schemaNames: [],

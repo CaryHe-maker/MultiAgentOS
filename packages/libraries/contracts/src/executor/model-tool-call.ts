@@ -23,6 +23,6 @@ export const ModelToolCallSchema = Type.Union(
     closed({ ...call, arguments: ParsedArgumentsSchema }),
     closed({ ...call, arguments: Type.Null(), argumentsError: Type.Literal('INVALID_JSON') }),
   ],
-  { $id: 'executor.ModelToolCall.v0' },
+  { $id: 'executor.ModelToolCall.v1' },
 );
 export type ModelToolCall = Static<typeof ModelToolCallSchema>;

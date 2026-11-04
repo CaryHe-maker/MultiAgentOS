@@ -2,16 +2,16 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createM1ProtocolRegistry,
-  type BoundaryContextV1,
-  type ExecutorRegistryV1,
+  createProtocolRegistry,
+  type BoundaryContext,
+  type ExecutorRegistry,
 } from '@multiagentos/contracts';
 import { InProcessFabric, SCHEMA_IDS } from '@multiagentos/fabric';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl } from './index.js';
 
-const context: BoundaryContextV1 = {
+const context: BoundaryContext = {
   tenantId: 'local',
   projectId: 'local',
   correlationId: 'cor_123456',
@@ -27,11 +27,11 @@ const kills: string[] = [];
 async function fixture(hostFactory: (fabric: InProcessFabric) => ModuleHostControl) {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-'));
   roots.push(dataDir);
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   const host = hostFactory(fabric);
   const supervisor = createSupervisor({
     fabric: fabric.client('supervisor'),
-    executors: {} as ExecutorRegistryV1,
+    executors: {} as ExecutorRegistry,
     credentials: { apiKeyFor: () => undefined },
     moduleHost: host,
     config: DEFAULT_KERNEL_CONFIG,

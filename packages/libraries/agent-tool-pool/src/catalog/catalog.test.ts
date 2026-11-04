@@ -1,12 +1,12 @@
-import type { BoundaryContextV1 } from '@multiagentos/contracts';
+import type { BoundaryContext } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
 import { InMemoryDefinitionSource } from '../adapters/memory/in-memory-definition-source.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 import type { SourceDocument } from '../ports/definition-source.js';
-import { buildCatalogIndexV1, DefinitionCatalogV1 } from './catalog-v1.js';
+import { buildCatalogIndex, DefinitionCatalog } from './catalog.js';
 
-const context: BoundaryContextV1 = {
+const context: BoundaryContext = {
   correlationId: 'cor_test0001',
   tenantId: 'local',
   projectId: 'local',
@@ -26,7 +26,7 @@ async function issuesWhen(origin: string, change: (content: Content) => Content 
       if (changed !== undefined) documents.push({ origin, content: changed });
     }
   }
-  const result = buildCatalogIndexV1(await new InMemoryDefinitionSource(documents).load());
+  const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
   return result.ok ? [] : result.issues.map((issue) => `${issue.code} ${issue.origin}`);
 }
 
@@ -37,7 +37,7 @@ const TEMPLATE = 'templates/analyze/v0.1.0.yaml';
 
 describe('the repository catalog', () => {
   it('loads every v1 definition and pins each agent and the template', async () => {
-    const catalog = await DefinitionCatalogV1.load(
+    const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     for (const id of ['main', 'planner', 'code-viewer']) {
@@ -48,7 +48,7 @@ describe('the repository catalog', () => {
   });
 
   it('pins the end tools with the unit tools', async () => {
-    const catalog = await DefinitionCatalogV1.load(
+    const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     const pinned = catalog.pinAgent({ id: 'main', version: 'v0.1.0' }, context);
@@ -80,11 +80,11 @@ describe('the rules of a v1 catalog', () => {
       (c: Content) => ({ ...c, failurePolicy: { USER_DECLINED: 'FATAL' } }),
     ],
     [
-      'a unit on the v0 contract',
+      'a unit on the contract of another kind',
       MODEL_CALL,
       (c: Content) => ({
         ...c,
-        inputContract: { kind: 'contract', id: 'executor.ModelCallInput', version: 'v0' },
+        inputContract: { kind: 'contract', id: 'executor.FileReadInput', version: 'v1' },
       }),
     ],
   ])('refuses %s', async (_name, origin, change) => {
@@ -169,7 +169,7 @@ describe('the rules of a v1 catalog', () => {
 
   it('changes the digest of everything above a changed tool', async () => {
     const pin = async (documents: readonly SourceDocument[]) => {
-      const result = buildCatalogIndexV1(await new InMemoryDefinitionSource(documents).load());
+      const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
       if (!result.ok) throw new Error('catalog does not load');
       return result.index.definitions.get('AGENT:main@v0.1.0')?.digest;
     };

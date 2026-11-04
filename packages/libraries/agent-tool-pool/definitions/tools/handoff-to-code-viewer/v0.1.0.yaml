@@ -13,7 +13,7 @@ modelDescription:
 parametersContract:
   kind: contract
   id: workflow.HandoffBrief
-  version: v0
+  version: v1
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true

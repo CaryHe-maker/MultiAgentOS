@@ -1,23 +1,23 @@
 import type {
-  AnswerAuthorizationRequestV1,
-  AuthorizationRequestV1,
-  AuthorizationResolvedV1,
-  CloseReasonV1,
-  CoreRejectedCodeV1,
-  EndAgentRunRequestV1,
+  AnswerAuthorizationRequest,
+  AuthorizationRequest,
+  AuthorizationResolved,
+  CloseReason,
+  CoreRejectedCode,
+  EndAgentRunRequest,
   ArtifactRef,
   ExecutionScope,
   ProjectFileContent,
   ReadProjectFileRequest,
-  RegisterAgentRunRequestV1,
-  RunSummaryV1,
-  SubmitUnitRequestV1,
+  RegisterAgentRunRequest,
+  RunSummary,
+  SubmitUnitRequest,
   SyscallAck,
-  SyscallRejectedV1,
+  SyscallRejected,
   TurnUsage,
-  UnitDefinitionV1,
-  UnitReportV1,
-  UnknownEffectV1,
+  UnitDefinition,
+  UnitReport,
+  UnknownEffect,
 } from '@multiagentos/contracts';
 import { RequestLedger } from './request-ledger.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
@@ -41,7 +41,7 @@ export type PinResult =
   | {
       readonly ok: false;
       readonly reasonCode: Extract<
-        CoreRejectedCodeV1,
+        CoreRejectedCode,
         'DEFINITION_UNAVAILABLE' | 'DEFINITION_MISMATCH' | 'FORBIDDEN'
       >;
     };
@@ -50,14 +50,14 @@ export type PinResult =
 export interface RunHost {
   readonly workflowRunId: string;
   control(): RunControl;
-  closeReason(): CloseReasonV1 | undefined;
+  closeReason(): CloseReason | undefined;
   runEpoch(): number;
   registerAgentRun(agentRunId: string): Decision;
   endAgentRun(agentRunId: string): Decision;
   attemptStarted(unitAttemptId: string): void;
   attemptEnded(unitAttemptId: string): void;
-  toWorkflow(report: UnitReportV1): void;
-  toInteraction(event: AuthorizationRequestV1 | AuthorizationResolvedV1 | ActivityOutput): void;
+  toWorkflow(report: UnitReport): void;
+  toInteraction(event: AuthorizationRequest | AuthorizationResolved | ActivityOutput): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
   enqueue(work: () => void): void;
@@ -71,8 +71,8 @@ export interface RunWorkDeps {
   readonly technicalRetryLimit: number;
   readonly repositoryRoot: string;
   readonly repositoryExclusions: readonly string[];
-  readonly pinAgent: (request: RegisterAgentRunRequestV1) => Promise<PinResult>;
-  readonly inputIsValid: (unit: UnitDefinitionV1, input: unknown) => boolean;
+  readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  readonly inputIsValid: (unit: UnitDefinition, input: unknown) => boolean;
   readonly preset: 'standard' | 'readonly';
   readonly readProjectFile: (path: string, scope: ExecutionScope) => Promise<ProjectFileRead>;
   readonly isTrusted: (path: string, sha256: string) => boolean;
@@ -82,15 +82,15 @@ export interface RunWorkDeps {
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
   readonly cancelExecutions: (runEpoch: number) => void;
   readonly executionsClosed: () => void;
-  readonly unknownEffects: () => UnknownEffectV1[];
+  readonly unknownEffects: () => UnknownEffect[];
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
 }
 
-type Response = SyscallAck | SyscallRejectedV1;
+type Response = SyscallAck | SyscallRejected;
 type Decided = { readonly accepted: true } | Extract<Decision, { accepted: false }>;
-type FileResponse = ProjectFileContent | SyscallRejectedV1;
+type FileResponse = ProjectFileContent | SyscallRejected;
 
 /** What Execution read; `truncated` says a question shows only the head of the file. */
 export type ProjectFileRead =
@@ -107,15 +107,15 @@ interface AgentRunRecord {
   readonly agent: PinnedAgent;
   state: 'ACTIVE' | 'ENDED';
   /** For the RunSummary. */
-  readonly agentRef: RegisterAgentRunRequestV1['agentRef'];
+  readonly agentRef: RegisterAgentRunRequest['agentRef'];
   readonly registeredAt: string;
   endedAt?: string;
   rounds: number;
 }
 
 /** How a run ended, as the RunSummary repeats it. */
-export type RunEnding = Pick<RunSummaryV1, 'closeReason' | 'unknownEffects' | 'resultRef'> & {
-  readonly failure?: Extract<RunSummaryV1, { failure: unknown }>['failure'];
+export type RunEnding = Pick<RunSummary, 'closeReason' | 'unknownEffects' | 'resultRef'> & {
+  readonly failure?: Extract<RunSummary, { failure: unknown }>['failure'];
 };
 
 /** A request parked on a question: first `repo.read`, then trust in the exact content. */
@@ -126,8 +126,8 @@ interface WaitingFile {
 }
 
 interface WaitingUnit {
-  readonly request: SubmitUnitRequestV1;
-  readonly unit: UnitDefinitionV1;
+  readonly request: SubmitUnitRequest;
+  readonly unit: UnitDefinition;
   readonly agent: PinnedAgent;
 }
 
@@ -227,7 +227,7 @@ export class RunWork {
     this.#deps.ledgers.openTurnLedger(turnId);
   }
 
-  #counted(report: UnitReportV1): void {
+  #counted(report: UnitReport): void {
     if (report.status === 'OK') this.#units.ok += 1;
     else if (report.status === 'REJECTED') this.#units.rejected += 1;
     else this.#units.failed += 1;
@@ -237,7 +237,7 @@ export class RunWork {
   }
 
   /** The run record of Execution (RunSummary), once the run closed and its last Turn too. */
-  summary(ids: { readonly sessionId: string }, ending: RunEnding): RunSummaryV1 {
+  summary(ids: { readonly sessionId: string }, ending: RunEnding): RunSummary {
     const closedAt = this.#deps.now();
     const delivered = this.#units.ok + this.#units.rejected + this.#units.failed;
     return {
@@ -259,7 +259,7 @@ export class RunWork {
       model: { requests: this.#modelRequests },
       tokens: this.#deps.ledgers.usage(),
       ...ending,
-    } as RunSummaryV1;
+    } as RunSummary;
   }
 
   closeTurn(turnId: string): TurnUsage {
@@ -269,9 +269,9 @@ export class RunWork {
   #refuse(
     requestId: string,
     payload: unknown,
-    reasonCode: CoreRejectedCodeV1 | 'RUN_BLOCKED',
+    reasonCode: CoreRejectedCode | 'RUN_BLOCKED',
   ): Response {
-    let response: SyscallRejectedV1;
+    let response: SyscallRejected;
     if (reasonCode === 'RUN_BLOCKED') {
       const closeReason = this.#host.closeReason();
       if (closeReason === undefined) throw new Error('RUN_BLOCKED requires closeReason');
@@ -310,7 +310,7 @@ export class RunWork {
       : this.#refuse(requestId, payload, decision.reasonCode);
   }
 
-  async registerAgentRun(request: RegisterAgentRunRequestV1): Promise<Response> {
+  async registerAgentRun(request: RegisterAgentRunRequest): Promise<Response> {
     const { requestId, agentRunId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
@@ -337,7 +337,7 @@ export class RunWork {
     return this.#accept(requestId, request);
   }
 
-  endAgentRun(request: EndAgentRunRequestV1): Response {
+  endAgentRun(request: EndAgentRunRequest): Response {
     const { requestId, agentRunId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
@@ -355,7 +355,7 @@ export class RunWork {
     return this.#accept(requestId, request);
   }
 
-  async submitUnit(request: SubmitUnitRequestV1): Promise<Response> {
+  async submitUnit(request: SubmitUnitRequest): Promise<Response> {
     const { requestId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
@@ -405,8 +405,8 @@ export class RunWork {
   }
 
   #refuseUnit(
-    request: SubmitUnitRequestV1,
-    unit: UnitDefinitionV1,
+    request: SubmitUnitRequest,
+    unit: UnitDefinition,
     refusal: Parameters<RunAttempts['rejectWithoutAttempt']>[1],
   ): void {
     this.#attempts.rejectWithoutAttempt(
@@ -420,7 +420,7 @@ export class RunWork {
     );
   }
 
-  #scopeOf(unit: UnitDefinitionV1, agent: PinnedAgent): ExecutionScope {
+  #scopeOf(unit: UnitDefinition, agent: PinnedAgent): ExecutionScope {
     if (unit.executionKind === 'MODEL') return agent.modelScope;
     if (!unit.protectedCapabilities.includes('repo.read')) return { kind: 'NONE' };
     const lease = this.#authorization.lease;
@@ -433,8 +433,8 @@ export class RunWork {
   }
 
   async #startAttempt(
-    request: SubmitUnitRequestV1,
-    unit: UnitDefinitionV1,
+    request: SubmitUnitRequest,
+    unit: UnitDefinition,
     agent: PinnedAgent,
   ): Promise<void> {
     const { turnId } = this.#host.control();
@@ -458,7 +458,7 @@ export class RunWork {
     this.#activity.retrying(retry.spec, retry.unitAttemptId, retry.attempt, retry.retryAt);
   }
 
-  async answerAuthorization(request: AnswerAuthorizationRequestV1): Promise<Response> {
+  async answerAuthorization(request: AnswerAuthorizationRequest): Promise<Response> {
     const { requestId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
@@ -496,7 +496,7 @@ export class RunWork {
     const replay = this.#requests.lookup<FileResponse>(requestId, request);
     if (replay.kind === 'replay') return { response: Promise.resolve(replay.response) };
     const refused = (reasonCode: 'REQUEST_CONFLICT' | 'RUN_BLOCKED') => ({
-      response: Promise.resolve(this.#refuse(requestId, request, reasonCode) as SyscallRejectedV1),
+      response: Promise.resolve(this.#refuse(requestId, request, reasonCode) as SyscallRejected),
     });
     if (replay.kind === 'conflict') return refused('REQUEST_CONFLICT');
     if (!readsProjectFile(this.#host.control()).accepted) return refused('RUN_BLOCKED');
@@ -601,13 +601,13 @@ export class RunWork {
     this.#waiting.clear();
     for (const file of [...this.#waitingFiles.values()])
       file.done(
-        this.#refuse(file.request.requestId, file.request, 'RUN_BLOCKED') as SyscallRejectedV1,
+        this.#refuse(file.request.requestId, file.request, 'RUN_BLOCKED') as SyscallRejected,
       );
     this.#clocks.stop();
     this.#deps.cancelExecutions(this.#host.runEpoch());
   }
 
-  unknownEffects(): UnknownEffectV1[] {
+  unknownEffects(): UnknownEffect[] {
     return this.#deps.unknownEffects();
   }
 

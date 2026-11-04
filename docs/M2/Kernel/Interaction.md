@@ -46,7 +46,7 @@ interface AttemptRegistration {        // CoreSyscalls.registerAttempt 的参数
   unitRunId: string;                   // 新增
   turnId: string;                      // 新增：尝试所属的 Turn，Turn 结束后的迟到提交据此拒绝
   runEpoch: number;
-  executionKind: ExecutionKindV1;
+  executionKind: ExecutionKind;
   requiresLease: boolean;
 }
 

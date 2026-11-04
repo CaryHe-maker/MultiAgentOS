@@ -8,8 +8,8 @@ import type {
   LifecyclePort,
   SessionPersistencePort,
   TemplateDefinition,
-  WorkflowConfigV1,
-  WorkflowGatewayPortV1,
+  WorkflowConfig,
+  WorkflowGatewayPort,
 } from '@multiagentos/contracts';
 import { SessionLogStore } from './session/session-log-store.js';
 import { SessionRunner, type AgentBinding } from './session/session-runner.js';
@@ -34,7 +34,7 @@ export {
 } from './session/session-runner.js';
 
 /** Module/Workflow 11. */
-export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfigV1 = Object.freeze({
+export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   regenerationLimit: 3,
   noProgressRounds: 2,
   repeatedIntent: Object.freeze({ window: 20, warnAt: 3, stopAt: 5 }),
@@ -43,7 +43,7 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfigV1 = Object.freeze({
 
 export interface WorkflowDeps {
   /** Workflow's only entry into the Kernel. */
-  readonly gateway: WorkflowGatewayPortV1;
+  readonly gateway: WorkflowGatewayPort;
   /** Only the `workflow` namespace may be used. */
   readonly persistence: SessionPersistencePort;
   /** Built-in Agents by id, and templates by id (Module/Workflow 4). */
@@ -52,7 +52,7 @@ export interface WorkflowDeps {
   /** What `SESSION_STARTED` records of the definitions, and what `OPEN` compares. */
   readonly definitionsDigest: string;
   readonly definitionVersions: readonly string[];
-  readonly config: WorkflowConfigV1;
+  readonly config: WorkflowConfig;
   readonly now?: () => Date;
 }
 

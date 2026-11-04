@@ -8,6 +8,7 @@ import type {
 import {
   cannedAssemble,
   cannedFileRead,
+  cannedList,
   cannedModelCall,
   cannedOrient,
   cannedSearch,
@@ -36,9 +37,8 @@ export function createFakeExecutorRegistry(
     REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', (input) =>
       completed(cannedOrient(input.tokenBudget)),
     ),
-    REPOSITORY_SEARCH: executor('REPOSITORY_SEARCH', (input) =>
-      completed(cannedSearch(input.tokenBudget)),
-    ),
+    REPOSITORY_SEARCH: executor('REPOSITORY_SEARCH', () => completed(cannedSearch())),
+    REPOSITORY_LIST: executor('REPOSITORY_LIST', (input) => completed(cannedList(input))),
     FILE_READ: executor('FILE_READ', (input) => completed(cannedFileRead(input))),
     CONTEXT_ASSEMBLE: executor('CONTEXT_ASSEMBLE', (input) => completed(cannedAssemble(input))),
     MODEL: executor('MODEL', (input) => {

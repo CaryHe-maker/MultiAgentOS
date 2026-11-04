@@ -2,24 +2,24 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  AssembleContextPackV1Schema,
-  ExecutionResultV1Schema,
+  AssembleContextPackSchema,
+  ExecutionResultSchema,
   assertValid,
-  type AssembleContextPackV1,
-  type AssembleExecutorInputV1,
-  type ExecutorEnvironmentV1,
+  type AssembleContextPack,
+  type AssembleExecutorInput,
+  type ExecutorEnvironment,
   type ResolvedHistoryEntry,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { createAssembleExecutorV1 } from './context-assemble/assemble-v1.js';
+import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
-import { createModelCallExecutorV1, retryAfterMsOf } from './model-call/model-call-v1.js';
+import { createModelCallExecutor, retryAfterMsOf } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';
-import { createFileReadExecutorV1, createListExecutorV1 } from './tool-preview/tool-executors.js';
+import { createListExecutor, withFilePreview } from './tool-preview/tool-executors.js';
 
 const NOW = new Date('2026-11-02T00:00:00.000Z');
 const deadline = '2026-11-02T01:00:00.000Z';
-const environment = (over: Partial<ExecutorEnvironmentV1>): ExecutorEnvironmentV1 => ({
+const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment => ({
   scope: { kind: 'NONE' },
   limits: { deadline, maxOutputBytes: 100_000 },
   signal: new AbortController().signal,
@@ -56,7 +56,7 @@ const conversation: ResolvedHistoryEntry[] = [
     trusted: false,
   },
 ];
-const assembleInput = (over: Partial<AssembleExecutorInputV1> = {}): AssembleExecutorInputV1 => ({
+const assembleInput = (over: Partial<AssembleExecutorInput> = {}): AssembleExecutorInput => ({
   final: false,
   tokenBudget: 10_000,
   instructions: 'You are main.',
@@ -66,17 +66,17 @@ const assembleInput = (over: Partial<AssembleExecutorInputV1> = {}): AssembleExe
   ...over,
 });
 
-async function assembled(input: AssembleExecutorInputV1) {
-  const outcome = await createAssembleExecutorV1().execute(input, environment({}));
+async function assembled(input: AssembleExecutorInput) {
+  const outcome = await createAssembleExecutor().execute(input, environment({}));
   if (outcome.outcome !== 'COMPLETED') return outcome;
-  assertValid(ExecutionResultV1Schema, outcome.result);
-  return assertValid<AssembleContextPackV1>(
-    AssembleContextPackV1Schema,
+  assertValid(ExecutionResultSchema, outcome.result);
+  return assertValid<AssembleContextPack>(
+    AssembleContextPackSchema,
     JSON.parse(outcome.result.artifact.text),
   );
 }
 
-const packOf = async (input: AssembleExecutorInputV1) => {
+const packOf = async (input: AssembleExecutorInput) => {
   const pack = await assembled(input);
   if ('outcome' in pack) throw new Error(pack.outcome);
   return pack;
@@ -107,7 +107,7 @@ describe('context-assemble', () => {
         history: [...conversation, { ...entry(5), kind: 'NOTE', text: 'a new day' }],
       }),
     );
-    const content = (pack: AssembleContextPackV1) =>
+    const content = (pack: AssembleContextPack) =>
       pack.items.filter((item) => item.segment !== 'STATUS').map((item) => item.content);
     expect(content(longer).slice(0, content(shorter).length)).toEqual(content(shorter));
   });
@@ -139,7 +139,7 @@ describe('context-assemble', () => {
   });
 
   it('fails on a call without an answer', async () => {
-    const outcome = await createAssembleExecutorV1().execute(
+    const outcome = await createAssembleExecutor().execute(
       assembleInput({ history: conversation.slice(0, 2) }),
       environment({}),
     );
@@ -168,7 +168,7 @@ describe('tools', () => {
     });
 
   it('renders a file as numbered lines for the model', async () => {
-    const outcome = await createFileReadExecutorV1(createFileReadExecutor()).execute(
+    const outcome = await withFilePreview(createFileReadExecutor()).execute(
       { path: 'a.ts' },
       toolEnvironment(repository()),
     );
@@ -177,20 +177,20 @@ describe('tools', () => {
   });
 
   it('lists the repository, and keeps the full output when the preview is cut', async () => {
-    const list = createListExecutorV1(new FileDigestCache());
+    const list = createListExecutor(new FileDigestCache());
     const whole = await list.execute({ depth: 2 }, toolEnvironment(repository()));
     if (whole.outcome !== 'COMPLETED') throw new Error(whole.outcome);
     expect('fullOutput' in whole.result).toBe(false);
     const cut = await list.execute({ depth: 2 }, toolEnvironment(repository(), 5));
     if (cut.outcome !== 'COMPLETED') throw new Error(cut.outcome);
-    assertValid(ExecutionResultV1Schema, cut.result);
+    assertValid(ExecutionResultSchema, cut.result);
     expect(cut.result.artifact.text).toContain('more entries omitted');
     expect('fullOutput' in cut.result).toBe(true);
   });
 
   it('does not tell a missing path from an excluded one', async () => {
     expect(
-      await createListExecutorV1(new FileDigestCache()).execute(
+      await createListExecutor(new FileDigestCache()).execute(
         { path: 'nothing' },
         toolEnvironment(repository()),
       ),
@@ -233,7 +233,7 @@ describe('model-call', () => {
   ) {
     const bodies: Record<string, unknown>[] = [];
     const pack = await packOf(assembleInput({ toolSpecs: [...tools] }));
-    const executor = createModelCallExecutorV1({
+    const executor = createModelCallExecutor({
       fetch: (_url, init) => {
         bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
         return Promise.resolve(reply());

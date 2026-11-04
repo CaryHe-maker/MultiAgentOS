@@ -1,14 +1,14 @@
-import type { ExecutionKindV1, SubmitUnitRequestV1 } from '@multiagentos/contracts';
+import type { ExecutionKind, SubmitUnitRequest } from '@multiagentos/contracts';
 import { testUnitDefinition } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
 import { closeRun, initialRunControl, openInitialTurn, type RunControl } from './run-control.js';
 import { admitUnit, type AdmissionContext } from './unit-admission.js';
 
-const unitOf = (kind: ExecutionKindV1) => testUnitDefinition(kind);
+const unitOf = (kind: ExecutionKind) => testUnitDefinition(kind);
 const fileRead = unitOf('FILE_READ');
 
 type Unit = ReturnType<typeof unitOf>;
-const requestFor = (unit: Unit): Pick<SubmitUnitRequestV1, 'unitRef' | 'input'> => ({
+const requestFor = (unit: Unit): Pick<SubmitUnitRequest, 'unitRef' | 'input'> => ({
   unitRef: { kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest },
   input: {},
 });

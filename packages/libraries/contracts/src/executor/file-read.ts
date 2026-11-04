@@ -12,7 +12,7 @@ export const FileReadInputSchema = Type.Refine(
       startLine: Type.Optional(count(1)),
       endLine: Type.Optional(count(1)),
     },
-    'executor.FileReadInput.v0',
+    'executor.FileReadInput.v1',
   ),
   (input) =>
     input.startLine === undefined ||
@@ -22,32 +22,8 @@ export const FileReadInputSchema = Type.Refine(
 );
 export type FileReadInput = Static<typeof FileReadInputSchema>;
 
-/**
- * `startLine..endLine` is what was actually returned, inside `1..totalLines`. The only empty
- * result is an empty file: `startLine = 1`, `endLine = 0`, `totalLines = 0`.
- */
+/** `fileSha256` is the digest of the whole file (M2Design 8.1). */
 export const FileReadOutputSchema = Type.Refine(
-  closed(
-    {
-      path: text(1024),
-      startLine: count(1),
-      endLine: count(),
-      totalLines: count(),
-      contentSha256: Sha256Schema,
-      fileSha256: Sha256Schema,
-    },
-    'executor.FileReadOutput.v0',
-  ),
-  (output) =>
-    output.totalLines === 0
-      ? output.startLine === 1 && output.endLine === 0
-      : output.startLine <= output.endLine && output.endLine <= output.totalLines,
-  () => 'the returned range must lie inside the file, or be 1..0 for an empty file',
-);
-export type FileReadOutput = Static<typeof FileReadOutputSchema>;
-
-/** Major 1 is the same output; the content digest it adds is `fileSha256` (M2Design 8.1). */
-export const FileReadOutputV1Schema = Type.Refine(
   closed(
     {
       path: text(1024),
@@ -65,4 +41,4 @@ export const FileReadOutputV1Schema = Type.Refine(
       : output.startLine <= output.endLine && output.endLine <= output.totalLines,
   () => 'the returned range must lie inside the file, or be 1..0 for an empty file',
 );
-export type FileReadOutputV1 = Static<typeof FileReadOutputV1Schema>;
+export type FileReadOutput = Static<typeof FileReadOutputSchema>;

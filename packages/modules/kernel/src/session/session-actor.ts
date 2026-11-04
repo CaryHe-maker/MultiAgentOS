@@ -1,13 +1,13 @@
 import {
   newId,
   type ArtifactRef,
-  type CloseReasonV1,
+  type CloseReason,
   type DefinitionRef,
-  type KernelToWorkflowEventV1,
+  type KernelToWorkflowEvent,
   type ReportSessionCommandRequest,
   type RunFailure,
-  type RunFinishedV1,
-  type RunSummaryV1,
+  type RunFinished,
+  type RunSummary,
   type UserInput,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
@@ -41,7 +41,7 @@ export interface SessionDuties {
   openRunWork(host: RunHost): RunWork;
   /** Writes the RunSummary; undefined means the write failed and the run ends without one. */
   /** Writes the run record; undefined when it could not be stored. */
-  writeRunSummary(summary: RunSummaryV1): Promise<ArtifactRef | undefined>;
+  writeRunSummary(summary: RunSummary): Promise<ArtifactRef | undefined>;
   /** A new Session could not be created: its reference and everything written for it go. */
   discardSession(): Promise<void>;
 }
@@ -57,7 +57,7 @@ export type SessionStart =
 
 export type RunClosing =
   | {
-      readonly closeReason: Exclude<CloseReasonV1, 'FAILED' | 'VIOLATION'>;
+      readonly closeReason: Exclude<CloseReason, 'FAILED' | 'VIOLATION'>;
       readonly resultRef?: ArtifactRef;
     }
   | { readonly closeReason: 'FAILED' | 'VIOLATION'; readonly failure: RunFailure };
@@ -75,7 +75,7 @@ export interface SessionActorDeps {
   readonly admission: (
     workflowRunId: string,
     runState: 'RUNNING' | 'CONVERGING' | 'CLOSED',
-    closeReason?: CloseReasonV1,
+    closeReason?: CloseReason,
   ) => void;
 }
 
@@ -473,11 +473,11 @@ export class SessionActor {
     outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       ...ending,
       type: 'RunClosed',
-    } as unknown as KernelToWorkflowEventV1);
+    } as unknown as KernelToWorkflowEvent);
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       ...ending,
       type: 'RunFinished',
-    } as unknown as RunFinishedV1);
+    } as unknown as RunFinished);
     if (this.#closeAfterRun !== undefined) this.#closeSession(this.#closeAfterRun);
   }
 

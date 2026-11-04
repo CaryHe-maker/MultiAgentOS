@@ -1,13 +1,13 @@
 import {
-  ExecutionFactV1Schema,
+  ExecutionFactSchema,
   MEDIA_TYPES,
   validate,
-  type ExecutionFactV1,
-  type ExecutionRequestV1,
-  type ExecutorV1,
-  type ExecutorKindV1,
-  type ExecutorOutcomeV1,
-  type ExecutorRegistryV1,
+  type ExecutionFact,
+  type ExecutionRequest,
+  type Executor,
+  type ExecutorKind,
+  type ExecutorOutcome,
+  type ExecutorRegistry,
   type ProviderCredentials,
   type SubprocessRunner,
 } from '@multiagentos/contracts';
@@ -16,8 +16,8 @@ import { createExecutorEnvironment } from './environment.js';
 import { ExecutionRunner } from './execution-runner.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
 
-type OrientRequest = Extract<ExecutionRequestV1, { executionKind: 'REPOSITORY_ORIENT' }>;
-type ModelRequest = Extract<ExecutionRequestV1, { executionKind: 'MODEL' }>;
+type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
+type ModelRequest = Extract<ExecutionRequest, { executionKind: 'MODEL' }>;
 
 const SHA = 'a'.repeat(64);
 const TOOL_LIMITS = {
@@ -26,7 +26,7 @@ const TOOL_LIMITS = {
   preview: { maxBytes: 1024, maxLines: 100 },
   maxFullOutputBytes: 4096,
 };
-const completedOrient: ExecutorOutcomeV1 = {
+const completedOrient: ExecutorOutcome = {
   outcome: 'COMPLETED',
   result: {
     output: {
@@ -42,9 +42,9 @@ const completedOrient: ExecutorOutcomeV1 = {
 };
 
 class RecordingSink {
-  public readonly facts: ExecutionFactV1[] = [];
+  public readonly facts: ExecutionFact[] = [];
 
-  public report(fact: ExecutionFactV1): Promise<void> {
+  public report(fact: ExecutionFact): Promise<void> {
     this.facts.push(fact);
     return Promise.resolve();
   }
@@ -114,7 +114,7 @@ function modelRequest(): ModelRequest {
   };
 }
 
-function requestFor(kind: ExecutorKindV1): ExecutionRequestV1 {
+function requestFor(kind: ExecutorKind): ExecutionRequest {
   switch (kind) {
     case 'REPOSITORY_ORIENT':
       return orientRequest();
@@ -168,7 +168,7 @@ function requestFor(kind: ExecutorKindV1): ExecutionRequestV1 {
   }
 }
 
-function completedFor(kind: ExecutorKindV1): ExecutorOutcomeV1 {
+function completedFor(kind: ExecutorKind): ExecutorOutcome {
   switch (kind) {
     case 'REPOSITORY_ORIENT':
       return completedOrient;
@@ -239,15 +239,12 @@ const subprocess: SubprocessRunner = {
   run: () => Promise.resolve({ exitCode: 0, signal: null, stdout: 'matched', truncated: false }),
 };
 
-function executor<K extends ExecutorKindV1>(
-  kind: K,
-  execute: ExecutorV1<K>['execute'],
-): ExecutorV1<K> {
+function executor<K extends ExecutorKind>(kind: K, execute: Executor<K>['execute']): Executor<K> {
   return { executionKind: kind, execute };
 }
 
-function registry(orient: ExecutorV1<'REPOSITORY_ORIENT'>): ExecutorRegistryV1 {
-  const unused = <K extends ExecutorKindV1>(kind: K): ExecutorV1<K> =>
+function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
+  const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
     REPOSITORY_ORIENT: orient,
@@ -259,7 +256,7 @@ function registry(orient: ExecutorV1<'REPOSITORY_ORIENT'>): ExecutorRegistryV1 {
   };
 }
 
-function makeRunner(orient: ExecutorV1<'REPOSITORY_ORIENT'>): {
+function makeRunner(orient: Executor<'REPOSITORY_ORIENT'>): {
   readonly runner: ExecutionRunner;
   readonly sink: RecordingSink;
 } {
@@ -267,7 +264,7 @@ function makeRunner(orient: ExecutorV1<'REPOSITORY_ORIENT'>): {
 }
 
 function makeRunnerWith(
-  executors: ExecutorRegistryV1,
+  executors: ExecutorRegistry,
   cancelGraceMs = 1000,
 ): {
   readonly runner: ExecutionRunner;
@@ -286,12 +283,12 @@ function makeRunnerWith(
   return { runner, sink };
 }
 
-function registryFor<K extends ExecutorKindV1>(kind: K, target: ExecutorV1<K>): ExecutorRegistryV1 {
+function registryFor<K extends ExecutorKind>(kind: K, target: Executor<K>): ExecutorRegistry {
   const base = registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)));
   return { ...base, [kind]: target };
 }
 
-function pendingUntilAbort(outcome: ExecutorOutcomeV1): ExecutorV1<'REPOSITORY_ORIENT'> {
+function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_ORIENT'> {
   return executor('REPOSITORY_ORIENT', (_input, environment) => {
     if (environment.signal.aborted) return Promise.resolve(outcome);
     return new Promise((resolve) => {
@@ -300,13 +297,13 @@ function pendingUntilAbort(outcome: ExecutorOutcomeV1): ExecutorV1<'REPOSITORY_O
   });
 }
 
-function hanging(): ExecutorV1<'REPOSITORY_ORIENT'> {
+function hanging(): Executor<'REPOSITORY_ORIENT'> {
   return executor('REPOSITORY_ORIENT', () => new Promise(() => undefined));
 }
 
-async function waitForFact(sink: RecordingSink): Promise<ExecutionFactV1> {
+async function waitForFact(sink: RecordingSink): Promise<ExecutionFact> {
   await vi.waitFor(() => expect(sink.facts).toHaveLength(1));
-  return sink.facts[0] as ExecutionFactV1;
+  return sink.facts[0] as ExecutionFact;
 }
 
 async function delay(ms: number): Promise<void> {
@@ -338,7 +335,7 @@ describe('ExecutionRunner', () => {
       startedAt: '2026-10-19T00:00:00.000Z',
       endedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('honours notBefore before starting the Executor', async () => {
@@ -360,7 +357,7 @@ describe('ExecutionRunner', () => {
     expect(fact.outcome).toBe('COMPLETED');
   });
 
-  it.each<ExecutorOutcomeV1>([
+  it.each<ExecutorOutcome>([
     completedOrient,
     { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' },
     { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: true },
@@ -378,7 +375,7 @@ describe('ExecutionRunner', () => {
     const fact = await waitForFact(sink);
     expect(fact.outcome).toBe(outcome.outcome);
     expect(calls).toBe(1);
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
     expect(sink.facts).toHaveLength(1);
   });
 
@@ -395,7 +392,7 @@ describe('ExecutionRunner', () => {
       retryable: false,
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('ignores a duplicate executionId and reports one fact', async () => {
@@ -416,7 +413,7 @@ describe('ExecutionRunner', () => {
     expect(sink.facts).toHaveLength(1);
   });
 
-  it.each<ExecutorKindV1>([
+  it.each<ExecutorKind>([
     'REPOSITORY_ORIENT',
     'REPOSITORY_SEARCH',
     'FILE_READ',
@@ -434,11 +431,11 @@ describe('ExecutionRunner', () => {
     runner.execute(requestFor(kind), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({ executionKind: kind, outcome: 'COMPLETED' });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('turns a missing executor into FAILED(INTERNAL)', async () => {
-    const { runner, sink } = makeRunnerWith({} as ExecutorRegistryV1);
+    const { runner, sink } = makeRunnerWith({} as ExecutorRegistry);
     runner.execute(orientRequest(), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({ outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false });
@@ -464,8 +461,8 @@ describe('ExecutionRunner', () => {
   });
 
   it('reports STOP_UNCONFIRMED when stop happens while the Executor is running', async () => {
-    let release: ((outcome: ExecutorOutcomeV1) => void) | undefined;
-    const pending = new Promise<ExecutorOutcomeV1>((resolve) => {
+    let release: ((outcome: ExecutorOutcome) => void) | undefined;
+    const pending = new Promise<ExecutorOutcome>((resolve) => {
       release = resolve;
     });
     const { runner, sink } = makeRunner(executor('REPOSITORY_ORIENT', () => pending));
@@ -514,7 +511,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a stop-time delivery failure without an unhandled rejection', async () => {
-    const sink: { report(fact: ExecutionFactV1): Promise<void> } = {
+    const sink: { report(fact: ExecutionFact): Promise<void> } = {
       report: () => Promise.reject(new Error('stop inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -538,7 +535,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a fact delivery failure without retrying the execution', async () => {
-    const sink: { report(fact: ExecutionFactV1): Promise<void> } = {
+    const sink: { report(fact: ExecutionFact): Promise<void> } = {
       report: () => Promise.reject(new Error('inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -577,7 +574,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
     });
     expect(fact).not.toHaveProperty('startedAt');
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('cancels a running execution and reports TERMINATED within grace', async () => {
@@ -593,7 +590,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('reports TERMINATED(UNIT_TIMEOUT) when the deadline aborts a running execution', async () => {
@@ -609,7 +606,7 @@ describe('ExecutionRunner', () => {
       reasonCode: 'UNIT_TIMEOUT',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('does not start an Executor whose deadline is already past', async () => {
@@ -628,7 +625,7 @@ describe('ExecutionRunner', () => {
 
     expect(calls).toBe(0);
     expect(fact).toMatchObject({ outcome: 'TERMINATED', reasonCode: 'UNIT_TIMEOUT' });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('treats an unparsable deadline as an immediate timeout', async () => {
@@ -680,12 +677,12 @@ describe('ExecutionRunner', () => {
       startedAt: '2026-10-19T00:00:00.000Z',
     });
     expect(fact).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('discards a late Executor result after STOP_UNCONFIRMED', async () => {
-    let release: ((outcome: ExecutorOutcomeV1) => void) | undefined;
-    const pending = new Promise<ExecutorOutcomeV1>((resolve) => {
+    let release: ((outcome: ExecutorOutcome) => void) | undefined;
+    const pending = new Promise<ExecutorOutcome>((resolve) => {
       release = resolve;
     });
     const { runner, sink } = makeRunnerWith(
@@ -719,7 +716,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('preserves VIOLATION when the Executor reports it during abort', async () => {
-    const violation: ExecutorOutcomeV1 = { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' };
+    const violation: ExecutorOutcome = { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(violation)), 50);
 
     runner.execute(orientRequest(), 'cor_123456');
@@ -733,7 +730,7 @@ describe('ExecutionRunner', () => {
   it('reports TERMINATED when the Executor rejects during abort', async () => {
     const failing = executor('REPOSITORY_ORIENT', (_input, environment) => {
       if (environment.signal.aborted) return Promise.reject(new Error('aborted'));
-      return new Promise<ExecutorOutcomeV1>((_resolve, reject) => {
+      return new Promise<ExecutorOutcome>((_resolve, reject) => {
         environment.signal.addEventListener('abort', () => reject(new Error('aborted')), {
           once: true,
         });
@@ -751,11 +748,11 @@ describe('ExecutionRunner', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       startedAt: '2026-10-19T00:00:00.000Z',
     });
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('reports TERMINATED without Executor extras when abort receives REJECTED', async () => {
-    const rejected: ExecutorOutcomeV1 = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
+    const rejected: ExecutorOutcome = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(rejected)), 50);
 
     runner.execute(orientRequest(), 'cor_123456');
@@ -791,7 +788,7 @@ describe('ExecutionRunner', () => {
   });
 });
 
-describe('ExecutionFactV1 normalization', () => {
+describe('ExecutionFact normalization', () => {
   const startedAt = '2026-10-19T00:00:00.000Z';
   const endedAt = '2026-10-19T00:00:01.000Z';
 
@@ -818,7 +815,7 @@ describe('ExecutionFactV1 normalization', () => {
       reasonCode: 'LIMIT_EXCEEDED',
     });
     expect(rejected).toMatchObject({ requestState: 'NOT_SENT' });
-    expect(validate(ExecutionFactV1Schema, rejected).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, rejected).ok).toBe(true);
 
     const failed = toExecutionFact(modelRequest(), startedAt, endedAt, {
       outcome: 'FAILED',
@@ -826,7 +823,7 @@ describe('ExecutionFactV1 normalization', () => {
       retryable: false,
     });
     expect(failed).toMatchObject({ requestState: 'UNKNOWN' });
-    expect(validate(ExecutionFactV1Schema, failed).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, failed).ok).toBe(true);
   });
 
   it('drops usage and requestState for non-MODEL outcomes', () => {
@@ -846,7 +843,7 @@ describe('ExecutionFactV1 normalization', () => {
     });
     expect(fact).toMatchObject({ requestState: 'NOT_SENT' });
     expect(fact).not.toHaveProperty('startedAt');
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 
   it('keeps MODEL usage for TERMINATED but not for STOP_UNCONFIRMED', () => {
@@ -859,7 +856,7 @@ describe('ExecutionFactV1 normalization', () => {
       requestState: 'UNKNOWN',
       usage: { inputTokens: 10, outputTokens: 5 },
     });
-    expect(validate(ExecutionFactV1Schema, terminated).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, terminated).ok).toBe(true);
 
     const unconfirmed = toTerminationFact(modelRequest(), startedAt, endedAt, {
       outcome: 'STOP_UNCONFIRMED',
@@ -867,7 +864,7 @@ describe('ExecutionFactV1 normalization', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     expect(unconfirmed).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactV1Schema, unconfirmed).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, unconfirmed).ok).toBe(true);
   });
 
   it('does not add requestState to a non-MODEL termination', () => {
@@ -879,7 +876,7 @@ describe('ExecutionFactV1 normalization', () => {
     });
     expect(fact).not.toHaveProperty('requestState');
     expect(fact).not.toHaveProperty('usage');
-    expect(validate(ExecutionFactV1Schema, fact).ok).toBe(true);
+    expect(validate(ExecutionFactSchema, fact).ok).toBe(true);
   });
 });
 

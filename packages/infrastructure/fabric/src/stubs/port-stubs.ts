@@ -1,16 +1,16 @@
 import type {
-  BoundaryContextV1,
+  BoundaryContext,
   CancelRunExecutionsRequest,
-  ExecutionFactV1,
-  ExecutionRequestV1,
+  ExecutionFact,
+  ExecutionRequest,
   FabricPort,
-  InteractionGatewayPortV1,
-  InteractionInboxEventV1,
+  InteractionGatewayPort,
+  InteractionInboxEvent,
   InteractionSessionEvent,
   InteractionSystemEvent,
   SupervisorShutdownRequest,
-  WorkflowGatewayPortV1,
-  WorkflowInboxEventV1,
+  WorkflowGatewayPort,
+  WorkflowInboxEvent,
   WorkflowSessionEvent,
   WorkflowSystemEvent,
 } from '@multiagentos/contracts';
@@ -38,13 +38,13 @@ export const SCHEMA_IDS = {
   answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v1',
   answerHuman: 'kernel.control.AnswerHumanRequest.v1',
   readArtifact: 'kernel.control.ReadArtifactRequest.v1',
-  shutdown: 'kernel.control.ShutdownRequest.v0',
+  shutdown: 'kernel.control.ShutdownRequest.v1',
   gatewayForward: 'kernel.control.GatewayForward.v1',
   admissionProjection: 'kernel.control.AdmissionProjection.v1',
   sessionProjection: 'kernel.control.SessionProjection.v1',
   execute: 'kernel.execution.ExecutionRequest.v1',
-  cancelRunExecutions: 'kernel.execution.CancelRunExecutionsRequest.v0',
-  supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v0',
+  cancelRunExecutions: 'kernel.execution.CancelRunExecutionsRequest.v1',
+  supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
   executionFact: 'kernel.execution.ExecutionFact.v1',
   workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
   workflowSessionEvent: 'kernel.session.WorkflowSessionEvent.v1',
@@ -64,7 +64,7 @@ export const WORKFLOW_SYSCALLS = [
   'readProjectFile',
   'reportSessionCommand',
   'reportSessionList',
-] as const satisfies readonly (keyof WorkflowGatewayPortV1)[];
+] as const satisfies readonly (keyof WorkflowGatewayPort)[];
 export const INTERACTION_SYSCALLS = [
   'startSession',
   'openSession',
@@ -75,7 +75,7 @@ export const INTERACTION_SYSCALLS = [
   'answerHuman',
   'readArtifact',
   'shutdown',
-] as const satisfies readonly (keyof InteractionGatewayPortV1)[];
+] as const satisfies readonly (keyof InteractionGatewayPort)[];
 
 /** Schema IDs only Gateway may serve with an invalid-body callback. */
 export const GATEWAY_SYSCALL_SCHEMAS: ReadonlySet<string> = new Set(
@@ -83,47 +83,47 @@ export const GATEWAY_SYSCALL_SCHEMAS: ReadonlySet<string> = new Set(
 );
 
 /** For Workflow: its syscalls, sent to Gateway. */
-export function createWorkflowGatewayPort(fabric: FabricPort): WorkflowGatewayPortV1 {
+export function createWorkflowGatewayPort(fabric: FabricPort): WorkflowGatewayPort {
   const port = Object.fromEntries(
     WORKFLOW_SYSCALLS.map((name) => [
       name,
-      (request: unknown, context: BoundaryContextV1) =>
+      (request: unknown, context: BoundaryContext) =>
         fabric.request(SCHEMA_IDS[name], request, context),
     ]),
   );
-  return port as unknown as WorkflowGatewayPortV1;
+  return port as unknown as WorkflowGatewayPort;
 }
 
 /** For UserInteraction: its requests, sent to Gateway. */
-export function createInteractionGatewayPort(fabric: FabricPort): InteractionGatewayPortV1 {
+export function createInteractionGatewayPort(fabric: FabricPort): InteractionGatewayPort {
   const port = Object.fromEntries(
     INTERACTION_SYSCALLS.map((name) => [
       name,
-      (request: unknown, context: BoundaryContextV1) =>
+      (request: unknown, context: BoundaryContext) =>
         fabric.request(SCHEMA_IDS[name], request, context),
     ]),
   );
-  return port as unknown as InteractionGatewayPortV1;
+  return port as unknown as InteractionGatewayPort;
 }
 
 /** What a receiver of Kernel events handles: one handler per sequence (Fabric 3). */
 export interface WorkflowInbox {
-  handleRunEvent(event: WorkflowInboxEventV1): Promise<void>;
+  handleRunEvent(event: WorkflowInboxEvent): Promise<void>;
   handleSessionEvent(event: WorkflowSessionEvent): Promise<void>;
   handleSystemEvent(event: WorkflowSystemEvent): Promise<void>;
 }
 export interface InteractionInbox {
-  handleRunEvent(event: InteractionInboxEventV1): Promise<void>;
+  handleRunEvent(event: InteractionInboxEvent): Promise<void>;
   handleSessionEvent(event: InteractionSessionEvent): Promise<void>;
   handleSystemEvent(event: InteractionSystemEvent): Promise<void>;
 }
 
-export type ToWorkflowEvent = WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent;
+export type ToWorkflowEvent = WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent;
 export type ToInteractionEvent =
-  InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent;
+  InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent;
 
 /** The context of an event follows the sequence it belongs to. */
-const eventContext = (event: object, correlationId: string): BoundaryContextV1 => ({
+const eventContext = (event: object, correlationId: string): BoundaryContext => ({
   correlationId,
   tenantId: 'local',
   projectId: 'local',
@@ -212,7 +212,7 @@ export function serveWorkflowInbox(fabric: FabricPort, inbox: WorkflowInbox): vo
     if (!check.accept(event)) return Promise.resolve();
     switch (envelope.schemaName) {
       case 'kernel.unit.WorkflowInboxEvent':
-        return inbox.handleRunEvent(event as WorkflowInboxEventV1);
+        return inbox.handleRunEvent(event as WorkflowInboxEvent);
       case 'kernel.session.WorkflowSessionEvent':
         return inbox.handleSessionEvent(event as WorkflowSessionEvent);
       default:
@@ -231,7 +231,7 @@ export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInbo
     if (!check.accept(event)) return Promise.resolve();
     switch (envelope.schemaName) {
       case 'kernel.control.InteractionInboxEvent':
-        return inbox.handleRunEvent(event as InteractionInboxEventV1);
+        return inbox.handleRunEvent(event as InteractionInboxEvent);
       case 'kernel.session.InteractionSessionEvent':
         return inbox.handleSessionEvent(event as InteractionSessionEvent);
       default:
@@ -241,8 +241,8 @@ export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInbo
 }
 
 /** What the Kernel core asks of the Supervisor (M1 KernelSupervisor, major 1 requests). */
-export interface SupervisorPortV1 {
-  execute(request: ExecutionRequestV1): Promise<void>;
+export interface SupervisorPort {
+  execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
@@ -253,8 +253,8 @@ export function createSupervisorPort(
   contextOf: (request: {
     readonly sessionId?: string;
     readonly workflowRunId?: string;
-  }) => BoundaryContextV1,
-): SupervisorPortV1 {
+  }) => BoundaryContext,
+): SupervisorPort {
   return {
     execute: (request) => fabric.request(SCHEMA_IDS.execute, request, contextOf(request)),
     cancelRun: (request) => fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf({})),
@@ -265,8 +265,8 @@ export function createSupervisorPort(
 /** For the Supervisor: reports execution facts to the Kernel core. */
 export function createExecutionFactSink(
   fabric: FabricPort,
-  contextOf: (fact: ExecutionFactV1) => BoundaryContextV1,
-): { report(fact: ExecutionFactV1): Promise<void> } {
+  contextOf: (fact: ExecutionFact) => BoundaryContext,
+): { report(fact: ExecutionFact): Promise<void> } {
   return {
     report: (fact) =>
       fabric.send('kernel-core.execution-facts', SCHEMA_IDS.executionFact, fact, contextOf(fact)),

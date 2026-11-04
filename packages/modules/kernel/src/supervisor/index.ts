@@ -4,8 +4,8 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
   CancelRunExecutionsRequest,
   Envelope,
-  ExecutionRequestV1,
-  ExecutorRegistryV1,
+  ExecutionRequest,
+  ExecutorRegistry,
   FabricPort,
   HealthStatus,
   LifecyclePort,
@@ -15,7 +15,7 @@ import type {
 } from '@multiagentos/contracts';
 import { newId } from '@multiagentos/contracts';
 import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
-import type { KernelConfigV1 } from '@multiagentos/contracts';
+import type { KernelConfig } from '@multiagentos/contracts';
 
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 import { ExecutionRunner } from './execution-runner.js';
@@ -30,10 +30,10 @@ export interface ModuleHostControl {
 export interface SupervisorDeps {
   /** The Fabric client whose producer is `supervisor`. */
   readonly fabric: FabricPort;
-  readonly executors: ExecutorRegistryV1;
+  readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly moduleHost: ModuleHostControl;
-  readonly config: Pick<KernelConfigV1, 'cancelGraceMs'>;
+  readonly config: Pick<KernelConfig, 'cancelGraceMs'>;
   /** System data directory; the Supervisor empties `<dataDir>/tmp/` before anything starts. */
   readonly dataDir: string;
   /**
@@ -137,7 +137,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       });
       registered.add(schemaId);
     };
-    serve<ExecutionRequestV1>(SCHEMA_IDS.execute, (envelope) => {
+    serve<ExecutionRequest>(SCHEMA_IDS.execute, (envelope) => {
       correlations.set(envelope.payload.workflowRunId, envelope.correlationId);
       runner.execute(envelope.payload, envelope.correlationId);
       return Promise.resolve();

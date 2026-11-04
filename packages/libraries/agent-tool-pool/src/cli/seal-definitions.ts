@@ -1,5 +1,5 @@
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
-import { planSealV1 } from '../catalog-v1/catalog-v1.js';
+import { planSeal } from '../catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 
 /**
@@ -8,7 +8,7 @@ import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
  */
 const directory = process.argv[2] ?? DEFAULT_DEFINITIONS_DIRECTORY;
 const source = new FileDefinitionSource(directory);
-const plan = planSealV1(await source.load());
+const plan = planSeal(await source.load());
 if (plan.issues.length > 0) {
   for (const issue of plan.issues)
     console.error(`[${issue.code}] ${issue.origin}: ${issue.message}`);

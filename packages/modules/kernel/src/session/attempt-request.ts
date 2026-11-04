@@ -1,32 +1,32 @@
 import {
-  AssembleContextPackV1Schema,
-  ContextAssembleInputV1Schema,
-  ExecutionRequestV1Schema,
+  AssembleContextPackSchema,
+  ContextAssembleInputSchema,
+  ExecutionRequestSchema,
   FileReadInputSchema,
-  ModelCallInputV1Schema,
+  ModelCallInputSchema,
   ModelRawOutputSchema,
   OrientContextPackSchema,
   RepositoryListInputSchema,
-  RepositoryOrientInputV1Schema,
+  RepositoryOrientInputSchema,
   RepositorySearchInputSchema,
   estimatePackTokens,
   validate,
   type ArtifactRef,
-  type AssembleContextPackV1,
-  type AssembleExecutorInputV1,
-  type ContextAssembleInputV1,
+  type AssembleContextPack,
+  type AssembleExecutorInput,
+  type ContextAssembleInput,
   type ContextHistoryEntry,
-  type ExecutionKindV1,
-  type ExecutionLimitsV1,
-  type ExecutionRequestV1,
-  type ExecutorKindV1,
+  type ExecutionKind,
+  type ExecutionLimits,
+  type ExecutionRequest,
+  type ExecutorKind,
   type FileReadInput,
-  type ModelCallInputV1,
+  type ModelCallInput,
   type ModelRawOutput,
   type ModelToolCall,
   type OrientContextPack,
   type RepositoryListInput,
-  type RepositoryOrientInputV1,
+  type RepositoryOrientInput,
   type RepositorySearchInput,
   type ResolvedHistoryEntry,
 } from '@multiagentos/contracts';
@@ -78,7 +78,7 @@ export class RequestBuildError extends Error {
 }
 
 export interface BuiltRequest {
-  readonly request: ExecutionRequestV1;
+  readonly request: ExecutionRequest;
   /** Present for MODEL: what must be reserved before dispatch. */
   readonly reservation?: { readonly estimatedTokens: number; readonly final: boolean };
 }
@@ -138,14 +138,11 @@ export class AttemptRequestBuilder {
 
   async build(spec: AttemptSpec, identity: RequestIdentity): Promise<BuiltRequest> {
     const { unit, input } = spec;
-    const made = (executorInput: unknown, limits: ExecutionLimitsV1): ExecutionRequestV1 =>
+    const made = (executorInput: unknown, limits: ExecutionLimits): ExecutionRequest =>
       this.#request(spec, identity, unit.executionKind, executorInput, limits);
     switch (unit.executionKind) {
       case 'REPOSITORY_ORIENT': {
-        const { objectiveRef } = inputOf<RepositoryOrientInputV1>(
-          RepositoryOrientInputV1Schema,
-          input,
-        );
+        const { objectiveRef } = inputOf<RepositoryOrientInput>(RepositoryOrientInputSchema, input);
         const objective = (await this.#text(objectiveRef)).slice(0, OBJECTIVE_MAX);
         const limits = this.#toolLimits('REPOSITORY_ORIENT', identity);
         return {
@@ -194,13 +191,13 @@ export class AttemptRequestBuilder {
     }
   }
 
-  #deadline(kind: ExecutorKindV1, identity: RequestIdentity): string {
+  #deadline(kind: ExecutorKind, identity: RequestIdentity): string {
     const start = identity.notBefore ?? this.#deps.now().toISOString();
     const { timeoutMs } = this.#deps.config.executionLimits[kind];
     return new Date(new Date(start).getTime() + timeoutMs).toISOString();
   }
 
-  #baseLimits(kind: ExecutorKindV1, identity: RequestIdentity) {
+  #baseLimits(kind: ExecutorKind, identity: RequestIdentity) {
     return {
       deadline: this.#deadline(kind, identity),
       maxOutputBytes: this.#deps.config.executionLimits[kind].maxOutputBytes,
@@ -225,12 +222,12 @@ export class AttemptRequestBuilder {
   #request(
     spec: AttemptSpec,
     identity: RequestIdentity,
-    executionKind: ExecutionKindV1,
+    executionKind: ExecutionKind,
     input: unknown,
-    limits: ExecutionLimitsV1,
-  ): ExecutionRequestV1 {
+    limits: ExecutionLimits,
+  ): ExecutionRequest {
     const { sessionId, workflowRunId, unitAttemptId, executionId, notBefore } = identity;
-    const validated = validate<ExecutionRequestV1>(ExecutionRequestV1Schema, {
+    const validated = validate<ExecutionRequest>(ExecutionRequestSchema, {
       sessionId,
       workflowRunId,
       unitAttemptId,
@@ -262,8 +259,8 @@ export class AttemptRequestBuilder {
     }
   }
 
-  async #assemble(spec: AttemptSpec): Promise<AssembleExecutorInputV1> {
-    const input = inputOf<ContextAssembleInputV1>(ContextAssembleInputV1Schema, spec.input);
+  async #assemble(spec: AttemptSpec): Promise<AssembleExecutorInput> {
+    const input = inputOf<ContextAssembleInput>(ContextAssembleInputSchema, spec.input);
     const { agent } = spec;
     const orientPack =
       input.orientPackRef === undefined
@@ -349,11 +346,11 @@ export class AttemptRequestBuilder {
   }
 
   async #model(spec: AttemptSpec, identity: RequestIdentity): Promise<BuiltRequest> {
-    const input = inputOf<ModelCallInputV1>(ModelCallInputV1Schema, spec.input);
+    const input = inputOf<ModelCallInput>(ModelCallInputSchema, spec.input);
     const { budget, contextWindowTokens } = spec.agent;
-    const contextPack = await this.#json<AssembleContextPackV1>(
+    const contextPack = await this.#json<AssembleContextPack>(
       input.contextPackRef,
-      AssembleContextPackV1Schema,
+      AssembleContextPackSchema,
     );
     const expected = input.final ? budget.finalInputBudget : budget.perCallInputLimit;
     if (contextPack.tokenBudget !== expected) throw new RequestBuildError('INVALID_INPUT');

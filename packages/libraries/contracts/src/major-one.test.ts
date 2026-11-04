@@ -3,15 +3,15 @@ import type { TSchema } from 'typebox';
 import { describe, expect, it } from 'vitest';
 import {
   ActivityEventSchema,
-  ContextAssembleInputV1Schema,
+  ContextAssembleInputSchema,
   HumanAnsweredSchema,
   ReadProjectFileRequestSchema,
-  RunStartV1Schema,
+  RunStartSchema,
   RunStateChangedSchema,
   SessionLogRecordSchema,
-  SubmitUnitRequestV1Schema,
-  UnitReportV1Schema,
-  createM1ProtocolRegistry,
+  SubmitUnitRequestSchema,
+  UnitReportSchema,
+  createProtocolRegistry,
   newId,
   pathDerivedId,
   validate,
@@ -20,8 +20,8 @@ import {
 const isValid = (schema: TSchema, value: unknown): boolean => validate(schema, value).ok;
 const artifact = { artifactId: `art_${'a'.repeat(64)}`, sha256: 'a'.repeat(64), size: 1 };
 
-describe('major 0 and major 1 side by side (SharedContracts 4)', () => {
-  const registry = createM1ProtocolRegistry();
+describe('one major (SharedContracts 4)', () => {
+  const registry = createProtocolRegistry();
 
   it.each([
     'platform.common.Envelope',
@@ -30,8 +30,8 @@ describe('major 0 and major 1 side by side (SharedContracts 4)', () => {
     'kernel.control.InteractionInboxEvent',
     'catalog.AgentDefinition',
     'kernel.execution.ExecutionRequest',
-  ])('resolves %s in both majors and refuses an unknown one', (name) => {
-    expect(registry.resolve(name, 0).major).toBe(0);
+  ])('resolves %s in major 1 and refuses any other', (name) => {
+    expect(() => registry.resolve(name, 0)).toThrow('UNKNOWN_SCHEMA_MAJOR');
     expect(registry.resolve(name, 1).major).toBe(1);
     expect(() => registry.resolve(name, 2)).toThrow('UNKNOWN_SCHEMA_MAJOR');
   });
@@ -69,13 +69,13 @@ describe('Schema-enforced constraints', () => {
   };
 
   it('accepts a submitUnit whose IDs come from its path', () => {
-    expect(isValid(SubmitUnitRequestV1Schema, request)).toBe(true);
+    expect(isValid(SubmitUnitRequestSchema, request)).toBe(true);
   });
 
   it('refuses a requestId or unitRunId that does not', () => {
-    expect(isValid(SubmitUnitRequestV1Schema, { ...request, requestId: newId('req') })).toBe(false);
+    expect(isValid(SubmitUnitRequestSchema, { ...request, requestId: newId('req') })).toBe(false);
     expect(
-      isValid(SubmitUnitRequestV1Schema, { ...request, unitRunId: pathDerivedId('unr', 'other') }),
+      isValid(SubmitUnitRequestSchema, { ...request, unitRunId: pathDerivedId('unr', 'other') }),
     ).toBe(false);
   });
 
@@ -93,10 +93,10 @@ describe('Schema-enforced constraints', () => {
   it('ties templateRef to the run mode', () => {
     const start = { type: 'RunStart', preset: 'standard', initialInput: true };
     const templateRef = { id: 'analyze', version: 'v1.0.0' };
-    expect(isValid(RunStartV1Schema, { ...start, mode: 'CHAT' })).toBe(true);
-    expect(isValid(RunStartV1Schema, { ...start, mode: 'CHAT', templateRef })).toBe(false);
-    expect(isValid(RunStartV1Schema, { ...start, mode: 'ORCHESTRATION' })).toBe(false);
-    expect(isValid(RunStartV1Schema, { ...start, mode: 'ORCHESTRATION', templateRef })).toBe(true);
+    expect(isValid(RunStartSchema, { ...start, mode: 'CHAT' })).toBe(true);
+    expect(isValid(RunStartSchema, { ...start, mode: 'CHAT', templateRef })).toBe(false);
+    expect(isValid(RunStartSchema, { ...start, mode: 'ORCHESTRATION' })).toBe(false);
+    expect(isValid(RunStartSchema, { ...start, mode: 'ORCHESTRATION', templateRef })).toBe(true);
   });
 
   it('ties humanRequestId to the answer origin', () => {
@@ -157,8 +157,8 @@ describe('Schema-enforced constraints', () => {
         final: false,
       },
     };
-    expect(isValid(ContextAssembleInputV1Schema, input)).toBe(false);
-    expect(isValid(ContextAssembleInputV1Schema, { ...input, final: false })).toBe(true);
+    expect(isValid(ContextAssembleInputSchema, input)).toBe(false);
+    expect(isValid(ContextAssembleInputSchema, { ...input, final: false })).toBe(true);
   });
 
   it('carries quota exactly with QUOTA_EXHAUSTED, and no attempt', () => {
@@ -176,13 +176,11 @@ describe('Schema-enforced constraints', () => {
     };
     const withoutQuota: Record<string, unknown> = { ...refused };
     delete withoutQuota.quota;
-    expect(isValid(UnitReportV1Schema, refused)).toBe(true);
-    expect(isValid(UnitReportV1Schema, withoutQuota)).toBe(false);
-    expect(isValid(UnitReportV1Schema, { ...refused, unitAttemptId: newId('una') })).toBe(false);
-    expect(isValid(UnitReportV1Schema, { ...refused, reasonCode: 'USER_DECLINED' })).toBe(false);
-    expect(isValid(UnitReportV1Schema, { ...withoutQuota, reasonCode: 'USER_DECLINED' })).toBe(
-      true,
-    );
+    expect(isValid(UnitReportSchema, refused)).toBe(true);
+    expect(isValid(UnitReportSchema, withoutQuota)).toBe(false);
+    expect(isValid(UnitReportSchema, { ...refused, unitAttemptId: newId('una') })).toBe(false);
+    expect(isValid(UnitReportSchema, { ...refused, reasonCode: 'USER_DECLINED' })).toBe(false);
+    expect(isValid(UnitReportSchema, { ...withoutQuota, reasonCode: 'USER_DECLINED' })).toBe(true);
   });
 });
 

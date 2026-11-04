@@ -9,11 +9,11 @@ protectedCapabilities:
 inputContract:
   kind: contract
   id: executor.FileReadInput
-  version: v0
+  version: v1
 outputContract:
   kind: contract
   id: executor.FileReadOutput
-  version: v0
+  version: v1
 toolRefs:
   - id: read-file
     version: v0.1.0

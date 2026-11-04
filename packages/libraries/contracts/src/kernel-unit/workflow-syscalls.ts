@@ -1,62 +1,12 @@
 import { Type, type Static } from 'typebox';
 import { pinnedRefOf } from '../catalog/definition-schemas.js';
-import { ReportRefSchema, WorkflowRunFailureSchema } from '../kernel-control/run-outcome.js';
+import { WorkflowRunFailureSchema } from '../kernel-control/run-outcome.js';
 import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { pathDerivedId } from '../platform-common/new-id.js';
 import { Sha256Schema, closed, text } from '../platform-common/schema-helpers.js';
-import { UnitInputSchema, UnitInputV1Schema } from './unit-io.js';
-
-export const RegisterAgentRunRequestSchema = closed(
-  {
-    requestId: IdSchemas.requestId,
-    workflowRunId: IdSchemas.workflowRunId,
-    agentRunId: IdSchemas.agentRunId,
-    agentRef: pinnedRefOf('AGENT'),
-  },
-  'kernel.unit.RegisterAgentRunRequest.v0',
-);
-export type RegisterAgentRunRequest = Static<typeof RegisterAgentRunRequestSchema>;
-
-/** `input` follows the `inputContract` of the Unit that `unitRef` names; Core checks that. */
-export const SubmitUnitRequestSchema = closed(
-  {
-    requestId: IdSchemas.requestId,
-    workflowRunId: IdSchemas.workflowRunId,
-    agentRunId: IdSchemas.agentRunId,
-    unitRef: pinnedRefOf('UNIT'),
-    input: UnitInputSchema,
-  },
-  'kernel.unit.SubmitUnitRequest.v0',
-);
-export type SubmitUnitRequest = Static<typeof SubmitUnitRequestSchema>;
-
-export const EndAgentRunRequestSchema = closed(
-  {
-    requestId: IdSchemas.requestId,
-    workflowRunId: IdSchemas.workflowRunId,
-    agentRunId: IdSchemas.agentRunId,
-  },
-  'kernel.unit.EndAgentRunRequest.v0',
-);
-export type EndAgentRunRequest = Static<typeof EndAgentRunRequestSchema>;
-
-const closeRun = { requestId: IdSchemas.requestId, workflowRunId: IdSchemas.workflowRunId };
-/**
- * COMPLETED carries the published report and nothing else; FAILED carries a failure whose
- * source is WORKFLOW and nothing else.
- */
-export const CloseRunRequestSchema = Type.Union(
-  [
-    closed({ ...closeRun, outcome: Type.Literal('COMPLETED'), reportRef: ReportRefSchema }),
-    closed({ ...closeRun, outcome: Type.Literal('FAILED'), failure: WorkflowRunFailureSchema }),
-  ],
-  { $id: 'kernel.unit.CloseRunRequest.v0' },
-);
-export type CloseRunRequest = Static<typeof CloseRunRequestSchema>;
-
-// --- Major 1 (Interface/WorkflowKernel 2.2) ---------------------------------------------------
+import { UnitInputSchema } from './unit-io.js';
 
 const inRun = {
   requestId: IdSchemas.requestId,
@@ -64,7 +14,7 @@ const inRun = {
   workflowRunId: IdSchemas.workflowRunId,
 };
 
-export const RegisterAgentRunRequestV1Schema = closed(
+export const RegisterAgentRunRequestSchema = closed(
   {
     ...inRun,
     agentRunId: IdSchemas.agentRunId,
@@ -76,7 +26,7 @@ export const RegisterAgentRunRequestV1Schema = closed(
   },
   'kernel.unit.RegisterAgentRunRequest.v1',
 );
-export type RegisterAgentRunRequestV1 = Static<typeof RegisterAgentRunRequestV1Schema>;
+export type RegisterAgentRunRequest = Static<typeof RegisterAgentRunRequestSchema>;
 
 const matchesPath = (request: { requestId: string; path: string }) =>
   request.requestId === pathDerivedId('req', request.path);
@@ -84,7 +34,7 @@ const matchesUnitRun = (request: { unitRunId: string; path: string }) =>
   request.unitRunId === pathDerivedId('unr', request.path.replace(/#[0-9]+$/u, ''));
 
 /** The `requestId` and `unitRunId` come from `path`, so a replayed log rebuilds them. */
-export const SubmitUnitRequestV1Schema = Type.Refine(
+export const SubmitUnitRequestSchema = Type.Refine(
   closed(
     {
       ...inRun,
@@ -92,7 +42,7 @@ export const SubmitUnitRequestV1Schema = Type.Refine(
       unitRunId: IdSchemas.unitRunId,
       path: text(512),
       unitRef: pinnedRefOf('UNIT'),
-      input: UnitInputV1Schema,
+      input: UnitInputSchema,
       display: closed({ toolName: text(64), argsSummary: text(80, 0) }),
     },
     'kernel.unit.SubmitUnitRequest.v1',
@@ -100,15 +50,15 @@ export const SubmitUnitRequestV1Schema = Type.Refine(
   (request) => matchesPath(request) && matchesUnitRun(request),
   () => 'requestId and unitRunId must be derived from path',
 );
-export type SubmitUnitRequestV1 = Static<typeof SubmitUnitRequestV1Schema>;
+export type SubmitUnitRequest = Static<typeof SubmitUnitRequestSchema>;
 
-export const EndAgentRunRequestV1Schema = closed(
+export const EndAgentRunRequestSchema = closed(
   { ...inRun, agentRunId: IdSchemas.agentRunId },
   'kernel.unit.EndAgentRunRequest.v1',
 );
-export type EndAgentRunRequestV1 = Static<typeof EndAgentRunRequestV1Schema>;
+export type EndAgentRunRequest = Static<typeof EndAgentRunRequestSchema>;
 
-export const CloseRunRequestV1Schema = Type.Union(
+export const CloseRunRequestSchema = Type.Union(
   [
     closed({
       ...inRun,
@@ -119,7 +69,7 @@ export const CloseRunRequestV1Schema = Type.Union(
   ],
   { $id: 'kernel.unit.CloseRunRequest.v1' },
 );
-export type CloseRunRequestV1 = Static<typeof CloseRunRequestV1Schema>;
+export type CloseRunRequest = Static<typeof CloseRunRequestSchema>;
 
 export const RequestHumanRequestSchema = closed(
   {

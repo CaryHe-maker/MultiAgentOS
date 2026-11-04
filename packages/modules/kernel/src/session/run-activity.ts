@@ -1,8 +1,8 @@
 import type {
   ActivityEvent,
-  ExecutionKindV1,
+  ExecutionKind,
   MessagePublished,
-  UnitReportV1,
+  UnitReport,
 } from '@multiagentos/contracts';
 import type { AttemptSpec } from './run-attempts.js';
 
@@ -14,7 +14,7 @@ export interface RunActivityDeps {
 }
 
 /** Units the activity area names as tool calls; the rest have a phase of their own or none. */
-const NOT_TOOLS: ReadonlySet<ExecutionKindV1> = new Set([
+const NOT_TOOLS: ReadonlySet<ExecutionKind> = new Set([
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'MESSAGE_PUBLISH',
@@ -104,7 +104,7 @@ export class RunActivity {
   }
 
   /** A delivered report: a finished tool folds into a line, a published message is shown. */
-  reported(spec: AttemptSpec | undefined, report: UnitReportV1): void {
+  reported(spec: AttemptSpec | undefined, report: UnitReport): void {
     if (report.status !== 'OK' || !('unitAttemptId' in report)) return;
     const label = this.#labels.get(report.agentRunId);
     if (report.executionKind === 'MESSAGE_PUBLISH') {

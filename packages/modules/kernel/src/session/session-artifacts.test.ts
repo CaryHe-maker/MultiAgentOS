@@ -6,7 +6,7 @@ import {
   type AppendLogPort,
   type ArtifactOwnerLine,
   type ArtifactRef,
-  type ArtifactStorePortV1,
+  type ArtifactStorePort,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { publishMessage, publishReport } from './built-in-units.js';
@@ -18,7 +18,7 @@ function setup() {
   const bodies = new Map<string, Uint8Array>();
   const lines: ArtifactOwnerLine[] = [];
   let now = Date.parse('2026-11-02T00:00:00.000Z');
-  const store: ArtifactStorePortV1 = {
+  const store: ArtifactStorePort = {
     put: (content, mediaType) => {
       const sha256 = createHash('sha256').update(content).digest('hex');
       bodies.set(sha256, content);

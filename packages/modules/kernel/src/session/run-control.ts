@@ -1,4 +1,4 @@
-import type { CoreRejectedCodeV1 } from '@multiagentos/contracts';
+import type { CoreRejectedCode } from '@multiagentos/contracts';
 
 /**
  * The run states and what each request may do in them (Kernel/Interaction 6.5), as a pure
@@ -23,9 +23,9 @@ export const initialRunControl = (): RunControl => ({
 
 export type Decision<T = undefined> =
   | { readonly accepted: true; readonly control: RunControl; readonly effect?: T }
-  | { readonly accepted: false; readonly reasonCode: CoreRejectedCodeV1 | 'RUN_BLOCKED' };
+  | { readonly accepted: false; readonly reasonCode: CoreRejectedCode | 'RUN_BLOCKED' };
 
-const refuse = (reasonCode: CoreRejectedCodeV1 | 'RUN_BLOCKED'): Decision<never> => ({
+const refuse = (reasonCode: CoreRejectedCode | 'RUN_BLOCKED'): Decision<never> => ({
   accepted: false,
   reasonCode,
 });

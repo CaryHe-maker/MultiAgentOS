@@ -2,8 +2,8 @@ import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
   newId,
   type ArtifactRef,
-  type AuthorizationRequestV1,
-  type AuthorizationResolvedV1,
+  type AuthorizationRequest,
+  type AuthorizationResolved,
 } from '@multiagentos/contracts';
 
 /** Lives in this run's memory only, and ends with the run (Kernel/Core 5, invariant 2). */
@@ -15,7 +15,7 @@ export interface Lease {
   readonly issuedAt: string;
 }
 
-export type Resolution = AuthorizationResolvedV1['resolution'];
+export type Resolution = AuthorizationResolved['resolution'];
 
 export type AccessDecision =
   | { readonly kind: 'ALLOWED' }
@@ -25,15 +25,15 @@ export type AccessDecision =
 export interface AccessCheck {
   readonly decision: AccessDecision;
   /** Present only when this check opened a new question. */
-  readonly requested?: AuthorizationRequestV1;
+  readonly requested?: AuthorizationRequest;
 }
 
 /** What an answered question hands back: everyone who waited on it, in arrival order. */
 export interface QuestionResolved<W> {
   readonly resolution: Resolution;
-  readonly capability: AuthorizationRequestV1['capability'];
+  readonly capability: AuthorizationRequest['capability'];
   readonly waiters: readonly W[];
-  readonly resolved: AuthorizationResolvedV1;
+  readonly resolved: AuthorizationResolved;
 }
 
 export interface RunAuthorizationDeps {
@@ -45,7 +45,7 @@ export interface RunAuthorizationDeps {
 
 interface Question<W> {
   readonly questionId: string;
-  readonly capability: AuthorizationRequestV1['capability'];
+  readonly capability: AuthorizationRequest['capability'];
   readonly instruction?: string;
   readonly waiters: W[];
   /** The AgentRuns a refusal binds. */

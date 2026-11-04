@@ -1,6 +1,6 @@
 import type {
-  ExecutionRequestV1,
-  ExecutorEnvironmentV1,
+  ExecutionRequest,
+  ExecutorEnvironment,
   ProviderCredentials,
   SubprocessRunner,
 } from '@multiagentos/contracts';
@@ -32,10 +32,10 @@ export interface ExecutorEnvironmentDeps {
  * only MODEL receives credentials and only REPOSITORY_SEARCH receives the real runner.
  */
 export function createExecutorEnvironment(
-  request: ExecutionRequestV1,
+  request: ExecutionRequest,
   signal: AbortSignal,
   deps: ExecutorEnvironmentDeps,
-): ExecutorEnvironmentV1 {
+): ExecutorEnvironment {
   return {
     scope: request.scope,
     limits: request.limits,

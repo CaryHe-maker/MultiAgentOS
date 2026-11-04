@@ -12,6 +12,7 @@ import { describeExecutorContract } from './executor-contract.js';
 const SCOPES: { readonly [K in ExecutorKind]: ExecutionScope } = {
   REPOSITORY_ORIENT: { kind: 'REPOSITORY', repositoryRoot: '/repository', exclusions: [] },
   REPOSITORY_SEARCH: { kind: 'REPOSITORY', repositoryRoot: '/repository', exclusions: [] },
+  REPOSITORY_LIST: { kind: 'REPOSITORY', repositoryRoot: '/repository', exclusions: [] },
   FILE_READ: { kind: 'REPOSITORY', repositoryRoot: '/repository', exclusions: [] },
   CONTEXT_ASSEMBLE: { kind: 'NONE' },
   MODEL: {
@@ -23,9 +24,13 @@ const SCOPES: { readonly [K in ExecutorKind]: ExecutionScope } = {
     thinking: 'DISABLED',
   },
 };
-const status = { roundsUsed: 0, maxRounds: 1, final: false, budgetState: 'NORMAL' } as const;
+const status = {
+  round: 1,
+  maxRounds: 1,
+  final: false,
+  budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+} as const;
 const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
-  objective: 'Explain the README.',
   final: false,
   tokenBudget: 64_000,
   instructions: 'CANNED INSTRUCTIONS',
@@ -36,6 +41,7 @@ const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
 const INPUTS: ExecutorInputByKind = {
   REPOSITORY_ORIENT: { objective: 'Explain the README.', tokenBudget: 4_000 },
   REPOSITORY_SEARCH: { query: 'README', mode: 'AUTO', maxItems: 20, tokenBudget: 4_000 },
+  REPOSITORY_LIST: {},
   FILE_READ: { path: 'README.md' },
   CONTEXT_ASSEMBLE: assembleInput,
   MODEL: {
@@ -50,7 +56,8 @@ function environmentFor(kind: ExecutorKind): ExecutorEnvironment {
     limits: {
       deadline: '2099-01-01T00:00:00.000Z',
       maxOutputBytes: 1_048_576,
-      maxOutputTokens: 8_192,
+      preview: { maxBytes: 262_144, maxLines: 2_000 },
+      maxFullOutputBytes: 1_048_576,
       maxFiles: 20_000,
     },
     signal: new AbortController().signal,

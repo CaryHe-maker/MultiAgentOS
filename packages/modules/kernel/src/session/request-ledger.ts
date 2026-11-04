@@ -11,9 +11,8 @@ interface LedgerEntry {
 }
 
 /**
- * Request records of the run manager (docs/M1/Kernel/Interaction.md 4.1 and
- * M1Interface 2.3). `createRun` and `shutdown` are recorded here because they do not belong to
- * a run actor. A run's own request records use the same rules inside the Core state block.
+ * Request records of the Session manager. `startSession` and `shutdown` are recorded here because
+ * they do not belong to a run actor. A run's own request records use the same rules inside the Core state block.
  */
 export class RequestLedger {
   readonly #entries = new Map<string, LedgerEntry>();

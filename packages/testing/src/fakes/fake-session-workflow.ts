@@ -1,8 +1,8 @@
 import {
   newId,
-  type BoundaryContextV1,
+  type BoundaryContext,
   type SessionListEntry,
-  type WorkflowGatewayPortV1,
+  type WorkflowGatewayPort,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
@@ -18,21 +18,21 @@ export interface FakeSessionWorkflow {
   failNext(code: 'SESSION_LOCKED' | 'SESSION_LOG_CORRUPT'): void;
 }
 
-const context = (sessionId?: string): BoundaryContextV1 => ({
+const context = (sessionId?: string): BoundaryContext => ({
   correlationId: newId('cor'),
   tenantId: 'local',
   projectId: 'local',
   ...(sessionId === undefined ? {} : { sessionId }),
 });
 
-export function createFakeSessionWorkflow(gateway: WorkflowGatewayPortV1): FakeSessionWorkflow {
+export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSessionWorkflow {
   const sessions = new Map<string, SessionListEntry>();
   let failure: 'SESSION_LOCKED' | 'SESSION_LOG_CORRUPT' | undefined;
 
   const reply = (
     sessionId: string,
     commandId: string,
-    result: Parameters<WorkflowGatewayPortV1['reportSessionCommand']>[0]['result'],
+    result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result'],
   ) =>
     gateway.reportSessionCommand(
       { requestId: newId('req'), sessionId, commandId, result },

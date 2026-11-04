@@ -2,7 +2,7 @@ import type {
   AppendLogPort,
   ArtifactOwnerLine,
   ArtifactRef,
-  ArtifactStorePortV1,
+  ArtifactStorePort,
   UserInput,
 } from '@multiagentos/contracts';
 
@@ -13,7 +13,7 @@ export type ArtifactRead =
   | { readonly ok: false; readonly reasonCode: ArtifactRefusal };
 
 export interface SessionArtifactsDeps {
-  readonly store: ArtifactStorePortV1;
+  readonly store: ArtifactStorePort;
   readonly owners: AppendLogPort<ArtifactOwnerLine>;
   readonly expiringRetentionDays: number;
   readonly now: () => Date;

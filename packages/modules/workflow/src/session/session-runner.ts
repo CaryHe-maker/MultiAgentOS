@@ -1,22 +1,22 @@
 import {
-  REPOSITORY_KINDS_V1,
+  REPOSITORY_KINDS,
   REASON_CODE_CATEGORY,
   newId,
   type AnalysisReportDraft,
   type ArtifactRef,
-  type BoundaryContextV1,
+  type BoundaryContext,
   type DefinitionRef,
-  type KernelToWorkflowEventV1,
+  type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
   type ReasonCode,
   type SessionCommandFailure,
   type SessionLogRecord,
   type TemplateDefinition,
-  type SubmitUnitRequestV1,
+  type SubmitUnitRequest,
   type ThinkingEffort,
-  type UnitInputV1,
-  type WorkflowGatewayPortV1,
-  type WorkflowInboxEventV1,
+  type UnitInput,
+  type WorkflowGatewayPort,
+  type WorkflowInboxEvent,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
@@ -60,7 +60,7 @@ import {
  * log first, then the projection, then syscalls. Turn-chat and templates differ only in how the
  * graph grows; all Agents share one AgentRun cycle and one kind of projection.
  */
-const REPOSITORY_KINDS: ReadonlySet<string> = new Set(REPOSITORY_KINDS_V1);
+const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
 
 export interface AgentBinding {
   readonly ref: PinnedDefinitionRef;
@@ -71,7 +71,7 @@ export interface AgentBinding {
 }
 
 export interface SessionRunnerDeps {
-  readonly gateway: WorkflowGatewayPortV1;
+  readonly gateway: WorkflowGatewayPort;
   readonly store: SessionLogStore;
   /** Built-in Agents by id; `chat` runs the one named `main`. */
   readonly agents: ReadonlyMap<string, AgentBinding>;
@@ -89,7 +89,7 @@ const MAIN = 'main';
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
-const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContextV1 => ({
+const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContext => ({
   correlationId: newId('cor'),
   tenantId: 'local',
   projectId: 'local',
@@ -149,9 +149,7 @@ export class SessionRunner {
 
   async handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
     const { sessionId, event } = envelope;
-    const reply = (
-      result: Parameters<WorkflowGatewayPortV1['reportSessionCommand']>[0]['result'],
-    ) =>
+    const reply = (result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result']) =>
       this.#deps.gateway.reportSessionCommand(
         { requestId: newId('req'), sessionId, commandId: event.commandId, result },
         contextOf(sessionId),
@@ -226,7 +224,7 @@ export class SessionRunner {
       );
       return;
     }
-    let result: Parameters<WorkflowGatewayPortV1['reportSessionCommand']>[0]['result'] = {
+    let result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result'] = {
       command: 'DELETE',
       outcome: 'DONE',
     };
@@ -242,7 +240,7 @@ export class SessionRunner {
     );
   }
 
-  async handleRunEvent(envelope: WorkflowInboxEventV1): Promise<void> {
+  async handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
     const { event, workflowRunId } = envelope;
     switch (event.type) {
       case 'RunStart':
@@ -301,7 +299,7 @@ export class SessionRunner {
 
   #initialRevision(
     workflowRunId: string,
-    event: Extract<KernelToWorkflowEventV1, { type: 'RunStart' }>,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
   ): GraphRevision {
     if (event.mode === 'CHAT') return initialChatRevision(workflowRunId, this.#mainRef());
     const template = this.#deps.templates.get(event.templateRef.id);
@@ -313,7 +311,7 @@ export class SessionRunner {
 
   async #onRunStart(
     workflowRunId: string,
-    event: Extract<KernelToWorkflowEventV1, { type: 'RunStart' }>,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
   ): Promise<void> {
     this.#mode = event.mode;
     await this.#append([
@@ -343,7 +341,7 @@ export class SessionRunner {
 
   async #onHumanAnswered(
     workflowRunId: string,
-    event: Extract<KernelToWorkflowEventV1, { type: 'HumanAnswered' }>,
+    event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }>,
   ): Promise<void> {
     const { graph, view } = projectGraph(this.#records, workflowRunId);
     const node =
@@ -585,8 +583,8 @@ export class SessionRunner {
    */
   async #withInstructions(
     workflowRunId: string,
-    request: SubmitUnitRequestV1,
-  ): Promise<SubmitUnitRequestV1> {
+    request: SubmitUnitRequest,
+  ): Promise<SubmitUnitRequest> {
     const active = this.#agent;
     if (active === undefined || !('history' in request.input) || !this.#readRepository)
       return request;
@@ -617,11 +615,11 @@ export class SessionRunner {
 
   async #onUnitReport(
     workflowRunId: string,
-    report: Extract<KernelToWorkflowEventV1, { type: 'UnitReport' }>,
+    report: Extract<KernelToWorkflowEvent, { type: 'UnitReport' }>,
   ): Promise<void> {
     const active = this.#agent;
     if (active === undefined) return;
-    if (report.status === 'OK' && REPOSITORY_KINDS.has(report.executionKind))
+    if (report.status === 'OK' && READS_REPOSITORY.has(report.executionKind))
       this.#readRepository = true;
     const transition = receiveAgentReport(
       active.state,
@@ -686,7 +684,7 @@ export class SessionRunner {
   async #closeWith(
     workflowRunId: string,
     active: ActiveAgent,
-    input: UnitInputV1,
+    input: UnitInput,
     source: ControlSource | undefined,
     nodeEnding: NodeEnding,
   ): Promise<void> {
@@ -804,7 +802,7 @@ export class SessionRunner {
     if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
     if (active.state.definitions.onDegraded === 'PUBLISH_NOTICE') {
       const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
-      await this.#closeWith(workflowRunId, active, input as UnitInputV1, undefined, {
+      await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
         status: 'FAILED',
         runOutput: false,
       });

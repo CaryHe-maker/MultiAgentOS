@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
-import { DefinitionCatalogV1 } from '../catalog-v1/catalog-v1.js';
+import { DefinitionCatalog } from '../catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 import { isPeakTime, modelCallCost } from './model-cost.js';
 
-const catalog = await DefinitionCatalogV1.load(
+const catalog = await DefinitionCatalog.load(
   new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
 );
 const latest = catalog.latest('MODEL', 'deepseek-flash');

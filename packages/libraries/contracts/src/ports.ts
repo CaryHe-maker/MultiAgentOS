@@ -1,11 +1,11 @@
 import type { RepositoryListInput } from './executor/repository-list.js';
-import type { ExecutionResultV1 } from './kernel-execution/execution-fact.js';
+import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
-  AssembleExecutorInputV1,
-  ExecutionLimitsV1,
-  ModelExecutorInputV1,
+  AssembleExecutorInput,
+  ExecutionLimits,
+  ModelExecutorInput,
 } from './kernel-execution/execution-request.js';
-import type { ExecutorKindV1 } from './platform-common/execution-kind.js';
+import type { ExecutorKind } from './platform-common/execution-kind.js';
 import type {
   AgentPinRequest,
   DefinitionLookup,
@@ -14,11 +14,11 @@ import type {
 import type { DefinitionByKind, DefinitionKind } from './catalog/definition-schemas.js';
 import type { TokenUsage } from './executor/model-call.js';
 import type {
-  AnswerAuthorizationRequestV1,
+  AnswerAuthorizationRequest,
   AnswerHumanRequest,
-  ReadArtifactRequestV1,
+  ReadArtifactRequest,
 } from './kernel-control/interaction-requests.js';
-import type { SessionAccepted, SyscallRejectedV1 } from './kernel-control/responses.js';
+import type { SessionAccepted, SyscallRejected } from './kernel-control/responses.js';
 import type {
   DeleteSessionRequest,
   ListSessionsRequest,
@@ -31,45 +31,24 @@ import type {
   ReportSessionListRequest,
 } from './kernel-unit/session-replies.js';
 import type {
-  CloseRunRequestV1,
-  EndAgentRunRequestV1,
+  CloseRunRequest,
+  EndAgentRunRequest,
   ProjectFileContent,
   ReadProjectFileRequest,
-  RegisterAgentRunRequestV1,
+  RegisterAgentRunRequest,
   RequestHumanRequest,
-  SubmitUnitRequestV1,
+  SubmitUnitRequest,
 } from './kernel-unit/workflow-syscalls.js';
-import type { BoundaryContextV1 } from './platform-common/common-schemas.js';
+import type { BoundaryContext } from './platform-common/common-schemas.js';
 import type { InstanceLockInfo, SessionLockInfo } from './platform-persistence/locks.js';
 import type { FileReadInput } from './executor/file-read.js';
+import type { KernelToInteractionEvent } from './kernel-control/interaction-events.js';
+import type { ShutdownRequest } from './kernel-control/interaction-requests.js';
+import type { ArtifactContent, SyscallAck } from './kernel-control/responses.js';
+import type { RequestState } from './kernel-execution/execution-fact.js';
 import type {
-  KernelToInteractionEvent,
-  InteractionInboxEvent,
-} from './kernel-control/interaction-events.js';
-import type {
-  AnswerAuthorizationRequest,
-  CancelRunRequest,
-  CreateRunRequest,
-  ReadArtifactRequest,
-  ShutdownRequest,
-} from './kernel-control/interaction-requests.js';
-import type {
-  ArtifactContent,
-  RunCreated,
-  SyscallAck,
-  SyscallRejected,
-} from './kernel-control/responses.js';
-import type {
-  ExecutionFact,
-  ExecutionResult,
-  RequestState,
-} from './kernel-execution/execution-fact.js';
-import type {
-  AssembleExecutorInput,
-  ExecutionLimits,
   ExecutionRequest,
   ExecutionScope,
-  ModelExecutorInput,
   OrientExecutorInput,
   SearchExecutorInput,
 } from './kernel-execution/execution-request.js';
@@ -77,97 +56,27 @@ import type {
   CancelRunExecutionsRequest,
   SupervisorShutdownRequest,
 } from './kernel-execution/supervisor-requests.js';
-import type { KernelToWorkflowEvent, WorkflowInboxEvent } from './kernel-unit/workflow-events.js';
-import type {
-  CloseRunRequest,
-  EndAgentRunRequest,
-  RegisterAgentRunRequest,
-  SubmitUnitRequest,
-} from './kernel-unit/workflow-syscalls.js';
+import type { KernelToWorkflowEvent } from './kernel-unit/workflow-events.js';
 import type {
   ArtifactRef,
-  BoundaryContext,
   CapabilityDescriptor,
-  EnvelopeV1,
+  Envelope,
   ModuleError,
 } from './platform-common/common-schemas.js';
 import type { ContractValidationError } from './platform-common/validation.js';
-import type { ExecutorKind } from './platform-common/execution-kind.js';
 import type {
   ExecutorFailedCode,
   ExecutorRejectedCode,
   ViolationCode,
 } from './platform-common/reason-code.js';
 
-/** Return value of the synchronous Ports (M1Interface 3.3). */
+/** Return value of the synchronous Ports. */
 export type PortResult<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: ModuleError };
 
-// --- Gateway ports (M1Interface 4.1) ---------------------------------------------------------
-
-/** Injected into Workflow only. */
-export interface WorkflowGatewayPort {
-  registerAgentRun(
-    request: RegisterAgentRunRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-  submitUnit(
-    request: SubmitUnitRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-  endAgentRun(
-    request: EndAgentRunRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-  closeRun(
-    request: CloseRunRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-}
-
-/** Injected into UserInteraction only. */
-export interface InteractionGatewayPort {
-  createRun(
-    request: CreateRunRequest,
-    context: BoundaryContext,
-  ): Promise<RunCreated | SyscallRejected>;
-  answerAuthorization(
-    request: AnswerAuthorizationRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-  cancelRun(
-    request: CancelRunRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-  readArtifact(
-    request: ReadArtifactRequest,
-    context: BoundaryContext,
-  ): Promise<ArtifactContent | SyscallRejected>;
-  shutdown(
-    request: ShutdownRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
-}
-
-// --- Inbox ports (M1Interface 5.1) -----------------------------------------------------------
-
-export interface InboxEvent<T> {
-  readonly eventId: string;
-  readonly workflowRunId: string;
-  readonly seq: number;
-  readonly occurredAt: string;
-  readonly event: T;
-}
-
-/** Implemented by the receiver. `deliver` validates and enqueues; it does not process. */
-export interface InboxPort<E extends InboxEvent<unknown>> {
-  deliver(event: E): Promise<void>;
-}
-export type WorkflowInboxPort = InboxPort<WorkflowInboxEvent>;
-export type InteractionInboxPort = InboxPort<InteractionInboxEvent>;
 export type { KernelToInteractionEvent, KernelToWorkflowEvent };
 
-// --- Kernel core and Supervisor (M1Interface 7.4) ---------------------------------------------
+// --- Kernel core and Supervisor --------------------------------------------------------------
 
 /** Implemented by the Supervisor. */
 export interface SupervisorPort {
@@ -177,28 +86,13 @@ export interface SupervisorPort {
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
-/** Implemented by the Kernel core. Returning means the fact entered the run Inbox. */
-export interface ExecutionFactSink {
-  report(fact: ExecutionFact): Promise<void>;
-}
-
-// --- ExecutorSet (M1Interface 8) --------------------------------------------------------------
-
 export interface ExecutorInputByKind {
-  readonly REPOSITORY_ORIENT: OrientExecutorInput;
-  readonly REPOSITORY_SEARCH: SearchExecutorInput;
-  readonly FILE_READ: FileReadInput;
-  readonly CONTEXT_ASSEMBLE: AssembleExecutorInput;
-  readonly MODEL: ModelExecutorInput;
-}
-
-export interface ExecutorInputByKindV1 {
   readonly REPOSITORY_ORIENT: OrientExecutorInput;
   readonly REPOSITORY_SEARCH: SearchExecutorInput;
   readonly REPOSITORY_LIST: RepositoryListInput;
   readonly FILE_READ: FileReadInput;
-  readonly CONTEXT_ASSEMBLE: AssembleExecutorInputV1;
-  readonly MODEL: ModelExecutorInputV1;
+  readonly CONTEXT_ASSEMBLE: AssembleExecutorInput;
+  readonly MODEL: ModelExecutorInput;
 }
 
 /** Only `rg` may be run, and only by REPOSITORY_SEARCH. */
@@ -234,32 +128,11 @@ export interface ExecutorEnvironment {
   now(): Date;
 }
 
-export interface ExecutorEnvironmentV1 extends Omit<ExecutorEnvironment, 'limits'> {
-  readonly limits: ExecutionLimitsV1;
-}
-
-/** As ExecutorOutcome, with previews and thinking in the result and `retryAfterMs` on a failure. */
-export type ExecutorOutcomeV1 =
-  | {
-      readonly outcome: 'COMPLETED';
-      readonly result: ExecutionResultV1;
-      readonly usage?: TokenUsage;
-      readonly requestState?: RequestState;
-    }
-  | Extract<ExecutorOutcome, { outcome: 'REJECTED' | 'VIOLATION' }>
-  | (Extract<ExecutorOutcome, { outcome: 'FAILED' }> & { readonly retryAfterMs?: number });
-
-export interface ExecutorV1<K extends ExecutorKindV1> {
-  readonly executionKind: K;
-  execute(
-    input: ExecutorInputByKindV1[K],
-    environment: ExecutorEnvironmentV1,
-  ): Promise<ExecutorOutcomeV1>;
-}
-
-export type ExecutorRegistryV1 = { readonly [K in ExecutorKindV1]: ExecutorV1<K> };
-
-/** TERMINATED and STOP_UNCONFIRMED are decided by the Supervisor, never by an Executor. */
+/**
+ * TERMINATED and STOP_UNCONFIRMED are decided by the Supervisor, never by an Executor. A tool's
+ * result carries its preview and, when that cut something, the full output; a model's carries
+ * its thinking. A failure may say when to retry (`retryAfterMs`).
+ */
 export type ExecutorOutcome =
   | {
       readonly outcome: 'COMPLETED';
@@ -274,11 +147,9 @@ export type ExecutorOutcome =
       readonly retryable: boolean;
       readonly usage?: TokenUsage;
       readonly requestState?: RequestState;
+      readonly retryAfterMs?: number;
     }
-  | {
-      readonly outcome: 'VIOLATION';
-      readonly reasonCode: ViolationCode;
-    };
+  | { readonly outcome: 'VIOLATION'; readonly reasonCode: ViolationCode };
 
 /** Implemented by ExecutorSet and called by the Supervisor. */
 export interface Executor<K extends ExecutorKind> {
@@ -288,10 +159,11 @@ export interface Executor<K extends ExecutorKind> {
     environment: ExecutorEnvironment,
   ): Promise<ExecutorOutcome>;
 }
+
 /** One Executor per kind; built by `createExecutorRegistry()` and injected into the Supervisor. */
 export type ExecutorRegistry = { readonly [K in ExecutorKind]: Executor<K> };
 
-// --- AgentToolPool (M1Interface 9.3) ----------------------------------------------------------
+// --- AgentToolPool ---------------------------------------------------------------------------
 
 /**
  * Read-only access to AgentToolPool definitions. Returned values are deeply frozen.
@@ -318,40 +190,6 @@ export interface CatalogPort {
   capabilities(): readonly CapabilityDescriptor[];
 }
 
-// --- Platform ports (M1Interface 10) ----------------------------------------------------------
-
-/** Injected into the Kernel core only and used by Execution. */
-export interface ArtifactStorePort {
-  put(workflowRunId: string, content: Uint8Array, mediaType: string): Promise<ArtifactRef>;
-  /** Verifies sha256 and size again and throws instead of returning damaged content. */
-  get(workflowRunId: string, ref: ArtifactRef): Promise<Uint8Array>;
-  capabilities(): readonly CapabilityDescriptor[];
-}
-
-export const PERSISTENCE_NAMESPACES = ['workflow', 'kernel-core'] as const;
-export type PersistenceNamespace = (typeof PERSISTENCE_NAMESPACES)[number];
-
-export interface RepositoryPort<T extends { readonly id: string }> {
-  get(id: string): Promise<T | undefined>;
-  /** Written to a temporary file first and then renamed atomically. */
-  put(record: T): Promise<void>;
-}
-
-export interface AuditLogPort<T> {
-  /** Appends one line of JSON. */
-  append(entry: T): Promise<void>;
-}
-
-/** Each Owner gets the ports of its own namespace only. */
-export interface PersistencePort {
-  repository<T extends { readonly id: string }>(
-    namespace: PersistenceNamespace,
-    workflowRunId: string,
-  ): RepositoryPort<T>;
-  auditLog<T>(namespace: PersistenceNamespace, workflowRunId: string): AuditLogPort<T>;
-  capabilities(): readonly CapabilityDescriptor[];
-}
-
 export const FABRIC_ADDRESSES = [
   'inbox.workflow',
   'inbox.user-interaction',
@@ -363,33 +201,30 @@ export type FabricAddress = (typeof FABRIC_ADDRESSES)[number];
 
 /**
  * One client per communication subject. `schemaId` is a registered Schema ID such as
- * `kernel.unit.SubmitUnitRequest.v0`; the payload is validated against it and copied on every
+ * `kernel.unit.SubmitUnitRequest.v1`; the payload is validated against it and copied on every
  * delivery. The client fixes `producer`, `messageId` and `occurredAt` of the Envelope.
  */
 export interface FabricPort {
   register<TRequest, TResponse>(
     schemaId: string,
-    handler: (envelope: EnvelopeV1<TRequest>) => Promise<TResponse>,
+    handler: (envelope: Envelope<TRequest>) => Promise<TResponse>,
     /** Only Gateway syscall routes may turn a malformed body with a valid requestId into a rejection. */
-    onInvalid?: (
-      envelope: EnvelopeV1<unknown>,
-      error: ContractValidationError,
-    ) => Promise<TResponse>,
+    onInvalid?: (envelope: Envelope<unknown>, error: ContractValidationError) => Promise<TResponse>,
   ): void;
   /** Waits for the handler's response. */
   request<TRequest, TResponse>(
     schemaId: string,
     payload: TRequest,
-    context: BoundaryContextV1,
+    context: BoundaryContext,
   ): Promise<TResponse>;
   /** Returns once the message entered the receiver's queue. */
   send<T>(
     address: FabricAddress,
     schemaId: string,
     payload: T,
-    context: BoundaryContextV1,
+    context: BoundaryContext,
   ): Promise<void>;
-  subscribe<T>(address: FabricAddress, handler: (envelope: EnvelopeV1<T>) => Promise<void>): void;
+  subscribe<T>(address: FabricAddress, handler: (envelope: Envelope<T>) => Promise<void>): void;
   capabilities(): readonly CapabilityDescriptor[];
 }
 
@@ -440,95 +275,84 @@ export interface SystemFault {
  */
 export type SystemFaultReporter = (fault: SystemFault) => void;
 
-// --- Major 1 (Interface/WorkflowKernel, InteractionKernel, Persistence) ------------------------
-
-export interface RunInboxEvent<T> {
-  readonly eventId: string;
-  readonly sessionId: string;
-  readonly workflowRunId: string;
-  readonly seq: number;
-  readonly occurredAt: string;
-  readonly event: T;
-}
-
-/** Injected into Workflow only; the M1 port stays until the release, for `analyze`. */
-export interface WorkflowGatewayPortV1 {
+/** Injected into Workflow only. */
+export interface WorkflowGatewayPort {
   registerAgentRun(
-    request: RegisterAgentRunRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    request: RegisterAgentRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   submitUnit(
-    request: SubmitUnitRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    request: SubmitUnitRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   endAgentRun(
-    request: EndAgentRunRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    request: EndAgentRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   closeRun(
-    request: CloseRunRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    request: CloseRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   requestHuman(
     request: RequestHumanRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   readProjectFile(
     request: ReadProjectFileRequest,
-    context: BoundaryContextV1,
-  ): Promise<ProjectFileContent | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<ProjectFileContent | SyscallRejected>;
   reportSessionCommand(
     request: ReportSessionCommandRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(
     request: ReportSessionListRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
 }
 
 /** Injected into UserInteraction only. */
-export interface InteractionGatewayPortV1 {
+export interface InteractionGatewayPort {
   startSession(
     request: StartSessionRequest,
-    context: BoundaryContextV1,
-  ): Promise<SessionAccepted | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SessionAccepted | SyscallRejected>;
   openSession(
     request: OpenSessionRequest,
-    context: BoundaryContextV1,
-  ): Promise<SessionAccepted | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SessionAccepted | SyscallRejected>;
   startRun(
     request: StartRunRequest,
-    context: BoundaryContextV1,
-  ): Promise<SessionAccepted | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SessionAccepted | SyscallRejected>;
   listSessions(
     request: ListSessionsRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   deleteSession(
     request: DeleteSessionRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   answerAuthorization(
-    request: AnswerAuthorizationRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    request: AnswerAuthorizationRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   answerHuman(
     request: AnswerHumanRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   readArtifact(
-    request: ReadArtifactRequestV1,
-    context: BoundaryContextV1,
-  ): Promise<ArtifactContent | SyscallRejectedV1>;
+    request: ReadArtifactRequest,
+    context: BoundaryContext,
+  ): Promise<ArtifactContent | SyscallRejected>;
   shutdown(
     request: ShutdownRequest,
-    context: BoundaryContextV1,
-  ): Promise<SyscallAck | SyscallRejectedV1>;
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
 }
 
-export const PERSISTENCE_NAMESPACES_V1 = ['workflow', 'kernel-core', 'kernel-execution'] as const;
-export type PersistenceNamespaceV1 = (typeof PERSISTENCE_NAMESPACES_V1)[number];
+export const PERSISTENCE_NAMESPACES = ['workflow', 'kernel-core', 'kernel-execution'] as const;
+export type PersistenceNamespace = (typeof PERSISTENCE_NAMESPACES)[number];
 
 export type StoragePath =
   | {
@@ -563,8 +387,8 @@ export interface SessionDirectoryPort {
 
 /** Limited to one namespace by the composition root; a foreign path is refused on the spot. */
 export interface SessionPersistencePort {
-  appendLog<T>(namespace: PersistenceNamespaceV1, path: StoragePath): AppendLogPort<T>;
-  sessionDirectory(namespace: PersistenceNamespaceV1, sessionId: string): SessionDirectoryPort;
+  appendLog<T>(namespace: PersistenceNamespace, path: StoragePath): AppendLogPort<T>;
+  sessionDirectory(namespace: PersistenceNamespace, sessionId: string): SessionDirectoryPort;
   capabilities(): readonly CapabilityDescriptor[];
 }
 
@@ -576,7 +400,7 @@ export interface InstanceLockPort {
 }
 
 /** Global and content-addressed; Execution records who owns what (Infrastructure/ArtifactStore). */
-export interface ArtifactStorePortV1 {
+export interface ArtifactStorePort {
   put(content: Uint8Array, mediaType: string): Promise<ArtifactRef>;
   /** Verifies sha256 and size again and throws instead of returning damaged content. */
   get(ref: ArtifactRef): Promise<Uint8Array>;

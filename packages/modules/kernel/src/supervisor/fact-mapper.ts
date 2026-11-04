@@ -1,7 +1,7 @@
 import type {
-  ExecutionFactV1,
-  ExecutionRequestV1,
-  ExecutorOutcomeV1,
+  ExecutionFact,
+  ExecutionRequest,
+  ExecutorOutcome,
   RequestState,
   TokenUsage,
 } from '@multiagentos/contracts';
@@ -20,18 +20,18 @@ export interface TerminationVerdict {
 
 /**
  * Maps an Executor verdict to the one terminal fact of an execution
- * (M1 Supervisor 4; major 1 facts carry the Session and `retryAfterMs`).
+ * (facts carry the Session and `retryAfterMs`).
  *
- * The ExecutionFactV1 union is discriminated by executionKind and outcome. The
+ * The ExecutionFact union is discriminated by executionKind and outcome. The
  * mapper keeps those two switches explicit; the cast is the necessary bridge
  * between the contract union and the Executor's untied result type.
  */
 export function toExecutionFact(
-  request: ExecutionRequestV1,
+  request: ExecutionRequest,
   startedAt: string,
   endedAt: string,
-  outcome: ExecutorOutcomeV1,
-): ExecutionFactV1 {
+  outcome: ExecutorOutcome,
+): ExecutionFact {
   const base = {
     sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
@@ -52,7 +52,7 @@ export function toExecutionFact(
           result: outcome.result,
           requestState: 'SENT',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-        } as ExecutionFactV1;
+        } as ExecutionFact;
       case 'REJECTED':
         return {
           ...base,
@@ -60,7 +60,7 @@ export function toExecutionFact(
           reasonCode: outcome.reasonCode,
           // A rejection happens before the provider processes the request.
           requestState: 'NOT_SENT' satisfies RequestState,
-        } as ExecutionFactV1;
+        } as ExecutionFact;
       case 'FAILED':
         return {
           ...base,
@@ -70,31 +70,31 @@ export function toExecutionFact(
           requestState: outcome.requestState ?? 'UNKNOWN',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
           ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
-        } as ExecutionFactV1;
+        } as ExecutionFact;
       case 'VIOLATION':
         return {
           ...base,
           outcome: 'VIOLATION',
           reasonCode: outcome.reasonCode,
           requestState: 'UNKNOWN',
-        } as ExecutionFactV1;
+        } as ExecutionFact;
     }
   }
 
   switch (outcome.outcome) {
     case 'COMPLETED':
-      return { ...base, outcome: 'COMPLETED', result: outcome.result } as ExecutionFactV1;
+      return { ...base, outcome: 'COMPLETED', result: outcome.result } as ExecutionFact;
     case 'REJECTED':
-      return { ...base, outcome: 'REJECTED', reasonCode: outcome.reasonCode } as ExecutionFactV1;
+      return { ...base, outcome: 'REJECTED', reasonCode: outcome.reasonCode } as ExecutionFact;
     case 'FAILED':
       return {
         ...base,
         outcome: 'FAILED',
         reasonCode: outcome.reasonCode,
         retryable: outcome.retryable,
-      } as ExecutionFactV1;
+      } as ExecutionFact;
     case 'VIOLATION':
-      return { ...base, outcome: 'VIOLATION', reasonCode: outcome.reasonCode } as ExecutionFactV1;
+      return { ...base, outcome: 'VIOLATION', reasonCode: outcome.reasonCode } as ExecutionFact;
   }
 }
 
@@ -103,11 +103,11 @@ export function toExecutionFact(
  * `startedAt`; every other termination does. STOP_UNCONFIRMED never carries usage.
  */
 export function toTerminationFact(
-  request: ExecutionRequestV1,
+  request: ExecutionRequest,
   startedAt: string | undefined,
   endedAt: string,
   verdict: TerminationVerdict,
-): ExecutionFactV1 {
+): ExecutionFact {
   const base = {
     sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
@@ -128,12 +128,12 @@ export function toTerminationFact(
       reasonCode: verdict.reasonCode,
       requestState,
       ...(usage === undefined ? {} : { usage }),
-    } as ExecutionFactV1;
+    } as ExecutionFact;
   }
 
   return {
     ...base,
     outcome: verdict.outcome,
     reasonCode: verdict.reasonCode,
-  } as ExecutionFactV1;
+  } as ExecutionFact;
 }

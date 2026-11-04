@@ -11,14 +11,14 @@ import {
   type ContextPack,
   type ExecutionResult,
   type FileReadInput,
+  type RepositoryListInput,
   type ModelRawOutput,
   type ModelToolCall,
   type OrientContextPack,
-  type SearchContextPack,
 } from '@multiagentos/contracts';
 
 /**
- * Schema-valid canned results, one per Unit of M1Interface 6.1. The fakes answer with these
+ * Schema-valid canned results, one per Executor. The fakes answer with these
  * values and no real logic: there is no repository, no search and no model behind them.
  */
 
@@ -94,30 +94,27 @@ export function cannedOrient(tokenBudget = 4_000): ExecutionResult {
   };
 }
 
-export function cannedSearch(tokenBudget = 4_000): ExecutionResult {
-  const contextPackId = newId('ctx');
-  const items = finishItems<SearchContextPack['items'][number]>(contextPackId, [
-    {
-      segment: 'SEARCH_HIT',
-      role: 'user',
-      content: FAKE_FILE.text,
-      provenance: provenance('TEXT'),
-      score: 1,
-    },
-  ]);
-  const value: SearchContextPack = {
-    ...packFields(contextPackId, items, tokenBudget),
-    operation: 'SEARCH',
-    snapshotId: FAKE_SNAPSHOT_ID,
-    items,
-  };
+/** A tool's artifact is the text the model sees, not a pack. */
+export function cannedSearch(): ExecutionResult {
   return {
     output: {
       snapshotId: FAKE_SNAPSHOT_ID,
       hits: [{ path: FAKE_FILE.path, startLine: 1, endLine: 3, score: 1, matchKind: 'TEXT' }],
       truncated: false,
     },
-    artifact: packArtifact(value),
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: `1 matches:\n\n${FAKE_FILE.text}` },
+  };
+}
+
+export function cannedList(input: RepositoryListInput): ExecutionResult {
+  return {
+    output: {
+      path: input.path ?? '.',
+      directoryCount: 0,
+      fileCount: 1,
+      omittedEntries: 0,
+    },
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: `${FAKE_FILE.path}\n` },
   };
 }
 
@@ -132,43 +129,48 @@ export function cannedFileRead(input: Pick<FileReadInput, 'path'>): ExecutionRes
       contentSha256: sha256Hex(FAKE_FILE.text),
       fileSha256: sha256Hex(FAKE_FILE.text),
     },
-    artifact: { mediaType: MEDIA_TYPES.fileText, text: FAKE_FILE.text },
+    artifact: {
+      mediaType: MEDIA_TYPES.fileText,
+      text: `${input.path} (lines 1-3 of 3)\n${FAKE_FILE.text}`,
+    },
   };
 }
 
 /**
- * Lays the input out in the segment order of M1Interface 6.3 and nothing more: it never trims,
- * so `truncated` is always false, and it does not check that tool calls and results pair up.
+ * Lays the input out in the segment order of ExecutorSet 6 and nothing more: it never elides, and
+ * it does not check that tool calls and results pair up.
  */
 export function cannedAssemble(input: AssembleExecutorInput): ExecutionResult {
   type Item = AssembleContextPack['items'][number];
-  const history = input.history.map(({ step, outputText }): Draft<Item> => {
-    if (step.kind === 'MODEL_TURN')
+  const history = input.history.map((entry): Draft<Item> => {
+    const base = {
+      segment: 'HISTORY',
+      seq: entry.seq,
+      category: entry.category,
+      ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }),
+    } as const;
+    if (entry.kind === 'MODEL_TURN')
       return {
-        segment: 'HISTORY',
+        ...base,
         role: 'assistant',
-        content: '',
-        ...(step.toolCalls.length === 0 ? {} : { toolCalls: step.toolCalls }),
+        content: entry.text ?? '',
+        ...(entry.toolCalls.length === 0 ? {} : { toolCalls: entry.toolCalls }),
       };
-    if (step.kind === 'TOOL_RESULT')
+    if (entry.kind === 'TOOL_RESULT')
       return {
-        segment: 'HISTORY',
+        ...base,
         role: 'tool',
-        content: step.status === 'OK' ? (outputText ?? '') : step.reasonCode,
-        toolCallId: step.toolCallId,
+        content: entry.text ?? entry.reasonCode ?? entry.status,
+        toolCallId: entry.toolCallId,
       };
-    return 'toolCallId' in step && step.toolCallId !== undefined
-      ? { segment: 'HISTORY', role: 'tool', content: step.message, toolCallId: step.toolCallId }
-      : { segment: 'HISTORY', role: 'user', content: step.message };
+    if (entry.kind === 'FEEDBACK' && entry.toolCallId !== undefined)
+      return { ...base, role: 'tool', content: entry.text, toolCallId: entry.toolCallId };
+    return { ...base, role: 'user', content: entry.text };
   });
   const contextPackId = newId('ctx');
   const items = finishItems<Item>(contextPackId, [
     { segment: 'INSTRUCTIONS', role: 'system', content: input.instructions },
     { segment: 'TOOLS', role: 'system', content: '', toolSpecs: input.toolSpecs },
-    { segment: 'OBJECTIVE', role: 'user', content: input.objective },
-    ...(input.handoff === undefined
-      ? []
-      : [{ segment: 'HANDOFF' as const, role: 'user' as const, content: input.handoff.task }]),
     ...(input.orientPack?.items ?? []).map((item): Draft<Item> => ({
       segment: 'ORIENT',
       role: 'user',
@@ -179,22 +181,30 @@ export function cannedAssemble(input: AssembleExecutorInput): ExecutionResult {
     { segment: 'STATUS', role: 'user', content: canonicalJson(input.status) },
   ]);
   const prefixSha256 = sha256Hex('canned-prefix');
+  const projectionDigest = sha256Hex(canonicalJson(input.history));
+  const tokenCount = items.reduce((total, item) => total + item.tokenCount, 0);
   const value: AssembleContextPack = {
-    ...packFields(contextPackId, items, input.tokenBudget),
+    contextPackId,
+    tokenCount,
+    tokenBudget: input.tokenBudget,
+    createdAt: CREATED_AT,
     operation: 'ASSEMBLE',
     ...(input.orientPack === undefined ? {} : { snapshotId: input.orientPack.snapshotId }),
     prefixSha256,
+    projectionDigest,
+    headDigest: prefixSha256,
+    elidedEntries: [],
     items,
   };
   return {
     output: {
       contextPackId,
-      tokenCount: value.tokenCount,
+      tokenCount,
       tokenBudget: input.tokenBudget,
-      truncated: false,
-      droppedCount: 0,
       prefixSha256,
-      elidedRequestIds: [],
+      projectionDigest,
+      headDigest: prefixSha256,
+      elidedEntries: [],
     },
     artifact: packArtifact(value),
   };
@@ -213,7 +223,12 @@ export function cannedModelCall(toolCalls: readonly ModelToolCall[]): ExecutionR
     receivedAt: CREATED_AT,
   };
   return {
-    output: { finishReason: 'TOOL_CALLS', toolCalls: [...toolCalls], hasText: false },
+    output: {
+      finishReason: 'TOOL_CALLS',
+      toolCalls: [...toolCalls],
+      hasText: false,
+      hasReasoning: false,
+    },
     artifact: { mediaType: MEDIA_TYPES.modelOutput, text: canonicalJson(raw) },
   };
 }

@@ -1,4 +1,4 @@
-import type { ActivityEvent, CloseReasonV1, SessionFailed } from '@multiagentos/contracts';
+import type { ActivityEvent, CloseReason, SessionFailed } from '@multiagentos/contracts';
 
 const DEGRADED: Readonly<Record<string, string>> = {
   BUDGET_EXHAUSTED: '额度已用完，没能完成回复。',
@@ -72,7 +72,7 @@ export const ConsoleText = Object.freeze({
     CANCELLED: '运行已取消。',
     ENDED_BY_USER: '运行已结束。',
     SHUTDOWN: '已退出。',
-  } satisfies Record<CloseReasonV1, string>,
+  } satisfies Record<CloseReason, string>,
   phase: {
     ASSEMBLING: '组织上下文',
     THINKING: '思考中',

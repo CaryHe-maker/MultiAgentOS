@@ -1,17 +1,17 @@
 import {
-  InteractionInboxEventV1Schema,
+  InteractionInboxEventSchema,
   MEDIA_TYPES,
-  RunSummaryV1Schema,
-  WorkflowInboxEventV1Schema,
+  RunSummarySchema,
+  WorkflowInboxEventSchema,
   assertValid,
   newId,
   pathDerivedId,
   type ArtifactRef,
-  type EndAgentRunRequestV1,
-  type RunSummaryV1,
-  type RegisterAgentRunRequestV1,
-  type SubmitUnitRequestV1,
-  type UnitDefinitionV1,
+  type EndAgentRunRequest,
+  type RunSummary,
+  type RegisterAgentRunRequest,
+  type SubmitUnitRequest,
+  type UnitDefinition,
 } from '@multiagentos/contracts';
 import {
   testArtifactRef,
@@ -28,7 +28,7 @@ import type { ProjectFileRead } from './run-work.js';
 const sessionId = newId('ses');
 const fileRead = testUnitDefinition('FILE_READ');
 const publish = testUnitDefinition('MESSAGE_PUBLISH');
-const refOf = (unit: UnitDefinitionV1) =>
+const refOf = (unit: UnitDefinition) =>
   ({ kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest }) as const;
 const replyInput = {
   kind: 'DEGRADED_REPLY',
@@ -48,7 +48,7 @@ async function setup(
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const faults: unknown[] = [];
-  const summaries: RunSummaryV1[] = [];
+  const summaries: RunSummary[] = [];
   const execution = new TestExecution();
   let now = 0;
   const timers: { delayMs: number; due: () => void }[] = [];
@@ -56,13 +56,13 @@ async function setup(
     {
       toWorkflow: (event) => {
         toWorkflow.push(
-          'workflowRunId' in event ? assertValid(WorkflowInboxEventV1Schema, event) : event,
+          'workflowRunId' in event ? assertValid(WorkflowInboxEventSchema, event) : event,
         );
         return Promise.resolve();
       },
       toInteraction: (event) => {
         toInteraction.push(
-          'workflowRunId' in event ? assertValid(InteractionInboxEventV1Schema, event) : event,
+          'workflowRunId' in event ? assertValid(InteractionInboxEventSchema, event) : event,
         );
         return Promise.resolve();
       },
@@ -99,7 +99,7 @@ async function setup(
           },
         }),
       writeRunSummary: (summary) => {
-        summaries.push(assertValid(RunSummaryV1Schema, summary));
+        summaries.push(assertValid(RunSummarySchema, summary));
         return Promise.resolve(testArtifactRef(MEDIA_TYPES.runSummary, 'e'));
       },
       discardSession: () => Promise.resolve(),
@@ -140,7 +140,7 @@ async function setup(
   let currentAgentRun = agentRunId;
   const register = async (id = agentRunId) => {
     currentAgentRun = id;
-    const request: RegisterAgentRunRequestV1 = {
+    const request: RegisterAgentRunRequest = {
       ...inRun,
       requestId: newId('req'),
       agentRunId: id,
@@ -153,7 +153,7 @@ async function setup(
     return actor.call(() => run().work.registerAgentRun(request));
   };
   let submissions = 0;
-  const unitRequest = (unit: UnitDefinitionV1, input: unknown): SubmitUnitRequestV1 => {
+  const unitRequest = (unit: UnitDefinition, input: unknown): SubmitUnitRequest => {
     submissions += 1;
     const unitPath = `${currentAgentRun}/round-1/${submissions}`;
     return {
@@ -165,9 +165,9 @@ async function setup(
       unitRef: refOf(unit),
       input,
       display: { toolName: 'read_file', argsSummary: '' },
-    } as SubmitUnitRequestV1;
+    } as SubmitUnitRequest;
   };
-  const submit = (unit: UnitDefinitionV1 = fileRead, input: unknown = { path: 'a.ts' }) => {
+  const submit = (unit: UnitDefinition = fileRead, input: unknown = { path: 'a.ts' }) => {
     const request = unitRequest(unit, input);
     return actor.call(() => run().work.submitUnit(request));
   };
@@ -397,7 +397,7 @@ describe('quotas and requests', () => {
     const kernel = await setup();
     await kernel.register();
     const request = kernel.unitRequest(publish, replyInput);
-    const submit = (body: SubmitUnitRequestV1) =>
+    const submit = (body: SubmitUnitRequest) =>
       kernel.actor.call(() => kernel.run().work.submitUnit(body));
     await submit(request);
     expect(await submit(request)).toMatchObject({ outcome: 'ACCEPTED' });
@@ -406,7 +406,7 @@ describe('quotas and requests', () => {
       await submit({
         ...request,
         input: { ...replyInput, agentLabel: 'other' },
-      } as SubmitUnitRequestV1),
+      } as SubmitUnitRequest),
     ).toMatchObject({ reasonCode: 'REQUEST_CONFLICT' });
   });
 
@@ -414,7 +414,7 @@ describe('quotas and requests', () => {
     const kernel = await setup();
     await kernel.register();
     expect(await kernel.register()).toMatchObject({ reasonCode: 'AGENT_RUN_EXISTS' });
-    const end: EndAgentRunRequestV1 = {
+    const end: EndAgentRunRequest = {
       ...kernel.inRun,
       requestId: newId('req'),
       agentRunId: kernel.agentRunId,

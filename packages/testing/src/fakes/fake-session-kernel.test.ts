@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   newId,
   pathDerivedId,
-  type BoundaryContextV1,
-  type SubmitUnitRequestV1,
+  type BoundaryContext,
+  type SubmitUnitRequest,
 } from '@multiagentos/contracts';
 import { createFakeSessionKernel, type FakeUnitScript } from './fake-session-kernel.js';
 import { createFakeSessionWorkflow } from './fake-session-workflow.js';
 
-const context: BoundaryContextV1 = {
+const context: BoundaryContext = {
   correlationId: newId('cor'),
   tenantId: 'local',
   projectId: 'local',
@@ -167,7 +167,7 @@ describe('fake Session Kernel', () => {
     const submit = (n: number) => {
       const unitRun = `agr_abcdef/round-1/${String(n)}`;
       const path = `${unitRun}#1`;
-      const request: SubmitUnitRequestV1 = {
+      const request: SubmitUnitRequest = {
         requestId: pathDerivedId('req', path),
         ...ids,
         agentRunId: newId('agr'),

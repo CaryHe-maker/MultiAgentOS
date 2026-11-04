@@ -12,7 +12,7 @@ modelDescription:
 parametersContract:
   kind: contract
   id: context.RepositorySearchInput
-  version: v0
+  version: v1
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true

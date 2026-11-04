@@ -1,12 +1,17 @@
 /**
- * Every rule that M1Interface states as a condition ("required when", "only for", "must equal")
+ * Every rule the Interface documents state as a condition ("required when", "only for", "must equal")
  * is enforced by the Schema. Each test gives a valid value and then breaks exactly one rule.
  */
 import type { TSchema } from 'typebox';
 import { describe, expect, it } from 'vitest';
 import { PinnedDefinitionSetSchema } from './catalog/catalog-schemas.js';
-import { ContextAssembleInputSchema, ContextAssembleOutputSchema } from './context/assemble.js';
 import { ContextPackSchema } from './context/context-pack.js';
+import {
+  ContextAssembleInputSchema,
+  ContextAssembleOutputSchema,
+  ContextHistoryEntrySchema,
+  StatusFactsSchema,
+} from './context/history-entry.js';
 import { RepositorySearchOutputSchema } from './context/repository.js';
 import { FileReadInputSchema, FileReadOutputSchema } from './executor/file-read.js';
 import {
@@ -36,9 +41,9 @@ import {
 } from './kernel-unit/workflow-syscalls.js';
 import { ArtifactRefSchema } from './platform-common/common-schemas.js';
 import { MEDIA_TYPES } from './platform-common/media-types.js';
+import { pathDerivedId } from './platform-common/new-id.js';
 import { validate } from './platform-common/validation.js';
 import { AnalysisReportSchema } from './workflow/report.js';
-import { StatusFactsSchema, StepRecordSchema } from './workflow/step-record.js';
 
 const sha = 'a'.repeat(64);
 const at = '2026-10-09T00:00:00.000Z';
@@ -56,6 +61,7 @@ const packRef = ref(MEDIA_TYPES.contextPack);
 const textRef = ref(MEDIA_TYPES.fileText);
 const reportRef = ref(MEDIA_TYPES.analysisReport);
 const summaryRef = ref(MEDIA_TYPES.runSummary);
+const outputRef = ref(MEDIA_TYPES.modelOutput);
 const unitRef = { kind: 'UNIT', id: 'file-read', version: 'v0.1.0', digest: sha };
 const agentRef = { kind: 'AGENT', id: 'planner', version: 'v0.1.0', digest: sha };
 const readOutput = {
@@ -66,7 +72,8 @@ const readOutput = {
   contentSha256: sha,
   fileSha256: sha,
 };
-const status = { roundsUsed: 0, maxRounds: 3, final: false, budgetState: 'NORMAL' };
+const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const status = { round: 1, maxRounds: 3, final: false, budget };
 
 describe('references and identifiers', () => {
   it('ties artifactId to sha256', () => {
@@ -82,25 +89,48 @@ describe('references and identifiers', () => {
       { contextPackRef: packRef, final: false },
       { 'contextPackRef that is not a ContextPack': { contextPackRef: textRef, final: false } },
     );
-    const close = { requestId: 'req_123456', workflowRunId: 'wfr_123456', outcome: 'COMPLETED' };
+    const close = {
+      requestId: 'req_123456',
+      sessionId: 'ses_123456',
+      workflowRunId: 'wfr_123456',
+      outcome: 'COMPLETED',
+    };
     expectRules(
       CloseRunRequestSchema,
-      { ...close, reportRef },
-      { 'reportRef that is not a report': { ...close, reportRef: textRef } },
+      { ...close, resultRef: reportRef },
+      { 'resultRef that is no reference': { ...close, resultRef: 'report' } },
     );
   });
 
   it('fixes the definition kind of every pinned reference', () => {
-    const register = {
+    const run = {
       requestId: 'req_123456',
+      sessionId: 'ses_123456',
       workflowRunId: 'wfr_123456',
       agentRunId: 'agr_123456',
+    };
+    const register = {
+      ...run,
+      nodeId: 'nod_123456',
       agentRef,
+      effort: 'none',
+      workspaceViewId: 'main',
+      display: { label: 'main' },
     };
     expectRules(RegisterAgentRunRequestSchema, register, {
       'agentRef that names a unit': { ...register, agentRef: unitRef },
     });
-    const submit = { ...without(register, 'agentRef'), unitRef, input: { path: 'src/a.ts' } };
+    const unitRun = 'agr_123456/round-1/1';
+    const path = `${unitRun}#1`;
+    const submit = {
+      ...run,
+      requestId: pathDerivedId('req', path),
+      unitRunId: pathDerivedId('unr', unitRun),
+      path,
+      unitRef,
+      input: { path: 'src/a.ts' },
+      display: { toolName: 'read_file', argsSummary: 'src/a.ts' },
+    };
     expectRules(SubmitUnitRequestSchema, submit, {
       'unitRef that names an agent': { ...submit, unitRef: agentRef },
       'input that is no Unit input': { ...submit, input: { command: 'rm' } },
@@ -142,17 +172,23 @@ describe('executor values', () => {
 
   it('ties finishReason to whether tools were called', () => {
     const call = { toolCallId: 'call_1', toolName: 'read_file', arguments: {} };
+    const answer = { hasText: false, hasReasoning: false };
     expectRules(
       ModelCallOutputSchema,
-      { finishReason: 'TOOL_CALLS', toolCalls: [call], hasText: false },
+      { ...answer, finishReason: 'TOOL_CALLS', toolCalls: [call] },
       {
-        'TOOL_CALLS without a call': { finishReason: 'TOOL_CALLS', toolCalls: [], hasText: false },
-        'STOP with a call': { finishReason: 'STOP', toolCalls: [call], hasText: false },
+        'TOOL_CALLS without a call': { ...answer, finishReason: 'TOOL_CALLS', toolCalls: [] },
+        'STOP with a call': { ...answer, finishReason: 'STOP', toolCalls: [call] },
+        'an answer that does not say whether it has thinking': {
+          finishReason: 'TOOL_CALLS',
+          toolCalls: [call],
+          hasText: false,
+        },
       },
     );
-    expect(
-      ok(ModelCallOutputSchema, { finishReason: 'LENGTH', toolCalls: [], hasText: true }),
-    ).toBe(true);
+    expect(ok(ModelCallOutputSchema, { ...answer, finishReason: 'LENGTH', toolCalls: [] })).toBe(
+      true,
+    );
   });
 
   it('keeps line ranges and token counts consistent', () => {
@@ -221,11 +257,18 @@ describe('ContextPack', () => {
   const orientItem = { ...item, segment: 'ORIENT', role: 'user', provenance };
   const orient = { ...pack, operation: 'ORIENT', snapshotId: `snp_${sha}`, items: [orientItem] };
   const assemble = (items: object[]) => ({
-    ...pack,
+    contextPackId: pack.contextPackId,
+    tokenCount: pack.tokenCount,
+    tokenBudget: pack.tokenBudget,
+    createdAt: at,
     operation: 'ASSEMBLE',
     prefixSha256: sha,
+    projectionDigest: sha,
+    headDigest: sha,
+    elidedEntries: [],
     items,
   });
+  const history = { segment: 'HISTORY', seq: 1, category: 'NORMAL' };
   const at0 = (extra: object) => [{ ...item, ...extra }];
 
   it('fixes what each operation may contain', () => {
@@ -246,6 +289,7 @@ describe('ContextPack', () => {
     });
     expectRules(ContextPackSchema, assemble(at0({ segment: 'INSTRUCTIONS', role: 'system' })), {
       'ASSEMBLE without prefixSha256': without(assemble([]), 'prefixSha256'),
+      'ASSEMBLE that says it was truncated': { ...assemble([]), truncated: false },
       'SEARCH_HIT item in an ASSEMBLE pack': assemble([hit]),
     });
   });
@@ -255,10 +299,10 @@ describe('ContextPack', () => {
     const valid = [
       { segment: 'TOOLS', role: 'system', toolSpecs: [] },
       { segment: 'OBJECTIVE', role: 'user' },
-      { segment: 'HISTORY', role: 'assistant', toolCalls: [call] },
-      { segment: 'HISTORY', role: 'assistant' },
-      { segment: 'HISTORY', role: 'tool', toolCallId: 'call_1' },
-      { segment: 'HISTORY', role: 'user' },
+      { ...history, role: 'assistant', toolCalls: [call], reasoningContent: 'hmm' },
+      { ...history, role: 'assistant' },
+      { ...history, role: 'tool', toolCallId: 'call_1' },
+      { ...history, role: 'user' },
     ];
     for (const extra of valid)
       expect(ok(ContextPackSchema, assemble(at0(extra))), JSON.stringify(extra)).toBe(true);
@@ -267,10 +311,11 @@ describe('ContextPack', () => {
       { segment: 'TOOLS', role: 'user', toolSpecs: [] },
       { segment: 'OBJECTIVE', role: 'user', toolSpecs: [] },
       { segment: 'INSTRUCTIONS', role: 'user' },
-      { segment: 'HISTORY', role: 'tool' },
-      { segment: 'HISTORY', role: 'user', toolCallId: 'call_1' },
-      { segment: 'HISTORY', role: 'assistant', toolCalls: [] },
-      { segment: 'HISTORY', role: 'system' },
+      { ...history, role: 'tool' },
+      { ...history, role: 'user', toolCallId: 'call_1' },
+      { ...history, role: 'assistant', toolCalls: [] },
+      { ...history, role: 'system' },
+      { segment: 'HISTORY', role: 'user' },
       { segment: 'STATUS', role: 'user', score: 1 },
     ];
     for (const extra of broken)
@@ -278,28 +323,28 @@ describe('ContextPack', () => {
   });
 
   it('keeps final, status and the token budget consistent', () => {
-    const input = { objective: 'o', final: false, steps: [], status };
+    const input = { final: false, history: [], status };
     expectRules(ContextAssembleInputSchema, input, {
       'final that differs from status.final': { ...input, final: true },
       'orientPackRef that is not a ContextPack': { ...input, orientPackRef: textRef },
     });
     expectRules(StatusFactsSchema, status, {
-      'more rounds used than allowed': { ...status, roundsUsed: 4 },
+      'a round before the first': { ...status, round: 0 },
+      'a wrap-up reason that is unknown': { ...status, wrapUpReason: 'USER_DECLINED' },
     });
     const output = {
       contextPackId: 'ctx_123456',
       tokenCount: 10,
       tokenBudget: 10,
-      truncated: false,
-      droppedCount: 0,
       prefixSha256: sha,
-      elidedRequestIds: [],
+      projectionDigest: sha,
+      headDigest: sha,
+      elidedEntries: [],
     };
     expectRules(ContextAssembleOutputSchema, output, {
       'tokenCount above tokenBudget': { ...output, tokenCount: 11 },
     });
     const resolved = {
-      objective: 'o',
       final: false,
       tokenBudget: 10,
       instructions: '',
@@ -307,15 +352,12 @@ describe('ContextPack', () => {
       history: [],
       status,
     };
-    const turn = { kind: 'MODEL_TURN', round: 1, requestId: 'req_123456', toolCalls: [] };
+    const turn = { seq: 1, category: 'NORMAL', kind: 'MODEL_TURN', toolCalls: [] };
     expectRules(
       AssembleExecutorInputSchema,
-      { ...resolved, history: [{ step: turn }] },
+      { ...resolved, history: [turn] },
       {
-        'outputText on a step that is no OK tool result': {
-          ...resolved,
-          history: [{ step: turn, outputText: 'x' }],
-        },
+        'an entry without seq': { ...resolved, history: [without(turn, 'seq')] },
         'orientPack that is an ASSEMBLE pack': { ...resolved, orientPack: assemble([]) },
       },
     );
@@ -323,57 +365,31 @@ describe('ContextPack', () => {
 });
 
 describe('workflow values', () => {
-  it('fixes the fields of each StepRecord', () => {
-    const result = {
-      kind: 'TOOL_RESULT',
-      round: 1,
-      requestId: 'req_123456',
-      toolCallId: 'c',
-      toolName: 't',
-    };
+  it('fixes the fields of each history entry', () => {
+    const entry = { seq: 1, category: 'NORMAL' };
+    const result = { ...entry, kind: 'TOOL_RESULT', toolCallId: 'c', toolName: 't' };
     expectRules(
-      StepRecordSchema,
-      { ...result, status: 'OK', output: readOutput, outputRef: textRef },
+      ContextHistoryEntrySchema,
+      { ...result, status: 'OK', outputRef: textRef },
       {
-        'OK without outputRef': { ...result, status: 'OK', output: readOutput },
-        'file-read output with a ContextPack artifact': {
-          ...result,
-          status: 'OK',
-          output: readOutput,
-          outputRef: packRef,
-        },
-        'REJECTED with a FAILED reason': {
-          ...result,
-          status: 'REJECTED',
-          reasonCode: 'UNIT_TIMEOUT',
-        },
-        'FAILED with a REJECTED reason': { ...result, status: 'FAILED', reasonCode: 'NOT_FOUND' },
-        'reason code next to OK': {
-          ...result,
-          status: 'OK',
-          output: readOutput,
-          outputRef: textRef,
-          reasonCode: 'NOT_FOUND',
-        },
+        'an unknown status': { ...result, status: 'LOST' },
+        'a body in place of its reference': { ...result, status: 'OK', text: 'body' },
+        'an entry without seq': { ...without(result, 'seq'), status: 'OK' },
       },
     );
-    const feedback = { kind: 'FEEDBACK', round: 1, message: 'm' };
-    expectRules(
-      StepRecordSchema,
-      { ...feedback, code: 'UNKNOWN_TOOL', toolCallId: 'c' },
-      {
-        'call feedback without toolCallId': { ...feedback, code: 'UNKNOWN_TOOL' },
-        'round feedback with toolCallId': {
-          ...feedback,
-          code: 'MODEL_CALL_FAILED',
-          toolCallId: 'c',
-        },
-      },
-    );
-    expect(ok(StepRecordSchema, { ...feedback, code: 'INVALID_ACTION' })).toBe(true);
-    expect(ok(StepRecordSchema, { ...feedback, code: 'INVALID_ACTION', toolCallId: 'c' })).toBe(
+    const turn = { ...entry, kind: 'MODEL_TURN', modelId: 'm', outputRef, replayable: true };
+    expectRules(ContextHistoryEntrySchema, turn, {
+      'a turn whose output is no model output': { ...turn, outputRef: textRef },
+      'a turn that does not say whether it replays': without(turn, 'replayable'),
+    });
+    expect(ok(ContextHistoryEntrySchema, { ...entry, kind: 'HUMAN', contentRef: textRef })).toBe(
       true,
     );
+    expect(ok(ContextHistoryEntrySchema, { ...entry, kind: 'HUMAN', text: 'body' })).toBe(false);
+    expect(ok(ContextHistoryEntrySchema, { ...entry, kind: 'FEEDBACK', text: 'm' })).toBe(true);
+    expect(
+      ok(ContextHistoryEntrySchema, { ...entry, kind: 'FEEDBACK', text: 'm', toolCallId: 'c' }),
+    ).toBe(true);
   });
 
   it('separates the normal report from the degraded one', () => {
@@ -413,11 +429,14 @@ describe('workflow values', () => {
         ...report,
         wrapUp: { reason: 'ROUND_LIMIT', lastIssue: { kind: 'NO_FINISH' } },
       },
+      'a reason that was removed': { ...report, wrapUp: { reason: 'USER_DECLINED' } },
       'the same empty read twice': { ...report, emptyReads: ['e.ts', 'e.ts'] },
     });
     expect(ok(AnalysisReportSchema, degraded)).toBe(true);
     expect(ok(AnalysisReportSchema, { ...report, emptyReads: ['e.ts', 'f.ts'] })).toBe(true);
     expect(ok(AnalysisReportSchema, { ...report, wrapUp: { reason: 'ROUND_LIMIT' } })).toBe(true);
+    for (const reason of ['TOOL_UNIT_LIMIT', 'CONTEXT_LIMIT', 'FINAL_CALL_INVALID'])
+      expect(ok(AnalysisReportSchema, { ...degraded, wrapUp: { reason } }), reason).toBe(true);
   });
 
   it('lets a degraded report state its last issue as a structured fact', () => {
@@ -495,7 +514,12 @@ describe('Gateway responses and run outcomes', () => {
     expectRules(RunFailureSchema, failure, {
       'category of another code': { ...failure, category: 'POLICY' },
     });
-    const close = { requestId: 'req_123456', workflowRunId: 'wfr_123456', outcome: 'FAILED' };
+    const close = {
+      requestId: 'req_123456',
+      sessionId: 'ses_123456',
+      workflowRunId: 'wfr_123456',
+      outcome: 'FAILED',
+    };
     const byWorkflow = { code: 'PIN_FAILED', category: 'DEPENDENCY', source: 'WORKFLOW' };
     expectRules(
       CloseRunRequestSchema,
@@ -503,7 +527,7 @@ describe('Gateway responses and run outcomes', () => {
       {
         'failure whose source is KERNEL': { ...close, failure },
         'FAILED without failure': close,
-        'reportRef next to failure': { ...close, failure: byWorkflow, reportRef },
+        'resultRef next to failure': { ...close, failure: byWorkflow, resultRef: reportRef },
       },
     );
   });
@@ -514,10 +538,9 @@ describe('Gateway responses and run outcomes', () => {
     const violation = { code: 'PATH_ESCAPE', category: 'INTEGRITY', source: 'KERNEL' };
     expectRules(
       RunFinishedSchema,
-      { ...end, closeReason: 'COMPLETED', reportRef },
+      { ...end, closeReason: 'COMPLETED', resultRef: reportRef },
       {
-        'COMPLETED without reportRef': { ...end, closeReason: 'COMPLETED' },
-        'COMPLETED with failure': { ...end, closeReason: 'COMPLETED', reportRef, failure },
+        'COMPLETED with failure': { ...end, closeReason: 'COMPLETED', failure },
         'FAILED without failure': { ...end, closeReason: 'FAILED' },
         'VIOLATION with a failure that is no violation': {
           ...end,
@@ -529,7 +552,7 @@ describe('Gateway responses and run outcomes', () => {
           closeReason: 'VIOLATION',
           failure: { ...violation, source: 'WORKFLOW' },
         },
-        'CANCELLED with reportRef': { ...end, closeReason: 'CANCELLED', reportRef },
+        'a timeout as a run end of its own': { ...end, closeReason: 'RUN_TIMEOUT' },
         'runSummaryRef that is not a RunSummary': {
           ...end,
           closeReason: 'CANCELLED',
@@ -541,13 +564,11 @@ describe('Gateway responses and run outcomes', () => {
     expect(ok(RunFinishedSchema, { ...end, closeReason: 'VIOLATION', failure: violation })).toBe(
       true,
     );
-    expect(ok(RunFinishedSchema, { ...end, closeReason: 'RUN_TIMEOUT' })).toBe(true);
-    expect(
-      ok(AdmissionProjectionSchema, { workflowRunId: 'wfr_123456', runState: 'RUNNING' }),
-    ).toBe(true);
-    expect(ok(AdmissionProjectionSchema, { workflowRunId: 'wfr_123456', runState: 'CLOSED' })).toBe(
-      false,
-    );
+    for (const closeReason of ['COMPLETED', 'BUDGET', 'TIMEOUT', 'ENDED_BY_USER', 'SHUTDOWN'])
+      expect(ok(RunFinishedSchema, { ...end, closeReason }), closeReason).toBe(true);
+    const run = { sessionId: 'ses_123456', workflowRunId: 'wfr_123456' };
+    expect(ok(AdmissionProjectionSchema, { ...run, runState: 'RUNNING' })).toBe(true);
+    expect(ok(AdmissionProjectionSchema, { ...run, runState: 'CLOSED' })).toBe(false);
   });
 
   it('delivers a summary write failure without inventing a RunSummary reference', () => {
@@ -570,13 +591,24 @@ describe('Gateway responses and run outcomes', () => {
   it('keeps the RunSummary consistent', () => {
     const summary = {
       workflowRunId: 'wfr_123456',
+      sessionId: 'ses_123456',
       closeReason: 'CANCELLED',
       startedAt: at,
       closedAt: at,
       durationMs: 0,
-      agentRuns: [{ agentRunId: 'agr_123456', agentRef, registeredAt: at, endedAt: at, rounds: 1 }],
+      turns: 1,
+      agentRuns: [
+        {
+          agentRunId: 'agr_123456',
+          agentRef,
+          registeredAt: at,
+          endedAt: at,
+          rounds: 1,
+          finalCallUsed: false,
+        },
+      ],
       units: { submitted: 3, ok: 1, rejected: 1, failed: 0, notDelivered: 1 },
-      model: { requests: 1, finalCallUsed: false },
+      model: { requests: 1 },
       tokens: {
         limit: 1,
         used: 0,
@@ -589,7 +621,7 @@ describe('Gateway responses and run outcomes', () => {
     };
     expectRules(RunSummarySchema, summary, {
       'units that do not add up': { ...summary, units: { ...summary.units, submitted: 4 } },
-      'COMPLETED without reportRef': { ...summary, closeReason: 'COMPLETED' },
+      'FAILED without failure': { ...summary, closeReason: 'FAILED' },
       'agentRef that names a unit': {
         ...summary,
         agentRuns: [{ ...summary.agentRuns[0], agentRef: unitRef }],
@@ -620,35 +652,24 @@ describe('UnitReport', () => {
     type: 'UnitReport',
     requestId: 'req_123456',
     agentRunId: 'agr_123456',
+    unitRunId: 'unr_123456',
     unitRef,
-    budgetState: 'NORMAL',
+    budget,
   };
   const done = { ...report, executionKind: 'FILE_READ', unitAttemptId: 'una_123456', status: 'OK' };
 
-  it('ties output and artifact to the execution kind', () => {
+  it('requires an output and an attempt of everything that completed', () => {
     expectRules(
       UnitReportSchema,
       { ...done, output: readOutput, outputRef: textRef },
       {
         'OK without output': { ...done, outputRef: textRef },
-        'OK without outputRef': { ...done, output: readOutput },
         'OK without unitAttemptId': {
           ...without(done, 'unitAttemptId'),
           output: readOutput,
           outputRef: textRef,
         },
-        'output of another kind': {
-          ...done,
-          output: { conclusionCount: 0, unconfirmedCount: 0, degraded: false },
-          outputRef: textRef,
-        },
-        'artifact of another kind': { ...done, output: readOutput, outputRef: packRef },
-        'a kind M1 does not run': {
-          ...done,
-          executionKind: 'COMMAND',
-          output: readOutput,
-          outputRef: textRef,
-        },
+        'output that is no Unit output': { ...done, output: { command: 'rm' } },
         'unitRef that names an agent': {
           ...done,
           unitRef: agentRef,
@@ -677,25 +698,30 @@ describe('UnitReport', () => {
           status: 'FAILED',
           reasonCode: 'PATH_ESCAPE',
         },
-        'rejection after dispatch without unitAttemptId': {
+        'FAILED without unitAttemptId': {
+          ...without(attempt, 'unitAttemptId'),
+          status: 'FAILED',
+          reasonCode: 'UNIT_TIMEOUT',
+        },
+        'QUOTA_EXHAUSTED without quota': {
           ...without(attempt, 'unitAttemptId'),
           status: 'REJECTED',
-          reasonCode: 'NOT_FOUND',
-        },
-        'USER_DECLINED with an attempt': {
-          ...attempt,
-          status: 'REJECTED',
-          reasonCode: 'USER_DECLINED',
+          reasonCode: 'QUOTA_EXHAUSTED',
         },
       },
     );
     const declined = { ...report, status: 'REJECTED', reasonCode: 'USER_DECLINED' };
     expect(ok(UnitReportSchema, { ...declined, executionKind: 'REPOSITORY_ORIENT' })).toBe(true);
-    expect(ok(UnitReportSchema, { ...declined, executionKind: 'MODEL' })).toBe(false);
     expect(ok(UnitReportSchema, { ...attempt, status: 'FAILED', reasonCode: 'UNIT_TIMEOUT' })).toBe(
       true,
     );
-    const event = { eventId: 'evt_123456', workflowRunId: 'wfr_123456', seq: 1, occurredAt: at };
+    const event = {
+      eventId: 'evt_123456',
+      sessionId: 'ses_123456',
+      workflowRunId: 'wfr_123456',
+      seq: 1,
+      occurredAt: at,
+    };
     expect(
       ok(WorkflowInboxEventSchema, {
         ...event,
@@ -708,6 +734,7 @@ describe('UnitReport', () => {
 
 describe('ExecutionRequest and ExecutionFact', () => {
   const ids = {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId: 'exe_123456',
@@ -723,12 +750,17 @@ describe('ExecutionRequest and ExecutionFact', () => {
     thinking: 'DISABLED',
   };
   const limits = { deadline: at, maxOutputBytes: 1 };
+  const toolLimits = {
+    ...limits,
+    preview: { maxBytes: 1, maxLines: 1 },
+    maxFullOutputBytes: 1,
+  };
   const read = {
     ...ids,
     executionKind: 'FILE_READ',
     input: { path: 'a.ts' },
     scope: repository,
-    limits,
+    limits: toolLimits,
   };
 
   it('fixes input, scope and limits by executionKind', () => {
@@ -736,6 +768,7 @@ describe('ExecutionRequest and ExecutionFact', () => {
       'scope of another kind': { ...read, scope: { kind: 'NONE' } },
       'a kind that is never dispatched': { ...read, executionKind: 'REPORT_PUBLISH' },
       'maxOutputTokens outside MODEL': { ...read, limits: { ...limits, maxOutputTokens: 1 } },
+      'a tool without preview limits': { ...read, limits },
       'an exclusion rule the matcher cannot apply': {
         ...read,
         scope: { ...repository, exclusions: ['**/*.{pem,key}'] },
@@ -747,7 +780,7 @@ describe('ExecutionRequest and ExecutionFact', () => {
       input: { objective: 'o', tokenBudget: 1 },
     };
     expect(ok(ExecutionRequestSchema, orient)).toBe(false);
-    expect(ok(ExecutionRequestSchema, { ...orient, limits: { ...limits, maxFiles: 1 } })).toBe(
+    expect(ok(ExecutionRequestSchema, { ...orient, limits: { ...toolLimits, maxFiles: 1 } })).toBe(
       true,
     );
     const pack = {
@@ -755,9 +788,10 @@ describe('ExecutionRequest and ExecutionFact', () => {
       operation: 'ASSEMBLE',
       tokenCount: 0,
       tokenBudget: 1,
-      truncated: false,
-      droppedCount: 0,
       prefixSha256: sha,
+      projectionDigest: sha,
+      headDigest: sha,
+      elidedEntries: [],
       items: [],
       createdAt: at,
     };
@@ -799,14 +833,6 @@ describe('ExecutionRequest and ExecutionFact', () => {
           ...fact,
           outcome: 'COMPLETED',
           result: { output: readOutput },
-        },
-        'artifact of another media type': {
-          ...fact,
-          outcome: 'COMPLETED',
-          result: {
-            output: readOutput,
-            artifact: { mediaType: MEDIA_TYPES.contextPack, text: 'x' },
-          },
         },
         'result of another kind': {
           ...fact,
@@ -868,7 +894,7 @@ describe('ExecutionRequest and ExecutionFact', () => {
       },
     );
     const answer = {
-      output: { finishReason: 'STOP', toolCalls: [], hasText: true },
+      output: { finishReason: 'STOP', toolCalls: [], hasText: true, hasReasoning: false },
       artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{}' },
     };
     const completed = { ...modelFact, outcome: 'COMPLETED', result: answer };

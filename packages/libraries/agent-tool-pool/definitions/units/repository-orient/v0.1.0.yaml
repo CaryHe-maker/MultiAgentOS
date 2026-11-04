@@ -13,7 +13,7 @@ inputContract:
 outputContract:
   kind: contract
   id: context.RepositoryOrientOutput
-  version: v0
+  version: v1
 toolRefs: []
 effect: READ_ONLY
 isIdempotent: true

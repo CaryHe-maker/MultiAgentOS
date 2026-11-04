@@ -8,6 +8,6 @@ export const HandoffBriefSchema = closed(
     focusAreas: Type.Array(text(200), { maxItems: 5 }),
     openQuestions: Type.Array(text(300), { maxItems: 5 }),
   },
-  'workflow.HandoffBrief.v0',
+  'workflow.HandoffBrief.v1',
 );
 export type HandoffBrief = Static<typeof HandoffBriefSchema>;

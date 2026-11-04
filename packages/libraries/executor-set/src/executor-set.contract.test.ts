@@ -13,12 +13,8 @@ import {
   repositoryGuardExpectations,
 } from '@multiagentos/testing';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
-import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createExecutorRegistry } from './index.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
-import { FileDigestCache } from './repository-access/file-set.js';
-import { createOrientExecutor } from './repository-orient/orient-executor.js';
-import { createSearchExecutor } from './repository-search/search-executor.js';
 import {
   MODEL_SCOPE,
   chatCompletion,
@@ -34,7 +30,6 @@ const repository = await createFixtureRepository(root, join(base, 'outside.txt')
 const runner = createSubprocessRunner();
 
 const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
-  objective: 'Explain what add does.',
   final: false,
   tokenBudget: 64_000,
   instructions: 'You analyse repositories.',
@@ -46,8 +41,13 @@ const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
       purpose: 'UNIT',
     },
   ],
-  history: [],
-  status: { roundsUsed: 0, maxRounds: 5, final: false, budgetState: 'NORMAL' },
+  history: [{ seq: 1, category: 'PINNED', kind: 'HUMAN', text: 'Explain what add does.' }],
+  status: {
+    round: 1,
+    maxRounds: 5,
+    final: false,
+    budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+  },
 };
 
 async function assembledPack(): Promise<AssembleContextPack> {
@@ -67,19 +67,13 @@ const fakeProvider: typeof fetch = () =>
 
 /** The real registry with the provider faked at the HTTP layer. */
 function registryUnderTest(): ExecutorRegistry {
-  const cache = new FileDigestCache();
-  return {
-    REPOSITORY_ORIENT: createOrientExecutor(cache),
-    REPOSITORY_SEARCH: createSearchExecutor({ cache }),
-    FILE_READ: createFileReadExecutor(),
-    CONTEXT_ASSEMBLE: createAssembleExecutor(),
-    MODEL: createModelCallExecutor({ fetch: fakeProvider }),
-  };
+  return { ...createExecutorRegistry(), MODEL: createModelCallExecutor({ fetch: fakeProvider }) };
 }
 
 const INPUTS: ExecutorInputByKind = {
   REPOSITORY_ORIENT: { objective: 'Explain the fixture.', tokenBudget: 4_000 },
   REPOSITORY_SEARCH: { query: 'add', mode: 'AUTO', maxItems: 20, tokenBudget: 4_000 },
+  REPOSITORY_LIST: { depth: 2 },
   FILE_READ: { path: 'src/math.ts' },
   CONTEXT_ASSEMBLE: assembleInput,
   MODEL: { contextPack: pack, final: false },
@@ -104,10 +98,7 @@ describeExecutorContract('ExecutorSet', {
 });
 
 describeExecutorContract('ExecutorSet registry without rg', {
-  create: () => {
-    const real = createExecutorRegistry();
-    return { ...real, MODEL: createModelCallExecutor({ fetch: fakeProvider }) };
-  },
+  create: registryUnderTest,
   caseFor: (kind) => ({ input: INPUTS[kind], environment: environmentFor(kind, scopeOf(kind)) }),
   expectations: repositoryGuardExpectations(repository, (kind, scope) =>
     environmentFor(kind, scope),

@@ -1,17 +1,9 @@
 /**
- * ExecutorSet static library (docs/M1/Library/ExecutorSet.md). One directory per Executor, and
- * `repository-access/` is shared by the three repository Executors. Provider SDKs may be
- * imported only under `model-call/`.
+ * ExecutorSet static library (docs/M2/Library/ExecutorSet.md). One directory per Executor, and
+ * `repository-access/` is shared by the repository Executors. Provider SDKs may be imported only
+ * under `model-call/`.
  */
-import type { ExecutionScope, ExecutorRegistry, ExecutorRegistryV1 } from '@multiagentos/contracts';
-import { createAssembleExecutorV1 } from './context-assemble/assemble-v1.js';
-import { createModelCallExecutorV1 } from './model-call/model-call-v1.js';
-import {
-  createFileReadExecutorV1,
-  createListExecutorV1,
-  createOrientExecutorV1,
-  createSearchExecutorV1,
-} from './tool-preview/tool-executors.js';
+import type { ExecutionScope, ExecutorRegistry } from '@multiagentos/contracts';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
@@ -20,6 +12,12 @@ import { readGuardedFile } from './repository-access/guarded-file.js';
 import { resolveRepositoryScope } from './repository-access/repository-scope.js';
 import { createOrientExecutor } from './repository-orient/orient-executor.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
+import {
+  createListExecutor,
+  withFilePreview,
+  withOrientLimits,
+  withSearchPreview,
+} from './tool-preview/tool-executors.js';
 
 /**
  * Called by the composition root, which injects the result into the Supervisor. The registry
@@ -29,24 +27,12 @@ import { createSearchExecutor } from './repository-search/search-executor.js';
 export function createExecutorRegistry(): ExecutorRegistry {
   const cache = new FileDigestCache();
   return {
-    REPOSITORY_ORIENT: createOrientExecutor(cache),
-    REPOSITORY_SEARCH: createSearchExecutor({ cache }),
-    FILE_READ: createFileReadExecutor(),
+    REPOSITORY_ORIENT: withOrientLimits(createOrientExecutor(cache)),
+    REPOSITORY_SEARCH: withSearchPreview(createSearchExecutor({ cache })),
+    REPOSITORY_LIST: createListExecutor(cache),
+    FILE_READ: withFilePreview(createFileReadExecutor()),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
-  };
-}
-
-/** Major 1: what the Supervisor runs once M1 is gone. */
-export function createExecutorRegistryV1(): ExecutorRegistryV1 {
-  const cache = new FileDigestCache();
-  return {
-    REPOSITORY_ORIENT: createOrientExecutorV1(createOrientExecutor(cache)),
-    REPOSITORY_SEARCH: createSearchExecutorV1(createSearchExecutor({ cache })),
-    REPOSITORY_LIST: createListExecutorV1(cache),
-    FILE_READ: createFileReadExecutorV1(createFileReadExecutor()),
-    CONTEXT_ASSEMBLE: createAssembleExecutorV1(),
-    MODEL: createModelCallExecutorV1(),
   };
 }
 

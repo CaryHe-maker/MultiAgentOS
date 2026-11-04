@@ -1,7 +1,7 @@
 import {
   ContractValidationError,
-  createM1ProtocolRegistry,
-  type BoundaryContextV1,
+  createProtocolRegistry,
+  type BoundaryContext,
   type ShutdownRequest,
   type SyscallAck,
 } from '@multiagentos/contracts';
@@ -15,7 +15,7 @@ import {
   createInteractionGatewayPort,
 } from './index.js';
 
-const context: BoundaryContextV1 = {
+const context: BoundaryContext = {
   correlationId: 'cor_123456',
   tenantId: 'local',
   projectId: 'local',
@@ -23,7 +23,7 @@ const context: BoundaryContextV1 = {
 const request: ShutdownRequest = { requestId: 'req_123456' };
 
 async function started(): Promise<InProcessFabric> {
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   await fabric.start();
   return fabric;
 }
@@ -161,7 +161,7 @@ describe('InProcessFabric', () => {
     expect(result).not.toBe(response);
     expect(received).toMatchObject({
       schemaName: 'kernel.control.ShutdownRequest',
-      schemaVersion: 0,
+      schemaVersion: 1,
       producer: 'user-interaction',
       correlationId: context.correlationId,
       payload: request,
@@ -176,7 +176,7 @@ describe('InProcessFabric', () => {
     await expect(
       client.request(SCHEMA_IDS.shutdown, { requestId: 'bad' }, context),
     ).rejects.toThrow(ContractValidationError);
-    await expect(client.request('kernel.control.Missing.v0', {}, context)).rejects.toThrow(
+    await expect(client.request('kernel.control.Missing.v1', {}, context)).rejects.toThrow(
       'UNKNOWN_SCHEMA_MAJOR',
     );
   });

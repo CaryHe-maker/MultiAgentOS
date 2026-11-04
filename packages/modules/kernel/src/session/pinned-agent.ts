@@ -1,14 +1,14 @@
 import {
   newId,
-  type BoundaryContextV1,
+  type BoundaryContext,
   type ExecutionScope,
   type ModelToolSpec,
-  type PinnedDefinitionSetV1,
+  type PinnedDefinitionSet,
   type PortResult,
   type ProtocolRegistry,
-  type RegisterAgentRunRequestV1,
+  type RegisterAgentRunRequest,
   type ThinkingEffort,
-  type ToolDefinitionV1,
+  type ToolDefinition,
 } from '@multiagentos/contracts';
 import type { PinnedAgent } from './run-attempts.js';
 import type { PinResult } from './run-work.js';
@@ -21,7 +21,7 @@ export type PinFailure = 'FORBIDDEN';
  * it means for the provider (Interface/Definitions 3).
  */
 export function pinnedAgentOf(
-  set: PinnedDefinitionSetV1,
+  set: PinnedDefinitionSet,
   effort: ThinkingEffort,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
 ): PinnedAgent | PinFailure {
@@ -43,7 +43,7 @@ export function pinnedAgentOf(
       ? { ...base, thinking: 'DISABLED' }
       : { ...base, thinking: 'ENABLED', thinkingEffort: request.providerEffort ?? effort };
 
-  const specOf = (tool: ToolDefinitionV1): ModelToolSpec => ({
+  const specOf = (tool: ToolDefinition): ModelToolSpec => ({
     name: tool.modelName,
     description: tool.modelDescription,
     parameters: registry.jsonSchemaOf(tool.parametersContract),
@@ -78,8 +78,8 @@ export function pinnedAgentOf(
 export interface AgentCatalog {
   pinAgent(
     ref: { readonly id: string; readonly version: string },
-    context: BoundaryContextV1,
-  ): PortResult<PinnedDefinitionSetV1>;
+    context: BoundaryContext,
+  ): PortResult<PinnedDefinitionSet>;
 }
 
 /**
@@ -89,7 +89,7 @@ export interface AgentCatalog {
 export function pinAgentFrom(
   catalog: AgentCatalog,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
-): (request: RegisterAgentRunRequestV1) => Promise<PinResult> {
+): (request: RegisterAgentRunRequest) => Promise<PinResult> {
   return (request) => {
     const { agentRef, effort, sessionId, workflowRunId } = request;
     const set = catalog.pinAgent(agentRef, {

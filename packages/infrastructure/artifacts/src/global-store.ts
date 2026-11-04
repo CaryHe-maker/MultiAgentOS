@@ -16,7 +16,7 @@ import {
   sha256Hex,
   validate,
   type ArtifactRef,
-  type ArtifactStorePortV1,
+  type ArtifactStorePort,
   type CapabilityDescriptor,
   type HealthStatus,
   type LifecyclePort,
@@ -38,7 +38,7 @@ const SHA256_NAME = /^[a-f0-9]{64}$/u;
  * and removes bodies. `put` and the check-then-delete of `sweep` exclude each other per body, so
  * a returned reference never points at a body a sweep is about to remove.
  */
-export class GlobalArtifactStore implements ArtifactStorePortV1, LifecyclePort {
+export class GlobalArtifactStore implements ArtifactStorePort, LifecyclePort {
   readonly manifest = { moduleId: 'artifact-store', version: '0.2.0', dependencies: [] } as const;
   readonly #dataDir: string;
   readonly #directory: string;

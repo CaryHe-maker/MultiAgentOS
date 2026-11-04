@@ -22,8 +22,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3. 阶段 1 的定义实例
 
-阶段 1 的定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`），与 M1 的 `v0` 文件放在同一目录中。`DefinitionCatalogV1` 只读 `v1` 文件，M1 的目录跳过它们；
-S1-IN-1 删除 M1 的模块时，M1 的定义文件与 M1 的目录一起删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
+阶段 1 的定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`）；M1 的定义文件与 M1 的目录已随 S1-IN-1 删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
 
 | kind | id | 说明 |
 |---|---|---|

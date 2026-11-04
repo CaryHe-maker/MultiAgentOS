@@ -1,9 +1,9 @@
 import {
-  InteractionInboxEventV1Schema,
+  InteractionInboxEventSchema,
   InteractionSessionEventSchema,
   InteractionSystemEventSchema,
   MEDIA_TYPES,
-  WorkflowInboxEventV1Schema,
+  WorkflowInboxEventSchema,
   WorkflowSessionEventSchema,
   WorkflowSystemEventSchema,
   assertValid,
@@ -12,20 +12,20 @@ import {
   type ArtifactContent,
   type ArtifactRef,
   type DefinitionRef,
-  type InteractionGatewayPortV1,
-  type InteractionInboxEventV1,
+  type InteractionGatewayPort,
+  type InteractionInboxEvent,
   type InteractionSessionEvent,
   type InteractionSystemEvent,
-  type KernelToInteractionEventV1,
-  type KernelToWorkflowEventV1,
+  type KernelToInteractionEvent,
+  type KernelToWorkflowEvent,
   type ProjectFileContent,
   type SessionCommand,
-  type SubmitUnitRequestV1,
+  type SubmitUnitRequest,
   type SyscallAck,
-  type SyscallRejectedV1,
-  type UnitReportV1,
-  type WorkflowGatewayPortV1,
-  type WorkflowInboxEventV1,
+  type SyscallRejected,
+  type UnitReport,
+  type WorkflowGatewayPort,
+  type WorkflowInboxEvent,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
@@ -38,21 +38,18 @@ import {
  * its Schema before it is delivered.
  */
 export type FakeUnitScript = (
-  request: SubmitUnitRequestV1,
+  request: SubmitUnitRequest,
   index: number,
 ) =>
-  | Pick<
-      Extract<UnitReportV1, { status: 'OK' }>,
-      'output' | 'outputRef' | 'fullRef' | 'reasoningRef'
-    >
+  | Pick<Extract<UnitReport, { status: 'OK' }>, 'output' | 'outputRef' | 'fullRef' | 'reasoningRef'>
   | {
       readonly reject: Exclude<
-        Extract<UnitReportV1, { status: 'REJECTED' }>['reasonCode'],
+        Extract<UnitReport, { status: 'REJECTED' }>['reasonCode'],
         'QUOTA_EXHAUSTED'
       >;
     }
-  | { readonly quota: Extract<UnitReportV1, { reasonCode: 'QUOTA_EXHAUSTED' }>['quota'] }
-  | { readonly fail: Extract<UnitReportV1, { status: 'FAILED' }>['reasonCode'] };
+  | { readonly quota: Extract<UnitReport, { reasonCode: 'QUOTA_EXHAUSTED' }>['quota'] }
+  | { readonly fail: Extract<UnitReport, { status: 'FAILED' }>['reasonCode'] };
 
 export interface FakeSessionKernelOptions {
   readonly repositoryRoot?: string;
@@ -62,25 +59,25 @@ export interface FakeSessionKernelOptions {
 }
 
 export interface FakeSessionKernel {
-  readonly gateway: WorkflowGatewayPortV1;
-  readonly interaction: InteractionGatewayPortV1;
+  readonly gateway: WorkflowGatewayPort;
+  readonly interaction: InteractionGatewayPort;
   onWorkflow(listener: FakeWorkflowListener): void;
   onInteraction(listener: FakeInteractionListener): void;
   /** Every event delivered so far, in order. */
   readonly workflowEvents: readonly (
-    WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent
+    WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent
   )[];
   readonly interactionEvents: readonly (
-    InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent
+    InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent
   )[];
   /** Waits until everything already triggered has been delivered. */
   idle(): Promise<void>;
 }
 export type FakeWorkflowListener = (
-  event: WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent,
+  event: WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent,
 ) => void | Promise<void>;
 export type FakeInteractionListener = (
-  event: InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent,
+  event: InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent,
 ) => void | Promise<void>;
 
 interface Run {
@@ -98,8 +95,8 @@ interface Run {
 const ack = (requestId: string): SyscallAck => ({ requestId, outcome: 'ACCEPTED' });
 const rejected = (
   requestId: string,
-  reasonCode: Extract<SyscallRejectedV1, { issuer: 'CORE'; reasonCode: string }>['reasonCode'],
-): SyscallRejectedV1 => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
+  reasonCode: Extract<SyscallRejected, { issuer: 'CORE'; reasonCode: string }>['reasonCode'],
+): SyscallRejected => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
 
 const textRef = (text: string): ArtifactRef => {
   const content = new TextEncoder().encode(text);
@@ -114,9 +111,9 @@ const textRef = (text: string): ArtifactRef => {
 
 export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}): FakeSessionKernel {
   const repositoryRoot = options.repositoryRoot ?? '/repository';
-  const workflowEvents: (WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent)[] = [];
+  const workflowEvents: (WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent)[] = [];
   const interactionEvents: (
-    InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent
+    InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent
   )[] = [];
   const workflowListeners: FakeWorkflowListener[] = [];
   const interactionListeners: FakeInteractionListener[] = [];
@@ -141,13 +138,13 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   const now = (): string => new Date().toISOString();
 
   const toWorkflow = async (
-    event: WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent,
+    event: WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent,
   ) => {
     workflowEvents.push(event);
     for (const listener of workflowListeners) await listener(structuredClone(event));
   };
   const toInteraction = async (
-    event: InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent,
+    event: InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent,
   ) => {
     interactionEvents.push(event);
     for (const listener of interactionListeners) await listener(structuredClone(event));
@@ -206,10 +203,10 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       }),
     );
   };
-  const runToWorkflow = async (current: Run, event: KernelToWorkflowEventV1) => {
+  const runToWorkflow = async (current: Run, event: KernelToWorkflowEvent) => {
     current.workflowSeq += 1;
     await toWorkflow(
-      assertValid<WorkflowInboxEventV1>(WorkflowInboxEventV1Schema, {
+      assertValid<WorkflowInboxEvent>(WorkflowInboxEventSchema, {
         eventId: newId('evt'),
         sessionId: current.sessionId,
         workflowRunId: current.workflowRunId,
@@ -219,10 +216,10 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       }),
     );
   };
-  const runToInteraction = async (current: Run, event: KernelToInteractionEventV1) => {
+  const runToInteraction = async (current: Run, event: KernelToInteractionEvent) => {
     current.interactionSeq += 1;
     await toInteraction(
-      assertValid<InteractionInboxEventV1>(InteractionInboxEventV1Schema, {
+      assertValid<InteractionInboxEvent>(InteractionInboxEventSchema, {
         eventId: newId('evt'),
         sessionId: current.sessionId,
         workflowRunId: current.workflowRunId,
@@ -303,7 +300,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   };
 
   const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
-  const deliverReport = async (current: Run, request: SubmitUnitRequestV1, index: number) => {
+  const deliverReport = async (current: Run, request: SubmitUnitRequest, index: number) => {
     const scripted = options.units?.(request, index) ?? { reject: 'INVALID_INPUT' as const };
     const common = {
       type: 'UnitReport' as const,
@@ -350,7 +347,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   const inRun = (workflowRunId: string): Run | undefined =>
     run?.workflowRunId === workflowRunId && !run.closed ? run : undefined;
 
-  const gateway: WorkflowGatewayPortV1 = {
+  const gateway: WorkflowGatewayPort = {
     registerAgentRun: (request) => {
       const current = inRun(request.workflowRunId);
       if (current?.turnId === undefined)
@@ -389,11 +386,11 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
         await runToWorkflow(current, {
           ...ending,
           type: 'RunClosed',
-        } as unknown as KernelToWorkflowEventV1);
+        } as unknown as KernelToWorkflowEvent);
         await runToInteraction(current, {
           ...ending,
           type: 'RunFinished',
-        } as unknown as KernelToInteractionEventV1);
+        } as unknown as KernelToInteractionEvent);
       });
       return Promise.resolve(ack(request.requestId));
     },
@@ -485,7 +482,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     return Promise.resolve({ requestId, outcome: 'ACCEPTED' as const, sessionId });
   };
 
-  const interaction: InteractionGatewayPortV1 = {
+  const interaction: InteractionGatewayPort = {
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),
     startRun: (request) => {
       if (request.template.id !== 'analyze')

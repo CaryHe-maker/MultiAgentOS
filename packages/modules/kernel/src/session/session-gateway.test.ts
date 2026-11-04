@@ -1,9 +1,9 @@
 import {
   newId,
   type AppendLogPort,
-  type BoundaryContextV1,
+  type BoundaryContext,
   type SessionRefLine,
-  type WorkflowGatewayPortV1,
+  type WorkflowGatewayPort,
 } from '@multiagentos/contracts';
 import { testArtifactRef, testId } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
@@ -21,7 +21,7 @@ const newHumanRequest = (): string => {
   return testId('hrq', humanRequests);
 };
 
-const context: BoundaryContextV1 = {
+const context: BoundaryContext = {
   correlationId: newId('cor'),
   tenantId: 'local',
   projectId: 'local',
@@ -129,7 +129,7 @@ function stack() {
     repairTail: () => Promise.resolve({ truncatedBytes: 0 }),
   };
   const gatewayRef: { current?: SessionGateway } = {};
-  const workflow = (): WorkflowGatewayPortV1 => {
+  const workflow = (): WorkflowGatewayPort => {
     if (gatewayRef.current === undefined) throw new Error('no gateway');
     return gatewayRef.current.workflow;
   };

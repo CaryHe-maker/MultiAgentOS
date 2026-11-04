@@ -1,11 +1,11 @@
 import { Type, type Static, type TProperties } from 'typebox';
-import { DefinitionRefSchema, PinnedDefinitionRefV1Schema } from '../catalog/definition-schemas.js';
+import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
-import { CLOSE_REASONS_V1 } from '../kernel-control/run-outcome.js';
+import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
-import { ReasonCodeV1Schema } from '../platform-common/reason-code.js';
+import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import {
   Sha256Schema,
   TimestampSchema,
@@ -85,7 +85,7 @@ export const SessionLogRecordSchema = Type.Union(
       initialInput: Type.Boolean(),
     }),
     record('WORKFLOW_RUN_ENDED', inRun, {
-      closeReason: Type.Enum([...CLOSE_REASONS_V1, 'PROCESS_EXITED', 'FORKED']),
+      closeReason: Type.Enum([...CLOSE_REASONS, 'PROCESS_EXITED', 'FORKED']),
     }),
     record('TURN_STARTED', inTurn, {
       promptNodeId: IdSchemas.nodeId,
@@ -134,7 +134,7 @@ export const SessionLogRecordSchema = Type.Union(
     record('AGENT_RUN_REGISTERED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       nodeId: IdSchemas.nodeId,
-      agentRef: PinnedDefinitionRefV1Schema,
+      agentRef: PinnedDefinitionRefSchema,
       effort: ThinkingEffortSchema,
     }),
     record('AGENT_RUN_ENDED', inTurn, {
@@ -147,13 +147,13 @@ export const SessionLogRecordSchema = Type.Union(
       path: text(512),
       agentRunId: IdSchemas.agentRunId,
       unitRunId: IdSchemas.unitRunId,
-      unitRef: PinnedDefinitionRefV1Schema,
+      unitRef: PinnedDefinitionRefSchema,
       inputSource: InputSourceSchema,
     }),
     record('UNIT_COMPLETED', inTurn, {
       requestId: IdSchemas.requestId,
       status: Type.Enum(['OK', 'REJECTED', 'FAILED']),
-      reasonCode: Type.Optional(ReasonCodeV1Schema),
+      reasonCode: Type.Optional(ReasonCodeSchema),
       output: Type.Optional(Type.Unknown()),
       outputRef: Type.Optional(ArtifactRefSchema),
       fullRef: Type.Optional(ArtifactRefSchema),
@@ -177,7 +177,7 @@ export const SessionLogRecordSchema = Type.Union(
     }),
     record('MODEL_ATTEMPT_FAILED', inTurn, {
       requestId: IdSchemas.requestId,
-      reasonCode: ReasonCodeV1Schema,
+      reasonCode: ReasonCodeSchema,
     }),
     /** What the model is told instead of a result; a call must always get an answer. */
     record('FEEDBACK', inTurn, {

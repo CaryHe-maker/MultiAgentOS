@@ -1,6 +1,6 @@
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalogV1,
+  DefinitionCatalog,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import { GlobalArtifactStore } from '@multiagentos/artifacts';
@@ -10,13 +10,13 @@ import {
   SessionRefLineSchema,
   TrustedInstructionLineSchema,
   canonicalJson,
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   newId,
   sha256Hex,
   type DefinitionRef,
-  type ExecutorRegistryV1,
-  type PersistenceNamespaceV1,
-  type PinnedDefinitionSetV1,
+  type ExecutorRegistry,
+  type PersistenceNamespace,
+  type PinnedDefinitionSet,
   type ProviderCredentials,
   type SessionPersistencePort,
   type StoragePath,
@@ -24,7 +24,7 @@ import {
   type SystemFaultReporter,
   type TemplateDefinition,
 } from '@multiagentos/contracts';
-import { createExecutorRegistryV1, readRepositoryText } from '@multiagentos/executor-set';
+import { createExecutorRegistry, readRepositoryText } from '@multiagentos/executor-set';
 import {
   InProcessFabric,
   createInteractionGatewayPort,
@@ -68,9 +68,9 @@ export interface ComposeOptions {
   readonly view: ConsoleView;
   readonly credentials: ProviderCredentials;
   /** Defaults to the catalog shipped in `agent-tool-pool/definitions`. */
-  readonly catalog?: DefinitionCatalogV1;
+  readonly catalog?: DefinitionCatalog;
   /** Defaults to ExecutorSet; an acceptance test passes scripted ones. */
-  readonly executors?: ExecutorRegistryV1;
+  readonly executors?: ExecutorRegistry;
   readonly now?: () => Date;
   /** Deadlines of the shutdown paths; the defaults follow `config.kernel`. */
   readonly timeouts?: Partial<ShutdownTimeouts>;
@@ -107,13 +107,13 @@ export interface System {
 /** A view of the store limited to the namespaces of one owner (Interface/Persistence 5). */
 function forNamespaces(
   store: SessionPersistencePort,
-  owned: readonly PersistenceNamespaceV1[],
+  owned: readonly PersistenceNamespace[],
 ): SessionPersistencePort {
-  const assertOwner = (namespace: PersistenceNamespaceV1): void => {
+  const assertOwner = (namespace: PersistenceNamespace): void => {
     if (!owned.includes(namespace)) throw new Error(`Namespace ${namespace} is not owned here`);
   };
   const limited: SessionPersistencePort = {
-    appendLog: <T>(namespace: PersistenceNamespaceV1, path: StoragePath) => {
+    appendLog: <T>(namespace: PersistenceNamespace, path: StoragePath) => {
       assertOwner(namespace);
       return store.appendLog<T>(namespace, path);
     },
@@ -130,7 +130,7 @@ function forNamespaces(
  * The built-ins of this process (Module/Workflow 4): the Agent `main`, the templates, and every
  * Agent a template names, each at the version the catalog pins.
  */
-function builtIns(catalog: DefinitionCatalogV1) {
+function builtIns(catalog: DefinitionCatalog) {
   const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
   const templates = catalog
     .list()
@@ -143,7 +143,7 @@ function builtIns(catalog: DefinitionCatalogV1) {
       template.nodes.flatMap((node) => (node.kind === 'AGENT' ? [node.agent] : [])),
     ),
   ];
-  const sets = new Map<string, PinnedDefinitionSetV1>();
+  const sets = new Map<string, PinnedDefinitionSet>();
   for (const ref of refs) {
     const pinned = catalog.pinAgent(ref, context);
     if (!pinned.ok) throw new ConfigError(`cannot pin Agent ${ref.id}@${ref.version}`);
@@ -166,10 +166,10 @@ function builtIns(catalog: DefinitionCatalogV1) {
 export async function composeSystem(options: ComposeOptions): Promise<System> {
   const config = assertSystemConfig(options.config);
   const now = options.now ?? (() => new Date());
-  const registry = createM1ProtocolRegistry();
+  const registry = createProtocolRegistry();
   const catalog =
     options.catalog ??
-    (await DefinitionCatalogV1.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
+    (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
   const builtin = builtIns(catalog);
   assertStartupChecks(config.kernel, [...builtin.sets.values()], registry, options.credentials);
   const main = builtin.sets.get('main');
@@ -251,7 +251,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     // The root keeps the runner so that it can end the child processes without the Supervisor.
     const supervisor = createSupervisor({
       fabric: fabric.client('supervisor'),
-      executors: options.executors ?? createExecutorRegistryV1(),
+      executors: options.executors ?? createExecutorRegistry(),
       credentials: options.credentials,
       moduleHost,
       config: config.kernel,

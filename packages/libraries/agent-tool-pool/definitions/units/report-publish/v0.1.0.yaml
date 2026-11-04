@@ -12,7 +12,7 @@ inputContract:
 outputContract:
   kind: contract
   id: kernel.unit.ReportPublishOutput
-  version: v0
+  version: v1
 toolRefs: []
 effect: READ_ONLY
 isIdempotent: true

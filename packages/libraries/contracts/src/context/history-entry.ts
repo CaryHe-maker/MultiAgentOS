@@ -3,7 +3,7 @@ import { BudgetViewSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema, artifactRefOf } from '../platform-common/common-schemas.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
-import { ReasonCodeV1Schema } from '../platform-common/reason-code.js';
+import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { Sha256Schema, closed, count, text } from '../platform-common/schema-helpers.js';
 
 const entry = {
@@ -36,7 +36,7 @@ export const ContextHistoryEntrySchema = Type.Union(
       toolName: text(64),
       status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
       outputRef: Type.Optional(ArtifactRefSchema),
-      reasonCode: Type.Optional(ReasonCodeV1Schema),
+      reasonCode: Type.Optional(ReasonCodeSchema),
     }),
     /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
     closed({
@@ -68,7 +68,7 @@ export const ContextHistoryEntrySchema = Type.Union(
 export type ContextHistoryEntry = Static<typeof ContextHistoryEntrySchema>;
 
 /** Why the next model call is the final call; a quota names the limit it reached. */
-export const WRAP_UP_REASONS_V1 = [
+export const WRAP_UP_REASONS = [
   'BUDGET_WRAP_UP',
   'TOOL_UNIT_LIMIT',
   'WALL_CLOCK_LIMIT',
@@ -80,33 +80,37 @@ export const WRAP_UP_REASONS_V1 = [
   'REGENERATION_LIMIT',
 ] as const;
 
-export const StatusFactsV1Schema = closed({
+/** Shared with `AnalysisReport.wrapUp`, which adds the endings that are not wrap-ups. */
+export const WrapUpReasonSchema = Type.Enum(WRAP_UP_REASONS);
+export type WrapUpReason = Static<typeof WrapUpReasonSchema>;
+
+export const StatusFactsSchema = closed({
   round: count(1),
   maxRounds: count(1),
   budget: BudgetViewSchema,
   final: Type.Boolean(),
-  wrapUpReason: Type.Optional(Type.Enum(WRAP_UP_REASONS_V1)),
+  wrapUpReason: Type.Optional(WrapUpReasonSchema),
 });
-export type StatusFactsV1 = Static<typeof StatusFactsV1Schema>;
+export type StatusFacts = Static<typeof StatusFactsSchema>;
 
 /** `final` here and `status.final` say the same thing and must be equal. */
-export const ContextAssembleInputV1Schema = Type.Refine(
+export const ContextAssembleInputSchema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
       orientPackRef: Type.Optional(artifactRefOf(MEDIA_TYPES.contextPack)),
       history: Type.Array(ContextHistoryEntrySchema),
-      status: StatusFactsV1Schema,
+      status: StatusFactsSchema,
     },
     'context.ContextAssembleInput.v1',
   ),
   (input) => input.final === input.status.final,
   () => 'final must equal status.final',
 );
-export type ContextAssembleInputV1 = Static<typeof ContextAssembleInputV1Schema>;
+export type ContextAssembleInput = Static<typeof ContextAssembleInputSchema>;
 
 /** Nothing is dropped per call; only the final-call safeguard elides entries (ExecutorSet 6.2). */
-export const ContextAssembleOutputV1Schema = Type.Refine(
+export const ContextAssembleOutputSchema = Type.Refine(
   closed(
     {
       contextPackId: IdSchemas.contextPackId,
@@ -122,4 +126,4 @@ export const ContextAssembleOutputV1Schema = Type.Refine(
   (output) => output.tokenCount <= output.tokenBudget,
   () => 'tokenCount must not exceed tokenBudget',
 );
-export type ContextAssembleOutputV1 = Static<typeof ContextAssembleOutputV1Schema>;
+export type ContextAssembleOutput = Static<typeof ContextAssembleOutputSchema>;

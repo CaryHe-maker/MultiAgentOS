@@ -1,4 +1,4 @@
-import type { KernelConfigV1 } from '@multiagentos/contracts';
+import type { KernelConfig } from '@multiagentos/contracts';
 
 const toolLimit = (timeoutMs: number, maxOutputBytes: number) =>
   Object.freeze({
@@ -13,7 +13,7 @@ const toolLimit = (timeoutMs: number, maxOutputBytes: number) =>
  * The defaults of Kernel/Interaction 9, Kernel/Execution 7 and Kernel/Monitor 6; all of them
  * still need calibration with the fixed task set.
  */
-export const DEFAULT_KERNEL_CONFIG: KernelConfigV1 = Object.freeze({
+export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   provider: 'deepseek',
   cancelGraceMs: 5_000,
   convergenceMarginMs: 1_000,

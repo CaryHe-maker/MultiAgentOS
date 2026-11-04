@@ -12,8 +12,8 @@ SharedContracts 是静态库 `@multiagentos/contracts`，提供全部跨模块 S
 M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Library/SharedContracts.md) 第 2 节）：TypeBox、`$id = <family>.<Name>.v<major>`、
 条件必填以联合变体表达、类型由 Schema 派生、文件之间无导入环。M2 补充：
 
-- 发布版只有 major 1：实现期间 major 0 继续注册，S1-IN-1 接线后全部删除（Interface 第 2.2 节）。
-- major 1 的 Schema 放在各 family 目录中，文件名不带版本；过渡期代码中的 `V1` 后缀在删除 major 0 时一起去掉。
+- 只有 major 1：major 0 已随 S1-IN-1 全部删除（Interface 第 2.2 节）。
+- Schema 放在各 family 目录中，文件名与代码中的名字都不带版本。
 - 每个阶段的契约门（M2Plan 第 2.2 节）只增加本阶段需要的 Schema；major 1 在 M2 发布前属于草稿，可以原地修改。
 - Interface 各文档"Schema 强制的约束"小节中的每一条，都必须由 Schema 强制，并有反例测试。
 
@@ -91,14 +91,14 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 ### 3.8 Port
 
 `PersistencePort`、`InstanceLockPort`、`ArtifactStorePort`、`WorkflowGatewayPort`、`InteractionGatewayPort` 与两种 Inbox Port 的 M2 形式，
-按 Interface 各文档定义，放在 `ports.ts`；M1 的 Port 签名在同一文件中保留到 S1-IN-1 的回归通过，之后随 major 0 一起删除。
+按 Interface 各文档定义，放在 `ports.ts`。
 
 ## 4. 测试
 
 - 每个 major 1 Schema 的正例与反例；Interface 各文档"Schema 强制的约束"的每一条都有反例（`kernel-protocol.test.ts` 的做法）。
 - 未知 major 被拒绝。
 - 由路径派生的 ID：`requestId`、`nodeId`、`unitRunId` 的 body 等于路径 SHA-256 的前 32 位（属性测试）。
-- 协议快照守卫（M1 的做法）在删除 major 0 后重建，覆盖 major 1。
+- 协议快照守卫（M1 的做法）覆盖 major 1；M2 发布前 `frozen: false`，注册的 Schema 必须与快照相同，发布时冻结。
 - **测试数据**：各包的测试从子路径 `@multiagentos/contracts/test-support` 取得合法的定义、产物引用、输出与 ID；每个构造函数返回前按 Schema 校验，测试中不以类型断言编造契约值。
   `testUnitDefinition` 按目录加载时的同一规则声明 `repo.read`（AgentToolPool 第 5 节）。
 

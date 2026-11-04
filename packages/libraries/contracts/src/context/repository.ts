@@ -10,12 +10,6 @@ import {
   text,
 } from '../platform-common/schema-helpers.js';
 
-export const RepositoryOrientInputSchema = closed(
-  { objective: text(4000) },
-  'context.RepositoryOrientInput.v0',
-);
-export type RepositoryOrientInput = Static<typeof RepositoryOrientInputSchema>;
-
 export const RepositoryOrientOutputSchema = closed(
   {
     snapshotId: IdSchemas.snapshotId,
@@ -25,7 +19,7 @@ export const RepositoryOrientOutputSchema = closed(
     tokenCount: count(),
     truncated: Type.Boolean(),
   },
-  'context.RepositoryOrientOutput.v0',
+  'context.RepositoryOrientOutput.v1',
 );
 export type RepositoryOrientOutput = Static<typeof RepositoryOrientOutputSchema>;
 
@@ -39,7 +33,7 @@ export const RepositorySearchInputSchema = closed(
     mode: Type.Optional(Type.Enum(SEARCH_MODES)),
     maxItems: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
   },
-  'context.RepositorySearchInput.v0',
+  'context.RepositorySearchInput.v1',
 );
 export type RepositorySearchInput = Static<typeof RepositorySearchInputSchema>;
 
@@ -61,13 +55,13 @@ export const RepositorySearchOutputSchema = closed(
     hits: Type.Array(SearchHitSchema, { maxItems: 50 }),
     truncated: Type.Boolean(),
   },
-  'context.RepositorySearchOutput.v0',
+  'context.RepositorySearchOutput.v1',
 );
 export type RepositorySearchOutput = Static<typeof RepositorySearchOutputSchema>;
 
-/** Major 1 names the goal by reference; Execution resolves it into `OrientExecutorInput`. */
-export const RepositoryOrientInputV1Schema = closed(
+/** Names the goal by reference; Execution resolves it into `OrientExecutorInput`. */
+export const RepositoryOrientInputSchema = closed(
   { objectiveRef: ArtifactRefSchema },
   'context.RepositoryOrientInput.v1',
 );
-export type RepositoryOrientInputV1 = Static<typeof RepositoryOrientInputV1Schema>;
+export type RepositoryOrientInput = Static<typeof RepositoryOrientInputSchema>;

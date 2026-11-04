@@ -1,16 +1,16 @@
 import {
   canonicalJson,
   sha256Hex,
-  type ExecutionKindV1,
-  type PinnedDefinitionSetV1,
+  type ExecutionKind,
+  type PinnedDefinitionSet,
   type ProtocolRegistry,
-  type ToolDefinitionV1,
-  type UnitDefinitionV1,
+  type ToolDefinition,
+  type UnitDefinition,
 } from '@multiagentos/contracts';
 import type { AgentDefinitions, AgentUnit } from '../domain/agent/agent-cycle.js';
 import type { AgentBinding } from './session-runner.js';
 
-const unitOf = (unit: UnitDefinitionV1): AgentUnit => ({
+const unitOf = (unit: UnitDefinition): AgentUnit => ({
   ref: { kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest },
   failurePolicy: unit.failurePolicy,
 });
@@ -21,18 +21,18 @@ const unitOf = (unit: UnitDefinitionV1): AgentUnit => ({
  * set already (AgentToolPool 4), so a missing role here is a broken catalog, not a user error.
  */
 export function agentBindingOf(
-  set: PinnedDefinitionSetV1,
+  set: PinnedDefinitionSet,
   registry: Pick<ProtocolRegistry, 'resolveContract'>,
 ): AgentBinding {
   const { agent, model, units, tools } = set;
-  const byKind = (kind: ExecutionKindV1): UnitDefinitionV1 | undefined =>
+  const byKind = (kind: ExecutionKind): UnitDefinition | undefined =>
     units.find((unit) => unit.executionKind === kind);
-  const required = (kind: ExecutionKindV1): AgentUnit => {
+  const required = (kind: ExecutionKind): AgentUnit => {
     const unit = byKind(kind);
     if (unit === undefined) throw new Error(`Agent ${agent.id} has no ${kind} Unit`);
     return unitOf(unit);
   };
-  const toolOf = (ref: { readonly id: string; readonly version: string }): ToolDefinitionV1 => {
+  const toolOf = (ref: { readonly id: string; readonly version: string }): ToolDefinition => {
     const tool = tools.find((each) => each.id === ref.id && each.version === ref.version);
     if (tool === undefined) throw new Error(`Agent ${agent.id} has no tool ${ref.id}`);
     return tool;

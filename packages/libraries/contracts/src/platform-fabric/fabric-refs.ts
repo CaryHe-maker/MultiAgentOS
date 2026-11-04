@@ -3,6 +3,6 @@ import { OpaqueRefSchema } from '../platform-common/opaque-ref.js';
 
 export const ConsumerOffsetRefSchema = OpaqueRefSchema(
   'consumer-offset',
-  'platform.fabric.ConsumerOffsetRef.v0',
+  'platform.fabric.ConsumerOffsetRef.v1',
 );
 export type ConsumerOffsetRef = Static<typeof ConsumerOffsetRefSchema>;

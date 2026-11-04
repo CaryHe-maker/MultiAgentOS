@@ -2,8 +2,8 @@ import {
   ContextPackSchema,
   EXECUTOR_KINDS,
   ExecutionFactSchema,
+  MEDIA_TYPES,
   ModelRawOutputSchema,
-  sha256Hex,
   validate,
   type ContextAssembleOutput,
   type ContextPack,
@@ -50,7 +50,6 @@ export interface ExecutorContractFixture {
 
 const PACK_OPERATION = {
   REPOSITORY_ORIENT: 'ORIENT',
-  REPOSITORY_SEARCH: 'SEARCH',
   CONTEXT_ASSEMBLE: 'ASSEMBLE',
 } as const;
 
@@ -66,7 +65,7 @@ function run(
 }
 
 /**
- * The ExecutionFact the Supervisor would report for this outcome (M1Interface 8). Validating it
+ * The ExecutionFact the Supervisor would report for this outcome. Validating it
  * checks everything the Kernel relies on at once: the output type and artifact media type of the
  * kind, the reason codes allowed for the outcome, and the request state of a MODEL execution.
  */
@@ -77,6 +76,7 @@ function factOf(kind: ExecutorKind, outcome: ExecutorOutcome): object {
     ...outcome,
   };
   return {
+    sessionId: 'ses_contract',
     workflowRunId: 'wfr_contract',
     unitAttemptId: 'una_contract',
     executionId: 'exe_contract',
@@ -96,8 +96,14 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
   if (outcome.outcome !== 'COMPLETED') return;
   const { output, artifact } = outcome.result;
   if (kind === 'FILE_READ') {
-    expect(sha256Hex(artifact.text)).toBe((output as FileReadOutput).contentSha256);
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
+    expect(artifact.text).toContain((output as FileReadOutput).path);
     expect(artifact.text).not.toContain('\r');
+    return;
+  }
+  if (kind === 'REPOSITORY_SEARCH' || kind === 'REPOSITORY_LIST') {
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
+    expect(artifact.text.length).toBeGreaterThan(0);
     return;
   }
   const content: unknown = JSON.parse(artifact.text);
@@ -118,15 +124,16 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
       prefixSha256: assembled.prefixSha256,
       tokenCount: assembled.tokenCount,
       tokenBudget: assembled.tokenBudget,
-      truncated: assembled.truncated,
-      droppedCount: assembled.droppedCount,
+      projectionDigest: assembled.projectionDigest,
+      headDigest: assembled.headDigest,
+      elidedEntries: assembled.elidedEntries,
     });
   } else expect(pack.snapshotId).toBe((output as { snapshotId: string }).snapshotId);
 }
 
 /**
- * What the Supervisor and the Kernel rely on from every Executor (M1Interface 8): the registry
- * covers the five kinds, an Executor never throws, every outcome makes a valid ExecutionFact,
+ * What the Supervisor and the Kernel rely on from every Executor: the registry
+ * covers every executor kind, an Executor never throws, every outcome makes a valid ExecutionFact,
  * and a completed execution carries an artifact that matches its output.
  */
 export function describeExecutorContract(name: string, fixture: ExecutorContractFixture): void {
@@ -268,7 +275,13 @@ export function repositoryGuardExpectations(
       input: { objective: 'Explain the fixture.', tokenBudget: 4_000 },
       environment: {
         ...environment('REPOSITORY_ORIENT', scope),
-        limits: { deadline: '2099-01-01T00:00:00.000Z', maxOutputBytes: 1_048_576, maxFiles: 1 },
+        limits: {
+          deadline: '2099-01-01T00:00:00.000Z',
+          maxOutputBytes: 1_048_576,
+          preview: { maxBytes: 262_144, maxLines: 2_000 },
+          maxFullOutputBytes: 1_048_576,
+          maxFiles: 1,
+        },
       },
       expected: rejected('LIMIT_EXCEEDED'),
     },

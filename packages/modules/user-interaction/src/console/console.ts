@@ -4,20 +4,20 @@ import {
   validate,
   type AnalysisReport,
   type ArtifactRef,
-  type BoundaryContextV1,
-  type CloseReasonV1,
-  type InteractionGatewayPortV1,
-  type InteractionInboxEventV1,
+  type BoundaryContext,
+  type CloseReason,
+  type InteractionGatewayPort,
+  type InteractionInboxEvent,
   type InteractionSessionEvent,
   type InteractionSystemEvent,
-  type RunFinishedV1,
+  type RunFinished,
 } from '@multiagentos/contracts';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, terminalText } from './console-text.js';
 import type { ActivityLine, ConsoleView, LiveState, PendingItem } from './console-view.js';
 
 export interface ConsoleDeps {
-  readonly gateway: InteractionGatewayPortV1;
+  readonly gateway: InteractionGatewayPort;
   readonly view: ConsoleView;
   readonly now?: () => Date;
 }
@@ -25,7 +25,7 @@ export interface ConsoleDeps {
 type RunState = 'NONE' | 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'CLOSED';
 
 /** `mas run` exits with the run's outcome (Module/UserInteraction 7). */
-export const RUN_EXIT_CODES: Readonly<Record<CloseReasonV1, number>> = {
+export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
   COMPLETED: 0,
   BUDGET: 0,
   FAILED: 1,
@@ -73,7 +73,7 @@ export class Console {
     this.#now = deps.now ?? (() => new Date());
   }
 
-  #context(): BoundaryContextV1 {
+  #context(): BoundaryContext {
     return {
       correlationId: newId('cor'),
       tenantId: 'local',
@@ -370,7 +370,7 @@ export class Console {
     return Promise.resolve();
   }
 
-  async handleRunEvent(envelope: InteractionInboxEventV1): Promise<void> {
+  async handleRunEvent(envelope: InteractionInboxEvent): Promise<void> {
     const { event } = envelope;
     this.#workflowRunId = envelope.workflowRunId;
     switch (event.type) {
@@ -503,7 +503,7 @@ export class Console {
     this.#deps.view.print({ kind: 'REPLY', agentLabel, text: terminalText(body ?? '') });
   }
 
-  async #runFinished(event: RunFinishedV1): Promise<void> {
+  async #runFinished(event: RunFinished): Promise<void> {
     this.#runState = 'CLOSED';
     this.#activity.clear();
     this.#openRequest = undefined;

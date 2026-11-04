@@ -1,20 +1,20 @@
 import {
   newId,
-  type InteractionInboxEventV1,
+  type InteractionInboxEvent,
   type InteractionSessionEvent,
   type InteractionSystemEvent,
-  type KernelToInteractionEventV1,
-  type KernelToWorkflowEventV1,
+  type KernelToInteractionEvent,
+  type KernelToWorkflowEvent,
   type SessionCommand,
-  type WorkflowInboxEventV1,
+  type WorkflowInboxEvent,
   type WorkflowSessionEvent,
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
 import { OrderedSender } from '@multiagentos/fabric';
 
-export type ToWorkflow = WorkflowInboxEventV1 | WorkflowSessionEvent | WorkflowSystemEvent;
+export type ToWorkflow = WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent;
 export type ToInteraction =
-  InteractionInboxEventV1 | InteractionSessionEvent | InteractionSystemEvent;
+  InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent;
 
 export interface OutboundPort {
   toWorkflow(event: ToWorkflow): Promise<void>;
@@ -67,7 +67,7 @@ export class KernelOutbox {
     return counters;
   }
 
-  runToWorkflow(sessionId: string, workflowRunId: string, event: KernelToWorkflowEventV1): void {
+  runToWorkflow(sessionId: string, workflowRunId: string, event: KernelToWorkflowEvent): void {
     const counters = KernelOutbox.#counters(this.#runs, workflowRunId);
     counters.workflow += 1;
     this.#pendingWorkflow.push({
@@ -82,7 +82,7 @@ export class KernelOutbox {
   runToInteraction(
     sessionId: string,
     workflowRunId: string,
-    event: KernelToInteractionEventV1,
+    event: KernelToInteractionEvent,
   ): void {
     const counters = KernelOutbox.#counters(this.#runs, workflowRunId);
     counters.interaction += 1;

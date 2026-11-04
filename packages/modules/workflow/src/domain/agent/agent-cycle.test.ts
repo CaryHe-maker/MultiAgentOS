@@ -3,11 +3,11 @@ import {
   RepositoryListInputSchema,
   newId,
   validate,
-  SubmitUnitRequestV1Schema,
+  SubmitUnitRequestSchema,
   type ArtifactRef,
   type BudgetView,
   type ModelToolCall,
-  type UnitReportV1,
+  type UnitReport,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
@@ -99,7 +99,7 @@ function report(
     | { reject: string }
     | { fail: string },
   budget: BudgetView = NORMAL,
-): UnitReportV1 {
+): UnitReport {
   const common = {
     type: 'UnitReport',
     requestId,
@@ -118,17 +118,17 @@ function report(
       ...(result.ref === undefined ? {} : { outputRef: result.ref }),
       ...(result.reasoningRef === undefined ? {} : { reasoningRef: result.reasoningRef }),
       ...(result.fullRef === undefined ? {} : { fullRef: result.fullRef }),
-    } as UnitReportV1;
+    } as UnitReport;
   return 'reject' in result
-    ? ({ ...common, status: 'REJECTED', reasonCode: result.reject } as UnitReportV1)
+    ? ({ ...common, status: 'REJECTED', reasonCode: result.reject } as UnitReport)
     : ({
         ...common,
         unitAttemptId: newId('una'),
         status: 'FAILED',
         reasonCode: result.fail,
-      } as UnitReportV1);
+      } as UnitReport);
 }
-const receive = (from: AgentTransition, r: UnitReportV1, cfg = config) =>
+const receive = (from: AgentTransition, r: UnitReport, cfg = config) =>
   receiveAgentReport(from.state, r, context, cfg);
 const only = (t: AgentTransition): string => {
   const request = t.submissions[0];
@@ -187,7 +187,7 @@ describe('startup', () => {
     const started = start();
     expect(types(started)).toEqual(['UNIT_SUBMITTED']);
     const request = started.submissions[0];
-    expect(validate(SubmitUnitRequestV1Schema, request).ok).toBe(true);
+    expect(validate(SubmitUnitRequestSchema, request).ok).toBe(true);
     expect(request?.path).toBe('agr_01ABCDEFGH/round-0/1#1');
   });
 
@@ -363,7 +363,7 @@ describe('tools', () => {
     const refused = {
       ...report(tools.state, only(tools), { reject: 'QUOTA_EXHAUSTED' }),
       quota,
-    } as UnitReportV1;
+    } as UnitReport;
     const next = receive(tools, refused);
     expect(next.ending).toBeUndefined();
     expect(next.state.wrapUpReason).toBe(reason);

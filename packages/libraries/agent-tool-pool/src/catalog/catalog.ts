@@ -4,22 +4,22 @@ import {
   type DefinitionStatus,
   type DefinitionStatusFile,
   CATALOG_ERROR_CODES,
-  DEFINITION_DRAFT_SCHEMAS_V1,
-  DEFINITION_KINDS_V1,
-  DEFINITION_SCHEMAS_V1,
-  REPOSITORY_KINDS_V1,
+  DEFINITION_DRAFT_SCHEMAS,
+  DEFINITION_KINDS,
+  DEFINITION_SCHEMAS,
+  REPOSITORY_KINDS,
   canonicalJson,
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   validate,
-  type BoundaryContextV1,
-  type DefinitionByKindV1,
-  type DefinitionKindV1,
+  type BoundaryContext,
+  type DefinitionByKind,
+  type DefinitionKind,
   type DefinitionRef,
-  type DefinitionV1,
-  type ExecutionKindV1,
+  type Definition,
+  type ExecutionKind,
   type ModuleError,
-  type PinnedDefinitionRefV1,
-  type PinnedDefinitionSetV1,
+  type PinnedDefinitionRef,
+  type PinnedDefinitionSet,
   type PortResult,
   type TemplateDefinition,
 } from '@multiagentos/contracts';
@@ -39,16 +39,16 @@ import type {
  * M1. Everything that can be wrong is found at load; lookups only fail for unknown versions.
  */
 
-type Body = { [K in DefinitionKindV1]: Omit<DefinitionByKindV1[K], 'digest'> }[DefinitionKindV1];
-type BodyOf<K extends DefinitionKindV1> = Omit<DefinitionByKindV1[K], 'digest'>;
+type Body = { [K in DefinitionKind]: Omit<DefinitionByKind[K], 'digest'> }[DefinitionKind];
+type BodyOf<K extends DefinitionKind> = Omit<DefinitionByKind[K], 'digest'>;
 
 interface Reference {
   readonly field: string;
-  readonly kind: DefinitionKindV1;
+  readonly kind: DefinitionKind;
   readonly ref: DefinitionRef;
 }
 
-const key = (kind: DefinitionKindV1, id: string, version: string) => `${kind}:${id}@${version}`;
+const key = (kind: DefinitionKind, id: string, version: string) => `${kind}:${id}@${version}`;
 const isDraft = (version: string) => version.startsWith('v0.');
 
 /** Where references live, in a fixed order; the digest covers each target's digest. */
@@ -110,35 +110,35 @@ function digestOf(body: Body, digests: ReadonlyMap<string, string>): string | un
     .digest('hex');
 }
 
-const ORDER: readonly DefinitionKindV1[] = ['TOOL', 'PROMPT', 'MODEL', 'UNIT', 'AGENT', 'TEMPLATE'];
-const registry = createM1ProtocolRegistry();
+const ORDER: readonly DefinitionKind[] = ['TOOL', 'PROMPT', 'MODEL', 'UNIT', 'AGENT', 'TEMPLATE'];
+const registry = createProtocolRegistry();
 
 /** The contracts of each kind's Unit; a v1 Unit must name exactly these. */
-const UNIT_CONTRACTS: { readonly [K in ExecutionKindV1]?: readonly [string, string] } = {
-  REPOSITORY_ORIENT: ['context.RepositoryOrientInput.v1', 'context.RepositoryOrientOutput.v0'],
-  REPOSITORY_SEARCH: ['context.RepositorySearchInput.v0', 'context.RepositorySearchOutput.v0'],
+const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string] } = {
+  REPOSITORY_ORIENT: ['context.RepositoryOrientInput.v1', 'context.RepositoryOrientOutput.v1'],
+  REPOSITORY_SEARCH: ['context.RepositorySearchInput.v1', 'context.RepositorySearchOutput.v1'],
   REPOSITORY_LIST: ['executor.RepositoryListInput.v1', 'executor.RepositoryListOutput.v1'],
-  FILE_READ: ['executor.FileReadInput.v0', 'executor.FileReadOutput.v0'],
+  FILE_READ: ['executor.FileReadInput.v1', 'executor.FileReadOutput.v1'],
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],
-  REPORT_PUBLISH: ['kernel.unit.ReportPublishInput.v1', 'kernel.unit.ReportPublishOutput.v0'],
+  REPORT_PUBLISH: ['kernel.unit.ReportPublishInput.v1', 'kernel.unit.ReportPublishOutput.v1'],
 };
 /** The arguments of each end action, as the model writes them. */
 const END_CONTRACTS = {
   PUBLISH_REPLY: 'workflow.ReplyArgs.v1',
-  PUBLISH_REPORT: 'workflow.AnalysisReportDraft.v0',
-  HANDOFF: 'workflow.HandoffBrief.v0',
+  PUBLISH_REPORT: 'workflow.AnalysisReportDraft.v1',
+  HANDOFF: 'workflow.HandoffBrief.v1',
 } as const;
 /** Kernel's refusals mean the same for every Unit, so no definition may change them. */
 const FIXED_CODES = ['USER_DECLINED', 'QUOTA_EXHAUSTED'];
 const EFFORTS = ['none', 'low', 'high', 'max'] as const;
-const REPOSITORY_KINDS: ReadonlySet<string> = new Set(REPOSITORY_KINDS_V1);
+const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
 const contractOf = (ref: { readonly id: string; readonly version: string }) =>
   `${ref.id}.${ref.version}`;
 
-export interface CatalogIndexV1 {
-  readonly definitions: ReadonlyMap<string, DefinitionV1>;
+export interface CatalogIndex {
+  readonly definitions: ReadonlyMap<string, Definition>;
   /** `status.yaml`; a version without an entry is ACTIVE. */
   readonly statuses: ReadonlyMap<string, DefinitionStatus>;
 }
@@ -150,16 +150,16 @@ interface Entry {
 }
 
 /** Takes the `v1` documents of a snapshot, checks them all and computes every digest. */
-export function buildCatalogIndexV1(
+export function buildCatalogIndex(
   snapshot: SourceSnapshot,
 ):
-  | { readonly ok: true; readonly index: CatalogIndexV1 }
+  | { readonly ok: true; readonly index: CatalogIndex }
   | { readonly ok: false; readonly issues: readonly CatalogIssue[] } {
   return analyze(snapshot, false);
 }
 
 /** Which documents to seal; empty when the catalog has issues. */
-export interface SealPlanV1 {
+export interface SealPlan {
   readonly patches: readonly SealPatch[];
   readonly issues: readonly CatalogIssue[];
 }
@@ -169,7 +169,7 @@ export interface SealPlanV1 {
  * has one is never touched (a published definition is immutable, so a mismatch is reported,
  * not "fixed"), and a draft never gets one: its digest is computed at load.
  */
-export function planSealV1(snapshot: SourceSnapshot): SealPlanV1 {
+export function planSeal(snapshot: SourceSnapshot): SealPlan {
   const result = analyze(snapshot, true);
   return result.ok
     ? { patches: result.unsealed, issues: [] }
@@ -180,7 +180,7 @@ function analyze(
   snapshot: SourceSnapshot,
   sealing: boolean,
 ):
-  | { readonly ok: true; readonly index: CatalogIndexV1; readonly unsealed: SealPatch[] }
+  | { readonly ok: true; readonly index: CatalogIndex; readonly unsealed: SealPatch[] }
   | { readonly ok: false; readonly issues: readonly CatalogIssue[] } {
   const unsealed: SealPatch[] = [];
   const issues: CatalogIssue[] = [];
@@ -233,7 +233,7 @@ function analyze(
   if (failed.size === 0) checkRules(entries, report);
   const statuses = parseStatuses(snapshot.statusDocument, entries, report);
   if (issues.length > 0) return { ok: false, issues };
-  const definitions = new Map<string, DefinitionV1>();
+  const definitions = new Map<string, Definition>();
   for (const [entryKey, entry] of entries)
     definitions.set(
       entryKey,
@@ -276,18 +276,18 @@ function parse(
 ): void {
   const content = document.content as Readonly<Record<string, unknown>> | null;
   if (typeof content !== 'object' || content === null || content['schemaVersion'] !== 'v1') return;
-  const kind = DEFINITION_KINDS_V1.find((candidate) => candidate === content['kind']);
+  const kind = DEFINITION_KINDS.find((candidate) => candidate === content['kind']);
   if (kind === undefined) {
     report(
       document.origin,
       'DEFINITION_INVALID',
-      `kind must be one of ${DEFINITION_KINDS_V1.join(', ')}`,
+      `kind must be one of ${DEFINITION_KINDS.join(', ')}`,
     );
     return;
   }
   const declared = 'digest' in content ? String(content['digest']) : undefined;
   const result = validate<Body>(
-    declared === undefined ? DEFINITION_DRAFT_SCHEMAS_V1[kind] : DEFINITION_SCHEMAS_V1[kind],
+    declared === undefined ? DEFINITION_DRAFT_SCHEMAS[kind] : DEFINITION_SCHEMAS[kind],
     content,
   );
   if (!result.ok) {
@@ -327,7 +327,7 @@ function checkRules(
   entries: ReadonlyMap<string, Entry>,
   report: (origin: string, code: CatalogIssueCode, message: string) => void,
 ): void {
-  const get = <K extends DefinitionKindV1>(kind: K, ref: DefinitionRef): BodyOf<K> | undefined =>
+  const get = <K extends DefinitionKind>(kind: K, ref: DefinitionRef): BodyOf<K> | undefined =>
     entries.get(key(kind, ref.id, ref.version))?.body as BodyOf<K> | undefined;
   const owners = new Map<string, number>();
   for (const { body } of entries.values())
@@ -368,7 +368,7 @@ function checkRules(
           );
         const declaresRead = body.protectedCapabilities.includes('repo.read');
         // Kernel decides on the declaration alone, so it must agree with the kind (Kernel/Core 5).
-        if (REPOSITORY_KINDS.has(body.executionKind) !== declaresRead)
+        if (READS_REPOSITORY.has(body.executionKind) !== declaresRead)
           report(
             origin,
             'UNIT_INVALID',
@@ -429,12 +429,11 @@ function checkRules(
 function checkAgent(
   origin: string,
   body: BodyOf<'AGENT'>,
-  get: <K extends DefinitionKindV1>(kind: K, ref: DefinitionRef) => BodyOf<K> | undefined,
+  get: <K extends DefinitionKind>(kind: K, ref: DefinitionRef) => BodyOf<K> | undefined,
   report: (origin: string, code: CatalogIssueCode, message: string) => void,
 ): void {
   const units = body.unitRefs.flatMap((ref) => get('UNIT', ref) ?? []);
-  const count = (kind: ExecutionKindV1) =>
-    units.filter((unit) => unit.executionKind === kind).length;
+  const count = (kind: ExecutionKind) => units.filter((unit) => unit.executionKind === kind).length;
   for (const kind of ['CONTEXT_ASSEMBLE', 'MODEL'] as const)
     if (count(kind) !== 1)
       report(
@@ -530,7 +529,7 @@ function checkAgent(
 function checkTemplate(
   origin: string,
   body: BodyOf<'TEMPLATE'>,
-  get: <K extends DefinitionKindV1>(kind: K, ref: DefinitionRef) => BodyOf<K> | undefined,
+  get: <K extends DefinitionKind>(kind: K, ref: DefinitionRef) => BodyOf<K> | undefined,
   report: (origin: string, code: CatalogIssueCode, message: string) => void,
 ): void {
   const nodes = new Map(body.nodes.map((node) => [node.name, node]));
@@ -590,17 +589,17 @@ function checkTemplate(
 }
 
 /** The v1 CatalogPort: lookups and run pinning over a validated, frozen index. */
-export class DefinitionCatalogV1 {
-  static async load(source: DefinitionSource): Promise<DefinitionCatalogV1> {
-    const result = buildCatalogIndexV1(await source.load());
+export class DefinitionCatalog {
+  static async load(source: DefinitionSource): Promise<DefinitionCatalog> {
+    const result = buildCatalogIndex(await source.load());
     if (!result.ok) throw new CatalogLoadError(result.issues);
-    return new DefinitionCatalogV1(result.index);
+    return new DefinitionCatalog(result.index);
   }
 
-  public constructor(private readonly index: CatalogIndexV1) {}
+  public constructor(private readonly index: CatalogIndex) {}
 
   /** Every definition that can be looked up, in load order. */
-  list(): readonly DefinitionV1[] {
+  list(): readonly Definition[] {
     return [...this.index.definitions].flatMap(([entryKey, definition]) => {
       const status = this.index.statuses.get(entryKey);
       return status !== undefined && UNAVAILABLE.has(status) ? [] : [definition];
@@ -608,7 +607,7 @@ export class DefinitionCatalogV1 {
   }
 
   /** The highest version of `id`, by its numeric parts; undefined when there is none. */
-  latest<K extends DefinitionKindV1>(kind: K, id: string): DefinitionByKindV1[K] | undefined {
+  latest<K extends DefinitionKind>(kind: K, id: string): DefinitionByKind[K] | undefined {
     const versions = this.list().filter((each) => each.kind === kind && each.id === id);
     const parts = (version: string) => version.slice(1).split('.').map(Number);
     const newer = (a: string, b: string) => {
@@ -617,39 +616,36 @@ export class DefinitionCatalogV1 {
         if ((x[index] ?? 0) !== (y[index] ?? 0)) return (x[index] ?? 0) > (y[index] ?? 0);
       return false;
     };
-    return versions.reduce<DefinitionV1 | undefined>(
+    return versions.reduce<Definition | undefined>(
       (best, each) => (best === undefined || newer(each.version, best.version) ? each : best),
       undefined,
-    ) as DefinitionByKindV1[K] | undefined;
+    ) as DefinitionByKind[K] | undefined;
   }
 
-  #find<K extends DefinitionKindV1>(
-    kind: K,
-    ref: DefinitionRef,
-  ): DefinitionByKindV1[K] | undefined {
+  #find<K extends DefinitionKind>(kind: K, ref: DefinitionRef): DefinitionByKind[K] | undefined {
     const found = key(kind, ref.id, ref.version);
     const status = this.index.statuses.get(found);
     if (status !== undefined && UNAVAILABLE.has(status)) return undefined;
-    return this.index.definitions.get(found) as DefinitionByKindV1[K] | undefined;
+    return this.index.definitions.get(found) as DefinitionByKind[K] | undefined;
   }
 
-  getDefinition<K extends DefinitionKindV1>(
+  getDefinition<K extends DefinitionKind>(
     kind: K,
     ref: DefinitionRef,
-    context: BoundaryContextV1,
-  ): PortResult<DefinitionByKindV1[K]> {
+    context: BoundaryContext,
+  ): PortResult<DefinitionByKind[K]> {
     const found = this.#find(kind, ref);
     return found === undefined
       ? failure(`no ${kind} ${ref.id}@${ref.version}`, context)
       : { ok: true, value: found };
   }
 
-  template(ref: DefinitionRef, context: BoundaryContextV1): PortResult<TemplateDefinition> {
+  template(ref: DefinitionRef, context: BoundaryContext): PortResult<TemplateDefinition> {
     return this.getDefinition('TEMPLATE', ref, context);
   }
 
   /** Everything one AgentRun runs with, by exact version. */
-  pinAgent(ref: DefinitionRef, context: BoundaryContextV1): PortResult<PinnedDefinitionSetV1> {
+  pinAgent(ref: DefinitionRef, context: BoundaryContext): PortResult<PinnedDefinitionSet> {
     const agent = this.#find('AGENT', ref);
     if (agent === undefined) return failure(`no AGENT ${ref.id}@${ref.version}`, context);
     const model = this.#find('MODEL', agent.modelRef);
@@ -663,14 +659,14 @@ export class DefinitionCatalogV1 {
       ...agent.actions.end.map((end) => end.toolRef),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
-    const members: DefinitionV1[] = [agent, model, prompt, ...pinnedUnits, ...tools];
-    const refs: PinnedDefinitionRefV1[] = members.map(({ kind, id, version, digest }) => ({
+    const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];
+    const refs: PinnedDefinitionRef[] = members.map(({ kind, id, version, digest }) => ({
       kind,
       id,
       version,
       digest,
     }));
-    const pinned: PinnedDefinitionSetV1 = {
+    const pinned: PinnedDefinitionSet = {
       schemaVersion: 'v1',
       agent: agent,
       model,
@@ -685,7 +681,7 @@ export class DefinitionCatalogV1 {
 
 function failure(
   message: string,
-  context: BoundaryContextV1,
+  context: BoundaryContext,
 ): { readonly ok: false; readonly error: ModuleError } {
   return {
     ok: false,

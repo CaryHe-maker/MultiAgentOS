@@ -1,13 +1,13 @@
 import {
   assertValid,
-  BoundaryContextV1Schema,
+  BoundaryContextSchema,
   ContractValidationError,
   IdSchemas,
   newId,
   validate,
-  type BoundaryContextV1,
+  type BoundaryContext,
   type CapabilityDescriptor,
-  type EnvelopeV1,
+  type Envelope,
   type FabricAddress,
   type FabricPort,
   type HealthStatus,
@@ -28,12 +28,12 @@ export interface FabricClientOptions {
   readonly requestTimeoutMs?: number;
 }
 
-type RequestHandler = (envelope: EnvelopeV1<unknown>) => Promise<unknown>;
-type MessageHandler = (envelope: EnvelopeV1<unknown>) => Promise<void>;
+type RequestHandler = (envelope: Envelope<unknown>) => Promise<unknown>;
+type MessageHandler = (envelope: Envelope<unknown>) => Promise<void>;
 interface RegisteredHandler {
   readonly handle: RequestHandler;
   readonly onInvalid?: (
-    envelope: EnvelopeV1<unknown>,
+    envelope: Envelope<unknown>,
     error: ContractValidationError,
   ) => Promise<unknown>;
 }
@@ -49,7 +49,7 @@ function hasValidRequestId(payload: unknown): boolean {
 }
 
 /**
- * Same-process Fabric (M1 Fabric 3, major 1 envelopes). Every communication subject gets
+ * Same-process Fabric. Every communication subject gets
  * its own client, which fixes the Envelope's producer. Each delivery validates the payload
  * against its registered Schema and copies it with `structuredClone`, so object references,
  * functions and class instances cannot cross a subject boundary unnoticed.
@@ -110,12 +110,12 @@ export class InProcessFabric implements LifecyclePort {
       request: async <TRequest, TResponse>(
         schemaId: string,
         payload: TRequest,
-        context: BoundaryContextV1,
+        context: BoundaryContext,
       ) => {
         // A bad transport context is never a malformed Gateway syscall body.
-        assertValid(BoundaryContextV1Schema, context);
+        assertValid(BoundaryContextSchema, context);
         const handler = this.#handlers.get(schemaId);
-        let envelope: EnvelopeV1<unknown>;
+        let envelope: Envelope<unknown>;
         try {
           envelope = this.#envelope(producer, 'command', schemaId, payload, context);
         } catch (error) {
@@ -165,11 +165,11 @@ export class InProcessFabric implements LifecyclePort {
     messageType: MessageType,
     schemaId: string,
     payload: unknown,
-    context: BoundaryContextV1,
+    context: BoundaryContext,
     validatePayload = true,
-  ): EnvelopeV1<unknown> {
+  ): Envelope<unknown> {
     if (!this.#running) throw new FabricError('NOT_RUNNING', schemaId);
-    const checkedContext = assertValid<BoundaryContextV1>(BoundaryContextV1Schema, context);
+    const checkedContext = assertValid<BoundaryContext>(BoundaryContextSchema, context);
     const entry = this.#registry.get(schemaId);
     return {
       schemaName: entry.schemaName,
@@ -204,7 +204,7 @@ const FABRIC_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze([
   {
     capability: 'fabric.durable-delivery',
     status: 'UNSUPPORTED',
-    schemaNames: ['platform.fabric.ConsumerOffsetRef.v0'],
+    schemaNames: ['platform.fabric.ConsumerOffsetRef.v1'],
     reason: 'the M1 Outbox and Inbox live in memory',
   },
 ]);

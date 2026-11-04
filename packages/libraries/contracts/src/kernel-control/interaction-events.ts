@@ -3,66 +3,14 @@ import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { runEndV1, runEndVariants } from './run-outcome.js';
-
-/** `repositoryPath` is the realpath of the repository root; `exclusions` follow M1Interface 3.5. */
-export const AuthorizationRequestSchema = closed(
-  {
-    type: Type.Literal('AuthorizationRequest'),
-    questionId: IdSchemas.questionId,
-    capability: Type.Literal('repo.read'),
-    repositoryPath: text(4096),
-    exclusions: Type.Array(ExclusionRuleSchema),
-    provider: text(64),
-    expiresAt: TimestampSchema,
-  },
-  'kernel.control.AuthorizationRequest.v0',
-);
-export type AuthorizationRequest = Static<typeof AuthorizationRequestSchema>;
-
-export const AuthorizationResolvedSchema = closed(
-  {
-    type: Type.Literal('AuthorizationResolved'),
-    questionId: IdSchemas.questionId,
-    resolution: Type.Enum(['GRANTED', 'DECLINED', 'TIMED_OUT', 'CANCELLED']),
-  },
-  'kernel.control.AuthorizationResolved.v0',
-);
-export type AuthorizationResolved = Static<typeof AuthorizationResolvedSchema>;
-
-/** Exactly one per run, the last event sent to UserInteraction; same RunEnd as RunClosed. */
-export const RunFinishedSchema = Type.Union(runEndVariants('RunFinished'), {
-  $id: 'kernel.control.RunFinished.v0',
-});
-export type RunFinished = Static<typeof RunFinishedSchema>;
-
-export const KernelToInteractionEventSchema = Type.Union([
-  AuthorizationRequestSchema,
-  AuthorizationResolvedSchema,
-  RunFinishedSchema,
-]);
-export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
-
-export const InteractionInboxEventSchema = closed(
-  {
-    eventId: IdSchemas.eventId,
-    workflowRunId: IdSchemas.workflowRunId,
-    seq: count(1),
-    occurredAt: TimestampSchema,
-    event: KernelToInteractionEventSchema,
-  },
-  'kernel.control.InteractionInboxEvent.v0',
-);
-export type InteractionInboxEvent = Static<typeof InteractionInboxEventSchema>;
-
-// --- Major 1 (Interface/InteractionKernel 3.1) ------------------------------------------------
+import { runEnd } from './run-outcome.js';
 
 /** A question waits until the user answers or the run converges; it never times out (M2Design 5.3). */
 const question = {
   type: Type.Literal('AuthorizationRequest'),
   questionId: IdSchemas.questionId,
 };
-export const AuthorizationRequestV1Schema = Type.Union(
+export const AuthorizationRequestSchema = Type.Union(
   [
     closed({
       ...question,
@@ -81,10 +29,10 @@ export const AuthorizationRequestV1Schema = Type.Union(
   ],
   { $id: 'kernel.control.AuthorizationRequest.v1' },
 );
-export type AuthorizationRequestV1 = Static<typeof AuthorizationRequestV1Schema>;
+export type AuthorizationRequest = Static<typeof AuthorizationRequestSchema>;
 
 /** CANCELLED only when the run converges or the answer can no longer reach the Kernel. */
-export const AuthorizationResolvedV1Schema = closed(
+export const AuthorizationResolvedSchema = closed(
   {
     type: Type.Literal('AuthorizationResolved'),
     questionId: IdSchemas.questionId,
@@ -92,7 +40,7 @@ export const AuthorizationResolvedV1Schema = closed(
   },
   'kernel.control.AuthorizationResolved.v1',
 );
-export type AuthorizationResolvedV1 = Static<typeof AuthorizationResolvedV1Schema>;
+export type AuthorizationResolved = Static<typeof AuthorizationResolvedSchema>;
 
 export const HumanRequestSchema = closed(
   {
@@ -182,32 +130,32 @@ export const ActivityEventSchema = Type.Union(
 );
 export type ActivityEvent = Static<typeof ActivityEventSchema>;
 
-export const RunFinishedV1Schema = Type.Union([...runEndV1('RunFinished')], {
+export const RunFinishedSchema = Type.Union([...runEnd('RunFinished')], {
   $id: 'kernel.control.RunFinished.v1',
 });
-export type RunFinishedV1 = Static<typeof RunFinishedV1Schema>;
+export type RunFinished = Static<typeof RunFinishedSchema>;
 
-export const KernelToInteractionEventV1Schema = Type.Union([
-  AuthorizationRequestV1Schema,
-  AuthorizationResolvedV1Schema,
+export const KernelToInteractionEventSchema = Type.Union([
+  AuthorizationRequestSchema,
+  AuthorizationResolvedSchema,
   HumanRequestSchema,
   HumanResolvedSchema,
   MessagePublishedSchema,
   RunStateChangedSchema,
   ActivityEventSchema,
-  RunFinishedV1Schema,
+  RunFinishedSchema,
 ]);
-export type KernelToInteractionEventV1 = Static<typeof KernelToInteractionEventV1Schema>;
+export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 
-export const InteractionInboxEventV1Schema = closed(
+export const InteractionInboxEventSchema = closed(
   {
     eventId: IdSchemas.eventId,
     sessionId: IdSchemas.sessionId,
     workflowRunId: IdSchemas.workflowRunId,
     seq: count(1),
     occurredAt: TimestampSchema,
-    event: KernelToInteractionEventV1Schema,
+    event: KernelToInteractionEventSchema,
   },
   'kernel.control.InteractionInboxEvent.v1',
 );
-export type InteractionInboxEventV1 = Static<typeof InteractionInboxEventV1Schema>;
+export type InteractionInboxEvent = Static<typeof InteractionInboxEventSchema>;

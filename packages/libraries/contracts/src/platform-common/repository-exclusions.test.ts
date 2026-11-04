@@ -87,7 +87,6 @@ describe('repository exclusions', () => {
       repositoryPath: '/repo',
       exclusions: [...defaults],
       provider: 'deepseek',
-      expiresAt: '2026-10-14T00:00:00.000Z',
     };
     expect(validate(AuthorizationRequestSchema, question).ok).toBe(true);
     expect(validate(AuthorizationRequestSchema, { ...question, exclusions: ['!x'] }).ok).toBe(

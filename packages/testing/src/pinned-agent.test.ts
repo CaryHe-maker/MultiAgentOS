@@ -1,16 +1,16 @@
-import { createM1ProtocolRegistry, type BoundaryContextV1 } from '@multiagentos/contracts';
+import { createProtocolRegistry, type BoundaryContext } from '@multiagentos/contracts';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalogV1,
+  DefinitionCatalog,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import { describe, expect, it } from 'vitest';
 import { pinnedAgentOf } from '@multiagentos/kernel';
 
-const context: BoundaryContextV1 = { correlationId: 'cor_test0001', tenantId: 'l', projectId: 'l' };
+const context: BoundaryContext = { correlationId: 'cor_test0001', tenantId: 'l', projectId: 'l' };
 
 async function pinned(id: string) {
-  const catalog = await DefinitionCatalogV1.load(
+  const catalog = await DefinitionCatalog.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
   const set = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
@@ -21,7 +21,7 @@ async function pinned(id: string) {
 describe('pinnedAgentOf', () => {
   it('turns the registered effort into the provider request', async () => {
     const set = await pinned('main');
-    const registry = createM1ProtocolRegistry();
+    const registry = createProtocolRegistry();
     expect(pinnedAgentOf(set, 'high', registry)).toMatchObject({
       modelScope: { kind: 'MODEL', thinking: 'ENABLED', thinkingEffort: 'high' },
       maxToolUnits: 200,
@@ -32,13 +32,13 @@ describe('pinnedAgentOf', () => {
   });
 
   it('refuses an effort the Agent does not allow', async () => {
-    expect(pinnedAgentOf(await pinned('planner'), 'high', createM1ProtocolRegistry())).toBe(
+    expect(pinnedAgentOf(await pinned('planner'), 'high', createProtocolRegistry())).toBe(
       'FORBIDDEN',
     );
   });
 
   it('offers only the end tools allowed in a final call', async () => {
-    const agent = pinnedAgentOf(await pinned('planner'), 'none', createM1ProtocolRegistry());
+    const agent = pinnedAgentOf(await pinned('planner'), 'none', createProtocolRegistry());
     if (agent === 'FORBIDDEN') throw new Error('forbidden');
     expect(agent.toolSpecs(false).map((spec) => spec.name)).toEqual([
       'finish_analysis',

@@ -1,7 +1,7 @@
 import {
-  InteractionInboxEventV1Schema,
+  InteractionInboxEventSchema,
   InteractionSessionEventSchema,
-  WorkflowInboxEventV1Schema,
+  WorkflowInboxEventSchema,
   WorkflowSessionEventSchema,
   assertValid,
   newId,
@@ -32,7 +32,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
       toWorkflow: (event) => {
         toWorkflow.push(
           'workflowRunId' in event
-            ? assertValid(WorkflowInboxEventV1Schema, event)
+            ? assertValid(WorkflowInboxEventSchema, event)
             : assertValid(WorkflowSessionEventSchema, event),
         );
         return Promise.resolve();
@@ -40,7 +40,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
       toInteraction: (event) => {
         toInteraction.push(
           'workflowRunId' in event
-            ? assertValid(InteractionInboxEventV1Schema, event)
+            ? assertValid(InteractionInboxEventSchema, event)
             : assertValid(InteractionSessionEventSchema, event),
         );
         return Promise.resolve();

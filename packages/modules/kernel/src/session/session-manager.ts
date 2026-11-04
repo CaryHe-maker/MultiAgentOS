@@ -1,6 +1,6 @@
 import {
   newId,
-  type CoreRejectedCodeV1,
+  type CoreRejectedCode,
   type DeleteSessionRequest,
   type ListSessionsRequest,
   type OpenSessionRequest,
@@ -12,7 +12,7 @@ import {
   type StartRunRequest,
   type StartSessionRequest,
   type SyscallAck,
-  type SyscallRejectedV1,
+  type SyscallRejected,
 } from '@multiagentos/contracts';
 import type { SessionActor } from './session-actor.js';
 import type { KernelOutbox } from './session-outbox.js';
@@ -34,7 +34,7 @@ export interface SessionManagerDeps {
   readonly closeTimeoutMs: number;
 }
 
-type Refused = SyscallRejectedV1;
+type Refused = SyscallRejected;
 type Accepted = SessionAccepted | Refused;
 
 interface Open {
@@ -43,7 +43,7 @@ interface Open {
   readonly closed: Promise<void>;
 }
 
-const refused = (requestId: string, reasonCode: CoreRejectedCodeV1): Refused => ({
+const refused = (requestId: string, reasonCode: CoreRejectedCode): Refused => ({
   requestId,
   outcome: 'REJECTED',
   issuer: 'CORE',

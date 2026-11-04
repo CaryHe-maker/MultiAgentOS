@@ -3,6 +3,6 @@ import { OpaqueRefSchema } from '../platform-common/opaque-ref.js';
 
 export const RestoreOperationRefSchema = OpaqueRefSchema(
   'restore-operation',
-  'restore.RestoreOperationRef.v0',
+  'restore.RestoreOperationRef.v1',
 );
 export type RestoreOperationRef = Static<typeof RestoreOperationRefSchema>;

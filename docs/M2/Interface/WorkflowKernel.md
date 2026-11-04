@@ -414,7 +414,7 @@ type ContextHistoryEntry = EntryBase & (
 
 interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL' }
 
-interface ContextAssembleInputV1 {
+interface ContextAssembleInput {
   final: boolean;                                  // 必须等于 status.final
   orientPackRef?: ArtifactRef;
   history: ContextHistoryEntry[];

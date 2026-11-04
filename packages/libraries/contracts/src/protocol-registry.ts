@@ -3,7 +3,6 @@ import * as catalogSchemas from './catalog/catalog-schemas.js';
 import * as definitionSchemas from './catalog/definition-schemas.js';
 import type { ContractRef } from './catalog/definition-schemas.js';
 import * as checkpointRefs from './checkpoint/checkpoint-refs.js';
-import * as assemble from './context/assemble.js';
 import * as contextPack from './context/context-pack.js';
 import * as repository from './context/repository.js';
 import * as fileRead from './executor/file-read.js';
@@ -39,7 +38,7 @@ import * as sessionLog from './platform-persistence/session-log.js';
 import * as reply from './workflow/reply.js';
 import * as commonSchemas from './platform-common/common-schemas.js';
 import * as systemConfig from './platform-config/system-config.js';
-import { EnvelopeSchema, EnvelopeV1Schema } from './platform-common/common-schemas.js';
+import { EnvelopeSchema } from './platform-common/common-schemas.js';
 import * as executionKind from './platform-common/execution-kind.js';
 import * as opaqueRef from './platform-common/opaque-ref.js';
 import * as reasonCode from './platform-common/reason-code.js';
@@ -49,7 +48,6 @@ import * as restoreRefs from './restore/restore-refs.js';
 import * as reviewRefs from './review/review-refs.js';
 import * as handoff from './workflow/handoff.js';
 import * as report from './workflow/report.js';
-import * as stepRecord from './workflow/step-record.js';
 import { Type } from 'typebox';
 
 /** Protocol families, their owner and what M1 does with them (M1Interface 12). */
@@ -137,7 +135,7 @@ export class ProtocolRegistry {
     return entry;
   }
 
-  /** Looks up by Schema ID, e.g. `kernel.unit.SubmitUnitRequest.v0`. */
+  /** Looks up by Schema ID, e.g. `kernel.unit.SubmitUnitRequest.v1`. */
   get(schemaId: string): ProtocolRegistration {
     const { schemaName, major } = parseSchemaId(schemaId);
     return this.resolve(schemaName, major);
@@ -185,10 +183,8 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   modelCall,
   contextPack,
   repository,
-  stepRecord,
   handoff,
   report,
-  assemble,
   definitionSchemas,
   catalogSchemas,
   runOutcome,
@@ -232,10 +228,9 @@ const hasSchemaId = (value: unknown): value is TSchema =>
   typeof (value as { readonly $id?: unknown }).$id === 'string';
 
 /** Registers every top-level Schema exported by the contract files (SharedContracts 3). */
-export function createM1ProtocolRegistry(): ProtocolRegistry {
+export function createProtocolRegistry(): ProtocolRegistry {
   const registry = new ProtocolRegistry();
   registry.register(EnvelopeSchema(Type.Unknown()));
-  registry.register(EnvelopeV1Schema(Type.Unknown()));
   for (const module of MODULES)
     for (const value of Object.values(module)) if (hasSchemaId(value)) registry.register(value);
   return registry;

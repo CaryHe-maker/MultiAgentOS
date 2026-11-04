@@ -12,21 +12,21 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalogV1,
+  DefinitionCatalog,
   FileDefinitionSource,
   modelCallCost,
 } from '@multiagentos/agent-tool-pool';
 import { parseCli, runCommand, type Terminal } from '@multiagentos/cli';
 import {
   AnalysisReportSchema,
-  RunSummaryV1Schema,
+  RunSummarySchema,
   validate,
   type AnalysisReport,
-  type ExecutorOutcomeV1,
-  type ExecutorRegistryV1,
-  type RunSummaryV1,
+  type ExecutorOutcome,
+  type ExecutorRegistry,
+  type RunSummary,
 } from '@multiagentos/contracts';
-import { createExecutorRegistryV1 } from '@multiagentos/executor-set';
+import { createExecutorRegistry } from '@multiagentos/executor-set';
 import type { Console, ConsoleView } from '@multiagentos/user-interaction';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
@@ -51,7 +51,7 @@ export interface RunOptions {
 
 /** One Executor call the run made, as the harness observed it at the registry. */
 export interface ExecutorCall {
-  readonly kind: keyof ExecutorRegistryV1;
+  readonly kind: keyof ExecutorRegistry;
   readonly input: unknown;
   readonly outcome: string;
 }
@@ -69,7 +69,7 @@ export interface RunRecord {
   readonly model?: string;
   readonly definitions: readonly { id: string; version: string; digest: string }[];
   readonly config: { readonly portReturnTimeoutMs: number; readonly budget: unknown };
-  readonly tokens?: RunSummaryV1['tokens'];
+  readonly tokens?: RunSummary['tokens'];
   readonly modelRequests?: number;
   /** Upper bound: cache hits are not reported per run, so all input is priced as misses. */
   readonly costMicroUsd?: number;
@@ -80,7 +80,7 @@ export interface TaskResult {
   readonly failures: readonly string[];
   readonly record: RunRecord;
   readonly report?: AnalysisReport;
-  readonly summary?: RunSummaryV1;
+  readonly summary?: RunSummary;
   readonly calls: readonly ExecutorCall[];
   readonly output: string;
 }
@@ -171,17 +171,14 @@ async function headCommit(): Promise<string> {
 }
 
 /** The product registry, with every call recorded on its way through. */
-function observedRegistry(
-  calls: ExecutorCall[],
-  trace?: (line: string) => void,
-): ExecutorRegistryV1 {
+function observedRegistry(calls: ExecutorCall[], trace?: (line: string) => void): ExecutorRegistry {
   type Untyped = {
     readonly executionKind: string;
-    execute(input: unknown, environment: unknown): Promise<ExecutorOutcomeV1>;
+    execute(input: unknown, environment: unknown): Promise<ExecutorOutcome>;
   };
-  const registry = createExecutorRegistryV1();
+  const registry = createExecutorRegistry();
   const observed = Object.fromEntries(
-    (Object.keys(registry) as (keyof ExecutorRegistryV1)[]).map((kind) => {
+    (Object.keys(registry) as (keyof ExecutorRegistry)[]).map((kind) => {
       const executor = registry[kind] as unknown as Untyped;
       const wrapped: Untyped = {
         executionKind: executor.executionKind,
@@ -196,7 +193,7 @@ function observedRegistry(
       return [kind, wrapped];
     }),
   );
-  return observed as unknown as ExecutorRegistryV1;
+  return observed as unknown as ExecutorRegistry;
 }
 
 /**
@@ -263,8 +260,8 @@ export function uncitedSources(
 /** Every artifact of the run that is a valid report or run summary. */
 async function runArtifacts(
   dataDir: string,
-): Promise<{ report?: AnalysisReport; summary?: RunSummaryV1 }> {
-  const found: { report?: AnalysisReport; summary?: RunSummaryV1 } = {};
+): Promise<{ report?: AnalysisReport; summary?: RunSummary }> {
+  const found: { report?: AnalysisReport; summary?: RunSummary } = {};
   const directory = join(dataDir, 'artifacts');
   for (const name of await readdir(directory).catch(() => [] as string[])) {
     let value: unknown;
@@ -275,7 +272,7 @@ async function runArtifacts(
     }
     const report = validate<AnalysisReport>(AnalysisReportSchema, value);
     if (report.ok) found.report = report.value;
-    const summary = validate<RunSummaryV1>(RunSummaryV1Schema, value);
+    const summary = validate<RunSummary>(RunSummarySchema, value);
     if (summary.ok) found.summary = summary.value;
   }
   return found;
@@ -435,9 +432,9 @@ async function recordOf(
   durationMs: number,
   exitCode: number,
   config: ReturnType<typeof defaultSystemConfig>,
-  summary: RunSummaryV1 | undefined,
+  summary: RunSummary | undefined,
 ): Promise<RunRecord> {
-  const catalog = await DefinitionCatalogV1.load(
+  const catalog = await DefinitionCatalog.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
   const definitions = (summary?.agentRuns ?? []).map((run) => ({

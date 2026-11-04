@@ -9,7 +9,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DefinitionCatalogV1,
+  DefinitionCatalog,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import dotenv from 'dotenv';
@@ -46,7 +46,7 @@ function parse(argv: readonly string[]): Options {
  * dearer rate, at peak time.
  */
 async function upperBoundUsdPerRun(): Promise<number> {
-  const catalog = await DefinitionCatalogV1.load(
+  const catalog = await DefinitionCatalog.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
   const model = catalog.latest('MODEL', 'deepseek-flash');

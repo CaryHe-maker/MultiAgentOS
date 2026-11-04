@@ -9,11 +9,11 @@ protectedCapabilities:
 inputContract:
   kind: contract
   id: context.RepositorySearchInput
-  version: v0
+  version: v1
 outputContract:
   kind: contract
   id: context.RepositorySearchOutput
-  version: v0
+  version: v1
 toolRefs:
   - id: search-repository
     version: v0.1.0

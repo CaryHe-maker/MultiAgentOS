@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import { describe, expect, it } from 'vitest';
 import { closed, count, text } from '../platform-common/schema-helpers.js';
-import { createM1ProtocolRegistry, ProtocolRegistry } from '../protocol-registry.js';
+import { createProtocolRegistry, ProtocolRegistry } from '../protocol-registry.js';
 import {
   compatibilityIssues,
   currentSchemas,
@@ -25,7 +25,7 @@ const frozen = frozenFrom(registryWith(closed(base, ID)));
 
 describe('protocol freeze guard (M1TechStack 11)', () => {
   it('keeps the registered Schemas equal to the snapshot', async () => {
-    expect(snapshotIssues(await readSchemaSnapshot(), createM1ProtocolRegistry())).toEqual([]);
+    expect(snapshotIssues(await readSchemaSnapshot(), createProtocolRegistry())).toEqual([]);
   });
 
   it('accepts an added optional property after the freeze', () => {
