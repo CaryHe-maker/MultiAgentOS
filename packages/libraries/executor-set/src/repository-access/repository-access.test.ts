@@ -1,12 +1,12 @@
 import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { normalizeRequestPath } from '@multiagentos/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { emptyDirectory, repositoryScope } from '../test-support/environments.js';
 import { FileDigestCache, buildFileSet } from './file-set.js';
 import { readGuardedFile } from './guarded-file.js';
 import { resolveRepositoryScope, type RepositoryScope } from './repository-scope.js';
-import { normalizeRequestPath } from './request-path.js';
 
 /** “中文说明” in GBK: not valid UTF-8. */
 const GBK_TEXT = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xcb, 0xb5, 0xc3, 0xf7, 0x0a]);

@@ -6,6 +6,7 @@ export * from './platform-common/validation.js';
 export * from './platform-common/canonical-json.js';
 export * from './platform-common/reason-code.js';
 export * from './platform-common/repository-exclusions.js';
+export * from './platform-common/write-access.js';
 export * from './platform-common/execution-kind.js';
 export * from './platform-common/media-types.js';
 export * from './kernel-unit/budget-state.js';
