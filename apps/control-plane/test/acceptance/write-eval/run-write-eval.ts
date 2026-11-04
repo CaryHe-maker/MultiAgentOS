@@ -382,7 +382,17 @@ if ((process.env['DEEPSEEK_API_KEY'] ?? '').trim() === '') {
 }
 await mkdir(options.out, { recursive: true });
 let spent = 0;
+// A run that stopped half way is taken up again: what is on record is not repeated.
+const done = new Set<string>();
+for (const file of await readdir(options.out))
+  if (file.startsWith('records.'))
+    for (const line of (await readFile(join(options.out, file), 'utf8')).split('\n'))
+      if (line !== '') {
+        const row = JSON.parse(line) as { id: string; run: number };
+        done.add(`${row.id}#${String(row.run)}`);
+      }
 for (const { task, run } of mine) {
+  if (done.has(`${task.id}#${String(run)}`)) continue;
   if (spent > options.budgetUsd) {
     process.stdout.write(`budget reached at ${spent.toFixed(3)} USD; stopping\n`);
     break;
