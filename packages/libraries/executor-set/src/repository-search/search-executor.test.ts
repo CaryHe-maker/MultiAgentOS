@@ -157,7 +157,7 @@ describe('REPOSITORY_SEARCH', () => {
   });
 
   it('keeps the hits within the token budget', async () => {
-    const { outcome, preview } = await search({ query: 'e', mode: 'TEXT', tokenBudget: 300 });
+    const { outcome, preview } = await search({ query: 'e', mode: 'TEXT', tokenBudget: 60 });
     expect(Buffer.byteLength(preview ?? '')).toBeLessThanOrEqual(500);
     expect(outcome).toMatchObject({ result: { output: { truncated: true } } });
   });

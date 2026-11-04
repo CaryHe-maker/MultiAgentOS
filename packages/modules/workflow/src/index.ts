@@ -39,6 +39,7 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   noProgressRounds: 2,
   repeatedIntent: Object.freeze({ window: 20, warnAt: 3, stopAt: 5 }),
   consecutiveErrorLimit: 5,
+  maxNestedInstructions: 8,
 });
 
 export interface WorkflowDeps {

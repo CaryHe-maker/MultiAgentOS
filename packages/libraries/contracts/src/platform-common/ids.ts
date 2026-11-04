@@ -16,6 +16,7 @@ export const IdSchemas = {
   messageId: Id('msg'),
   correlationId: Id('cor'),
   questionId: Id('qst'),
+  undoId: Id('und'),
   /** `art_` followed by the SHA-256 of the content. */
   artifactId: DigestId('art'),
   contextPackId: Id('ctx'),

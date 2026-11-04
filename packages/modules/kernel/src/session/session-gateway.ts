@@ -2,7 +2,9 @@ import {
   AnswerAuthorizationRequestSchema,
   AnswerHumanRequestSchema,
   CloseRunRequestSchema,
+  ConfirmUndoRequestSchema,
   DeleteSessionRequestSchema,
+  DiffTurnsRequestSchema,
   EndAgentRunRequestSchema,
   ListSessionsRequestSchema,
   OpenSessionRequestSchema,
@@ -16,6 +18,8 @@ import {
   StartRunRequestSchema,
   StartSessionRequestSchema,
   SubmitUnitRequestSchema,
+  UndoTurnsRequestSchema,
+  UpdateActivityRequestSchema,
   newId,
   validate,
   type CloseReason,
@@ -71,6 +75,15 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
     needs: 'RUN',
     blocked: true,
   },
+  updateActivity: {
+    caller: 'workflow',
+    schema: UpdateActivityRequestSchema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  undoTurns: { caller: 'user-interaction', schema: UndoTurnsRequestSchema, needs: 'RUN' },
+  confirmUndo: { caller: 'user-interaction', schema: ConfirmUndoRequestSchema, needs: 'RUN' },
+  diffTurns: { caller: 'user-interaction', schema: DiffTurnsRequestSchema, needs: 'SESSION' },
   endAgentRun: { caller: 'workflow', schema: EndAgentRunRequestSchema, needs: 'RUN' },
   closeRun: { caller: 'workflow', schema: CloseRunRequestSchema, needs: 'RUN' },
   reportSessionCommand: {
@@ -216,6 +229,7 @@ export class SessionGateway {
     closeRun: this.#port('workflow', 'closeRun'),
     requestHuman: this.#port('workflow', 'requestHuman'),
     readProjectFile: this.#port('workflow', 'readProjectFile'),
+    updateActivity: this.#port('workflow', 'updateActivity'),
     reportSessionCommand: this.#port('workflow', 'reportSessionCommand'),
     reportSessionList: this.#port('workflow', 'reportSessionList'),
   };
@@ -230,6 +244,9 @@ export class SessionGateway {
     answerAuthorization: this.#port('user-interaction', 'answerAuthorization'),
     answerHuman: this.#port('user-interaction', 'answerHuman'),
     readArtifact: this.#port('user-interaction', 'readArtifact'),
+    undoTurns: this.#port('user-interaction', 'undoTurns'),
+    confirmUndo: this.#port('user-interaction', 'confirmUndo'),
+    diffTurns: this.#port('user-interaction', 'diffTurns'),
     shutdown: this.#port('user-interaction', 'shutdown'),
   };
 }

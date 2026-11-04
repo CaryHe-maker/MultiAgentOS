@@ -1,10 +1,19 @@
 import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
+  REPOSITORY_ROOT_PATH,
   newId,
   type ArtifactRef,
   type AuthorizationRequest,
   type AuthorizationResolved,
 } from '@multiagentos/contracts';
+import {
+  decideUnit,
+  type AuthorizationEntry,
+  type Capability,
+  type CapabilityCeiling,
+  type UnitDecision,
+  type UnitDemand,
+} from './unit-decision.js';
 
 /** Lives in this run's memory only, and ends with the run (Kernel/Core 5, invariant 2). */
 export interface Lease {
@@ -29,10 +38,11 @@ export interface AccessCheck {
 }
 
 /** What an answered question hands back: everyone who waited on it, in arrival order. */
-export interface QuestionResolved<W> {
+export interface QuestionResolved {
   readonly resolution: Resolution;
   readonly capability: AuthorizationRequest['capability'];
-  readonly waiters: readonly W[];
+  /** The requests waiting on it. */
+  readonly waiters: readonly string[];
   readonly resolved: AuthorizationResolved;
 }
 
@@ -43,31 +53,43 @@ export interface RunAuthorizationDeps {
   readonly now: () => Date;
 }
 
-interface Question<W> {
+/** One question to ask: a write names its root, or for a critical one the exact content. */
+export type WriteQuestion =
+  | { readonly critical: false; readonly writeRoot: string }
+  | {
+      readonly critical: true;
+      readonly path: string;
+      readonly contentRef: ArtifactRef;
+    };
+
+interface Question {
   readonly questionId: string;
   readonly capability: AuthorizationRequest['capability'];
-  readonly instruction?: string;
-  readonly waiters: W[];
+  /** Asked again by this key is the same question; a critical one has none (Kernel/Core 5a.2). */
+  readonly key?: string;
+  readonly critical: boolean;
+  readonly waiters: string[];
   /** The AgentRuns a refusal binds. */
   readonly agentRuns: Set<string>;
 }
 
-const instructionKey = (path: string, sha256: string): string => `${path}\u0000${sha256}`;
+const instructionKey = (path: string, sha256: string): string =>
+  `project.instructions\u0000${path}\u0000${sha256}`;
+const resourceKey = (capability: Capability, key: string): string => `${capability}\u0000${key}`;
 
 /**
- * Authorization of one run. A question waits until the user answers; it has no timeout, and only
- * the run's convergence cancels it (M2Design 5.3). A `repo.read` grant lasts for the run; a refusal
- * binds the AgentRuns that asked, which never ask again, and the next one may. `project.instructions` is asked per exact content; a refusal is
- * remembered here and trust itself belongs to Session management, because it outlives the run
- * and grants nothing (Kernel/Core 5).
+ * Authorization of one run. Decisions come from `decideUnit` over the entries kept here, and
+ * answers only ever add entries. A question waits until the user answers; it has no timeout, and
+ * only the run's convergence cancels it (M2Design 5.3). `project.instructions` is asked per exact
+ * content; a refusal is remembered here and trust itself belongs to Session management, because
+ * it outlives the run and grants nothing (Kernel/Core 5).
  */
-export class RunAuthorization<W> {
+export class RunAuthorization {
   readonly #deps: RunAuthorizationDeps;
   readonly #exclusions: readonly string[];
-  readonly #questions = new Map<string, Question<W>>();
+  readonly #questions = new Map<string, Question>();
   readonly #distrusted = new Set<string>();
-  readonly #repoReadDenied = new Set<string>();
-  #repoReadQuestion: string | undefined;
+  #entries: readonly AuthorizationEntry[] = [];
   #lease: Readonly<Lease> | undefined;
 
   public constructor(deps: RunAuthorizationDeps) {
@@ -82,27 +104,61 @@ export class RunAuthorization<W> {
     return this.#lease;
   }
 
-  requireRepoRead(waiter: W, agentRunId?: string): AccessCheck {
-    if (this.#lease !== undefined) return { decision: { kind: 'ALLOWED' } };
-    if (agentRunId !== undefined && this.#repoReadDenied.has(agentRunId))
-      return { decision: { kind: 'DECLINED' } };
-    const pending =
-      this.#repoReadQuestion === undefined
-        ? undefined
-        : this.#questions.get(this.#repoReadQuestion);
-    if (pending !== undefined) {
-      pending.waiters.push(waiter);
-      if (agentRunId !== undefined) pending.agentRuns.add(agentRunId);
-      return { decision: { kind: 'PENDING', questionId: pending.questionId } };
-    }
+  /** The defaults and the Session's own rules: what every scope and ceiling carries. */
+  public get exclusions(): readonly string[] {
+    return this.#exclusions;
+  }
+
+  decide(demand: UnitDemand, ceiling: CapabilityCeiling): UnitDecision {
+    return decideUnit(demand, ceiling, this.#entries);
+  }
+
+  #join(key: string, waiter: string, agentRunId: string | undefined): AccessCheck | undefined {
+    for (const question of this.#questions.values())
+      if (question.key === key) {
+        question.waiters.push(waiter);
+        if (agentRunId !== undefined) question.agentRuns.add(agentRunId);
+        return { decision: { kind: 'PENDING', questionId: question.questionId } };
+      }
+    return undefined;
+  }
+
+  #open(
+    fields: Pick<Question, 'capability' | 'critical'> & { readonly key?: string },
+    waiter: string,
+    agentRunId: string | undefined,
+  ): string {
     const questionId = newId('qst');
     this.#questions.set(questionId, {
+      ...fields,
       questionId,
-      capability: 'repo.read',
       waiters: [waiter],
       agentRuns: new Set(agentRunId === undefined ? [] : [agentRunId]),
     });
-    this.#repoReadQuestion = questionId;
+    return questionId;
+  }
+
+  /** Reading a project file needs the repository too, with no AgentRun to bind a refusal to. */
+  requireRepoRead(waiter: string, agentRunId?: string): AccessCheck {
+    if (this.#lease !== undefined) return { decision: { kind: 'ALLOWED' } };
+    if (
+      this.#entries.some(
+        (entry) =>
+          entry.capability === 'repo.read' &&
+          entry.scope === 'RUN' &&
+          entry.effect === 'DENY' &&
+          entry.agentRunId === agentRunId,
+      )
+    )
+      return { decision: { kind: 'DECLINED' } };
+    const key = resourceKey('repo.read', REPOSITORY_ROOT_PATH);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'repo.read', critical: false, key },
+      waiter,
+      agentRunId,
+    );
     return {
       decision: { kind: 'PENDING', questionId },
       requested: {
@@ -116,6 +172,45 @@ export class RunAuthorization<W> {
     };
   }
 
+  askWrite(question: WriteQuestion, waiter: string, agentRunId: string): AccessCheck {
+    if (question.critical) {
+      const questionId = this.#open(
+        { capability: 'workspace.write', critical: true },
+        waiter,
+        agentRunId,
+      );
+      return {
+        decision: { kind: 'PENDING', questionId },
+        requested: {
+          type: 'AuthorizationRequest',
+          questionId,
+          capability: 'workspace.write',
+          path: question.path,
+          contentRef: question.contentRef,
+          critical: true,
+        },
+      };
+    }
+    const key = resourceKey('workspace.write', question.writeRoot);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'workspace.write', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'workspace.write',
+        writeRoot: question.writeRoot,
+        critical: false,
+      },
+    };
+  }
+
   /** The caller has already looked in the trust records; this decides what remains. */
   askInstructions(
     file: {
@@ -124,23 +219,17 @@ export class RunAuthorization<W> {
       readonly contentRef: ArtifactRef;
       readonly truncated: boolean;
     },
-    waiter: W,
+    waiter: string,
   ): AccessCheck {
     const key = instructionKey(file.path, file.sha256);
     if (this.#distrusted.has(key)) return { decision: { kind: 'DECLINED' } };
-    for (const question of this.#questions.values())
-      if (question.instruction === key) {
-        question.waiters.push(waiter);
-        return { decision: { kind: 'PENDING', questionId: question.questionId } };
-      }
-    const questionId = newId('qst');
-    this.#questions.set(questionId, {
-      questionId,
-      capability: 'project.instructions',
-      instruction: key,
-      waiters: [waiter],
-      agentRuns: new Set(),
-    });
+    const joined = this.#join(key, waiter, undefined);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'project.instructions', critical: false, key },
+      waiter,
+      undefined,
+    );
     return {
       decision: { kind: 'PENDING', questionId },
       requested: {
@@ -154,11 +243,10 @@ export class RunAuthorization<W> {
     };
   }
 
-  #settle(questionId: string, resolution: Resolution): QuestionResolved<W> | undefined {
+  #settle(questionId: string, resolution: Resolution): QuestionResolved | undefined {
     const question = this.#questions.get(questionId);
     if (question === undefined) return undefined;
     this.#questions.delete(questionId);
-    if (this.#repoReadQuestion === questionId) this.#repoReadQuestion = undefined;
     return {
       resolution,
       capability: question.capability,
@@ -167,18 +255,54 @@ export class RunAuthorization<W> {
     };
   }
 
-  answer(questionId: string, scope: 'ALLOW' | 'DENY'): QuestionResolved<W> | undefined {
+  /** True when the question offers this answer: only a critical one takes ONCE, and only it. */
+  offers(questionId: string, scope: 'ALLOW' | 'ONCE' | 'DENY'): boolean {
     const question = this.#questions.get(questionId);
-    const settled = this.#settle(questionId, scope === 'ALLOW' ? 'GRANTED' : 'DECLINED');
+    if (question === undefined || scope === 'DENY') return true;
+    return question.critical === (scope === 'ONCE');
+  }
+
+  answer(questionId: string, scope: 'ALLOW' | 'ONCE' | 'DENY'): QuestionResolved | undefined {
+    const question = this.#questions.get(questionId);
+    const settled = this.#settle(questionId, scope === 'DENY' ? 'DECLINED' : 'GRANTED');
     if (question === undefined || settled === undefined) return undefined;
     if (question.capability === 'project.instructions') {
-      if (scope === 'DENY' && question.instruction !== undefined)
-        this.#distrusted.add(question.instruction);
+      if (scope === 'DENY' && question.key !== undefined) this.#distrusted.add(question.key);
       return settled;
     }
-    if (scope === 'DENY')
-      for (const agentRunId of question.agentRuns) this.#repoReadDenied.add(agentRunId);
-    else
+    this.#remember(question, question.capability, scope);
+    return settled;
+  }
+
+  #remember(question: Question, capability: Capability, scope: 'ALLOW' | 'ONCE' | 'DENY'): void {
+    if (question.critical) {
+      const [requestId] = question.waiters;
+      if (requestId === undefined) throw new Error('A question has no one waiting on it');
+      this.#entries = [
+        ...this.#entries,
+        { scope: 'ONCE', effect: scope === 'DENY' ? 'DENY' : 'ALLOW', capability, requestId },
+      ];
+      return;
+    }
+    if (scope === 'DENY') {
+      this.#entries = [
+        ...this.#entries,
+        ...[...question.agentRuns].map((agentRunId): AuthorizationEntry => ({
+          scope: 'RUN',
+          effect: 'DENY',
+          capability,
+          agentRunId,
+        })),
+      ];
+      return;
+    }
+    const key = question.key?.split('\u0000')[1];
+    if (key === undefined) throw new Error('A question without a key cannot grant a resource');
+    this.#entries = [
+      ...this.#entries,
+      { scope: 'RUN', effect: 'ALLOW', capability, resourceKey: key },
+    ];
+    if (capability === 'repo.read')
       this.#lease = Object.freeze({
         capability: 'repo.read',
         repositoryRoot: this.#deps.repositoryRoot,
@@ -186,11 +310,17 @@ export class RunAuthorization<W> {
         provider: this.#deps.provider,
         issuedAt: this.#deps.now().toISOString(),
       });
-    return settled;
+  }
+
+  /** The attempt of this request ended: its single answer is spent (Kernel/Core 5a.4). */
+  attemptEnded(requestId: string): void {
+    this.#entries = this.#entries.filter(
+      (entry) => entry.scope !== 'ONCE' || entry.requestId !== requestId,
+    );
   }
 
   /** The run started converging: nothing stays pending, and results in flight still settle. */
-  cancelQuestions(): readonly QuestionResolved<W>[] {
+  cancelQuestions(): readonly QuestionResolved[] {
     return [...this.#questions.keys()].flatMap(
       (questionId) => this.#settle(questionId, 'CANCELLED') ?? [],
     );
@@ -199,5 +329,6 @@ export class RunAuthorization<W> {
   /** The run has drained: the Lease ends with it (Kernel/Interaction 6.3). */
   endLease(): void {
     this.#lease = undefined;
+    this.#entries = [];
   }
 }

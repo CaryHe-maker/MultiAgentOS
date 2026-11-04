@@ -2,13 +2,17 @@ import {
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
   ExecutionRequestSchema,
+  FileEditInputSchema,
   FileReadInputSchema,
+  FileWriteInputSchema,
+  OutputReadInputSchema,
   ModelCallInputSchema,
   ModelRawOutputSchema,
   OrientContextPackSchema,
   RepositoryListInputSchema,
   RepositoryOrientInputSchema,
   RepositorySearchInputSchema,
+  calibratedTokens,
   estimatePackTokens,
   validate,
   type ArtifactRef,
@@ -20,7 +24,10 @@ import {
   type ExecutionLimits,
   type ExecutionRequest,
   type ExecutorKind,
+  type FileEditInput,
   type FileReadInput,
+  type FileWriteInput,
+  type OutputReadInput,
   type ModelCallInput,
   type ModelRawOutput,
   type ModelToolCall,
@@ -29,6 +36,7 @@ import {
   type RepositoryOrientInput,
   type RepositorySearchInput,
   type ResolvedHistoryEntry,
+  type TokenCalibration,
 } from '@multiagentos/contracts';
 import type { AttemptSpec } from './run-attempts.js';
 import type { ArtifactRefusal, SessionArtifacts } from './session-artifacts.js';
@@ -51,6 +59,9 @@ export interface ExecutionConfig {
     readonly REPOSITORY_SEARCH: ToolExecutionLimit;
     readonly REPOSITORY_LIST: ToolExecutionLimit;
     readonly FILE_READ: ToolExecutionLimit;
+    readonly FILE_WRITE: ToolExecutionLimit;
+    readonly FILE_EDIT: ToolExecutionLimit;
+    readonly OUTPUT_READ: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
@@ -80,10 +91,17 @@ export class RequestBuildError extends Error {
 export interface BuiltRequest {
   readonly request: ExecutionRequest;
   /** Present for MODEL: what must be reserved before dispatch. */
-  readonly reservation?: { readonly estimatedTokens: number; readonly final: boolean };
+  readonly reservation?: {
+    readonly estimatedTokens: number;
+    readonly final: boolean;
+    readonly cacheHitWeight: number;
+    readonly inputEstimate: number;
+  };
 }
 
 export interface RequestIdentity {
+  /** The AgentRun's last measured request, for figures that decide a limit. */
+  readonly calibration?: TokenCalibration;
   readonly sessionId: string;
   readonly workflowRunId: string;
   readonly unitAttemptId: string;
@@ -102,6 +120,18 @@ export interface RequestBuilderDeps {
 type Schema = Parameters<typeof validate>[0];
 
 const OBJECTIVE_MAX = 4000;
+/** The estimate may be low by this much; a reservation must still hold (Kernel/Monitor 3.2). */
+const RESERVED_INPUT_SHARE = 1.05;
+
+/**
+ * Room for the estimate to be low, up to the input limit: the ledger keeps exactly a limit's worth
+ * for the next call and the final one, and those reservations must always succeed.
+ */
+export const reservedTokens = (
+  inputTokens: number,
+  inputLimit: number,
+  maxOutputTokens: number,
+): number => Math.min(Math.ceil(inputTokens * RESERVED_INPUT_SHARE), inputLimit) + maxOutputTokens;
 
 function inputOf<T>(schema: Schema, value: unknown): T {
   const input = validate<T>(schema, value);
@@ -180,9 +210,37 @@ export class AttemptRequestBuilder {
             this.#toolLimits('FILE_READ', identity),
           ),
         };
+      case 'FILE_WRITE':
+        return {
+          request: made(
+            inputOf<FileWriteInput>(FileWriteInputSchema, input),
+            this.#toolLimits('FILE_WRITE', identity),
+          ),
+        };
+      case 'FILE_EDIT':
+        return {
+          request: made(
+            inputOf<FileEditInput>(FileEditInputSchema, input),
+            this.#toolLimits('FILE_EDIT', identity),
+          ),
+        };
+      case 'OUTPUT_READ': {
+        const { fullRef, ...window } = inputOf<OutputReadInput>(OutputReadInputSchema, input);
+        if (!this.#deps.artifacts.isFullOutput(fullRef))
+          throw new RequestBuildError('INVALID_ARTIFACT_REF');
+        return {
+          request: made(
+            { ...window, content: await this.#text(fullRef) },
+            this.#toolLimits('OUTPUT_READ', identity),
+          ),
+        };
+      }
       case 'CONTEXT_ASSEMBLE':
         return {
-          request: made(await this.#assemble(spec), this.#baseLimits('CONTEXT_ASSEMBLE', identity)),
+          request: made(
+            await this.#assemble(spec, identity),
+            this.#baseLimits('CONTEXT_ASSEMBLE', identity),
+          ),
         };
       case 'MODEL':
         return this.#model(spec, identity);
@@ -205,7 +263,14 @@ export class AttemptRequestBuilder {
   }
 
   #toolLimits(
-    kind: 'REPOSITORY_ORIENT' | 'REPOSITORY_SEARCH' | 'REPOSITORY_LIST' | 'FILE_READ',
+    kind:
+      | 'REPOSITORY_ORIENT'
+      | 'REPOSITORY_SEARCH'
+      | 'REPOSITORY_LIST'
+      | 'FILE_READ'
+      | 'FILE_WRITE'
+      | 'FILE_EDIT'
+      | 'OUTPUT_READ',
     identity: RequestIdentity,
   ) {
     const limit = this.#deps.config.executionLimits[kind];
@@ -259,7 +324,7 @@ export class AttemptRequestBuilder {
     }
   }
 
-  async #assemble(spec: AttemptSpec): Promise<AssembleExecutorInput> {
+  async #assemble(spec: AttemptSpec, identity: RequestIdentity): Promise<AssembleExecutorInput> {
     const input = inputOf<ContextAssembleInput>(ContextAssembleInputSchema, spec.input);
     const { agent } = spec;
     const orientPack =
@@ -276,6 +341,7 @@ export class AttemptRequestBuilder {
       ...(orientPack === undefined ? {} : { orientPack }),
       history,
       status: input.status,
+      ...(identity.calibration === undefined ? {} : { tokenCalibration: identity.calibration }),
     };
   }
 
@@ -347,7 +413,7 @@ export class AttemptRequestBuilder {
 
   async #model(spec: AttemptSpec, identity: RequestIdentity): Promise<BuiltRequest> {
     const input = inputOf<ModelCallInput>(ModelCallInputSchema, spec.input);
-    const { budget, contextWindowTokens } = spec.agent;
+    const { budget, contextWindowTokens, cacheHitWeight } = spec.agent;
     const contextPack = await this.#json<AssembleContextPack>(
       input.contextPackRef,
       AssembleContextPackSchema,
@@ -355,8 +421,11 @@ export class AttemptRequestBuilder {
     const expected = input.final ? budget.finalInputBudget : budget.perCallInputLimit;
     if (contextPack.tokenBudget !== expected) throw new RequestBuildError('INVALID_INPUT');
     const maxOutputTokens = input.final ? budget.finalMaxOutputTokens : budget.maxOutputTokens;
-    const estimatedTokens = estimatePackTokens(contextPack) + maxOutputTokens;
-    if (estimatedTokens > contextWindowTokens) throw new RequestBuildError('LIMIT_EXCEEDED');
+    const inputEstimate = estimatePackTokens(contextPack);
+    const inputTokens = calibratedTokens(inputEstimate, identity.calibration);
+    if (inputTokens + maxOutputTokens > contextWindowTokens)
+      throw new RequestBuildError('LIMIT_EXCEEDED');
+    const estimatedTokens = reservedTokens(inputTokens, contextPack.tokenBudget, maxOutputTokens);
     const { final } = input;
     const finalMode = identity.retry === true && final ? 'FORCED' : input.finalMode;
     return {
@@ -367,7 +436,7 @@ export class AttemptRequestBuilder {
         { contextPack, final, ...(finalMode === undefined ? {} : { finalMode }) },
         { ...this.#baseLimits('MODEL', identity), maxOutputTokens },
       ),
-      reservation: { estimatedTokens, final },
+      reservation: { estimatedTokens, final, cacheHitWeight, inputEstimate },
     };
   }
 }

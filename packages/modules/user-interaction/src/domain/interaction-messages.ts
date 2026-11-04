@@ -113,6 +113,17 @@ export const InteractionMessages = Object.freeze({
     HUMAN_REQUEST_NOT_PENDING: '该询问已失效。',
     CONTEXT_OVERFLOW: '上下文超出了模型窗口。',
     QUOTA_EXHAUSTED: '已用完工具调用次数或时间额度。',
+    CAPABILITY_NOT_SUBSET: '请求的能力超出了该 Agent 的上限。',
+    CAPABILITY_NOT_GRANTED: '该 Agent 没有这项能力。',
+    WRITE_OUT_OF_SCOPE: '写入路径不在可写范围内。',
+    PROTECTED_PATH: '该路径受保护，不能写入。',
+    ADMISSION_CHECK_FAILED: '权限检查失败，操作未执行。',
+    FILE_CHANGED: '文件在读取之后被改动过。',
+    EDIT_NO_MATCH: '文件中没有要替换的内容。',
+    EDIT_NOT_UNIQUE: '要替换的内容在文件中不唯一。',
+    UNDO_NOT_AVAILABLE: '现在不能回退：只有等待输入时才可以。',
+    NOTHING_TO_UNDO: '没有可以回退的改动。',
+    UNDO_UNKNOWN: '该回退确认已失效。',
   } satisfies Record<ReasonCode, string>,
 });
 

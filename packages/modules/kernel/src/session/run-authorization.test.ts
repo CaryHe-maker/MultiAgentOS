@@ -12,14 +12,14 @@ const contentRef: ArtifactRef = {
 const file = { path: 'AGENTS.md', sha256, contentRef, truncated: false };
 
 const authorization = () =>
-  new RunAuthorization<string>({
+  new RunAuthorization({
     repositoryRoot: '/repository',
     provider: 'deepseek',
     repositoryExclusions: [],
     now: () => new Date('2026-10-31T00:00:00.000Z'),
   });
 
-function ask(auth: RunAuthorization<string>, waiter: string): string {
+function ask(auth: RunAuthorization, waiter: string): string {
   const { decision } = auth.requireRepoRead(waiter);
   if (decision.kind !== 'PENDING') throw new Error(decision.kind);
   return decision.questionId;

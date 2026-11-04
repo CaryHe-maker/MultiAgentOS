@@ -1,4 +1,5 @@
 import { Type, type Static, type TProperties } from 'typebox';
+import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
@@ -191,6 +192,36 @@ export const SessionLogRecordSchema = Type.Union(
       ref: ArtifactRefSchema,
       sha256: Sha256Schema,
       trusted: Type.Optional(Type.Boolean()),
+      /** Of a nested `AGENTS.md`: the projection that loaded it. */
+      agentRunId: Type.Optional(IdSchemas.agentRunId),
+    }),
+    /** A nested `AGENTS.md` beyond the limit is noted, not read. */
+    record('PROJECT_FILE_LOADED', inRun, {
+      path: text(512),
+      agentRunId: IdSchemas.agentRunId,
+      skipped: Type.Literal('LIMIT'),
+    }),
+    record('TODOS_UPDATED', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      source: closed({ modelTurnRequestId: IdSchemas.requestId, toolCallId: ToolCallIdSchema }),
+      counts: closed({
+        total: count(),
+        pending: count(),
+        inProgress: count(),
+        done: count(),
+        cancelled: count(),
+      }),
+    }),
+    record('WORKSPACE_REVERTED', inRun, {
+      revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
+      forced: Type.Boolean(),
+      externalFiles: Type.Array(text(4096)),
+      backupSnapshot: Type.Optional(text(64)),
+    }),
+    record('WORKSPACE_DIVERGED', inRun, { files: Type.Array(text(4096), { minItems: 1 }) }),
+    record('SESSION_FORKED', base, {
+      fromSessionId: IdSchemas.sessionId,
+      fromSeq: count(),
     }),
     record('REQUEST_CONTEXT', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -208,6 +239,14 @@ export const SessionLogRecordSchema = Type.Union(
       projectionDigest: Sha256Schema,
       headDigest: Sha256Schema,
       elidedEntries: Type.Optional(Type.Array(count(1))),
+      tokenCount: count(),
+      tokenBudget: count(1),
+    }),
+    /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
+    record('AGENT_WRAP_UP', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      reason: WrapUpReasonSchema,
+      round: count(1),
     }),
     record('AUTHORIZATION_REQUESTED', inRun, {
       questionId: IdSchemas.questionId,

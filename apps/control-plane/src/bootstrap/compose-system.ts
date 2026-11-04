@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
   DefinitionCatalog,
@@ -24,7 +25,12 @@ import {
   type SystemFaultReporter,
   type TemplateDefinition,
 } from '@multiagentos/contracts';
-import { createExecutorRegistry, readRepositoryText } from '@multiagentos/executor-set';
+import {
+  createExecutorRegistry,
+  createShadowFiles,
+  createWorkspaceFiles,
+  readRepositoryText,
+} from '@multiagentos/executor-set';
 import {
   InProcessFabric,
   createInteractionGatewayPort,
@@ -176,6 +182,20 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
 
   const subprocess = options.subprocess ?? createSubprocessRunner();
+  // Writes rest on snapshots, and snapshots on git: without it the system only reads (M2Design 4.6).
+  const log = options.log ?? ((line: string) => void process.stderr.write(line));
+  const probe = await subprocess.run('git', ['--version'], {
+    cwd: options.repositoryRoot,
+    signal: new AbortController().signal,
+    maxOutputBytes: 1024,
+    env: {},
+  });
+  const hasGit = probe.exitCode === 0;
+  const preset = hasGit ? options.preset : 'readonly';
+  if (!hasGit && options.preset !== 'readonly')
+    log('git was not found, so this session is read-only: nothing can be written or undone.\n');
+  const snapshotsOf = (sessionId: string): string =>
+    join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
   const internalFaults =
     options.reportSystemFault === undefined ? createDeferredFaultReporter(options.log) : undefined;
   const reportSystemFault: SystemFaultReporter =
@@ -200,10 +220,20 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       mainBudget: main.agent.budget,
       config: config.kernel,
       repositoryRoot: options.repositoryRoot,
-      preset: options.preset,
+      preset,
+      ...(preset === 'readonly'
+        ? {}
+        : {
+            workspace: {
+              files: createWorkspaceFiles(options.repositoryRoot),
+              git: subprocess,
+              directoryOf: snapshotsOf,
+              shadowOf: (sessionId: string) => createShadowFiles(snapshotsOf(sessionId)),
+            },
+          }),
       readRepositoryFile: readRepositoryText,
       reportSystemFault,
-      diagnostic: options.log ?? ((line) => void process.stderr.write(line)),
+      diagnostic: log,
       now,
     });
     const gateway = createSessionGatewayModule({ fabric: fabric.client('gateway'), now });
@@ -216,7 +246,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       gateway: createWorkflowGatewayPort(workflowFabric),
       persistence: forNamespaces(persistence, ['workflow']),
       agents: new Map(
-        [...builtin.sets].map(([id, set]) => [id, agentBindingOf(set, registry)] as const),
+        [...builtin.sets].map(([id, set]) => [id, agentBindingOf(set, registry, preset)] as const),
       ),
       templates: builtin.templates,
       definitionsDigest: builtin.definitionsDigest,

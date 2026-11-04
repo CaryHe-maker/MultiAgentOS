@@ -53,6 +53,7 @@ const definitions: AgentDefinitions = {
   tools: [
     {
       modelName: 'list_files',
+      executionKind: 'REPOSITORY_LIST',
       unit: unit('repository-list', { NOT_FOUND: 'RETURN_TO_MODEL', LIMIT_EXCEEDED: 'FINAL_CALL' }),
       parameters: RepositoryListInputSchema,
     },
@@ -70,6 +71,7 @@ const definitions: AgentDefinitions = {
 };
 const config: AgentConfig = {
   repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
+  maxNestedInstructions: 8,
   consecutiveErrorLimit: 5,
   noProgressRounds: 2,
   regenerationLimit: 3,
@@ -425,6 +427,9 @@ describe('wrap-up', () => {
     const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
     const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low));
     expect(next.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
+    expect(next.records).toContainEqual(
+      expect.objectContaining({ type: 'AGENT_WRAP_UP', reason: 'BUDGET_WRAP_UP' }),
+    );
     expect(next.submissions[0]?.input).toMatchObject({
       final: true,
       status: { wrapUpReason: 'BUDGET_WRAP_UP' },
@@ -470,6 +475,21 @@ describe('wrap-up', () => {
     current = replied(current, [call('list_files', {})]);
     current = receive(current, report(current.state, only(current), { ok: {}, ref: ref('4') }));
     expect(current.state.final).toBe(true);
+  });
+
+  it('takes a size the provider refused the same way as one it never saw', () => {
+    const started = start();
+    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const final = receive(
+      assembling,
+      report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
+    );
+    const assembled = receive(final, report(final.state, only(final), assembledOutput));
+    expect(assembled.state).toMatchObject({ final: true, wrapUpReason: 'CONTEXT_LIMIT' });
+    expectDegraded(
+      receive(assembled, report(assembled.state, only(assembled), { reject: 'LIMIT_EXCEEDED' })),
+      'CONTEXT_LIMIT',
+    );
   });
 
   it('wraps up a context over the limit, and degrades when the final call is too', () => {

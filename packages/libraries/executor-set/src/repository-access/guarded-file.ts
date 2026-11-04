@@ -1,14 +1,18 @@
 import { constants } from 'node:fs';
 import { open, readlink, realpath, stat, type FileHandle } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import { isExcluded, type ExecutorOutcome } from '@multiagentos/contracts';
+import {
+  MAX_WORKSPACE_FILE_BYTES,
+  isExcluded,
+  normalizeRequestPath,
+  type ExecutorOutcome,
+} from '@multiagentos/contracts';
 import { rejected, violation } from '../outcome/outcomes.js';
 import { isText } from '../text/text-document.js';
-import { normalizeRequestPath } from './request-path.js';
 import type { RepositoryScope } from './repository-scope.js';
 
 /** Larger files are refused by FILE_READ with LIMIT_EXCEEDED. */
-export const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
+export const MAX_READ_FILE_BYTES = MAX_WORKSPACE_FILE_BYTES;
 
 export interface GuardedContent {
   /** Normalized request path, relative to the root and `/`-separated. */

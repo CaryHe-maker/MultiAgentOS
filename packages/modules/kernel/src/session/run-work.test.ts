@@ -138,7 +138,13 @@ async function setup(
   const inRun = { requestId: newId('req'), sessionId, workflowRunId };
   const agentRunId = newId('agr');
   let currentAgentRun = agentRunId;
-  const register = async (id = agentRunId) => {
+  const register = async (
+    id = agentRunId,
+    requestedCapabilities: RegisterAgentRunRequest['requestedCapabilities'] = [
+      'repo.read',
+      'workspace.write',
+    ],
+  ) => {
     currentAgentRun = id;
     const request: RegisterAgentRunRequest = {
       ...inRun,
@@ -148,6 +154,8 @@ async function setup(
       agentRef: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest: 'd'.repeat(64) },
       effort: 'high',
       workspaceViewId: 'main',
+      requestedCapabilities,
+      writeRoots: ['.'],
       display: { label: 'main' },
     };
     return actor.call(() => run().work.registerAgentRun(request));
@@ -178,7 +186,7 @@ async function setup(
     if (asked?.event.type !== 'AuthorizationRequest') throw new Error('no question');
     return asked.event.questionId;
   };
-  const answer = (scope: 'ALLOW' | 'DENY', questionId = question()) =>
+  const answer = (scope: 'ALLOW' | 'ONCE' | 'DENY', questionId = question()) =>
     actor.call(() =>
       run().work.answerAuthorization({
         ...inRun,
@@ -206,6 +214,10 @@ async function setup(
   const reports = () =>
     toWorkflow.flatMap((entry) => (entry.event.type === 'UnitReport' ? [entry.event] : []));
   const interactionTypes = () => toInteraction.map((entry) => entry.event.type);
+  const questions = () =>
+    toInteraction.flatMap((entry) =>
+      entry.event.type === 'AuthorizationRequest' ? [entry.event] : [],
+    );
   return {
     actor,
     execution,
@@ -220,6 +232,7 @@ async function setup(
     trusted,
     reports,
     interactionTypes,
+    questions,
     toWorkflow,
     summaries,
     settled,
@@ -276,6 +289,148 @@ describe('one Unit through the Kernel', () => {
     await kernel.settled();
     expect(kernel.execution.started).toHaveLength(1);
     expect(kernel.interactionTypes()).not.toContain('AuthorizationRequest');
+  });
+});
+
+describe('a write', () => {
+  const fileWrite = testUnitDefinition('FILE_WRITE');
+  const writer = testPinnedAgent({ units: [fileRead, fileWrite, publish] });
+  const write = (path: string) => ({ path, content: 'new text', expectAbsent: true });
+  const refusals = (kernel: Awaited<ReturnType<typeof setup>>) =>
+    kernel.reports().flatMap((report) => (report.status === 'REJECTED' ? [report.reasonCode] : []));
+
+  it('asks once for the write root, runs in a workspace scope, and does not ask again', async () => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.settled();
+    expect(kernel.questions()).toMatchObject([
+      { capability: 'workspace.write', writeRoot: '.', critical: false },
+    ]);
+    expect(kernel.execution.started).toEqual([]);
+    await kernel.submit(fileWrite, write('src/b.ts'));
+    await kernel.settled();
+    expect(kernel.questions()).toHaveLength(1);
+
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.execution.started).toHaveLength(2);
+    expect(kernel.execution.started[0]?.spec.scope).toMatchObject({
+      kind: 'WORKSPACE',
+      repositoryRoot: '/repository',
+      writableRoots: ['.'],
+      exclusions: expect.arrayContaining(['**/.env*']) as string[],
+    });
+    await kernel.submit(fileWrite, write('src/c.ts'));
+    await kernel.settled();
+    expect(kernel.execution.started).toHaveLength(3);
+    expect(kernel.questions()).toHaveLength(1);
+  });
+
+  it.each([
+    ['../outside.txt', 'WRITE_OUT_OF_SCOPE'],
+    ['.git/config', 'PROTECTED_PATH'],
+    ['.env', 'PROTECTED_PATH'],
+  ])('refuses %s without asking', async (path, reasonCode) => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write(path));
+    await kernel.settled();
+    expect(kernel.questions()).toEqual([]);
+    expect(refusals(kernel)).toEqual([reasonCode]);
+    expect(kernel.faults).toEqual([]);
+  });
+
+  it('asks for each AGENTS.md alone with its content, whatever was granted', async () => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.answer('ALLOW');
+    await kernel.submit(fileWrite, write('AGENTS.md'));
+    await kernel.submit(fileWrite, write('pkg/AGENTS.md'));
+    await kernel.settled();
+    const critical = kernel.questions().slice(1);
+    expect(critical).toMatchObject([
+      { path: 'AGENTS.md', critical: true },
+      { path: 'pkg/AGENTS.md', critical: true },
+    ]);
+    expect(kernel.execution.started).toHaveLength(1);
+
+    await kernel.answer('ONCE', critical[0]?.questionId);
+    await kernel.settled();
+    expect(kernel.execution.started).toHaveLength(2);
+    await kernel.finish(1);
+    await kernel.submit(fileWrite, write('AGENTS.md'));
+    await kernel.settled();
+    expect(kernel.questions()).toHaveLength(4);
+  });
+
+  it('a critical question takes only ONCE or DENY, and an ordinary one not ONCE', async () => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write('AGENTS.md'));
+    await kernel.settled();
+    expect(await kernel.answer('ALLOW')).toMatchObject({ reasonCode: 'INVALID_INPUT' });
+    expect(kernel.execution.started).toEqual([]);
+    await kernel.answer('DENY');
+    await kernel.settled();
+    expect(refusals(kernel)).toEqual(['USER_DECLINED']);
+
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.settled();
+    expect(await kernel.answer('ONCE')).toMatchObject({ reasonCode: 'INVALID_INPUT' });
+  });
+
+  it('a refused AGENTS.md leaves ordinary writes to their own question', async () => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write('AGENTS.md'));
+    await kernel.answer('DENY');
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.settled();
+    expect(kernel.questions().at(-1)).toMatchObject({ writeRoot: '.' });
+  });
+
+  it('a refused write binds this AgentRun, and the next may ask again', async () => {
+    const kernel = await setup(writer);
+    await kernel.register();
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.answer('DENY');
+    await kernel.submit(fileWrite, write('src/b.ts'));
+    await kernel.settled();
+    expect(kernel.questions()).toHaveLength(1);
+    expect(refusals(kernel)).toEqual(['USER_DECLINED', 'USER_DECLINED']);
+
+    await kernel.actor.call(() =>
+      kernel.run().work.endAgentRun({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        agentRunId: kernel.agentRunId,
+      }),
+    );
+    await kernel.register(newId('agr'));
+    await kernel.submit(fileWrite, write('src/c.ts'));
+    await kernel.settled();
+    expect(kernel.questions()).toHaveLength(2);
+  });
+
+  it('readonly refuses to register a run that wants to write', async () => {
+    const kernel = await setup(writer, { preset: 'readonly' });
+    expect(await kernel.register()).toMatchObject({ reasonCode: 'CAPABILITY_NOT_SUBSET' });
+  });
+
+  it('refuses a capability the Agent does not have', async () => {
+    const kernel = await setup(testPinnedAgent({ capabilities: ['repo.read'] }));
+    expect(await kernel.register()).toMatchObject({ reasonCode: 'CAPABILITY_NOT_SUBSET' });
+  });
+
+  it('refuses a Unit beyond what the run asked for, without asking', async () => {
+    const kernel = await setup(writer);
+    await kernel.register(undefined, ['repo.read']);
+    await kernel.submit(fileWrite, write('src/a.ts'));
+    await kernel.settled();
+    expect(kernel.questions()).toEqual([]);
+    expect(refusals(kernel)).toEqual(['CAPABILITY_NOT_GRANTED']);
   });
 });
 

@@ -41,6 +41,9 @@ const config: ExecutionConfig = {
     REPOSITORY_SEARCH: tool,
     REPOSITORY_LIST: tool,
     FILE_READ: tool,
+    FILE_WRITE: tool,
+    FILE_EDIT: tool,
+    OUTPUT_READ: tool,
     CONTEXT_ASSEMBLE: { timeoutMs: 1000, maxOutputBytes: 1000 },
     MODEL: { timeoutMs: 1000, maxOutputBytes: 1000 },
   },
@@ -136,6 +139,7 @@ function setup(options: { converging?: boolean } = {}) {
       cancelled.push(request.runEpoch);
       return Promise.resolve();
     },
+    written: () => Promise.resolve(),
     retrying: (activity) => retries.push(activity),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {

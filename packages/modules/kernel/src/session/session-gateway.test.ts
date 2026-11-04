@@ -2,6 +2,7 @@ import {
   newId,
   type AppendLogPort,
   type BoundaryContext,
+  type ReportSessionCommandRequest,
   type SessionRefLine,
   type WorkflowGatewayPort,
 } from '@multiagentos/contracts';
@@ -142,7 +143,14 @@ function stack() {
           const result =
             command === 'CLOSE'
               ? ({ command, outcome: 'DONE' } as const)
-              : ({ command, outcome: 'READY' } as const);
+              : command === 'FORK'
+                ? ({
+                    command,
+                    outcome: 'READY',
+                    inheritedArtifacts: [],
+                    fromTurnCount: 0,
+                  } as ReportSessionCommandRequest['result'])
+                : ({ command, outcome: 'READY' } as ReportSessionCommandRequest['result']);
           const { sessionId } = event;
           queueMicrotask(() => {
             void workflow().reportSessionCommand(

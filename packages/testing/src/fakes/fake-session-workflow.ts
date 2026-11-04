@@ -92,7 +92,13 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
           status: 'ACTIVE',
         });
       }
-      await reply(sessionId, event.commandId, { command: event.command, outcome: 'READY' });
+      await reply(
+        sessionId,
+        event.commandId,
+        event.command === 'FORK'
+          ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromTurnCount: 0 }
+          : { command: event.command, outcome: 'READY' },
+      );
     },
   };
 }

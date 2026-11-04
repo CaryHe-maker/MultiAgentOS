@@ -1,4 +1,4 @@
-import { testUnitDefinition } from '@multiagentos/contracts/test-support';
+import { testArtifactRef, testUnitDefinition } from '@multiagentos/contracts/test-support';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { RunLedgers, minShare, type AgentBudget } from '../monitor/index.js';
 import type { AttemptSpec, PinnedAgent, RunAttempts } from '../session/run-attempts.js';
@@ -25,11 +25,14 @@ export const testScheduler = (): SchedulerDuties => {
 };
 
 export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAgent => ({
+  id: 'main',
+  capabilities: ['repo.read', 'workspace.write'],
   units: [testUnitDefinition('FILE_READ'), testUnitDefinition('MESSAGE_PUBLISH')],
   maxToolUnits: 10,
   modelScope: { kind: 'NONE' },
   budget: testAgentBudget,
   contextWindowTokens: 100_000,
+  cacheHitWeight: 1,
   instructions: 'You are a test agent.',
   toolSpecs: () => [],
   ...overrides,
@@ -73,6 +76,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     repositoryRoot: '/repository',
     repositoryExclusions: [],
     pinAgent: () => Promise.resolve({ ok: true, agent: testPinnedAgent() }),
+    storeQuestionContent: () => Promise.resolve(testArtifactRef()),
     inputIsValid: () => true,
     preset: 'standard',
     readProjectFile: () => Promise.resolve({ exists: false }),

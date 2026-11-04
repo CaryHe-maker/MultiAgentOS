@@ -26,13 +26,22 @@
 | D8 | `AGENTS.md` 与其他说明文档同级：第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit（M2Design v1.14，Cary 2026-11-02 决定） | 已执行 |
 | D9 | 用户拒绝绑定提出请求的 AgentRun；工具结果为 `the user rejected tool "x"`（参照 DeepSeek Harness），不计入连续出错，之后的轮次不再提交相同的工具（M2Design v1.15，Cary 2026-11-02 决定） | 已执行 |
 | D10 | 思考强度只在 `registerAgentRun` 中给出（Cary 2026-11-02 决定） | 已执行 |
-| D11 | main 的提示词暂不定稿：等阶段 2 实现写入能力之后再考虑。阶段 1 退出不再要求评测、定稿与封存 main，`main-system` 保持 `PLACEHOLDER`，`v1` 定义保持 `v0.1.0` 草稿（Cary 2026-11-04 决定） | 已写入 AgentToolPool 第 3 节 |
+| D12 | 文件工具拒绝写入排除规则命中的路径（`.env*`、私钥、`node_modules` 等），返回 `PROTECTED_PATH`（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
+| D13 | 系统没有 `git` 时，启动预设降为 `readonly` 并提示用户（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
+| D14 | 写文件保持进程内执行；越界路径、符号链接替换与竞争条件的对抗测试是阶段 2 的退出条件（M2Design v1.16，Cary 2026-11-04 决定） | 文档已改 |
+| D11 | main 的提示词在写入能力完成后定稿（Cary 2026-11-04 决定，阶段 2 结束时执行）：`main-system` 为 `FINAL`，已在真实模型上验证。阶段 3–6 还要给 main 增加工具，所以定义仍是 `v0.1.0` 草稿，到 M2 发布时再一起封存 | 已写入 AgentToolPool 第 3 节 |
 | D1 | 摘要请求按实测改写法（M2Design v1.11）；每个阶段完成后从 `feature/phase<N>/main` PR 到 `feat/M2`（Cary 2026-10-31 决定） | 已执行 |
 
 ## 3. 当前进度
 
-核对时间：2026-11-04，`feature/phase1/main`；Ubuntu 24.04（WSL）完整质量门在阶段 1 的每次推进后运行。
-阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 在 `feature/phase1/main` 上，远端作为备份，尚未向 `feat/M2` 开 PR。
+核对时间：2026-11-04，`feature/phase2/main`；Ubuntu 24.04（WSL）完整质量门在阶段 1 的每次推进后运行。
+阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 已由 PR #41 合入 `feat/M2`。阶段 2 的文档门已通过（Cary 2026-11-04），S2-CT-1 到 S2-UI-1 在 `feature/phase2/main` 上实现，确定性退出用例在 `stage2-exit.test.ts`。
+
+阶段 2 发布前审核（2026-11-04，M2Design v1.17）：审核发现的 24 条问题与端到端用例查出的 2 条问题已全部修复；Ubuntu 24.04 完整质量门通过。真实模型复查：写入任务 39/40（本仓库任务 4/4；唯一的失败是模型写的代码没过隐藏测试），`analyze` 回归 F1–F5 5/5。
+
+真实模型写入实验（2026-11-04）：小仓库任务全部通过；真实仓库任务大多在写入之前被叫停，主因是上下文上限按字节计，高估约 3.3 倍（待决定）。tree-sitter 不引入，见 [experiments](../experiments.md)。
+
+main 写入的真实模型检查（`run-main-write.ts`，2026-11-04，`deepseek-flash@v0.1.0`，Ubuntu 24.04）：6/6 通过。改名（三个文件）、新建文件、只问问题时不写、打招呼不调用工具、`.env` 没有被写入、`/undo` 恢复原内容。只跑了一轮，不是评测基线；`.env` 那一例模型没有尝试写入，所以这一轮没有在真实模型上触发 `PROTECTED_PATH`，这条拒绝由 `stage2-exit.test.ts` 与对抗测试覆盖。
 
 | 任务 | 状态 | 已完成 | 未完成 |
 |---|---|---|---|
@@ -46,7 +55,7 @@
 | Core 的 Unit 路径 | 完成 | `RunWork`：幂等、AgentRun 登记与结束、受理、额度、授权、尝试、结果检查、收敛；审计写入；`RunExecution` 已接入 | — |
 | S1-KX-1 | 完成 | 按 Session 的产物归属与保留类别、用户输入、`message-publish`、`report-publish`、引用解析、预览与完整输出、技术重试、取消与未确认停止的兜底、`readProjectFile`、`removeSessionFiles`、启动时与定期的产物回收 | — |
 | S1-EX-1 | 完成 | `retention/`、工具 Executor、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistry`；已在真实 DeepSeek 上运行 | — |
-| S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | main 的提示词等阶段 2 之后再定（D11） |
+| S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | — |
 | S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图；已接入组合根 | — |
 | S1-IN-1 | 完成 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；`analyze` 真实模型回归 15/15；退出用例的确定性测试（`stage1-exit.test.ts`） | — |
 
@@ -102,3 +111,7 @@
 M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现在代码与注释中（`M1` 只作为归档文档的名字出现在 `docs/`）；
 `repository-search` 与 `file-read` 直接产出预览，不再经过 M1 Executor 外的适配层；`SearchContextPack`、`SEARCH_HIT`、`OBJECTIVE`、`HANDOFF` 段、只测试自己的 fake Executor 已删除。
 `M2Design` 与 `Module/`、`Kernel/`、`Library/` 各文档中的“相对 M1 的变化”与指向 `History/M1` 的链接有意保留：它们说明设计来由，部分行为仍以归档文档为准。
+| D14 | 系统内存检测放入阶段 3：Monitor 定时采样，只向 Core 发控制消息，经统一收尾路径与中断入口处理，不设特例路径（M2Design v1.17，Cary 2026-11-04 决定） | 文档已改，S3-KC-3 实现 |
+| D15 | 额度按价格折算缓存命中的输入；单次输出上限 64000，输入上限 880000（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |
+| D16 | 估算与 provider 的计数相差不到 5%；模型运行代码的问题留到阶段 3 有运行指令能力之后；提前收尾必须有报告与日志，接近上限时预警（M2Design v1.17，Cary 2026-11-04 决定） | 已执行 |
+| D17 | main 的 `maxRounds` 提到 80：上下文放开后，轮次成为长任务的下一个瓶颈（Cary 2026-11-04 决定） | 已执行 |

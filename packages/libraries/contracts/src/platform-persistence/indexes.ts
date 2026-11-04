@@ -66,3 +66,38 @@ export const ArtifactOwnerLineSchema = closed(
   'platform.persistence.ArtifactOwnerLine.v1',
 );
 export type ArtifactOwnerLine = Static<typeof ArtifactOwnerLineSchema>;
+
+const snapshotChange = closed({
+  path: text(4096),
+  change: Type.Enum(['ADDED', 'MODIFIED', 'DELETED']),
+});
+
+/** `snapshot-index.jsonl`; a Turn without TURN_ENDED was left by an exit (M2Design 4.6). */
+export const SnapshotIndexLineSchema = Type.Union(
+  [
+    closed({
+      kind: Type.Literal('TURN_STARTED'),
+      turnId: IdSchemas.turnId,
+      turnSeq: count(1),
+      viewId: Type.Literal('main'),
+      startSnapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
+    closed({
+      kind: Type.Literal('TURN_ENDED'),
+      turnId: IdSchemas.turnId,
+      endSnapshot: Type.Optional(text(64)),
+      changedFiles: Type.Array(snapshotChange),
+      at: TimestampSchema,
+    }),
+    closed({
+      kind: Type.Literal('REVERTED'),
+      revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
+      forced: Type.Boolean(),
+      backupSnapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
+  ],
+  { $id: 'platform.persistence.SnapshotIndexLine.v1' },
+);
+export type SnapshotIndexLine = Static<typeof SnapshotIndexLineSchema>;

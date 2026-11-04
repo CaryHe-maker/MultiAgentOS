@@ -9,7 +9,8 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { testRunWork } from '../test-support/run-work.js';
-import { SessionActor, type SessionStart } from './session-actor.js';
+import type { UndoPlan } from './workspace-snapshots.js';
+import { SessionActor, type SessionDuties, type SessionStart } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 
 const sha256 = 'a'.repeat(64);
@@ -21,7 +22,7 @@ const summary: ArtifactRef = {
 const input = () => ({ inputId: newId('inp'), text: 'hello' });
 const sessionId = newId('ses');
 
-function setup(options: { summaryFails?: boolean } = {}) {
+function setup(options: { summaryFails?: boolean; snapshots?: SessionDuties['snapshots'] } = {}) {
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const closed: string[] = [];
@@ -54,6 +55,7 @@ function setup(options: { summaryFails?: boolean } = {}) {
     repositoryRoot: '/repository',
     outbox,
     duties: {
+      ...(options.snapshots === undefined ? {} : { snapshots: options.snapshots }),
       storeUserInput: () => Promise.resolve(ref),
       openRunWork: (host) => testRunWork(host),
       writeRunSummary: () => Promise.resolve(options.summaryFails === true ? undefined : summary),
@@ -189,6 +191,124 @@ describe('opening a Session', () => {
       code: 'SESSION_LOCKED',
     });
     expect(removed).toEqual([]);
+  });
+});
+
+describe('undo', () => {
+  const turnId = newId('trn');
+  const planOf = (external: UndoPlan['external']): UndoPlan => ({
+    turnIds: [turnId],
+    files: [{ path: 'a.txt' }],
+    currentTree: 't'.repeat(40),
+    external,
+  });
+  const edited = [{ path: 'a.txt', change: 'MODIFIED' }] as const;
+  const snapshots = (overrides: Partial<NonNullable<SessionDuties['snapshots']>> = {}) => ({
+    turnStarted: () => Promise.resolve(),
+    turnEnded: () => Promise.resolve({}),
+    planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf([]) } as const),
+    applyUndo: () => Promise.resolve({ ok: true } as const),
+    diffTurn: () => Promise.resolve(undefined),
+    divergedFiles: () => Promise.resolve([]),
+    ...overrides,
+  });
+  const awaiting = async (kernel: ReturnType<typeof setup>) => {
+    await kernel.begin();
+    const run = kernel.currentRun();
+    await kernel.actor.call(() => kernel.actor.requestOpenInput(run, 'hrq_01ABCDEFGH'));
+    await kernel.settled();
+    return run;
+  };
+  const events = (kernel: ReturnType<typeof setup>, type: string) =>
+    kernel.toInteraction.flatMap((e) => (e.event.type === type ? [e.event] : []));
+
+  it('is only for a run that waits for input', async () => {
+    const kernel = setup({ snapshots: snapshots() });
+    await kernel.begin();
+    const run = kernel.currentRun();
+    expect(await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'))).toEqual({
+      accepted: false,
+      reasonCode: 'UNDO_NOT_AVAILABLE',
+    });
+  });
+
+  it('without external changes goes straight on, and tells both sides', async () => {
+    const kernel = setup({ snapshots: snapshots() });
+    const run = await awaiting(kernel);
+    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.settled();
+    expect(events(kernel, 'WorkspaceReverted')).toMatchObject([{ forced: false }]);
+    expect(kernel.toWorkflow.at(-1)?.event).toMatchObject({ type: 'WorkspaceReverted' });
+    expect(events(kernel, 'UndoConfirmationRequested')).toEqual([]);
+  });
+
+  it('H9: a file changed after the force stops it and asks again', async () => {
+    const applied: boolean[] = [];
+    const kernel = setup({
+      snapshots: snapshots({
+        planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf(edited) }),
+        applyUndo: (_plan, forced) => {
+          applied.push(forced);
+          return Promise.resolve(
+            applied.length === 1 ? ({ ok: false } as const) : ({ ok: true } as const),
+          );
+        },
+      }),
+    });
+    const run = await awaiting(kernel);
+    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.settled();
+    const [first] = events(kernel, 'UndoConfirmationRequested') as { undoId: string }[];
+    await kernel.actor.call(() => kernel.actor.confirmUndo(run, first?.undoId ?? '', 'FORCE'));
+    await kernel.settled();
+    expect(events(kernel, 'WorkspaceReverted')).toEqual([]);
+    const asked = events(kernel, 'UndoConfirmationRequested') as { undoId: string }[];
+    expect(asked).toHaveLength(2);
+    expect(asked[1]?.undoId).not.toBe(first?.undoId);
+
+    // The old confirmation is spent; the new one finishes it.
+    expect(
+      await kernel.actor.call(() => kernel.actor.confirmUndo(run, first?.undoId ?? '', 'FORCE')),
+    ).toEqual({ accepted: false, reasonCode: 'UNDO_UNKNOWN' });
+    await kernel.actor.call(() => kernel.actor.confirmUndo(run, asked[1]?.undoId ?? '', 'FORCE'));
+    await kernel.settled();
+    expect(events(kernel, 'WorkspaceReverted')).toMatchObject([{ forced: true }]);
+    expect(applied).toEqual([true, true]);
+  });
+
+  it('says so when the failed undo has nothing left to ask about', async () => {
+    const kernel = setup({
+      snapshots: snapshots({
+        applyUndo: () => Promise.reject(new Error('a link on the way')),
+      }),
+    });
+    const run = await awaiting(kernel);
+    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.settled();
+    expect(events(kernel, 'UndoCancelled')).toMatchObject([{ reason: 'FILE_CHANGED' }]);
+    expect(kernel.faults).toEqual([]);
+  });
+
+  it('the next message cancels a confirmation', async () => {
+    const kernel = setup({
+      snapshots: snapshots({
+        planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf(edited) }),
+      }),
+    });
+    const run = await awaiting(kernel);
+    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.actor.call(() => kernel.actor.answerOpenInput(run, 'hrq_01ABCDEFGH', input()));
+    await kernel.settled();
+    expect(events(kernel, 'UndoCancelled')).toMatchObject([{ reason: 'NEW_INPUT' }]);
+  });
+
+  it('without snapshots there is nothing to undo with', async () => {
+    const kernel = setup();
+    const run = await awaiting(kernel);
+    expect(await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'))).toEqual({
+      accepted: false,
+      reasonCode: 'UNDO_NOT_AVAILABLE',
+    });
   });
 });
 

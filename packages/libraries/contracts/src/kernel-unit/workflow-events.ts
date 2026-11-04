@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { DefinitionRefSchema, pinnedRefOf } from '../catalog/definition-schemas.js';
+import { WorkspaceRevertedSchema } from '../kernel-control/interaction-events.js';
 import { runEnd } from '../kernel-control/run-outcome.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { ExecutionKindSchema } from '../platform-common/execution-kind.js';
@@ -9,7 +10,7 @@ import {
   UNIT_REJECTED_CODES,
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
-import { TimestampSchema, closed, count } from '../platform-common/schema-helpers.js';
+import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { BudgetViewSchema, TurnUsageSchema } from './budget-state.js';
 import { UnitOutputSchema } from './unit-io.js';
 
@@ -51,6 +52,8 @@ export const UnitReportSchema = Type.Union(
       outputRef: Type.Optional(ArtifactRefSchema),
       fullRef: Type.Optional(ArtifactRefSchema),
       reasoningRef: Type.Optional(ArtifactRefSchema),
+      /** The files a write tool changed. */
+      changedFiles: Type.Optional(Type.Array(text(1024))),
     }),
     closed({
       ...report,
@@ -103,6 +106,10 @@ export const TurnClosedSchema = closed(
     turnId: IdSchemas.turnId,
     reason: Type.Enum(['COMPLETED', 'ABORTED', 'TIMEOUT', 'BUDGET', 'RUN_CLOSED']),
     usage: TurnUsageSchema,
+    /** Absent when the snapshot failed: the Turn went on, and cannot be undone. */
+    startSnapshot: Type.Optional(text(64)),
+    endSnapshot: Type.Optional(text(64)),
+    changedFileCount: Type.Optional(count()),
   },
   'kernel.unit.TurnClosed.v1',
 );
@@ -113,12 +120,21 @@ export const RunClosedSchema = Type.Union([...runEnd('RunClosed')], {
 });
 export type RunClosed = Static<typeof RunClosedSchema>;
 
+/** What opening the Session found changed since its last Turn (M2Design 2.3). */
+export const WorkspaceDivergedSchema = closed(
+  { type: Type.Literal('WorkspaceDiverged'), files: Type.Array(text(4096), { minItems: 1 }) },
+  'kernel.unit.WorkspaceDiverged.v1',
+);
+export type WorkspaceDiverged = Static<typeof WorkspaceDivergedSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   UnitReportSchema,
   HumanAnsweredSchema,
   TurnClosedSchema,
   RunClosedSchema,
+  WorkspaceRevertedSchema,
+  WorkspaceDivergedSchema,
 ]);
 export type KernelToWorkflowEvent = Static<typeof KernelToWorkflowEventSchema>;
 

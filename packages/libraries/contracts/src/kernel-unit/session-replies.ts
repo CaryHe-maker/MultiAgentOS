@@ -26,9 +26,16 @@ const SessionCommandResultSchema = Type.Union([
     lastTurnId: Type.Optional(IdSchemas.turnId),
   }),
   closed({ command: Type.Literal('CREATE'), outcome: Type.Literal('READY') }),
+  /** Every artifact the copied log refers to, and how far the original had got. */
+  closed({
+    command: Type.Literal('FORK'),
+    outcome: Type.Literal('READY'),
+    inheritedArtifacts: Type.Array(ArtifactRefSchema),
+    fromTurnCount: count(),
+  }),
   closed({ command: Type.Enum(['CLOSE', 'DELETE']), outcome: Type.Literal('DONE') }),
   closed({
-    command: Type.Enum(['OPEN', 'CREATE', 'CLOSE', 'DELETE']),
+    command: Type.Enum(['OPEN', 'CREATE', 'FORK', 'CLOSE', 'DELETE']),
     outcome: Type.Literal('FAILED'),
     failure: SessionCommandFailureSchema,
   }),

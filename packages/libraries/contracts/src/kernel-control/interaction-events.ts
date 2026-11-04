@@ -1,3 +1,4 @@
+import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -25,6 +26,21 @@ export const AuthorizationRequestSchema = Type.Union(
       path: text(512),
       contentRef: ArtifactRefSchema,
       truncated: Type.Boolean(),
+    }),
+    /** Uncertain level: answered with ALLOW or DENY, for the whole write root. */
+    closed({
+      ...question,
+      capability: Type.Literal('workspace.write'),
+      writeRoot: text(1024),
+      critical: Type.Literal(false),
+    }),
+    /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
+    closed({
+      ...question,
+      capability: Type.Literal('workspace.write'),
+      path: text(1024),
+      contentRef: ArtifactRefSchema,
+      critical: Type.Literal(true),
     }),
   ],
   { $id: 'kernel.control.AuthorizationRequest.v1' },
@@ -62,12 +78,54 @@ export const HumanResolvedSchema = closed(
 );
 export type HumanResolved = Static<typeof HumanResolvedSchema>;
 
+/** External changes stand in the way of an undo; this is not an authorization question. */
+export const UndoConfirmationRequestedSchema = closed(
+  {
+    type: Type.Literal('UndoConfirmationRequested'),
+    undoId: IdSchemas.undoId,
+    files: Type.Array(
+      closed({
+        path: text(4096),
+        change: Type.Enum(['ADDED', 'MODIFIED', 'DELETED', 'UNKNOWN']),
+      }),
+    ),
+  },
+  'kernel.control.UndoConfirmationRequested.v1',
+);
+export type UndoConfirmationRequested = Static<typeof UndoConfirmationRequestedSchema>;
+
+export const UndoCancelledSchema = closed(
+  {
+    type: Type.Literal('UndoCancelled'),
+    undoId: IdSchemas.undoId,
+    reason: Type.Enum(['USER_CANCELLED', 'NEW_INPUT', 'SESSION_CLOSED', 'FILE_CHANGED']),
+  },
+  'kernel.control.UndoCancelled.v1',
+);
+export type UndoCancelled = Static<typeof UndoCancelledSchema>;
+
+/** Sent to both UserInteraction and Workflow, which replaces those Turns in its projection. */
+export const WorkspaceRevertedSchema = closed(
+  {
+    type: Type.Literal('WorkspaceReverted'),
+    revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
+    forced: Type.Boolean(),
+    /** The external changes that were overwritten. */
+    externalFiles: Type.Array(text(4096)),
+    /** Taken before a forced undo. */
+    backupSnapshot: Type.Optional(text(64)),
+  },
+  'kernel.control.WorkspaceReverted.v1',
+);
+export type WorkspaceReverted = Static<typeof WorkspaceRevertedSchema>;
+
 export const MessagePublishedSchema = closed(
   {
     type: Type.Literal('MessagePublished'),
     messageRef: ArtifactRefSchema,
     agentLabel: text(80),
     kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.control.MessagePublished.v1',
 );
@@ -111,6 +169,14 @@ const activity = {
       fullRef: Type.Optional(ArtifactRefSchema),
     }),
   ),
+  /** The progress of `update_todos`, passed through as Workflow gave it. */
+  todos: Type.Optional(
+    closed({
+      total: Type.Integer({ minimum: 0, maximum: 30 }),
+      done: Type.Integer({ minimum: 0, maximum: 30 }),
+      current: Type.Optional(text(80)),
+    }),
+  ),
   at: TimestampSchema,
 };
 /** `retry` is present exactly in the RETRYING phase. */
@@ -144,6 +210,9 @@ export const KernelToInteractionEventSchema = Type.Union([
   RunStateChangedSchema,
   ActivityEventSchema,
   RunFinishedSchema,
+  UndoConfirmationRequestedSchema,
+  UndoCancelledSchema,
+  WorkspaceRevertedSchema,
 ]);
 export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 

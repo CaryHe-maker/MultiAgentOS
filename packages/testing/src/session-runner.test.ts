@@ -51,6 +51,7 @@ const definitions: AgentDefinitions = {
   tools: [
     {
       modelName: 'list_files',
+      executionKind: 'REPOSITORY_LIST',
       unit: unit('repository-list'),
       parameters: RepositoryListInputSchema,
     },
@@ -70,6 +71,8 @@ const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
   ref: { kind: 'AGENT', id, version: 'v1.0.0', digest } as const,
   modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
   effort: 'none' as const,
+  requestedCapabilities: ['repo.read'] as const,
+  writeRoots: [],
   toolsDigest: digest,
   definitions: agentDefinitions,
 });
@@ -197,6 +200,7 @@ function setup(
     definitionVersions: ['main@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
+      maxNestedInstructions: 8,
       consecutiveErrorLimit: 5,
       noProgressRounds: 2,
       regenerationLimit: 3,

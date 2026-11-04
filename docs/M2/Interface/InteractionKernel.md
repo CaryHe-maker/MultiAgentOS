@@ -1,6 +1,6 @@
 # UserInteraction 与 Kernel 的接口
 
-> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 为准，本文只定义字段。
+> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
 > 标"阶段 N"的条目在该阶段的文档门中补全。
 
 ## 1. 范围
@@ -35,7 +35,9 @@ interface InteractionGatewayPort {
   answerHuman(request: AnswerHumanRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   readArtifact(request: ReadArtifactRequest, context: BoundaryContext): Promise<ArtifactContent | SyscallRejected>;
   shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  // 阶段 2：undoTurns、confirmUndo、diffTurns
+  undoTurns(request: UndoTurnsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;      // 阶段 2
+  confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;  // 阶段 2
+  diffTurns(request: DiffTurnsRequest, context: BoundaryContext): Promise<TurnDiff | SyscallRejected>;        // 阶段 2
   // 阶段 5：pauseRun、resumeRun、interruptRun、steerRun（运行中插话，只在 RUNNING 时受理，M2Design 第 4.5 节）
   // 阶段 8：compactContext（第 2.4 节）
 }
@@ -105,8 +107,38 @@ interface AnswerAuthorizationRequest {
 
 type AuthorizationAnswer =
   | { scope: 'ALLOW' }               // 不确定级与安全级：本运行内对这个资源键有效；project.instructions：信任这份内容
+  | { scope: 'ONCE' }                // 阶段 2：极危险级只有它与 DENY；这个 UnitAttempt 结束时作废
   | { scope: 'DENY' };
-  // 阶段 2：单次允许；阶段 3：本运行内这条命令、本运行内这个前缀
+  // 阶段 3：本运行内这条命令、本运行内这个前缀
+
+interface UndoTurnsRequest {         // 阶段 2：只在 AWAITING_INPUT，否则 UNDO_NOT_AVAILABLE
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+  scope: 'LAST' | 'ALL';
+}
+
+interface ConfirmUndoRequest {       // 阶段 2：回答 UndoConfirmationRequested
+  requestId: string;
+  sessionId: string;
+  workflowRunId: string;
+  undoId: string;
+  decision: 'FORCE' | 'CANCEL';
+}
+
+interface DiffTurnsRequest {         // 阶段 2：倒数第 n 个尚未被回退的 Turn，缺省 1
+  requestId: string;
+  sessionId: string;
+  n?: number;
+}
+
+interface TurnDiff {                 // 阶段 2
+  requestId: string;
+  outcome: 'ACCEPTED';
+  turnId: string;
+  files: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[];
+  diffRef: ArtifactRef;              // 统一 diff 文本；被排除的文件不在其中
+}
 
 interface AnswerHumanRequest {
   requestId: string;
@@ -161,8 +193,36 @@ type AuthorizationRequest =
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'project.instructions';
       path: string; contentRef: ArtifactRef; truncated: boolean;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
+    }
+  | {  // 阶段 2：不确定级，回答 ALLOW 或 DENY
+      type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
+      writeRoot: string; critical: false;
+    }
+  | {  // 阶段 2：写 AGENTS.md，极危险级，回答 ONCE 或 DENY；展示确切内容
+      type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
+      path: string; contentRef: ArtifactRef; critical: true;
     };
-  // 阶段 2：workspace.write；阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
+  // 阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
+
+interface UndoConfirmationRequested {  // 阶段 2：有外部修改时；不是授权询问
+  type: 'UndoConfirmationRequested';
+  undoId: string;
+  files: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' | 'UNKNOWN' }[];
+}
+
+interface UndoCancelled {            // 阶段 2
+  type: 'UndoCancelled';
+  undoId: string;
+  reason: 'USER_CANCELLED' | 'NEW_INPUT' | 'SESSION_CLOSED' | 'FILE_CHANGED';
+}
+
+interface WorkspaceReverted {        // 阶段 2：发给 UserInteraction 与 Workflow
+  type: 'WorkspaceReverted';
+  revertedTurnIds: string[];
+  forced: boolean;
+  externalFiles: string[];           // 被覆盖的外部修改
+  backupSnapshot?: string;           // 强制时的兜底快照
+}
 
 interface AuthorizationResolved {
   type: 'AuthorizationResolved';
@@ -184,6 +244,7 @@ interface HumanResolved {
 
 interface MessagePublished {         // message-publish 完成时发出
   type: 'MessagePublished';
+  wrapUpReason?: WrapUpReason;      // 回复来自提前收尾的 final-call 时带上；界面在回复后提示
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
   kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
@@ -233,7 +294,7 @@ interface SessionOpened {
   title?: string;                    // ≤80，来自第一条 prompt
   turnCount: number;
   fork?: { fromSessionId: string; fromTurnCount: number };
-  // 阶段 2：divergedFiles（打开时的工作区差异，M2Design 第 2.3 节 Session 第 6 条）
+  divergedFiles?: string[];          // 阶段 2：打开时的工作区差异（M2Design 第 2.3 节 Session 第 6 条）
 }
 
 interface SessionFailed {

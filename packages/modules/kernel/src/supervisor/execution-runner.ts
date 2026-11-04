@@ -334,6 +334,12 @@ function runExecutor(
       return registry.REPOSITORY_LIST.execute(request.input, environment);
     case 'FILE_READ':
       return registry.FILE_READ.execute(request.input, environment);
+    case 'FILE_WRITE':
+      return registry.FILE_WRITE.execute(request.input, environment);
+    case 'FILE_EDIT':
+      return registry.FILE_EDIT.execute(request.input, environment);
+    case 'OUTPUT_READ':
+      return registry.OUTPUT_READ.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':
       return registry.CONTEXT_ASSEMBLE.execute(request.input, environment);
     case 'MODEL':

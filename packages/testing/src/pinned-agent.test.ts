@@ -22,23 +22,25 @@ describe('pinnedAgentOf', () => {
   it('turns the registered effort into the provider request', async () => {
     const set = await pinned('main');
     const registry = createProtocolRegistry();
-    expect(pinnedAgentOf(set, 'high', registry)).toMatchObject({
+    expect(pinnedAgentOf(set, 'high', registry, ['repo.read'])).toMatchObject({
       modelScope: { kind: 'MODEL', thinking: 'ENABLED', thinkingEffort: 'high' },
       maxToolUnits: 200,
     });
-    expect(pinnedAgentOf(set, 'none', registry)).toMatchObject({
+    expect(pinnedAgentOf(set, 'none', registry, ['repo.read'])).toMatchObject({
       modelScope: { thinking: 'DISABLED' },
     });
   });
 
   it('refuses an effort the Agent does not allow', async () => {
-    expect(pinnedAgentOf(await pinned('planner'), 'high', createProtocolRegistry())).toBe(
-      'FORBIDDEN',
-    );
+    expect(
+      pinnedAgentOf(await pinned('planner'), 'high', createProtocolRegistry(), ['repo.read']),
+    ).toBe('FORBIDDEN');
   });
 
   it('offers only the end tools allowed in a final call', async () => {
-    const agent = pinnedAgentOf(await pinned('planner'), 'none', createProtocolRegistry());
+    const agent = pinnedAgentOf(await pinned('planner'), 'none', createProtocolRegistry(), [
+      'repo.read',
+    ]);
     if (agent === 'FORBIDDEN') throw new Error('forbidden');
     expect(agent.toolSpecs(false).map((spec) => spec.name)).toEqual([
       'finish_analysis',

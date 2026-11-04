@@ -6,6 +6,10 @@
 import type { ExecutionScope, ExecutorRegistry } from '@multiagentos/contracts';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
+import { createFileEditExecutor, createFileWriteExecutor } from './fs/file-write-executor.js';
+import { PathLocks } from './fs/guarded-write.js';
+export { createShadowFiles, createWorkspaceFiles } from './fs/workspace-files.js';
+import { createOutputReadExecutor } from './output-read/output-read-executor.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';
 import { readGuardedFile } from './repository-access/guarded-file.js';
@@ -21,11 +25,15 @@ import { createListExecutor } from './repository-list/list-executor.js';
  */
 export function createExecutorRegistry(): ExecutorRegistry {
   const cache = new FileDigestCache();
+  const locks = new PathLocks();
   return {
     REPOSITORY_ORIENT: createOrientExecutor(cache),
     REPOSITORY_SEARCH: createSearchExecutor({ cache }),
     REPOSITORY_LIST: createListExecutor(cache),
     FILE_READ: createFileReadExecutor(),
+    FILE_WRITE: createFileWriteExecutor(locks),
+    FILE_EDIT: createFileEditExecutor(locks),
+    OUTPUT_READ: createOutputReadExecutor(),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
   };

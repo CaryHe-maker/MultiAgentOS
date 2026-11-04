@@ -3,6 +3,7 @@ import { artifactRefOf } from '../platform-common/common-schemas.js';
 import { ToolCallIdSchema } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
+import { WrapUpReasonSchema } from '../context/history-entry.js';
 
 /**
  * The reply's text exists only in the model output, so the input carries a reference and a
@@ -19,6 +20,8 @@ export const MessagePublishInputSchema = Type.Union(
         modelOutputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
         toolCallId: ToolCallIdSchema,
       }),
+      /** Set when the reply came from a final call: the Turn ended early and the user is told. */
+      wrapUpReason: Type.Optional(WrapUpReasonSchema),
     }),
     closed({
       kind: Type.Literal('DEGRADED_REPLY'),
@@ -31,7 +34,10 @@ export const MessagePublishInputSchema = Type.Union(
 export type MessagePublishInput = Static<typeof MessagePublishInputSchema>;
 
 export const MessagePublishOutputSchema = closed(
-  { kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']) },
+  {
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    wrapUpReason: Type.Optional(WrapUpReasonSchema),
+  },
   'kernel.unit.MessagePublishOutput.v1',
 );
 export type MessagePublishOutput = Static<typeof MessagePublishOutputSchema>;

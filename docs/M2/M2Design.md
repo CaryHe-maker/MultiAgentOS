@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.15 定稿（2026-11-02）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.17 定稿（2026-11-04）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -593,7 +593,7 @@ main 的派生准则写进它的 Prompt，要点如下：
 | RUNNING | 正常推进 | 开放 |
 | PAUSING | 用户已请求暂停，等待在途 UnitAttempt 按第 4.4 节收敛 | 新的 UnitAttempt 保留在队列中，不派发 |
 | PAUSED | 暂停中，在途 UnitAttempt 数为 0 | 同上；可以回答授权询问与人类请求，答复在继续后生效 |
-| INTERRUPTING | 用户已请求中止，正在取消在途工作 | 拒绝 `registerAgentRun`、`submitUnit`（`RUN_BLOCKED`）；放行 `endAgentRun`、`requestHuman(prompt)`、`closeRun` |
+| INTERRUPTING | 中断已生效（用户中止、Turn 超时或内存压力，第 7.7 节），正在取消在途工作 | 拒绝 `registerAgentRun`、`submitUnit`（`RUN_BLOCKED`）；放行 `endAgentRun`、`requestHuman(prompt)`、`closeRun` |
 | AWAITING_INPUT | 有待答复的请求式 `HUMAN(prompt)`，没有开启中的 Turn、没有 ACTIVE 的 AgentRun，也没有在途 UnitAttempt | 只放行回答、ControlOperation 与关闭 |
 | CONVERGING、CLOSED | M1 原样 | M1 原样 |
 
@@ -603,6 +603,7 @@ PAUSED         ──resumeRun(说明?)─────────────�
 PAUSED         ──暂停超过 maxPauseSeconds───────▶ INTERRUPTING        （缺省 1800 秒）
 RUNNING / PAUSING / PAUSED ──interruptRun──────▶ INTERRUPTING
 RUNNING / PAUSING ──Turn 超时───────────────────▶ INTERRUPTING        （第 7.4 节）
+任意非终态      ──内存压力达到危险级────────────▶ INTERRUPTING        （第 7.7 节）
 INTERRUPTING   ──Workflow 请求 HUMAN(prompt)，在途 = 0──▶ AWAITING_INPUT   （Turn-chat；本 Turn 以 ABORTED 结束）
 INTERRUPTING   ──Workflow closeRun(CANCELLED | TIMEOUT)──▶ CONVERGING      （Orchestration）
 RUNNING        ──Workflow 请求 HUMAN(prompt)，在途 = 0──▶ AWAITING_INPUT   （本 Turn 以 COMPLETED 结束）
@@ -649,7 +650,9 @@ Workflow 为每次变化追加对应的日志记录。
 工作区快照由 Kernel.Execution 管理，以独立 `GIT_DIR` 的影子 git 仓库保存在 Session 目录中，不要求被分析仓库本身是 git 仓库。
 快照在每个 Turn 开始与结束时拍摄，这两个时刻都是静止点（第 2.1 节）。Orchestration 运行整体是一个 Turn，所以它在运行开始与收敛时各有一个快照，运行中不拍摄。
 
-快照范围是仓库内除 M1 默认排除规则之外的文件，单个超过 2 MiB 的未跟踪文件跳过。影子 git 设置 `GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=/dev/null`，不读取用户与系统的 git 配置。
+系统没有可用的 `git` 时无法拍摄快照：组合根在启动时探测，探测失败就把启动预设降为 `readonly`（第 5.2 节）并提示用户，写入工具不可用，对话与分析照常。
+
+快照范围是仓库内除 M1 默认排除规则之外的文件，单个超过 16 MiB（文件工具的上限）的未跟踪文件跳过。影子 git 设置 `GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=/dev/null`，不读取用户与系统的 git 配置。
 每个 Turn 开启时，Kernel 把 `turnId`、Turn 序号与开始快照写入自己命名空间中的快照索引（`kernel-execution/snapshot-index.jsonl`）；结束时追加结束快照，以及两者之间改动过的文件列表（新增、修改、删除）。
 因进程退出或停机而没有正常结束的 Turn，在索引中只有开始快照。
 回退时再追加一项，标明哪些 Turn 已被回退。`/undo`、`/diff` 只依据这份索引定位快照；进程重启后照样可用，Kernel 不需要读取 Workflow 的日志。
@@ -675,7 +678,7 @@ Workflow 为每次变化追加对应的日志记录。
    - **取消**：不修改任何文件。
 
    不提供"只回退没有冲突的文件"：部分回退会让工作区一半新、一半旧，与对话历史也对不上。
-   超时或关闭界面一律按取消处理。这个询问是 ControlOperation 的确认，不是授权询问，不产生授权条目，也不是 HUMAN 节点，不进入模型上下文。
+   没有计时器：用户的下一条输入、切换或关闭 Session、关闭界面都按取消处理。这个询问是 ControlOperation 的确认，不是授权询问，不产生授权条目，也不是 HUMAN 节点，不进入模型上下文。
 4. **兜底快照**：强制回退之前，Kernel 先对当前工作区拍一个快照，询问时告知用户"被覆盖的内容会保留在快照中"。M2 不提供 redo，但误覆盖的修改可以从影子仓库找回。
 5. **写入前复查**：逐个文件写入之前再比较一次。如果文件在第 2 步之后又被改动（用户确认之后，编辑器或外部程序还在改），就停止回退，已写入的文件按兜底快照恢复，然后重新提示。
    `/undo` 只在 AWAITING_INPUT 执行，本系统没有 Agent 在运行，实例锁又排除了另一个 MultiAgentOS 进程，所以这种情况只可能来自本系统之外。
@@ -795,7 +798,7 @@ Architecture 中"危险行为每次都必须单独征得用户同意"在 M2 中�
 
 **极危险级的询问选项**：只有单次允许与拒绝。不提供任何"均允许"，批准不继承、不复用，每个 UnitAttempt 单独询问；询问界面以警示样式显示。
 
-**不确定级的询问选项**：允许（本 WorkflowRun 内对这个资源键有效）、拒绝（本 WorkflowRun 内对这个资源键保持拒绝）。
+**不确定级的询问选项**：允许（本 WorkflowRun 内对这个资源键有效）、拒绝（绑定提出请求的 AgentRun，见第 5.3 节“拒绝绑定 AgentRun”）。
 
 每个选项都形成一条授权条目（第 5.1 节）；"单次允许"的条目在该 UnitAttempt 结束时作废。
 
@@ -902,8 +905,11 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 
 `file-write`、`file-edit` 在进程内执行。它们与 Core 的第 ③ 步判定、沙盒的 `--bind` 使用同一个 `isWritable(profile, path)` 函数，
 并用属性测试证明三处判断一致。路径不跟随符号链接，不得越出仓库目录（M1 的 `guarded-file` 规则）。
-`isWritable` 对 `.git/`、`.multiagentos/` 之下的路径一律返回否（`PROTECTED_PATH`）；任一目录中的 `AGENTS.md` 可写，但按极危险级逐次询问（第 5.2 节）。
+`isWritable` 对 `.git/`、`.multiagentos/` 之下的路径，以及排除规则命中的路径（`.env*`、私钥、`node_modules` 等，含 `repositoryExclusions` 追加的规则），一律返回否（`PROTECTED_PATH`）：
+快照不覆盖这些文件，写入后无法回退，也与第 6.1 节命令的遮蔽不一致。任一目录中的 `AGENTS.md` 可写，但按极危险级逐次询问（第 5.2 节）。
 文件工具同样不能读取敏感文件（M1 的排除规则），与第 6.1 节命令的可见性一致。
+
+文件工具的防线是代码，不是操作系统（第 2.5 节的有意偏离）。因此越界路径、符号链接替换与竞争条件的对抗测试是阶段 2 的退出条件。
 
 ### 6.4 并行运行的安全条件
 
@@ -980,9 +986,12 @@ WorkflowRun 账本（budget.runTokenLimit）
 
 | 层 | 缺省份额（初值） | 说明 |
 |---|---|---|
-| WorkflowRun | `budget.runTokenLimit` = 5,000,000 | 整个运行的总上限 |
-| Turn | `budget.turnTokenLimit` = 2,000,000 | 一个 Turn（含其中全部 AgentRun）的上限；运行级余额不足时取余额 |
+| WorkflowRun | `budget.runTokenLimit` = 12,000,000 | 整个运行的总上限 |
+| Turn | `budget.turnTokenLimit` = 4,000,000 | 一个 Turn（含其中全部 AgentRun）的上限；运行级余额不足时取余额 |
 | AgentRun | explorer 300,000；worker 600,000；模板节点按所引用 Agent 的缺省份额 | `run_subagents` 与模板可以在 `[最小份额, 缺省份额的 2 倍]` 内调整 |
+
+**额度的单位**：账本记的是"按价格折算后的 token"。缓存命中的输入按模型定义的价格折算（命中单价 ÷ 未命中单价，`deepseek-flash` 为 1/50），未命中的输入与输出按原值计。
+额度因此约束实际花费：只在末尾追加的请求大部分命中缓存，长任务不会因为重复计算同一段前缀而提前触顶。预留不知道命中多少，按全部未命中计，结算时多退。
 
 **为什么要委派**：同一个 AgentRun 内的模型调用是串行的（一轮一次 model-call），所以每个账本的在途预留最多一份。
 M1 Monitor 的结论（NORMAL 状态下普通预留必然成功、收尾预留必然成功）可以原样用在每个账本上；
@@ -1032,6 +1041,11 @@ M1 Monitor 的结论（NORMAL 状态下普通预留必然成功、收尾预留�
 2. final-call 结果不合法时，按 M1 的降级规则生成降级结果或降级回复，不依赖模型；
 3. Orchestration 中输出节点（`output: true`）因额度未能运行时，Workflow 以确定性方式生成运行报告：列出已完成节点的结果、未完成节点及其原因、触顶项，不调用模型，经 `message-publish` 发布；
 4. 回复与运行报告中都注明是因额度到达限制而结束，以及剩余未完成的工作。
+
+**任何提前收尾都有报告和日志**（不只额度，统一收尾路径上的每一项）：
+- **日志**：决定收尾时写 `AGENT_WRAP_UP`（原因与轮次），AgentRun 结束时 `AGENT_RUN_ENDED` 再带一次原因；
+- **模型**：final-call 的 STATUS 要求它说明哪些做完了、哪些没有；
+- **用户**：`message-publish` 带上原因，界面在回复之后提示本轮提前结束及原因。不能显示成正常完成。
 
 **压缩的额度**（第 9.6 节）：上下文压缩的摘要调用从被压缩对象所用的账本支出——chat 的 main 为当前 Turn 的账本，模板中的 AGENT 节点与 SubAgent 为该 AgentRun 自己的账本（份额来自上级的委派），不得动用收尾保留 F。
 修剪（第 9.6 节第 4.5 步）不调用模型，不需要额度。
@@ -1146,6 +1160,23 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 - **结果映射**：Supervisor 以 `TERMINATED` 上报被取消的执行，Execution 按取消原因形成 `INTERRUPTED(PAUSED | ABORTED)`；MODEL 按 M1 的规则结算已发生的用量。
 - **排队中的尝试**：中止时，尚未派发的尝试从队列中移出，同样交付 `INTERRUPTED(ABORTED)`（M1 收敛时清出队列的尝试不交付，这里不同）。
 - **防止迟到的提交**：每个尝试记录所属的 `turnId`。Turn 结束后，属于它的 `submitUnit` 一律以 `NO_OPEN_TURN` 拒绝。
+
+### 7.7 内存压力
+
+内存不足时进程会被系统杀死，日志之外的状态全部丢失，用户也得不到任何说明。系统在到达那一步之前主动收尾并退出。这里不设特例路径，只有一条：
+
+1. **采样**：Kernel.Monitor 按 `memory.sampleIntervalMs`（缺省 1000）定时采样，判断级别（Kernel/Monitor 第 4a 节）。这是 Monitor 唯一自己定时运行的工作，因为内存属于进程，不属于某个运行。
+2. **上报**：级别升高时，Monitor 向 Core 发一条控制消息 `MemoryPressure(level, 采样值)`，与其他控制消息一样排队、按序处理。Monitor 不能自己取消、关闭运行或停机。
+3. **处理**：Core 经中断的统一入口处理，不增加新的状态、Workflow 事件或关闭方式：
+
+| 级别 | 缺省 | Core 的处理 |
+|---|---|---|
+| WARNING | 占用比 ≥ 75% | 第 7.3 节的统一收尾路径：每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），下一次模型调用是 final-call；拒绝登记新的 AgentRun 与开启新的 Turn。结束后留下报告（第 7.3 节） |
+| DANGER | 占用比 ≥ 90% | 全部运行进入 INTERRUPTING（第 4.3 节，与用户中止、Turn 超时相同）：取消在途与排队的工作，经 `RunInterrupted(MEMORY_PRESSURE)` 通知 Workflow；Workflow 不再调用模型，以确定性结果收敛并 `closeRun` |
+
+4. **退出**：所有运行收敛后，日志都已落盘，Core 请求组合根按正常停机流程退出，退出码表明原因；界面说明原因与恢复方式，下次启动可以恢复 Session。任一运行无法确认停止时，按第 4.7 节处理。
+
+阶段 3 只实现内存压力这一个中断原因，同时建立中断的统一入口与 INTERRUPTING；阶段 5 的用户中止、Turn 超时、暂停超时都进入同一入口。
 
 ## 8. 工具与 Executor
 
@@ -1264,8 +1295,12 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 - **不按调用重新裁剪**：`context-assemble` 按日志顺序组装全部条目，不去掉任何条目。上下文的规模只由两件事控制：
   1. 工具结果在产生时只留预览（第 8.2 节）；
   2. 超出阈值时由 Kernel 压缩（第 9.6 节：先修剪较早的大工具结果，仍超出再写摘要），结果写回日志。
-- **两种规模估算**：判断是否压缩用"实测加估算"——最近一次模型调用由 provider 报告的实际输入 token，加上它之后新增条目的估算（第 9.6 节"触发"）；
-  额度预留仍用保守的字节估算（M1 的 `estimatePackTokens`）。前者用于判断，偏差只影响压缩的时机；后者用于保证额度，宁可高估。
+- **规模估算**：`estimatePackTokens` 按文本片段的类别估算 token，各类权重按 provider 的实际计数拟合（选择过程见 `docs/experiments.md`）；回传的思考内容计入输入。
+  判断上限时再用校准：同一 AgentRun 上一次请求的实测输入 ÷ 当时的估算，乘以本次估算；本次估算不足上次的 70%（工具列表或历史已变，不再共享前缀）时不校准。校准值只在 Kernel 内存中，由 Kernel 填入 `context-assemble` 的输入，Workflow 不接触 token 数。
+  实测误差低于 5%。判断压缩的"实测加估算"见第 9.6 节"触发"。额度预留 = 校准后的输入 × 1.05 + 该次调用的输出上限，留出估算偏差。
+- **上下文上限**：`perCallInputLimit` 取模型窗口减去输出上限，再留约 6% 的估算余量。`deepseek-flash` 的窗口为 1,000,000、输出取 64,000，所以输入上限为 880,000。
+- **provider 拒绝**：估算偏差使 provider 以上下文超长拒绝时，`model-call` 返回 `LIMIT_EXCEEDED`，按超出上限处理。
+- **接近上限的预警**：上下文达到 `perCallInputLimit` 的 85% 时，STATUS 写明已用比例与 token 数，要求模型只读必要内容、尽快结束；到达上限时按下一条进入最后一轮。预警在 STATUS 中，不改变缓存前缀，写入日志的 `CONTEXT_ASSEMBLED` 带这次的 token 数。
 - **收尾调用的保险**：收尾调用是该 AgentRun 的最后一次调用，不再压缩。组装超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，
   以完整的模型轮为单位（工具调用与它的结果不拆开），直到装下为止；`PINNED` 条目与最近一轮永不去掉。去掉的条目记入 `CONTEXT_ASSEMBLED`，结果可以复现。
   仍然装不下时，不调用模型，按 M1 的降级规则结束（第 7.3 节"必有报告"）。
@@ -1809,6 +1844,8 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.11 | 2026-10-31 | 第 9.6 节：按阶段 0 的实测改写前缀式摘要请求：保留工具定义、不设 `tool_choice`，指令要求不调用工具，模型调用工具按摘要不合格处理；`summaryReasoningEffort` 缺省改为 `low` |
 | v1.12 | 2026-10-31 | 第 7.5 节：用户正文只以引用传递，没有例外；发布版只有 major 1 一套契约，M1 的模块与 major 0 在接线后删除；第 3.8、3.9 节：`analyze` 的 planner、code-viewer 改为普通 `v1` Agent，走统一路径，取消 M1 额度档案；第 8.2 节：预览上限不再按定义版本区分；第 14.2 节相应修改 |
 | v1.12（编辑性） | 2026-10-31 | 第 10.3 节第 4 步：补全被打断的 AgentRun、节点与工具调用的结算 |
+| v1.17 | 2026-11-04 | 第 7.7 节（新增）：内存压力由 Monitor 定时采样，以控制消息上报 Core，经统一收尾路径与中断入口处理，阶段 3 实现；第 4.3 节 INTERRUPTING 的含义相应放宽；第 7.3 节：额度按价格折算缓存命中的输入，运行与 Turn 上限调整，任何提前收尾都有日志与用户提示；第 9.3 节：估算改为按片段分类并按实测校准，思考内容计入输入，输入上限对齐模型窗口，接近上限时预警，provider 的超长拒绝走统一收尾路径；第 4.6 节：快照保存磁盘原始字节；第 4.6 节：快照跳过的未跟踪文件从 2 MiB 改为 16 MiB，使文件工具能写的都能回退 |
+| v1.16 | 2026-11-04 | 第 6.3 节：文件工具拒绝写入排除规则命中的路径（`PROTECTED_PATH`），对抗测试列为阶段 2 的退出条件；第 4.6 节：系统没有 `git` 时启动预设降为 `readonly`；回退的确认没有计时器，下一条输入、切换或关闭按取消处理（Cary 2026-11-04 决定） |
 | v1.15 | 2026-11-02 | 第 5.3 节：拒绝的工具结果固定为 `the user rejected tool "<工具名>"`；被拒绝的工具不再提交；取消 v1.14 的 `AUTHORIZATION_DECLINED` 收尾 |
 | v1.14 | 2026-11-02 | 第 3.9、9.2、9.5 节：`AGENTS.md` 与其他说明文档同级，第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit；第 5.3 节：拒绝绑定提出请求的 AgentRun，不计入连续出错，模型在之后的轮次再次调用时收尾（`AUTHORIZATION_DECLINED`）；思考强度只在 `registerAgentRun` 中给出；第 2.3、7.5、10、12（不变量 20）、13（A）、14.1 节相应修改 |
 | v1.13（编辑性） | 2026-11-02 | 第 8.2 节：删去"按 Unit 定义的版本选取上限"的残留，与 v1.12 一致 |

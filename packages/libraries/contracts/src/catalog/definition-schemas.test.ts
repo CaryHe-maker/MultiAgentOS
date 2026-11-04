@@ -42,6 +42,7 @@ const fixtures = {
       ],
       onDegraded: 'PUBLISH_NOTICE',
     },
+    capabilities: ['repo.read'],
     limits: { maxRounds: 3, maxToolCallsPerRound: 1, maxToolUnits: 10 },
     budget: {
       perCallInputLimit: 1_000,

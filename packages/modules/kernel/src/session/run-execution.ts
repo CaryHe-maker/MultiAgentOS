@@ -38,6 +38,8 @@ export interface RunExecutionDeps {
   readonly dispatch: (request: ExecutionRequest) => Promise<void>;
   readonly cancelRun: (request: CancelRunExecutionsRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
+  /** A write landed; awaited, so that whatever follows from it precedes the report. */
+  readonly written: (path: string, sha256: string) => Promise<void>;
   /** Undefined when the file does not exist. */
   readonly readRepositoryFile: (path: string, scope: ExecutionScope) => Promise<string | undefined>;
   /** Runs `work` as a control message of the actor; a timer only does this. */
@@ -161,8 +163,10 @@ export class RunExecution {
   async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
+    const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);
     try {
       built = await this.#builder.build(attempt.spec, {
+        ...(calibration === undefined ? {} : { calibration }),
         sessionId: this.#deps.sessionId,
         workflowRunId: this.#deps.workflowRunId,
         unitAttemptId: attempt.unitAttemptId,
@@ -288,12 +292,24 @@ export class RunExecution {
       await ended('FAILED', 'INTERNAL');
       return;
     }
+    let changedFiles: readonly string[] | undefined;
+    if (fact.executionKind === 'FILE_WRITE' || fact.executionKind === 'FILE_EDIT') {
+      const { path, sha256 } = fact.result.output;
+      changedFiles = [path];
+      try {
+        await this.#deps.written(path, sha256);
+      } catch {
+        await ended('FAILED', 'INTERNAL');
+        return;
+      }
+    }
     await this.#finish(attempt, {
       executionId: fact.executionId,
       outcome: 'COMPLETED',
       output: result.output,
       ...refs,
       ...model,
+      ...(changedFiles === undefined ? {} : { changedFiles }),
     });
   }
 

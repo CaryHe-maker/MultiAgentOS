@@ -27,3 +27,4 @@ export {
 } from './session/pinned-agent.js';
 export type { PinnedAgent } from './session/run-attempts.js';
 export { minShare, type AgentBudget } from './monitor/index.js';
+export { WorkspaceSnapshots } from './session/workspace-snapshots.js';

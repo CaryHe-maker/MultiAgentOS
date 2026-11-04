@@ -1,5 +1,12 @@
 import {
+  DEFAULT_REPOSITORY_EXCLUSIONS,
   MEDIA_TYPES,
+  PROTECTED_WRITE_RULES,
+  isProjectInstructionPath,
+  type ShadowFiles,
+  type SnapshotIndexLine,
+  type SubprocessRunner,
+  type WorkspaceFiles,
   RunSummarySchema,
   assertValid,
   canonicalJson,
@@ -39,6 +46,7 @@ import { RunExecution, type RunExecutionDeps } from './session/run-execution.js'
 import { RunWork, type PinResult, type RunHost } from './session/run-work.js';
 import { SessionActor } from './session/session-actor.js';
 import { SessionArtifacts } from './session/session-artifacts.js';
+import { WorkspaceSnapshots } from './session/workspace-snapshots.js';
 import { SessionCore, type CoreResponse } from './session/session-core.js';
 import {
   SessionGateway,
@@ -67,6 +75,13 @@ export interface SessionKernelDeps {
   /** This process's repository: a realpath. */
   readonly repositoryRoot: string;
   readonly preset: 'standard' | 'readonly';
+  /** What snapshots need; without it (`readonly`, or no git) nothing is captured or undone. */
+  readonly workspace?: {
+    readonly files: WorkspaceFiles;
+    readonly git: SubprocessRunner;
+    readonly directoryOf: (sessionId: string) => string;
+    readonly shadowOf: (sessionId: string) => ShadowFiles;
+  };
   /** `readProjectFile` reads through the same guard as `file-read`. */
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
   readonly reportSystemFault?: SystemFaultReporter;
@@ -191,6 +206,11 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       dispatch: (request) => supervisor.execute(request),
       cancelRun: (request) => supervisor.cancelRun(request),
       retrying: (retry) => holder.work?.retrying(retry),
+      // A write the user approved gives the content they saw standing (Kernel/Core 5a.4).
+      written: (path, sha256) =>
+        isProjectInstructionPath(path)
+          ? trust.record(repositoryRoot, path, sha256, 'APPROVED_WRITE')
+          : Promise.resolve(),
       readRepositoryFile: deps.readRepositoryFile,
       enqueue: (work) => {
         host.enqueue(work);
@@ -219,6 +239,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       readProjectFile: (path, scope) => execution.readProjectFile(path, scope),
       isTrusted: (path, sha256) => trust.isTrusted(repositoryRoot, path, sha256),
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
+      storeQuestionContent: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
         execution.cancel(runEpoch);
@@ -285,6 +306,29 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       });
       await artifacts.load();
       sessionArtifacts.set(sessionId, artifacts);
+      const snapshots =
+        deps.workspace === undefined
+          ? undefined
+          : new WorkspaceSnapshots({
+              repositoryRoot,
+              directory: deps.workspace.directoryOf(sessionId),
+              index: persistence.appendLog<SnapshotIndexLine>('kernel-execution', {
+                scope: 'SESSION',
+                sessionId,
+                file: 'snapshot-index',
+              }),
+              git: deps.workspace.git,
+              files: deps.workspace.files,
+              shadow: deps.workspace.shadowOf(sessionId),
+              ...(deps.diagnostic === undefined ? {} : { diagnostic: deps.diagnostic }),
+              rules: [
+                ...PROTECTED_WRITE_RULES,
+                ...DEFAULT_REPOSITORY_EXCLUSIONS,
+                ...config.repositoryExclusions,
+              ],
+              now,
+            });
+      await snapshots?.load();
       const auditLog = persistence.appendLog<object>('kernel-core', {
         scope: 'SESSION',
         sessionId,
@@ -299,7 +343,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         sessionId,
         repositoryRoot,
         outbox,
+        preset: deps.preset,
         duties: {
+          ...(snapshots === undefined ? {} : { snapshots }),
+          storeDiff: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
+          inheritArtifacts: async (fromSessionId, refs) => {
+            const unknown = await artifacts.inherit(refs, ownersOf(fromSessionId));
+            for (const ref of unknown)
+              audit({ type: 'ARTIFACT_NOT_INHERITED', artifactId: ref.artifactId });
+          },
           storeUserInput: (input) => artifacts.storeUserInput(input),
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {

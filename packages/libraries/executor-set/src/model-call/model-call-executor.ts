@@ -13,7 +13,7 @@ import {
   type RequestState,
   type TokenUsage,
 } from '@multiagentos/contracts';
-import { violation } from '../outcome/outcomes.js';
+import { rejected, violation } from '../outcome/outcomes.js';
 import { createLanguageModel, type LanguageModel, type ModelScope } from './language-model.js';
 import { toPrompt, toTools, toolSpecsOf } from './provider-request.js';
 import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
@@ -161,6 +161,11 @@ export function failureOf(
   };
 }
 
+/** DeepSeek's wording; the estimate should keep this from ever happening. */
+const isContextOverflow = (error: unknown): boolean =>
+  error instanceof Error &&
+  /maximum context length|context.*(too long|exceed)/iu.test(error.message);
+
 /** What each way a call can go wrong means for the Unit. */
 export function classifyCall(
   error: unknown,
@@ -178,6 +183,7 @@ export function classifyCall(
     if (status === 429) return failureOf('PROVIDER_RATE_LIMITED', true, 'NOT_SENT');
     if (status === 401 || status === 403) return failureOf('PROVIDER_AUTH', false, 'NOT_SENT');
     if (status === 408 || status >= 500) return failureOf('PROVIDER_ERROR', false, 'UNKNOWN');
+    if (status === 400 && isContextOverflow(error)) return rejected('LIMIT_EXCEEDED');
     if (status >= 400) return failureOf('INTERNAL', false, 'NOT_SENT');
   }
   if (!progress.started || progress.failedBeforeSending)

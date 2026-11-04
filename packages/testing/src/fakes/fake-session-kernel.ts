@@ -348,6 +348,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     run?.workflowRunId === workflowRunId && !run.closed ? run : undefined;
 
   const gateway: WorkflowGatewayPort = {
+    updateActivity: (request) => Promise.resolve(ack(request.requestId)),
     registerAgentRun: (request) => {
       const current = inRun(request.workflowRunId);
       if (current?.turnId === undefined)
@@ -483,6 +484,9 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   };
 
   const interaction: InteractionGatewayPort = {
+    undoTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    confirmUndo: (request) => Promise.resolve(rejected(request.requestId, 'UNDO_UNKNOWN')),
+    diffTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),
     startRun: (request) => {
       if (request.template.id !== 'analyze')

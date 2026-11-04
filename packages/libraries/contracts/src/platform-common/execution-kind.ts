@@ -1,8 +1,8 @@
 import { Type, type Static } from 'typebox';
 
 /**
- * Every execution kind a Unit can have (Interface/Definitions 5). FILE_WRITE, COMMAND and TEST
- * are answered with UNSUPPORTED_CAPABILITY until the stages that add them.
+ * Every execution kind a Unit can have (Interface/Definitions 5). COMMAND and TEST are answered
+ * with UNSUPPORTED_CAPABILITY until the stage that adds them.
  */
 export const EXECUTION_KINDS = [
   'REPOSITORY_ORIENT',
@@ -16,6 +16,8 @@ export const EXECUTION_KINDS = [
   'TEST',
   'REPOSITORY_LIST',
   'MESSAGE_PUBLISH',
+  'FILE_EDIT',
+  'OUTPUT_READ',
 ] as const;
 export const ExecutionKindSchema = Type.Enum(EXECUTION_KINDS, {
   $id: 'platform.common.ExecutionKind.v1',
@@ -30,6 +32,9 @@ export const EXECUTOR_KINDS = [
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'REPOSITORY_LIST',
+  'FILE_WRITE',
+  'FILE_EDIT',
+  'OUTPUT_READ',
 ] as const;
 export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 
@@ -40,3 +45,6 @@ export const REPOSITORY_KINDS = [
   'FILE_READ',
   'REPOSITORY_LIST',
 ] as const;
+
+/** The kinds whose Unit declares `workspace.write`. */
+export const WRITE_KINDS = ['FILE_WRITE', 'FILE_EDIT'] as const;

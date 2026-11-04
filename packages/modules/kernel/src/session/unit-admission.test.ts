@@ -38,7 +38,6 @@ describe('admitUnit', () => {
   it('admits a repository Unit that needs the Lease and counts as a tool', () => {
     expect(admitUnit(request, context())).toMatchObject({
       accepted: true,
-      needsRepoRead: true,
       countsAsTool: true,
     });
   });
@@ -68,17 +67,6 @@ describe('admitUnit', () => {
     );
   });
 
-  it('needs the Lease only because the definition declares repo.read', () => {
-    const declared = testUnitDefinition('MODEL', { protectedCapabilities: ['repo.read'] });
-    const undeclared = testUnitDefinition('FILE_READ', { protectedCapabilities: [] });
-    const needs = (unit: Unit) => {
-      const result = admitUnit(requestFor(unit), context({ agentRun: pinned(unit) }));
-      return result.accepted && result.needsRepoRead;
-    };
-    expect(needs(declared)).toBe(true);
-    expect(needs(undeclared)).toBe(false);
-  });
-
   it('refuses input outside the contract', () => {
     expect(refusal({ inputIsValid: () => false })).toBe('INVALID_INPUT');
   });
@@ -89,7 +77,6 @@ describe('admitUnit', () => {
       const unit = unitOf(kind);
       expect(admitUnit(requestFor(unit), context({ agentRun: pinned(unit) }))).toMatchObject({
         accepted: true,
-        needsRepoRead: false,
         countsAsTool: false,
       });
     },

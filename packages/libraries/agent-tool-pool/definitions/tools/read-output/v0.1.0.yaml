@@ -1,0 +1,19 @@
+schemaVersion: v1
+kind: TOOL
+id: read-output
+version: v0.1.0
+description: Model-facing paged read of a full tool output, served by the output-read unit.
+purpose: UNIT
+modelName: read_output
+modelDescription: >-
+  Read the full output of an earlier tool call whose result was cut, by its toolCallId. offset is
+  the first line (from 1), limit the number of lines (at most 2000); with pattern, only lines
+  containing that literal text are returned.
+parametersContract:
+  kind: contract
+  id: executor.OutputReadArgs
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

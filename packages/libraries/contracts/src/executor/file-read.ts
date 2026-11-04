@@ -32,6 +32,8 @@ export const FileReadOutputSchema = Type.Refine(
       totalLines: count(),
       contentSha256: Sha256Schema,
       fileSha256: Sha256Schema,
+      /** The `AGENTS.md` between this file and the root, outermost first (ExecutorSet 3). */
+      nestedInstructions: Type.Optional(Type.Array(text(512), { maxItems: 64 })),
     },
     'executor.FileReadOutput.v1',
   ),

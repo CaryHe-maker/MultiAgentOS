@@ -17,6 +17,8 @@ const EXPECTED = {
     'VersionedRef',
   ],
   'kernel.unit': [
+    'UpdateActivityRequest',
+    'WorkspaceDiverged',
     'BudgetState',
     'BudgetView',
     'CloseRunRequest',
@@ -43,6 +45,14 @@ const EXPECTED = {
     'WorkflowInboxEvent',
   ],
   executor: [
+    'FileEditArgs',
+    'FileEditInput',
+    'FileWriteArgs',
+    'FileWriteInput',
+    'FileWriteOutput',
+    'OutputReadArgs',
+    'OutputReadInput',
+    'OutputReadOutput',
     'FileReadInput',
     'FileReadOutput',
     'ModelCallInput',
@@ -65,7 +75,13 @@ const EXPECTED = {
     'RepositorySearchInput',
     'RepositorySearchOutput',
   ],
-  workflow: ['AnalysisReport', 'AnalysisReportDraft', 'HandoffBrief', 'ReplyArgs'],
+  workflow: [
+    'UpdateTodosArgs',
+    'AnalysisReport',
+    'AnalysisReportDraft',
+    'HandoffBrief',
+    'ReplyArgs',
+  ],
   catalog: [
     'AgentDefinition',
     'AgentPinRequest',
@@ -84,6 +100,13 @@ const EXPECTED = {
     'UnitDefinition',
   ],
   'kernel.control': [
+    'ConfirmUndoRequest',
+    'DiffTurnsRequest',
+    'TurnDiff',
+    'UndoCancelled',
+    'UndoConfirmationRequested',
+    'UndoTurnsRequest',
+    'WorkspaceReverted',
     'ActivityEvent',
     'AdmissionProjection',
     'AnswerAuthorizationRequest',
@@ -115,6 +138,7 @@ const EXPECTED = {
     'UnknownEffect',
   ],
   'kernel.execution': [
+    'OutputReadExecutorInput',
     'AssembleExecutorInput',
     'CancelRunExecutionsRequest',
     'ExecutionFact',
@@ -134,6 +158,7 @@ const EXPECTED = {
   integration: ['ChangeSetRef', 'IntegrationPlanRef', 'QualityGateResultRef'],
   'platform.fabric': ['ConsumerOffsetRef'],
   'platform.persistence': [
+    'SnapshotIndexLine',
     'ArtifactOwnerLine',
     'InstanceLockInfo',
     'JournalPositionRef',

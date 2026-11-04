@@ -119,6 +119,33 @@ describe('context-assemble', () => {
     });
   });
 
+  it('warns the model once the context is nearly full, and not before', async () => {
+    const history = [
+      ...conversation,
+      { ...entry(5), kind: 'NOTE' as const, text: 'word '.repeat(300) },
+    ];
+    const status = (pack: AssembleContextPack) => pack.items.at(-1)?.content ?? '';
+    const size = (await packOf(assembleInput({ history }))).tokenCount;
+    expect(status(await packOf(assembleInput({ history, tokenBudget: size * 2 })))).not.toContain(
+      'Warning',
+    );
+    const warned = status(await packOf(assembleInput({ history, tokenBudget: size + 50 })));
+    expect(warned).toContain('Warning: the context is');
+    expect(warned).toContain('your next call is the final one');
+  });
+
+  it('judges the limit by the calibrated figure', async () => {
+    const size = (await packOf(assembleInput())).tokenCount;
+    const measuredDouble = {
+      tokenCalibration: { measuredInputTokens: size * 2, estimatedInputTokens: size },
+    };
+    await expect(
+      assembled(assembleInput({ tokenBudget: size + 10, ...measuredDouble })),
+    ).resolves.toMatchObject({ outcome: 'REJECTED', reasonCode: 'LIMIT_EXCEEDED' });
+    const pack = await packOf(assembleInput({ tokenBudget: size * 3, ...measuredDouble }));
+    expect(pack.tokenCount).toBe(size * 2);
+  });
+
   it('lets only a final call drop whole old rounds, never a PINNED entry or the latest', async () => {
     const long = 'x'.repeat(4000);
     const old: ResolvedHistoryEntry[] = [

@@ -1,6 +1,9 @@
+import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sha256Hex } from '@multiagentos/contracts';
 import type {
+  ExecutionScope,
   ExecutorInputByKind,
   ExecutorKind,
   ExecutorRegistry,
@@ -75,21 +78,48 @@ const INPUTS: ExecutorInputByKind = {
   REPOSITORY_SEARCH: { query: 'add', mode: 'AUTO', maxItems: 20, tokenBudget: 4_000 },
   REPOSITORY_LIST: { depth: 2 },
   FILE_READ: { path: 'src/math.ts' },
+  FILE_WRITE: { path: 'unused', content: '', expectAbsent: true },
+  FILE_EDIT: { path: 'unused', oldString: 'x', newString: '', baseSha: sha256Hex('') },
+  OUTPUT_READ: { toolCallId: 'call_1', content: 'one\ntwo\n' },
   CONTEXT_ASSEMBLE: assembleInput,
   MODEL: { contextPack: pack, final: false },
 };
 
-const scopeOf = (kind: ExecutorKind) =>
+/** The cases share one repository, so each write has a file of its own. */
+let writes = 0;
+function inputFor<K extends ExecutorKind>(kind: K): ExecutorInputByKind[K];
+function inputFor(kind: ExecutorKind): ExecutorInputByKind[ExecutorKind] {
+  writes += 1;
+  const path = `written-${String(writes)}.txt`;
+  if (kind === 'FILE_WRITE') return { path, content: 'written\n', expectAbsent: true };
+  if (kind !== 'FILE_EDIT') return INPUTS[kind];
+  writeFileSync(join(repository.root, path), 'left + right\n');
+  return {
+    path,
+    oldString: 'left + right',
+    newString: 'right + left',
+    baseSha: sha256Hex('left + right\n'),
+  };
+}
+
+const scopeOf = (kind: ExecutorKind): ExecutionScope =>
   kind === 'MODEL'
     ? MODEL_SCOPE
-    : kind === 'CONTEXT_ASSEMBLE'
+    : kind === 'CONTEXT_ASSEMBLE' || kind === 'OUTPUT_READ'
       ? ({ kind: 'NONE' } as const)
-      : repositoryScope(repository.root);
+      : kind === 'FILE_WRITE' || kind === 'FILE_EDIT'
+        ? {
+            kind: 'WORKSPACE' as const,
+            repositoryRoot: repository.root,
+            writableRoots: ['.'],
+            exclusions: [],
+          }
+        : repositoryScope(repository.root);
 
 describeExecutorContract('ExecutorSet', {
   create: registryUnderTest,
   caseFor: (kind) => ({
-    input: INPUTS[kind],
+    input: inputFor(kind),
     environment: environmentFor(kind, scopeOf(kind), { subprocess: runner }),
   }),
   expectations: repositoryGuardExpectations(repository, (kind, scope) =>
@@ -99,7 +129,7 @@ describeExecutorContract('ExecutorSet', {
 
 describeExecutorContract('ExecutorSet registry without rg', {
   create: registryUnderTest,
-  caseFor: (kind) => ({ input: INPUTS[kind], environment: environmentFor(kind, scopeOf(kind)) }),
+  caseFor: (kind) => ({ input: inputFor(kind), environment: environmentFor(kind, scopeOf(kind)) }),
   expectations: repositoryGuardExpectations(repository, (kind, scope) =>
     environmentFor(kind, scope),
   ),

@@ -24,12 +24,11 @@ export type Admission =
   | {
       readonly accepted: true;
       readonly unit: UnitDefinition;
-      readonly needsRepoRead: boolean;
       readonly countsAsTool: boolean;
     };
 
-/** The kinds this stage cannot run; stage 2 judges by the Unit's capabilities instead. */
-const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['FILE_WRITE', 'COMMAND', 'TEST']);
+/** The kinds this stage cannot run. */
+const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['COMMAND', 'TEST']);
 
 /** Model work and the Units that end an Agent stay available after the quota (Kernel/Monitor 3). */
 const UNCOUNTED_KINDS: ReadonlySet<ExecutionKind> = new Set([
@@ -65,8 +64,6 @@ export function admitUnit(
   return {
     accepted: true,
     unit,
-    // The definition's declaration is the only source; loading the catalog checks it (AgentToolPool 5).
-    needsRepoRead: unit.protectedCapabilities.includes('repo.read'),
     countsAsTool: !UNCOUNTED_KINDS.has(unit.executionKind),
   };
 }

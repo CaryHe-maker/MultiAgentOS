@@ -1,6 +1,6 @@
 # 持久化接口
 
-> 状态：已评审（阶段 1 的部分）。约定见 [Interface](README.md)。语义以 [M2Design](../M2Design.md) 第 10 节为准。
+> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
 > 存储机制与写入规则见 [Infrastructure/Persistence](../Infrastructure/Persistence.md)；本文只定义目录、记录格式与 Port。
 
 ## 1. 目录
@@ -59,6 +59,7 @@ interface LogRecordBase {
 | `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind` | 1 |
 | `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
+| `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） | 2 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
 | `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
@@ -68,7 +69,7 @@ interface LogRecordBase {
 | `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
-| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
+| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`tokenCount`、`tokenBudget`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
 | `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` | 2 |
 | `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） | 8 |
 | `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` | 8 |
@@ -76,7 +77,10 @@ interface LogRecordBase {
 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 | 1 |
 | `LOG_TAIL_REPAIRED` | `truncatedBytes` | 1 |
 | `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` | 1 |
-| `WORKSPACE_REVERTED`、`WORKSPACE_DIVERGED`、`SESSION_FORKED` | 见阶段 2 | 2 |
+| `WORKSPACE_REVERTED` | `revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?` | 2 |
+| `WORKSPACE_DIVERGED` | `files` | 2 |
+| `SESSION_FORKED` | `fromSessionId`、`fromSeq` | 2 |
+| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` | 2 |
 | `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED` | 见阶段 5 | 5 |
 | `LOOP_EXHAUSTED` | 见阶段 7 | 7 |
 
@@ -178,6 +182,20 @@ interface ArtifactOwnerLine {
 
 - `EXPIRING` 的正文在 `retainedSince` 之后满 `expiringRetentionDays`（缺省 7 天）即可回收，此后读取一律返回 `ARTIFACT_EXPIRED`，不论正文是否已被删除；`SESSION` 的正文只在没有任何 ACTIVE 的 Session 拥有时回收。
 - 只有 Session 引用为 ACTIVE 的 Session 的归属文件参与回收的标记（[Infrastructure/ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
+
+### 4.4 快照索引（阶段 2）
+
+`sessions/<sessionId>/kernel-execution/snapshot-index.jsonl`，只追加，最后一行为准：
+
+```ts
+type SnapshotIndexLine =
+  | { kind: 'TURN_STARTED'; turnId: string; turnSeq: number; viewId: 'main'; startSnapshot?: string; at: string }
+  | { kind: 'TURN_ENDED'; turnId: string; endSnapshot?: string;
+      changedFiles: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[]; at: string }
+  | { kind: 'REVERTED'; revertedTurnIds: string[]; forced: boolean; backupSnapshot?: string; at: string };
+```
+
+没有 `TURN_ENDED` 的 Turn 是进程退出或停机留下的（M2Design 第 4.6 节）。
 
 ## 5. Kernel 审计
 

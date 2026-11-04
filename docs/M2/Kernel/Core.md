@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Core
 
-> 状态：已评审（阶段 1）。
+> 状态：已评审（阶段 1、2）。
 
 ## 1. 定位
 
@@ -82,6 +82,68 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
 - 信任记录是系统级状态，跨运行、跨 Session 有效；它不授予任何执行能力，不是授权条目，也不是 Lease。
 - 用户批准的 `AGENTS.md` 写入（根目录或子目录）成功后，新内容的 SHA 自动记为信任（`source: APPROVED_WRITE`，阶段 2）。
 
+## 5a. 两步授权（阶段 2）
+
+Lease 由能力上限与授权条目两步判定（M2Design 第 5 节）。判定是纯函数 `decideUnit`，Session actor 按结果行动，判定本身不做 I/O。
+
+### 5a.1 能力上限
+
+AgentRun 登记时计算一次，之后不变，只在 Core 内存中：
+
+```text
+capabilities = Agent 定义的 capabilities ∩ 启动预设允许的能力（readonly 只留安全级）
+writeRoots   = registerAgentRun.writeRoots（main 为仓库根目录），每一项规范化后必须在仓库内
+requestedCapabilities ⊄ capabilities，或 writeRoots 越出仓库 → 登记以 CAPABILITY_NOT_SUBSET 拒绝
+```
+
+阶段 2 只有顶层 AgentRun；父 AgentRun 的收窄在阶段 4 加入。
+
+### 5a.2 能力表
+
+能力的级别写在 Core 的能力表中，Unit 定义只声明能力：
+
+| 能力 | 级别 | 资源键 | 询问 |
+|---|---|---|---|
+| `repo.read` | 安全 | 仓库根目录 | 第 5.1 节 |
+| `workspace.write` | 不确定 | 发起者的可写根目录；条目覆盖其下全部路径 | 没有覆盖的条目时询问一次，`ALLOW` 与 `DENY` |
+| `workspace.write`，目标为任一目录的 `AGENTS.md` | 极危险 | 本次写入 | 每个 UnitAttempt 单独询问，只有 `ONCE` 与 `DENY`；不查找已有条目，不合并；询问展示路径与确切内容 |
+
+### 5a.3 判定顺序
+
+对每个需要能力的 Unit 按固定顺序判定（M2Design 第 5.3 节）：
+
+```text
+② 能力不在该 AgentRun 的能力上限中                → REJECTED(CAPABILITY_NOT_GRANTED)
+③ isWritable(profile, path)                      → WRITE_OUT_OF_SCOPE 或 PROTECTED_PATH
+④ 查找覆盖该能力与资源键的条目（极危险级跳过）   → 允许：签发 Lease；拒绝：USER_DECLINED
+   该 AgentRun 已拒绝过同一项能力                → USER_DECLINED，不询问
+⑤ 没有条目 → 发起询问，挂起尝试；相同询问合并；回答形成条目后回到 ④
+判定过程本身出错                                 → REJECTED(ADMISSION_CHECK_FAILED)
+```
+
+第 ① 步（`deniedCommands`、`deniedDomains`）在阶段 3、6 随对应能力加入。
+`file-write`、`file-edit` 的资源键从 Unit 输入的 `path` 提取；`isWritable` 与 Executor 使用同一个函数（`contracts` 的 `isWritable`）。
+
+### 5a.4 授权条目
+
+条目为 `(能力, 资源键, 有效范围, ALLOW | DENY)`，属于 WorkflowRun，只在内存中，运行结束时失效。`ONCE` 的条目在该 UnitAttempt 结束时作废。
+拒绝绑定提出请求的 AgentRun（第 5.1 节的规则推广到每项能力）。`AGENTS.md` 的写入成功后，Execution 报告新内容的 SHA，Core 追加信任记录（`source: APPROVED_WRITE`）。
+
+### 5a.5 回退的发起与确认
+
+Core 受理 `undoTurns`、`confirmUndo`、`diffTurns`（只在 AWAITING_INPUT，否则 `UNDO_NOT_AVAILABLE`），调用 Execution（[Execution](Execution.md) 第 6c 节）：
+
+```text
+undoTurns → Execution.planUndo
+  没有可回退的 Turn → NOTHING_TO_UNDO
+  没有外部修改      → Execution.applyUndo，发出 WorkspaceReverted
+  有外部修改        → 记录 undoId，向 UserInteraction 发出 UndoConfirmationRequested
+confirmUndo(FORCE)  → 拍兜底快照，Execution.applyUndo；复查失败时恢复并重新发出确认
+confirmUndo(CANCEL)、下一条 answerHuman、切换或关闭 Session → 发出 UndoCancelled，不修改文件
+```
+
+确认不是授权询问，不产生授权条目，也不进入模型上下文。
+
 ## 6. Turn 与人类请求
 
 | 消息 | 检查 | 动作 |
@@ -130,6 +192,8 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | `TURN_OPENED`、`TURN_CLOSED` | Turn 的开启与结束，附用量 | 1 |
 | `HUMAN_REQUESTED`、`HUMAN_ANSWERED` | 只记录 `humanRequestId`、`inputId` 与产物引用，不记录正文 | 1 |
 | `INSTRUCTIONS_TRUSTED` | 追加信任记录 | 1 |
+| `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | 询问与回答，附能力与资源键；`AGENTS.md` 的写入附内容的 SHA | 2 |
+| `WORKSPACE_REVERTED`、`UNDO_CANCELLED` | 回退的结果，附 Turn、是否强制、外部修改的文件、兜底快照 | 2 |
 | `COMPACTION_STARTED`、`COMPACTION_ENDED`、`COMPACTION_FAILED` | 压缩的开始、生效与失败，附触发、对象、修剪的条目数、范围、摘要请求的方式、用量与失败原因 | 8 |
 
 ## 8. 配置
@@ -149,6 +213,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 11：授权与检查出错时一律拒绝；询问一直等到用户回答 | 单元测试：询问没有计时器，待答复期间 Unit 保持挂起；收敛时询问以 `CANCELLED` 结束；拒绝后同一 AgentRun 不再询问，下一个 AgentRun 可以询问 |
 | 13：HUMAN 节点的答复不产生授权 | 单元测试：`answerHuman` 不改变任何授权记录 |
 | 18：Turn 由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
+| 判定顺序（阶段 2） | 属性测试：能力上限只能收窄；上限之外与写入范围之外从不询问；极危险级从不复用条目；判定出错时拒绝 |
 | 20：只有用户信任过的确切内容的 `AGENTS.md` 标明为项目指令 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
 | 28：修剪与摘要只在确认后生效，不动用 F（阶段 8） | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时只修剪、不写摘要；压缩期间该对象没有模型调用；空闲压缩进行中收到 `undoTurns` 时先取消且不写回；SubAgent 额度不足时进入收尾（阶段 4 完成后） |
 

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Execution
 
-> 状态：已评审（阶段 1）。
+> 状态：已评审（阶段 1、2）。
 
 ## 1. 定位
 
@@ -114,6 +114,39 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 
 **Session 删除与失败时的清理**：`deleteSession` 时，不论 Workflow 是否删除成功，Execution 都删除该 Session 的 `kernel-execution` 目录；
 新建 Session 失败时（Workflow 回复 `CREATE` 失败），Execution 同样删除已为它写入的归属文件（第一条输入的登记）。正文由下一次回收删除。
+
+## 6b. 工作区快照（阶段 2）
+
+影子 git 仓库在 `sessions/<id>/kernel-execution/snapshots/`，经 Supervisor 的 `git` 子进程操作（[Supervisor](Supervisor.md) 第 3 节），不要求被分析的仓库是 git 仓库：
+
+```text
+环境：GIT_DIR=<影子目录>、GIT_WORK_TREE=<仓库>、GIT_INDEX_FILE=<临时文件>、GIT_CONFIG_NOSYSTEM=1、GIT_CONFIG_GLOBAL=/dev/null
+拍摄：按排除规则遍历工作区（不跟随符号链接，不读仓库的 .gitignore）
+      → git update-index --force-remove（已不在的条目）→ git update-index --add --remove -z --stdin → git write-tree，得到快照 ID（tree）
+跳过：超过 16 MiB（文件工具的上限）、且不在上一个快照中的文件
+属性：影子目录的 info/attributes 关闭 text、eol、ident、filter 与编码转换，快照保存磁盘上的原始字节
+```
+
+- Turn 开启时拍开始快照，写入索引；结束时拍结束快照，以 `git diff-tree` 算出改动过的文件，追加到索引（`SnapshotIndexLine`，Interface/Persistence 第 4.4 节）。
+- 影子仓库关闭 gc（`gc.auto=0`）；快照只被快照索引引用，随 Session 目录删除。
+- 快照失败时 Turn 照常进行，但在索引中记为没有快照：这个 Turn 不能回退，`/undo` 说明原因。写入与回退依赖 git，启动探测见 M2Design 第 4.6 节。
+- 拍摄读文件内容，只在静止点进行，读取结束后不持有任何状态。
+
+## 6c. 回退（阶段 2）
+
+Execution 提供 `planUndo`、`applyUndo`、`diffTurn`，由 Core 发起（Core 第 5a.5 节）。步骤与 M2Design 第 4.6 节相同：
+
+1. **范围**：被回退各 Turn 改动过的文件的并集；目标为第一个改它的 Turn 的开始快照，目标中不存在时删除；
+2. **检查**：比较当前内容与最后改它的 Turn 的结束快照；没有结束快照的 Turn 按"开始快照与下一个 Turn 的开始快照之间的差异"计算，它就是最后一个时全部按外部修改处理；
+3. **兜底**：强制时先拍一个快照，引用写入回退记录；
+4. **写入**：逐个文件写入前再比较一次；不一致时停止，已写入的文件按兜底快照恢复，返回 `UNDO_FILE_CHANGED`；写入用同一套原子写入，保留文件权限；
+5. **记录**：向快照索引追加 `{ revertedTurnIds, forced, backupSnapshot? }`。
+
+Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn。切换或打开 Session 时，比较当前工作区与最后一个 Turn 的结束快照，差异作为 `divergedFiles` 与 `WorkspaceDiverged` 告知（M2Design 第 2.3 节 Session 第 6 条）。
+
+## 6d. Fork 的产物继承（阶段 2）
+
+`inheritArtifacts(refs)`：Workflow 复制日志时列出其中的 ArtifactRef，Execution 从原 Session 的归属索引读取每个引用的登记，以 `source: INHERITED` 写入新 Session，保留类别、`retainedSince` 与 `fullOutput` 不变；原 Session 没有登记的引用跳过并写审计。
 
 ## 6a. 压缩中的估算、修剪与摘要请求（阶段 8）
 

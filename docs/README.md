@@ -9,6 +9,7 @@
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [History](History/) | 已归档的文档，不作为当前规范；其中 [M1](History/M1/README.md) 是已发布的 M1 的规范、发布计划与验收证据 |
+| [experiments](experiments.md) | 为选择技术路径做过的实验与决定 |
 | [Style](Style.md) | 工程与文档协作规范 |
 
 目标平台为 Ubuntu LTS，规范版本为 24.04（M1 起）。Architecture 只描述长期规划，不穷尽实现；各 MVP 的具体机制在对应目录中明确。

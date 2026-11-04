@@ -15,6 +15,40 @@ const grantedId = (decision: ReturnType<Monitor['reserve']>): string => {
   return decision.reservationId;
 };
 
+describe('Monitor charges by price', () => {
+  const budget = { ...LEDGER, tokenLimit: 1_000_000 };
+
+  it('charges cached input by its weight and keeps the raw usage for the summary', () => {
+    const monitor = new Monitor(budget);
+    const id = grantedId(
+      monitor.reserve({ estimatedTokens: 100_000, final: false, cacheHitWeight: 0.02 }),
+    );
+    monitor.settle(id, {
+      type: 'ACTUAL',
+      usage: { inputTokens: 50_000, inputCacheHitTokens: 40_000, outputTokens: 1_000 },
+    });
+    // 10,000 uncached + 40,000 × 0.02 + 1,000 output.
+    expect(monitor.remaining()).toBe(1_000_000 - 11_800);
+    expect(monitor.finalize()).toMatchObject({ used: 11_800, inputTokens: 50_000 });
+  });
+
+  it('charges every token in full without a weight', () => {
+    const monitor = new Monitor(budget);
+    const id = grantedId(monitor.reserve({ estimatedTokens: 100_000, final: false }));
+    monitor.settle(id, {
+      type: 'ACTUAL',
+      usage: { inputTokens: 50_000, inputCacheHitTokens: 40_000, outputTokens: 1_000 },
+    });
+    expect(monitor.finalize().used).toBe(51_000);
+  });
+
+  it('refuses a weight outside what a price can be', () => {
+    expect(() =>
+      new Monitor(budget).reserve({ estimatedTokens: 1, final: false, cacheHitWeight: 2 }),
+    ).toThrow(MonitorInvariantError);
+  });
+});
+
 describe('Monitor settlement', () => {
   const budget = {
     ...LEDGER,

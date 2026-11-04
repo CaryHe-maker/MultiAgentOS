@@ -17,6 +17,7 @@
         "unitRefs",
         "startUnitRefs",
         "actions",
+        "capabilities",
         "limits",
         "budget"
       ],
@@ -230,9 +231,48 @@
                 "PUBLISH_NOTICE",
                 "PUBLISH_REPORT"
               ]
+            },
+            "todos": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "repo.read",
+              "workspace.write"
+            ]
+          },
+          "uniqueItems": true
         },
         "limits": {
           "type": "object",
@@ -894,6 +934,7 @@
             "unitRefs",
             "startUnitRefs",
             "actions",
+            "capabilities",
             "limits",
             "budget"
           ],
@@ -1107,9 +1148,48 @@
                     "PUBLISH_NOTICE",
                     "PUBLISH_REPORT"
                   ]
+                },
+                "todos": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "repo.read",
+                  "workspace.write"
+                ]
+              },
+              "uniqueItems": true
             },
             "limits": {
               "type": "object",
@@ -1643,7 +1723,9 @@
                   "COMMAND",
                   "TEST",
                   "REPOSITORY_LIST",
-                  "MESSAGE_PUBLISH"
+                  "MESSAGE_PUBLISH",
+                  "FILE_EDIT",
+                  "OUTPUT_READ"
                 ],
                 "$id": "platform.common.ExecutionKind.v1"
               },
@@ -1651,7 +1733,8 @@
                 "type": "array",
                 "items": {
                   "enum": [
-                    "repo.read"
+                    "repo.read",
+                    "workspace.write"
                   ]
                 },
                 "uniqueItems": true
@@ -1792,6 +1875,22 @@
                       "FATAL"
                     ]
                   },
+                  "CAPABILITY_NOT_GRANTED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "ADMISSION_CHECK_FAILED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "OUT_OF_SCOPE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -1833,6 +1932,46 @@
                     ]
                   },
                   "LIMIT_EXCEEDED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "WRITE_OUT_OF_SCOPE": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "PROTECTED_PATH": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "FILE_CHANGED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "EDIT_NO_MATCH": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "EDIT_NOT_UNIQUE": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -2583,7 +2722,9 @@
             "COMMAND",
             "TEST",
             "REPOSITORY_LIST",
-            "MESSAGE_PUBLISH"
+            "MESSAGE_PUBLISH",
+            "FILE_EDIT",
+            "OUTPUT_READ"
           ],
           "$id": "platform.common.ExecutionKind.v1"
         },
@@ -2591,7 +2732,8 @@
           "type": "array",
           "items": {
             "enum": [
-              "repo.read"
+              "repo.read",
+              "workspace.write"
             ]
           },
           "uniqueItems": true
@@ -2732,6 +2874,22 @@
                 "FATAL"
               ]
             },
+            "CAPABILITY_NOT_GRANTED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "ADMISSION_CHECK_FAILED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "OUT_OF_SCOPE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -2773,6 +2931,46 @@
               ]
             },
             "LIMIT_EXCEEDED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "WRITE_OUT_OF_SCOPE": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "PROTECTED_PATH": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "FILE_CHANGED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "EDIT_NO_MATCH": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "EDIT_NOT_UNIQUE": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3226,7 +3424,18 @@
                       "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
-                      "QUOTA_EXHAUSTED"
+                      "QUOTA_EXHAUSTED",
+                      "CAPABILITY_NOT_SUBSET",
+                      "CAPABILITY_NOT_GRANTED",
+                      "WRITE_OUT_OF_SCOPE",
+                      "PROTECTED_PATH",
+                      "ADMISSION_CHECK_FAILED",
+                      "FILE_CHANGED",
+                      "EDIT_NO_MATCH",
+                      "EDIT_NOT_UNIQUE",
+                      "UNDO_NOT_AVAILABLE",
+                      "NOTHING_TO_UNDO",
+                      "UNDO_UNKNOWN"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   }
@@ -3861,7 +4070,18 @@
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
-                "QUOTA_EXHAUSTED"
+                "QUOTA_EXHAUSTED",
+                "CAPABILITY_NOT_SUBSET",
+                "CAPABILITY_NOT_GRANTED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "ADMISSION_CHECK_FAILED",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE",
+                "UNDO_NOT_AVAILABLE",
+                "NOTHING_TO_UNDO",
+                "UNDO_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -5017,6 +5237,65 @@
       "additionalProperties": false,
       "$id": "context.RepositorySearchOutput.v1"
     },
+    "executor.FileEditArgs.v1": {
+      "type": "object",
+      "required": [
+        "path",
+        "oldString",
+        "newString"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "oldString": {
+          "type": "string",
+          "minLength": 1
+        },
+        "newString": {
+          "type": "string"
+        },
+        "replaceAll": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.FileEditArgs.v1"
+    },
+    "executor.FileEditInput.v1": {
+      "type": "object",
+      "required": [
+        "path",
+        "oldString",
+        "newString",
+        "baseSha"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "oldString": {
+          "type": "string",
+          "minLength": 1
+        },
+        "newString": {
+          "type": "string"
+        },
+        "replaceAll": {
+          "type": "boolean"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.FileEditInput.v1"
+    },
     "executor.FileReadInput.v1": {
       "type": "object",
       "required": [
@@ -5075,10 +5354,100 @@
         "fileSha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "nestedInstructions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 64
         }
       },
       "additionalProperties": false,
       "$id": "executor.FileReadOutput.v1"
+    },
+    "executor.FileWriteArgs.v1": {
+      "type": "object",
+      "required": [
+        "path",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "content": {
+          "type": "string"
+        },
+        "append": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.FileWriteArgs.v1"
+    },
+    "executor.FileWriteInput.v1": {
+      "type": "object",
+      "required": [
+        "path",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "content": {
+          "type": "string"
+        },
+        "append": {
+          "type": "boolean"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "expectAbsent": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.FileWriteInput.v1"
+    },
+    "executor.FileWriteOutput.v1": {
+      "type": "object",
+      "required": [
+        "path",
+        "operation",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "operation": {
+          "enum": [
+            "CREATED",
+            "OVERWRITTEN",
+            "APPENDED",
+            "EDITED"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.FileWriteOutput.v1"
     },
     "executor.ModelCallInput.v1": {
       "type": "object",
@@ -5510,6 +5879,134 @@
       ],
       "$id": "executor.ModelToolCall.v1"
     },
+    "executor.OutputReadArgs.v1": {
+      "type": "object",
+      "required": [
+        "toolCallId"
+      ],
+      "properties": {
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.OutputReadArgs.v1"
+    },
+    "executor.OutputReadInput.v1": {
+      "type": "object",
+      "required": [
+        "toolCallId",
+        "fullRef"
+      ],
+      "properties": {
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fullRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.OutputReadInput.v1"
+    },
+    "executor.OutputReadOutput.v1": {
+      "type": "object",
+      "required": [
+        "toolCallId",
+        "totalLines",
+        "startLine",
+        "endLine",
+        "omittedLines"
+      ],
+      "properties": {
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "totalLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matchedLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omittedLines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.OutputReadOutput.v1"
+    },
     "executor.RepositoryListInput.v1": {
       "type": "object",
       "properties": {
@@ -5793,6 +6290,31 @@
               },
               "additionalProperties": false
             },
+            "todos": {
+              "type": "object",
+              "required": [
+                "total",
+                "done"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "done": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "current": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "additionalProperties": false
+            },
             "at": {
               "type": "string",
               "format": "date-time"
@@ -5904,6 +6426,31 @@
                   },
                   "additionalProperties": false,
                   "$id": "platform.common.ArtifactRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "todos": {
+              "type": "object",
+              "required": [
+                "total",
+                "done"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "done": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "current": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
                 }
               },
               "additionalProperties": false
@@ -6031,6 +6578,7 @@
             "scope": {
               "enum": [
                 "ALLOW",
+                "ONCE",
                 "DENY"
               ]
             }
@@ -6273,6 +6821,105 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
+            "writeRoot",
+            "critical"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "workspace.write"
+            },
+            "writeRoot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "critical": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
+            "path",
+            "contentRef",
+            "critical"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "workspace.write"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "critical": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.control.AuthorizationRequest.v1"
@@ -6317,6 +6964,42 @@
       ],
       "$id": "kernel.control.CloseReason.v1"
     },
+    "kernel.control.ConfirmUndoRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "undoId",
+        "decision"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "undoId": {
+          "type": "string",
+          "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "decision": {
+          "enum": [
+            "FORCE",
+            "CANCEL"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.ConfirmUndoRequest.v1"
+    },
     "kernel.control.DeleteSessionRequest.v1": {
       "type": "object",
       "required": [
@@ -6335,6 +7018,29 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.DeleteSessionRequest.v1"
+    },
+    "kernel.control.DiffTurnsRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.DiffTurnsRequest.v1"
     },
     "kernel.control.GatewayForward.v1": {
       "anyOf": [
@@ -6365,7 +7071,9 @@
                 "agentRef",
                 "effort",
                 "workspaceViewId",
-                "display"
+                "display",
+                "requestedCapabilities",
+                "writeRoots"
               ],
               "properties": {
                 "requestId": {
@@ -6442,6 +7150,24 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "requestedCapabilities": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "repo.read",
+                      "workspace.write"
+                    ]
+                  },
+                  "uniqueItems": true
+                },
+                "writeRoots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
                 }
               },
               "additionalProperties": false,
@@ -6960,7 +7686,18 @@
                                       "TEMPLATE_UNSUPPORTED",
                                       "HUMAN_REQUEST_NOT_PENDING",
                                       "CONTEXT_OVERFLOW",
-                                      "QUOTA_EXHAUSTED"
+                                      "QUOTA_EXHAUSTED",
+                                      "CAPABILITY_NOT_SUBSET",
+                                      "CAPABILITY_NOT_GRANTED",
+                                      "WRITE_OUT_OF_SCOPE",
+                                      "PROTECTED_PATH",
+                                      "ADMISSION_CHECK_FAILED",
+                                      "FILE_CHANGED",
+                                      "EDIT_NO_MATCH",
+                                      "EDIT_NOT_UNIQUE",
+                                      "UNDO_NOT_AVAILABLE",
+                                      "NOTHING_TO_UNDO",
+                                      "UNDO_UNKNOWN"
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
                                   }
@@ -7434,6 +8171,19 @@
                                 }
                               },
                               "additionalProperties": false
+                            },
+                            "wrapUpReason": {
+                              "enum": [
+                                "BUDGET_WRAP_UP",
+                                "TOOL_UNIT_LIMIT",
+                                "WALL_CLOCK_LIMIT",
+                                "REPEATED_INTENT",
+                                "CONSECUTIVE_ERRORS",
+                                "CONTEXT_LIMIT",
+                                "NO_PROGRESS",
+                                "ROUND_LIMIT",
+                                "REGENERATION_LIMIT"
+                              ]
                             }
                           },
                           "additionalProperties": false
@@ -7465,6 +8215,128 @@
                         }
                       ],
                       "$id": "kernel.unit.MessagePublishInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "content"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "append": {
+                          "type": "boolean"
+                        },
+                        "baseSha": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "expectAbsent": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.FileWriteInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "oldString",
+                        "newString",
+                        "baseSha"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        },
+                        "oldString": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "newString": {
+                          "type": "string"
+                        },
+                        "replaceAll": {
+                          "type": "boolean"
+                        },
+                        "baseSha": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.FileEditInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "toolCallId",
+                        "fullRef"
+                      ],
+                      "properties": {
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "fullRef": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
+                        },
+                        "offset": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2000
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.OutputReadInput.v1"
                     }
                   ],
                   "$id": "kernel.unit.UnitInput.v1"
@@ -7713,7 +8585,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -7854,11 +8737,86 @@
                 },
                 "path": {
                   "type": "string",
-                  "pattern": "^(?:AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$"
+                  "pattern": "^(?:(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$",
+                  "maxLength": 512
                 }
               },
               "additionalProperties": false,
               "$id": "kernel.unit.ReadProjectFileRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "updateActivity"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "agentRunId",
+                "todos"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "todos": {
+                  "type": "object",
+                  "required": [
+                    "total",
+                    "done"
+                  ],
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "done": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    },
+                    "current": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.UpdateActivityRequest.v1"
             }
           },
           "additionalProperties": false
@@ -7946,6 +8904,63 @@
                       "type": "object",
                       "required": [
                         "command",
+                        "outcome",
+                        "inheritedArtifacts",
+                        "fromTurnCount"
+                      ],
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "const": "FORK"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "const": "READY"
+                        },
+                        "inheritedArtifacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "fromTurnCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "command",
                         "outcome"
                       ],
                       "properties": {
@@ -7974,6 +8989,7 @@
                           "enum": [
                             "OPEN",
                             "CREATE",
+                            "FORK",
                             "CLOSE",
                             "DELETE"
                           ]
@@ -8160,42 +9176,89 @@
               "const": "startSession"
             },
             "request": {
-              "type": "object",
-              "required": [
-                "requestId",
-                "mode",
-                "prompt"
-              ],
-              "properties": {
-                "requestId": {
-                  "type": "string",
-                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "mode": {
-                  "type": "string",
-                  "const": "NEW"
-                },
-                "prompt": {
+              "anyOf": [
+                {
                   "type": "object",
                   "required": [
-                    "inputId",
-                    "text"
+                    "requestId",
+                    "prompt",
+                    "mode"
                   ],
                   "properties": {
-                    "inputId": {
+                    "requestId": {
                       "type": "string",
-                      "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
-                    "text": {
+                    "prompt": {
+                      "type": "object",
+                      "required": [
+                        "inputId",
+                        "text"
+                      ],
+                      "properties": {
+                        "inputId": {
+                          "type": "string",
+                          "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "mode": {
                       "type": "string",
-                      "minLength": 1,
-                      "maxLength": 100000
+                      "const": "NEW"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "prompt",
+                    "mode",
+                    "fromSessionId"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string",
+                      "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "prompt": {
+                      "type": "object",
+                      "required": [
+                        "inputId",
+                        "text"
+                      ],
+                      "properties": {
+                        "inputId": {
+                          "type": "string",
+                          "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "mode": {
+                      "type": "string",
+                      "const": "FORK"
+                    },
+                    "fromSessionId": {
+                      "type": "string",
+                      "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     }
                   },
                   "additionalProperties": false
                 }
-              },
-              "additionalProperties": false,
+              ],
               "$id": "kernel.control.StartSessionRequest.v1"
             },
             "sessionId": {
@@ -8444,6 +9507,7 @@
                     "scope": {
                       "enum": [
                         "ALLOW",
+                        "ONCE",
                         "DENY"
                       ]
                     }
@@ -8610,6 +9674,153 @@
               },
               "additionalProperties": false,
               "$id": "kernel.control.ReadArtifactRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "undoTurns"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "scope"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "scope": {
+                  "enum": [
+                    "LAST",
+                    "ALL"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.UndoTurnsRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "confirmUndo"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "undoId",
+                "decision"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "undoId": {
+                  "type": "string",
+                  "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "decision": {
+                  "enum": [
+                    "FORCE",
+                    "CANCEL"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.ConfirmUndoRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "diffTurns"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "n": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.DiffTurnsRequest.v1"
             }
           },
           "additionalProperties": false
@@ -8842,6 +10053,105 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
+                    "writeRoot",
+                    "critical"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "workspace.write"
+                    },
+                    "writeRoot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "critical": {
+                      "type": "boolean",
+                      "const": false
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
+                    "path",
+                    "contentRef",
+                    "critical"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "workspace.write"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "contentRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "critical": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ],
               "$id": "kernel.control.AuthorizationRequest.v1"
@@ -8976,6 +10286,19 @@
                     "REPLY",
                     "DEGRADED_REPLY",
                     "RUN_RESULT"
+                  ]
+                },
+                "wrapUpReason": {
+                  "enum": [
+                    "BUDGET_WRAP_UP",
+                    "TOOL_UNIT_LIMIT",
+                    "WALL_CLOCK_LIMIT",
+                    "REPEATED_INTENT",
+                    "CONSECUTIVE_ERRORS",
+                    "CONTEXT_LIMIT",
+                    "NO_PROGRESS",
+                    "ROUND_LIMIT",
+                    "REGENERATION_LIMIT"
                   ]
                 }
               },
@@ -9118,6 +10441,31 @@
                       },
                       "additionalProperties": false
                     },
+                    "todos": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "done"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "done": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "current": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "at": {
                       "type": "string",
                       "format": "date-time"
@@ -9233,6 +10581,31 @@
                       },
                       "additionalProperties": false
                     },
+                    "todos": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "done"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "done": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "current": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "at": {
                       "type": "string",
                       "format": "date-time"
@@ -9325,7 +10698,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -9479,7 +10855,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -9610,7 +10989,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -9749,7 +11131,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -9860,7 +11253,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -9975,7 +11371,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -10086,7 +11493,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -10270,7 +11680,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -10362,6 +11775,121 @@
                 }
               ],
               "$id": "kernel.control.RunFinished.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "undoId",
+                "files"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "UndoConfirmationRequested"
+                },
+                "undoId": {
+                  "type": "string",
+                  "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "change"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "change": {
+                        "enum": [
+                          "ADDED",
+                          "MODIFIED",
+                          "DELETED",
+                          "UNKNOWN"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.UndoConfirmationRequested.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "undoId",
+                "reason"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "UndoCancelled"
+                },
+                "undoId": {
+                  "type": "string",
+                  "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "reason": {
+                  "enum": [
+                    "USER_CANCELLED",
+                    "NEW_INPUT",
+                    "SESSION_CLOSED",
+                    "FILE_CHANGED"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.UndoCancelled.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "revertedTurnIds",
+                "forced",
+                "externalFiles"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "WorkspaceReverted"
+                },
+                "revertedTurnIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "minItems": 1
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "externalFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "backupSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.WorkspaceReverted.v1"
             }
           ]
         }
@@ -10436,6 +11964,19 @@
             "REPLY",
             "DEGRADED_REPLY",
             "RUN_RESULT"
+          ]
+        },
+        "wrapUpReason": {
+          "enum": [
+            "BUDGET_WRAP_UP",
+            "TOOL_UNIT_LIMIT",
+            "WALL_CLOCK_LIMIT",
+            "REPEATED_INTENT",
+            "CONSECUTIVE_ERRORS",
+            "CONTEXT_LIMIT",
+            "NO_PROGRESS",
+            "ROUND_LIMIT",
+            "REGENERATION_LIMIT"
           ]
         }
       },
@@ -10574,7 +12115,18 @@
             "TEMPLATE_UNSUPPORTED",
             "HUMAN_REQUEST_NOT_PENDING",
             "CONTEXT_OVERFLOW",
-            "QUOTA_EXHAUSTED"
+            "QUOTA_EXHAUSTED",
+            "CAPABILITY_NOT_SUBSET",
+            "CAPABILITY_NOT_GRANTED",
+            "WRITE_OUT_OF_SCOPE",
+            "PROTECTED_PATH",
+            "ADMISSION_CHECK_FAILED",
+            "FILE_CHANGED",
+            "EDIT_NO_MATCH",
+            "EDIT_NOT_UNIQUE",
+            "UNDO_NOT_AVAILABLE",
+            "NOTHING_TO_UNDO",
+            "UNDO_UNKNOWN"
           ],
           "$id": "platform.common.ReasonCode.v1"
         },
@@ -10683,7 +12235,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -10837,7 +12392,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -10968,7 +12526,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -11107,7 +12668,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -11218,7 +12790,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -11333,7 +12908,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -11444,7 +13030,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -11628,7 +13217,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -12019,7 +13611,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -12326,7 +13921,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -12437,7 +14035,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -12728,7 +14337,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -12932,42 +14544,89 @@
       "$id": "kernel.control.StartRunRequest.v1"
     },
     "kernel.control.StartSessionRequest.v1": {
-      "type": "object",
-      "required": [
-        "requestId",
-        "mode",
-        "prompt"
-      ],
-      "properties": {
-        "requestId": {
-          "type": "string",
-          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "mode": {
-          "type": "string",
-          "const": "NEW"
-        },
-        "prompt": {
+      "anyOf": [
+        {
           "type": "object",
           "required": [
-            "inputId",
-            "text"
+            "requestId",
+            "prompt",
+            "mode"
           ],
           "properties": {
-            "inputId": {
+            "requestId": {
               "type": "string",
-              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
-            "text": {
+            "prompt": {
+              "type": "object",
+              "required": [
+                "inputId",
+                "text"
+              ],
+              "properties": {
+                "inputId": {
+                  "type": "string",
+                  "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                }
+              },
+              "additionalProperties": false
+            },
+            "mode": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 100000
+              "const": "NEW"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "requestId",
+            "prompt",
+            "mode",
+            "fromSessionId"
+          ],
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "prompt": {
+              "type": "object",
+              "required": [
+                "inputId",
+                "text"
+              ],
+              "properties": {
+                "inputId": {
+                  "type": "string",
+                  "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                }
+              },
+              "additionalProperties": false
+            },
+            "mode": {
+              "type": "string",
+              "const": "FORK"
+            },
+            "fromSessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
           },
           "additionalProperties": false
         }
-      },
-      "additionalProperties": false,
+      ],
       "$id": "kernel.control.StartSessionRequest.v1"
     },
     "kernel.control.SyscallAck.v1": {
@@ -13070,7 +14729,11 @@
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "ARTIFACT_EXPIRED",
-                "USER_DECLINED"
+                "USER_DECLINED",
+                "CAPABILITY_NOT_SUBSET",
+                "UNDO_NOT_AVAILABLE",
+                "NOTHING_TO_UNDO",
+                "UNDO_UNKNOWN"
               ]
             }
           },
@@ -13122,6 +14785,192 @@
         }
       ],
       "$id": "kernel.control.SyscallRejected.v1"
+    },
+    "kernel.control.TurnDiff.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "outcome",
+        "turnId",
+        "files",
+        "diffRef"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "const": "ACCEPTED"
+        },
+        "turnId": {
+          "type": "string",
+          "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "change"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "change": {
+                "enum": [
+                  "ADDED",
+                  "MODIFIED",
+                  "DELETED"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "diffRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.TurnDiff.v1"
+    },
+    "kernel.control.UndoCancelled.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "undoId",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "UndoCancelled"
+        },
+        "undoId": {
+          "type": "string",
+          "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "reason": {
+          "enum": [
+            "USER_CANCELLED",
+            "NEW_INPUT",
+            "SESSION_CLOSED",
+            "FILE_CHANGED"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.UndoCancelled.v1"
+    },
+    "kernel.control.UndoConfirmationRequested.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "undoId",
+        "files"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "UndoConfirmationRequested"
+        },
+        "undoId": {
+          "type": "string",
+          "pattern": "^und_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "change"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "change": {
+                "enum": [
+                  "ADDED",
+                  "MODIFIED",
+                  "DELETED",
+                  "UNKNOWN"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.UndoConfirmationRequested.v1"
+    },
+    "kernel.control.UndoTurnsRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "scope"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "scope": {
+          "enum": [
+            "LAST",
+            "ALL"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.UndoTurnsRequest.v1"
     },
     "kernel.control.UnknownEffect.v1": {
       "anyOf": [
@@ -13177,7 +15026,10 @@
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPOSITORY_LIST"
+                "REPOSITORY_LIST",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ"
               ]
             },
             "effect": {
@@ -13189,6 +15041,47 @@
         }
       ],
       "$id": "kernel.control.UnknownEffect.v1"
+    },
+    "kernel.control.WorkspaceReverted.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "revertedTurnIds",
+        "forced",
+        "externalFiles"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "WorkspaceReverted"
+        },
+        "revertedTurnIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+          },
+          "minItems": 1
+        },
+        "forced": {
+          "type": "boolean"
+        },
+        "externalFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "backupSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.WorkspaceReverted.v1"
     },
     "kernel.execution.AssembleExecutorInput.v1": {
       "type": "object",
@@ -13641,7 +15534,18 @@
                       "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
-                      "QUOTA_EXHAUSTED"
+                      "QUOTA_EXHAUSTED",
+                      "CAPABILITY_NOT_SUBSET",
+                      "CAPABILITY_NOT_GRANTED",
+                      "WRITE_OUT_OF_SCOPE",
+                      "PROTECTED_PATH",
+                      "ADMISSION_CHECK_FAILED",
+                      "FILE_CHANGED",
+                      "EDIT_NO_MATCH",
+                      "EDIT_NOT_UNIQUE",
+                      "UNDO_NOT_AVAILABLE",
+                      "NOTHING_TO_UNDO",
+                      "UNDO_UNKNOWN"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
@@ -13803,6 +15707,24 @@
                 "ROUND_LIMIT",
                 "REGENERATION_LIMIT"
               ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "tokenCalibration": {
+          "type": "object",
+          "required": [
+            "measuredInputTokens",
+            "estimatedInputTokens"
+          ],
+          "properties": {
+            "measuredInputTokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "estimatedInputTokens": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -14337,10 +16259,398 @@
                     "fileSha256": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "nestedInstructions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "maxItems": 64
                     }
                   },
                   "additionalProperties": false,
                   "$id": "executor.FileReadOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "FILE_WRITE"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "operation",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "operation": {
+                      "enum": [
+                        "CREATED",
+                        "OVERWRITTEN",
+                        "APPENDED",
+                        "EDITED"
+                      ]
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.FileWriteOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "FILE_EDIT"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "operation",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "operation": {
+                      "enum": [
+                        "CREATED",
+                        "OVERWRITTEN",
+                        "APPENDED",
+                        "EDITED"
+                      ]
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.FileWriteOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "OUTPUT_READ"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "toolCallId",
+                    "totalLines",
+                    "startLine",
+                    "endLine",
+                    "omittedLines"
+                  ],
+                  "properties": {
+                    "toolCallId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "totalLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matchedLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "startLine": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "endLine": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omittedLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.OutputReadOutput.v1"
                 },
                 "artifact": {
                   "type": "object",
@@ -14892,6 +17202,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -14910,7 +17223,12 @@
                 "UNSUPPORTED_FILE",
                 "INVALID_RANGE",
                 "INVALID_QUERY",
-                "LIMIT_EXCEEDED"
+                "LIMIT_EXCEEDED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE"
               ]
             }
           },
@@ -14962,6 +17280,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -15033,6 +17354,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -15098,6 +17422,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -15163,6 +17490,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -15273,7 +17603,12 @@
                 "UNSUPPORTED_FILE",
                 "INVALID_RANGE",
                 "INVALID_QUERY",
-                "LIMIT_EXCEEDED"
+                "LIMIT_EXCEEDED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE"
               ]
             }
           },
@@ -16849,7 +19184,18 @@
                               "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
-                              "QUOTA_EXHAUSTED"
+                              "QUOTA_EXHAUSTED",
+                              "CAPABILITY_NOT_SUBSET",
+                              "CAPABILITY_NOT_GRANTED",
+                              "WRITE_OUT_OF_SCOPE",
+                              "PROTECTED_PATH",
+                              "ADMISSION_CHECK_FAILED",
+                              "FILE_CHANGED",
+                              "EDIT_NO_MATCH",
+                              "EDIT_NOT_UNIQUE",
+                              "UNDO_NOT_AVAILABLE",
+                              "NOTHING_TO_UNDO",
+                              "UNDO_UNKNOWN"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
@@ -17011,6 +19357,24 @@
                         "ROUND_LIMIT",
                         "REGENERATION_LIMIT"
                       ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "tokenCalibration": {
+                  "type": "object",
+                  "required": [
+                    "measuredInputTokens",
+                    "estimatedInputTokens"
+                  ],
+                  "properties": {
+                    "measuredInputTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "estimatedInputTokens": {
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "additionalProperties": false
@@ -17836,6 +20200,450 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "FILE_WRITE"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "content": {
+                  "type": "string"
+                },
+                "append": {
+                  "type": "boolean"
+                },
+                "baseSha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "expectAbsent": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.FileWriteInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind",
+                "repositoryRoot",
+                "writableRoots",
+                "exclusions"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "WORKSPACE"
+                },
+                "repositoryRoot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "writableRoots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "minItems": 1
+                },
+                "exclusions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "FILE_EDIT"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "path",
+                "oldString",
+                "newString",
+                "baseSha"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "oldString": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "newString": {
+                  "type": "string"
+                },
+                "replaceAll": {
+                  "type": "boolean"
+                },
+                "baseSha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.FileEditInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind",
+                "repositoryRoot",
+                "writableRoots",
+                "exclusions"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "WORKSPACE"
+                },
+                "repositoryRoot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "writableRoots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "minItems": 1
+                },
+                "exclusions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "OUTPUT_READ"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "toolCallId",
+                "content"
+              ],
+              "properties": {
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "content": {
+                  "type": "string"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pattern": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.execution.OutputReadExecutorInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "NONE"
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.execution.ExecutionRequest.v1"
@@ -18134,10 +20942,167 @@
                 "fileSha256": {
                   "type": "string",
                   "pattern": "^[a-f0-9]{64}$"
+                },
+                "nestedInstructions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 64
                 }
               },
               "additionalProperties": false,
               "$id": "executor.FileReadOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "path",
+                "operation",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "operation": {
+                  "enum": [
+                    "CREATED",
+                    "OVERWRITTEN",
+                    "APPENDED",
+                    "EDITED"
+                  ]
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.FileWriteOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "toolCallId",
+                "totalLines",
+                "startLine",
+                "endLine",
+                "omittedLines"
+              ],
+              "properties": {
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "totalLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "matchedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "startLine": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "endLine": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "omittedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.OutputReadOutput.v1"
             },
             "artifact": {
               "type": "object",
@@ -18526,6 +21491,44 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 4096
+            },
+            "exclusions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "repositoryRoot",
+            "writableRoots",
+            "exclusions"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "WORKSPACE"
+            },
+            "repositoryRoot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "writableRoots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "minItems": 1
             },
             "exclusions": {
               "type": "array",
@@ -19286,6 +22289,38 @@
       "additionalProperties": false,
       "$id": "kernel.execution.OrientExecutorInput.v1"
     },
+    "kernel.execution.OutputReadExecutorInput.v1": {
+      "type": "object",
+      "required": [
+        "toolCallId",
+        "content"
+      ],
+      "properties": {
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "content": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.OutputReadExecutorInput.v1"
+    },
     "kernel.execution.SearchExecutorInput.v1": {
       "type": "object",
       "required": [
@@ -19406,6 +22441,14 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "divergedFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
                 }
               },
               "additionalProperties": false
@@ -19651,6 +22694,40 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 4096
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "commandId",
+                "command",
+                "repositoryRoot",
+                "fromSessionId"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "SessionCommand"
+                },
+                "commandId": {
+                  "type": "string",
+                  "pattern": "^scm_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "command": {
+                  "type": "string",
+                  "const": "FORK"
+                },
+                "repositoryRoot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "fromSessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                 }
               },
               "additionalProperties": false
@@ -19957,7 +23034,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -20266,6 +23354,19 @@
                 }
               },
               "additionalProperties": false
+            },
+            "wrapUpReason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
+              ]
             }
           },
           "additionalProperties": false
@@ -20309,6 +23410,19 @@
             "REPLY",
             "DEGRADED_REPLY",
             "RUN_RESULT"
+          ]
+        },
+        "wrapUpReason": {
+          "enum": [
+            "BUDGET_WRAP_UP",
+            "TOOL_UNIT_LIMIT",
+            "WALL_CLOCK_LIMIT",
+            "REPEATED_INTENT",
+            "CONSECUTIVE_ERRORS",
+            "CONTEXT_LIMIT",
+            "NO_PROGRESS",
+            "ROUND_LIMIT",
+            "REGENERATION_LIMIT"
           ]
         }
       },
@@ -20368,7 +23482,8 @@
             },
             "path": {
               "type": "string",
-              "const": "AGENTS.md"
+              "pattern": "^(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md$",
+              "maxLength": 512
             },
             "exists": {
               "type": "boolean",
@@ -20509,7 +23624,8 @@
         },
         "path": {
           "type": "string",
-          "pattern": "^(?:AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$"
+          "pattern": "^(?:(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$",
+          "maxLength": 512
         }
       },
       "additionalProperties": false,
@@ -20526,7 +23642,9 @@
         "agentRef",
         "effort",
         "workspaceViewId",
-        "display"
+        "display",
+        "requestedCapabilities",
+        "writeRoots"
       ],
       "properties": {
         "requestId": {
@@ -20603,6 +23721,24 @@
             }
           },
           "additionalProperties": false
+        },
+        "requestedCapabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "repo.read",
+              "workspace.write"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "writeRoots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
         }
       },
       "additionalProperties": false,
@@ -20745,6 +23881,63 @@
               "type": "object",
               "required": [
                 "command",
+                "outcome",
+                "inheritedArtifacts",
+                "fromTurnCount"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "const": "FORK"
+                },
+                "outcome": {
+                  "type": "string",
+                  "const": "READY"
+                },
+                "inheritedArtifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "fromTurnCount": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "command",
                 "outcome"
               ],
               "properties": {
@@ -20773,6 +23966,7 @@
                   "enum": [
                     "OPEN",
                     "CREATE",
+                    "FORK",
                     "CLOSE",
                     "DELETE"
                   ]
@@ -21029,7 +24223,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -21183,7 +24380,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -21314,7 +24514,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -21453,7 +24656,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -21564,7 +24778,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -21679,7 +24896,18 @@
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
-                    "QUOTA_EXHAUSTED"
+                    "QUOTA_EXHAUSTED",
+                    "CAPABILITY_NOT_SUBSET",
+                    "CAPABILITY_NOT_GRANTED",
+                    "WRITE_OUT_OF_SCOPE",
+                    "PROTECTED_PATH",
+                    "ADMISSION_CHECK_FAILED",
+                    "FILE_CHANGED",
+                    "EDIT_NO_MATCH",
+                    "EDIT_NOT_UNIQUE",
+                    "UNDO_NOT_AVAILABLE",
+                    "NOTHING_TO_UNDO",
+                    "UNDO_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -21790,7 +25018,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -21974,7 +25205,10 @@
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
                           "MODEL",
-                          "REPOSITORY_LIST"
+                          "REPOSITORY_LIST",
+                          "FILE_WRITE",
+                          "FILE_EDIT",
+                          "OUTPUT_READ"
                         ]
                       },
                       "effect": {
@@ -22645,7 +25879,18 @@
                               "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
-                              "QUOTA_EXHAUSTED"
+                              "QUOTA_EXHAUSTED",
+                              "CAPABILITY_NOT_SUBSET",
+                              "CAPABILITY_NOT_GRANTED",
+                              "WRITE_OUT_OF_SCOPE",
+                              "PROTECTED_PATH",
+                              "ADMISSION_CHECK_FAILED",
+                              "FILE_CHANGED",
+                              "EDIT_NO_MATCH",
+                              "EDIT_NOT_UNIQUE",
+                              "UNDO_NOT_AVAILABLE",
+                              "NOTHING_TO_UNDO",
+                              "UNDO_UNKNOWN"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           }
@@ -23119,6 +26364,19 @@
                         }
                       },
                       "additionalProperties": false
+                    },
+                    "wrapUpReason": {
+                      "enum": [
+                        "BUDGET_WRAP_UP",
+                        "TOOL_UNIT_LIMIT",
+                        "WALL_CLOCK_LIMIT",
+                        "REPEATED_INTENT",
+                        "CONSECUTIVE_ERRORS",
+                        "CONTEXT_LIMIT",
+                        "NO_PROGRESS",
+                        "ROUND_LIMIT",
+                        "REGENERATION_LIMIT"
+                      ]
                     }
                   },
                   "additionalProperties": false
@@ -23150,6 +26408,128 @@
                 }
               ],
               "$id": "kernel.unit.MessagePublishInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "content": {
+                  "type": "string"
+                },
+                "append": {
+                  "type": "boolean"
+                },
+                "baseSha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "expectAbsent": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.FileWriteInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "path",
+                "oldString",
+                "newString",
+                "baseSha"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "oldString": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "newString": {
+                  "type": "string"
+                },
+                "replaceAll": {
+                  "type": "boolean"
+                },
+                "baseSha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.FileEditInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "toolCallId",
+                "fullRef"
+              ],
+              "properties": {
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "fullRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000
+                },
+                "pattern": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.OutputReadInput.v1"
             }
           ],
           "$id": "kernel.unit.UnitInput.v1"
@@ -23237,6 +26617,20 @@
           },
           "additionalProperties": false,
           "$id": "kernel.unit.TurnUsage.v1"
+        },
+        "startSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "endSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "changedFileCount": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false,
@@ -23702,7 +27096,18 @@
                           "TEMPLATE_UNSUPPORTED",
                           "HUMAN_REQUEST_NOT_PENDING",
                           "CONTEXT_OVERFLOW",
-                          "QUOTA_EXHAUSTED"
+                          "QUOTA_EXHAUSTED",
+                          "CAPABILITY_NOT_SUBSET",
+                          "CAPABILITY_NOT_GRANTED",
+                          "WRITE_OUT_OF_SCOPE",
+                          "PROTECTED_PATH",
+                          "ADMISSION_CHECK_FAILED",
+                          "FILE_CHANGED",
+                          "EDIT_NO_MATCH",
+                          "EDIT_NOT_UNIQUE",
+                          "UNDO_NOT_AVAILABLE",
+                          "NOTHING_TO_UNDO",
+                          "UNDO_UNKNOWN"
                         ],
                         "$id": "platform.common.ReasonCode.v1"
                       }
@@ -24176,6 +27581,19 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "wrapUpReason": {
+                  "enum": [
+                    "BUDGET_WRAP_UP",
+                    "TOOL_UNIT_LIMIT",
+                    "WALL_CLOCK_LIMIT",
+                    "REPEATED_INTENT",
+                    "CONSECUTIVE_ERRORS",
+                    "CONTEXT_LIMIT",
+                    "NO_PROGRESS",
+                    "ROUND_LIMIT",
+                    "REGENERATION_LIMIT"
+                  ]
                 }
               },
               "additionalProperties": false
@@ -24207,6 +27625,128 @@
             }
           ],
           "$id": "kernel.unit.MessagePublishInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "content"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "content": {
+              "type": "string"
+            },
+            "append": {
+              "type": "boolean"
+            },
+            "baseSha": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "expectAbsent": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.FileWriteInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "oldString",
+            "newString",
+            "baseSha"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "oldString": {
+              "type": "string",
+              "minLength": 1
+            },
+            "newString": {
+              "type": "string"
+            },
+            "replaceAll": {
+              "type": "boolean"
+            },
+            "baseSha": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.FileEditInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "toolCallId",
+            "fullRef"
+          ],
+          "properties": {
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "fullRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            },
+            "pattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.OutputReadInput.v1"
         }
       ],
       "$id": "kernel.unit.UnitInput.v1"
@@ -24348,6 +27888,15 @@
             "fileSha256": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
+            },
+            "nestedInstructions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "maxItems": 64
             }
           },
           "additionalProperties": false,
@@ -24417,6 +27966,19 @@
                 "REPLY",
                 "DEGRADED_REPLY",
                 "RUN_RESULT"
+              ]
+            },
+            "wrapUpReason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
               ]
             }
           },
@@ -24687,6 +28249,74 @@
             }
           ],
           "$id": "executor.ModelCallOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "operation",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "operation": {
+              "enum": [
+                "CREATED",
+                "OVERWRITTEN",
+                "APPENDED",
+                "EDITED"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.FileWriteOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "toolCallId",
+            "totalLines",
+            "startLine",
+            "endLine",
+            "omittedLines"
+          ],
+          "properties": {
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "totalLines": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchedLines": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "startLine": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endLine": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "omittedLines": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.OutputReadOutput.v1"
         }
       ],
       "$id": "kernel.unit.UnitOutput.v1"
@@ -24765,7 +28395,9 @@
                 "COMMAND",
                 "TEST",
                 "REPOSITORY_LIST",
-                "MESSAGE_PUBLISH"
+                "MESSAGE_PUBLISH",
+                "FILE_EDIT",
+                "OUTPUT_READ"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -24950,6 +28582,15 @@
                     "fileSha256": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "nestedInstructions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "maxItems": 64
                     }
                   },
                   "additionalProperties": false,
@@ -25019,6 +28660,19 @@
                         "REPLY",
                         "DEGRADED_REPLY",
                         "RUN_RESULT"
+                      ]
+                    },
+                    "wrapUpReason": {
+                      "enum": [
+                        "BUDGET_WRAP_UP",
+                        "TOOL_UNIT_LIMIT",
+                        "WALL_CLOCK_LIMIT",
+                        "REPEATED_INTENT",
+                        "CONSECUTIVE_ERRORS",
+                        "CONTEXT_LIMIT",
+                        "NO_PROGRESS",
+                        "ROUND_LIMIT",
+                        "REGENERATION_LIMIT"
                       ]
                     }
                   },
@@ -25289,6 +28943,74 @@
                     }
                   ],
                   "$id": "executor.ModelCallOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "operation",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "operation": {
+                      "enum": [
+                        "CREATED",
+                        "OVERWRITTEN",
+                        "APPENDED",
+                        "EDITED"
+                      ]
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.FileWriteOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "toolCallId",
+                    "totalLines",
+                    "startLine",
+                    "endLine",
+                    "omittedLines"
+                  ],
+                  "properties": {
+                    "toolCallId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "totalLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matchedLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "startLine": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "endLine": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omittedLines": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.OutputReadOutput.v1"
                 }
               ],
               "$id": "kernel.unit.UnitOutput.v1"
@@ -25382,6 +29104,14 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
+            },
+            "changedFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              }
             }
           },
           "additionalProperties": false
@@ -25457,7 +29187,9 @@
                 "COMMAND",
                 "TEST",
                 "REPOSITORY_LIST",
-                "MESSAGE_PUBLISH"
+                "MESSAGE_PUBLISH",
+                "FILE_EDIT",
+                "OUTPUT_READ"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -25514,12 +29246,19 @@
                 "BUDGET_EXHAUSTED",
                 "FINAL_CALL_USED",
                 "ARTIFACT_EXPIRED",
+                "CAPABILITY_NOT_GRANTED",
+                "ADMISSION_CHECK_FAILED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
                 "UNSUPPORTED_FILE",
                 "INVALID_RANGE",
                 "INVALID_QUERY",
-                "LIMIT_EXCEEDED"
+                "LIMIT_EXCEEDED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE"
               ]
             }
           },
@@ -25597,7 +29336,9 @@
                 "COMMAND",
                 "TEST",
                 "REPOSITORY_LIST",
-                "MESSAGE_PUBLISH"
+                "MESSAGE_PUBLISH",
+                "FILE_EDIT",
+                "OUTPUT_READ"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -25726,7 +29467,9 @@
                 "COMMAND",
                 "TEST",
                 "REPOSITORY_LIST",
-                "MESSAGE_PUBLISH"
+                "MESSAGE_PUBLISH",
+                "FILE_EDIT",
+                "OUTPUT_READ"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -25790,6 +29533,61 @@
         }
       ],
       "$id": "kernel.unit.UnitReport.v1"
+    },
+    "kernel.unit.UpdateActivityRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "agentRunId",
+        "todos"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "agentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "todos": {
+          "type": "object",
+          "required": [
+            "total",
+            "done"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            },
+            "done": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            },
+            "current": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.UpdateActivityRequest.v1"
     },
     "kernel.unit.WorkflowInboxEvent.v1": {
       "type": "object",
@@ -25982,7 +29780,9 @@
                         "COMMAND",
                         "TEST",
                         "REPOSITORY_LIST",
-                        "MESSAGE_PUBLISH"
+                        "MESSAGE_PUBLISH",
+                        "FILE_EDIT",
+                        "OUTPUT_READ"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -26167,6 +29967,15 @@
                             "fileSha256": {
                               "type": "string",
                               "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "nestedInstructions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 512
+                              },
+                              "maxItems": 64
                             }
                           },
                           "additionalProperties": false,
@@ -26236,6 +30045,19 @@
                                 "REPLY",
                                 "DEGRADED_REPLY",
                                 "RUN_RESULT"
+                              ]
+                            },
+                            "wrapUpReason": {
+                              "enum": [
+                                "BUDGET_WRAP_UP",
+                                "TOOL_UNIT_LIMIT",
+                                "WALL_CLOCK_LIMIT",
+                                "REPEATED_INTENT",
+                                "CONSECUTIVE_ERRORS",
+                                "CONTEXT_LIMIT",
+                                "NO_PROGRESS",
+                                "ROUND_LIMIT",
+                                "REGENERATION_LIMIT"
                               ]
                             }
                           },
@@ -26506,6 +30328,74 @@
                             }
                           ],
                           "$id": "executor.ModelCallOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "path",
+                            "operation",
+                            "sha256"
+                          ],
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024
+                            },
+                            "operation": {
+                              "enum": [
+                                "CREATED",
+                                "OVERWRITTEN",
+                                "APPENDED",
+                                "EDITED"
+                              ]
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.FileWriteOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "toolCallId",
+                            "totalLines",
+                            "startLine",
+                            "endLine",
+                            "omittedLines"
+                          ],
+                          "properties": {
+                            "toolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "totalLines": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "matchedLines": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "startLine": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "endLine": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "omittedLines": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.OutputReadOutput.v1"
                         }
                       ],
                       "$id": "kernel.unit.UnitOutput.v1"
@@ -26599,6 +30489,14 @@
                       },
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "changedFiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                      }
                     }
                   },
                   "additionalProperties": false
@@ -26674,7 +30572,9 @@
                         "COMMAND",
                         "TEST",
                         "REPOSITORY_LIST",
-                        "MESSAGE_PUBLISH"
+                        "MESSAGE_PUBLISH",
+                        "FILE_EDIT",
+                        "OUTPUT_READ"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -26731,12 +30631,19 @@
                         "BUDGET_EXHAUSTED",
                         "FINAL_CALL_USED",
                         "ARTIFACT_EXPIRED",
+                        "CAPABILITY_NOT_GRANTED",
+                        "ADMISSION_CHECK_FAILED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
                         "UNSUPPORTED_FILE",
                         "INVALID_RANGE",
                         "INVALID_QUERY",
-                        "LIMIT_EXCEEDED"
+                        "LIMIT_EXCEEDED",
+                        "WRITE_OUT_OF_SCOPE",
+                        "PROTECTED_PATH",
+                        "FILE_CHANGED",
+                        "EDIT_NO_MATCH",
+                        "EDIT_NOT_UNIQUE"
                       ]
                     }
                   },
@@ -26814,7 +30721,9 @@
                         "COMMAND",
                         "TEST",
                         "REPOSITORY_LIST",
-                        "MESSAGE_PUBLISH"
+                        "MESSAGE_PUBLISH",
+                        "FILE_EDIT",
+                        "OUTPUT_READ"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -26943,7 +30852,9 @@
                         "COMMAND",
                         "TEST",
                         "REPOSITORY_LIST",
-                        "MESSAGE_PUBLISH"
+                        "MESSAGE_PUBLISH",
+                        "FILE_EDIT",
+                        "OUTPUT_READ"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -27245,6 +31156,20 @@
                   },
                   "additionalProperties": false,
                   "$id": "kernel.unit.TurnUsage.v1"
+                },
+                "startSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "endSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "changedFileCount": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "additionalProperties": false,
@@ -27321,7 +31246,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -27475,7 +31403,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -27606,7 +31537,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -27745,7 +31679,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -27856,7 +31801,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -27971,7 +31919,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -28082,7 +32041,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -28266,7 +32228,10 @@
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
                                   "MODEL",
-                                  "REPOSITORY_LIST"
+                                  "REPOSITORY_LIST",
+                                  "FILE_WRITE",
+                                  "FILE_EDIT",
+                                  "OUTPUT_READ"
                                 ]
                               },
                               "effect": {
@@ -28358,12 +32323,101 @@
                 }
               ],
               "$id": "kernel.unit.RunClosed.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "revertedTurnIds",
+                "forced",
+                "externalFiles"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "WorkspaceReverted"
+                },
+                "revertedTurnIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "minItems": 1
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "externalFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "backupSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.WorkspaceReverted.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "files"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "WorkspaceDiverged"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.WorkspaceDiverged.v1"
             }
           ]
         }
       },
       "additionalProperties": false,
       "$id": "kernel.unit.WorkflowInboxEvent.v1"
+    },
+    "kernel.unit.WorkspaceDiverged.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "files"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "WorkspaceDiverged"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.WorkspaceDiverged.v1"
     },
     "platform.artifact.RetentionTokenRef.v1": {
       "type": "object",
@@ -28628,7 +32682,9 @@
         "COMMAND",
         "TEST",
         "REPOSITORY_LIST",
-        "MESSAGE_PUBLISH"
+        "MESSAGE_PUBLISH",
+        "FILE_EDIT",
+        "OUTPUT_READ"
       ],
       "$id": "platform.common.ExecutionKind.v1"
     },
@@ -28793,7 +32849,18 @@
         "TEMPLATE_UNSUPPORTED",
         "HUMAN_REQUEST_NOT_PENDING",
         "CONTEXT_OVERFLOW",
-        "QUOTA_EXHAUSTED"
+        "QUOTA_EXHAUSTED",
+        "CAPABILITY_NOT_SUBSET",
+        "CAPABILITY_NOT_GRANTED",
+        "WRITE_OUT_OF_SCOPE",
+        "PROTECTED_PATH",
+        "ADMISSION_CHECK_FAILED",
+        "FILE_CHANGED",
+        "EDIT_NO_MATCH",
+        "EDIT_NOT_UNIQUE",
+        "UNDO_NOT_AVAILABLE",
+        "NOTHING_TO_UNDO",
+        "UNDO_UNKNOWN"
       ],
       "$id": "platform.common.ReasonCode.v1"
     },
@@ -28921,6 +32988,9 @@
             "REPOSITORY_SEARCH",
             "REPOSITORY_LIST",
             "FILE_READ",
+            "FILE_WRITE",
+            "FILE_EDIT",
+            "OUTPUT_READ",
             "CONTEXT_ASSEMBLE",
             "MODEL"
           ],
@@ -29025,6 +33095,105 @@
               "additionalProperties": false
             },
             "FILE_READ": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "FILE_WRITE": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "FILE_EDIT": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "OUTPUT_READ": {
               "type": "object",
               "required": [
                 "timeoutMs",
@@ -29234,6 +33403,9 @@
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
+                "FILE_WRITE",
+                "FILE_EDIT",
+                "OUTPUT_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL"
               ],
@@ -29370,6 +33542,105 @@
                   },
                   "additionalProperties": false
                 },
+                "FILE_WRITE": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "FILE_EDIT": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "OUTPUT_READ": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "CONTEXT_ASSEMBLE": {
                   "type": "object",
                   "required": [
@@ -29437,7 +33708,8 @@
             "regenerationLimit",
             "noProgressRounds",
             "repeatedIntent",
-            "consecutiveErrorLimit"
+            "consecutiveErrorLimit",
+            "maxNestedInstructions"
           ],
           "properties": {
             "regenerationLimit": {
@@ -29474,6 +33746,10 @@
             "consecutiveErrorLimit": {
               "type": "integer",
               "minimum": 1
+            },
+            "maxNestedInstructions": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false,
@@ -29489,7 +33765,8 @@
         "regenerationLimit",
         "noProgressRounds",
         "repeatedIntent",
-        "consecutiveErrorLimit"
+        "consecutiveErrorLimit",
+        "maxNestedInstructions"
       ],
       "properties": {
         "regenerationLimit": {
@@ -29524,6 +33801,10 @@
           "additionalProperties": false
         },
         "consecutiveErrorLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxNestedInstructions": {
           "type": "integer",
           "minimum": 1
         }
@@ -30928,7 +35209,18 @@
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
-                "QUOTA_EXHAUSTED"
+                "QUOTA_EXHAUSTED",
+                "CAPABILITY_NOT_SUBSET",
+                "CAPABILITY_NOT_GRANTED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "ADMISSION_CHECK_FAILED",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE",
+                "UNDO_NOT_AVAILABLE",
+                "NOTHING_TO_UNDO",
+                "UNDO_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
@@ -31324,7 +35616,18 @@
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
-                "QUOTA_EXHAUSTED"
+                "QUOTA_EXHAUSTED",
+                "CAPABILITY_NOT_SUBSET",
+                "CAPABILITY_NOT_GRANTED",
+                "WRITE_OUT_OF_SCOPE",
+                "PROTECTED_PATH",
+                "ADMISSION_CHECK_FAILED",
+                "FILE_CHANGED",
+                "EDIT_NO_MATCH",
+                "EDIT_NOT_UNIQUE",
+                "UNDO_NOT_AVAILABLE",
+                "NOTHING_TO_UNDO",
+                "UNDO_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -31454,6 +35757,271 @@
             },
             "trusted": {
               "type": "boolean"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "path",
+            "agentRunId",
+            "skipped"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "PROJECT_FILE_LOADED"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "skipped": {
+              "type": "string",
+              "const": "LIMIT"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "agentRunId",
+            "source",
+            "counts"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "TODOS_UPDATED"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "modelTurnRequestId",
+                "toolCallId"
+              ],
+              "properties": {
+                "modelTurnRequestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false
+            },
+            "counts": {
+              "type": "object",
+              "required": [
+                "total",
+                "pending",
+                "inProgress",
+                "done",
+                "cancelled"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pending": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inProgress": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "done": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cancelled": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "revertedTurnIds",
+            "forced",
+            "externalFiles"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "WORKSPACE_REVERTED"
+            },
+            "revertedTurnIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "minItems": 1
+            },
+            "forced": {
+              "type": "boolean"
+            },
+            "externalFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "backupSnapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "files"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "WORKSPACE_DIVERGED"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "type",
+            "fromSessionId",
+            "fromSeq"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "type": {
+              "type": "string",
+              "const": "SESSION_FORKED"
+            },
+            "fromSessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "fromSeq": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false
@@ -31565,7 +36133,9 @@
             "type",
             "requestId",
             "projectionDigest",
-            "headDigest"
+            "headDigest",
+            "tokenCount",
+            "tokenBudget"
           ],
           "properties": {
             "seq": {
@@ -31606,6 +36176,70 @@
                 "type": "integer",
                 "minimum": 1
               }
+            },
+            "tokenCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokenBudget": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "agentRunId",
+            "reason",
+            "round"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "AGENT_WRAP_UP"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "reason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
+              ]
+            },
+            "round": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -31815,6 +36449,139 @@
       },
       "additionalProperties": false,
       "$id": "platform.persistence.SessionRefLine.v1"
+    },
+    "platform.persistence.SnapshotIndexLine.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "turnId",
+            "turnSeq",
+            "viewId",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "TURN_STARTED"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "viewId": {
+              "type": "string",
+              "const": "main"
+            },
+            "startSnapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "turnId",
+            "changedFiles",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "TURN_ENDED"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "endSnapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "changedFiles": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "change"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "change": {
+                    "enum": [
+                      "ADDED",
+                      "MODIFIED",
+                      "DELETED"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "revertedTurnIds",
+            "forced",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "REVERTED"
+            },
+            "revertedTurnIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "minItems": 1
+            },
+            "forced": {
+              "type": "boolean"
+            },
+            "backupSnapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "platform.persistence.SnapshotIndexLine.v1"
     },
     "platform.persistence.TrustedInstructionLine.v1": {
       "type": "object",
@@ -32379,7 +37146,18 @@
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED"
+                            "QUOTA_EXHAUSTED",
+                            "CAPABILITY_NOT_SUBSET",
+                            "CAPABILITY_NOT_GRANTED",
+                            "WRITE_OUT_OF_SCOPE",
+                            "PROTECTED_PATH",
+                            "ADMISSION_CHECK_FAILED",
+                            "FILE_CHANGED",
+                            "EDIT_NO_MATCH",
+                            "EDIT_NOT_UNIQUE",
+                            "UNDO_NOT_AVAILABLE",
+                            "NOTHING_TO_UNDO",
+                            "UNDO_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         }
@@ -32555,6 +37333,43 @@
       },
       "additionalProperties": false,
       "$id": "workflow.ReplyArgs.v1"
+    },
+    "workflow.UpdateTodosArgs.v1": {
+      "type": "object",
+      "required": [
+        "todos"
+      ],
+      "properties": {
+        "todos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "content",
+              "status"
+            ],
+            "properties": {
+              "content": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "done",
+                  "cancelled"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 30
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.UpdateTodosArgs.v1"
     }
   }
 }

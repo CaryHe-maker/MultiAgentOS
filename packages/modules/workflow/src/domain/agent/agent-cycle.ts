@@ -1,9 +1,17 @@
-import { canonicalJson, pathDerivedId, sha256Hex, validate } from '@multiagentos/contracts';
+import {
+  WRITE_KINDS,
+  canonicalJson,
+  normalizeRequestPath,
+  pathDerivedId,
+  sha256Hex,
+  validate,
+} from '@multiagentos/contracts';
 import type {
   ArtifactRef,
   BudgetView,
   ContextAssembleInput,
   ContextAssembleOutput,
+  ExecutionKind,
   FailureHandling,
   ModelToolCall,
   PinnedDefinitionRef,
@@ -11,6 +19,8 @@ import type {
   SubmitUnitRequest,
   UnitInput,
   UnitReport,
+  UpdateActivityRequest,
+  UpdateTodosArgs,
   WrapUpReason,
 } from '@multiagentos/contracts';
 import type { NewLogRecord } from '../../session/session-log-store.js';
@@ -28,6 +38,7 @@ export interface AgentUnit {
 }
 export interface AgentTool {
   readonly modelName: string;
+  readonly executionKind: ExecutionKind;
   readonly unit: AgentUnit;
   readonly parameters: Schema;
 }
@@ -44,6 +55,7 @@ export interface AgentDefinitions {
   readonly endTools: readonly EndTool[];
   /** What is published when no end tool was called validly. */
   readonly onDegraded: DegradedAction;
+  readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';
@@ -62,6 +74,7 @@ export interface AgentConfig {
   };
   readonly consecutiveErrorLimit: number;
   readonly noProgressRounds: number;
+  readonly maxNestedInstructions: number;
   readonly regenerationLimit: number;
 }
 
@@ -76,6 +89,13 @@ type Pending =
       readonly call: ModelToolCall;
       readonly intent: string;
     };
+
+export interface DeferredWrite {
+  readonly tool: AgentTool;
+  readonly call: ModelToolCall;
+  readonly intent: string;
+  readonly modelTurnRequestId: string;
+}
 
 export interface AgentState {
   readonly workflowRunId: string;
@@ -97,6 +117,11 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  /**
+   * Writes of this reply to a path another of its writes has: each needs what the one before it
+   * left, so they are submitted one at a time (Module/Workflow 7, item 10).
+   */
+  readonly deferred: readonly DeferredWrite[];
   /** Tools the user rejected in this AgentRun; they are not submitted again. */
   readonly declinedTools: readonly string[];
   readonly fatal?: ReasonCode;
@@ -132,6 +157,8 @@ export interface AgentTransition {
   readonly records: readonly NewLogRecord[];
   readonly submissions: readonly SubmitUnitRequest[];
   readonly ending?: AgentEnding;
+  /** The todo progress for the interface, once the records are durable (WorkflowKernel 2.5). */
+  readonly activity?: UpdateActivityRequest['todos'];
 }
 
 /** The facts context-assemble needs that the log, not this machine, supplies. */
@@ -142,7 +169,33 @@ export interface AgentContext {
   ) => ContextAssembleInput;
   /** The first prompt of the run: no event or log record carries its text. */
   readonly objectiveRef: ArtifactRef;
+  /**
+   * What the log adds to a tool's arguments and the model cannot give. Undefined leaves them as
+   * they are, and a refusal is a tool result for the model.
+   */
+  readonly toolInput?: (
+    kind: ExecutionKind,
+    args: unknown,
+    notYetInLog?: readonly NewLogRecord[],
+  ) => ToolInput;
 }
+
+export type ToolInput =
+  | {
+      readonly ok: true;
+      readonly input: UnitInput;
+      readonly workflowFields?: Readonly<Record<string, unknown>>;
+    }
+  | { readonly ok: false; readonly message: string };
+
+/** Kinds that change the workspace: what was read before them is no longer what is there. */
+const WRITES: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
+/** Core's refusals of the call itself: never the Unit's failurePolicy, and never fatal. */
+const CORE_REFUSALS: ReadonlySet<string> = new Set([
+  'CAPABILITY_NOT_GRANTED',
+  'ADMISSION_CHECK_FAILED',
+  'ARTIFACT_EXPIRED',
+]);
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
@@ -153,6 +206,7 @@ const FEEDBACK = {
   CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
   INVALID_ARGUMENTS: 'Not executed: the arguments do not match the tool parameters.',
+  TOOL_INPUT_REFUSED: 'Not executed.',
   TOO_MANY_TOOL_CALLS: 'Not executed: this reply has more tool calls than allowed.',
   DUPLICATE_CALL: 'Not executed: the same call already succeeded and its result is above.',
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
@@ -166,7 +220,7 @@ const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnI
 
 function feedback(
   state: AgentState,
-  code: FeedbackCode | 'TOOL_REJECTED',
+  code: FeedbackCode | 'TOOL_REJECTED' | 'TODOS_UPDATED',
   toolCallId?: string,
   message?: string,
 ): NewLogRecord {
@@ -175,7 +229,8 @@ function feedback(
     type: 'FEEDBACK',
     agentRunId: state.agentRunId,
     code,
-    message: message ?? (code === 'TOOL_REJECTED' ? '' : FEEDBACK[code]),
+    message:
+      message ?? (code === 'TOOL_REJECTED' || code === 'TODOS_UPDATED' ? '' : FEEDBACK[code]),
     ...(toolCallId === undefined ? {} : { toolCallId }),
   };
 }
@@ -293,13 +348,25 @@ function nextRound(
     final,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
+  const wrapUpRecords: readonly NewLogRecord[] =
+    wrapUpReason === undefined
+      ? []
+      : [
+          {
+            ...base(next),
+            type: 'AGENT_WRAP_UP',
+            agentRunId: next.agentRunId,
+            reason: wrapUpReason,
+            round: next.round,
+          },
+        ];
   return one(
     next,
     'CONTEXT',
     next.definitions.contextAssemble,
     context.assembleInput(status, final),
     'context',
-    records,
+    [...records, ...wrapUpRecords],
   );
 }
 
@@ -319,6 +386,7 @@ export function startAgent(
     pending: new Map(),
     unitCounter: 0,
     succeeded: [],
+    deferred: [],
     declinedTools: [],
     intents: [],
     consecutiveErrors: 0,
@@ -351,7 +419,7 @@ function failed(
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
-  if (code === 'LIMIT_EXCEEDED' && pending.role === 'CONTEXT')
+  if (code === 'LIMIT_EXCEEDED' && (pending.role === 'CONTEXT' || pending.role === 'MODEL'))
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp(state, 'CONTEXT_LIMIT'), context, records);
@@ -464,6 +532,66 @@ function handleModel(
       records,
     );
   }
+  // The one control tool that goes with anything else, and it is handled first (M2Design 3.5).
+  const todoTool = state.final ? undefined : state.definitions.todoTool;
+  const isTodo = (call: ModelToolCall) => call.toolName === todoTool?.toolName;
+  let activity: AgentTransition['activity'];
+  if (todoTool !== undefined)
+    for (const call of calls.filter(isTodo)) {
+      const args =
+        call.arguments === null ? undefined : validate(todoTool.parameters, call.arguments);
+      if (args === undefined || !args.ok) {
+        records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+        continue;
+      }
+      const { todos } = call.arguments as unknown as UpdateTodosArgs;
+      const countOf = (status: UpdateTodosArgs['todos'][number]['status']) =>
+        todos.filter((todo) => todo.status === status).length;
+      const counts = {
+        total: todos.length,
+        pending: countOf('pending'),
+        inProgress: countOf('in_progress'),
+        done: countOf('done'),
+        cancelled: countOf('cancelled'),
+      };
+      records.push(
+        {
+          ...base(state),
+          type: 'TODOS_UPDATED',
+          agentRunId: state.agentRunId,
+          source: { modelTurnRequestId: report.requestId, toolCallId: call.toolCallId },
+          counts,
+        },
+        feedback(
+          state,
+          'TODOS_UPDATED',
+          call.toolCallId,
+          `Todos: ${String(counts.total)} items, ${String(counts.done)} done, ${String(counts.inProgress)} in progress.`,
+        ),
+      );
+      const current = todos.find((todo) => todo.status === 'in_progress')?.content.slice(0, 80);
+      activity = {
+        total: counts.total,
+        done: counts.done,
+        ...(current === undefined ? {} : { current }),
+      };
+    }
+  const acting = calls.filter((call) => !isTodo(call));
+  const transition =
+    acting.length === 0
+      ? afterTools(state, context, config, records)
+      : actOn(state, report, acting, context, config, records);
+  return activity === undefined ? transition : { ...transition, activity };
+}
+
+function actOn(
+  state: AgentState,
+  report: Extract<UnitReport, { status: 'OK' }>,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+  config: AgentConfig,
+  records: NewLogRecord[],
+): AgentTransition {
   const endTool = (call: ModelToolCall) =>
     state.definitions.endTools.find((tool) => tool.toolName === call.toolName);
   const control = calls.find((call) => endTool(call) !== undefined);
@@ -501,6 +629,7 @@ function handleModel(
   const pending = new Map<string, Pending>();
   const submissions: SubmitUnitRequest[] = [];
   const seen = new Set<string>();
+  const writtenPaths = new Set<string>();
   let accepted = 0;
   for (const call of calls) {
     const tool = state.definitions.tools.find((candidate) => candidate.modelName === call.toolName);
@@ -535,24 +664,109 @@ function handleModel(
       continue;
     }
     seen.add(intent);
-    const made = submission(next, tool.unit, call.arguments as UnitInput, {
-      toolName: tool.modelName,
-      argsSummary: '',
-    });
-    next = made.state;
-    pending.set(made.request.requestId, { role: 'TOOL', unit: tool.unit, call, intent });
-    submissions.push(made.request);
-    records.push({
-      ...(made.record as Extract<NewLogRecord, { type: 'UNIT_SUBMITTED' }>),
-      inputSource: {
-        kind: 'TOOL_CALL',
-        modelTurnRequestId: report.requestId,
-        toolCallId: call.toolCallId,
-      },
-    });
+    const planned = { tool, call, intent, modelTurnRequestId: report.requestId };
+    if (WRITES.has(tool.executionKind)) {
+      const path = writePathOf(call);
+      if (writtenPaths.has(path)) {
+        next = { ...next, deferred: [...next.deferred, planned] };
+        continue;
+      }
+      writtenPaths.add(path);
+    }
+    const started = startTool(next, planned, context, records);
+    next = started.state;
+    if (started.pending === undefined) continue;
+    pending.set(started.pending[0], started.pending[1]);
+    submissions.push(started.pending[2]);
   }
-  if (submissions.length === 0) return afterTools(next, context, config, records);
-  return { state: { ...next, pending }, records, submissions };
+  next = { ...next, pending };
+  if (submissions.length === 0) {
+    const released = releaseDeferred(next, context, records);
+    if (released.submissions.length > 0) return { ...released, records };
+    return afterTools(released.state, context, config, records);
+  }
+  return { state: next, records, submissions };
+}
+
+const writePathOf = (call: ModelToolCall): string => {
+  const { path } = call.arguments as { readonly path: string };
+  return normalizeRequestPath(path) ?? path;
+};
+
+/** Makes the Unit of a tool call, or answers the call when the log says it cannot run. */
+function startTool(
+  state: AgentState,
+  planned: DeferredWrite,
+  context: AgentContext,
+  records: NewLogRecord[],
+): {
+  readonly state: AgentState;
+  readonly pending?: readonly [string, Pending, SubmitUnitRequest];
+} {
+  const { tool, call, intent, modelTurnRequestId } = planned;
+  const completed: ToolInput = context.toolInput?.(tool.executionKind, call.arguments, records) ?? {
+    ok: true,
+    input: call.arguments as UnitInput,
+  };
+  if (!completed.ok) {
+    records.push(feedback(state, 'TOOL_INPUT_REFUSED', call.toolCallId, completed.message));
+    return { state };
+  }
+  const made = submission(state, tool.unit, completed.input, {
+    toolName: tool.modelName,
+    argsSummary: '',
+  });
+  records.push({
+    ...(made.record as Extract<NewLogRecord, { type: 'UNIT_SUBMITTED' }>),
+    inputSource: {
+      kind: 'TOOL_CALL',
+      modelTurnRequestId,
+      toolCallId: call.toolCallId,
+      ...(completed.workflowFields === undefined
+        ? {}
+        : { workflowFields: { ...completed.workflowFields } }),
+    },
+  });
+  return {
+    state: made.state,
+    pending: [
+      made.request.requestId,
+      { role: 'TOOL', unit: tool.unit, call, intent },
+      made.request,
+    ],
+  };
+}
+
+/** The next deferred write that can run; every call still gets its one answer. */
+function releaseDeferred(
+  state: AgentState,
+  context: AgentContext,
+  records: NewLogRecord[],
+): { readonly state: AgentState; readonly submissions: readonly SubmitUnitRequest[] } {
+  let next = state;
+  while (next.deferred.length > 0) {
+    const [planned, ...rest] = next.deferred;
+    if (planned === undefined) break;
+    next = { ...next, deferred: rest };
+    if (next.fatal !== undefined || next.wrapUpReason !== undefined) {
+      records.push(feedback(next, 'NOT_EXECUTED', planned.call.toolCallId));
+      continue;
+    }
+    if (next.declinedTools.includes(planned.tool.modelName)) {
+      const text = rejectedText(planned.tool.modelName);
+      records.push(feedback(next, 'TOOL_REJECTED', planned.call.toolCallId, text));
+      continue;
+    }
+    const started = startTool(next, planned, context, records);
+    next = started.state;
+    if (started.pending === undefined) continue;
+    const [requestId, pending, request] = started.pending;
+    return {
+      state: { ...next, pending: new Map([...next.pending, [requestId, pending]]) },
+      submissions: [request],
+    };
+  }
+  return { state: next, submissions: [] };
 }
 
 function handleTool(
@@ -575,7 +789,12 @@ function handleTool(
     ...state,
     consecutiveErrors,
     roundHadOk: state.roundHadOk || ok,
-    succeeded: ok ? [...state.succeeded, pending.intent] : state.succeeded,
+    // After a write nothing read before it may be answered with "the result is above".
+    succeeded: !ok
+      ? state.succeeded
+      : WRITES.has(report.executionKind)
+        ? []
+        : [...state.succeeded, pending.intent],
   };
   if (consecutiveErrors >= config.consecutiveErrorLimit) next = wrapUp(next, 'CONSECUTIVE_ERRORS');
   // Kernel's refusals have fixed meanings, not the Unit's failurePolicy (Module/Workflow 7): a quota
@@ -586,10 +805,16 @@ function handleTool(
     const { toolName } = pending.call;
     if (!next.declinedTools.includes(toolName))
       next = { ...next, declinedTools: [...next.declinedTools, toolName] };
-  } else if (!ok) {
+  } else if (!ok && !CORE_REFUSALS.has(report.reasonCode)) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
     if (handling === 'FINAL_CALL') next = wrapUp(next, 'BUDGET_WRAP_UP');
+  }
+  if (next.pending.size === 0 && next.deferred.length > 0) {
+    const released = releaseDeferred(next, context, records);
+    next = released.state;
+    if (released.submissions.length > 0)
+      return { state: next, records, submissions: released.submissions };
   }
   // The batch finishes first, so every call of this reply has its result in the log.
   if (next.fatal !== undefined && next.pending.size === 0)
@@ -600,7 +825,8 @@ function handleTool(
 }
 
 function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK' }>): NewLogRecord {
-  const { projectionDigest, headDigest, elidedEntries } = report.output as ContextAssembleOutput;
+  const { projectionDigest, headDigest, elidedEntries, tokenCount, tokenBudget } =
+    report.output as ContextAssembleOutput;
   return {
     ...base(state),
     type: 'CONTEXT_ASSEMBLED',
@@ -608,6 +834,8 @@ function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK'
     projectionDigest,
     headDigest,
     ...(elidedEntries.length === 0 ? {} : { elidedEntries }),
+    tokenCount,
+    tokenBudget,
   };
 }
 

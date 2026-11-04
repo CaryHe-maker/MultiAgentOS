@@ -54,10 +54,14 @@ describe('the repository catalog', () => {
     const pinned = catalog.pinAgent({ id: 'main', version: 'v0.1.0' }, context);
     if (!pinned.ok) throw new Error(pinned.error.message);
     expect(pinned.value.tools.map((tool) => tool.modelName).sort()).toEqual([
+      'edit_file',
       'list_files',
       'read_file',
+      'read_output',
       'reply',
       'search_repository',
+      'update_todos',
+      'write_file',
     ]);
   });
 });

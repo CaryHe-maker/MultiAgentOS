@@ -14,6 +14,18 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   ARTIFACT_EXPIRED: 'the output it refers to is no longer kept; call the tool again if you need it',
   QUOTA_EXHAUSTED:
     'this agent has used up its tools or its time; finish with what you already have',
+  CAPABILITY_NOT_GRANTED: 'this agent may not use this tool; do the work another way or say so',
+  ADMISSION_CHECK_FAILED: 'the system could not check this call, so it did not run it',
+  WRITE_OUT_OF_SCOPE:
+    'the path is outside what you may write (absolute, `..`, or beyond your write root); use a relative path inside it',
+  PROTECTED_PATH:
+    'this path is protected (.git, .multiagentos, .env, keys, node_modules, or excluded by the project) and cannot be written; tell the user if it must change',
+  FILE_CHANGED:
+    'the file is not as you last read it; read it again, then redo the change against what is there',
+  EDIT_NO_MATCH:
+    'oldString is not in the file; read the file again and copy the text exactly, with its whitespace',
+  EDIT_NOT_UNIQUE:
+    'oldString occurs more than once; include more of the surrounding text, or set replaceAll',
   OUT_OF_SCOPE:
     'the path is outside the readable repository (absolute, `..`, or a protected file such as .env, keys or node_modules); use a relative path inside the repository',
   NOT_FOUND:

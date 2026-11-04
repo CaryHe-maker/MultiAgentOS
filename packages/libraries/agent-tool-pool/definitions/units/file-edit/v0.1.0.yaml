@@ -1,0 +1,31 @@
+schemaVersion: v1
+kind: UNIT
+id: file-edit
+version: v0.1.0
+description: Replace text in one repository file.
+executionKind: FILE_EDIT
+protectedCapabilities:
+  - workspace.write
+inputContract:
+  kind: contract
+  id: executor.FileEditInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.FileWriteOutput
+  version: v1
+toolRefs:
+  - id: edit-file
+    version: v0.1.0
+effect: WORKSPACE_WRITE
+isIdempotent: false
+failurePolicy:
+  WRITE_OUT_OF_SCOPE: RETURN_TO_MODEL
+  PROTECTED_PATH: RETURN_TO_MODEL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  UNSUPPORTED_FILE: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  FILE_CHANGED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL
+  EDIT_NO_MATCH: RETURN_TO_MODEL
+  EDIT_NOT_UNIQUE: RETURN_TO_MODEL

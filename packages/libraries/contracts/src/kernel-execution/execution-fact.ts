@@ -5,6 +5,8 @@ import {
   RepositorySearchOutputSchema,
 } from '../context/repository.js';
 import { FileReadOutputSchema } from '../executor/file-read.js';
+import { FileWriteOutputSchema } from '../executor/file-write.js';
+import { OutputReadOutputSchema } from '../executor/output-read.js';
 import { ModelCallOutputSchema, TokenUsageSchema } from '../executor/model-call.js';
 import { RepositoryListOutputSchema } from '../executor/repository-list.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -115,6 +117,8 @@ const OrientResultSchema = toolResult(RepositoryOrientOutputSchema);
 const SearchResultSchema = toolResult(RepositorySearchOutputSchema);
 const ListResultSchema = toolResult(RepositoryListOutputSchema);
 const FileReadResultSchema = toolResult(FileReadOutputSchema);
+const FileWriteResultSchema = toolResult(FileWriteOutputSchema);
+const OutputReadResultSchema = toolResult(OutputReadOutputSchema);
 const AssembleResultSchema = closed({
   output: ContextAssembleOutputSchema,
   artifact: artifact,
@@ -132,6 +136,8 @@ export const ExecutionResultSchema = Type.Union(
     SearchResultSchema,
     ListResultSchema,
     FileReadResultSchema,
+    FileWriteResultSchema,
+    OutputReadResultSchema,
     AssembleResultSchema,
     ModelResultSchema,
   ],
@@ -145,6 +151,9 @@ const NON_MODEL_KINDS = Type.Enum([
   'REPOSITORY_SEARCH',
   'REPOSITORY_LIST',
   'FILE_READ',
+  'FILE_WRITE',
+  'FILE_EDIT',
+  'OUTPUT_READ',
   'CONTEXT_ASSEMBLE',
 ]);
 const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = notCompleted(
@@ -158,6 +167,9 @@ export const ExecutionFactSchema = Type.Union(
     completed('REPOSITORY_SEARCH', SearchResultSchema, inSession),
     completed('REPOSITORY_LIST', ListResultSchema, inSession),
     completed('FILE_READ', FileReadResultSchema, inSession),
+    completed('FILE_WRITE', FileWriteResultSchema, inSession),
+    completed('FILE_EDIT', FileWriteResultSchema, inSession),
+    completed('OUTPUT_READ', OutputReadResultSchema, inSession),
     completed('CONTEXT_ASSEMBLE', AssembleResultSchema, inSession),
     completed('MODEL', ModelResultSchema, {
       ...inSession,

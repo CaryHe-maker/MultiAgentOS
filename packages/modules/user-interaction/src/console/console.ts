@@ -10,8 +10,10 @@ import {
   type InteractionInboxEvent,
   type InteractionSessionEvent,
   type InteractionSystemEvent,
+  type KernelToInteractionEvent,
   type RunFinished,
 } from '@multiagentos/contracts';
+import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, terminalText } from './console-text.js';
 import type { ActivityLine, ConsoleView, LiveState, PendingItem } from './console-view.js';
@@ -59,6 +61,8 @@ export class Console {
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
+  /** Set by /fork until the draft's first prompt. */
+  #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
   #runState: RunState = 'NONE';
   #budget = 'NORMAL';
@@ -148,8 +152,13 @@ export class Console {
     }
     if (this.#sessionId === undefined) {
       this.#deps.view.print({ kind: 'USER', text: terminalText(input) });
+      const prompt = { inputId: newId('inp'), text: input };
+      const from = this.#forkFrom;
+      this.#forkFrom = undefined;
       const accepted = await this.#deps.gateway.startSession(
-        { requestId: newId('req'), mode: 'NEW', prompt: { inputId: newId('inp'), text: input } },
+        from === undefined
+          ? { requestId: newId('req'), mode: 'NEW', prompt }
+          : { requestId: newId('req'), mode: 'FORK', prompt, fromSessionId: from },
         this.#context(),
       );
       if (accepted.outcome === 'ACCEPTED') this.#sessionId = accepted.sessionId;
@@ -220,7 +229,13 @@ export class Console {
   async #answer(item: PendingItem, input: string): Promise<void> {
     const yes = /^(y|yes|是|好)$/iu.test(input);
     const no = /^(n|no|否|不)$/iu.test(input);
-    if (!yes && !no) return;
+    if (!yes && !no) {
+      // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
+      if (item.kind !== 'UNDO') return;
+      this.#pending.shift();
+      await this.submit(input);
+      return;
+    }
     this.#pending.shift();
     if (item.kind === 'CONTINUE') {
       if (yes && this.#sessionId !== undefined)
@@ -234,6 +249,20 @@ export class Console {
     const sessionId = this.#sessionId;
     const workflowRunId = this.#workflowRunId;
     if (sessionId === undefined || workflowRunId === undefined) return;
+    if (item.kind === 'UNDO') {
+      await this.#deps.gateway.confirmUndo(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          undoId: item.undoId,
+          decision: yes ? 'FORCE' : 'CANCEL',
+        },
+        this.#context(),
+      );
+      this.#refresh();
+      return;
+    }
     this.#notice(yes ? text.granted : text.declined);
     await this.#deps.gateway.answerAuthorization(
       {
@@ -241,7 +270,7 @@ export class Console {
         sessionId,
         workflowRunId,
         questionId: item.questionId,
-        answer: { scope: yes ? 'ALLOW' : 'DENY' },
+        answer: { scope: !yes ? 'DENY' : item.once ? 'ONCE' : 'ALLOW' },
       },
       this.#context(),
     );
@@ -267,8 +296,22 @@ export class Console {
       case '/sessions':
         await this.#deps.gateway.listSessions({ requestId: newId('req') }, this.#context());
         break;
+      case '/fork':
+        // Like /new, nothing is created until the first prompt; the open Session stays open.
+        if (this.#sessionId === undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        this.#putBack();
+        this.#forkFrom = this.#sessionId;
+        this.#sessionId = undefined;
+        this.#workflowRunId = undefined;
+        this.#runState = 'NONE';
+        this.#notice(text.forkDraft);
+        break;
       case '/new':
         // The new Session is created only when its first prompt is sent.
+        this.#forkFrom = undefined;
         this.#putBack();
         this.#sessionId = undefined;
         this.#workflowRunId = undefined;
@@ -298,6 +341,32 @@ export class Console {
           );
         break;
       }
+      case '/undo': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (
+          sessionId === undefined ||
+          workflowRunId === undefined ||
+          (argument !== undefined && argument !== 'all')
+        ) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const undone = await this.#deps.gateway.undoTurns(
+          {
+            requestId: newId('req'),
+            sessionId,
+            workflowRunId,
+            scope: argument === 'all' ? 'ALL' : 'LAST',
+          },
+          this.#context(),
+        );
+        if (undone.outcome === 'REJECTED') this.#notice(describeReason(undone.reasonCode));
+        break;
+      }
+      case '/diff':
+        await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        break;
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
         if (ref === undefined) this.#notice(text.notNow);
@@ -308,6 +377,24 @@ export class Console {
         this.#notice(text.unknownCommand(name));
     }
     this.#refresh();
+  }
+
+  async #showDiff(n: number): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined || !Number.isSafeInteger(n) || n < 1) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const diff = await this.#deps.gateway.diffTurns(
+      { requestId: newId('req'), sessionId, n },
+      this.#context(),
+    );
+    if (diff.outcome === 'REJECTED') {
+      this.#notice(text.noDiff);
+      return;
+    }
+    const body = await this.#read(diff.diffRef);
+    this.#notice(diff.files.length === 0 ? text.noDiff : terminalText(body ?? ''));
   }
 
   /** Switching, a new Session or a run that ended: queued messages go back to the input box. */
@@ -357,6 +444,8 @@ export class Console {
         this.#notice(
           text.sessionOpened(terminalText(event.title ?? text.untitled), event.turnCount),
         );
+        if (event.divergedFiles !== undefined)
+          this.#notice(text.diverged(event.divergedFiles.length));
         break;
       case 'SessionFailed':
         if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
@@ -391,19 +480,27 @@ export class Console {
         this.#pending.push({
           kind: 'AUTHORIZATION',
           questionId: event.questionId,
-          text:
-            event.capability === 'repo.read'
-              ? text.repoRead(
-                  terminalText(event.repositoryPath),
-                  event.provider,
-                  event.exclusions.length,
-                )
-              : text.instructions(
-                  event.path,
-                  event.truncated,
-                  terminalText((await this.#read(event.contentRef)) ?? ''),
-                ),
+          once: event.capability === 'workspace.write' && event.critical,
+          text: await this.#questionText(event),
         });
+        break;
+      case 'UndoConfirmationRequested':
+        this.#pending.push({
+          kind: 'UNDO',
+          undoId: event.undoId,
+          text: text.undoConfirm(event.files.map((file) => terminalText(file.path))),
+        });
+        break;
+      case 'UndoCancelled': {
+        const index = this.#pending.findIndex(
+          (item) => item.kind === 'UNDO' && item.undoId === event.undoId,
+        );
+        if (index >= 0) this.#pending.splice(index, 1);
+        this.#notice(text.undoCancelled[event.reason]);
+        break;
+      }
+      case 'WorkspaceReverted':
+        this.#notice(text.undone(event.revertedTurnIds.length));
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(
@@ -418,12 +515,20 @@ export class Console {
           unit === undefined
             ? undefined
             : terminalText(`${unit.toolName} ${unit.argsSummary}`.trim());
+        const { todos } = event;
+        const progress =
+          todos === undefined
+            ? undefined
+            : terminalText(
+                `${String(todos.done)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
+              );
+        const shown = tool ?? progress;
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           since: event.at,
-          ...(tool === undefined ? {} : { tool }),
+          ...(shown === undefined ? {} : { tool: shown }),
           ...('retry' in event ? { retry: event.retry } : {}),
         });
         if (unit?.state === 'RUNNING') this.#unitStarted.set(unit.unitAttemptId, event.at);
@@ -446,12 +551,40 @@ export class Console {
       }
       case 'MessagePublished':
         await this.#published(event.kind, event.agentLabel, event.messageRef);
+        if (event.wrapUpReason !== undefined)
+          this.#deps.view.print({
+            kind: 'NOTICE',
+            text: text.earlyEnd[event.wrapUpReason] ?? event.wrapUpReason,
+          });
         break;
       case 'RunFinished':
         await this.#runFinished(event);
         break;
     }
     this.#refresh();
+  }
+
+  async #questionText(
+    event: Extract<KernelToInteractionEvent, { type: 'AuthorizationRequest' }>,
+  ): Promise<string> {
+    if (event.capability === 'repo.read')
+      return text.repoRead(
+        terminalText(event.repositoryPath),
+        event.provider,
+        event.exclusions.length,
+      );
+    if (event.capability === 'project.instructions')
+      return text.instructions(
+        event.path,
+        event.truncated,
+        terminalText((await this.#read(event.contentRef)) ?? ''),
+      );
+    if (event.critical)
+      return text.writeCritical(
+        terminalText(event.path),
+        terminalText((await this.#read(event.contentRef)) ?? ''),
+      );
+    return text.writeRoot(terminalText(event.writeRoot));
   }
 
   async #read(ref: ArtifactRef): Promise<string | undefined> {

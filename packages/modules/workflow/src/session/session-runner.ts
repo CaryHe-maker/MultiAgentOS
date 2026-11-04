@@ -5,9 +5,11 @@ import {
   type AnalysisReportDraft,
   type ArtifactRef,
   type BoundaryContext,
+  canonicalJson,
   type DefinitionRef,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
+  type ProtectedCapability,
   type ReasonCode,
   type SessionCommandFailure,
   type SessionLogRecord,
@@ -39,6 +41,8 @@ import {
   normalReportBody,
   type AgentRounds,
 } from '../domain/agent/analysis-report.js';
+import { instructionsToLoad } from '../domain/context/nested-instructions.js';
+import { toolInputOf } from '../domain/context/tool-inputs.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import {
   advanceGraph,
@@ -66,6 +70,8 @@ export interface AgentBinding {
   readonly ref: PinnedDefinitionRef;
   readonly modelRef: DefinitionRef;
   readonly effort: ThinkingEffort;
+  readonly requestedCapabilities: readonly ProtectedCapability[];
+  readonly writeRoots: readonly string[];
   readonly toolsDigest: string;
   readonly definitions: AgentDefinitions;
 }
@@ -170,6 +176,19 @@ export class SessionRunner {
         });
         this.#adopt(sessionId, event.repositoryRoot, [started]);
         await reply({ command: 'CREATE', outcome: 'READY' });
+      } else if (event.command === 'FORK') {
+        const forked = await this.#deps.store.fork({
+          sessionId,
+          fromSessionId: event.fromSessionId,
+          repositoryRoot: event.repositoryRoot,
+        });
+        this.#adopt(sessionId, event.repositoryRoot, forked.records);
+        await reply({
+          command: 'FORK',
+          outcome: 'READY',
+          inheritedArtifacts: [...forked.inheritedArtifacts],
+          fromTurnCount: forked.fromTurnCount,
+        });
       } else {
         const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
         this.#adopt(sessionId, event.repositoryRoot, opened.records);
@@ -264,6 +283,30 @@ export class SessionRunner {
         ]);
         await this.#deps.store.recordTurnClosed();
         break;
+      case 'WorkspaceReverted':
+        await this.#append([
+          {
+            type: 'WORKSPACE_REVERTED',
+            workflowRunId,
+            revertedTurnIds: event.revertedTurnIds,
+            forced: event.forced,
+            externalFiles: event.externalFiles,
+            ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+          },
+        ]);
+        break;
+      case 'WorkspaceDiverged': {
+        // Measured against the last Turn, so reopening without one finds the same files again.
+        const said = [...this.#records]
+          .reverse()
+          .find((record) => record.type === 'WORKSPACE_DIVERGED' || record.type === 'TURN_STARTED');
+        if (
+          said?.type !== 'WORKSPACE_DIVERGED' ||
+          canonicalJson(said.files) !== canonicalJson(event.files)
+        )
+          await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
+        break;
+      }
       case 'RunClosed':
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },
@@ -458,6 +501,9 @@ export class SessionRunner {
   #context(workflowRunId: string, scope: ProjectionScope): AgentContext {
     return {
       objectiveRef: this.#objectiveRef(workflowRunId),
+      // What a transition has not appended yet still counts: it may be the write this one follows.
+      toolInput: (kind, args, notYetInLog = []) =>
+        toolInputOf(kind, args, [...this.#records, ...(notYetInLog as SessionLogRecord[])], scope),
       assembleInput: (status, final) => {
         return {
           final,
@@ -526,6 +572,8 @@ export class SessionRunner {
         effort: binding.effort,
         workspaceViewId: 'main',
         display: { label: binding.definitions.label },
+        requestedCapabilities: [...binding.requestedCapabilities],
+        writeRoots: [...binding.writeRoots],
       },
       contextOf(sessionId, workflowRunId),
     );
@@ -561,6 +609,19 @@ export class SessionRunner {
   async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
     await this.#append(transition.records);
     if (this.#agent !== undefined) this.#agent = { ...this.#agent, state: transition.state };
+    if (transition.activity !== undefined) {
+      const sessionId = this.#sessionIdOrThrow();
+      await this.#deps.gateway.updateActivity(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          agentRunId: transition.state.agentRunId,
+          todos: transition.activity,
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
@@ -608,10 +669,50 @@ export class SessionRunner {
           },
         ]);
     }
+    await this.#loadNestedInstructions(workflowRunId, active.state.agentRunId, active.scope);
     return {
       ...request,
       input: { ...request.input, history: [...projectHistory(this.#records, active.scope)] },
     };
+  }
+
+  /** Done before the assembly, so the model sees them right after the read (M2Design 9.5). */
+  async #loadNestedInstructions(
+    workflowRunId: string,
+    agentRunId: string,
+    scope: ProjectionScope,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    for (const { path, skip } of instructionsToLoad(
+      this.#records,
+      scope,
+      workflowRunId,
+      agentRunId,
+      this.#deps.config.maxNestedInstructions,
+    )) {
+      if (skip) {
+        await this.#append([
+          { type: 'PROJECT_FILE_LOADED', workflowRunId, path, agentRunId, skipped: 'LIMIT' },
+        ]);
+        continue;
+      }
+      const file = await this.#deps.gateway.readProjectFile(
+        { requestId: newId('req'), sessionId, workflowRunId, path },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file)
+        await this.#append([
+          {
+            type: 'PROJECT_FILE_LOADED',
+            workflowRunId,
+            path,
+            ref: file.ref,
+            sha256: file.sha256,
+            trusted: file.trusted,
+            agentRunId,
+          },
+        ]);
+    }
   }
 
   async #onUnitReport(
@@ -766,6 +867,7 @@ export class SessionRunner {
               modelOutputRef: ending.source.modelOutputRef,
               toolCallId: ending.source.toolCallId,
             },
+            ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
           },
           ending.source,
           { status: 'SUCCEEDED', runOutput: false },
@@ -845,6 +947,8 @@ export class SessionRunner {
         return this.#advance(workflowRunId);
       }
       case 'FAILED':
+        // In a chat the run goes on with the next prompt, so the user must hear of it here.
+        if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
         await this.#endAgentRun(workflowRunId, active, ending.kind);
         await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
         this.#runFailure = ending.code;

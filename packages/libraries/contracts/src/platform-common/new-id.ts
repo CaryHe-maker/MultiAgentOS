@@ -25,6 +25,7 @@ export type IdPrefix =
   | 'msg'
   | 'cor'
   | 'qst'
+  | 'und'
   | 'ctx'
   | 'ses'
   | 'trn'

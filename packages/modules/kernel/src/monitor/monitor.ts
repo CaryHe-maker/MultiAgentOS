@@ -24,6 +24,7 @@ interface Charge {
 
 interface Reservation {
   readonly estimatedTokens: number;
+  readonly cacheHitWeight: number;
   charge?: Charge;
 }
 
@@ -74,13 +75,18 @@ export class Monitor implements MonitorDuties {
   reserve({
     estimatedTokens,
     final,
+    cacheHitWeight = 1,
   }: {
     readonly estimatedTokens: number;
     readonly final: boolean;
+    /** What a cached input token costs against an uncached one, from the model's pricing. */
+    readonly cacheHitWeight?: number;
   }) {
     if (this.#finalized) throw new MonitorInvariantError('Cannot reserve after finalization');
     if (!Number.isSafeInteger(estimatedTokens) || estimatedTokens < 0)
       throw new MonitorInvariantError('Invalid token estimate');
+    if (!Number.isFinite(cacheHitWeight) || cacheHitWeight < 0 || cacheHitWeight > 1)
+      throw new MonitorInvariantError('Invalid cache hit weight');
     if (this.#state === 'EXHAUSTED')
       return { ok: false as const, reasonCode: 'BUDGET_EXHAUSTED' as const };
     const available = this.#config.tokenLimit - (final ? 0 : this.#finalReserve);
@@ -92,7 +98,7 @@ export class Monitor implements MonitorDuties {
       };
     }
     const reservationId = `rsv_${ulid()}`;
-    this.#reservations.set(reservationId, { estimatedTokens });
+    this.#reservations.set(reservationId, { estimatedTokens, cacheHitWeight });
     this.#reserved += estimatedTokens;
     return { ok: true as const, reservationId };
   }
@@ -189,7 +195,9 @@ export class Monitor implements MonitorDuties {
           settlement.usage.inputCacheHitTokens > inputTokens))
     )
       throw new MonitorInvariantError('Invalid actual token usage');
-    return { type: 'ACTUAL', amount: inputTokens + outputTokens, usage: settlement.usage };
+    const hits = settlement.usage.inputCacheHitTokens ?? 0;
+    const input = Math.ceil(inputTokens - hits + hits * reservation.cacheHitWeight);
+    return { type: 'ACTUAL', amount: input + outputTokens, usage: settlement.usage };
   }
 
   #sameCharge(left: Charge, right: Charge): boolean {

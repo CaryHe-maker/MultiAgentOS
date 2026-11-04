@@ -10,14 +10,18 @@ import {
   RegisterAgentRunRequestSchema,
   RequestHumanRequestSchema,
   SubmitUnitRequestSchema,
+  UpdateActivityRequestSchema,
 } from '../kernel-unit/workflow-syscalls.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { closed } from '../platform-common/schema-helpers.js';
 import {
   AnswerAuthorizationRequestSchema,
   AnswerHumanRequestSchema,
+  ConfirmUndoRequestSchema,
+  DiffTurnsRequestSchema,
   ReadArtifactRequestSchema,
   ShutdownRequestSchema,
+  UndoTurnsRequestSchema,
 } from './interaction-requests.js';
 import {
   DeleteSessionRequestSchema,
@@ -43,6 +47,7 @@ export const GatewayForwardSchema = Type.Union(
     forward('workflow', 'closeRun', CloseRunRequestSchema),
     forward('workflow', 'requestHuman', RequestHumanRequestSchema),
     forward('workflow', 'readProjectFile', ReadProjectFileRequestSchema),
+    forward('workflow', 'updateActivity', UpdateActivityRequestSchema),
     forward('workflow', 'reportSessionCommand', ReportSessionCommandRequestSchema),
     forward('workflow', 'reportSessionList', ReportSessionListRequestSchema),
     closed({
@@ -63,6 +68,9 @@ export const GatewayForwardSchema = Type.Union(
     forward('user-interaction', 'answerAuthorization', AnswerAuthorizationRequestSchema),
     forward('user-interaction', 'answerHuman', AnswerHumanRequestSchema),
     forward('user-interaction', 'readArtifact', ReadArtifactRequestSchema),
+    forward('user-interaction', 'undoTurns', UndoTurnsRequestSchema),
+    forward('user-interaction', 'confirmUndo', ConfirmUndoRequestSchema),
+    forward('user-interaction', 'diffTurns', DiffTurnsRequestSchema),
     forward('user-interaction', 'shutdown', ShutdownRequestSchema),
   ],
   { $id: 'kernel.control.GatewayForward.v1' },

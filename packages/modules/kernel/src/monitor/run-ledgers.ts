@@ -109,7 +109,11 @@ export class RunLedgers {
     };
   }
 
-  reserve(request: { readonly estimatedTokens: number; readonly final: boolean }) {
+  reserve(request: {
+    readonly estimatedTokens: number;
+    readonly final: boolean;
+    readonly cacheHitWeight?: number;
+  }) {
     const turn = this.#openTurn();
     const reserved = turn.ledger.reserve(request);
     if (reserved.ok) turn.modelRequests += 1;

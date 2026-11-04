@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import { pinnedRefOf } from '../catalog/definition-schemas.js';
+import { PROTECTED_CAPABILITIES, pinnedRefOf } from '../catalog/definition-schemas.js';
 import { WorkflowRunFailureSchema } from '../kernel-control/run-outcome.js';
 import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -23,6 +23,10 @@ export const RegisterAgentRunRequestSchema = closed(
     effort: ThinkingEffortSchema,
     workspaceViewId: Type.Literal('main'),
     display: closed({ label: text(80) }),
+    /** May only narrow the ceiling, or registration is CAPABILITY_NOT_SUBSET (Kernel/Core 5a.1). */
+    requestedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
+    /** Relative to the repository root; main has `['.']`, and none without `workspace.write`. */
+    writeRoots: Type.Array(text(1024)),
   },
   'kernel.unit.RegisterAgentRunRequest.v1',
 );
@@ -82,12 +86,16 @@ export const RequestHumanRequestSchema = closed(
 );
 export type RequestHumanRequest = Static<typeof RequestHumanRequestSchema>;
 
-/** Stage 1 opens `AGENTS.md` and repository templates; nested `AGENTS.md` comes with stage 2. */
+/** `AGENTS.md` at the root or below it, with no `.` or `..` segment and no empty one. */
+const INSTRUCTIONS_PATH = '(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md';
+
+/** Only `AGENTS.md` and repository templates; whether it may be read is decided behind this. */
 export const ReadProjectFileRequestSchema = closed(
   {
     ...inRun,
     path: Type.String({
-      pattern: '^(?:AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$',
+      pattern: `^(?:${INSTRUCTIONS_PATH}|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$`,
+      maxLength: 512,
     }),
   },
   'kernel.unit.ReadProjectFileRequest.v1',
@@ -100,7 +108,7 @@ export const ProjectFileContentSchema = Type.Union(
     closed({ ...accepted, path: text(512), exists: Type.Literal(false) }),
     closed({
       ...accepted,
-      path: Type.Literal('AGENTS.md'),
+      path: Type.String({ pattern: `^${INSTRUCTIONS_PATH}$`, maxLength: 512 }),
       exists: Type.Literal(true),
       ref: ArtifactRefSchema,
       sha256: Sha256Schema,
@@ -118,3 +126,18 @@ export const ProjectFileContentSchema = Type.Union(
   { $id: 'kernel.unit.ProjectFileContent.v1' },
 );
 export type ProjectFileContent = Static<typeof ProjectFileContentSchema>;
+
+/** Only for the interface: Kernel puts it into the ActivityEvents as it is (WorkflowKernel 2.5). */
+export const UpdateActivityRequestSchema = closed(
+  {
+    ...inRun,
+    agentRunId: IdSchemas.agentRunId,
+    todos: closed({
+      total: Type.Integer({ minimum: 0, maximum: 30 }),
+      done: Type.Integer({ minimum: 0, maximum: 30 }),
+      current: Type.Optional(text(80)),
+    }),
+  },
+  'kernel.unit.UpdateActivityRequest.v1',
+);
+export type UpdateActivityRequest = Static<typeof UpdateActivityRequestSchema>;

@@ -1,5 +1,8 @@
-import type { RepositoryListInput, RepositoryListOutput } from '@multiagentos/contracts';
-import { normalizeRequestPath } from '../repository-access/request-path.js';
+import {
+  normalizeRequestPath,
+  type RepositoryListInput,
+  type RepositoryListOutput,
+} from '@multiagentos/contracts';
 import { retainItems, type PreviewLimits } from '../retention/retention.js';
 
 const DEFAULT_DEPTH = 2;

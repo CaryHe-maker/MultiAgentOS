@@ -24,6 +24,12 @@ unitRefs:
     version: v0.1.0
   - id: file-read
     version: v0.1.0
+  - id: file-write
+    version: v0.1.0
+  - id: file-edit
+    version: v0.1.0
+  - id: output-read
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -39,12 +45,19 @@ actions:
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
+  todos:
+    toolRef:
+      id: update-todos
+      version: v0.1.0
+capabilities:
+  - repo.read
+  - workspace.write
 limits:
-  maxRounds: 40
+  maxRounds: 80
   maxToolCallsPerRound: 8
   maxToolUnits: 200
 budget:
-  perCallInputLimit: 96000
-  maxOutputTokens: 8192
-  finalInputBudget: 72000
-  finalMaxOutputTokens: 8192
+  perCallInputLimit: 880000
+  maxOutputTokens: 64000
+  finalInputBudget: 880000
+  finalMaxOutputTokens: 64000

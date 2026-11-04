@@ -130,6 +130,8 @@ describe('fake Session Kernel', () => {
           agentRef: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest: 'a'.repeat(64) },
           effort: 'high',
           workspaceViewId: 'main',
+          requestedCapabilities: ['repo.read'],
+          writeRoots: [],
           display: { label: 'main' },
         },
         context,

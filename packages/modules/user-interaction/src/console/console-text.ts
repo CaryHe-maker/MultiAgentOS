@@ -11,6 +11,24 @@ const DEGRADED: Readonly<Record<string, string>> = {
   CONSECUTIVE_ERRORS: '工具连续出错，没能完成回复。',
   CONTEXT_LIMIT: '上下文太长，没能完成回复；可以用 /new 开始新对话。',
   REGENERATION_LIMIT: '模型的回复连续不合要求，没能完成回复。',
+  PROVIDER_AUTH: '模型服务拒绝了 API 密钥，没能完成回复。',
+  PROVIDER_RATE_LIMITED: '模型服务限流，重试后仍然失败，没能完成回复。',
+  PROVIDER_UNREACHABLE: '连不上模型服务，没能完成回复。',
+  PROVIDER_ERROR: '模型服务出错，没能完成回复。',
+  UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
+};
+
+/** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
+const EARLY_END: Readonly<Record<string, string>> = {
+  BUDGET_WRAP_UP: '额度接近用完，这一轮提前结束了。',
+  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这一轮提前结束了。',
+  WALL_CLOCK_LIMIT: '运行时间到了上限，这一轮提前结束了。',
+  ROUND_LIMIT: '轮次到了上限，这一轮提前结束了。',
+  NO_PROGRESS: '连续几轮没有进展，这一轮提前结束了。',
+  REPEATED_INTENT: '同一个调用重复太多次，这一轮提前结束了。',
+  CONSECUTIVE_ERRORS: '工具连续出错，这一轮提前结束了。',
+  CONTEXT_LIMIT: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
+  REGENERATION_LIMIT: '模型的回复连续不合要求，这一轮提前结束了。',
 };
 
 const RUN_STATE: Readonly<Record<string, string>> = {
@@ -41,6 +59,22 @@ export const ConsoleText = Object.freeze({
     `允许读取仓库 ${path} 吗？读取的内容会发送至 ${provider}；${String(exclusions)} 条排除规则内的文件不会读取。[y/n]`,
   instructions: (path: string, truncated: boolean, text: string) =>
     `是否信任这份 ${path}？信任后它作为项目指令交给 Agent；不信任则只作为仓库材料。${truncated ? '（只展示开头）' : ''}\n${text}\n[y/n]`,
+  writeRoot: (root: string) =>
+    `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
+  writeCritical: (path: string, text: string) =>
+    `允许 Agent 写入 ${path} 吗？写入后它会作为可信的项目指令。只对这一次写入有效。\n${text}\n[y/n]`,
+  undoConfirm: (files: readonly string[]) =>
+    `这些文件在之后被别处改过：\n${files.join('\n')}\n仍要回退吗？被覆盖的内容会保留在快照中。[y/n]`,
+  undoCancelled: {
+    USER_CANCELLED: '已取消回退，没有修改任何文件。',
+    NEW_INPUT: '已取消回退，没有修改任何文件。',
+    SESSION_CLOSED: '已取消回退，没有修改任何文件。',
+    FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
+  },
+  undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
+  noDiff: '没有可以显示的改动。',
+  diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
+  forkDraft: '下一条消息会开始一个分出的新对话，它带着到目前为止的全部内容。',
   granted: '已允许。',
   declined: '已拒绝。',
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',
@@ -52,16 +86,20 @@ export const ConsoleText = Object.freeze({
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',
+    '/fork             从当前对话分出一个新对话',
     '/sessions         列出本仓库的对话',
     '/resume <编号>    打开对话',
     '/delete <编号>    删除未打开的对话',
     '/status           当前运行与额度状态',
     '/output <编号>    查看被截断的工具输出',
+    '/undo [all]       回退最近一轮（或全部）的文件改动',
+    '/diff [N]         查看倒数第 N 轮改动了什么',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
   ].join('\n'),
   status: (state: string, budget: string) => `运行：${state}；额度：${budget}`,
   degraded: DEGRADED,
+  earlyEnd: EARLY_END,
   degradedOther: '没能完成回复。',
   finished: {
     COMPLETED: '',

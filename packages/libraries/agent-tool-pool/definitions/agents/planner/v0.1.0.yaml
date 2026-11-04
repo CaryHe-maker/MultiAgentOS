@@ -35,12 +35,14 @@ actions:
       then: HANDOFF
       allowedInFinal: false
   onDegraded: PUBLISH_REPORT
+capabilities:
+  - repo.read
 limits:
   maxRounds: 3
   maxToolCallsPerRound: 0
   maxToolUnits: 1
 budget:
-  perCallInputLimit: 96000
-  maxOutputTokens: 8192
-  finalInputBudget: 72000
-  finalMaxOutputTokens: 8192
+  perCallInputLimit: 880000
+  maxOutputTokens: 64000
+  finalInputBudget: 880000
+  finalMaxOutputTokens: 64000

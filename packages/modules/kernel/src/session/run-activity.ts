@@ -32,9 +32,15 @@ type UnitLine = NonNullable<ActivityEvent['unit']>;
 export class RunActivity {
   readonly #deps: RunActivityDeps;
   readonly #labels = new Map<string, string>();
+  readonly #todos = new Map<string, NonNullable<ActivityEvent['todos']>>();
 
   public constructor(deps: RunActivityDeps) {
     this.#deps = deps;
+  }
+
+  todos(agentRunId: string, todos: NonNullable<ActivityEvent['todos']>): void {
+    this.#todos.set(agentRunId, todos);
+    this.#emit(agentRunId, 'THINKING');
   }
 
   registered(agentRunId: string, label: string): void {
@@ -44,12 +50,14 @@ export class RunActivity {
   #emit(agentRunId: string, phase: Exclude<Phase, 'RETRYING'>, unit?: UnitLine): void {
     const label = this.#labels.get(agentRunId);
     if (label === undefined) return;
+    const todos = this.#todos.get(agentRunId);
     this.#deps.emit({
       type: 'ActivityEvent',
       agentRunId,
       label,
       phase,
       ...(unit === undefined ? {} : { unit }),
+      ...(todos === undefined ? {} : { todos }),
       at: this.#deps.now().toISOString(),
     });
   }
@@ -108,13 +116,16 @@ export class RunActivity {
     if (report.status !== 'OK' || !('unitAttemptId' in report)) return;
     const label = this.#labels.get(report.agentRunId);
     if (report.executionKind === 'MESSAGE_PUBLISH') {
-      const kind = (report.output as { kind?: MessagePublished['kind'] }).kind;
+      const { kind, wrapUpReason } = report.output as Partial<
+        Pick<MessagePublished, 'kind' | 'wrapUpReason'>
+      >;
       if (label === undefined || kind === undefined || report.outputRef === undefined) return;
       this.#deps.emit({
         type: 'MessagePublished',
         messageRef: report.outputRef,
         agentLabel: label,
         kind,
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
       });
       return;
     }

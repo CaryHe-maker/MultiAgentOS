@@ -115,6 +115,8 @@ describe('references and identifiers', () => {
       agentRef,
       effort: 'none',
       workspaceViewId: 'main',
+      requestedCapabilities: [],
+      writeRoots: [],
       display: { label: 'main' },
     };
     expectRules(RegisterAgentRunRequestSchema, register, {

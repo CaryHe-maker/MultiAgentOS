@@ -1,6 +1,6 @@
 # MultiAgentOS M2 ExecutorSet
 
-> 状态：已评审（阶段 1）。
+> 状态：已评审（阶段 1、2）。
 
 ## 1. 定位
 
@@ -69,11 +69,36 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 `read_output` 工具的执行（M2Design 第 8.2 节）。`executionKind` 为 `OUTPUT_READ`，`scope.kind` 为 `NONE`，在进程内运行，不进沙盒。
 
 - 输入 `executor.OutputReadInput`：`toolCallId`、`offset?`（起始行，从 1 开始，缺省 1）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（按字面匹配的文字，不是正则）；
+- 结果（含首尾说明）不超过预览上限；一行超过上限时截断这一行并写明省略的字节数，下一次从下一行继续，不会停在同一行。
   另有 Execution 解析后的完整输出正文。`fullRef`（截断时另存的完整输出，或修剪时补登的未截断预览）由 Workflow 填入 Unit 输入，Execution 解析并检查归属与过期，本 Executor 看不到引用。
 - 按行切分（`\r\n` 与 `\n` 都视为换行）；有 `pattern` 时先筛出含有它的行，再按 `offset`、`limit` 取段；每行前加原文件中的行号。
 - 结果经 `retention/` 限制在该 Unit 的预览上限内（缺省至多 2000 行或 50 KiB），按条目（行）保留前部，注明总行数、本段的行范围与省略量，并提示用 `offset` 继续读取；不交回完整输出。
 - `offset` 超出总行数时返回 `REJECTED(INVALID_RANGE)`，说明总行数；正文不是 UTF-8 文本时返回 `REJECTED(UNSUPPORTED_FILE)`（与 M1 `file-read` 相同的原因码）。
 - 不接触 ArtifactStore、文件系统与网络；同一输入总是得到逐字节相同的结果。
+
+## 5b. `fs/`：`file-write`、`file-edit`（阶段 2）
+
+在进程内执行（M2Design 第 2.5、6.3 节）。`scope.kind` 为 `WORKSPACE`：`{ repositoryRoot, writableRoots, exclusions }`，由 Core 从 Lease 派生。
+
+**写入路径的检查**，每次写入都按顺序执行，任何一步不通过都不触碰文件：
+
+1. 请求路径规范化：拒绝绝对路径、`..`、空段；
+2. `isWritable(profile, path)`：越出可写根目录为 `WRITE_OUT_OF_SCOPE`，受保护路径或排除规则命中为 `PROTECTED_PATH`；
+3. 从仓库根目录逐段 `lstat` 到父目录，任何一段是符号链接时为 `OUT_OF_SCOPE`；目标本身是符号链接时同样拒绝；不存在的中间目录按需创建；
+4. 持有按规范化路径的锁，比较 `baseSha` 与 `expectAbsent`，不一致时为 `FILE_CHANGED`；
+5. 写入同目录下的临时文件（`O_CREAT | O_EXCL | O_NOFOLLOW`），`fsync` 后再比较一次，然后 `rename`，保留原文件的权限；
+6. `rename` 之后校验父目录的 realpath 仍在仓库内；不在时记为 `GUARD_FAILURE`，上报安全违规。
+
+**`file-write`**：输入 `executor.FileWriteInput`（`path`、`content`、`append?`、`baseSha?`、`expectAbsent?`）。覆盖要求 `baseSha`，新建要求 `expectAbsent`，二者都没有时为 `INVALID_INPUT`。
+
+**`file-edit`**：输入 `executor.FileEditInput`（`path`、`oldString`、`newString`、`replaceAll?`、`baseSha`）。
+
+- `oldString` 必须唯一匹配，否则 `EDIT_NOT_UNIQUE`，除非 `replaceAll`；没有匹配时 `EDIT_NO_MATCH`；
+- 精确匹配失败时依次按"排版引号归一"与"空白差异"重试，仍要求唯一；
+- 保持文件原有的换行符（CRLF 与 LF）。
+
+两者的输出带 `path`、`operation`、`sha256`（新内容的 SHA），预览是一行结果说明。
+`baseSha`、`expectAbsent` 由 Workflow 填写，不在模型看到的工具参数中（`FileWriteArgs`、`FileEditArgs`）。
 
 ## 6. `ContextAssembleExecutor` 的变化
 
@@ -94,6 +119,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - Workflow 交来的每个 HISTORY 条目带 `turnId`、`seq` 与类别 `PINNED` 或 `NORMAL`（M2Design 第 9.3 节）。
 - 普通调用按条目顺序组装全部条目，不去掉任何条目；同一个 AgentRun 两次压缩之间的组装结果，前一次是后一次的前缀（不变量 27）。
 - 普通调用超出 `tokenBudget`（`perCallInputLimit`）时返回 `REJECTED(LIMIT_EXCEEDED)`。阶段 8 起这种情况由 Kernel 在派发前压缩避免（M2Design 第 9.6 节）；之前由 Workflow 进入收尾。
+- 判断上限用校准后的值（M2Design 第 9.3 节）；达到上限的 85% 时，STATUS 写入预警。
 - ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
 - **收尾调用的保险**（`final: true`）：超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，以完整的模型轮为单位（工具调用与它的结果不拆开，思考内容随轮一起去掉），
   直到装下为止；`PINNED` 条目与最近一轮永不去掉。输出 `elidedEntries`（被去掉条目的 `seq`），取代 M1 的 `elidedRequestIds`。仍装不下时返回 `REJECTED(LIMIT_EXCEEDED)`，Workflow 按降级规则结束。
@@ -145,6 +171,7 @@ M1 的测试全部保留。增加：
   收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；`AGENTS.md` 不进入 system 段；
 - `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；`Retry-After` 的两种格式换算为 `retryAfterMs`；
   前缀式摘要请求与之前普通请求的前缀相同（阶段 8）；
+- `fs/`（阶段 2）：`isWritable` 与 Core、沙盒三处判定一致（属性测试）；对抗测试：越界路径（绝对路径、`..`、大小写与 Unicode 变体）、符号链接与符号链接替换（目标与中间目录，含检查与写入之间的替换）、竞争写入、`baseSha` 与 `expectAbsent`、受保护路径与排除规则；编辑匹配的唯一性、归一重试、换行符保持；写入失败不留下临时文件；
 - `command/parse/`（阶段 3）：引号与转义中的分隔符不拆分；子 shell、`{ }`、管道、heredoc 中的子命令都被取出；变量作命令名、命令替换与语法错误判为不可复用；ARITY 表的取词；
 - 修剪与纯文本式（阶段 8）：头尾字节数精确、不切断 UTF-8、说明中带 `toolCallId`；纯文本式按目标去掉最早的完整模型轮，先前的摘要不去掉，`omittedEntries` 正确。
 

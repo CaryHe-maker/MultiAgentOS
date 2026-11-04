@@ -1,7 +1,11 @@
 import { UnitDefinitionSchema, type UnitDefinition } from '../catalog/definition-schemas.js';
 import { FileReadOutputSchema, type FileReadOutput } from '../executor/file-read.js';
 import { ArtifactRefSchema, type ArtifactRef } from '../platform-common/common-schemas.js';
-import { REPOSITORY_KINDS, type ExecutionKind } from '../platform-common/execution-kind.js';
+import {
+  REPOSITORY_KINDS,
+  WRITE_KINDS,
+  type ExecutionKind,
+} from '../platform-common/execution-kind.js';
 import { assertValid } from '../platform-common/validation.js';
 
 /**
@@ -27,10 +31,12 @@ export function testArtifactRef(mediaType = 'text/plain', seed = 'a'): ArtifactR
 }
 
 const READS_REPOSITORY: ReadonlySet<ExecutionKind> = new Set(REPOSITORY_KINDS);
+const WRITES_WORKSPACE: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
 
 /**
  * A `v1` Unit of the given kind. It declares `repo.read` exactly when the kind reads the
- * repository, the same rule the catalog checks on load (AgentToolPool 5).
+ * repository and `workspace.write` when it writes it, the rule the catalog checks on load
+ * (AgentToolPool 5).
  */
 export function testUnitDefinition(
   executionKind: ExecutionKind,
@@ -45,7 +51,11 @@ export function testUnitDefinition(
     digest: sha256Of('d'),
     description: `Test Unit ${name}`,
     executionKind,
-    protectedCapabilities: READS_REPOSITORY.has(executionKind) ? ['repo.read'] : [],
+    protectedCapabilities: READS_REPOSITORY.has(executionKind)
+      ? ['repo.read']
+      : WRITES_WORKSPACE.has(executionKind)
+        ? ['workspace.write']
+        : [],
     inputContract: { kind: 'contract', id: `test.${name}`, version: 'v1' },
     outputContract: { kind: 'contract', id: `test.${name}`, version: 'v1' },
     toolRefs: [],
