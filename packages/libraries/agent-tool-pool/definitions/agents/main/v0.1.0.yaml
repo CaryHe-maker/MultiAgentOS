@@ -53,7 +53,7 @@ capabilities:
   - repo.read
   - workspace.write
 limits:
-  maxRounds: 40
+  maxRounds: 80
   maxToolCallsPerRound: 8
   maxToolUnits: 200
 budget:

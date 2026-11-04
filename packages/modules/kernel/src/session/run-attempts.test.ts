@@ -304,7 +304,7 @@ describe('refusals without an attempt', () => {
     expect(reports[0]).not.toHaveProperty('unitAttemptId');
   });
 
-  it('calibrates by the last measured request of the same AgentRun', async () => {
+  it('calibrates the context on all input tokens, cached or not', async () => {
     const { run, start } = setup();
     const id = await start('MODEL');
     run.requestReservation({
@@ -322,7 +322,7 @@ describe('refusals without an attempt', () => {
       outcome: 'COMPLETED',
       output: fileOutput,
       outputRef,
-      usage: { inputTokens: 44, outputTokens: 1 },
+      usage: { inputTokens: 44, inputCacheHitTokens: 40, outputTokens: 1 },
     });
     expect(run.calibrationOf(testId('agr', 1))).toEqual({
       measuredInputTokens: 44,

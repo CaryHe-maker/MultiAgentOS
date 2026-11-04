@@ -45,7 +45,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 - **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后的阶段给 main 增加工具时，只增加对应工具的用法。
 - 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：阶段 3–6 还要改动 main，现在封存只会多出中间版本。
 - main 的额度参数（Interface/Definitions 第 2 节）按模型窗口取值（M2Design 第 9.3 节）：`perCallInputLimit = 880000`、`maxOutputTokens = 64000`、
-  `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 40`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
+  `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 80`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
 
 ## 4. 加载校验
