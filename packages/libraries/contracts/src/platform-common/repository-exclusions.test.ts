@@ -12,6 +12,15 @@ import { validate } from './validation.js';
 
 const defaults = DEFAULT_REPOSITORY_EXCLUSIONS;
 
+describe('what lies below an excluded path', () => {
+  it('is excluded too', () => {
+    const rules = DEFAULT_REPOSITORY_EXCLUSIONS;
+    expect(isExcluded('.envs/production', rules)).toBe(true);
+    expect(isExcluded('a/b.key/c.txt', rules)).toBe(true);
+    expect(isExcluded('src/environment.ts', rules)).toBe(false);
+  });
+});
+
 describe('repository exclusions', () => {
   it('excludes the dangerous files that path.matchesGlob lets through', () => {
     expect(isExcluded('.hidden/x.pem', defaults)).toBe(true);

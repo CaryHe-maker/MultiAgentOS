@@ -1,11 +1,15 @@
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AppendLogPort, SnapshotIndexLine } from '@multiagentos/contracts';
-import { DEFAULT_REPOSITORY_EXCLUSIONS, newId } from '@multiagentos/contracts';
+import {
+  DEFAULT_REPOSITORY_EXCLUSIONS,
+  PROTECTED_WRITE_RULES,
+  newId,
+} from '@multiagentos/contracts';
 import { WorkspaceSnapshots, createSubprocessRunner } from '@multiagentos/kernel';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createWorkspaceFiles } from './workspace-files.js';
+import { createShadowFiles, createWorkspaceFiles } from './workspace-files.js';
 
 let root: string;
 let shadow: string;
@@ -30,6 +34,7 @@ const snapshots = () =>
     index: index(),
     git: createSubprocessRunner(),
     files: createWorkspaceFiles(root),
+    shadow: createShadowFiles(join(shadow, 'snapshots')),
     rules: [...DEFAULT_REPOSITORY_EXCLUSIONS, '**/.multiagentos/**'],
     now: () => new Date('2026-11-04T00:00:00.000Z'),
   });
@@ -103,14 +108,14 @@ describe('a Turn', () => {
   it('leaves excluded files, links and oversized new files out', async () => {
     await put('.env', 'SECRET');
     await put('node_modules/a/index.js', 'x');
-    await put('big.bin', Buffer.alloc(3 * 1024 * 1024, 1));
+    await put('big.bin', Buffer.alloc(17 * 1024 * 1024, 1));
     await put('a.txt', 'a');
     await symlink(join(root, 'a.txt'), join(root, 'link.txt')).catch(() => undefined);
     const store = snapshots();
     const turnId = await turn(store, async () => {
       await put('.env', 'CHANGED');
       await put('node_modules/a/index.js', 'y');
-      await put('big.bin', Buffer.alloc(3 * 1024 * 1024, 2));
+      await put('big.bin', Buffer.alloc(17 * 1024 * 1024, 2));
     });
     expect(lines.find((l) => l.kind === 'TURN_ENDED' && l.turnId === turnId)).toMatchObject({
       changedFiles: [],
@@ -130,6 +135,7 @@ describe('a Turn', () => {
     const broken = new WorkspaceSnapshots({
       repositoryRoot: root,
       directory: join(shadow, 'snapshots'),
+      shadow: createShadowFiles(join(shadow, 'snapshots')),
       index: index(),
       git: {
         run: () => Promise.resolve({ exitCode: 128, signal: null, stdout: '', truncated: false }),
@@ -315,5 +321,108 @@ describe('opening a Session', () => {
   it('has nothing to say for a Session with no Turn', async () => {
     await put('a.txt', 'a');
     expect(await snapshots().divergedFiles()).toEqual([]);
+  });
+});
+
+describe('what a snapshot holds', () => {
+  it('keeps the bytes on disk, whatever .gitattributes says', async () => {
+    await put('.gitattributes', '* text=auto eol=lf\n');
+    await put('crlf.txt', 'one\r\ntwo\r\n');
+    const store = snapshots();
+    await turn(store, () => put('crlf.txt', 'three\r\n'));
+    const plan = await planOf(store);
+    expect(plan.external).toEqual([]);
+    expect(await store.applyUndo(plan, false)).toMatchObject({ ok: true });
+    expect(await read('crlf.txt')).toBe('one\r\ntwo\r\n');
+  });
+
+  it('can undo a file too large for the old limit', async () => {
+    const before = 'a'.repeat(3 * 1024 * 1024);
+    await put('big.txt', before);
+    const store = snapshots();
+    await turn(store, () => put('big.txt', 'small'));
+    await store.applyUndo(await planOf(store), false);
+    expect(await read('big.txt')).toBe(before);
+  });
+
+  it('still notices a file removed between captures', async () => {
+    await put('a.txt', 'a');
+    await put('b.txt', 'b');
+    const store = snapshots();
+    await turn(store, () => rm(join(root, 'b.txt')));
+    await store.applyUndo(await planOf(store), false);
+    expect(await read('b.txt')).toBe('b');
+  });
+
+  it('survives what a killed git left behind', async () => {
+    await put('a.txt', 'a');
+    const store = snapshots();
+    await turn(store, () => put('a.txt', 'b'));
+    await writeFile(join(shadow, 'snapshots', 'capture-index.lock'), '');
+    await turn(store, () => put('a.txt', 'c'));
+    await store.applyUndo(await planOf(store), false);
+    expect(await read('a.txt')).toBe('b');
+  });
+
+  it('notices and undoes a change of the executable bit', async () => {
+    await put('run.sh', 'echo');
+    const store = snapshots();
+    const turnId = newId('trn');
+    await store.turnStarted(turnId);
+    await chmod(join(root, 'run.sh'), 0o755);
+    await store.turnEnded(turnId);
+    await store.applyUndo(await planOf(store), false);
+    expect((await stat(join(root, 'run.sh'))).mode & 0o111).toBe(0);
+  });
+
+  it('takes away the directories it made for a file, and only those', async () => {
+    await put('keep/a.txt', 'a');
+    const store = snapshots();
+    await turn(store, async () => {
+      await put('keep/new/deep/b.txt', 'b');
+      await put('fresh/deep/c.txt', 'c');
+    });
+    await store.applyUndo(await planOf(store), false);
+    expect(await exists('keep/a.txt')).toBe(true);
+    expect(await exists('keep/new')).toBe(false);
+    expect(await exists('fresh')).toBe(false);
+  });
+
+  it('leaves out what a crashed write left behind', async () => {
+    await put('a.txt', 'a');
+    const store = new WorkspaceSnapshots({
+      repositoryRoot: root,
+      directory: join(shadow, 'snapshots'),
+      index: index(),
+      git: createSubprocessRunner(),
+      files: createWorkspaceFiles(root),
+      shadow: createShadowFiles(join(shadow, 'snapshots')),
+      rules: [...PROTECTED_WRITE_RULES, ...DEFAULT_REPOSITORY_EXCLUSIONS],
+      now: () => new Date('2026-11-04T00:00:00.000Z'),
+    });
+    await turn(store, () => put('.0123.multiagentos-write', 'partial'));
+    expect((await planOf(store)).files).toEqual([]);
+  });
+
+  it('says so when a Turn has no snapshot, and the Turn goes on', async () => {
+    const said: string[] = [];
+    const store = new WorkspaceSnapshots({
+      repositoryRoot: root,
+      directory: join(shadow, 'snapshots'),
+      index: index(),
+      git: {
+        run: () => Promise.resolve({ exitCode: 1, signal: null, stdout: '', truncated: false }),
+      },
+      files: createWorkspaceFiles(root),
+      shadow: createShadowFiles(join(shadow, 'snapshots')),
+      rules: [],
+      now: () => new Date('2026-11-04T00:00:00.000Z'),
+      diagnostic: (line) => said.push(line),
+    });
+    await store.turnStarted('trn_1');
+    expect(said.join('')).toContain('cannot be undone');
+    await expect(store.turnEnded('trn_1')).resolves.toEqual({});
+    await expect(store.diffTurn(1)).resolves.toBeUndefined();
+    await expect(store.planUndo('LAST')).resolves.toEqual({ kind: 'NOT_UNDOABLE' });
   });
 });

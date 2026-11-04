@@ -8,7 +8,7 @@ import { createAssembleExecutor } from './context-assemble/assemble-executor.js'
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createFileEditExecutor, createFileWriteExecutor } from './fs/file-write-executor.js';
 import { PathLocks } from './fs/guarded-write.js';
-export { createWorkspaceFiles } from './fs/workspace-files.js';
+export { createShadowFiles, createWorkspaceFiles } from './fs/workspace-files.js';
 import { createOutputReadExecutor } from './output-read/output-read-executor.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';

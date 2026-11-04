@@ -163,7 +163,7 @@ export class RunExecution {
   async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
-    const calibration = attempt.attempts.calibrationOf(attempt.spec.agentRunId);
+    const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);
     try {
       built = await this.#builder.build(attempt.spec, {
         ...(calibration === undefined ? {} : { calibration }),

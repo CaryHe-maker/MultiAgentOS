@@ -1,8 +1,15 @@
 import { MEDIA_TYPES, type Executor, type OutputReadExecutorInput } from '@multiagentos/contracts';
 import { completed, guarded, rejected } from '../outcome/outcomes.js';
-import { previewLimitsOf, retainItems, type PreviewLimits } from '../retention/retention.js';
+import {
+  previewLimitsOf,
+  retainBytes,
+  retainItems,
+  type PreviewLimits,
+} from '../retention/retention.js';
 
 export const DEFAULT_OUTPUT_READ_LINES = 2000;
+/** What the header and the footer take out of the limit, which applies to the whole result. */
+const FRAME_BYTES = 256;
 
 interface NumberedLine {
   readonly number: number;
@@ -14,6 +21,12 @@ function linesOf(content: string): readonly NumberedLine[] {
   const lines = content.split(/\r?\n/u);
   if (lines.at(-1) === '') lines.pop();
   return lines.map((text, index) => ({ number: index + 1, text }));
+}
+
+function cutLine(line: string, limits: PreviewLimits): string {
+  const note = ' ... [this line is cut here: %s bytes omitted]';
+  const { head, omittedBytes } = retainBytes(line, limits.maxBytes - note.length - 16, 'HEAD');
+  return head + note.replace('%s', String(omittedBytes));
 }
 
 function read(input: OutputReadExecutorInput, limits: PreviewLimits) {
@@ -29,10 +42,12 @@ function read(input: OutputReadExecutorInput, limits: PreviewLimits) {
     offset - 1 + (input.limit ?? DEFAULT_OUTPUT_READ_LINES),
   );
   const width = String(all.length).length;
-  const { kept } = retainItems(
-    wanted.map(({ number, text }) => `${String(number).padStart(width)} | ${text}`),
-    limits,
-  );
+  const shown = wanted.map(({ number, text }) => `${String(number).padStart(width)} | ${text}`);
+  const room = { ...limits, maxBytes: Math.max(limits.maxBytes - FRAME_BYTES, 1) };
+  const retained = retainItems(shown, room).kept;
+  // A line too long for one result is cut, or the same offset would answer the same forever.
+  const kept =
+    retained.length === 0 && shown[0] !== undefined ? [cutLine(shown[0], room)] : retained;
   const first = wanted[0];
   const last = wanted[kept.length - 1];
   const omittedLines = selected.length - (offset - 1) - kept.length;

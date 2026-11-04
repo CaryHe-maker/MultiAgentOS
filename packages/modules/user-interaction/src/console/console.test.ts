@@ -182,6 +182,13 @@ describe('Console', () => {
     });
   });
 
+  it('does not undo on an argument it does not know', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.console.submit('/undo 2');
+    expect(t.printed).toContainEqual({ kind: 'NOTICE', text: '当前不能使用这条指令。' });
+  });
+
   it('says so when a reply came from a Turn that ended early', async () => {
     const reply = testArtifactRef('text/markdown', 'c');
     const t = setup({ artifacts: new Map([[reply.artifactId, '做完了一半']]) });

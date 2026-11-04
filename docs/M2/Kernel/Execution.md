@@ -122,8 +122,9 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 ```text
 环境：GIT_DIR=<影子目录>、GIT_WORK_TREE=<仓库>、GIT_INDEX_FILE=<临时文件>、GIT_CONFIG_NOSYSTEM=1、GIT_CONFIG_GLOBAL=/dev/null
 拍摄：按排除规则遍历工作区（不跟随符号链接，不读仓库的 .gitignore）
-      → git read-tree --empty → git update-index --add --remove -z --stdin → git write-tree，得到快照 ID（tree）
-跳过：超过 2 MiB、且不在上一个快照中的文件
+      → git update-index --force-remove（已不在的条目）→ git update-index --add --remove -z --stdin → git write-tree，得到快照 ID（tree）
+跳过：超过 16 MiB（文件工具的上限）、且不在上一个快照中的文件
+属性：影子目录的 info/attributes 关闭 text、eol、ident、filter 与编码转换，快照保存磁盘上的原始字节
 ```
 
 - Turn 开启时拍开始快照，写入索引；结束时拍结束快照，以 `git diff-tree` 算出改动过的文件，追加到索引（`SnapshotIndexLine`，Interface/Persistence 第 4.4 节）。

@@ -112,9 +112,9 @@ export function applyEdit(content: string, request: EditRequest): EditMatch {
   const replacement = request.newString.replaceAll('\r\n', '\n');
   const view = content.replaceAll('\r\n', '\n');
   const dropped = droppedCarriageReturns(content);
-  /** A view offset in the content: on a line feed it means the CR before it. */
+  /** A view offset in the content: on a line feed it means the CR before it. Ascending calls. */
+  let below = 0;
   const rawOffset = (offset: number): number => {
-    let below = 0;
     while (below < dropped.length && (dropped[below] ?? offset) < offset) below += 1;
     return offset + below;
   };

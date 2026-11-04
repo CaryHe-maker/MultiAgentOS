@@ -5,10 +5,11 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
 } from '@multiagentos/contracts';
+import { APICallError } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { createAssembleExecutor } from '../context-assemble/assemble-executor.js';
 import { MODEL_SCOPE, chatCompletion, environmentFor } from '../test-support/environments.js';
-import { createModelCallExecutor } from './model-call-executor.js';
+import { classifyCall, createModelCallExecutor } from './model-call-executor.js';
 
 const TOOLS = [
   {
@@ -309,5 +310,22 @@ describe('MODEL (ExecutorSet 7)', () => {
       environment: { scope: { kind: 'NONE' } },
     });
     expect(outcome).toEqual({ outcome: 'VIOLATION', reasonCode: 'SCOPE_MISSING' });
+  });
+});
+
+describe('a size the provider refuses', () => {
+  it('is a context limit, in the words DeepSeek really uses', () => {
+    const error = new APICallError({
+      message:
+        "This model's maximum context length is 1048576 tokens. However, you requested 1419096 tokens.",
+      url: 'https://api.deepseek.com/chat/completions',
+      requestBodyValues: {},
+      statusCode: 400,
+    });
+    const progress = { started: true, failedBeforeSending: false, responded: true };
+    expect(classifyCall(error, progress, new AbortController().signal)).toEqual({
+      outcome: 'REJECTED',
+      reasonCode: 'LIMIT_EXCEEDED',
+    });
   });
 });

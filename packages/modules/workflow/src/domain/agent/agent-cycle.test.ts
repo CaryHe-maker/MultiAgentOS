@@ -476,6 +476,21 @@ describe('wrap-up', () => {
     expect(current.state.final).toBe(true);
   });
 
+  it('takes a size the provider refused the same way as one it never saw', () => {
+    const started = start();
+    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const final = receive(
+      assembling,
+      report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
+    );
+    const assembled = receive(final, report(final.state, only(final), assembledOutput));
+    expect(assembled.state).toMatchObject({ final: true, wrapUpReason: 'CONTEXT_LIMIT' });
+    expectDegraded(
+      receive(assembled, report(assembled.state, only(assembled), { reject: 'LIMIT_EXCEEDED' })),
+      'CONTEXT_LIMIT',
+    );
+  });
+
   it('wraps up a context over the limit, and degrades when the final call is too', () => {
     const started = start();
     const assembling = receive(started, report(started.state, only(started), assembledOutput));

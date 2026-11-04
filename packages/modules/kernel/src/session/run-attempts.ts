@@ -30,6 +30,7 @@ export interface PinnedAgent {
   /** The model scope for the effort this AgentRun registered with. */
   readonly modelScope: ExecutionScope;
   readonly budget: AgentBudget;
+  readonly id: string;
   readonly contextWindowTokens: number;
   readonly cacheHitWeight: number;
   /** The rendered Prompt of the Agent. */
@@ -237,9 +238,12 @@ export class RunAttempts {
     return this.#finalCalls.has(agentRunId);
   }
 
-  /** What the provider counted for this AgentRun's last request, next to the estimate of it. */
-  calibrationOf(agentRunId: string): TokenCalibration | undefined {
-    return this.#calibrations.get(agentRunId);
+  /**
+   * What the provider counted for this Agent's last request, next to the estimate of it. By Agent:
+   * main is a new AgentRun each Turn, with the same history. Stage 4 narrows it to one history.
+   */
+  calibrationOf(agentId: string): TokenCalibration | undefined {
+    return this.#calibrations.get(agentId);
   }
 
   requestReservation(
@@ -416,7 +420,7 @@ export class RunAttempts {
   #settleReservation(attempt: Attempt, settlement: Settlement | undefined): void {
     if (attempt.reservation === undefined || settlement === undefined) return;
     if (settlement.type === 'ACTUAL' && settlement.usage.inputTokens > 0)
-      this.#calibrations.set(attempt.spec.agentRunId, {
+      this.#calibrations.set(attempt.spec.agent.id, {
         measuredInputTokens: settlement.usage.inputTokens,
         estimatedInputTokens: attempt.reservation.inputEstimate,
       });

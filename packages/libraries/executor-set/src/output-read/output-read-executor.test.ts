@@ -84,4 +84,21 @@ describe('output-read', () => {
     const input = { content: lines(50), offset: 5, limit: 10 };
     expect(textOf(await run(input))).toBe(textOf(await run(input)));
   });
+
+  it('keeps the whole result within the limit', async () => {
+    const preview = { maxBytes: 2_000, maxLines: 10_000 };
+    const text = textOf(await run({ content: lines(5_000) }, preview));
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(2_000);
+    expect(text).toContain('continue with offset');
+  });
+
+  it('cuts a line too long for one result, and goes on after it', async () => {
+    const preview = { maxBytes: 2_000, maxLines: 10_000 };
+    const content = `${'x'.repeat(50_000)}\nsecond`;
+    const text = textOf(await run({ content }, preview));
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(2_000);
+    expect(text).toContain('this line is cut here');
+    expect(text).toContain('continue with offset 2');
+    expect(textOf(await run({ content, offset: 2 }, preview))).toContain('second');
+  });
 });

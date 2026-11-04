@@ -344,7 +344,11 @@ export class Console {
       case '/undo': {
         const sessionId = this.#sessionId;
         const workflowRunId = this.#workflowRunId;
-        if (sessionId === undefined || workflowRunId === undefined) {
+        if (
+          sessionId === undefined ||
+          workflowRunId === undefined ||
+          (argument !== undefined && argument !== 'all')
+        ) {
           this.#notice(text.notNow);
           break;
         }

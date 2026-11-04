@@ -5,6 +5,7 @@ import {
   type AnalysisReportDraft,
   type ArtifactRef,
   type BoundaryContext,
+  canonicalJson,
   type DefinitionRef,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
@@ -294,9 +295,18 @@ export class SessionRunner {
           },
         ]);
         break;
-      case 'WorkspaceDiverged':
-        await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
+      case 'WorkspaceDiverged': {
+        // Measured against the last Turn, so reopening without one finds the same files again.
+        const said = [...this.#records]
+          .reverse()
+          .find((record) => record.type === 'WORKSPACE_DIVERGED' || record.type === 'TURN_STARTED');
+        if (
+          said?.type !== 'WORKSPACE_DIVERGED' ||
+          canonicalJson(said.files) !== canonicalJson(event.files)
+        )
+          await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
         break;
+      }
       case 'RunClosed':
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },

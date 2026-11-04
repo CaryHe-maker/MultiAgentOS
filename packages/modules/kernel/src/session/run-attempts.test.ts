@@ -315,7 +315,7 @@ describe('refusals without an attempt', () => {
       inputEstimate: 40,
     });
     run.registerExecution(id, 'exe_1');
-    expect(run.calibrationOf(testId('agr', 1))).toBeUndefined();
+    expect(run.calibrationOf('main')).toBeUndefined();
     run.submitResultCheck({
       unitAttemptId: id,
       executionId: 'exe_1',
@@ -324,7 +324,7 @@ describe('refusals without an attempt', () => {
       outputRef,
       usage: { inputTokens: 44, inputCacheHitTokens: 40, outputTokens: 1 },
     });
-    expect(run.calibrationOf(testId('agr', 1))).toEqual({
+    expect(run.calibrationOf('main')).toEqual({
       measuredInputTokens: 44,
       estimatedInputTokens: 40,
     });

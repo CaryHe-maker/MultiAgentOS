@@ -129,8 +129,8 @@ export class SessionLogStore {
   }
 
   /**
-   * A fork begins as a copy of the whole log. A run the original left open ends here as FORKED,
-   * so replaying the copy never takes it for one that was interrupted.
+   * A fork begins as a copy of the whole log. What the original left open is settled as in any
+   * open, or a call without an answer would stop the history; a run left open ends as FORKED.
    */
   async fork(input: {
     readonly sessionId: string;
@@ -148,18 +148,12 @@ export class SessionLogStore {
     const records = await this.#readChecked(log);
     this.#seq = records.length;
     const appended: SessionLogRecord[] = [];
-    const ended = new Set(
-      records.flatMap((r) => (r.type === 'WORKFLOW_RUN_ENDED' ? [r.workflowRunId] : [])),
-    );
-    for (const record of records)
-      if (record.type === 'WORKFLOW_RUN_STARTED' && !ended.has(record.workflowRunId))
-        appended.push(
-          await this.append({
-            type: 'WORKFLOW_RUN_ENDED',
-            workflowRunId: record.workflowRunId,
-            closeReason: 'FORKED',
-          }),
-        );
+    for (const record of settleStaleRecords(records))
+      appended.push(
+        await this.append(
+          record.type === 'WORKFLOW_RUN_ENDED' ? { ...record, closeReason: 'FORKED' } : record,
+        ),
+      );
     appended.push(
       await this.append({
         type: 'SESSION_FORKED',

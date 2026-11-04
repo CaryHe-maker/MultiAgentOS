@@ -417,7 +417,7 @@ function failed(
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
-  if (code === 'LIMIT_EXCEEDED' && pending.role === 'CONTEXT')
+  if (code === 'LIMIT_EXCEEDED' && (pending.role === 'CONTEXT' || pending.role === 'MODEL'))
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp(state, 'CONTEXT_LIMIT'), context, records);

@@ -70,6 +70,7 @@ export function pinnedAgentOf(
   const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
 
   return {
+    id: agent.id,
     capabilities: agent.capabilities,
     units,
     maxToolUnits: agent.limits.maxToolUnits,

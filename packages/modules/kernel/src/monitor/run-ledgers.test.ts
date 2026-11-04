@@ -27,6 +27,22 @@ function spend(ledgers: RunLedgers, tokens: number): void {
   ledgers.settle(reserved.reservationId, used(tokens));
 }
 
+describe('price of cached input', () => {
+  it('reaches the settlement from the reservation', () => {
+    const ledgers = new RunLedgers(budget, main);
+    ledgers.openTurnLedger('trn_1');
+    const reserved = ledgers.reserve({ estimatedTokens: 100, final: false, cacheHitWeight: 0.02 });
+    if (!reserved.ok) throw new Error(reserved.reasonCode);
+    ledgers.settle(reserved.reservationId, {
+      type: 'ACTUAL',
+      usage: { inputTokens: 100, inputCacheHitTokens: 50, outputTokens: 10 },
+    });
+    // 50 uncached + 50 × 0.02 + 10 output, but the usage stays what the provider counted.
+    expect(ledgers.closeTurnLedger('trn_1')).toMatchObject({ inputTokens: 100, outputTokens: 10 });
+    expect(ledgers.usage().used).toBe(61);
+  });
+});
+
 describe('derived values', () => {
   it('follows Kernel/Monitor 3.3', () => {
     expect(finalReserve(main)).toBe(60);

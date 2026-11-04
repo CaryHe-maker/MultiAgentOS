@@ -185,6 +185,8 @@ export async function writeGuarded(
     const checked = await checkSegments(scope.root, path);
     if ('outcome' in checked) return refuse(checked);
 
+    if (((await lstatOf(absolute))?.size ?? 0) > MAX_READ_FILE_BYTES)
+      return refuse(rejected('LIMIT_EXCEEDED'));
     const current = await readCurrent(absolute);
     if (current !== undefined && current.length > MAX_READ_FILE_BYTES)
       return refuse(rejected('LIMIT_EXCEEDED'));

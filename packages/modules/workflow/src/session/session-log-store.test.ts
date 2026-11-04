@@ -340,3 +340,26 @@ describe('settling is a pure function of the log', () => {
     );
   });
 });
+
+describe('fork', () => {
+  it('settles what the original left open, so the copy has a usable history', async () => {
+    const persistence = new MemorySessionPersistence();
+    const original = new SessionLogStore(persistence);
+    const from = newId('ses');
+    await original.create(createInput(from));
+    const open = newId('req');
+    await original.append(unit(open));
+    await original.close();
+
+    const forked = await new SessionLogStore(persistence).fork({
+      sessionId: newId('ses'),
+      fromSessionId: from,
+      repositoryRoot: root,
+    });
+    expect(forked.records).toContainEqual(
+      expect.objectContaining({ type: 'UNIT_INTERRUPTED', requestId: open }),
+    );
+    expect(forked.records.at(-1)).toMatchObject({ type: 'SESSION_FORKED', fromSessionId: from });
+    expect(settleStaleRecords(forked.records)).toEqual([]);
+  });
+});

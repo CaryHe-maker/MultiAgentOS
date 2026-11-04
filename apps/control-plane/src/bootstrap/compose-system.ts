@@ -27,6 +27,7 @@ import {
 } from '@multiagentos/contracts';
 import {
   createExecutorRegistry,
+  createShadowFiles,
   createWorkspaceFiles,
   readRepositoryText,
 } from '@multiagentos/executor-set';
@@ -193,6 +194,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const preset = hasGit ? options.preset : 'readonly';
   if (!hasGit && options.preset !== 'readonly')
     log('git was not found, so this session is read-only: nothing can be written or undone.\n');
+  const snapshotsOf = (sessionId: string): string =>
+    join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
   const internalFaults =
     options.reportSystemFault === undefined ? createDeferredFaultReporter(options.log) : undefined;
   const reportSystemFault: SystemFaultReporter =
@@ -224,13 +227,13 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
             workspace: {
               files: createWorkspaceFiles(options.repositoryRoot),
               git: subprocess,
-              directoryOf: (sessionId: string) =>
-                join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots'),
+              directoryOf: snapshotsOf,
+              shadowOf: (sessionId: string) => createShadowFiles(snapshotsOf(sessionId)),
             },
           }),
       readRepositoryFile: readRepositoryText,
       reportSystemFault,
-      diagnostic: options.log ?? ((line) => void process.stderr.write(line)),
+      diagnostic: log,
       now,
     });
     const gateway = createSessionGatewayModule({ fabric: fabric.client('gateway'), now });

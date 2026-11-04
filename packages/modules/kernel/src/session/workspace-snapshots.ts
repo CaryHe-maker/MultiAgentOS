@@ -1,13 +1,25 @@
 import { createHash } from 'node:crypto';
+import { MAX_WORKSPACE_FILE_BYTES } from '@multiagentos/contracts';
 import type {
   AppendLogPort,
+  ShadowFiles,
   SnapshotIndexLine,
   SubprocessRunner,
   WorkspaceFiles,
 } from '@multiagentos/contracts';
 
-/** A file larger than this enters a snapshot only when the one before already holds it. */
-export const MAX_UNTRACKED_SNAPSHOT_BYTES = 2 * 1024 * 1024;
+/**
+ * A file larger than this enters a snapshot only when the one before already holds it. It is the
+ * limit of the file tools, so everything they can write can be undone.
+ */
+export const MAX_UNTRACKED_SNAPSHOT_BYTES = MAX_WORKSPACE_FILE_BYTES;
+/** The actor holds every message during a capture, so a stuck git must not hold it for ever. */
+const GIT_TIMEOUT_MS = 300_000;
+/** Enough for the snapshots of the Turns at hand; a tree can always be read again. */
+const MAX_CACHED_TREES = 8;
+const INDEX_FILE = 'capture-index';
+/** A snapshot holds the bytes on disk, whatever the repository's .gitattributes would make of them. */
+const RAW_ATTRIBUTES = '* -text !eol -ident -filter -working-tree-encoding\n';
 const MAX_LIST_BYTES = 64 * 1024 * 1024;
 const MAX_BLOB_BYTES = 256 * 1024 * 1024;
 
@@ -72,9 +84,12 @@ export interface WorkspaceSnapshotsDeps {
   readonly index: AppendLogPort<SnapshotIndexLine>;
   readonly git: SubprocessRunner;
   readonly files: WorkspaceFiles;
+  readonly shadow: ShadowFiles;
   /** Everything a snapshot leaves out. */
   readonly rules: readonly string[];
   readonly now: () => Date;
+  /** Says that a Turn has no way back; the work itself goes on. */
+  readonly diagnostic?: (line: string) => void;
 }
 
 class SnapshotFailed extends Error {}
@@ -87,7 +102,7 @@ const blobId = (content: Buffer): string =>
     .digest('hex');
 
 const sameEntry = (left: Entry | undefined, right: Entry | undefined): boolean =>
-  left?.sha === right?.sha;
+  left?.sha === right?.sha && left?.mode === right?.mode;
 
 function changesBetween(
   from: ReadonlyMap<string, Entry>,
@@ -153,12 +168,12 @@ export class WorkspaceSnapshots {
     const { directory, repositoryRoot } = this.#deps;
     const result = await this.#deps.git.run('git', args, {
       cwd: repositoryRoot,
-      signal: new AbortController().signal,
+      signal: AbortSignal.timeout(GIT_TIMEOUT_MS),
       maxOutputBytes: options.maxOutputBytes ?? MAX_LIST_BYTES,
       env: {
         GIT_DIR: directory,
         GIT_WORK_TREE: repositoryRoot,
-        GIT_INDEX_FILE: `${directory}/capture-index`,
+        GIT_INDEX_FILE: `${directory}/${INDEX_FILE}`,
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_CONFIG_GLOBAL: '/dev/null',
       },
@@ -175,12 +190,17 @@ export class WorkspaceSnapshots {
     await this.#git(['init', '-q']);
     await this.#git(['config', 'gc.auto', '0']);
     await this.#git(['config', 'core.autocrlf', 'false']);
+    await this.#deps.shadow.write('info/attributes', RAW_ATTRIBUTES);
     this.#ready = true;
   }
 
   async #entries(tree: string): Promise<ReadonlyMap<string, Entry>> {
     const known = this.#trees.get(tree);
-    if (known !== undefined) return known;
+    if (known !== undefined) {
+      this.#trees.delete(tree);
+      this.#trees.set(tree, known);
+      return known;
+    }
     const entries = new Map<string, Entry>();
     for (const line of (await this.#git(['ls-tree', '-r', '-z', tree])).split('\0')) {
       if (line === '') continue;
@@ -190,18 +210,44 @@ export class WorkspaceSnapshots {
       entries.set(line.slice(tab + 1), { mode, sha });
     }
     this.#trees.set(tree, entries);
+    for (const oldest of this.#trees.keys()) {
+      if (this.#trees.size <= MAX_CACHED_TREES) break;
+      this.#trees.delete(oldest);
+    }
     return entries;
   }
 
+  /** Anything going wrong is the one failure callers know: this Turn has no way back. */
   async #capture(): Promise<string> {
+    try {
+      return await this.#captureTree();
+    } catch (error) {
+      if (error instanceof SnapshotFailed) throw error;
+      throw new SnapshotFailed(String(error));
+    }
+  }
+
+  /**
+   * The index stays between captures, so git hashes again only what changed. One capture runs at
+   * a time under the Session's lock, so a lock file here is what a killed git left behind.
+   */
+  async #captureTree(): Promise<string> {
     await this.#prepare();
+    await this.#deps.shadow.remove(`${INDEX_FILE}.lock`);
     const last = this.#latestSnapshot();
     const previous = last === undefined ? new Map<string, Entry>() : await this.#entries(last);
     const files = await this.#deps.files.list(this.#deps.rules);
     const paths = files
       .filter((file) => file.size <= MAX_UNTRACKED_SNAPSHOT_BYTES || previous.has(file.path))
       .map((file) => file.path);
-    await this.#git(['read-tree', '--empty']);
+    const wanted = new Set(paths);
+    const gone = (await this.#git(['ls-files', '-z']))
+      .split('\0')
+      .filter((path) => path !== '' && !wanted.has(path));
+    if (gone.length > 0)
+      await this.#git(['update-index', '--force-remove', '-z', '--stdin'], {
+        stdin: `${gone.join('\0')}\0`,
+      });
     // --remove: a file that went between the walk and here is simply not there.
     if (paths.length > 0)
       await this.#git(['update-index', '--add', '--remove', '-z', '--stdin'], {
@@ -222,6 +268,8 @@ export class WorkspaceSnapshots {
   /** A failed capture leaves the Turn running, and not undoable (Kernel/Execution 6b). */
   async turnStarted(turnId: string): Promise<void> {
     const startSnapshot = await this.#capture().catch(() => undefined);
+    if (startSnapshot === undefined)
+      this.#deps.diagnostic?.(`Turn ${turnId}: no snapshot, so it cannot be undone.\n`);
     const turn: Turn = {
       turnId,
       ...(startSnapshot === undefined ? {} : { startSnapshot }),
@@ -243,13 +291,19 @@ export class WorkspaceSnapshots {
   async turnEnded(turnId: string): Promise<TurnSnapshots> {
     const turn = this.#turns.find((each) => each.turnId === turnId);
     if (turn === undefined) return {};
-    const endSnapshot = await this.#capture().catch(() => undefined);
+    let endSnapshot = await this.#capture().catch(() => undefined);
     let changedFiles: Turn['changedFiles'] = [];
     if (turn.startSnapshot !== undefined && endSnapshot !== undefined)
-      changedFiles = changesBetween(
-        await this.#entries(turn.startSnapshot),
-        await this.#entries(endSnapshot),
-      );
+      try {
+        changedFiles = changesBetween(
+          await this.#entries(turn.startSnapshot),
+          await this.#entries(endSnapshot),
+        );
+      } catch (error) {
+        if (!(error instanceof SnapshotFailed)) throw error;
+        endSnapshot = undefined;
+      }
+    if (endSnapshot === undefined) this.#deps.diagnostic?.(`Turn ${turnId}: no end snapshot.\n`);
     await this.#deps.index.append({
       kind: 'TURN_ENDED',
       turnId,
@@ -349,11 +403,7 @@ export class WorkspaceSnapshots {
       encoding: 'base64',
       maxOutputBytes: MAX_BLOB_BYTES,
     });
-    await this.#deps.files.write(
-      path,
-      Buffer.from(body, 'base64'),
-      entry.mode === '100755' ? 0o755 : undefined,
-    );
+    await this.#deps.files.write(path, Buffer.from(body, 'base64'), entry.mode === '100755');
   }
 
   /** Kernel/Execution 6c, steps 3 to 5. A forced undo keeps what it overwrites. */
@@ -389,17 +439,22 @@ export class WorkspaceSnapshots {
     if (turn?.startSnapshot === undefined) return undefined;
     const end = turn.endSnapshot;
     if (end === undefined) return undefined;
-    const diff = await this.#git([
-      'diff-tree',
-      '-p',
-      '-r',
-      '--no-renames',
-      '--no-color',
-      '--no-ext-diff',
-      turn.startSnapshot,
-      end,
-    ]);
-    return { turnId: turn.turnId, files: turn.changedFiles, diff };
+    try {
+      const diff = await this.#git([
+        'diff-tree',
+        '-p',
+        '-r',
+        '--no-renames',
+        '--no-color',
+        '--no-ext-diff',
+        turn.startSnapshot,
+        end,
+      ]);
+      return { turnId: turn.turnId, files: turn.changedFiles, diff };
+    } catch (error) {
+      if (error instanceof SnapshotFailed) return undefined;
+      throw error;
+    }
   }
 
   /** What changed since the last Turn this Session left (M2Design 2.3); empty when unknowable. */

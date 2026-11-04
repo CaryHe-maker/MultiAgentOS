@@ -145,9 +145,16 @@ export interface WorkspaceFiles {
   list(rules: readonly string[]): Promise<readonly WorkspaceFile[]>;
   /** Undefined when the file is not there. */
   read(path: string): Promise<Buffer | undefined>;
-  /** `mode` when the snapshot asks for one; otherwise an existing file keeps its own. */
-  write(path: string, content: Buffer, mode?: number): Promise<void>;
+  /** An existing file keeps its other permission bits; the snapshot decides `executable`. */
+  write(path: string, content: Buffer, executable: boolean): Promise<void>;
+  /** Also removes the directories this leaves empty. */
   remove(path: string): Promise<void>;
+}
+
+/** The shadow git directory, by names relative to it. */
+export interface ShadowFiles {
+  write(name: string, text: string): Promise<void>;
+  remove(name: string): Promise<void>;
 }
 
 /** Only MODEL uses it; the key never enters outputs, logs or artifacts. */

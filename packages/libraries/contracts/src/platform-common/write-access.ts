@@ -8,6 +8,9 @@ import { DEFAULT_REPOSITORY_EXCLUSIONS, isExcluded } from './repository-exclusio
  * part, because only it looks at the disk.
  */
 
+/** The largest file the file tools read or write, and so what a snapshot must be able to hold. */
+export const MAX_WORKSPACE_FILE_BYTES = 16 * 1024 * 1024;
+
 /** A write root and a request path are relative and `/`-separated; `.` is the repository root. */
 export const REPOSITORY_ROOT_PATH = '.';
 
@@ -40,6 +43,8 @@ export type WriteAccess =
 export const PROTECTED_WRITE_RULES: readonly string[] = Object.freeze([
   '**/.multiagentos',
   '**/.multiagentos/**',
+  // What a write left behind when the process died in the middle of it.
+  '**/.*.multiagentos-write',
 ]);
 
 const isBelow = (root: string, path: string): boolean =>

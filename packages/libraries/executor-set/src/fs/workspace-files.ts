@@ -1,10 +1,23 @@
 import { randomBytes } from 'node:crypto';
 import { constants, type Dirent } from 'node:fs';
-import { chmod, lstat, mkdir, open, readdir, realpath, rename, rm } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   excludesDirectory,
   isExcluded,
+  type ShadowFiles,
   type WorkspaceFile,
   type WorkspaceFiles,
 } from '@multiagentos/contracts';
@@ -12,6 +25,11 @@ import {
 const isMissing = (error: unknown): boolean => {
   const code = (error as NodeJS.ErrnoException).code;
   return code === 'ENOENT' || code === 'ENOTDIR';
+};
+
+const isUnreadable = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'EACCES' || code === 'EPERM';
 };
 
 /** Refuses a link on the way; a missing directory ends the walk, as nothing can be below it. */
@@ -46,7 +64,8 @@ export function createWorkspaceFiles(repositoryRoot: string): WorkspaceFiles {
     try {
       entries = await readdir(join(root, directory), { withFileTypes: true });
     } catch (error) {
-      if (isMissing(error)) return;
+      // What cannot be read cannot be held; one such directory does not cost the whole snapshot.
+      if (isMissing(error) || isUnreadable(error)) return;
       throw error;
     }
     for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
@@ -55,6 +74,11 @@ export function createWorkspaceFiles(repositoryRoot: string): WorkspaceFiles {
       if (entry.isDirectory()) {
         if (!excludesDirectory(path, rules)) await walk(root, path, rules, found);
       } else if (entry.isFile()) {
+        const readable = await access(join(root, path), constants.R_OK).then(
+          () => true,
+          () => false,
+        );
+        if (!readable) continue;
         const { size } = await lstat(join(root, path)).catch(() => ({ size: 0 }));
         found.push({ path, size });
       }
@@ -82,7 +106,7 @@ export function createWorkspaceFiles(repositoryRoot: string): WorkspaceFiles {
         throw error;
       }
     },
-    write: async (path, content, mode) => {
+    write: async (path, content, executable) => {
       const root = await rootOf();
       await assertNoLinks(root, path);
       const absolute = join(root, path);
@@ -106,7 +130,8 @@ export function createWorkspaceFiles(repositoryRoot: string): WorkspaceFiles {
         await handle.close();
       }
       try {
-        await chmod(temporary, mode ?? kept?.mode ?? 0o644);
+        const mode = (kept?.mode ?? 0o644) & 0o777;
+        await chmod(temporary, executable ? mode | ((mode & 0o444) >> 2) : mode & ~0o111);
         await rename(temporary, absolute);
       } finally {
         await rm(temporary, { force: true });
@@ -116,6 +141,25 @@ export function createWorkspaceFiles(repositoryRoot: string): WorkspaceFiles {
       const root = await rootOf();
       await assertNoLinks(root, path);
       await rm(join(root, path), { force: true });
+      // A directory made for this file goes with it; one that still holds something stays.
+      for (let dir = dirname(path); dir !== '.'; dir = dirname(dir)) {
+        const gone = await rmdir(join(root, dir)).then(
+          () => true,
+          () => false,
+        );
+        if (!gone) break;
+      }
     },
+  };
+}
+
+/** The few files of the shadow git directory that git has no command for. */
+export function createShadowFiles(directory: string): ShadowFiles {
+  return {
+    write: async (name, text) => {
+      await mkdir(dirname(join(directory, name)), { recursive: true });
+      await writeFile(join(directory, name), text);
+    },
+    remove: (name) => rm(join(directory, name), { force: true }),
   };
 }

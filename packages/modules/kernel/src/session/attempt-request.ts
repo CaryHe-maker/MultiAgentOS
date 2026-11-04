@@ -123,6 +123,16 @@ const OBJECTIVE_MAX = 4000;
 /** The estimate may be low by this much; a reservation must still hold (Kernel/Monitor 3.2). */
 const RESERVED_INPUT_SHARE = 1.05;
 
+/**
+ * Room for the estimate to be low, up to the input limit: the ledger keeps exactly a limit's worth
+ * for the next call and the final one, and those reservations must always succeed.
+ */
+export const reservedTokens = (
+  inputTokens: number,
+  inputLimit: number,
+  maxOutputTokens: number,
+): number => Math.min(Math.ceil(inputTokens * RESERVED_INPUT_SHARE), inputLimit) + maxOutputTokens;
+
 function inputOf<T>(schema: Schema, value: unknown): T {
   const input = validate<T>(schema, value);
   if (!input.ok) throw new RequestBuildError('INVALID_INPUT');
@@ -415,7 +425,7 @@ export class AttemptRequestBuilder {
     const inputTokens = calibratedTokens(inputEstimate, identity.calibration);
     if (inputTokens + maxOutputTokens > contextWindowTokens)
       throw new RequestBuildError('LIMIT_EXCEEDED');
-    const estimatedTokens = Math.ceil(inputTokens * RESERVED_INPUT_SHARE) + maxOutputTokens;
+    const estimatedTokens = reservedTokens(inputTokens, contextPack.tokenBudget, maxOutputTokens);
     const { final } = input;
     const finalMode = identity.retry === true && final ? 'FORCED' : input.finalMode;
     return {

@@ -25,6 +25,7 @@ export const testScheduler = (): SchedulerDuties => {
 };
 
 export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAgent => ({
+  id: 'main',
   capabilities: ['repo.read', 'workspace.write'],
   units: [testUnitDefinition('FILE_READ'), testUnitDefinition('MESSAGE_PUBLISH')],
   maxToolUnits: 10,

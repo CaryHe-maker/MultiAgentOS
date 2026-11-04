@@ -3,6 +3,7 @@ import {
   MEDIA_TYPES,
   PROTECTED_WRITE_RULES,
   isProjectInstructionPath,
+  type ShadowFiles,
   type SnapshotIndexLine,
   type SubprocessRunner,
   type WorkspaceFiles,
@@ -79,6 +80,7 @@ export interface SessionKernelDeps {
     readonly files: WorkspaceFiles;
     readonly git: SubprocessRunner;
     readonly directoryOf: (sessionId: string) => string;
+    readonly shadowOf: (sessionId: string) => ShadowFiles;
   };
   /** `readProjectFile` reads through the same guard as `file-read`. */
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
@@ -317,6 +319,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               }),
               git: deps.workspace.git,
               files: deps.workspace.files,
+              shadow: deps.workspace.shadowOf(sessionId),
+              ...(deps.diagnostic === undefined ? {} : { diagnostic: deps.diagnostic }),
               rules: [
                 ...PROTECTED_WRITE_RULES,
                 ...DEFAULT_REPOSITORY_EXCLUSIONS,
