@@ -547,6 +547,11 @@ export class Console {
       }
       case 'MessagePublished':
         await this.#published(event.kind, event.agentLabel, event.messageRef);
+        if (event.wrapUpReason !== undefined)
+          this.#deps.view.print({
+            kind: 'NOTICE',
+            text: text.earlyEnd[event.wrapUpReason] ?? event.wrapUpReason,
+          });
         break;
       case 'RunFinished':
         await this.#runFinished(event);

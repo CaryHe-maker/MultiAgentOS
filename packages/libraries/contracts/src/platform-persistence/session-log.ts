@@ -1,4 +1,5 @@
 import { Type, type Static, type TProperties } from 'typebox';
+import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
@@ -238,6 +239,14 @@ export const SessionLogRecordSchema = Type.Union(
       projectionDigest: Sha256Schema,
       headDigest: Sha256Schema,
       elidedEntries: Type.Optional(Type.Array(count(1))),
+      tokenCount: count(),
+      tokenBudget: count(1),
+    }),
+    /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
+    record('AGENT_WRAP_UP', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      reason: WrapUpReasonSchema,
+      round: count(1),
     }),
     record('AUTHORIZATION_REQUESTED', inRun, {
       questionId: IdSchemas.questionId,

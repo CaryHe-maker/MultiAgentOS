@@ -8,6 +8,7 @@ import type {
   ReasonCode,
   RequestState,
   SubmitUnitRequest,
+  TokenCalibration,
   TokenUsage,
   UnitDefinition,
   UnitInput,
@@ -30,6 +31,7 @@ export interface PinnedAgent {
   readonly modelScope: ExecutionScope;
   readonly budget: AgentBudget;
   readonly contextWindowTokens: number;
+  readonly cacheHitWeight: number;
   /** The rendered Prompt of the Agent. */
   readonly instructions: string;
   /** The tools of a call: the Units' and the end tools, or only those allowed in a final call. */
@@ -71,6 +73,7 @@ export interface AttemptLedger {
   reserve(request: {
     readonly estimatedTokens: number;
     readonly final: boolean;
+    readonly cacheHitWeight: number;
   }):
     | { readonly ok: true; readonly reservationId: string }
     | { readonly ok: false; readonly reasonCode: 'BUDGET_WRAP_UP' | 'BUDGET_EXHAUSTED' };
@@ -143,11 +146,16 @@ export interface RunAttemptsDeps {
   readonly audit: (entry: AttemptAudit) => void;
 }
 
-interface Reservation {
-  readonly reservationId: string;
-  readonly grantId: string;
+interface ReservationRequest {
   readonly estimatedTokens: number;
   readonly final: boolean;
+  readonly cacheHitWeight: number;
+  readonly inputEstimate: number;
+}
+
+interface Reservation extends ReservationRequest {
+  readonly reservationId: string;
+  readonly grantId: string;
 }
 
 interface Attempt {
@@ -174,6 +182,7 @@ const unitRefOf = (unit: UnitDefinition) =>
  * never converges the run.
  */
 export class RunAttempts {
+  readonly #calibrations = new Map<string, TokenCalibration>();
   readonly #deps: RunAttemptsDeps;
   readonly #byRequest = new Map<string, AttemptSpec>();
   readonly #attempts = new Map<string, Attempt>();
@@ -228,11 +237,14 @@ export class RunAttempts {
     return this.#finalCalls.has(agentRunId);
   }
 
-  requestReservation(request: {
-    readonly unitAttemptId: string;
-    readonly estimatedTokens: number;
-    readonly final: boolean;
-  }): ReservationDecision {
+  /** What the provider counted for this AgentRun's last request, next to the estimate of it. */
+  calibrationOf(agentRunId: string): TokenCalibration | undefined {
+    return this.#calibrations.get(agentRunId);
+  }
+
+  requestReservation(
+    request: ReservationRequest & { readonly unitAttemptId: string },
+  ): ReservationDecision {
     const attempt = this.#open(request.unitAttemptId);
     if (this.#deps.isConverging()) {
       this.abandon(request.unitAttemptId);
@@ -244,20 +256,21 @@ export class RunAttempts {
       this.#reject(attempt, 'FINAL_CALL_USED');
       return { granted: false, reason: 'FINAL_CALL_USED' };
     }
-    const reserved = this.#reserve(attempt, request.estimatedTokens, request.final);
+    const reserved = this.#reserve(attempt, request);
     if (!reserved.granted) return reserved;
     if (request.final) this.#finalCalls.set(agentRunId, request.unitAttemptId);
     return reserved;
   }
 
-  #reserve(attempt: Attempt, estimatedTokens: number, final: boolean): ReservationDecision {
+  #reserve(attempt: Attempt, request: ReservationRequest): ReservationDecision {
+    const { estimatedTokens, final, cacheHitWeight, inputEstimate } = request;
     const grant = this.#deps.scheduler.acquire(this.#deps.provider);
     if (!grant.ok) {
       this.abandon(attempt.unitAttemptId);
       this.#deps.onFault({ kind: 'KERNEL_INTERNAL' });
       return { granted: false, reason: 'RUN_CONVERGING' };
     }
-    const reserved = this.#deps.ledger.reserve({ estimatedTokens, final });
+    const reserved = this.#deps.ledger.reserve({ estimatedTokens, final, cacheHitWeight });
     if (!reserved.ok) {
       this.#deps.scheduler.release(grant.grantId);
       this.#reject(attempt, reserved.reasonCode);
@@ -268,6 +281,8 @@ export class RunAttempts {
       grantId: grant.grantId,
       estimatedTokens,
       final,
+      cacheHitWeight,
+      inputEstimate,
     };
     return { granted: true, reservationId: reserved.reservationId, grantId: grant.grantId };
   }
@@ -345,7 +360,7 @@ export class RunAttempts {
     this.#settleReservation(attempt, settlement);
     this.#deps.scheduler.release(previous.grantId);
     delete attempt.reservation;
-    const reserved = this.#reserve(attempt, previous.estimatedTokens, previous.final);
+    const reserved = this.#reserve(attempt, previous);
     if (!reserved.granted) {
       if (reserved.reason === 'RUN_CONVERGING') return { allowed: false, reason: 'RUN_CONVERGING' };
       if (reserved.reason === 'FINAL_CALL_USED') throw new Error('A retry cannot use a final call');
@@ -400,6 +415,11 @@ export class RunAttempts {
 
   #settleReservation(attempt: Attempt, settlement: Settlement | undefined): void {
     if (attempt.reservation === undefined || settlement === undefined) return;
+    if (settlement.type === 'ACTUAL' && settlement.usage.inputTokens > 0)
+      this.#calibrations.set(attempt.spec.agentRunId, {
+        measuredInputTokens: settlement.usage.inputTokens,
+        estimatedInputTokens: attempt.reservation.inputEstimate,
+      });
     const result = this.#deps.ledger.settle(attempt.reservation.reservationId, settlement);
     for (const anomaly of result.anomalies)
       this.#deps.audit({

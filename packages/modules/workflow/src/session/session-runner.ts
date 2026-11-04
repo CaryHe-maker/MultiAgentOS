@@ -856,6 +856,7 @@ export class SessionRunner {
               modelOutputRef: ending.source.modelOutputRef,
               toolCallId: ending.source.toolCallId,
             },
+            ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
           },
           ending.source,
           { status: 'SUCCEEDED', runOutput: false },

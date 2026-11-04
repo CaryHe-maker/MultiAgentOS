@@ -188,7 +188,9 @@ Supervisor（影子 git 子进程）、ExecutorSet（`file-write`、`file-edit`�
 SystemFaultHandling（`STOP_UNCONFIRMED` 停机）、Core（命令的级别与资源键、`approvalDigest`、名单、前缀、联网）、
 ExecutorSet（`run-command`、`command/parse/` 的语法树拆分与 ARITY 表、`git-inspect`）、`M2TechStack.md` 中 tree-sitter 的版本、`Interface/KernelSupervisor.md`。
 
-**契约门** S3-CT-1：SandboxProfile、按执行取消、执行事实的新字段，以及 fake Supervisor。
+文档门还包括 Monitor（第 4a 节内存采样）、Core（中断的统一入口）、Workflow（中断后的收敛）。
+
+**契约门** S3-CT-1：SandboxProfile、按执行取消、执行事实的新字段，以及 fake Supervisor；`RunInterrupted`（带原因）与 `INTERRUPTED` 报告从 S5-CT-1 提前到这里。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
@@ -196,12 +198,14 @@ ExecutorSet（`run-command`、`command/parse/` 的语法树拆分与 ARITY 表�
 | S3-KX-2 | Execution：敏感文件列表、受保护路径的新建检查与隔离（包括任一目录中的 `AGENTS.md`）、EXEC 互斥 | — |
 | S3-KC-1 | Core：计算 SandboxProfile、命令的资源键与询问选项（按语法树拆分的结果；解析失败时只提供单次允许）、`approvalDigest`、`command.network`、`ask-unisolated` | 提前任务 E-EX-3 |
 | S3-KC-2 | `STOP_UNCONFIRMED` 经 `reportSystemFault` 停机 | — |
+| S3-KC-3 | 系统内存检测（M2Design 第 7.7 节）：Monitor 定时采样并判断阈值，只向 Core 发一条 `MemoryPressure` 控制消息；Core 建立中断的统一入口和 INTERRUPTING 状态，内存压力是它的第一个原因。警戒级走统一收尾路径（`quota = 'MEMORY'`），危险级进入 INTERRUPTING，全部运行收敛后写报告和日志并安全退出。阶段 5 的用户中止和 Turn 超时使用同一入口。架构测试保证采样器只能发这一条消息，不能直接取消、关闭运行或停机 | S3-CT-1 |
+| S3-WF-1 | 中断后的收敛（不调用模型的确定性结果与 `closeRun`），`WrapUpReason` 增加 `MEMORY_LIMIT` | S3-KC-3 |
 | S3-EX-1 | `run-command` | 提前任务 E-EX-3 |
 | S3-EX-2 | `git-inspect` | — |
 | S3-PL-1 | main 增加 `run_command`、`git_inspect` 的定义 | — |
-| S3-UI-1 | 命令询问的四个选项、警示样式、"未隔离"提示、停机提示 | — |
+| S3-UI-1 | 命令询问的四个选项、警示样式、"未隔离"提示、停机提示、内存警戒与安全退出的提示 | — |
 
-**集成** S3-IN-1。**退出**：C1–C5、H6–H7、A 组的命令部分（含命令的拆分）。
+**集成** S3-IN-1。**退出**：C1–C5、H6–H7、A 组的命令部分（含命令的拆分）；用假采样值与真实内存压力各验证一次：警戒级完成收尾并留下报告，危险级收敛后以约定的退出码退出，日志完整，下次启动可以恢复 Session。
 
 ### 6.5 阶段 4：并行
 
@@ -228,11 +232,11 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 **文档门**：Core（PAUSING、PAUSED、INTERRUPTING、计时冻结、交付条件、运行中插话 `steerRun`）、Execution 与 Supervisor（按并发类别处理暂停、
 `cancelExecution`）、Workflow（`steer`（暂停后附加与运行中插话，目标已结束时改投）、`ask_user`、重新提交 READ、中止后的收敛）、UserInteraction（Ctrl+C、`/continue`、`/steer` 与 Alt+Enter、中止时排队消息的放回）。
 
-**契约门** S5-CT-1：`pauseRun`、`resumeRun`、`interruptRun`、`steerRun`、`HumanAnswered(kind: steer)` 与 `HUMAN_ANSWERED.redirectedFrom`、`HumanCancelled`、`INTERRUPTED` 报告。
+**契约门** S5-CT-1：`pauseRun`、`resumeRun`、`interruptRun`、`steerRun`、`HumanAnswered(kind: steer)` 与 `HUMAN_ANSWERED.redirectedFrom`、`HumanCancelled`；`RunInterrupted` 与 `INTERRUPTED` 报告在 S3-CT-1 已有，这里只增加原因。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S5-KC-1 | 控制状态与转移、`maxPauseSeconds`；Turn 超时，全部工作都在等用户时暂停计时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；`steerRun` 的受理与转发 | — |
+| S5-KC-1 | 其余控制状态与转移（INTERRUPTING 与中断入口在 S3-KC-3 已有）、`maxPauseSeconds`；Turn 超时，全部工作都在等用户时暂停计时（阶段 5 之前，Turn 的时长由每次执行的截止时间间接约束）；`steerRun` 的受理与转发 | — |
 | S5-KX-1 | 按并发类别处理暂停、`cancelExecution`、中止时排队中的尝试也交付 | — |
 | S5-WF-1 | `steer` 节点（暂停后附加与运行中插话，目标已结束时改投父 AgentRun）、`ask_user`、重新提交被取消的 READ、中止后的收敛 | — |
 | S5-UI-1 | 按键与 `/continue`、`/steer` 与 Alt+Enter、中止时排队消息的放回、待处理请求的队列 | — |

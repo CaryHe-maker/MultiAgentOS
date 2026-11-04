@@ -31,6 +31,7 @@ export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAge
   modelScope: { kind: 'NONE' },
   budget: testAgentBudget,
   contextWindowTokens: 100_000,
+  cacheHitWeight: 1,
   instructions: 'You are a test agent.',
   toolSpecs: () => [],
   ...overrides,

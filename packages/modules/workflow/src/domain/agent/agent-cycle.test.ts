@@ -426,6 +426,9 @@ describe('wrap-up', () => {
     const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
     const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low));
     expect(next.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
+    expect(next.records).toContainEqual(
+      expect.objectContaining({ type: 'AGENT_WRAP_UP', reason: 'BUDGET_WRAP_UP' }),
+    );
     expect(next.submissions[0]?.input).toMatchObject({
       final: true,
       status: { wrapUpReason: 'BUDGET_WRAP_UP' },

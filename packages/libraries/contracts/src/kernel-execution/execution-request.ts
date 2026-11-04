@@ -145,6 +145,10 @@ export const AssembleExecutorInputSchema = Type.Refine(
       orientPack: Type.Optional(OrientContextPackSchema),
       history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
+      /** The AgentRun's last measured request; Kernel fills it, Workflow never holds tokens. */
+      tokenCalibration: Type.Optional(
+        closed({ measuredInputTokens: count(1), estimatedInputTokens: count(1) }),
+      ),
     },
     'kernel.execution.AssembleExecutorInput.v1',
   ),

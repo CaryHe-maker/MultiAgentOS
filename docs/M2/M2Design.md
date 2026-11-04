@@ -593,7 +593,7 @@ main 的派生准则写进它的 Prompt，要点如下：
 | RUNNING | 正常推进 | 开放 |
 | PAUSING | 用户已请求暂停，等待在途 UnitAttempt 按第 4.4 节收敛 | 新的 UnitAttempt 保留在队列中，不派发 |
 | PAUSED | 暂停中，在途 UnitAttempt 数为 0 | 同上；可以回答授权询问与人类请求，答复在继续后生效 |
-| INTERRUPTING | 用户已请求中止，正在取消在途工作 | 拒绝 `registerAgentRun`、`submitUnit`（`RUN_BLOCKED`）；放行 `endAgentRun`、`requestHuman(prompt)`、`closeRun` |
+| INTERRUPTING | 中断已生效（用户中止、Turn 超时或内存压力，第 7.7 节），正在取消在途工作 | 拒绝 `registerAgentRun`、`submitUnit`（`RUN_BLOCKED`）；放行 `endAgentRun`、`requestHuman(prompt)`、`closeRun` |
 | AWAITING_INPUT | 有待答复的请求式 `HUMAN(prompt)`，没有开启中的 Turn、没有 ACTIVE 的 AgentRun，也没有在途 UnitAttempt | 只放行回答、ControlOperation 与关闭 |
 | CONVERGING、CLOSED | M1 原样 | M1 原样 |
 
@@ -603,6 +603,7 @@ PAUSED         ──resumeRun(说明?)─────────────�
 PAUSED         ──暂停超过 maxPauseSeconds───────▶ INTERRUPTING        （缺省 1800 秒）
 RUNNING / PAUSING / PAUSED ──interruptRun──────▶ INTERRUPTING
 RUNNING / PAUSING ──Turn 超时───────────────────▶ INTERRUPTING        （第 7.4 节）
+任意非终态      ──内存压力达到危险级────────────▶ INTERRUPTING        （第 7.7 节）
 INTERRUPTING   ──Workflow 请求 HUMAN(prompt)，在途 = 0──▶ AWAITING_INPUT   （Turn-chat；本 Turn 以 ABORTED 结束）
 INTERRUPTING   ──Workflow closeRun(CANCELLED | TIMEOUT)──▶ CONVERGING      （Orchestration）
 RUNNING        ──Workflow 请求 HUMAN(prompt)，在途 = 0──▶ AWAITING_INPUT   （本 Turn 以 COMPLETED 结束）
@@ -1151,6 +1152,23 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 - **结果映射**：Supervisor 以 `TERMINATED` 上报被取消的执行，Execution 按取消原因形成 `INTERRUPTED(PAUSED | ABORTED)`；MODEL 按 M1 的规则结算已发生的用量。
 - **排队中的尝试**：中止时，尚未派发的尝试从队列中移出，同样交付 `INTERRUPTED(ABORTED)`（M1 收敛时清出队列的尝试不交付，这里不同）。
 - **防止迟到的提交**：每个尝试记录所属的 `turnId`。Turn 结束后，属于它的 `submitUnit` 一律以 `NO_OPEN_TURN` 拒绝。
+
+### 7.7 内存压力
+
+内存不足时进程会被系统杀死，日志之外的状态全部丢失，用户也得不到任何说明。系统在到达那一步之前主动收尾并退出。这里不设特例路径，只有一条：
+
+1. **采样**：Kernel.Monitor 按 `memory.sampleIntervalMs`（缺省 1000）定时采样，判断级别（Kernel/Monitor 第 4a 节）。这是 Monitor 唯一自己定时运行的工作，因为内存属于进程，不属于某个运行。
+2. **上报**：级别升高时，Monitor 向 Core 发一条控制消息 `MemoryPressure(level, 采样值)`，与其他控制消息一样排队、按序处理。Monitor 不能自己取消、关闭运行或停机。
+3. **处理**：Core 经中断的统一入口处理，不增加新的状态、Workflow 事件或关闭方式：
+
+| 级别 | 缺省 | Core 的处理 |
+|---|---|---|
+| WARNING | 占用比 ≥ 75% | 第 7.3 节的统一收尾路径：每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），下一次模型调用是 final-call；拒绝登记新的 AgentRun 与开启新的 Turn。结束后留下报告（第 7.3 节） |
+| DANGER | 占用比 ≥ 90% | 全部运行进入 INTERRUPTING（第 4.3 节，与用户中止、Turn 超时相同）：取消在途与排队的工作，经 `RunInterrupted(MEMORY_PRESSURE)` 通知 Workflow；Workflow 不再调用模型，以确定性结果收敛并 `closeRun` |
+
+4. **退出**：所有运行收敛后，日志都已落盘，Core 请求组合根按正常停机流程退出，退出码表明原因；界面说明原因与恢复方式，下次启动可以恢复 Session。任一运行无法确认停止时，按第 4.7 节处理。
+
+阶段 3 只实现内存压力这一个中断原因，同时建立中断的统一入口与 INTERRUPTING；阶段 5 的用户中止、Turn 超时、暂停超时都进入同一入口。
 
 ## 8. 工具与 Executor
 

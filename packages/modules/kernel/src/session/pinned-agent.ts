@@ -79,6 +79,7 @@ export function pinnedAgentOf(
     modelScope,
     budget: agent.budget,
     contextWindowTokens: model.limits.contextWindowTokens,
+    cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
     instructions: prompt.template,
     // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
     toolSpecs: (isFinal) => (isFinal ? final : ordinary),

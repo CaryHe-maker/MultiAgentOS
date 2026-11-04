@@ -4,7 +4,7 @@
 
 ## 1. 定位
 
-Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行。组件间交互见 [Interaction](Interaction.md)，
+Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行；唯一的例外是内存采样（第 4a 节），它自己定时运行，结果只以一条控制消息交给 Core。组件间交互见 [Interaction](Interaction.md)，
 长期规划见 [Kernel 架构](../../Architecture/Module/Kernel.md) 第 9 节。额度的设计以 [M2Design](../M2Design.md) 第 7.3 节为准。
 
 ## 2. 相对 M1 的变化
@@ -65,6 +65,27 @@ M2Design 第 7.3 节"压缩的额度"：
 
 Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monitor。重复意图与连续出错是业务判断，归 Workflow（M2Design 第 3.4 节）。
 
+## 4a. 内存采样（阶段 3）
+
+设计以 M2Design 第 7.7 节为准。内存属于整个进程，不属于某个运行，所以不进入账本，也不由 Core 按运行计时。
+
+```text
+Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶ 判断级别
+                                                         │ 只在级别升高时
+                                                         ▼
+                                     MemoryPressure(level, 采样值) ──控制消息──▶ Core
+                                                                                  │ 统一入口
+                                               WARNING ──▶ 统一收尾路径（QUOTA_EXHAUSTED, quota = 'MEMORY'）
+                                               DANGER  ──▶ 全部运行进入 INTERRUPTING，收敛后安全退出
+```
+
+| 项 | 规则 |
+|---|---|
+| 采样内容 | 进程 RSS 与 `process.constrainedMemory()`（没有限制时为物理内存）之比、V8 堆用量与 `heap_size_limit` 之比、系统可用内存（Linux 的 `MemAvailable`，能反映沙盒中命令子进程的占用）；取其中最高的占用比 |
+| 级别 | `NORMAL`、`WARNING`（缺省 75%）、`DANGER`（缺省 90%）；初值在 S3-IN-1 按实测校准，只在升高时发消息，恢复时不撤销已发生的收尾 |
+| 职责边界 | 采样器只发 `MemoryPressure`，不持有 Core、Workflow 或运行的任何句柄，不能自己取消、关闭运行或停机；采样和发送本身不分配随运行增长的内存 |
+| 定时器 | `unref`，不阻止进程退出；采样失败时记一次诊断日志，不当作压力 |
+
 ## 5. 接口
 
 `MonitorDuties` 的阶段 1 形式见 [Interaction](Interaction.md) 第 4 节。`budgetView(agentRunId)` 返回该 AgentRun 所在各级账本的状态；
@@ -94,12 +115,14 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 | 6：每个已登记的 AgentRun 都能完成收尾 | 属性测试：任意预留与结算序列下，收尾预留必然成功 |
 | 22（阶段 1 部分）：每个账本的在途预留至多一份；Turn 结束时剩余全部返还 | 单元测试：同一 Turn 不能有两份在途预留；`closeTurnLedger` 后运行级剩余 = 原剩余 − Turn 已用 − 未知 |
 | 额度不触发收敛 | 状态机测试：账本 EXHAUSTED 时运行仍为 RUNNING，直到 Workflow `closeRun` |
+| 内存压力没有特例路径 | 架构测试：采样器只依赖发消息的接口；单元测试：假采样值只产生 `MemoryPressure`，级别升高才发，同一级别不重复 |
 
 ## 8. 阶段
 
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 1 | 第 3–7 节（第 3.4 节除外） |
+| 3 | 第 4a 节：内存采样 |
 | 4 | AgentRun 级账本与逐级委派、委派保留、`minShare` 的派生检查、等待子任务时墙钟暂停 |
 | 5 | 暂停时墙钟暂停 |
 | 7 | 模板节点从 Turn 账本划出份额 |

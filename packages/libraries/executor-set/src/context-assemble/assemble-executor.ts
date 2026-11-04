@@ -1,4 +1,5 @@
 import {
+  calibratedTokens,
   canonicalJson,
   sha256Hex,
   type AssembleContextPack,
@@ -30,6 +31,9 @@ type Answer = ToolResult | Extract<ResolvedHistoryEntry, { kind: 'FEEDBACK' }>;
 /** At most this much of an `AGENTS.md` enters the context (M2Design 9.5). */
 const INSTRUCTIONS_MAX = 64 * 1024;
 
+/** From this share of its limit on, the status warns the model that the context is filling up. */
+const CONTEXT_WARNING_SHARE = 0.85;
+
 const WRAP_UP_TEXT: Record<NonNullable<StatusFacts['wrapUpReason']>, string> = {
   BUDGET_WRAP_UP: 'the token budget is nearly used up',
   TOOL_UNIT_LIMIT: 'the tool limit of this agent is reached',
@@ -42,6 +46,11 @@ const WRAP_UP_TEXT: Record<NonNullable<StatusFacts['wrapUpReason']>, string> = {
   REGENERATION_LIMIT: 'too many replies were invalid',
 };
 
+function renderContextWarning(used: number, limit: number): string {
+  const percent = Math.floor((used / limit) * 100);
+  return `Warning: the context is ${String(percent)}% full (${String(used)} of ${String(limit)} tokens). Read only what you need and finish soon; once it is full your next call is the final one.`;
+}
+
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const { round, maxRounds, budget, final, wrapUpReason } = status;
   const lines = [
@@ -51,7 +60,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
     lines.push(
-      `This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer; cite only content you have read and list what you could not confirm.`,
+      `This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.`,
     );
   }
   return lines.join('\n');
@@ -214,7 +223,7 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       provenance: item.provenance,
     })),
   ];
-  const status: Draft = {
+  let status: Draft = {
     segment: 'STATUS',
     role: 'user',
     content: renderStatus(input.status, input.toolSpecs),
@@ -223,16 +232,24 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
 
   const elided: number[] = [];
   let total = tokensOf(head) + tokensOf(history.flat()) + draftTokens(status);
-  if (total > input.tokenBudget) {
+  const calibration = input.tokenCalibration;
+  const measured = () => calibratedTokens(total, calibration);
+  if (measured() > input.tokenBudget) {
     if (!input.final) return rejected('LIMIT_EXCEEDED');
-    for (let index = 0; index < history.length - 1 && total > input.tokenBudget; index += 1) {
+    for (let index = 0; index < history.length - 1 && measured() > input.tokenBudget; index += 1) {
       const group = history[index] ?? [];
       const dropped = group.filter((draft) => !isPinned(draft));
       total -= tokensOf(dropped);
       elided.push(...dropped.map(seqOf));
       history[index] = group.filter(isPinned);
     }
-    if (total > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
+    if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
+  } else if (!input.final && measured() >= input.tokenBudget * CONTEXT_WARNING_SHARE) {
+    const warning = renderContextWarning(measured(), input.tokenBudget);
+    const warned = { ...status, content: `${status.content}\n${warning}` };
+    total += draftTokens(warned) - draftTokens(status);
+    if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
+    status = warned;
   }
 
   const contextPackId = newContextPackId();
@@ -241,7 +258,7 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     canonicalJson({ instructions: input.instructions, toolSpecs: input.toolSpecs }),
   );
   const projectionDigest = sha256Hex(canonicalJson(input.history));
-  const tokenCount = packTokens(items);
+  const tokenCount = calibratedTokens(packTokens(items), calibration);
   const pack: AssembleContextPack = {
     contextPackId,
     tokenCount,

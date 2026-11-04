@@ -60,7 +60,12 @@ export async function publishMessage(
   const reply = await replyText(value, artifacts);
   if ('refused' in reply) return reply.refused;
   const outputRef = await artifacts.put(reply.text, MEDIA_TYPES.markdown, 'SESSION');
-  return { outcome: 'COMPLETED', output: { kind: value.kind }, outputRef };
+  const { wrapUpReason } = value;
+  return {
+    outcome: 'COMPLETED',
+    output: { kind: value.kind, ...(wrapUpReason === undefined ? {} : { wrapUpReason }) },
+    outputRef,
+  };
 }
 
 /** Fills in the goal from `goalRef`, because Workflow never holds the user's words. */

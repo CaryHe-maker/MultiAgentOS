@@ -13,6 +13,19 @@ const DEGRADED: Readonly<Record<string, string>> = {
   REGENERATION_LIMIT: '模型的回复连续不合要求，没能完成回复。',
 };
 
+/** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
+const EARLY_END: Readonly<Record<string, string>> = {
+  BUDGET_WRAP_UP: '额度接近用完，这一轮提前结束了。',
+  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这一轮提前结束了。',
+  WALL_CLOCK_LIMIT: '运行时间到了上限，这一轮提前结束了。',
+  ROUND_LIMIT: '轮次到了上限，这一轮提前结束了。',
+  NO_PROGRESS: '连续几轮没有进展，这一轮提前结束了。',
+  REPEATED_INTENT: '同一个调用重复太多次，这一轮提前结束了。',
+  CONSECUTIVE_ERRORS: '工具连续出错，这一轮提前结束了。',
+  CONTEXT_LIMIT: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
+  REGENERATION_LIMIT: '模型的回复连续不合要求，这一轮提前结束了。',
+};
+
 const RUN_STATE: Readonly<Record<string, string>> = {
   RUNNING: '运行中',
   AWAITING_INPUT: '等待输入',
@@ -81,6 +94,7 @@ export const ConsoleText = Object.freeze({
   ].join('\n'),
   status: (state: string, budget: string) => `运行：${state}；额度：${budget}`,
   degraded: DEGRADED,
+  earlyEnd: EARLY_END,
   degradedOther: '没能完成回复。',
   finished: {
     COMPLETED: '',

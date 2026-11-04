@@ -116,13 +116,16 @@ export class RunActivity {
     if (report.status !== 'OK' || !('unitAttemptId' in report)) return;
     const label = this.#labels.get(report.agentRunId);
     if (report.executionKind === 'MESSAGE_PUBLISH') {
-      const kind = (report.output as { kind?: MessagePublished['kind'] }).kind;
+      const { kind, wrapUpReason } = report.output as Partial<
+        Pick<MessagePublished, 'kind' | 'wrapUpReason'>
+      >;
       if (label === undefined || kind === undefined || report.outputRef === undefined) return;
       this.#deps.emit({
         type: 'MessagePublished',
         messageRef: report.outputRef,
         agentLabel: label,
         kind,
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
       });
       return;
     }

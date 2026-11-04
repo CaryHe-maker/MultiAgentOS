@@ -346,13 +346,25 @@ function nextRound(
     final,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
+  const wrapUpRecords: readonly NewLogRecord[] =
+    wrapUpReason === undefined
+      ? []
+      : [
+          {
+            ...base(next),
+            type: 'AGENT_WRAP_UP',
+            agentRunId: next.agentRunId,
+            reason: wrapUpReason,
+            round: next.round,
+          },
+        ];
   return one(
     next,
     'CONTEXT',
     next.definitions.contextAssemble,
     context.assembleInput(status, final),
     'context',
-    records,
+    [...records, ...wrapUpRecords],
   );
 }
 
@@ -811,7 +823,8 @@ function handleTool(
 }
 
 function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK' }>): NewLogRecord {
-  const { projectionDigest, headDigest, elidedEntries } = report.output as ContextAssembleOutput;
+  const { projectionDigest, headDigest, elidedEntries, tokenCount, tokenBudget } =
+    report.output as ContextAssembleOutput;
   return {
     ...base(state),
     type: 'CONTEXT_ASSEMBLED',
@@ -819,6 +832,8 @@ function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK'
     projectionDigest,
     headDigest,
     ...(elidedEntries.length === 0 ? {} : { elidedEntries }),
+    tokenCount,
+    tokenBudget,
   };
 }
 

@@ -1,3 +1,4 @@
+import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -124,6 +125,7 @@ export const MessagePublishedSchema = closed(
     messageRef: ArtifactRefSchema,
     agentLabel: text(80),
     kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.control.MessagePublished.v1',
 );

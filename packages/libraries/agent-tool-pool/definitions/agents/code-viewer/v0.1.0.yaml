@@ -45,7 +45,7 @@ limits:
   maxToolCallsPerRound: 8
   maxToolUnits: 200
 budget:
-  perCallInputLimit: 96000
-  maxOutputTokens: 8192
-  finalInputBudget: 72000
-  finalMaxOutputTokens: 8192
+  perCallInputLimit: 880000
+  maxOutputTokens: 64000
+  finalInputBudget: 880000
+  finalMaxOutputTokens: 64000

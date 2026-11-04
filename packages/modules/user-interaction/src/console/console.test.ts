@@ -182,6 +182,24 @@ describe('Console', () => {
     });
   });
 
+  it('says so when a reply came from a Turn that ended early', async () => {
+    const reply = testArtifactRef('text/markdown', 'c');
+    const t = setup({ artifacts: new Map([[reply.artifactId, '做完了一半']]) });
+    await t.console.submit('hi');
+    await t.event({
+      type: 'MessagePublished',
+      kind: 'REPLY',
+      agentLabel: 'main',
+      messageRef: reply,
+      wrapUpReason: 'CONTEXT_LIMIT',
+    });
+    expect(t.printed).toContainEqual({ kind: 'REPLY', agentLabel: 'main', text: '做完了一半' });
+    expect(t.printed).toContainEqual({
+      kind: 'NOTICE',
+      text: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
+    });
+  });
+
   it('notes a truncated result and shows its full output on /output', async () => {
     const full = testArtifactRef('text/plain', 'e');
     const expired = testArtifactRef('text/plain', 'f');

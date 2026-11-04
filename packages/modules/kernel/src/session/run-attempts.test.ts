@@ -93,6 +93,8 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
   return { run, start, reports, ended, faults, audits, grants };
 }
 
+const reservation = { cacheHitWeight: 1, inputEstimate: 1 };
+
 describe('result checks', () => {
   it('delivers an OK report with unitRunId and BudgetView', async () => {
     const { run, start, reports, ended } = setup();
@@ -183,7 +185,7 @@ describe('reservations', () => {
   it('allows one final call per AgentRun', async () => {
     const { run, start, reports } = setup();
     const first = await start('MODEL');
-    const final = { estimatedTokens: finalReserve(main), final: true };
+    const final = { ...reservation, estimatedTokens: finalReserve(main), final: true };
     expect(run.requestReservation({ unitAttemptId: first, ...final }).granted).toBe(true);
     const other = await start('MODEL', {
       agentRunId: testId('agr', 2),
@@ -204,6 +206,7 @@ describe('reservations', () => {
     const id = await start('MODEL');
     const decision = run.requestReservation({
       unitAttemptId: id,
+      ...reservation,
       estimatedTokens: 10_000,
       final: false,
     });
@@ -215,7 +218,12 @@ describe('reservations', () => {
   it('retries a MODEL request only when its consumption is known', async () => {
     const { run, start } = setup();
     const id = await start('MODEL');
-    run.requestReservation({ unitAttemptId: id, estimatedTokens: 50, final: false });
+    run.requestReservation({
+      ...reservation,
+      unitAttemptId: id,
+      estimatedTokens: 50,
+      final: false,
+    });
     run.registerExecution(id, 'exe_1');
     expect(
       run.retryExecution({
@@ -247,7 +255,12 @@ describe('attempts that end without a result', () => {
     const { run, start, ended } = setup({ deliverable: false });
     const id = await start('MODEL');
     expect(
-      run.requestReservation({ unitAttemptId: id, estimatedTokens: 10, final: false }),
+      run.requestReservation({
+        ...reservation,
+        unitAttemptId: id,
+        estimatedTokens: 10,
+        final: false,
+      }),
     ).toEqual({
       granted: false,
       reason: 'RUN_CONVERGING',
@@ -258,7 +271,12 @@ describe('attempts that end without a result', () => {
   it('ends a queued attempt once, and gives its opportunity back', async () => {
     const { run, start, ended, grants } = setup();
     const id = await start('MODEL');
-    run.requestReservation({ unitAttemptId: id, estimatedTokens: 10, final: false });
+    run.requestReservation({
+      ...reservation,
+      unitAttemptId: id,
+      estimatedTokens: 10,
+      final: false,
+    });
     run.abandon(id);
     run.abandon(id);
     expect(ended).toEqual([id]);
@@ -284,5 +302,31 @@ describe('refusals without an attempt', () => {
     );
     expect(reports[0]).toMatchObject({ status: 'REJECTED', ...refusal });
     expect(reports[0]).not.toHaveProperty('unitAttemptId');
+  });
+
+  it('calibrates by the last measured request of the same AgentRun', async () => {
+    const { run, start } = setup();
+    const id = await start('MODEL');
+    run.requestReservation({
+      ...reservation,
+      unitAttemptId: id,
+      estimatedTokens: 50,
+      final: false,
+      inputEstimate: 40,
+    });
+    run.registerExecution(id, 'exe_1');
+    expect(run.calibrationOf(testId('agr', 1))).toBeUndefined();
+    run.submitResultCheck({
+      unitAttemptId: id,
+      executionId: 'exe_1',
+      outcome: 'COMPLETED',
+      output: fileOutput,
+      outputRef,
+      usage: { inputTokens: 44, outputTokens: 1 },
+    });
+    expect(run.calibrationOf(testId('agr', 1))).toEqual({
+      measuredInputTokens: 44,
+      estimatedInputTokens: 40,
+    });
   });
 });

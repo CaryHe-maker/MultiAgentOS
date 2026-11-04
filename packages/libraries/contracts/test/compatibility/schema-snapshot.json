@@ -8171,6 +8171,19 @@
                                 }
                               },
                               "additionalProperties": false
+                            },
+                            "wrapUpReason": {
+                              "enum": [
+                                "BUDGET_WRAP_UP",
+                                "TOOL_UNIT_LIMIT",
+                                "WALL_CLOCK_LIMIT",
+                                "REPEATED_INTENT",
+                                "CONSECUTIVE_ERRORS",
+                                "CONTEXT_LIMIT",
+                                "NO_PROGRESS",
+                                "ROUND_LIMIT",
+                                "REGENERATION_LIMIT"
+                              ]
                             }
                           },
                           "additionalProperties": false
@@ -10274,6 +10287,19 @@
                     "DEGRADED_REPLY",
                     "RUN_RESULT"
                   ]
+                },
+                "wrapUpReason": {
+                  "enum": [
+                    "BUDGET_WRAP_UP",
+                    "TOOL_UNIT_LIMIT",
+                    "WALL_CLOCK_LIMIT",
+                    "REPEATED_INTENT",
+                    "CONSECUTIVE_ERRORS",
+                    "CONTEXT_LIMIT",
+                    "NO_PROGRESS",
+                    "ROUND_LIMIT",
+                    "REGENERATION_LIMIT"
+                  ]
                 }
               },
               "additionalProperties": false,
@@ -11938,6 +11964,19 @@
             "REPLY",
             "DEGRADED_REPLY",
             "RUN_RESULT"
+          ]
+        },
+        "wrapUpReason": {
+          "enum": [
+            "BUDGET_WRAP_UP",
+            "TOOL_UNIT_LIMIT",
+            "WALL_CLOCK_LIMIT",
+            "REPEATED_INTENT",
+            "CONSECUTIVE_ERRORS",
+            "CONTEXT_LIMIT",
+            "NO_PROGRESS",
+            "ROUND_LIMIT",
+            "REGENERATION_LIMIT"
           ]
         }
       },
@@ -15671,6 +15710,24 @@
             }
           },
           "additionalProperties": false
+        },
+        "tokenCalibration": {
+          "type": "object",
+          "required": [
+            "measuredInputTokens",
+            "estimatedInputTokens"
+          ],
+          "properties": {
+            "measuredInputTokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "estimatedInputTokens": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
@@ -19300,6 +19357,24 @@
                         "ROUND_LIMIT",
                         "REGENERATION_LIMIT"
                       ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "tokenCalibration": {
+                  "type": "object",
+                  "required": [
+                    "measuredInputTokens",
+                    "estimatedInputTokens"
+                  ],
+                  "properties": {
+                    "measuredInputTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "estimatedInputTokens": {
+                      "type": "integer",
+                      "minimum": 1
                     }
                   },
                   "additionalProperties": false
@@ -23279,6 +23354,19 @@
                 }
               },
               "additionalProperties": false
+            },
+            "wrapUpReason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
+              ]
             }
           },
           "additionalProperties": false
@@ -23322,6 +23410,19 @@
             "REPLY",
             "DEGRADED_REPLY",
             "RUN_RESULT"
+          ]
+        },
+        "wrapUpReason": {
+          "enum": [
+            "BUDGET_WRAP_UP",
+            "TOOL_UNIT_LIMIT",
+            "WALL_CLOCK_LIMIT",
+            "REPEATED_INTENT",
+            "CONSECUTIVE_ERRORS",
+            "CONTEXT_LIMIT",
+            "NO_PROGRESS",
+            "ROUND_LIMIT",
+            "REGENERATION_LIMIT"
           ]
         }
       },
@@ -26263,6 +26364,19 @@
                         }
                       },
                       "additionalProperties": false
+                    },
+                    "wrapUpReason": {
+                      "enum": [
+                        "BUDGET_WRAP_UP",
+                        "TOOL_UNIT_LIMIT",
+                        "WALL_CLOCK_LIMIT",
+                        "REPEATED_INTENT",
+                        "CONSECUTIVE_ERRORS",
+                        "CONTEXT_LIMIT",
+                        "NO_PROGRESS",
+                        "ROUND_LIMIT",
+                        "REGENERATION_LIMIT"
+                      ]
                     }
                   },
                   "additionalProperties": false
@@ -27467,6 +27581,19 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "wrapUpReason": {
+                  "enum": [
+                    "BUDGET_WRAP_UP",
+                    "TOOL_UNIT_LIMIT",
+                    "WALL_CLOCK_LIMIT",
+                    "REPEATED_INTENT",
+                    "CONSECUTIVE_ERRORS",
+                    "CONTEXT_LIMIT",
+                    "NO_PROGRESS",
+                    "ROUND_LIMIT",
+                    "REGENERATION_LIMIT"
+                  ]
                 }
               },
               "additionalProperties": false
@@ -27839,6 +27966,19 @@
                 "REPLY",
                 "DEGRADED_REPLY",
                 "RUN_RESULT"
+              ]
+            },
+            "wrapUpReason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
               ]
             }
           },
@@ -28520,6 +28660,19 @@
                         "REPLY",
                         "DEGRADED_REPLY",
                         "RUN_RESULT"
+                      ]
+                    },
+                    "wrapUpReason": {
+                      "enum": [
+                        "BUDGET_WRAP_UP",
+                        "TOOL_UNIT_LIMIT",
+                        "WALL_CLOCK_LIMIT",
+                        "REPEATED_INTENT",
+                        "CONSECUTIVE_ERRORS",
+                        "CONTEXT_LIMIT",
+                        "NO_PROGRESS",
+                        "ROUND_LIMIT",
+                        "REGENERATION_LIMIT"
                       ]
                     }
                   },
@@ -29892,6 +30045,19 @@
                                 "REPLY",
                                 "DEGRADED_REPLY",
                                 "RUN_RESULT"
+                              ]
+                            },
+                            "wrapUpReason": {
+                              "enum": [
+                                "BUDGET_WRAP_UP",
+                                "TOOL_UNIT_LIMIT",
+                                "WALL_CLOCK_LIMIT",
+                                "REPEATED_INTENT",
+                                "CONSECUTIVE_ERRORS",
+                                "CONTEXT_LIMIT",
+                                "NO_PROGRESS",
+                                "ROUND_LIMIT",
+                                "REGENERATION_LIMIT"
                               ]
                             }
                           },
@@ -35957,7 +36123,9 @@
             "type",
             "requestId",
             "projectionDigest",
-            "headDigest"
+            "headDigest",
+            "tokenCount",
+            "tokenBudget"
           ],
           "properties": {
             "seq": {
@@ -35998,6 +36166,70 @@
                 "type": "integer",
                 "minimum": 1
               }
+            },
+            "tokenCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokenBudget": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "agentRunId",
+            "reason",
+            "round"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "AGENT_WRAP_UP"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "reason": {
+              "enum": [
+                "BUDGET_WRAP_UP",
+                "TOOL_UNIT_LIMIT",
+                "WALL_CLOCK_LIMIT",
+                "REPEATED_INTENT",
+                "CONSECUTIVE_ERRORS",
+                "CONTEXT_LIMIT",
+                "NO_PROGRESS",
+                "ROUND_LIMIT",
+                "REGENERATION_LIMIT"
+              ]
+            },
+            "round": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false

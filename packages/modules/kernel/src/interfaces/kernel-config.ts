@@ -25,10 +25,10 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   maxSnapshotFiles: 20_000,
   maxReportBytes: 262_144,
   budget: Object.freeze({
-    runTokenLimit: 5_000_000,
-    turnTokenLimit: 2_000_000,
-    orientBudget: 4_000,
-    searchBudget: 4_000,
+    runTokenLimit: 12_000_000,
+    turnTokenLimit: 4_000_000,
+    orientBudget: 1_200,
+    searchBudget: 1_200,
   }),
   executionLimits: Object.freeze({
     REPOSITORY_ORIENT: toolLimit(60_000, 1_048_576),
@@ -38,8 +38,8 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     FILE_WRITE: toolLimit(10_000, 16_384),
     FILE_EDIT: toolLimit(10_000, 16_384),
     OUTPUT_READ: toolLimit(10_000, 51_200),
-    CONTEXT_ASSEMBLE: Object.freeze({ timeoutMs: 30_000, maxOutputBytes: 2_097_152 }),
-    MODEL: Object.freeze({ timeoutMs: 180_000, maxOutputBytes: 1_048_576 }),
+    CONTEXT_ASSEMBLE: Object.freeze({ timeoutMs: 30_000, maxOutputBytes: 16_777_216 }),
+    MODEL: Object.freeze({ timeoutMs: 900_000, maxOutputBytes: 1_048_576 }),
   }),
   artifactRetention: Object.freeze({ expiringRetentionDays: 7, sweepIntervalMinutes: 60 }),
 });
