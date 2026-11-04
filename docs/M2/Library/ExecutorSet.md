@@ -100,6 +100,22 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 两者的输出带 `path`、`operation`、`sha256`（新内容的 SHA），预览是一行结果说明。
 `baseSha`、`expectAbsent` 由 Workflow 填写，不在模型看到的工具参数中（`FileWriteArgs`、`FileEditArgs`）。
 
+## 5c. `command/` 与 `git/`（阶段 3，草稿）
+
+字段见 [Interface/KernelSupervisor](../Interface/KernelSupervisor.md) 第 4、5 节。
+
+**`run-command`**（`COMMAND`，`scope.kind = 'SANDBOX'`）：输入 `{ command, timeoutMs }`，经 `environment.sandbox.run` 在沙盒中执行；Executor 不构造 bwrap 参数，也不启动进程。
+
+- 输出（stdout 与 stderr 合并）经 `retention/` 按字节保留头与尾，省略量精确；超出预览上限时交回完整输出（`maxFullOutputBytes`，超出按同一取舍保存）。
+- 非零退出码与已有输出的超时都是 OK；`exitCode`、`timedOut`、`backend`、`sandboxDenials` 随结构化输出，预览首行写明退出状态。
+- 沙盒拒绝的识别只数固定文字，不改变结果；原始异常文字（宿主路径）不进入预览。
+- 同一输入与同一输出得到逐字节相同的预览。
+
+**`command/parse/`**（提前任务 E-EX-3，已实现）：`createCommandParser()` 加载 `web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法（只加载一次，之后同步使用）；
+`parse` 返回子命令与 `unreusable` 原因；`commandPrefix`（ARITY 表）；`matchesCommandPattern`（语法树与原始文字的并集）。Core 与 Supervisor 经注入的 `CommandAnalyzer` 使用同一个实现，Kernel 不依赖 ExecutorSet。
+
+**`git-inspect`**（`GIT_INSPECT`，`scope.kind = 'REPOSITORY'`）：固定子命令表，经 `environment.subprocess` 运行 `git`，pathspec 排除 `repositoryExclusions` 命中的文件；不是 git 仓库返回 `UNSUPPORTED`；预览经 `retention/`。
+
 ## 6. `ContextAssembleExecutor` 的变化
 
 ### 6.1 段
@@ -181,6 +197,6 @@ M1 的测试全部保留。增加：
 |---|---|
 | 1 | 第 3–8 节（第 5a、6.4 节与摘要请求除外） |
 | 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1）；第 5a 节 `output-read`；`file-read` 的 `nestedInstructions` 与子目录 `AGENTS.md` 条目的组装 |
-| 3 | `command/`：`run-command`（输出预览保留头尾）、`command/parse/`（tree-sitter-bash 拆分与 ARITY 表，提前任务 E-EX-3）；`git/`：`git-inspect` |
+| 3 | 第 5c 节：`command/`：`run-command`（输出预览保留头尾）、`command/parse/`（tree-sitter-bash 拆分与 ARITY 表，提前任务 E-EX-3，已实现）；`git/`：`git-inspect` |
 | 6 | `web/`：`web-search`（Tavily 适配器）、`web-fetch`（提前任务 E-EX-2） |
 | 8 | 第 6.4 节：修剪与摘要请求的两种组装；`model-call` 的摘要请求（思考强度按配置）与 `COMPACTION_SUMMARY_INVALID` |

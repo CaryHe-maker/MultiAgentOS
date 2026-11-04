@@ -144,6 +144,44 @@ confirmUndo(CANCEL)、下一条 answerHuman、切换或关闭 Session → 发出
 
 确认不是授权询问，不产生授权条目，也不进入模型上下文。
 
+## 5b. 命令的授权与沙盒（阶段 3，草稿）
+
+`run_command` 需要 `command.exec`（危险级），`network: true` 时另需 `command.network`（极危险级，只有 main 的能力白名单中有）。判定顺序不变（第 5a.3 节），命令加入以下规则：
+
+```text
+① 命令按语法树拆分（ExecutorSet command/parse/，经注入的 CommandAnalyzer）；任一子命令或原始文字命中 deniedCommands → REJECTED(COMMAND_DENIED)
+② command.exec 不在能力上限中                                     → CAPABILITY_NOT_GRANTED（readonly 预设下工具本来就不出现）
+   沙盒不可用且 sandbox.unavailable = 'deny'                         → REJECTED(SANDBOX_UNAVAILABLE)
+④ 查找覆盖本命令的条目：每个子命令都被某条目覆盖才算覆盖
+     条目的资源键：(规范化的子命令文字, 工作目录) 为 COMMAND 条目；前缀 + 工作目录范围为 PREFIX 条目
+     命中 criticalCommands、network: true、沙盒不可用（ask-unisolated）→ 极危险级：不查条目，每次询问
+⑤ 没有覆盖 → 询问，展示：确切的命令、工作目录、SandboxProfile 摘要（可写根目录、联网与否、是否未隔离）、approvalDigest
+```
+
+- **询问选项**：危险级为 `ONCE`（单次）、`COMMAND`（本运行内这条命令均允许）、`PREFIX`（本运行内这个命令前缀均允许）、`DENY`；极危险级只有 `ONCE`、`DENY`，以警示样式显示。
+  **解析不可靠时**（`unreusable` 不为空：语法错误、命令名不是字面量、命令替换、进程替换、`eval`、`sh -c`、通往 shell 的管道、heredoc 作为 shell 的输入）、沙盒不可用、命中名单时，只提供 `ONCE` 与 `DENY`。
+  `PREFIX` 选项只在每个子命令都能得出前缀时提供；一个条目不跨工作目录。
+- **相同的询问合并**：同一运行内两个 UnitAttempt 需要相同的（规范化命令、工作目录）时挂在同一个询问上；极危险级不合并。
+- **拒绝**：绑定提出请求的 AgentRun，与其他能力相同（M2Design 第 5.3 节）。
+- **SandboxProfile**：签发 Lease 时由 Core 计算静态部分（第 2 节 Interface/KernelSupervisor），随 `ExecutionScope` 交给 Execution，由它补上扫描的列表。
+
+**EXEC 互斥**：同一时刻至多一个 EXEC 在派发（`maxConcurrentExec = 1`），由 Execution 持有；等待授权与排队的尝试不占用。
+
+**停机**：Execution 报告 `STOP_UNCONFIRMED` 时，Core 不收敛这一个运行，而是经 `reportSystemFault` 请求停机（M2Design 第 4.7 节）：封锁新的请求，对全部残余执行发出取消，写审计（Unit、进程、已知效果），界面显示"无法确认 <命令摘要> 已停止"，进程以非零退出码退出。
+
+## 5c. 中断的统一入口与内存压力（阶段 3，草稿）
+
+M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个入口 `interrupt(reason)`；阶段 3 的唯一原因是 `MEMORY_PRESSURE`，阶段 5 的用户中止、Turn 超时、暂停超时使用同一入口。
+
+| 来源 | Core 的处理 |
+|---|---|
+| `MemoryPressure(WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的 Turn（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
+| `MemoryPressure(DANGER)` | 全部运行进入 INTERRUPTING：封锁新的受理，取消在途与排队的尝试（`cancelRun` 之前先以 `INTERRUPTED(ABORTED)` 交付），Outbox 向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`；Workflow 以确定性结果收敛并 `closeRun(INTERRUPTED)`；全部运行关闭后，Core 请求组合根按正常停机流程退出（退出码 75），界面说明原因与恢复方式 |
+
+- 同一级别不重复处理；级别只升不降地触发（恢复时不撤销已发生的收尾）。
+- 任一运行无法确认停止时按第 5b 节的停机处理。
+- 内存采样在 Monitor（[Monitor](Monitor.md) 第 4a 节），Core 只处理控制消息，不持有采样器。
+
 ## 6. Turn 与人类请求
 
 | 消息 | 检查 | 动作 |
@@ -223,7 +261,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 |---|---|
 | 1 | 第 3–9 节 |
 | 2 | 能力上限与授权条目、判定顺序、询问合并、`workspace.write`、任一目录中 `AGENTS.md` 的极危险写入、子目录 `AGENTS.md` 的信任询问、回退的发起与确认 |
-| 3 | 命令的级别、资源键与询问选项、SandboxProfile、`approvalDigest`、`STOP_UNCONFIRMED` 停机 |
+| 3 | 第 5b、5c 节：命令的级别、资源键与询问选项、SandboxProfile、`approvalDigest`、`STOP_UNCONFIRMED` 停机、中断的统一入口与内存压力 |
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 2 | `updateActivity` 的转发 |
 | 5 | PAUSING、PAUSED、INTERRUPTING，Turn 超时（全部工作都在等用户时暂停计时，M2Design 第 7.4 节），人类请求的取消，运行中插话 `steerRun` |

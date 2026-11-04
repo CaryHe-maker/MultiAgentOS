@@ -97,7 +97,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 | 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink 8.0.0（及其依赖 React 19.3.1；测试用 ink-testing-library 4.0.0）；只在 `apps/cli` 中使用，UserInteraction 经 `ConsoleView` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
-| 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法文件（不需要原生编译），只在 ExecutorSet 的 `command/parse/` 中使用；版本在阶段 3 的文档门中确定；提前任务 E-EX-3 可先行引入 |
+| 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 0.27.1 与 `tree-sitter-bash` 0.25.1 的 WebAssembly 语法文件（`tree-sitter-bash.wasm` 随包提供，不需要原生编译；`pnpm-workspace.yaml` 中 `allowBuilds` 对 `tree-sitter-bash` 为 `false`，不运行它的构建脚本），只在 ExecutorSet 的 `command/parse/` 中使用；E-EX-3 已引入（2026-11-05，Windows 与 Ubuntu 24.04 上测试通过） |
 | 网页检索提供方 Tavily 的客户端 | 6 | 待定 |
 | HTML 转 Markdown | 6 | 待定：M2Design 第 8.4 节倾向于把纯函数复制到 `vendor/` 并注明来源与许可证 |
 | 模板 YAML 解析 | 1 | 不新增：沿用 AgentToolPool 已有的 YAML 1.2 core schema 解析（M1），内置模板与使用者模板都由它解析 |

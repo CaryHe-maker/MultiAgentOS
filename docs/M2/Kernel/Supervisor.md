@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Supervisor
 
-> 状态：已评审（阶段 2）。阶段 3 补充 bwrap、遮蔽、进程组与停止升级。
+> 状态：已评审（阶段 2）；阶段 3 的第 5、6 节为草稿，待评审。
 
 ## 1. 定位
 
@@ -25,9 +25,26 @@ M1 的机制见归档的 [M1 Supervisor](../../History/M1/Kernel/Supervisor.md)�
 
 组合根在启动 Supervisor 之前执行一次 `git --version`。失败时把启动预设降为 `readonly` 并提示用户（M2Design 第 4.6 节）。
 
-## 5. 阶段
+## 5. 沙盒（阶段 3）
+
+字段见 [Interface/KernelSupervisor](../Interface/KernelSupervisor.md)。Supervisor 只做三件事：把 `SandboxProfile` 变成 bwrap 的参数并启动、管理进程的生命周期、探测可用性。判断允许与否是 Core 的事，Supervisor 只校验批准的内容没有被换掉。
+
+- **参数的构造是纯函数**（`buildBwrapArgs(profile, command)`），顺序固定，由测试逐项断言：`--unshare-pid`、`--die-with-parent`、`--new-session`、`--json-status-fd`；`--clearenv` 后只设白名单中的变量；
+  `--ro-bind / /` → `$HOME` 以 `--tmpfs` 遮蔽 → `--tmpfs /tmp` → 白名单目录只读挂回 → 凭据文件以空文件遮蔽 → 仓库只读挂回 → 可写根目录 `--bind` → `protectedExisting` 以 `--ro-bind` 重新挂载 → `maskedFiles`、`maskedDirs` 遮蔽 → `dataDir` 遮蔽 → `--unshare-net`（`network = false`）。
+  已验证的写法见 M2TechStack 第 3.1 节：遮蔽用空的普通文件而不是 `/dev/null`，`--tmpfs /tmp` 在仓库挂载之前。
+- **环境变量**：白名单构造（`PATH`、`HOME`、`LANG`、`TERM`；`HOME` 为沙盒内的空目录）；构造后断言没有名称匹配 `*KEY*`、`*SECRET*`、`*TOKEN*`、`*PASSWORD*`、`*CREDENTIAL*` 的变量，否则拒绝启动并写审计。
+- **进程**：以 `child-pid` 为内层进程组；停止的升级顺序见 M2Design 第 4.7 节。进程内的 Executor 没有 SIGKILL 一步。
+- **输出**：stdout 与 stderr 合并读取，超过 `maxOutputBytes` 时保留头尾，其余丢弃并标记 `truncated`；Supervisor 不解释内容，只识别沙盒拒绝的固定文字（`Read-only file system`、`Network is unreachable`）并计数。
+- **探测**：Session 开始时以真实 profile 运行 `/bin/true`；失败时按原因分类（没有 `bwrap`、命名空间被限制、profile 启动失败），并给出使用说明中的修复提示。
+- **没有 `bwrap` 的平台**（如 Windows）：探测为 `NO_BWRAP`，按 `sandbox.unavailable` 处理。
+
+## 6. 停机（阶段 3）
+
+`STOP_UNCONFIRMED` 是系统故障：Execution 收到该事实后，经 Core 的 `reportSystemFault` 请求组合根停机（[SystemFaultHandling](../SystemFaultHandling.md)）。Supervisor 在停机时对全部子进程组发 SIGKILL。
+
+## 7. 阶段
 
 | 阶段 | 本文增加的内容 |
 |---|---|
 | 2 | 第 3、4 节 |
-| 3 | bwrap、SandboxProfile、遮蔽、进程组、SIGKILL 升级、`STOP_UNCONFIRMED` |
+| 3 | 第 5、6 节：bwrap、SandboxProfile、遮蔽、进程组、SIGKILL 升级、`STOP_UNCONFIRMED`、`cancelExecution` |

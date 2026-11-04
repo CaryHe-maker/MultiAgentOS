@@ -59,8 +59,9 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | Kernel：[Interaction](Kernel/Interaction.md)、[Core](Kernel/Core.md)、[Gateway](Kernel/Gateway.md)、[Execution](Kernel/Execution.md)、[Monitor](Kernel/Monitor.md) | 已评审（阶段 1） | 1 |
 | Library：[AgentToolPool](Library/AgentToolPool.md)、[ExecutorSet](Library/ExecutorSet.md)、[SharedContracts](Library/SharedContracts.md) | 已评审（阶段 1） | 1 |
 | Infrastructure：[Persistence](Infrastructure/Persistence.md)、[ArtifactStore](Infrastructure/ArtifactStore.md)、[ModuleHost](Infrastructure/ModuleHost.md)、[Fabric](Infrastructure/Fabric.md) | 已评审（阶段 1） | 1 |
-| Kernel：[Supervisor](Kernel/Supervisor.md) | 草稿（阶段 2，待评审） | 2 |
-| Kernel：Scheduler；SystemFaultHandling；`Interface/KernelSupervisor.md` | 未开始 | 3–4 |
+| Kernel：[Supervisor](Kernel/Supervisor.md) | 已评审（阶段 2）；阶段 3 的沙盒与停机为草稿 | 2、3 |
+| [SystemFaultHandling](SystemFaultHandling.md)；[Interface/KernelSupervisor](Interface/KernelSupervisor.md) | 草稿（阶段 3，待评审） | 3 |
+| Kernel：Scheduler | 未开始 | 4 |
 | M2Usage、M2Limitations | 未开始 | 发布准备 |
 
 状态取值：未开始、草稿、已评审、已实现。实现合入集成分支后，对应文档改为"已实现"。
