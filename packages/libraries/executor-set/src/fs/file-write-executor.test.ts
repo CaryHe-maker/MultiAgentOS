@@ -138,7 +138,7 @@ describe('file-write', () => {
     );
   });
 
-  it('serializes writers of one path: the second sees the first', async () => {
+  it('serializes writers of one path: the later one sees the earlier', async () => {
     await put('f.txt', 'base');
     const locks = new PathLocks();
     const executor = createFileWriteExecutor(locks);
@@ -148,8 +148,10 @@ describe('file-write', () => {
       executor.execute({ ...input, content: 'first' }, environment),
       executor.execute({ ...input, content: 'second' }, environment),
     ]);
-    expect(outcomes.map((o) => o.outcome)).toEqual(['COMPLETED', 'REJECTED']);
-    expect(await read('f.txt')).toBe('first');
+    // Which gets there first is not fixed; that one of them loses is.
+    expect(outcomes.map((o) => o.outcome).sort()).toEqual(['COMPLETED', 'REJECTED']);
+    const winner = outcomes[0]?.outcome === 'COMPLETED' ? 'first' : 'second';
+    expect(await read('f.txt')).toBe(winner);
   });
 
   it('fails as a violation without a workspace scope', async () => {

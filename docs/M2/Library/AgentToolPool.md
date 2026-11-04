@@ -36,6 +36,9 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
 | PROMPT | `main-system` | main 的系统提示词（新写，`PLACEHOLDER`；暂不定稿，见下） |
 | PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
+| UNIT | `file-write`、`file-edit`、`output-read`（阶段 2） | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
+| TOOL | `write-file`、`edit-file`、`read-output`（阶段 2） | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
+| TOOL | `update-todos`（阶段 2） | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 

@@ -146,7 +146,7 @@ interface ReportSessionCommandRequest {
   result:
     | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string }
     | { command: 'CREATE'; outcome: 'READY' }
-    | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[] }   // 复制的日志中出现的全部产物引用
+    | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[]; fromTurnCount: number }   // 复制的日志中出现的全部产物引用；原 Session 的 Turn 数，用于 SessionOpened.fork
     | { command: 'CLOSE' | 'DELETE'; outcome: 'DONE' }
     | { command: 'OPEN' | 'CREATE' | 'FORK' | 'CLOSE' | 'DELETE'; outcome: 'FAILED'; failure: SessionCommandFailure };
 }

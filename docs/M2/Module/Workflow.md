@@ -179,7 +179,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
   - `read_file` 的 `UNIT_COMPLETED` 带 `nestedInstructions`（沿途存在的 `AGENTS.md` 路径）时，对其中本投影在本 WorkflowRun 内尚未加载的，从外层到内层逐个 `readProjectFile`，追加 `PROJECT_FILE_LOADED { path, ref, sha256, trusted, agentRunId }`；全部完成后才提交该 AgentRun 的下一次 `context-assemble`；
   - 投影中，每条加载记录成为一个 `PINNED` 条目，位置就是记录的位置（那次 `read_file` 的结果之后），user 角色，按 `trusted` 标明"用户已信任的项目指令（<路径>）"或"仓库材料（<路径>），未经用户信任"；
   - 之后的 WorkflowRun 再次触及时重新读取，SHA 与本投影最近一次加载相同时只追加记录、不产生新条目；
-  - 本投影已加载 `maxNestedInstructions`（缺省 8）份时，追加 `PROJECT_FILE_LOADED { path, skipped: 'LIMIT', agentRunId }`，投影中为一条说明；
+  - 本投影已加载 `maxNestedInstructions`（8，阶段 2 为代码中的常量）份时，追加 `PROJECT_FILE_LOADED { path, skipped: 'LIMIT', agentRunId }`，投影中为一条说明；
   - 用户批准的写入改动了某个子目录的 `AGENTS.md` 后，重新读取，在已加载过它的投影末尾追加；
   - 各 AgentRun 按自己的投影判断是否已加载，SubAgent 不继承父 AgentRun 的条目；被回退 Turn 中的加载不算已加载。
 - 外部输入（用户输入、工具结果、压缩的摘要）一律以 user 或 tool 角色出现并标明来源。

@@ -229,7 +229,13 @@ export class Console {
   async #answer(item: PendingItem, input: string): Promise<void> {
     const yes = /^(y|yes|是|好)$/iu.test(input);
     const no = /^(n|no|否|不)$/iu.test(input);
-    if (!yes && !no) return;
+    if (!yes && !no) {
+      // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
+      if (item.kind !== 'UNDO') return;
+      this.#pending.shift();
+      await this.submit(input);
+      return;
+    }
     this.#pending.shift();
     if (item.kind === 'CONTINUE') {
       if (yes && this.#sessionId !== undefined)

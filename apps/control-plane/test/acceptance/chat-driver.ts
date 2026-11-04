@@ -4,6 +4,7 @@
  * replaced. It stands where the user stands: it types lines and reads what the console shows.
  */
 import { realpath } from 'node:fs/promises';
+import type { TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
   ConsoleView,
@@ -112,6 +113,7 @@ export interface ChatOptions {
   readonly provider: ScriptedChat;
   readonly answer?: (question: string) => Answer;
   readonly now?: () => Date;
+  readonly subprocess?: TrackedSubprocessRunner;
 }
 
 export interface Chat {
@@ -167,6 +169,7 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
       credentials: { apiKeyFor: () => OFFLINE_KEY },
       log: () => undefined,
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.subprocess === undefined ? {} : { subprocess: options.subprocess }),
     });
   } finally {
     globalThis.fetch = original;

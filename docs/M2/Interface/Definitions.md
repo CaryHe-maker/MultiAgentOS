@@ -163,7 +163,7 @@ nodes:
 ```ts
 interface UnitDefinition extends Omit<M1UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'；M1UnitDefinition 见归档的 M1Interface
   executionKind: ExecutionKind;
-  // 阶段 2：capabilities 与 resourceKeys；阶段 4：concurrencyClass
+  // 能力即 protectedCapabilities（阶段 2 增加 workspace.write）；资源键由 Core 从输入的 path 提取，不写在定义中；阶段 4：concurrencyClass
 }
 
 type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH' | 'OUTPUT_READ' | 'FILE_EDIT';   // 阶段 2；M1 的 FILE_WRITE 开放；阶段 3–6 增加各新工具的类别
