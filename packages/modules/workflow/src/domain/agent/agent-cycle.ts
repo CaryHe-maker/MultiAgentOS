@@ -188,7 +188,10 @@ export type ToolInput =
     }
   | { readonly ok: false; readonly message: string };
 
-/** Kinds that change the workspace: what was read before them is no longer what is there. */
+/**
+ * Kinds that change the workspace: what was read before them is no longer what is there. A
+ * command may change it as well, but it names no path, so it only clears the "already read" memory.
+ */
 const WRITES: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
 /** Core's refusals of the call itself: never the Unit's failurePolicy, and never fatal. */
 const CORE_REFUSALS: ReadonlySet<string> = new Set([
@@ -794,7 +797,7 @@ function handleTool(
     // After a write nothing read before it may be answered with "the result is above".
     succeeded: !ok
       ? state.succeeded
-      : WRITES.has(report.executionKind)
+      : WRITES.has(report.executionKind) || report.executionKind === 'COMMAND'
         ? []
         : [...state.succeeded, pending.intent],
   };

@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: git-inspect
+version: v0.1.0
+description: Model-facing read-only git inspection, served by the git-inspect unit.
+purpose: UNIT
+modelName: git_inspect
+modelDescription: >-
+  Look at the git state of the repository without changing it. action is one of status, diff
+  (staged true for the index; path limits it), log (limit up to 50; path limits it), show (rev
+  is required, for example HEAD~1; path limits it) and blame (path is required; lines is
+  "start,end"). Files the project hides, such as .env and keys, never appear. It takes no other
+  arguments; use run_command for anything else.
+parametersContract:
+  kind: contract
+  id: executor.GitInspectInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

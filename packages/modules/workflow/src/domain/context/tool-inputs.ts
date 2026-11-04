@@ -1,10 +1,12 @@
 import {
+  COMMAND_DEFAULT_TIMEOUT_MS,
   normalizeRequestPath,
   type ArtifactRef,
   type ExecutionKind,
   type FileEditArgs,
   type FileWriteArgs,
   type OutputReadArgs,
+  type RunCommandArgs,
   type SessionLogRecord,
   type UnitInput,
 } from '@multiagentos/contracts';
@@ -84,6 +86,8 @@ function fullOutputOf(
 
 const READ_FIRST =
   'Not executed: read the file before editing it, so the edit is based on what is there.';
+const BAD_WORKDIR =
+  'Not executed: workdir must be a relative path inside the repository, without `..`.';
 const NO_SUCH_CALL = 'Not executed: there is no tool call with this id.';
 const NOT_CUT = 'Not executed: the output of that call was not cut; its result above is all of it.';
 
@@ -117,6 +121,19 @@ export function toolInputOf(
       if (baseline?.kind !== 'SHA') return { ok: false, message: READ_FIRST };
       const known = { baseSha: baseline.sha256 };
       return { ok: true, input: { ...edit, ...known }, workflowFields: known };
+    }
+    case 'COMMAND': {
+      // The model gives the command; the defaults are the system's (M2Design 8.1).
+      const run = args as RunCommandArgs;
+      const workdir = run.workdir === undefined ? '' : normalizeRequestPath(run.workdir);
+      if (workdir === undefined) return { ok: false, message: BAD_WORKDIR };
+      const input = {
+        command: run.command,
+        workdir: workdir === '.' ? '' : workdir,
+        timeoutMs: run.timeoutMs ?? COMMAND_DEFAULT_TIMEOUT_MS,
+        network: run.network ?? false,
+      };
+      return { ok: true, input, workflowFields: input };
     }
     case 'OUTPUT_READ': {
       const read = args as OutputReadArgs;

@@ -1,0 +1,26 @@
+schemaVersion: v1
+kind: UNIT
+id: git-inspect
+version: v0.1.0
+description: Read git status, diff, log, show and blame with fixed arguments only.
+executionKind: GIT_INSPECT
+protectedCapabilities:
+  - repo.read
+inputContract:
+  kind: contract
+  id: executor.GitInspectInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.GitInspectOutput
+  version: v1
+toolRefs:
+  - id: git-inspect
+    version: v0.1.0
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  NOT_A_GIT_REPOSITORY: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

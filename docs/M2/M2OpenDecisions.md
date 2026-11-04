@@ -132,5 +132,5 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 | S3-KC-1 | 完成 | `decideUnit` 的命令判定（名单、能力上限、沙盒可用性、条目覆盖每个子命令、极危险级逐次询问）；命令询问（合并、四个选项、不可复用原因）；`ONCE`/`COMMAND`/`PREFIX` 条目；签发 `SandboxScope` 与 `approvalDigest`；`ask-unisolated` 的未隔离运行；启动探测 `probeSandbox` | 探测结果写入 `SESSION_STARTED` 与审计 |
 | S3-KC-2、S3-KC-3 | 大部分 | `STOP_UNCONFIRMED` 关闭运行后经 `onFatal` 请求停机；Monitor 内存采样器（只发 `MemoryPressure`，架构测试保证）；WARNING 拒绝新 AgentRun 并以 `QUOTA_EXHAUSTED(MEMORY)` 拒绝工具；DANGER 发 `RunInterrupted`、取消并以 `INTERRUPTED` 关闭运行，界面以退出码 75 退出 | 没有运行时的 DANGER 退出（`onMemoryExit` 尚未接到组合根）；`cancelExecution` 与 INTERRUPTING 状态（阶段 5 的暂停与中止共用） |
 | S3-WF-1 | 部分 | `RunInterrupted` 记入日志并在下一次打开时以说明出现在投影中；`QUOTA_EXHAUSTED(MEMORY)` 进入 `MEMORY_LIMIT` 收尾 | 中断时不经模型的确定性回复（现在直接以 `INTERRUPTED` 关闭运行，没有 `DEGRADED_REPLY`） |
-| S3-PL-1 | 未开始 | — | `run_command`、`git_inspect` 的 Unit 与 Tool 定义，main 增加这两个工具 |
+| S3-PL-1 | 完成 | Unit `run-command`、`git-inspect` 与 Tool `run_command`、`git_inspect`（v0.1.0 草稿）；main 增加两个工具与 `command.exec`、`command.network`，提示词增加运行命令与验证的准则；Workflow 填写工作目录、超时、联网的缺省值，命令之后不再把先前的读取当作重复调用 | — |
 | S3-IN-1 | 未开始 | — | 组合根接线、`stage3-exit.test.ts`（C1–C5、H6–H7、内存压力的假采样与真实压力） |
