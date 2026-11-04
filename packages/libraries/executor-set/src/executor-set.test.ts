@@ -166,7 +166,7 @@ describe('context-assemble', () => {
   });
 
   it('warns a few rounds before the round limit and asks for a handover in the last one', async () => {
-    const statusOf = async (over: Partial<typeof status> & { wrapUpReason?: 'ROUND_LIMIT' }) => {
+    const statusOf = async (over: { round: number; maxRounds: number }) => {
       const pack = await packOf(assembleInput({ status: { ...status, ...over } }));
       return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
     };
