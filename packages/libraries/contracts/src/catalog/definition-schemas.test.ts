@@ -10,7 +10,6 @@ import {
   DEFINITION_DRAFT_SCHEMAS,
   DEFINITION_KINDS,
   DEFINITION_SCHEMAS,
-  DefinitionSchema,
   ModelDefinitionSchema,
   PromptDefinitionSchema,
   ToolDefinitionSchema,
@@ -19,8 +18,8 @@ import {
 } from './definition-schemas.js';
 
 const digest = 'a'.repeat(64);
-const contract = (id: string) => ({ kind: 'contract', id, version: 'v0' }) as const;
-const common = { schemaVersion: 'v0', version: 'v1.0.0', digest, description: 'fixture' } as const;
+const contract = (id: string) => ({ kind: 'contract', id, version: 'v1' }) as const;
+const common = { schemaVersion: 'v1', version: 'v1.0.0', digest, description: 'fixture' } as const;
 
 const fixtures = {
   AGENT: {
@@ -29,12 +28,27 @@ const fixtures = {
     id: 'fixture-agent',
     role: 'analyst',
     modelRef: { id: 'fixture-model', version: 'v1.0.0' },
-    modelSettings: { thinking: 'DISABLED' },
+    thinking: { defaultEffort: 'none', allowedEfforts: ['none'] },
     promptRef: { id: 'fixture-prompt', version: 'v1.0.0' },
     unitRefs: [{ id: 'fixture-unit', version: 'v1.0.0' }],
     startUnitRefs: [],
-    actions: { finish: { toolRef: { id: 'fixture-finish', version: 'v1.0.0' } } },
-    limits: { maxRounds: 3, maxToolCallsPerRound: 1 },
+    actions: {
+      end: [
+        {
+          toolRef: { id: 'fixture-finish', version: 'v1.0.0' },
+          then: 'PUBLISH_REPLY',
+          allowedInFinal: true,
+        },
+      ],
+      onDegraded: 'PUBLISH_NOTICE',
+    },
+    limits: { maxRounds: 3, maxToolCallsPerRound: 1, maxToolUnits: 10 },
+    budget: {
+      perCallInputLimit: 1_000,
+      maxOutputTokens: 100,
+      finalInputBudget: 1_000,
+      finalMaxOutputTokens: 100,
+    },
   },
   UNIT: {
     ...common,
@@ -76,7 +90,13 @@ const fixtures = {
       hasJsonOutput: true,
       hasToolCalls: true,
       hasVision: false,
-      thinking: { isSupported: false, isEnabledByDefault: false, effortLevels: [] },
+      thinking: {
+        isSupported: false,
+        effortMapping: [],
+        replayReasoning: 'UNSUPPORTED',
+        missingReasoningFill: 'OMIT',
+        reasoningCountsAsOutput: false,
+      },
     },
     pricing: {
       currency: 'USD',
@@ -100,6 +120,13 @@ const fixtures = {
     variables: [{ name: 'question', description: 'user question' }],
     contentStatus: 'PLACEHOLDER',
   },
+  TEMPLATE: {
+    ...common,
+    kind: 'TEMPLATE',
+    id: 'fixture-template',
+    origin: 'BUILTIN',
+    nodes: [{ name: 'answer', kind: 'AGENT', agent: { id: 'fixture-agent', version: 'v1.0.0' } }],
+  },
 } as const;
 
 describe('catalog definition schemas', () => {
@@ -108,7 +135,6 @@ describe('catalog definition schemas', () => {
       ok: true,
       value: fixtures[kind],
     });
-    expect(validate(DefinitionSchema, fixtures[kind]).ok).toBe(true);
   });
 
   it.each(DEFINITION_KINDS)('accepts a %s draft only without digest', (kind) => {
@@ -124,7 +150,7 @@ describe('catalog definition schemas', () => {
   });
 
   it('rejects a definition whose kind does not match its body', () => {
-    expect(validate(DefinitionSchema, { ...fixtures.TOOL, kind: 'MODEL' }).ok).toBe(false);
+    expect(validate(ToolDefinitionSchema, { ...fixtures.TOOL, kind: 'MODEL' }).ok).toBe(false);
   });
 
   it.each([
@@ -176,7 +202,7 @@ describe('catalog definition schemas', () => {
     expect(validate(UnitDefinitionSchema, { ...fixtures.UNIT, toolRefs: [] }).ok).toBe(true);
   });
 
-  it('only allows system prompts in M1', () => {
+  it('only allows system prompts', () => {
     expect(validate(PromptDefinitionSchema, { ...fixtures.PROMPT, role: 'user' }).ok).toBe(false);
   });
 
@@ -196,20 +222,20 @@ describe('catalog lookup and pinning schemas', () => {
   });
 
   it('accepts a pinned set that survives a JSON round trip', () => {
-    const ref = (kind: keyof typeof fixtures) => ({
+    const ref = (kind: 'AGENT' | 'MODEL' | 'PROMPT' | 'UNIT' | 'TOOL') => ({
       kind,
       id: fixtures[kind].id,
       version: 'v1.0.0',
       digest,
     });
     const pinned = {
-      schemaVersion: 'v0',
+      schemaVersion: 'v1',
       agent: fixtures.AGENT,
       model: fixtures.MODEL,
       prompt: fixtures.PROMPT,
       units: [fixtures.UNIT],
       tools: [fixtures.TOOL],
-      refs: DEFINITION_KINDS.map(ref),
+      refs: (['AGENT', 'MODEL', 'PROMPT', 'UNIT', 'TOOL'] as const).map(ref),
     };
     const roundTripped: unknown = JSON.parse(JSON.stringify(pinned));
     expect(validate(PinnedDefinitionSetSchema, roundTripped)).toEqual({ ok: true, value: pinned });

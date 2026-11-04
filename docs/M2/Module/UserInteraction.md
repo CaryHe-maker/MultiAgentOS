@@ -26,7 +26,7 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 ## 3. 职责
 
 - 进入 Kernel 的唯一途径是 `InteractionGatewayPort`；实现运行级、Session 级与系统级三种事件的 Inbox，按各自的序列逐条处理。
-- 终端的全部要求由 `TerminalPort` 表达；`apps/cli` 以 Ink 实现展示，UserInteraction 不依赖 Ink。
+- 终端的全部要求由 `ConsoleView` 表达（记录区的 `print`、活动区与输入区的 `update`、放回输入框的 `restoreInput`）；`apps/cli` 以 Ink 实现展示，UserInteraction 不依赖 Ink。
 - 分配 `requestId` 与 `inputId`；保存的只有界面偏好、草稿、排队的消息与输入历史（↑/↓），都只在内存中，退出即丢弃。
 - 不直接访问 ArtifactStore、Persistence 或 Workflow；正文经 `readArtifact` 读取。
 
@@ -64,9 +64,9 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 - 授权询问与人类请求按到达顺序排成一个队列，一次只处理一项；两类以不同样式显示，每项标明来自哪个 Agent（阶段 4 起还有任务名）。
 - 授权询问的展示：
-  - `repo.read`：仓库路径、排除规则、"读取的内容会发送至 <provider>"、回答期限（M1 原样）；
+  - `repo.read`：仓库路径、排除规则、"读取的内容会发送至 <provider>"；询问不超时，不显示回答期限；
   - `project.instructions`：`AGENTS.md` 的全文（经 `readArtifact` 读取；`truncated` 时注明只展示开头）、"信任这份内容"与"不信任"两个选项。
-- 回答只是原始响应：授权以 `AuthorizationResolved` 为准，人类请求以 `HumanResolved` 为准；拒绝或超时不视为同意。
+- 回答只是原始响应：授权以 `AuthorizationResolved` 为准，人类请求以 `HumanResolved` 为准；没有回答不视为同意。
 - 询问的读取任务不阻塞 Inbox 的处理（M1 第 4 节的规则）。
 
 ### 5.2 排队的消息
@@ -85,9 +85,10 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | 普通消息 | RUNNING | 进入排队（第 5.2 节） |
 | `/new` | 任意 | 进入新对话的草稿；提交第一条提示词时才创建 Session |
 | `/sessions` | 任意 | `listSessions`，展示 `SessionList` |
-| `/resume <id>` | 任意 | `openSession` |
-| `/delete <id>` | 任意 | `deleteSession`；只能删除未打开的 Session，结果以 `SessionDeleted` 展示 |
+| `/resume <编号或 id>` | 任意 | `openSession`；编号来自最近一次展示的 `SessionList` |
+| `/delete <编号或 id>` | 任意 | `deleteSession`；只能删除未打开的 Session，结果以 `SessionDeleted` 展示 |
 | `/status` | 任意 | 当前运行状态与额度状态（来自最近的事件） |
+| `/output <编号>` | 任意 | 经 `readArtifact` 展示第几个被截断的工具结果的完整输出（第 6 节） |
 | `/help`、`/exit` | 任意 | 帮助；`shutdown` |
 | Enter、`\` 加 Enter、Esc、↑/↓ | 任意 | 发送、换行、清空输入、浏览输入历史 |
 | Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
@@ -105,7 +106,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 - 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`重试中（第 n 次，x 秒后）`（按 `retry.retryAt` 每秒倒计时）、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`；阶段 8 增加 `压缩上下文`。
 - 阶段 2 起，ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
-- 工具结果被截断时，折叠行注明"输出已截断"；展开时经 `readArtifact` 读取完整输出（`fullRef`），已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
+- 工具结果被截断时（`ActivityEvent.unit` 在 `DONE` 时带 `fullRef`），折叠行注明"输出已截断"及编号；`/output <编号>` 经 `readArtifact` 读取完整输出，已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
 - 阶段 8：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
 - 思考内容与回复都不流式显示。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
 - 展示文本中的控制字符按 M1 的规则转义。

@@ -1,4 +1,4 @@
-# The quality gate of docs/Style.md 6.3 and the compatibility matrix of M1TechStack 11, on the
+# The quality gate of docs/Style.md 6.3 and the compatibility matrix, on the
 # acceptance platform (Ubuntu 24.04 LTS). It needs no secrets, calls no model and uses no
 # network beyond installing dependencies.
 name: quality-gate
@@ -34,7 +34,6 @@ jobs:
       - run: pnpm run build
       - run: pnpm run check
       - run: git diff --check
-      - run: pnpm run demo:fake
 
   # The other cells of the matrix run the whole offline chain under one changed condition each.
   compatibility:
@@ -73,4 +72,3 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - run: pnpm run test
-      - run: pnpm run demo:fake

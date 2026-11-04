@@ -57,15 +57,16 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 
 ### 5.1 `repo.read`
 
-与 M1 Core 第 4 节相同：运行开启后第一次需要时询问一次，同意后本运行内的 AgentRun 都可使用；拒绝在本运行内保留。
-询问超时只拒绝本次，不形成持久的拒绝（M2Design 第 5.3 节）——这是相对 M1 的变化。
+第一个需要它的 Unit 询问一次，同意后本运行内的 AgentRun 都可使用；拒绝绑定提出请求的 AgentRun，它之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问，下一个 AgentRun 可以重新询问（M2Design 第 5.3 节）。
+询问不超时，一直等到用户回答；只在运行收敛时取消（M2Design 第 5.3 节）——这是相对 M1 的变化，M1 的询问计时器与 `authorizationTimeoutMs` 删除。
+拒绝作为被拒 Unit 的结果交给 Workflow，不改变运行控制状态与 Turn。
 
 ### 5.2 `project.instructions`
 
 `readProjectFile('AGENTS.md')` 的处理（M2Design 第 9.5 节）：
 
 ```text
-本运行没有 repo.read 的授权 → 先按第 5.1 节询问；拒绝时返回 USER_DECLINED
+本运行没有 repo.read 的授权 → 先按第 5.1 节询问；拒绝时返回 USER_DECLINED（模板文件同样要经过这一步）
 Execution 读取文件（readProjectFile），不存在时返回 exists: false
 存在 → 计算 SHA；信任记录中有 (repositoryRoot, path, sha) → 返回 trusted: true
        没有 → 预设为 readonly 时直接返回 trusted: false
@@ -73,7 +74,7 @@ Execution 读取文件（readProjectFile），不存在时返回 exists: false
              否则发起 AuthorizationRequest(project.instructions)，挂起本请求
                  ALLOW  → 追加信任记录（source: USER_CONFIRMED），返回 trusted: true
                  DENY  → 在本运行的内存中记住 (path, sha)，返回 trusted: false
-                 超时、取消 → 返回 trusted: false
+                 运行收敛时取消 → 本请求以 RUN_BLOCKED 结束
 ```
 
 `path` 为 `'AGENTS.md'`，阶段 2 起也可以是子目录的 `AGENTS.md`（M2Design 第 9.5 节）；规则相同，询问展示路径与全文。
@@ -136,7 +137,6 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 配置 | 读取者 | 缺省 |
 |---|---|---|
 | `KernelConfig.repositoryRoot` | Core | 组合根写入 |
-| `KernelConfig.authorizationTimeoutMs` | Core | 300000 |
 | `KernelConfig.provider`、`repositoryExclusions`、`convergenceMarginMs` | Core | 与 M1 相同 |
 | `KernelConfig.preset` | Core | `standard`；`readonly` 由 CLI 参数设置（M2Design 第 5.2 节） |
 | `KernelConfig.compaction` | Core | `triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、`summaryReasoningEffort` `low`（摘要请求的思考强度，启动时按所用模型的 `effortMapping` 校验，不合法时拒绝启动）（阶段 8） |
@@ -146,10 +146,10 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
 | 2（阶段 1 部分）：Lease 只在 Core 内存中；授权只由人类签发 | 架构测试：Lease 类型不导出；单元测试：信任记录不产生任何执行权限 |
-| 11：授权与检查出错时一律拒绝；超时不视为同意 | 单元测试：询问超时得到拒绝，且不在本运行内保留 |
+| 11：授权与检查出错时一律拒绝；询问一直等到用户回答 | 单元测试：询问没有计时器，待答复期间 Unit 保持挂起；收敛时询问以 `CANCELLED` 结束；拒绝后同一 AgentRun 不再询问，下一个 AgentRun 可以询问 |
 | 13：HUMAN 节点的答复不产生授权 | 单元测试：`answerHuman` 不改变任何授权记录 |
 | 18：Turn 由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
-| 20：只有用户信任过的确切内容的 `AGENTS.md` 进入 system 段 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
+| 20：只有用户信任过的确切内容的 `AGENTS.md` 标明为项目指令 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
 | 28：修剪与摘要只在确认后生效，不动用 F（阶段 8） | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时只修剪、不写摘要；压缩期间该对象没有模型调用；空闲压缩进行中收到 `undoTurns` 时先取消且不写回；SubAgent 额度不足时进入收尾（阶段 4 完成后） |
 
 ## 10. 阶段
@@ -161,6 +161,6 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 3 | 命令的级别、资源键与询问选项、SandboxProfile、`approvalDigest`、`STOP_UNCONFIRMED` 停机 |
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 2 | `updateActivity` 的转发 |
-| 5 | PAUSING、PAUSED、INTERRUPTING，授权询问计时的冻结，Turn 超时（全部工作都在等用户时暂停计时，M2Design 第 7.4 节），人类请求的取消（询问不超时），运行中插话 `steerRun` |
+| 5 | PAUSING、PAUSED、INTERRUPTING，Turn 超时（全部工作都在等用户时暂停计时，M2Design 第 7.4 节），人类请求的取消，运行中插话 `steerRun` |
 | 6 | `web.search`、`web.fetch` |
 | 8 | 第 6a 节：压缩过程（检查点、空闲触发、修剪、摘要请求的回退）；压缩的审计与配置 |

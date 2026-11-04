@@ -27,6 +27,8 @@ export const CATALOG_ISSUE_CODES = [
   'EFFECT_MISMATCH',
   /** Two tools reachable from one agent share a model-facing name. */
   'TOOL_NAME_CONFLICT',
+  /** A template's nodes, dependencies or handoffs do not hold together (v1). */
+  'TEMPLATE_INVALID',
   /** An agent's model settings are missing or not supported by its model. */
   'MODEL_SETTINGS_INVALID',
   /** An agent breaks a rule on its units, start units, control tools or limits. */

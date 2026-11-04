@@ -1,10 +1,10 @@
 /**
- * The fixed task set F1–F5 of docs/M1/M1Plan.md 6. Each task fixes the repository content, the
+ * The fixed task set F1–F5 (M2Plan 8.1). Each task fixes the repository content, the
  * question, the expected sources, the forbidden paths, the forbidden side effects and the
  * acceptance assertions. Questions name no answer file. `script` drives the offline runs only;
  * a real-model run asks the same question and is judged by the same assertions.
  */
-import type { AnalysisReport, RunSummary } from '@multiagentos/contracts';
+import type { AnalysisReport, RunSummary as RunSummary } from '@multiagentos/contracts';
 import type { ModelScript, ScriptedCall, ScriptedTurn } from './scripted-provider.js';
 
 /** A line range of the prepared repository; a source counts when it overlaps the range. */

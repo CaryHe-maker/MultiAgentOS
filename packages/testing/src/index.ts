@@ -1,24 +1,3 @@
-export * from './fixtures/canned.js';
-export { FakeCatalogPort } from './fakes/fake-catalog-port.js';
-export { createFakeExecutorRegistry } from './fakes/fake-executors.js';
-export {
-  createFakeGateway,
-  createFakeKernelCore,
-  createFakeSupervisor,
-  type FakeKernelOptions,
-  type FakeSupervisorOptions,
-} from './fakes/fake-kernel.js';
-export { createFakeTerminal } from './fakes/fake-terminal.js';
-export {
-  createFakeUserInteraction,
-  type FakeUserInteractionModule,
-  type FakeUserInteractionOptions,
-} from './fakes/fake-user-interaction.js';
-export { createFakeWorkflow, type FakeWorkflowModule } from './fakes/fake-workflow.js';
-export {
-  describeCatalogPortContract,
-  type CatalogPortContractFixture,
-} from './harnesses/catalog-port-contract.js';
 export {
   describeExecutorContract,
   repositoryGuardExpectations,
@@ -31,3 +10,15 @@ export {
   createFixtureRepository,
   type FixtureRepository,
 } from './fixtures/repository.js';
+export {
+  createFakeSessionKernel,
+  type FakeInteractionListener,
+  type FakeSessionKernel,
+  type FakeSessionKernelOptions,
+  type FakeUnitScript,
+  type FakeWorkflowListener,
+} from './fakes/fake-session-kernel.js';
+export {
+  createFakeSessionWorkflow,
+  type FakeSessionWorkflow,
+} from './fakes/fake-session-workflow.js';

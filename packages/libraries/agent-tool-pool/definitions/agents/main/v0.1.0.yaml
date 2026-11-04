@@ -1,0 +1,50 @@
+schemaVersion: v1
+kind: AGENT
+id: main
+version: v0.1.0
+description: 'The agent of a Turn-chat: reads, lists and searches the repository and replies.'
+role: coding assistant
+modelRef:
+  id: deepseek-flash
+  version: v0.1.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - none
+    - low
+    - high
+    - max
+promptRef:
+  id: main-system
+  version: v0.1.0
+unitRefs:
+  - id: repository-list
+    version: v0.1.0
+  - id: repository-search
+    version: v0.1.0
+  - id: file-read
+    version: v0.1.0
+  - id: context-assemble
+    version: v0.1.0
+  - id: model-call
+    version: v0.1.0
+  - id: message-publish
+    version: v0.1.0
+startUnitRefs: []
+actions:
+  end:
+    - toolRef:
+        id: reply
+        version: v0.1.0
+      then: PUBLISH_REPLY
+      allowedInFinal: true
+  onDegraded: PUBLISH_NOTICE
+limits:
+  maxRounds: 40
+  maxToolCallsPerRound: 8
+  maxToolUnits: 200
+budget:
+  perCallInputLimit: 96000
+  maxOutputTokens: 8192
+  finalInputBudget: 72000
+  finalMaxOutputTokens: 8192

@@ -21,9 +21,10 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | — | 控制工具 `update_todos`：校验、`TODOS_UPDATED`、经 `updateActivity` 交出进度 | M2Design 第 3.5 节 | 2（worker 为 4） |
 | `steer` 只在暂停后附加 | 运行中的 `steer`（`HumanAnswered(kind: steer)`），目标已结束时改投 | M2Design 第 4.5 节 | 5 |
 | — | 应 Kernel 的查询交出压缩材料（模型轮带实测用量与 `headDigest`），把修剪与压缩结果记入日志，投影以修剪后的结果与摘要取代原来的内容 | M2Design 第 9.6 节 | 8 |
-| 只读根目录的 `AGENTS.md` | `read_file` 触及的子目录 `AGENTS.md` 按投影加载，追加在末尾 | M2Design 第 9.5 节 | 2 |
+| 运行开始时读根目录的 `AGENTS.md`，放在 system 段 | 第一次需要读仓库时才读，作为历史条目追加在末尾 | M2Design 第 9.5 节 | 1 |
+| — | `read_file` 触及的子目录 `AGENTS.md` 按投影加载，追加在末尾 | M2Design 第 9.5 节 | 2 |
 | 不处理 Session | 执行 Kernel 下达的 Session 命令：新建、打开（修复日志）、关闭、删除；维护 Session 列表 | M2Design 第 2.3、10.3 节 | 1 |
-| 每个运行至多一次 final-call | 每个 AgentRun 至多一次（`analyze` 仍按运行，见 Monitor 第 3.4 节） | M2Design 第 7.3 节 | 1 |
+| 每个运行至多一次 final-call | 每个 AgentRun 至多一次 | M2Design 第 7.3 节 | 1 |
 | `budgetState` 一个值 | `BudgetView`：AgentRun、Turn、运行三级；额度触顶时进入最后一轮，必有报告 | M2Design 第 7.3 节 | 1 |
 | 无业务熔断 | 重复意图、连续出错由 Workflow 判断 | M2Design 第 3.4 节 | 1 |
 | 运行超时由 Kernel 收敛 | Turn 超时按中止处理，结束由 Workflow 以 `closeRun(TIMEOUT)` 报告 | M2Design 第 2.3 节 | 5 |
@@ -68,7 +69,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 
 M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"；Workflow 不读取 Kernel 的审计，
 "上一个进程故障停机"的区分在阶段 3 由 Kernel 随 `OPEN` 命令告知），
-对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`，对未结束的运行追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`，最后追加一条 `STALE_UNITS_SETTLED`。
+没有得到回答的工具调用追加 `FEEDBACK`，未结束的 AgentRun 与节点以 `INTERRUPTED` 结束，不恢复；对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`，对未结束的运行追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`，最后追加一条 `STALE_UNITS_SETTLED`。
 遗留的 Unit 不重新提交；被打断的节点记为 INTERRUPTED。
 
 ### 5.3 Session 列表
@@ -116,13 +117,17 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 沿用 M1 Workflow 第 5–8 节，变化如下：
 
 1. **登记**：AGENT 节点就绪时 `registerAgentRun`（带 `nodeId`、`effort`、`display.label`）；`effort` 取 Agent 定义的 `defaultEffort`。
-2. **启动 Unit**：main 的 `repository-orient` 只在每个 WorkflowRun 的第一个 Turn 提交；之后的 Turn 沿用该次概览的引用，并在上下文中标出它对应的快照（M2Design 第 3.9 节）。
+2. **启动 Unit**：main 没有启动 Unit，运行开启时不碰仓库；`analyze` 的 code-viewer 提交 `repository-orient`（M2Design 第 3.9 节）。
+   **项目指令**：本运行第一个读取仓库的工具成功后，在下一次组装之前以 `readProjectFile` 读取 `AGENTS.md`，追加 `PROJECT_FILE_LOADED`；条目排在这一轮的工具结果之后，工具结果与它的调用不被隔开。
 3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；`finish` 与 `handoff-to-code-viewer` 只在 `analyze` 中出现；`update_todos` 见第 9 条（阶段 2）。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；
    为 EXHAUSTED 时不再发起模型调用，按 M1 的规则结束该 AgentRun（main 为降级回复，见第 9.1 节）。
-   `QUOTA_EXHAUSTED`（工具次数、墙钟）同样进入收尾，`wrapUpReason` 为对应的触顶项。
+   `QUOTA_EXHAUSTED` 同样进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT`。这是固定规则，不经过 Unit 的 `failurePolicy`；
+   额度与上限只限制工具 Unit，收尾所需的 `context-assemble`、`model-call` 与发布 Unit 不受影响。
 5. **业务熔断**（M2Design 第 3.4 节）：重复意图在第 3 次时于工具结果中附加警告、第 5 次时不再提交并进入收尾（`REPEATED_INTENT`）；
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
+   授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果为 `the user rejected tool "<工具名>"`；它不结束 Turn，也不结束 AgentRun，不计入连续出错（M2Design 第 5.3 节）。
+   被拒绝的工具在该 AgentRun 之后的轮次不再提交，以 `FEEDBACK(TOOL_REJECTED)` 和同样的文字回答。这也是固定规则，不经过 Unit 的 `failurePolicy`。
 6. **final-call**：每个 AgentRun 至多一次；收尾调用的模型参数（`tool_choice`、思考设置、失败后的重试）由 `context-assemble` 与 `model-call` 按 M2Design 第 9.4 节处理，Workflow 只设置 `final`。
 7. M1 的 `DUPLICATE_CALL` 检查保留；它与重复意图不同：前者拒绝同一 AgentRun 内已成功执行过的相同调用，后者计数最近 20 个 UnitIntent。
    M1 中"先前结果已被裁剪时不算重复"的例外改为：先前结果已被压缩的摘要取代（阶段 8），或在本次收尾调用的保险中被去掉时，不算重复。
@@ -141,6 +146,8 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    - 随后调用 `updateActivity({ agentRunId, todos: { total, done, current? } })`（`current` 为进行中一项的前 80 个字符），只用于界面；
    - 可以与普通工具、结束控制工具在同一次返回中出现（`CONTROL_MIXED` 的例外），先于其他调用处理；只调用它的一轮计入无进展检测，不计入重复意图。
 
+**结束**：AgentRun 状态机对所有 Agent 相同，只有三种结局：调用了定义中声明的结束工具（`ENDED`）、没能合法结束（`DEGRADED`）、致命失败（`FAILED`）。它不知道结束工具的含义。结束后做什么由 Agent 定义的 `actions.end[].then` 与 `actions.onDegraded` 决定，运行器按这一张表执行，不按 Agent 分支。发布类动作提交最后一个 Unit，它的 UnitReport 之后 AgentRun 才结束；模板运行在图没有可启动的节点时结束，`chat` 由生长规则继续。
+
 ## 8. 上下文
 
 ### 8.1 投影
@@ -154,10 +161,9 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 ### 8.2 组成与项目指令
 
-- system 段：人设与职责、可用工具说明、项目指令（`AGENTS.md`，仅当 `trusted`）（M2Design 第 9.2 节）；在一个 AgentRun 内不变，不放任何会变化的内容。
+- system 段：人设与职责、可用工具说明（M2Design 第 9.2 节）；在一个 AgentRun 内不变，不放任何会变化的内容。
 - 运行时上下文（工作目录、沙盒状态、当前日期）是历史条目：每个 WorkflowRun 开始时，以及它变化时（例如日期变化），追加 `REQUEST_CONTEXT`，投影在该位置加入一条说明。
-- 用户批准修改 `AGENTS.md` 后重新读取的内容，从下一个 AgentRun 起进入 system 段；当前 AgentRun 在历史末尾追加一条说明。
-- `trusted = false` 的 `AGENTS.md` 以 user 角色、标明"仓库材料，未经用户信任"放在 history 的开头。
+- `AGENTS.md` 以 `PINNED` 条目追加在历史末尾（第 7 节第 2 条）：`trusted` 时标明"用户已信任的项目指令"，否则标明"仓库材料，未经用户信任"；内容相同时不重复，用户批准修改后重新读取的内容再追加一条。
 - **子目录的 `AGENTS.md`**（阶段 2，M2Design 第 9.5 节）：
   - `read_file` 的 `UNIT_COMPLETED` 带 `nestedInstructions`（沿途存在的 `AGENTS.md` 路径）时，对其中本投影在本 WorkflowRun 内尚未加载的，从外层到内层逐个 `readProjectFile`，追加 `PROJECT_FILE_LOADED { path, ref, sha256, trusted, agentRunId }`；全部完成后才提交该 AgentRun 的下一次 `context-assemble`；
   - 投影中，每条加载记录成为一个 `PINNED` 条目，位置就是记录的位置（那次 `read_file` 的结果之后），user 角色，按 `trusted` 标明"用户已信任的项目指令（<路径>）"或"仓库材料（<路径>），未经用户信任"；
@@ -253,7 +259,7 @@ reply(text) 合法 → 追加 MODEL_TURN
 | 13：每次用户输入都对应一个 HUMAN 节点 | 单元测试：初始提示、后续消息都形成 HUMAN 节点 |
 | 15：日志中只有引用，没有正文 | 单元测试：扫描日志记录，不出现用户输入、回复与工具参数的正文 |
 | 6：每个 AgentRun 都能完成收尾 | 场景测试：额度触顶、工具次数触顶、连续出错都进入 final-call，final-call 失败时得到降级回复 |
-| 阶段 1 的回归 | `analyze` 在 M1 额度档案下运行 F1–F5（M2Plan 第 8.1 节） |
+| 阶段 1 的回归 | `analyze` 运行 F1–F5，成功率与来源完整性不低于 M1 基线（M2Plan 第 8.1 节） |
 
 ## 13. 阶段
 

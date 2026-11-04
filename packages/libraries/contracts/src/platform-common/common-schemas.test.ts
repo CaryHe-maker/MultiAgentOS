@@ -42,7 +42,7 @@ describe('platform.common schemas', () => {
 
   it('builds a structured unsupported error', () => {
     expect(
-      unsupported('checkpoint.create', 'checkpoint.SessionCheckpointRef.v0', 'cor_123456'),
+      unsupported('checkpoint.create', 'checkpoint.SessionCheckpointRef.v1', 'cor_123456'),
     ).toMatchObject({
       code: 'UNSUPPORTED_CAPABILITY',
       retryable: false,

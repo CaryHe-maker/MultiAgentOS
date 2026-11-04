@@ -1,123 +1,163 @@
 import { describe, expect, it } from 'vitest';
 import { ArtifactRefSchema } from './platform-common/common-schemas.js';
 import { validate } from './platform-common/validation.js';
-import { ProtocolRegistry, createM1ProtocolRegistry, parseSchemaId } from './protocol-registry.js';
+import { ProtocolRegistry, createProtocolRegistry, parseSchemaId } from './protocol-registry.js';
 
-/** Schema IDs of docs/M1/Library/SharedContracts.md section 3, without the `.v0` suffix. */
+/** Schema IDs of Library/SharedContracts 3, without the `.v1` suffix. */
 const EXPECTED = {
   'platform.common': [
-    'BoundaryContext',
-    'Envelope',
     'ArtifactRef',
-    'ErrorCategory',
-    'ModuleError',
+    'BoundaryContext',
     'CapabilityDescriptor',
-    'ReasonCode',
+    'Envelope',
+    'ErrorCategory',
     'ExecutionKind',
+    'ModuleError',
+    'ReasonCode',
     'VersionedRef',
   ],
-  'platform.config': ['KernelConfig', 'WorkflowConfig', 'SystemConfig'],
+  'kernel.unit': [
+    'BudgetState',
+    'BudgetView',
+    'CloseRunRequest',
+    'EndAgentRunRequest',
+    'HumanAnswered',
+    'MessagePublishInput',
+    'MessagePublishOutput',
+    'ProjectFileContent',
+    'ReadProjectFileRequest',
+    'RegisterAgentRunRequest',
+    'ReportPublishInput',
+    'ReportPublishOutput',
+    'ReportSessionCommandRequest',
+    'ReportSessionListRequest',
+    'RequestHumanRequest',
+    'RunClosed',
+    'RunStart',
+    'SubmitUnitRequest',
+    'TurnClosed',
+    'TurnUsage',
+    'UnitInput',
+    'UnitOutput',
+    'UnitReport',
+    'WorkflowInboxEvent',
+  ],
   executor: [
-    'ModelToolCall',
     'FileReadInput',
     'FileReadOutput',
-    'TokenUsage',
     'ModelCallInput',
     'ModelCallOutput',
     'ModelRawOutput',
+    'ModelToolCall',
+    'RepositoryListInput',
+    'RepositoryListOutput',
+    'RetentionNotice',
+    'TokenUsage',
   ],
   context: [
-    'ModelToolSpec',
+    'ContextAssembleInput',
+    'ContextAssembleOutput',
+    'ContextHistoryEntry',
     'ContextPack',
+    'ModelToolSpec',
     'RepositoryOrientInput',
     'RepositoryOrientOutput',
     'RepositorySearchInput',
     'RepositorySearchOutput',
-    'ContextAssembleInput',
-    'ContextAssembleOutput',
   ],
-  workflow: ['StepRecord', 'StatusFacts', 'HandoffBrief', 'AnalysisReportDraft', 'AnalysisReport'],
+  workflow: ['AnalysisReport', 'AnalysisReportDraft', 'HandoffBrief', 'ReplyArgs'],
   catalog: [
-    'DefinitionKind',
-    'DefinitionRef',
-    'PinnedDefinitionRef',
-    'ContractRef',
     'AgentDefinition',
-    'UnitDefinition',
-    'ToolDefinition',
-    'ModelDefinition',
-    'PromptDefinition',
-    'Definition',
-    'DefinitionStatus',
-    'DefinitionLookup',
     'AgentPinRequest',
-    'PinnedDefinitionSet',
+    'ContractRef',
+    'DefinitionKind',
+    'DefinitionLookup',
+    'DefinitionRef',
+    'DefinitionStatus',
     'DefinitionStatusFile',
+    'ModelDefinition',
+    'PinnedDefinitionRef',
+    'PinnedDefinitionSet',
+    'PromptDefinition',
+    'TemplateDefinition',
+    'ToolDefinition',
+    'UnitDefinition',
   ],
   'kernel.control': [
-    'CloseReason',
-    'RunFailure',
-    'UnknownEffect',
-    'SyscallAck',
-    'SyscallRejected',
-    'RunCreated',
-    'ArtifactContent',
-    'CreateRunRequest',
+    'ActivityEvent',
+    'AdmissionProjection',
     'AnswerAuthorizationRequest',
-    'CancelRunRequest',
-    'ReadArtifactRequest',
-    'ShutdownRequest',
+    'AnswerHumanRequest',
+    'ArtifactContent',
     'AuthorizationRequest',
     'AuthorizationResolved',
-    'RunFinished',
-    'InteractionInboxEvent',
-    'RunSummary',
+    'CloseReason',
+    'DeleteSessionRequest',
     'GatewayForward',
-    'AdmissionProjection',
-  ],
-  'kernel.unit': [
-    'BudgetState',
-    'ReportPublishInput',
-    'ReportPublishOutput',
-    'UnitInput',
-    'UnitOutput',
-    'RegisterAgentRunRequest',
-    'SubmitUnitRequest',
-    'EndAgentRunRequest',
-    'CloseRunRequest',
-    'RunStart',
-    'UnitReport',
-    'RunClosed',
-    'WorkflowInboxEvent',
+    'HumanRequest',
+    'HumanResolved',
+    'InteractionInboxEvent',
+    'ListSessionsRequest',
+    'MessagePublished',
+    'OpenSessionRequest',
+    'ReadArtifactRequest',
+    'RunFailure',
+    'RunFinished',
+    'RunStateChanged',
+    'RunSummary',
+    'SessionAccepted',
+    'SessionProjection',
+    'ShutdownRequest',
+    'StartRunRequest',
+    'StartSessionRequest',
+    'SyscallAck',
+    'SyscallRejected',
+    'UnknownEffect',
   ],
   'kernel.execution': [
-    'ExecutionScope',
-    'ExecutionLimits',
-    'OrientExecutorInput',
-    'SearchExecutorInput',
     'AssembleExecutorInput',
-    'ModelExecutorInput',
+    'CancelRunExecutionsRequest',
+    'ExecutionFact',
+    'ExecutionLimits',
     'ExecutionRequest',
     'ExecutionResult',
-    'ExecutionFact',
-    'CancelRunExecutionsRequest',
+    'ExecutionScope',
+    'ModelExecutorInput',
+    'OrientExecutorInput',
+    'SearchExecutorInput',
     'SupervisorShutdownRequest',
   ],
-  'platform.fabric': ['ConsumerOffsetRef'],
-  'platform.persistence': ['JournalPositionRef'],
-  'platform.artifact': ['RetentionTokenRef'],
-  checkpoint: ['WorkflowCheckpointRef', 'SessionCheckpointRef'],
+  'platform.config': ['KernelConfig', 'SystemConfig', 'WorkflowConfig'],
+  checkpoint: ['SessionCheckpointRef', 'WorkflowCheckpointRef'],
   restore: ['RestoreOperationRef'],
-  review: ['HumanReviewRequestRef', 'HumanReviewDecisionRef'],
+  review: ['HumanReviewDecisionRef', 'HumanReviewRequestRef'],
   integration: ['ChangeSetRef', 'IntegrationPlanRef', 'QualityGateResultRef'],
+  'platform.fabric': ['ConsumerOffsetRef'],
+  'platform.persistence': [
+    'ArtifactOwnerLine',
+    'InstanceLockInfo',
+    'JournalPositionRef',
+    'SessionIndexLine',
+    'SessionLockInfo',
+    'SessionLogRecord',
+    'SessionRefLine',
+    'TrustedInstructionLine',
+  ],
+  'platform.artifact': ['RetentionTokenRef'],
+  'kernel.session': [
+    'InteractionSessionEvent',
+    'InteractionSystemEvent',
+    'WorkflowSessionEvent',
+    'WorkflowSystemEvent',
+  ],
 } as const;
 
 describe('protocol registry', () => {
-  const registry = createM1ProtocolRegistry();
+  const registry = createProtocolRegistry();
 
   it('registers exactly the Schemas of SharedContracts section 3', () => {
     const expected = Object.entries(EXPECTED)
-      .flatMap(([family, names]) => names.map((name) => `${family}.${name}.v0`))
+      .flatMap(([family, names]) => names.map((name) => `${family}.${name}.v1`))
       .sort();
     expect(
       registry
@@ -128,40 +168,40 @@ describe('protocol registry', () => {
   });
 
   it('assigns each Schema to its family and marks opaque families unsupported', () => {
-    expect(registry.get('kernel.unit.SubmitUnitRequest.v0')).toMatchObject({
+    expect(registry.get('kernel.unit.SubmitUnitRequest.v1')).toMatchObject({
       family: 'kernel.unit',
       owner: 'kernel',
       status: 'SUPPORTED',
     });
-    expect(registry.get('checkpoint.SessionCheckpointRef.v0').status).toBe('UNSUPPORTED');
+    expect(registry.get('checkpoint.SessionCheckpointRef.v1').status).toBe('UNSUPPORTED');
   });
 
   it('rejects unknown majors, unknown names and duplicates', () => {
-    expect(() => registry.resolve('kernel.unit.SubmitUnitRequest', 1)).toThrow(
+    expect(() => registry.resolve('kernel.unit.SubmitUnitRequest', 2)).toThrow(
       'UNKNOWN_SCHEMA_MAJOR',
     );
-    expect(() => registry.get('kernel.unit.Missing.v0')).toThrow('UNKNOWN_SCHEMA_MAJOR');
-    expect(registry.has('kernel.unit.Missing.v0')).toBe(false);
+    expect(() => registry.get('kernel.unit.Missing.v1')).toThrow('UNKNOWN_SCHEMA_MAJOR');
+    expect(registry.has('kernel.unit.Missing.v1')).toBe(false);
     const fresh = new ProtocolRegistry();
     fresh.register(ArtifactRefSchema);
     expect(() => fresh.register(ArtifactRefSchema)).toThrow('PROTOCOL_ALREADY_REGISTERED');
   });
 
   it('parses Schema IDs and rejects malformed ones', () => {
-    expect(parseSchemaId('kernel.unit.SubmitUnitRequest.v0')).toEqual({
+    expect(parseSchemaId('kernel.unit.SubmitUnitRequest.v1')).toEqual({
       schemaName: 'kernel.unit.SubmitUnitRequest',
-      major: 0,
+      major: 1,
     });
     expect(() => parseSchemaId('SubmitUnitRequest')).toThrow('INVALID_SCHEMA_ID');
   });
 
   it('resolves a ContractRef and turns it into a plain JSON Schema', () => {
-    const ref = { id: 'executor.FileReadInput', version: 'v0' };
+    const ref = { id: 'executor.FileReadInput', version: 'v1' };
     expect(validate(registry.resolveContract(ref), { path: 'src/a.ts' }).ok).toBe(true);
     const jsonSchema = registry.jsonSchemaOf(ref);
     expect(jsonSchema).toMatchObject({ type: 'object', additionalProperties: false });
     expect(JSON.stringify(jsonSchema)).not.toContain('$id');
-    expect(() => registry.resolveContract({ id: 'executor.Missing', version: 'v0' })).toThrow(
+    expect(() => registry.resolveContract({ id: 'executor.Missing', version: 'v1' })).toThrow(
       'UNKNOWN_SCHEMA_MAJOR',
     );
   });

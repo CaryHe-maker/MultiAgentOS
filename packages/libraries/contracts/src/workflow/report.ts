@@ -11,7 +11,7 @@ import {
   lineRange,
   text,
 } from '../platform-common/schema-helpers.js';
-import { WrapUpReasonSchema } from './step-record.js';
+import { WRAP_UP_REASONS } from '../context/history-entry.js';
 
 const range = { path: text(1024), ...lineRange };
 const SourceRefSchema = Type.Refine(closed(range), isLineRange, LINE_RANGE_ERROR);
@@ -30,7 +30,7 @@ export const AnalysisReportDraftSchema = closed(
     ),
     unconfirmed: Type.Array(text(1000), { maxItems: 50 }),
   },
-  'workflow.AnalysisReportDraft.v0',
+  'workflow.AnalysisReportDraft.v1',
 );
 export type AnalysisReportDraft = Static<typeof AnalysisReportDraftSchema>;
 
@@ -86,10 +86,19 @@ export const ReportLastIssueSchema = Type.Union([
 ]);
 export type ReportLastIssue = Static<typeof ReportLastIssueSchema>;
 
-const WrapUpSchema = closed({ reason: WrapUpReasonSchema });
+/** A wrap-up, or an ending no final call could follow (Module/Workflow 7). */
+export const REPORT_END_REASONS = [
+  ...WRAP_UP_REASONS,
+  'BUDGET_EXHAUSTED',
+  'FINAL_CALL_INVALID',
+] as const;
+export type ReportEndReason = (typeof REPORT_END_REASONS)[number];
+const ReportEndReasonSchema = Type.Enum(REPORT_END_REASONS);
+
+const WrapUpSchema = closed({ reason: ReportEndReasonSchema });
 /** Only a degraded report explains why its last call did not finish. */
 const DegradedWrapUpSchema = closed({
-  reason: WrapUpReasonSchema,
+  reason: ReportEndReasonSchema,
   lastIssue: Type.Optional(ReportLastIssueSchema),
 });
 
@@ -127,6 +136,6 @@ export const AnalysisReportSchema = Type.Union(
       wrapUp: DegradedWrapUpSchema,
     }),
   ],
-  { $id: 'workflow.AnalysisReport.v0' },
+  { $id: 'workflow.AnalysisReport.v1' },
 );
 export type AnalysisReport = Static<typeof AnalysisReportSchema>;

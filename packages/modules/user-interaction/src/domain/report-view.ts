@@ -1,9 +1,4 @@
-import type {
-  AnalysisReport,
-  AuthorizationRequest,
-  ReportLastIssue,
-  RunSummary,
-} from '@multiagentos/contracts';
+import type { AnalysisReport, ReportLastIssue } from '@multiagentos/contracts';
 import { InteractionMessages as messages, describeReason } from './interaction-messages.js';
 
 /** Escape C0, DEL and C1 controls; LF remains available for ordinary text layout. */
@@ -89,43 +84,5 @@ export function renderReport(report: AnalysisReport): string {
   }
   if (report.emptyReads !== undefined && report.emptyReads.length > 0)
     lines.push(messages.emptyFiles(report.emptyReads.length));
-  return terminalText(lines.join('\n') + '\n');
-}
-
-export function renderQuestion(question: AuthorizationRequest): string {
-  return terminalText(
-    [
-      messages.repository(question.repositoryPath),
-      messages.exclusions(question.exclusions),
-      messages.provider(question.provider),
-      messages.expiresAt(question.expiresAt),
-    ].join('\n') + '\n',
-  );
-}
-
-export function renderSummary(summary: RunSummary): string {
-  const lines: string[] = [messages.summaryTitle];
-  for (const agent of summary.agentRuns)
-    lines.push(messages.agentRounds(agent.agentRef.id, agent.rounds));
-  lines.push(
-    messages.unitCounts(
-      summary.units.submitted,
-      summary.units.ok,
-      summary.units.rejected,
-      summary.units.failed,
-      summary.units.notDelivered,
-    ),
-    messages.modelCalls(summary.model.requests),
-    messages.tokenCounts(summary.tokens.used, summary.tokens.unknown, summary.tokens.limit),
-    messages.duration(summary.durationMs),
-  );
-  if ('failure' in summary && summary.failure !== undefined) {
-    lines.push(
-      messages.failureCategory(
-        messages.category[summary.failure.category] ?? messages.unknownCategory,
-      ),
-    );
-    lines.push(describeReason(summary.failure.code));
-  }
   return terminalText(lines.join('\n') + '\n');
 }

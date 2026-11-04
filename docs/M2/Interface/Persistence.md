@@ -63,8 +63,9 @@ interface LogRecordBase {
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
 | `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
 | `UNIT_INTERRUPTED` | `requestId`、`reason`（打开 Session 时的修复，或阶段 5 的暂停与中止） | 1 |
-| `MODEL_TURN` | `requestId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
+| `MODEL_TURN` | `requestId`、`agentRunId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
+| `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
 | `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
 | `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
@@ -83,6 +84,33 @@ interface LogRecordBase {
   工具调用的参数正文由 `model-call` 的输出产物保存。这样先写日志、再提交（第 10.3 节写入规则第 1、2 条）不需要额外的产物写入。
 - `AGENT_RUN_REGISTERED`、`AGENT_RUN_ENDED`、`MODEL_ATTEMPT_FAILED`、`CONTEXT_ASSEMBLED` 是 M2Design 第 10.2 节"Unit"类记录的展开，
   为重放上下文所必需（不变量 7）。
+
+### 2.3 图的节点与边
+
+```ts
+interface GraphNodeRecord {
+  nodeId: string;
+  path: string;                 // <workflowRunId>/<revision>/<名称>#<迭代号>
+  name: string;                 // ≤64
+  kind: 'AGENT' | 'HUMAN';
+  trigger: 'all_success' | 'all_done';
+  iteration: number;
+  loopId?: string;              // 所属循环；不在循环中时省略（阶段 7）
+  agentRef?: DefinitionRef;     // AGENT 必填
+  goal?: string;                // ≤4000
+  inputFrom?: 'HANDOFF';
+  output?: boolean;
+}
+
+interface GraphEdgeRecord {
+  from: string;                 // nodeId
+  to: string;                   // nodeId
+  kind: 'DEPENDS' | 'CONDITIONAL';
+  when?: EdgeCondition;         // Definitions 第 4 节；CONDITIONAL 时必填
+}
+```
+
+`NODE_ENDED` 另带 `result?`：条件边读取的结构化结果（如 planner 的 `action`），写入日志后重放时不需要读取产物。
 
 ## 3. Session 列表
 

@@ -14,7 +14,7 @@ M2 沿用 M1 的工程基线（[M1TechStack](../History/M1/M1TechStack.md)），
 |---|---|---|
 | 平台 | Ubuntu 24.04 LTS（验收平台）；WSL2 中的 Ubuntu 24.04 用于日常验证 | 不变；沙盒相关的测试只能在这两种环境中运行 |
 | Runtime、包管理、语言、Schema、测试、质量门 | Node.js `>=24.19.0 <25`、pnpm、TypeScript、TypeBox、Vitest 与 fast-check、ESLint 与 Prettier | 不变，版本见 M1TechStack 第 2 节 |
-| 协议版本 | 语义变化的 Schema 发布新 major 1（`.v1`）；M1 的 major 0（`.v0`）冻结，供 `analyze` 回归 | 新增 major 1 |
+| 协议版本 | 发布版只有 major 1（`.v1`）；M1 的 major 0 在阶段 1 接线后删除 | 改变 |
 | 系统依赖 | `bubblewrap`（`bwrap`）、`git`、`rg`（可选，M1 已有） | 新增 `bwrap` 与 `git` |
 
 ## 3. 阶段 0 实测
@@ -94,7 +94,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 | 用途 | 阶段 | 状态 |
 |---|---|---|
-| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink（及其依赖 React），版本在阶段 1 的契约门中确定；只在 `apps/cli` 中使用，UserInteraction 经 `TerminalPort` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
+| 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink 8.0.0（及其依赖 React 19.3.1；测试用 ink-testing-library 4.0.0）；只在 `apps/cli` 中使用，UserInteraction 经 `ConsoleView` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
 | 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法文件（不需要原生编译），只在 ExecutorSet 的 `command/parse/` 中使用；版本在阶段 3 的文档门中确定；提前任务 E-EX-3 可先行引入 |

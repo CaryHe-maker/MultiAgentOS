@@ -24,7 +24,7 @@ async function scopeOf(root: string, exclusions: string[] = []): Promise<Reposit
   return scope;
 }
 
-describe('exclusion rules (M1Interface 3.5, shared with Core)', () => {
+describe('exclusion rules', () => {
   it.each([
     ['.env.production'],
     ['.hidden/server.pem'],
@@ -49,7 +49,7 @@ describe('exclusion rules (M1Interface 3.5, shared with Core)', () => {
   });
 });
 
-describe('request paths (ExecutorSet 3.2 step 2)', () => {
+describe('request paths (ExecutorSet step 2)', () => {
   it.each([
     ['src/a.ts', 'src/a.ts'],
     ['./src//a.ts', 'src/a.ts'],
@@ -80,7 +80,7 @@ describe('request paths (ExecutorSet 3.2 step 2)', () => {
   });
 });
 
-describe('guarded read (ExecutorSet 3.2)', () => {
+describe('guarded read', () => {
   it('reads a text file inside the root', async () => {
     const root = await emptyDirectory('guard');
     await writeTree(root, { 'src/a.ts': 'one\n' });
@@ -170,7 +170,7 @@ describe('guarded read (ExecutorSet 3.2)', () => {
   });
 });
 
-describe('file set and snapshot (ExecutorSet 3.1)', () => {
+describe('file set and snapshot', () => {
   const files = {
     'README.md': '# r\n',
     'src/a.ts': 'export const a = 1;\n',

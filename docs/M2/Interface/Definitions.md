@@ -7,18 +7,18 @@
 
 M1 的定义格式见 M1Interface 第 9 节（`DefinitionHeader.schemaVersion = 'v0'`）。M2 中：
 
-- 发生语义变化的定义种类发布 `schemaVersion = 'v1'`：Agent、Model、Unit；新增种类 Template；
+- 全部定义种类都发布 `schemaVersion = 'v1'`，新增种类 Template；
 - Unit 在阶段 1 就升到 `v1`，因为 `ExecutionKind` 要增加取值（第 5 节），在冻结的 `v0` 中增加枚举值属于破坏性变更；
   阶段 2 增加能力与资源键、阶段 4 增加并发类别，都在 `v1` 草稿期内原地增加；
-- Tool、Prompt 不变，继续使用 `v0`；
-- M1 的定义实例（`planner`、`code-viewer` 及其 Unit、Tool、Prompt、Model）原样保留，供 `analyze` 使用，不改写、不升版本。
+- Tool、Prompt 的字段不变；
+- `planner`、`code-viewer` 及其 Unit 全部改写为 `v1` 定义，与 main 使用同一种格式；Prompt 与 Tool 的内容可以按需调整。M1 的定义文件随 major 0 一起删除。
 
 `DefinitionRef`、`PinnedDefinitionRef`、`ContractRef` 沿用 M1Interface 第 9.1 节；`PinnedDefinitionRef.kind` 在 major 1 中增加 `'TEMPLATE'`。
 
 ## 2. Agent（`v1`）
 
 ```ts
-interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersion = 'v1'
+interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion = 'v1'
   role: string;                                  // ≤200
   modelRef: DefinitionRef;
   thinking: {
@@ -27,9 +27,14 @@ interface AgentDefinitionV1 extends DefinitionHeader<'AGENT'> {   // schemaVersi
   };
   promptRef: DefinitionRef;
   unitRefs: DefinitionRef[];                     // 封闭集合；阶段 2 起与能力白名单一起决定能力上限
-  startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 只在每个 WorkflowRun 的第一个 Turn 提交
+  startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 为空：运行开启时不碰仓库
   actions: {
-    finish: { toolRef: DefinitionRef; kind: 'REPLY' };   // 阶段 4 增加 'FINISH_SUBAGENT'
+    end: {                                       // 至少一项；没有声明的工具不能结束这个 Agent
+      toolRef: DefinitionRef;
+      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';   // 阶段 4 增加 'FINISH_SUBAGENT'
+      allowedInFinal: boolean;                   // 收尾调用中是否可用
+    }[];
+    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';   // 没有合法结束时发布什么
     // 阶段 2：todos（update_todos，M2Design 第 3.5 节）；阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
   };
   limits: {
@@ -58,7 +63,7 @@ interface AgentBudgetProfile {                   // M2Design 第 7.3 节"每个 
 ## 3. Model（`v1`）
 
 ```ts
-interface ModelDefinitionV1 extends Omit<ModelDefinition, 'schemaVersion' | 'features'> {   // schemaVersion = 'v1'
+interface ModelDefinition extends Omit<M1ModelDefinition, 'schemaVersion' | 'features'> {   // schemaVersion = 'v1'；M1ModelDefinition 见归档的 M1Interface
   features: {
     hasJsonOutput: boolean;
     hasToolCalls: boolean;
@@ -89,6 +94,7 @@ type ThinkingRequest =
 | `replayReasoning` | `'REQUIRED'` |
 | `missingReasoningFill` | `'EMPTY_STRING'` |
 | `reasoningCountsAsOutput` | `true` |
+
 其余字段（provider、计价、上下文窗口等）与 M1Interface 第 9.2 节相同。
 
 ## 4. Template（`v1`，新增）
@@ -131,7 +137,7 @@ interface EdgeCondition {                         // 以后可能增加按前驱
 
 - 根节点 `HUMAN(prompt)`（`mas run` 的目标或 `/run` 的输入）不写在模板中，由 Workflow 在编译时加入，模板中没有前驱的节点都依赖它（M2Design 第 3.8 节）。
 - `chat` 是内置的生长规则，写在代码中，不是模板文件（M2Design 第 3.8 节）；因此 `RunStart` 与 `WORKFLOW_RUN_STARTED` 在 `mode = 'CHAT'` 时没有 `templateRef`。
-- `analyze` 引用的 Agent 版本与 M1 发布时一致（`planner@v1.1.0`，其交接目标为 `code-viewer@v1.1.0`）；加载校验要求 `view` 节点的 Agent 与 `plan` 的交接目标相同（[AgentToolPool](../Library/AgentToolPool.md) 第 4 节）。
+- `analyze` 引用 `v1` 的 planner 与 code-viewer；交接的目标由模板中的 `view` 节点决定（`inputFrom: HANDOFF` 且以条件边依赖 `plan`），`v1` Agent 定义中没有交接目标（[AgentToolPool](../Library/AgentToolPool.md) 第 4 节）。
 - 阶段 1 的内置模板只有 `analyze`：
 
 ```yaml
@@ -148,24 +154,23 @@ nodes:
       inputFrom: HANDOFF, output: true }
 ```
 
-`analyze` 运行时使用 M2Plan 第 8.1 节的 M1 额度档案；该档案写在 Monitor 的配置中，由模板 ID 选用，不写在模板里。
+`analyze` 没有特殊额度，按 Agent 定义中的额度参数运行。
 
 ## 5. Unit（`v1`）、Tool、Prompt
 
 ```ts
-interface UnitDefinitionV1 extends Omit<UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'
-  executionKind: ExecutionKindV1;
+interface UnitDefinition extends Omit<M1UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'；M1UnitDefinition 见归档的 M1Interface
+  executionKind: ExecutionKind;
   // 阶段 2：capabilities 与 resourceKeys；阶段 4：concurrencyClass
 }
 
-type ExecutionKindV1 = ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
+type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH';   // 阶段 2 增加 'OUTPUT_READ'，阶段 2–6 增加各新工具的类别
 ```
 
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；
 - `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）；
 - `OUTPUT_READ`（阶段 2）：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
 
-工具 Unit 的预览上限按定义的版本区分（M2Design 第 8.2 节）：`v1` Unit 使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`，`v0` Unit 使用 `maxOutputBytes`；上限不写在定义中。
+工具 Unit 的预览上限使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`；上限不写在定义中。
 
-其余字段与 M1Interface 第 9.2 节相同。M1 的 Unit 实例保持 `v0`，供 `analyze` 使用；M2 新写的 Unit 实例使用 `v1`。
-Tool 与 Prompt 沿用 `v0`。
+其余字段与 M1Interface 第 9.2 节相同。全部 Unit、Tool、Prompt 实例使用 `v1`。

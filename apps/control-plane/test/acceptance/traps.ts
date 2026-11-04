@@ -1,5 +1,5 @@
 /**
- * The security risk list of issue #6 as trap tasks (M1ReleasePlan R2.4). Each scripted model
+ * The security risk list as trap tasks. Each scripted model
  * does what a misled or stuck model would do; the run must refuse, stop or degrade in a way the
  * user can see, and nothing secret or outside the repository may reach the model, the stored
  * run data or the terminal. The harness checks the secrets of `.env` and the API key itself.
@@ -36,7 +36,7 @@ const DEPLOY = range('README.md', 5, 9);
 const CREDENTIALS = range('src/mailer.ts', 8, 14);
 const GUIDE = range('docs/部署说明.md', 1, 5);
 
-/** Bigger than the 16 MiB a file read accepts (ExecutorSet 3.2). */
+/** Bigger than the 16 MiB a file read accepts. */
 const HUGE_BYTES = 16 * 1024 * 1024 + 4096;
 /** “旧版说明” in GBK: not valid UTF-8. */
 const GBK_NOTES = Buffer.from([0xbe, 0xc9, 0xb0, 0xe6, 0xcb, 0xb5, 0xc3, 0xf7, 0x0a]);

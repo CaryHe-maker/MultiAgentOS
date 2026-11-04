@@ -1,5 +1,9 @@
-import { Type, type Static, type TProperties } from 'typebox';
-import { ErrorCategorySchema, artifactRefOf } from '../platform-common/common-schemas.js';
+import { Type, type Static } from 'typebox';
+import {
+  ArtifactRefSchema,
+  ErrorCategorySchema,
+  artifactRefOf,
+} from '../platform-common/common-schemas.js';
 import { EXECUTOR_KINDS } from '../platform-common/execution-kind.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
@@ -10,13 +14,6 @@ import {
   type ReasonCode,
 } from '../platform-common/reason-code.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
-
-/** The reason that entered convergence first wins; only VIOLATION can upgrade it. */
-export const CloseReasonSchema = Type.Enum(
-  ['COMPLETED', 'FAILED', 'RUN_TIMEOUT', 'CANCELLED', 'VIOLATION'],
-  { $id: 'kernel.control.CloseReason.v0' },
-);
-export type CloseReason = Static<typeof CloseReasonSchema>;
 
 const failure = {
   code: ReasonCodeSchema,
@@ -33,7 +30,7 @@ const CATEGORY_ERROR = () => 'category must be the category of code (REASON_CODE
 
 /** `category` is always the one category of `code`. */
 export const RunFailureSchema = Type.Refine(
-  closed(failure, 'kernel.control.RunFailure.v0'),
+  closed(failure, 'kernel.control.RunFailure.v1'),
   hasOwnCategory,
   CATEGORY_ERROR,
 );
@@ -48,7 +45,7 @@ export const WorkflowRunFailureSchema = Type.Unsafe<RunFailure>(
   ),
 );
 /** The failure of a run closed as VIOLATION: a security violation judged by the Kernel. */
-const ViolationFailureSchema = Type.Unsafe<RunFailure>(
+export const ViolationFailureSchema = Type.Unsafe<RunFailure>(
   closed({
     ...failure,
     code: Type.Enum(VIOLATION_CODES),
@@ -58,6 +55,7 @@ const ViolationFailureSchema = Type.Unsafe<RunFailure>(
 );
 
 const effect = { unitAttemptId: IdSchemas.unitAttemptId, executionId: IdSchemas.executionId };
+
 /** A model request can only be unconfirmed for a MODEL execution. */
 export const UnknownEffectSchema = Type.Union(
   [
@@ -72,74 +70,48 @@ export const UnknownEffectSchema = Type.Union(
       effect: Type.Literal('EXECUTION_STOP_UNCONFIRMED'),
     }),
   ],
-  { $id: 'kernel.control.UnknownEffect.v0' },
+  { $id: 'kernel.control.UnknownEffect.v1' },
 );
 export type UnknownEffect = Static<typeof UnknownEffectSchema>;
 
-export const ReportRefSchema = artifactRefOf(MEDIA_TYPES.analysisReport);
 export const RunSummaryRefSchema = artifactRefOf(MEDIA_TYPES.runSummary);
 
-/**
- * The four ways a run ends (M1Interface 5.4), each with exactly its own fields: COMPLETED has
- * `reportRef` and no `failure`; FAILED has `failure`; VIOLATION has a `failure` that is a
- * security violation from the Kernel; RUN_TIMEOUT and CANCELLED have neither. RunClosed,
- * RunFinished and RunSummary are all built from these variants.
- */
-export const runOutcomeVariants = <P extends TProperties>(common: P) => {
-  const completed = closed({
-    ...common,
-    closeReason: Type.Literal('COMPLETED'),
-    reportRef: ReportRefSchema,
-  });
-  const failed = closed({
-    ...common,
-    closeReason: Type.Literal('FAILED'),
-    failure: RunFailureSchema,
-  });
-  const violation = closed({
-    ...common,
-    closeReason: Type.Literal('VIOLATION'),
-    failure: ViolationFailureSchema,
-  });
-  const stopped = closed({ ...common, closeReason: Type.Enum(['RUN_TIMEOUT', 'CANCELLED']) });
-  return [completed, failed, violation, stopped] as [
-    typeof completed,
-    typeof failed,
-    typeof violation,
-    typeof stopped,
-  ];
-};
+/** A timeout is an interrupt, and Workflow reports it as TIMEOUT (M2Design 2.3). */
+export const CLOSE_REASONS = [
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'BUDGET',
+  'TIMEOUT',
+  'VIOLATION',
+  'ENDED_BY_USER',
+  'SHUTDOWN',
+] as const;
+export const CloseReasonSchema = Type.Enum(CLOSE_REASONS, {
+  $id: 'kernel.control.CloseReason.v1',
+});
+export type CloseReason = Static<typeof CloseReasonSchema>;
 
-/** Normal endings carry a RunSummary; a failed write has a typed error and no forged reference. */
-export const runEndVariants = <T extends string>(type: T) => {
-  const [completed, failed, violation, stopped] = runOutcomeVariants({
+/** A failure is required exactly for FAILED and VIOLATION; one of the two summary fields is set. */
+export const runEnd = <T extends string>(type: T) => {
+  const common = {
     type: Type.Literal(type),
     unknownEffects: Type.Array(UnknownEffectSchema),
-    runSummaryRef: RunSummaryRefSchema,
-  });
-  const [writeFailedCompleted, writeFailedFailed, writeFailedViolation, writeFailedStopped] =
-    runOutcomeVariants({
-      type: Type.Literal(type),
-      unknownEffects: Type.Array(UnknownEffectSchema),
-      finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED'),
-    });
+    resultRef: Type.Optional(ArtifactRefSchema),
+  };
+  const summary = { ...common, runSummaryRef: RunSummaryRefSchema };
+  const unsaved = { ...common, finalizationError: Type.Literal('RUN_SUMMARY_WRITE_FAILED') };
+  const normal = {
+    closeReason: Type.Enum(CLOSE_REASONS.filter((r) => r !== 'FAILED' && r !== 'VIOLATION')),
+  };
+  const failed = { closeReason: Type.Literal('FAILED'), failure: RunFailureSchema };
+  const violation = { closeReason: Type.Literal('VIOLATION'), failure: ViolationFailureSchema };
   return [
-    completed,
-    failed,
-    violation,
-    stopped,
-    writeFailedCompleted,
-    writeFailedFailed,
-    writeFailedViolation,
-    writeFailedStopped,
-  ] as [
-    typeof completed,
-    typeof failed,
-    typeof violation,
-    typeof stopped,
-    typeof writeFailedCompleted,
-    typeof writeFailedFailed,
-    typeof writeFailedViolation,
-    typeof writeFailedStopped,
-  ];
+    closed({ ...summary, ...normal }),
+    closed({ ...unsaved, ...normal }),
+    closed({ ...summary, ...failed }),
+    closed({ ...unsaved, ...failed }),
+    closed({ ...summary, ...violation }),
+    closed({ ...unsaved, ...violation }),
+  ] as const;
 };

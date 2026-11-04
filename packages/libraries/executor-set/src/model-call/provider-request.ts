@@ -3,16 +3,16 @@ import type { LanguageModel } from './language-model.js';
 
 type CallOptions = Parameters<LanguageModel['doGenerate']>[0];
 type Prompt = CallOptions['prompt'];
+type PackItems = Pick<AssembleContextPack, 'items'>;
 type Message = Prompt[number];
 type Tools = NonNullable<CallOptions['tools']>;
-type ToolChoice = NonNullable<CallOptions['toolChoice']>;
 
 /**
- * The provider request of ExecutorSet 4.5: INSTRUCTIONS become the system message, TOOLS the tool
+ * The provider request of ExecutorSet 7: INSTRUCTIONS become the system message, TOOLS the tool
  * parameter, and every other item a message of its role, in pack order. The mapping is purely
- * structural; what a tool means is Workflow's business (M1Interface 6.4).
+ * structural; what a tool means is Workflow's business.
  */
-export function toPrompt(pack: AssembleContextPack): Prompt {
+export function toPrompt(pack: PackItems): Prompt {
   const toolNames = new Map<string, string>();
   const messages: Message[] = [];
   for (const item of pack.items) {
@@ -61,7 +61,7 @@ export function toPrompt(pack: AssembleContextPack): Prompt {
   return messages;
 }
 
-export function toolSpecsOf(pack: AssembleContextPack): readonly ModelToolSpec[] {
+export function toolSpecsOf(pack: PackItems): readonly ModelToolSpec[] {
   return pack.items.flatMap((item) => (item.segment === 'TOOLS' ? item.toolSpecs : []));
 }
 
@@ -72,14 +72,4 @@ export function toTools(specs: readonly ModelToolSpec[]): Tools {
     description: spec.description,
     inputSchema: spec.parameters as Tools[number] extends { inputSchema: infer S } ? S : never,
   }));
-}
-
-/**
- * `final`: the model must call the one control tool (by name, which DeepSeek supports with
- * thinking off; issue #26, C6). Otherwise the model chooses.
- */
-export function toToolChoice(specs: readonly ModelToolSpec[], final: boolean): ToolChoice {
-  if (!final) return { type: 'auto' };
-  const control = specs.find((spec) => spec.purpose === 'CONTROL');
-  return control === undefined ? { type: 'required' } : { type: 'tool', toolName: control.name };
 }

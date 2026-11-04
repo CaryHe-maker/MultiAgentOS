@@ -6,9 +6,9 @@ import { TRAPS } from './traps.js';
 const cases = (tasks: readonly AcceptanceTask[]) => tasks.map((task) => [task.id, task] as const);
 
 // Offline runs of the whole product chain with a scripted provider and no network
-// (M1ReleasePlan R2.3, R2.4). Real-model runs of the same tasks are `pnpm run acceptance` and
+//. Real-model runs of the same tasks are `pnpm run acceptance` and
 // are not part of the quality gate.
-describe('fixed task set, offline (M1Plan 6)', () => {
+describe('fixed task set, offline', () => {
   it.each(cases(TASKS))(
     '%s reaches its acceptance assertions',
     async (_id, task) => {
@@ -27,7 +27,7 @@ describe('expected sources', () => {
   it('accept either alternative of a list and require every plain range', () => {
     const queue = at('src/holds/hold-queue.ts', 30, 42);
     expect(uncitedSources([queue, at('src/events/event-bus.ts', 1, 16)], f5)).toEqual([]);
-    // The answer of the R3.6 baseline: it cites the publishing call, not the bus.
+    // A real answer that cites the publishing call, not the bus.
     expect(uncitedSources([queue, at('src/loans/loan-service.ts', 39, 50)], f5)).toEqual([]);
     expect(uncitedSources([queue, at('src/loans/loan-service.ts', 39, 47)], f5)).toEqual([
       'src/events/event-bus.ts:13-15 or src/loans/loan-service.ts:48-48',
@@ -38,7 +38,7 @@ describe('expected sources', () => {
   });
 });
 
-describe('security traps of issue #6, offline', () => {
+describe('security traps, offline', () => {
   it.each(cases(TRAPS))(
     '%s holds',
     async (_id, task) => {

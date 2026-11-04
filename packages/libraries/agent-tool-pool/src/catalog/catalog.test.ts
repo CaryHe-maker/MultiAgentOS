@@ -1,0 +1,184 @@
+import type { BoundaryContext } from '@multiagentos/contracts';
+import { describe, expect, it } from 'vitest';
+import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
+import { InMemoryDefinitionSource } from '../adapters/memory/in-memory-definition-source.js';
+import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
+import type { SourceDocument } from '../ports/definition-source.js';
+import { buildCatalogIndex, DefinitionCatalog } from './catalog.js';
+
+const context: BoundaryContext = {
+  correlationId: 'cor_test0001',
+  tenantId: 'local',
+  projectId: 'local',
+};
+const repository = async () =>
+  (await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load()).documents;
+
+type Content = Record<string, unknown>;
+
+/** The repository's v1 documents with one of them changed. */
+async function issuesWhen(origin: string, change: (content: Content) => Content | undefined) {
+  const documents: SourceDocument[] = [];
+  for (const document of await repository()) {
+    if (document.origin !== origin) documents.push(document);
+    else {
+      const changed = change(structuredClone(document.content) as Content);
+      if (changed !== undefined) documents.push({ origin, content: changed });
+    }
+  }
+  const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
+  return result.ok ? [] : result.issues.map((issue) => `${issue.code} ${issue.origin}`);
+}
+
+const AGENT = 'agents/main/v0.1.0.yaml';
+const FILE_READ = 'units/file-read/v0.1.0.yaml';
+const MODEL_CALL = 'units/model-call/v0.1.0.yaml';
+const TEMPLATE = 'templates/analyze/v0.1.0.yaml';
+
+describe('the repository catalog', () => {
+  it('loads every v1 definition and pins each agent and the template', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    for (const id of ['main', 'planner', 'code-viewer']) {
+      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      expect(pinned.ok).toBe(true);
+    }
+    expect(catalog.template({ id: 'analyze', version: 'v0.1.0' }, context).ok).toBe(true);
+  });
+
+  it('pins the end tools with the unit tools', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const pinned = catalog.pinAgent({ id: 'main', version: 'v0.1.0' }, context);
+    if (!pinned.ok) throw new Error(pinned.error.message);
+    expect(pinned.value.tools.map((tool) => tool.modelName).sort()).toEqual([
+      'list_files',
+      'read_file',
+      'reply',
+      'search_repository',
+    ]);
+  });
+});
+
+describe('the rules of a v1 catalog', () => {
+  it.each([
+    [
+      'a repository unit that does not declare repo.read',
+      FILE_READ,
+      (c: Content) => ({ ...c, protectedCapabilities: [] }),
+    ],
+    [
+      'a model unit that declares repo.read',
+      MODEL_CALL,
+      (c: Content) => ({ ...c, protectedCapabilities: ['repo.read'] }),
+    ],
+    [
+      'a failurePolicy that lists USER_DECLINED',
+      FILE_READ,
+      (c: Content) => ({ ...c, failurePolicy: { USER_DECLINED: 'FATAL' } }),
+    ],
+    [
+      'a unit on the contract of another kind',
+      MODEL_CALL,
+      (c: Content) => ({
+        ...c,
+        inputContract: { kind: 'contract', id: 'executor.FileReadInput', version: 'v1' },
+      }),
+    ],
+  ])('refuses %s', async (_name, origin, change) => {
+    expect(await issuesWhen(origin, change)).toContain(`UNIT_INVALID ${origin}`);
+  });
+
+  it('refuses QUOTA_EXHAUSTED in a failurePolicy already by its Schema', async () => {
+    expect(
+      await issuesWhen(FILE_READ, (c) => ({ ...c, failurePolicy: { QUOTA_EXHAUSTED: 'FATAL' } })),
+    ).toContain(`DEFINITION_INVALID ${FILE_READ}`);
+  });
+
+  it('refuses a model whose efforts are not all mapped', async () => {
+    const origin = 'models/deepseek-flash/v0.1.0.yaml';
+    const issues = await issuesWhen(origin, (content) => {
+      const features = content['features'] as { thinking: { effortMapping: unknown[] } };
+      features.thinking.effortMapping = features.thinking.effortMapping.slice(0, 3);
+      return content;
+    });
+    expect(issues).toContain(`MODEL_SETTINGS_INVALID ${origin}`);
+  });
+
+  it.each([
+    [
+      'a default effort it does not allow',
+      (c: Content) => ({ ...c, thinking: { defaultEffort: 'max', allowedEfforts: ['none'] } }),
+    ],
+    [
+      'a reply without a message-publish unit',
+      (c: Content) => ({ ...c, unitRefs: (c['unitRefs'] as unknown[]).slice(0, 5) }),
+    ],
+    [
+      'the same end tool twice',
+      (c: Content) => {
+        const actions = c['actions'] as { end: unknown[] };
+        return { ...c, actions: { ...actions, end: [...actions.end, ...actions.end] } };
+      },
+    ],
+  ])('refuses an agent with %s', async (_name, change) => {
+    expect(await issuesWhen(AGENT, change)).toContain(`AGENT_INVALID ${AGENT}`);
+  });
+
+  it('refuses an end tool whose arguments do not fit its action', async () => {
+    const issues = await issuesWhen(AGENT, (content) => {
+      const actions = content['actions'] as { end: { then: string }[] };
+      actions.end = actions.end.map((end) => ({ ...end, then: 'PUBLISH_REPORT' }));
+      return { ...content, actions: { ...actions, onDegraded: 'PUBLISH_REPORT' } };
+    });
+    expect(issues).toContain(`AGENT_INVALID ${AGENT}`);
+  });
+
+  it.each([
+    [
+      'a cycle',
+      (c: Content) => {
+        const nodes = c['nodes'] as Content[];
+        return { ...c, nodes: [{ ...nodes[0], dependsOn: ['view'] }, nodes[1]] };
+      },
+    ],
+    [
+      'a conditional edge in a repository template',
+      (c: Content) => ({ ...c, origin: 'REPOSITORY' }),
+    ],
+    [
+      'a handoff input without an agent that hands off',
+      (c: Content) => {
+        const nodes = c['nodes'] as Content[];
+        return {
+          ...c,
+          nodes: [{ ...nodes[0], agent: { id: 'code-viewer', version: 'v0.1.0' } }, nodes[1]],
+        };
+      },
+    ],
+  ])('refuses a template with %s', async (_name, change) => {
+    expect(await issuesWhen(TEMPLATE, change)).toContain(`TEMPLATE_INVALID ${TEMPLATE}`);
+  });
+
+  it('refuses a reference to something that is not there', async () => {
+    const issues = await issuesWhen('tools/reply/v0.1.0.yaml', () => undefined);
+    expect(issues).toContain(`REFERENCE_MISSING ${AGENT}`);
+  });
+
+  it('changes the digest of everything above a changed tool', async () => {
+    const pin = async (documents: readonly SourceDocument[]) => {
+      const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
+      if (!result.ok) throw new Error('catalog does not load');
+      return result.index.definitions.get('AGENT:main@v0.1.0')?.digest;
+    };
+    const documents = await repository();
+    const changed = documents.map((document) =>
+      document.origin === 'tools/reply/v0.1.0.yaml'
+        ? { ...document, content: { ...(document.content as Content), description: 'changed' } }
+        : document,
+    );
+    expect(await pin(changed)).not.toBe(await pin(documents));
+  });
+});

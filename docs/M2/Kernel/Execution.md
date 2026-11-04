@@ -17,7 +17,7 @@ Execution 负责 UnitAttempt、执行队列、产物与内建 Unit；阶段 2 �
 | 不读取项目文件 | `readProjectFile`：按白名单读取 `AGENTS.md` 与模板文件，正文存为产物 | M2Design 第 7.5 节 | 1 |
 | 产物没有保留类别 | 登记 `SESSION` 或 `EXPIRING`：工具结果的预览长期保留，完整输出与 ContextPack 7 天过期 | M2Design 第 8.2、10.1 节 | 1 |
 | 启动时不回收产物 | 启动时与每小时回收：只按 ACTIVE 的 Session 的登记与保留期标记，其余在本次回收开始之前写入的正文删除 | [ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节 | 1 |
-| 预览上限就是 `maxOutputBytes` | 按 Unit 定义的版本选取预览上限：`v1` 为 `previewMaxBytes`、`previewMaxLines`（并且不超过 `maxOutputBytes`），`v0` 为 `maxOutputBytes` | M2Design 第 8.2 节 | 1 |
+| 预览上限就是 `maxOutputBytes` | 预览上限为 `previewMaxBytes`、`previewMaxLines`，并且不超过 `maxOutputBytes` | M2Design 第 8.2 节 | 1 |
 | 技术重试只按指数退避等待 | 以指数退避与 `Retry-After` 中较大者等待，超过 `retryAfterMaxMs` 不再重试；等待期间发出"重试中"的活动 | M2Design 第 7.4 节 | 1 |
 | — | `output-read` 的输入解析：`fullRef` 的归属与过期检查 | M2Design 第 8.2 节 | 2 |
 | — | 压缩中的规模估算（实测加估算）、修剪的截取与存储、摘要请求的两种组装与执行 | M2Design 第 9.6 节 | 8 |
@@ -36,9 +36,9 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
   | 工具 Unit 的预览（`outputRef`）、模型输出、思考内容、用户输入、回复与运行结果、报告、运行摘要、`AGENTS.md` 与模板文件、压缩的摘要 | `SESSION` |
   | 工具 Unit 截断时的完整输出（`fullRef`）、ContextPack | `EXPIRING` |
 
-- 预览上限按 Unit 定义的版本选取（M2Design 第 8.2 节），随 `ExecutionLimits` 交给 Executor：`v1` 为 `min(previewMaxBytes, maxOutputBytes)` 字节与 `previewMaxLines` 行；`v0`（`analyze` 使用的 M1 Unit）为 `maxOutputBytes`、不限行数。
-- 工具 Unit 的结果检查：Executor 交回预览与（截断时的）完整输出；预览超过上述上限、或完整输出超过 `maxFullOutputBytes` 时以 `LIMIT_EXCEEDED` 失败，不写入；
-  否则预览存为 `outputRef`，完整输出存为 `fullRef`（登记行带 `fullOutput: true`）。M1 Executor 截断后的输出就是预览，所以 `analyze` 看到的内容不变。
+- 预览上限随 `ExecutionLimits` 交给 Executor：`min(previewMaxBytes, maxOutputBytes)` 字节与 `previewMaxLines` 行（M2Design 第 8.2 节）。
+- 工具 Unit 的结果检查：Executor 交回预览与（截断时的）完整输出；预览超过上述上限、或完整输出超过 `maxFullOutputBytes` 时以 `REJECTED(LIMIT_EXCEEDED)` 结束，不写入；
+  否则预览存为 `outputRef`，完整输出存为 `fullRef`（登记行带 `fullOutput: true`）。
 - 修剪（第 6a 节）时，没有截断的工具结果的预览就是完整输出：Execution 为它追加一行带 `fullOutput: true` 的登记（类别仍为 `SESSION`），使它可以经 `read_output` 读回。
 - 打开 Session 时从 `artifact-owners.jsonl` 读入归属索引。
 - 需要解析的引用（M1 Execution 第 4 节列出的位置，加上 `HumanAnswered.contentRef`、`MessagePublishInput` 中的引用、`readArtifact` 的引用）
@@ -61,6 +61,10 @@ M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackof
 - `retryAfterMs > retryAfterMaxMs` 时不再重试，按重试耗尽处理（以原失败的原因码结束）；
 - 等待期间由 Core 发出 ActivityEvent：阶段 `RETRYING`，带 `retry { attempt, retryAt }`；等待不占用并发计数与调用机会，暂停时保留，中止时交付 `INTERRUPTED(ABORTED)`。
 
+## 4b. 目标引用的解析
+
+`repository-orient` 的 `objectiveRef`、`report-publish` 的 `goalRef` 都按第 3 节检查归属，解析为文字后填入 Executor 输入的 `objective` 或报告的 `goal`。
+
 ## 5. 内建 Unit：`message-publish`
 
 与 `report-publish` 相同，不派发给 Supervisor，由 Execution 在 Session actor 的处理中完成：
@@ -68,10 +72,13 @@ M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackof
 ```text
 取到 message-publish 尝试；输入已在受理时按 Schema 校验：
   { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }      // 阶段 1
+  { kind: 'DEGRADED_REPLY', agentLabel, reason }                              // 阶段 1：降级回复，只有结构化原因
   { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 阶段 7：确定性运行报告
 REPLY：
   → modelOutputRef 必须属于本 Session（第 3 节）；从中取出 toolCallId 对应的 reply 调用的 text 参数
   → 把 text 以 text/markdown 存为新的产物，登记归属
+DEGRADED_REPLY：
+  → 把 { reason } 以 JSON 存为产物，登记归属；不经过额度检查，额度耗尽时也要能发布
 RUN_RESULT：
   → report 按 Schema 校验后以 JSON 存为产物，登记归属
 → submitResultCheck(COMPLETED, output = { kind }, outputRef = 新产物)
@@ -114,13 +121,13 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 
 - **估算**（`estimateAssembly`）：取条目中该对象最近一次模型轮带的实测用量（`MODEL_TURN.usage` 的输入与输出 token，Workflow 随条目交来）与它对应的 `headDigest`；
   与本次组装的 `headDigest` 相同、且其后没有修剪后的条目或摘要条目时，估算 = 实测输入 + 实测输出 + 其后新增条目的字节估算；否则全部按字节估算（M1 的 `estimatePackTokens`）。
-  额度预留不用这个估算，仍用字节估算（Monitor 第 3.5 节）。空闲触发时 Core 用 main 最近一次模型调用的实测值，不需要条目；
+  额度预留不用这个估算，仍用字节估算（Monitor 第 3.4 节）。空闲触发时 Core 用 main 最近一次模型调用的实测值，不需要条目；
 - **修剪**（第 4.5 步）：按 Core 给出的候选（保留区之前、预览超过 `pruneMinBytes`、尚未修剪的 `NORMAL` 工具结果）读出预览正文，作为 Kernel 内部尝试交给 `context-assemble` Executor（`purpose = 'PRUNE'`，ExecutorSet 第 6.4 节）；
   修剪后的结果存为 `SESSION` 类产物；没有截断的结果补登 `fullOutput: true`（第 3 节）；交回每项的 `toolCallId`、修剪后的引用与可读回的引用（截断时为 `fullRef`，否则为原预览）；
 - **组装**：前缀式用 Workflow 交回的投影条目中 `seq ≤ toSeq` 的部分，按该对象普通请求的方式经 `context-assemble` Executor 组装，末尾追加 Prompt `compaction-system` 的指令；
   前缀式的估算超出 `perCallInputLimit − summaryMaxTokens`，或 `model-call` 返回 `CONTEXT_OVERFLOW` 时，按 Core 给出的目标改用纯文本式（ExecutorSet 第 6.4 节）；
 - 执行：作为一次 Kernel 内部的 MODEL 尝试，经 Core 申请调用机会与额度（与普通尝试相同的内部 syscall，Core 调用 Scheduler 与 Monitor），由 Supervisor 派发给 `model-call` Executor（`purpose = 'COMPACTION'`）；
-  不属于任何 Workflow 提交的 Unit，不产生 UnitReport；用量按 Core 指定的账本结算（Monitor 第 3.5 节）；
+  不属于任何 Workflow 提交的 Unit，不产生 UnitReport；用量按 Core 指定的账本结算（Monitor 第 3.4 节）；
 - 结果：摘要文本存为 `SESSION` 类产物，连同所用的方式与去掉的条目数（`summaryInput`）交回 Core；`COMPACTION_SUMMARY_INVALID` 时由 Core 决定重试一次，`CONTEXT_OVERFLOW` 时由 Core 按 `summaryFallbackTargets` 给出下一个目标。
 
 ## 7. 配置
@@ -128,7 +135,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 | 配置 | 读取者 | 缺省 |
 |---|---|---|
 | `executionLimits.MESSAGE_PUBLISH`、`REPOSITORY_LIST` | Execution | 前者为内建，不设截止时间；后者 `timeoutMs` 30000、`maxOutputBytes` 1048576 |
-| `executionLimits.<工具 Unit>.previewMaxBytes`、`previewMaxLines` | Execution、Executor | 51200、2000；只对 `v1` Unit 生效（M2Design 第 8.2 节） |
+| `executionLimits.<工具 Unit>.previewMaxBytes`、`previewMaxLines` | Execution、Executor | 51200、2000（M2Design 第 8.2 节） |
 | `executionLimits.<工具 Unit>.maxFullOutputBytes` | Execution、Executor | 8388608（8 MiB） |
 | `executionLimits.OUTPUT_READ` | Execution | `timeoutMs` 30000、`maxOutputBytes` 51200（阶段 2） |
 | `KernelConfig.retryAfterMaxMs` | Execution | 120000 |
@@ -145,7 +152,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 | 产物引用只在本 Session 内有效 | 单元测试：另一 Session 的引用返回 `INVALID_ARTIFACT_REF`；重开 Session 后旧引用仍然有效 |
 | 29：只有 ACTIVE 的 Session 的登记能让正文免于回收 | 单元测试：`EXPIRING` 满 7 天后被回收（启动时与定期回收各一例，以假时钟驱动），读取得到 `ARTIFACT_EXPIRED`；到期而尚未回收的正文读取同样得到 `ARTIFACT_EXPIRED`；回收开始后再次写入的正文不被删除；`SESSION` 的正文在 ACTIVE 的 Session 拥有期间不被回收；DELETED 的 Session 残留的归属文件不影响回收；同一正文在两个 Session 中、以不同类别登记时取最长的保留 |
 | 7：重建只需要长期保留的正文 | 集成测试：删除全部 `EXPIRING` 正文后，重放日志得到相同的 `context-assemble` 输入（包括 `read_output` 的结果与修剪后的结果） |
-| 预览上限按定义版本选取 | 单元测试：同一 executionKind 下 `v0` Unit 的预览上限为 `maxOutputBytes`，`v1` Unit 为 `previewMaxBytes` 与 `previewMaxLines` |
+| 预览上限 | 单元测试：预览不超过 `previewMaxBytes` 与 `previewMaxLines` |
 | 技术重试的等待 | 单元测试（假时钟）：`retryAfterMs` 大于指数退避时按它等待；超过 `retryAfterMaxMs` 时不再重试；等待期间有 `RETRYING` 活动，中止时交付 `INTERRUPTED(ABORTED)` |
 | 30：`read_output` 只读到本 Session、未过期的完整输出（阶段 2） | 单元测试：另一 Session 的 `fullRef` 得到 `INVALID_ARTIFACT_REF`；不带 `fullOutput` 标记的引用得到 `INVALID_INPUT`；到期得到 `ARTIFACT_EXPIRED` 且不派发；修剪时补登的预览可以读取且不过期（阶段 8）；`context-assemble` 输入中的 `fullRef` 被拒绝 |
 | 压缩的估算是日志的纯函数（阶段 8） | 单元测试：`headDigest` 相同且其后没有修剪与摘要时使用实测值，否则按字节估算；同一组条目得到相同的估算 |

@@ -11,7 +11,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 | M1 | M2 | 阶段 |
 |---|---|---|
-| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → Turn → AgentRun；阶段 1 只有运行与 Turn 两级，main 直接使用 Turn 账本 | 1（AgentRun 级为 4） |
+| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → Turn → AgentRun；阶段 1 只有运行与 Turn 两级，AgentRun 直接使用 Turn 账本 | 1（AgentRun 级为 4） |
 | `finalReserve` 每个运行一份，至多一次 final-call | 每个 AgentRun 一份收尾保留、至多一次 final-call；收尾保留按该 Agent 的额度参数计算 | 1 |
 | 额度参数是全局配置 | 写在每个 Agent 定义中（Interface/Definitions 第 2 节） | 1 |
 | 额度只看 token | 增加工具 Unit 次数与墙钟两项资源上限（`QUOTA_EXHAUSTED`） | 1 |
@@ -45,13 +45,7 @@ wrapUpMargin(agent) = perCallInputLimit + maxOutputTokens
 minShare(agent)     = F(agent) + 2 × wrapUpMargin(agent)
 ```
 
-### 3.4 `analyze` 的 M1 额度档案
-
-运行使用内置模板 `analyze` 时（M2Plan 第 8.1 节）：运行级与 Turn 账本合一，`L = 300000`；planner 与 code-viewer 共用这一份账本；
-`F` 与 `wrapUpMargin` 取 M1 的全局值（M1 Monitor 第 4 节）；整个运行至多一次 final-call（由 Core 按运行而不是按 AgentRun 计）。
-档案由 `budget.profiles.analyze` 配置，按模板 ID 选用。
-
-### 3.5 压缩的额度（阶段 8）
+### 3.4 压缩的额度（阶段 8）
 
 M2Design 第 7.3 节"压缩的额度"：
 
@@ -66,8 +60,8 @@ M2Design 第 7.3 节"压缩的额度"：
 
 | 上限 | 计数 | 触顶时 |
 |---|---|---|
-| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call`、`message-publish`） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
-| `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（阶段 5 起暂停也不计入，阶段 4 起等待子任务也不计入） | 同上，`quota = 'WALL_CLOCK'` |
+| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call` 与两个发布 Unit `message-publish`、`report-publish`：它们用于结束 Agent，触顶后仍须可用） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
+| `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（阶段 5 起暂停也不计入，阶段 4 起等待子任务也不计入）。判定与 Turn 超时的暂停相同：该 AgentRun 没有已派发或待派发的尝试（挂起在授权询问上的不算）且有待答复的询问时停止计时，Core 在每次处理消息的末尾重新判断，只为最早可能到点的墙钟设一个定时器；没有设置该上限的 Agent 不计时 | 同上，`quota = 'WALL_CLOCK'` |
 
 Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monitor。重复意图与连续出错是业务判断，归 Workflow（M2Design 第 3.4 节）。
 
@@ -82,7 +76,6 @@ Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monit
 |---|---|---|
 | `runTokenLimit` | 5000000 | 运行级上限 |
 | `turnTokenLimit` | 2000000 | 每个 Turn 的上限 |
-| `profiles.analyze` | `{ tokenLimit: 300000, finalReserve 与 wrapUpMargin 取 M1 的值 }` | 第 3.4 节 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。
@@ -106,8 +99,8 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 
 | 阶段 | 本文增加的内容 |
 |---|---|
-| 1 | 第 3–7 节（第 3.5 节除外） |
+| 1 | 第 3–7 节（第 3.4 节除外） |
 | 4 | AgentRun 级账本与逐级委派、委派保留、`minShare` 的派生检查、等待子任务时墙钟暂停 |
 | 5 | 暂停时墙钟暂停 |
 | 7 | 模板节点从 Turn 账本划出份额 |
-| 8 | 第 3.5 节：压缩的额度（SubAgent 的部分在阶段 4 完成后） |
+| 8 | 第 3.4 节：压缩的额度（SubAgent 的部分在阶段 4 完成后） |

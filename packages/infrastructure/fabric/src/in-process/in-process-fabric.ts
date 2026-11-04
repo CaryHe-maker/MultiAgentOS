@@ -17,7 +17,7 @@ import {
   type ProtocolRegistry,
 } from '@multiagentos/contracts';
 import { withinDeadline } from '../deadline/port-deadline.js';
-import { SCHEMA_IDS } from '../stubs/port-stubs.js';
+import { GATEWAY_SYSCALL_SCHEMAS } from '../stubs/port-stubs.js';
 import { FabricError } from './fabric-error.js';
 
 export interface FabricClientOptions {
@@ -38,18 +38,6 @@ interface RegisteredHandler {
   ) => Promise<unknown>;
 }
 
-const GATEWAY_REQUEST_SCHEMAS = new Set<string>([
-  SCHEMA_IDS.registerAgentRun,
-  SCHEMA_IDS.submitUnit,
-  SCHEMA_IDS.endAgentRun,
-  SCHEMA_IDS.closeRun,
-  SCHEMA_IDS.createRun,
-  SCHEMA_IDS.answerAuthorization,
-  SCHEMA_IDS.cancelRun,
-  SCHEMA_IDS.readArtifact,
-  SCHEMA_IDS.shutdown,
-]);
-
 function hasValidRequestId(payload: unknown): boolean {
   return (
     typeof payload === 'object' &&
@@ -61,7 +49,7 @@ function hasValidRequestId(payload: unknown): boolean {
 }
 
 /**
- * Same-process Fabric (docs/M1/Infrastructure/Fabric.md 3). Every communication subject gets
+ * Same-process Fabric. Every communication subject gets
  * its own client, which fixes the Envelope's producer. Each delivery validates the payload
  * against its registered Schema and copies it with `structuredClone`, so object references,
  * functions and class instances cannot cross a subject boundary unnoticed.
@@ -111,7 +99,7 @@ export class InProcessFabric implements LifecyclePort {
         if (this.#handlers.has(schemaId)) throw new FabricError('ALREADY_REGISTERED', schemaId);
         if (
           onInvalid !== undefined &&
-          (producer !== 'gateway' || !GATEWAY_REQUEST_SCHEMAS.has(schemaId))
+          (producer !== 'gateway' || !GATEWAY_SYSCALL_SCHEMAS.has(schemaId))
         )
           throw new FabricError('INVALID_REGISTRATION', schemaId);
         this.#handlers.set(schemaId, {
@@ -196,6 +184,7 @@ export class InProcessFabric implements LifecyclePort {
       ...(checkedContext.causationId === undefined
         ? {}
         : { causationId: checkedContext.causationId }),
+      ...(checkedContext.sessionId === undefined ? {} : { sessionId: checkedContext.sessionId }),
       ...(checkedContext.workflowRunId === undefined
         ? {}
         : { workflowRunId: checkedContext.workflowRunId }),
@@ -210,12 +199,12 @@ const FABRIC_CAPABILITIES: readonly CapabilityDescriptor[] = Object.freeze([
     capability: 'fabric.cross-process',
     status: 'UNSUPPORTED',
     schemaNames: [],
-    reason: 'M1 runs every communication subject in one process',
+    reason: 'every communication subject runs in one process',
   },
   {
     capability: 'fabric.durable-delivery',
     status: 'UNSUPPORTED',
-    schemaNames: ['platform.fabric.ConsumerOffsetRef.v0'],
-    reason: 'the M1 Outbox and Inbox live in memory',
+    schemaNames: ['platform.fabric.ConsumerOffsetRef.v1'],
+    reason: 'the Outbox and the Inbox live in memory',
   },
 ]);

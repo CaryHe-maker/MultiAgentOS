@@ -28,12 +28,12 @@ describe('system configuration', () => {
 
   it('lays a partial file over the defaults', async () => {
     const path = await configFile(
-      JSON.stringify({ kernel: { provider: 'other', budget: { tokenLimit: 1000 } } }),
+      JSON.stringify({ kernel: { provider: 'other', budget: { runTokenLimit: 1000 } } }),
     );
     const config = await loadSystemConfig({ MULTIAGENTOS_CONFIG: path });
     const defaults = defaultSystemConfig();
     expect(config.kernel.provider).toBe('other');
-    expect(config.kernel.budget).toEqual({ ...defaults.kernel.budget, tokenLimit: 1000 });
+    expect(config.kernel.budget).toEqual({ ...defaults.kernel.budget, runTokenLimit: 1000 });
     expect(config.workflow).toEqual(defaults.workflow);
   });
 
@@ -45,7 +45,7 @@ describe('system configuration', () => {
 
   it.each([
     ['an unknown key', JSON.stringify({ kernel: { providr: 'typo' } })],
-    ['a value of the wrong type', JSON.stringify({ kernel: { runTimeoutMs: 'soon' } })],
+    ['a value of the wrong type', JSON.stringify({ kernel: { cancelGraceMs: 'soon' } })],
     ['a relative dataDir', JSON.stringify({ dataDir: 'relative/dir' })],
     ['a zero port deadline', JSON.stringify({ portReturnTimeoutMs: 0 })],
     ['a fractional port deadline', JSON.stringify({ portReturnTimeoutMs: 1.5 })],

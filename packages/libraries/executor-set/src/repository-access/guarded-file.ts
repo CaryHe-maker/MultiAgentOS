@@ -7,7 +7,7 @@ import { isText } from '../text/text-document.js';
 import { normalizeRequestPath } from './request-path.js';
 import type { RepositoryScope } from './repository-scope.js';
 
-/** Larger files are refused by FILE_READ with LIMIT_EXCEEDED (issue #26, A4). */
+/** Larger files are refused by FILE_READ with LIMIT_EXCEEDED. */
 export const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 
 export interface GuardedContent {
@@ -38,12 +38,12 @@ export function relativeToRoot(root: string, real: string): string {
 }
 
 /**
- * Steps 2–7 of ExecutorSet 3.2 for one path asked for by a model, reading the whole file
+ * Steps 2–7 of ExecutorSet for one path asked for by a model, reading the whole file
  * through the descriptor that passed step 7 (a binary file fails step 6 once its first bytes
  * are known). Step 1 (the scope) is checked by the caller.
  *
  * Step 7 compares the identity (`dev`, `ino`) of the opened descriptor with the file that passed
- * step 5, and on Linux also the path behind `/proc/self/fd` (issue #26, A1): replacing the file
+ * step 5, and on Linux also the path behind `/proc/self/fd`: replacing the file
  * or a directory on its path after the checks changes the identity, which is a violation, not a
  * normal rejection, because it means something is racing the guard.
  */

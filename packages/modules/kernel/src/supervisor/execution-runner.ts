@@ -1,7 +1,6 @@
 import type {
   CancelRunExecutionsRequest,
   ExecutionFact,
-  ExecutionFactSink,
   ExecutionRequest,
   ExecutorEnvironment,
   ExecutorOutcome,
@@ -19,7 +18,7 @@ export interface ExecutionRunnerDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly subprocess: SubprocessRunner;
-  readonly facts: ExecutionFactSink;
+  readonly facts: { report(fact: ExecutionFact): Promise<void> };
   readonly cancelGraceMs: number;
   readonly now: () => Date;
 }
@@ -39,7 +38,7 @@ export class ExecutionRunner {
   readonly #executors: ExecutorRegistry;
   readonly #credentials: ProviderCredentials;
   readonly #subprocess: SubprocessRunner;
-  readonly #facts: ExecutionFactSink;
+  readonly #facts: { report(fact: ExecutionFact): Promise<void> };
   readonly #cancelGraceMs: number;
   readonly #now: () => Date;
   readonly #table = new ExecutionTable();
@@ -331,6 +330,8 @@ function runExecutor(
       return registry.REPOSITORY_ORIENT.execute(request.input, environment);
     case 'REPOSITORY_SEARCH':
       return registry.REPOSITORY_SEARCH.execute(request.input, environment);
+    case 'REPOSITORY_LIST':
+      return registry.REPOSITORY_LIST.execute(request.input, environment);
     case 'FILE_READ':
       return registry.FILE_READ.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':

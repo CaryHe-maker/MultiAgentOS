@@ -26,6 +26,7 @@ const KIND_DIRECTORIES: Readonly<Record<string, DefinitionKind>> = {
   tools: 'TOOL',
   models: 'MODEL',
   prompts: 'PROMPT',
+  templates: 'TEMPLATE',
 };
 const STATUS_FILE = 'status.yaml';
 const IGNORED_ROOT_FILES = new Set(['README.md']);

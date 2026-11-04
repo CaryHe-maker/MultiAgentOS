@@ -1,6 +1,6 @@
 import { Type, type TProperties } from 'typebox';
 
-/** Object schema that rejects undeclared properties (M1Interface 1.2 rule 3). */
+/** Object schema that rejects undeclared properties. */
 export const closed = <P extends TProperties>(properties: P, $id?: string) =>
   Type.Object(properties, { additionalProperties: false, ...($id === undefined ? {} : { $id }) });
 

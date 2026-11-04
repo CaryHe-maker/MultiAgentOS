@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The process entry (docs/M1/Infrastructure/ModuleHost.md 2): runs one command line through
+ * The process entry: runs one command line through
  * `main` and ends the process with its exit code. `main` already installs the process guards
  * and stops every module, so nothing else belongs here. It sets `process.exitCode` instead of
  * calling `process.exit`, so that what was written to the terminal is flushed first.

@@ -1,76 +1,81 @@
 import { Type, type Static } from 'typebox';
-import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { closed, count, text } from '../platform-common/schema-helpers.js';
 
 const ms = () => count(1);
 const ExecutionLimitSchema = closed({ timeoutMs: ms(), maxOutputBytes: count(1) });
+export type BudgetConfig = KernelConfig['budget'];
 
-/** The `kernel` part of the system configuration (docs/M1/Kernel/Interaction.md 9). */
+const ToolLimitSchema = closed({
+  timeoutMs: ms(),
+  maxOutputBytes: count(1),
+  previewMaxBytes: count(1),
+  previewMaxLines: count(1),
+  maxFullOutputBytes: count(1),
+});
+
+/**
+ * The `kernel` part. `repositoryRoot` and `preset` are not configured: the composition
+ * root sets them from the working directory or `--repo` and from the CLI.
+ */
 export const KernelConfigSchema = closed(
   {
     provider: text(64),
-    runTimeoutMs: ms(),
-    authorizationTimeoutMs: ms(),
     cancelGraceMs: ms(),
     convergenceMarginMs: ms(),
     technicalRetryLimit: count(),
     retryBackoffBaseMs: ms(),
+    retryAfterMaxMs: ms(),
+    sessionCloseTimeoutMs: ms(),
     /** Appended to the default exclusion rules; it can never remove one of them. */
     repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
     maxReportBytes: count(1),
-    /** Token budget of one WorkflowRun (docs/M1/Kernel/Monitor.md 4). */
+    /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
-      tokenLimit: count(1),
-      perCallInputLimit: count(1),
-      finalInputBudget: count(1),
-      maxOutputTokens: count(1),
-      finalMaxOutputTokens: count(1),
+      runTokenLimit: count(1),
+      turnTokenLimit: count(1),
       orientBudget: count(1),
       searchBudget: count(1),
     }),
     executionLimits: closed({
-      REPOSITORY_ORIENT: ExecutionLimitSchema,
-      REPOSITORY_SEARCH: ExecutionLimitSchema,
-      FILE_READ: ExecutionLimitSchema,
+      REPOSITORY_ORIENT: ToolLimitSchema,
+      REPOSITORY_SEARCH: ToolLimitSchema,
+      REPOSITORY_LIST: ToolLimitSchema,
+      FILE_READ: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),
+    artifactRetention: closed({
+      expiringRetentionDays: count(1),
+      sweepIntervalMinutes: count(1),
+    }),
   },
-  'platform.config.KernelConfig.v0',
+  'platform.config.KernelConfig.v1',
 );
 export type KernelConfig = Static<typeof KernelConfigSchema>;
-export type BudgetConfig = KernelConfig['budget'];
 
-/** The `workflow` part of the system configuration (docs/M1/Module/Workflow.md 12). */
+/** The entry Agent comes from the template, so `entryAgentRef` is gone. */
 export const WorkflowConfigSchema = closed(
   {
-    entryAgentRef: DefinitionRefSchema,
     regenerationLimit: count(1),
     noProgressRounds: count(1),
+    repeatedIntent: closed({ window: count(1), warnAt: count(1), stopAt: count(1) }),
+    consecutiveErrorLimit: count(1),
   },
-  'platform.config.WorkflowConfig.v0',
+  'platform.config.WorkflowConfig.v1',
 );
 export type WorkflowConfig = Static<typeof WorkflowConfigSchema>;
 
-/**
- * The whole system configuration (docs/M1/M1TechStack.md 4). The composition root validates it
- * and injects each part into its owner. Secrets never belong here: they come from environment
- * variables only.
- */
 export const SystemConfigSchema = closed(
   {
     /** System data directory; an absolute path. */
     dataDir: text(4096),
-    /**
-     * How long Workflow and UserInteraction wait for a port to return (M1Interface 14.3);
-     * Fabric and the composition root enforce it.
-     */
+    /** How long Workflow and UserInteraction wait for a port to return. */
     portReturnTimeoutMs: ms(),
     kernel: KernelConfigSchema,
     workflow: WorkflowConfigSchema,
   },
-  'platform.config.SystemConfig.v0',
+  'platform.config.SystemConfig.v1',
 );
 export type SystemConfig = Static<typeof SystemConfigSchema>;

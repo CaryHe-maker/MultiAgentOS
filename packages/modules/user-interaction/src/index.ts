@@ -1,51 +1,47 @@
 /**
- * UserInteraction Module (docs/M1/Module/UserInteraction.md). `domain/` holds the exit codes,
- * `InteractionMessages` and the report view; `application/` consumes the Inbox and drives
- * createRun, the authorization question and shutdown; `ports/` declares the terminal port that
- * the CLI adapter in `apps/cli` implements.
+ * UserInteraction Module (Module/UserInteraction). `console/` holds the terminal-independent
+ * console: it turns Kernel events into what the view shows and the user's input into requests
+ * through `InteractionGatewayPort`. `apps/cli` draws the view; `domain/` renders the analyze
+ * report.
  */
-import type {
-  InteractionGatewayPort,
-  InteractionInboxPort,
-  LifecyclePort,
-  SystemFaultReporter,
-} from '@multiagentos/contracts';
-import type { TerminalPort } from './ports/terminal-port.js';
-import { createInteractionRunner } from './application/interaction-runner.js';
+import type { HealthStatus, LifecyclePort } from '@multiagentos/contracts';
+import { Console, type ConsoleDeps } from './console/console.js';
 
-export { EXIT_CODES, EXIT_CODE_RUN_REJECTED } from './domain/exit-codes.js';
-export type { TerminalPort } from './ports/terminal-port.js';
+export { Console, RUN_EXIT_CODES, type ConsoleDeps } from './console/console.js';
+export { ConsoleText, terminalText } from './console/console-text.js';
+export type {
+  ActivityLine,
+  ConsoleView,
+  LiveState,
+  PendingItem,
+  TranscriptRecord,
+} from './console/console-view.js';
+export { renderReport } from './domain/report-view.js';
 
-export interface AnalyzeCommand {
-  readonly goal: string;
-  /** Absolute path of the repository to analyse. */
-  readonly repositoryPath: string;
-  /** Also show the RunSummary. */
-  readonly details: boolean;
-}
-
-export interface UserInteractionDeps {
-  /** UserInteraction's only way into the Kernel. */
-  readonly gateway: InteractionGatewayPort;
-  readonly terminal: TerminalPort;
-  /**
-   * Where an error thrown by the Inbox handler, the question task or the interrupt handler goes
-   * (docs/M1/Module/UserInteraction.md 6.1). UserInteraction does not try to recover by itself.
-   */
-  readonly reportSystemFault?: SystemFaultReporter;
-  readonly now?: () => Date;
-}
-
-/**
- * `inbox` is served on the address `inbox.user-interaction` by the composition root.
- * `analyze` runs one goal to its end, shows the result, requests shutdown and resolves with
- * the exit code; the composition root exits the process with it after everything stopped.
- */
+/** The console as a ModuleHost module; it holds no state that a start or stop must handle. */
 export interface UserInteractionModule extends LifecyclePort {
-  readonly inbox: InteractionInboxPort;
-  analyze(command: AnalyzeCommand): Promise<number>;
+  readonly console: Console;
 }
 
-export function createUserInteraction(deps: UserInteractionDeps): UserInteractionModule {
-  return createInteractionRunner(deps);
+export function createUserInteraction(deps: ConsoleDeps): UserInteractionModule {
+  const console = new Console(deps);
+  let running = false;
+  return {
+    console,
+    manifest: { moduleId: 'user-interaction', version: '0.2.0', dependencies: ['gateway'] },
+    start: () => {
+      running = true;
+      return Promise.resolve();
+    },
+    stop: () => {
+      running = false;
+      return Promise.resolve();
+    },
+    health: (): Promise<HealthStatus> =>
+      Promise.resolve({
+        status: running ? 'UP' : 'DOWN',
+        checkedAt: new Date().toISOString(),
+        details: [],
+      }),
+  };
 }

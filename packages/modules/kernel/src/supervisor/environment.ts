@@ -28,7 +28,7 @@ export interface ExecutorEnvironmentDeps {
 }
 
 /**
- * Builds the smallest environment an Executor needs (docs/M1/Kernel/Supervisor.md 4):
+ * Builds the smallest environment an Executor needs:
  * only MODEL receives credentials and only REPOSITORY_SEARCH receives the real runner.
  */
 export function createExecutorEnvironment(

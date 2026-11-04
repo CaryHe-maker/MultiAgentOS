@@ -20,7 +20,7 @@ export interface TerminationVerdict {
 
 /**
  * Maps an Executor verdict to the one terminal fact of an execution
- * (docs/M1/Kernel/Supervisor.md 4 and M1Interface 7.3).
+ * (facts carry the Session and `retryAfterMs`).
  *
  * The ExecutionFact union is discriminated by executionKind and outcome. The
  * mapper keeps those two switches explicit; the cast is the necessary bridge
@@ -33,6 +33,7 @@ export function toExecutionFact(
   outcome: ExecutorOutcome,
 ): ExecutionFact {
   const base = {
+    sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
     unitAttemptId: request.unitAttemptId,
     executionId: request.executionId,
@@ -68,6 +69,7 @@ export function toExecutionFact(
           retryable: outcome.retryable,
           requestState: outcome.requestState ?? 'UNKNOWN',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+          ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
         } as ExecutionFact;
       case 'VIOLATION':
         return {
@@ -107,6 +109,7 @@ export function toTerminationFact(
   verdict: TerminationVerdict,
 ): ExecutionFact {
   const base = {
+    sessionId: request.sessionId,
     workflowRunId: request.workflowRunId,
     unitAttemptId: request.unitAttemptId,
     executionId: request.executionId,

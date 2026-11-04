@@ -30,7 +30,7 @@ async function orient(files: Record<string, string>, tokenBudget = 8_000) {
 
 const readme = Array.from({ length: 60 }, (_, index) => `readme line ${index + 1}`).join('\n');
 
-describe('REPOSITORY_ORIENT (ExecutorSet 4.1)', () => {
+describe('REPOSITORY_ORIENT', () => {
   it('shows the tree, the README and the manifests with provenance', async () => {
     const { output, pack } = await orient({
       'README.md': readme,

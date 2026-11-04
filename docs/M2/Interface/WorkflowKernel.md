@@ -41,7 +41,7 @@ interface WorkflowGatewayPort {
 }
 ```
 
-`SyscallAck` 与 `SyscallRejected` 沿用 M1Interface 第 4.3 节的 major 0；`SyscallRejected.reasonCode` 增加本文第 5 节的原因码。
+`SyscallAck` 与 `SyscallRejected` 的字段与 M1Interface 第 4.3 节相同，以 major 1 发布；`SyscallRejected.reasonCode` 增加本文第 5 节的原因码。
 
 ### 2.2 运行内的请求
 
@@ -55,7 +55,7 @@ interface RegisterAgentRunRequest {
   agentRunId: string;              // 前缀 agr，Workflow 生成（ULID），写入日志后重放不变
   nodeId: string;                  // 该 AgentRun 对应的 AGENT 节点
   agentRef: PinnedDefinitionRef;   // kind = 'AGENT'
-  effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内
+  effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内；AgentRun 的思考强度只在这里给出，Unit 输入中没有
   workspaceViewId: 'main';         // M2Design 第 6.5 节
   display: { label: string };      // ≤80，只用于界面
   // 阶段 2：requestedCapabilities、writeRoots
@@ -126,8 +126,10 @@ type ProjectFileContent =
 ```
 
 - `AGENTS.md` 不返回正文，Workflow 只把引用交给 `context-assemble`；`trusted` 的判定与询问见 M2Design 第 9.5 节。
-  询问进行中时本请求挂起，直到用户回答或超时（超时得到 `trusted: false`）。
+  询问进行中时本请求挂起，直到用户回答；询问不超时，运行收敛时本请求以 `RUN_BLOCKED` 结束。
 - 文件超过 64 KiB 时照常存为产物；截断只发生在上下文组装中。
+
+- **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要目标文字的 Unit 输入写 `objectiveRef` 或 `goalRef`，由 Execution 解析。没有例外。
 
 ### 2.3 Session 命令的回复
 
@@ -253,8 +255,9 @@ interface UnitReport {
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
   fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不进入投影，只作为 read_output 的输入（M2Design 第 8.2 节）
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
+  quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
-  // 阶段 2：changedFiles；阶段 4：quota
+  // 阶段 2：changedFiles
 }
 
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
@@ -394,6 +397,39 @@ interface ContextCompacted {
 - 触发压缩的 `context-assemble` 在修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
 - `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；第三次溢出后按收尾处理。
 
+### 3.5 上下文投影的条目
+
+`context-assemble`（`v1`）的输入是 `context.ContextAssembleInput.v1`，历史由 `ContextHistoryEntry` 组成（[Module/Workflow](../Module/Workflow.md) 第 8.3 节）。正文都在产物中，所以同一个日志前缀得到相同的输入。
+
+```ts
+type ContextHistoryEntry = EntryBase & (
+  | { kind: 'HUMAN'; contentRef: ArtifactRef }
+  | { kind: 'MODEL_TURN'; modelId: string; outputRef: ArtifactRef; reasoningRef?: ArtifactRef; replayable: boolean }
+  | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
+  | { kind: 'FEEDBACK'; text: string; toolCallId?: string }   // 没有执行的工具调用的回答，≤1000
+  | { kind: 'HANDOFF'; outputRef: ArtifactRef; toolCallId: string }   // 前驱节点的交接，PINNED；正文在该次模型输出中
+  | { kind: 'PROJECT_INSTRUCTIONS'; path: string; ref: ArtifactRef; trusted: boolean }   // AGENTS.md，PINNED，追加在读取它的位置（M2Design 第 9.5 节）
+  | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
+);
+
+interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL' }
+
+interface ContextAssembleInput {
+  final: boolean;                                  // 必须等于 status.final
+  orientPackRef?: ArtifactRef;
+  history: ContextHistoryEntry[];
+  status: { round: number; maxRounds: number; budget: BudgetView; final: boolean; wrapUpReason?: WrapUpReason };
+}
+
+type WrapUpReason =                                // 下一次模型调用为什么是收尾调用（Module/Workflow 第 7 节）
+  | 'BUDGET_WRAP_UP'                               // BudgetView 为 WRAP_UP
+  | 'TOOL_UNIT_LIMIT' | 'WALL_CLOCK_LIMIT'         // QUOTA_EXHAUSTED 的 quota 为 TOOL_UNITS、WALL_CLOCK
+  | 'REPEATED_INTENT' | 'CONSECUTIVE_ERRORS'       // Workflow 的业务熔断（M2Design 第 3.4 节）
+  | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT';
+```
+
+`GRAPH_EXTENDED` 的 `nodes`、`edges` 见 [Persistence](Persistence.md) 第 2.3 节。
+
 ## 4. Schema 强制的约束
 
 | 对象 | 约束 |
@@ -406,6 +442,7 @@ interface ContextCompacted {
 | `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |
 | `HumanAnswered` | `origin = 'requested'` 时必须有 `humanRequestId`；`origin = 'initial'` 时不得有 |
 | `RunEnd` | `runSummaryRef` 与 `finalizationError` 恰好出现一个（同 M1） |
+| `UnitReport` | `reasonCode = 'QUOTA_EXHAUSTED'` 时必须有 `quota`、不得有 `unitAttemptId`（在受理时拒绝，没有尝试）；其他情况不得有 `quota` |
 
 ## 5. 原因码
 
@@ -415,8 +452,10 @@ interface ContextCompacted {
 | `NO_OPEN_TURN` | `SyscallRejected`（`registerAgentRun`、`submitUnit`） | 没有开启中的 Turn，或尝试属于已结束的 Turn |
 | `SESSION_COMMAND_UNKNOWN` | `SyscallRejected`（`reportSessionCommand`） | `commandId` 不存在或已回复 |
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
+| `USER_DECLINED` | `SyscallRejected`（`readProjectFile`） | 用户拒绝了 `repo.read`，项目文件读不到（Kernel/Core 第 5.2 节）；Unit 被拒时走 UnitReport |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
 
+| `QUOTA_EXHAUSTED` | UnitReport（`REJECTED`） | 该 AgentRun 的工具次数或墙钟已触顶（`quota` 说明是哪一项）；后续的非收尾 Unit 都以它拒绝，Workflow 进入收尾（Kernel/Monitor 第 3 节） |
 | `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中（阶段 2），Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
 | `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 阶段 8：组装期间完成了压缩，须以新的投影重新提交 |
 | `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | 阶段 8：provider 报告上下文过长 |

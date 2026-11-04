@@ -1,9 +1,0 @@
-{
-  "extends": "../../../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": ".."
-  },
-  "include": ["./**/*.ts"],
-  "exclude": ["fixtures", "runs"]
-}

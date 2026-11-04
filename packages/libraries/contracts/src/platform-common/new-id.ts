@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
@@ -16,9 +16,31 @@ export function ulid(now: number = Date.now()): string {
 }
 
 export type IdPrefix =
-  'wfr' | 'agr' | 'req' | 'una' | 'exe' | 'evt' | 'msg' | 'cor' | 'qst' | 'ctx';
+  | 'wfr'
+  | 'agr'
+  | 'req'
+  | 'una'
+  | 'exe'
+  | 'evt'
+  | 'msg'
+  | 'cor'
+  | 'qst'
+  | 'ctx'
+  | 'ses'
+  | 'trn'
+  | 'inp'
+  | 'scm'
+  | 'slq';
 
-/** A new random identifier `<prefix>_<ULID>` (M1Interface 3.1). */
+/** A new random identifier `<prefix>_<ULID>`. */
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${ulid()}`;
+}
+
+/**
+ * An ID derived from a readable path: `<prefix>_` and the first 32 hexadecimal digits of the
+ * path's SHA-256, so replaying a log gives the same ID (Interface 3).
+ */
+export function pathDerivedId(prefix: 'nod' | 'unr' | 'req', path: string): string {
+  return `${prefix}_${createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 32)}`;
 }

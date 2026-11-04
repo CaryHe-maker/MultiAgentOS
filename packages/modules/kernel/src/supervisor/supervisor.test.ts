@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   type BoundaryContext,
   type ExecutorRegistry,
 } from '@multiagentos/contracts';
@@ -27,7 +27,7 @@ const kills: string[] = [];
 async function fixture(hostFactory: (fabric: InProcessFabric) => ModuleHostControl) {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-'));
   roots.push(dataDir);
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   const host = hostFactory(fabric);
   const supervisor = createSupervisor({
     fabric: fabric.client('supervisor'),
@@ -129,6 +129,7 @@ describe('Supervisor bootstrap', () => {
       fabric.client('kernel-core').request(
         SCHEMA_IDS.execute,
         {
+          sessionId: 'ses_123456',
           workflowRunId: 'wfr_123456',
           unitAttemptId: 'una_123456',
           executionId: 'exe_123456',
@@ -139,6 +140,8 @@ describe('Supervisor bootstrap', () => {
           limits: {
             deadline: '2026-10-19T01:00:00.000Z',
             maxOutputBytes: 1024,
+            preview: { maxBytes: 1024, maxLines: 100 },
+            maxFullOutputBytes: 4096,
             maxFiles: 10,
           },
         },

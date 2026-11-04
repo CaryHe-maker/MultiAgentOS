@@ -1,15 +1,15 @@
 import { Type, type Static, type TSchema } from 'typebox';
 import { ExecutionKindSchema } from '../platform-common/execution-kind.js';
-import { UNIT_REPORT_CODES } from '../platform-common/reason-code.js';
+import { FAILURE_POLICY_CODES } from '../platform-common/reason-code.js';
 
 /**
  * AgentToolPool definition protocol (catalog.*).
  *
  * A definition is a versioned, content-addressed document. From v1.0.0 on it is immutable;
- * v0.x versions are drafts edited in place during M1. Its `digest` is the SHA-256 of the
- * canonical JSON of the definition without the `digest` field, where every reference is
- * expanded with the digest of its target (a Merkle tree). Pinning an agent's digest therefore
- * pins the whole Agent -> Unit -> Tool / Model / Prompt closure.
+ * v0.x versions are drafts edited in place. Its `digest` is the SHA-256 of the canonical JSON
+ * of the definition without the `digest` field, where every reference is expanded with the
+ * digest of its target (a Merkle tree). Pinning an agent's digest therefore pins the whole
+ * Agent -> Unit -> Tool / Model / Prompt closure.
  *
  * This file may import only `../platform-common/` (SharedContracts 2): the other families
  * import the pinned reference schema from here, and an import cycle between ES modules would
@@ -26,25 +26,18 @@ export type DeepReadonly<T> = T extends (infer Item)[]
     ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
     : T;
 
-export const DEFINITION_KINDS = ['AGENT', 'UNIT', 'TOOL', 'MODEL', 'PROMPT'] as const;
+export const DEFINITION_KINDS = ['AGENT', 'UNIT', 'TOOL', 'MODEL', 'PROMPT', 'TEMPLATE'] as const;
 export type DefinitionKind = (typeof DEFINITION_KINDS)[number];
-export const DefinitionKindSchema = Type.Union(
-  [
-    Type.Literal('AGENT'),
-    Type.Literal('UNIT'),
-    Type.Literal('TOOL'),
-    Type.Literal('MODEL'),
-    Type.Literal('PROMPT'),
-  ],
-  { $id: 'catalog.DefinitionKind.v0' },
-);
+export const DefinitionKindSchema = Type.Enum(DEFINITION_KINDS, {
+  $id: 'catalog.DefinitionKind.v1',
+});
 
 /** Stable logical identity, lower kebab-case, e.g. `code-viewer`. */
 export const DefinitionIdSchema = Type.String({
   pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$',
   maxLength: 64,
 });
-/** Exact version tag `v<major>.<minor>.<patch>`; M1 has no version ranges. */
+/** Exact version tag `v<major>.<minor>.<patch>`; there are no version ranges. */
 export const DefinitionVersionTagSchema = Type.String({
   pattern: '^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$',
 });
@@ -57,7 +50,7 @@ export const DefinitionStatusSchema = Type.Union(
     Type.Literal('QUARANTINED'),
     Type.Literal('REVOKED'),
   ],
-  { $id: 'catalog.DefinitionStatus.v0' },
+  { $id: 'catalog.DefinitionStatus.v1' },
 );
 export type DefinitionStatus = Static<typeof DefinitionStatusSchema>;
 
@@ -69,7 +62,7 @@ const TextSchema = (maxLength: number) => Type.String({ minLength: 1, maxLength 
 /** Reference written inside a definition file. The digest is derived, never hand-written. */
 export const DefinitionRefSchema = Type.Object(
   { id: DefinitionIdSchema, version: DefinitionVersionTagSchema },
-  { additionalProperties: false, $id: 'catalog.DefinitionRef.v0' },
+  { additionalProperties: false, $id: 'catalog.DefinitionRef.v1' },
 );
 export type DefinitionRef = Static<typeof DefinitionRefSchema>;
 
@@ -81,7 +74,7 @@ export const PinnedDefinitionRefSchema = Type.Object(
     version: DefinitionVersionTagSchema,
     digest: Sha256HexSchema,
   },
-  { additionalProperties: false, $id: 'catalog.PinnedDefinitionRef.v0' },
+  { additionalProperties: false, $id: 'catalog.PinnedDefinitionRef.v1' },
 );
 export type PinnedDefinitionRef = Static<typeof PinnedDefinitionRefSchema>;
 
@@ -99,14 +92,14 @@ export const pinnedRefOf = (kind: DefinitionKind) =>
     ),
   );
 
-/** Points at a registered protocol schema, e.g. `{ id: 'context.ContextPack', version: 'v0' }`. */
+/** Points at a registered protocol schema, e.g. `{ id: 'context.ContextPack', version: 'v1' }`. */
 export const ContractRefSchema = Type.Object(
   {
     kind: Type.Literal('contract'),
     id: Type.String({ pattern: '^[a-z][a-z0-9-]*(?:\\.[A-Za-z][A-Za-z0-9-]*)+$', maxLength: 160 }),
     version: Type.String({ pattern: '^v[0-9]+$' }),
   },
-  { additionalProperties: false, $id: 'catalog.ContractRef.v0' },
+  { additionalProperties: false, $id: 'catalog.ContractRef.v1' },
 );
 export type ContractRef = Static<typeof ContractRefSchema>;
 
@@ -119,7 +112,7 @@ const UniqueRefs = (options: { readonly minItems: number }) =>
  * type to ModelDefinition.
  */
 const header = <K extends DefinitionKind>(kind: K) => ({
-  schemaVersion: Type.Literal('v0'),
+  schemaVersion: Type.Literal('v1'),
   kind: Type.Literal(kind),
   id: DefinitionIdSchema,
   version: DefinitionVersionTagSchema,
@@ -127,51 +120,61 @@ const header = <K extends DefinitionKind>(kind: K) => ({
   description: TextSchema(2_000),
 });
 
+const EffortSchema = Type.Enum(['none', 'low', 'high', 'max']);
+
 export const AgentDefinitionSchema = Type.Object(
   {
     ...header('AGENT'),
     role: TextSchema(200),
     modelRef: DefinitionRefSchema,
-    /**
-     * How this agent calls its model. Thinking is always explicit: providers such as DeepSeek
-     * enable it by default, which silently adds output tokens (billed) and latency.
-     */
-    modelSettings: Type.Object(
+    thinking: Type.Object(
       {
-        thinking: Type.Union([Type.Literal('DISABLED'), Type.Literal('ENABLED')]),
-        /** Required when thinking is ENABLED; one of the model's `thinking.effortLevels`. */
-        thinkingEffort: Type.Optional(TextSchema(32)),
+        defaultEffort: EffortSchema,
+        allowedEfforts: Type.Array(EffortSchema, { minItems: 1, uniqueItems: true }),
       },
       { additionalProperties: false },
     ),
     promptRef: DefinitionRefSchema,
-    /** Closed set of units this agent may request; an agent never names UNIT tools directly. */
     unitRefs: UniqueRefs({ minItems: 1 }),
-    /** Subset of unitRefs, submitted in order when each AgentRun starts. */
     startUnitRefs: UniqueRefs({ minItems: 0 }),
-    /** Control tools (purpose CONTROL): how the model finishes or hands the task over. */
+    /** How this Agent may end; a tool that is not declared here cannot end it. */
     actions: Type.Object(
       {
-        finish: Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
-        handoff: Type.Optional(
+        end: Type.Array(
           Type.Object(
-            { toolRef: DefinitionRefSchema, targetAgentRef: DefinitionRefSchema },
+            {
+              toolRef: DefinitionRefSchema,
+              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF']),
+              allowedInFinal: Type.Boolean(),
+            },
             { additionalProperties: false },
           ),
+          { minItems: 1 },
         ),
+        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT']),
       },
       { additionalProperties: false },
     ),
-    /** Read by Workflow; execution deadlines and output limits live in KernelConfig. */
     limits: Type.Object(
       {
         maxRounds: Type.Integer({ minimum: 1, maximum: 100 }),
         maxToolCallsPerRound: Type.Integer({ minimum: 0, maximum: 32 }),
+        maxToolUnits: Type.Integer({ minimum: 1, maximum: 1000 }),
+        maxWallClockMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      },
+      { additionalProperties: false },
+    ),
+    budget: Type.Object(
+      {
+        perCallInputLimit: Type.Integer({ minimum: 1 }),
+        maxOutputTokens: Type.Integer({ minimum: 1 }),
+        finalInputBudget: Type.Integer({ minimum: 1 }),
+        finalMaxOutputTokens: Type.Integer({ minimum: 1 }),
       },
       { additionalProperties: false },
     ),
   },
-  { additionalProperties: false, $id: 'catalog.AgentDefinition.v0' },
+  { additionalProperties: false, $id: 'catalog.AgentDefinition.v1' },
 );
 export type AgentDefinition = DeepReadonly<Static<typeof AgentDefinitionSchema>>;
 
@@ -187,12 +190,12 @@ export const FAILURE_HANDLINGS = [
 export type FailureHandling = (typeof FAILURE_HANDLINGS)[number];
 /** Keyed by the reason codes of a UnitReport; a code that is not listed is handled as FATAL. */
 export type FailurePolicy = {
-  readonly [Code in (typeof UNIT_REPORT_CODES)[number]]?: FailureHandling;
+  readonly [Code in (typeof FAILURE_POLICY_CODES)[number]]?: FailureHandling;
 };
 const FailurePolicySchema = Type.Unsafe<FailurePolicy>(
   Type.Object(
     Object.fromEntries(
-      UNIT_REPORT_CODES.map((code) => [code, Type.Optional(Type.Enum(FAILURE_HANDLINGS))]),
+      FAILURE_POLICY_CODES.map((code) => [code, Type.Optional(Type.Enum(FAILURE_HANDLINGS))]),
     ),
     { additionalProperties: false },
   ),
@@ -201,7 +204,7 @@ const FailurePolicySchema = Type.Unsafe<FailurePolicy>(
 export const UnitDefinitionSchema = Type.Object(
   {
     ...header('UNIT'),
-    /** Selects the Executor; FILE_WRITE, COMMAND and TEST are rejected by Core in M1. */
+    /** Selects the Executor; FILE_WRITE, COMMAND and TEST are rejected by Core until their stage. */
     executionKind: ExecutionKindSchema,
     /** Capabilities that need a Lease. The caller and the model cannot remove them. */
     protectedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
@@ -213,14 +216,14 @@ export const UnitDefinitionSchema = Type.Object(
     isIdempotent: Type.Boolean(),
     failurePolicy: FailurePolicySchema,
   },
-  { additionalProperties: false, $id: 'catalog.UnitDefinition.v0' },
+  { additionalProperties: false, $id: 'catalog.UnitDefinition.v1' },
 );
 export type UnitDefinition = DeepReadonly<Static<typeof UnitDefinitionSchema>>;
 
 export const ToolDefinitionSchema = Type.Object(
   {
     ...header('TOOL'),
-    /** UNIT maps to one Unit; CONTROL expresses FINISH or HANDOFF. */
+    /** UNIT maps to one Unit; CONTROL ends the Agent or hands its task over. */
     purpose: Type.Union([Type.Literal('UNIT'), Type.Literal('CONTROL')]),
     /** Name shown to the model in tool calling; follows the common provider name rules. */
     modelName: Type.String({ pattern: '^[a-zA-Z][a-zA-Z0-9_-]{0,63}$' }),
@@ -241,7 +244,7 @@ export const ToolDefinitionSchema = Type.Object(
     isIdempotent: Type.Boolean(),
     contentStatus: ContentStatusSchema,
   },
-  { additionalProperties: false, $id: 'catalog.ToolDefinition.v0' },
+  { additionalProperties: false, $id: 'catalog.ToolDefinition.v1' },
 );
 export type ToolDefinition = DeepReadonly<Static<typeof ToolDefinitionSchema>>;
 
@@ -262,7 +265,7 @@ export const PromptDefinitionSchema = Type.Object(
     ),
     contentStatus: ContentStatusSchema,
   },
-  { additionalProperties: false, $id: 'catalog.PromptDefinition.v0' },
+  { additionalProperties: false, $id: 'catalog.PromptDefinition.v1' },
 );
 export type PromptDefinition = DeepReadonly<Static<typeof PromptDefinitionSchema>>;
 
@@ -279,6 +282,14 @@ const TokenRatesSchema = Type.Object(
   { additionalProperties: false },
 );
 const ClockTimeSchema = Type.String({ pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' });
+
+const ThinkingRequestSchema = Type.Union([
+  Type.Object({ thinking: Type.Literal('DISABLED') }, { additionalProperties: false }),
+  Type.Object(
+    { thinking: Type.Literal('ENABLED'), providerEffort: Type.Optional(TextSchema(32)) },
+    { additionalProperties: false },
+  ),
+]);
 
 export const ModelDefinitionSchema = Type.Object(
   {
@@ -308,8 +319,15 @@ export const ModelDefinitionSchema = Type.Object(
         thinking: Type.Object(
           {
             isSupported: Type.Boolean(),
-            isEnabledByDefault: Type.Boolean(),
-            effortLevels: Type.Array(TextSchema(32), { uniqueItems: true }),
+            effortMapping: Type.Array(
+              Type.Object(
+                { effort: EffortSchema, request: ThinkingRequestSchema },
+                { additionalProperties: false },
+              ),
+            ),
+            replayReasoning: Type.Enum(['REQUIRED', 'OPTIONAL', 'UNSUPPORTED']),
+            missingReasoningFill: Type.Enum(['EMPTY_STRING', 'OMIT']),
+            reasoningCountsAsOutput: Type.Boolean(),
           },
           { additionalProperties: false },
         ),
@@ -353,22 +371,62 @@ export const ModelDefinitionSchema = Type.Object(
       { additionalProperties: false },
     ),
   },
-  { additionalProperties: false, $id: 'catalog.ModelDefinition.v0' },
+  { additionalProperties: false, $id: 'catalog.ModelDefinition.v1' },
 );
 export type ModelDefinition = DeepReadonly<Static<typeof ModelDefinitionSchema>>;
 
-export const DefinitionSchema = Type.Union(
-  [
-    AgentDefinitionSchema,
-    UnitDefinitionSchema,
-    ToolDefinitionSchema,
-    ModelDefinitionSchema,
-    PromptDefinitionSchema,
-  ],
-  { $id: 'catalog.Definition.v0' },
+const NodeNameSchema = Type.String({ pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$', maxLength: 64 });
+const ScalarSchema = Type.Union([Type.String(), Type.Boolean()]);
+
+/** Exactly one of `equals` and `in`; the field is a path into the predecessor's result. */
+export const EdgeConditionSchema = Type.Refine(
+  Type.Object(
+    {
+      field: TextSchema(128),
+      equals: Type.Optional(ScalarSchema),
+      in: Type.Optional(Type.Array(ScalarSchema, { minItems: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+  (condition) => (condition.equals === undefined) !== (condition.in === undefined),
+  () => 'exactly one of equals and in must be present',
 );
-export type Definition =
-  AgentDefinition | UnitDefinition | ToolDefinition | ModelDefinition | PromptDefinition;
+export type EdgeCondition = Static<typeof EdgeConditionSchema>;
+
+const TemplateDependencySchema = Type.Union([
+  NodeNameSchema,
+  Type.Object({ node: NodeNameSchema, when: EdgeConditionSchema }, { additionalProperties: false }),
+]);
+
+export const TemplateNodeSchema = Type.Union([
+  Type.Object(
+    {
+      name: NodeNameSchema,
+      kind: Type.Literal('AGENT'),
+      agent: DefinitionRefSchema,
+      goal: Type.Optional(TextSchema(4_000)),
+      dependsOn: Type.Optional(Type.Array(TemplateDependencySchema)),
+      inputFrom: Type.Optional(Type.Literal('HANDOFF')),
+      output: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { name: NodeNameSchema, kind: Type.Literal('HUMAN') },
+    { additionalProperties: false },
+  ),
+]);
+export type TemplateNode = Static<typeof TemplateNodeSchema>;
+
+export const TemplateDefinitionSchema = Type.Object(
+  {
+    ...header('TEMPLATE'),
+    origin: Type.Enum(['BUILTIN', 'REPOSITORY']),
+    nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
+);
+export type TemplateDefinition = DeepReadonly<Static<typeof TemplateDefinitionSchema>>;
 
 /**
  * Maps a kind literal to its definition type, so `DefinitionByKind['MODEL']` is
@@ -380,7 +438,9 @@ export interface DefinitionByKind {
   readonly TOOL: ToolDefinition;
   readonly MODEL: ModelDefinition;
   readonly PROMPT: PromptDefinition;
+  readonly TEMPLATE: TemplateDefinition;
 }
+export type Definition = DefinitionByKind[DefinitionKind];
 
 export const DEFINITION_SCHEMAS: { readonly [K in DefinitionKind]: TSchema } = {
   AGENT: AgentDefinitionSchema,
@@ -388,16 +448,15 @@ export const DEFINITION_SCHEMAS: { readonly [K in DefinitionKind]: TSchema } = {
   TOOL: ToolDefinitionSchema,
   MODEL: ModelDefinitionSchema,
   PROMPT: PromptDefinitionSchema,
+  TEMPLATE: TemplateDefinitionSchema,
 };
 
-/**
- * The same shapes without `digest`, as authored in files: v0.x draft versions never store a
- * digest (it is computed at load), and v1+ versions lack one only until `catalog:seal` runs.
- */
+/** As authored: drafts (v0.x) never store a digest, published versions only after sealing. */
 export const DEFINITION_DRAFT_SCHEMAS: { readonly [K in DefinitionKind]: TSchema } = {
   AGENT: Type.Omit(AgentDefinitionSchema, ['digest'], { additionalProperties: false }),
   UNIT: Type.Omit(UnitDefinitionSchema, ['digest'], { additionalProperties: false }),
   TOOL: Type.Omit(ToolDefinitionSchema, ['digest'], { additionalProperties: false }),
   MODEL: Type.Omit(ModelDefinitionSchema, ['digest'], { additionalProperties: false }),
   PROMPT: Type.Omit(PromptDefinitionSchema, ['digest'], { additionalProperties: false }),
+  TEMPLATE: Type.Omit(TemplateDefinitionSchema, ['digest'], { additionalProperties: false }),
 };

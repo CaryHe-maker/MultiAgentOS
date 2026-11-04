@@ -22,39 +22,44 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3. 阶段 1 的定义实例
 
-M1 的 16 个定义原样保留（`v0`，供 `analyze` 使用）。阶段 1 新增：
+阶段 1 的定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`）；M1 的定义文件与 M1 的目录已随 S1-IN-1 删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
 
-| kind | id | version | `schemaVersion` | 说明 |
-|---|---|---|---|---|
-| AGENT | `main` | `v0.1.0`（草稿） | `v1` | Turn-chat 的主 Agent：读、列目录、检索；结束工具 `reply`；`thinking.defaultEffort = high`，允许 `none`–`max` |
-| UNIT | `repository-list` | `v0.1.0` | `v1` | `executionKind = REPOSITORY_LIST`，受保护能力 `repo.read`，工具 `list-files` |
-| UNIT | `message-publish` | `v0.1.0` | `v1` | `executionKind = MESSAGE_PUBLISH`，Kernel 内建，无工具 |
-| UNIT | `repository-orient`、`repository-search`、`file-read`、`context-assemble`、`model-call` | 各 `v1.1.0` | `v1` | M1 实例的 `v1` 版本，内容不变，供 main 引用；M1 的 `v1.0.0` 保留给 planner 与 code-viewer |
-| TOOL | `list-files` | `v0.1.0` | `v0` | `purpose = UNIT`，参数为 `executor.RepositoryListInput` |
-| TOOL | `reply` | `v0.1.0` | `v0` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
-| PROMPT | `main-system` | `v0.1.0` | `v0` | main 的系统提示词 |
-| MODEL | `deepseek-flash` | `v2.0.0` | `v1` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
-| TEMPLATE | `analyze` | `v1.0.0` | `v1` | Interface/Definitions 第 4 节 |
+| kind | id | 说明 |
+|---|---|---|
+| AGENT | `main` | Turn-chat 的主 Agent：列目录、检索、读文件；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
+| AGENT | `planner`、`code-viewer` | `analyze` 的两个节点，由 M1 改写：结束工具 `finish-analysis`（`PUBLISH_REPORT`），planner 另有 `handoff-to-code-viewer`（`HANDOFF`，收尾调用中不可用）；code-viewer 的启动 Unit 是 `repository-orient`；思考关闭（`allowedEfforts = [none]`，M1 原样） |
+| UNIT | `repository-orient`、`repository-search`、`file-read`、`context-assemble`、`model-call`、`report-publish` | M1 实例的 `v1` 版本：契约改为 major 1 的版本，`failurePolicy` 去掉 `USER_DECLINED` |
+| UNIT | `repository-list` | `executionKind = REPOSITORY_LIST`，受保护能力 `repo.read`，工具 `list-files` |
+| UNIT | `message-publish` | `executionKind = MESSAGE_PUBLISH`，Kernel 内建，无工具 |
+| TOOL | `read-file`、`search-repository`、`finish-analysis`、`handoff-to-code-viewer` | M1 内容的 `v1` 版本 |
+| TOOL | `list-files` | `purpose = UNIT`，参数为 `executor.RepositoryListInput` |
+| TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
+| PROMPT | `main-system` | main 的系统提示词（新写，`PLACEHOLDER`；暂不定稿，见下） |
+| PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
+| MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
+| TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 
-- 草稿（`v0.x`）在阶段 1 的退出评测之后定稿并封存为 `v1.0.0`（与 M1 的做法相同）。
+- **main 的提示词暂不定稿**：main 在阶段 2 才有写入工具，只读阶段的评测不代表它实际的工作方式，所以等阶段 2 实现写入能力之后再考虑定稿（Cary 2026-11-04 决定）。阶段 1 退出不要求评测、定稿与封存 main。
+- 草稿（`v0.x`）在 main 的提示词定稿之后一起封存为 `v1.0.0`（与 M1 的做法相同）。
 - main 的额度参数（Interface/Definitions 第 2 节）初值取 M1 的全局值：`perCallInputLimit = 96000`、`maxOutputTokens = 8192`、
   `finalInputBudget = 72000`、`finalMaxOutputTokens = 8192`；`limits` 为 `maxRounds = 40`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
 
 ## 4. 加载校验
 
-M1 的校验规则全部保留（M1 AgentToolPool 第 5 节），只作用于 `v0` 定义。`v1` 增加：
+M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 
 | 对象 | 规则 |
 |---|---|
 | Agent `v1` | `thinking.allowedEfforts` 包含 `defaultEffort`；模型不支持思考时只能为 `['none']`；每一档在模型的 `effortMapping` 中都有映射 |
-| Agent `v1` | `actions.finish.kind = 'REPLY'` 时，工具为 `purpose = CONTROL` 且 `parametersContract = workflow.ReplyArgs` |
-| Agent `v1` | `unitRefs` 中 `CONTEXT_ASSEMBLE`、`MODEL`、`MESSAGE_PUBLISH` 各恰好一个；`startUnitRefs` 只能是 `REPOSITORY_ORIENT` |
+| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；参数契约按 `then`：`PUBLISH_REPLY` 为 `workflow.ReplyArgs`，`PUBLISH_REPORT` 为 `workflow.AnalysisReportDraft`，`HANDOFF` 为 `workflow.HandoffBrief` |
+| Agent `v1` | `unitRefs` 中 `CONTEXT_ASSEMBLE`、`MODEL` 各恰好一个；有 `PUBLISH_REPLY` 或 `onDegraded = PUBLISH_NOTICE` 时恰好一个 `MESSAGE_PUBLISH`，否则没有；有 `PUBLISH_REPORT` 或 `onDegraded = PUBLISH_REPORT` 时恰好一个 `REPORT_PUBLISH`，否则没有；`startUnitRefs` 只能是本 Agent 的 `REPOSITORY_ORIENT`；工具的模型名称不重复 |
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
-| Unit `v1` | `REPOSITORY_LIST` 必须声明 `repo.read`；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具 |
+| Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具；`failurePolicy` 不得列出 `USER_DECLINED`、`QUOTA_EXHAUSTED`：它们的处理是 Workflow 的固定规则（Module/Workflow 第 7 节） |
 | Model `v1` | `effortMapping` 恰好覆盖四档，每档一项 |
-| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个声明了 `handoff` 的 Agent 节点，且自身的 Agent 等于该交接的 `targetAgentRef` |
-| 引用 | `v1` 定义可以引用 `v0` 的 Tool 与 Prompt；`v0` 定义不得引用 `v1` 定义 |
+| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个结束动作含 `HANDOFF` 的 Agent 节点（交接的目标由模板决定，Agent 定义中没有目标） |
+| 引用 | `v1` 定义只引用 `v1` 定义；已封存的版本只引用已封存的版本 |
+| Unit `v1` | 输入与输出契约按执行类型固定为 major 1 的版本（例如 `model-call` 为 `executor.ModelCallInput.v1`） |
 
 跨配置校验（组合根）：每个可登记 Agent 的额度参数通过 Monitor 的启动检查（[Kernel/Monitor](../Kernel/Monitor.md) 第 6 节）。
 

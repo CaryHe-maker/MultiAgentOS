@@ -13,7 +13,7 @@ import { validate } from './validation.js';
 const defaults = DEFAULT_REPOSITORY_EXCLUSIONS;
 
 describe('repository exclusions', () => {
-  it('excludes the dangerous files that path.matchesGlob lets through (issue #24)', () => {
+  it('excludes the dangerous files that path.matchesGlob lets through', () => {
     expect(isExcluded('.hidden/x.pem', defaults)).toBe(true);
     expect(isExcluded('.cfg/node_modules/a.js', defaults)).toBe(true);
     expect(isExcluded('src/.git/config', defaults)).toBe(true);
@@ -87,7 +87,6 @@ describe('repository exclusions', () => {
       repositoryPath: '/repo',
       exclusions: [...defaults],
       provider: 'deepseek',
-      expiresAt: '2026-10-14T00:00:00.000Z',
     };
     expect(validate(AuthorizationRequestSchema, question).ok).toBe(true);
     expect(validate(AuthorizationRequestSchema, { ...question, exclusions: ['!x'] }).ok).toBe(

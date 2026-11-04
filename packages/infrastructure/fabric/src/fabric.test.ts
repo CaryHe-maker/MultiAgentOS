@@ -1,16 +1,12 @@
 import {
   ContractValidationError,
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   type BoundaryContext,
-  type CatalogPort,
-  type PersistencePort,
   type ShutdownRequest,
   type SyscallAck,
 } from '@multiagentos/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  catalogWithDeadline,
-  persistenceWithDeadline,
   FabricError,
   InProcessFabric,
   Inbox,
@@ -27,7 +23,7 @@ const context: BoundaryContext = {
 const request: ShutdownRequest = { requestId: 'req_123456' };
 
 async function started(): Promise<InProcessFabric> {
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   await fabric.start();
   return fabric;
 }
@@ -48,7 +44,7 @@ describe('InProcessFabric', () => {
     const first = sender.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     await subscriberStarted;
@@ -65,7 +61,12 @@ describe('InProcessFabric', () => {
       sender.send(
         'gateway.admission',
         SCHEMA_IDS.admissionProjection,
-        { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+        {
+          workflowRunId: 'wfr_123456',
+          sessionId: 'ses_123456',
+          runState: 'CLOSED',
+          closeReason: 'COMPLETED',
+        },
         context,
       ),
     ).rejects.toThrow('NOT_RUNNING');
@@ -88,7 +89,7 @@ describe('InProcessFabric', () => {
         .send(
           'gateway.admission',
           SCHEMA_IDS.admissionProjection,
-          { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+          { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
           context,
         ),
     ).rejects.toThrow('NO_SUBSCRIBER');
@@ -123,18 +124,17 @@ describe('InProcessFabric', () => {
     const admission = sender.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     const workflow = sender.send(
       'inbox.workflow',
-      SCHEMA_IDS.workflowInboxEvent,
+      SCHEMA_IDS.workflowSystemEvent,
       {
         eventId: 'evt_123456',
-        workflowRunId: 'wfr_123456',
         seq: 1,
         occurredAt: '2026-10-21T00:00:00.000Z',
-        event: { type: 'RunStart', goal: 'analyze' },
+        event: { type: 'SessionListQuery', queryId: 'slq_123456', repositoryRoot: '/repo' },
       },
       context,
     );
@@ -161,7 +161,7 @@ describe('InProcessFabric', () => {
     expect(result).not.toBe(response);
     expect(received).toMatchObject({
       schemaName: 'kernel.control.ShutdownRequest',
-      schemaVersion: 0,
+      schemaVersion: 1,
       producer: 'user-interaction',
       correlationId: context.correlationId,
       payload: request,
@@ -176,7 +176,7 @@ describe('InProcessFabric', () => {
     await expect(
       client.request(SCHEMA_IDS.shutdown, { requestId: 'bad' }, context),
     ).rejects.toThrow(ContractValidationError);
-    await expect(client.request('kernel.control.Missing.v0', {}, context)).rejects.toThrow(
+    await expect(client.request('kernel.control.Missing.v1', {}, context)).rejects.toThrow(
       'UNKNOWN_SCHEMA_MAJOR',
     );
   });
@@ -218,7 +218,7 @@ describe('InProcessFabric', () => {
     ).rejects.toThrow(ContractValidationError);
     expect(() =>
       fabric.client('workflow').register(
-        SCHEMA_IDS.createRun,
+        SCHEMA_IDS.startSession,
         () => Promise.resolve(),
         () => Promise.resolve(),
       ),
@@ -268,14 +268,19 @@ describe('InProcessFabric', () => {
     const first = client.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'RUNNING' },
+      { workflowRunId: 'wfr_123456', sessionId: 'ses_123456', runState: 'RUNNING' },
       context,
     );
     const firstResult = first.catch((error: unknown) => error);
     const second = client.send(
       'gateway.admission',
       SCHEMA_IDS.admissionProjection,
-      { workflowRunId: 'wfr_123456', runState: 'CLOSED', closeReason: 'COMPLETED' },
+      {
+        workflowRunId: 'wfr_123456',
+        sessionId: 'ses_123456',
+        runState: 'CLOSED',
+        closeReason: 'COMPLETED',
+      },
       context,
     );
     await firstStarted;
@@ -537,48 +542,6 @@ describe('request deadline (Fabric.md 3)', () => {
       await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
       handler.answer(ack);
       await expect(pending).resolves.toEqual(ack);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('gives the Catalog and Persistence wrappers the same deadline', async () => {
-    vi.useFakeTimers();
-    try {
-      const never = () => new Promise<never>(() => undefined);
-      const catalog = catalogWithDeadline(
-        { pinAgent: never, getDefinition: never, capabilities: () => [] } as CatalogPort,
-        1_000,
-      );
-      const persistence = persistenceWithDeadline(
-        {
-          repository: () => ({ get: never, put: () => Promise.resolve() }),
-          auditLog: () => ({ append: never }),
-          capabilities: () => [],
-        } as PersistencePort,
-        1_000,
-      );
-      const timedOut = { name: 'FabricError', code: 'REQUEST_TIMEOUT' };
-      const waits = [
-        expect(
-          catalog.pinAgent({ id: 'planner', version: 'v1.0.0' }, context),
-        ).rejects.toMatchObject(timedOut),
-        expect(
-          catalog.getDefinition({ kind: 'MODEL', id: 'model', version: 'v1.0.0' }, context),
-        ).rejects.toMatchObject(timedOut),
-        expect(persistence.repository('workflow', 'wfr_123456').get('x')).rejects.toMatchObject(
-          timedOut,
-        ),
-        expect(persistence.auditLog('workflow', 'wfr_123456').append({})).rejects.toMatchObject(
-          timedOut,
-        ),
-        expect(
-          persistence.repository('workflow', 'wfr_123456').put({ id: 'x' }),
-        ).resolves.toBeUndefined(),
-      ];
-      await vi.advanceTimersByTimeAsync(1_000);
-      await Promise.all(waits);
-      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }

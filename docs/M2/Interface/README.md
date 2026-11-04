@@ -33,10 +33,8 @@
 ### 2.2 版本规则
 
 1. `schemaName + major` 唯一确定语义；未知 major 必须拒绝。
-2. M1 的全部 Schema 为 major 0，已冻结。M2 中语义变化的 Schema 发布 major 1（`.v1`），与 major 0 并存；
-   语义不变的 Schema 继续使用 major 0，本目录只列出名称并链接到 M1Interface 的定义。
-3. M2 运行时只产生 major 1 的版本（存在 major 1 时）。内置模板 `analyze` 使用 M1 的 Agent 与 Unit 定义，
-   它们的输入输出 Schema 仍是 major 0。
+2. M1 的全部 Schema 为 major 0，已随 S1-IN-1 删除。发布版只有 major 1 一套契约。
+3. M2 运行时只产生 major 1 的版本；内置模板 `analyze` 同样使用 major 1。
 4. 阶段 1 之前，major 1 的 Schema 属于草稿，按本目录原地修改；M2 发布时冻结。冻结后的规则同 M1Interface 第 1.2 节。
 5. 所有边界数据先经过运行时 Schema 校验；对象一律 `additionalProperties: false`。
 

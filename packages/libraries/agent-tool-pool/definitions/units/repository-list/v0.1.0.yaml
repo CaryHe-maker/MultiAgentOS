@@ -1,0 +1,26 @@
+schemaVersion: v1
+kind: UNIT
+id: repository-list
+version: v0.1.0
+description: List the repository as a tree, through the same file set as search and read.
+executionKind: REPOSITORY_LIST
+protectedCapabilities:
+  - repo.read
+inputContract:
+  kind: contract
+  id: executor.RepositoryListInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.RepositoryListOutput
+  version: v1
+toolRefs:
+  - id: list-files
+    version: v0.1.0
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  NOT_FOUND: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

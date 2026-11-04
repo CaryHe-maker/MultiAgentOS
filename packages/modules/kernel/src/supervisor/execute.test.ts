@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   MEDIA_TYPES,
   type BoundaryContext,
   type Envelope,
@@ -47,6 +47,7 @@ afterEach(async () => {
 
 function request(executionId = 'exe_123456'): OrientRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
@@ -57,6 +58,8 @@ function request(executionId = 'exe_123456'): OrientRequest {
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
+      preview: { maxBytes: 1024, maxLines: 100 },
+      maxFullOutputBytes: 4096,
       maxFiles: 10,
     },
   };
@@ -72,6 +75,7 @@ function registry(): ExecutorRegistry {
   return {
     REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', () => Promise.resolve(completed)),
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
+    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
@@ -95,6 +99,7 @@ const context: BoundaryContext = {
   correlationId: 'cor_123456',
   tenantId: 'local',
   projectId: 'local',
+  sessionId: 'ses_123456',
   workflowRunId: 'wfr_123456',
 };
 
@@ -105,7 +110,7 @@ async function fixture(executors: ExecutorRegistry = registry()): Promise<{
 }> {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-execute-'));
   roots.push(dataDir);
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   const kernelCore = fabric.client('kernel-core');
   const facts: Envelope<ExecutionFact>[] = [];
   kernelCore.subscribe<ExecutionFact>('kernel-core.execution-facts', (envelope) => {

@@ -1,7 +1,7 @@
 import type { SearchMode } from '@multiagentos/contracts';
 
 /**
- * The keywords of the SYMBOL pattern of ExecutorSet 3.3, plus `func`, `trait`, `namespace` and
+ * The keywords of the SYMBOL pattern of ExecutorSet, plus `func`, `trait`, `namespace` and
  * `module` so Go, Rust traits, C++ and Ruby declarations are found too.
  */
 const DECLARATION_KEYWORDS =
@@ -12,7 +12,7 @@ const MODIFIERS = 'public|private|protected|static|final|abstract|async|override
  * Declarations of `name` (a regex-escaped identifier), as one pattern that means the same in
  * JavaScript and in ripgrep's Rust regex (no look-around, ASCII classes only):
  *
- * - `<keyword> name` — the pattern of ExecutorSet 3.3;
+ * - `<keyword> name` — the pattern of ExecutorSet;
  * - `func (receiver) name` — Go methods;
  * - `#define name` — C macros;
  * - `type name(` at column 0 — C and C++ functions, which have no keyword;
@@ -46,7 +46,7 @@ export interface LineQuery {
   /** The fixed string (TEXT) or the regular expression source (SYMBOL). */
   readonly pattern: string;
   /**
-   * Case-insensitive when the query is ASCII without upper-case letters (issue #26, E17):
+   * Case-insensitive when the query is ASCII without upper-case letters:
    * `parse config` finds `parseConfig`-style prose and `ParseConfig`, while `ParseConfig`
    * stays exact. ASCII-only keeps the folding identical in JavaScript and ripgrep.
    */

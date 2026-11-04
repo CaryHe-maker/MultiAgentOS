@@ -1,7 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-// Kernel components keep their data isolated (docs/M1/Kernel/Interaction.md 3.2): a component
+// Kernel components keep their data isolated (Kernel/Interaction): a component
 // imports `interfaces/` only, never a sibling; only `run-actor/` and the package entry wire
 // components together, and only through each component's `index.ts`.
 const kernelComponents = ['core', 'execution', 'monitor', 'scheduler', 'gateway', 'supervisor'];
@@ -92,8 +92,11 @@ export default tseslint.config(
     },
   })),
   {
-    // The child-process exit matrix must spawn a real child; product code still may not.
-    files: ['apps/control-plane/test/process-entry.test.ts'],
+    // The exit matrix and the killed process of S1 must spawn a real child; product code may not.
+    files: [
+      'apps/control-plane/test/process-entry.test.ts',
+      'apps/control-plane/test/acceptance/stage1-exit.test.ts',
+    ],
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdk] }],
     },

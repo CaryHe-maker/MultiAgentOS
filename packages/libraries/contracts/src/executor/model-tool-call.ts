@@ -13,7 +13,7 @@ const ParsedArgumentsSchema = Type.Union([
 
 const call = { toolCallId: ToolCallIdSchema, toolName: text(128) };
 /**
- * `arguments` is one of the two open JSON values of the protocol (M1Interface 1.2): Workflow
+ * `arguments` is one of the two open JSON values of the protocol: Workflow
  * validates it against the tool's `parametersContract` before use. Exactly one of two shapes:
  * parsed arguments without `argumentsError`, or `arguments: null` with `argumentsError` when
  * the provider text could not be parsed.
@@ -23,6 +23,6 @@ export const ModelToolCallSchema = Type.Union(
     closed({ ...call, arguments: ParsedArgumentsSchema }),
     closed({ ...call, arguments: Type.Null(), argumentsError: Type.Literal('INVALID_JSON') }),
   ],
-  { $id: 'executor.ModelToolCall.v0' },
+  { $id: 'executor.ModelToolCall.v1' },
 );
 export type ModelToolCall = Static<typeof ModelToolCallSchema>;

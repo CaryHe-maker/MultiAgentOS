@@ -21,12 +21,12 @@
 
 | 风险 | 防护 | 位置 |
 |---|---|---|
-| 克隆来的仓库借 `AGENTS.md` 取得 system 级的指令权威 | 只有用户按 `(仓库, SHA)` 确认信任过的内容才进入 system 段；内容一变化就重新询问 | [Kernel/Core](Kernel/Core.md) 第 5.2 节 |
-| 未被信任的 `AGENTS.md` 仍可能包含注入 | 以 user 角色、标明"仓库材料，未经用户信任"出现在历史开头；不进入 system 段 | [ExecutorSet](Library/ExecutorSet.md) 第 6.1 节 |
+| 克隆来的仓库借 `AGENTS.md` 取得 system 级的指令权威 | `AGENTS.md` 一律不进入 system 段；只有用户按 `(仓库, SHA)` 确认信任过的内容才标明为项目指令；内容一变化就重新询问 | [Kernel/Core](Kernel/Core.md) 第 5.2 节 |
+| 未被信任的 `AGENTS.md` 仍可能包含注入 | 以 user 角色、标明"仓库材料，未经用户信任"追加在历史末尾 | [ExecutorSet](Library/ExecutorSet.md) 第 6.1 节 |
 | `readonly` 预设下被诱导信任 | `readonly` 预设不询问，`AGENTS.md` 一律按未被信任处理 | Core 第 5.2 节 |
 | 信任记录被当作授权 | 信任记录不授予任何执行能力，不是授权条目，也不是 Lease | M2Design 第 9.5 节 |
 | Agent 修改 `AGENTS.md` | 只能经文件工具，按极危险级逐次询问；命令无法写入或新建（阶段 2、3）；根目录与子目录相同 | M2Design 第 5.2、6.1 节 |
-| 子目录的 `AGENTS.md` 借"项目指令"取得权威（阶段 2） | 信任规则与根目录相同，按 `(仓库, 相对路径, SHA)` 确认；被信任的也只以 user 角色、标明已信任的条目追加，不进入 system 段；未被信任的标明为仓库材料；每个投影至多 8 份 | M2Design 第 9.5 节 |
+| 子目录的 `AGENTS.md` 借"项目指令"取得权威（阶段 2） | 信任规则与根目录相同，按 `(仓库, 相对路径, SHA)` 确认；被信任的也只以 user 角色、标明已信任的条目追加；未被信任的标明为仓库材料；每个投影至多 8 份 | M2Design 第 9.5 节 |
 
 ## 4. 其余部分（在对应阶段完成）
 

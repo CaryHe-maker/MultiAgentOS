@@ -15,7 +15,7 @@ import type {
 } from '@multiagentos/contracts';
 import { newId } from '@multiagentos/contracts';
 import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
-import type { KernelConfig } from '../interfaces/index.js';
+import type { KernelConfig } from '@multiagentos/contracts';
 
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 import { ExecutionRunner } from './execution-runner.js';
@@ -33,7 +33,7 @@ export interface SupervisorDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly moduleHost: ModuleHostControl;
-  readonly config: KernelConfig;
+  readonly config: Pick<KernelConfig, 'cancelGraceMs'>;
   /** System data directory; the Supervisor empties `<dataDir>/tmp/` before anything starts. */
   readonly dataDir: string;
   /**
@@ -62,14 +62,12 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const now = deps.now ?? (() => new Date());
   const subprocess = deps.subprocess ?? createSubprocessRunner();
   const correlations = new Map<string, string>();
-  const facts = createExecutionFactSink(deps.fabric, (workflowRunId) => ({
-    correlationId:
-      workflowRunId === undefined
-        ? newId('cor')
-        : (correlations.get(workflowRunId) ?? newId('cor')),
+  const facts = createExecutionFactSink(deps.fabric, (fact) => ({
+    correlationId: correlations.get(fact.workflowRunId) ?? newId('cor'),
     tenantId: 'local',
     projectId: 'local',
-    ...(workflowRunId === undefined ? {} : { workflowRunId }),
+    sessionId: fact.sessionId,
+    workflowRunId: fact.workflowRunId,
   }));
   const runner = new ExecutionRunner({
     executors: deps.executors,

@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { text } from './schema-helpers.js';
 
 /**
- * Exclusion rules of repository access (M1Interface 3.5). Core shows them to the user and puts
+ * Exclusion rules of repository access. Core shows them to the user and puts
  * them into every REPOSITORY scope; the Executors apply them. Both sides use this one list and
  * this one matcher, so the range the user agreed to is the range that is read.
  *

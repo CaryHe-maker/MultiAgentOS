@@ -2,8 +2,8 @@ import { isUtf8 } from 'node:buffer';
 
 /**
  * Line handling shared by every Executor that returns repository text. A file is decoded as
- * UTF-8 and split on LF; a CR before the LF is dropped, so returned text always uses LF
- * (ExecutorSet 4.3). The text of a line range is what FILE_READ returns for that range, and its
+ * UTF-8 and split on LF; a CR before the LF is dropped, so returned text always uses LF.
+ * The text of a line range is what FILE_READ returns for that range, and its
  * SHA-256 is the `contentSha256` of every Provenance that cites the range.
  */
 export interface TextDocument {
@@ -12,11 +12,11 @@ export interface TextDocument {
   readonly endsWithNewline: boolean;
 }
 
-/** Binary per ExecutorSet 3.1: a NUL byte within the first 8 KiB. */
+/** Binary per ExecutorSet: a NUL byte within the first 8 KiB. */
 export const BINARY_PROBE_BYTES = 8 * 1024;
 
 /**
- * A text file per ExecutorSet 3.1: not binary, and valid UTF-8 throughout, so text in another
+ * A text file per ExecutorSet: not binary, and valid UTF-8 throughout, so text in another
  * encoding is refused instead of being returned with replacement characters.
  */
 export function isText(content: Uint8Array): boolean {
@@ -45,7 +45,7 @@ export function lineRangeText(document: TextDocument, startLine: number, endLine
 }
 
 /**
- * Lines prefixed with right-aligned line numbers, the format M0 measured as the cheapest and
+ * Lines prefixed with right-aligned line numbers, the format measured as the cheapest and
  * clearest for the model (`experiments/minimal-agent-loop/RUNS.md`, C4).
  */
 export function numberLines(lines: readonly string[], firstLine: number): string {

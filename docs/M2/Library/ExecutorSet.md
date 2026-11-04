@@ -14,7 +14,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 |---|---|---|
 | 五个 Executor | 增加 `repository-list`；阶段 2–6 增加文件写入、`output-read`、命令、git、网页 | 1 起 |
 | 输出超过 `maxOutputBytes` 时截断，完整内容丢弃 | 工具 Executor 生成固定的预览，截断时同时交回完整输出（不超过 `maxFullOutputBytes`，由 Execution 存为 7 天过期的产物）；共用模块 `retention/` | 1 |
-| 预览上限就是 `maxOutputBytes`（检索、概览为 1 MiB） | `v1` Unit 的预览上限为 `previewMaxBytes`（50 KiB）与 `previewMaxLines`（2000），并且不超过 `maxOutputBytes`；`v0` Unit 不变 | 1 |
+| 预览上限就是 `maxOutputBytes`（检索、概览为 1 MiB） | 预览上限为 `previewMaxBytes`（50 KiB）与 `previewMaxLines`（2000），并且不超过 `maxOutputBytes` | 1 |
 | 失败分类不带重试时刻 | `model-call` 在限流与过载的失败中交回 provider 给出的 `retryAfterMs` | 1 |
 | — | `output-read`：`read_output` 工具的执行，对完整输出分段读取 | 2 |
 | `context-assemble` 只组装一次运行内的历史，超出预算时每次按固定顺序裁剪 | 历史跨 Turn、跨 WorkflowRun；按日志顺序组装、不按调用裁剪；运行时上下文是历史条目；只有收尾调用保留确定性的保险；项目指令段；思考内容回传 | 1 |
@@ -27,14 +27,16 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 仓库访问（文件集合、快照、路径检查、检索）、`repository-orient`、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
 见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
 阶段 2 起，`v1` 的 `file-read` 另返回 `nestedInstructions`：从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 的相对路径，由外到内排列，经同一个 `RepositoryAccess` 检查（排除规则命中的目录不算，不跟随符号链接），不读取它们的内容（M2Design 第 9.5 节）。
-M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）；预览的内容与 M1 截断后的输出相同，所以 `analyze` 的行为不变。
+`repository-search`、`repository-list` 经 `retention/` 生成预览（第 4 节）；预览是给模型看的文本，不是 JSON。`file-read` 的预览是带行号的文本，超出上限时说明可以按 `startLine` 继续读，不另存完整输出：文件本身就能按范围重读。`repository-orient` 的产物是后续调用读取的结构，由 `orientBudget` 限制，不是预览。
 
 ## 3. Executor 清单（阶段 1）
 
 | executionKind | 实现 | 目录（`src/`） | scope.kind | 产物 |
 |---|---|---|---|---|
-| `REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ` | M1 原样，预览经 `retention/` | M1 原样 | `REPOSITORY` | 预览（长期保留）；截断时另有完整输出（7 天过期） |
-| `REPOSITORY_LIST` | `RepositoryListExecutor` | `repository-list/` | `REPOSITORY` | 目录树文本的预览；截断时另有完整输出 |
+| `REPOSITORY_ORIENT` | M1 原样 | M1 原样 | `REPOSITORY` | 概览（长期保留） |
+| `FILE_READ` | M1 原样，产物为带行号的文本 | M1 原样 | `REPOSITORY` | 预览（长期保留） |
+| `REPOSITORY_SEARCH` | M1 原样，预览经 `retention/` | M1 原样 | `REPOSITORY` | 预览（长期保留）；截断时另有完整输出（7 天过期） |
+| `REPOSITORY_LIST` | `createListExecutor` | `repository-list/` | `REPOSITORY` | 目录树文本的预览；截断时另有完整输出 |
 | `CONTEXT_ASSEMBLE` | `ContextAssembleExecutor` | `context-assemble/` | `NONE` | ASSEMBLE ContextPack（7 天过期） |
 | `MODEL` | `ModelCallExecutor` | `model-call/` | `MODEL` | 模型原始输出；思考内容单独一个产物（都长期保留） |
 
@@ -47,7 +49,7 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 
 - 两种保留器：按条目（路径、检索命中，保留前 N 个）与按字节（保留头部、尾部或头尾两端）；不切断 UTF-8 与 UTF-16 代理对；精确计数省略的条目数或字节数；
 - 只回答"保留了什么、省略了多少"；保留哪一端、预览中的说明文字由各 Executor 决定（检索结果建议缩小范围，文件建议指定行范围，命令输出保留头尾）；
-- 预览上限由 Execution 随执行限制交来（M2Design 第 8.2 节）：`v1` Unit 为 `min(previewMaxBytes, maxOutputBytes)` 字节且不超过 `previewMaxLines` 行；`v0` Unit 为 `maxOutputBytes`、不限行数；
+- 预览上限由 Execution 随执行限制交来（M2Design 第 8.2 节）：`min(previewMaxBytes, maxOutputBytes)` 字节且不超过 `previewMaxLines` 行；
   按条目保留时，行数按条目渲染后的行计算；
 - 预览不超过上述上限；截断时 Executor 交回完整输出，未截断时不交回；
 - 完整输出不超过该 Unit 的 `maxFullOutputBytes`（缺省 8 MiB）；超出时以与预览相同的取舍保存，预览中注明完整输出也不完整；
@@ -81,12 +83,10 @@ M1 的三个工具 Executor 改为经 `retention/` 生成预览（第 4 节）�
 |---|---|---|---|
 | INSTRUCTIONS | 人设与职责 | system | M1 原样 |
 | TOOLS | 实际可用的工具（final 时只有结束控制工具） | system | M1 原样 |
-| PROJECT_INSTRUCTIONS | `trusted = true` 的 `AGENTS.md`，≤64 KiB；在一个 AgentRun 内不变 | system | 新增 |
-| UNTRUSTED_INSTRUCTIONS | `trusted = false` 的根目录 `AGENTS.md`，标明"仓库材料，未经用户信任" | user | 新增，位于 HISTORY 之前 |
-| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、子目录 `AGENTS.md` 的条目（按 `trusted` 标明，≤64 KiB，阶段 2）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
+| HISTORY | 跨 Turn 的人类输入、模型轮、工具结果的预览、运行时上下文条目（工作目录、沙盒状态、当前日期）、`AGENTS.md` 的条目（按 `trusted` 标明为已信任的项目指令或未经信任的仓库材料，≤64 KiB；子目录的自阶段 2 起）、压缩的摘要、说明性记录 | 按条目 | 增加 Turn 分组、`seq` 与类别 |
 | STATUS | 已用轮数、额度状态、收尾原因 | user | `budgetState` 改为 `BudgetView`；位于末尾 |
 
-`OBJECTIVE` 与 `HANDOFF` 只在 `analyze` 的 planner、code-viewer 中出现（M1 原样）；main 的目标就是 HISTORY 中的人类输入。
+`OBJECTIVE` 与 `HANDOFF` 段删除：目标是 HISTORY 中的人类输入，交接内容是目标节点投影中的 `PINNED` 条目。
 system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时上下文变化时，Workflow 在 HISTORY 末尾追加一条新的条目。
 
 ### 6.2 只在末尾追加，不按调用裁剪
@@ -94,7 +94,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - Workflow 交来的每个 HISTORY 条目带 `turnId`、`seq` 与类别 `PINNED` 或 `NORMAL`（M2Design 第 9.3 节）。
 - 普通调用按条目顺序组装全部条目，不去掉任何条目；同一个 AgentRun 两次压缩之间的组装结果，前一次是后一次的前缀（不变量 27）。
 - 普通调用超出 `tokenBudget`（`perCallInputLimit`）时返回 `REJECTED(LIMIT_EXCEEDED)`。阶段 8 起这种情况由 Kernel 在派发前压缩避免（M2Design 第 9.6 节）；之前由 Workflow 进入收尾。
-- ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS、PROJECT_INSTRUCTIONS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
+- ContextPack 带 `headDigest`：system 段（INSTRUCTIONS、TOOLS）与模型参数的摘要；Workflow 把它写入 `CONTEXT_ASSEMBLED`，压缩的估算据此判断实测值是否可用（阶段 8）。
 - **收尾调用的保险**（`final: true`）：超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，以完整的模型轮为单位（工具调用与它的结果不拆开，思考内容随轮一起去掉），
   直到装下为止；`PINNED` 条目与最近一轮永不去掉。输出 `elidedEntries`（被去掉条目的 `seq`），取代 M1 的 `elidedRequestIds`。仍装不下时返回 `REJECTED(LIMIT_EXCEEDED)`，Workflow 按降级规则结束。
 
@@ -120,7 +120,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 
 ## 7. `ModelCallExecutor` 的变化
 
-- **思考强度**：由 `scope` 中的 `effort` 按模型的 `effortMapping` 转为请求参数（DeepSeek 为请求体中的 `thinking` 与 `reasoning_effort`，M1 的写法）。
+- **思考强度**：Core 在登记 AgentRun 时按模型的 `effortMapping` 转换，随 `scope` 交来（DeepSeek 为请求体中的 `thinking` 与 `reasoning_effort`，M1 的写法）。
 - **思考内容**：响应中的 `reasoning_content` 不放入 `ModelCallOutput`，而是作为单独的产物交回，Execution 写入后在 `UnitReport` 中给出 `reasoningRef`。
 - **收尾调用**（M2Design 第 9.4 节）：
   1. 第一次：只提供结束控制工具，`tool_choice = auto`，按 Agent 的设置开启思考；
@@ -137,12 +137,12 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 ## 8. 测试
 
 M1 的测试全部保留。增加：
-- `retention/`：两种保留器的省略计数精确；不切断 UTF-8 与代理对；同一输入得到逐字节相同的预览；`v0` Unit 下 M1 三个工具的预览与 M1 截断后的输出逐字节相同；`v1` Unit 的预览不超过 `previewMaxBytes` 与 `previewMaxLines`；
+- `retention/`：两种保留器的省略计数精确；不切断 UTF-8 与代理对；同一输入得到逐字节相同的预览；预览不超过 `previewMaxBytes` 与 `previewMaxLines`；
 - `repository-list`：排除规则与路径检查与 `file-read` 一致；深度与 glob；不读取内容；截断时交回完整输出；
 - 完整输出的上限：超过 `maxFullOutputBytes` 时按预览的取舍保存，预览注明完整输出也不完整；
 - `output-read`（阶段 2）：行号与原文一致；`pattern` 按字面匹配；`offset`、`limit` 的边界；结果不超过预览上限；`\r\n` 与 `\n`；同一输入结果逐字节相同；
 - `context-assemble`：同一输入得到逐字节相同的 ContextPack；普通调用不去掉任何条目，追加条目后前一次的结果是新结果的前缀；system 段与运行时上下文无关；
-  收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；未信任的 `AGENTS.md` 不进入 system 段；
+  收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；`AGENTS.md` 不进入 system 段；
 - `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；`Retry-After` 的两种格式换算为 `retryAfterMs`；
   前缀式摘要请求与之前普通请求的前缀相同（阶段 8）；
 - `command/parse/`（阶段 3）：引号与转义中的分隔符不拆分；子 shell、`{ }`、管道、heredoc 中的子命令都被取出；变量作命令名、命令替换与语法错误判为不可复用；ARITY 表的取词；

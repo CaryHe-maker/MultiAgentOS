@@ -1,10 +1,10 @@
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
-import { planSeal } from '../domain/catalog-index.js';
+import { planSeal } from '../catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 
 /**
- * `pnpm run catalog:seal [directory]`: computes and writes the digest of every draft
- * definition (a file without `digest`). Files that already have a digest are never changed.
+ * `pnpm run catalog:seal [directory]`: computes and writes the digest of every published
+ * definition that has none yet. Drafts and files that already have a digest are never changed.
  */
 const directory = process.argv[2] ?? DEFAULT_DEFINITIONS_DIRECTORY;
 const source = new FileDefinitionSource(directory);

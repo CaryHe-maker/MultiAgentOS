@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { sha256Hex, type ExecutorOutcome, type FileReadInput } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { emptyDirectory, environmentFor, repositoryScope } from '../test-support/environments.js';
-import { createFileReadExecutor } from './file-read-executor.js';
+import { RENDERING_BYTES, createFileReadExecutor } from './file-read-executor.js';
 
 const numbered = (count: number) =>
   Array.from({ length: count }, (_, index) => `line ${index + 1}`).join('\n') + '\n';
@@ -11,14 +11,22 @@ const numbered = (count: number) =>
 async function read(
   content: string,
   input: Omit<FileReadInput, 'path'> = {},
-  maxOutputBytes = 1_048_576,
+  maxBytes = 1_048_576,
 ): Promise<ExecutorOutcome> {
   const root = await emptyDirectory('file-read');
   await writeFile(join(root, 'file.txt'), content);
   const environment = environmentFor('FILE_READ', repositoryScope(root));
   return createFileReadExecutor().execute(
     { path: 'file.txt', ...input },
-    { ...environment, limits: { ...environment.limits, maxOutputBytes } },
+    {
+      ...environment,
+      limits: {
+        deadline: '2099-01-01T00:00:00.000Z',
+        maxOutputBytes: 1_048_576,
+        preview: { maxBytes: RENDERING_BYTES + maxBytes, maxLines: 2_000 },
+        maxFullOutputBytes: 1_048_576,
+      },
+    },
   );
 }
 
@@ -27,13 +35,14 @@ const output = (outcome: ExecutorOutcome) => {
   return { output: outcome.result.output, text: outcome.result.artifact.text };
 };
 
-describe('FILE_READ (ExecutorSet 4.3)', () => {
+describe('FILE_READ', () => {
   it('reads lines 1..400 by default and reports the real end', async () => {
     const { output: result, text } = output(await read(numbered(1000)));
     expect(result).toMatchObject({ startLine: 1, endLine: 400, totalLines: 1000 });
-    expect(text.split('\n')[399]).toBe('line 400');
+    expect(text).toContain('400 | line 400');
+    expect(text).toContain('[Lines 401-1000 not shown; call read_file with startLine 401');
     expect(result).toMatchObject({
-      contentSha256: sha256Hex(text),
+      contentSha256: sha256Hex(numbered(400)),
       fileSha256: sha256Hex(numbered(1000)),
     });
   });
@@ -48,24 +57,26 @@ describe('FILE_READ (ExecutorSet 4.3)', () => {
     expect(result).toMatchObject({ startLine: 2, endLine: 5, totalLines: 5 });
   });
 
-  it('cuts to the last whole line within maxOutputBytes', async () => {
+  it('cuts to the last whole line within the preview', async () => {
     // Each line "line N\n" is 7 bytes for N < 10.
     const { output: result, text } = output(await read(numbered(9), {}, 20));
     expect(result).toMatchObject({ startLine: 1, endLine: 2 });
-    expect(text).toBe('line 1\nline 2\n');
+    expect(text).toBe(
+      'file.txt (lines 1-2 of 9)\n1 | line 1\n2 | line 2\n[Lines 3-9 not shown; call read_file with startLine 3 to continue.]',
+    );
   });
 
-  it('rejects a first line longer than maxOutputBytes', async () => {
+  it('rejects a first line longer than the preview', async () => {
     expect(await read(`${'x'.repeat(100)}\nshort\n`, {}, 50)).toEqual({
       outcome: 'REJECTED',
       reasonCode: 'LIMIT_EXCEEDED',
     });
   });
 
-  it('returns an empty file as 1..0 with empty content', async () => {
+  it('returns an empty file as 1..0 and says it is empty', async () => {
     const { output: result, text } = output(await read(''));
     expect(result).toMatchObject({ startLine: 1, endLine: 0, totalLines: 0 });
-    expect(text).toBe('');
+    expect(text).toBe('file.txt (empty file)');
   });
 
   it('rejects a range on an empty file and a start beyond the end', async () => {
@@ -77,7 +88,7 @@ describe('FILE_READ (ExecutorSet 4.3)', () => {
 
   it('normalizes CRLF to LF and keeps a missing final newline', async () => {
     const { output: result, text } = output(await read('a\r\nb\r\nc'));
-    expect(text).toBe('a\nb\nc');
+    expect(text).toBe('file.txt (lines 1-3 of 3)\n1 | a\n2 | b\n3 | c');
     expect(result).toMatchObject({ totalLines: 3, endLine: 3 });
   });
 

@@ -124,7 +124,7 @@ interface ReadArtifactRequest {
 }
 ```
 
-`ArtifactContent`、`ShutdownRequest` 沿用 M1Interface 第 4.2、4.3 节的 major 0。
+`ArtifactContent`、`ShutdownRequest` 的字段与 M1Interface 第 4.2、4.3 节相同，以 major 1 发布。
 `readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
 
 ### 2.4 `/compact`（阶段 8）
@@ -156,18 +156,18 @@ type KernelToInteractionEvent =
 type AuthorizationRequest =
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'repo.read';
-      repositoryPath: string; exclusions: string[]; provider: string; expiresAt: string;
+      repositoryPath: string; exclusions: string[]; provider: string;
     }
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'project.instructions';
-      path: string; contentRef: ArtifactRef; truncated: boolean; expiresAt: string;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
+      path: string; contentRef: ArtifactRef; truncated: boolean;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
     };
   // 阶段 2：workspace.write；阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
 
 interface AuthorizationResolved {
   type: 'AuthorizationResolved';
   questionId: string;
-  resolution: 'GRANTED' | 'DECLINED' | 'TIMED_OUT' | 'CANCELLED';
+  resolution: 'GRANTED' | 'DECLINED' | 'CANCELLED';   // 询问不超时；CANCELLED 只在运行收敛时（M2Design 第 5.3 节）
 }
 
 interface HumanRequest {
@@ -186,7 +186,7 @@ interface MessagePublished {         // message-publish 完成时发出
   type: 'MessagePublished';
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
-  kind: 'REPLY' | 'RUN_RESULT';
+  kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
 }
 
 interface RunStateChanged {
@@ -201,7 +201,7 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   label: string;                     // 登记时的 display.label
   parentAgentRunId?: string;         // 阶段 4
   phase: ActivityPhase;
-  unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE' };
+  unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE'; fullRef?: ArtifactRef };   // toolName 与 argsSummary 取自 submitUnit 的 display；fullRef 只在 DONE 且预览截断时给出
   retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
   todos?: { total: number; done: number; current?: string };   // 阶段 2：Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;

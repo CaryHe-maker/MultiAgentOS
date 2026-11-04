@@ -1,6 +1,6 @@
 /**
  * `pnpm run acceptance -- [F1 F2 … | all] [--runs N] [--yes] [--out DIR]`: runs the fixed task
- * set against the real model (M1ReleasePlan R3.1, R3.6). It costs money, so it first prints the
+ * set against the real model. It costs money, so it first prints the
  * number of runs and an upper bound of the cost, and starts only with `--yes`. The API key comes
  * from `DEEPSEEK_API_KEY` or from `.env` in the MultiAgentOS working directory. Every run record
  * is appended to `<out>/records.jsonl` (default `.multiagentos/acceptance/<time>/`, ignored by git).
@@ -41,20 +41,20 @@ function parse(argv: readonly string[]): Options {
   return { ids: ids.length === 0 ? TASKS.map((task) => task.id) : ids, runs, yes, out };
 }
 
-/** The most one run can cost: the whole token budget at the dearer rate, at peak time. */
+/**
+ * The most one run can cost: an `analyze` run is one Turn, so the whole Turn budget at the
+ * dearer rate, at peak time.
+ */
 async function upperBoundUsdPerRun(): Promise<number> {
   const catalog = await DefinitionCatalog.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
-  const model = await catalog.getDefinition(
-    { kind: 'MODEL', id: 'deepseek-flash', version: 'v1.0.0' },
-    { correlationId: 'cor_acceptance', tenantId: 'local', projectId: 'local' },
-  );
-  if (!model.ok) throw new Error('the default model definition is missing');
-  const rates = model.value.pricing.offPeak;
+  const model = catalog.latest('MODEL', 'deepseek-flash');
+  if (model === undefined) throw new Error('the default model definition is missing');
+  const rates = model.pricing.offPeak;
   const microUsdPerToken = Math.max(rates.inputCacheMiss, rates.output) / 1_000_000;
-  const peak = model.value.pricing.peak.ratePercent / 100;
-  const tokens = defaultSystemConfig().kernel.budget.tokenLimit;
+  const peak = model.pricing.peak.ratePercent / 100;
+  const tokens = defaultSystemConfig().kernel.budget.turnTokenLimit;
   return (tokens * microUsdPerToken * peak) / 1_000_000;
 }
 

@@ -5,13 +5,13 @@ import { closed, count } from '../platform-common/schema-helpers.js';
 /** Cancels every execution of the run whose runEpoch is lower than this one. */
 export const CancelRunExecutionsRequestSchema = closed(
   { workflowRunId: IdSchemas.workflowRunId, runEpoch: count(1) },
-  'kernel.execution.CancelRunExecutionsRequest.v0',
+  'kernel.execution.CancelRunExecutionsRequest.v1',
 );
 export type CancelRunExecutionsRequest = Static<typeof CancelRunExecutionsRequestSchema>;
 
 /** `requestId` is the one of the ShutdownRequest that triggered the shutdown. */
 export const SupervisorShutdownRequestSchema = closed(
   { requestId: IdSchemas.requestId },
-  'kernel.execution.SupervisorShutdownRequest.v0',
+  'kernel.execution.SupervisorShutdownRequest.v1',
 );
 export type SupervisorShutdownRequest = Static<typeof SupervisorShutdownRequestSchema>;

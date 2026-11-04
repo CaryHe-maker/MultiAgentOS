@@ -5,7 +5,7 @@ const VersionSchema = Type.String({ pattern: '^v[0-9]+(?:\\.[0-9]+){0,2}$' });
 
 export const VersionedRefSchema = closed(
   { kind: text(128), id: text(160), version: VersionSchema },
-  'platform.common.VersionedRef.v0',
+  'platform.common.VersionedRef.v1',
 );
 export type VersionedRef = Static<typeof VersionedRefSchema>;
 export type OpaqueRef<K extends string> = VersionedRef & { readonly kind: K };

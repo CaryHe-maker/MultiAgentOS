@@ -6,7 +6,7 @@ import type {
   ViolationCode,
 } from '@multiagentos/contracts';
 
-/** Outcome constructors, so every Executor reports with the reason codes of M1Interface 7.3. */
+/** Outcome constructors, so every Executor reports with its own reason codes. */
 export const completed = (result: ExecutionResult): ExecutorOutcome => ({
   outcome: 'COMPLETED',
   result,
@@ -31,7 +31,7 @@ export const failed = (reasonCode: ExecutorFailedCode, retryable: boolean): Exec
 /**
  * Raised inside an Executor when its signal fires; the Executor answers with `aborted()`. The
  * Supervisor reports such an execution as TERMINATED, so the reason code here is never
- * delivered (issue #26, B5).
+ * delivered.
  */
 export class ExecutionAborted extends Error {
   public constructor() {
@@ -47,8 +47,8 @@ export function throwIfAborted(signal: AbortSignal): void {
 }
 
 /**
- * Runs an Executor body and turns anything it throws into an outcome: an Executor never throws
- * (M1Interface 8). An abort becomes `aborted()`, any other error a non-retryable INTERNAL
+ * Runs an Executor body and turns anything it throws into an outcome: an Executor never throws.
+ * An abort becomes `aborted()`, any other error a non-retryable INTERNAL
  * failure, because it means a defect rather than a condition of the input.
  */
 export async function guarded(body: () => Promise<ExecutorOutcome>): Promise<ExecutorOutcome> {

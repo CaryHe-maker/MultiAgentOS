@@ -28,33 +28,32 @@ const TOOLS = [
 async function packOf(final: boolean): Promise<AssembleContextPack> {
   const outcome = await createAssembleExecutor().execute(
     {
-      objective: 'What does add do?',
       final,
       tokenBudget: 64_000,
       instructions: 'Analyse the repository.',
       toolSpecs: final ? [TOOLS[1] as (typeof TOOLS)[number]] : TOOLS,
       history: [
+        { seq: 1, category: 'PINNED', kind: 'HUMAN', text: 'What does add do?' },
         {
-          step: {
-            kind: 'MODEL_TURN',
-            round: 1,
-            requestId: 'req_turn000001',
-            toolCalls: [
-              { toolCallId: 'call_0', toolName: 'read_file', arguments: { path: 'a.ts' } },
-            ],
-          },
+          seq: 2,
+          category: 'NORMAL',
+          kind: 'MODEL_TURN',
+          toolCalls: [{ toolCallId: 'call_0', toolName: 'read_file', arguments: { path: 'a.ts' } }],
         },
         {
-          step: {
-            kind: 'FEEDBACK',
-            round: 1,
-            code: 'NOT_EXECUTED',
-            message: 'Not executed.',
-            toolCallId: 'call_0',
-          },
+          seq: 3,
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: 'Not executed.',
+          toolCallId: 'call_0',
         },
       ],
-      status: { roundsUsed: 1, maxRounds: 5, final, budgetState: 'NORMAL' },
+      status: {
+        round: 2,
+        maxRounds: 5,
+        final,
+        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      },
     },
     environmentFor('CONTEXT_ASSEMBLE', { kind: 'NONE' }),
   );
@@ -85,12 +84,20 @@ function fakeFetch(respond: () => Response | Promise<Response>, recorded: Record
 
 async function call(
   respond: () => Response | Promise<Response>,
-  options: { final?: boolean; environment?: Partial<ExecutorEnvironment> } = {},
+  options: {
+    final?: boolean;
+    finalMode?: 'AUTO' | 'FORCED';
+    environment?: Partial<ExecutorEnvironment>;
+  } = {},
 ): Promise<{ outcome: ExecutorOutcome; recorded: Recorded }> {
   const recorded: Recorded = { calls: 0 };
   const executor = createModelCallExecutor({ fetch: fakeFetch(respond, recorded) });
   const outcome = await executor.execute(
-    { contextPack: options.final === true ? finalPack : pack, final: options.final === true },
+    {
+      contextPack: options.final === true ? finalPack : pack,
+      final: options.final === true,
+      ...(options.finalMode === undefined ? {} : { finalMode: options.finalMode }),
+    },
     environmentFor('MODEL', MODEL_SCOPE, options.environment),
   );
   return { outcome, recorded };
@@ -105,7 +112,7 @@ const networkError = (code: string) => () =>
     }),
   );
 
-describe('MODEL (ExecutorSet 4.5)', () => {
+describe('MODEL (ExecutorSet 7)', () => {
   it('maps a tool-calling answer to the output and the raw artifact', async () => {
     const { outcome, recorded } = await call(() =>
       chatCompletion(
@@ -165,15 +172,18 @@ describe('MODEL (ExecutorSet 4.5)', () => {
     expect(recorded.authorization).toBe('Bearer sk-test-secret');
   });
 
-  it('forces the control tool on the final call', async () => {
-    const { recorded } = await call(() => chatCompletion([]), { final: true });
-    expect(recorded.body?.['tool_choice']).toEqual({
+  it('offers the end tool freely on a final call, and forces it on the retry', async () => {
+    const free = await call(() => chatCompletion([]), { final: true });
+    expect(free.recorded.body?.['tool_choice']).toBe('auto');
+    const forced = await call(() => chatCompletion([]), { final: true, finalMode: 'FORCED' });
+    expect(forced.recorded.body?.['tool_choice']).toEqual({
       type: 'function',
       function: { name: 'finish_analysis' },
     });
+    expect(forced.recorded.body?.['thinking']).toEqual({ type: 'disabled' });
   });
 
-  it('completes a final call that answers with exactly the forced tool', async () => {
+  it('completes a final call that answers with exactly one end tool', async () => {
     const { outcome } = await call(
       () => chatCompletion([{ id: 'c', name: 'finish_analysis', arguments: '{"summary":"s"}' }]),
       { final: true },
@@ -184,7 +194,7 @@ describe('MODEL (ExecutorSet 4.5)', () => {
     });
   });
 
-  // DeepSeek has answered forced final calls with read_file, which the request did not even offer.
+  // DeepSeek has answered final calls with read_file, which the request did not even offer.
   it.each([
     ['another tool', [{ id: 'c', name: 'read_file', arguments: '{"path":"a"}' }]],
     ['no tool call', []],

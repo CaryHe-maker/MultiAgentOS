@@ -57,8 +57,8 @@
 
 | 能力 | 何时询问 | 结果 |
 |---|---|---|
-| `repo.read` | 运行开启后第一次需要时；同意后本运行内有效 | 拒绝在本运行内保留；超时只拒绝本次 |
-| `project.instructions` | `readProjectFile('AGENTS.md')` 读到未被信任的内容时 | 信任记录跨 Session 有效，只决定 `AGENTS.md` 能否进入 system 段，不产生执行权限 |
+| `repo.read` | 第一个需要它的 Unit；同意后本运行内有效 | 询问不超时，一直等到用户回答；拒绝绑定提出请求的 AgentRun，被拒的 Unit 以 `REJECTED(USER_DECLINED)` 作为工具结果交还，不结束 Turn |
+| `project.instructions` | `readProjectFile('AGENTS.md')` 读到未被信任的内容时 | 信任记录跨 Session 有效，只决定 `AGENTS.md` 标明为项目指令还是仓库材料，不产生执行权限 |
 
 授权只由 Kernel 在准入或读取项目文件时被动发起；Workflow 的人类请求与 UserInteraction 的回答都不产生授权（M2Design 第 4.1 节）。
 
@@ -91,7 +91,7 @@ M1 的原因码及其处理（M1 第 10 节）保留。阶段 1 新增：
 |---|---|---|
 | `AGENT_RUN_ACTIVE`（`requestHuman`） | SyscallRejected | 内部错误：Workflow 只在静止时请求开放输入 |
 | `NO_OPEN_TURN` | SyscallRejected | 内部错误 |
-| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 为触顶项 |
+| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT` |
 | `LIMIT_EXCEEDED`（普通调用的 `context-assemble`） | UnitReport | 上下文超出窗口：进入收尾，main 的回复提示 `/new`（阶段 8 起由压缩避免，M2Design 第 9.3 节） |
 | `ARTIFACT_EXPIRED` | UnitReport、`readArtifact` 的拒绝 | 正文已过保留期；UnitReport 中只出现在 `read_output` 的结果里（阶段 2），作为给模型的工具结果 |
 

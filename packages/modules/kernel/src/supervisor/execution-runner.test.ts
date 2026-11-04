@@ -3,7 +3,6 @@ import {
   MEDIA_TYPES,
   validate,
   type ExecutionFact,
-  type ExecutionFactSink,
   type ExecutionRequest,
   type Executor,
   type ExecutorKind,
@@ -21,6 +20,12 @@ type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIE
 type ModelRequest = Extract<ExecutionRequest, { executionKind: 'MODEL' }>;
 
 const SHA = 'a'.repeat(64);
+const TOOL_LIMITS = {
+  deadline: '2026-10-19T01:00:00.000Z',
+  maxOutputBytes: 1024,
+  preview: { maxBytes: 1024, maxLines: 100 },
+  maxFullOutputBytes: 4096,
+};
 const completedOrient: ExecutorOutcome = {
   outcome: 'COMPLETED',
   result: {
@@ -36,7 +41,7 @@ const completedOrient: ExecutorOutcome = {
   },
 };
 
-class RecordingSink implements ExecutionFactSink {
+class RecordingSink {
   public readonly facts: ExecutionFact[] = [];
 
   public report(fact: ExecutionFact): Promise<void> {
@@ -52,6 +57,7 @@ afterEach(() => {
 
 function orientRequest(executionId = 'exe_123456'): OrientRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
@@ -62,6 +68,8 @@ function orientRequest(executionId = 'exe_123456'): OrientRequest {
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
+      preview: { maxBytes: 1024, maxLines: 100 },
+      maxFullOutputBytes: 4096,
       maxFiles: 10,
     },
   };
@@ -69,6 +77,7 @@ function orientRequest(executionId = 'exe_123456'): OrientRequest {
 
 function modelRequest(): ModelRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId: 'exe_123456',
@@ -80,9 +89,10 @@ function modelRequest(): ModelRequest {
         operation: 'ASSEMBLE',
         tokenCount: 0,
         tokenBudget: 1000,
-        truncated: false,
-        droppedCount: 0,
         prefixSha256: SHA,
+        projectionDigest: SHA,
+        headDigest: SHA,
+        elidedEntries: [],
         items: [],
         createdAt: '2026-10-19T00:00:00.000Z',
       },
@@ -113,30 +123,42 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
         ...orientRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
+      };
+    case 'REPOSITORY_LIST':
+      return {
+        ...orientRequest(),
+        executionKind: 'REPOSITORY_LIST',
+        input: {},
+        limits: TOOL_LIMITS,
       };
     case 'FILE_READ':
       return {
         ...orientRequest(),
         executionKind: 'FILE_READ',
         input: { path: 'a.ts' },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
       };
     case 'CONTEXT_ASSEMBLE':
       return {
+        sessionId: 'ses_123456',
         workflowRunId: 'wfr_123456',
         unitAttemptId: 'una_123456',
         executionId: 'exe_123456',
         runEpoch: 1,
         executionKind: 'CONTEXT_ASSEMBLE',
         input: {
-          objective: 'analyze',
           final: false,
           tokenBudget: 1000,
           instructions: 'system',
           toolSpecs: [],
           history: [],
-          status: { roundsUsed: 0, maxRounds: 1, final: false, budgetState: 'NORMAL' },
+          status: {
+            round: 1,
+            maxRounds: 1,
+            final: false,
+            budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          },
         },
         scope: { kind: 'NONE' },
         limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
@@ -156,6 +178,14 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
         result: {
           output: { snapshotId: `snp_${SHA}`, hits: [], truncated: false },
           artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+        },
+      };
+    case 'REPOSITORY_LIST':
+      return {
+        outcome: 'COMPLETED',
+        result: {
+          output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
+          artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
         },
       };
     case 'FILE_READ':
@@ -181,10 +211,10 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
             contextPackId: 'ctx_123456',
             tokenCount: 0,
             tokenBudget: 1000,
-            truncated: false,
-            droppedCount: 0,
             prefixSha256: SHA,
-            elidedRequestIds: [],
+            projectionDigest: SHA,
+            headDigest: SHA,
+            elidedEntries: [],
           },
           artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
         },
@@ -193,7 +223,7 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
       return {
         outcome: 'COMPLETED',
         result: {
-          output: { finishReason: 'STOP', toolCalls: [], hasText: false },
+          output: { finishReason: 'STOP', toolCalls: [], hasText: false, hasReasoning: false },
           artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{}' },
         },
         usage: { inputTokens: 10, outputTokens: 5 },
@@ -219,6 +249,7 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
   return {
     REPOSITORY_ORIENT: orient,
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
+    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
@@ -480,7 +511,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a stop-time delivery failure without an unhandled rejection', async () => {
-    const sink: ExecutionFactSink = {
+    const sink: { report(fact: ExecutionFact): Promise<void> } = {
       report: () => Promise.reject(new Error('stop inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -504,7 +535,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('records a fact delivery failure without retrying the execution', async () => {
-    const sink: ExecutionFactSink = {
+    const sink: { report(fact: ExecutionFact): Promise<void> } = {
       report: () => Promise.reject(new Error('inbox unavailable')),
     };
     const runner = new ExecutionRunner({
@@ -765,7 +796,7 @@ describe('ExecutionFact normalization', () => {
     const fact = toExecutionFact(modelRequest(), startedAt, endedAt, {
       outcome: 'COMPLETED',
       result: {
-        output: { finishReason: 'STOP', toolCalls: [], hasText: false },
+        output: { finishReason: 'STOP', toolCalls: [], hasText: false, hasReasoning: false },
         artifact: { mediaType: MEDIA_TYPES.modelOutput, text: '{}' },
       },
       usage: { inputTokens: 10, outputTokens: 5 },
@@ -879,7 +910,7 @@ describe('Executor environment', () => {
         ...orientRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
-        limits: { deadline: '2026-10-19T01:00:00.000Z', maxOutputBytes: 1024 },
+        limits: TOOL_LIMITS,
       },
       new AbortController().signal,
       { credentials, subprocess, now: () => new Date() },

@@ -1,0 +1,46 @@
+schemaVersion: v1
+kind: AGENT
+id: planner
+version: v0.1.0
+description: Plans the repository analysis and hands it to the code viewer; never reads the repository.
+role: analysis planner
+modelRef:
+  id: deepseek-flash
+  version: v0.1.0
+thinking:
+  defaultEffort: none
+  allowedEfforts:
+    - none
+promptRef:
+  id: planner-system
+  version: v0.1.0
+unitRefs:
+  - id: context-assemble
+    version: v0.1.0
+  - id: model-call
+    version: v0.1.0
+  - id: report-publish
+    version: v0.1.0
+startUnitRefs: []
+actions:
+  end:
+    - toolRef:
+        id: finish-analysis
+        version: v0.1.0
+      then: PUBLISH_REPORT
+      allowedInFinal: true
+    - toolRef:
+        id: handoff-to-code-viewer
+        version: v0.1.0
+      then: HANDOFF
+      allowedInFinal: false
+  onDegraded: PUBLISH_REPORT
+limits:
+  maxRounds: 3
+  maxToolCallsPerRound: 0
+  maxToolUnits: 1
+budget:
+  perCallInputLimit: 96000
+  maxOutputTokens: 8192
+  finalInputBudget: 72000
+  finalMaxOutputTokens: 8192

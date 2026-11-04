@@ -19,7 +19,7 @@ describe('SubprocessRunner', () => {
     else expect(version).toEqual({ exitCode: null, signal: null, stdout: '', truncated: false });
   });
 
-  // Each cell of the CI matrix (M1TechStack 11) states whether it has rg; a broken install fails.
+  // Each cell of the CI matrix states whether it has rg; a broken install fails.
   it.runIf(process.env['CI'] !== undefined)('has rg exactly when the CI cell says so', () => {
     expect(hasRipgrep).toBe(process.env['MULTIAGENTOS_RIPGREP'] !== 'absent');
   });

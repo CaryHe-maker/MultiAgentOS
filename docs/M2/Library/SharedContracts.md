@@ -12,8 +12,8 @@ SharedContracts 是静态库 `@multiagentos/contracts`，提供全部跨模块 S
 M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Library/SharedContracts.md) 第 2 节）：TypeBox、`$id = <family>.<Name>.v<major>`、
 条件必填以联合变体表达、类型由 Schema 派生、文件之间无导入环。M2 补充：
 
-- M1 的 major 0 Schema 冻结，原样保留并继续注册；M2 新增或语义变化的 Schema 注册为 major 1，与 major 0 并存（Interface 第 2.2 节）。
-- major 1 的 Schema 放在与 major 0 相同的 family 目录中，文件名不带版本；同一文件可以同时导出两个 major。
+- 只有 major 1：major 0 已随 S1-IN-1 全部删除（Interface 第 2.2 节）。
+- Schema 放在各 family 目录中，文件名与代码中的名字都不带版本。
 - 每个阶段的契约门（M2Plan 第 2.2 节）只增加本阶段需要的 Schema；major 1 在 M2 发布前属于草稿，可以原地修改。
 - Interface 各文档"Schema 强制的约束"小节中的每一条，都必须由 Schema 强制，并有反例测试。
 
@@ -65,9 +65,10 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 |---|---|---|
 | `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 5 节 |
 | `executor.FileReadOutput.v1` | `executor/file-read.ts` | 增加内容的 SHA-256 |
-| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `effort`、`finalMode`；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
-| `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines? }`（按 Unit 定义的版本选取，M2Design 第 8.2 节） |
-| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`） |
+| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `finalMode`（思考强度在登记时给出，随 `scope` 交给 Executor）；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines }`（M2Design 第 8.2 节） |
+| `kernel.execution.ExecutionResult.v1`、`ExecutionFact.v1` | `kernel-execution/execution-fact.ts` | 带 `sessionId`，增加 `REPOSITORY_LIST`；工具结果分为预览 `artifact` 与截断时的 `fullOutput`；模型结果带 `reasoning`；模型的 `FAILED` 带 `retryAfterMs`（Kernel/Execution 第 3、4a 节） |
+| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`）；工具结果带 `status`、`reasonCode`，没有预览时的文字由 Executor 写 |
 | `context.ContextPack.v1` | `context/context-pack.ts` | 增加 `elidedEntries`（只在收尾调用的保险中出现），取代 `elidedRequestIds` |
 | `executor.RetentionNotice.v1` | `executor/retention.ts` | 预览的截断说明：策略、单位、上限、保留量、省略量、完整输出是否也被截断（超过 `maxFullOutputBytes`）（ExecutorSet 第 4 节） |
 
@@ -90,14 +91,16 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 ### 3.8 Port
 
 `PersistencePort`、`InstanceLockPort`、`ArtifactStorePort`、`WorkflowGatewayPort`、`InteractionGatewayPort` 与两种 Inbox Port 的 M2 形式，
-按 Interface 各文档定义，放在 `ports.ts`；M1 的 Port 签名在同一文件中保留到 M2 发布，供 `analyze` 回归使用。
+按 Interface 各文档定义，放在 `ports.ts`。
 
 ## 4. 测试
 
 - 每个 major 1 Schema 的正例与反例；Interface 各文档"Schema 强制的约束"的每一条都有反例（`kernel-protocol.test.ts` 的做法）。
-- major 0 与 major 1 并存：同名 Schema 两个 major 都能注册与解析，未知 major 被拒绝。
+- 未知 major 被拒绝。
 - 由路径派生的 ID：`requestId`、`nodeId`、`unitRunId` 的 body 等于路径 SHA-256 的前 32 位（属性测试）。
-- 协议快照守卫（M1 的做法）覆盖 major 0 与 major 1；major 0 的快照不允许改变。
+- 协议快照守卫（M1 的做法）覆盖 major 1；M2 发布前 `frozen: false`，注册的 Schema 必须与快照相同，发布时冻结。
+- **测试数据**：各包的测试从子路径 `@multiagentos/contracts/test-support` 取得合法的定义、产物引用、输出与 ID；每个构造函数返回前按 Schema 校验，测试中不以类型断言编造契约值。
+  `testUnitDefinition` 按目录加载时的同一规则声明 `repo.read`（AgentToolPool 第 5 节）。
 
 ## 5. 阶段
 
