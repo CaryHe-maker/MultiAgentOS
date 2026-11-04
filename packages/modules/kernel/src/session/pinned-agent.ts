@@ -5,6 +5,7 @@ import {
   type ModelToolSpec,
   type PinnedDefinitionSet,
   type PortResult,
+  type ProtectedCapability,
   type ProtocolRegistry,
   type RegisterAgentRunRequest,
   type ThinkingEffort,
@@ -24,6 +25,7 @@ export function pinnedAgentOf(
   set: PinnedDefinitionSet,
   effort: ThinkingEffort,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+  requested: readonly ProtectedCapability[],
 ): PinnedAgent | PinFailure {
   const { agent, model, prompt, units, tools } = set;
   if (!agent.thinking.allowedEfforts.includes(effort)) return 'FORBIDDEN';
@@ -51,7 +53,10 @@ export function pinnedAgentOf(
   });
   const toolOf = (ref: { readonly id: string; readonly version: string }) =>
     tools.find((tool) => tool.id === ref.id && tool.version === ref.version);
-  const unitTools = units.flatMap((unit) => unit.toolRefs.flatMap((ref) => toolOf(ref) ?? []));
+  // A tool beyond the ceiling is not offered at all; asking for it would be refused (M2Design 5.4).
+  const unitTools = units
+    .filter((unit) => unit.protectedCapabilities.every((c) => requested.includes(c)))
+    .flatMap((unit) => unit.toolRefs.flatMap((ref) => toolOf(ref) ?? []));
   const ends = agent.actions.end.flatMap((end) => {
     const tool = toolOf(end.toolRef);
     return tool === undefined ? [] : [{ tool, allowedInFinal: end.allowedInFinal }];
@@ -60,6 +65,7 @@ export function pinnedAgentOf(
   const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
 
   return {
+    capabilities: agent.capabilities,
     units,
     maxToolUnits: agent.limits.maxToolUnits,
     ...(agent.limits.maxWallClockMs === undefined
@@ -102,7 +108,7 @@ export function pinAgentFrom(
     if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
     if (set.value.agent.digest !== agentRef.digest)
       return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
-    const agent = pinnedAgentOf(set.value, effort, registry);
+    const agent = pinnedAgentOf(set.value, effort, registry, request.requestedCapabilities);
     return Promise.resolve(
       agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
     );

@@ -10,7 +10,13 @@ import {
   RepositorySearchOutputSchema,
 } from '../context/repository.js';
 import { FileReadInputSchema, FileReadOutputSchema } from '../executor/file-read.js';
+import {
+  FileEditInputSchema,
+  FileWriteInputSchema,
+  FileWriteOutputSchema,
+} from '../executor/file-write.js';
 import { ModelCallInputSchema, ModelCallOutputSchema } from '../executor/model-call.js';
+import { OutputReadInputSchema, OutputReadOutputSchema } from '../executor/output-read.js';
 import {
   RepositoryListInputSchema,
   RepositoryListOutputSchema,
@@ -28,6 +34,9 @@ export const UnitInputSchema = Type.Union(
     ReportPublishInputSchema,
     RepositoryListInputSchema,
     MessagePublishInputSchema,
+    FileWriteInputSchema,
+    FileEditInputSchema,
+    OutputReadInputSchema,
   ],
   { $id: 'kernel.unit.UnitInput.v1' },
 );
@@ -43,6 +52,8 @@ export const UnitOutputSchema = Type.Union(
     MessagePublishOutputSchema,
     ContextAssembleOutputSchema,
     ModelCallOutputSchema,
+    FileWriteOutputSchema,
+    OutputReadOutputSchema,
   ],
   { $id: 'kernel.unit.UnitOutput.v1' },
 );

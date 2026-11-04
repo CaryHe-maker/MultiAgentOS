@@ -68,9 +68,7 @@ export function writableRoots(profile: Pick<WriteProfile, 'writeRoots'>): readon
     return normalized;
   });
   const unique = [...new Set(roots)].sort();
-  return unique.filter(
-    (root) => !unique.some((other) => other !== root && isBelow(other, root)),
-  );
+  return unique.filter((root) => !unique.some((other) => other !== root && isBelow(other, root)));
 }
 
 /** Scope first, then protection: which root a path falls under is also its resource key. */

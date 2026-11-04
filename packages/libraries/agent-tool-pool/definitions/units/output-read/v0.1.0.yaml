@@ -1,0 +1,26 @@
+schemaVersion: v1
+kind: UNIT
+id: output-read
+version: v0.1.0
+description: Read a window of the full output of an earlier tool call.
+executionKind: OUTPUT_READ
+protectedCapabilities: []
+inputContract:
+  kind: contract
+  id: executor.OutputReadInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.OutputReadOutput
+  version: v1
+toolRefs:
+  - id: read-output
+    version: v0.1.0
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  INVALID_ARTIFACT_REF: RETURN_TO_MODEL
+  INVALID_RANGE: RETURN_TO_MODEL
+  UNSUPPORTED_FILE: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

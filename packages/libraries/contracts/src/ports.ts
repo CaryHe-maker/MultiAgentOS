@@ -1,9 +1,11 @@
 import type { RepositoryListInput } from './executor/repository-list.js';
+import type { FileEditInput, FileWriteInput } from './executor/file-write.js';
 import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
   AssembleExecutorInput,
   ExecutionLimits,
   ModelExecutorInput,
+  OutputReadExecutorInput,
 } from './kernel-execution/execution-request.js';
 import type { ExecutorKind } from './platform-common/execution-kind.js';
 import type {
@@ -16,7 +18,11 @@ import type { TokenUsage } from './executor/model-call.js';
 import type {
   AnswerAuthorizationRequest,
   AnswerHumanRequest,
+  ConfirmUndoRequest,
+  DiffTurnsRequest,
   ReadArtifactRequest,
+  TurnDiff,
+  UndoTurnsRequest,
 } from './kernel-control/interaction-requests.js';
 import type { SessionAccepted, SyscallRejected } from './kernel-control/responses.js';
 import type {
@@ -38,6 +44,7 @@ import type {
   RegisterAgentRunRequest,
   RequestHumanRequest,
   SubmitUnitRequest,
+  UpdateActivityRequest,
 } from './kernel-unit/workflow-syscalls.js';
 import type { BoundaryContext } from './platform-common/common-schemas.js';
 import type { InstanceLockInfo, SessionLockInfo } from './platform-persistence/locks.js';
@@ -93,17 +100,25 @@ export interface ExecutorInputByKind {
   readonly FILE_READ: FileReadInput;
   readonly CONTEXT_ASSEMBLE: AssembleExecutorInput;
   readonly MODEL: ModelExecutorInput;
+  readonly FILE_WRITE: FileWriteInput;
+  readonly FILE_EDIT: FileEditInput;
+  readonly OUTPUT_READ: OutputReadExecutorInput;
 }
 
-/** Only `rg` may be run, and only by REPOSITORY_SEARCH. */
+/**
+ * Only `rg`, for REPOSITORY_SEARCH, and `git`, for Execution's snapshots, may be run. `env` is what
+ * the process gets besides PATH, so a repository's or a user's git settings cannot reach it.
+ */
 export interface SubprocessRunner {
   run(
-    command: 'rg',
+    command: 'rg' | 'git',
     args: readonly string[],
     options: {
       readonly cwd: string;
       readonly signal: AbortSignal;
       readonly maxOutputBytes: number;
+      readonly env?: Readonly<Record<string, string>>;
+      readonly stdin?: string;
     },
   ): Promise<{
     readonly exitCode: number | null;
@@ -297,6 +312,10 @@ export interface WorkflowGatewayPort {
     request: RequestHumanRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
+  updateActivity(
+    request: UpdateActivityRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   readProjectFile(
     request: ReadProjectFileRequest,
     context: BoundaryContext,
@@ -345,6 +364,18 @@ export interface InteractionGatewayPort {
     request: ReadArtifactRequest,
     context: BoundaryContext,
   ): Promise<ArtifactContent | SyscallRejected>;
+  undoTurns(
+    request: UndoTurnsRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  confirmUndo(
+    request: ConfirmUndoRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  diffTurns(
+    request: DiffTurnsRequest,
+    context: BoundaryContext,
+  ): Promise<TurnDiff | SyscallRejected>;
   shutdown(
     request: ShutdownRequest,
     context: BoundaryContext,
@@ -380,6 +411,8 @@ export type LockResult =
 
 export interface SessionDirectoryPort {
   create(): Promise<void>;
+  /** A fork: copies the other Session's whole log into this one. */
+  copyLogFrom(fromSessionId: string): Promise<void>;
   remove(): Promise<void>;
   /** Provided in the `workflow` namespace only. */
   lock(): Promise<LockResult>;

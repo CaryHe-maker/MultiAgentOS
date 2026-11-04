@@ -41,6 +41,10 @@ export const ConsoleText = Object.freeze({
     `允许读取仓库 ${path} 吗？读取的内容会发送至 ${provider}；${String(exclusions)} 条排除规则内的文件不会读取。[y/n]`,
   instructions: (path: string, truncated: boolean, text: string) =>
     `是否信任这份 ${path}？信任后它作为项目指令交给 Agent；不信任则只作为仓库材料。${truncated ? '（只展示开头）' : ''}\n${text}\n[y/n]`,
+  writeRoot: (root: string) =>
+    `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
+  writeCritical: (path: string, text: string) =>
+    `允许 Agent 写入 ${path} 吗？写入后它会作为可信的项目指令。只对这一次写入有效。\n${text}\n[y/n]`,
   granted: '已允许。',
   declined: '已拒绝。',
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',

@@ -122,6 +122,20 @@ const header = <K extends DefinitionKind>(kind: K) => ({
 
 const EffortSchema = Type.Enum(['none', 'low', 'high', 'max']);
 
+export const PROTECTED_CAPABILITIES = ['repo.read', 'workspace.write'] as const;
+export type ProtectedCapability = (typeof PROTECTED_CAPABILITIES)[number];
+
+/** Safe capabilities: asked at most once, for the repository as a whole (M2Design 5.2). */
+const SAFE_CAPABILITIES: ReadonlySet<ProtectedCapability> = new Set(['repo.read']);
+
+/** What a start preset leaves of an Agent's capabilities: `readonly` keeps the safe ones. */
+export function capabilitiesUnderPreset(
+  capabilities: readonly ProtectedCapability[],
+  preset: 'standard' | 'readonly',
+): readonly ProtectedCapability[] {
+  return capabilities.filter((c) => preset === 'standard' || SAFE_CAPABILITIES.has(c));
+}
+
 export const AgentDefinitionSchema = Type.Object(
   {
     ...header('AGENT'),
@@ -152,9 +166,15 @@ export const AgentDefinitionSchema = Type.Object(
           { minItems: 1 },
         ),
         onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT']),
+        /** The `update_todos` tool, which ends nothing (M2Design 3.5). */
+        todos: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
       },
       { additionalProperties: false },
     ),
+    /** The source of the capability ceiling (Kernel/Core 5a.1). */
+    capabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     limits: Type.Object(
       {
         maxRounds: Type.Integer({ minimum: 1, maximum: 100 }),
@@ -177,9 +197,6 @@ export const AgentDefinitionSchema = Type.Object(
   { additionalProperties: false, $id: 'catalog.AgentDefinition.v1' },
 );
 export type AgentDefinition = DeepReadonly<Static<typeof AgentDefinitionSchema>>;
-
-export const PROTECTED_CAPABILITIES = ['repo.read'] as const;
-export type ProtectedCapability = (typeof PROTECTED_CAPABILITIES)[number];
 
 export const FAILURE_HANDLINGS = [
   'RETURN_TO_MODEL',
@@ -204,7 +221,7 @@ const FailurePolicySchema = Type.Unsafe<FailurePolicy>(
 export const UnitDefinitionSchema = Type.Object(
   {
     ...header('UNIT'),
-    /** Selects the Executor; FILE_WRITE, COMMAND and TEST are rejected by Core until their stage. */
+    /** Selects the Executor; COMMAND and TEST are rejected by Core until their stage. */
     executionKind: ExecutionKindSchema,
     /** Capabilities that need a Lease. The caller and the model cannot remove them. */
     protectedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
@@ -228,7 +245,7 @@ export const ToolDefinitionSchema = Type.Object(
     /** Name shown to the model in tool calling; follows the common provider name rules. */
     modelName: Type.String({ pattern: '^[a-zA-Z][a-zA-Z0-9_-]{0,63}$' }),
     modelDescription: TextSchema(4_000),
-    /** For a UNIT tool, equal to the inputContract of the Unit that owns it. */
+    /** For a UNIT tool, the inputContract of its Unit, or the part of it the model writes. */
     parametersContract: ContractRefSchema,
     riskClass: Type.Union([
       Type.Literal('READ_ONLY'),

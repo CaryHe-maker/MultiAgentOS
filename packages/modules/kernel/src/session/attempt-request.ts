@@ -2,7 +2,10 @@ import {
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
   ExecutionRequestSchema,
+  FileEditInputSchema,
   FileReadInputSchema,
+  FileWriteInputSchema,
+  OutputReadInputSchema,
   ModelCallInputSchema,
   ModelRawOutputSchema,
   OrientContextPackSchema,
@@ -20,7 +23,10 @@ import {
   type ExecutionLimits,
   type ExecutionRequest,
   type ExecutorKind,
+  type FileEditInput,
   type FileReadInput,
+  type FileWriteInput,
+  type OutputReadInput,
   type ModelCallInput,
   type ModelRawOutput,
   type ModelToolCall,
@@ -51,6 +57,9 @@ export interface ExecutionConfig {
     readonly REPOSITORY_SEARCH: ToolExecutionLimit;
     readonly REPOSITORY_LIST: ToolExecutionLimit;
     readonly FILE_READ: ToolExecutionLimit;
+    readonly FILE_WRITE: ToolExecutionLimit;
+    readonly FILE_EDIT: ToolExecutionLimit;
+    readonly OUTPUT_READ: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
@@ -180,6 +189,31 @@ export class AttemptRequestBuilder {
             this.#toolLimits('FILE_READ', identity),
           ),
         };
+      case 'FILE_WRITE':
+        return {
+          request: made(
+            inputOf<FileWriteInput>(FileWriteInputSchema, input),
+            this.#toolLimits('FILE_WRITE', identity),
+          ),
+        };
+      case 'FILE_EDIT':
+        return {
+          request: made(
+            inputOf<FileEditInput>(FileEditInputSchema, input),
+            this.#toolLimits('FILE_EDIT', identity),
+          ),
+        };
+      case 'OUTPUT_READ': {
+        const { fullRef, ...window } = inputOf<OutputReadInput>(OutputReadInputSchema, input);
+        if (!this.#deps.artifacts.isFullOutput(fullRef))
+          throw new RequestBuildError('INVALID_ARTIFACT_REF');
+        return {
+          request: made(
+            { ...window, content: await this.#text(fullRef) },
+            this.#toolLimits('OUTPUT_READ', identity),
+          ),
+        };
+      }
       case 'CONTEXT_ASSEMBLE':
         return {
           request: made(await this.#assemble(spec), this.#baseLimits('CONTEXT_ASSEMBLE', identity)),
@@ -205,7 +239,14 @@ export class AttemptRequestBuilder {
   }
 
   #toolLimits(
-    kind: 'REPOSITORY_ORIENT' | 'REPOSITORY_SEARCH' | 'REPOSITORY_LIST' | 'FILE_READ',
+    kind:
+      | 'REPOSITORY_ORIENT'
+      | 'REPOSITORY_SEARCH'
+      | 'REPOSITORY_LIST'
+      | 'FILE_READ'
+      | 'FILE_WRITE'
+      | 'FILE_EDIT'
+      | 'OUTPUT_READ',
     identity: RequestIdentity,
   ) {
     const limit = this.#deps.config.executionLimits[kind];

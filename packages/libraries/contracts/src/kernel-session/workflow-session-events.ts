@@ -7,6 +7,12 @@ const command = { type: Type.Literal('SessionCommand'), commandId: IdSchemas.com
 /** What Kernel orders Workflow to do with a Session (Interface/WorkflowKernel 3.2). */
 export const SessionCommandSchema = Type.Union([
   closed({ ...command, command: Type.Enum(['OPEN', 'CREATE']), repositoryRoot: text(4096) }),
+  closed({
+    ...command,
+    command: Type.Literal('FORK'),
+    repositoryRoot: text(4096),
+    fromSessionId: IdSchemas.sessionId,
+  }),
   closed({ ...command, command: Type.Literal('CLOSE') }),
 ]);
 export type SessionCommand = Static<typeof SessionCommandSchema>;

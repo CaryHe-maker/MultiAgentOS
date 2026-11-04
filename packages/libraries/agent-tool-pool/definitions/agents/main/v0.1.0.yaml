@@ -24,6 +24,12 @@ unitRefs:
     version: v0.1.0
   - id: file-read
     version: v0.1.0
+  - id: file-write
+    version: v0.1.0
+  - id: file-edit
+    version: v0.1.0
+  - id: output-read
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -39,6 +45,9 @@ actions:
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
+capabilities:
+  - repo.read
+  - workspace.write
 limits:
   maxRounds: 40
   maxToolCallsPerRound: 8

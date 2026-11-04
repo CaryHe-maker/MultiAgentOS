@@ -8,6 +8,7 @@ import {
   type DefinitionRef,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
+  type ProtectedCapability,
   type ReasonCode,
   type SessionCommandFailure,
   type SessionLogRecord,
@@ -39,6 +40,7 @@ import {
   normalReportBody,
   type AgentRounds,
 } from '../domain/agent/analysis-report.js';
+import { toolInputOf } from '../domain/context/tool-inputs.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import {
   advanceGraph,
@@ -66,6 +68,8 @@ export interface AgentBinding {
   readonly ref: PinnedDefinitionRef;
   readonly modelRef: DefinitionRef;
   readonly effort: ThinkingEffort;
+  readonly requestedCapabilities: readonly ProtectedCapability[];
+  readonly writeRoots: readonly string[];
   readonly toolsDigest: string;
   readonly definitions: AgentDefinitions;
 }
@@ -458,6 +462,7 @@ export class SessionRunner {
   #context(workflowRunId: string, scope: ProjectionScope): AgentContext {
     return {
       objectiveRef: this.#objectiveRef(workflowRunId),
+      toolInput: (kind, args) => toolInputOf(kind, args, this.#records, scope),
       assembleInput: (status, final) => {
         return {
           final,
@@ -526,6 +531,8 @@ export class SessionRunner {
         effort: binding.effort,
         workspaceViewId: 'main',
         display: { label: binding.definitions.label },
+        requestedCapabilities: [...binding.requestedCapabilities],
+        writeRoots: [...binding.writeRoots],
       },
       contextOf(sessionId, workflowRunId),
     );

@@ -8,6 +8,7 @@ import {
   DEFINITION_KINDS,
   DEFINITION_SCHEMAS,
   REPOSITORY_KINDS,
+  WRITE_KINDS,
   canonicalJson,
   createProtocolRegistry,
   validate,
@@ -118,10 +119,19 @@ const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string
   REPOSITORY_SEARCH: ['context.RepositorySearchInput.v1', 'context.RepositorySearchOutput.v1'],
   REPOSITORY_LIST: ['executor.RepositoryListInput.v1', 'executor.RepositoryListOutput.v1'],
   FILE_READ: ['executor.FileReadInput.v1', 'executor.FileReadOutput.v1'],
+  FILE_WRITE: ['executor.FileWriteInput.v1', 'executor.FileWriteOutput.v1'],
+  FILE_EDIT: ['executor.FileEditInput.v1', 'executor.FileWriteOutput.v1'],
+  OUTPUT_READ: ['executor.OutputReadInput.v1', 'executor.OutputReadOutput.v1'],
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],
   REPORT_PUBLISH: ['kernel.unit.ReportPublishInput.v1', 'kernel.unit.ReportPublishOutput.v1'],
+};
+/** Where Workflow fills in part of the input, the tool's parameters are the rest (AgentToolPool 5). */
+const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
+  FILE_WRITE: 'executor.FileWriteArgs.v1',
+  FILE_EDIT: 'executor.FileEditArgs.v1',
+  OUTPUT_READ: 'executor.OutputReadArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
 const END_CONTRACTS = {
@@ -130,9 +140,15 @@ const END_CONTRACTS = {
   HANDOFF: 'workflow.HandoffBrief.v1',
 } as const;
 /** Kernel's refusals mean the same for every Unit, so no definition may change them. */
-const FIXED_CODES = ['USER_DECLINED', 'QUOTA_EXHAUSTED'];
+const FIXED_CODES = [
+  'USER_DECLINED',
+  'QUOTA_EXHAUSTED',
+  'CAPABILITY_NOT_GRANTED',
+  'ADMISSION_CHECK_FAILED',
+];
 const EFFORTS = ['none', 'low', 'high', 'max'] as const;
 const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
+const WRITES_WORKSPACE: ReadonlySet<string> = new Set(WRITE_KINDS);
 const contractOf = (ref: { readonly id: string; readonly version: string }) =>
   `${ref.id}.${ref.version}`;
 
@@ -373,6 +389,13 @@ function checkRules(
             'UNIT_INVALID',
             `${body.executionKind} ${declaresRead ? 'must not' : 'must'} declare repo.read`,
           );
+        const declaresWrite = body.protectedCapabilities.includes('workspace.write');
+        if (WRITES_WORKSPACE.has(body.executionKind) !== declaresWrite)
+          report(
+            origin,
+            'UNIT_INVALID',
+            `${body.executionKind} ${declaresWrite ? 'must not' : 'must'} declare workspace.write`,
+          );
         if (body.toolRefs.length > 1) report(origin, 'UNIT_INVALID', 'a unit has at most one tool');
         if (
           body.executionKind === 'MESSAGE_PUBLISH' &&
@@ -383,7 +406,9 @@ function checkRules(
           const tool = get('TOOL', ref);
           if (
             tool !== undefined &&
-            (tool.purpose !== 'UNIT' || contractOf(tool.parametersContract) !== actual[0])
+            (tool.purpose !== 'UNIT' ||
+              contractOf(tool.parametersContract) !==
+                (TOOL_ARGUMENTS[body.executionKind] ?? actual[0]))
           )
             report(
               origin,
@@ -521,6 +546,14 @@ function checkAgent(
         `end tool ${end.toolRef.id} must be CONTROL with ${END_CONTRACTS[end.then]}`,
       );
   }
+  for (const unit of units)
+    for (const capability of unit.protectedCapabilities)
+      if (!body.capabilities.includes(capability))
+        report(
+          origin,
+          'AGENT_INVALID',
+          `unit ${unit.id} needs ${capability}, which is not declared`,
+        );
   if (body.limits.maxToolCallsPerRound > 0 && !units.some((unit) => unit.toolRefs.length > 0))
     report(origin, 'AGENT_INVALID', 'maxToolCallsPerRound > 0 needs a unit with a tool');
 }

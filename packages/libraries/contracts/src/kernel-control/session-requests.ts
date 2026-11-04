@@ -7,10 +7,15 @@ import { closed, text } from '../platform-common/schema-helpers.js';
 export const UserInputSchema = closed({ inputId: IdSchemas.inputId, text: text(100000) });
 export type UserInput = Static<typeof UserInputSchema>;
 
-/** Sent when the draft's first prompt is submitted; `FORK` opens in stage 2. */
-export const StartSessionRequestSchema = closed(
-  { requestId: IdSchemas.requestId, mode: Type.Literal('NEW'), prompt: UserInputSchema },
-  'kernel.control.StartSessionRequest.v1',
+const startSession = { requestId: IdSchemas.requestId, prompt: UserInputSchema };
+
+/** Sent when the draft's first prompt is submitted; a fork starts from the open Session. */
+export const StartSessionRequestSchema = Type.Union(
+  [
+    closed({ ...startSession, mode: Type.Literal('NEW') }),
+    closed({ ...startSession, mode: Type.Literal('FORK'), fromSessionId: IdSchemas.sessionId }),
+  ],
+  { $id: 'kernel.control.StartSessionRequest.v1' },
 );
 export type StartSessionRequest = Static<typeof StartSessionRequestSchema>;
 

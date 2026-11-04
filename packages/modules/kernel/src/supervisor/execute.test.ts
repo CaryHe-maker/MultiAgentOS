@@ -77,6 +77,9 @@ function registry(): ExecutorRegistry {
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
     REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
+    FILE_WRITE: unused('FILE_WRITE'),
+    FILE_EDIT: unused('FILE_EDIT'),
+    OUTPUT_READ: unused('OUTPUT_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };

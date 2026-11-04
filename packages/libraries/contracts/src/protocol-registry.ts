@@ -25,6 +25,9 @@ import * as workflowEvents from './kernel-unit/workflow-events.js';
 import * as workflowSyscalls from './kernel-unit/workflow-syscalls.js';
 import * as artifactRefs from './platform-artifact/artifact-refs.js';
 import * as historyEntry from './context/history-entry.js';
+import * as fileWrite from './executor/file-write.js';
+import * as outputRead from './executor/output-read.js';
+import * as updateTodos from './workflow/update-todos.js';
 import * as repositoryList from './executor/repository-list.js';
 import * as retention from './executor/retention.js';
 import * as sessionRequests from './kernel-control/session-requests.js';
@@ -209,6 +212,9 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   persistenceRefs,
   artifactRefs,
   historyEntry,
+  fileWrite,
+  outputRead,
+  updateTodos,
   repositoryList,
   retention,
   sessionRequests,

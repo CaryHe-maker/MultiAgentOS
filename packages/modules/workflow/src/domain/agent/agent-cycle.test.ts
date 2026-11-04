@@ -53,6 +53,7 @@ const definitions: AgentDefinitions = {
   tools: [
     {
       modelName: 'list_files',
+      executionKind: 'REPOSITORY_LIST',
       unit: unit('repository-list', { NOT_FOUND: 'RETURN_TO_MODEL', LIMIT_EXCEEDED: 'FINAL_CALL' }),
       parameters: RepositoryListInputSchema,
     },

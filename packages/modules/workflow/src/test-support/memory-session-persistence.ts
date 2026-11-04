@@ -47,6 +47,11 @@ export class MemorySessionPersistence implements SessionPersistencePort {
         this.directories.add(sessionId);
         return Promise.resolve();
       },
+      copyLogFrom: (fromSessionId) => {
+        const source = this.lines.get(`log:${fromSessionId}`) ?? [];
+        this.lines.set(`log:${sessionId}`, [...source]);
+        return Promise.resolve();
+      },
       remove: () => {
         this.directories.delete(sessionId);
         this.lines.delete(`log:${sessionId}`);

@@ -106,9 +106,7 @@ describe('isWritable', () => {
   it('never allows a path that climbs out, however it is spelled', () => {
     const climbing = fc
       .tuple(fc.array(segment, { maxLength: 3 }), fc.array(segment, { maxLength: 3 }))
-      .map(([down, rest]) =>
-        [...down, ...down.map(() => '..'), '..', ...rest].join('/'),
-      );
+      .map(([down, rest]) => [...down, ...down.map(() => '..'), '..', ...rest].join('/'));
     fc.assert(
       fc.property(climbing, (path) => {
         expect(refusal(path)).toBe('WRITE_OUT_OF_SCOPE');

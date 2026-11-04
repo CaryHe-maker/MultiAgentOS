@@ -25,10 +25,10 @@ const SessionCommandResultSchema = Type.Union([
     outcome: Type.Literal('READY'),
     lastTurnId: Type.Optional(IdSchemas.turnId),
   }),
-  closed({ command: Type.Literal('CREATE'), outcome: Type.Literal('READY') }),
+  closed({ command: Type.Enum(['CREATE', 'FORK']), outcome: Type.Literal('READY') }),
   closed({ command: Type.Enum(['CLOSE', 'DELETE']), outcome: Type.Literal('DONE') }),
   closed({
-    command: Type.Enum(['OPEN', 'CREATE', 'CLOSE', 'DELETE']),
+    command: Type.Enum(['OPEN', 'CREATE', 'FORK', 'CLOSE', 'DELETE']),
     outcome: Type.Literal('FAILED'),
     failure: SessionCommandFailureSchema,
   }),

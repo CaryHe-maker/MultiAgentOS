@@ -38,6 +38,8 @@ actions:
       then: PUBLISH_REPORT
       allowedInFinal: true
   onDegraded: PUBLISH_REPORT
+capabilities:
+  - repo.read
 limits:
   maxRounds: 20
   maxToolCallsPerRound: 8

@@ -1,21 +1,19 @@
 import {
+  capabilitiesUnderPreset,
   isProjectInstructionPath,
   isWritable,
   normalizeRequestPath,
+  PROTECTED_CAPABILITIES,
   REPOSITORY_ROOT_PATH,
   writeRootCovers,
+  type ProtectedCapability,
 } from '@multiagentos/contracts';
 
-export type Capability = 'repo.read' | 'workspace.write';
+export type Capability = ProtectedCapability;
 export type StartPreset = 'standard' | 'readonly';
 
-/** Levels live here, not in Unit definitions, which only declare a capability (Kernel/Core 5a.2). */
-const CAPABILITY_LEVELS: Readonly<Record<Capability, 'SAFE' | 'UNCERTAIN'>> = {
-  'repo.read': 'SAFE',
-  'workspace.write': 'UNCERTAIN',
-};
-
-const isCapability = (name: string): name is Capability => Object.hasOwn(CAPABILITY_LEVELS, name);
+const isCapability = (name: string): name is Capability =>
+  (PROTECTED_CAPABILITIES as readonly string[]).includes(name);
 
 /** What an AgentRun can ever do; computed once at registration and never widened. */
 export interface CapabilityCeiling {
@@ -39,11 +37,7 @@ export type CeilingResult =
 
 /** Kernel/Core 5a.1. What the run asks for may only narrow what the definition and preset allow. */
 export function ceilingOf(request: CeilingRequest): CeilingResult {
-  const allowed = new Set(
-    request.agentCapabilities.filter(
-      (capability) => request.preset === 'standard' || CAPABILITY_LEVELS[capability] === 'SAFE',
-    ),
-  );
+  const allowed = new Set(capabilitiesUnderPreset(request.agentCapabilities, request.preset));
   if (!request.requestedCapabilities.every((capability) => allowed.has(capability)))
     return { ok: false, reasonCode: 'CAPABILITY_NOT_SUBSET' };
   const writeRoots = request.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);

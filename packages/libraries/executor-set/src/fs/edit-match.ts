@@ -34,11 +34,7 @@ const withPlainQuotes = (text: string): string =>
 /** Overlapping occurrences count, so `aa` in `aaa` is not unique. */
 const findExact: Finder = (view, target) => {
   const ranges: Range[] = [];
-  for (
-    let start = view.indexOf(target);
-    start !== -1;
-    start = view.indexOf(target, start + 1)
-  )
+  for (let start = view.indexOf(target); start !== -1; start = view.indexOf(target, start + 1))
     ranges.push({ start, end: start + target.length });
   return ranges;
 };

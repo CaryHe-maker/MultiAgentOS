@@ -36,6 +36,10 @@ export const SCHEMA_IDS = {
   listSessions: 'kernel.control.ListSessionsRequest.v1',
   deleteSession: 'kernel.control.DeleteSessionRequest.v1',
   answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v1',
+  undoTurns: 'kernel.control.UndoTurnsRequest.v1',
+  confirmUndo: 'kernel.control.ConfirmUndoRequest.v1',
+  diffTurns: 'kernel.control.DiffTurnsRequest.v1',
+  updateActivity: 'kernel.unit.UpdateActivityRequest.v1',
   answerHuman: 'kernel.control.AnswerHumanRequest.v1',
   readArtifact: 'kernel.control.ReadArtifactRequest.v1',
   shutdown: 'kernel.control.ShutdownRequest.v1',
@@ -62,6 +66,7 @@ export const WORKFLOW_SYSCALLS = [
   'closeRun',
   'requestHuman',
   'readProjectFile',
+  'updateActivity',
   'reportSessionCommand',
   'reportSessionList',
 ] as const satisfies readonly (keyof WorkflowGatewayPort)[];
@@ -74,6 +79,9 @@ export const INTERACTION_SYSCALLS = [
   'answerAuthorization',
   'answerHuman',
   'readArtifact',
+  'undoTurns',
+  'confirmUndo',
+  'diffTurns',
   'shutdown',
 ] as const satisfies readonly (keyof InteractionGatewayPort)[];
 

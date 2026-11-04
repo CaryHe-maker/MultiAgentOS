@@ -152,6 +152,19 @@ export class SessionCore {
         return this.#readProjectFile(forward.request);
       case 'readArtifact':
         return this.#readArtifact(forward.request);
+      case 'updateActivity':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.updateActivity(forward.request)),
+        );
+      case 'undoTurns':
+      case 'confirmUndo':
+      case 'diffTurns':
+        return Promise.resolve({
+          requestId: forward.request.requestId,
+          outcome: 'REJECTED',
+          issuer: 'CORE',
+          reasonCode: 'UNDO_NOT_AVAILABLE',
+        });
     }
   }
 }

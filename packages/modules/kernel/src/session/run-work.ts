@@ -1,3 +1,4 @@
+import { isProjectInstructionPath, writableRoots } from '@multiagentos/contracts';
 import type {
   AnswerAuthorizationRequest,
   AuthorizationRequest,
@@ -18,6 +19,7 @@ import type {
   UnitDefinition,
   UnitReport,
   UnknownEffect,
+  UpdateActivityRequest,
 } from '@multiagentos/contracts';
 import { RequestLedger } from './request-ledger.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
@@ -33,6 +35,7 @@ import { RunActivity, type ActivityOutput } from './run-activity.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
 import { admitWork, readsProjectFile, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
+import { ceilingOf, type CapabilityCeiling, type UnitDecision } from './unit-decision.js';
 import type { RetryingActivity } from './run-execution.js';
 import { WallClocks } from './wall-clocks.js';
 
@@ -77,6 +80,8 @@ export interface RunWorkDeps {
   readonly readProjectFile: (path: string, scope: ExecutionScope) => Promise<ProjectFileRead>;
   readonly isTrusted: (path: string, sha256: string) => boolean;
   readonly trust: (path: string, sha256: string) => Promise<void>;
+  /** Keeps what a critical question shows; the question then only refers to it. */
+  readonly storeQuestionContent: (text: string) => Promise<ArtifactRef>;
   /** Execution takes the attempt over and registers it through `attempts`. */
   readonly createAttempt: (spec: AttemptSpec, attempts: RunAttempts) => Promise<string>;
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
@@ -105,6 +110,7 @@ export type ProjectFileRead =
 
 interface AgentRunRecord {
   readonly agent: PinnedAgent;
+  readonly ceiling: CapabilityCeiling;
   state: 'ACTIVE' | 'ENDED';
   /** For the RunSummary. */
   readonly agentRef: RegisterAgentRunRequest['agentRef'];
@@ -128,8 +134,18 @@ interface WaitingFile {
 interface WaitingUnit {
   readonly request: SubmitUnitRequest;
   readonly unit: UnitDefinition;
-  readonly agent: PinnedAgent;
+  readonly record: AgentRunRecord;
 }
+
+/** What a write shows when it asks; an edit has no whole new content yet (ExecutorSet 5b). */
+function shownContent(input: SubmitUnitRequest['input']): string {
+  if ('content' in input) return input.content;
+  if ('oldString' in input) return `--- replaces\n${input.oldString}\n+++ with\n${input.newString}`;
+  throw new Error('A write has neither content nor an edit');
+}
+
+const pathOf = (input: SubmitUnitRequest['input']): string | undefined =>
+  'path' in input && typeof input.path === 'string' ? input.path : undefined;
 
 /**
  * The Unit path of one run (Kernel/Interaction 7): request records, AgentRuns, admission, quotas,
@@ -143,7 +159,7 @@ export class RunWork {
   readonly #waiting = new Map<string, WaitingUnit>();
   readonly #waitingFiles = new Map<string, WaitingFile>();
   readonly #inFlight = new Map<string, number>();
-  readonly #authorization: RunAuthorization<string>;
+  readonly #authorization: RunAuthorization;
   readonly #clocks: WallClocks;
   readonly #attempts: RunAttempts;
   readonly #activity: RunActivity;
@@ -157,7 +173,7 @@ export class RunWork {
     const { host } = deps;
     this.#host = host;
     this.#startedAt = deps.now().toISOString();
-    this.#authorization = new RunAuthorization<string>({
+    this.#authorization = new RunAuthorization({
       repositoryRoot: deps.repositoryRoot,
       provider: deps.provider,
       repositoryExclusions: deps.repositoryExclusions,
@@ -204,6 +220,7 @@ export class RunWork {
       },
       attemptEnded: (spec, unitAttemptId) => {
         this.#countInFlight(spec.agentRunId, -1);
+        this.#authorization.attemptEnded(spec.requestId);
         host.attemptEnded(unitAttemptId);
       },
       onFault: (fault) => {
@@ -323,10 +340,19 @@ export class RunWork {
 
     const pinned = await this.#deps.pinAgent(request);
     if (!pinned.ok) return this.#refuse(requestId, request, pinned.reasonCode);
+    const ceiling = ceilingOf({
+      agentCapabilities: pinned.agent.capabilities,
+      requestedCapabilities: request.requestedCapabilities,
+      writeRoots: request.writeRoots,
+      preset: this.#deps.preset,
+      exclusions: this.#authorization.exclusions,
+    });
+    if (!ceiling.ok) return this.#refuse(requestId, request, ceiling.reasonCode);
     const registered = this.#host.registerAgentRun(agentRunId);
     if (!registered.accepted) return this.#refuse(requestId, request, registered.reasonCode);
     this.#agentRuns.set(agentRunId, {
       agent: pinned.agent,
+      ceiling: ceiling.ceiling,
       state: 'ACTIVE',
       agentRef: request.agentRef,
       registeredAt: this.#deps.now().toISOString(),
@@ -385,23 +411,59 @@ export class RunWork {
         return response;
       }
     }
-    if (!admission.needsRepoRead) {
-      await this.#startAttempt(request, unit, record.agent);
-      return response;
-    }
-    const { decision, requested } = this.#authorization.requireRepoRead(
-      requestId,
-      request.agentRunId,
-    );
-    if (requested !== undefined) this.#host.toInteraction(requested);
-    if (decision.kind === 'ALLOWED') await this.#startAttempt(request, unit, record.agent);
-    else if (decision.kind === 'DECLINED')
-      this.#refuseUnit(request, unit, { reasonCode: 'USER_DECLINED' });
-    else {
-      this.#waiting.set(requestId, { request, unit, agent: record.agent });
-      this.#activity.awaitingAuthorization(request.agentRunId);
-    }
+    await this.#decide({ request, unit, record });
     return response;
+  }
+
+  /** Kernel/Core 5a.3; an answer to a question comes back here, because it only adds an entry. */
+  async #decide(waiting: WaitingUnit): Promise<void> {
+    const { request, unit, record } = waiting;
+    for (const capability of unit.protectedCapabilities) {
+      const path = pathOf(request.input);
+      const decision = this.#authorization.decide(
+        {
+          requestId: request.requestId,
+          agentRunId: request.agentRunId,
+          capability,
+          ...(path === undefined ? {} : { path }),
+        },
+        record.ceiling,
+      );
+      if (decision.kind === 'REFUSE') {
+        this.#refuseUnit(request, unit, { reasonCode: decision.reasonCode });
+        return;
+      }
+      if (decision.kind === 'ASK') {
+        await this.#ask(waiting, decision);
+        return;
+      }
+    }
+    await this.#startAttempt(request, unit, record);
+  }
+
+  async #ask(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
+    const { requestId, agentRunId, input } = waiting.request;
+    let check;
+    if (decision.capability === 'repo.read')
+      check = this.#authorization.requireRepoRead(requestId, agentRunId);
+    else if (decision.critical) {
+      const path = pathOf(input);
+      if (path === undefined) throw new Error('A critical write has no path');
+      const contentRef = await this.#deps.storeQuestionContent(shownContent(input));
+      check = this.#authorization.askWrite(
+        { critical: true, path, contentRef },
+        requestId,
+        agentRunId,
+      );
+    } else
+      check = this.#authorization.askWrite(
+        { critical: false, writeRoot: decision.resourceKey },
+        requestId,
+        agentRunId,
+      );
+    if (check.requested !== undefined) this.#host.toInteraction(check.requested);
+    this.#waiting.set(requestId, waiting);
+    this.#activity.awaitingAuthorization(agentRunId);
   }
 
   #refuseUnit(
@@ -420,8 +482,15 @@ export class RunWork {
     );
   }
 
-  #scopeOf(unit: UnitDefinition, agent: PinnedAgent): ExecutionScope {
-    if (unit.executionKind === 'MODEL') return agent.modelScope;
+  #scopeOf(unit: UnitDefinition, record: AgentRunRecord): ExecutionScope {
+    if (unit.executionKind === 'MODEL') return record.agent.modelScope;
+    if (unit.protectedCapabilities.includes('workspace.write'))
+      return {
+        kind: 'WORKSPACE',
+        repositoryRoot: this.#deps.repositoryRoot,
+        writableRoots: [...writableRoots(record.ceiling)],
+        exclusions: [...record.ceiling.exclusions],
+      };
     if (!unit.protectedCapabilities.includes('repo.read')) return { kind: 'NONE' };
     const lease = this.#authorization.lease;
     if (lease === undefined) throw new Error('A protected Unit needs a valid Lease');
@@ -435,7 +504,7 @@ export class RunWork {
   async #startAttempt(
     request: SubmitUnitRequest,
     unit: UnitDefinition,
-    agent: PinnedAgent,
+    record: AgentRunRecord,
   ): Promise<void> {
     const { turnId } = this.#host.control();
     if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
@@ -446,9 +515,9 @@ export class RunWork {
       turnId,
       unit,
       input: request.input,
-      scope: this.#scopeOf(unit, agent),
+      scope: this.#scopeOf(unit, record),
       runEpoch: this.#host.runEpoch(),
-      agent,
+      agent: record.agent,
       display: request.display,
     });
   }
@@ -462,6 +531,8 @@ export class RunWork {
     const { requestId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
+    if (!this.#authorization.offers(request.questionId, request.answer.scope))
+      return this.#refuse(requestId, request, 'INVALID_INPUT');
     const settled = this.#authorization.answer(request.questionId, request.answer.scope);
     if (settled === undefined) return this.#refuse(requestId, request, 'QUESTION_NOT_PENDING');
     this.#host.toInteraction(settled.resolved);
@@ -469,7 +540,7 @@ export class RunWork {
     return this.#accept(requestId, request);
   }
 
-  async #release(settled: QuestionResolved<string>): Promise<void> {
+  async #release(settled: QuestionResolved): Promise<void> {
     for (const requestId of settled.waiters) {
       const file = this.#waitingFiles.get(requestId);
       if (file !== undefined) {
@@ -479,9 +550,7 @@ export class RunWork {
       const waiting = this.#waiting.get(requestId);
       if (waiting === undefined) continue;
       this.#waiting.delete(requestId);
-      if (settled.resolution === 'GRANTED')
-        await this.#startAttempt(waiting.request, waiting.unit, waiting.agent);
-      else this.#refuseUnit(waiting.request, waiting.unit, { reasonCode: 'USER_DECLINED' });
+      await this.#decide(waiting);
     }
   }
 
@@ -541,7 +610,7 @@ export class RunWork {
       file.done({ ...accepted, path, exists: false });
       return;
     }
-    if (path !== 'AGENTS.md') {
+    if (!isProjectInstructionPath(path)) {
       const { ref, sha256, text } = read;
       file.done({ ...accepted, path, exists: true, ref, sha256, text });
       return;
@@ -573,12 +642,23 @@ export class RunWork {
     file.done({
       requestId: file.request.requestId,
       outcome: 'ACCEPTED',
-      path: 'AGENTS.md',
+      path: file.request.path,
       exists: true,
       ref: read.ref,
       sha256: read.sha256,
       trusted,
     });
+  }
+
+  /** Only for the interface: goes into the AgentRun's next ActivityEvents as it came. */
+  updateActivity(request: UpdateActivityRequest): Response {
+    const { requestId, agentRunId, todos } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    if (this.#agentRuns.get(agentRunId)?.state !== 'ACTIVE')
+      return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
+    this.#activity.todos(agentRunId, todos);
+    return this.#accept(requestId, request);
   }
 
   /**

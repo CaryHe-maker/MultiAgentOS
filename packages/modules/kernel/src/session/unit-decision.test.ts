@@ -107,9 +107,9 @@ describe('the decision order', () => {
       kind: 'REFUSE',
       reasonCode: 'USER_DECLINED',
     });
-    expect(
-      decideUnit(write('src/a.ts', { agentRunId: 'run-2' }), main, [refusal]),
-    ).toMatchObject({ kind: 'ASK' });
+    expect(decideUnit(write('src/a.ts', { agentRunId: 'run-2' }), main, [refusal])).toMatchObject({
+      kind: 'ASK',
+    });
   });
 
   it('④ a refusal outweighs a grant from before it', () => {

@@ -9,6 +9,7 @@ import { ModelToolCallSchema } from '../executor/model-tool-call.js';
 import { RepositoryListInputSchema } from '../executor/repository-list.js';
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
+import { FileEditInputSchema, FileWriteInputSchema } from '../executor/file-write.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
@@ -18,6 +19,13 @@ const RepositoryScopeSchema = closed({
   kind: Type.Literal('REPOSITORY'),
   /** The realpath of the repository root. */
   repositoryRoot: text(4096),
+  exclusions: Type.Array(ExclusionRuleSchema),
+});
+/** Derived by Core from the ceiling of the AgentRun: what a write may touch (ExecutorSet 5b). */
+const WorkspaceScopeSchema = closed({
+  kind: Type.Literal('WORKSPACE'),
+  repositoryRoot: text(4096),
+  writableRoots: Type.Array(text(1024), { minItems: 1 }),
   exclusions: Type.Array(ExclusionRuleSchema),
 });
 const modelScope = {
@@ -33,9 +41,9 @@ const ModelScopeSchema = Type.Union([
   closed({ ...modelScope, thinking: Type.Literal('ENABLED'), thinkingEffort: text(32) }),
 ]);
 const NoScopeSchema = closed({ kind: Type.Literal('NONE') });
-/** Derived by Core: REPOSITORY from the Lease, MODEL from the pinned Model and Agent. */
+/** Derived by Core: REPOSITORY and WORKSPACE from a Lease, MODEL from the pinned Model and Agent. */
 export const ExecutionScopeSchema = Type.Union(
-  [RepositoryScopeSchema, ModelScopeSchema, NoScopeSchema],
+  [RepositoryScopeSchema, WorkspaceScopeSchema, ModelScopeSchema, NoScopeSchema],
   { $id: 'kernel.execution.ExecutionScope.v1' },
 );
 export type ExecutionScope = Static<typeof ExecutionScopeSchema>;
@@ -155,6 +163,19 @@ export const ModelExecutorInputSchema = closed(
 );
 export type ModelExecutorInput = Static<typeof ModelExecutorInputSchema>;
 
+/** `read_output` after Execution resolved `fullRef`; the Executor never sees a reference. */
+export const OutputReadExecutorInputSchema = closed(
+  {
+    toolCallId: ToolCallIdSchema,
+    content: Type.String(),
+    offset: Type.Optional(count(1)),
+    limit: Type.Optional(count(1)),
+    pattern: Type.Optional(text(500)),
+  },
+  'kernel.execution.OutputReadExecutorInput.v1',
+);
+export type OutputReadExecutorInput = Static<typeof OutputReadExecutorInputSchema>;
+
 const request = <K extends string, I extends TSchema, S extends TSchema, L extends TSchema>(
   executionKind: K,
   input: I,
@@ -192,6 +213,9 @@ export const ExecutionRequestSchema = Type.Union(
     request('FILE_READ', FileReadInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
     request('CONTEXT_ASSEMBLE', AssembleExecutorInputSchema, NoScopeSchema, AssembleLimitsSchema),
     request('MODEL', ModelExecutorInputSchema, ModelScopeSchema, ModelLimitsSchema),
+    request('FILE_WRITE', FileWriteInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
+    request('FILE_EDIT', FileEditInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
+    request('OUTPUT_READ', OutputReadExecutorInputSchema, NoScopeSchema, PlainLimitsSchema),
   ],
   { $id: 'kernel.execution.ExecutionRequest.v1' },
 );

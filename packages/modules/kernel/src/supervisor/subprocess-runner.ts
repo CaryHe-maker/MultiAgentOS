@@ -5,8 +5,9 @@ type RunResult = Awaited<ReturnType<SubprocessRunner['run']>>;
 const NOT_RUN: RunResult = { exitCode: null, signal: null, stdout: '', truncated: false };
 
 /**
- * The only place that starts a child process: a thin wrapper of
- * `child_process.spawn` that runs `rg` and nothing else, with an argument array and no shell.
+ * The only place that starts a child process: a thin wrapper of `child_process.spawn` that runs
+ * `rg` and `git` and nothing else, with an argument array and no shell. `git` gets only the given
+ * environment and PATH, so that settings of the user or a repository cannot reach it.
  * It never throws: a binary that is missing or cannot start resolves with `exitCode: null`.
  * The child is killed when `signal` fires or when its output passes `maxOutputBytes`, in which
  * case `truncated` is true and `stdout` holds what was read up to the limit.
@@ -25,19 +26,21 @@ export function createSubprocessRunner(): TrackedSubprocessRunner {
     killAll: () => {
       for (const child of live) child.kill('SIGKILL');
     },
-    run: (command, args, { cwd, signal, maxOutputBytes }) =>
+    run: (command, args, { cwd, signal, maxOutputBytes, env, stdin }) =>
       new Promise<RunResult>((resolve) => {
-        if (command !== 'rg' || signal.aborted) {
+        if ((command !== 'rg' && command !== 'git') || signal.aborted) {
           resolve(NOT_RUN);
           return;
         }
-        const child = spawn('rg', [...args], {
+        const child = spawn(command, [...args], {
           cwd,
           shell: false,
           windowsHide: true,
-          stdio: ['ignore', 'pipe', 'ignore'],
+          stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'],
+          ...(env === undefined ? {} : { env: { ...env, PATH: process.env['PATH'] ?? '' } }),
         });
         live.add(child);
+        if (stdin !== undefined) child.stdin?.end(stdin);
         const chunks: Buffer[] = [];
         let size = 0;
         let truncated = false;
@@ -56,7 +59,7 @@ export function createSubprocessRunner(): TrackedSubprocessRunner {
           });
         };
         signal.addEventListener('abort', kill);
-        child.stdout.on('data', (chunk: Buffer) => {
+        child.stdout?.on('data', (chunk: Buffer) => {
           const room = maxOutputBytes - size;
           if (chunk.byteLength > room) {
             truncated = true;

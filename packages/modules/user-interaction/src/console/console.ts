@@ -10,6 +10,7 @@ import {
   type InteractionInboxEvent,
   type InteractionSessionEvent,
   type InteractionSystemEvent,
+  type KernelToInteractionEvent,
   type RunFinished,
 } from '@multiagentos/contracts';
 import { renderReport } from '../domain/report-view.js';
@@ -241,7 +242,7 @@ export class Console {
         sessionId,
         workflowRunId,
         questionId: item.questionId,
-        answer: { scope: yes ? 'ALLOW' : 'DENY' },
+        answer: { scope: !yes ? 'DENY' : item.once ? 'ONCE' : 'ALLOW' },
       },
       this.#context(),
     );
@@ -391,18 +392,8 @@ export class Console {
         this.#pending.push({
           kind: 'AUTHORIZATION',
           questionId: event.questionId,
-          text:
-            event.capability === 'repo.read'
-              ? text.repoRead(
-                  terminalText(event.repositoryPath),
-                  event.provider,
-                  event.exclusions.length,
-                )
-              : text.instructions(
-                  event.path,
-                  event.truncated,
-                  terminalText((await this.#read(event.contentRef)) ?? ''),
-                ),
+          once: event.capability === 'workspace.write' && event.critical,
+          text: await this.#questionText(event),
         });
         break;
       case 'AuthorizationResolved': {
@@ -452,6 +443,29 @@ export class Console {
         break;
     }
     this.#refresh();
+  }
+
+  async #questionText(
+    event: Extract<KernelToInteractionEvent, { type: 'AuthorizationRequest' }>,
+  ): Promise<string> {
+    if (event.capability === 'repo.read')
+      return text.repoRead(
+        terminalText(event.repositoryPath),
+        event.provider,
+        event.exclusions.length,
+      );
+    if (event.capability === 'project.instructions')
+      return text.instructions(
+        event.path,
+        event.truncated,
+        terminalText((await this.#read(event.contentRef)) ?? ''),
+      );
+    if (event.critical)
+      return text.writeCritical(
+        terminalText(event.path),
+        terminalText((await this.#read(event.contentRef)) ?? ''),
+      );
+    return text.writeRoot(terminalText(event.writeRoot));
   }
 
   async #read(ref: ArtifactRef): Promise<string | undefined> {

@@ -140,6 +140,7 @@ export function projectHistory(
         // Appended at the end like any new fact, so a later call keeps the earlier prefix;
         // the same content is not repeated in a later run.
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        if (!('ref' in record)) break;
         if (instructions.has(`${record.path}\0${record.sha256}`)) break;
         instructions.add(`${record.path}\0${record.sha256}`);
         entries.push({

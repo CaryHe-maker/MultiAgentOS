@@ -1,4 +1,5 @@
 import {
+  capabilitiesUnderPreset,
   canonicalJson,
   sha256Hex,
   type ExecutionKind,
@@ -23,8 +24,13 @@ const unitOf = (unit: UnitDefinition): AgentUnit => ({
 export function agentBindingOf(
   set: PinnedDefinitionSet,
   registry: Pick<ProtocolRegistry, 'resolveContract'>,
+  preset: 'standard' | 'readonly' = 'standard',
 ): AgentBinding {
   const { agent, model, units, tools } = set;
+  const requestedCapabilities = capabilitiesUnderPreset(agent.capabilities, preset);
+  const offered = units.filter((unit) =>
+    unit.protectedCapabilities.every((c) => requestedCapabilities.includes(c)),
+  );
   const byKind = (kind: ExecutionKind): UnitDefinition | undefined =>
     units.find((unit) => unit.executionKind === kind);
   const required = (kind: ExecutionKind): AgentUnit => {
@@ -56,11 +62,12 @@ export function agentBindingOf(
     contextAssemble: required('CONTEXT_ASSEMBLE'),
     modelCall: required('MODEL'),
     publish: unitOf(publish),
-    tools: units.flatMap((unit) =>
+    tools: offered.flatMap((unit) =>
       unit.toolRefs.map((ref) => {
         const tool = toolOf(ref);
         return {
           modelName: tool.modelName,
+          executionKind: unit.executionKind,
           unit: unitOf(unit),
           parameters: registry.resolveContract(tool.parametersContract),
         };
@@ -81,8 +88,21 @@ export function agentBindingOf(
     ref: { kind: 'AGENT', id: agent.id, version: agent.version, digest: agent.digest },
     modelRef: { id: model.id, version: model.version },
     effort: agent.thinking.defaultEffort,
+    requestedCapabilities,
+    writeRoots: requestedCapabilities.includes('workspace.write') ? ['.'] : [],
     // The tool definitions the model sees, by digest: a change adds a REQUEST_CONTEXT record.
-    toolsDigest: sha256Hex(canonicalJson(tools.map((tool) => tool.digest).sort())),
+    toolsDigest: sha256Hex(
+      canonicalJson(
+        tools
+          .filter(
+            (tool) =>
+              tool.purpose !== 'UNIT' ||
+              offered.some((unit) => unit.toolRefs.some((ref) => ref.id === tool.id)),
+          )
+          .map((tool) => tool.digest)
+          .sort(),
+      ),
+    ),
     definitions,
   };
 }

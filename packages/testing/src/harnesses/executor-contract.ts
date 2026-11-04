@@ -101,7 +101,13 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
     expect(artifact.text).not.toContain('\r');
     return;
   }
-  if (kind === 'REPOSITORY_SEARCH' || kind === 'REPOSITORY_LIST') {
+  if (
+    kind === 'REPOSITORY_SEARCH' ||
+    kind === 'REPOSITORY_LIST' ||
+    kind === 'FILE_WRITE' ||
+    kind === 'FILE_EDIT' ||
+    kind === 'OUTPUT_READ'
+  ) {
     expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
     expect(artifact.text.length).toBeGreaterThan(0);
     return;
@@ -158,7 +164,8 @@ export function describeExecutorContract(name: string, fixture: ExecutorContract
     );
 
     it.each(EXECUTOR_KINDS)('%s gives the same output for the same input', async (kind) => {
-      if (kind === 'MODEL') return;
+      // A write changes what the next one finds; that is its point.
+      if (kind === 'MODEL' || kind === 'FILE_WRITE' || kind === 'FILE_EDIT') return;
       const registry = await fixture.create();
       const { input, environment } = fixture.caseFor(kind);
       const first = await run(registry, kind, input, environment);

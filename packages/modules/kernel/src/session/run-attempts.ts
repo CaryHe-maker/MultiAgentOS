@@ -15,11 +15,14 @@ import type {
   UnitReport,
   ViolationCode,
 } from '@multiagentos/contracts';
+import type { ProtectedCapability } from '@multiagentos/contracts';
 import type { SchedulerDuties, Settlement, SettlementResult } from '../interfaces/index.js';
 import type { AgentBudget } from '../monitor/index.js';
 
 /** What the catalog gives Core and Execution for one registered AgentRun. */
 export interface PinnedAgent {
+  /** The Agent definition's whitelist, the source of the ceiling (Kernel/Core 5a.1). */
+  readonly capabilities: readonly ProtectedCapability[];
   readonly units: readonly UnitDefinition[];
   readonly maxToolUnits: number;
   readonly maxWallClockMs?: number;
@@ -59,6 +62,7 @@ export interface ResultCheck {
   readonly outputRef?: ArtifactRef;
   readonly fullRef?: ArtifactRef;
   readonly reasoningRef?: ArtifactRef;
+  readonly changedFiles?: readonly string[];
   readonly usage?: TokenUsage;
   readonly requestState?: RequestState;
 }
@@ -355,7 +359,14 @@ export class RunAttempts {
   rejectWithoutAttempt(
     spec: Pick<AttemptSpec, 'requestId' | 'agentRunId' | 'unitRunId' | 'unit'>,
     refusal:
-      | { readonly reasonCode: 'USER_DECLINED' }
+      | {
+          readonly reasonCode:
+            | 'USER_DECLINED'
+            | 'CAPABILITY_NOT_GRANTED'
+            | 'WRITE_OUT_OF_SCOPE'
+            | 'PROTECTED_PATH'
+            | 'ADMISSION_CHECK_FAILED';
+        }
       | { readonly reasonCode: 'QUOTA_EXHAUSTED'; readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' },
   ): void {
     this.#deliver({
@@ -436,6 +447,7 @@ export class RunAttempts {
         ...(check.outputRef === undefined ? {} : { outputRef: check.outputRef }),
         ...(check.fullRef === undefined ? {} : { fullRef: check.fullRef }),
         ...(check.reasoningRef === undefined ? {} : { reasoningRef: check.reasoningRef }),
+        ...(check.changedFiles === undefined ? {} : { changedFiles: [...check.changedFiles] }),
       };
     }
     const reasonCode = check.reasonCode;

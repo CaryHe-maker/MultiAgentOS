@@ -21,6 +21,8 @@ export const SessionOpenedSchema = closed({
   title: Type.Optional(text(80)),
   turnCount: count(),
   fork: Type.Optional(ForkOriginSchema),
+  /** What changed in the workspace since the Session's last Turn (M2Design 2.3). */
+  divergedFiles: Type.Optional(Type.Array(text(4096))),
 });
 export type SessionOpened = Static<typeof SessionOpenedSchema>;
 

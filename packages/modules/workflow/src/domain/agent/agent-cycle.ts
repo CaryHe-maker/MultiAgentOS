@@ -1,9 +1,16 @@
-import { canonicalJson, pathDerivedId, sha256Hex, validate } from '@multiagentos/contracts';
+import {
+  WRITE_KINDS,
+  canonicalJson,
+  pathDerivedId,
+  sha256Hex,
+  validate,
+} from '@multiagentos/contracts';
 import type {
   ArtifactRef,
   BudgetView,
   ContextAssembleInput,
   ContextAssembleOutput,
+  ExecutionKind,
   FailureHandling,
   ModelToolCall,
   PinnedDefinitionRef,
@@ -28,6 +35,7 @@ export interface AgentUnit {
 }
 export interface AgentTool {
   readonly modelName: string;
+  readonly executionKind: ExecutionKind;
   readonly unit: AgentUnit;
   readonly parameters: Schema;
 }
@@ -142,7 +150,28 @@ export interface AgentContext {
   ) => ContextAssembleInput;
   /** The first prompt of the run: no event or log record carries its text. */
   readonly objectiveRef: ArtifactRef;
+  /**
+   * What the log adds to a tool's arguments and the model cannot give. Undefined leaves them as
+   * they are, and a refusal is a tool result for the model.
+   */
+  readonly toolInput?: (kind: ExecutionKind, args: unknown) => ToolInput;
 }
+
+export type ToolInput =
+  | {
+      readonly ok: true;
+      readonly input: UnitInput;
+      readonly workflowFields?: Readonly<Record<string, unknown>>;
+    }
+  | { readonly ok: false; readonly message: string };
+
+/** Kinds that change the workspace: what was read before them is no longer what is there. */
+const WRITES: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
+/** Core's refusals of the call itself: never the Unit's failurePolicy, and never fatal. */
+const CORE_REFUSALS: ReadonlySet<string> = new Set([
+  'CAPABILITY_NOT_GRANTED',
+  'ADMISSION_CHECK_FAILED',
+]);
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
@@ -153,6 +182,7 @@ const FEEDBACK = {
   CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
   INVALID_ARGUMENTS: 'Not executed: the arguments do not match the tool parameters.',
+  TOOL_INPUT_REFUSED: 'Not executed.',
   TOO_MANY_TOOL_CALLS: 'Not executed: this reply has more tool calls than allowed.',
   DUPLICATE_CALL: 'Not executed: the same call already succeeded and its result is above.',
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
@@ -535,7 +565,15 @@ function handleModel(
       continue;
     }
     seen.add(intent);
-    const made = submission(next, tool.unit, call.arguments as UnitInput, {
+    const completed: ToolInput = context.toolInput?.(tool.executionKind, call.arguments) ?? {
+      ok: true,
+      input: call.arguments as UnitInput,
+    };
+    if (!completed.ok) {
+      records.push(feedback(state, 'TOOL_INPUT_REFUSED', call.toolCallId, completed.message));
+      continue;
+    }
+    const made = submission(next, tool.unit, completed.input, {
       toolName: tool.modelName,
       argsSummary: '',
     });
@@ -548,6 +586,9 @@ function handleModel(
         kind: 'TOOL_CALL',
         modelTurnRequestId: report.requestId,
         toolCallId: call.toolCallId,
+        ...(completed.workflowFields === undefined
+          ? {}
+          : { workflowFields: { ...completed.workflowFields } }),
       },
     });
   }
@@ -575,7 +616,12 @@ function handleTool(
     ...state,
     consecutiveErrors,
     roundHadOk: state.roundHadOk || ok,
-    succeeded: ok ? [...state.succeeded, pending.intent] : state.succeeded,
+    // After a write nothing read before it may be answered with "the result is above".
+    succeeded: !ok
+      ? state.succeeded
+      : WRITES.has(report.executionKind)
+        ? []
+        : [...state.succeeded, pending.intent],
   };
   if (consecutiveErrors >= config.consecutiveErrorLimit) next = wrapUp(next, 'CONSECUTIVE_ERRORS');
   // Kernel's refusals have fixed meanings, not the Unit's failurePolicy (Module/Workflow 7): a quota
@@ -586,7 +632,7 @@ function handleTool(
     const { toolName } = pending.call;
     if (!next.declinedTools.includes(toolName))
       next = { ...next, declinedTools: [...next.declinedTools, toolName] };
-  } else if (!ok) {
+  } else if (!ok && !CORE_REFUSALS.has(report.reasonCode)) {
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
     if (handling === 'FINAL_CALL') next = wrapUp(next, 'BUDGET_WRAP_UP');

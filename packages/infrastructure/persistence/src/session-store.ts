@@ -11,6 +11,7 @@ import {
   truncate,
   utimes,
   writeFile,
+  copyFile,
 } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
@@ -186,6 +187,13 @@ export class FileSessionStore implements SessionPersistencePort, LifecyclePort {
         await assertNoSymlink(this.#dataDir, segments);
         await mkdir(dirname(directory), { recursive: true });
         await mkdir(directory);
+      },
+      copyLogFrom: async (fromSessionId) => {
+        assertSessionId(fromSessionId);
+        const source = ['sessions', fromSessionId, namespace, 'log.v1.jsonl'];
+        await assertNoSymlink(this.#dataDir, segments);
+        await assertNoSymlink(this.#dataDir, source);
+        await copyFile(join(this.#dataDir, ...source), join(directory, 'log.v1.jsonl'));
       },
       remove: async () => {
         await assertNoSymlink(this.#dataDir, segments);

@@ -1,5 +1,6 @@
 import {
   MEDIA_TYPES,
+  isProjectInstructionPath,
   RunSummarySchema,
   assertValid,
   canonicalJson,
@@ -191,6 +192,11 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       dispatch: (request) => supervisor.execute(request),
       cancelRun: (request) => supervisor.cancelRun(request),
       retrying: (retry) => holder.work?.retrying(retry),
+      // A write the user approved gives the content they saw standing (Kernel/Core 5a.4).
+      written: (path, sha256) =>
+        isProjectInstructionPath(path)
+          ? trust.record(repositoryRoot, path, sha256, 'APPROVED_WRITE')
+          : Promise.resolve(),
       readRepositoryFile: deps.readRepositoryFile,
       enqueue: (work) => {
         host.enqueue(work);
@@ -219,6 +225,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       readProjectFile: (path, scope) => execution.readProjectFile(path, scope),
       isTrusted: (path, sha256) => trust.isTrusted(repositoryRoot, path, sha256),
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
+      storeQuestionContent: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
         execution.cancel(runEpoch);

@@ -191,6 +191,36 @@ export const SessionLogRecordSchema = Type.Union(
       ref: ArtifactRefSchema,
       sha256: Sha256Schema,
       trusted: Type.Optional(Type.Boolean()),
+      /** Of a nested `AGENTS.md`: the projection that loaded it. */
+      agentRunId: Type.Optional(IdSchemas.agentRunId),
+    }),
+    /** A nested `AGENTS.md` beyond the limit is noted, not read. */
+    record('PROJECT_FILE_LOADED', inRun, {
+      path: text(512),
+      agentRunId: IdSchemas.agentRunId,
+      skipped: Type.Literal('LIMIT'),
+    }),
+    record('TODOS_UPDATED', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      source: closed({ modelTurnRequestId: IdSchemas.requestId, toolCallId: ToolCallIdSchema }),
+      counts: closed({
+        total: count(),
+        pending: count(),
+        inProgress: count(),
+        done: count(),
+        cancelled: count(),
+      }),
+    }),
+    record('WORKSPACE_REVERTED', inRun, {
+      revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
+      forced: Type.Boolean(),
+      externalFiles: Type.Array(text(4096)),
+      backupSnapshot: Type.Optional(text(64)),
+    }),
+    record('WORKSPACE_DIVERGED', inRun, { files: Type.Array(text(4096), { minItems: 1 }) }),
+    record('SESSION_FORKED', base, {
+      fromSessionId: IdSchemas.sessionId,
+      fromSeq: count(),
     }),
     record('REQUEST_CONTEXT', inTurn, {
       agentRunId: IdSchemas.agentRunId,

@@ -57,6 +57,17 @@ export const REASON_CODE_CATEGORY = {
   HUMAN_REQUEST_NOT_PENDING: 'CONFLICT',
   CONTEXT_OVERFLOW: 'RESOURCE',
   QUOTA_EXHAUSTED: 'RESOURCE',
+  CAPABILITY_NOT_SUBSET: 'POLICY',
+  CAPABILITY_NOT_GRANTED: 'POLICY',
+  WRITE_OUT_OF_SCOPE: 'POLICY',
+  PROTECTED_PATH: 'POLICY',
+  ADMISSION_CHECK_FAILED: 'POLICY',
+  FILE_CHANGED: 'CONFLICT',
+  EDIT_NO_MATCH: 'VALIDATION',
+  EDIT_NOT_UNIQUE: 'VALIDATION',
+  UNDO_NOT_AVAILABLE: 'CONFLICT',
+  NOTHING_TO_UNDO: 'CONFLICT',
+  UNDO_UNKNOWN: 'CONFLICT',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
@@ -104,6 +115,10 @@ export const CORE_REJECTED_CODES = [
   'HUMAN_REQUEST_NOT_PENDING',
   'ARTIFACT_EXPIRED',
   'USER_DECLINED',
+  'CAPABILITY_NOT_SUBSET',
+  'UNDO_NOT_AVAILABLE',
+  'NOTHING_TO_UNDO',
+  'UNDO_UNKNOWN',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
@@ -116,6 +131,11 @@ export const EXECUTOR_REJECTED_CODES = [
   'INVALID_RANGE',
   'INVALID_QUERY',
   'LIMIT_EXCEEDED',
+  'WRITE_OUT_OF_SCOPE',
+  'PROTECTED_PATH',
+  'FILE_CHANGED',
+  'EDIT_NO_MATCH',
+  'EDIT_NOT_UNIQUE',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `FAILED` outcome. */
 export const EXECUTOR_FAILED_CODES = [
@@ -152,6 +172,8 @@ export const UNIT_REJECTED_CODES = [
   'FINAL_CALL_USED',
   'ARTIFACT_EXPIRED',
   'QUOTA_EXHAUSTED',
+  'CAPABILITY_NOT_GRANTED',
+  'ADMISSION_CHECK_FAILED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */

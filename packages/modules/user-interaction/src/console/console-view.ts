@@ -25,7 +25,12 @@ export interface ActivityLine {
 
 /** The one item the input area asks about; the rest wait behind it in arrival order. */
 export type PendingItem =
-  | { readonly kind: 'AUTHORIZATION'; readonly questionId: string; readonly text: string }
+  | {
+      readonly kind: 'AUTHORIZATION';
+      readonly once: boolean;
+      readonly questionId: string;
+      readonly text: string;
+    }
   | { readonly kind: 'CONTINUE'; readonly text: string };
 
 /** Everything that changes in place: redrawn whenever it changes. */

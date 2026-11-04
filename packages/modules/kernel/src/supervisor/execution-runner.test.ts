@@ -165,6 +165,8 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
       };
     case 'MODEL':
       return modelRequest();
+    default:
+      throw new Error(`No request for ${kind}`);
   }
 }
 
@@ -228,6 +230,8 @@ function completedFor(kind: ExecutorKind): ExecutorOutcome {
         },
         usage: { inputTokens: 10, outputTokens: 5 },
       };
+    default:
+      throw new Error(`No result for ${kind}`);
   }
 }
 
@@ -251,6 +255,9 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
     REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
+    FILE_WRITE: unused('FILE_WRITE'),
+    FILE_EDIT: unused('FILE_EDIT'),
+    OUTPUT_READ: unused('OUTPUT_READ'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };

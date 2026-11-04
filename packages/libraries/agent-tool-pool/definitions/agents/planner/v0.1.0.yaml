@@ -35,6 +35,8 @@ actions:
       then: HANDOFF
       allowedInFinal: false
   onDegraded: PUBLISH_REPORT
+capabilities:
+  - repo.read
 limits:
   maxRounds: 3
   maxToolCallsPerRound: 0
