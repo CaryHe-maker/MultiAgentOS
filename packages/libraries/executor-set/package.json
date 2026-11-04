@@ -7,7 +7,9 @@
     "@ai-sdk/anthropic": "4.0.58",
     "@ai-sdk/openai": "4.0.71",
     "@multiagentos/contracts": "workspace:*",
-    "ai": "7.0.107"
+    "ai": "7.0.107",
+    "tree-sitter-bash": "0.25.1",
+    "web-tree-sitter": "0.27.1"
   },
   "devDependencies": {
     "@multiagentos/agent-tool-pool": "workspace:*",

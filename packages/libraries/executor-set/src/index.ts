@@ -52,3 +52,13 @@ export async function readRepositoryText(
   const read = await readGuardedFile(resolved, path);
   return read.ok ? read.file.content.toString('utf8') : undefined;
 }
+
+export { createCommandParser, prefixOf } from './command/parse/command-parser.js';
+export type {
+  CommandParser,
+  ParsedCommand,
+  SubCommand,
+  UnreusableReason,
+} from './command/parse/command-parser.js';
+export { firstMatchingPattern, matchesCommandPattern } from './command/parse/command-match.js';
+export { ARITY, commandPrefix } from './command/parse/arity.js';
