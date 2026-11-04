@@ -73,6 +73,8 @@ export interface RunRecord {
   readonly modelRequests?: number;
   /** Upper bound: cache hits are not reported per run, so all input is priced as misses. */
   readonly costMicroUsd?: number;
+  /** A real run's prompt cache, for L5 (M2Design 14): hits out of all input tokens. */
+  readonly cache?: { readonly inputTokens: number; readonly hitTokens: number };
 }
 
 export interface TaskResult {
@@ -413,7 +415,17 @@ async function runIn(
       failures.push(`${provider.log.remainingTurns()} scripted turn(s) were not used`);
   }
 
-  const record = await recordOf(task, mode, startedAt, durationMs, exitCode, config, summary);
+  const record = {
+    ...(await recordOf(task, mode, startedAt, durationMs, exitCode, config, summary)),
+    ...(mode.kind === 'real'
+      ? {
+          cache: {
+            inputTokens: provider.log.usage.inputTokens,
+            hitTokens: provider.log.usage.cacheHitTokens,
+          },
+        }
+      : {}),
+  };
   return {
     passed: failures.length === 0,
     failures,

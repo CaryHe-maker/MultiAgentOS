@@ -565,7 +565,7 @@ export class SessionRunner {
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
     for (const planned of transition.submissions) {
-      const request = await this.#withInstructions(workflowRunId, planned);
+      const request = await this.#withCurrentHistory(workflowRunId, planned);
       const response = await this.#deps.gateway.submitUnit(
         request,
         contextOf(sessionId, workflowRunId),
@@ -577,18 +577,19 @@ export class SessionRunner {
   }
 
   /**
+   * An assembly is planned before the records of its transition are appended, so its history is
+   * taken again from the log: every tool result must be there, whether the tool succeeded or not.
    * `AGENTS.md` is read when the run first needs the repository, like any document, and joins
-   * the context after the tool results of that round: a result must directly follow its call,
-   * so this waits for the next assembly and refreshes the history that was planned for it.
+   * the context after the tool results of that round, because a result must directly follow its
+   * call.
    */
-  async #withInstructions(
+  async #withCurrentHistory(
     workflowRunId: string,
     request: SubmitUnitRequest,
   ): Promise<SubmitUnitRequest> {
     const active = this.#agent;
-    if (active === undefined || !('history' in request.input) || !this.#readRepository)
-      return request;
-    if (this.#instructionsRun !== workflowRunId) {
+    if (active === undefined || !('history' in request.input)) return request;
+    if (this.#readRepository && this.#instructionsRun !== workflowRunId) {
       this.#instructionsRun = workflowRunId;
       const sessionId = this.#sessionIdOrThrow();
       const file = await this.#deps.gateway.readProjectFile(

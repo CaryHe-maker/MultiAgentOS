@@ -47,7 +47,7 @@
 | S1-EX-1 | 完成 | `retention/`、工具 Executor、`context-assemble` 与 `model-call` 的 major 1（思考回传、收尾两步、`retryAfterMs`）、`createExecutorRegistry`；已在真实 DeepSeek 上运行 | — |
 | S1-PL-1 | 完成 | `DefinitionCatalog`（解析、digest、交叉校验、固定）；main、planner、code-viewer、`analyze` 等 22 个 `v1` 草稿；`pinnedAgentOf` | 退出评测后定稿 main 的提示词并封存 |
 | S1-UI-1 | 完成 | 终端无关的 `Console`（待处理队列、排队的消息、指令、`/output`、两次 Ctrl+C、`mas run` 退出码）；`apps/cli` 的 Ink 视图与非 TTY 的逐行视图；已接入组合根 | — |
-| S1-IN-1 | 部分 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；`analyze` 真实模型回归 15/15 | 退出验收用例 S1–S3、S5–S7、L5、L6、H12、A 组的核对 |
+| S1-IN-1 | 部分 | 组合根接线；删除 M1 的模块与 major 0；去掉 `V1` 后缀与文件名中的版本；重建协议快照（`frozen: false`）；`analyze` 真实模型回归 15/15；退出用例的确定性测试（`stage1-exit.test.ts`） | L5 真实运行的缓存命中率；main 提示词定稿后的回归 |
 
 运行链路已切到 M2，代码中只有 major 1 一套契约。
 
@@ -66,3 +66,21 @@
 - 来源完整性：130 条结论全部带已核验来源（基线 144 条，同样全部带来源）。45 条未确认项中 3 条是来源不在读取范围内而被核验降级的结论，其余是模型自己标注的（基线 47 条，同样 3 条）。
 - 成本与延迟：共 0.088 美元，平均 0.0059；延迟中位数 16.6 秒（基线 0.094 美元、18.7 秒）。单次最多 54353 token，高于基线的 44420，出现在 F4。
 - 这次的定义还是 `v0.1.0` 草稿，main 的提示词定稿并封存后要再跑一次。运行记录没有技术重试的计数，这一项没有与基线比较。
+
+阶段 1 退出用例的核对（M2Plan 第 6.2、8.3 节）。确定性用例都经过真实的组合根、Kernel、Workflow、Console 与 ExecutorSet，只替换 provider 的 HTTP 接口，在 `apps/control-plane/test/acceptance/stage1-exit.test.ts`：
+
+| 用例 | 结论 | 证据 |
+|---|---|---|
+| R | 通过 | 上面的真实模型回归 |
+| S1 | 通过 | SIGKILL 子进程后重开：对话继续，遗留 Unit 记为 INTERRUPTED，没有重放，授权重新询问 |
+| S2 | 通过 | 日志尾部写入半行后重开并继续 |
+| S3 | 部分 | `/new` 后放弃不产生 Session 文件；`/fork` 在阶段 2 |
+| S5 | 通过 | 第二个进程退出码 70，提示持锁进程（核对时补上了进程信息） |
+| S6 | 通过 | Ubuntu 上的存储层测试：持有者退出、pid 被复用、心跳停止时抢占；没有另做进程级用例 |
+| S7 | 通过 | 端到端：429 与 `Retry-After` 下等待足够长、活动区有倒计时。超过 `retryAfterMaxMs` 与假时钟在 `run-execution.test.ts` |
+| L5 | 部分 | fake provider 比对：工具不变，除末尾的状态行外只在末尾增长。真实运行的缓存命中率还没有：`records.jsonl` 从现在起记录，下一次真实运行后写入 |
+| L6 | 通过 | 真实存储：满 7 天的 ContextPack 在启动时回收，上下文重建不受影响，删除 Session 后不再保留。定期回收以假定时器测试；新建或删除失败在 `session-manager.test.ts` |
+| H12 | 部分 | 运行中输入的消息在 AWAITING_INPUT 时作为下一个 Turn 提交；中止的部分在阶段 5 |
+| A（`repo.read`、根目录 `AGENTS.md`） | 通过 | 没用到仓库时不询问、一次运行只问一次、待答复时不放行也不拒绝、拒绝后 Turn 继续且下一个 Turn 可再问、未信任内容不进 system 段、内容变化后重新询问。“注入指令没有被执行”只验证结构，fake 模型不会判断内容 |
+
+核对中发现并修复的问题：一次运行的第一个工具调用没有成功时（用户拒绝或文件不存在），下一次组装的历史缺少它的结果，组装失败，AgentRun 以 FAILED 结束，Turn 没有回复。上面的真实回归在修复之前的提交上运行；这个修复只改变第一个工具失败时的路径，F1–F5 不走这条路径。

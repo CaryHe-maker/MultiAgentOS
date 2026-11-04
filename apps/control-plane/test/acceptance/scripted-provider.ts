@@ -28,6 +28,8 @@ export interface ProviderLog {
   readonly bodies: string[];
   readonly hosts: string[];
   readonly problems: string[];
+  /** Input tokens and cache hits as the provider reported them; a real run only. */
+  readonly usage: { inputTokens: number; cacheHitTokens: number };
   remainingTurns(): number;
 }
 
@@ -89,6 +91,7 @@ export function scriptedProvider(
     bodies: [],
     hosts: [],
     problems: [],
+    usage: { inputTokens: 0, cacheHitTokens: 0 },
     remainingTurns: () =>
       queues.planner.length + Math.max(0, queues.codeViewer.length - (script.endless ? 1 : 0)),
   };
@@ -125,12 +128,28 @@ export function recordingProvider(inner: typeof globalThis.fetch): {
   fetch: typeof globalThis.fetch;
   log: ProviderLog;
 } {
-  const log: ProviderLog = { bodies: [], hosts: [], problems: [], remainingTurns: () => 0 };
-  const fetch: typeof globalThis.fetch = (input, init) => {
+  const log: ProviderLog = {
+    bodies: [],
+    hosts: [],
+    problems: [],
+    usage: { inputTokens: 0, cacheHitTokens: 0 },
+    remainingTurns: () => 0,
+  };
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     log.hosts.push(url.host);
     if (typeof init?.body === 'string') log.bodies.push(init.body);
-    return inner(input, init);
+    const response = await inner(input, init);
+    try {
+      const { usage } = (await response.clone().json()) as {
+        usage?: { prompt_tokens?: number; prompt_cache_hit_tokens?: number };
+      };
+      log.usage.inputTokens += usage?.prompt_tokens ?? 0;
+      log.usage.cacheHitTokens += usage?.prompt_cache_hit_tokens ?? 0;
+    } catch {
+      // A body that is no JSON is the model-call Executor's to report.
+    }
+    return response;
   };
   return { fetch, log };
 }

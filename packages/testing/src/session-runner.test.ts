@@ -274,6 +274,23 @@ describe('a chat Turn', () => {
     expect(asked).toEqual([]);
   });
 
+  it.each(['USER_DECLINED', 'NOT_FOUND'] as const)(
+    'assembles with the result of a first tool that was refused as %s',
+    async (reject) => {
+      const replies = [modelReply('list_files', {}), modelReply('reply', { text: 'hi' })];
+      const answers = script(replies);
+      const assembled: SubmitUnitRequest[] = [];
+      const { kernel } = setup(replies, (request, index) => {
+        if (request.unitRef.id === 'context-assemble') assembled.push(request);
+        return request.unitRef.id === 'repository-list' ? { reject } : answers(request, index);
+      });
+      await begin(kernel);
+      const history = (assembled[1]?.input as { history: { kind: string; reasonCode?: string }[] })
+        .history;
+      expect(history.at(-1)).toMatchObject({ kind: 'TOOL_RESULT', reasonCode: reject });
+    },
+  );
+
   it('reads AGENTS.md after the first repository tool, behind its results', async () => {
     const asked: string[] = [];
     const replies = [

@@ -65,7 +65,11 @@ export async function main(argv: readonly string[]): Promise<number> {
       const lock = new FileInstanceLock(config.dataDir, { version: VERSION });
       const held = await lock.acquire();
       if (held.outcome === 'HELD') {
-        process.stderr.write(`另一个 mas 进程正在使用 ${config.dataDir}。\n`);
+        const { pid, processStartedAt } = held.owner;
+        const host = 'hostname' in held.owner ? `${held.owner.hostname} 上的` : '';
+        process.stderr.write(
+          `另一个 mas 进程正在使用 ${config.dataDir}：${host}进程 ${String(pid)}，启动于 ${processStartedAt}。\n`,
+        );
         return EXIT_CODE_SYSTEM_FAULT;
       }
       releaseLock = () => held.release();
