@@ -96,6 +96,7 @@ export default tseslint.config(
     files: [
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/stage1-exit.test.ts',
+      'apps/control-plane/test/acceptance/write-eval/run-write-eval.ts',
     ],
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdk] }],

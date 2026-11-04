@@ -202,6 +202,51 @@ describe('A: writing', () => {
   );
 
   it(
+    'several edits of one file in one reply all land, in order, without a refusal',
+    async () => {
+      const place = await roots({ 'many.txt': 'first\nsecond\nthird\n' });
+      const edit = (oldString: string, newString: string) => ({
+        name: 'edit_file',
+        arguments: { path: 'many.txt', oldString, newString },
+      });
+      const provider = scriptedChat(
+        tool('read_file', { path: 'many.txt' }),
+        { calls: [edit('first', 'one'), edit('second', 'two'), edit('third', 'three')] },
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('change all three');
+      expect(await readFile(join(place.repository, 'many.txt'), 'utf8')).toBe('one\ntwo\nthree\n');
+      const seen = contents(lastRequest(provider)).join('\n');
+      expect(seen).not.toContain('not as you last read it');
+      const [sessionId = ''] = await sessionsIn(place.dataDir);
+      expect(await logOf(place.dataDir, sessionId)).not.toContain('FILE_CHANGED');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a failed edit in a reply does not stop the next edit of that file',
+    async () => {
+      const place = await roots({ 'many.txt': 'first\nsecond\n' });
+      const edit = (oldString: string, newString: string) => ({
+        name: 'edit_file',
+        arguments: { path: 'many.txt', oldString, newString },
+      });
+      const provider = scriptedChat(
+        tool('read_file', { path: 'many.txt' }),
+        { calls: [edit('absent', 'x'), edit('second', 'two')] },
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('change it');
+      expect(await readFile(join(place.repository, 'many.txt'), 'utf8')).toBe('first\ntwo\n');
+      expect(contents(lastRequest(provider)).join('\n')).toContain('oldString is not in the file');
+    },
+    TIMEOUT,
+  );
+
+  it(
     'asks for each AGENTS.md with its content, and what it approved is then trusted',
     async () => {
       const place = await roots();

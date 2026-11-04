@@ -1,6 +1,7 @@
 import {
   WRITE_KINDS,
   canonicalJson,
+  normalizeRequestPath,
   pathDerivedId,
   sha256Hex,
   validate,
@@ -88,6 +89,13 @@ type Pending =
       readonly intent: string;
     };
 
+export interface DeferredWrite {
+  readonly tool: AgentTool;
+  readonly call: ModelToolCall;
+  readonly intent: string;
+  readonly modelTurnRequestId: string;
+}
+
 export interface AgentState {
   readonly workflowRunId: string;
   readonly sessionId: string;
@@ -108,6 +116,11 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  /**
+   * Writes of this reply to a path another of its writes has: each needs what the one before it
+   * left, so they are submitted one at a time (Module/Workflow 7, item 10).
+   */
+  readonly deferred: readonly DeferredWrite[];
   /** Tools the user rejected in this AgentRun; they are not submitted again. */
   readonly declinedTools: readonly string[];
   readonly fatal?: ReasonCode;
@@ -159,7 +172,11 @@ export interface AgentContext {
    * What the log adds to a tool's arguments and the model cannot give. Undefined leaves them as
    * they are, and a refusal is a tool result for the model.
    */
-  readonly toolInput?: (kind: ExecutionKind, args: unknown) => ToolInput;
+  readonly toolInput?: (
+    kind: ExecutionKind,
+    args: unknown,
+    notYetInLog?: readonly NewLogRecord[],
+  ) => ToolInput;
 }
 
 export type ToolInput =
@@ -355,6 +372,7 @@ export function startAgent(
     pending: new Map(),
     unitCounter: 0,
     succeeded: [],
+    deferred: [],
     declinedTools: [],
     intents: [],
     consecutiveErrors: 0,
@@ -597,6 +615,7 @@ function actOn(
   const pending = new Map<string, Pending>();
   const submissions: SubmitUnitRequest[] = [];
   const seen = new Set<string>();
+  const writtenPaths = new Set<string>();
   let accepted = 0;
   for (const call of calls) {
     const tool = state.definitions.tools.find((candidate) => candidate.modelName === call.toolName);
@@ -631,35 +650,109 @@ function actOn(
       continue;
     }
     seen.add(intent);
-    const completed: ToolInput = context.toolInput?.(tool.executionKind, call.arguments) ?? {
-      ok: true,
-      input: call.arguments as UnitInput,
-    };
-    if (!completed.ok) {
-      records.push(feedback(state, 'TOOL_INPUT_REFUSED', call.toolCallId, completed.message));
+    const planned = { tool, call, intent, modelTurnRequestId: report.requestId };
+    if (WRITES.has(tool.executionKind)) {
+      const path = writePathOf(call);
+      if (writtenPaths.has(path)) {
+        next = { ...next, deferred: [...next.deferred, planned] };
+        continue;
+      }
+      writtenPaths.add(path);
+    }
+    const started = startTool(next, planned, context, records);
+    next = started.state;
+    if (started.pending === undefined) continue;
+    pending.set(started.pending[0], started.pending[1]);
+    submissions.push(started.pending[2]);
+  }
+  next = { ...next, pending };
+  if (submissions.length === 0) {
+    const released = releaseDeferred(next, context, records);
+    if (released.submissions.length > 0) return { ...released, records };
+    return afterTools(released.state, context, config, records);
+  }
+  return { state: next, records, submissions };
+}
+
+const writePathOf = (call: ModelToolCall): string => {
+  const { path } = call.arguments as { readonly path: string };
+  return normalizeRequestPath(path) ?? path;
+};
+
+/** Makes the Unit of a tool call, or answers the call when the log says it cannot run. */
+function startTool(
+  state: AgentState,
+  planned: DeferredWrite,
+  context: AgentContext,
+  records: NewLogRecord[],
+): {
+  readonly state: AgentState;
+  readonly pending?: readonly [string, Pending, SubmitUnitRequest];
+} {
+  const { tool, call, intent, modelTurnRequestId } = planned;
+  const completed: ToolInput = context.toolInput?.(tool.executionKind, call.arguments, records) ?? {
+    ok: true,
+    input: call.arguments as UnitInput,
+  };
+  if (!completed.ok) {
+    records.push(feedback(state, 'TOOL_INPUT_REFUSED', call.toolCallId, completed.message));
+    return { state };
+  }
+  const made = submission(state, tool.unit, completed.input, {
+    toolName: tool.modelName,
+    argsSummary: '',
+  });
+  records.push({
+    ...(made.record as Extract<NewLogRecord, { type: 'UNIT_SUBMITTED' }>),
+    inputSource: {
+      kind: 'TOOL_CALL',
+      modelTurnRequestId,
+      toolCallId: call.toolCallId,
+      ...(completed.workflowFields === undefined
+        ? {}
+        : { workflowFields: { ...completed.workflowFields } }),
+    },
+  });
+  return {
+    state: made.state,
+    pending: [
+      made.request.requestId,
+      { role: 'TOOL', unit: tool.unit, call, intent },
+      made.request,
+    ],
+  };
+}
+
+/** The next deferred write that can run; every call still gets its one answer. */
+function releaseDeferred(
+  state: AgentState,
+  context: AgentContext,
+  records: NewLogRecord[],
+): { readonly state: AgentState; readonly submissions: readonly SubmitUnitRequest[] } {
+  let next = state;
+  while (next.deferred.length > 0) {
+    const [planned, ...rest] = next.deferred;
+    if (planned === undefined) break;
+    next = { ...next, deferred: rest };
+    if (next.fatal !== undefined || next.wrapUpReason !== undefined) {
+      records.push(feedback(next, 'NOT_EXECUTED', planned.call.toolCallId));
       continue;
     }
-    const made = submission(next, tool.unit, completed.input, {
-      toolName: tool.modelName,
-      argsSummary: '',
-    });
-    next = made.state;
-    pending.set(made.request.requestId, { role: 'TOOL', unit: tool.unit, call, intent });
-    submissions.push(made.request);
-    records.push({
-      ...(made.record as Extract<NewLogRecord, { type: 'UNIT_SUBMITTED' }>),
-      inputSource: {
-        kind: 'TOOL_CALL',
-        modelTurnRequestId: report.requestId,
-        toolCallId: call.toolCallId,
-        ...(completed.workflowFields === undefined
-          ? {}
-          : { workflowFields: { ...completed.workflowFields } }),
-      },
-    });
+    if (next.declinedTools.includes(planned.tool.modelName)) {
+      const text = rejectedText(planned.tool.modelName);
+      records.push(feedback(next, 'TOOL_REJECTED', planned.call.toolCallId, text));
+      continue;
+    }
+    const started = startTool(next, planned, context, records);
+    next = started.state;
+    if (started.pending === undefined) continue;
+    const [requestId, pending, request] = started.pending;
+    return {
+      state: { ...next, pending: new Map([...next.pending, [requestId, pending]]) },
+      submissions: [request],
+    };
   }
-  if (submissions.length === 0) return afterTools(next, context, config, records);
-  return { state: { ...next, pending }, records, submissions };
+  return { state: next, submissions: [] };
 }
 
 function handleTool(
@@ -702,6 +795,12 @@ function handleTool(
     const handling = handlingOf(pending.unit, report.reasonCode);
     if (handling === 'FATAL') next = { ...next, fatal: next.fatal ?? report.reasonCode };
     if (handling === 'FINAL_CALL') next = wrapUp(next, 'BUDGET_WRAP_UP');
+  }
+  if (next.pending.size === 0 && next.deferred.length > 0) {
+    const released = releaseDeferred(next, context, records);
+    next = released.state;
+    if (released.submissions.length > 0)
+      return { state: next, records, submissions: released.submissions };
   }
   // The batch finishes first, so every call of this reply has its result in the log.
   if (next.fatal !== undefined && next.pending.size === 0)

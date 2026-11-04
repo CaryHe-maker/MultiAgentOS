@@ -491,7 +491,9 @@ export class SessionRunner {
   #context(workflowRunId: string, scope: ProjectionScope): AgentContext {
     return {
       objectiveRef: this.#objectiveRef(workflowRunId),
-      toolInput: (kind, args) => toolInputOf(kind, args, this.#records, scope),
+      // What a transition has not appended yet still counts: it may be the write this one follows.
+      toolInput: (kind, args, notYetInLog = []) =>
+        toolInputOf(kind, args, [...this.#records, ...(notYetInLog as SessionLogRecord[])], scope),
       assembleInput: (status, final) => {
         return {
           final,
