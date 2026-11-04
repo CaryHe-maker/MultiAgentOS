@@ -37,6 +37,8 @@
 核对时间：2026-11-04，`feature/phase1/main`；Ubuntu 24.04（WSL）完整质量门在阶段 1 的每次推进后运行。
 阶段 0 已经由 PR #40 合入 `feat/M2`。阶段 1 已由 PR #41 合入 `feat/M2`。阶段 2 的文档门已通过（Cary 2026-11-04），S2-CT-1 到 S2-UI-1 在 `feature/phase2/main` 上实现，确定性退出用例在 `stage2-exit.test.ts`。
 
+写入与 tree-sitter 的实验见 [Evidence-S2-Write-And-TreeSitter](Evidence-S2-Write-And-TreeSitter.md)：小仓库任务 108/108，真实仓库任务 4/12，主因是上下文上限按字节计，高估约 3.3 倍（待决定）；tree-sitter 现在不引入。
+
 main 写入的真实模型检查（`run-main-write.ts`，2026-11-04，`deepseek-flash@v0.1.0`，Ubuntu 24.04）：6/6 通过。改名（三个文件）、新建文件、只问问题时不写、打招呼不调用工具、`.env` 没有被写入、`/undo` 恢复原内容。只跑了一轮，不是评测基线；`.env` 那一例模型没有尝试写入，所以这一轮没有在真实模型上触发 `PROTECTED_PATH`，这条拒绝由 `stage2-exit.test.ts` 与对抗测试覆盖。
 
 | 任务 | 状态 | 已完成 | 未完成 |
