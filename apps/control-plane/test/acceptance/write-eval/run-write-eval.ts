@@ -149,6 +149,13 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
   if (task.realRepository === true) {
     const quiet = { cwd: repository, encoding: 'utf8', timeout: 300_000 } as const;
     spawnSync('git', ['clone', '-q', process.cwd(), '.'], quiet);
+    // The tasks and their hidden tests live in this repository: the agent must not find them.
+    spawnSync('rm', ['-rf', 'apps/control-plane/test/acceptance/write-eval'], quiet);
+    spawnSync(
+      'git',
+      ['-c', 'user.name=eval', '-c', 'user.email=eval@example.invalid', 'commit', '-qam', 'eval'],
+      quiet,
+    );
     spawnSync('pnpm', ['install', '--offline', '--frozen-lockfile'], quiet);
   }
   const usage: Usage[] = [];
@@ -266,6 +273,15 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
     ms: Date.now() - started,
     requests: usage.length,
     ...totals,
+    inputs: usage.map((u) => u.input),
+    wrapUps: records.flatMap((r) => {
+      const reason = (r as { wrapUpReason?: string }).wrapUpReason;
+      return reason === undefined ? [] : [reason];
+    }),
+    estimates: records.flatMap((r) => {
+      const count = (r as { output?: { tokenCount?: number } }).output?.tokenCount;
+      return count === undefined ? [] : [count];
+    }),
     cacheRate: totals.input === 0 ? 0 : totals.cacheHit / totals.input,
     /** The first request of a chat cannot hit; this is what the rest achieved. */
     cacheRateAfterFirst:

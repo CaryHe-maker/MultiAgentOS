@@ -152,13 +152,13 @@ import { expect, it } from 'vitest';
 import { environmentFor } from '../test-support/environments.js';
 import { createOutputReadExecutor } from './output-read-executor.js';
 const run = async (input: object) => {
-  const outcome = await createOutputReadExecutor().execute({ toolCallId: 'call_1', content: 'a\nb\nHIT\nd\ne\nf\ng\nHIT\ni\n', ...input } as never, environmentFor('OUTPUT_READ', { kind: 'NONE' }));
+  const outcome = await createOutputReadExecutor().execute({ toolCallId: 'call_1', content: 'a\\nb\\nHIT\\nd\\ne\\nf\\ng\\nHIT\\ni\\n', ...input } as never, environmentFor('OUTPUT_READ', { kind: 'NONE' }));
   if (outcome.outcome !== 'COMPLETED') throw new Error(outcome.outcome);
   return outcome.result.artifact.text;
 };
 it('args', () => { expect(validate(OutputReadArgsSchema, { toolCallId: 'call_1', pattern: 'x', context: 2 }).ok).toBe(true); expect(validate(OutputReadArgsSchema, { toolCallId: 'call_1', context: 6 }).ok).toBe(false); });
 it('context lines', async () => { const t = await run({ pattern: 'HIT', context: 1 }); for (const l of ['2 | b','3 | HIT','4 | d','7 | g','8 | HIT','9 | i']) expect(t).toContain(l); expect(t).not.toContain('5 | e'); expect(t).not.toContain('1 | a'); });
-it('merge', async () => { const t = await run({ pattern: 'HIT', context: 2 }); expect(t.match(/5 \| e/g)?.length).toBe(1); expect(t.match(/6 \| f/g)?.length).toBe(1); });
+it('merge', async () => { const t = await run({ pattern: 'HIT', context: 2 }); expect(t.match(/5 \\| e/g)?.length).toBe(1); expect(t.match(/6 \\| f/g)?.length).toBe(1); });
 it('without context as before', async () => { const t = await run({ pattern: 'HIT' }); expect(t).toContain('3 | HIT'); expect(t).not.toContain('2 | b'); });
 `,
     },
