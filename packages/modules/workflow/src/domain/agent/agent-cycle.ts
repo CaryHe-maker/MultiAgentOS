@@ -236,6 +236,18 @@ const withdrawnOf = (state: AgentState): readonly string[] =>
     ? [state.definitions.spawnTool.toolName]
     : [];
 
+/** The same for a finishing call: nothing ran, and the model is told what to correct. */
+function controlArgumentsText(
+  checked: ReturnType<typeof validate> | undefined,
+  notJson: boolean,
+): string {
+  const base = 'The arguments of the call do not match its parameters';
+  if (notJson) return `${base}: they are not valid JSON.`;
+  if (checked === undefined || checked.ok) return `${base}.`;
+  const text = `${base}: ${checked.issues.slice(0, 3).join('; ')}`;
+  return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
+}
+
 /** Why a tool's arguments were refused, so the model can correct them instead of guessing. */
 function invalidArgumentsText(
   checked: ReturnType<typeof validate> | undefined,
@@ -520,12 +532,14 @@ function invalidReply(
   context: AgentContext,
   config: AgentConfig,
   records: readonly NewLogRecord[],
+  /** What is wrong, when the model can act on it; otherwise the fixed text of the code. */
+  detail?: string,
 ): AgentTransition {
   // Every call gets its answer here, also when the AgentRun ends: the history must stay valid.
   const notes =
     calls.length === 0
       ? [feedback(state, code)]
-      : calls.map((call) => feedback(state, code, call.toolCallId));
+      : calls.map((call) => feedback(state, code, call.toolCallId, detail));
   if (state.final) return degrade(state, 'FINAL_CALL_INVALID', [...records, ...notes]);
   const regenerations = state.regenerations + 1;
   const next =
@@ -646,8 +660,18 @@ function actOn(
       return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
     if (state.final && !tool.allowedInFinal)
       return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    if (control.arguments === null || !validate(tool.parameters, control.arguments).ok)
-      return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
+    const controlChecked =
+      control.arguments === null ? undefined : validate(tool.parameters, control.arguments);
+    if (controlChecked === undefined || !controlChecked.ok)
+      return invalidReply(
+        state,
+        'CONTROL_ARGUMENTS_INVALID',
+        calls,
+        context,
+        config,
+        records,
+        controlArgumentsText(controlChecked, control.arguments === null),
+      );
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
     return ended(
       state,
@@ -671,8 +695,18 @@ function actOn(
       return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
     if (state.final)
       return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    if (spawn.arguments === null || !validate(spawnTool.parameters, spawn.arguments).ok)
-      return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
+    const spawnChecked =
+      spawn.arguments === null ? undefined : validate(spawnTool.parameters, spawn.arguments);
+    if (spawnChecked === undefined || !spawnChecked.ok)
+      return invalidReply(
+        state,
+        'CONTROL_ARGUMENTS_INVALID',
+        calls,
+        context,
+        config,
+        records,
+        controlArgumentsText(spawnChecked, spawn.arguments === null),
+      );
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
     return ended(
       state,
