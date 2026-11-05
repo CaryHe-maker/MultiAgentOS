@@ -175,8 +175,10 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       };
       child.stdout?.on('data', capture);
       child.stderr?.on('data', capture);
+      let status = '';
       child.stdio[STATUS_FD]?.on('data', (chunk: Buffer) => {
-        const match = /"child-pid"\s*:\s*(\d+)/u.exec(chunk.toString('utf8'));
+        status = (status + chunk.toString('utf8')).slice(-512);
+        const match = /"child-pid"\s*:\s*(\d+)/u.exec(status);
         if (match?.[1] !== undefined) innerPid = Number(match[1]);
       });
 

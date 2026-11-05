@@ -48,9 +48,13 @@ describe('scanRepository', () => {
     expect(scan.maskedDirs).toContain('src/deep');
   });
 
-  it('stops at its entry budget instead of walking a huge tree', async () => {
-    const scan = await scanRepository({ ...options(repository()), maxEntries: 2 });
-    expect(scan.maskedFiles.length + scan.protectedExisting.length).toBeLessThan(7);
+  it('fails instead of returning a partial list when the tree is larger than its budget', async () => {
+    await expect(scanRepository({ ...options(repository()), maxEntries: 2 })).rejects.toThrow(
+      'SANDBOX_SCAN_INCOMPLETE',
+    );
+    await expect(protectedPathsOf({ ...options(repository()), maxEntries: 2 })).rejects.toThrow(
+      'SANDBOX_SCAN_INCOMPLETE',
+    );
   });
 });
 

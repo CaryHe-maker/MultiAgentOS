@@ -1,4 +1,4 @@
-import { lstat, readdir, rename, mkdir } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
@@ -44,7 +44,7 @@ async function walk(
   rules: readonly string[],
   exclusions: readonly string[],
   found: Found,
-  budget: { left: number },
+  budget: { left: number; exhausted: boolean },
 ): Promise<void> {
   let entries;
   try {
@@ -53,7 +53,10 @@ async function walk(
     return;
   }
   for (const entry of entries) {
-    if (budget.left <= 0) return;
+    if (budget.left <= 0) {
+      budget.exhausted = true;
+      return;
+    }
     budget.left -= 1;
     const path = relative === '' ? entry.name : posix.join(relative, entry.name);
     if (entry.isDirectory()) {
@@ -74,14 +77,17 @@ async function walk(
 
 export async function scanRepository(options: ScanOptions): Promise<SandboxScan> {
   const found: Found = { masked: [], maskedDirs: [], protectedPaths: [] };
+  const budget = { left: options.maxEntries, exhausted: false };
   await walk(
     options.repositoryRoot,
     '',
     secretRules([...options.extraSecretRules]),
     options.exclusions,
     found,
-    { left: options.maxEntries },
+    budget,
   );
+  // A secret deeper in the tree would not be masked: no command runs on a partial scan.
+  if (budget.exhausted) throw new Error('SANDBOX_SCAN_INCOMPLETE');
   return {
     maskedFiles: found.masked.sort(),
     maskedDirs: found.maskedDirs.sort(),
@@ -92,10 +98,20 @@ export async function scanRepository(options: ScanOptions): Promise<SandboxScan>
 /** Protected paths that exist now, for the before-and-after comparison around a command. */
 export async function protectedPathsOf(options: ScanOptions): Promise<ReadonlySet<string>> {
   const found: Found = { masked: [], maskedDirs: [], protectedPaths: [] };
-  await walk(options.repositoryRoot, '', [], options.exclusions, found, {
-    left: options.maxEntries,
-  });
+  const budget = { left: options.maxEntries, exhausted: false };
+  await walk(options.repositoryRoot, '', [], options.exclusions, found, budget);
+  if (budget.exhausted) throw new Error('SANDBOX_SCAN_INCOMPLETE');
   return new Set(found.protectedPaths);
+}
+
+/** `rename` fails across file systems (a repository on another mount): copy, then remove. */
+async function moveAway(source: string, target: string): Promise<void> {
+  try {
+    await rename(source, target);
+  } catch {
+    await cp(source, target, { recursive: true, verbatimSymlinks: true });
+    await rm(source, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -116,12 +132,11 @@ export async function quarantineNewProtected(
     try {
       await lstat(join(options.repositoryRoot, path));
       await mkdir(quarantineDir, { recursive: true });
-      await rename(join(options.repositoryRoot, path), target);
-      moved.push(path);
+      await moveAway(join(options.repositoryRoot, path), target);
     } catch {
-      // Left in place: the report still names it.
-      moved.push(path);
+      // Could not be moved or removed: it stays, and the report still names it.
     }
+    moved.push(path);
   }
   return moved;
 }

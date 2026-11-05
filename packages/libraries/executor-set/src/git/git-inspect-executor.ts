@@ -101,6 +101,8 @@ export function createGitInspectExecutor(): Executor<'GIT_INSPECT'> {
         if (
           input.path !== undefined &&
           (input.path.startsWith('/') ||
+            // `:(top)` and `:!x` are pathspec magic, not file names.
+            input.path.startsWith(':') ||
             input.path.split('/').includes('..') ||
             isExcluded(input.path, resolved.rules))
         )
@@ -132,7 +134,7 @@ export function createGitInspectExecutor(): Executor<'GIT_INSPECT'> {
             output: { action: input.action },
             artifact: {
               mediaType,
-              text: `git ${input.action} failed (exit code ${String(ran.exitCode)}).`,
+              text: `git ${input.action} failed (exit code ${String(ran.exitCode)}). Check that the revision and the path exist.`,
             },
           });
         const body = text === '' ? '(no output)' : text;

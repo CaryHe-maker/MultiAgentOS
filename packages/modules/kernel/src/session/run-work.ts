@@ -634,6 +634,18 @@ export class RunWork {
   ): Promise<void> {
     const { turnId } = this.#host.control();
     if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
+    let scope: ExecutionScope;
+    try {
+      scope =
+        unit.executionKind === 'COMMAND'
+          ? await this.#commandScope(request, record)
+          : this.#scopeOf(unit, record);
+    } catch (error) {
+      // E.g. the repository is too large to scan for secrets: the command does not run unmasked.
+      if (unit.executionKind !== 'COMMAND') throw error;
+      this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
+      return;
+    }
     await this.#attempts.start({
       requestId: request.requestId,
       agentRunId: request.agentRunId,
@@ -641,10 +653,7 @@ export class RunWork {
       turnId,
       unit,
       input: request.input,
-      scope:
-        unit.executionKind === 'COMMAND'
-          ? await this.#commandScope(request, record)
-          : this.#scopeOf(unit, record),
+      scope,
       runEpoch: this.#host.runEpoch(),
       agent: record.agent,
       display: request.display,

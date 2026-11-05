@@ -5,7 +5,7 @@ import type { SandboxProfile } from '@multiagentos/contracts';
  * The `bwrap` arguments of a SandboxProfile (M2Design 6.1). A pure function: the order matters
  * because a later mount lands on top of an earlier one, and the tests assert it item by item.
  *
- *   1. new PID namespace, die with the parent, new session, status fd, no network unless approved
+ *   1. new PID, IPC and UTS namespaces, die with the parent, new session, status fd, no network unless approved
  *   2. the root read-only, then /dev and /proc
  *   3. $HOME hidden by an empty tmpfs, /tmp private (before the repository: it may live in /tmp)
  *   4. the tool chains under $HOME back, read-only, and their credential files masked
@@ -39,6 +39,9 @@ export function buildBwrapArgs(input: BwrapInput): string[] {
   const repo = profile.repositoryRoot;
   const args: string[] = [
     '--unshare-pid',
+    // SysV shared memory and queues of the host, and its host name, are not the command's.
+    '--unshare-ipc',
+    '--unshare-uts',
     '--die-with-parent',
     '--new-session',
     '--json-status-fd',

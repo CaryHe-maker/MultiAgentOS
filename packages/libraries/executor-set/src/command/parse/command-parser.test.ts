@@ -98,6 +98,15 @@ describe('prefix', () => {
     expect(prefixOf(parser.parse('git -C . push').subcommands[0]!)).toBeUndefined();
   });
 
+  it.each(['env FOO=1 make', 'xargs rm -f', 'timeout 5 npm test', 'nohup ./serve', 'sudo ls'])(
+    'offers none for %s, which runs another command',
+    (line) => {
+      const sub = parser.parse(line).subcommands[0];
+      expect(sub).toBeDefined();
+      if (sub !== undefined) expect(prefixOf(sub)).toBeUndefined();
+    },
+  );
+
   it('offers none for a command that is not literal', () => {
     expect(prefixOf(parser.parse('git $X').subcommands[0]!)).toBeUndefined();
   });

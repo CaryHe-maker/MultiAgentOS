@@ -25,7 +25,7 @@ const UNREUSABLE_TEXT: Readonly<Record<string, string>> = {
 /** What the user is shown before a command runs: exactly the command, where, and what it may do. */
 function commandQuestionText(q: CommandQuestion): string {
   const lines = [
-    q.critical || q.network || q.unisolated
+    q.matched !== undefined || q.network || q.unisolated
       ? '⚠ 高风险命令，请确认：'
       : '允许 Agent 运行这条命令吗？',
     '  ' + q.command,

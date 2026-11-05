@@ -163,8 +163,36 @@ export function createCommandParser(): Promise<CommandParser> {
   return initialised;
 }
 
+/**
+ * Commands that run the rest of their line as another command. Their prefix would stand for any
+ * command at all (`env rm -rf x`, `timeout 5 sh x`), so none is offered; "this command" still is.
+ */
+const WRAPPERS: ReadonlySet<string> = new Set([
+  'env',
+  'xargs',
+  'nohup',
+  'timeout',
+  'time',
+  'nice',
+  'ionice',
+  'setsid',
+  'sudo',
+  'doas',
+  'exec',
+  'command',
+  'builtin',
+  'watch',
+  'stdbuf',
+  'chroot',
+  'unshare',
+  'strace',
+  'ltrace',
+  'script',
+  'flock',
+]);
+
 /** The prefix a "this prefix from now on" entry would hold; undefined when none is safe to offer. */
 export function prefixOf(command: SubCommand): string | undefined {
-  if (command.name === undefined || command.dynamic) return undefined;
+  if (command.name === undefined || command.dynamic || WRAPPERS.has(command.name)) return undefined;
   return commandPrefix([command.name, ...command.args]);
 }

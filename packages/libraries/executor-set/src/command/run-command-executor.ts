@@ -62,7 +62,7 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
         const notice =
           `\n[${String(preview.omittedBytes)} bytes of output left out of the middle` +
           `${result.truncated ? ' (the full output is cut as well)' : ''}. ` +
-          'The full output is kept for 7 days; read it with read_output.]';
+          'The full output is kept for 7 days; read it with read_output.]\n';
         return completed({
           output: {
             ...base,
@@ -104,6 +104,9 @@ function previewOf(
     const half = Math.floor(budget / 2);
     head = lines.slice(0, half).join('\n');
     tail = lines.slice(Math.max(half, lines.length - (budget - half))).join('\n');
+    // Cutting by lines must not give back the bytes the byte limit took: a few lines may be huge.
+    head = retainBytes(head, Math.ceil(maxBytes / 2), 'HEAD').head;
+    tail = retainBytes(tail, Math.floor(maxBytes / 2), 'TAIL').tail;
   }
   const retainedBytes = Buffer.byteLength(head, 'utf8') + Buffer.byteLength(tail, 'utf8');
   return { head, tail, omittedBytes: Math.max(0, total - retainedBytes), retainedBytes };

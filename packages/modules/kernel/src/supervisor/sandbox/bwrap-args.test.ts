@@ -39,8 +39,10 @@ const at = (args: readonly string[], ...sequence: string[]): number => {
 describe('buildBwrapArgs', () => {
   it('starts with the isolation flags and cuts the network by default', () => {
     const args = buildBwrapArgs(input());
-    expect(args.slice(0, 5)).toEqual([
+    expect(args.slice(0, 7)).toEqual([
       '--unshare-pid',
+      '--unshare-ipc',
+      '--unshare-uts',
       '--die-with-parent',
       '--new-session',
       '--json-status-fd',
