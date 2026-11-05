@@ -404,7 +404,7 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
         finishWorker(summary, [], {
           validation: [
             {
-              command: 'echo hi',
+              command: 'touch made.txt',
               exitCode: 0,
               outputRef: {
                 artifactId: `art_${sha}`,
@@ -427,11 +427,17 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
         },
         {
           left: [
-            { wait: together(), then: tool('run_command', { command: 'echo hi' }) },
+            {
+              wait: together(),
+              then: tool('run_command', { command: 'touch made.txt', workdir: 'a' }),
+            },
             finishing('left said hi'),
           ],
           right: [
-            { wait: together(), then: tool('run_command', { command: 'echo hi' }) },
+            {
+              wait: together(),
+              then: tool('run_command', { command: 'touch made.txt', workdir: 'b' }),
+            },
             finishing('right said hi'),
           ],
         },
