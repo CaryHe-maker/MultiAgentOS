@@ -33,7 +33,7 @@ import {
   closeAgent,
   receiveAgentReport,
   resumeAfterRefusal,
-  resumeAfterSpawn,
+  answerDelegatedCall,
   startAgent,
   type AgentConfig,
   type AgentContext,
@@ -53,9 +53,10 @@ import {
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
-import { joinedResults, spawnNodeOf, taskScopeOf, type Waiting } from '../domain/spawn/join.js';
+import { wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
+import { callOf, spawnedIn, spawnNodeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
 import {
   finishedOutcome,
   resultOf,
@@ -77,6 +78,7 @@ import {
   projectGraph,
   spawnRevision,
   type GraphRevision,
+  type ProjectedGraph,
 } from '../domain/graph/session-graph.js';
 import {
   SessionStoreFailure,
@@ -149,8 +151,6 @@ interface ActiveAgent {
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
-  /** Set while the call it made to `run_subagents` has tasks that have not ended. */
-  readonly waiting?: Waiting | undefined;
   /** The task this AgentRun was started for, when it is a SubAgent. */
   readonly task?: { readonly name: string; readonly criteria: readonly string[] };
   /** What the Kernel reported this AgentRun changed (M2Design 3.7). */
@@ -170,8 +170,6 @@ export class SessionRunner {
   #turnId: string | undefined;
   /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
   readonly #agents = new Map<string, ActiveAgent>();
-  /** What this Turn spawned so far (M2Design 3.6). */
-  #spawned = { tasks: 0, calls: 0 };
   #orientPackRef: AgentState['orientPackRef'];
   /** A repository tool succeeded in the current run. */
   #readRepository = false;
@@ -462,7 +460,6 @@ export class SessionRunner {
           );
     if (node === undefined) throw new Error('HumanAnswered names no HUMAN node');
     if (view.get(node.nodeId)?.status === 'SUCCEEDED') return;
-    if (this.#turnId !== event.turnId) this.#spawned = { tasks: 0, calls: 0 };
     this.#turnId = event.turnId;
     await this.#append([
       {
@@ -524,7 +521,7 @@ export class SessionRunner {
       }
     }
     const projected = projectGraph(this.#records, workflowRunId);
-    const { skipped, ready } = advanceGraph(projected.graph, projected.view);
+    const { skipped, ready, wake: woken } = advanceGraph(projected.graph, projected.view);
     await this.#append(
       skipped.map(({ node, reason }) => ({
         type: 'NODE_ENDED',
@@ -552,7 +549,7 @@ export class SessionRunner {
         await this.#startAgent(workflowRunId, record);
       }
     }
-    await this.#joinFinished(workflowRunId);
+    await this.#wake(workflowRunId, woken);
     if (this.#advanceAgain) return;
     if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agents.size === 0)
       await this.#closeFinishedRun(workflowRunId);
@@ -619,6 +616,19 @@ export class SessionRunner {
     return { outputRef: ended.resultRef, toolCallId: String(ended.result?.['toolCallId']) };
   }
 
+  /** Who dispatched a task, from the `DELEGATE` edge that leads to it; undefined for any other node. */
+  #dispatchOf(
+    graph: ProjectedGraph,
+    node: GraphNodeRecord,
+  ): { parentAgentRunId: string; delegationId: string } | undefined {
+    if (node.spawn === undefined) return undefined;
+    const call = callOf(graph, node.nodeId);
+    const caller = [...this.#agents.values()].find((each) => each.nodeId === call?.callerNodeId);
+    if (call === undefined || caller === undefined)
+      throw new Error(`the task ${node.name} was not dispatched by a running AgentRun`);
+    return { parentAgentRunId: caller.state.agentRunId, delegationId: call.delegationId };
+  }
+
   async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     const turnId = this.#turnId;
@@ -629,11 +639,16 @@ export class SessionRunner {
     const { spawn } = node;
     const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
     const binding = this.#binding(agentId);
-    const place = placementOf(node, {
-      label: binding.definitions.label,
-      effort: binding.effort,
-      writeRoots: binding.writeRoots,
-    });
+    const graph = projectGraph(this.#records, workflowRunId);
+    const place = placementOf(
+      node,
+      {
+        label: binding.definitions.label,
+        effort: binding.effort,
+        writeRoots: binding.writeRoots,
+      },
+      this.#dispatchOf(graph, node),
+    );
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -700,13 +715,7 @@ export class SessionRunner {
     const task =
       spawn === undefined
         ? undefined
-        : taskScopeOf(
-            this.#records,
-            workflowRunId,
-            projectGraph(this.#records, workflowRunId),
-            node,
-            spawn,
-          );
+        : taskScopeOf(this.#records, workflowRunId, graph, node, spawn);
     const scope: ProjectionScope =
       this.#mode === 'CHAT' && spawn === undefined
         ? { kind: 'MAIN' }
@@ -763,6 +772,7 @@ export class SessionRunner {
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
     const sessionId = this.#sessionIdOrThrow();
+    if (transition.submissions.length > 0) this.#assertNotWaiting(workflowRunId, current);
     for (const planned of transition.submissions) {
       const request = await this.#withCurrentHistory(workflowRunId, planned);
       const response = await this.#deps.gateway.submitUnit(
@@ -774,6 +784,17 @@ export class SessionRunner {
     }
     if (transition.ending !== undefined)
       await this.#onEnding(workflowRunId, agentRunId, transition.ending);
+  }
+
+  /**
+   * A node that waits for a call it dispatched submits no new Unit (M2Design 3.1): the AgentRun
+   * has nothing to do until the call comes back, so a submission now is a bug in the runner.
+   */
+  #assertNotWaiting(workflowRunId: string, active: ActiveAgent | undefined): void {
+    if (active === undefined) return;
+    const { view } = projectGraph(this.#records, workflowRunId);
+    if (view.get(active.nodeId)?.status === 'WAITING')
+      throw new Error(`the node of ${active.state.agentRunId} waits and submits no Unit`);
   }
 
   /**
@@ -1155,12 +1176,11 @@ export class SessionRunner {
         status: 'FAILED',
         notes: ['stopped: the run was interrupted'],
       });
-    for (const active of all.filter((each) => each.task === undefined)) {
-      // Nobody joins the call any more: the AgentRun ends on its own terms.
-      const alone: ActiveAgent = { ...active, waiting: undefined };
-      this.#agents.set(active.state.agentRunId, alone);
-      await this.#onDegraded(workflowRunId, alone, reason);
-    }
+    // Every task has ended now: the calls came back, though nobody will read what they came to.
+    const projected = projectGraph(this.#records, workflowRunId);
+    await this.#wake(workflowRunId, wakeableNodes(projected.graph, projected.view));
+    for (const active of all.filter((each) => each.task === undefined))
+      await this.#onDegraded(workflowRunId, active, reason);
   }
 
   async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
@@ -1274,8 +1294,9 @@ export class SessionRunner {
     const refuse = (text: string, withdraw = false): Promise<void> =>
       this.#apply(
         workflowRunId,
-        resumeAfterSpawn(
+        answerDelegatedCall(
           active.state,
+          toolCallId,
           {
             refused: true,
             withdraw,
@@ -1290,7 +1311,7 @@ export class SessionRunner {
       rules: this.#deps.config,
       agents: this.#spawnable,
       callerRoots: this.#binding(active.agentId).writeRoots,
-      spawned: this.#spawned,
+      spawned: spawnedIn(this.#records, this.#turnId),
       readable: (artifactId) => readable.has(artifactId),
     });
     if (!checked.ok) {
@@ -1342,7 +1363,11 @@ export class SessionRunner {
     return { kind: 'REFUSED', text };
   }
 
-  /** The tasks become nodes; their caller stays RUNNING and waits (M2Design 3.6). */
+  /**
+   * Task graph: the tasks become nodes, joined to their caller by `DELEGATE` and `RESUME` edges,
+   * so the caller is the last link of the tasks it started (M2Design 3.1, 3.6). AgentRun: the caller
+   * enters WAITING for the call.
+   */
   async #expandGraph(
     workflowRunId: string,
     active: ActiveAgent,
@@ -1350,74 +1375,58 @@ export class SessionRunner {
     tasks: SpawnPlan['tasks'],
     reserved: DelegationReserved,
   ): Promise<void> {
-    const link = {
-      parentAgentRunId: active.state.agentRunId,
-      delegationId: reserved.delegationId,
-      callToolCallId: toolCallId,
-    };
+    const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
     const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
     const revision = spawnRevision(
       workflowRunId,
       revisionNumber,
+      { nodeId: active.nodeId, call },
       tasks.map((task) => ({
         name: task.name,
         agentRef: this.#refOf(task.agent),
         goal: task.goal,
         dependsOn: task.dependsOn ?? [],
-        spawn: spawnNodeOf(task, link, shares.get(task.name)),
+        spawn: spawnNodeOf(task, shares.get(task.name)),
       })),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
-    this.#spawned = { tasks: this.#spawned.tasks + tasks.length, calls: this.#spawned.calls + 1 };
-    this.#agents.set(active.state.agentRunId, {
-      ...active,
-      waiting: {
-        toolCallId,
-        delegationId: reserved.delegationId,
-        tasks: tasks.map((task) => ({
-          name: task.name,
-          agent: task.agent,
-          nodeId: revision.nodes.find((node) => node.name === task.name)?.nodeId ?? '',
-        })),
-      },
-    });
+    // The caller is WAITING from here on: the edges hold a call that has not come back.
     await this.#advance(workflowRunId);
   }
 
-  /** A caller whose tasks have all ended is told how they went and goes on (M2Design 3.6). */
-  async #joinFinished(workflowRunId: string): Promise<void> {
-    if (this.#interrupted) return;
+  /**
+   * The graph says a call came back (its `RESUME` edges can be followed); the AgentRun that waits
+   * for it goes on (M2Design 3.3): the shares of the tasks that never started go back to it, and
+   * what its tasks came to answers the call.
+   */
+  async #wake(workflowRunId: string, woken: readonly Wake[]): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
-    for (const parent of [...this.#agents.values()]) {
-      const { waiting } = parent;
-      const results =
-        waiting === undefined ? undefined : joinedResults(this.#records, workflowRunId, waiting);
-      if (waiting === undefined || results === undefined) continue;
-      // The shares of tasks that never started go back to the caller.
-      await this.#deps.gateway.releaseDelegation(
-        { requestId: newId('req'), sessionId, workflowRunId, delegationId: waiting.delegationId },
-        contextOf(sessionId, workflowRunId),
-      );
+    for (const { node, call } of woken) {
+      const caller = [...this.#agents.values()].find((each) => each.nodeId === node.nodeId);
       await this.#append([
         {
-          type: 'SUBAGENTS_JOINED',
+          type: 'NODE_RESUMED',
           workflowRunId,
           ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
-          agentRunId: parent.state.agentRunId,
-          toolCallId: waiting.toolCallId,
-          delegationId: waiting.delegationId,
-          results,
+          nodeId: node.nodeId,
+          call,
         },
       ]);
-      const resumed: ActiveAgent = { ...parent, waiting: undefined };
-      this.#agents.set(parent.state.agentRunId, resumed);
+      // A run that is closing hears no answer; an AgentRun whose call is not out has nothing to go on with.
+      if (this.#interrupted || caller === undefined || !caller.state.pending.has(call.toolCallId))
+        continue;
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId: call.delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
       await this.#apply(
         workflowRunId,
-        resumeAfterSpawn(
-          resumed.state,
+        answerDelegatedCall(
+          caller.state,
+          call.toolCallId,
           { refused: false, records: [] },
-          this.#context(workflowRunId, resumed.scope),
+          this.#context(workflowRunId, caller.scope),
           this.#deps.config,
         ),
       );

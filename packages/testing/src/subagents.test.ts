@@ -19,6 +19,7 @@ import { FileSessionStore } from '@multiagentos/persistence';
 import {
   SessionLogStore,
   SessionRunner,
+  callResultsOf,
   type AgentDefinitions,
   type AgentUnit,
 } from '@multiagentos/workflow';
@@ -253,6 +254,34 @@ const begin = async (kernel: ReturnType<typeof createFakeSessionKernel>) => {
   );
   await kernel.idle();
 };
+/**
+ * What each call that came back told its caller: the outcomes of the nodes on its RESUME edges. It
+ * also checks the invariant of a waiting node: between its call going out and coming back the
+ * caller's AgentRun submits no Unit.
+ */
+const resumedCalls = (records: readonly SessionLogRecord[]) =>
+  ofType(records, 'NODE_RESUMED').map((resumed) => {
+    const from = records.findIndex(
+      (record) =>
+        record.type === 'GRAPH_EXTENDED' &&
+        record.edges.some(
+          (edge) =>
+            edge.kind === 'DELEGATE' &&
+            edge.from === resumed.nodeId &&
+            edge.call?.toolCallId === resumed.call.toolCallId,
+        ),
+    );
+    const to = records.findIndex((record) => record === resumed);
+    const callerRun = ofType(records, 'AGENT_RUN_REGISTERED').find(
+      (record) => record.nodeId === resumed.nodeId,
+    )?.agentRunId;
+    expect(
+      records
+        .slice(from, to)
+        .filter((record) => record.type === 'UNIT_SUBMITTED' && record.agentRunId === callerRun),
+    ).toEqual([]);
+    return callResultsOf(records, resumed.workflowRunId, resumed.nodeId, resumed.call.toolCallId);
+  });
 const ofType = <T extends SessionLogRecord['type']>(
   records: readonly SessionLogRecord[],
   type: T,
@@ -299,8 +328,8 @@ describe('run_subagents', () => {
     );
     expect(secondStart).toBeGreaterThan(firstEnd);
     expect(ofType(records, 'GRAPH_EXTENDED').map((record) => record.source)).toContain('SPAWN');
-    const [joined] = ofType(records, 'SUBAGENTS_JOINED');
-    expect(joined?.results.map((result) => [result.name, result.status])).toEqual([
+    const [joined] = resumedCalls(records);
+    expect(joined?.map((result) => [result.name, result.status])).toEqual([
       ['survey', 'DONE'],
       ['check', 'DONE'],
     ]);
@@ -395,9 +424,9 @@ describe('run_subagents', () => {
         .filter((record) => record.code === 'NOT_VERIFIED')
         .map((record) => record.code),
     ).toEqual(['NOT_VERIFIED']);
-    const [joined] = ofType(records, 'SUBAGENTS_JOINED');
-    expect(joined?.results[0]?.status).toBe('DONE');
-    expect(joined?.results[0]?.notes).toEqual([
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toEqual([
       'criterion 0 not_met: it builds',
       'changed but not reported: src/a.ts',
     ]);
@@ -434,9 +463,7 @@ describe('run_subagents', () => {
     await begin(kernel);
     const { records } = runner;
     expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_INCOMPLETE');
-    expect(ofType(records, 'SUBAGENTS_JOINED')[0]?.results[0]?.notes).toEqual([
-      'criterion 1 unknown: b',
-    ]);
+    expect(resumedCalls(records)[0]?.[0]?.notes).toEqual(['criterion 1 unknown: b']);
   });
 });
 
@@ -470,7 +497,7 @@ describe('the length of a result', () => {
     await begin(kernel);
     const { records } = runner;
     expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_TOO_LONG');
-    expect(ofType(records, 'SUBAGENTS_JOINED')[0]?.results[0]?.status).toBe('DONE');
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
   });
 });
 
@@ -493,7 +520,7 @@ describe('a plan before the work', () => {
     await begin(kernel);
     const { records } = runner;
     expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
-    expect(ofType(records, 'SUBAGENTS_JOINED')).toHaveLength(1);
+    expect(resumedCalls(records)).toHaveLength(1);
     const refused = ofType(records, 'FEEDBACK').find(
       (record) => record.code === 'INVALID_ARGUMENTS',
     );

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.26 定稿（2026-11-06）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.27 定稿（2026-11-06）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -280,9 +280,11 @@ Architecture 已据此修改（Module/Kernel 3.2、3.3，Evolution 第 2、4 节
 | 依赖边（`dependsOn`） | 前驱结束后，后继按自己的触发规则判断能否就绪；多个前驱即为汇合 |
 | 条件边（`when`） | 依赖边加一个谓词：前驱 SUCCEEDED 且谓词成立时这条边被选中，前驱 SUCCEEDED 但谓词不成立时这条边未被选中 |
 | 循环边（`loop`） | 从一个节点回到它的某个祖先，带 `maxIterations`；见第 3.2 节的展开规则 |
-| `attachedTo`（附属） | HUMAN 节点附属于一个 AGENT 节点：由该 AgentRun 发起的 `ask_user`，或投递给该 AgentRun 的 `steer`。附属关系不参与就绪判定，只决定答复交给谁 |
+| 派发边（`DELEGATE`） | 从一个正在运行的 AGENT 节点（调用方）指向它派发的节点：调用方运行期间这条边被选中，被派发的节点才有可能就绪。它让被派发的节点在图上有来历；调用方在这次调用回来之前处于 `WAITING`（见下面的节点状态） |
+| 唤醒边（`RESUME`） | 从被派发的节点回到调用方，与 `DELEGATE` 成对出现，带同一个调用号。它不决定谁第一次就绪，只表示"这次调用回来了"：同一调用的全部唤醒边的前驱都结束，调用方就被唤醒（见第 3.3 节）。它是一种回边，和循环边一样不参与就绪判定与无环检查，也不是正向路径。阶段 4 只有 `run_subagents` 一种派发，派发了就必须等；后期 Orchestration 可能增加不需要等待的派发，阶段 4 没有考虑，到时再扩展 |
+| `attachedTo`（附属） | HUMAN 节点附属于一个 AGENT 节点：由该 AgentRun 发起的 `ask_user`，或投递给该 AgentRun 的 `steer`。附属关系不参与就绪判定，只决定答复交给谁。阶段 5 的 `ask_user` 与 `run_subagents` 形状相同（派发、等待、被唤醒），将用 `DELEGATE` 与 `RESUME` 表达 |
 
-`Edge` 的 `kind` 为 `DEPENDS`、`CONDITIONAL` 或 `LOOP`。
+`Edge` 的 `kind` 为 `DEPENDS`、`CONDITIONAL`、`LOOP`、`DELEGATE` 或 `RESUME`。`DELEGATE` 与 `RESUME` 带调用号（发起调用的那次模型输出里的 `toolCallId`）和委派号（Kernel 为这次调用借出额度时给的编号）；额度与写入占用属于 Kernel，图只表达谁等谁。
 
 **触发规则**写在节点上（`trigger`），决定节点何时就绪：
 
@@ -309,7 +311,7 @@ Architecture 已据此修改（Module/Kernel 3.2、3.3，Evolution 第 2、4 节
 HUMAN 节点只表达业务输入，不是 Unit（Unit 是 Kernel 执行的操作，而人类输入不是执行），也不是授权（第 4.1 节）。
 这一区分保证了不变式"等待人类时没有在途 UnitAttempt"（第 12 节）。
 
-节点状态：`PENDING → READY → RUNNING → SUCCEEDED | FAILED | SKIPPED(DEPENDENCY_FAILED | NOT_TAKEN) | INTERRUPTED`。状态只由日志记录投影得到。
+节点状态：`PENDING → RUNNING ⇄ WAITING`，终态为 `SUCCEEDED | FAILED | SKIPPED(DEPENDENCY_FAILED | NOT_TAKEN) | INTERRUPTED`。`WAITING` 只表示节点层面的状态：节点在运行，并且有一次它派发的调用（`DELEGATE`）还没有被唤醒（`RESUME`）。凡是派发了而没有被唤醒的节点都默认是 `WAITING`；它由边与日志推出，从不单独记录，所以不会和它们不一致。它不影响 AgentRun：AgentRun 没有暂停，只是在等一个工具调用的结果，结果回来就继续，AgentRun 层面没有 waiting 状态。节点在 `WAITING` 期间不得提交新的 Unit（Workflow 的 runner 以断言保证）。状态只由日志记录投影得到（`NODE_STARTED`、`NODE_RESUMED`、`NODE_ENDED`）。
 
 ### 3.2 GraphRevision
 
@@ -344,12 +346,22 @@ edgeState(e, status, results) =                       // 只看前驱的最后�
   前驱 SKIPPED(NOT_TAKEN)                     → NOT_TAKEN
   前驱 FAILED、INTERRUPTED、SKIPPED(DEPENDENCY_FAILED) → FAILED
 
+  DELEGATE 边：调用方 RUNNING 或 WAITING                → TAKEN
+               调用方已结束                         → FAILED（被派发的节点因此被跳过）
+               其余（调用方尚未开始）               → WAITING
+  RESUME 边不参与 edgeState
+
 readyNodes = { n | status(n) = PENDING 且
                    trigger(n) = all_success：全部入边为 TAKEN
                    trigger(n) = all_done：  没有入边为 WAITING }
 skippedNodes = { n | status(n) = PENDING 且 trigger(n) = all_success 且没有入边为 WAITING 且有入边不为 TAKEN }
   原因：有入边为 FAILED → DEPENDENCY_FAILED；否则 → NOT_TAKEN
+withWaiting：status(n) = RUNNING 且 n 有一次调用 c（它的 RESUME 边）还没有 NODE_RESUMED → status(n) = WAITING
+wakeableNodes = { (n, c) | status(n) = WAITING 且 c 没有 NODE_RESUMED 且
+                      c 的全部 RESUME 边的前驱都已结束（成败、被跳过都算：all_done） }
 ```
+
+唤醒用 `all_done`：被派发的节点有失败或被跳过的，调用方照样被唤醒，并看到每个节点的结束状态；它不会因为任务失败而永远等下去。
 
 Workflow 处理每条 Inbox 事件的顺序固定为：
 
@@ -357,7 +369,8 @@ Workflow 处理每条 Inbox 事件的顺序固定为：
 2. 更新投影；
 3. 需要循环展开或 `chat` 生长时，追加 `GRAPH_EXTENDED`；
 4. 把 `skippedNodes` 按原因记为 `SKIPPED`，重复直到不再变化（跳过会向下游传递）；
-5. 对 `readyNodes` 中的每个节点追加 `NODE_STARTED`，再启动它：AGENT 节点登记 AgentRun，HUMAN 节点发起人类请求。
+5. 对 `readyNodes` 中的每个节点追加 `NODE_STARTED`，再启动它：AGENT 节点登记 AgentRun，HUMAN 节点发起人类请求；
+6. 对 `wakeableNodes` 中的每次调用追加 `NODE_RESUMED`，并让调用方的 AgentRun 继续：被派发的节点的结果成为调用方这次调用的结果。
 
 - **就绪即推进**：任一节点完成后立即计算新的就绪节点，没有超步屏障。M2 借鉴 MAF 的是拓扑模型（节点、有类型的结果、扇出与汇合），推进方式不采用超步。
 - **结果逐个记录**：每个节点一结束就追加 `NODE_ENDED`，不等同批的其他节点。
@@ -444,7 +457,9 @@ run_subagents({
 - 校验通过时，Kernel 一次性从调用方的账本中划出全部任务的份额，作为委派保留（全有或全无，第 7.3 节）；之后不会因额度不足而只派生一部分。
 - 任务在就绪时才登记 AgentRun，由 Kernel 计算并校验它的能力上限，并把委派保留中属于它的份额转为它自己的账本。登记被拒的任务记为 `FAILED`，原因码随之记录，依赖它的任务记为 `SKIPPED`，它们的份额返还调用方。
 - 调用方在等待期间没有在途 Unit，它的墙钟上限暂停计时。
-- 汇合结果按调用参数中任务的书写顺序排列，不按完成顺序，以保证上下文可以复现、前缀缓存可以命中。未满足的验收条目、失败与跳过的任务排在每项的最前面。
+- 任务在图上的位置：每个任务是一个新节点，从调用方到它有一条 `DELEGATE` 边，从它回到调用方有一条 `RESUME` 边，任务之间的依赖是 `DEPENDS` 边。派发之后调用方没有被唤醒之前就是 `WAITING`，调用方因此是这一组任务的最后一环；本 Turn 已派生的任务数与调用次数也由图得出，不另设计数。AgentRun 层面 `run_subagents` 只是一次结果稍后才到的工具调用。
+- 汇合结果按调用参数中任务的书写顺序排列（即唤醒边的顺序），不按完成顺序，以保证上下文可以复现、前缀缓存可以命中。未满足的验收条目、失败与跳过的任务排在每项的最前面。汇合结果由唤醒边的前驱的结果推出，是日志的纯函数，不另写汇合记录；唤醒本身是 `NODE_RESUMED`。
+- 调用方在 `WAITING` 时被中断或失败，`DELEGATE` 边为 FAILED，还没启动的任务按 `all_success` 被跳过；已在运行的任务由中断一并结束，随后这次调用以 `NODE_RESUMED` 关闭，但不再交给调用方的 AgentRun（调用方不再提交 Unit）。
 - 同一 Turn 内可以多次调用 `run_subagents`（分批派生）：先调研，再按结果派生修改任务。
 
 ### 3.7 结果契约
@@ -1873,3 +1888,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.24 | 2026-11-05 | 第 7.1 节：只读名单上的命令行按 READ 处理；第 7.3 节：`budget.runTokenLimit` 与 `turnTokenLimit` 的缺省值改为 24,000,000 与 8,000,000（main 的收尾保留与一次调用余量就占 188.8 万，4,000,000 的 Turn 额度只能委派约 190 万，放不下 4 个 worker 的缺省份额）；`agent.spawn` 在 `readonly` 预设下保留（SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了）（Cary 2026-11-05 决定前两项） |
 | v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget` 只保留 `tokens`（Cary 决定）：`toolUnits` 与 `wallClockMs` 从参数中删除，一个任务的工具次数与墙钟上限只由所用 Agent 的定义决定；汇合时每个子任务的结果最多 8000 字符（见第 3.7 节） |
 | v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）；第 3.5 节：只调用 `update_todos` 的一轮不判进展，连续第二个才计入，参数不合要求的那一轮始终不判进展；`status` 的取值 `done` 改为 `completed`（模型的惯用词），`in_progress` 不再限制至多一项，进度计数与活动事件中的 `done` 随之改为 `completed`（Cary 2026-11-06 决定） |
+| v1.27 | 2026-11-06 | 第 3.1、3.3、3.6 节：`run_subagents` 的派发、等待与汇合放进任务图（Cary 2026-11-06 决定）。边增加 `DELEGATE`（派发，调用方运行期间被选中）与 `RESUME`（唤醒，不参与就绪与无环检查的回边）；节点增加 `WAITING` 状态，只在节点层面，凡派发了而尚未被唤醒的节点都默认是 `WAITING`，由边与日志推出、不单独记录，期间不得提交新的 Unit；AgentRun 层面不增加 waiting，`run_subagents` 只是结果稍后到的工具调用；增加 `wakeableNodes`（一次调用的全部唤醒边的前驱都结束，`all_done`）；日志记录 `NODE_RESUMED` 取代 `SUBAGENTS_JOINED`，汇合结果与已派生的任务数、调用次数由图推出；说明后期 Orchestration 可能增加不需要等待的派发，阶段 4 未考虑；阶段 5 的 `ask_user` 将复用同一对边 |

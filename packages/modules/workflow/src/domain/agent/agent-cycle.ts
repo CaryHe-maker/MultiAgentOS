@@ -94,7 +94,12 @@ type Pending =
       readonly unit: AgentUnit;
       readonly call: ModelToolCall;
       readonly intent: string;
-    };
+    }
+  /**
+   * A call that the task graph answers, not a Unit: `run_subagents`. It is one more tool call that
+   * has not come back, and the round goes on when it has (keyed by its tool call id, M2Design 3.6).
+   */
+  | { readonly role: 'DELEGATED' };
 
 export interface DeferredWrite {
   readonly tool: AgentTool;
@@ -459,7 +464,7 @@ const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
 
 function failed(
   state: AgentState,
-  pending: Pending,
+  pending: Exclude<Pending, { readonly role: 'DELEGATED' }>,
   code: ReasonCode,
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
@@ -718,15 +723,22 @@ function actOn(
     if (refusal !== undefined)
       return invalidReply(state, refusal.code, calls, context, config, records, refusal.detail);
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
-    return ended(
-      state,
-      sole.ending({
-        modelTurnRequestId: report.requestId,
-        modelOutputRef: report.outputRef,
-        toolCallId: sole.call.toolCallId,
-      }),
-      records,
-    );
+    const ending = sole.ending({
+      modelTurnRequestId: report.requestId,
+      modelOutputRef: report.outputRef,
+      toolCallId: sole.call.toolCallId,
+    });
+    const transition = ended(state, ending, records);
+    // A delegated call is pending until the graph answers it; any other control call ends the run.
+    return ending.kind === 'SPAWN'
+      ? {
+          ...transition,
+          state: {
+            ...transition.state,
+            pending: new Map([[sole.call.toolCallId, { role: 'DELEGATED' } as const]]),
+          },
+        }
+      : transition;
   }
   if (state.final)
     return degrade(state, 'FINAL_CALL_INVALID', [
@@ -1017,7 +1029,8 @@ export function receiveAgentReport(
   config: AgentConfig,
 ): AgentTransition {
   const pending = current.pending.get(report.requestId);
-  if (pending === undefined) return { state: current, records: [], submissions: [] };
+  if (pending === undefined || pending.role === 'DELEGATED')
+    return { state: current, records: [], submissions: [] };
   const remaining = new Map(current.pending);
   remaining.delete(report.requestId);
   const state = applyBudget({ ...current, pending: remaining }, report);
@@ -1104,11 +1117,13 @@ export function resumeAfterRefusal(
 }
 
 /**
- * The caller of `run_subagents` goes on after the call was refused (`refused`) or its tasks
- * ended. A refused call is no progress, and two in a row take the tool away (M2Design 3.6).
+ * The call to `run_subagents` has its answer: it was refused (`refused`), or its tasks ended and
+ * the graph says so. The round goes on as it does when any other call comes back. A refused call is
+ * no progress, and two in a row take the tool away (M2Design 3.6).
  */
-export function resumeAfterSpawn(
+export function answerDelegatedCall(
   state: AgentState,
+  toolCallId: string,
   outcome: {
     readonly refused: boolean;
     /** The tool is taken away at once: a limit was reached. */
@@ -1119,8 +1134,11 @@ export function resumeAfterSpawn(
   config: AgentConfig,
 ): AgentTransition {
   const invalidSpawns = outcome.refused ? state.invalidSpawns + 1 : 0;
+  const pending = new Map(state.pending);
+  pending.delete(toolCallId);
   const next: AgentState = {
     ...state,
+    pending,
     invalidSpawns,
     spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
     roundHadOk: !outcome.refused,

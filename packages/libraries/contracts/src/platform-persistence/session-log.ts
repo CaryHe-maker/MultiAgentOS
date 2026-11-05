@@ -16,12 +16,11 @@ import {
   text,
 } from '../platform-common/schema-helpers.js';
 
-/** What a task of `run_subagents` adds to its node (M2Design 3.6). */
+/**
+ * What a task of `run_subagents` adds to its node (M2Design 3.6). Who called it, and under which
+ * delegation, is on the `DELEGATE` edge that leads to it.
+ */
 export const SpawnNodeSchema = closed({
-  parentAgentRunId: IdSchemas.agentRunId,
-  delegationId: IdSchemas.delegationId,
-  /** The `run_subagents` call of the parent that this task answers. */
-  callToolCallId: ToolCallIdSchema,
   writeScope: Type.Array(text(500), { maxItems: 10 }),
   acceptance: Type.Array(text(300), { maxItems: 10 }),
   inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
@@ -49,10 +48,25 @@ export const GraphNodeRecordSchema = closed({
 });
 export type GraphNodeRecord = Static<typeof GraphNodeRecordSchema>;
 
+/**
+ * One call that suspends an AgentRun until the nodes it dispatched have ended: the model's tool call
+ * and the Kernel's reservation that funds it. Shared by the `DELEGATE` and `RESUME` edges of the call.
+ */
+export const EdgeCallSchema = closed({
+  toolCallId: ToolCallIdSchema,
+  delegationId: IdSchemas.delegationId,
+});
+export type EdgeCall = Static<typeof EdgeCallSchema>;
+
 export const GraphEdgeRecordSchema = closed({
   from: IdSchemas.nodeId,
   to: IdSchemas.nodeId,
-  kind: Type.Enum(['DEPENDS', 'CONDITIONAL']),
+  /**
+   * `DELEGATE`: from a caller that waits to a node it dispatched. `RESUME`: back from that node to
+   * the caller, which it wakes (M2Design 3.1). Both carry `call`.
+   */
+  kind: Type.Enum(['DEPENDS', 'CONDITIONAL', 'DELEGATE', 'RESUME']),
+  call: Type.Optional(EdgeCallSchema),
   when: Type.Optional(
     closed({
       field: text(128),
@@ -135,6 +149,11 @@ export const SessionLogRecordSchema = Type.Union(
       edges: Type.Array(GraphEdgeRecordSchema),
     }),
     record('NODE_STARTED', inTurn, { nodeId: IdSchemas.nodeId, path: text(512) }),
+    /**
+     * The `RESUME` edges of a call were followed: every node it dispatched has ended (M2Design 3.3).
+     * The graph says the call came back; the AgentRun of the node, which waited, goes on.
+     */
+    record('NODE_RESUMED', inTurn, { nodeId: IdSchemas.nodeId, call: EdgeCallSchema }),
     record('NODE_ENDED', inTurn, {
       nodeId: IdSchemas.nodeId,
       status: Type.Enum(['SUCCEEDED', 'FAILED', 'SKIPPED', 'INTERRUPTED']),
@@ -206,27 +225,6 @@ export const SessionLogRecordSchema = Type.Union(
     record('MODEL_ATTEMPT_FAILED', inTurn, {
       requestId: IdSchemas.requestId,
       reasonCode: ReasonCodeSchema,
-    }),
-    /**
-     * The tasks of a `run_subagents` call have all ended: what its caller is told (M2Design 3.6).
-     * The bodies of the results stay in the model outputs of the SubAgents.
-     */
-    record('SUBAGENTS_JOINED', inTurn, {
-      agentRunId: IdSchemas.agentRunId,
-      toolCallId: ToolCallIdSchema,
-      delegationId: IdSchemas.delegationId,
-      results: Type.Array(
-        closed({
-          name: text(64),
-          agent: text(64),
-          status: Type.Enum(['DONE', 'PARTIAL', 'BLOCKED', 'FAILED', 'SKIPPED']),
-          /** What the Workflow adds: unmet criteria, differences from the changes it saw. */
-          notes: Type.Array(text(300), { maxItems: 10 }),
-          outputRef: Type.Optional(ArtifactRefSchema),
-          resultToolCallId: Type.Optional(ToolCallIdSchema),
-        }),
-        { minItems: 1, maxItems: 12 },
-      ),
     }),
     /** What the model is told instead of a result; a call must always get an answer. */
     record('FEEDBACK', inTurn, {

@@ -171,9 +171,9 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 1. **校验**（`domain/spawn/validate-spawn.ts`，纯函数）：`TOO_MANY_TASKS`、`DUPLICATE_NAME`、`UNKNOWN_DEPENDENCY`、`CYCLE`、`TOO_DEEP`、`UNKNOWN_AGENT`、`WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN`、`WRITE_SCOPE_OUTSIDE`（规范化后须在调用方的可写范围内）、`WRITE_SCOPE_OVERLAP`（没有依赖路径的两个任务范围相交）、`EFFORT_NOT_ALLOWED`、`INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物，`readableArtifacts` 从日志得出）、`SPAWN_LIMIT`。所有不满足的规则一次列出；整次调用不执行，以 `FEEDBACK(INVALID_ACTION)` 作为这次调用的结果。连续两次被拒，或触及 `SPAWN_LIMIT`，下一次组装起 `ContextAssembleInput.withdrawnTools` 带上 `run_subagents`，模型不再看到它。
 2. **委派**：校验通过后调用 `reserveDelegation`（全有或全无）。`BUDGET_INSUFFICIENT` 带回可委派的余额，同样以 FEEDBACK 告知；Kernel 的其他拒绝也如此。
-3. **扩展任务图**：追加 `GRAPH_EXTENDED(source: SPAWN)`，每个任务一个 `AGENT` 节点（`goal` 与 `spawn` 字段：父 AgentRun、委派、调用号、范围、验收标准、产物、强度、份额），依赖是 `DEPENDS` 边。没有依赖的任务没有前驱，立即就绪；调用方的节点保持 RUNNING，调用方记录 `waiting`。
+3. **扩展任务图**：追加 `GRAPH_EXTENDED(source: SPAWN)`，每个任务一个 `AGENT` 节点（`goal` 与 `spawn` 字段：范围、验收标准、产物、强度、份额），任务之间的依赖是 `DEPENDS` 边；再从调用方到每个任务加一条 `DELEGATE` 边，从每个任务回到调用方加一条 `RESUME` 边，两者带调用号与委派号。调用方此刻起是 `WAITING`（由这些边推出，不写记录），没有依赖的任务立即就绪。调用方的 AgentRun 把这次调用当作结果稍后才到的工具调用，自己没有任何 waiting 状态。
 4. **推进**：就绪的任务各登记一个 AgentRun（带 `parentAgentRunId`、`delegationId`、`taskName`，可写根目录是任务的范围）；登记被拒的任务记为 FAILED，依赖它的任务按 `all_success` 记为 SKIPPED。`#advance` 不可重入：任务在推进过程中结束时只要求再来一遍。
-5. **汇合**：调用方所有任务节点都结束后，runner 调用 `releaseDelegation`，追加 `SUBAGENTS_JOINED`（按任务书写顺序），调用方的投影据此得到这次调用的结果（一条 FEEDBACK 计数，随后每个任务一条 `SUBAGENT_RESULT`），并开始下一轮。
+5. **唤醒**：`#advance` 按 `wakeableNodes` 找到调用方（它的这次调用的全部唤醒边的前驱都结束了），调用 `releaseDelegation`，追加 `NODE_RESUMED`，并把这次调用的结果交给它的 AgentRun（`answerDelegatedCall`）。调用方的投影在 `NODE_RESUMED` 处得到这次调用的结果（一条 FEEDBACK 计数，随后按唤醒边的顺序每个任务一条 `SUBAGENT_RESULT`）。调用方在 `WAITING` 期间不提交 Unit（`#assertNotWaiting`）；运行被中断时调用以 `NODE_RESUMED` 关闭而不交付。运行器不另存派生计数：谁在等、等什么、本 Turn 已派生多少，都从图和日志推出。
 
 **任务看到什么**：`TASK`（目标、验收标准、写入范围、交给它的产物）和它所依赖任务的 `SUBAGENT_RESULT`，都是 PINNED；看不到用户的输入，也看不到调用方的步骤。`SUBAGENT_RESULT` 只引用 SubAgent 结束那次模型输出和 `toolCallId`，Kernel 组装请求时从中取出 `finish_subagent` 的参数，日志中不复制正文。
 

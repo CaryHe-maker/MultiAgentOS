@@ -39310,28 +39310,12 @@
                   "spawn": {
                     "type": "object",
                     "required": [
-                      "parentAgentRunId",
-                      "delegationId",
-                      "callToolCallId",
                       "writeScope",
                       "acceptance",
                       "inputs",
                       "tokens"
                     ],
                     "properties": {
-                      "parentAgentRunId": {
-                        "type": "string",
-                        "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
-                      "delegationId": {
-                        "type": "string",
-                        "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
-                      "callToolCallId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128
-                      },
                       "writeScope": {
                         "type": "array",
                         "items": {
@@ -39430,8 +39414,29 @@
                   "kind": {
                     "enum": [
                       "DEPENDS",
-                      "CONDITIONAL"
+                      "CONDITIONAL",
+                      "DELEGATE",
+                      "RESUME"
                     ]
+                  },
+                  "call": {
+                    "type": "object",
+                    "required": [
+                      "toolCallId",
+                      "delegationId"
+                    ],
+                    "properties": {
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "delegationId": {
+                        "type": "string",
+                        "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "when": {
                     "type": "object",
@@ -39516,6 +39521,63 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "nodeId",
+            "call"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "NODE_RESUMED"
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "call": {
+              "type": "object",
+              "required": [
+                "toolCallId",
+                "delegationId"
+              ],
+              "properties": {
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "delegationId": {
+                  "type": "string",
+                  "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -40571,135 +40633,6 @@
                 "DELEGATION_NOT_FOUND"
               ],
               "$id": "platform.common.ReasonCode.v1"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "seq",
-            "at",
-            "workflowRunId",
-            "type",
-            "agentRunId",
-            "toolCallId",
-            "delegationId",
-            "results"
-          ],
-          "properties": {
-            "seq": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "at": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "workflowRunId": {
-              "type": "string",
-              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "type": {
-              "type": "string",
-              "const": "SUBAGENTS_JOINED"
-            },
-            "agentRunId": {
-              "type": "string",
-              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "toolCallId": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "delegationId": {
-              "type": "string",
-              "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "results": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "agent",
-                  "status",
-                  "notes"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
-                  },
-                  "agent": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
-                  },
-                  "status": {
-                    "enum": [
-                      "DONE",
-                      "PARTIAL",
-                      "BLOCKED",
-                      "FAILED",
-                      "SKIPPED"
-                    ]
-                  },
-                  "notes": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 300
-                    },
-                    "maxItems": 10
-                  },
-                  "outputRef": {
-                    "type": "object",
-                    "required": [
-                      "artifactId",
-                      "sha256",
-                      "size",
-                      "mediaType"
-                    ],
-                    "properties": {
-                      "artifactId": {
-                        "type": "string",
-                        "pattern": "^art_[a-f0-9]{64}$"
-                      },
-                      "sha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "size": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "mediaType": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128
-                      }
-                    },
-                    "additionalProperties": false,
-                    "$id": "platform.common.ArtifactRef.v1"
-                  },
-                  "resultToolCallId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                  }
-                },
-                "additionalProperties": false
-              },
-              "minItems": 1,
-              "maxItems": 12
             }
           },
           "additionalProperties": false

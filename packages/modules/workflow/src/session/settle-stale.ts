@@ -54,6 +54,10 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
       case 'FEEDBACK':
         if (record.toolCallId !== undefined) unanswered.delete(record.toolCallId);
         break;
+      case 'NODE_RESUMED':
+        // The tasks of the call answered it, as a projection reads them.
+        unanswered.delete(record.call.toolCallId);
+        break;
       case 'UNIT_SUBMITTED':
         openUnits.set(record.requestId, {
           workflowRunId: record.workflowRunId,

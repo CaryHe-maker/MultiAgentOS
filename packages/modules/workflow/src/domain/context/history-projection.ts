@@ -1,4 +1,5 @@
 import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multiagentos/contracts';
+import { callResultsOf } from '../spawn/spawn-graph.js';
 
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
@@ -41,6 +42,8 @@ export function projectHistory(
   scope: ProjectionScope,
 ): readonly ContextHistoryEntry[] {
   const mainRuns = new Set<string>();
+  /** The AgentRun that runs a node: what a node-level record is read for. */
+  const runOfNode = new Map<string, string>();
   const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
   const toolNames = new Map<string, string>();
   const entries: ContextHistoryEntry[] = [];
@@ -57,6 +60,7 @@ export function projectHistory(
         currentTurn = record.turnId;
         break;
       case 'AGENT_RUN_REGISTERED':
+        runOfNode.set(record.nodeId, record.agentRunId);
         if (scope.kind === 'NODE') {
           if (record.agentRunId !== scope.agentRunId) break;
           mainRuns.add(record.agentRunId);
@@ -247,19 +251,27 @@ export function projectHistory(
           ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
         });
         break;
-      case 'SUBAGENTS_JOINED': {
-        if (!mainRuns.has(record.agentRunId)) break;
-        const count = (status: string) =>
-          record.results.filter((result) => result.status === status).length;
+      case 'NODE_RESUMED': {
+        // The call it woke from is answered by what its tasks came to, in the order they were
+        // written (M2Design 3.3, 3.6): a pure function of the log, so no record of it is kept.
+        if (!mainRuns.has(runOfNode.get(record.nodeId) ?? '')) break;
+        const results = callResultsOf(
+          records,
+          record.workflowRunId,
+          record.nodeId,
+          record.call.toolCallId,
+        );
+        const count = (...statuses: string[]) =>
+          results.filter((result) => statuses.includes(result.status)).length;
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'FEEDBACK',
-          text: `${String(record.results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL') + count('BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
-          toolCallId: record.toolCallId,
+          text: `${String(results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL', 'BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
+          toolCallId: record.call.toolCallId,
         });
-        for (const result of record.results)
+        for (const result of results)
           entries.push({
             seq: record.seq,
             ...turnOf(record.turnId),
@@ -268,11 +280,9 @@ export function projectHistory(
             name: result.name,
             agent: result.agent,
             status: result.status,
-            notes: result.notes,
+            notes: [...result.notes],
             ...(result.outputRef === undefined ? {} : { outputRef: result.outputRef }),
-            ...(result.resultToolCallId === undefined
-              ? {}
-              : { toolCallId: result.resultToolCallId }),
+            ...(result.toolCallId === undefined ? {} : { toolCallId: result.toolCallId }),
           });
         break;
       }
