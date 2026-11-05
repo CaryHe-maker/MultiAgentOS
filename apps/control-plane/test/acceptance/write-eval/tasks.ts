@@ -21,6 +21,8 @@ export interface Judged {
   readonly replies: readonly string[];
   /** Paths whose content differs from the start. */
   readonly changed: readonly string[];
+  /** What the commands the model ran printed, in order, as the model was shown it. */
+  readonly toolResults?: readonly string[];
 }
 
 export interface WriteTask {
@@ -31,6 +33,8 @@ export interface WriteTask {
   readonly realRepository?: true;
   readonly files: Readonly<Record<string, string | Buffer>>;
   readonly steps: readonly Step[];
+  /** The fewest `run_command` calls the model must have made (acceptance group C). */
+  readonly mustRunCommands?: number;
   /** Copied in after the last step; the model never sees them. */
   readonly hidden?: Readonly<Record<string, string>>;
   readonly run?: readonly string[];

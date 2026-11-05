@@ -8,11 +8,12 @@
  */
 import { spawnSync } from 'node:child_process';
 import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import dotenv from 'dotenv';
 import { openChat, until, type Chat, type ScriptedChat } from '../chat-driver.js';
 import { HARD_TASKS, REAL_TASKS } from './tasks-hard.js';
+import { COMMAND_TASKS } from './tasks-command.js';
 import { WRITE_TASKS, type Judged, type WriteTask } from './tasks.js';
 
 /** The list prices in USD per million tokens, off-peak (`deepseek-flash` definition). */
@@ -20,7 +21,7 @@ const RATES = { cacheHit: 0.003, cacheMiss: 0.15, output: 0.6 };
 const TURN_TIMEOUT_MS = 8 * 60_000;
 const AWAITING = '等待输入';
 
-const ALL_TASKS = [...WRITE_TASKS, ...HARD_TASKS, ...REAL_TASKS];
+const ALL_TASKS = [...WRITE_TASKS, ...HARD_TASKS, ...REAL_TASKS, ...COMMAND_TASKS];
 
 interface Usage {
   input: number;
@@ -181,6 +182,23 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
     provider,
     answer,
     credentials: { apiKeyFor: () => process.env['DEEPSEEK_API_KEY'] },
+    // A toolchain under the home directory (nvm, a tarball in ~/.local/opt) is hidden from
+    // commands unless it is on the list; the evaluation needs the node it runs with.
+    configure: (config) => {
+      const toolchain = dirname(dirname(process.execPath));
+      return toolchain.startsWith(`${homedir()}/`)
+        ? {
+            ...config,
+            kernel: {
+              ...config.kernel,
+              sandbox: {
+                ...config.kernel.sandbox,
+                homeReadOnly: [...config.kernel.sandbox.homeReadOnly, toolchain],
+              },
+            },
+          }
+        : config;
+    },
   });
   try {
     for (const step of task.steps) {
@@ -226,13 +244,25 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
   const changed = paths.filter(
     (path) => !original.get(path)?.equals(bytes.get(path) ?? Buffer.alloc(0)),
   );
+  // What the model was shown of its commands: the tool results of its last request.
+  const toolResults = (provider.requests.at(-1)?.messages ?? [])
+    .filter((message) => message.role === 'tool')
+    .map((message) => (typeof message.content === 'string' ? message.content : ''));
   const judged: Judged = {
     files: new Map([...bytes].map(([k, v]) => [k, v.toString('utf8')])),
     bytes,
     replies,
     changed,
+    toolResults,
   };
   failures.push(...(task.check?.(judged) ?? []));
+  if (task.mustRunCommands !== undefined) {
+    const ran = called.filter((name) => name === 'run_command').length;
+    if (ran < task.mustRunCommands)
+      failures.push(
+        `ran ${String(ran)} commands, fewer than the ${String(task.mustRunCommands)} expected`,
+      );
+  }
 
   await write(repository, task.hidden ?? {});
   const commands = [...(task.run === undefined ? [] : [task.run]), ...(task.runs ?? [])];
