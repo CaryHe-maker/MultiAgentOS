@@ -56,7 +56,7 @@ export interface AgentDefinitions {
   /** What is published when no end tool was called validly. */
   readonly onDegraded: DegradedAction;
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
-  /** `run_subagents`: a control tool that waits for tasks instead of ending the AgentRun. */
+  /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */

@@ -197,7 +197,7 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 **写入占用的委派**：父在派生期间（有任务在运行，或有任务尚未登记也尚未放弃）不占用写入根目录，也不参与相交检查；它此间提交的 `FILE_WRITE`、`FILE_EDIT`、`COMMAND` 一律以 `WRITE_SCOPE_DELEGATED` 拒绝（验收 P6）。父的墙钟在等待子任务期间不计时。
 
-**`releaseDelegation`**：Workflow 在汇合之后调用，没有登记的任务的份额还给父；委派随之结束（父的占用恢复）。不认识的委派以 `DELEGATION_NOT_FOUND` 拒绝；运行收敛时无效果地接受。
+**`releaseDelegation`**：Workflow 在这次调用被唤醒（`NODE_RESUMED`）时调用，没有登记的任务的份额还给父；委派随之结束（父的占用恢复）。不认识的委派以 `DELEGATION_NOT_FOUND` 拒绝；运行收敛时无效果地接受。
 
 **`endAgentRun`**：SubAgent 的账本结束，未用的份额还给父，任务不再占用写入根目录。
 

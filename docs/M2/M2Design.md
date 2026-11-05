@@ -397,7 +397,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 | 控制工具 | 谁可用 | 效果 |
 |---|---|---|
 | `reply` | main | 以文字结果完成本节点，结束该 AgentRun。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
-| `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方进入"等待子任务"，所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
+| `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方的节点在这次调用回来之前处于 `WAITING`（第 3.1 节），所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
 | `finish_subagent` | explorer、worker | 以结构化结果结束本 AgentRun（第 3.7 节） |
 | `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上追加一个附属于调用方的 `HUMAN(ask / confirm / review)` 节点：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |
 | `update_todos` | main、worker | 以完整列表替换该 AgentRun 的待办（见下文）；不改变任务图，不结束 AgentRun |
@@ -955,7 +955,7 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
   这覆盖了模板中并行的 main 节点、它们各自派生的 SubAgent，以及同一个 main 分批派生的 SubAgent。
 - **父 AgentRun 的占用在派生期间转为委派**：SubAgent 的可写根目录必然落在父 AgentRun 的范围之内。父 AgentRun 调用 `run_subagents`、Kernel 受理 `reserveDelegation` 时，
   父的写入占用转为"已委派"：它不参与相交检查，父 AgentRun 在此期间提交的 WRITE 与 EXEC 一律拒绝（`WRITE_SCOPE_DELEGATED`）。
-  正常情况下父 AgentRun 在等待汇合，不会提交任何 Unit，这条拒绝只是兜底。全部子任务结束，或份额被返还后，父的占用恢复。
+  正常情况下父节点在 `WAITING`，不会提交任何 Unit，这条拒绝只是兜底。全部子任务结束，或份额被返还后，父的占用恢复。
 - **结束即释放**：AgentRun 结束（`endAgentRun`）时释放它的写入占用。
 - explorer 等没有 `workspace.write` 的 AgentRun 没有写入占用，不参与检查。
 

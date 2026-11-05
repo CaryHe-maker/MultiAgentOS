@@ -184,7 +184,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 - `status` 为 `blocked` 的任务节点记为 FAILED（依赖它的任务被跳过），`partial` 与 `done` 记为 SUCCEEDED；
 - 因额度、轮次等降级的 SubAgent（`onDegraded: RETURN_PARTIAL`）不发布任何东西，交回 `PARTIAL` 和原因；失败的 SubAgent 交回 `FAILED` 与原因码。
 
-**中断**：运行被中断时，SubAgent 先停止（记为 FAILED），再让调用方按自己的降级动作收尾。
+**中断**：运行被中断时，SubAgent 先停止（记为 FAILED），这样每次调用的唤醒边都已结束，调用以 `NODE_RESUMED` 关闭但不交给调用方的 AgentRun；然后调用方按自己的降级动作收尾。
 
 ## 8. 上下文
 

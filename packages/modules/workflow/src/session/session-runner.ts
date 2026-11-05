@@ -1365,8 +1365,8 @@ export class SessionRunner {
 
   /**
    * Task graph: the tasks become nodes, joined to their caller by `DELEGATE` and `RESUME` edges,
-   * so the caller is the last link of the tasks it started (M2Design 3.1, 3.6). AgentRun: the caller
-   * enters WAITING for the call.
+   * so the caller is the last link of the tasks it started (M2Design 3.1, 3.6). The caller's node is
+   * WAITING from here on; its AgentRun just has a tool call whose result has not come yet.
    */
   async #expandGraph(
     workflowRunId: string,
