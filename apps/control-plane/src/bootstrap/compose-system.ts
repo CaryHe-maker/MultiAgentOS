@@ -47,6 +47,7 @@ import {
   createSupervisor,
   pinAgentFrom,
   probeSandbox,
+  type MemorySample,
   type SandboxProbe,
   type TrackedSubprocessRunner,
 } from '@multiagentos/kernel';
@@ -88,6 +89,8 @@ export interface ComposeOptions {
   readonly log?: (line: string) => void;
   /** What the sandbox probe found; a test gives its own so that it does not depend on the host. */
   readonly sandboxProbe?: SandboxProbe;
+  /** Where memory is read; a test gives its own so that pressure can be made to order. */
+  readonly memorySample?: () => MemorySample;
   /** The runner owned by the entry so it can kill children even if composition fails. */
   readonly subprocess?: TrackedSubprocessRunner;
   /** Composition-time fault entry; the entry buffers faults until SystemControl is bound. */
@@ -244,6 +247,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
             },
           }),
       readRepositoryFile: readRepositoryText,
+      dataDir: config.dataDir,
+      ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
       commands: {
         analyze: analyzeCommand,
         sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),

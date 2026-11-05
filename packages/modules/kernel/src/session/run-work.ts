@@ -87,6 +87,7 @@ export interface CommandSupport {
   readonly unavailablePolicy: 'deny' | 'ask-unisolated';
   readonly homeReadOnly: readonly string[];
   readonly homeMaskedFiles: readonly string[];
+  /** Hidden from commands when it lies outside the home directory (M2Design 6.1). */
   readonly dataDir?: string;
   /** The files to mask and the protected paths that exist, found by looking at the repository. */
   readonly scan: () => Promise<

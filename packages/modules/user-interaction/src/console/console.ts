@@ -691,7 +691,9 @@ export class Console {
     if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined) {
       // The run was cut short from outside: the log is complete, so leave in control.
       this.#exitCode = RUN_EXIT_CODES.INTERRUPTED;
-      await this.shutdown();
+      // Not awaited: the Kernel waits for this very event to be delivered before it stops, so
+      // waiting for the stop inside the handler would wait for itself.
+      void this.shutdown().catch(() => undefined);
       return;
     }
     if (this.#finished !== undefined) {

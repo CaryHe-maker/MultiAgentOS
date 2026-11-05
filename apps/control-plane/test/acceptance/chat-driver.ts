@@ -4,8 +4,8 @@
  * replaced. It stands where the user stands: it types lines and reads what the console shows.
  */
 import { realpath } from 'node:fs/promises';
-import type { SystemConfig } from '@multiagentos/contracts';
-import type { TrackedSubprocessRunner } from '@multiagentos/kernel';
+import type { ExecutorRegistry, SystemConfig, SystemFaultReporter } from '@multiagentos/contracts';
+import type { MemorySample, SandboxProbe, TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
   ConsoleView,
@@ -106,7 +106,7 @@ export async function until(condition: () => boolean, what: string, ms = 15_000)
 }
 
 /** What the user answers to one question; `hold` leaves it open. */
-export type Answer = 'y' | 'n' | 'hold';
+export type Answer = 'y' | 'n' | 'hold' | '1' | '2' | '3' | 'c' | 'p';
 
 export interface ChatOptions {
   readonly dataDir: string;
@@ -117,6 +117,12 @@ export interface ChatOptions {
   /** Changes the defaults, for a limit a case must reach. */
   readonly configure?: (config: SystemConfig) => SystemConfig;
   readonly subprocess?: TrackedSubprocessRunner;
+  readonly preset?: 'standard' | 'readonly';
+  /** Replaces Executors, for a case that needs an Executor to fail in a way a real one cannot. */
+  readonly executors?: ExecutorRegistry;
+  readonly sandboxProbe?: SandboxProbe;
+  readonly memorySample?: () => MemorySample;
+  readonly reportSystemFault?: SystemFaultReporter;
   /** A real run's key; scripted runs use a key that goes nowhere. */
   readonly credentials?: { apiKeyFor(provider: string): string | undefined };
 }
@@ -135,6 +141,8 @@ export interface Chat {
   /** Sends a message and waits for the next reply of the agent. */
   say(text: string): Promise<void>;
   close(): Promise<number>;
+  /** The exit code, once the console ended by itself (an interrupt) or was closed. */
+  readonly done: Promise<number>;
 }
 
 const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
@@ -172,12 +180,18 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
         dataDir: options.dataDir,
       }),
       repositoryRoot: await realpath(options.repository),
-      preset: 'standard',
+      preset: options.preset ?? 'standard',
       view,
       credentials: options.credentials ?? { apiKeyFor: () => OFFLINE_KEY },
       log: () => undefined,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.subprocess === undefined ? {} : { subprocess: options.subprocess }),
+      ...(options.executors === undefined ? {} : { executors: options.executors }),
+      ...(options.sandboxProbe === undefined ? {} : { sandboxProbe: options.sandboxProbe }),
+      ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
+      ...(options.reportSystemFault === undefined
+        ? {}
+        : { reportSystemFault: options.reportSystemFault }),
     });
   } finally {
     globalThis.fetch = original;
@@ -189,7 +203,7 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
     const exited = running.exited();
     await running.start();
     await exited;
-    return 0;
+    return running.exitCode;
   });
   const replies = () => records.filter((record) => record.kind === 'REPLY').length;
   return {
@@ -206,6 +220,7 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
       await console.submit(text);
       await until(() => replies() > before, `a reply to "${text}"`);
     },
+    done,
     close: async () => {
       await console.submit('/exit');
       return done;

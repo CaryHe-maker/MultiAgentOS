@@ -39,7 +39,12 @@ import {
   createSupervisorPort,
   createWorkflowEventSender,
 } from '@multiagentos/fabric';
-import { RunLedgers, createMemorySampler, type AgentBudget } from './monitor/index.js';
+import {
+  RunLedgers,
+  createMemorySampler,
+  type AgentBudget,
+  type MemorySample,
+} from './monitor/index.js';
 import { InProcessProviderCapacity, Scheduler } from './scheduler/index.js';
 import type { ExecutionConfig } from './session/attempt-request.js';
 import { RunExecution, type RunExecutionDeps } from './session/run-execution.js';
@@ -98,6 +103,10 @@ export interface SessionKernelDeps {
    * (SystemFaultHandling 3). With a run, the run closes as INTERRUPTED and the interface exits.
    */
   readonly onMemoryExit?: () => void;
+  /** Where the sampler reads memory; a test gives a controllable one. */
+  readonly memorySample?: () => MemorySample;
+  /** The system data directory, which no command may see. */
+  readonly dataDir?: string;
   /** Commands (Kernel/Core 5b): the analysis of a line, and what the probe found. */
   readonly commands?: {
     readonly analyze: CommandSupport['analyze'];
@@ -286,6 +295,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               analyze: deps.commands.analyze,
               sandbox: deps.commands.sandbox,
               unavailablePolicy: config.sandbox.unavailable,
+              ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
               homeReadOnly: config.sandbox.homeReadOnly.map(expandHome),
               homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),
               scan: () => scanRepository(scanOptions),
@@ -449,6 +459,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       warningRatio: config.memory.warningRatio,
       dangerRatio: config.memory.dangerRatio,
     },
+    ...(deps.memorySample === undefined ? {} : { read: deps.memorySample }),
     send: (message) => {
       void manager.memoryPressure(message.level, () => deps.onMemoryExit?.()).catch(fault);
     },

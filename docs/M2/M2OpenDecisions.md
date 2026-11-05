@@ -134,3 +134,20 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 | S3-WF-1 | 部分 | `RunInterrupted` 记入日志并在下一次打开时以说明出现在投影中；`QUOTA_EXHAUSTED(MEMORY)` 进入 `MEMORY_LIMIT` 收尾 | 中断时不经模型的确定性回复（现在直接以 `INTERRUPTED` 关闭运行，没有 `DEGRADED_REPLY`） |
 | S3-PL-1 | 完成 | Unit `run-command`、`git-inspect` 与 Tool `run_command`、`git_inspect`（v0.1.0 草稿）；main 增加两个工具与 `command.exec`、`command.network`，提示词增加运行命令与验证的准则；Workflow 填写工作目录、超时、联网的缺省值，命令之后不再把先前的读取当作重复调用 | — |
 | S3-IN-1 | 未开始 | — | 组合根接线、`stage3-exit.test.ts`（C1–C5、H6–H7、内存压力的假采样与真实压力） |
+
+阶段 3 退出用例（`apps/control-plane/test/acceptance/stage3-exit.test.ts`，2026-11-05，Ubuntu 24.04 WSL，连跑 3 次 40/40）：真实的组合根、Kernel、Workflow、界面、ExecutorSet、`bwrap` 与 `git`，只替换 provider 的 HTTP 接口；内存读数、Executor 的失败与沙盒探测结果由用例给出。
+
+| 组 | 用例 | 证据 |
+|---|---|---|
+| C | 询问展示确切命令与选项、非零退出码是结果、超时保留已有输出、长输出截断并经 `read_output` 读回、工作目录、每次全新 shell | 通过 |
+| C5 | 秘密文件读为空且不进模型与日志；环境变量无凭据（`env`、`printenv`、`/proc/self/environ`）；不能写仓库外；指向仓库外的链接读不到；无网络；已有 `.git`、`AGENTS.md` 只读；新建的受保护路径被移出并写审计；看不到数据目录 | 通过 |
+| H6 | 忽略 SIGTERM 的命令被 SIGKILL 收掉，没有残留进程，系统继续 | 通过 |
+| H7 | 无法确认停止：报系统故障、之后不再调用模型、重新打开 Session 后不重跑 | 通过（以测试替身模拟） |
+| A | 前缀与"这条命令"的覆盖范围、单次用完即止、不跨 WorkflowRun、拒绝作为工具结果且同一运行不再问、待答复时不放行不拒绝、六种不可复用写法只给单次、`git push`/`gh`/联网每次询问、禁止名单（含 `env`、赋值前缀、子 shell 包装）、批准后改命令被 `APPROVAL_MISMATCH` 拒绝 | 通过 |
+| — | 沙盒不可用的缺省拒绝、`ask-unisolated`、`readonly` 预设无命令工具 | 通过 |
+| — | `git_inspect` 的五个动作、不泄露隐藏文件、固定参数、非 git 仓库 | 通过 |
+| 内存 | 警戒级收尾并告知用户、不再接新任务；危险级中断、退出码 75、日志完整、重启后恢复且不重跑 | 通过 |
+| — | 轮次上限：第 80 轮是收尾、提前预警、界面提示 | 通过 |
+
+用例查出并修复的问题：内存中断后界面在事件处理里等待停机，而 Kernel 等这个事件送达后才停机，两边互相等待，进程不退出；现在不在处理里等待。
+未覆盖：C1–C4（真实模型）、内存压力的真实压力、`cancelExecution`。
