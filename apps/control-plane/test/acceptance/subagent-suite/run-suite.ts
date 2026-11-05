@@ -137,7 +137,9 @@ function compactRecord(line: string): string[] {
       case 'FEEDBACK':
         return [`FEEDBACK ${String(record['code'])}`];
       case 'UNIT_COMPLETED':
-        return [`UNIT ${String(record['status'])} ${String(record['reasonCode'] ?? '')}`.trim()];
+        return [
+          `UNIT ${String(record['status'])} ${typeof record['reasonCode'] === 'string' ? record['reasonCode'] : ''}`.trim(),
+        ];
       case 'MODEL_TURN':
         return ['MODEL_TURN'];
       default:
