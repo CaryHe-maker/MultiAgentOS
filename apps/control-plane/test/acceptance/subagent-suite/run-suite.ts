@@ -127,6 +127,26 @@ const statusesOf = (provider: ScriptedChat): Record<string, string> => {
   return found;
 };
 
+/** Each round of main: the tools it called, and the start of what came back. */
+function mainRounds(provider: ScriptedChat): string[] {
+  const last = [...provider.requests]
+    .reverse()
+    .find((request) => agentOfRequest(request) === 'main');
+  const messages = last?.messages ?? [];
+  const rounds: string[] = [];
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== 'assistant' || message.tool_calls === undefined) continue;
+    const calls = message.tool_calls.map((call) => call.function.name);
+    const answers = messages
+      .slice(index + 1)
+      .filter((each) => each.role === 'tool')
+      .slice(0, calls.length)
+      .map((each) => textOf(each).replace(/s+/gu, ' ').slice(0, 70));
+    rounds.push(`${calls.join(',')} => ${answers.join(' | ')}`);
+  }
+  return rounds;
+}
+
 const refusalsOf = (provider: ScriptedChat): string[] => [
   ...new Set(
     provider.requests.flatMap((request) =>
@@ -189,6 +209,8 @@ async function runOne(def: CaseDef, mode: Mode, run: number) {
     statuses: statusesOf(provider),
     refusals: refusalsOf(provider),
     questions: chat.questions.length,
+    /** What main asked in each of its rounds, and how each answer began. */
+    rounds: mainRounds(provider),
     replies: chat.printed('REPLY').map((text) => text.slice(0, 600)),
     notices: chat
       .printed('NOTICE')
