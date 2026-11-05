@@ -73,7 +73,15 @@ const modelScope = {
   thinking: 'DISABLED',
 } as const;
 
-function setup(options: { converging?: boolean } = {}) {
+function setup(
+  options: {
+    converging?: boolean;
+    maxConcurrentAttempts?: number;
+    serialExecution?: boolean;
+    /** Call slots; the test can change them. */
+    slots?: { free: number };
+  } = {},
+) {
   const bodies = new Map<string, Uint8Array>();
   const lines: ArtifactOwnerLine[] = [];
   const store: ArtifactStorePort = {
@@ -157,12 +165,30 @@ function setup(options: { converging?: boolean } = {}) {
     now: () => new Date(NOW),
     newExecutionId: () => nextId('exe'),
     newAttemptId: () => nextId('una'),
+    ...(options.maxConcurrentAttempts === undefined
+      ? {}
+      : { maxConcurrentAttempts: options.maxConcurrentAttempts }),
+    ...(options.serialExecution === undefined ? {} : { serialExecution: options.serialExecution }),
   });
   const attempts: RunAttempts = new RunAttempts({
     provider: 'deepseek',
     technicalRetryLimit: 2,
     ledger: ledgers,
-    scheduler: testScheduler(),
+    scheduler:
+      options.slots === undefined
+        ? testScheduler()
+        : {
+            ...testScheduler(),
+            acquire: () => {
+              const slots = options.slots as { free: number };
+              if (slots.free <= 0) return { ok: false, reason: 'CAPACITY' };
+              slots.free -= 1;
+              return { ok: true, grantId: `grt_${String(Math.random())}` };
+            },
+            release: () => {
+              (options.slots as { free: number }).free += 1;
+            },
+          },
     createAttempt: (spec) => execution.createAttempt(spec, attempts),
     isDeliverable: () => options.converging !== true,
     isConverging: () => options.converging === true,
@@ -175,11 +201,16 @@ function setup(options: { converging?: boolean } = {}) {
     audit: () => undefined,
   });
   let requests = 0;
-  const specOf = (kind: ExecutionKind, input: unknown, scope: AttemptSpec['scope']) => {
+  const specOf = (
+    kind: ExecutionKind,
+    input: unknown,
+    scope: AttemptSpec['scope'],
+    agentRun = 1,
+  ) => {
     requests += 1;
     return {
       requestId: testId('req', requests),
-      agentRunId: testId('agr'),
+      agentRunId: testId('agr', agentRun),
       unitRunId: testId('unr', requests),
       turnId: testId('trn'),
       unit: testUnitDefinition(kind),
@@ -190,8 +221,12 @@ function setup(options: { converging?: boolean } = {}) {
       display: { toolName: 'tool', argsSummary: '' },
     };
   };
-  const submit = (kind: ExecutionKind, input: unknown, scope: AttemptSpec['scope'] = repository) =>
-    attempts.start(specOf(kind, input, scope));
+  const submit = (
+    kind: ExecutionKind,
+    input: unknown,
+    scope: AttemptSpec['scope'] = repository,
+    agentRun = 1,
+  ) => attempts.start(specOf(kind, input, scope, agentRun));
   const started = { startedAt: '2026-11-02T00:00:00.000Z', endedAt: '2026-11-02T00:00:01.000Z' };
   const factFor = (request: ExecutionRequest, rest: object): ExecutionFact =>
     assertValid(ExecutionFactSchema, {
@@ -244,11 +279,53 @@ const failure = (extra: object = {}) => ({
   ...extra,
 });
 
-describe('the queue', () => {
-  it('runs one attempt at a time, in order', async () => {
+describe('the queues (M2Design 7.1)', () => {
+  it('runs neighbouring reads of one AgentRun together (P1)', async () => {
     const run = setup();
+    for (const path of ['a.ts', 'b.ts', 'c.ts', 'd.ts']) await run.submit('FILE_READ', { path });
+    expect(run.dispatched).toHaveLength(4);
+  });
+
+  it('runs the queues of different AgentRuns side by side, up to the global limit', async () => {
+    const run = setup({ maxConcurrentAttempts: 3 });
+    for (const agentRun of [1, 2, 3, 4])
+      await run.submit('FILE_READ', fileInput, repository, agentRun);
+    expect(run.dispatched).toHaveLength(3);
+    // The oldest first: the fourth starts when one of the three has ended.
+    await run.execution.handleFact(run.factFor(run.dispatched[0] as never, run.fileResult()));
+    expect(run.dispatched).toHaveLength(4);
+  });
+
+  it('holds back what follows a barrier of the same AgentRun, and not another AgentRun', async () => {
+    const run = setup();
+    const contextPackRef = await run.artifacts.put(
+      canonicalJson({
+        contextPackId: testId('ctx'),
+        tokenCount: 0,
+        tokenBudget: testAgentBudget.perCallInputLimit,
+        createdAt: '2026-11-02T00:00:00.000Z',
+        operation: 'ASSEMBLE',
+        prefixSha256: 'a'.repeat(64),
+        projectionDigest: 'b'.repeat(64),
+        headDigest: 'c'.repeat(64),
+        elidedEntries: [],
+        items: [],
+      }),
+      MEDIA_TYPES.contextPack,
+      'EXPIRING',
+    );
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, 1);
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', fileInput, repository, 2);
+    // The model call of AgentRun 1 holds its read back; AgentRun 2 goes on.
+    expect(run.dispatched.map((request) => request.executionKind)).toEqual(['MODEL', 'FILE_READ']);
+  });
+
+  it('starts one attempt at a time when serial', async () => {
+    const run = setup({ serialExecution: true });
     await run.submit('FILE_READ', fileInput);
     await run.submit('FILE_READ', { path: 'b.ts' });
+    await run.submit('FILE_READ', fileInput, repository, 2);
     expect(run.dispatched).toHaveLength(1);
     await run.execution.handleFact(run.factFor(run.last(), run.fileResult()));
     expect(run.dispatched).toHaveLength(2);
@@ -482,7 +559,7 @@ describe('project files', () => {
 
 describe('cancelling', () => {
   it('ends what is queued and cancels what is in flight', async () => {
-    const run = setup();
+    const run = setup({ maxConcurrentAttempts: 1 });
     await run.submit('FILE_READ', fileInput);
     await run.submit('FILE_READ', { path: 'b.ts' });
     run.execution.cancel(2);
@@ -509,5 +586,75 @@ describe('cancelling', () => {
     await Promise.resolve();
     expect(run.faults).toMatchObject([{ kind: 'STOP_UNCONFIRMED' }]);
     expect(run.ended).toHaveLength(1);
+  });
+});
+
+describe('waiting for a call slot (M2Design 7.2)', () => {
+  async function modelAttempt(run: ReturnType<typeof setup>, agentRun: number) {
+    const contextPackRef = await run.artifacts.put(
+      canonicalJson({
+        contextPackId: testId('ctx'),
+        tokenCount: 0,
+        tokenBudget: testAgentBudget.perCallInputLimit,
+        createdAt: '2026-11-02T00:00:00.000Z',
+        operation: 'ASSEMBLE',
+        prefixSha256: 'a'.repeat(64),
+        projectionDigest: 'b'.repeat(64),
+        headDigest: 'c'.repeat(64),
+        elidedEntries: [],
+        items: [],
+      }),
+      MEDIA_TYPES.contextPack,
+      'EXPIRING',
+    );
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, agentRun);
+  }
+
+  it('holds a model call back when every slot is in use, and sends it when one is free', async () => {
+    const slots = { free: 1 };
+    const run = setup({ slots });
+    await modelAttempt(run, 1);
+    await modelAttempt(run, 2);
+    // Not a failure: no report, no fault, nothing ended, one request sent.
+    expect(run.dispatched).toHaveLength(1);
+    expect(run.reports).toEqual([]);
+    expect(run.faults).toEqual([]);
+    expect(run.ended).toEqual([]);
+    await run.execution.drainCapacityWaiters();
+    expect(run.dispatched).toHaveLength(1);
+    // The first call ends, its slot comes back, and the second goes.
+    await run.execution.handleFact(
+      run.factFor(run.last(), {
+        outcome: 'FAILED',
+        reasonCode: 'PROVIDER_AUTH',
+        retryable: false,
+        requestState: 'NOT_SENT',
+      }),
+    );
+    await run.execution.drainCapacityWaiters();
+    expect(run.dispatched).toHaveLength(2);
+    expect(run.dispatched[1]?.executionKind).toBe('MODEL');
+  });
+
+  it('holds the reads behind the call that waits, and does not hold another AgentRun back', async () => {
+    const slots = { free: 0 };
+    const run = setup({ slots });
+    await modelAttempt(run, 1);
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', fileInput, repository, 2);
+    // AgentRun 1 waits for a slot and holds its read; AgentRun 2 is not affected.
+    expect(run.dispatched.map((request) => request.executionKind)).toEqual(['FILE_READ']);
+  });
+
+  it('gives up a waiting call when the run converges', async () => {
+    const slots = { free: 0 };
+    const run = setup({ slots });
+    await modelAttempt(run, 1);
+    run.execution.cancel(2);
+    expect(run.ended).toHaveLength(1);
+    expect(run.cancelled).toEqual([]);
+    slots.free = 1;
+    await run.execution.drainCapacityWaiters();
+    expect(run.dispatched).toEqual([]);
   });
 });

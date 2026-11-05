@@ -118,6 +118,8 @@ export interface RunWorkDeps {
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
   readonly cancelExecutions: (runEpoch: number) => void;
   readonly executionsClosed: () => void;
+  /** Offers the call slots given back to the attempts that wait for one (M2Design 7.2). */
+  readonly drainCapacityWaiters?: () => Promise<void>;
   readonly unknownEffects: () => UnknownEffect[];
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
@@ -276,6 +278,11 @@ export class RunWork {
 
   #countInFlight(agentRunId: string, change: number): void {
     this.#inFlight.set(agentRunId, (this.#inFlight.get(agentRunId) ?? 0) + change);
+  }
+
+  /** At the end of every message of the actor: the slots given back go to those who wait. */
+  async drainCapacityWaiters(): Promise<void> {
+    await this.#deps.drainCapacityWaiters?.();
   }
 
   setMemoryWarning(): void {

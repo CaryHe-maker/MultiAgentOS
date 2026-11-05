@@ -298,6 +298,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       },
       schedule,
       now,
+      maxConcurrentAttempts: config.maxConcurrentAttempts,
+      maxConcurrentExec: config.maxConcurrentExec,
+      serialExecution: config.serialExecution,
     });
     executions.set(host.workflowRunId, execution);
     const work = new RunWork({
@@ -342,6 +345,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       executionsClosed: () => {
         execution.closed();
       },
+      drainCapacityWaiters: () => execution.drainCapacityWaiters(),
       unknownEffects: () => execution.unknownEffects(),
       audit,
       now,

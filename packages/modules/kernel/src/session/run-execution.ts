@@ -16,6 +16,7 @@ import {
   type ExecutionConfig,
 } from './attempt-request.js';
 import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
+import { AttemptQueues, type ConcurrencyClass, type QueueEntry } from './execution-queues.js';
 import type { AttemptSpec, ResultCheck, RunAttempts } from './run-attempts.js';
 import type { ProjectFileRead } from './run-work.js';
 import type { SessionArtifacts } from './session-artifacts.js';
@@ -55,11 +56,17 @@ export interface RunExecutionDeps {
     readonly quarantine: (before: ReadonlySet<string>) => Promise<readonly string[]>;
   };
   readonly audit?: (entry: object) => void;
+  /** UnitAttempts executing at once over all AgentRuns (`kernel.maxConcurrentAttempts`). */
+  readonly maxConcurrentAttempts?: number;
+  /** Commands that write executing at once (`kernel.maxConcurrentExec`). */
+  readonly maxConcurrentExec?: number;
+  /** Every Unit a barrier and one attempt at a time (`kernel.serialExecution`). */
+  readonly serialExecution?: boolean;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
 
-interface Attempt {
+interface Attempt extends QueueEntry {
   readonly spec: AttemptSpec;
   readonly unitAttemptId: string;
   readonly attempts: RunAttempts;
@@ -67,6 +74,33 @@ interface Attempt {
   retries: number;
   /** The protected paths that existed when a command was first dispatched. */
   protectedBefore?: ReadonlySet<string>;
+  /** Built, and waiting for a call slot to be reserved (M2Design 7.2). */
+  built?: { readonly request: BuiltRequest; readonly executionId: string };
+}
+
+/**
+ * The class a Unit declares for the queue (M2Design 7.1). A command that cannot write, one of the
+ * read-only list in a sandbox without a writable root, is a READ: it takes no part in the EXEC
+ * mutex and is no barrier (M2Design 5.2).
+ */
+export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): ConcurrencyClass {
+  switch (spec.unit.executionKind) {
+    case 'MODEL':
+      return 'MODEL';
+    case 'FILE_WRITE':
+    case 'FILE_EDIT':
+    case 'MESSAGE_PUBLISH':
+    case 'REPORT_PUBLISH':
+      return 'WRITE';
+    case 'COMMAND':
+      return spec.scope.kind === 'SANDBOX' &&
+        spec.scope.backend === 'BWRAP' &&
+        spec.scope.profile.writableRoots.length === 0
+        ? 'READ'
+        : 'EXEC';
+    default:
+      return 'READ';
+  }
 }
 
 type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
@@ -83,17 +117,19 @@ const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
 };
 
 /**
- * One run's attempts in Execution (Kernel/Execution): a FIFO with one attempt at a time, the
- * storage of results and technical retries. Every method runs inside a message of the Session
+ * One run's attempts in Execution (Kernel/Execution): a queue for every AgentRun, started by
+ * class and by the global limits (M2Design 7.1), the storage of results and technical retries. Every method runs inside a message of the Session
  * actor; I/O on local artifacts may be awaited there (Kernel/Interaction 5.4).
  */
 export class RunExecution {
   readonly #deps: RunExecutionDeps;
   readonly #builder: AttemptRequestBuilder;
-  readonly #queue: Attempt[] = [];
+  readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
   readonly #effects: UnknownEffect[] = [];
-  #active: Attempt | undefined;
+  #seq = 0;
+  #pumping = false;
+  #again = false;
   #cancelFallback: (() => void) | undefined;
 
   public constructor(deps: RunExecutionDeps) {
@@ -108,11 +144,29 @@ export class RunExecution {
   async createAttempt(spec: AttemptSpec, attempts: RunAttempts): Promise<string> {
     const unitAttemptId = this.#deps.newAttemptId?.() ?? newId('una');
     attempts.registerAttempt(unitAttemptId, spec.requestId);
-    const attempt: Attempt = { spec, unitAttemptId, attempts, retries: 0 };
+    this.#seq += 1;
+    const attempt: Attempt = {
+      spec,
+      unitAttemptId,
+      attempts,
+      retries: 0,
+      seq: this.#seq,
+      agentRunId: spec.agentRunId,
+      cls: concurrencyClassOf(spec),
+      state: 'QUEUED',
+    };
     this.#byId.set(unitAttemptId, attempt);
-    this.#queue.push(attempt);
+    this.#queues.add(attempt);
     await this.#pump();
     return unitAttemptId;
+  }
+
+  get #limits() {
+    return {
+      maxAttempts: this.#deps.maxConcurrentAttempts ?? 6,
+      maxExec: this.#deps.maxConcurrentExec ?? 1,
+      serial: this.#deps.serialExecution === true,
+    };
   }
 
   #noteStop(attempt: Attempt, executionId: string): void {
@@ -138,17 +192,33 @@ export class RunExecution {
     return [...this.#effects];
   }
 
+  /** Starts whatever may start now. A call made while it runs makes it look again. */
   async #pump(): Promise<void> {
-    if (this.#active !== undefined) return;
-    const next = this.#queue.shift();
-    if (next === undefined) return;
-    this.#active = next;
-    await this.#run(next);
+    if (this.#pumping) {
+      this.#again = true;
+      return;
+    }
+    this.#pumping = true;
+    try {
+      do {
+        this.#again = false;
+        const started = this.#queues.startable(this.#limits);
+        await Promise.all(started.map((attempt) => this.#run(attempt)));
+      } while (this.#again);
+    } finally {
+      this.#pumping = false;
+    }
   }
 
   async #finish(attempt: Attempt, check: Omit<ResultCheck, 'unitAttemptId'>): Promise<void> {
     attempt.attempts.submitResultCheck({ unitAttemptId: attempt.unitAttemptId, ...check });
-    if (this.#active === attempt) this.#active = undefined;
+    this.#queues.release(attempt);
+    await this.#pump();
+  }
+
+  /** The attempt is over without a result of its own: Core ended it, with a report or the run. */
+  async #dropped(attempt: Attempt): Promise<void> {
+    this.#queues.release(attempt);
     await this.#pump();
   }
 
@@ -210,12 +280,22 @@ export class RunExecution {
         ...built.reservation,
       });
       if (!decision.granted) {
+        if (decision.reason === 'WAIT_CAPACITY') {
+          // Every call slot is in use: it waits, uncounted, and asks again when one is free.
+          attempt.built = { request: built, executionId };
+          this.#queues.park(attempt);
+          await this.#pump();
+          return;
+        }
         // Core has already ended the attempt, with a report or with the run.
-        if (this.#active === attempt) this.#active = undefined;
-        await this.#pump();
+        await this.#dropped(attempt);
         return;
       }
     }
+    this.#send(attempt, built, executionId);
+  }
+
+  #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
@@ -231,6 +311,39 @@ export class RunExecution {
         });
       });
     });
+  }
+
+  /**
+   * Called at the end of every message of the Session actor (M2Design 7.2): the call slots given
+   * back since are offered to the attempts that wait, oldest first, and the first that finds none
+   * ends the round, so a younger one never passes an older one.
+   */
+  async drainCapacityWaiters(): Promise<void> {
+    for (const attempt of this.#queues.waiting()) {
+      const pending = attempt.built;
+      if (pending === undefined || !this.#queues.resume(attempt, this.#limits)) break;
+      const reservation = pending.request.reservation;
+      if (reservation === undefined) {
+        delete attempt.built;
+        this.#send(attempt, pending.request, pending.executionId);
+        continue;
+      }
+      const decision = attempt.attempts.requestReservation({
+        unitAttemptId: attempt.unitAttemptId,
+        ...reservation,
+      });
+      if (decision.granted) {
+        delete attempt.built;
+        this.#send(attempt, pending.request, pending.executionId);
+        continue;
+      }
+      if (decision.reason === 'WAIT_CAPACITY') {
+        this.#queues.park(attempt);
+        break;
+      }
+      delete attempt.built;
+      await this.#dropped(attempt);
+    }
   }
 
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
@@ -391,8 +504,7 @@ export class RunExecution {
     if (!decision.allowed) {
       if (decision.reason !== 'BUDGET_WRAP_UP' && decision.reason !== 'BUDGET_EXHAUSTED')
         return false;
-      if (this.#active === attempt) this.#active = undefined;
-      await this.#pump();
+      await this.#dropped(attempt);
       return true;
     }
     attempt.retries += 1;
@@ -429,23 +541,28 @@ export class RunExecution {
    * cancelled, and when the Supervisor never confirms, the fallback judges it unconfirmed.
    */
   cancel(runEpoch: number): void {
-    for (const attempt of this.#queue.splice(0)) attempt.attempts.abandon(attempt.unitAttemptId);
-    const active = this.#active;
-    if (active === undefined) return;
-    if (active.executionId === undefined) {
-      active.attempts.abandon(active.unitAttemptId);
-      this.#active = undefined;
-      return;
+    for (const attempt of this.#queues.drainQueued())
+      attempt.attempts.abandon(attempt.unitAttemptId);
+    // One that waits for a call slot, or is being built, was never sent: nothing to stop.
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.executionId !== undefined) continue;
+      attempt.attempts.abandon(attempt.unitAttemptId);
+      this.#queues.release(attempt);
     }
+    const sent = this.#queues.running().filter((attempt) => attempt.executionId !== undefined);
+    if (sent.length === 0) return;
     const { config, enqueue, schedule, workflowRunId, cancelRun } = this.#deps;
     this.#cancelFallback = schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
       enqueue(() => {
-        if (this.#active !== active || active.executionId === undefined) return;
-        this.#noteStop(active, active.executionId);
-        void this.#finish(active, {
-          executionId: active.executionId,
-          outcome: 'STOP_UNCONFIRMED',
-        });
+        for (const attempt of sent) {
+          if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+            continue;
+          this.#noteStop(attempt, attempt.executionId);
+          void this.#finish(attempt, {
+            executionId: attempt.executionId,
+            outcome: 'STOP_UNCONFIRMED',
+          });
+        }
       });
     });
     cancelRun({ workflowRunId, runEpoch }).catch(() => undefined);
