@@ -6,7 +6,7 @@ description: Control tool that starts SubAgent tasks and returns their joined re
 purpose: CONTROL
 modelName: run_subagents
 modelDescription: >-
-  Start up to 4 subtasks that run in parallel, and get all their results back when every one has
+  Start up to 8 subtasks that run in parallel, and get all their results back when every one has
   finished. Each task has a unique name, an agent (explorer reads and reports, worker changes
   files), a goal that stands on its own (the agent does not see your conversation), and optional
   dependsOn (names of other tasks of this call; a task starts after them and receives their

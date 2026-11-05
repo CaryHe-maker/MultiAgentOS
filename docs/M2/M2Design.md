@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.25 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.26 定稿（2026-11-06）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -425,7 +425,7 @@ run_subagents({
 
 | 规则 | 错误 |
 |---|---|
-| 任务数 ≤ `maxSubagentsPerCall`（缺省 4） | `TOO_MANY_TASKS`（写明本次数量与上限） |
+| 任务数 ≤ `maxSubagentsPerCall`（缺省 8） | `TOO_MANY_TASKS`（写明本次数量与上限） |
 | `name` 不重复；`dependsOn` 只引用本次调用中的任务 | `DUPLICATE_NAME`、`UNKNOWN_DEPENDENCY` |
 | 无环，依赖深度 ≤ `maxDependencyDepth`（缺省 2） | `CYCLE`、`TOO_DEEP` |
 | worker 有 `writeScope`，explorer 没有 | `WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN` |
@@ -1872,3 +1872,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |
 | v1.24 | 2026-11-05 | 第 7.1 节：只读名单上的命令行按 READ 处理；第 7.3 节：`budget.runTokenLimit` 与 `turnTokenLimit` 的缺省值改为 24,000,000 与 8,000,000（main 的收尾保留与一次调用余量就占 188.8 万，4,000,000 的 Turn 额度只能委派约 190 万，放不下 4 个 worker 的缺省份额）；`agent.spawn` 在 `readonly` 预设下保留（SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了）（Cary 2026-11-05 决定前两项） |
 | v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget` 只保留 `tokens`（Cary 决定）：`toolUnits` 与 `wallClockMs` 从参数中删除，一个任务的工具次数与墙钟上限只由所用 Agent 的定义决定；汇合时每个子任务的结果最多 8000 字符（见第 3.7 节） |
+| v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）（Cary 2026-11-06 决定） |

@@ -118,7 +118,7 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
   if (tasks.length > rules.maxSubagentsPerCall)
     add(
       'TOO_MANY_TASKS',
-      `this call has ${String(tasks.length)} tasks, at most ${String(rules.maxSubagentsPerCall)} are allowed`,
+      `this call has ${String(tasks.length)} tasks, at most ${String(rules.maxSubagentsPerCall)} are allowed in one call; start the rest in a later call, which cannot depend on the tasks of this one, so put what they need in their goals`,
     );
   if (context.spawned.calls >= rules.maxSpawnCalls)
     add('SPAWN_LIMIT', `${String(rules.maxSpawnCalls)} calls of run_subagents were already made`);

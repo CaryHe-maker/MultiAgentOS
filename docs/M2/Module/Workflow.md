@@ -294,7 +294,7 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | `consecutiveErrorLimit` | 5 | 同上 |
 | `entryAgentRef` | — | 删除；入口由模板决定 |
 | `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节，阶段 2） |
-| `maxSubagentsPerCall`、`maxDependencyDepth` | 4、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节，阶段 4） |
+| `maxSubagentsPerCall`、`maxDependencyDepth` | 8、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节，阶段 4） |
 | `maxTasks`、`maxSpawnCalls` | 12、4 | 每个 Turn 累计派生的任务数与调用次数上限（第 7a 节，阶段 4） |
 
 ## 12. 不变量与测试

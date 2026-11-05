@@ -236,6 +236,18 @@ const withdrawnOf = (state: AgentState): readonly string[] =>
     ? [state.definitions.spawnTool.toolName]
     : [];
 
+/** Why a tool's arguments were refused, so the model can correct them instead of guessing. */
+function invalidArgumentsText(
+  checked: ReturnType<typeof validate> | undefined,
+  notJson: boolean,
+): string {
+  const base = 'Not executed: the arguments do not match the tool parameters';
+  if (notJson) return `${base}: they are not valid JSON.`;
+  if (checked === undefined || checked.ok) return `${base}.`;
+  const text = `${base}: ${checked.issues.slice(0, 3).join('; ')}`;
+  return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
+}
+
 const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
 function feedback(
@@ -489,8 +501,10 @@ function afterTools(
   context: AgentContext,
   config: AgentConfig,
   records: readonly NewLogRecord[],
+  /** False when the round is not judged by progress, such as a refused run_subagents. */
+  judged = true,
 ): AgentTransition {
-  const noProgress = state.roundHadOk ? 0 : state.noProgress + 1;
+  const noProgress = !judged ? state.noProgress : state.roundHadOk ? 0 : state.noProgress + 1;
   const next = { ...state, noProgress };
   return nextRound(
     noProgress >= config.noProgressRounds ? wrapUp(next, 'NO_PROGRESS') : next,
@@ -565,7 +579,14 @@ function handleModel(
       const args =
         call.arguments === null ? undefined : validate(todoTool.parameters, call.arguments);
       if (args === undefined || !args.ok) {
-        records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+        records.push(
+          feedback(
+            state,
+            'INVALID_ARGUMENTS',
+            call.toolCallId,
+            invalidArgumentsText(args, call.arguments === null),
+          ),
+        );
         continue;
       }
       const { todos } = call.arguments as unknown as UpdateTodosArgs;
@@ -694,8 +715,16 @@ function actOn(
       records.push(feedback(state, 'TOO_MANY_TOOL_CALLS', call.toolCallId));
       continue;
     }
-    if (call.arguments === null || !validate(tool.parameters, call.arguments).ok) {
-      records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+    const checked = call.arguments === null ? undefined : validate(tool.parameters, call.arguments);
+    if (checked === undefined || !checked.ok) {
+      records.push(
+        feedback(
+          state,
+          'INVALID_ARGUMENTS',
+          call.toolCallId,
+          invalidArgumentsText(checked, call.arguments === null),
+        ),
+      );
       continue;
     }
     const intent = intentOf(call);
@@ -1056,5 +1085,6 @@ export function resumeAfterSpawn(
     spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
     roundHadOk: !outcome.refused,
   };
-  return afterTools(next, context, config, outcome.records);
+  // A refused call has its own limit (two take the tool away); it does not also end the AgentRun.
+  return afterTools(next, context, config, outcome.records, !outcome.refused);
 }

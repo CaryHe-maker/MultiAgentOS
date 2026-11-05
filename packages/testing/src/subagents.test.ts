@@ -350,6 +350,8 @@ describe('run_subagents', () => {
       (request) => (request.input as { withdrawnTools?: string[] }).withdrawnTools,
     );
     expect(withdrawn).toEqual([undefined, undefined, ['run_subagents']]);
+    // Two refused calls are not two rounds without progress: the run was not forced to wrap up.
+    expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
   });
 
   it('accepts a worker only after it checked what it changed, and notes what it did not report', async () => {
