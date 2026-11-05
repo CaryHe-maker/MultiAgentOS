@@ -41,7 +41,11 @@ export type FakeUnitScript = (
   request: SubmitUnitRequest,
   index: number,
 ) =>
-  | Pick<Extract<UnitReport, { status: 'OK' }>, 'output' | 'outputRef' | 'fullRef' | 'reasoningRef'>
+  | (Pick<
+      Extract<UnitReport, { status: 'OK' }>,
+      'output' | 'outputRef' | 'fullRef' | 'reasoningRef'
+    > &
+      Partial<Pick<Extract<UnitReport, { status: 'OK' }>, 'changedFiles' | 'executionKind'>>)
   | {
       readonly reject: Exclude<
         Extract<UnitReport, { status: 'REJECTED' }>['reasonCode'],

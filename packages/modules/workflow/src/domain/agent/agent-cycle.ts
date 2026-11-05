@@ -48,18 +48,20 @@ export interface AgentDefinitions {
   readonly orient?: AgentUnit;
   readonly contextAssemble: AgentUnit;
   readonly modelCall: AgentUnit;
-  /** The Unit that publishes what an ended AgentRun leaves behind. */
-  readonly publish: AgentUnit;
+  /** The Unit that publishes what an ended AgentRun leaves behind; a SubAgent has none. */
+  readonly publish?: AgentUnit;
   readonly tools: readonly AgentTool[];
   /** How this Agent may end: a tool it does not declare cannot end it. */
   readonly endTools: readonly EndTool[];
   /** What is published when no end tool was called validly. */
   readonly onDegraded: DegradedAction;
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `run_subagents`: a control tool that waits for tasks instead of ending the AgentRun. */
+  readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
-export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';
+export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';
 export interface EndTool {
   readonly toolName: string;
   readonly parameters: Schema;
@@ -75,6 +77,10 @@ export interface AgentConfig {
   readonly consecutiveErrorLimit: number;
   readonly noProgressRounds: number;
   readonly maxNestedInstructions: number;
+  readonly maxSubagentsPerCall: number;
+  readonly maxDependencyDepth: number;
+  readonly maxTasks: number;
+  readonly maxSpawnCalls: number;
   readonly regenerationLimit: number;
 }
 
@@ -124,6 +130,9 @@ export interface AgentState {
   readonly deferred: readonly DeferredWrite[];
   /** Tools the user rejected in this AgentRun; they are not submitted again. */
   readonly declinedTools: readonly string[];
+  /** Calls of `run_subagents` refused one after the other; two take the tool away. */
+  readonly invalidSpawns: number;
+  readonly spawnWithdrawn: boolean;
   readonly fatal?: ReasonCode;
 }
 
@@ -143,6 +152,8 @@ export type AgentEnding =
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
     }
   | { readonly kind: 'FAILED'; readonly code: ReasonCode }
+  /** `run_subagents` was called validly in form; the runner validates the tasks. */
+  | { readonly kind: 'SPAWN'; readonly arguments: unknown; readonly source: ControlSource }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -166,6 +177,7 @@ export interface AgentContext {
   readonly assembleInput: (
     status: ContextAssembleInput['status'],
     final: boolean,
+    withdrawnTools: readonly string[],
   ) => ContextAssembleInput;
   /** The first prompt of the run: no event or log record carries its text. */
   readonly objectiveRef: ArtifactRef;
@@ -218,6 +230,11 @@ const FEEDBACK = {
 /** Word for word the tool result of the refusal itself (M2Design 5.3). */
 const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
 type FeedbackCode = keyof typeof FEEDBACK;
+
+const withdrawnOf = (state: AgentState): readonly string[] =>
+  state.spawnWithdrawn && state.definitions.spawnTool !== undefined
+    ? [state.definitions.spawnTool.toolName]
+    : [];
 
 const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
@@ -369,7 +386,7 @@ function nextRound(
     next,
     'CONTEXT',
     next.definitions.contextAssemble,
-    context.assembleInput(status, final),
+    context.assembleInput(status, final, withdrawnOf(next)),
     'context',
     [...records, ...wrapUpRecords],
   );
@@ -393,6 +410,8 @@ export function startAgent(
     succeeded: [],
     deferred: [],
     declinedTools: [],
+    invalidSpawns: 0,
+    spawnWithdrawn: false,
     intents: [],
     consecutiveErrors: 0,
     noProgress: 0,
@@ -619,6 +638,30 @@ function actOn(
           modelTurnRequestId: report.requestId,
           modelOutputRef: report.outputRef,
           toolCallId: control.toolCallId,
+        },
+      },
+      records,
+    );
+  }
+  const spawnTool = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
+  const spawn = calls.find((call) => call.toolName === spawnTool?.toolName);
+  if (spawn !== undefined && spawnTool !== undefined) {
+    if (calls.length > 1)
+      return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
+    if (state.final)
+      return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
+    if (spawn.arguments === null || !validate(spawnTool.parameters, spawn.arguments).ok)
+      return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
+    if (report.outputRef === undefined) throw new Error('A model report has no output reference');
+    return ended(
+      state,
+      {
+        kind: 'SPAWN',
+        arguments: spawn.arguments,
+        source: {
+          modelTurnRequestId: report.requestId,
+          modelOutputRef: report.outputRef,
+          toolCallId: spawn.toolCallId,
         },
       },
       records,
@@ -877,7 +920,9 @@ export function closeAgent(
   input: UnitInput,
   source: ControlSource | undefined,
 ): AgentTransition {
-  const made = one(state, 'CLOSING', state.definitions.publish, input, 'publish');
+  const { publish } = state.definitions;
+  if (publish === undefined) throw new Error('This Agent has no publishing Unit');
+  const made = one(state, 'CLOSING', publish, input, 'publish');
   if (source === undefined) return made;
   return {
     ...made,
@@ -960,4 +1005,56 @@ export function receiveAgentReport(
         records,
       );
   }
+}
+
+/** An answer to a call that is not a Unit: the model reads it as the result of the call. */
+export function answerRecord(
+  state: AgentState,
+  code: string,
+  toolCallId: string,
+  message: string,
+): NewLogRecord {
+  return {
+    ...base(state),
+    type: 'FEEDBACK',
+    agentRunId: state.agentRunId,
+    code,
+    message,
+    toolCallId,
+  };
+}
+
+/** The AgentRun goes on after a finishing call was sent back: that is no progress (M2Design 3.7). */
+export function resumeAfterRefusal(
+  state: AgentState,
+  records: readonly NewLogRecord[],
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  return afterTools({ ...state, roundHadOk: false }, context, config, records);
+}
+
+/**
+ * The caller of `run_subagents` goes on after the call was refused (`refused`) or its tasks
+ * ended. A refused call is no progress, and two in a row take the tool away (M2Design 3.6).
+ */
+export function resumeAfterSpawn(
+  state: AgentState,
+  outcome: {
+    readonly refused: boolean;
+    /** The tool is taken away at once: a limit was reached. */
+    readonly withdraw?: boolean;
+    readonly records: readonly NewLogRecord[];
+  },
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  const invalidSpawns = outcome.refused ? state.invalidSpawns + 1 : 0;
+  const next: AgentState = {
+    ...state,
+    invalidSpawns,
+    spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
+    roundHadOk: !outcome.refused,
+  };
+  return afterTools(next, context, config, outcome.records);
 }

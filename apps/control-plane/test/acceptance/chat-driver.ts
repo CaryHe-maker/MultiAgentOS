@@ -230,3 +230,66 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
     },
   };
 }
+
+/** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
+export function agentOfRequest(request: ChatRequest): 'main' | 'explorer' | 'worker' | 'unknown' {
+  const names = new Set((request.tools ?? []).map((each) => each.function.name));
+  if (names.has('run_subagents')) return 'main';
+  if (names.has('finish_subagent')) return names.has('write_file') ? 'worker' : 'explorer';
+  return 'unknown';
+}
+
+/** A turn that is answered only after `wait` has settled: two Agents can be made to overlap. */
+export type RoutedTurn =
+  ProviderTurn | { readonly wait: Promise<unknown>; readonly then: ProviderTurn };
+
+/**
+ * A provider with one script per Agent, for runs where several AgentRuns ask at once: a request
+ * is answered from the queue of the Agent it is for, so the order between Agents does not matter.
+ */
+export function scriptedAgents(
+  scripts: Readonly<Partial<Record<'main' | 'explorer' | 'worker', readonly RoutedTurn[]>>>,
+  /** Worker scripts by task, for a case where two workers say different things. */
+  tasks: Readonly<Record<string, readonly RoutedTurn[]>> = {},
+): ScriptedChat {
+  const queues = new Map(
+    Object.entries(scripts).map(([agent, turns]) => [agent, [...(turns ?? [])]]),
+  );
+  const byTask = new Map(Object.entries(tasks).map(([task, turns]) => [task, [...turns]]));
+  const owner = new Map<string, string>();
+  const requests: ChatRequest[] = [];
+  const inner = scriptedChat();
+  return {
+    requests,
+    add: (...more) => void queues.get('main')?.push(...more),
+    fetch: async (input, init) => {
+      const request = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest;
+      requests.push(request);
+      const agent = agentOfRequest(request);
+      // A task is known by the first user message that carries its name.
+      const first = textOf(request.messages.find((message) => message.role === 'user'));
+      const task = [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
+      const key = task ?? agent;
+      owner.set(key, agent);
+      const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
+      if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
+      const answer = 'then' in turn ? (await turn.wait, turn.then) : turn;
+      inner.add(answer);
+      return inner.fetch(input, init);
+    },
+  };
+}
+
+/** Lets `size` callers wait for each other: the one who comes last frees all. */
+export function barrier(size: number): () => Promise<void> {
+  let arrived = 0;
+  let release: () => void = () => undefined;
+  const open = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return () => {
+    arrived += 1;
+    if (arrived >= size) release();
+    return open;
+  };
+}

@@ -503,7 +503,7 @@ export class RunWork {
       registeredAt: this.#deps.now().toISOString(),
       rounds: 0,
     });
-    this.#activity.registered(agentRunId, request.display.label);
+    this.#activity.registered(agentRunId, request.display.label, child?.parentAgentRunId);
     this.#clocks.register(agentRunId, pinned.agent.maxWallClockMs);
     return this.#accept(requestId, request);
   }
@@ -533,9 +533,7 @@ export class RunWork {
    * Takes the shares of all the tasks of a `run_subagents` call out of the parent's ledger, or none
    * (M2Design 3.6, 7.3). The parent holds no write roots from now until its children have ended.
    */
-  async reserveDelegation(
-    request: ReserveDelegationRequest,
-  ): Promise<DelegationReserved | SyscallRejected> {
+  reserveDelegation(request: ReserveDelegationRequest): DelegationReserved | SyscallRejected {
     const { requestId, parentAgentRunId } = request;
     const refuse = (reasonCode: CoreRejectedCode | 'RUN_BLOCKED') =>
       this.#refuse(requestId, request, reasonCode) as SyscallRejected;
@@ -597,6 +595,7 @@ export class RunWork {
       return response;
     }
     this.#delegations.create(delegationId, parentAgentRunId, tasks);
+    this.#activity.waitingForSubtasks(parentAgentRunId);
     const response: DelegationReserved = {
       requestId,
       outcome: 'ACCEPTED',

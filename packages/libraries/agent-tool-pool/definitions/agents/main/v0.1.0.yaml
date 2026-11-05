@@ -53,11 +53,16 @@ actions:
     toolRef:
       id: update-todos
       version: v0.1.0
+  spawn:
+    toolRef:
+      id: run-subagents
+      version: v0.1.0
 capabilities:
   - repo.read
   - workspace.write
   - command.exec
   - command.network
+  - agent.spawn
 limits:
   maxRounds: 80
   maxToolCallsPerRound: 8

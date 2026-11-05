@@ -1192,7 +1192,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     expect(refused).toMatchObject({
       outcome: 'REJECTED',
       reasonCode: 'BUDGET_INSUFFICIENT',
-      delegable: expect.any(Number),
+      delegable: expect.any(Number) as number,
     });
   });
 

@@ -193,12 +193,16 @@ export const ACTIVITY_PHASES = [
   'CALLING_TOOL',
   'AWAITING_AUTHORIZATION',
   'QUEUED',
+  /** The AgentRun called `run_subagents` and waits for its tasks. */
+  'WAITING_SUBTASKS',
   'WRAPPING_UP',
   'ENDED',
 ] as const;
 const activity = {
   type: Type.Literal('ActivityEvent'),
   agentRunId: IdSchemas.agentRunId,
+  /** Of a SubAgent: the AgentRun that started it, so the interface can draw the tree. */
+  parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
   label: text(80),
   unit: Type.Optional(
     closed({

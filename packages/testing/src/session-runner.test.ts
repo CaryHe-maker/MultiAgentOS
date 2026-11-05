@@ -71,6 +71,7 @@ const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
   ref: { kind: 'AGENT', id, version: 'v1.0.0', digest } as const,
   modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
   effort: 'none' as const,
+  allowedEfforts: ['none'] as const,
   requestedCapabilities: ['repo.read'] as const,
   writeRoots: [],
   toolsDigest: digest,
@@ -201,6 +202,10 @@ function setup(
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
       maxNestedInstructions: 8,
+      maxSubagentsPerCall: 4,
+      maxDependencyDepth: 2,
+      maxTasks: 12,
+      maxSpawnCalls: 4,
       consecutiveErrorLimit: 5,
       noProgressRounds: 2,
       regenerationLimit: 3,

@@ -36,6 +36,7 @@ interface NodeSpec {
   readonly goal?: string;
   readonly inputFrom?: 'HANDOFF';
   readonly output?: boolean;
+  readonly spawn?: GraphNodeRecord['spawn'];
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
@@ -51,6 +52,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
     ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
+    ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
   };
 }
 
@@ -87,6 +89,45 @@ export function chatGrowthRevision(
     nodes: [prompt, main],
     edges: [{ from: endedMainNodeId, to: prompt.nodeId, kind: 'DEPENDS' }, depends(prompt, main)],
   };
+}
+
+/** One task of `run_subagents` as the graph holds it. */
+export interface SpawnTaskSpec {
+  readonly name: string;
+  readonly agentRef: DefinitionRef;
+  readonly goal: string;
+  readonly dependsOn: readonly string[];
+  readonly spawn: NonNullable<GraphNodeRecord['spawn']>;
+}
+
+/**
+ * The revision a `run_subagents` call adds (M2Design 3.6): one node per task, in the order the
+ * caller wrote them, and an edge for each dependency. Tasks without one have no predecessor, and
+ * are ready at once; the caller's node stays RUNNING and waits.
+ */
+export function spawnRevision(
+  workflowRunId: string,
+  revision: number,
+  tasks: readonly SpawnTaskSpec[],
+): GraphRevision {
+  const nodes = tasks.map((task) =>
+    nodeOf(workflowRunId, revision, {
+      name: task.name,
+      kind: 'AGENT',
+      agentRef: task.agentRef,
+      goal: task.goal,
+      spawn: task.spawn,
+    }),
+  );
+  const byName = new Map(nodes.map((node) => [node.name, node]));
+  const edges = tasks.flatMap((task) =>
+    task.dependsOn.flatMap((name) => {
+      const from = byName.get(name);
+      const to = byName.get(task.name);
+      return from === undefined || to === undefined ? [] : [depends(from, to)];
+    }),
+  );
+  return { nodes, edges };
 }
 
 /** Adds the root `HUMAN(prompt)`, which every node without a predecessor depends on (3.8). */
@@ -245,6 +286,7 @@ export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
     return (
       ended &&
       nodes.get(node.nodeId)?.kind === 'AGENT' &&
+      nodes.get(node.nodeId)?.spawn === undefined &&
       !graph.edges.some((edge) => edge.from === node.nodeId)
     );
   })?.nodeId;

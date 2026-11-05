@@ -15,6 +15,10 @@ export type TranscriptRecord =
 export interface ActivityLine {
   readonly agentRunId: string;
   readonly label: string;
+  /** The AgentRun that started this one, when it is a SubAgent. */
+  readonly parentAgentRunId?: string;
+  /** The tree branch in front of the label (`├─ `), empty for a line without a parent. */
+  readonly branch?: string;
   readonly phase: string;
   /** When this phase began, so the view can count seconds by itself. */
   readonly since: string;

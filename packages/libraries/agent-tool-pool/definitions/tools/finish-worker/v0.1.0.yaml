@@ -1,0 +1,22 @@
+schemaVersion: v1
+kind: TOOL
+id: finish-worker
+version: v0.1.0
+description: Control tool that ends a worker with what it changed and checked.
+purpose: CONTROL
+modelName: finish_subagent
+modelDescription: >-
+  Return your result to the agent that started you, and stop; call it alone. summary says what
+  you did. changedFiles lists every file you changed. status is done, partial or blocked.
+  validation lists the commands you ran to check your work, each with its exit code and the
+  artifact of its output. blockers says what stopped you, including any path you needed outside
+  your writeScope. When the task had acceptance criteria, acceptance answers each by its index
+  (starting at 0) with met, not_met or unknown.
+parametersContract:
+  kind: contract
+  id: workflow.WorkerResult
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

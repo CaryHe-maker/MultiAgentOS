@@ -16,6 +16,22 @@ import {
   text,
 } from '../platform-common/schema-helpers.js';
 
+/** What a task of `run_subagents` adds to its node (M2Design 3.6). */
+export const SpawnNodeSchema = closed({
+  parentAgentRunId: IdSchemas.agentRunId,
+  delegationId: IdSchemas.delegationId,
+  /** The `run_subagents` call of the parent that this task answers. */
+  callToolCallId: ToolCallIdSchema,
+  writeScope: Type.Array(text(500), { maxItems: 10 }),
+  acceptance: Type.Array(text(300), { maxItems: 10 }),
+  inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
+  effort: Type.Optional(ThinkingEffortSchema),
+  /** The share of budget reserved for it, after the Kernel clamped the request. */
+  tokens: count(1),
+  clamped: Type.Optional(Type.Enum(['MIN', 'MAX'])),
+});
+export type SpawnNode = Static<typeof SpawnNodeSchema>;
+
 /** Node and edge of a GraphRevision as the log stores them (M2Design 3.1, 3.2). */
 export const GraphNodeRecordSchema = closed({
   nodeId: IdSchemas.nodeId,
@@ -29,6 +45,7 @@ export const GraphNodeRecordSchema = closed({
   goal: Type.Optional(text(4000)),
   inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
+  spawn: Type.Optional(SpawnNodeSchema),
 });
 export type GraphNodeRecord = Static<typeof GraphNodeRecordSchema>;
 
@@ -145,6 +162,8 @@ export const SessionLogRecordSchema = Type.Union(
       nodeId: IdSchemas.nodeId,
       agentRef: PinnedDefinitionRefSchema,
       effort: ThinkingEffortSchema,
+      /** Of a SubAgent: the AgentRun that started it. */
+      parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
     }),
     record('AGENT_RUN_ENDED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -187,6 +206,27 @@ export const SessionLogRecordSchema = Type.Union(
     record('MODEL_ATTEMPT_FAILED', inTurn, {
       requestId: IdSchemas.requestId,
       reasonCode: ReasonCodeSchema,
+    }),
+    /**
+     * The tasks of a `run_subagents` call have all ended: what its caller is told (M2Design 3.6).
+     * The bodies of the results stay in the model outputs of the SubAgents.
+     */
+    record('SUBAGENTS_JOINED', inTurn, {
+      agentRunId: IdSchemas.agentRunId,
+      toolCallId: ToolCallIdSchema,
+      delegationId: IdSchemas.delegationId,
+      results: Type.Array(
+        closed({
+          name: text(64),
+          agent: text(64),
+          status: Type.Enum(['DONE', 'PARTIAL', 'BLOCKED', 'FAILED', 'SKIPPED']),
+          /** What the Workflow adds: unmet criteria, differences from the changes it saw. */
+          notes: Type.Array(text(300), { maxItems: 10 }),
+          outputRef: Type.Optional(ArtifactRefSchema),
+          resultToolCallId: Type.Optional(ToolCallIdSchema),
+        }),
+        { minItems: 1, maxItems: 12 },
+      ),
     }),
     /** What the model is told instead of a result; a call must always get an answer. */
     record('FEEDBACK', inTurn, {

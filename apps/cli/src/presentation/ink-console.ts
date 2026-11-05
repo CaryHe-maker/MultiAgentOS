@@ -45,7 +45,11 @@ function Activity({
       : [
           `${line.phase}（第 ${String(line.retry.attempt)} 次，${String(Math.max(0, Math.round((Date.parse(line.retry.retryAt) - now) / 1000)))} 秒后）`,
         ];
-  return h(Text, { color: 'gray' }, `· ${line.label} ${phase.filter(Boolean).join(' ')}`);
+  return h(
+    Text,
+    { color: 'gray' },
+    `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`,
+  );
 }
 
 function useClock(running: boolean): number {

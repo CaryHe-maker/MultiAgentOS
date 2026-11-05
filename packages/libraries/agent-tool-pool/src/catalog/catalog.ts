@@ -79,6 +79,15 @@ function referencesOf(body: Body): readonly Reference[] {
                 ref: body.actions.todos.toolRef,
               },
             ]),
+        ...(body.actions.spawn === undefined
+          ? []
+          : [
+              {
+                field: 'actions.spawn.toolRef',
+                kind: 'TOOL' as const,
+                ref: body.actions.spawn.toolRef,
+              },
+            ]),
       ];
     case 'UNIT':
       return body.toolRefs.map((ref, index) => ({
@@ -766,6 +775,7 @@ export class DefinitionCatalog {
       ...pinnedUnits.flatMap((unit) => unit.toolRefs),
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
+      ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

@@ -1,6 +1,7 @@
 import { settleOpenCalls } from './settle-stale.js';
 import {
   REPOSITORY_KINDS,
+  WRITE_KINDS,
   REASON_CODE_CATEGORY,
   newId,
   type AnalysisReportDraft,
@@ -8,6 +9,8 @@ import {
   type BoundaryContext,
   canonicalJson,
   type DefinitionRef,
+  type GraphNodeRecord,
+  type RunSubagentsArgs,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
   type ProtectedCapability,
@@ -24,8 +27,11 @@ import {
   type WorkflowSystemEvent,
 } from '@multiagentos/contracts';
 import {
+  answerRecord,
   closeAgent,
   receiveAgentReport,
+  resumeAfterRefusal,
+  resumeAfterSpawn,
   startAgent,
   type AgentConfig,
   type AgentContext,
@@ -44,7 +50,20 @@ import {
 } from '../domain/agent/analysis-report.js';
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
-import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
+import {
+  projectHistory,
+  type ProjectionScope,
+  type TaskScope,
+} from '../domain/context/history-projection.js';
+import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
+import {
+  finishedOutcome,
+  outcomeOf,
+  resultOf,
+  unansweredCriteria,
+  type TaskOutcome,
+} from '../domain/spawn/task-results.js';
+import { validateSpawn, type SpawnError } from '../domain/spawn/validate-spawn.js';
 import {
   advanceGraph,
   chatGrowthPoint,
@@ -52,6 +71,7 @@ import {
   compileTemplate,
   initialChatRevision,
   projectGraph,
+  spawnRevision,
   type GraphRevision,
 } from '../domain/graph/session-graph.js';
 import {
@@ -71,6 +91,7 @@ export interface AgentBinding {
   readonly ref: PinnedDefinitionRef;
   readonly modelRef: DefinitionRef;
   readonly effort: ThinkingEffort;
+  readonly allowedEfforts: readonly ThinkingEffort[];
   readonly requestedCapabilities: readonly ProtectedCapability[];
   readonly writeRoots: readonly string[];
   readonly toolsDigest: string;
@@ -118,12 +139,39 @@ interface NodeEnding {
 
 const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
 
+/** A `run_subagents` call whose tasks have not all ended: its caller waits (M2Design 3.6). */
+interface Waiting {
+  readonly toolCallId: string;
+  readonly delegationId: string;
+  /** In the order the caller wrote them. */
+  readonly tasks: readonly {
+    readonly name: string;
+    readonly nodeId: string;
+    readonly agent: string;
+  }[];
+}
+
 interface ActiveAgent {
   readonly state: AgentState;
   readonly nodeId: string;
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
+  readonly waiting?: Waiting;
+  /** The task this AgentRun was started for, when it is a SubAgent. */
+  readonly task?: { readonly name: string; readonly criteria: readonly string[] };
+  /** What the Kernel reported this AgentRun changed (M2Design 3.7). */
+  readonly changed: readonly string[];
+  /** Files changed after the last successful command: a worker should check its work. */
+  readonly unchecked: boolean;
+  readonly completionAsked: boolean;
+}
+
+/** The same AgentRun once its tasks are over. */
+function withoutWaiting(active: ActiveAgent): ActiveAgent {
+  return Object.fromEntries(
+    Object.entries(active).filter(([key]) => key !== 'waiting'),
+  ) as unknown as ActiveAgent;
 }
 
 export class SessionRunner {
@@ -133,7 +181,10 @@ export class SessionRunner {
   #records: SessionLogRecord[] = [];
   #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
   #turnId: string | undefined;
-  #agent: ActiveAgent | undefined;
+  /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
+  readonly #agents = new Map<string, ActiveAgent>();
+  /** What this Turn spawned so far (M2Design 3.6). */
+  #spawned = { tasks: 0, calls: 0 };
   #orientPackRef: AgentState['orientPackRef'];
   /** A repository tool succeeded in the current run. */
   #readRepository = false;
@@ -144,6 +195,8 @@ export class SessionRunner {
   #overBudget = false;
   /** The Kernel interrupted this run: the reply that says so is the last thing it publishes. */
   #interrupted = false;
+  #advancing = false;
+  #advanceAgain = false;
   #runFailure: string | undefined;
 
   public constructor(deps: SessionRunnerDeps) {
@@ -223,7 +276,7 @@ export class SessionRunner {
     this.#sessionId = undefined;
     this.#records = [];
     this.#turnId = undefined;
-    this.#agent = undefined;
+    this.#agents.clear();
     this.#clearRun();
   }
 
@@ -324,7 +377,7 @@ export class SessionRunner {
         await this.#append([
           { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },
         ]);
-        this.#agent = undefined;
+        this.#agents.clear();
         this.#clearRun();
         break;
     }
@@ -338,7 +391,7 @@ export class SessionRunner {
   async #extend(
     workflowRunId: string,
     revision: number,
-    source: 'TEMPLATE' | 'CHAT_GROWTH',
+    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN',
     content: GraphRevision,
   ): Promise<void> {
     await this.#append([
@@ -408,6 +461,7 @@ export class SessionRunner {
           );
     if (node === undefined) throw new Error('HumanAnswered names no HUMAN node');
     if (view.get(node.nodeId)?.status === 'SUCCEEDED') return;
+    if (this.#turnId !== event.turnId) this.#spawned = { tasks: 0, calls: 0 };
     this.#turnId = event.turnId;
     await this.#append([
       {
@@ -434,7 +488,27 @@ export class SessionRunner {
     await this.#advance(workflowRunId);
   }
 
+  /**
+   * Starts what is ready. A node that ends while this runs asks for another pass instead of
+   * starting a second one inside the first, which would start the same nodes twice.
+   */
   async #advance(workflowRunId: string): Promise<void> {
+    if (this.#advancing) {
+      this.#advanceAgain = true;
+      return;
+    }
+    this.#advancing = true;
+    try {
+      do {
+        this.#advanceAgain = false;
+        await this.#advanceOnce(workflowRunId);
+      } while (this.#advanceAgain);
+    } finally {
+      this.#advancing = false;
+    }
+  }
+
+  async #advanceOnce(workflowRunId: string): Promise<void> {
     if (this.#mode === 'CHAT') {
       const projected = projectGraph(this.#records, workflowRunId);
       const growth = chatGrowthPoint(projected);
@@ -474,11 +548,12 @@ export class SessionRunner {
       if (node.kind === 'HUMAN') {
         await this.#requestHuman(workflowRunId, node.nodeId);
       } else {
-        if (record.agentRef === undefined) throw new Error('an AGENT node names no Agent');
-        await this.#startAgent(workflowRunId, node.nodeId, record.agentRef.id, record.inputFrom);
+        await this.#startAgent(workflowRunId, record);
       }
     }
-    if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agent === undefined)
+    await this.#joinFinished(workflowRunId);
+    if (this.#advanceAgain) return;
+    if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agents.size === 0)
       await this.#closeFinishedRun(workflowRunId);
   }
 
@@ -517,9 +592,10 @@ export class SessionRunner {
       // What a transition has not appended yet still counts: it may be the write this one follows.
       toolInput: (kind, args, notYetInLog = []) =>
         toolInputOf(kind, args, [...this.#records, ...(notYetInLog as SessionLogRecord[])], scope),
-      assembleInput: (status, final) => {
+      assembleInput: (status, final, withdrawnTools) => {
         return {
           final,
+          ...(withdrawnTools.length === 0 ? {} : { withdrawnTools: [...withdrawnTools] }),
           ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
           history: [...projectHistory(this.#records, scope)],
           status,
@@ -542,17 +618,17 @@ export class SessionRunner {
     return { outputRef: ended.resultRef, toolCallId: String(ended.result?.['toolCallId']) };
   }
 
-  async #startAgent(
-    workflowRunId: string,
-    nodeId: string,
-    agentId: string,
-    inputFrom: 'HANDOFF' | undefined,
-  ): Promise<void> {
+  async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     const turnId = this.#turnId;
     if (turnId === undefined) throw new Error('an AgentRun needs an open Turn');
+    if (node.agentRef === undefined) throw new Error('an AGENT node names no Agent');
+    const nodeId = node.nodeId;
+    const agentId = node.agentRef.id;
+    const { spawn } = node;
     const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
     const binding = this.#binding(agentId);
+    const effort = spawn?.effort ?? binding.effort;
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -561,7 +637,8 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort: binding.effort,
+        effort,
+        ...(spawn === undefined ? {} : { parentAgentRunId: spawn.parentAgentRunId }),
       },
       {
         type: 'REQUEST_CONTEXT',
@@ -569,7 +646,7 @@ export class SessionRunner {
         turnId,
         agentRunId,
         modelRef: binding.modelRef,
-        thinking: binding.effort,
+        thinking: effort,
         toolsDigest: binding.toolsDigest,
         runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
       },
@@ -582,15 +659,41 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort: binding.effort,
+        effort,
         workspaceViewId: 'main',
-        display: { label: binding.definitions.label },
+        display: {
+          label:
+            spawn === undefined
+              ? binding.definitions.label
+              : `${binding.definitions.label} ${node.name}`,
+        },
         requestedCapabilities: [...binding.requestedCapabilities],
-        writeRoots: [...binding.writeRoots],
+        writeRoots: spawn === undefined ? [...binding.writeRoots] : [...spawn.writeScope],
+        ...(spawn === undefined
+          ? {}
+          : {
+              parentAgentRunId: spawn.parentAgentRunId,
+              delegationId: spawn.delegationId,
+              taskName: node.name,
+            }),
       },
       contextOf(sessionId, workflowRunId),
     );
     if (registered.outcome === 'REJECTED') {
+      if (spawn !== undefined) {
+        // The caller is told why this task did not start; tasks that wait for it are skipped.
+        await this.#endNode(
+          workflowRunId,
+          turnId,
+          nodeId,
+          'FAILED',
+          resultOf({
+            status: 'FAILED',
+            notes: [`could not be started: ${registered.reasonCode}`],
+          }),
+        );
+        return this.#advance(workflowRunId);
+      }
       await this.#endNode(workflowRunId, turnId, nodeId, 'FAILED');
       // This process is short of memory (Core 5c): no model is asked. The run closes as
       // interrupted, the user is told so, and the next message opens a new run instead of
@@ -599,15 +702,17 @@ export class SessionRunner {
         await this.#close(workflowRunId, 'INTERRUPTED');
       return;
     }
-    const handoff = inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
+    const handoff = node.inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
+    const task = spawn === undefined ? undefined : this.#taskScope(workflowRunId, node, spawn);
     const scope: ProjectionScope =
-      this.#mode === 'CHAT'
+      this.#mode === 'CHAT' && spawn === undefined
         ? { kind: 'MAIN' }
         : {
             kind: 'NODE',
             workflowRunId,
             agentRunId,
             ...(handoff === undefined ? {} : { handoff }),
+            ...(task === undefined ? {} : { task }),
           };
     const transition = startAgent(
       {
@@ -620,13 +725,66 @@ export class SessionRunner {
       },
       this.#context(workflowRunId, scope),
     );
-    this.#agent = { state: transition.state, nodeId, scope, agentId };
+    this.#agents.set(agentRunId, {
+      state: transition.state,
+      nodeId,
+      scope,
+      agentId,
+      changed: [],
+      unchecked: false,
+      completionAsked: false,
+      ...(spawn === undefined ? {} : { task: { name: node.name, criteria: spawn.acceptance } }),
+    });
     await this.#apply(workflowRunId, transition);
   }
 
+  /** What a SubAgent is given: its task, and the results of the tasks it waits for. */
+  #taskScope(
+    workflowRunId: string,
+    node: GraphNodeRecord,
+    spawn: NonNullable<GraphNodeRecord['spawn']>,
+  ): TaskScope {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const dependencies = projected.graph.edges
+      .filter((edge) => edge.to === node.nodeId)
+      .flatMap((edge) => {
+        const before = projected.nodes.get(edge.from);
+        if (before === undefined) return [];
+        const outcome: TaskOutcome = outcomeOf(this.#records, workflowRunId, before.nodeId) ?? {
+          status: 'FAILED',
+          notes: [],
+        };
+        return [
+          {
+            seq: 0,
+            category: 'PINNED' as const,
+            kind: 'SUBAGENT_RESULT' as const,
+            name: before.name,
+            agent: before.agentRef?.id ?? 'unknown',
+            status: outcome.status,
+            notes: [...outcome.notes],
+            ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
+            ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          },
+        ];
+      });
+    return {
+      name: node.name,
+      agent: node.agentRef?.id ?? 'unknown',
+      goal: node.goal ?? '',
+      acceptance: spawn.acceptance,
+      writeScope: spawn.writeScope,
+      inputs: spawn.inputs,
+      dependencies,
+    };
+  }
+
   async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
+    const { agentRunId } = transition.state;
     await this.#append(transition.records);
-    if (this.#agent !== undefined) this.#agent = { ...this.#agent, state: transition.state };
+    const current = this.#agents.get(agentRunId);
+    if (current !== undefined)
+      this.#agents.set(agentRunId, { ...current, state: transition.state });
     if (transition.activity !== undefined) {
       const sessionId = this.#sessionIdOrThrow();
       await this.#deps.gateway.updateActivity(
@@ -634,7 +792,7 @@ export class SessionRunner {
           requestId: newId('req'),
           sessionId,
           workflowRunId,
-          agentRunId: transition.state.agentRunId,
+          agentRunId,
           todos: transition.activity,
         },
         contextOf(sessionId, workflowRunId),
@@ -652,7 +810,8 @@ export class SessionRunner {
       if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
         throw new Error(`submitUnit refused: ${response.reasonCode}`);
     }
-    if (transition.ending !== undefined) await this.#onEnding(workflowRunId, transition.ending);
+    if (transition.ending !== undefined)
+      await this.#onEnding(workflowRunId, agentRunId, transition.ending);
   }
 
   /**
@@ -666,7 +825,7 @@ export class SessionRunner {
     workflowRunId: string,
     request: SubmitUnitRequest,
   ): Promise<SubmitUnitRequest> {
-    const active = this.#agent;
+    const active = this.#agents.get(request.agentRunId);
     if (active === undefined || !('history' in request.input)) return request;
     if (this.#readRepository && this.#instructionsRun !== workflowRunId) {
       this.#instructionsRun = workflowRunId;
@@ -737,10 +896,24 @@ export class SessionRunner {
     workflowRunId: string,
     report: Extract<KernelToWorkflowEvent, { type: 'UnitReport' }>,
   ): Promise<void> {
-    const active = this.#agent;
-    if (active === undefined) return;
+    const found = this.#agents.get(report.agentRunId);
+    if (found === undefined) return;
     if (report.status === 'OK' && READS_REPOSITORY.has(report.executionKind))
       this.#readRepository = true;
+    let active = found;
+    if (report.status === 'OK') {
+      const ranClean =
+        report.executionKind === 'COMMAND' &&
+        (report.output as { readonly exitCode?: number }).exitCode === 0;
+      active = {
+        ...found,
+        changed: [...new Set([...found.changed, ...(report.changedFiles ?? [])])],
+        unchecked: ranClean
+          ? false
+          : found.unchecked || (WRITE_KINDS as readonly string[]).includes(report.executionKind),
+      };
+      this.#agents.set(report.agentRunId, active);
+    }
     const transition = receiveAgentReport(
       active.state,
       report,
@@ -777,13 +950,14 @@ export class SessionRunner {
     outcome: AgentEnding['kind'],
   ): Promise<void> {
     const { agentRunId, turnId, wrapUpReason, round, definitions } = active.state;
-    this.#agent = undefined;
-    this.#rounds.push({
-      agentId: active.agentId,
-      agentRunId,
-      roundsUsed: round,
-      maxRounds: definitions.limits.maxRounds,
-    });
+    this.#agents.delete(agentRunId);
+    if (active.task === undefined)
+      this.#rounds.push({
+        agentId: active.agentId,
+        agentRunId,
+        roundsUsed: round,
+        maxRounds: definitions.limits.maxRounds,
+      });
     await this.#append([
       {
         type: 'AGENT_RUN_ENDED',
@@ -808,7 +982,7 @@ export class SessionRunner {
     source: ControlSource | undefined,
     nodeEnding: NodeEnding,
   ): Promise<void> {
-    this.#agent = { ...active, nodeEnding };
+    this.#agents.set(active.state.agentRunId, { ...active, nodeEnding });
     await this.#apply(workflowRunId, closeAgent(active.state, input, source));
   }
 
@@ -916,24 +1090,120 @@ export class SessionRunner {
           ending.source.modelOutputRef,
         );
         return this.#advance(workflowRunId);
+      case 'FINISH_SUBAGENT':
+        return this.#finishSubagent(workflowRunId, active, ending);
     }
   }
 
+  /** The caller is told its finishing call is not accepted yet; it goes on with a new Round. */
+  async #sendBack(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    code: string,
+    message: string,
+  ): Promise<void> {
+    const transition = resumeAfterRefusal(
+      active.state,
+      [answerRecord(active.state, code, toolCallId, message)],
+      this.#context(workflowRunId, active.scope),
+      this.#deps.config,
+    );
+    await this.#apply(workflowRunId, transition);
+  }
+
+  /** The result of a SubAgent: checked in form, then handed to whoever waits for it (M2Design 3.7). */
+  async #finishSubagent(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    const { task } = active;
+    if (task === undefined) throw new Error('only a SubAgent finishes with a result');
+    const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
+    const { toolCallId } = ending.source;
+    const missing = unansweredCriteria(args, task.criteria.length);
+    if (missing.length > 0)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        toolCallId,
+        'RESULT_INCOMPLETE',
+        `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
+      );
+    const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
+    if (canRun && active.unchecked && !active.completionAsked) {
+      this.#agents.set(active.state.agentRunId, { ...active, completionAsked: true });
+      return this.#sendBack(
+        workflowRunId,
+        { ...active, completionAsked: true },
+        toolCallId,
+        'NOT_VERIFIED',
+        'Not accepted yet: you changed files but have not run a command that checks them since. Run the tests, the build or the linter, then finish again.',
+      );
+    }
+    const outcome = finishedOutcome(args, task.criteria, active.changed);
+    await this.#endAgentRun(workflowRunId, active, 'ENDED');
+    await this.#endNode(
+      workflowRunId,
+      active.state.turnId,
+      active.nodeId,
+      outcome.status === 'BLOCKED' ? 'FAILED' : 'SUCCEEDED',
+      resultOf({ ...outcome, toolCallId }),
+      ending.source.modelOutputRef,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /** A SubAgent that stops without a result: whatever it has left is the caller's to read. */
+  async #endTask(
+    workflowRunId: string,
+    active: ActiveAgent,
+    kind: AgentEnding['kind'],
+    outcome: TaskOutcome,
+  ): Promise<void> {
+    await this.#endAgentRun(workflowRunId, active, kind);
+    await this.#endNode(
+      workflowRunId,
+      active.state.turnId,
+      active.nodeId,
+      outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
+      resultOf(outcome),
+    );
+  }
+
   /**
-   * The Kernel interrupts the run (Kernel/Core 5c): no model is called again. The AgentRun ends
-   * with the one reply that says why, which needs no model, and the run closes as INTERRUPTED.
-   * Whatever was in flight is no longer waited for: the reply replaces the pending requests.
+   * The Kernel interrupts the run (Kernel/Core 5c): no model is called again. SubAgents stop where
+   * they are; the AgentRun that spawned them ends with the one reply that says why, which needs no
+   * model, and the run closes as INTERRUPTED. Whatever was in flight is no longer waited for.
    */
   async #onInterrupted(workflowRunId: string, reason: string): Promise<void> {
     this.#interrupted = true;
-    const active = this.#agent;
-    if (active === undefined) return this.#close(workflowRunId, 'INTERRUPTED');
-    return this.#onDegraded(workflowRunId, active, reason);
+    const all = [...this.#agents.values()];
+    if (all.length === 0) return this.#close(workflowRunId, 'INTERRUPTED');
+    for (const active of all.filter((each) => each.task !== undefined))
+      await this.#endTask(workflowRunId, active, 'FAILED', {
+        status: 'FAILED',
+        notes: ['stopped: the run was interrupted'],
+      });
+    for (const active of all.filter((each) => each.task === undefined)) {
+      const rest = withoutWaiting(active);
+      this.#agents.set(active.state.agentRunId, rest);
+      await this.#onDegraded(workflowRunId, rest, reason);
+    }
   }
 
   async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
     if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
-    if (active.state.definitions.onDegraded === 'PUBLISH_NOTICE') {
+    const { onDegraded } = active.state.definitions;
+    if (onDegraded === 'RETURN_PARTIAL') {
+      await this.#endTask(workflowRunId, active, 'DEGRADED', {
+        status: 'PARTIAL',
+        notes: [`stopped early: ${reason}`],
+      });
+      return this.#advance(workflowRunId);
+    }
+    if (onDegraded === 'PUBLISH_NOTICE') {
       const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
       await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
         status: 'FAILED',
@@ -951,13 +1221,15 @@ export class SessionRunner {
     );
   }
 
-  async #onEnding(workflowRunId: string, ending: AgentEnding): Promise<void> {
-    const active = this.#agent;
+  async #onEnding(workflowRunId: string, agentRunId: string, ending: AgentEnding): Promise<void> {
+    const active = this.#agents.get(agentRunId);
     if (active === undefined) return;
     const { turnId } = active.state;
     switch (ending.kind) {
       case 'ENDED':
         return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
+      case 'SPAWN':
+        return this.#onSpawn(workflowRunId, active, ending);
       case 'DEGRADED':
         return this.#onDegraded(workflowRunId, active, ending.reason);
       case 'CLOSED': {
@@ -972,17 +1244,25 @@ export class SessionRunner {
           ending.outputRef,
         );
         if (plan.runOutput) this.#runResult = ending.outputRef;
-        if (this.#interrupted) return this.#close(workflowRunId, 'INTERRUPTED');
+        if (this.#interrupted)
+          return this.#agents.size === 0 ? this.#close(workflowRunId, 'INTERRUPTED') : undefined;
         if (this.#mode === 'CHAT' && ending.budget.run !== 'NORMAL')
           return this.#close(workflowRunId, 'BUDGET');
         return this.#advance(workflowRunId);
       }
       case 'FAILED':
+        if (active.task !== undefined) {
+          await this.#endTask(workflowRunId, active, ending.kind, {
+            status: 'FAILED',
+            notes: [`failed: ${ending.code}`],
+          });
+          return this.#advance(workflowRunId);
+        }
         if (this.#interrupted) {
           // The reply could not be published: the run still ends, and the log says why.
           await this.#endAgentRun(workflowRunId, active, ending.kind);
           await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
-          return this.#close(workflowRunId, 'INTERRUPTED');
+          return this.#agents.size === 0 ? this.#close(workflowRunId, 'INTERRUPTED') : undefined;
         }
         // In a chat the run goes on with the next prompt, so the user must hear of it here.
         if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
@@ -990,6 +1270,203 @@ export class SessionRunner {
         await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
         this.#runFailure = ending.code;
         return this.#advance(workflowRunId);
+    }
+  }
+
+  #refOf(agentId: string): DefinitionRef {
+    const { id, version } = this.#binding(agentId).ref;
+    return { id, version };
+  }
+
+  /** The model reads this in place of a result: which rules failed, and what to do instead. */
+  #refusalText(errors: readonly SpawnError[], withdrawn: boolean): string {
+    const lines = errors.map(
+      (error) =>
+        `${error.code}${error.task === undefined ? '' : ` (${error.task})`}: ${error.message}`,
+    );
+    const tail = withdrawn
+      ? 'run_subagents is no longer available to you: finish the work yourself.'
+      : 'Nothing was started. Correct the call and send it again, or do the work yourself.';
+    const text = [...lines, tail].join('\n');
+    return text.length <= 1000 ? text : `${text.slice(0, 999)}…`;
+  }
+
+  /**
+   * `run_subagents` (M2Design 3.6): the tasks are checked as a whole, the Kernel lends their
+   * shares as a whole, and only then does the graph grow. The caller waits until they all ended.
+   */
+  async #onSpawn(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const { toolCallId } = ending.source;
+    const refuse = async (text: string, withdraw = false): Promise<void> => {
+      const transition = resumeAfterSpawn(
+        active.state,
+        {
+          refused: true,
+          withdraw,
+          records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
+        },
+        this.#context(workflowRunId, active.scope),
+        this.#deps.config,
+      );
+      await this.#apply(workflowRunId, transition);
+    };
+    const agents = new Map<
+      string,
+      { writes: boolean; allowedEfforts: readonly ThinkingEffort[] }
+    >();
+    for (const [id, binding] of this.#deps.agents)
+      if (binding.definitions.endTools.some((tool) => tool.action === 'FINISH_SUBAGENT'))
+        agents.set(id, {
+          writes: binding.requestedCapabilities.includes('workspace.write'),
+          allowedEfforts: binding.allowedEfforts,
+        });
+    const readable = readableArtifacts(this.#records, active.state.agentRunId);
+    const checked = validateSpawn(ending.arguments as RunSubagentsArgs, {
+      rules: this.#deps.config,
+      agents,
+      callerRoots: this.#binding(active.agentId).writeRoots,
+      spawned: this.#spawned,
+      readable: (artifactId) => readable.has(artifactId),
+    });
+    if (!checked.ok) {
+      const withdraw = checked.errors.some((error) => error.code === 'SPAWN_LIMIT');
+      return refuse(
+        this.#refusalText(checked.errors, withdraw || active.state.invalidSpawns + 1 >= 2),
+        withdraw,
+      );
+    }
+    const { tasks } = checked.plan;
+    const reserved = await this.#deps.gateway.reserveDelegation(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        parentAgentRunId: active.state.agentRunId,
+        tasks: tasks.map((task) => ({
+          name: task.name,
+          agentRef: this.#binding(task.agent).ref,
+          writeRoots: [...task.writeRoots],
+          ...(task.budget?.tokens === undefined ? {} : { tokens: task.budget.tokens }),
+        })),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (reserved.outcome === 'REJECTED') {
+      if (reserved.reasonCode === 'RUN_BLOCKED') return;
+      if (reserved.reasonCode === 'BUDGET_INSUFFICIENT')
+        return refuse(
+          `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total. Start fewer or smaller tasks, or do the work yourself.`,
+        );
+      return refuse(
+        `${reserved.reasonCode}: the system refused to start these tasks. Nothing was started.`,
+      );
+    }
+    const shares = new Map(reserved.shares.map((share) => [share.name, share]));
+    const projected = projectGraph(this.#records, workflowRunId);
+    const revisionNumber = projected.lastRevision + 1;
+    const revision = spawnRevision(
+      workflowRunId,
+      revisionNumber,
+      tasks.map((task) => {
+        const share = shares.get(task.name);
+        return {
+          name: task.name,
+          agentRef: this.#refOf(task.agent),
+          goal: task.goal,
+          dependsOn: task.dependsOn ?? [],
+          spawn: {
+            parentAgentRunId: active.state.agentRunId,
+            delegationId: reserved.delegationId,
+            callToolCallId: toolCallId,
+            writeScope: [...task.writeRoots],
+            acceptance: [...(task.acceptance ?? [])],
+            inputs: [...(task.inputs ?? [])],
+            ...(task.effort === undefined ? {} : { effort: task.effort }),
+            tokens: share?.tokens ?? 1,
+            ...(share?.clamped === undefined ? {} : { clamped: share.clamped }),
+          },
+        };
+      }),
+    );
+    await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
+    this.#spawned = {
+      tasks: this.#spawned.tasks + tasks.length,
+      calls: this.#spawned.calls + 1,
+    };
+    this.#agents.set(active.state.agentRunId, {
+      ...active,
+      waiting: {
+        toolCallId,
+        delegationId: reserved.delegationId,
+        tasks: tasks.map((task) => ({
+          name: task.name,
+          agent: task.agent,
+          nodeId: revision.nodes.find((node) => node.name === task.name)?.nodeId ?? '',
+        })),
+      },
+    });
+    await this.#advance(workflowRunId);
+  }
+
+  /** A caller whose tasks have all ended is told how they went and goes on (M2Design 3.6). */
+  async #joinFinished(workflowRunId: string): Promise<void> {
+    if (this.#interrupted) return;
+    const sessionId = this.#sessionIdOrThrow();
+    for (const parent of [...this.#agents.values()]) {
+      const { waiting } = parent;
+      if (waiting === undefined) continue;
+      const outcomes = waiting.tasks.map((task) => ({
+        task,
+        outcome: outcomeOf(this.#records, workflowRunId, task.nodeId),
+      }));
+      if (outcomes.some((each) => each.outcome === undefined)) continue;
+      // The shares of tasks that never started go back to the caller.
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId: waiting.delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
+      await this.#append([
+        {
+          type: 'SUBAGENTS_JOINED',
+          workflowRunId,
+          ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+          agentRunId: parent.state.agentRunId,
+          toolCallId: waiting.toolCallId,
+          delegationId: waiting.delegationId,
+          results: outcomes.flatMap(({ task, outcome }) =>
+            outcome === undefined
+              ? []
+              : [
+                  {
+                    name: task.name,
+                    agent: task.agent,
+                    status: outcome.status,
+                    notes: [...outcome.notes],
+                    ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
+                    ...(outcome.toolCallId === undefined
+                      ? {}
+                      : { resultToolCallId: outcome.toolCallId }),
+                  },
+                ],
+          ),
+        },
+      ]);
+      const rest = withoutWaiting(parent);
+      this.#agents.set(parent.state.agentRunId, rest);
+      await this.#apply(
+        workflowRunId,
+        resumeAfterSpawn(
+          rest.state,
+          { refused: false, records: [] },
+          this.#context(workflowRunId, rest.scope),
+          this.#deps.config,
+        ),
+      );
     }
   }
 }

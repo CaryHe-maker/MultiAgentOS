@@ -1,0 +1,55 @@
+schemaVersion: v1
+kind: AGENT
+id: explorer
+version: v0.1.0
+description: A SubAgent that reads the repository and reports findings with evidence.
+role: read-only investigator
+modelRef:
+  id: deepseek-flash
+  version: v0.1.0
+thinking:
+  defaultEffort: none
+  allowedEfforts:
+    - none
+    - low
+promptRef:
+  id: explorer-system
+  version: v0.1.0
+unitRefs:
+  - id: repository-list
+    version: v0.1.0
+  - id: repository-search
+    version: v0.1.0
+  - id: file-read
+    version: v0.1.0
+  - id: output-read
+    version: v0.1.0
+  - id: git-inspect
+    version: v0.1.0
+  - id: context-assemble
+    version: v0.1.0
+  - id: model-call
+    version: v0.1.0
+startUnitRefs: []
+actions:
+  end:
+    - toolRef:
+        id: finish-explorer
+        version: v0.1.0
+      then: FINISH_SUBAGENT
+      allowedInFinal: true
+  onDegraded: RETURN_PARTIAL
+spawnable:
+  defaultShare: 300000
+capabilities:
+  - repo.read
+limits:
+  maxRounds: 20
+  maxToolCallsPerRound: 8
+  maxToolUnits: 60
+  maxWallClockMs: 600000
+budget:
+  perCallInputLimit: 60000
+  maxOutputTokens: 16000
+  finalInputBudget: 60000
+  finalMaxOutputTokens: 16000

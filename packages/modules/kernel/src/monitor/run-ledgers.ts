@@ -192,11 +192,6 @@ export class RunLedgers {
     this.#topLevel.set(agentRunId, agent);
   }
 
-  #budgetOf(agentRunId: string | undefined): AgentBudget {
-    if (agentRunId === undefined) return this.#main;
-    return this.#agents.get(agentRunId)?.agent ?? this.#topLevel.get(agentRunId) ?? this.#main;
-  }
-
   /**
    * Takes the shares of a `run_subagents` call out of the parent's ledger, all or none (M2Design 7.3,
    * rule 2). The parent keeps its final reserve and one ordinary call, so it can go on afterwards.

@@ -15,6 +15,7 @@ import {
   type BuiltRequest,
   type ExecutionConfig,
 } from './attempt-request.js';
+import type { Fingerprints } from './change-scan.js';
 import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
 import { AttemptQueues, type ConcurrencyClass, type QueueEntry } from './execution-queues.js';
 import type { AttemptSpec, ResultCheck, RunAttempts } from './run-attempts.js';
@@ -55,6 +56,17 @@ export interface RunExecutionDeps {
     readonly snapshot: () => Promise<ReadonlySet<string>>;
     readonly quarantine: (before: ReadonlySet<string>) => Promise<readonly string[]>;
   };
+  /**
+   * Which files a command changed (M2Design 7.1): its write roots are scanned before it runs and
+   * after, and the difference goes into the report. Undefined when the tree cannot be scanned.
+   */
+  readonly changes?: {
+    readonly snapshot: (roots: readonly string[]) => Promise<Fingerprints | undefined>;
+    readonly since: (
+      before: Fingerprints,
+      roots: readonly string[],
+    ) => Promise<readonly string[] | undefined>;
+  };
   readonly audit?: (entry: object) => void;
   /** UnitAttempts executing at once over all AgentRuns (`kernel.maxConcurrentAttempts`). */
   readonly maxConcurrentAttempts?: number;
@@ -66,6 +78,10 @@ export interface RunExecutionDeps {
   readonly newAttemptId?: () => string;
 }
 
+/** The roots a sandboxed command may write: what a scan before and after looks at. */
+const commandRootsOf = (spec: AttemptSpec): readonly string[] =>
+  spec.scope.kind === 'SANDBOX' ? spec.scope.profile.writableRoots : [];
+
 interface Attempt extends QueueEntry {
   readonly spec: AttemptSpec;
   readonly unitAttemptId: string;
@@ -74,6 +90,7 @@ interface Attempt extends QueueEntry {
   retries: number;
   /** The protected paths that existed when a command was first dispatched. */
   protectedBefore?: ReadonlySet<string>;
+  changedBefore?: Fingerprints | undefined;
   /** Built, and waiting for a call slot to be reserved (M2Design 7.2). */
   built?: { readonly request: BuiltRequest; readonly executionId: string };
 }
@@ -252,6 +269,20 @@ export class RunExecution {
         attempt.protectedBefore = await guard.snapshot();
       } catch {
         // Without a "before" there is nothing to compare; the sandbox still protects what exists.
+      }
+    }
+    const { changes } = this.#deps;
+    const roots = commandRootsOf(attempt.spec);
+    if (
+      changes !== undefined &&
+      attempt.spec.unit.executionKind === 'COMMAND' &&
+      attempt.changedBefore === undefined &&
+      roots.length > 0
+    ) {
+      try {
+        attempt.changedBefore = await changes.snapshot(roots);
+      } catch {
+        // Without a "before" the report names no files.
       }
     }
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
@@ -471,6 +502,20 @@ export class RunExecution {
       } catch {
         await ended('FAILED', 'INTERNAL');
         return;
+      }
+    }
+    if (
+      fact.executionKind === 'COMMAND' &&
+      attempt.changedBefore !== undefined &&
+      this.#deps.changes !== undefined
+    ) {
+      try {
+        changedFiles = await this.#deps.changes.since(
+          attempt.changedBefore,
+          commandRootsOf(attempt.spec),
+        );
+      } catch {
+        // The command ran; only the list of what it changed is missing.
       }
     }
     await this.#finish(attempt, {

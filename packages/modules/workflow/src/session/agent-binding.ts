@@ -54,9 +54,10 @@ export function agentBindingOf(
       unit.executionKind === 'REPOSITORY_ORIENT' &&
       agent.startUnitRefs.some((ref) => ref.id === unit.id && ref.version === unit.version),
   );
-  // The catalog allows one publishing Unit per Agent: a message or a report.
+  // The catalog allows one publishing Unit per Agent: a message or a report. A SubAgent has none.
   const publish = byKind('MESSAGE_PUBLISH') ?? byKind('REPORT_PUBLISH');
-  if (publish === undefined) throw new Error(`Agent ${agent.id} has no publishing Unit`);
+  if (publish === undefined && agent.actions.onDegraded !== 'RETURN_PARTIAL')
+    throw new Error(`Agent ${agent.id} has no publishing Unit`);
 
   const definitions: AgentDefinitions = {
     label: agent.id,
@@ -67,7 +68,7 @@ export function agentBindingOf(
     ...(orient === undefined ? {} : { orient: unitOf(orient) }),
     contextAssemble: required('CONTEXT_ASSEMBLE'),
     modelCall: required('MODEL'),
-    publish: unitOf(publish),
+    ...(publish === undefined ? {} : { publish: unitOf(publish) }),
     tools: offered.flatMap((unit) =>
       unit.toolRefs.map((ref) => {
         const tool = toolOf(ref);
@@ -89,6 +90,16 @@ export function agentBindingOf(
       };
     }),
     onDegraded: agent.actions.onDegraded,
+    ...(agent.actions.spawn === undefined || !requestedCapabilities.includes('agent.spawn')
+      ? {}
+      : {
+          spawnTool: {
+            toolName: toolOf(agent.actions.spawn.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.spawn.toolRef).parametersContract,
+            ),
+          },
+        }),
     ...(agent.actions.todos === undefined
       ? {}
       : {
@@ -104,6 +115,7 @@ export function agentBindingOf(
     ref: { kind: 'AGENT', id: agent.id, version: agent.version, digest: agent.digest },
     modelRef: { id: model.id, version: model.version },
     effort: agent.thinking.defaultEffort,
+    allowedEfforts: agent.thinking.allowedEfforts,
     requestedCapabilities,
     writeRoots: requestedCapabilities.includes('workspace.write') ? ['.'] : [],
     // The tool definitions the model sees, by digest: a change adds a REQUEST_CONTEXT record.

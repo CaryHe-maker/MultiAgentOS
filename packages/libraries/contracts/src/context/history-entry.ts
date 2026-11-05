@@ -60,6 +60,31 @@ export const ContextHistoryEntrySchema = Type.Union(
       ref: ArtifactRefSchema,
       trusted: Type.Boolean(),
     }),
+    /** The task a SubAgent was started with, PINNED in its own view (M2Design 3.6). */
+    closed({
+      ...entry,
+      kind: Type.Literal('TASK'),
+      name: text(64),
+      agent: text(64),
+      goal: text(4000),
+      acceptance: Type.Array(text(300), { maxItems: 10 }),
+      writeScope: Type.Array(text(500), { maxItems: 10 }),
+      inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
+    }),
+    /**
+     * The result of a task, by the model output that holds its `finish_subagent` call: PINNED in
+     * the view of the task that depends on it, NORMAL in the view of the caller (M2Design 3.6).
+     */
+    closed({
+      ...entry,
+      kind: Type.Literal('SUBAGENT_RESULT'),
+      name: text(64),
+      agent: text(64),
+      status: Type.Enum(['DONE', 'PARTIAL', 'BLOCKED', 'FAILED', 'SKIPPED']),
+      notes: Type.Array(text(300), { maxItems: 10 }),
+      outputRef: Type.Optional(artifactRefOf(MEDIA_TYPES.modelOutput)),
+      toolCallId: Type.Optional(ToolCallIdSchema),
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],
@@ -102,6 +127,8 @@ export const ContextAssembleInputSchema = Type.Refine(
       orientPackRef: Type.Optional(artifactRefOf(MEDIA_TYPES.contextPack)),
       history: Type.Array(ContextHistoryEntrySchema),
       status: StatusFactsSchema,
+      /** Tools the model is no longer offered, by model name (M2Design 3.6). */
+      withdrawnTools: Type.Optional(Type.Array(text(64), { maxItems: 8 })),
     },
     'context.ContextAssembleInput.v1',
   ),

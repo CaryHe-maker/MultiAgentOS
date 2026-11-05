@@ -153,8 +153,14 @@ function builtIns(catalog: DefinitionCatalog) {
     .filter((each): each is TemplateDefinition => each.kind === 'TEMPLATE');
   const main = catalog.latest('AGENT', 'main');
   if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
+  // The Agents `run_subagents` may start are built in with main, whatever the template (M2Design 3.9).
+  const spawnable = catalog
+    .list()
+    .filter((each) => each.kind === 'AGENT' && each.spawnable !== undefined)
+    .map(({ id, version }) => ({ id, version }));
   const refs = [
     { id: main.id, version: main.version },
+    ...spawnable,
     ...templates.flatMap((template) =>
       template.nodes.flatMap((node) => (node.kind === 'AGENT' ? [node.agent] : [])),
     ),

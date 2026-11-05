@@ -64,6 +64,7 @@ import {
   scanRepository,
   type ScanOptions,
 } from './session/sandbox-scan.js';
+import { changesBetween, fingerprintRoots, type ChangeScanOptions } from './session/change-scan.js';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { SessionActor } from './session/session-actor.js';
@@ -264,6 +265,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     exclusions: [...DEFAULT_REPOSITORY_EXCLUSIONS, ...config.repositoryExclusions],
     maxEntries: config.maxSnapshotFiles * 10,
   };
+  /** What a command changed: the write roots of its AgentRun, before and after (M2Design 7.1). */
+  const changeOptions: ChangeScanOptions = {
+    repositoryRoot,
+    exclusions: config.repositoryExclusions,
+    maxEntries: config.maxSnapshotFiles * 10,
+  };
   /** Where a protected path a command made is moved (M2Design 6.1). */
   const quarantineOf = (sessionId: string): string =>
     deps.workspace === undefined
@@ -300,6 +307,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
                 quarantineNewProtected(scanOptions, before, quarantineOf(sessionId)),
             },
           }),
+      changes: {
+        snapshot: (roots) => fingerprintRoots(changeOptions, roots),
+        since: async (before, roots) => {
+          const after = await fingerprintRoots(changeOptions, roots);
+          return after === undefined ? undefined : changesBetween(before, after);
+        },
+      },
       audit,
       enqueue: (work) => {
         host.enqueue(work);

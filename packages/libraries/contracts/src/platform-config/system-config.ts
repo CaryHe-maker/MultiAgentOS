@@ -103,6 +103,11 @@ export const WorkflowConfigSchema = closed(
     repeatedIntent: closed({ window: count(1), warnAt: count(1), stopAt: count(1) }),
     consecutiveErrorLimit: count(1),
     maxNestedInstructions: count(1),
+    /** `run_subagents` (M2Design 3.6). */
+    maxSubagentsPerCall: count(1),
+    maxDependencyDepth: count(),
+    maxTasks: count(1),
+    maxSpawnCalls: count(1),
   },
   'platform.config.WorkflowConfig.v1',
 );

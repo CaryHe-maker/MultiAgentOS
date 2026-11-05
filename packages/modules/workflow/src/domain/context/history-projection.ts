@@ -10,6 +10,17 @@ import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multia
  */
 const MAIN_AGENT_ID = 'main';
 
+/** What a SubAgent is given: its task and the results of the tasks it waits for (M2Design 3.6). */
+export interface TaskScope {
+  readonly name: string;
+  readonly agent: string;
+  readonly goal: string;
+  readonly acceptance: readonly string[];
+  readonly writeScope: readonly string[];
+  readonly inputs: readonly ArtifactRef[];
+  readonly dependencies: readonly Extract<ContextHistoryEntry, { kind: 'SUBAGENT_RESULT' }>[];
+}
+
 export type ProjectionScope =
   | { readonly kind: 'MAIN' }
   | {
@@ -17,6 +28,7 @@ export type ProjectionScope =
       readonly workflowRunId: string;
       readonly agentRunId: string;
       readonly handoff?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
+      readonly task?: TaskScope;
     };
 
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
@@ -48,6 +60,22 @@ export function projectHistory(
         if (scope.kind === 'NODE') {
           if (record.agentRunId !== scope.agentRunId) break;
           mainRuns.add(record.agentRunId);
+          if (scope.task !== undefined) {
+            entries.push({
+              seq: record.seq,
+              ...turnOf(record.turnId),
+              category: 'PINNED',
+              kind: 'TASK',
+              name: scope.task.name,
+              agent: scope.task.agent,
+              goal: scope.task.goal,
+              acceptance: [...scope.task.acceptance],
+              writeScope: [...scope.task.writeScope],
+              inputs: [...scope.task.inputs],
+            });
+            for (const dependency of scope.task.dependencies)
+              entries.push({ ...dependency, seq: record.seq, ...turnOf(record.turnId) });
+          }
           if (scope.handoff !== undefined)
             entries.push({
               seq: record.seq,
@@ -62,6 +90,8 @@ export function projectHistory(
         break;
       case 'HUMAN_ANSWERED':
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        // A SubAgent works from its task, not from what the user said.
+        if (scope.kind === 'NODE' && scope.task !== undefined) break;
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -217,6 +247,35 @@ export function projectHistory(
           ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
         });
         break;
+      case 'SUBAGENTS_JOINED': {
+        if (!mainRuns.has(record.agentRunId)) break;
+        const count = (status: string) =>
+          record.results.filter((result) => result.status === status).length;
+        entries.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: `${String(record.results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL') + count('BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
+          toolCallId: record.toolCallId,
+        });
+        for (const result of record.results)
+          entries.push({
+            seq: record.seq,
+            ...turnOf(record.turnId),
+            category: 'NORMAL',
+            kind: 'SUBAGENT_RESULT',
+            name: result.name,
+            agent: result.agent,
+            status: result.status,
+            notes: result.notes,
+            ...(result.outputRef === undefined ? {} : { outputRef: result.outputRef }),
+            ...(result.resultToolCallId === undefined
+              ? {}
+              : { toolCallId: result.resultToolCallId }),
+          });
+        break;
+      }
       case 'STALE_UNITS_SETTLED':
         entries.push({
           seq: record.seq,

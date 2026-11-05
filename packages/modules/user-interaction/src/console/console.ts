@@ -81,6 +81,12 @@ export class Console {
   /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
   #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
+  /** Every AgentRun of the current run, in the order it appeared (`/timeline`). */
+  readonly #timeline = new Map<
+    string,
+    { label: string; parent?: string; from: string; to?: string }
+  >();
+  #timelineRun: string | undefined;
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
@@ -117,13 +123,64 @@ export class Console {
   #refresh(): void {
     const live: LiveState = {
       status: text.runState[this.#runState] ?? this.#runState,
-      activity: [...this.#activity.values()],
+      activity: this.#activityTree(),
       ...(this.#pending[0] === undefined ? {} : { pending: this.#pending[0] }),
       waiting: Math.max(0, this.#pending.length - 1),
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
     };
     this.#deps.view.update(live);
+  }
+
+  /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
+  #activityTree(): ActivityLine[] {
+    const lines = [...this.#activity.values()];
+    const children = (parent: string | undefined) =>
+      lines.filter((line) =>
+        parent === undefined
+          ? line.parentAgentRunId === undefined || !this.#activity.has(line.parentAgentRunId)
+          : line.parentAgentRunId === parent,
+      );
+    const ordered: ActivityLine[] = [];
+    const visit = (parent: string | undefined, indent: string): void => {
+      const siblings = children(parent);
+      for (const [index, line] of siblings.entries()) {
+        const last = index === siblings.length - 1;
+        const branch = parent === undefined ? '' : `${indent}${last ? '└─ ' : '├─ '}`;
+        ordered.push({ ...line, branch });
+        visit(line.agentRunId, parent === undefined ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+      }
+    };
+    visit(undefined, '');
+    return ordered;
+  }
+
+  /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
+  #showTimeline(): void {
+    if (this.#timeline.size === 0) {
+      this.#notice(text.timelineEmpty);
+      return;
+    }
+    const now = this.#now().toISOString();
+    const lines: string[] = [];
+    const visit = (parent: string | undefined, depth: number): void => {
+      for (const [id, entry] of this.#timeline) {
+        const isChild = entry.parent !== undefined && this.#timeline.has(entry.parent);
+        if (parent === undefined ? isChild : entry.parent !== parent) continue;
+        lines.push(
+          text.timelineLine(
+            '  '.repeat(depth),
+            entry.label,
+            entry.from,
+            entry.to,
+            secondsBetween(entry.from, entry.to ?? now),
+          ),
+        );
+        visit(id, depth + 1);
+      }
+    };
+    visit(undefined, 0);
+    this.#notice(lines.join('\n'));
   }
 
   #notice(message: string): void {
@@ -357,6 +414,9 @@ export class Console {
       case '/exit':
         await this.shutdown();
         break;
+      case '/timeline':
+        this.#showTimeline();
+        break;
       case '/status':
         this.#notice(text.status(text.runState[this.#runState] ?? this.#runState, this.#budget));
         break;
@@ -532,6 +592,10 @@ export class Console {
   async handleRunEvent(envelope: InteractionInboxEvent): Promise<void> {
     const { event } = envelope;
     this.#workflowRunId = envelope.workflowRunId;
+    if (this.#timelineRun !== envelope.workflowRunId) {
+      this.#timelineRun = envelope.workflowRunId;
+      this.#timeline.clear();
+    }
     switch (event.type) {
       case 'RunStateChanged':
         this.#runState = event.state;
@@ -594,8 +658,18 @@ export class Console {
                 `${String(todos.done)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
               );
         const shown = tool ?? progress;
+        const known = this.#timeline.get(event.agentRunId);
+        this.#timeline.set(event.agentRunId, {
+          label: terminalText(event.label),
+          ...(event.parentAgentRunId === undefined ? {} : { parent: event.parentAgentRunId }),
+          from: known?.from ?? event.at,
+          ...(event.phase === 'ENDED' ? { to: event.at } : {}),
+        });
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
+          ...(event.parentAgentRunId === undefined
+            ? {}
+            : { parentAgentRunId: event.parentAgentRunId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           since: event.at,
