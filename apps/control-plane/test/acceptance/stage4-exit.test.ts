@@ -429,14 +429,14 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
           left: [
             {
               wait: together(),
-              then: tool('run_command', { command: 'touch made.txt', workdir: 'a' }),
+              then: tool('run_command', { command: 'touch made.txt' }),
             },
             finishing('left said hi'),
           ],
           right: [
             {
               wait: together(),
-              then: tool('run_command', { command: 'touch made.txt', workdir: 'b' }),
+              then: tool('run_command', { command: 'touch made.txt' }),
             },
             finishing('right said hi'),
           ],
