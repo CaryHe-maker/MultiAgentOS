@@ -61,6 +61,23 @@ const callsOf = (provider: ScriptedChat): string[] => {
   return names;
 };
 
+/** What the callers of run_subagents were told when a call was refused, once each. */
+const refusalsOf = (provider: ScriptedChat): string[] => [
+  ...new Set(
+    provider.requests.flatMap((request) =>
+      request.messages
+        .filter((message) => message.role === 'tool')
+        .map((message) =>
+          typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+        )
+        .filter(
+          (text) => text.includes('Nothing was started') || text.includes('no longer available'),
+        )
+        .map((text) => text.slice(0, 160)),
+    ),
+  ),
+];
+
 async function withChat(
   id: string,
   message: string,
@@ -111,6 +128,7 @@ async function withChat(
         spawnCalls: calls.filter((name) => name === 'run_subagents').length,
         finished: calls.filter((name) => name === 'finish_subagent').length,
         agents,
+        refusals: refusalsOf(provider),
         questions: chat.questions.length,
       },
     };
