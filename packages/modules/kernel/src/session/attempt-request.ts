@@ -1,4 +1,5 @@
 import {
+  SUBAGENT_RESULT_CHARS,
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
   CommandInputSchema,
@@ -453,7 +454,12 @@ export class AttemptRequestBuilder {
           const raw = await this.#rawOutput(entry.outputRef);
           const call = raw.toolCalls.find((each) => each.toolCallId === entry.toolCallId);
           if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
-          lines.push(call.argumentsText);
+          lines.push(
+            call.argumentsText.length <= SUBAGENT_RESULT_CHARS
+              ? call.argumentsText
+              : `${call.argumentsText.slice(0, SUBAGENT_RESULT_CHARS)}
+[cut: the result is ${String(call.argumentsText.length)} characters, only the first ${String(SUBAGENT_RESULT_CHARS)} are shown]`,
+          );
         }
         return { ...base, kind: 'NOTE', text: lines.join('\n') };
       }

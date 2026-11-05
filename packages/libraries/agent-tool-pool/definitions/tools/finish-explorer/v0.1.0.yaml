@@ -6,7 +6,7 @@ description: Control tool that ends an explorer with its findings.
 purpose: CONTROL
 modelName: finish_subagent
 modelDescription: >-
-  Return your result to the agent that started you, and stop; call it alone. summary answers the
+  Return your result to the agent that started you, and stop; call it alone. The whole call must stay under 8000 characters: what is longer is cut, so put the answer first and keep only findings that matter. summary answers the
   goal. findings has one entry per claim, each with the evidence that supports it (artifacts that
   your tools returned). openQuestions lists what you could not settle. When the task had
   acceptance criteria, acceptance answers each by its index (starting at 0) with met, not_met or

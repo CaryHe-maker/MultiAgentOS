@@ -435,3 +435,37 @@ describe('run_subagents', () => {
     ]);
   });
 });
+
+describe('the length of a result', () => {
+  it('sends back a result that is longer than the caller reads, once it is short enough accepts it', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({
+          toolName: 'finish_subagent',
+          args: {
+            summary: 'x'.repeat(3900),
+            findings: [
+              { claim: 'y'.repeat(900), evidence: [] },
+              { claim: 'z'.repeat(900), evidence: [] },
+              { claim: 'w'.repeat(900), evidence: [] },
+              { claim: 'v'.repeat(900), evidence: [] },
+              { claim: 'u'.repeat(900), evidence: [] },
+            ],
+          },
+        }),
+        model({ toolName: 'finish_subagent', args: explorerResult }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_TOO_LONG');
+    expect(ofType(records, 'SUBAGENTS_JOINED')[0]?.results[0]?.status).toBe('DONE');
+  });
+});

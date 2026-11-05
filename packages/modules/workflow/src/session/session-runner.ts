@@ -1,6 +1,7 @@
 import { settleOpenCalls } from './settle-stale.js';
 import {
   REPOSITORY_KINDS,
+  SUBAGENT_RESULT_CHARS,
   WRITE_KINDS,
   REASON_CODE_CATEGORY,
   newId,
@@ -1130,6 +1131,14 @@ export class SessionRunner {
         toolCallId,
         'RESULT_INCOMPLETE',
         `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
+      );
+    if (canonicalJson(args).length > SUBAGENT_RESULT_CHARS)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        toolCallId,
+        'RESULT_TOO_LONG',
+        `Not accepted: the result is longer than ${String(SUBAGENT_RESULT_CHARS)} characters, and what is longer is cut. Say it shorter: keep the findings that matter and leave out the rest.`,
       );
     const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
     if (canRun && active.unchecked && !active.completionAsked) {

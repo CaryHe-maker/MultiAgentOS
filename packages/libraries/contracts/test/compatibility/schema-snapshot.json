@@ -42690,16 +42690,11 @@
               },
               "budget": {
                 "type": "object",
+                "required": [
+                  "tokens"
+                ],
                 "properties": {
                   "tokens": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "toolUnits": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "wallClockMs": {
                     "type": "integer",
                     "minimum": 1
                   }

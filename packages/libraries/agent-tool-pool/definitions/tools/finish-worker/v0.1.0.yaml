@@ -6,7 +6,7 @@ description: Control tool that ends a worker with what it changed and checked.
 purpose: CONTROL
 modelName: finish_subagent
 modelDescription: >-
-  Return your result to the agent that started you, and stop; call it alone. summary says what
+  Return your result to the agent that started you, and stop; call it alone. The whole call must stay under 8000 characters: what is longer is cut, so put the answer first and keep it short. summary says what
   you did. changedFiles lists every file you changed. status is done, partial or blocked.
   validation lists the commands you ran to check your work, each with its exit code and the
   artifact of its output. blockers says what stopped you, including any path you needed outside

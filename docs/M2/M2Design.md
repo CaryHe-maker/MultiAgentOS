@@ -416,7 +416,7 @@ run_subagents({
     inputs?: ArtifactRef[];  // 调用方显式交给它的产物，只能是调用方可读的
     acceptance?: string[];   // 验收标准，≤10 条，每条 ≤300 字符
     effort?: 'none' | 'low' | 'high' | 'max';  // 必须在该 Agent 允许的范围内
-    budget?: { tokens?: number; toolUnits?: number; wallClockMs?: number };
+    budget?: { tokens: number };  // 该任务的额度份额；工具次数与墙钟上限只由 Agent 定义决定，调用方不能改
   }[];
 })
 ```
@@ -462,6 +462,7 @@ run_subagents({
 type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown'; evidence?: ArtifactRef[] }
 ```
 
+0. **结果长度**：父 AgentRun 读到的每个子任务结果最多 8000 字符（`SUBAGENT_RESULT_CHARS`）。提示词与工具说明都告知了这个限制；超过时 Workflow 以 `RESULT_TOO_LONG` 退回一次让 SubAgent 重写，Kernel 组装上下文时仍会截断并注明；完整内容留在子任务的模型输出中。
 1. **Schema 校验**：Workflow 按 Schema 校验 `finish_subagent`。不合格时以 FEEDBACK 退回，计入该 AgentRun 的 Round。
 2. **验收条目**：只做形式检查，即每条验收标准都有回应，不判断内容是否属实。
 3. **blocked**：`status` 为 `blocked` 的任务，其节点记为失败，依赖它的任务因此被跳过；`partial` 与 `done` 的节点记为成功，汇合结果里仍带原来的状态。
@@ -1870,4 +1871,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.22 | 2026-11-05 | 第 6.1、7.7 节：内存压力只度量有对应场景的两项——V8 堆（以堆上限与可用内存 60% 中较小者为分母）与容器内存上限下的 RSS；没有容器上限时不再用 RSS 对比物理内存；入口以 `--max-old-space-size=4096` 启动；沙盒命令增加私有可写内存上限（`RLIMIT_DATA`）（依据：实测 WSL 上 V8 默认堆上限仅 2240 MB，运行时设置该标志无效，命令超限应由命令自己失败；Cary 同意） |
 | v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |
 | v1.24 | 2026-11-05 | 第 7.1 节：只读名单上的命令行按 READ 处理；第 7.3 节：`budget.runTokenLimit` 与 `turnTokenLimit` 的缺省值改为 24,000,000 与 8,000,000（main 的收尾保留与一次调用余量就占 188.8 万，4,000,000 的 Turn 额度只能委派约 190 万，放不下 4 个 worker 的缺省份额）；`agent.spawn` 在 `readonly` 预设下保留（SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了）（Cary 2026-11-05 决定前两项） |
-| v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget.toolUnits` 与 `budget.wallClockMs` 暂不改变任务的上限（只有 `tokens` 经 Kernel 校验） |
+| v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget` 只保留 `tokens`（Cary 决定）：`toolUnits` 与 `wallClockMs` 从参数中删除，一个任务的工具次数与墙钟上限只由所用 Agent 的定义决定；汇合时每个子任务的结果最多 8000 字符（见第 3.7 节） |

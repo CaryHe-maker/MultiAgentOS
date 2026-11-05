@@ -6,6 +6,9 @@ import { closed, count, text } from '../platform-common/schema-helpers.js';
  * The control tools of SubAgents (M2Design 3.6, 3.7): `run_subagents` asks for tasks, and
  * `finish_subagent` returns the result of one.
  */
+/** What of a SubAgent's result its caller reads: longer is cut, and a longer one is sent back. */
+export const SUBAGENT_RESULT_CHARS = 8000;
+
 const NameSchema = Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' });
 
 export const SubagentTaskSchema = closed({
@@ -17,13 +20,8 @@ export const SubagentTaskSchema = closed({
   inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
   acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
   effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
-  budget: Type.Optional(
-    closed({
-      tokens: Type.Optional(count(1)),
-      toolUnits: Type.Optional(count(1)),
-      wallClockMs: Type.Optional(count(1)),
-    }),
-  ),
+  /** Only the token share is the caller's to ask for; the other limits are the Agent's own. */
+  budget: Type.Optional(closed({ tokens: count(1) })),
 });
 export type SubagentTask = Static<typeof SubagentTaskSchema>;
 

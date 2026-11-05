@@ -30,6 +30,8 @@ template: |
     by its index, starting at 0.
   - When the status says this is the final call, call finish_subagent immediately with what you
     have, and say partial or blocked if that is the truth.
+  - The reader sees at most 8000 characters of your finish_subagent call, and a longer one is
+    sent back to you: keep the summary and blockers short.
   - Write in the language of the goal.
 variables: []
 contentStatus: FINAL

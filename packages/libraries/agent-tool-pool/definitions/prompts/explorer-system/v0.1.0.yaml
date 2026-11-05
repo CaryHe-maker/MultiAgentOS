@@ -21,6 +21,8 @@ template: |
     answer each one by its index, starting at 0; say unknown when you cannot tell.
   - When the status says this is the final call, call finish_subagent immediately with what you
     already have.
+  - The reader sees at most 8000 characters of your finish_subagent call, and a longer one is
+    sent back to you: put the answer first and keep only the findings that matter.
   - Write in the language of the goal.
 variables: []
 contentStatus: FINAL
