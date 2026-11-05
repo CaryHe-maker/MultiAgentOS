@@ -123,6 +123,8 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  /** Rounds in a row that only kept the todo list: the first is not judged by progress. */
+  readonly todoOnlyRounds: number;
   /**
    * Writes of this reply to a path another of its writes has: each needs what the one before it
    * left, so they are submitted one at a time (Module/Workflow 7, item 10).
@@ -441,6 +443,7 @@ export function startAgent(
     noProgress: 0,
     regenerations: 0,
     roundHadOk: false,
+    todoOnlyRounds: 0,
   };
   const { orient } = input.definitions;
   if (orient === undefined || input.orientPackRef !== undefined) return nextRound(state, context);
@@ -636,10 +639,13 @@ function handleModel(
       };
     }
   const acting = calls.filter((call) => !isTodo(call));
+  // Writing the plan first is fair: a round of only todos is not judged by progress, but a second
+  // one in a row is (M2Design 3.5).
+  const todoOnlyRounds = acting.length === 0 ? state.todoOnlyRounds + 1 : 0;
   const transition =
     acting.length === 0
-      ? afterTools(state, context, config, records)
-      : actOn(state, report, acting, context, config, records);
+      ? afterTools({ ...state, todoOnlyRounds }, context, config, records, todoOnlyRounds > 1)
+      : actOn({ ...state, todoOnlyRounds }, report, acting, context, config, records);
   return activity === undefined ? transition : { ...transition, activity };
 }
 

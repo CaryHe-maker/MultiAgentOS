@@ -127,6 +127,27 @@ const statusesOf = (provider: ScriptedChat): Record<string, string> => {
   return found;
 };
 
+/** One line per record that says how a round went: results, answers to calls, and wrap-ups. */
+function compactRecord(line: string): string[] {
+  try {
+    const record = JSON.parse(line) as Record<string, unknown>;
+    switch (record['type']) {
+      case 'AGENT_WRAP_UP':
+        return [`WRAP_UP ${String(record['reason'])} before round ${String(record['round'])}`];
+      case 'FEEDBACK':
+        return [`FEEDBACK ${String(record['code'])}`];
+      case 'UNIT_COMPLETED':
+        return [`UNIT ${String(record['status'])} ${String(record['reasonCode'] ?? '')}`.trim()];
+      case 'MODEL_TURN':
+        return ['MODEL_TURN'];
+      default:
+        return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
 /** Why and when AgentRuns were wrapped up, from the session log the run left behind. */
 async function wrapUpsOf(directory: string): Promise<string[]> {
   const found: string[] = [];
@@ -136,7 +157,7 @@ async function wrapUpsOf(directory: string): Promise<string[]> {
       if (entry.isDirectory()) await walk(next);
       else if (entry.name.endsWith('.jsonl'))
         for (const line of (await readFile(next, 'utf8').catch(() => '')).split('\n'))
-          if (line.includes('"AGENT_WRAP_UP"')) found.push(line.slice(0, 200));
+          found.push(...compactRecord(line));
     }
   };
   await walk(directory);

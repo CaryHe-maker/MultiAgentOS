@@ -4,6 +4,7 @@ import {
   ReplyArgsSchema,
   RepositoryListInputSchema,
   RunSubagentsArgsSchema,
+  UpdateTodosArgsSchema,
   WorkerResultSchema,
   newId,
   type ArtifactRef,
@@ -56,6 +57,7 @@ const main: AgentDefinitions = {
   ],
   onDegraded: 'PUBLISH_NOTICE',
   spawnTool: { toolName: 'run_subagents', parameters: RunSubagentsArgsSchema },
+  todoTool: { toolName: 'update_todos', parameters: UpdateTodosArgsSchema },
 };
 const explorer: AgentDefinitions = {
   ...common,
@@ -469,5 +471,47 @@ describe('the length of a result', () => {
     const { records } = runner;
     expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_TOO_LONG');
     expect(ofType(records, 'SUBAGENTS_JOINED')[0]?.results[0]?.status).toBe('DONE');
+  });
+});
+
+describe('a plan before the work', () => {
+  const plan = { todos: [{ content: 'survey', status: 'in_progress' }] };
+  const wrong = { todos: [{ content: 'survey', status: 'completed' }] };
+
+  it('is not a round without progress, even when the todos are refused', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({ toolName: 'update_todos', args: wrong }),
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [model({ toolName: 'finish_subagent', args: explorerResult })],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
+    expect(ofType(records, 'SUBAGENTS_JOINED')).toHaveLength(1);
+    const refused = ofType(records, 'FEEDBACK').find(
+      (record) => record.code === 'INVALID_ARGUMENTS',
+    );
+    expect(refused?.message).toContain('status');
+  });
+
+  it('is judged from the second in a row on', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'reply', args: { text: 'stopped' } }),
+      ],
+    });
+    await begin(kernel);
+    expect(ofType(runner.records, 'AGENT_WRAP_UP').map((record) => record.reason)).toEqual([
+      'NO_PROGRESS',
+    ]);
   });
 });

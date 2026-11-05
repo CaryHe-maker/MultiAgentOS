@@ -399,7 +399,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 **`update_todos`**（参考 OpenCode 的 `todowrite`）：长任务中让 Agent 维护结构化的待办，减少遗忘步骤。
 - 参数为 `todos: { content: string; status: 'pending' | 'in_progress' | 'done' | 'cancelled' }[]`（≤30 项，每项 ≤200 字符，`in_progress` 至多一项），每次以完整列表替换；
 - Workflow 校验后追加 `TODOS_UPDATED`（只引用模型输出中的这次调用，不复制正文），工具结果为一行计数（"待办 7 项：完成 3、进行中 1"）；参数不合法时以 FEEDBACK 退回；
-- 它是唯一可以与普通工具、结束控制工具在同一次返回中出现的控制工具（`CONTROL_MIXED` 的例外），Workflow 先处理它；不提交 Unit，不计入工具次数；只调用它的一轮计入无进展检测；
+- 它是唯一可以与普通工具、结束控制工具在同一次返回中出现的控制工具（`CONTROL_MIXED` 的例外），Workflow 先处理它；不提交 Unit，不计入工具次数；只调用它的一轮（参数不合要求的也算）不判进展，连续第二个这样的轮次才计入无进展检测——先写计划再行动是正常做法，不能因此被强制收尾；
 - 进度经 `updateActivity` 交给 Kernel，Kernel 只把它原样放进 ActivityEvent（与 `display` 相同，不据此做任何判断），活动区显示"3/7 · <进行中的一项>"；
 - 待办不跨 AgentRun 继承：main 在下一个 Turn 中从投影里的历次调用看到之前的列表。
 
@@ -1872,4 +1872,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |
 | v1.24 | 2026-11-05 | 第 7.1 节：只读名单上的命令行按 READ 处理；第 7.3 节：`budget.runTokenLimit` 与 `turnTokenLimit` 的缺省值改为 24,000,000 与 8,000,000（main 的收尾保留与一次调用余量就占 188.8 万，4,000,000 的 Turn 额度只能委派约 190 万，放不下 4 个 worker 的缺省份额）；`agent.spawn` 在 `readonly` 预设下保留（SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了）（Cary 2026-11-05 决定前两项） |
 | v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget` 只保留 `tokens`（Cary 决定）：`toolUnits` 与 `wallClockMs` 从参数中删除，一个任务的工具次数与墙钟上限只由所用 Agent 的定义决定；汇合时每个子任务的结果最多 8000 字符（见第 3.7 节） |
-| v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）（Cary 2026-11-06 决定） |
+| v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）；第 3.5 节：只调用 `update_todos` 的一轮不判进展，连续第二个才计入（Cary 2026-11-06 决定） |
