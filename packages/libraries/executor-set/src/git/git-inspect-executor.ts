@@ -98,6 +98,8 @@ export function createGitInspectExecutor(): Executor<'GIT_INSPECT'> {
         if (scope.kind !== 'REPOSITORY') return violation('SCOPE_MISSING');
         const resolved = await resolveRepositoryScope(scope);
         if (resolved === undefined) return violation('SCOPE_MISSING');
+        // A revision that starts with `-` is an option to git (`--ext-diff` turns a program back on).
+        if (input.rev?.startsWith('-') === true) return rejected('OUT_OF_SCOPE');
         if (
           input.path !== undefined &&
           (input.path.startsWith('/') ||

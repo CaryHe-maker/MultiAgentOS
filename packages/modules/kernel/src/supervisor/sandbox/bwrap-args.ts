@@ -49,6 +49,9 @@ const HIDDEN_HOST_DIRECTORIES = ['/run', '/mnt', '/media'] as const;
 /** What name resolution needs when the network is shared. */
 const RESOLVER_PATHS = ['/run/systemd/resolve', '/mnt/wsl/resolv.conf'] as const;
 
+/** The runner checks that it is there; the command's own PATH is not relied on. */
+export const PRLIMIT_PATH = '/usr/bin/prlimit';
+
 const inside = (root: string, path: string): boolean =>
   path === root || path.startsWith(`${root}/`);
 
@@ -119,7 +122,7 @@ export function buildBwrapArgs(input: BwrapInput): string[] {
   args.push('--');
   if (input.limits !== undefined)
     args.push(
-      'prlimit',
+      PRLIMIT_PATH,
       `--nproc=${String(input.limits.maxProcesses)}`,
       `--fsize=${String(input.limits.maxFileBytes)}`,
       ...(input.limits.maxDataBytes === undefined

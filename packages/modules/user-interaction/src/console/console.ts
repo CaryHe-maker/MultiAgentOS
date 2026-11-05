@@ -225,11 +225,17 @@ export class Console {
     // new run's first request for input takes it. Refused while the old run is still closing; the
     // flag stays, and the next message tries again.
     if (this.#continueOnInput && this.#sessionId !== undefined) {
-      const opened = await this.#deps.gateway.openSession(
-        { requestId: newId('req'), sessionId: this.#sessionId },
-        this.#context(),
-      );
-      if (opened.outcome === 'ACCEPTED') this.#continueOnInput = false;
+      for (let attempt = 0; attempt < 5 && this.#sessionId !== undefined; attempt += 1) {
+        const opened = await this.#deps.gateway.openSession(
+          { requestId: newId('req'), sessionId: this.#sessionId },
+          this.#context(),
+        );
+        if (opened.outcome === 'ACCEPTED') {
+          this.#continueOnInput = false;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
     }
     this.#refresh();
   }

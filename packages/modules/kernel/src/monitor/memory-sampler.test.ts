@@ -126,6 +126,12 @@ describe('the sampler', () => {
     expect(summary(run(own(0.8, 0.1, 0.8)).sent)).toEqual(['PROCESS:WARNING', 'PROCESS:WARNING']);
   });
 
+  it('keeps a level until the ratio has fallen clear of it: hovering is one event', () => {
+    const { sent, levels } = run(own(0.76, 0.74, 0.76, 0.73, 0.69, 0.76));
+    expect(levels).toEqual(['WARNING', 'WARNING', 'WARNING', 'WARNING', undefined, 'WARNING']);
+    expect(summary(sent)).toEqual(['PROCESS:WARNING', 'PROCESS:WARNING']);
+  });
+
   it('knows the live level of the process, and follows it down', () => {
     expect(run(own(0.8, 0.1, 0.95, 0.8)).levels).toEqual([
       'WARNING',

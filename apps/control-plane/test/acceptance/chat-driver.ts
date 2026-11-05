@@ -35,7 +35,10 @@ export const tool = (name: string, args: unknown = {}): ProviderTurn => ({
 export interface ChatMessage {
   readonly role: string;
   readonly content?: unknown;
-  readonly tool_calls?: readonly { readonly function: { readonly name: string } }[];
+  readonly tool_calls?: readonly {
+    readonly id?: string;
+    readonly function: { readonly name: string };
+  }[];
   readonly tool_call_id?: string;
 }
 export interface ChatRequest {

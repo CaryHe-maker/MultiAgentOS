@@ -148,7 +148,7 @@ describe('buildBwrapArgs', () => {
     expect(at(args, '--size', '1024', '--tmpfs', '/tmp')).toBeGreaterThan(-1);
     expect(args.slice(-9)).toEqual([
       '--',
-      'prlimit',
+      '/usr/bin/prlimit',
       '--nproc=300',
       '--fsize=4096',
       '--data=8192',

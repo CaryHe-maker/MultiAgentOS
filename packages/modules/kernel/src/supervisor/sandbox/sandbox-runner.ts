@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -21,7 +21,7 @@ import {
   type SandboxRunner,
   type SandboxScope,
 } from '@multiagentos/contracts';
-import { buildBwrapArgs } from './bwrap-args.js';
+import { PRLIMIT_PATH, buildBwrapArgs } from './bwrap-args.js';
 import { sanitizeGitConfig } from './git-config.js';
 
 /**
@@ -59,7 +59,20 @@ export interface TrackedSandboxRunner extends SandboxRunner {
 }
 
 const STATUS_FD = 3;
-const PRLIMIT = '/usr/bin/prlimit';
+const PRLIMIT = PRLIMIT_PATH;
+
+/** `--size` for a tmpfs came with bubblewrap 0.8.0; Ubuntu 22.04 has 0.6.1. */
+function supportsTmpfsSize(bwrapPath: string): boolean {
+  try {
+    const text = spawnSync(bwrapPath, ['--version'], { encoding: 'utf8' }).stdout;
+    const match = /(\d+)\.(\d+)\.(\d+)/u.exec(text);
+    if (match === null) return false;
+    const [major, minor] = [Number(match[1]), Number(match[2])];
+    return major > 0 || minor >= 8;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Since Linux 5.14 the process limit counts the processes of the user namespace `bwrap` makes;
@@ -95,15 +108,19 @@ function userProcesses(): number {
 function gitConfigCopy(
   repositoryRoot: string,
   directory: string,
+  emptyFile: string,
 ): { path: string; remove: () => void } | undefined {
+  const original = posix.join(repositoryRoot, '.git/config');
+  if (!existsSync(original)) return undefined;
   try {
-    const text = readFileSync(posix.join(repositoryRoot, '.git/config'), 'utf8');
+    const text = readFileSync(original, 'utf8');
     const folder = mkdtempSync(join(directory, 'gitconfig-'));
     const path = join(folder, 'config');
     writeFileSync(path, sanitizeGitConfig(text), { mode: 0o644 });
     return { path, remove: () => rmSync(folder, { recursive: true, force: true }) };
   } catch {
-    return undefined;
+    // It is there and cannot be copied: the command sees an empty file, never the original.
+    return { path: emptyFile, remove: () => undefined };
   }
 }
 
@@ -157,6 +174,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
   const live = new Set<ChildProcess>();
   const hostEnv = deps.hostEnv ?? process.env;
   const bwrap = deps.bwrapPath ?? 'bwrap';
+  const tmpSizeSupported = supportsTmpfsSize(bwrap);
 
   const run: SandboxRunner['run'] = (options) =>
     new Promise<SandboxRunResult>((resolve, reject) => {
@@ -184,9 +202,9 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       const unisolated = scope.backend === 'UNISOLATED';
       const gitConfig = unisolated
         ? undefined
-        : gitConfigCopy(scope.profile.repositoryRoot, dirname(deps.emptyFile));
+        : gitConfigCopy(scope.profile.repositoryRoot, dirname(deps.emptyFile), deps.emptyFile);
       const args = buildBwrapArgs({
-        tmpBytes: deps.tmpBytes ?? 512 * 1024 * 1024,
+        ...(tmpSizeSupported ? { tmpBytes: deps.tmpBytes ?? 512 * 1024 * 1024 } : {}),
         ...(existsSync(PRLIMIT)
           ? {
               limits: {

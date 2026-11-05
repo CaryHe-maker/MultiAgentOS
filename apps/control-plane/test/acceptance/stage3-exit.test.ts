@@ -1100,6 +1100,8 @@ onLinux('git_inspect', () => {
           tool('git_inspect', { action: 'blame' }),
           tool('git_inspect', { action: 'diff', path: '.env' }),
           tool('git_inspect', { action: 'diff', extra: '--stat' }),
+          tool('git_inspect', { action: 'show', rev: '--ext-diff' }),
+          tool('git_inspect', { action: 'diff', path: ':(top).env' }),
         ),
         reply('done'),
       );
@@ -1109,6 +1111,10 @@ onLinux('git_inspect', () => {
       expect(results.slice(0, 2).join('\n')).toContain('arguments do not match');
       expect(results[2]).toContain('outside the readable repository');
       expect(results[3]).toContain('arguments do not match');
+      // An option as a revision, and pathspec magic as a path: refused by the arguments or by the
+      // Executor, whichever sees it first, and git never runs.
+      expect(results[4]).toMatch(/arguments do not match|outside the readable repository/u);
+      expect(results[5]).toMatch(/arguments do not match|outside the readable repository/u);
       expect(await exists('/tmp/mas-x')).toBe(false);
     },
     TIMEOUT,
@@ -1315,6 +1321,15 @@ real('memory pressure', () => {
       await chat.say('carry on');
       expect(chat.printed('REPLY').join('\n')).toContain('fresh start after the interruption');
       expect(seen(provider)).toContain('ran short of memory');
+      // The history the provider got holds every call once and answers each once, as it demands.
+      const messages = provider.requests.at(-1)?.messages ?? [];
+      const calls = messages.flatMap((m) => m.tool_calls?.map((call) => call.id) ?? []).sort();
+      const answers = messages
+        .filter((m) => m.role === 'tool')
+        .map((m) => m.tool_call_id)
+        .sort();
+      expect(calls.length).toBeGreaterThan(0);
+      expect(answers).toEqual(calls);
       expect((await readFile(marker, 'utf8')).trim().split('\n')).toEqual(['started']);
     },
     TIMEOUT,

@@ -122,6 +122,23 @@ export interface MemorySampler {
 const rank = (level: MemoryLevel | undefined): number =>
   level === 'DANGER' ? 2 : level === 'WARNING' ? 1 : 0;
 
+/** A level is left only when the ratio is this far below its threshold. */
+export const HYSTERESIS = 0.05;
+
+/**
+ * The level to report: the raw one, except that a level already reported is kept until the ratio
+ * has fallen clear of it, so a ratio hovering at a threshold does not repeat the event.
+ */
+export function levelWithHysteresis(
+  raw: MemoryLevel | undefined,
+  previous: MemoryLevel | undefined,
+  ratio: number,
+  thresholds: MemoryThresholds,
+): MemoryLevel | undefined {
+  if (previous === undefined || rank(raw) >= rank(previous)) return raw;
+  return rank(levelOf(ratio + HYSTERESIS, thresholds)) >= rank(previous) ? previous : raw;
+}
+
 /**
  * A message is sent when a level rises. A level that fell is forgotten, so that rising again is
  * reported again: the process stays up after an interrupt, and the next pressure is news.
@@ -166,10 +183,27 @@ export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
       );
       return;
     }
-    const own = levelOf(processRatio(sample), deps.thresholds);
+    const ownRatio = processRatio(sample);
+    const own = levelWithHysteresis(
+      levelOf(ownRatio, deps.thresholds),
+      sent.PROCESS,
+      ownRatio,
+      deps.thresholds,
+    );
     current = own;
-    settle('PROCESS', own, processRatio(sample), sample);
-    settle('SYSTEM', systemLevelOf(sample, deps.thresholds), sample.systemRatio ?? 0, sample);
+    settle('PROCESS', own, ownRatio, sample);
+    const systemRatio = sample.systemRatio ?? 0;
+    settle(
+      'SYSTEM',
+      levelWithHysteresis(
+        systemLevelOf(sample, deps.thresholds),
+        sent.SYSTEM,
+        systemRatio,
+        deps.thresholds,
+      ),
+      systemRatio,
+      sample,
+    );
   };
   return {
     sampleOnce,
