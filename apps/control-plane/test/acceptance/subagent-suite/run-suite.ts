@@ -189,6 +189,11 @@ async function runOne(def: CaseDef, mode: Mode, run: number) {
     statuses: statusesOf(provider),
     refusals: refusalsOf(provider),
     questions: chat.questions.length,
+    replies: chat.printed('REPLY').map((text) => text.slice(0, 600)),
+    notices: chat
+      .printed('NOTICE')
+      .slice(-4)
+      .map((text) => text.slice(0, 200)),
   };
   await chat.close().catch(() => undefined);
   await rm(dataDir, { recursive: true, force: true });
