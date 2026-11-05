@@ -198,6 +198,8 @@ export class RunWork {
   readonly #startedAt: string;
   /** Memory is short (Kernel/Core 5c): no new AgentRun, and the tools of running ones stop. */
   #memoryWarning = false;
+  /** The run is being interrupted (Kernel/Core 5c): only the closing reply may still be published. */
+  #interrupting = false;
   #turns = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
@@ -443,6 +445,8 @@ export class RunWork {
     const response = this.#accept(requestId, request);
     this.#units.submitted += 1;
 
+    if (this.#interrupting && unit.executionKind !== 'MESSAGE_PUBLISH')
+      return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
     if (admission.countsAsTool && this.#memoryWarning) {
       this.#refuseUnit(request, unit, { reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' });
       return response;
@@ -800,6 +804,25 @@ export class RunWork {
   }
 
   /** The run started converging: Units on a question end with it and get no report. */
+  /**
+   * INTERRUPTING (Kernel/Core 5c): what runs is cancelled and nothing new starts, but the run
+   * stays open so that Workflow can publish the reply that says what happened and close it. The
+   * facts of the cancelled work still arrive; Workflow no longer waits for them.
+   */
+  beginInterrupt(backstopMs: number, due: () => void): void {
+    this.#interrupting = true;
+    this.#memoryWarning = true;
+    for (const settled of this.#authorization.cancelQuestions())
+      this.#host.toInteraction(settled.resolved);
+    this.#waiting.clear();
+    this.#clocks.stop();
+    this.#deps.cancelExecutions(this.#host.runEpoch());
+    // If Workflow does not close the run, the Kernel does, so that memory is not held for ever.
+    this.#deps.schedule(backstopMs, () => {
+      this.#host.enqueue(due);
+    });
+  }
+
   beginClosing(): void {
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);

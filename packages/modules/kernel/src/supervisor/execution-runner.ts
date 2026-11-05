@@ -1,4 +1,5 @@
 import type {
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   ExecutionFact,
   ExecutionRequest,
@@ -104,6 +105,22 @@ export class ExecutionRunner {
         this.#abort(entry, 'EXECUTION_CANCELLED');
       }
     }
+  }
+
+  /**
+   * Cancels one execution (Interface/KernelSupervisor 7). `runEpoch` does not move: the fact is
+   * still delivered, and says why. A request that has not started is answered at once; one that
+   * runs gets the stop of M2Design 4.7. An unknown execution, one of another epoch or one that has
+   * ended is ignored: its fact is already on the way, or was.
+   */
+  public cancelExecution(request: CancelExecutionRequest): void {
+    const entry = this.#table.find(request.executionId);
+    if (entry === undefined || entry.terminal || entry.request.runEpoch !== request.runEpoch)
+      return;
+    entry.cancelReason ??= request.reason;
+    if (entry.state === 'ACCEPTED')
+      this.#finalizeTerminated(entry, undefined, 'EXECUTION_CANCELLED');
+    else if (entry.state === 'RUNNING') this.#abort(entry, 'EXECUTION_CANCELLED');
   }
 
   /** Stops scheduling, clears timers and best-effort reports unconfirmed in-flight work. */
@@ -287,6 +304,9 @@ export class ExecutionRunner {
         outcome: 'TERMINATED',
         reasonCode: reason,
         ...extras,
+        ...(reason === 'EXECUTION_CANCELLED' && entry.cancelReason !== undefined
+          ? { cancelReason: entry.cancelReason }
+          : {}),
       }),
     );
   }

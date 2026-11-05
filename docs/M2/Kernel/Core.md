@@ -176,7 +176,7 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 | 来源 | Core 的处理 |
 |---|---|
 | `MemoryPressure(WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的 Turn（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
-| `MemoryPressure(DANGER)` | 全部运行进入 INTERRUPTING：封锁新的受理，取消在途与排队的尝试（`cancelRun` 之前先以 `INTERRUPTED(ABORTED)` 交付），Outbox 向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`；Workflow 以确定性结果收敛并 `closeRun(INTERRUPTED)`；全部运行关闭后，Core 请求组合根按正常停机流程退出（退出码 75），界面说明原因与恢复方式 |
+| `MemoryPressure(DANGER)` | 运行进入 INTERRUPTING：Outbox 先向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`，随后取消待答复的询问、在途与排队的尝试，拒绝新的 AgentRun 与除 `message-publish` 之外的 Unit（`MEMORY_PRESSURE`）；运行保持打开，让 Workflow 发布一条不经模型的回复并 `closeRun(INTERRUPTED)`。Workflow 在 `interruptBackstopMs`（缺省 `cancelGraceMs + convergenceMarginMs + 10 秒`）内没有关闭时，Kernel 自己关闭。运行关闭后界面以退出码 75 退出，说明原因与恢复方式；没有运行或没有打开的 Session 时，Core 经 `onMemoryExit` 请组合根让界面退出 |
 
 - 同一级别不重复处理；级别只升不降地触发（恢复时不撤销已发生的收尾）。
 - 任一运行无法确认停止时按第 5b 节的停机处理。

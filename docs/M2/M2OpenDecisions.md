@@ -181,3 +181,10 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 
 node 在 `$HOME` 下的缺口（上一节）已按 Cary 的决定（2026-11-05）改为自动挂载 `PATH` 中位于 `$HOME` 之下的目录（M2Design v1.18，`sandbox.mountPath`，缺省开启）。评测运行器里的临时白名单已删除；C1–C4 在自动挂载下再跑 3 次，12/12，$0.018（`~/mas-eval-automount`）。端到端用例 3 个：命令找得到 node 与 npm 及其 `../lib`；`$HOME` 的其余内容仍不可见；关闭开关后工具目录不在。纯函数 `pathToolchainMounts` 有 8 个单元用例（`$HOME` 与其上级、直接位于 `$HOME` 之下的前缀、数据目录与仓库、嵌套目录、相对与空项）。
 已知局限：`~/.local/bin` 这类目录里指向别处的符号链接，目标若在未挂载的位置仍会找不到；只读挂回意味着命令能读到这些目录里的所有文件，用户的 `PATH` 里不应放含机密的目录。
+
+阶段 3 的小项（2026-11-05）全部补齐：
+- `cancelExecution`：契约、Supervisor（运行中与未开始的执行、重复、未知与其他 epoch 的请求、仍会升级为 `STOP_UNCONFIRMED`）、Fabric 端口、`createFakeSupervisor`（6 项）与 Fabric 上的 2 项用例；事实带 `cancelReason`。
+- 探测结果：写入 `SESSION_STARTED.sandbox` 与审计 `SANDBOX_PROBED`；模型在运行时上下文看到 `Sandbox: …`；不可用且缺省拒绝时，`run_command` 不在任何请求的工具列表中，`ask-unisolated` 时保留。
+- 危险级内存中断：改为设计中的 INTERRUPTING。运行保持打开，只放行关闭用的回复，Workflow 发布一条不经模型的 `DEGRADED_REPLY`（`MEMORY_PRESSURE`）后以 `closeRun(INTERRUPTED)` 结束；超时由 Kernel 兜底关闭。Workflow 与 Core 文档已与实现一致。
+- 没有运行、或会话间的危险级内存：界面经 `onMemoryExit` 以退出码 75 退出。
+用例查出一个问题并已修：运行时上下文里 `sandbox` 字段在日志中限 64 个字符，第一版文字超长，使重新打开的 Session 被判为"记录已损坏"（8 个既有用例因此失败）；现在文字缩短，并在注释里写明限制。

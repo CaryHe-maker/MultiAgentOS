@@ -148,6 +148,7 @@ const EXPECTED = {
     'CommandExecutorInput',
     'OutputReadExecutorInput',
     'AssembleExecutorInput',
+    'CancelExecutionRequest',
     'CancelRunExecutionsRequest',
     'ExecutionFact',
     'ExecutionLimits',

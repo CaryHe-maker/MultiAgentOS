@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   Envelope,
   ExecutionRequest,
@@ -162,6 +163,10 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     });
     serve<CancelRunExecutionsRequest>(SCHEMA_IDS.cancelRunExecutions, (envelope) => {
       runner.cancelRun(envelope.payload);
+      return Promise.resolve();
+    });
+    serve<CancelExecutionRequest>(SCHEMA_IDS.cancelExecution, (envelope) => {
+      runner.cancelExecution(envelope.payload);
       return Promise.resolve();
     });
     serve<SupervisorShutdownRequest>(SCHEMA_IDS.supervisorShutdown, () => {

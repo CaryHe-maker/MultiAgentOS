@@ -22,3 +22,4 @@ export {
   createFakeSessionWorkflow,
   type FakeSessionWorkflow,
 } from './fakes/fake-session-workflow.js';
+export * from './fakes/fake-supervisor.js';

@@ -114,6 +114,8 @@ export interface SessionKernelDeps {
   readonly commands?: {
     readonly analyze: CommandSupport['analyze'];
     readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+    /** What the probe found, for the audit of every Session. */
+    readonly probe?: { readonly available: boolean; readonly reason?: string };
   };
   /** Local diagnostics of what does not stop the system; the composition root gives stderr. */
   readonly diagnostic?: (line: string) => void;
@@ -420,6 +422,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       const audit = (entry: object): void => {
         auditLog.append({ at: now().toISOString(), ...entry }).catch(fault);
       };
+      // What the probe found is on the audit of every Session (M2Design 6.2).
+      if (deps.commands?.probe !== undefined)
+        audit({ type: 'SANDBOX_PROBED', sessionId, ...deps.commands.probe });
       // Gateway knows the Session before its first event can make anyone use it.
       await sendSession(sessionId, 'OPEN');
       return new SessionActor({
@@ -454,6 +459,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
           session.onClosed();
         },
         onFatal: fault,
+        interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
+        onIdleMemoryExit: () => deps.onMemoryExit?.(),
         onInterrupted: () => {
           deps.diagnostic?.('memory pressure: the run was interrupted\n');
         },

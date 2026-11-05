@@ -105,7 +105,7 @@ interface SandboxRunner {
 **停止的升级**（M2Design 第 4.7 节）：`signal` 触发后，对 `--json-status-fd` 报告的 `child-pid` 的进程组发 SIGTERM；`cancelGraceMs` 后对外层进程组发 SIGKILL；再等 `killGraceMs`。仍无法确认已停止时，`run` 以特殊拒绝 `STOP_UNCONFIRMED` 结束，
 Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportSystemFault` 停机。
 
-**可用性探测**：Session 开始时以真实的 profile 运行一次 `/bin/true`（仓库根目录为工作目录）。结果 `SandboxProbe { available: boolean; backend; reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED'; hint?: string }` 写入 `SESSION_STARTED` 与审计。
+**可用性探测**：Session 开始时以真实的 profile 运行一次 `/bin/true`（仓库根目录为工作目录）。结果 `SandboxProbe { available: boolean; backend; reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED'; hint?: string }` 写入 `SESSION_STARTED` 的 `sandbox`（`state`: `ISOLATED`、`UNISOLATED`、`UNAVAILABLE`，不可用时带 `reason`）与每个 Session 的审计（`SANDBOX_PROBED`）；模型在运行时上下文中看到同一状态。不可用且 `sandbox.unavailable = deny` 时，命令工具不提供给任何 Agent。
 
 ## 7. cancelExecution
 
@@ -113,7 +113,7 @@ Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportS
 interface CancelExecutionRequest { executionId: ExecutionId; runEpoch: number; reason: 'PAUSED' | 'ABORTED' }
 ```
 
-`SupervisorPort.cancelExecution`：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（阶段 5 用 `PAUSED`）。`cancelRun` 保留，用于收敛。
+`SupervisorPort.cancelExecution`（阶段 3 已实现；未知、已结束或 `runEpoch` 不符的执行被忽略，重复请求保留第一个原因）：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（阶段 5 用 `PAUSED`）。`cancelRun` 保留，用于收敛。
 
 ## 8. 内存压力与中断
 

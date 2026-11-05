@@ -245,7 +245,7 @@ reply(text) 合法 → 追加 MODEL_TURN
 
 Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInterrupted(reason)` 后，Workflow 不再调用模型，也不再提交任何 Unit：
 
-1. 在途与排队的 Unit 已由 Kernel 以 `INTERRUPTED(ABORTED)` 交付；Workflow 把它们按 `UNIT_COMPLETED(INTERRUPTED)` 记入日志，工具结果的文字为 `The call of <工具名> was interrupted.`；
+1. 在途与排队的 Unit 已由 Kernel 取消。它们的结果之后到达时，Workflow 不再等待：关闭用的 Unit 取代了全部待处理的请求，迟到的报告被忽略；
 2. 每个 ACTIVE 的 AgentRun 以确定性结果结束（`endAgentRun`，没有 final-call）：main 发布 `DEGRADED_REPLY`（`reason = INTERRUPTED(<原因>)`，不经过额度检查），`analyze` 发布降级报告；
 3. 追加 `RUN_INTERRUPTED(reason)`、`NODE_ENDED(FAILED)`，然后 `closeRun(INTERRUPTED)`；Turn-chat 不再请求下一个开放输入；
 4. 重新打开该 Session 时按 Session 的恢复规则：对话照常延续，`RUN_INTERRUPTED` 以说明性记录出现在投影中，让 main 知道上一轮因何停止。

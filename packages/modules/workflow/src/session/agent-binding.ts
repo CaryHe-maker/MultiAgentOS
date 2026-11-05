@@ -25,9 +25,15 @@ export function agentBindingOf(
   set: PinnedDefinitionSet,
   registry: Pick<ProtocolRegistry, 'resolveContract'>,
   preset: 'standard' | 'readonly' = 'standard',
+  /** False when commands cannot run here: the command tools are not offered at all. */
+  options: { readonly commands?: boolean } = {},
 ): AgentBinding {
   const { agent, model, units, tools } = set;
-  const requestedCapabilities = capabilitiesUnderPreset(agent.capabilities, preset);
+  const requestedCapabilities = capabilitiesUnderPreset(agent.capabilities, preset).filter(
+    (capability) =>
+      options.commands !== false ||
+      (capability !== 'command.exec' && capability !== 'command.network'),
+  );
   const offered = units.filter((unit) =>
     unit.protectedCapabilities.every((c) => requestedCapabilities.includes(c)),
   );

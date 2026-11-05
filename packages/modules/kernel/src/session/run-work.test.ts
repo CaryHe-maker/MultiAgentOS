@@ -923,18 +923,67 @@ describe('memory pressure', () => {
     });
   });
 
-  it('DANGER tells Workflow, cancels the work and closes the run as INTERRUPTED', async () => {
-    const interrupted = vi.fn();
-    const kernel = await setup(testPinnedAgent(), { interrupted });
-    await kernel.register();
-    // A question is open and nothing runs, so the run can drain at once.
-    await kernel.submit();
-    await kernel.settled();
-    await kernel.actor.memoryPressure('DANGER');
-    await kernel.settled();
-    const types = kernel.toWorkflow.map((entry) => entry.event.type);
-    expect(types).toContain('RunInterrupted');
-    expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
-    expect(types.indexOf('RunInterrupted')).toBeLessThan(types.indexOf('RunClosed'));
+  describe('DANGER', () => {
+    const interrupt = async (interrupted = vi.fn()) => {
+      const kernel = await setup(
+        testPinnedAgent({ units: [fileRead, publish], maxToolUnits: 10 }),
+        { interrupted },
+      );
+      await kernel.register();
+      // A question is open and nothing runs, so the run can drain once it is told to close.
+      await kernel.submit();
+      await kernel.settled();
+      await kernel.actor.memoryPressure('DANGER');
+      await kernel.settled();
+      return { kernel, interrupted };
+    };
+    const types = (kernel: Awaited<ReturnType<typeof setup>>) =>
+      kernel.toWorkflow.map((entry) => entry.event.type);
+
+    it('tells Workflow first and keeps the run open for the one reply that says why', async () => {
+      const { kernel } = await interrupt();
+      expect(types(kernel)).toContain('RunInterrupted');
+      expect(types(kernel)).not.toContain('RunClosed');
+      expect(kernel.summaries).toEqual([]);
+      expect(kernel.execution.cancels).toBeGreaterThan(0);
+    });
+
+    it('lets nothing but the closing reply in, whatever the AgentRun asks', async () => {
+      const { kernel } = await interrupt();
+      const before = kernel.execution.started.length;
+      expect(await kernel.submit()).toMatchObject({
+        outcome: 'REJECTED',
+        reasonCode: 'MEMORY_PRESSURE',
+      });
+      // The reply that says why is the one thing that still goes in.
+      await kernel.submit(publish, replyInput);
+      await kernel.settled();
+      expect(kernel.execution.started.length).toBe(before + 1);
+      expect(await kernel.register(newId('agr'))).toMatchObject({ reasonCode: 'MEMORY_PRESSURE' });
+    });
+
+    it('closes as INTERRUPTED when Workflow says so, and only then asks the system to leave', async () => {
+      const { kernel, interrupted } = await interrupt();
+      expect(interrupted).not.toHaveBeenCalled();
+      await kernel.actor.call(() =>
+        kernel.actor.closeRun(kernel.run(), { closeReason: 'INTERRUPTED' }),
+      );
+      await kernel.settled();
+      expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
+      expect(types(kernel).indexOf('RunInterrupted')).toBeLessThan(
+        types(kernel).indexOf('RunClosed'),
+      );
+      expect(interrupted).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the run itself when Workflow does not, after the backstop', async () => {
+      const { kernel, interrupted } = await interrupt();
+      const backstop = kernel.timers.find((timer) => timer.delayMs === 30_000);
+      expect(backstop).toBeDefined();
+      backstop?.due();
+      await kernel.settled();
+      expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
+      expect(interrupted).toHaveBeenCalledTimes(1);
+    });
   });
 });

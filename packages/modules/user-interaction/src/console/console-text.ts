@@ -67,6 +67,7 @@ const DEGRADED: Readonly<Record<string, string>> = {
   PROVIDER_UNREACHABLE: '连不上模型服务，没能完成回复。',
   PROVIDER_ERROR: '模型服务出错，没能完成回复。',
   UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
+  MEMORY_PRESSURE: '系统内存紧张，运行被中断，没能完成回复。',
 };
 
 /** The reply above is complete as far as it goes, but the Turn stopped before the task did. */

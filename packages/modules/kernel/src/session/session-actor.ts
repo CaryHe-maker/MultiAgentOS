@@ -95,6 +95,10 @@ export interface SessionActorDeps {
   readonly onFatal: (error: unknown) => void;
   /** A run ended because of memory pressure (Kernel/Core 5c): the system now exits in control. */
   readonly onInterrupted?: () => void;
+  /** Memory ran short with no run to carry it: the system exits in control. */
+  readonly onIdleMemoryExit?: () => void;
+  /** How long Workflow has to close an interrupted run before the Kernel does. */
+  readonly interruptBackstopMs?: number;
   /** What Gateway may let in; pushed on every change of a run. */
   readonly admission: (
     workflowRunId: string,
@@ -169,10 +173,10 @@ export class SessionActor {
    * the run closes as INTERRUPTED.
    */
   memoryPressure(level: MemoryLevel): Promise<void> {
-    return this.call(async () => {
+    return this.call(() => {
       const run = this.#run;
       if (run === undefined || run.control.phase === 'CLOSED') {
-        if (level === 'DANGER') this.#deps.onInterrupted?.();
+        if (level === 'DANGER') this.#deps.onIdleMemoryExit?.();
         return;
       }
       if (level === 'WARNING') {
@@ -183,7 +187,10 @@ export class SessionActor {
         type: 'RunInterrupted',
         reason: 'MEMORY_PRESSURE',
       });
-      await this.closeRun(run, { closeReason: 'INTERRUPTED' });
+      // The run stays open for the one reply that says what happened; Workflow closes it.
+      run.work.beginInterrupt(this.#deps.interruptBackstopMs ?? 30_000, () => {
+        void this.closeRun(run, { closeReason: 'INTERRUPTED' });
+      });
     }, 'control');
   }
 

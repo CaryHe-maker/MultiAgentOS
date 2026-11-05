@@ -158,6 +158,15 @@ export class Console {
     return this.#exitCode;
   }
 
+  /**
+   * Leaves with this code, as when the user asks to: the system stops in the normal way. Used
+   * when the system must end for a reason outside the conversation and no run can say so.
+   */
+  exitWith(code: number): void {
+    this.#exitCode = code;
+    void this.shutdown().catch(() => undefined);
+  }
+
   /** Resolves when the user asked to leave; the composition root then shuts down. */
   exited(): Promise<void> {
     return new Promise((resolve) => {

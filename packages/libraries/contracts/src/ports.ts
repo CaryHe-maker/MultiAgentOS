@@ -62,6 +62,7 @@ import type {
   SearchExecutorInput,
 } from './kernel-execution/execution-request.js';
 import type {
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   SupervisorShutdownRequest,
 } from './kernel-execution/supervisor-requests.js';
@@ -92,6 +93,8 @@ export interface SupervisorPort {
   /** Returns once the request is accepted, not when the execution ends. */
   execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
+  /** Cancels one execution; its fact says why (PAUSED or ABORTED). */
+  cancelExecution(request: CancelExecutionRequest): Promise<void>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 

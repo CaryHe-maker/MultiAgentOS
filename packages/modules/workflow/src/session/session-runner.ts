@@ -87,6 +87,8 @@ export interface SessionRunnerDeps {
   readonly definitionVersions: readonly string[];
   readonly config: AgentConfig;
   readonly runtime: () => { readonly sandbox: string; readonly currentDate: string };
+  /** What the probe found, for `SESSION_STARTED`. */
+  readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
   readonly now?: () => Date;
   readonly newAgentRunId?: () => string;
 }
@@ -139,6 +141,8 @@ export class SessionRunner {
   #rounds: AgentRounds[] = [];
   #runResult: ArtifactRef | undefined;
   #overBudget = false;
+  /** The Kernel interrupted this run: the reply that says so is the last thing it publishes. */
+  #interrupted = false;
   #runFailure: string | undefined;
 
   public constructor(deps: SessionRunnerDeps) {
@@ -173,6 +177,7 @@ export class SessionRunner {
           repositoryRoot: event.repositoryRoot,
           definitionsDigest: this.#deps.definitionsDigest,
           definitionVersions: this.#deps.definitionVersions,
+          ...(this.#deps.sandbox === undefined ? {} : { sandbox: this.#deps.sandbox }),
         });
         this.#adopt(sessionId, event.repositoryRoot, [started]);
         await reply({ command: 'CREATE', outcome: 'READY' });
@@ -227,6 +232,7 @@ export class SessionRunner {
     this.#rounds = [];
     this.#runResult = undefined;
     this.#overBudget = false;
+    this.#interrupted = false;
     this.#runFailure = undefined;
   }
 
@@ -309,6 +315,7 @@ export class SessionRunner {
       }
       case 'RunInterrupted':
         await this.#append([{ type: 'RUN_INTERRUPTED', workflowRunId, reason: event.reason }]);
+        await this.#onInterrupted(workflowRunId, event.reason);
         break;
       case 'RunClosed':
         await this.#append([
@@ -817,7 +824,7 @@ export class SessionRunner {
 
   async #close(
     workflowRunId: string,
-    outcome: 'COMPLETED' | 'BUDGET',
+    outcome: 'COMPLETED' | 'BUDGET' | 'INTERRUPTED',
     resultRef?: ArtifactRef,
   ): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
@@ -904,6 +911,18 @@ export class SessionRunner {
     }
   }
 
+  /**
+   * The Kernel interrupts the run (Kernel/Core 5c): no model is called again. The AgentRun ends
+   * with the one reply that says why, which needs no model, and the run closes as INTERRUPTED.
+   * Whatever was in flight is no longer waited for: the reply replaces the pending requests.
+   */
+  async #onInterrupted(workflowRunId: string, reason: string): Promise<void> {
+    this.#interrupted = true;
+    const active = this.#agent;
+    if (active === undefined) return this.#close(workflowRunId, 'INTERRUPTED');
+    return this.#onDegraded(workflowRunId, active, reason);
+  }
+
   async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
     if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
     if (active.state.definitions.onDegraded === 'PUBLISH_NOTICE') {
@@ -945,11 +964,18 @@ export class SessionRunner {
           ending.outputRef,
         );
         if (plan.runOutput) this.#runResult = ending.outputRef;
+        if (this.#interrupted) return this.#close(workflowRunId, 'INTERRUPTED');
         if (this.#mode === 'CHAT' && ending.budget.run !== 'NORMAL')
           return this.#close(workflowRunId, 'BUDGET');
         return this.#advance(workflowRunId);
       }
       case 'FAILED':
+        if (this.#interrupted) {
+          // The reply could not be published: the run still ends, and the log says why.
+          await this.#endAgentRun(workflowRunId, active, ending.kind);
+          await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
+          return this.#close(workflowRunId, 'INTERRUPTED');
+        }
         // In a chat the run goes on with the next prompt, so the user must hear of it here.
         if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
         await this.#endAgentRun(workflowRunId, active, ending.kind);

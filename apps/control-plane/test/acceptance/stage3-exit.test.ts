@@ -186,6 +186,9 @@ real('C: running a command, in the sandbox', () => {
       const provider = scriptedChat(run('echo out; echo err >&2; exit 3'), reply('done'));
       const chat = await chatOn(place, provider);
       await chat.say('run it');
+      // The probe found the sandbox, and the model is told what it can rely on.
+      expect(seen(provider)).toContain('Sandbox: bwrap (isolated');
+      expect(await logOf(place.dataDir)).toContain('"sandbox":{"state":"ISOLATED"}');
       expect(chat.questions).toHaveLength(1);
       expect(chat.questions[0]).toContain('echo out; echo err >&2; exit 3');
       expect(chat.questions[0]).toContain('1 / y');
@@ -865,16 +868,25 @@ real('A: the authorization of commands', () => {
 
 onLinux('the sandbox is not there', () => {
   it(
-    'refuses every command by default, and says commands cannot run here',
+    'offers no command tool by default, tells the model so, and records why in the log',
     async () => {
       const place = await roots();
+      // The model calls the tool anyway, as one that was told about it in training might.
       const provider = scriptedChat(run('echo hi'), reply('d'));
       const chat = await chatOn(place, provider, {
         sandboxProbe: { available: false, reason: 'USERNS_DENIED', hint: 'fix apparmor' },
       });
       await chat.say('go');
+      const names = (provider.requests[0]?.tools ?? []).map((entry) => entry.function.name);
+      expect(names).toContain('read_file');
+      expect(names).not.toContain('run_command');
       expect(chat.questions).toEqual([]);
-      expect(lastResult(provider)).toContain('sandbox is unavailable');
+      expect(lastResult(provider)).toContain('no such tool');
+      expect(seen(provider)).toContain('Sandbox: none (commands cannot be run)');
+      expect(await logOf(place.dataDir)).toContain(
+        '"sandbox":{"state":"UNAVAILABLE","reason":"USERNS_DENIED"}',
+      );
+      expect(await filesHolding(place.dataDir, 'SANDBOX_PROBED')).not.toEqual([]);
     },
     TIMEOUT,
   );
@@ -901,6 +913,12 @@ onLinux('the sandbox is not there', () => {
         expect(question).toContain('未隔离');
         expect(question).not.toContain('2 / c');
       }
+      const names = (provider.requests[0]?.tools ?? []).map((entry) => entry.function.name);
+      expect(names).toContain('run_command');
+      expect(seen(provider)).toContain('Sandbox: none (not isolated');
+      expect(await logOf(place.dataDir)).toContain(
+        '"sandbox":{"state":"UNISOLATED","reason":"NO_BWRAP"}',
+      );
       const results = toolResults(provider.requests.at(-1));
       expect(results[0]).toContain('[not isolated]');
       // Without a sandbox the mask is not there either; that is what the question warned of.
@@ -1075,6 +1093,39 @@ real('memory pressure', () => {
   );
 
   it(
+    'DANGER between two messages leaves too, with the conversation whole',
+    async () => {
+      const place = await roots();
+      const gauge = memory();
+      const provider = scriptedChat(reply('first answer'));
+      const chat = await chatOn(place, provider, { memorySample: gauge.sample, configure: fast });
+      await chat.say('hello');
+      gauge.state.ratio = 0.95;
+      const code = await Promise.race([chat.done, nap(20_000).then(() => 'timed out' as const)]);
+      expect(code).toBe(75);
+      expect(await logOf(place.dataDir)).toContain('"closeReason":"INTERRUPTED"');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'DANGER with no conversation open leaves too',
+    async () => {
+      const place = await roots();
+      const gauge = memory();
+      const chat = await chatOn(place, scriptedChat(), {
+        memorySample: gauge.sample,
+        configure: fast,
+      });
+      await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
+      gauge.state.ratio = 0.95;
+      const code = await Promise.race([chat.done, nap(20_000).then(() => 'timed out' as const)]);
+      expect(code).toBe(75);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'DANGER interrupts the run: the command is stopped, the log is whole, the exit code is 75',
     async () => {
       const place = await roots();
@@ -1107,6 +1158,8 @@ real('memory pressure', () => {
           JSON.parse(line);
         }).not.toThrow();
       expect(chat.printed('NOTICE').join('\n')).toContain('内存紧张');
+      // The user is told in the conversation too, by a reply no model wrote.
+      expect(chat.printed('ERROR').join('\n')).toContain('系统内存紧张，运行被中断');
       expect(provider.requests).toHaveLength(1);
 
       // The next start resumes the conversation, tells the model, and does not run the job again.

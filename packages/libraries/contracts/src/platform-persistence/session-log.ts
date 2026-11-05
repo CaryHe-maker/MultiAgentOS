@@ -79,6 +79,13 @@ export const SessionLogRecordSchema = Type.Union(
       repositoryRoot: text(4096),
       definitionsDigest: Sha256Schema,
       definitionVersions: Type.Array(text(160)),
+      /** What the probe found (M2Design 6.2); absent in a log from before commands. */
+      sandbox: Type.Optional(
+        closed({
+          state: Type.Enum(['ISOLATED', 'UNISOLATED', 'UNAVAILABLE']),
+          reason: Type.Optional(Type.Enum(['NO_BWRAP', 'USERNS_DENIED', 'PROFILE_FAILED'])),
+        }),
+      ),
     }),
     record('WORKFLOW_RUN_STARTED', inRun, {
       mode: Type.Enum(['CHAT', 'ORCHESTRATION']),

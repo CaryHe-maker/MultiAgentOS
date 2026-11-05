@@ -16549,6 +16549,32 @@
       "additionalProperties": false,
       "$id": "kernel.execution.AssembleExecutorInput.v1"
     },
+    "kernel.execution.CancelExecutionRequest.v1": {
+      "type": "object",
+      "required": [
+        "executionId",
+        "runEpoch",
+        "reason"
+      ],
+      "properties": {
+        "executionId": {
+          "type": "string",
+          "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "runEpoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "enum": [
+            "PAUSED",
+            "ABORTED"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.CancelExecutionRequest.v1"
+    },
     "kernel.execution.CancelRunExecutionsRequest.v1": {
       "type": "object",
       "required": [
@@ -18564,6 +18590,12 @@
                 "UNIT_TIMEOUT",
                 "EXECUTION_CANCELLED"
               ]
+            },
+            "cancelReason": {
+              "enum": [
+                "PAUSED",
+                "ABORTED"
+              ]
             }
           },
           "additionalProperties": false
@@ -19001,6 +19033,12 @@
               "enum": [
                 "UNIT_TIMEOUT",
                 "EXECUTION_CANCELLED"
+              ]
+            },
+            "cancelReason": {
+              "enum": [
+                "PAUSED",
+                "ABORTED"
               ]
             }
           },
@@ -37169,6 +37207,29 @@
                 "minLength": 1,
                 "maxLength": 160
               }
+            },
+            "sandbox": {
+              "type": "object",
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "ISOLATED",
+                    "UNISOLATED",
+                    "UNAVAILABLE"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "NO_BWRAP",
+                    "USERNS_DENIED",
+                    "PROFILE_FAILED"
+                  ]
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

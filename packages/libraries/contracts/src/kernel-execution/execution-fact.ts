@@ -81,6 +81,8 @@ const notCompleted = <K extends TSchema, P extends TProperties>(executionKind: K
     startedAt: Type.Optional(TimestampSchema),
     outcome: Type.Literal('TERMINATED'),
     reasonCode: reasonCodeOf(TERMINATION_CODES),
+    /** Present when `cancelExecution` ended it: why (Interface/KernelSupervisor 7). */
+    cancelReason: Type.Optional(Type.Enum(['PAUSED', 'ABORTED'])),
   });
   const unconfirmed = closed({
     ...common,
