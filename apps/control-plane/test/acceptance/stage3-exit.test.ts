@@ -8,7 +8,7 @@
  * 3.1); the others run wherever the product runs.
  */
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   StopUnconfirmedError,
@@ -457,6 +457,69 @@ real('C5: what the sandbox keeps a command from', () => {
 
 // ------------------------------------------------------------------------------------------------
 
+/** A node (or any tool) installed under the home directory is what this group is about. */
+const toolchainDirectory = dirname(process.execPath);
+const underHome = toolchainDirectory.startsWith(`${homedir()}/`);
+const homeCases = bwrapWorks && underHome ? describe : describe.skip;
+
+homeCases('the tools on PATH that live under the home directory (M2Design 6.1, v1.18)', () => {
+  it(
+    'a command finds them, with the libraries they load through ../lib',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run('node --version; npm --version; node -e "console.log(2 + 2)"'),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('which node');
+      const result = lastResult(provider);
+      expect(result).toContain('exit code 0');
+      expect(result).toContain(process.version);
+      expect(result).toMatch(/\n\d+\.\d+\.\d+\n4\n/u);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'the rest of the home directory stays hidden while they are there',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run(
+          `for f in ~/.bashrc ~/.profile ~/.ssh ~/.gitconfig ~/.bash_history ~/.aws; do test -e "$f" && echo "visible $f"; done; echo checked`,
+        ),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('look at home');
+      const result = lastResult(provider);
+      expect(result).toContain('checked');
+      expect(result).not.toContain('visible');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'the switch turns it off: without it the tool directory is not there',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run(`ls ${toolchainDirectory} 2>&1 | head -2; echo end`),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider, {
+        configure: kernel({
+          sandbox: { ...kernelDefaults().sandbox, mountPath: false },
+        }),
+      });
+      await chat.say('is it there');
+      expect(lastResult(provider)).toMatch(/No such file or directory/u);
+    },
+    TIMEOUT,
+  );
+});
+
 real('H6: a command that will not stop', () => {
   it(
     'is killed after its grace period, and nothing of it is left running',
@@ -866,6 +929,7 @@ const kernelDefaults = () => ({
   sandbox: {
     unavailable: 'deny' as const,
     homeReadOnly: [] as string[],
+    mountPath: true,
     homeMaskedFiles: [] as string[],
   },
 });

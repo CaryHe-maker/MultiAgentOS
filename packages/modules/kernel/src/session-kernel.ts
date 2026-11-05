@@ -1,3 +1,4 @@
+import { pathToolchainMounts } from '@multiagentos/contracts';
 import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
   MEDIA_TYPES,
@@ -107,6 +108,8 @@ export interface SessionKernelDeps {
   readonly memorySample?: () => MemorySample;
   /** The system data directory, which no command may see. */
   readonly dataDir?: string;
+  /** The PATH to mount toolchains from; defaults to this process's. */
+  readonly hostPath?: string;
   /** Commands (Kernel/Core 5b): the analysis of a line, and what the probe found. */
   readonly commands?: {
     readonly analyze: CommandSupport['analyze'];
@@ -218,6 +221,21 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const inputIsValid = (unit: UnitDefinition, input: unknown): boolean =>
     validate(deps.registry.resolveContract(unit.inputContract), input).ok;
 
+  /**
+   * What comes back into the sandbox from $HOME: the configured toolchains, and the directories
+   * the user's PATH names, so that a command finds the tools the user's shell finds.
+   */
+  const toolchains = (): string[] => [
+    ...new Set([
+      ...config.sandbox.homeReadOnly.map(expandHome),
+      ...(config.sandbox.mountPath
+        ? pathToolchainMounts(deps.hostPath ?? process.env['PATH'], homedir(), [
+            repositoryRoot,
+            ...(deps.dataDir === undefined ? [] : [deps.dataDir]),
+          ])
+        : []),
+    ]),
+  ];
   const expandHome = (path: string): string =>
     path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path;
   /** What looking at the repository for a command uses: the same rules as the file tools. */
@@ -296,7 +314,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               sandbox: deps.commands.sandbox,
               unavailablePolicy: config.sandbox.unavailable,
               ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
-              homeReadOnly: config.sandbox.homeReadOnly.map(expandHome),
+              homeReadOnly: toolchains(),
               homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),
               scan: () => scanRepository(scanOptions),
             },

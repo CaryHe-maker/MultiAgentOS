@@ -133,6 +133,7 @@ Core 在全部运行收敛后请求组合根按正常停机流程退出，退出
 |---|---|
 | `sandbox.unavailable` | `deny`（另一个值 `ask-unisolated`） |
 | `sandbox.homeReadOnly` | `~/.nvm`、`~/.volta`、`~/.cargo`、`~/.rustup`、`~/.local/bin`、`~/.npm`（只挂回存在的） |
+| `sandbox.mountPath` | `true`：`PATH` 中位于 `$HOME` 之下的目录也以只读挂回（规则见 M2Design 第 6.1 节）；纯函数 `pathToolchainMounts` |
 | `sandbox.homeMaskedFiles` | `~/.cargo/credentials.toml`、`~/.npmrc`（可追加、不可删除） |
 | `sandboxMaskedPatterns` | 空（可追加；与默认排除规则中的秘密类规则一起生效） |
 | `command.deniedCommands` | 空 |

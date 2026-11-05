@@ -3,6 +3,7 @@ import {
   approvalDigestOf,
   buildSandboxEnvironment,
   countSandboxDenials,
+  pathToolchainMounts,
   SandboxScopeSchema,
   type ApprovedCommand,
 } from './sandbox.js';
@@ -93,5 +94,62 @@ describe('SandboxScope', () => {
     expect(
       validate(SandboxScopeSchema, { ...rest, profile: { ...profile, writableRoots: [] } }).ok,
     ).toBe(false);
+  });
+});
+
+describe('pathToolchainMounts', () => {
+  const home = '/home/me';
+
+  it('takes the PATH directories below the home directory and no others', () => {
+    expect(
+      pathToolchainMounts('/usr/local/bin:/usr/bin:/home/me/tools:relative/bin::/opt/x', home),
+    ).toEqual(['/home/me/tools']);
+  });
+
+  it('takes the install prefix of a bin directory, so ../lib is there', () => {
+    expect(pathToolchainMounts('/home/me/.local/opt/node-v24/bin', home)).toEqual([
+      '/home/me/.local/opt/node-v24',
+    ]);
+  });
+
+  it('never takes a whole prefix directly below the home directory', () => {
+    expect(
+      pathToolchainMounts('/home/me/.local/bin:/home/me/.cargo/bin:/home/me/bin', home),
+    ).toEqual(['/home/me/.cargo/bin', '/home/me/.local/bin', '/home/me/bin']);
+  });
+
+  it('never takes the home directory or what is above it', () => {
+    expect(pathToolchainMounts('/home/me:/home:/home/me/', home)).toEqual([]);
+  });
+
+  it('leaves out what holds or is something that must stay hidden', () => {
+    const hidden = ['/home/me/.multiagentos', '/home/me/work/repo'];
+    expect(
+      pathToolchainMounts(
+        '/home/me/.multiagentos:/home/me/.multiagentos/bin:/home/me/work/repo/node_modules/.bin:/home/me/work/bin',
+        home,
+        hidden,
+      ),
+    ).toEqual([
+      '/home/me/.multiagentos/bin',
+      '/home/me/work/bin',
+      '/home/me/work/repo/node_modules/.bin',
+    ]);
+  });
+
+  it('does not take a prefix that holds the data directory', () => {
+    expect(pathToolchainMounts('/home/me/a/b/bin', home, ['/home/me/a/b/data'])).toEqual([
+      '/home/me/a/b/bin',
+    ]);
+  });
+
+  it('drops a directory that lies inside another one it takes', () => {
+    expect(pathToolchainMounts('/home/me/a/b/bin:/home/me/a/b/lib/x', home)).toEqual([
+      '/home/me/a/b',
+    ]);
+  });
+
+  it('copes with an unset PATH', () => {
+    expect(pathToolchainMounts(undefined, home)).toEqual([]);
   });
 });

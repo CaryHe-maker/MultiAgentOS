@@ -49,7 +49,7 @@
 
 | 风险 | 防护（由内到外） | 位置 |
 |---|---|---|
-| 命令读取凭据（`$HOME` 下的令牌、仓库里的 `.env`、私钥） | `$HOME` 整体遮蔽，仅白名单工具链只读挂回，其中凭据文件再以空文件遮蔽；命中秘密类排除规则与 `sandboxMaskedPatterns` 的仓库文件以空文件遮蔽；环境变量白名单加名称断言（`*KEY*`、`*SECRET*`、`*TOKEN*` 等） | Supervisor 第 5 节 |
+| 命令读取凭据（`$HOME` 下的令牌、仓库里的 `.env`、私钥） | `$HOME` 整体遮蔽，仅白名单工具链与 `PATH` 中位于 `$HOME` 之下的目录只读挂回（`$HOME` 本身、其上级、数据目录与仓库的上级从不挂回），其中凭据文件再以空文件遮蔽；命中秘密类排除规则与 `sandboxMaskedPatterns` 的仓库文件以空文件遮蔽；环境变量白名单加名称断言（`*KEY*`、`*SECRET*`、`*TOKEN*` 等） | Supervisor 第 5 节 |
 | 命令把数据送出仓库 | 缺省 `--unshare-net`；只有批准了 `command.network` 的那一条命令共享网络，该能力为极危险级，每次单独询问，只有 main 有 | Core 第 5b 节 |
 | 命令写到仓库之外 | 根文件系统只读；只有可写根目录 `--bind`；`/tmp` 为私有 tmpfs | Supervisor 第 5 节 |
 | 命令改写 `.git`、`.multiagentos`、`AGENTS.md` | 已存在的重新以 `--ro-bind` 挂载；不存在的不占位，命令前后比较，新建的移入隔离目录并报告 `PROTECTED_PATH_CREATED` | Execution |

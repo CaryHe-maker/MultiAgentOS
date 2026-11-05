@@ -8,7 +8,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import dotenv from 'dotenv';
 import { openChat, until, type Chat, type ScriptedChat } from '../chat-driver.js';
@@ -182,23 +182,6 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
     provider,
     answer,
     credentials: { apiKeyFor: () => process.env['DEEPSEEK_API_KEY'] },
-    // A toolchain under the home directory (nvm, a tarball in ~/.local/opt) is hidden from
-    // commands unless it is on the list; the evaluation needs the node it runs with.
-    configure: (config) => {
-      const toolchain = dirname(dirname(process.execPath));
-      return toolchain.startsWith(`${homedir()}/`)
-        ? {
-            ...config,
-            kernel: {
-              ...config.kernel,
-              sandbox: {
-                ...config.kernel.sandbox,
-                homeReadOnly: [...config.kernel.sandbox.homeReadOnly, toolchain],
-              },
-            },
-          }
-        : config;
-    },
   });
   try {
     for (const step of task.steps) {

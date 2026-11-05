@@ -35,6 +35,8 @@ export const KernelConfigSchema = closed(
     sandbox: closed({
       unavailable: Type.Enum(['deny', 'ask-unisolated']),
       homeReadOnly: Type.Array(text(4096)),
+      /** The PATH directories below $HOME come back read-only too (M2Design 6.1, v1.18). */
+      mountPath: Type.Boolean(),
       homeMaskedFiles: Type.Array(text(4096)),
     }),
     /** Appended to the default secret rules; it can never remove one of them. */

@@ -178,3 +178,6 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 - 8 次 `TOOL_INPUT_REFUSED`/`TOO_MANY_TOOL_CALLS`（一轮并行读太多文件、`workdir` 写成绝对路径），模型都自己纠正了。
 - **一个产品缺口**：node 装在 `$HOME` 下的自定义目录（这台 WSL 的 `~/.local/opt/node-…`）时，沙盒里找不到 node，因为 `$HOME` 被整体遮蔽，缺省白名单只有 `.nvm`、`.volta`、`.cargo`、`.rustup`、`.local/bin`、`.npm`。评测运行器把当前 node 所在目录加入了 `sandbox.homeReadOnly`；用户的使用说明必须写明这一点，否则命令会报 `node: command not found`。
 - 没有一次触发 `wrapUps`、拒绝或沙盒的任何拦截：这四个任务不含越界企图，拦截由确定性的 C5 覆盖。
+
+node 在 `$HOME` 下的缺口（上一节）已按 Cary 的决定（2026-11-05）改为自动挂载 `PATH` 中位于 `$HOME` 之下的目录（M2Design v1.18，`sandbox.mountPath`，缺省开启）。评测运行器里的临时白名单已删除；C1–C4 在自动挂载下再跑 3 次，12/12，$0.018（`~/mas-eval-automount`）。端到端用例 3 个：命令找得到 node 与 npm 及其 `../lib`；`$HOME` 的其余内容仍不可见；关闭开关后工具目录不在。纯函数 `pathToolchainMounts` 有 8 个单元用例（`$HOME` 与其上级、直接位于 `$HOME` 之下的前缀、数据目录与仓库、嵌套目录、相对与空项）。
+已知局限：`~/.local/bin` 这类目录里指向别处的符号链接，目标若在未挂载的位置仍会找不到；只读挂回意味着命令能读到这些目录里的所有文件，用户的 `PATH` 里不应放含机密的目录。

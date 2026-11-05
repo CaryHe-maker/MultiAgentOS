@@ -35659,6 +35659,7 @@
           "required": [
             "unavailable",
             "homeReadOnly",
+            "mountPath",
             "homeMaskedFiles"
           ],
           "properties": {
@@ -35675,6 +35676,9 @@
                 "minLength": 1,
                 "maxLength": 4096
               }
+            },
+            "mountPath": {
+              "type": "boolean"
             },
             "homeMaskedFiles": {
               "type": "array",
@@ -36248,6 +36252,7 @@
               "required": [
                 "unavailable",
                 "homeReadOnly",
+                "mountPath",
                 "homeMaskedFiles"
               ],
               "properties": {
@@ -36264,6 +36269,9 @@
                     "minLength": 1,
                     "maxLength": 4096
                   }
+                },
+                "mountPath": {
+                  "type": "boolean"
                 },
                 "homeMaskedFiles": {
                   "type": "array",

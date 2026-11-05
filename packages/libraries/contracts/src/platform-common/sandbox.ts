@@ -112,3 +112,44 @@ export function countSandboxDenials(output: string): number {
     if (DENIAL_TEXTS.some((denial) => line.includes(denial))) denials += 1;
   return denials;
 }
+
+// --- Toolchains found through PATH -------------------------------------------------------------
+
+/**
+ * The directories under `$HOME` that `PATH` names come back into the sandbox read-only
+ * (M2Design 6.1, v1.18): a command must find the tools the user's own shell finds, wherever
+ * they were installed, without the user listing each place by hand.
+ *
+ * - A directory named `bin` that belongs to an install prefix deeper than one level below
+ *   `$HOME` brings its prefix (`~/.local/opt/node-v24/bin` → `~/.local/opt/node-v24`), because the
+ *   tools there reach their libraries through `../lib`. A prefix directly below `$HOME`
+ *   (`~/.local`, `~/.cargo`) is never taken as a whole: it holds more than tools.
+ * - Never mounted: `$HOME` itself or anything above it, and any directory that holds or equals
+ *   something that has to stay hidden (the data directory, the repository, which comes back with
+ *   its own rules).
+ * - Entries that are relative, empty or outside `$HOME` are not this function's business: the
+ *   rest of the system is already visible read-only.
+ */
+export function pathToolchainMounts(
+  pathVariable: string | undefined,
+  home: string,
+  hidden: readonly string[] = [],
+): string[] {
+  const mounts = new Set<string>();
+  const below = (root: string, path: string): boolean => path.startsWith(`${root}/`);
+  const keeps = (path: string): boolean =>
+    below(home, path) && !hidden.some((secret) => secret === path || below(path, secret));
+  for (const entry of (pathVariable ?? '').split(':')) {
+    const directory = entry.replace(/\/+$/u, '');
+    if (!directory.startsWith('/') || !below(home, directory) || !keeps(directory)) continue;
+    mounts.add(directory);
+    const name = directory.slice(directory.lastIndexOf('/') + 1);
+    const prefix = directory.slice(0, directory.lastIndexOf('/'));
+    const depth = prefix.slice(home.length + 1).split('/').length;
+    if (name === 'bin' && below(home, prefix) && depth >= 2 && keeps(prefix)) mounts.add(prefix);
+  }
+  // A directory inside one that is mounted anyway adds nothing.
+  return [...mounts]
+    .filter((path) => ![...mounts].some((other) => other !== path && below(other, path)))
+    .sort();
+}

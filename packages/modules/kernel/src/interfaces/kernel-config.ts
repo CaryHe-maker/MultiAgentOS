@@ -27,6 +27,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   sandbox: Object.freeze({
     unavailable: 'deny' as const,
     homeReadOnly: ['~/.nvm', '~/.volta', '~/.cargo', '~/.rustup', '~/.local/bin', '~/.npm'],
+    mountPath: true,
     homeMaskedFiles: ['~/.cargo/credentials.toml', '~/.npmrc'],
   }),
   sandboxMaskedPatterns: [],
