@@ -127,6 +127,27 @@ const statusesOf = (provider: ScriptedChat): Record<string, string> => {
   return found;
 };
 
+/** The update_todos calls of main and what it was told, to see why they are refused. */
+function todoCallsOf(provider: ScriptedChat): string[] {
+  const last = [...provider.requests]
+    .reverse()
+    .find((request) => agentOfRequest(request) === 'main');
+  const messages = last?.messages ?? [];
+  const found: string[] = [];
+  for (const message of messages)
+    for (const call of (message.tool_calls ?? []) as unknown as {
+      id?: string;
+      function: { name: string; arguments?: string };
+    }[]) {
+      if (call.function.name !== 'update_todos') continue;
+      const answer = messages.find((each) => each.role === 'tool' && each.tool_call_id === call.id);
+      found.push(
+        `${(call.function.arguments ?? '').slice(0, 400)} => ${textOf(answer).slice(0, 300)}`,
+      );
+    }
+  return found;
+}
+
 /** Each round of main: the tools it called, and the start of what came back. */
 function mainRounds(provider: ScriptedChat): string[] {
   const last = [...provider.requests]
@@ -209,6 +230,7 @@ async function runOne(def: CaseDef, mode: Mode, run: number) {
     statuses: statusesOf(provider),
     refusals: refusalsOf(provider),
     questions: chat.questions.length,
+    todoCalls: todoCallsOf(provider),
     /** What main asked in each of its rounds, and how each answer began. */
     rounds: mainRounds(provider),
     replies: chat.printed('REPLY').map((text) => text.slice(0, 600)),
