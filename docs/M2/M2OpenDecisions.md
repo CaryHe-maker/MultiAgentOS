@@ -245,3 +245,8 @@ node 在 `$HOME` 下的缺口（上一节）已按 Cary 的决定（2026-11-05�
 - `git_inspect` 的 `rev` 以 `-` 开头会作为选项传给 git（`--ext-diff` 会重新打开前面关掉的外部 diff）；现在拒绝。
 - 端到端用例补了结构检查：中断后提供方收到的历史里，每个工具调用恰有一个结果。
 已知局限（未修）：入口放宽堆上限用的是 shebang；npm 全局安装与直接执行有效，pnpm 的启动脚本直接调用 `node`，不经过 shebang，这时堆上限仍是 V8 默认值。要在所有安装方式下生效，需要入口在发现堆上限偏低时用 `--max-old-space-size` 重新启动自己；这涉及信号转发与终端，单独做。
+
+阶段 4 的开始（2026-11-05，`feature/phase4/main`，M2Design v1.24）：Cary 决定两项——Turn 与运行额度提高到 800 万与 2400 万；只读名单上的命令行按 READ 处理（不占 EXEC 互斥）。顺序与进度：
+- 已完成并通过测试：S4-KC-2 Monitor（AgentRun 账本与逐级委派）、S4-KC-1 Scheduler（`providerCapacity`、`WAIT_CAPACITY`）、S4-KX-1 Execution（按 AgentRun 分队列、类别、全局上限、`serialExecution`、等待调用机会）、S4-CT-1 契约（`reserveDelegation`、`releaseDelegation`、`RegisterAgentRunRequest` 的父子字段、`agent.spawn`）、S4-KC-3 Core（SubAgent 登记、委派、写入占用、`WRITE_SCOPE_CONFLICT`、`WRITE_SCOPE_DELEGATED`）。
+- 尚未做：S4-PL-1 explorer、worker 与 `run_subagents`、`finish_subagent` 的定义与提示词；S4-WF-1 Workflow（多个 AgentRun 并行推进、`run_subagents` 的校验与图扩展、汇合、结果契约、改动对账、完成检查、业务熔断、worker 的 `update_todos`）；EXEC 的改动检测（命令前后扫描可写范围）；S4-UI-1 活动区的 SubAgent 树与 `/timeline`；S4-IN-1 集成与退出用例 P1–P6、B、D、A 的派生部分。
+- 发现：`vitest` 在包目录下运行会把 `dist/` 里旧的编译测试一起跑，出现大量与改动无关的失败；测试一律在仓库根目录运行。

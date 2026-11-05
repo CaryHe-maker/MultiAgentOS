@@ -5,7 +5,7 @@ import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { pathDerivedId } from '../platform-common/new-id.js';
-import { Sha256Schema, closed, text } from '../platform-common/schema-helpers.js';
+import { Sha256Schema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { UnitInputSchema } from './unit-io.js';
 
 const inRun = {
@@ -27,10 +27,66 @@ export const RegisterAgentRunRequestSchema = closed(
     requestedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     /** Relative to the repository root; main has `['.']`, and none without `workspace.write`. */
     writeRoots: Type.Array(text(1024)),
+    /**
+     * A SubAgent names the AgentRun that spawned it, the reservation that funds it and its task in
+     * that reservation: all three or none (M2Design 6.4, 7.3; Kernel/Core 5d).
+     */
+    parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+    delegationId: Type.Optional(IdSchemas.delegationId),
+    taskName: Type.Optional(text(64)),
   },
   'kernel.unit.RegisterAgentRunRequest.v1',
 );
 export type RegisterAgentRunRequest = Static<typeof RegisterAgentRunRequestSchema>;
+
+/** One task of a `run_subagents` call, as far as the Kernel needs to know it. */
+export const DelegationTaskSchema = closed({
+  name: text(64),
+  agentRef: pinnedRefOf('AGENT'),
+  /** Relative to the repository root; empty for an AgentRun that does not write. */
+  writeRoots: Type.Array(text(1024)),
+  /** Asked for; the Kernel keeps it between the Agent's minimum share and twice its default. */
+  tokens: Type.Optional(count(1)),
+});
+export type DelegationTask = Static<typeof DelegationTaskSchema>;
+
+export const MAX_DELEGATION_TASKS = 12;
+
+/** Takes the shares of all tasks out of the parent's ledger, or none (M2Design 7.3, rule 2). */
+export const ReserveDelegationRequestSchema = closed(
+  {
+    ...inRun,
+    parentAgentRunId: IdSchemas.agentRunId,
+    tasks: Type.Array(DelegationTaskSchema, { minItems: 1, maxItems: MAX_DELEGATION_TASKS }),
+  },
+  'kernel.unit.ReserveDelegationRequest.v1',
+);
+export type ReserveDelegationRequest = Static<typeof ReserveDelegationRequestSchema>;
+
+/** What the tasks got; a share the Kernel moved to the limits of the Agent says which limit. */
+export const DelegationReservedSchema = closed(
+  {
+    requestId: IdSchemas.requestId,
+    outcome: Type.Literal('ACCEPTED'),
+    delegationId: IdSchemas.delegationId,
+    shares: Type.Array(
+      closed({
+        name: text(64),
+        tokens: count(1),
+        clamped: Type.Optional(Type.Enum(['MIN', 'MAX'])),
+      }),
+    ),
+  },
+  'kernel.unit.DelegationReserved.v1',
+);
+export type DelegationReserved = Static<typeof DelegationReservedSchema>;
+
+/** Gives back the shares of the tasks that never registered (skipped, or refused). */
+export const ReleaseDelegationRequestSchema = closed(
+  { ...inRun, delegationId: IdSchemas.delegationId },
+  'kernel.unit.ReleaseDelegationRequest.v1',
+);
+export type ReleaseDelegationRequest = Static<typeof ReleaseDelegationRequestSchema>;
 
 const matchesPath = (request: { requestId: string; path: string }) =>
   request.requestId === pathDerivedId('req', request.path);

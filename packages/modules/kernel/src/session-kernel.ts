@@ -51,7 +51,13 @@ import {
 import { InProcessProviderCapacity, Scheduler } from './scheduler/index.js';
 import type { ExecutionConfig } from './session/attempt-request.js';
 import { RunExecution, type RunExecutionDeps } from './session/run-execution.js';
-import { RunWork, type CommandSupport, type PinResult, type RunHost } from './session/run-work.js';
+import {
+  RunWork,
+  type CommandSupport,
+  type PinResult,
+  type RunHost,
+  type RunWorkDeps,
+} from './session/run-work.js';
 import {
   protectedPathsOf,
   quarantineNewProtected,
@@ -92,6 +98,8 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
+  readonly agentShare?: RunWorkDeps['agentShare'];
   /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
   readonly config: KernelConfig;
@@ -319,6 +327,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       repositoryRoot,
       repositoryExclusions: config.repositoryExclusions,
       pinAgent: deps.pinAgent,
+      ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
       inputIsValid,
       preset: deps.preset,
       ...(deps.commands === undefined

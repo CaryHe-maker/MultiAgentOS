@@ -31,7 +31,8 @@ export type IdPrefix =
   | 'trn'
   | 'inp'
   | 'scm'
-  | 'slq';
+  | 'slq'
+  | 'dlg';
 
 /** A new random identifier `<prefix>_<ULID>`. */
 export function newId(prefix: IdPrefix): string {

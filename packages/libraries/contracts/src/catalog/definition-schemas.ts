@@ -127,11 +127,13 @@ export const PROTECTED_CAPABILITIES = [
   'workspace.write',
   'command.exec',
   'command.network',
+  /** Only a top-level AgentRun has it: a SubAgent cannot spawn (M2Design 5.2, 5.4). */
+  'agent.spawn',
 ] as const;
 export type ProtectedCapability = (typeof PROTECTED_CAPABILITIES)[number];
 
 /** Safe capabilities: asked at most once, for the repository as a whole (M2Design 5.2). */
-const SAFE_CAPABILITIES: ReadonlySet<ProtectedCapability> = new Set(['repo.read']);
+const SAFE_CAPABILITIES: ReadonlySet<ProtectedCapability> = new Set(['repo.read', 'agent.spawn']);
 
 /** What a start preset leaves of an Agent's capabilities: `readonly` keeps the safe ones. */
 export function capabilitiesUnderPreset(
@@ -163,20 +165,28 @@ export const AgentDefinitionSchema = Type.Object(
           Type.Object(
             {
               toolRef: DefinitionRefSchema,
-              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF']),
+              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF', 'FINISH_SUBAGENT']),
               allowedInFinal: Type.Boolean(),
             },
             { additionalProperties: false },
           ),
           { minItems: 1 },
         ),
-        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT']),
+        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT', 'RETURN_PARTIAL']),
         /** The `update_todos` tool, which ends nothing (M2Design 3.5). */
         todos: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6). */
+        spawn: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
       },
       { additionalProperties: false },
+    ),
+    /** An Agent that `run_subagents` may start, with the share of budget it gets by default. */
+    spawnable: Type.Optional(
+      Type.Object({ defaultShare: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
     ),
     /** The source of the capability ceiling (Kernel/Core 5a.1). */
     capabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
@@ -202,6 +212,20 @@ export const AgentDefinitionSchema = Type.Object(
   { additionalProperties: false, $id: 'catalog.AgentDefinition.v1' },
 );
 export type AgentDefinition = DeepReadonly<Static<typeof AgentDefinitionSchema>>;
+
+/** The smallest share of budget an Agent can work with: its final call and two ordinary ones. */
+export function agentMinShare(budget: {
+  readonly perCallInputLimit: number;
+  readonly maxOutputTokens: number;
+  readonly finalInputBudget: number;
+  readonly finalMaxOutputTokens: number;
+}): number {
+  return (
+    budget.finalInputBudget +
+    budget.finalMaxOutputTokens +
+    2 * (budget.perCallInputLimit + budget.maxOutputTokens)
+  );
+}
 
 export const FAILURE_HANDLINGS = [
   'RETURN_TO_MODEL',

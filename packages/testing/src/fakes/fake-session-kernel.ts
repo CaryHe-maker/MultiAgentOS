@@ -95,7 +95,10 @@ interface Run {
 const ack = (requestId: string): SyscallAck => ({ requestId, outcome: 'ACCEPTED' });
 const rejected = (
   requestId: string,
-  reasonCode: Extract<SyscallRejected, { issuer: 'CORE'; reasonCode: string }>['reasonCode'],
+  reasonCode: Exclude<
+    Extract<SyscallRejected, { issuer: 'CORE'; reasonCode: string }>['reasonCode'],
+    'BUDGET_INSUFFICIENT'
+  >,
 ): SyscallRejected => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
 
 const textRef = (text: string): ArtifactRef => {
@@ -347,8 +350,20 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   const inRun = (workflowRunId: string): Run | undefined =>
     run?.workflowRunId === workflowRunId && !run.closed ? run : undefined;
 
+  let delegations = 0;
   const gateway: WorkflowGatewayPort = {
     updateActivity: (request) => Promise.resolve(ack(request.requestId)),
+    // Every share is granted as asked (or 100,000); a test that needs a refusal replaces this.
+    reserveDelegation: (request) => {
+      delegations += 1;
+      return Promise.resolve({
+        requestId: request.requestId,
+        outcome: 'ACCEPTED' as const,
+        delegationId: `dlg_fake${String(delegations).padStart(6, '0')}`,
+        shares: request.tasks.map((task) => ({ name: task.name, tokens: task.tokens ?? 100_000 })),
+      });
+    },
+    releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
     registerAgentRun: (request) => {
       const current = inRun(request.workflowRunId);
       if (current?.turnId === undefined)

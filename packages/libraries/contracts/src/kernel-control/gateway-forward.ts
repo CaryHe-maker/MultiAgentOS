@@ -8,6 +8,8 @@ import {
   EndAgentRunRequestSchema,
   ReadProjectFileRequestSchema,
   RegisterAgentRunRequestSchema,
+  ReleaseDelegationRequestSchema,
+  ReserveDelegationRequestSchema,
   RequestHumanRequestSchema,
   SubmitUnitRequestSchema,
   UpdateActivityRequestSchema,
@@ -42,6 +44,8 @@ const forward = <C extends string, R extends string, S extends TSchema>(
 export const GatewayForwardSchema = Type.Union(
   [
     forward('workflow', 'registerAgentRun', RegisterAgentRunRequestSchema),
+    forward('workflow', 'reserveDelegation', ReserveDelegationRequestSchema),
+    forward('workflow', 'releaseDelegation', ReleaseDelegationRequestSchema),
     forward('workflow', 'submitUnit', SubmitUnitRequestSchema),
     forward('workflow', 'endAgentRun', EndAgentRunRequestSchema),
     forward('workflow', 'closeRun', CloseRunRequestSchema),

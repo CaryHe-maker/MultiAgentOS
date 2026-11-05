@@ -1,4 +1,9 @@
-import type { BudgetState, BudgetView, TurnUsage } from '@multiagentos/contracts';
+import {
+  agentMinShare,
+  type BudgetState,
+  type BudgetView,
+  type TurnUsage,
+} from '@multiagentos/contracts';
 import type { Settlement, SettlementResult } from '../interfaces/index.js';
 import { Monitor, MonitorInvariantError } from './monitor.js';
 
@@ -19,8 +24,7 @@ export const finalReserve = (agent: AgentBudget): number =>
   agent.finalInputBudget + agent.finalMaxOutputTokens;
 export const wrapUpMargin = (agent: AgentBudget): number =>
   agent.perCallInputLimit + agent.maxOutputTokens;
-export const minShare = (agent: AgentBudget): number =>
-  finalReserve(agent) + 2 * wrapUpMargin(agent);
+export const minShare = (agent: AgentBudget): number => agentMinShare(agent);
 
 /** The startup checks that need no model or prompt (Kernel/Monitor 6). */
 export function assertBudgetsConsistent(budget: RunBudget, main: AgentBudget): void {

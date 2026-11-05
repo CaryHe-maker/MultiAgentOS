@@ -6,7 +6,7 @@ import {
   GATEWAY_REJECTED_CODES,
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
-import { closed } from '../platform-common/schema-helpers.js';
+import { closed, count } from '../platform-common/schema-helpers.js';
 import { CloseReasonSchema } from './run-outcome.js';
 
 export const SyscallAckSchema = closed(
@@ -47,6 +47,13 @@ export const SyscallRejectedSchema = Type.Union(
       issuer: Type.Enum(['GATEWAY', 'CORE']),
       reasonCode: Type.Literal('RUN_BLOCKED'),
       closeReason: CloseReasonSchema,
+    }),
+    /** The shares of a delegation are more than the parent can lend; it is told what it can. */
+    closed({
+      ...rejected,
+      issuer: Type.Literal('CORE'),
+      reasonCode: Type.Literal('BUDGET_INSUFFICIENT'),
+      delegable: count(),
     }),
   ],
   { $id: 'kernel.control.SyscallRejected.v1' },

@@ -30,6 +30,8 @@ export interface PinnedAgent {
   /** The model scope for the effort this AgentRun registered with. */
   readonly modelScope: ExecutionScope;
   readonly budget: AgentBudget;
+  /** The share a `run_subagents` task gets by default; absent for an Agent that cannot be spawned. */
+  readonly defaultShare?: number;
   readonly id: string;
   readonly contextWindowTokens: number;
   readonly cacheHitWeight: number;
@@ -412,6 +414,7 @@ export class RunAttempts {
             | 'PROTECTED_PATH'
             | 'COMMAND_DENIED'
             | 'SANDBOX_UNAVAILABLE'
+            | 'WRITE_SCOPE_DELEGATED'
             | 'ADMISSION_CHECK_FAILED';
         }
       | {

@@ -33,6 +33,8 @@ export const IdSchemas = {
   humanRequestId: Id('hrq'),
   inputId: Id('inp'),
   commandId: Id('scm'),
+  /** One reservation of shares for the tasks of a `run_subagents` call (M2Design 7.3). */
+  delegationId: Id('dlg'),
   queryId: Id('slq'),
 } as const;
 

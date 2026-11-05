@@ -58,7 +58,7 @@ export interface AgentDefinitions {
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
-export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';
+export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
 export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';
 export interface EndTool {
   readonly toolName: string;

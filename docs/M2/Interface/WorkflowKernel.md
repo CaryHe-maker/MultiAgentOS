@@ -36,7 +36,8 @@ interface WorkflowGatewayPort {
   reportSessionCommand(request: ReportSessionCommandRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(request: ReportSessionListRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   updateActivity(request: UpdateActivityRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 阶段 2，第 2.5 节
-  // 阶段 4：reserveDelegation、releaseDelegation
+  reserveDelegation(request: ReserveDelegationRequest, context: BoundaryContext): Promise<DelegationReserved | SyscallRejected>;   // 阶段 4
+  releaseDelegation(request: ReleaseDelegationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 阶段 4
   // 阶段 8：reportCompactionSource、ackCompaction（第 2.4 节）
 }
 ```
@@ -60,8 +61,24 @@ interface RegisterAgentRunRequest {
   display: { label: string };      // ≤80，只用于界面
   requestedCapabilities: string[]; // 阶段 2：不超出能力上限，否则 CAPABILITY_NOT_SUBSET（Kernel/Core 第 5a.1 节）
   writeRoots: string[];            // 阶段 2：相对仓库根目录；main 为 ['.']；没有 workspace.write 时为空
-  // 阶段 4：parentAgentRunId、delegationId、budget
+  // 阶段 4：SubAgent 带 parentAgentRunId、delegationId、taskName（三项同有同无，Kernel/Core 第 5d 节）
+  parentAgentRunId?: string;
+  delegationId?: string;           // 前缀 dlg，Core 生成
+  taskName?: string;
 }
+
+// 阶段 4
+interface ReserveDelegationRequest {
+  requestId: string; sessionId: string; workflowRunId: string;
+  parentAgentRunId: string;
+  tasks: { name: string; agentRef: PinnedDefinitionRef; writeRoots: string[]; tokens?: number }[];   // 1–12 项
+}
+interface DelegationReserved {            // outcome: 'ACCEPTED'
+  requestId: string; delegationId: string;
+  shares: { name: string; tokens: number; clamped?: 'MIN' | 'MAX' }[];
+}
+// 额度不足：SyscallRejected { issuer: 'CORE', reasonCode: 'BUDGET_INSUFFICIENT', delegable: number }
+interface ReleaseDelegationRequest { requestId: string; sessionId: string; workflowRunId: string; delegationId: string }
 
 type ThinkingEffort = 'none' | 'low' | 'high' | 'max';
 

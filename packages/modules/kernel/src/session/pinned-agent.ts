@@ -11,6 +11,7 @@ import {
   type ThinkingEffort,
   type ToolDefinition,
 } from '@multiagentos/contracts';
+import type { AgentBudget } from '../monitor/index.js';
 import type { PinnedAgent } from './run-attempts.js';
 import type { PinResult } from './run-work.js';
 
@@ -62,9 +63,15 @@ export function pinnedAgentOf(
     return tool === undefined ? [] : [{ tool, allowedInFinal: end.allowedInFinal }];
   });
   const todos = agent.actions.todos === undefined ? undefined : toolOf(agent.actions.todos.toolRef);
+  // `run_subagents` is offered to an AgentRun whose ceiling has `agent.spawn` (M2Design 5.4, layer 2).
+  const spawn =
+    agent.actions.spawn === undefined || !requested.includes('agent.spawn')
+      ? undefined
+      : toolOf(agent.actions.spawn.toolRef);
   const ordinary = [
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
+    ...(spawn === undefined ? [] : [spawn]),
     ...ends.map((end) => end.tool),
   ].map(specOf);
   const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
@@ -79,11 +86,42 @@ export function pinnedAgentOf(
       : { maxWallClockMs: agent.limits.maxWallClockMs }),
     modelScope,
     budget: agent.budget,
+    ...(agent.spawnable === undefined ? {} : { defaultShare: agent.spawnable.defaultShare }),
     contextWindowTokens: model.limits.contextWindowTokens,
     cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
     instructions: prompt.template,
     // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
     toolSpecs: (isFinal) => (isFinal ? final : ordinary),
+  };
+}
+
+/** What `reserveDelegation` needs of an Agent (M2Design 7.3). */
+export type AgentShare =
+  | { readonly ok: true; readonly defaultShare: number | undefined; readonly budget: AgentBudget }
+  | { readonly ok: false; readonly reasonCode: 'DEFINITION_UNAVAILABLE' | 'DEFINITION_MISMATCH' };
+
+/** The default share and the per-call budget of an Agent, from the catalog. */
+export function agentShareFrom(
+  catalog: AgentCatalog,
+): (
+  ref: { readonly id: string; readonly version: string; readonly digest: string },
+  context: Pick<BoundaryContext, 'sessionId' | 'workflowRunId'>,
+) => AgentShare {
+  return (ref, context) => {
+    const set = catalog.pinAgent(ref, {
+      correlationId: newId('cor'),
+      tenantId: 'local',
+      projectId: 'local',
+      ...context,
+    });
+    if (!set.ok) return { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' };
+    if (set.value.agent.digest !== ref.digest)
+      return { ok: false, reasonCode: 'DEFINITION_MISMATCH' };
+    return {
+      ok: true,
+      defaultShare: set.value.agent.spawnable?.defaultShare,
+      budget: set.value.agent.budget,
+    };
   };
 }
 
