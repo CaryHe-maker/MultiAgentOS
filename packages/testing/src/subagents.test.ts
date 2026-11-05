@@ -476,7 +476,7 @@ describe('the length of a result', () => {
 
 describe('a plan before the work', () => {
   const plan = { todos: [{ content: 'survey', status: 'in_progress' }] };
-  const wrong = { todos: [{ content: 'survey', status: 'completed' }] };
+  const wrong = { todos: [{ content: 'survey', status: 'finished' }] };
 
   it('is not a round without progress, even when the todos are refused', async () => {
     const { kernel, runner } = setup({

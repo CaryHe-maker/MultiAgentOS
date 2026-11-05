@@ -591,6 +591,7 @@ function handleModel(
   const todoTool = state.final ? undefined : state.definitions.todoTool;
   const isTodo = (call: ModelToolCall) => call.toolName === todoTool?.toolName;
   let activity: AgentTransition['activity'];
+  let refusedTodos = false;
   if (todoTool !== undefined)
     for (const call of calls.filter(isTodo)) {
       const args =
@@ -604,6 +605,7 @@ function handleModel(
             invalidArgumentsText(args, call.arguments === null),
           ),
         );
+        refusedTodos = true;
         continue;
       }
       const { todos } = call.arguments as unknown as UpdateTodosArgs;
@@ -613,7 +615,7 @@ function handleModel(
         total: todos.length,
         pending: countOf('pending'),
         inProgress: countOf('in_progress'),
-        done: countOf('done'),
+        completed: countOf('completed'),
         cancelled: countOf('cancelled'),
       };
       records.push(
@@ -628,13 +630,13 @@ function handleModel(
           state,
           'TODOS_UPDATED',
           call.toolCallId,
-          `Todos: ${String(counts.total)} items, ${String(counts.done)} done, ${String(counts.inProgress)} in progress.`,
+          `Todos: ${String(counts.total)} items, ${String(counts.completed)} completed, ${String(counts.inProgress)} in progress.`,
         ),
       );
       const current = todos.find((todo) => todo.status === 'in_progress')?.content.slice(0, 80);
       activity = {
         total: counts.total,
-        done: counts.done,
+        completed: counts.completed,
         ...(current === undefined ? {} : { current }),
       };
     }
@@ -644,7 +646,13 @@ function handleModel(
   const todoOnlyRounds = acting.length === 0 ? state.todoOnlyRounds + 1 : 0;
   const transition =
     acting.length === 0
-      ? afterTools({ ...state, todoOnlyRounds }, context, config, records, todoOnlyRounds > 1)
+      ? afterTools(
+          { ...state, todoOnlyRounds },
+          context,
+          config,
+          records,
+          todoOnlyRounds > 1 && !refusedTodos,
+        )
       : actOn({ ...state, todoOnlyRounds }, report, acting, context, config, records);
   return activity === undefined ? transition : { ...transition, activity };
 }

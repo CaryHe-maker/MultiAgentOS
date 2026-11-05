@@ -655,7 +655,7 @@ export class Console {
           todos === undefined
             ? undefined
             : terminalText(
-                `${String(todos.done)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
+                `${String(todos.completed)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
               );
         const shown = tool ?? progress;
         const known = this.#timeline.get(event.agentRunId);

@@ -218,7 +218,7 @@ const activity = {
   todos: Type.Optional(
     closed({
       total: Type.Integer({ minimum: 0, maximum: 30 }),
-      done: Type.Integer({ minimum: 0, maximum: 30 }),
+      completed: Type.Integer({ minimum: 0, maximum: 30 }),
       current: Type.Optional(text(80)),
     }),
   ),

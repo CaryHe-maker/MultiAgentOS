@@ -144,7 +144,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
      说明"没有这个编号的调用"或"该调用的输出没有被截断，预览就是全部内容"；不说明引用。
    - 结果按普通工具结果处理：预览进入投影，计入重复调用与重复意图的检查；`REJECTED(ARTIFACT_EXPIRED)` 与其他工具拒绝一样作为工具结果交给模型。
 9. **`update_todos`**（阶段 2，worker 为阶段 4；M2Design 第 3.5 节）：
-   - 校验参数（≤30 项、每项 ≤200 字符、`in_progress` 至多一项），不合法时记录 `FEEDBACK(INVALID_ARGUMENTS)`；
+   - 校验参数（≤30 项、每项 ≤200 字符，`status` 为 `pending`、`in_progress`、`completed`、`cancelled`，可同时有多项 `in_progress`），不合法时记录 `FEEDBACK(INVALID_ARGUMENTS)`；
    - 合法时追加 `TODOS_UPDATED { agentRunId, source: { modelTurnRequestId, toolCallId }, counts }`，工具结果为一行计数，不提交 Unit；
    - 随后调用 `updateActivity({ agentRunId, todos: { total, done, current? } })`（`current` 为进行中一项的前 80 个字符），只用于界面；
    - 可以与普通工具、结束控制工具在同一次返回中出现（`CONTROL_MIXED` 的例外），先于其他调用处理；只调用它的一轮计入无进展检测，不计入重复意图。

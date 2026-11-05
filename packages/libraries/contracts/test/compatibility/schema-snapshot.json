@@ -7229,7 +7229,7 @@
               "type": "object",
               "required": [
                 "total",
-                "done"
+                "completed"
               ],
               "properties": {
                 "total": {
@@ -7237,7 +7237,7 @@
                   "minimum": 0,
                   "maximum": 30
                 },
-                "done": {
+                "completed": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 30
@@ -7373,7 +7373,7 @@
               "type": "object",
               "required": [
                 "total",
-                "done"
+                "completed"
               ],
               "properties": {
                 "total": {
@@ -7381,7 +7381,7 @@
                   "minimum": 0,
                   "maximum": 30
                 },
-                "done": {
+                "completed": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 30
@@ -10320,7 +10320,7 @@
                   "type": "object",
                   "required": [
                     "total",
-                    "done"
+                    "completed"
                   ],
                   "properties": {
                     "total": {
@@ -10328,7 +10328,7 @@
                       "minimum": 0,
                       "maximum": 30
                     },
-                    "done": {
+                    "completed": {
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 30
@@ -12087,7 +12087,7 @@
                       "type": "object",
                       "required": [
                         "total",
-                        "done"
+                        "completed"
                       ],
                       "properties": {
                         "total": {
@@ -12095,7 +12095,7 @@
                           "minimum": 0,
                           "maximum": 30
                         },
-                        "done": {
+                        "completed": {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 30
@@ -12231,7 +12231,7 @@
                       "type": "object",
                       "required": [
                         "total",
-                        "done"
+                        "completed"
                       ],
                       "properties": {
                         "total": {
@@ -12239,7 +12239,7 @@
                           "minimum": 0,
                           "maximum": 30
                         },
-                        "done": {
+                        "completed": {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 30
@@ -33678,7 +33678,7 @@
           "type": "object",
           "required": [
             "total",
-            "done"
+            "completed"
           ],
           "properties": {
             "total": {
@@ -33686,7 +33686,7 @@
               "minimum": 0,
               "maximum": 30
             },
-            "done": {
+            "completed": {
               "type": "integer",
               "minimum": 0,
               "maximum": 30
@@ -40940,7 +40940,7 @@
                 "total",
                 "pending",
                 "inProgress",
-                "done",
+                "completed",
                 "cancelled"
               ],
               "properties": {
@@ -40956,7 +40956,7 @@
                   "type": "integer",
                   "minimum": 0
                 },
-                "done": {
+                "completed": {
                   "type": "integer",
                   "minimum": 0
                 },
@@ -42735,7 +42735,7 @@
                 "enum": [
                   "pending",
                   "in_progress",
-                  "done",
+                  "completed",
                   "cancelled"
                 ]
               }

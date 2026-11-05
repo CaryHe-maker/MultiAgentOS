@@ -256,7 +256,7 @@ export const SessionLogRecordSchema = Type.Union(
         total: count(),
         pending: count(),
         inProgress: count(),
-        done: count(),
+        completed: count(),
         cancelled: count(),
       }),
     }),
