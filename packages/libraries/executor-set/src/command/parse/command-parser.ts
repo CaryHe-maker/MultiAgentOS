@@ -36,6 +36,8 @@ export interface ParsedCommand {
   readonly subcommands: readonly SubCommand[];
   /** Empty when "allow this command / this prefix from now on" may be offered. */
   readonly unreusable: readonly UnreusableReason[];
+  /** True when a redirection writes to a file: anything but `/dev/null` and another descriptor. */
+  readonly writesFiles: boolean;
 }
 
 export interface CommandParser {
@@ -96,6 +98,16 @@ function subCommandOf(node: Node): SubCommand | undefined {
   return { name, args, text: normalise(node.text), dynamic };
 }
 
+/** `> file`, `>> file`, `&> file`, `>| file`, `<> file`: not `2>&1`, `>&2`, `> /dev/null`. */
+function writesFilesIn(root: Node): boolean {
+  return root.descendantsOfType(['file_redirect']).some((redirect) => {
+    const match = /^(?:\d*|&)\s*(>>|>\||>&|&>>|&>|<>|>)\s*(.*)$/su.exec(redirect.text.trim());
+    if (match === null) return false;
+    const target = (match[2] ?? '').trim().replace(/^['"]|['"]$/gu, '');
+    return !(target === '/dev/null' || /^\d+$/u.test(target) || target === '-');
+  });
+}
+
 function reasonsOf(root: Node, subcommands: readonly SubCommand[]): UnreusableReason[] {
   const reasons = new Set<UnreusableReason>();
   if (root.hasError) reasons.add('PARSE_ERROR');
@@ -143,7 +155,8 @@ export function createCommandParser(): Promise<CommandParser> {
     return {
       parse(text: string): ParsedCommand {
         const tree = parser.parse(text);
-        if (tree === null) return { subcommands: [], unreusable: ['PARSE_ERROR'] };
+        if (tree === null)
+          return { subcommands: [], unreusable: ['PARSE_ERROR'], writesFiles: false };
         try {
           const nodes = tree.rootNode.descendantsOfType([
             'command',
@@ -153,7 +166,11 @@ export function createCommandParser(): Promise<CommandParser> {
           const subcommands = nodes
             .map(subCommandOf)
             .filter((command): command is SubCommand => command !== undefined);
-          return { subcommands, unreusable: reasonsOf(tree.rootNode, subcommands) };
+          return {
+            subcommands,
+            unreusable: reasonsOf(tree.rootNode, subcommands),
+            writesFiles: writesFilesIn(tree.rootNode),
+          };
         } finally {
           tree.delete();
         }

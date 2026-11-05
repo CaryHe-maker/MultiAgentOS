@@ -25,6 +25,10 @@ export interface CommandAnalysis {
   readonly denied?: string;
   /** The first criticalCommands pattern that matched. */
   readonly critical?: string;
+  /** Every command of the line only reads (the read-only list, M2Design 5.2). */
+  readonly readOnly?: boolean;
+  /** False for a line that touches no file of the repository (`echo`, `pwd`); absent means true. */
+  readonly readsRepository?: boolean;
 }
 
 /** What the Unit asks for when it is a command (Kernel/Core 5b). */
@@ -35,6 +39,8 @@ export interface CommandDemand {
   readonly network: boolean;
   readonly sandbox: 'AVAILABLE' | 'UNAVAILABLE';
   readonly unavailablePolicy: 'deny' | 'ask-unisolated';
+  /** The user has allowed `repo.read` in this run: a Lease is held. */
+  readonly repoReadGranted?: boolean;
 }
 
 export type Capability = ProtectedCapability;
@@ -130,7 +136,13 @@ export interface UnitDemand {
 }
 
 export type UnitDecision =
-  | { readonly kind: 'ALLOW'; readonly capability: Capability; readonly resourceKey: string }
+  | {
+      readonly kind: 'ALLOW';
+      readonly capability: Capability;
+      readonly resourceKey: string;
+      /** A command of the read-only list: it runs in a sandbox that cannot write (Core 5b). */
+      readonly readOnly?: true;
+    }
   | {
       readonly kind: 'REFUSE';
       readonly reasonCode:
@@ -262,6 +274,30 @@ function decideCommand(
   const decided = answered(entries, demand, 'command.exec');
   if (decided === 'DENY' || commandRefused(entries, demand.agentRunId, command))
     return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
+  // ④b a line of the read-only list needs no question of its own: it reads what `read_file` reads
+  // and has the same protection, the Lease of `repo.read`. It runs where nothing can be written.
+  const refusedRepoRead = entries.some(
+    (entry) =>
+      entry.scope === 'RUN' &&
+      entry.effect === 'DENY' &&
+      entry.capability === 'repo.read' &&
+      entry.agentRunId === demand.agentRunId,
+  );
+  if (
+    command.analysis.readOnly === true &&
+    !critical &&
+    command.sandbox === 'AVAILABLE' &&
+    !refusedRepoRead
+  ) {
+    if (command.repoReadGranted === true || command.analysis.readsRepository === false)
+      return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir, readOnly: true };
+    return {
+      kind: 'ASK',
+      capability: 'repo.read',
+      resourceKey: REPOSITORY_ROOT_PATH,
+      critical: false,
+    };
+  }
   if (decided === 'ALLOW' || (!perAttempt && commandsCovered(entries, command, workdir)))
     return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir };
   // ⑤

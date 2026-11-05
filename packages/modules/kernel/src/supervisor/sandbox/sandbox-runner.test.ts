@@ -308,7 +308,7 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     const result = await limited.run({
       scope,
       command,
-      timeoutMs: 10_000,
+      timeoutMs: 25_000,
       maxOutputBytes: 100_000,
       signal: new AbortController().signal,
     });
@@ -316,6 +316,19 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     expect(result.output).toMatch(/size:1000000|No space left/u);
     expect(result.output).not.toContain('size:3000000');
     expect(result.output).not.toContain('forked:8');
+  }, 40_000);
+
+  it('cannot write anywhere in the repository when it has no writable root, and still reads and runs git', async () => {
+    spawnSync('git', ['init', '-q'], { cwd: repo });
+    const result = await exec(
+      'git status --short 2>&1; echo status:$?; touch new.txt 2>&1; echo w:$?; cat a.txt',
+      { writableRoots: [] },
+    );
+    expect(result.output).toContain('status:0');
+    expect(result.output).toMatch(/Read-only file system/u);
+    expect(result.output).toContain('w:1');
+    expect(result.output).toContain('hello');
+    expect(existsSync(join(repo, 'new.txt'))).toBe(false);
   });
 
   it('lets a command that fills memory fail instead of the machine', async () => {

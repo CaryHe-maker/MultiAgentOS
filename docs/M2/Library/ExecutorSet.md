@@ -111,6 +111,8 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 - 沙盒拒绝的识别只数固定文字，不改变结果；原始异常文字（宿主路径）不进入预览。
 - 同一输入与同一输出得到逐字节相同的预览。
 
+**只读名单**（`command/parse/read-only-commands.ts`）：`isReadOnlyLine(parsed, names)` 判断一行是否只由名单上的只读命令组成，`readsRepository` 判断它是否会打开仓库文件；分析结果因此多两个字段：`readOnly`、`readsRepository`。解析器的 `ParsedCommand.writesFiles` 标出写文件的重定向（`> file`、`>> file`、`&> file`；`2>&1`、`>&2`、`> /dev/null` 不算）。名单由 `command.readOnlyCommands` 给出，`git` 与 `command` 两项代表它们的只读子命令与选项。
+
 **`command/parse/`**（提前任务 E-EX-3，已实现）：`createCommandParser()` 加载 `web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法（只加载一次，之后同步使用）；
 `parse` 返回子命令与 `unreusable` 原因；`commandPrefix`（ARITY 表）；`matchesCommandPattern`（语法树与原始文字的并集）。Core 与 Supervisor 经注入的 `CommandAnalyzer` 使用同一个实现，Kernel 不依赖 ExecutorSet。
 

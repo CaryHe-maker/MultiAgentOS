@@ -137,6 +137,7 @@ Core 的处理见 [Core](../Kernel/Core.md) 第 5c 节。DANGER 时 Workflow 收
 | `sandbox.homeMaskedFiles` | `~/.cargo/credentials.toml`、`~/.npmrc`（可追加、不可删除） |
 | `sandboxMaskedPatterns` | 空（可追加；与默认排除规则中的秘密类规则一起生效） |
 | `command.deniedCommands` | 空 |
+| `command.readOnlyCommands` | `DEFAULT_READ_ONLY_COMMANDS`（`ls`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、`find`、`sort`、`diff`、`jq`、`pwd`、`echo`、`test`、`cd`、`git`、`command` 等；替换缺省，`[]` 关闭；M2Design 第 5.2 节） |
 | `command.criticalCommands` | `git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`（可追加，不可删除缺省项） |
 | `killGraceMs` | 2000 |
 | `memory.sampleIntervalMs` | 1000 |

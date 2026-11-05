@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.22 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.23 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -759,7 +759,7 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 | `workspace.write` | 不确定 | 发起写入的 AgentRun 的可写根目录；已批准的条目覆盖其下全部路径 | 没有覆盖的条目时询问一次。main 的可写根目录是仓库根目录，批准后也覆盖全部 SubAgent 的 `writeScope`，所以每个 WorkflowRun 通常只问一次；main 尚未写过时，worker 第一次写入按它自己的 `writeScope` 询问 |
 | `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次 |
 | `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问 |
-| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问 |
+| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问；只读名单上的命令行例外（见下文"只读名单"） |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
 | `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
 | `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
@@ -795,6 +795,14 @@ Architecture 中"危险行为每次都必须单独征得用户同意"在 M2 中�
   名单匹配照常进行（按原始文字再匹配一次，取两者的并集），不会因解析失败而漏掉禁止规则；
 - 以下情况同样不提供两个"均允许"选项：语法树中含命令替换（`$(…)`、反引号）、进程替换、`eval`、`sh -c` 或 `bash -c`、通往 `sh` 或 `bash` 的管道、heredoc 作为 shell 的输入；沙盒不可用；
   命中 `deniedCommands` 或 `criticalCommands`。
+
+**只读名单**（`command.readOnlyCommands`，与 `deniedCommands`、`criticalCommands` 分开单列，缺省见 `DEFAULT_READ_ONLY_COMMANDS`：`ls`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、`find`、`sort`、`diff`、`jq`、`pwd`、`echo`、`test`、`cd`，以及 `git` 的只读子命令 `status`、`diff`、`log`、`show`、`blame` 等；写入 `[]` 即关闭，改写即替换缺省）：
+- 命令行中**每一条**简单命令都在名单上，并且没有写文件的重定向（`> file`、`>> file`、`&> file`；`2>&1`、`>&2`、`> /dev/null` 不算）、没有命令替换或进程替换、命令名都是字面量且不是路径、没有 `find -delete`、`-exec`、`sort -o`、`rg --pre`、`git diff --output` 这类写入参数时，才算只读命令行。解析不可靠（`unreusable` 不为空）的一律不算。命中 `deniedCommands`、`criticalCommands` 的也不算。
+- 只读命令行**不单独询问**，与只读工具（`read_file`、`search_repository`）同一保护级别：需要 `repo.read`，用户同意一次之后本运行内的只读命令行直接运行；没有同意时先问 `repo.read`，问的是"读取仓库"，不是命令。一行只有 `echo`、`pwd`、`cd`、`true` 或某个程序的 `--version` 这类不打开仓库文件的命令时，连 `repo.read` 也不需要。
+- 它们在**只读沙盒**里运行：可写根目录为空、不联网、其余隔离与其他命令相同。名单是便利，不是保护：名单上有判断错的，只会使命令失败（只读文件系统），写不出去。模型看到的仍是同一个工具、同一种状态行和真实命令的输出，不需要知道有这一条捷径。
+- 不适用的情况：沙盒不可用、`network: true`；用户拒绝过本 AgentRun 的 `repo.read` 时，同一命令行按普通命令询问；用户拒绝过的这一条命令仍然被拒。
+- 每一次这样的放行写入审计（`COMMAND_READ_ONLY`：请求、AgentRun、命令、工作目录）。
+- 没有用 Executor 重新实现 `ls`、`cat`：输出格式、退出码、错误信息与管道组合都要逐字复现，且永远补不完；真实运行并让沙盒来保证只读，输出就是真实的。
 
 **极危险级的询问选项**：只有单次允许与拒绝。不提供任何"均允许"，批准不继承、不复用，每个 UnitAttempt 单独询问；询问界面以警示样式显示。
 
@@ -1858,3 +1866,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.20 | 2026-11-05 | 第 15 节阶段 6：`web_search` 的提供方不再固定为 Tavily，改为经端口替换，DeepSeek 于 2026-10 开放的搜索与抓取接口先经 S6-T-1 实测证明可用并由 Cary 决定（M2TechStack 第 3.3 节、M2Plan 第 6.7 节） |
 | v1.21 | 2026-11-05 | 第 7.7 节：内存压力区分来源，整机内存不足只通知与记录；每次压力先有系统级记录再有界面提示；中断之后对话不退出，下一条消息开启新的 Turn，只有一次性命令以退出码 75 退出（取代 v1.17 中"所有运行收敛后退出"）；WARNING 以当前级别为准，不再是整个运行的粘性标志（依据：阶段 2 任务集重跑中整机内存紧张使 3 个聊天提前收尾；Cary 要求中止后可以继续输入） |
 | v1.22 | 2026-11-05 | 第 6.1、7.7 节：内存压力只度量有对应场景的两项——V8 堆（以堆上限与可用内存 60% 中较小者为分母）与容器内存上限下的 RSS；没有容器上限时不再用 RSS 对比物理内存；入口以 `--max-old-space-size=4096` 启动；沙盒命令增加私有可写内存上限（`RLIMIT_DATA`）（依据：实测 WSL 上 V8 默认堆上限仅 2240 MB，运行时设置该标志无效，命令超限应由命令自己失败；Cary 同意） |
+| v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |

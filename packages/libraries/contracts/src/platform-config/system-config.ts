@@ -45,6 +45,13 @@ export const KernelConfigSchema = closed(
       deniedCommands: Type.Array(text(200)),
       /** Appended to the defaults; a default cannot be removed. */
       criticalCommands: Type.Array(text(200)),
+      /**
+       * The read-only list (M2Design 5.2): a line made only of these runs without a question of its
+       * own once `repo.read` is allowed, in a sandbox that cannot write. It replaces the default,
+       * so an entry can be taken out; an empty list switches the shortcut off. `git` and `command`
+       * stand for their read-only subcommands.
+       */
+      readOnlyCommands: Type.Array(text(100)),
     }),
     killGraceMs: ms(),
     maxConcurrentExec: count(1),
@@ -94,6 +101,60 @@ export const WorkflowConfigSchema = closed(
   'platform.config.WorkflowConfig.v1',
 );
 export type WorkflowConfig = Static<typeof WorkflowConfigSchema>;
+
+/**
+ * The read-only list a Session starts with (M2Design 5.2); `command.readOnlyCommands` replaces it.
+ */
+export const DEFAULT_READ_ONLY_COMMANDS: readonly string[] = Object.freeze([
+  // files and directories
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'stat',
+  'file',
+  'du',
+  'tree',
+  'nl',
+  'od',
+  // search
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'find',
+  // text
+  'sort',
+  'uniq',
+  'cut',
+  'tr',
+  'diff',
+  'cmp',
+  'comm',
+  'fold',
+  'jq',
+  // paths
+  'pwd',
+  'basename',
+  'dirname',
+  'realpath',
+  'readlink',
+  // the shell itself
+  'echo',
+  'printf',
+  'true',
+  'false',
+  'test',
+  '[',
+  ':',
+  'cd',
+  'type',
+  'which',
+  // `git` and `command` stand for their reading subcommands and options only
+  'git',
+  'command',
+]);
 
 export const SystemConfigSchema = closed(
   {

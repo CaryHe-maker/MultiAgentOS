@@ -203,6 +203,90 @@ real('C: running a command, in the sandbox', () => {
   );
 
   it(
+    'runs a line of the read-only list after one question about reading the repository, none about the command',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run('ls -la && wc -l a.txt'),
+        run('cat a.txt | head -3'),
+        run('pwd'),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('look around');
+      // The only question is the one `read_file` would have asked: the command is not asked about.
+      expect(chat.questions).toHaveLength(1);
+      expect(chat.questions[0]).toContain('读取仓库');
+      const results = toolResults(provider.requests.at(-1));
+      expect(results[0]).toContain('exit code 0');
+      expect(results[0]).toContain('a.txt');
+      expect(results[1]).toContain('exit code 0');
+      expect(results[2]).toContain('exit code 0');
+      // The model is shown the same status line as for any command: nothing about a shortcut.
+      for (const result of results) expect(result).not.toMatch(/read-only|auto/iu);
+      // It is on record, though, and the user's story of the run holds it.
+      const audit = await readFile(
+        join(await sessionDirectory(place.dataDir), 'kernel-core', 'audit.jsonl'),
+        'utf8',
+      );
+      expect(audit.match(/COMMAND_READ_ONLY/gu)).toHaveLength(3);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'asks about the command, as before, when the line can write or is not on the list',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run('ls > listing.txt'),
+        run('find . -name "*.nothing" -delete'),
+        run('npm --version && node -e "1"'),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('write a listing');
+      const commandQuestions = chat.questions.filter((question) => !question.includes('读取仓库'));
+      expect(commandQuestions).toHaveLength(3);
+      expect(commandQuestions[0]).toContain('ls > listing.txt');
+      expect(await readFile(join(place.repository, 'listing.txt'), 'utf8')).toContain('a.txt');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'needs no question at all for a line that opens no file, like echo and pwd',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(run('echo hello; pwd'), reply('done'));
+      const chat = await chatOn(place, provider);
+      await chat.say('say hello');
+      expect(chat.questions).toHaveLength(0);
+      expect(lastResult(provider)).toContain('hello');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'refused repo.read: the line is asked about as an ordinary command',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(run('ls'), reply('done'));
+      const chat = await chatOn(place, provider, {
+        answer: (question) => (question.includes('读取仓库') ? 'n' : 'y'),
+      });
+      await chat.say('list');
+      // The user said no to reading the repository: the line is then asked about like any command,
+      // and it runs because the user said yes to that.
+      expect(chat.questions).toHaveLength(2);
+      expect(chat.questions[0]).toContain('读取仓库');
+      expect(chat.questions[1]).toContain('ls');
+      expect(lastResult(provider)).toContain('a.txt');
+    },
+    TIMEOUT,
+  );
+
+  it(
     'tells a timed-out command from a failed one, and keeps what it printed',
     async () => {
       const place = await roots();
@@ -265,8 +349,8 @@ real('C: running a command, in the sandbox', () => {
       expect(results[0]).toContain(join(place.repository, 'pkg/lib'));
       expect(results[1]).toContain('workdir must be a relative path');
       expect(results[2]).toContain('workdir must be a relative path');
-      // Only the first got as far as a question.
-      expect(chat.questions).toHaveLength(1);
+      // Only the first got as far as a decision, and `pwd` opens no file: no question at all.
+      expect(chat.questions).toHaveLength(0);
     },
     TIMEOUT,
   );
@@ -615,7 +699,23 @@ onLinux('H7: a process that cannot be confirmed stopped', () => {
 
 // ------------------------------------------------------------------------------------------------
 
+/** The authorization cases are about the question, so the read-only shortcut is off for them. */
+const withoutShortcut = (config: SystemConfig): SystemConfig => ({
+  ...config,
+  kernel: { ...config.kernel, command: { ...config.kernel.command, readOnlyCommands: [] } },
+});
+const chatWithoutShortcut = (
+  place: Place,
+  provider: ScriptedChat,
+  options: Partial<ChatOptions> = {},
+): Promise<Chat> =>
+  chatOn(place, provider, {
+    ...options,
+    configure: (config) => (options.configure ?? ((same) => same))(withoutShortcut(config)),
+  });
+
 real('A: the authorization of commands', () => {
+  const chatOn = chatWithoutShortcut;
   const questionsAbout = (chat: Chat) =>
     chat.questions.filter((question) => !question.includes('读取仓库'));
 
@@ -825,7 +925,9 @@ real('A: the authorization of commands', () => {
         reply('d'),
       );
       const chat = await chatOn(place, provider, {
-        configure: kernel({ command: { deniedCommands: ['rm -rf'], criticalCommands: [] } }),
+        configure: kernel({
+          command: { deniedCommands: ['rm -rf'], criticalCommands: [], readOnlyCommands: [] },
+        }),
       });
       await chat.say('clean up');
       const results = toolResults(provider.requests.at(-1));

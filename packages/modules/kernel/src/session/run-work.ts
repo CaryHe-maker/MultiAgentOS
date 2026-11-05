@@ -479,6 +479,7 @@ export class RunWork {
   /** Kernel/Core 5a.3; an answer to a question comes back here, because it only adds an entry. */
   async #decide(waiting: WaitingUnit): Promise<void> {
     const { request, unit, record } = waiting;
+    let readOnly = false;
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
       const command = capability === 'command.exec' ? this.#commandDemand(request) : undefined;
@@ -496,6 +497,7 @@ export class RunWork {
         },
         record.ceiling,
       );
+      if (decision.kind === 'ALLOW' && decision.readOnly === true) readOnly = true;
       if (decision.kind === 'REFUSE') {
         this.#refuseUnit(request, unit, { reasonCode: decision.reasonCode });
         return;
@@ -505,7 +507,7 @@ export class RunWork {
         return;
       }
     }
-    await this.#startAttempt(request, unit, record);
+    await this.#startAttempt(request, unit, record, readOnly);
   }
 
   async #ask(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
@@ -545,6 +547,7 @@ export class RunWork {
       network: input.network,
       sandbox: support.sandbox(),
       unavailablePolicy: support.unavailablePolicy,
+      repoReadGranted: this.#authorization.lease !== undefined,
     };
   }
 
@@ -593,12 +596,17 @@ export class RunWork {
   }
 
   /** Where a command runs and with what; the scanned lists are not part of what was approved. */
-  async #commandScope(request: SubmitUnitRequest, record: AgentRunRecord): Promise<ExecutionScope> {
+  async #commandScope(
+    request: SubmitUnitRequest,
+    record: AgentRunRecord,
+    readOnly: boolean,
+  ): Promise<ExecutionScope> {
     const support = this.#deps.command;
     if (support === undefined) throw new Error('A command needs the command support');
     const input = request.input as CommandInput;
     const backend = support.sandbox() === 'UNAVAILABLE' ? 'UNISOLATED' : 'BWRAP';
-    const roots = [...writableRoots(record.ceiling)];
+    // A line of the read-only list runs where nothing can be written, whatever the AgentRun may.
+    const roots = readOnly ? [] : [...writableRoots(record.ceiling)];
     return {
       kind: 'SANDBOX',
       backend,
@@ -645,6 +653,7 @@ export class RunWork {
     request: SubmitUnitRequest,
     unit: UnitDefinition,
     record: AgentRunRecord,
+    readOnly = false,
   ): Promise<void> {
     const { turnId } = this.#host.control();
     if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
@@ -652,7 +661,7 @@ export class RunWork {
     try {
       scope =
         unit.executionKind === 'COMMAND'
-          ? await this.#commandScope(request, record)
+          ? await this.#commandScope(request, record, readOnly)
           : this.#scopeOf(unit, record);
     } catch (error) {
       // E.g. the repository is too large to scan for secrets: the command does not run unmasked.
@@ -660,6 +669,14 @@ export class RunWork {
       this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
       return;
     }
+    if (readOnly && unit.executionKind === 'COMMAND')
+      this.#deps.audit({
+        type: 'COMMAND_READ_ONLY',
+        requestId: request.requestId,
+        agentRunId: request.agentRunId,
+        command: (request.input as CommandInput).command,
+        workdir: (request.input as CommandInput).workdir,
+      });
     await this.#attempts.start({
       requestId: request.requestId,
       agentRunId: request.agentRunId,

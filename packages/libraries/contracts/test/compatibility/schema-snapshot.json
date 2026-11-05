@@ -35739,7 +35739,8 @@
           "type": "object",
           "required": [
             "deniedCommands",
-            "criticalCommands"
+            "criticalCommands",
+            "readOnlyCommands"
           ],
           "properties": {
             "deniedCommands": {
@@ -35756,6 +35757,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
+              }
+            },
+            "readOnlyCommands": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
               }
             }
           },
@@ -36332,7 +36341,8 @@
               "type": "object",
               "required": [
                 "deniedCommands",
-                "criticalCommands"
+                "criticalCommands",
+                "readOnlyCommands"
               ],
               "properties": {
                 "deniedCommands": {
@@ -36349,6 +36359,14 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  }
+                },
+                "readOnlyCommands": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 }
               },

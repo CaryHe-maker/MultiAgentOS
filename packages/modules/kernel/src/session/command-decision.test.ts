@@ -339,3 +339,113 @@ describe('the command question', () => {
     expect(run('make clean', 'pkg')).toBe('ASK');
   });
 });
+
+describe('a line of the read-only list', () => {
+  const reading = (text: string, over: Partial<CommandDemand> = {}) =>
+    command(text, { analysis: analysis(text, { readOnly: true }), ...over });
+  const denyRepoRead: AuthorizationEntry = {
+    scope: 'RUN',
+    effect: 'DENY',
+    capability: 'repo.read',
+    agentRunId: 'run-1',
+  };
+
+  it('asks for repo.read first, as read_file does, and not for the command', () => {
+    expect(decideUnit(demand(reading('ls -la')), mainCeiling, [])).toEqual({
+      kind: 'ASK',
+      capability: 'repo.read',
+      resourceKey: '.',
+      critical: false,
+    });
+  });
+
+  it('needs no repo.read for a line that opens no file of the repository', () => {
+    const echo = command('echo hi', {
+      analysis: analysis('echo hi', { readOnly: true, readsRepository: false }),
+    });
+    expect(decideUnit(demand(echo), mainCeiling, [])).toMatchObject({
+      kind: 'ALLOW',
+      readOnly: true,
+    });
+  });
+
+  it('runs without a question once repo.read is allowed, and says it is read-only', () => {
+    expect(
+      decideUnit(demand(reading('ls -la', { repoReadGranted: true })), mainCeiling, []),
+    ).toEqual({ kind: 'ALLOW', capability: 'command.exec', resourceKey: '.', readOnly: true });
+  });
+
+  it('is not allowed without the capability to run commands at all', () => {
+    const ceiling: CapabilityCeiling = {
+      ...mainCeiling,
+      capabilities: new Set<Capability>(['repo.read']),
+    };
+    expect(decideUnit(demand(reading('ls', { repoReadGranted: true })), ceiling, [])).toMatchObject(
+      { kind: 'REFUSE', reasonCode: 'CAPABILITY_NOT_GRANTED' },
+    );
+  });
+
+  it('stays a question like any command where the sandbox is missing, or the network is wanted', () => {
+    const open = { repoReadGranted: true };
+    expect(
+      decideUnit(
+        demand(
+          reading('ls', { ...open, sandbox: 'UNAVAILABLE', unavailablePolicy: 'ask-unisolated' }),
+        ),
+        mainCeiling,
+        [],
+      ),
+    ).toMatchObject({ kind: 'ASK', capability: 'command.exec', critical: true });
+    expect(
+      decideUnit(demand(reading('ls', { ...open, network: true })), mainCeiling, []),
+    ).toMatchObject({ kind: 'ASK', capability: 'command.exec', critical: true });
+  });
+
+  it('is not read-only when a list says the line is critical or forbidden', () => {
+    const open = { repoReadGranted: true };
+    const critical = command('git status', {
+      ...open,
+      analysis: analysis('git status', { readOnly: true, critical: 'git' }),
+    });
+    expect(decideUnit(demand(critical), mainCeiling, [])).toMatchObject({
+      kind: 'ASK',
+      capability: 'command.exec',
+      critical: true,
+    });
+    const denied = command('ls', {
+      ...open,
+      analysis: analysis('ls', { readOnly: true, denied: 'ls' }),
+    });
+    expect(decideUnit(demand(denied), mainCeiling, [])).toMatchObject({
+      reasonCode: 'COMMAND_DENIED',
+    });
+  });
+
+  it('is asked as an ordinary command by an AgentRun that refused repo.read', () => {
+    expect(
+      decideUnit(demand(reading('ls', { repoReadGranted: true })), mainCeiling, [denyRepoRead]),
+    ).toMatchObject({ kind: 'ASK', capability: 'command.exec' });
+  });
+
+  it('is refused when the user refused exactly this command', () => {
+    const refused: AuthorizationEntry = {
+      scope: 'RUN',
+      effect: 'DENY',
+      capability: 'command.exec',
+      agentRunId: 'run-1',
+      commandKey: ' ls',
+    };
+    expect(
+      decideUnit(demand(reading('ls', { repoReadGranted: true })), mainCeiling, [refused]),
+    ).toMatchObject({ kind: 'REFUSE', reasonCode: 'USER_DECLINED' });
+  });
+
+  it('is not read-only when the analysis does not say so', () => {
+    expect(
+      decideUnit(demand(command('ls', { repoReadGranted: true })), mainCeiling, []),
+    ).toMatchObject({
+      kind: 'ASK',
+      capability: 'command.exec',
+    });
+  });
+});

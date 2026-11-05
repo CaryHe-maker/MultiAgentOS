@@ -1,4 +1,4 @@
-import type { KernelConfig } from '@multiagentos/contracts';
+import { DEFAULT_READ_ONLY_COMMANDS, type KernelConfig } from '@multiagentos/contracts';
 
 const toolLimit = (timeoutMs: number, maxOutputBytes: number) =>
   Object.freeze({
@@ -34,6 +34,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   command: Object.freeze({
     deniedCommands: [],
     criticalCommands: [],
+    readOnlyCommands: [...DEFAULT_READ_ONLY_COMMANDS],
   }),
   killGraceMs: 2_000,
   maxConcurrentExec: 1,

@@ -1,5 +1,10 @@
 import { firstMatchingPattern } from './parse/command-match.js';
 import { prefixOf, type CommandParser } from './parse/command-parser.js';
+import {
+  DEFAULT_READ_ONLY_COMMANDS,
+  isReadOnlyLine,
+  readsRepository,
+} from './parse/read-only-commands.js';
 
 /** Appended to by `command.criticalCommands`, never removed from (M2Design 5.2). */
 export const DEFAULT_CRITICAL_COMMANDS: readonly string[] = Object.freeze([
@@ -24,6 +29,10 @@ export interface CommandAnalysisResult {
   readonly unreusable: ReturnType<CommandParser['parse']>['unreusable'];
   readonly denied?: string;
   readonly critical?: string;
+  /** Every command of the line only reads (the read-only list); see read-only-commands.ts. */
+  readonly readOnly: boolean;
+  /** A command of a read-only line can read a file of the repository: `repo.read` is needed. */
+  readonly readsRepository: boolean;
 }
 
 /**
@@ -35,6 +44,8 @@ export function createCommandAnalyzer(
   lists: {
     readonly deniedCommands: readonly string[];
     readonly criticalCommands: readonly string[];
+    /** The read-only list; the default one when not given. */
+    readonly readOnlyCommands?: readonly string[];
   },
 ): (command: string) => CommandAnalysisResult {
   const critical = [...new Set([...DEFAULT_CRITICAL_COMMANDS, ...lists.criticalCommands])];
@@ -53,6 +64,12 @@ export function createCommandAnalyzer(
         };
       }),
       unreusable: parsed.unreusable,
+      // A line that a list forbids or calls critical is never read-only.
+      readOnly:
+        denied === undefined &&
+        matched === undefined &&
+        isReadOnlyLine(parsed, lists.readOnlyCommands ?? DEFAULT_READ_ONLY_COMMANDS),
+      readsRepository: readsRepository(parsed),
       ...(denied === undefined ? {} : { denied }),
       ...(matched === undefined ? {} : { critical: matched }),
     };

@@ -120,6 +120,14 @@ export type AttemptAudit =
       readonly reasonCode?: ReasonCode;
     }
   | { readonly type: 'STALE_FACT'; readonly unitAttemptId: string }
+  /** A command of the read-only list ran without a question of its own (Core 5b). */
+  | {
+      readonly type: 'COMMAND_READ_ONLY';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly command: string;
+      readonly workdir: string;
+    }
   | {
       readonly type: 'SETTLEMENT_ANOMALY';
       readonly unitAttemptId: string;

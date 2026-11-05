@@ -153,6 +153,10 @@ confirmUndo(CANCEL)、下一条 answerHuman、切换或关闭 Session → 发出
 ② command.exec 不在能力上限中                                     → CAPABILITY_NOT_GRANTED（readonly 预设下工具本来就不出现）
    沙盒不可用且 sandbox.unavailable = 'deny'                         → REJECTED(SANDBOX_UNAVAILABLE)
 ④ 查找覆盖本命令的条目：每个子命令都被某条目覆盖才算覆盖
+   ④b 只读命令行（分析给出 readOnly，不命中名单、不联网、沙盒可用，M2Design 第 5.2 节"只读名单"）：
+       不单独询问，需要 repo.read：已有 Lease → ALLOW（readOnly），沙盒的可写根目录为空；
+       没有 Lease → 询问 repo.read（问的是读取仓库）；本 AgentRun 拒绝过 repo.read → 按普通命令继续往下判
+       不打开仓库文件的命令行（readsRepository = false，如 echo、pwd）连 Lease 也不要；放行写入审计 COMMAND_READ_ONLY
      条目的资源键：(规范化的子命令文字, 工作目录) 为 COMMAND 条目；前缀 + 工作目录范围为 PREFIX 条目
      命中 criticalCommands、network: true、沙盒不可用（ask-unisolated）→ 极危险级：不查条目，每次询问
 ⑤ 没有覆盖 → 询问，展示：确切的命令、工作目录、SandboxProfile 摘要（可写根目录、联网与否、是否未隔离）、approvalDigest
