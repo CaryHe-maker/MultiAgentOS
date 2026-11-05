@@ -156,6 +156,15 @@ export const ConsoleText = Object.freeze({
   degraded: DEGRADED,
   earlyEnd: EARLY_END,
   degradedOther: '没能完成回复。',
+  /** What the user is told when memory runs short; the same event is on record in the Kernel. */
+  memory: (source: 'PROCESS' | 'SYSTEM', level: 'WARNING' | 'DANGER', ratio: number): string => {
+    const percent = `${(ratio * 100).toFixed(0)}%`;
+    if (source === 'SYSTEM')
+      return `⚠ 整机内存紧张（已用 ${percent}），多半是其他程序占用；本程序的运行不受影响，必要时请关闭其他程序。`;
+    return level === 'DANGER'
+      ? `⚠ 本程序的内存危险（${percent}），正在进行的运行会被中断；对话记录完整，可以随后重新输入。`
+      : `⚠ 本程序的内存偏高（${percent}），当前一轮会提前收尾，新的任务暂缓，内存回落后即可继续。`;
+  },
   finished: {
     COMPLETED: '',
     BUDGET: '本次运行因额度结束。',
@@ -165,7 +174,7 @@ export const ConsoleText = Object.freeze({
     CANCELLED: '运行已取消。',
     ENDED_BY_USER: '运行已结束。',
     SHUTDOWN: '已退出。',
-    INTERRUPTED: '运行因内存紧张被中断，对话记录完整；重新启动后可以用 /resume 继续。',
+    INTERRUPTED: '运行因内存紧张被中断，对话记录完整；可以直接重新输入，开始新的一轮。',
   } satisfies Record<CloseReason, string>,
   phase: {
     ASSEMBLING: '组织上下文',

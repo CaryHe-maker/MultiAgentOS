@@ -1,3 +1,4 @@
+import { settleOpenCalls } from './settle-stale.js';
 import {
   REPOSITORY_KINDS,
   REASON_CODE_CATEGORY,
@@ -315,6 +316,8 @@ export class SessionRunner {
       }
       case 'RunInterrupted':
         await this.#append([{ type: 'RUN_INTERRUPTED', workflowRunId, reason: event.reason }]);
+        // Calls the cancelled work left without a result are answered before anything else.
+        await this.#append([...settleOpenCalls(this.#records, workflowRunId)]);
         await this.#onInterrupted(workflowRunId, event.reason);
         break;
       case 'RunClosed':
@@ -589,6 +592,11 @@ export class SessionRunner {
     );
     if (registered.outcome === 'REJECTED') {
       await this.#endNode(workflowRunId, turnId, nodeId, 'FAILED');
+      // This process is short of memory (Core 5c): no model is asked. The run closes as
+      // interrupted, the user is told so, and the next message opens a new run instead of
+      // waiting on one that has nothing left to do.
+      if (registered.reasonCode === 'MEMORY_PRESSURE')
+        await this.#close(workflowRunId, 'INTERRUPTED');
       return;
     }
     const handoff = inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;

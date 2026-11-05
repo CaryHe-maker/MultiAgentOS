@@ -95,8 +95,6 @@ export interface SessionActorDeps {
   readonly onFatal: (error: unknown) => void;
   /** A run ended because of memory pressure (Kernel/Core 5c): the system now exits in control. */
   readonly onInterrupted?: () => void;
-  /** Memory ran short with no run to carry it: the system exits in control. */
-  readonly onIdleMemoryExit?: () => void;
   /** How long Workflow has to close an interrupted run before the Kernel does. */
   readonly interruptBackstopMs?: number;
   /** What Gateway may let in; pushed on every change of a run. */
@@ -175,10 +173,9 @@ export class SessionActor {
   memoryPressure(level: MemoryLevel): Promise<void> {
     return this.call(() => {
       const run = this.#run;
-      if (run === undefined || run.control.phase === 'CLOSED') {
-        if (level === 'DANGER') this.#deps.onIdleMemoryExit?.();
-        return;
-      }
+      // With no run open there is nothing to interrupt: the notice and the record were made by
+      // the Kernel, and the next start is refused while the process is short (Core 5c).
+      if (run === undefined || run.control.phase === 'CLOSED') return;
       if (level === 'WARNING') {
         run.work.setMemoryWarning();
         return;

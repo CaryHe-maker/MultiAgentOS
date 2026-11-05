@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { MemorySessionPersistence } from '../test-support/memory-session-persistence.js';
 import { SessionLogStore, SessionStoreFailure } from './session-log-store.js';
-import { settleStaleRecords } from './settle-stale.js';
+import { settleOpenCalls, settleStaleRecords } from './settle-stale.js';
 
 const root = '/repository';
 const digest = 'a'.repeat(64);
@@ -262,6 +262,43 @@ describe('settling what was open', () => {
       { type: 'AGENT_RUN_ENDED', turnId: turn, agentRunId, outcome: 'ENDED' },
     ];
     expect(settleStaleRecords(log(closed))).toEqual([]);
+  });
+
+  describe('after an interrupt, in the process that stays', () => {
+    const submitted = {
+      type: 'UNIT_SUBMITTED',
+      turnId: turn,
+      requestId: 'req_open',
+      path: 'agr_abcdef/round-1/1#1',
+      agentRunId,
+      unitRunId: `unr_${'b'.repeat(32)}`,
+      unitRef: { kind: 'UNIT', id: 'run-command', version: 'v1.0.0', digest },
+      inputSource: { kind: 'TOOL_CALL', modelTurnRequestId: 'req_m', toolCallId: 'call_1' },
+    };
+
+    it('ends the unit that was in flight, and only that: the AgentRun closes through its reply', () => {
+      const settled = settleOpenCalls(log([registered, modelTurn, submitted]), run);
+      expect(settled).toMatchObject([{ type: 'UNIT_INTERRUPTED', requestId: 'req_open' }]);
+    });
+
+    it('answers a call that was never submitted', () => {
+      const settled = settleOpenCalls(log([registered, modelTurn]), run);
+      expect(settled).toMatchObject([
+        { type: 'FEEDBACK', code: 'INTERRUPTED', toolCallId: 'call_1' },
+      ]);
+    });
+
+    it('leaves a finished unit and another run alone', () => {
+      const done = {
+        type: 'UNIT_COMPLETED',
+        turnId: turn,
+        requestId: 'req_open',
+        status: 'OK',
+        budget,
+      };
+      expect(settleOpenCalls(log([registered, modelTurn, submitted, done]), run)).toEqual([]);
+      expect(settleOpenCalls(log([registered, modelTurn, submitted]), newId('wfr'))).toEqual([]);
+    });
   });
 });
 

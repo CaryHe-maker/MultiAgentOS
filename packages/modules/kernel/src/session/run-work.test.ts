@@ -926,9 +926,10 @@ describe('memory pressure', () => {
   });
 
   it('lets work in again once the live level says the pressure is gone', async () => {
-    let level: 'WARNING' | undefined = 'WARNING';
+    let level: 'WARNING' | undefined;
     const kernel = await setup(undefined, { memoryLevel: () => level });
     await kernel.register();
+    level = 'WARNING';
     await kernel.actor.memoryPressure('WARNING');
     await kernel.submit();
     await kernel.settled();
@@ -941,6 +942,17 @@ describe('memory pressure', () => {
     // Not refused for memory again: the unit went on to ask the user.
     expect(kernel.reports()).toHaveLength(1);
     expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+  });
+
+  it('refuses a new AgentRun while this process is short, and takes it once the level has fallen', async () => {
+    let level: 'DANGER' | undefined = 'DANGER';
+    const kernel = await setup(undefined, { memoryLevel: () => level });
+    expect(await kernel.register()).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'MEMORY_PRESSURE',
+    });
+    level = undefined;
+    expect(await kernel.register(newId('agr'))).toMatchObject({ outcome: 'ACCEPTED' });
   });
 
   describe('DANGER', () => {

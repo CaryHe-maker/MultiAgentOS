@@ -1,9 +1,9 @@
 /** Kernel.Monitor: one ledger per Turn, and the run's budget and quotas over them (Kernel/Monitor). */
 export {
   createMemorySampler,
-  levelOfSample,
+  systemLevelOf,
   levelOf,
-  pressureRatio,
+  processRatio,
   readMemorySample,
   type MemorySample,
   type MemorySampler,

@@ -282,15 +282,15 @@ export class RunWork {
     this.#memoryWarning = true;
   }
 
-  /** New work is refused while WARNING holds; it holds until the live level has fallen. */
+  /**
+   * New work is refused while this process is short of memory. The live level decides, so a
+   * Turn after an interrupt is refused with the reason while the pressure lasts and accepted as
+   * soon as it has fallen; without a live level the message that raised the warning decides.
+   */
   #underWarning(): boolean {
     if (this.#interrupting) return true;
-    if (!this.#memoryWarning) return false;
-    if (this.#deps.memoryLevel !== undefined && this.#deps.memoryLevel() === undefined) {
-      this.#memoryWarning = false;
-      return false;
-    }
-    return true;
+    if (this.#deps.memoryLevel !== undefined) return this.#deps.memoryLevel() !== undefined;
+    return this.#memoryWarning;
   }
 
   openTurn(turnId: string): void {

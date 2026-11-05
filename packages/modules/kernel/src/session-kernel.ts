@@ -25,6 +25,8 @@ import {
   type HealthStatus,
   type KernelConfig,
   type LifecyclePort,
+  type MemoryLevel,
+  type MemorySource,
   type ProtocolRegistry,
   type RegisterAgentRunRequest,
   type SessionPersistencePort,
@@ -73,6 +75,13 @@ import { KernelOutbox } from './session/session-outbox.js';
 import { ArtifactSweep } from './session/artifact-sweep.js';
 import { SessionRefs, TrustRecords } from './session/session-refs.js';
 
+/** What the user is told when memory runs short (Kernel/Monitor 4a). */
+export interface MemoryNotice {
+  readonly source: MemorySource;
+  readonly level: MemoryLevel;
+  readonly ratio: number;
+}
+
 export interface SessionKernelDeps {
   /** The Fabric client whose producer is `kernel-core`. */
   readonly fabric: FabricPort;
@@ -100,10 +109,10 @@ export interface SessionKernelDeps {
   readonly readRepositoryFile: RunExecutionDeps['readRepositoryFile'];
   readonly reportSystemFault?: SystemFaultReporter;
   /**
-   * Memory is short and no run is open to carry it: the composition root exits in control
-   * (SystemFaultHandling 3). With a run, the run closes as INTERRUPTED and the interface exits.
+   * Memory is short: the interface tells the user. It is told whether or not a run is open, and
+   * the same notice is on record (`memory-events`). A run, if there is one, is handled by Core.
    */
-  readonly onMemoryExit?: () => void;
+  readonly onMemoryNotice?: (notice: MemoryNotice) => void;
   /** Where the sampler reads memory; a test gives a controllable one. */
   readonly memorySample?: () => MemorySample;
   /** The system data directory, which no command may see. */
@@ -461,7 +470,6 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         },
         onFatal: fault,
         interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
-        onIdleMemoryExit: () => deps.onMemoryExit?.(),
         onInterrupted: () => {
           deps.diagnostic?.('memory pressure: the run was interrupted\n');
         },
@@ -477,6 +485,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     artifactsOf: (sessionId) => sessionArtifacts.get(sessionId),
   });
 
+  const memoryEvents = persistence.appendLog<object>('kernel-core', {
+    scope: 'SYSTEM',
+    file: 'memory-events',
+  });
   let started = false;
   // The sampler's only way out is this one message to Core (Kernel/Monitor 4a).
   const sampler = createMemorySampler({
@@ -487,7 +499,30 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     },
     ...(deps.memorySample === undefined ? {} : { read: deps.memorySample }),
     send: (message) => {
-      void manager.memoryPressure(message.level, () => deps.onMemoryExit?.()).catch(fault);
+      // Recorded first, so that a notice the user saw can always be found afterwards.
+      memoryEvents
+        .append({
+          at: now().toISOString(),
+          source: message.source,
+          level: message.level,
+          ratio: message.ratio,
+          rssBytes: message.rssBytes,
+          heapRatio: message.heapRatio,
+          ...(message.availableBytes === undefined
+            ? {}
+            : { availableBytes: message.availableBytes }),
+        })
+        .catch(fault);
+      deps.diagnostic?.(
+        `memory ${message.source} ${message.level}: ${(message.ratio * 100).toFixed(0)}%\n`,
+      );
+      deps.onMemoryNotice?.({
+        source: message.source,
+        level: message.level,
+        ratio: message.ratio,
+      });
+      // Only this process's own pressure touches a run (M2Design 7.7).
+      if (message.source === 'PROCESS') void manager.memoryPressure(message.level).catch(fault);
     },
     ...(deps.diagnostic === undefined ? {} : { diagnostic: deps.diagnostic }),
   });

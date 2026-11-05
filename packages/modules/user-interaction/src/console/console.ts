@@ -78,6 +78,8 @@ export class Console {
   readonly #now: () => Date;
   readonly #pending: PendingItem[] = [];
   readonly #queued: string[] = [];
+  /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
+  #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
@@ -126,6 +128,15 @@ export class Console {
 
   #notice(message: string): void {
     if (message.length > 0) this.#deps.view.print({ kind: 'NOTICE', text: message });
+  }
+
+  /** Memory ran short (Kernel/Monitor 4a): the user is told at once, whatever the Console is doing. */
+  notifyMemory(notice: {
+    source: 'PROCESS' | 'SYSTEM';
+    level: 'WARNING' | 'DANGER';
+    ratio: number;
+  }): void {
+    this.#notice(text.memory(notice.source, notice.level, notice.ratio));
   }
 
   /** Interactive start: the list of this repository's Sessions, then a draft. */
@@ -210,6 +221,16 @@ export class Console {
     }
     // Nothing waits for input: the message waits in the console, Kernel never sees it (5.2).
     this.#queued.push(input);
+    // After an interrupt there is no run to wait for: this message opens the next one, and the
+    // new run's first request for input takes it. Refused while the old run is still closing; the
+    // flag stays, and the next message tries again.
+    if (this.#continueOnInput && this.#sessionId !== undefined) {
+      const opened = await this.#deps.gateway.openSession(
+        { requestId: newId('req'), sessionId: this.#sessionId },
+        this.#context(),
+      );
+      if (opened.outcome === 'ACCEPTED') this.#continueOnInput = false;
+    }
     this.#refresh();
   }
 
@@ -492,7 +513,10 @@ export class Console {
         this.#deps.view.print({ kind: 'ERROR', text: text.sessionFailed[event.code] });
         break;
       case 'SessionClosed':
-        if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
+        if (this.#sessionId === envelope.sessionId) {
+          this.#sessionId = undefined;
+          this.#continueOnInput = false;
+        }
         break;
     }
     this.#refresh();
@@ -697,14 +721,11 @@ export class Console {
     }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
-    if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined) {
-      // The run was cut short from outside: the log is complete, so leave in control.
-      this.#exitCode = RUN_EXIT_CODES.INTERRUPTED;
-      // Not awaited: the Kernel waits for this very event to be delivered before it stops, so
-      // waiting for the stop inside the handler would wait for itself.
-      void this.shutdown().catch(() => undefined);
-      return;
-    }
+    // An interrupted conversation stays open: the log is complete, and the next message starts
+    // a new Turn (refused with the reason while memory is still short). Only a one-shot command
+    // leaves, with code 75, through the exit code of its close reason below.
+    if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined)
+      this.#continueOnInput = true;
     if (this.#finished !== undefined) {
       this.#finished(RUN_EXIT_CODES[event.closeReason]);
       return;

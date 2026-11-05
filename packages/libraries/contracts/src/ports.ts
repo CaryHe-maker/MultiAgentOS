@@ -476,7 +476,7 @@ export type PersistenceNamespace = (typeof PERSISTENCE_NAMESPACES)[number];
 export type StoragePath =
   | {
       readonly scope: 'SYSTEM';
-      readonly file: 'session-index' | 'session-refs' | 'trusted-instructions';
+      readonly file: 'session-index' | 'session-refs' | 'trusted-instructions' | 'memory-events';
     }
   | {
       readonly scope: 'SESSION';

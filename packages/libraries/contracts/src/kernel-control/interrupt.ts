@@ -13,6 +13,13 @@ export const MEMORY_LEVELS = ['WARNING', 'DANGER'] as const;
 export type MemoryLevel = (typeof MEMORY_LEVELS)[number];
 
 /**
+ * Whose memory it is. PROCESS (this program's RSS and heap) may interrupt a run; SYSTEM (the
+ * machine running short because of other programs) only informs and is recorded.
+ */
+export const MEMORY_SOURCES = ['PROCESS', 'SYSTEM'] as const;
+export type MemorySource = (typeof MEMORY_SOURCES)[number];
+
+/**
  * The one thing the memory sampler may send (Kernel/Monitor 4a): a control message that Core
  * queues and handles like any other. The sampler holds no run, no Workflow and no way to stop
  * anything itself.
@@ -20,6 +27,7 @@ export type MemoryLevel = (typeof MEMORY_LEVELS)[number];
 export const MemoryPressureSchema = closed(
   {
     type: Type.Literal('MemoryPressure'),
+    source: Type.Enum(MEMORY_SOURCES),
     level: Type.Enum(MEMORY_LEVELS),
     /** The highest of the ratios below, 0..1. */
     ratio: Type.Number({ minimum: 0 }),

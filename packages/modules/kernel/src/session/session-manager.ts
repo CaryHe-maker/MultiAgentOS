@@ -89,13 +89,10 @@ export class SessionManager {
     });
   }
 
-  /** Memory pressure reaches the open Session's run, if any; with none open, DANGER still exits. */
-  memoryPressure(level: MemoryLevel, noRun: () => void): Promise<void> {
+  /** Memory pressure of this process reaches the open Session's run, if any. */
+  memoryPressure(level: MemoryLevel): Promise<void> {
     const open = this.#open;
-    if (open === undefined) {
-      if (level === 'DANGER') noRun();
-      return Promise.resolve();
-    }
+    if (open === undefined) return Promise.resolve();
     return open.actor.memoryPressure(level);
   }
 

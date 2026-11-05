@@ -175,10 +175,11 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 | 来源 | Core 的处理 |
 |---|---|
-| `MemoryPressure(WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的 Turn（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
-| `MemoryPressure(DANGER)` | 运行进入 INTERRUPTING：Outbox 先向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`，随后取消待答复的询问、在途与排队的尝试，拒绝新的 AgentRun 与除 `message-publish` 之外的 Unit（`MEMORY_PRESSURE`）；运行保持打开，让 Workflow 发布一条不经模型的回复并 `closeRun(INTERRUPTED)`。Workflow 在 `interruptBackstopMs`（缺省 `cancelGraceMs + convergenceMarginMs + 10 秒`）内没有关闭时，Kernel 自己关闭。运行关闭后界面以退出码 75 退出，说明原因与恢复方式；没有运行或没有打开的 Session 时，Core 经 `onMemoryExit` 请组合根让界面退出 |
+| `MemoryPressure(source = SYSTEM)` | 只通知与记录（系统级 `memory-events` 记录，界面提示），不拒绝任何工作，不收尾，不中断 |
+| `MemoryPressure(PROCESS, WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的 Turn（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
+| `MemoryPressure(PROCESS, DANGER)` | 运行进入 INTERRUPTING：Outbox 先向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`，随后取消待答复的询问、在途与排队的尝试，拒绝新的 AgentRun 与除 `message-publish` 之外的 Unit（`MEMORY_PRESSURE`）；运行保持打开，让 Workflow 发布一条不经模型的回复并 `closeRun(INTERRUPTED)`。Workflow 在 `interruptBackstopMs`（缺省 `cancelGraceMs + convergenceMarginMs + 10 秒`）内没有关闭时，Kernel 自己关闭。运行关闭后对话仍打开，界面说明原因，用户的下一条消息开启新的运行；一次性命令以退出码 75 退出。没有运行或没有打开的 Session 时只通知与记录，不退出 |
 
-- 同一级别不重复处理；级别只升不降地触发（恢复时不撤销已发生的收尾）。
+- 同一级别不重复处理；级别回落后再次升高会再次触发。已发生的收尾不撤销，但拒绝新工作以采样器当前的级别为准：回落后新的 AgentRun 与工具即可继续。
 - 任一运行无法确认停止时按第 5b 节的停机处理。
 - 内存采样在 Monitor（[Monitor](Monitor.md) 第 4a 节），Core 只处理控制消息，不持有采样器。
 

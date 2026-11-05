@@ -4,17 +4,22 @@ import type { MemoryPressure } from '@multiagentos/contracts';
 import {
   createMemorySampler,
   levelOf,
-  levelOfSample,
-  pressureRatio,
+  processRatio,
+  systemLevelOf,
   type MemorySample,
 } from './memory-sampler.js';
 
 const thresholds = { warningRatio: 0.75, dangerRatio: 0.9 };
-const sample = (ratio: number): MemorySample => ({ rssBytes: 1, rssRatio: ratio, heapRatio: 0 });
+const sample = (ratio: number, systemRatio?: number): MemorySample => ({
+  rssBytes: 1,
+  rssRatio: ratio,
+  heapRatio: 0,
+  ...(systemRatio === undefined ? {} : { systemRatio }),
+});
 
 describe('levels', () => {
-  it('uses the highest of the ratios', () => {
-    expect(pressureRatio({ rssBytes: 1, rssRatio: 0.2, heapRatio: 0.8, systemRatio: 0.5 })).toBe(
+  it('counts what this process holds as the higher of its RSS and its heap', () => {
+    expect(processRatio({ rssBytes: 1, rssRatio: 0.2, heapRatio: 0.8, systemRatio: 0.99 })).toBe(
       0.8,
     );
   });
@@ -24,73 +29,88 @@ describe('levels', () => {
     expect(levelOf(0.75, thresholds)).toBe('WARNING');
     expect(levelOf(0.9, thresholds)).toBe('DANGER');
   });
-});
 
-describe('own memory against the machine', () => {
   it('lets the machine running short reach WARNING only', () => {
-    const machine = (systemRatio: number): MemorySample => ({ ...sample(0.1), systemRatio });
-    expect(levelOfSample(machine(0.8), thresholds)).toBe('WARNING');
-    expect(levelOfSample(machine(0.99), thresholds)).toBe('WARNING');
-    expect(levelOfSample(machine(0.5), thresholds)).toBeUndefined();
-  });
-
-  it('lets this process reach DANGER', () => {
-    expect(levelOfSample(sample(0.95), thresholds)).toBe('DANGER');
-    expect(levelOfSample({ ...sample(0.1), heapRatio: 0.92 }, thresholds)).toBe('DANGER');
+    expect(systemLevelOf(sample(0.1, 0.8), thresholds)).toBe('WARNING');
+    expect(systemLevelOf(sample(0.1, 0.99), thresholds)).toBe('WARNING');
+    expect(systemLevelOf(sample(0.1, 0.5), thresholds)).toBeUndefined();
+    expect(systemLevelOf(sample(0.1), thresholds)).toBeUndefined();
   });
 });
 
 describe('the sampler', () => {
-  const run = (ratios: (number | Error)[]) => {
+  const run = (readings: (MemorySample | Error)[]) => {
     const sent: MemoryPressure[] = [];
     const diagnostics: string[] = [];
+    const levels: (string | undefined)[] = [];
     let index = 0;
     const sampler = createMemorySampler({
       intervalMs: 10,
       thresholds,
       read: () => {
-        const next = ratios[index++] ?? 0;
+        const next = readings[index++] ?? sample(0);
         if (next instanceof Error) throw next;
-        return sample(next);
+        return next;
       },
       send: (message) => sent.push(message),
       diagnostic: (line) => diagnostics.push(line),
     });
-    const levels: (string | undefined)[] = [];
-    for (let step = 0; step < ratios.length; step += 1) {
+    for (let step = 0; step < readings.length; step += 1) {
       sampler.sampleOnce();
       levels.push(sampler.level());
     }
     return { sent, diagnostics, levels };
   };
+  const own = (...ratios: number[]) => ratios.map((ratio) => sample(ratio));
+  const summary = (sent: MemoryPressure[]) =>
+    sent.map((message) => `${message.source}:${message.level}`);
 
   it('sends nothing while the level is normal', () => {
-    expect(run([0.1, 0.5, 0.74]).sent).toEqual([]);
+    expect(run(own(0.1, 0.5, 0.74)).sent).toEqual([]);
   });
 
   it('sends one message when the level rises and none while it stays', () => {
-    const { sent } = run([0.8, 0.85, 0.8]);
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ type: 'MemoryPressure', level: 'WARNING' });
+    const { sent } = run(own(0.8, 0.85, 0.8));
+    expect(summary(sent)).toEqual(['PROCESS:WARNING']);
+    expect(sent[0]).toMatchObject({ type: 'MemoryPressure', ratio: 0.8 });
   });
 
-  it('sends DANGER after WARNING, and nothing when the pressure falls back from DANGER', () => {
-    const { sent } = run([0.8, 0.95, 0.1, 0.95]);
-    expect(sent.map((message) => message.level)).toEqual(['WARNING', 'DANGER']);
+  it('sends DANGER after WARNING', () => {
+    expect(summary(run(own(0.8, 0.95)).sent)).toEqual(['PROCESS:WARNING', 'PROCESS:DANGER']);
   });
 
-  it('knows the live level, and sends WARNING again after it fell back', () => {
-    const { sent, levels } = run([0.8, 0.1, 0.8]);
-    expect(levels).toEqual(['WARNING', undefined, 'WARNING']);
-    expect(sent.map((message) => message.level)).toEqual(['WARNING', 'WARNING']);
+  it('sends a level again when it rises again after it fell, DANGER included', () => {
+    expect(summary(run(own(0.95, 0.1, 0.95, 0.8, 0.95)).sent)).toEqual([
+      'PROCESS:DANGER',
+      'PROCESS:DANGER',
+      'PROCESS:DANGER',
+    ]);
+    expect(summary(run(own(0.8, 0.1, 0.8)).sent)).toEqual(['PROCESS:WARNING', 'PROCESS:WARNING']);
   });
 
-  it('keeps DANGER as the level', () => {
-    expect(run([0.95, 0.1]).levels).toEqual(['DANGER', 'DANGER']);
+  it('knows the live level of the process, and follows it down', () => {
+    expect(run(own(0.8, 0.1, 0.95, 0.8)).levels).toEqual([
+      'WARNING',
+      undefined,
+      'DANGER',
+      'WARNING',
+    ]);
+  });
+
+  it('reports the machine running short as SYSTEM, apart from the process', () => {
+    const { sent, levels } = run([sample(0.1, 0.8), sample(0.1, 0.95), sample(0.1, 0.4)]);
+    expect(summary(sent)).toEqual(['SYSTEM:WARNING']);
+    // It does not touch the level that refuses work.
+    expect(levels).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('reports both when both are short, each once', () => {
+    const { sent } = run([sample(0.8, 0.9), sample(0.8, 0.9)]);
+    expect(summary(sent).sort()).toEqual(['PROCESS:WARNING', 'SYSTEM:WARNING']);
   });
 
   it('treats a failed reading as no pressure and says so once per failure', () => {
-    const { sent, diagnostics } = run([new Error('no /proc'), 0.1]);
+    const { sent, diagnostics } = run([new Error('no /proc'), sample(0.1)]);
     expect(sent).toEqual([]);
     expect(diagnostics).toEqual(['memory sampling failed: no /proc']);
   });

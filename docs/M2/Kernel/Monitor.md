@@ -77,7 +77,7 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
                                      MemoryPressure(level, 采样值) ──控制消息──▶ Core
                                                                                   │ 统一入口
                                                WARNING ──▶ 统一收尾路径（QUOTA_EXHAUSTED, quota = 'MEMORY'）
-                                               DANGER  ──▶ 全部运行进入 INTERRUPTING，收敛后安全退出
+                                               DANGER  ──▶ 全部运行进入 INTERRUPTING，收敛后对话继续（一次性命令以 75 退出）
 ```
 
 | 项 | 规则 |

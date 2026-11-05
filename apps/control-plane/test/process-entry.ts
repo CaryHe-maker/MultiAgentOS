@@ -64,6 +64,8 @@ async function command(system: System): Promise<number> {
             () => resolve(130),
           );
         });
+        // READY comes before the command runs; a signal sent on READY could beat this handler.
+        process.stdout.write('HANDLER_INSTALLED\n');
       });
     }
     default:

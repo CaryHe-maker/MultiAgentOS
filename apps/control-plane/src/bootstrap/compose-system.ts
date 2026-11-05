@@ -25,7 +25,6 @@ import {
   type SystemFaultReporter,
   type TemplateDefinition,
 } from '@multiagentos/contracts';
-import { EXIT_CODE_MEMORY_PRESSURE } from '@multiagentos/contracts';
 import {
   createExecutorRegistry,
   createCommandAnalyzer,
@@ -256,7 +255,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       readRepositoryFile: readRepositoryText,
       dataDir: config.dataDir,
       // Memory ran short and no run is open: leave in control, as the interface does when a run ends.
-      onMemoryExit: () => interaction.console?.exitWith(EXIT_CODE_MEMORY_PRESSURE),
+      onMemoryNotice: (notice) => interaction.console?.notifyMemory(notice),
       ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
       commands: {
         analyze: analyzeCommand,

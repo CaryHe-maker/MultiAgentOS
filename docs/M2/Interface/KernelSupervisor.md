@@ -118,14 +118,14 @@ interface CancelExecutionRequest { executionId: ExecutionId; runEpoch: number; r
 ## 8. 内存压力与中断
 
 ```ts
-interface MemoryPressure { level: 'WARNING' | 'DANGER'; ratio: number; rss: number; heapRatio: number; availableBytes?: number }  // 控制消息，Monitor → Core
+interface MemoryPressure { source: 'PROCESS' | 'SYSTEM'; level: 'WARNING' | 'DANGER'; ratio: number; rss: number; heapRatio: number; availableBytes?: number }  // 控制消息，Monitor → Core
 type InterruptReason = 'MEMORY_PRESSURE' /* 阶段 5 增加 USER_ABORT、TURN_TIMEOUT、PAUSE_TIMEOUT */;
 RunInterrupted { workflowRunId; reason: InterruptReason }                      // Kernel → Workflow 事件
 WrapUpReason += 'MEMORY_LIMIT';  QuotaKind += 'MEMORY';  RunReport / closeRun 原因 += 'INTERRUPTED'
 ```
 
 Core 的处理见 [Core](../Kernel/Core.md) 第 5c 节。DANGER 时 Workflow 收到 `RunInterrupted` 后不再调用模型：它以确定性结果结束每个 ACTIVE 的 AgentRun（`INTERRUPTED` 报告），写 `closeRun(INTERRUPTED)`；
-Core 在全部运行收敛后请求组合根按正常停机流程退出，退出码为 `75`（`EX_TEMPFAIL`，可恢复）。
+一次性命令在运行以 `INTERRUPTED` 关闭后以退出码 `75`（`EX_TEMPFAIL`，可恢复）退出；对话不退出，下一条消息开启新的运行。`source = SYSTEM` 最高只有 `WARNING`，只通知与记录。每条 `MemoryPressure` 先写入系统级记录 `memory-events`，再由界面提示用户。
 
 ## 9. 配置（`KernelConfig`）
 

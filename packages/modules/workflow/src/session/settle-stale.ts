@@ -119,3 +119,63 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
   }
   return settled;
 }
+
+const INTERRUPT_REASON = '运行被中断（内存紧张）';
+const INTERRUPT_NO_RESULT = 'Not executed: the run was interrupted before this call finished.';
+
+/**
+ * What an interrupt leaves open in one run that stays in the log (Core 5c): the Kernel cancelled
+ * the work in flight and Workflow no longer waits for its reports. Every call the model made gets
+ * its answer here, or the next run's history would hold a call without a result and the provider
+ * would refuse it. The process did not end, so nothing else is settled: the AgentRun, its node
+ * and the run close through the reply that says why.
+ */
+export function settleOpenCalls(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+): readonly NewLogRecord[] {
+  const openUnits = new Map<string, { workflowRunId: string; turnId?: string }>();
+  const unanswered = new Map<string, { agentRunId: string } & OpenAgentRun>();
+  for (const record of records) {
+    if (!('workflowRunId' in record) || record.workflowRunId !== workflowRunId) continue;
+    switch (record.type) {
+      case 'MODEL_TURN':
+        for (const call of record.toolCalls)
+          unanswered.set(call.toolCallId, {
+            agentRunId: record.agentRunId,
+            workflowRunId: record.workflowRunId,
+            ...(record.turnId === undefined ? {} : { turnId: record.turnId }),
+          });
+        break;
+      case 'FEEDBACK':
+        if (record.toolCallId !== undefined) unanswered.delete(record.toolCallId);
+        break;
+      case 'UNIT_SUBMITTED':
+        openUnits.set(record.requestId, {
+          workflowRunId: record.workflowRunId,
+          ...(record.turnId === undefined ? {} : { turnId: record.turnId }),
+        });
+        if (record.inputSource.kind === 'TOOL_CALL')
+          unanswered.delete(record.inputSource.toolCallId);
+        break;
+      case 'UNIT_COMPLETED':
+      case 'UNIT_INTERRUPTED':
+        openUnits.delete(record.requestId);
+        break;
+      default:
+        break;
+    }
+  }
+  const settled: NewLogRecord[] = [];
+  for (const [requestId, unit] of openUnits)
+    settled.push({ type: 'UNIT_INTERRUPTED', requestId, reason: INTERRUPT_REASON, ...unit });
+  for (const [toolCallId, call] of unanswered)
+    settled.push({
+      type: 'FEEDBACK',
+      code: 'INTERRUPTED',
+      message: INTERRUPT_NO_RESULT,
+      toolCallId,
+      ...call,
+    });
+  return settled;
+}

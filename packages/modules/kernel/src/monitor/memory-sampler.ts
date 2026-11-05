@@ -1,13 +1,17 @@
 import { freemem, totalmem } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { getHeapStatistics } from 'node:v8';
-import type { MemoryLevel, MemoryPressure } from '@multiagentos/contracts';
+import type { MemoryLevel, MemoryPressure, MemorySource } from '@multiagentos/contracts';
 
 /**
  * Memory pressure (M2Design 7.7; Kernel/Monitor 4a). The one thing that runs on its own in the
  * Monitor, because memory belongs to the process and not to a run. It reads, judges, and sends
- * one control message upwards; it holds nothing it could cancel, close or stop with, and it
+ * control messages upwards; it holds nothing it could cancel, close or stop with, and it
  * allocates nothing that grows with a run.
+ *
+ * Two kinds of pressure, reported apart. What this process holds (RSS against its limit, the V8
+ * heap) may reach DANGER: the run is interrupted. The machine running short (other programs) only
+ * ever reaches WARNING and only informs: interrupting a run does not give that memory back.
  */
 export interface MemorySample {
   readonly rssBytes: number;
@@ -19,33 +23,27 @@ export interface MemorySample {
   readonly availableBytes?: number;
 }
 
-/** The highest of the ratios: any one of them running out is enough. */
-export const pressureRatio = (sample: MemorySample): number =>
-  Math.max(sample.rssRatio, sample.heapRatio, sample.systemRatio ?? 0);
+/** What this process holds: the higher of its RSS and its heap. */
+export const processRatio = (sample: MemorySample): number =>
+  Math.max(sample.rssRatio, sample.heapRatio);
 
 export interface MemoryThresholds {
   readonly warningRatio: number;
   readonly dangerRatio: number;
 }
 
-/**
- * The level of a sample. What this process holds (RSS against its limit, V8 heap) may reach
- * DANGER; the whole machine running short (other programs) only ever reaches WARNING, because
- * interrupting a run does not give that memory back and must not end the user's work.
- */
-export function levelOfSample(
-  sample: MemorySample,
-  thresholds: MemoryThresholds,
-): MemoryLevel | undefined {
-  const own = levelOf(Math.max(sample.rssRatio, sample.heapRatio), thresholds);
-  const system = levelOf(sample.systemRatio ?? 0, thresholds) === undefined ? undefined : 'WARNING';
-  return own === 'DANGER' ? own : (own ?? system);
-}
-
 export function levelOf(ratio: number, thresholds: MemoryThresholds): MemoryLevel | undefined {
   if (ratio >= thresholds.dangerRatio) return 'DANGER';
   if (ratio >= thresholds.warningRatio) return 'WARNING';
   return undefined;
+}
+
+/** The machine running short is a warning at most. */
+export function systemLevelOf(
+  sample: MemorySample,
+  thresholds: MemoryThresholds,
+): MemoryLevel | undefined {
+  return levelOf(sample.systemRatio ?? 0, thresholds) === undefined ? undefined : 'WARNING';
 }
 
 export function readMemorySample(): MemorySample {
@@ -84,21 +82,46 @@ export interface MemorySampler {
   stop(): void;
   /** One sample, for tests and for starting values. */
   sampleOnce(): void;
-  /** The level of the latest sample; DANGER stays, because the process is about to exit. */
+  /** The level of this process at the latest sample; undefined when it is normal. */
   level(): MemoryLevel | undefined;
 }
 
+const rank = (level: MemoryLevel | undefined): number =>
+  level === 'DANGER' ? 2 : level === 'WARNING' ? 1 : 0;
+
 /**
- * A message is sent when the level rises. Falling back from WARNING is noticed (`level()`), so a
- * later rise is sent again; DANGER never falls back.
+ * A message is sent when a level rises. A level that fell is forgotten, so that rising again is
+ * reported again: the process stays up after an interrupt, and the next pressure is news.
  */
 export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
   const read = deps.read ?? readMemorySample;
-  let sent: MemoryLevel | undefined;
+  const sent: Record<MemorySource, MemoryLevel | undefined> = {
+    PROCESS: undefined,
+    SYSTEM: undefined,
+  };
   let current: MemoryLevel | undefined;
   let timer: NodeJS.Timeout | undefined;
-  const rank = (level: MemoryLevel | undefined): number =>
-    level === 'DANGER' ? 2 : level === 'WARNING' ? 1 : 0;
+
+  const settle = (
+    source: MemorySource,
+    level: MemoryLevel | undefined,
+    ratio: number,
+    sample: MemorySample,
+  ): void => {
+    const before = rank(sent[source]);
+    sent[source] = level;
+    if (level === undefined || rank(level) <= before) return;
+    deps.send({
+      type: 'MemoryPressure',
+      source,
+      level,
+      ratio,
+      rssBytes: sample.rssBytes,
+      heapRatio: sample.heapRatio,
+      ...(sample.availableBytes === undefined ? {} : { availableBytes: sample.availableBytes }),
+    });
+  };
+
   const sampleOnce = (): void => {
     let sample: MemorySample;
     try {
@@ -110,20 +133,10 @@ export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
       );
       return;
     }
-    const ratio = pressureRatio(sample);
-    const level = levelOfSample(sample, deps.thresholds);
-    if (sent !== 'DANGER') current = level;
-    if (level === undefined && sent === 'WARNING') sent = undefined;
-    if (level === undefined || rank(level) <= rank(sent)) return;
-    sent = level;
-    deps.send({
-      type: 'MemoryPressure',
-      level,
-      ratio,
-      rssBytes: sample.rssBytes,
-      heapRatio: sample.heapRatio,
-      ...(sample.availableBytes === undefined ? {} : { availableBytes: sample.availableBytes }),
-    });
+    const own = levelOf(processRatio(sample), deps.thresholds);
+    current = own;
+    settle('PROCESS', own, processRatio(sample), sample);
+    settle('SYSTEM', systemLevelOf(sample, deps.thresholds), sample.systemRatio ?? 0, sample);
   };
   return {
     sampleOnce,

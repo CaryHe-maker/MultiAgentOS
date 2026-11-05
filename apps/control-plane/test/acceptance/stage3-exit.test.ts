@@ -1092,46 +1092,88 @@ real('memory pressure', () => {
     TIMEOUT,
   );
 
+  /** The records of memory events the Kernel keeps for the whole system. */
+  const eventsOf = async (dataDir: string) =>
+    (await readFile(join(dataDir, 'kernel-core', 'memory-events.jsonl'), 'utf8').catch(() => ''))
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { source: string; level: string });
+  /** Waits until the sampler has seen the reading (a few of its intervals). */
+  const sampled = () => nap(150);
+
   it(
-    'DANGER between two messages leaves too, with the conversation whole',
+    'DANGER between two messages is told and recorded, and the conversation goes on with the next message',
     async () => {
       const place = await roots();
       const gauge = memory();
-      const provider = scriptedChat(reply('first answer'));
+      const provider = scriptedChat(
+        reply('first answer'),
+        reply('second answer, after the pressure'),
+      );
       const chat = await chatOn(place, provider, { memorySample: gauge.sample, configure: fast });
       await chat.say('hello');
       gauge.state.ratio = 0.95;
-      const code = await Promise.race([chat.done, nap(20_000).then(() => 'timed out' as const)]);
-      expect(code).toBe(75);
-      expect(await logOf(place.dataDir)).toContain('"closeReason":"INTERRUPTED"');
+      await until(
+        () => chat.printed('NOTICE').join('\n').includes('本程序的内存危险'),
+        'the notice of DANGER',
+      );
+      // The program is still there: nothing exited, nothing hangs.
+      expect(await Promise.race([chat.done, nap(400).then(() => 'open' as const)])).toBe('open');
+      expect(await eventsOf(place.dataDir)).toContainEqual(
+        expect.objectContaining({ source: 'PROCESS', level: 'DANGER' }),
+      );
+
+      // While the process is short the next message is refused, with the reason, without a model call.
+      await sayAndSettle(chat, 'too soon', 800);
+      expect(provider.requests).toHaveLength(1);
+
+      // Once memory has fallen, the next message starts a new Turn and gets its answer.
+      gauge.state.ratio = 0.1;
+      await sampled();
+      await chat.say('and now');
+      expect(provider.requests).toHaveLength(2);
+      expect(chat.printed('REPLY').join('\n')).toContain('second answer, after the pressure');
     },
     TIMEOUT,
   );
 
   it(
-    'DANGER with no conversation open leaves too',
+    'DANGER with no conversation open is told and recorded too, and the program stays',
     async () => {
       const place = await roots();
       const gauge = memory();
-      const chat = await chatOn(place, scriptedChat(), {
+      const chat = await chatOn(place, scriptedChat(reply('hello back')), {
         memorySample: gauge.sample,
         configure: fast,
       });
       await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
       gauge.state.ratio = 0.95;
-      const code = await Promise.race([chat.done, nap(20_000).then(() => 'timed out' as const)]);
-      expect(code).toBe(75);
+      await until(
+        () => chat.printed('NOTICE').join('\n').includes('本程序的内存危险'),
+        'the notice of DANGER',
+      );
+      expect(await Promise.race([chat.done, nap(400).then(() => 'open' as const)])).toBe('open');
+      expect(await eventsOf(place.dataDir)).toContainEqual(
+        expect.objectContaining({ source: 'PROCESS', level: 'DANGER' }),
+      );
+      gauge.state.ratio = 0.1;
+      await sampled();
+      await chat.say('hello');
+      expect(chat.printed('REPLY').join('\n')).toContain('hello back');
     },
     TIMEOUT,
   );
 
   it(
-    'DANGER interrupts the run: the command is stopped, the log is whole, the exit code is 75',
+    'DANGER interrupts the run: the command is stopped, the log is whole, and the next prompt starts a new Turn',
     async () => {
       const place = await roots();
       const gauge = memory();
       const marker = join(place.repository, 'runs');
-      const provider = scriptedChat(run(`echo started >> runs; sleep 30`), reply('never'));
+      const provider = scriptedChat(
+        run(`echo started >> runs; sleep 30`),
+        reply('fresh start after the interruption'),
+      );
       const chat = await chatOn(place, provider, {
         memorySample: gauge.sample,
         configure: fast,
@@ -1142,13 +1184,14 @@ real('memory pressure', () => {
       });
       const started = Date.now();
       await chat.console.submit('long job');
-      const code = await Promise.race([chat.done, nap(30_000).then(() => 'timed out' as const)]);
-      if (code === 'timed out')
-        process.stderr.write(
-          `${JSON.stringify(await chat.system.shutdown().catch((e: unknown) => String(e)))}\n`,
-        );
-      expect(code).toBe(75);
+      await until(
+        () => chat.printed('ERROR').join('\n').includes('系统内存紧张，运行被中断'),
+        'the reply that says the run was interrupted',
+        20_000,
+      );
       expect(Date.now() - started).toBeLessThan(20_000);
+      // The program did not leave.
+      expect(await Promise.race([chat.done, nap(300).then(() => 'open' as const)])).toBe('open');
       const log = await logOf(place.dataDir);
       expect(log).toContain('RUN_INTERRUPTED');
       expect(log).toContain('"closeReason":"INTERRUPTED"');
@@ -1157,22 +1200,44 @@ real('memory pressure', () => {
         expect(() => {
           JSON.parse(line);
         }).not.toThrow();
-      expect(chat.printed('NOTICE').join('\n')).toContain('内存紧张');
-      // The user is told in the conversation too, by a reply no model wrote.
-      expect(chat.printed('ERROR').join('\n')).toContain('系统内存紧张，运行被中断');
+      expect(chat.printed('NOTICE').join('\n')).toContain('本程序的内存危险');
+      expect(chat.printed('NOTICE').join('\n')).toContain('可以直接重新输入');
+      expect(await eventsOf(place.dataDir)).toContainEqual(
+        expect.objectContaining({ source: 'PROCESS', level: 'DANGER' }),
+      );
       expect(provider.requests).toHaveLength(1);
 
-      // The next start resumes the conversation, tells the model, and does not run the job again.
-      const later = scriptedChat(reply('back after the interruption'));
-      const resumed = await chatOn(place, later);
-      await until(() => resumed.printed('NOTICE').length > 0, 'the welcome');
-      await resumed.console.submit('/sessions');
-      await nap(100);
-      await resumed.console.submit('/resume 1');
-      await until(() => resumed.console.sessionId !== undefined, 'the resumed Session');
-      await resumed.say('carry on');
-      expect(seen(later)).toContain('ran short of memory');
+      // The user types again once memory is back: a new Turn, not a hang, and the job did not rerun.
+      gauge.state.ratio = 0.1;
+      await sampled();
+      await chat.say('carry on');
+      expect(chat.printed('REPLY').join('\n')).toContain('fresh start after the interruption');
+      expect(seen(provider)).toContain('ran short of memory');
       expect((await readFile(marker, 'utf8')).trim().split('\n')).toEqual(['started']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'the machine running short is told and recorded, and changes nothing: the tools still run',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(run('echo still works'), reply('done'));
+      const chat = await chatOn(place, provider, {
+        memorySample: () => ({ rssBytes: 1, rssRatio: 0.1, heapRatio: 0, systemRatio: 0.97 }),
+        configure: fast,
+      });
+      await until(
+        () => chat.printed('NOTICE').join('\n').includes('整机内存紧张'),
+        'the notice of the machine',
+      );
+      await chat.say('work');
+      expect(lastResult(provider)).toContain('still works');
+      expect(chat.printed('NOTICE').join('\n')).not.toContain('提前收尾');
+      expect(await logOf(place.dataDir)).not.toContain('MEMORY_LIMIT');
+      expect(await eventsOf(place.dataDir)).toEqual([
+        expect.objectContaining({ source: 'SYSTEM', level: 'WARNING' }),
+      ]);
     },
     TIMEOUT,
   );

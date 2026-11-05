@@ -8,7 +8,7 @@
 | M1 | M2 | 阶段 |
 |---|---|---|
 | `STOP_UNCONFIRMED` 记为任务异常，收敛这一个运行 | 系统故障，出现即停机：无法确认停止的执行意味着工作区可能仍在被改动，EXEC 互斥与并发计数无法安全释放 | 3 |
-| 停机原因只有故障 | 增加"可恢复的退出"：内存压力的 DANGER 级收敛后以退出码 75 退出，日志完整，下次启动可以恢复 Session | 3 |
+| 停机原因只有故障 | 增加"可恢复的退出"：一次性命令（`mas run`）遇到内存压力的 DANGER 级收敛后以退出码 75 退出，日志完整，下次启动可以恢复 Session；对话不退出，下一条消息开启新的运行（M2Design 第 7.7 节） | 3 |
 | 恢复时只修复日志 | 停机后打开 Session：未完成的 Unit 记为 `INTERRUPTED`（原因"上一个进程故障停机"），没有结束快照的 Turn 记为异常结束，与最后一个快照的差异告知用户与 main，不改动文件 | 1、2 |
 
 ## 2. 停机流程（`STOP_UNCONFIRMED`）
@@ -30,7 +30,8 @@ Supervisor 上报 ExecutionFact(STOP_UNCONFIRMED)
 ```text
 Monitor 采样 → MemoryPressure(DANGER) → Core.interrupt(MEMORY_PRESSURE)
   → 全部运行进入 INTERRUPTING，Workflow 以确定性结果收敛，closeRun(INTERRUPTED)
-  → 全部运行关闭、日志落盘后，Core 请求组合根按正常停机流程退出，退出码 75
+  → 全部运行关闭、日志落盘后：对话（Turn-chat）保持打开，用户的下一条消息开启新的运行；
+    一次性命令（`mas run`）按正常停机流程退出，退出码 75
 ```
 
 | 退出码 | 含义 |
@@ -38,6 +39,6 @@ Monitor 采样 → MemoryPressure(DANGER) → Core.interrupt(MEMORY_PRESSURE)
 | 0 | 正常退出 |
 | 64、130、命令的非零码 | M1 沿用 |
 | 70 | 系统故障、配置或引导失败、实例锁被占用（M1 沿用），含 `STOP_UNCONFIRMED` |
-| 75 | 内存压力引起的受控退出，日志完整，可以直接重启并 `/resume` |
+| 75 | 一次性命令因内存压力的受控退出，日志完整，可以直接重启并 `/resume` |
 
 收敛超时（运行在宽限期内没有全部关闭）时，不继续等待，按系统故障退出。
