@@ -163,6 +163,29 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 **结束**：AgentRun 状态机对所有 Agent 相同，只有三种结局：调用了定义中声明的结束工具（`ENDED`）、没能合法结束（`DEGRADED`）、致命失败（`FAILED`）。它不知道结束工具的含义。结束后做什么由 Agent 定义的 `actions.end[].then` 与 `actions.onDegraded` 决定，运行器按这一张表执行，不按 Agent 分支。发布类动作提交最后一个 Unit，它的 UnitReport 之后 AgentRun 才结束；模板运行在图没有可启动的节点时结束，`chat` 由生长规则继续。
 
+## 7a. SubAgent（阶段 4，草稿）
+
+设计以 M2Design 第 3.6、3.7 节为准。同一个 `SessionRunner` 同时持有多个未结束的 AgentRun（`#agents`），每个有自己的状态机、投影范围和（SubAgent 的）任务信息。
+
+**`run_subagents`**：它是控制工具，不提交 Unit。`agent-cycle` 把它当作只能单独出现的控制调用（与别的调用同回复、在最后一轮、参数不合 Schema 都以 FEEDBACK 退回），合格时以 `SPAWN` 结束本轮，由 runner 处理：
+
+1. **校验**（`domain/spawn/validate-spawn.ts`，纯函数）：`TOO_MANY_TASKS`、`DUPLICATE_NAME`、`UNKNOWN_DEPENDENCY`、`CYCLE`、`TOO_DEEP`、`UNKNOWN_AGENT`、`WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN`、`WRITE_SCOPE_OUTSIDE`（规范化后须在调用方的可写范围内）、`WRITE_SCOPE_OVERLAP`（没有依赖路径的两个任务范围相交）、`EFFORT_NOT_ALLOWED`、`INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物，`readableArtifacts` 从日志得出）、`SPAWN_LIMIT`。所有不满足的规则一次列出；整次调用不执行，以 `FEEDBACK(INVALID_ACTION)` 作为这次调用的结果。连续两次被拒，或触及 `SPAWN_LIMIT`，下一次组装起 `ContextAssembleInput.withdrawnTools` 带上 `run_subagents`，模型不再看到它。
+2. **委派**：校验通过后调用 `reserveDelegation`（全有或全无）。`BUDGET_INSUFFICIENT` 带回可委派的余额，同样以 FEEDBACK 告知；Kernel 的其他拒绝也如此。
+3. **扩展任务图**：追加 `GRAPH_EXTENDED(source: SPAWN)`，每个任务一个 `AGENT` 节点（`goal` 与 `spawn` 字段：父 AgentRun、委派、调用号、范围、验收标准、产物、强度、份额），依赖是 `DEPENDS` 边。没有依赖的任务没有前驱，立即就绪；调用方的节点保持 RUNNING，调用方记录 `waiting`。
+4. **推进**：就绪的任务各登记一个 AgentRun（带 `parentAgentRunId`、`delegationId`、`taskName`，可写根目录是任务的范围）；登记被拒的任务记为 FAILED，依赖它的任务按 `all_success` 记为 SKIPPED。`#advance` 不可重入：任务在推进过程中结束时只要求再来一遍。
+5. **汇合**：调用方所有任务节点都结束后，runner 调用 `releaseDelegation`，追加 `SUBAGENTS_JOINED`（按任务书写顺序），调用方的投影据此得到这次调用的结果（一条 FEEDBACK 计数，随后每个任务一条 `SUBAGENT_RESULT`），并开始下一轮。
+
+**任务看到什么**：`TASK`（目标、验收标准、写入范围、交给它的产物）和它所依赖任务的 `SUBAGENT_RESULT`，都是 PINNED；看不到用户的输入，也看不到调用方的步骤。`SUBAGENT_RESULT` 只引用 SubAgent 结束那次模型输出和 `toolCallId`，Kernel 组装请求时从中取出 `finish_subagent` 的参数，日志中不复制正文。
+
+**结果契约**（`#finishSubagent`）：
+- 每条验收标准都要有回应（只做形式检查），否则以 `RESULT_INCOMPLETE` 退回，计入该 AgentRun 的 Round；
+- 能运行命令的 Agent（worker）改过文件而最近一次成功的命令早于最后一次改动时，退回一次（`NOT_VERIFIED`，每个 AgentRun 至多一次）；
+- 自报的 `changedFiles` 与 Kernel 在 UnitReport 中给出的实际改动对账，不一致处写进汇合结果的说明；
+- `status` 为 `blocked` 的任务节点记为 FAILED（依赖它的任务被跳过），`partial` 与 `done` 记为 SUCCEEDED；
+- 因额度、轮次等降级的 SubAgent（`onDegraded: RETURN_PARTIAL`）不发布任何东西，交回 `PARTIAL` 和原因；失败的 SubAgent 交回 `FAILED` 与原因码。
+
+**中断**：运行被中断时，SubAgent 先停止（记为 FAILED），再让调用方按自己的降级动作收尾。
+
 ## 8. 上下文
 
 ### 8.1 投影
@@ -271,6 +294,8 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | `consecutiveErrorLimit` | 5 | 同上 |
 | `entryAgentRef` | — | 删除；入口由模板决定 |
 | `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节，阶段 2） |
+| `maxSubagentsPerCall`、`maxDependencyDepth` | 4、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节，阶段 4） |
+| `maxTasks`、`maxSpawnCalls` | 12、4 | 每个 Turn 累计派生的任务数与调用次数上限（第 7a 节，阶段 4） |
 
 ## 12. 不变量与测试
 

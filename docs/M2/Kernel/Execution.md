@@ -65,6 +65,16 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 - **收敛**：没有开始的尝试与等待调用机会的尝试直接结束（`abandon`），没有东西需要停止；已发出的执行发出取消，Supervisor 不确认时全部按 `STOP_UNCONFIRMED` 判定。
 - 测试：`execution-queues.test.ts`（纯函数）、`run-execution.test.ts`（P1：相邻 READ 一起派发；P2：两个 AgentRun 并行；屏障；全局上限；`serialExecution`；等待调用机会）。
 
+## 4d. 命令改动检测（阶段 4，草稿）
+
+设计以 M2Design 第 7.1 节为准。`session/change-scan.ts` 在沙盒命令（可写根目录非空）第一次派发前，按指纹（大小、mtime、ctime、inode）扫描该 AgentRun 的可写根目录，命令完成后再扫一次，差异（新增、修改、删除，排序）作为 `changedFiles` 放进 UnitReport，与 `FILE_WRITE`、`FILE_EDIT` 的 `changedFiles` 同一字段。要点：
+
+- 扫描不计算内容摘要，只用 `lstat`；这样同一毫秒内大小不变的改写可能漏报，改动检测只用于对账和提示，不据此判断授权或写入占用；
+- 不进入 `.git`、`node_modules` 和被排除规则命中的路径（M2Design 说的"只报告变化数量"尚未实现，这些路径的改动不出现）；
+- 条目数超过 `maxSnapshotFiles × 10` 时放弃，报告里没有 `changedFiles`（不影响命令本身）；
+- 只读命令（可写根目录为空）不扫描；技术重试不重新取"之前"的扫描。
+- 测试：`change-scan.test.ts`；`stage4-exit` 的"命令改动"用例在真实沙盒中验证。
+
 ## 4a. 技术重试的等待
 
 M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackoffBaseMs × 2^(n−1)`），等待时间改为（M2Design 第 7.4 节）：

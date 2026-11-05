@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.24 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.25 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -432,6 +432,7 @@ run_subagents({
 | `writeScope` 规范化后在调用方的可写范围之内；已存在的前缀做 realpath 后仍在仓库内，且根目录不是符号链接 | `WRITE_SCOPE_OUTSIDE` |
 | 任意两个可能同时运行的任务（彼此之间没有依赖路径）`writeScope` 不相交 | `WRITE_SCOPE_OVERLAP`（建议加依赖或拆分范围） |
 | `effort` 在 Agent 允许的范围内 | `EFFORT_NOT_ALLOWED` |
+| `inputs` 中的产物都是调用方自己读得到的（它的步骤产生的、用户给它的、交给它的项目文件） | `INPUT_NOT_READABLE` |
 | 累计任务数 ≤ `maxTasks`（缺省 12）；`run_subagents` 调用次数 ≤ `maxSpawnCalls`（缺省 4）。都按 Turn 计（Orchestration 运行整体是一个 Turn） | `SPAWN_LIMIT` |
 | 各任务的 `budget.tokens` 之和 ≤ 调用方当前可委派的额度（由 Kernel 的 `reserveDelegation` 判定，第 7.3 节） | `BUDGET_INSUFFICIENT`（写明可委派的余额与各任务的份额） |
 
@@ -463,7 +464,8 @@ type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown';
 
 1. **Schema 校验**：Workflow 按 Schema 校验 `finish_subagent`。不合格时以 FEEDBACK 退回，计入该 AgentRun 的 Round。
 2. **验收条目**：只做形式检查，即每条验收标准都有回应，不判断内容是否属实。
-3. **改动对账**：Kernel 在 UnitReport 中返回每次 WRITE 与 EXEC 实际改动的文件（新增、修改、删除），检测方法见第 7.1 节。Workflow 把 worker 自报的 `changedFiles` 与实际改动对比，不一致之处在汇合结果中标注。
+3. **blocked**：`status` 为 `blocked` 的任务，其节点记为失败，依赖它的任务因此被跳过；`partial` 与 `done` 的节点记为成功，汇合结果里仍带原来的状态。
+3a. **改动对账**：Kernel 在 UnitReport 中返回每次 WRITE 与 EXEC 实际改动的文件（新增、修改、删除），检测方法见第 7.1 节。Workflow 把 worker 自报的 `changedFiles` 与实际改动对比，不一致之处在汇合结果中标注。
 4. **完成检查**：worker 写过文件，但最后一次写入之后没有任何成功的 `run_command` 时，Workflow 在接受它的 `finish_subagent` 之前返回一次 FEEDBACK："已修改文件但尚未运行验证命令"。每个 AgentRun 最多触发一次。
 
 ### 3.8 模板
@@ -1868,3 +1870,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.22 | 2026-11-05 | 第 6.1、7.7 节：内存压力只度量有对应场景的两项——V8 堆（以堆上限与可用内存 60% 中较小者为分母）与容器内存上限下的 RSS；没有容器上限时不再用 RSS 对比物理内存；入口以 `--max-old-space-size=4096` 启动；沙盒命令增加私有可写内存上限（`RLIMIT_DATA`）（依据：实测 WSL 上 V8 默认堆上限仅 2240 MB，运行时设置该标志无效，命令超限应由命令自己失败；Cary 同意） |
 | v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |
 | v1.24 | 2026-11-05 | 第 7.1 节：只读名单上的命令行按 READ 处理；第 7.3 节：`budget.runTokenLimit` 与 `turnTokenLimit` 的缺省值改为 24,000,000 与 8,000,000（main 的收尾保留与一次调用余量就占 188.8 万，4,000,000 的 Turn 额度只能委派约 190 万，放不下 4 个 worker 的缺省份额）；`agent.spawn` 在 `readonly` 预设下保留（SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了）（Cary 2026-11-05 决定前两项） |
+| v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget.toolUnits` 与 `budget.wallClockMs` 暂不改变任务的上限（只有 `tokens` 经 Kernel 校验） |

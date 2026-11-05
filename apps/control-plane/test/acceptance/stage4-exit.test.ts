@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from '@multiagentos/contracts';
+import { probeSandbox } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   barrier,
@@ -22,6 +23,8 @@ import {
 } from './chat-driver.js';
 
 const TIMEOUT = 90_000;
+const bwrapWorks = (await probeSandbox(tmpdir())).available;
+const real = bwrapWorks ? describe : describe.skip;
 
 const directories: string[] = [];
 const open: Chat[] = [];
@@ -342,6 +345,106 @@ describe('what the user sees', () => {
       const timeline = chat.printed('NOTICE').at(-1) ?? '';
       expect(timeline).toContain('main');
       expect(timeline).toContain('  explorer survey');
+    },
+    TIMEOUT,
+  );
+});
+
+real('what a command changed (M2Design 7.1)', () => {
+  it(
+    'is found by scanning the write scope, and marked against what the worker reports',
+    async () => {
+      const place = await roots({ 'out/old.txt': 'old\n' });
+      const sha = 'a'.repeat(64);
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'make', agent: 'worker', goal: 'make a file', writeScope: ['out'] }),
+            reply('done'),
+          ],
+        },
+        {
+          make: [
+            tool('run_command', { command: 'echo made > out/made.txt && rm out/old.txt' }),
+            finishWorker('ran a command', [], {
+              validation: [
+                {
+                  command: 'echo',
+                  exitCode: 0,
+                  outputRef: {
+                    artifactId: `art_${sha}`,
+                    sha256: sha,
+                    size: 1,
+                    mediaType: 'text/plain',
+                  },
+                },
+              ],
+            }),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(await exists(join(place.repository, 'out/made.txt'))).toBe(true);
+      expect(await exists(join(place.repository, 'out/old.txt'))).toBe(false);
+      expect(seen(provider)).toContain('changed but not reported: out/made.txt, out/old.txt');
+    },
+    TIMEOUT,
+  );
+});
+
+real('A: one question for the same command, whoever asks (M2Design 5.5)', () => {
+  it(
+    'asks once when two workers want the same command at the same time, and both then run it',
+    async () => {
+      const place = await roots({ 'a/x.txt': 'x\n', 'b/y.txt': 'y\n' });
+      const together = barrier(2);
+      const sha = 'a'.repeat(64);
+      const finishing = (summary: string) =>
+        finishWorker(summary, [], {
+          validation: [
+            {
+              command: 'echo hi',
+              exitCode: 0,
+              outputRef: {
+                artifactId: `art_${sha}`,
+                sha256: sha,
+                size: 1,
+                mediaType: 'text/plain',
+              },
+            },
+          ],
+        });
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'left', agent: 'worker', goal: 'say hi', writeScope: ['a'] },
+              { name: 'right', agent: 'worker', goal: 'say hi', writeScope: ['b'] },
+            ),
+            reply('done'),
+          ],
+        },
+        {
+          left: [
+            { wait: together(), then: tool('run_command', { command: 'echo hi' }) },
+            finishing('left said hi'),
+          ],
+          right: [
+            { wait: together(), then: tool('run_command', { command: 'echo hi' }) },
+            finishing('right said hi'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider, {
+        // "This command, for the rest of the run" covers the second worker.
+        answer: (question) => (question.includes('运行这条命令') ? 'c' : 'y'),
+      });
+      await chat.say('go');
+      expect(chat.questions.filter((each) => each.includes('运行这条命令'))).toHaveLength(1);
+      const all = seen(provider);
+      expect(all).toContain('Result of task left (worker): DONE');
+      expect(all).toContain('Result of task right (worker): DONE');
     },
     TIMEOUT,
   );

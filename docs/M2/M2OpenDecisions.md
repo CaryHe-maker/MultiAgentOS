@@ -248,5 +248,6 @@ node 在 `$HOME` 下的缺口（上一节）已按 Cary 的决定（2026-11-05�
 
 阶段 4 的开始（2026-11-05，`feature/phase4/main`，M2Design v1.24）：Cary 决定两项——Turn 与运行额度提高到 800 万与 2400 万；只读名单上的命令行按 READ 处理（不占 EXEC 互斥）。顺序与进度：
 - 已完成并通过测试：S4-KC-2 Monitor（AgentRun 账本与逐级委派）、S4-KC-1 Scheduler（`providerCapacity`、`WAIT_CAPACITY`）、S4-KX-1 Execution（按 AgentRun 分队列、类别、全局上限、`serialExecution`、等待调用机会）、S4-CT-1 契约（`reserveDelegation`、`releaseDelegation`、`RegisterAgentRunRequest` 的父子字段、`agent.spawn`）、S4-KC-3 Core（SubAgent 登记、委派、写入占用、`WRITE_SCOPE_CONFLICT`、`WRITE_SCOPE_DELEGATED`）。
-- 尚未做：S4-PL-1 explorer、worker 与 `run_subagents`、`finish_subagent` 的定义与提示词；S4-WF-1 Workflow（多个 AgentRun 并行推进、`run_subagents` 的校验与图扩展、汇合、结果契约、改动对账、完成检查、业务熔断、worker 的 `update_todos`）；EXEC 的改动检测（命令前后扫描可写范围）；S4-UI-1 活动区的 SubAgent 树与 `/timeline`；S4-IN-1 集成与退出用例 P1–P6、B、D、A 的派生部分。
+- 随后完成：S4-PL-1 explorer、worker 与 `run_subagents`、`finish_subagent` 的定义和提示词；S4-WF-1 Workflow（多个 AgentRun 并行推进，`run_subagents` 的校验、委派与图扩展，汇合，结果契约，改动对账，完成检查，调用方连续两次被拒后收回工具）；命令改动检测；S4-UI-1 活动区的 SubAgent 树与 `/timeline`；S4-IN-1 集成（`stage4-exit`：两个 worker 同时在各自范围内写、越界写入被拒、依赖结果传递、B2 额度不足、工具集、活动树与 `/timeline`、命令改动对账）。
+- 与设计稿的差异，留待定稿时决定：(1) `budget.toolUnits`、`budget.wallClockMs` 被接受但不改变任务的上限，只有 `tokens` 生效；(2) 在等依赖、还没有登记的任务不出现在活动区（Kernel 不认识它们），"等待 <任务名>"没有做；(3) 改动检测不进入被排除目录，也不报告它们的变化数量；(4) 业务熔断只做了"连续两次被拒或触及 SPAWN_LIMIT 收回 `run_subagents`"，"重复派生同一个失败任务"（第 14.2 节第 12 条）留给阶段 4 之后；(5) 验收 D（真实模型上的对照评测）、P3（D1 依赖图）、B1/B3/B4 在 Kernel 层的测试已有，端到端的版本与真实模型评测还没有跑。
 - 发现：`vitest` 在包目录下运行会把 `dist/` 里旧的编译测试一起跑，出现大量与改动无关的失败；测试一律在仓库根目录运行。

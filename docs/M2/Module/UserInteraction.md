@@ -107,6 +107,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 - 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`重试中（第 n 次，x 秒后）`（按 `retry.retryAt` 每秒倒计时）、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`；阶段 8 增加 `压缩上下文`。
 - 阶段 2 的询问：`workspace.write` 展示可写根目录，选项为允许与拒绝；写 `AGENTS.md` 以警示样式展示路径与确切内容，选项为单次允许与拒绝。
 - 阶段 2 的回退：`/undo`、`/undo all` 只在等待输入时可用；有外部修改时列出文件，并说明被覆盖的内容保留在快照中，`y` 强制、`n` 取消，其他任何输入都按取消处理并照常发送；`/diff [N]` 打印差异；`/fork` 进入草稿，发送第一条提示词时以 `mode: 'FORK'` 新建。
+- 阶段 4：`ActivityEvent.parentAgentRunId` 让控制台把 SubAgent 画成树（`├─`、`└─`，缩进两格），行首是 Agent 与任务名（如 `worker fix-api`）；调用了 `run_subagents` 的 AgentRun 显示 `等待子任务`（Kernel 受理委派时发出）。还没有开始的任务（在等依赖）Kernel 并不认识，所以没有行。`/timeline` 把本次运行见到的每个 AgentRun 的起止时间按父子关系列出（只记在控制台内存中，换到新的 WorkflowRun 时清空）。
 - 阶段 2 起，ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
 - 工具结果被截断时（`ActivityEvent.unit` 在 `DONE` 时带 `fullRef`），折叠行注明"输出已截断"及编号；`/output <编号>` 经 `readArtifact` 读取完整输出，已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
 - 阶段 8：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
