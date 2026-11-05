@@ -167,7 +167,7 @@ const schedule = (delayMs: number, due: () => void): (() => void) => {
 export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelCoreModule {
   const now = deps.now ?? (() => new Date());
   const { fabric, persistence, config, repositoryRoot } = deps;
-  const capacity = new InProcessProviderCapacity();
+  const capacity = new InProcessProviderCapacity(config.providerCapacity);
   const executionConfig = executionConfigOf(config);
   const correlations = new Map<string, string>();
   const correlationOf = (event: object): string =>

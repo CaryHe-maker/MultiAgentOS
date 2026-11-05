@@ -71,15 +71,18 @@ export interface ResultCheck {
 }
 
 export interface AttemptLedger {
-  reserve(request: {
-    readonly estimatedTokens: number;
-    readonly final: boolean;
-    readonly cacheHitWeight: number;
-  }):
+  reserve(
+    request: {
+      readonly estimatedTokens: number;
+      readonly final: boolean;
+      readonly cacheHitWeight: number;
+    },
+    agentRunId: string,
+  ):
     | { readonly ok: true; readonly reservationId: string }
     | { readonly ok: false; readonly reasonCode: 'BUDGET_WRAP_UP' | 'BUDGET_EXHAUSTED' };
   settle(reservationId: string, settlement: Settlement): SettlementResult;
-  budgetView(): BudgetView;
+  budgetView(agentRunId: string): BudgetView;
 }
 
 export type ReservationDecision =
@@ -87,7 +90,13 @@ export type ReservationDecision =
   | {
       readonly granted: false;
       /** For the three budget reasons the UnitReport is already delivered. */
-      readonly reason: 'BUDGET_WRAP_UP' | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_USED' | 'RUN_CONVERGING';
+      readonly reason:
+        | 'BUDGET_WRAP_UP'
+        | 'BUDGET_EXHAUSTED'
+        | 'FINAL_CALL_USED'
+        | 'RUN_CONVERGING'
+        /** Not a failure: every call slot is in use. The attempt stays open and asks again. */
+        | 'WAIT_CAPACITY';
     };
 
 export type RetryDecision =
@@ -274,15 +283,24 @@ export class RunAttempts {
     return reserved;
   }
 
-  #reserve(attempt: Attempt, request: ReservationRequest): ReservationDecision {
+  /** `keptGrant`: a retry holds on to its call slot, so it cannot lose it to another AgentRun. */
+  #reserve(attempt: Attempt, request: ReservationRequest, keptGrant?: string): ReservationDecision {
     const { estimatedTokens, final, cacheHitWeight, inputEstimate } = request;
-    const grant = this.#deps.scheduler.acquire(this.#deps.provider);
+    const grant =
+      keptGrant === undefined
+        ? this.#deps.scheduler.acquire(this.#deps.provider)
+        : ({ ok: true, grantId: keptGrant } as const);
     if (!grant.ok) {
+      // The slots are full: wait, and ask again when one is given back (M2Design 7.2).
+      if (grant.reason === 'CAPACITY') return { granted: false, reason: 'WAIT_CAPACITY' };
       this.abandon(attempt.unitAttemptId);
       this.#deps.onFault({ kind: 'KERNEL_INTERNAL' });
       return { granted: false, reason: 'RUN_CONVERGING' };
     }
-    const reserved = this.#deps.ledger.reserve({ estimatedTokens, final, cacheHitWeight });
+    const reserved = this.#deps.ledger.reserve(
+      { estimatedTokens, final, cacheHitWeight },
+      attempt.spec.agentRunId,
+    );
     if (!reserved.ok) {
       this.#deps.scheduler.release(grant.grantId);
       this.#reject(attempt, reserved.reasonCode);
@@ -370,12 +388,12 @@ export class RunAttempts {
     if (settlement === undefined) return { allowed: false, reason: 'REQUEST_MAY_BE_SENT' };
     attempt.retryFrom = request.previousExecutionId;
     this.#settleReservation(attempt, settlement);
-    this.#deps.scheduler.release(previous.grantId);
     delete attempt.reservation;
-    const reserved = this.#reserve(attempt, previous);
+    const reserved = this.#reserve(attempt, previous, previous.grantId);
     if (!reserved.granted) {
       if (reserved.reason === 'RUN_CONVERGING') return { allowed: false, reason: 'RUN_CONVERGING' };
       if (reserved.reason === 'FINAL_CALL_USED') throw new Error('A retry cannot use a final call');
+      if (reserved.reason === 'WAIT_CAPACITY') throw new Error('A retry keeps its call slot');
       return { allowed: false, reason: reserved.reason };
     }
     attempt.retries += 1;
@@ -408,7 +426,7 @@ export class RunAttempts {
       unitRunId: spec.unitRunId,
       unitRef: unitRefOf(spec.unit),
       executionKind: spec.unit.executionKind,
-      budget: this.#deps.ledger.budgetView(),
+      budget: this.#deps.ledger.budgetView(spec.agentRunId),
       status: 'REJECTED',
       ...refusal,
     });
@@ -469,7 +487,7 @@ export class RunAttempts {
       unitRunId: spec.unitRunId,
       unitRef: unitRefOf(spec.unit),
       executionKind: spec.unit.executionKind,
-      budget: this.#deps.ledger.budgetView(),
+      budget: this.#deps.ledger.budgetView(spec.agentRunId),
     } as const;
   }
 

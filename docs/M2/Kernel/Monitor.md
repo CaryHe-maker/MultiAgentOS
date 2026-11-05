@@ -96,8 +96,8 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
 
 | 配置 | 缺省（初值） | 说明 |
 |---|---|---|
-| `runTokenLimit` | 12000000 | 运行级上限 |
-| `turnTokenLimit` | 4000000 | 每个 Turn 的上限 |
+| `runTokenLimit` | 24000000 | 运行级上限 |
+| `turnTokenLimit` | 8000000 | 每个 Turn 的上限 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。

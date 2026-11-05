@@ -59,16 +59,22 @@ export interface MonitorDuties {
 // --- Core -> Scheduler: duties ----------------------------------------------------------------
 
 export interface SchedulerDuties {
+  /**
+   * `CAPACITY`: every slot of the provider is held, which is normal with several AgentRuns and
+   * means wait (M2Design 7.2). `STOPPED`: the run no longer grants (it converges).
+   */
   acquire(
     provider: string,
-  ): { readonly ok: true; readonly grantId: string } | { readonly ok: false };
+  ):
+    | { readonly ok: true; readonly grantId: string }
+    | { readonly ok: false; readonly reason: 'CAPACITY' | 'STOPPED' };
   /** Idempotent. */
   release(grantId: string): void;
   stopGranting(): void;
   releaseAll(): number;
 }
 
-/** Capacity shared by all runs. It lives in the process, with capacity 1 per provider. */
+/** Capacity shared by all runs. It lives in the process, with `providerCapacity` slots per provider. */
 export interface ProviderCapacityPort {
   /** Returns a token, or null when the provider is busy. */
   tryAcquire(provider: string): string | null;

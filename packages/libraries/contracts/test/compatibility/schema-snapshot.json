@@ -35639,6 +35639,9 @@
         "command",
         "killGraceMs",
         "maxConcurrentExec",
+        "maxConcurrentAttempts",
+        "providerCapacity",
+        "serialExecution",
         "memory",
         "budget",
         "executionLimits",
@@ -35777,6 +35780,17 @@
         "maxConcurrentExec": {
           "type": "integer",
           "minimum": 1
+        },
+        "maxConcurrentAttempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "providerCapacity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "serialExecution": {
+          "type": "boolean"
         },
         "memory": {
           "type": "object",
@@ -36241,6 +36255,9 @@
             "command",
             "killGraceMs",
             "maxConcurrentExec",
+            "maxConcurrentAttempts",
+            "providerCapacity",
+            "serialExecution",
             "memory",
             "budget",
             "executionLimits",
@@ -36379,6 +36396,17 @@
             "maxConcurrentExec": {
               "type": "integer",
               "minimum": 1
+            },
+            "maxConcurrentAttempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "providerCapacity": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "serialExecution": {
+              "type": "boolean"
             },
             "memory": {
               "type": "object",

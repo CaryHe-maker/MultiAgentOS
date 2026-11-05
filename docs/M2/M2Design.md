@@ -996,8 +996,8 @@ WorkflowRun 账本（budget.runTokenLimit）
 
 | 层 | 缺省份额（初值） | 说明 |
 |---|---|---|
-| WorkflowRun | `budget.runTokenLimit` = 12,000,000 | 整个运行的总上限 |
-| Turn | `budget.turnTokenLimit` = 4,000,000 | 一个 Turn（含其中全部 AgentRun）的上限；运行级余额不足时取余额 |
+| WorkflowRun | `budget.runTokenLimit` = 24,000,000 | 整个运行的总上限 |
+| Turn | `budget.turnTokenLimit` = 8,000,000 | 一个 Turn（含其中全部 AgentRun）的上限；运行级余额不足时取余额 |
 | AgentRun | explorer 300,000；worker 600,000；模板节点按所引用 Agent 的缺省份额 | `run_subagents` 与模板可以在 `[最小份额, 缺省份额的 2 倍]` 内调整 |
 
 **额度的单位**：账本记的是"按价格折算后的 token"。缓存命中的输入按模型定义的价格折算（命中单价 ÷ 未命中单价，`deepseek-flash` 为 1/50），未命中的输入与输出按原值计。
