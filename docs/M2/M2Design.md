@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.19 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.20 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -1241,7 +1241,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 
 ### 8.3 网页检索的提供方
 
-`web-search` 只有一个 Unit。提供方接口按多提供方设计，M2 实现 Tavily 一个适配器（面向 Agent 设计、返回清洗过的摘要，Open Deep Research 与 DeerFlow 都在使用）；以后可以增加自部署的 SearXNG。
+`web-search` 只有一个 Unit。提供方接口按多提供方设计，M2 实现一个适配器：DeepSeek 的搜索接口（`/v1/tools/search`，与模型共用 key，结果带 `summary`、`date`、`authority`）或 Tavily（面向 Agent 设计、返回清洗过的摘要，Open Deep Research 与 DeerFlow 都在使用），先由 S6-T-1 实测证明可用性并经 Cary 决定（M2TechStack 第 3.3 节）；以后可以增加自部署的 SearXNG。抓取同样经端口，提供方可为 DeepSeek 的 `/v1/tools/fetch` 或本地实现。
 测试使用本地的固定内容服务器，不依赖真实网络。
 
 ### 8.4 Executor 的组织
@@ -1817,7 +1817,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分（含命令的拆分） |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D、A 组的派生部分（L12 在阶段 8 也完成后） |
 | 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`（询问不超时，等用户时 Turn 计时暂停）；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分 |
-| 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W、A 组的网页部分 |
+| 6 Web | `web_search`（提供方经端口替换：DeepSeek 搜索接口或 Tavily，先由 S6-T-1 实测证明可用并由 Cary 决定，见 M2TechStack 第 3.3 节）、`web_fetch` 与地址检查 | 1 | W、A 组的网页部分 |
 | 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
 | 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出、`/compact` 与空闲触发，实测加估算，材料查询，修剪与结果确认，摘要请求的两种输入与额度，投影替换；压缩与回退的关系、读取已被压缩取代或被修剪的调用（阶段 2 已完成时）；SubAgent 的压缩（阶段 4 已完成时） | 1 | L1–L5、L9–L11、L13（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后，L12 在阶段 4 与阶段 8 都完成后） |
 
@@ -1854,3 +1854,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.13 | 2026-10-31 | 第 5.3、7.4 节：授权询问不再超时，删除 `authorizationTimeoutMs`、询问的 `expiresAt` 与 `TIMED_OUT`（取代 v1.9 中"授权询问 5 分钟后本次拒绝"）；询问只在运行收敛时取消；第 4.1、5.3 节：拒绝作为被拒 Unit 的工具结果交还 Agent，不结束 Turn；第 4.3、9.5、12（不变量 11）、13（H13、A）、14.1、14.2 节相应修改 |
 | v1.18 | 2026-11-05 | 第 6.1 节：`PATH` 中位于 `$HOME` 之下的目录自动以只读挂回，使命令找得到用户的 shell 找得到的工具（装在 `$HOME` 下自定义目录的 node 等），不再要求用户逐个追加白名单；可由 `sandbox.mountPath` 关闭（依据：阶段 3 的 C1–C4 真实模型评测中，node 位于 `~/.local/opt` 时沙盒内 `node: command not found`） |
 | v1.19 | 2026-11-05 | 第 6.1 节：沙盒遮蔽宿主的 `/run`、`/mnt`、`/media`，`.git/config` 以去掉凭据的副本覆盖，`/tmp` 大小、进程数、单文件大小有上限，增加 `--unshare-ipc`、`--unshare-uts`；第 5.3 节：`command.exec` 的拒绝只绑定被拒的那一条命令；第 7.7 节：内存压力中系统可用内存不足最高只到 `WARNING`，`WARNING` 在压力回落后不再拒绝新工作；第 8.1 节：`git_inspect` 的 `git` 在只读沙盒中运行（依据：阶段 3 静态审查，Cary 决定按推荐全部实现） |
+| v1.20 | 2026-11-05 | 第 15 节阶段 6：`web_search` 的提供方不再固定为 Tavily，改为经端口替换，DeepSeek 于 2026-10 开放的搜索与抓取接口先经 S6-T-1 实测证明可用并由 Cary 决定（M2TechStack 第 3.3 节、M2Plan 第 6.7 节） |

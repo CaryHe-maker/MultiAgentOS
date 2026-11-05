@@ -198,5 +198,5 @@ M1 的测试全部保留。增加：
 | 1 | 第 3–8 节（第 5a、6.4 节与摘要请求除外） |
 | 2 | `fs/`：`file-write`、`file-edit`、`isWritable`（提前任务 E-EX-1、E-KX-1）；第 5a 节 `output-read`；`file-read` 的 `nestedInstructions` 与子目录 `AGENTS.md` 条目的组装 |
 | 3 | 第 5c 节：`command/`：`run-command`（输出预览保留头尾）、`command/parse/`（tree-sitter-bash 拆分与 ARITY 表，提前任务 E-EX-3，已实现）；`git/`：`git-inspect` |
-| 6 | `web/`：`web-search`（Tavily 适配器）、`web-fetch`（提前任务 E-EX-2） |
+| 6 | `web/`：`web-search`（经 `SearchProvider` 端口：DeepSeek 搜索接口或 Tavily，由 M2TechStack 第 3.3 节的实测决定）、`web-fetch`（提前任务 E-EX-2） |
 | 8 | 第 6.4 节：修剪与摘要请求的两种组装；`model-call` 的摘要请求（思考强度按配置）与 `COMPACTION_SUMMARY_INVALID` |

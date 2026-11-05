@@ -248,18 +248,19 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 只依赖阶段 1，可以与阶段 2–5 同时进行。
 
 **文档门**：ExecutorSet（`web-search`、`web-fetch`）、Core（`web.search`、`web.fetch` 的资源键与地址拒绝）、
-`M2Security.md` 的网络部分、`M2TechStack.md` 中的 Tavily。
+`M2Security.md` 的网络部分、`M2TechStack.md` 第 3.3 节（DeepSeek 搜索与抓取接口的实测）与其中的提供方依赖。
 
 **契约门** S6-CT-1：两个 Unit 的输入输出与本地网页 fixture 服务器。
 
 | 任务 | 内容 | 依赖 |
 |---|---|---|
-| S6-EX-1 | `web-search` 与 Tavily 适配器；本地固定内容服务器 | — |
-| S6-EX-2 | `web-fetch`：地址检查、重定向逐跳检查、HTML 转 Markdown | 提前任务 E-EX-2 |
+| S6-T-1 | 实测 DeepSeek 搜索与抓取接口（`M2TechStack.md` 第 3.3 节的 W-T1 至 W-T7），证明可用性并给出提供方结论，由 Cary 决定；脚本 `web-eval/run-web-eval.ts` | — |
+| S6-EX-1 | `web-search` 与提供方适配器（`SearchProvider` 端口；DeepSeek 或 Tavily，按 S6-T-1 的结论）；本地固定内容服务器 | 适配器依赖 S6-T-1，端口与 fixture 不依赖 |
+| S6-EX-2 | `web-fetch`：地址检查、重定向逐跳检查、结果封装；HTML 转 Markdown 是否保留按 S6-T-1 的结论 | 提前任务 E-EX-2；提供方部分依赖 S6-T-1 |
 | S6-KC-1 | Core：网络能力的资源键与询问 | — |
 | S6-PL-1 | main 增加网页工具；explorer 已存在时同时为它加上 | — |
 
-**集成** S6-IN-1。**退出**：W、A 组的网页部分。
+**集成** S6-IN-1。**退出**：W、A 组的网页部分；S6-T-1 的实测结果与 Cary 的提供方决定已写入 `M2TechStack.md` 第 3.3 节与 M2OpenDecisions。
 
 ### 6.8 阶段 7：Orchestration
 
