@@ -59,5 +59,6 @@ export * from './platform-persistence/indexes.js';
 export * from './platform-persistence/locks.js';
 export * from './platform-persistence/session-log.js';
 export * from './workflow/reply.js';
+export * from './workflow/subagents.js';
 export * from './ports.js';
 export * from './protocol-registry.js';

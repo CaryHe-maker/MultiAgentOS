@@ -16,6 +16,21 @@ import {
   text,
 } from '../platform-common/schema-helpers.js';
 
+/**
+ * What a task of `run_subagents` adds to its node (M2Design 3.6). Who called it, and under which
+ * delegation, is on the `DELEGATE` edge that leads to it.
+ */
+export const SpawnNodeSchema = closed({
+  writeScope: Type.Array(text(500), { maxItems: 10 }),
+  acceptance: Type.Array(text(300), { maxItems: 10 }),
+  inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
+  effort: Type.Optional(ThinkingEffortSchema),
+  /** The share of budget reserved for it, after the Kernel clamped the request. */
+  tokens: count(1),
+  clamped: Type.Optional(Type.Enum(['MIN', 'MAX'])),
+});
+export type SpawnNode = Static<typeof SpawnNodeSchema>;
+
 /** Node and edge of a GraphRevision as the log stores them (M2Design 3.1, 3.2). */
 export const GraphNodeRecordSchema = closed({
   nodeId: IdSchemas.nodeId,
@@ -29,13 +44,29 @@ export const GraphNodeRecordSchema = closed({
   goal: Type.Optional(text(4000)),
   inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
+  spawn: Type.Optional(SpawnNodeSchema),
 });
 export type GraphNodeRecord = Static<typeof GraphNodeRecordSchema>;
+
+/**
+ * One call that suspends an AgentRun until the nodes it dispatched have ended: the model's tool call
+ * and the Kernel's reservation that funds it. Shared by the `DELEGATE` and `RESUME` edges of the call.
+ */
+export const EdgeCallSchema = closed({
+  toolCallId: ToolCallIdSchema,
+  delegationId: IdSchemas.delegationId,
+});
+export type EdgeCall = Static<typeof EdgeCallSchema>;
 
 export const GraphEdgeRecordSchema = closed({
   from: IdSchemas.nodeId,
   to: IdSchemas.nodeId,
-  kind: Type.Enum(['DEPENDS', 'CONDITIONAL']),
+  /**
+   * `DELEGATE`: from a caller that waits to a node it dispatched. `RESUME`: back from that node to
+   * the caller, which it wakes (M2Design 3.1). Both carry `call`.
+   */
+  kind: Type.Enum(['DEPENDS', 'CONDITIONAL', 'DELEGATE', 'RESUME']),
+  call: Type.Optional(EdgeCallSchema),
   when: Type.Optional(
     closed({
       field: text(128),
@@ -118,6 +149,11 @@ export const SessionLogRecordSchema = Type.Union(
       edges: Type.Array(GraphEdgeRecordSchema),
     }),
     record('NODE_STARTED', inTurn, { nodeId: IdSchemas.nodeId, path: text(512) }),
+    /**
+     * The `RESUME` edges of a call were followed: every node it dispatched has ended (M2Design 3.3).
+     * The graph says the call came back; the AgentRun of the node, which waited, goes on.
+     */
+    record('NODE_RESUMED', inTurn, { nodeId: IdSchemas.nodeId, call: EdgeCallSchema }),
     record('NODE_ENDED', inTurn, {
       nodeId: IdSchemas.nodeId,
       status: Type.Enum(['SUCCEEDED', 'FAILED', 'SKIPPED', 'INTERRUPTED']),
@@ -145,6 +181,8 @@ export const SessionLogRecordSchema = Type.Union(
       nodeId: IdSchemas.nodeId,
       agentRef: PinnedDefinitionRefSchema,
       effort: ThinkingEffortSchema,
+      /** Of a SubAgent: the AgentRun that started it. */
+      parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
     }),
     record('AGENT_RUN_ENDED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -216,7 +254,7 @@ export const SessionLogRecordSchema = Type.Union(
         total: count(),
         pending: count(),
         inProgress: count(),
-        done: count(),
+        completed: count(),
         cancelled: count(),
       }),
     }),

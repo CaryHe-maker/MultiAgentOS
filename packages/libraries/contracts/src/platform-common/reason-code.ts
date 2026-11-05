@@ -75,6 +75,10 @@ export const REASON_CODE_CATEGORY = {
   PROTECTED_PATH_CREATED: 'POLICY',
   NOT_A_GIT_REPOSITORY: 'EXECUTION',
   MEMORY_PRESSURE: 'RESOURCE',
+  WRITE_SCOPE_CONFLICT: 'CONFLICT',
+  WRITE_SCOPE_DELEGATED: 'CONFLICT',
+  BUDGET_INSUFFICIENT: 'RESOURCE',
+  DELEGATION_NOT_FOUND: 'VALIDATION',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
@@ -127,6 +131,8 @@ export const CORE_REJECTED_CODES = [
   'NOTHING_TO_UNDO',
   'UNDO_UNKNOWN',
   'MEMORY_PRESSURE',
+  'WRITE_SCOPE_CONFLICT',
+  'DELEGATION_NOT_FOUND',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
@@ -188,6 +194,7 @@ export const UNIT_REJECTED_CODES = [
   'ADMISSION_CHECK_FAILED',
   'COMMAND_DENIED',
   'PROTECTED_PATH_CREATED',
+  'WRITE_SCOPE_DELEGATED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */

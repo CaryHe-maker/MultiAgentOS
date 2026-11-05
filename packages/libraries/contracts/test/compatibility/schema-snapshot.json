@@ -215,7 +215,8 @@
                     "enum": [
                       "PUBLISH_REPLY",
                       "PUBLISH_REPORT",
-                      "HANDOFF"
+                      "HANDOFF",
+                      "FINISH_SUBAGENT"
                     ]
                   },
                   "allowedInFinal": {
@@ -229,10 +230,40 @@
             "onDegraded": {
               "enum": [
                 "PUBLISH_NOTICE",
-                "PUBLISH_REPORT"
+                "PUBLISH_REPORT",
+                "RETURN_PARTIAL"
               ]
             },
             "todos": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "spawn": {
               "type": "object",
               "required": [
                 "toolRef"
@@ -264,6 +295,19 @@
           },
           "additionalProperties": false
         },
+        "spawnable": {
+          "type": "object",
+          "required": [
+            "defaultShare"
+          ],
+          "properties": {
+            "defaultShare": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
         "capabilities": {
           "type": "array",
           "items": {
@@ -271,7 +315,8 @@
               "repo.read",
               "workspace.write",
               "command.exec",
-              "command.network"
+              "command.network",
+              "agent.spawn"
             ]
           },
           "uniqueItems": true
@@ -1134,7 +1179,8 @@
                         "enum": [
                           "PUBLISH_REPLY",
                           "PUBLISH_REPORT",
-                          "HANDOFF"
+                          "HANDOFF",
+                          "FINISH_SUBAGENT"
                         ]
                       },
                       "allowedInFinal": {
@@ -1148,10 +1194,40 @@
                 "onDegraded": {
                   "enum": [
                     "PUBLISH_NOTICE",
-                    "PUBLISH_REPORT"
+                    "PUBLISH_REPORT",
+                    "RETURN_PARTIAL"
                   ]
                 },
                 "todos": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "spawn": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -1183,6 +1259,19 @@
               },
               "additionalProperties": false
             },
+            "spawnable": {
+              "type": "object",
+              "required": [
+                "defaultShare"
+              ],
+              "properties": {
+                "defaultShare": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "capabilities": {
               "type": "array",
               "items": {
@@ -1190,7 +1279,8 @@
                   "repo.read",
                   "workspace.write",
                   "command.exec",
-                  "command.network"
+                  "command.network",
+                  "agent.spawn"
                 ]
               },
               "uniqueItems": true
@@ -1741,7 +1831,8 @@
                     "repo.read",
                     "workspace.write",
                     "command.exec",
-                    "command.network"
+                    "command.network",
+                    "agent.spawn"
                   ]
                 },
                 "uniqueItems": true
@@ -1907,6 +1998,14 @@
                     ]
                   },
                   "PROTECTED_PATH_CREATED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "WRITE_SCOPE_DELEGATED": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -2791,7 +2890,8 @@
               "repo.read",
               "workspace.write",
               "command.exec",
-              "command.network"
+              "command.network",
+              "agent.spawn"
             ]
           },
           "uniqueItems": true
@@ -2957,6 +3057,14 @@
               ]
             },
             "PROTECTED_PATH_CREATED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "WRITE_SCOPE_DELEGATED": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3548,7 +3656,11 @@
                       "ENV_ASSERTION_FAILED",
                       "PROTECTED_PATH_CREATED",
                       "NOT_A_GIT_REPOSITORY",
-                      "MEMORY_PRESSURE"
+                      "MEMORY_PRESSURE",
+                      "WRITE_SCOPE_CONFLICT",
+                      "WRITE_SCOPE_DELEGATED",
+                      "BUDGET_INSUFFICIENT",
+                      "DELEGATION_NOT_FOUND"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   }
@@ -3735,6 +3847,202 @@
                   "seq",
                   "category",
                   "kind",
+                  "name",
+                  "agent",
+                  "goal",
+                  "acceptance",
+                  "writeScope",
+                  "inputs"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "TASK"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "goal": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "maxItems": 10
+                  },
+                  "writeScope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "maxItems": 10
+                  },
+                  "inputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "maxItems": 10
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "name",
+                  "agent",
+                  "status",
+                  "notes"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SUBAGENT_RESULT"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "status": {
+                    "enum": [
+                      "DONE",
+                      "PARTIAL",
+                      "BLOCKED",
+                      "FAILED",
+                      "SKIPPED"
+                    ]
+                  },
+                  "notes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "maxItems": 10
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -3840,6 +4148,15 @@
             }
           },
           "additionalProperties": false
+        },
+        "withdrawnTools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 8
         }
       },
       "additionalProperties": false,
@@ -4202,7 +4519,11 @@
                 "ENV_ASSERTION_FAILED",
                 "PROTECTED_PATH_CREATED",
                 "NOT_A_GIT_REPOSITORY",
-                "MEMORY_PRESSURE"
+                "MEMORY_PRESSURE",
+                "WRITE_SCOPE_CONFLICT",
+                "WRITE_SCOPE_DELEGATED",
+                "BUDGET_INSUFFICIENT",
+                "DELEGATION_NOT_FOUND"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -4379,6 +4700,202 @@
             },
             "trusted": {
               "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "name",
+            "agent",
+            "goal",
+            "acceptance",
+            "writeScope",
+            "inputs"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "TASK"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "agent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "goal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "acceptance": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "maxItems": 10
+            },
+            "writeScope": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "maxItems": 10
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "artifactId",
+                  "sha256",
+                  "size",
+                  "mediaType"
+                ],
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "pattern": "^art_[a-f0-9]{64}$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false,
+                "$id": "platform.common.ArtifactRef.v1"
+              },
+              "maxItems": 10
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "name",
+            "agent",
+            "status",
+            "notes"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "SUBAGENT_RESULT"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "agent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "status": {
+              "enum": [
+                "DONE",
+                "PARTIAL",
+                "BLOCKED",
+                "FAILED",
+                "SKIPPED"
+              ]
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "maxItems": 10
+            },
+            "outputRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "const": "application/vnd.multiagentos.model-output+json"
+                }
+              },
+              "additionalProperties": false
+            },
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           },
           "additionalProperties": false
@@ -6636,143 +7153,7 @@
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
-            "label": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 80
-            },
-            "unit": {
-              "type": "object",
-              "required": [
-                "unitAttemptId",
-                "toolName",
-                "argsSummary",
-                "state"
-              ],
-              "properties": {
-                "unitAttemptId": {
-                  "type": "string",
-                  "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "toolName": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64
-                },
-                "argsSummary": {
-                  "type": "string",
-                  "minLength": 0,
-                  "maxLength": 80
-                },
-                "state": {
-                  "enum": [
-                    "QUEUED",
-                    "RUNNING",
-                    "DONE"
-                  ]
-                },
-                "fullRef": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
-                }
-              },
-              "additionalProperties": false
-            },
-            "todos": {
-              "type": "object",
-              "required": [
-                "total",
-                "done"
-              ],
-              "properties": {
-                "total": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 30
-                },
-                "done": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 30
-                },
-                "current": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80
-                }
-              },
-              "additionalProperties": false
-            },
-            "at": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "phase": {
-              "type": "string",
-              "const": "RETRYING"
-            },
-            "retry": {
-              "type": "object",
-              "required": [
-                "attempt",
-                "retryAt"
-              ],
-              "properties": {
-                "attempt": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "retryAt": {
-                  "type": "string",
-                  "format": "date-time"
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "type",
-            "agentRunId",
-            "label",
-            "at",
-            "phase"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "ActivityEvent"
-            },
-            "agentRunId": {
+            "parentAgentRunId": {
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
@@ -6848,7 +7229,7 @@
               "type": "object",
               "required": [
                 "total",
-                "done"
+                "completed"
               ],
               "properties": {
                 "total": {
@@ -6856,7 +7237,151 @@
                   "minimum": 0,
                   "maximum": 30
                 },
-                "done": {
+                "completed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "current": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "additionalProperties": false
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "phase": {
+              "type": "string",
+              "const": "RETRYING"
+            },
+            "retry": {
+              "type": "object",
+              "required": [
+                "attempt",
+                "retryAt"
+              ],
+              "properties": {
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "retryAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "agentRunId",
+            "label",
+            "at",
+            "phase"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ActivityEvent"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "parentAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "unit": {
+              "type": "object",
+              "required": [
+                "unitAttemptId",
+                "toolName",
+                "argsSummary",
+                "state"
+              ],
+              "properties": {
+                "unitAttemptId": {
+                  "type": "string",
+                  "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "toolName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "argsSummary": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 80
+                },
+                "state": {
+                  "enum": [
+                    "QUEUED",
+                    "RUNNING",
+                    "DONE"
+                  ]
+                },
+                "fullRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "todos": {
+              "type": "object",
+              "required": [
+                "total",
+                "completed"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30
+                },
+                "completed": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 30
@@ -6880,6 +7405,7 @@
                 "CALLING_TOOL",
                 "AWAITING_AUTHORIZATION",
                 "QUEUED",
+                "WAITING_SUBTASKS",
                 "WRAPPING_UP",
                 "ENDED"
               ]
@@ -7684,7 +8210,8 @@
                       "repo.read",
                       "workspace.write",
                       "command.exec",
-                      "command.network"
+                      "command.network",
+                      "agent.spawn"
                     ]
                   },
                   "uniqueItems": true
@@ -7696,10 +8223,182 @@
                     "minLength": 1,
                     "maxLength": 1024
                   }
+                },
+                "parentAgentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "delegationId": {
+                  "type": "string",
+                  "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "taskName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
                 }
               },
               "additionalProperties": false,
               "$id": "kernel.unit.RegisterAgentRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "reserveDelegation"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "parentAgentRunId",
+                "tasks"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "parentAgentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "agentRef",
+                      "writeRoots"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "agentRef": {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "id",
+                          "version",
+                          "digest"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "AGENT"
+                          },
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                            "maxLength": 64
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                          },
+                          "digest": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "writeRoots": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        }
+                      },
+                      "tokens": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 12
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ReserveDelegationRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "releaseDelegation"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "delegationId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "delegationId": {
+                  "type": "string",
+                  "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ReleaseDelegationRequest.v1"
             }
           },
           "additionalProperties": false
@@ -8232,7 +8931,11 @@
                                       "ENV_ASSERTION_FAILED",
                                       "PROTECTED_PATH_CREATED",
                                       "NOT_A_GIT_REPOSITORY",
-                                      "MEMORY_PRESSURE"
+                                      "MEMORY_PRESSURE",
+                                      "WRITE_SCOPE_CONFLICT",
+                                      "WRITE_SCOPE_DELEGATED",
+                                      "BUDGET_INSUFFICIENT",
+                                      "DELEGATION_NOT_FOUND"
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
                                   }
@@ -8419,6 +9122,202 @@
                                   "seq",
                                   "category",
                                   "kind",
+                                  "name",
+                                  "agent",
+                                  "goal",
+                                  "acceptance",
+                                  "writeScope",
+                                  "inputs"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "TASK"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "goal": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "acceptance": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    "maxItems": 10
+                                  },
+                                  "writeScope": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 500
+                                    },
+                                    "maxItems": 10
+                                  },
+                                  "inputs": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "required": [
+                                        "artifactId",
+                                        "sha256",
+                                        "size",
+                                        "mediaType"
+                                      ],
+                                      "properties": {
+                                        "artifactId": {
+                                          "type": "string",
+                                          "pattern": "^art_[a-f0-9]{64}$"
+                                        },
+                                        "sha256": {
+                                          "type": "string",
+                                          "pattern": "^[a-f0-9]{64}$"
+                                        },
+                                        "size": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        "mediaType": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128
+                                        }
+                                      },
+                                      "additionalProperties": false,
+                                      "$id": "platform.common.ArtifactRef.v1"
+                                    },
+                                    "maxItems": 10
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
+                                  "name",
+                                  "agent",
+                                  "status",
+                                  "notes"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "SUBAGENT_RESULT"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "DONE",
+                                      "PARTIAL",
+                                      "BLOCKED",
+                                      "FAILED",
+                                      "SKIPPED"
+                                    ]
+                                  },
+                                  "notes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    "maxItems": 10
+                                  },
+                                  "outputRef": {
+                                    "type": "object",
+                                    "required": [
+                                      "artifactId",
+                                      "sha256",
+                                      "size",
+                                      "mediaType"
+                                    ],
+                                    "properties": {
+                                      "artifactId": {
+                                        "type": "string",
+                                        "pattern": "^art_[a-f0-9]{64}$"
+                                      },
+                                      "sha256": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      },
+                                      "size": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "const": "application/vnd.multiagentos.model-output+json"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "toolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
                                   "text"
                                 ],
                                 "properties": {
@@ -8524,6 +9423,15 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        "withdrawnTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "maxItems": 8
                         }
                       },
                       "additionalProperties": false,
@@ -9211,7 +10119,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -9408,7 +10320,7 @@
                   "type": "object",
                   "required": [
                     "total",
-                    "done"
+                    "completed"
                   ],
                   "properties": {
                     "total": {
@@ -9416,7 +10328,7 @@
                       "minimum": 0,
                       "maximum": 30
                     },
-                    "done": {
+                    "completed": {
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 30
@@ -11099,143 +12011,7 @@
                       "type": "string",
                       "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 80
-                    },
-                    "unit": {
-                      "type": "object",
-                      "required": [
-                        "unitAttemptId",
-                        "toolName",
-                        "argsSummary",
-                        "state"
-                      ],
-                      "properties": {
-                        "unitAttemptId": {
-                          "type": "string",
-                          "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                        },
-                        "toolName": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 64
-                        },
-                        "argsSummary": {
-                          "type": "string",
-                          "minLength": 0,
-                          "maxLength": 80
-                        },
-                        "state": {
-                          "enum": [
-                            "QUEUED",
-                            "RUNNING",
-                            "DONE"
-                          ]
-                        },
-                        "fullRef": {
-                          "type": "object",
-                          "required": [
-                            "artifactId",
-                            "sha256",
-                            "size",
-                            "mediaType"
-                          ],
-                          "properties": {
-                            "artifactId": {
-                              "type": "string",
-                              "pattern": "^art_[a-f0-9]{64}$"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[a-f0-9]{64}$"
-                            },
-                            "size": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "mediaType": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 128
-                            }
-                          },
-                          "additionalProperties": false,
-                          "$id": "platform.common.ArtifactRef.v1"
-                        }
-                      },
-                      "additionalProperties": false
-                    },
-                    "todos": {
-                      "type": "object",
-                      "required": [
-                        "total",
-                        "done"
-                      ],
-                      "properties": {
-                        "total": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 30
-                        },
-                        "done": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 30
-                        },
-                        "current": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 80
-                        }
-                      },
-                      "additionalProperties": false
-                    },
-                    "at": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "phase": {
-                      "type": "string",
-                      "const": "RETRYING"
-                    },
-                    "retry": {
-                      "type": "object",
-                      "required": [
-                        "attempt",
-                        "retryAt"
-                      ],
-                      "properties": {
-                        "attempt": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "retryAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        }
-                      },
-                      "additionalProperties": false
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "agentRunId",
-                    "label",
-                    "at",
-                    "phase"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "const": "ActivityEvent"
-                    },
-                    "agentRunId": {
+                    "parentAgentRunId": {
                       "type": "string",
                       "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
@@ -11311,7 +12087,7 @@
                       "type": "object",
                       "required": [
                         "total",
-                        "done"
+                        "completed"
                       ],
                       "properties": {
                         "total": {
@@ -11319,7 +12095,151 @@
                           "minimum": 0,
                           "maximum": 30
                         },
-                        "done": {
+                        "completed": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "current": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "const": "RETRYING"
+                    },
+                    "retry": {
+                      "type": "object",
+                      "required": [
+                        "attempt",
+                        "retryAt"
+                      ],
+                      "properties": {
+                        "attempt": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "retryAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "agentRunId",
+                    "label",
+                    "at",
+                    "phase"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "ActivityEvent"
+                    },
+                    "agentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "parentAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "unit": {
+                      "type": "object",
+                      "required": [
+                        "unitAttemptId",
+                        "toolName",
+                        "argsSummary",
+                        "state"
+                      ],
+                      "properties": {
+                        "unitAttemptId": {
+                          "type": "string",
+                          "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "toolName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "argsSummary": {
+                          "type": "string",
+                          "minLength": 0,
+                          "maxLength": 80
+                        },
+                        "state": {
+                          "enum": [
+                            "QUEUED",
+                            "RUNNING",
+                            "DONE"
+                          ]
+                        },
+                        "fullRef": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "todos": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "completed"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "completed": {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 30
@@ -11343,6 +12263,7 @@
                         "CALLING_TOOL",
                         "AWAITING_AUTHORIZATION",
                         "QUEUED",
+                        "WAITING_SUBTASKS",
                         "WRAPPING_UP",
                         "ENDED"
                       ]
@@ -11883,7 +12804,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -12132,7 +13057,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -12888,7 +13817,11 @@
             "ENV_ASSERTION_FAILED",
             "PROTECTED_PATH_CREATED",
             "NOT_A_GIT_REPOSITORY",
-            "MEMORY_PRESSURE"
+            "MEMORY_PRESSURE",
+            "WRITE_SCOPE_CONFLICT",
+            "WRITE_SCOPE_DELEGATED",
+            "BUDGET_INSUFFICIENT",
+            "DELEGATION_NOT_FOUND"
           ],
           "$id": "platform.common.ReasonCode.v1"
         },
@@ -13456,7 +14389,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -13705,7 +14642,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -14848,7 +15789,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -15538,7 +16483,9 @@
                 "UNDO_NOT_AVAILABLE",
                 "NOTHING_TO_UNDO",
                 "UNDO_UNKNOWN",
-                "MEMORY_PRESSURE"
+                "MEMORY_PRESSURE",
+                "WRITE_SCOPE_CONFLICT",
+                "DELEGATION_NOT_FOUND"
               ]
             }
           },
@@ -15585,6 +16532,39 @@
                 "SHUTDOWN"
               ],
               "$id": "kernel.control.CloseReason.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "requestId",
+            "outcome",
+            "issuer",
+            "reasonCode",
+            "delegable"
+          ],
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "REJECTED"
+            },
+            "issuer": {
+              "type": "string",
+              "const": "CORE"
+            },
+            "reasonCode": {
+              "type": "string",
+              "const": "BUDGET_INSUFFICIENT"
+            },
+            "delegable": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false
@@ -16360,7 +17340,11 @@
                       "ENV_ASSERTION_FAILED",
                       "PROTECTED_PATH_CREATED",
                       "NOT_A_GIT_REPOSITORY",
-                      "MEMORY_PRESSURE"
+                      "MEMORY_PRESSURE",
+                      "WRITE_SCOPE_CONFLICT",
+                      "WRITE_SCOPE_DELEGATED",
+                      "BUDGET_INSUFFICIENT",
+                      "DELEGATION_NOT_FOUND"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
@@ -20439,7 +21423,11 @@
                               "ENV_ASSERTION_FAILED",
                               "PROTECTED_PATH_CREATED",
                               "NOT_A_GIT_REPOSITORY",
-                              "MEMORY_PRESSURE"
+                              "MEMORY_PRESSURE",
+                              "WRITE_SCOPE_CONFLICT",
+                              "WRITE_SCOPE_DELEGATED",
+                              "BUDGET_INSUFFICIENT",
+                              "DELEGATION_NOT_FOUND"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
@@ -25017,7 +26005,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -25057,6 +26049,59 @@
         }
       ],
       "$id": "kernel.unit.CloseRunRequest.v1"
+    },
+    "kernel.unit.DelegationReserved.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "outcome",
+        "delegationId",
+        "shares"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "const": "ACCEPTED"
+        },
+        "delegationId": {
+          "type": "string",
+          "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "shares": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "tokens"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "clamped": {
+                "enum": [
+                  "MIN",
+                  "MAX"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.DelegationReserved.v1"
     },
     "kernel.unit.EndAgentRunRequest.v1": {
       "type": "object",
@@ -25703,7 +26748,8 @@
               "repo.read",
               "workspace.write",
               "command.exec",
-              "command.network"
+              "command.network",
+              "agent.spawn"
             ]
           },
           "uniqueItems": true
@@ -25715,10 +26761,52 @@
             "minLength": 1,
             "maxLength": 1024
           }
+        },
+        "parentAgentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "delegationId": {
+          "type": "string",
+          "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "taskName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "additionalProperties": false,
       "$id": "kernel.unit.RegisterAgentRunRequest.v1"
+    },
+    "kernel.unit.ReleaseDelegationRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "delegationId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "delegationId": {
+          "type": "string",
+          "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ReleaseDelegationRequest.v1"
     },
     "kernel.unit.ReportPublishInput.v1": {
       "type": "object",
@@ -26127,6 +27215,98 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.RequestHumanRequest.v1"
+    },
+    "kernel.unit.ReserveDelegationRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "parentAgentRunId",
+        "tasks"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "parentAgentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agentRef",
+              "writeRoots"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "agentRef": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "id",
+                  "version",
+                  "digest"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "AGENT"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "writeRoots": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                }
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ReserveDelegationRequest.v1"
     },
     "kernel.unit.RunClosed.v1": {
       "anyOf": [
@@ -26658,7 +27838,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -26907,7 +28091,11 @@
                     "ENV_ASSERTION_FAILED",
                     "PROTECTED_PATH_CREATED",
                     "NOT_A_GIT_REPOSITORY",
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "WRITE_SCOPE_CONFLICT",
+                    "WRITE_SCOPE_DELEGATED",
+                    "BUDGET_INSUFFICIENT",
+                    "DELEGATION_NOT_FOUND"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -27921,7 +29109,11 @@
                               "ENV_ASSERTION_FAILED",
                               "PROTECTED_PATH_CREATED",
                               "NOT_A_GIT_REPOSITORY",
-                              "MEMORY_PRESSURE"
+                              "MEMORY_PRESSURE",
+                              "WRITE_SCOPE_CONFLICT",
+                              "WRITE_SCOPE_DELEGATED",
+                              "BUDGET_INSUFFICIENT",
+                              "DELEGATION_NOT_FOUND"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           }
@@ -28108,6 +29300,202 @@
                           "seq",
                           "category",
                           "kind",
+                          "name",
+                          "agent",
+                          "goal",
+                          "acceptance",
+                          "writeScope",
+                          "inputs"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "TASK"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "agent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "goal": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          },
+                          "acceptance": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "maxItems": 10
+                          },
+                          "writeScope": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            },
+                            "maxItems": 10
+                          },
+                          "inputs": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "artifactId",
+                                "sha256",
+                                "size",
+                                "mediaType"
+                              ],
+                              "properties": {
+                                "artifactId": {
+                                  "type": "string",
+                                  "pattern": "^art_[a-f0-9]{64}$"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "mediaType": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                }
+                              },
+                              "additionalProperties": false,
+                              "$id": "platform.common.ArtifactRef.v1"
+                            },
+                            "maxItems": 10
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "name",
+                          "agent",
+                          "status",
+                          "notes"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SUBAGENT_RESULT"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "agent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "DONE",
+                              "PARTIAL",
+                              "BLOCKED",
+                              "FAILED",
+                              "SKIPPED"
+                            ]
+                          },
+                          "notes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "maxItems": 10
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
                           "text"
                         ],
                         "properties": {
@@ -28213,6 +29601,15 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "withdrawnTools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "maxItems": 8
                 }
               },
               "additionalProperties": false,
@@ -29217,7 +30614,11 @@
                           "ENV_ASSERTION_FAILED",
                           "PROTECTED_PATH_CREATED",
                           "NOT_A_GIT_REPOSITORY",
-                          "MEMORY_PRESSURE"
+                          "MEMORY_PRESSURE",
+                          "WRITE_SCOPE_CONFLICT",
+                          "WRITE_SCOPE_DELEGATED",
+                          "BUDGET_INSUFFICIENT",
+                          "DELEGATION_NOT_FOUND"
                         ],
                         "$id": "platform.common.ReasonCode.v1"
                       }
@@ -29404,6 +30805,202 @@
                       "seq",
                       "category",
                       "kind",
+                      "name",
+                      "agent",
+                      "goal",
+                      "acceptance",
+                      "writeScope",
+                      "inputs"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "TASK"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "agent": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "goal": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      "acceptance": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "maxItems": 10
+                      },
+                      "writeScope": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "maxItems": 10
+                      },
+                      "inputs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
+                        },
+                        "maxItems": 10
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "name",
+                      "agent",
+                      "status",
+                      "notes"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "SUBAGENT_RESULT"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "agent": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "status": {
+                        "enum": [
+                          "DONE",
+                          "PARTIAL",
+                          "BLOCKED",
+                          "FAILED",
+                          "SKIPPED"
+                        ]
+                      },
+                      "notes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "maxItems": 10
+                      },
+                      "outputRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "const": "application/vnd.multiagentos.model-output+json"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
                       "text"
                     ],
                     "properties": {
@@ -29509,6 +31106,15 @@
                 }
               },
               "additionalProperties": false
+            },
+            "withdrawnTools": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "maxItems": 8
             }
           },
           "additionalProperties": false,
@@ -31748,6 +33354,7 @@
                 "ADMISSION_CHECK_FAILED",
                 "COMMAND_DENIED",
                 "PROTECTED_PATH_CREATED",
+                "WRITE_SCOPE_DELEGATED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
                 "UNSUPPORTED_FILE",
@@ -32071,7 +33678,7 @@
           "type": "object",
           "required": [
             "total",
-            "done"
+            "completed"
           ],
           "properties": {
             "total": {
@@ -32079,7 +33686,7 @@
               "minimum": 0,
               "maximum": 30
             },
-            "done": {
+            "completed": {
               "type": "integer",
               "minimum": 0,
               "maximum": 30
@@ -33301,6 +34908,7 @@
                         "ADMISSION_CHECK_FAILED",
                         "COMMAND_DENIED",
                         "PROTECTED_PATH_CREATED",
+                        "WRITE_SCOPE_DELEGATED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
                         "UNSUPPORTED_FILE",
@@ -34380,7 +35988,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -34629,7 +36241,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -35591,7 +37207,11 @@
         "ENV_ASSERTION_FAILED",
         "PROTECTED_PATH_CREATED",
         "NOT_A_GIT_REPOSITORY",
-        "MEMORY_PRESSURE"
+        "MEMORY_PRESSURE",
+        "WRITE_SCOPE_CONFLICT",
+        "WRITE_SCOPE_DELEGATED",
+        "BUDGET_INSUFFICIENT",
+        "DELEGATION_NOT_FOUND"
       ],
       "$id": "platform.common.ReasonCode.v1"
     },
@@ -35639,6 +37259,9 @@
         "command",
         "killGraceMs",
         "maxConcurrentExec",
+        "maxConcurrentAttempts",
+        "providerCapacity",
+        "serialExecution",
         "memory",
         "budget",
         "executionLimits",
@@ -35777,6 +37400,17 @@
         "maxConcurrentExec": {
           "type": "integer",
           "minimum": 1
+        },
+        "maxConcurrentAttempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "providerCapacity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "serialExecution": {
+          "type": "boolean"
         },
         "memory": {
           "type": "object",
@@ -36241,6 +37875,9 @@
             "command",
             "killGraceMs",
             "maxConcurrentExec",
+            "maxConcurrentAttempts",
+            "providerCapacity",
+            "serialExecution",
             "memory",
             "budget",
             "executionLimits",
@@ -36379,6 +38016,17 @@
             "maxConcurrentExec": {
               "type": "integer",
               "minimum": 1
+            },
+            "maxConcurrentAttempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "providerCapacity": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "serialExecution": {
+              "type": "boolean"
             },
             "memory": {
               "type": "object",
@@ -36814,7 +38462,11 @@
             "noProgressRounds",
             "repeatedIntent",
             "consecutiveErrorLimit",
-            "maxNestedInstructions"
+            "maxNestedInstructions",
+            "maxSubagentsPerCall",
+            "maxDependencyDepth",
+            "maxTasks",
+            "maxSpawnCalls"
           ],
           "properties": {
             "regenerationLimit": {
@@ -36855,6 +38507,22 @@
             "maxNestedInstructions": {
               "type": "integer",
               "minimum": 1
+            },
+            "maxSubagentsPerCall": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxDependencyDepth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxTasks": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxSpawnCalls": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false,
@@ -36871,7 +38539,11 @@
         "noProgressRounds",
         "repeatedIntent",
         "consecutiveErrorLimit",
-        "maxNestedInstructions"
+        "maxNestedInstructions",
+        "maxSubagentsPerCall",
+        "maxDependencyDepth",
+        "maxTasks",
+        "maxSpawnCalls"
       ],
       "properties": {
         "regenerationLimit": {
@@ -36910,6 +38582,22 @@
           "minimum": 1
         },
         "maxNestedInstructions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxSubagentsPerCall": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxDependencyDepth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxTasks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxSpawnCalls": {
           "type": "integer",
           "minimum": 1
         }
@@ -37618,6 +39306,88 @@
                   },
                   "output": {
                     "type": "boolean"
+                  },
+                  "spawn": {
+                    "type": "object",
+                    "required": [
+                      "writeScope",
+                      "acceptance",
+                      "inputs",
+                      "tokens"
+                    ],
+                    "properties": {
+                      "writeScope": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "maxItems": 10
+                      },
+                      "acceptance": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "maxItems": 10
+                      },
+                      "inputs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
+                        },
+                        "maxItems": 10
+                      },
+                      "effort": {
+                        "enum": [
+                          "none",
+                          "low",
+                          "high",
+                          "max"
+                        ]
+                      },
+                      "tokens": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "clamped": {
+                        "enum": [
+                          "MIN",
+                          "MAX"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -37644,8 +39414,29 @@
                   "kind": {
                     "enum": [
                       "DEPENDS",
-                      "CONDITIONAL"
+                      "CONDITIONAL",
+                      "DELEGATE",
+                      "RESUME"
                     ]
+                  },
+                  "call": {
+                    "type": "object",
+                    "required": [
+                      "toolCallId",
+                      "delegationId"
+                    ],
+                    "properties": {
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "delegationId": {
+                        "type": "string",
+                        "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "when": {
                     "type": "object",
@@ -37730,6 +39521,63 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "nodeId",
+            "call"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "NODE_RESUMED"
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "call": {
+              "type": "object",
+              "required": [
+                "toolCallId",
+                "delegationId"
+              ],
+              "properties": {
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "delegationId": {
+                  "type": "string",
+                  "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -38047,6 +39895,10 @@
                 "high",
                 "max"
               ]
+            },
+            "parentAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
           },
           "additionalProperties": false
@@ -38356,7 +40208,11 @@
                 "ENV_ASSERTION_FAILED",
                 "PROTECTED_PATH_CREATED",
                 "NOT_A_GIT_REPOSITORY",
-                "MEMORY_PRESSURE"
+                "MEMORY_PRESSURE",
+                "WRITE_SCOPE_CONFLICT",
+                "WRITE_SCOPE_DELEGATED",
+                "BUDGET_INSUFFICIENT",
+                "DELEGATION_NOT_FOUND"
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
@@ -38770,7 +40626,11 @@
                 "ENV_ASSERTION_FAILED",
                 "PROTECTED_PATH_CREATED",
                 "NOT_A_GIT_REPOSITORY",
-                "MEMORY_PRESSURE"
+                "MEMORY_PRESSURE",
+                "WRITE_SCOPE_CONFLICT",
+                "WRITE_SCOPE_DELEGATED",
+                "BUDGET_INSUFFICIENT",
+                "DELEGATION_NOT_FOUND"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -39013,7 +40873,7 @@
                 "total",
                 "pending",
                 "inProgress",
-                "done",
+                "completed",
                 "cancelled"
               ],
               "properties": {
@@ -39029,7 +40889,7 @@
                   "type": "integer",
                   "minimum": 0
                 },
-                "done": {
+                "completed": {
                   "type": "integer",
                   "minimum": 0
                 },
@@ -40344,7 +42204,11 @@
                             "ENV_ASSERTION_FAILED",
                             "PROTECTED_PATH_CREATED",
                             "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE"
+                            "MEMORY_PRESSURE",
+                            "WRITE_SCOPE_CONFLICT",
+                            "WRITE_SCOPE_DELEGATED",
+                            "BUDGET_INSUFFICIENT",
+                            "DELEGATION_NOT_FOUND"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         }
@@ -40471,6 +42335,143 @@
       "additionalProperties": false,
       "$id": "workflow.AnalysisReportDraft.v1"
     },
+    "workflow.ExplorerResult.v1": {
+      "type": "object",
+      "required": [
+        "summary",
+        "findings"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim",
+              "evidence"
+            ],
+            "properties": {
+              "claim": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 30
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "verdict"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "verdict": {
+                "enum": [
+                  "met",
+                  "not_met",
+                  "unknown"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 10
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.ExplorerResult.v1"
+    },
     "workflow.HandoffBrief.v1": {
       "type": "object",
       "required": [
@@ -40521,6 +42522,128 @@
       "additionalProperties": false,
       "$id": "workflow.ReplyArgs.v1"
     },
+    "workflow.RunSubagentsArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsArgs.v1"
+    },
     "workflow.UpdateTodosArgs.v1": {
       "type": "object",
       "required": [
@@ -40545,7 +42668,7 @@
                 "enum": [
                   "pending",
                   "in_progress",
-                  "done",
+                  "completed",
                   "cancelled"
                 ]
               }
@@ -40557,6 +42680,161 @@
       },
       "additionalProperties": false,
       "$id": "workflow.UpdateTodosArgs.v1"
+    },
+    "workflow.WorkerResult.v1": {
+      "type": "object",
+      "required": [
+        "summary",
+        "changedFiles",
+        "status",
+        "validation"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "changedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 200
+        },
+        "status": {
+          "enum": [
+            "done",
+            "partial",
+            "blocked"
+          ]
+        },
+        "validation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "command",
+              "exitCode",
+              "outputRef"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "exitCode": {
+                "type": "integer"
+              },
+              "outputRef": {
+                "type": "object",
+                "required": [
+                  "artifactId",
+                  "sha256",
+                  "size",
+                  "mediaType"
+                ],
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "pattern": "^art_[a-f0-9]{64}$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false,
+                "$id": "platform.common.ArtifactRef.v1"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 20
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "verdict"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "verdict": {
+                "enum": [
+                  "met",
+                  "not_met",
+                  "unknown"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 10
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.WorkerResult.v1"
     }
   }
 }

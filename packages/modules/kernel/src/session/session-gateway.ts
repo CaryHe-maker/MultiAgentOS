@@ -11,6 +11,8 @@ import {
   ReadArtifactRequestSchema,
   ReadProjectFileRequestSchema,
   RegisterAgentRunRequestSchema,
+  ReleaseDelegationRequestSchema,
+  ReserveDelegationRequestSchema,
   ReportSessionCommandRequestSchema,
   ReportSessionListRequestSchema,
   RequestHumanRequestSchema,
@@ -56,6 +58,17 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
     schema: RegisterAgentRunRequestSchema,
     needs: 'RUN',
     blocked: true,
+  },
+  reserveDelegation: {
+    caller: 'workflow',
+    schema: ReserveDelegationRequestSchema,
+    needs: 'RUN',
+    blocked: true,
+  },
+  releaseDelegation: {
+    caller: 'workflow',
+    schema: ReleaseDelegationRequestSchema,
+    needs: 'RUN',
   },
   submitUnit: {
     caller: 'workflow',
@@ -224,6 +237,8 @@ export class SessionGateway {
   /** Injected into Workflow only; the caller is who holds the port. */
   readonly workflow: WorkflowGatewayPort = {
     registerAgentRun: this.#port('workflow', 'registerAgentRun'),
+    reserveDelegation: this.#port('workflow', 'reserveDelegation'),
+    releaseDelegation: this.#port('workflow', 'releaseDelegation'),
     submitUnit: this.#port('workflow', 'submitUnit'),
     endAgentRun: this.#port('workflow', 'endAgentRun'),
     closeRun: this.#port('workflow', 'closeRun'),

@@ -45,6 +45,10 @@ export class Monitor implements MonitorDuties {
   #used = 0;
   #unknown = 0;
   #reserved = 0;
+  /** Lent to ledgers below and not yet paid back (Kernel/Monitor 3.2, M2Design 7.3). */
+  #lent = 0;
+  /** What the ledgers below spent of what they were lent: gone for good. */
+  #lentSpent = 0;
   #inputTokens = 0;
   #outputTokens = 0;
   #state: BudgetState = 'NORMAL';
@@ -89,7 +93,7 @@ export class Monitor implements MonitorDuties {
       throw new MonitorInvariantError('Invalid cache hit weight');
     if (this.#state === 'EXHAUSTED')
       return { ok: false as const, reasonCode: 'BUDGET_EXHAUSTED' as const };
-    const available = this.#config.tokenLimit - (final ? 0 : this.#finalReserve);
+    const available = this.#limit() - (final ? 0 : this.#finalReserve);
     if (estimatedTokens > available - this.#used - this.#unknown - this.#reserved) {
       this.#advance(final ? 'EXHAUSTED' : 'WRAP_UP');
       return {
@@ -153,7 +157,36 @@ export class Monitor implements MonitorDuties {
 
   /** The balance if nothing reserved were spent is not what counts: reservations are spent. */
   remaining(): number {
-    return this.#config.tokenLimit - this.#used - this.#unknown - this.#reserved;
+    return this.#limit() - this.#used - this.#unknown - this.#reserved;
+  }
+
+  /** What the limit is once the loans are taken out. */
+  #limit(): number {
+    return this.#config.tokenLimit - this.#lent - this.#lentSpent;
+  }
+
+  /**
+   * What may be lent: the balance less the final reserve and one ordinary call, so that after the
+   * ledgers below end, this one can still go on and wrap up (M2Design 7.3, rule 1).
+   */
+  delegable(): number {
+    return Math.max(0, this.remaining() - this.#finalReserve - this.#wrapUpMargin);
+  }
+
+  /** Takes `amount` out of the limit for a ledger below. */
+  lend(amount: number): void {
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > this.delegable())
+      throw new MonitorInvariantError('Cannot lend more than is delegable');
+    this.#lent += amount;
+    this.#recalculateState();
+  }
+
+  /** A loan of `amount` ends; the ledger below spent `spent` of it, and the rest comes back. */
+  settleLoan(amount: number, spent: number): void {
+    if (amount > this.#lent || spent > amount || spent < 0)
+      throw new MonitorInvariantError('Unknown loan');
+    this.#lent -= amount;
+    this.#lentSpent += spent;
   }
 
   finalize(): BudgetSummary {
@@ -241,7 +274,7 @@ export class Monitor implements MonitorDuties {
   }
 
   #recalculateState(): void {
-    const remaining = this.#config.tokenLimit - this.#used - this.#unknown;
+    const remaining = this.#limit() - this.#used - this.#unknown;
     if (remaining < this.#finalReserve) this.#advance('EXHAUSTED');
     else if (remaining < this.#finalReserve + this.#wrapUpMargin) this.#advance('WRAP_UP');
   }

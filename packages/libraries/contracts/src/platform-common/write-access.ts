@@ -103,6 +103,13 @@ export function writeRootsOverlap(left: readonly string[], right: readonly strin
   );
 }
 
+/** True when every root of `inner` lies under a root of `outer`: what a SubAgent may write is within its parent's. */
+export function writeRootsWithin(inner: readonly string[], outer: readonly string[]): boolean {
+  return writableRoots({ writeRoots: inner }).every((root) =>
+    outer.some((container) => isBelow(container, root)),
+  );
+}
+
 /** An `AGENTS.md` in any directory: writing one is critical (Kernel/Core 5a.2). Ignores case. */
 export function isProjectInstructionPath(path: string): boolean {
   const name = asFileSystemsSeeIt(path).split('/').at(-1);

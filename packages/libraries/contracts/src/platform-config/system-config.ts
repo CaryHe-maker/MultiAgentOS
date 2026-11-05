@@ -55,6 +55,12 @@ export const KernelConfigSchema = closed(
     }),
     killGraceMs: ms(),
     maxConcurrentExec: count(1),
+    /** UnitAttempts executing at the same time, over all AgentRuns (M2Design 7.1). */
+    maxConcurrentAttempts: count(1),
+    /** Model calls in flight at the same time per provider; the rest wait (M2Design 7.2). */
+    providerCapacity: count(1),
+    /** Every Unit is a barrier and the global concurrency is 1: for finding races (M2Design 7.1). */
+    serialExecution: Type.Boolean(),
     memory: closed({
       sampleIntervalMs: ms(),
       warningRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
@@ -97,6 +103,11 @@ export const WorkflowConfigSchema = closed(
     repeatedIntent: closed({ window: count(1), warnAt: count(1), stopAt: count(1) }),
     consecutiveErrorLimit: count(1),
     maxNestedInstructions: count(1),
+    /** `run_subagents` (M2Design 3.6). */
+    maxSubagentsPerCall: count(1),
+    maxDependencyDepth: count(),
+    maxTasks: count(1),
+    maxSpawnCalls: count(1),
   },
   'platform.config.WorkflowConfig.v1',
 );

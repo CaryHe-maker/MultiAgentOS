@@ -104,7 +104,7 @@ Monitor 在阶段 1 只有运行级与 Turn 两级账本，main 直接使用 Tur
 | Session 级分块 | Core：审计写入器、Session 级 Outbox、Session 命令的待回复表；Execution：产物归属索引 |
 | 运行级分块 | 当前运行（至多一个）的 Core、Execution、Monitor、Scheduler 分块；已结束的运行只保留墓碑 |
 
-`execution.drainCapacityWaiters()` 在阶段 4 引入（M2Design 第 7.2 节），阶段 1 为空操作。
+`execution.drainCapacityWaiters()` 在阶段 4 引入（M2Design 第 7.2 节），阶段 1 为空操作；阶段 4 起它为等待调用机会的尝试重新申请（[Execution](Execution.md) 第 4c 节）。
 
 ### 5.3 消息
 

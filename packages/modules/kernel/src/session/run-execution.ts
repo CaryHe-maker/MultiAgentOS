@@ -15,7 +15,14 @@ import {
   type BuiltRequest,
   type ExecutionConfig,
 } from './attempt-request.js';
+import type { Fingerprints } from './change-scan.js';
 import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
+import {
+  AttemptQueues,
+  type ConcurrencyClass,
+  type QueueEntry,
+  type QueueLimits,
+} from './execution-queues.js';
 import type { AttemptSpec, ResultCheck, RunAttempts } from './run-attempts.js';
 import type { ProjectFileRead } from './run-work.js';
 import type { SessionArtifacts } from './session-artifacts.js';
@@ -54,19 +61,67 @@ export interface RunExecutionDeps {
     readonly snapshot: () => Promise<ReadonlySet<string>>;
     readonly quarantine: (before: ReadonlySet<string>) => Promise<readonly string[]>;
   };
+  /**
+   * Which files a command changed (M2Design 7.1): its write roots are scanned before it runs and
+   * after, and the difference goes into the report. Undefined when the tree cannot be scanned.
+   */
+  readonly changes?: {
+    readonly snapshot: (roots: readonly string[]) => Promise<Fingerprints | undefined>;
+    readonly since: (
+      before: Fingerprints,
+      roots: readonly string[],
+    ) => Promise<readonly string[] | undefined>;
+  };
   readonly audit?: (entry: object) => void;
+  /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
+  readonly limits: QueueLimits;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
 
-interface Attempt {
+/** The roots a sandboxed command may write: what a scan before and after looks at. */
+const commandRootsOf = (spec: AttemptSpec): readonly string[] =>
+  spec.scope.kind === 'SANDBOX' ? spec.scope.profile.writableRoots : [];
+
+interface Attempt extends QueueEntry {
   readonly spec: AttemptSpec;
   readonly unitAttemptId: string;
   readonly attempts: RunAttempts;
   executionId?: string;
   retries: number;
+  /** Set once the "before" of a command was taken. */
+  snapshotted?: boolean;
   /** The protected paths that existed when a command was first dispatched. */
   protectedBefore?: ReadonlySet<string>;
+  /** The files under a command's write roots when it was first dispatched. */
+  changedBefore?: Fingerprints | undefined;
+  /** Built, and waiting for a call slot to be reserved (M2Design 7.2). */
+  built?: { readonly request: BuiltRequest; readonly executionId: string };
+}
+
+/**
+ * The class a Unit declares for the queue (M2Design 7.1). A command that cannot write, one of the
+ * read-only list in a sandbox without a writable root, is a READ: it takes no part in the EXEC
+ * mutex and is no barrier (M2Design 5.2).
+ */
+export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): ConcurrencyClass {
+  switch (spec.unit.executionKind) {
+    case 'MODEL':
+      return 'MODEL';
+    case 'FILE_WRITE':
+    case 'FILE_EDIT':
+    case 'MESSAGE_PUBLISH':
+    case 'REPORT_PUBLISH':
+      return 'WRITE';
+    case 'COMMAND':
+      return spec.scope.kind === 'SANDBOX' &&
+        spec.scope.backend === 'BWRAP' &&
+        spec.scope.profile.writableRoots.length === 0
+        ? 'READ'
+        : 'EXEC';
+    default:
+      return 'READ';
+  }
 }
 
 type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
@@ -83,17 +138,19 @@ const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
 };
 
 /**
- * One run's attempts in Execution (Kernel/Execution): a FIFO with one attempt at a time, the
- * storage of results and technical retries. Every method runs inside a message of the Session
+ * One run's attempts in Execution (Kernel/Execution): a queue for every AgentRun, started by
+ * class and by the global limits (M2Design 7.1), the storage of results and technical retries. Every method runs inside a message of the Session
  * actor; I/O on local artifacts may be awaited there (Kernel/Interaction 5.4).
  */
 export class RunExecution {
   readonly #deps: RunExecutionDeps;
   readonly #builder: AttemptRequestBuilder;
-  readonly #queue: Attempt[] = [];
+  readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
   readonly #effects: UnknownEffect[] = [];
-  #active: Attempt | undefined;
+  #seq = 0;
+  #pumping = false;
+  #again = false;
   #cancelFallback: (() => void) | undefined;
 
   public constructor(deps: RunExecutionDeps) {
@@ -108,9 +165,19 @@ export class RunExecution {
   async createAttempt(spec: AttemptSpec, attempts: RunAttempts): Promise<string> {
     const unitAttemptId = this.#deps.newAttemptId?.() ?? newId('una');
     attempts.registerAttempt(unitAttemptId, spec.requestId);
-    const attempt: Attempt = { spec, unitAttemptId, attempts, retries: 0 };
+    this.#seq += 1;
+    const attempt: Attempt = {
+      spec,
+      unitAttemptId,
+      attempts,
+      retries: 0,
+      seq: this.#seq,
+      agentRunId: spec.agentRunId,
+      cls: concurrencyClassOf(spec),
+      state: 'QUEUED',
+    };
     this.#byId.set(unitAttemptId, attempt);
-    this.#queue.push(attempt);
+    this.#queues.add(attempt);
     await this.#pump();
     return unitAttemptId;
   }
@@ -138,17 +205,33 @@ export class RunExecution {
     return [...this.#effects];
   }
 
+  /** Starts whatever may start now. A call made while it runs makes it look again. */
   async #pump(): Promise<void> {
-    if (this.#active !== undefined) return;
-    const next = this.#queue.shift();
-    if (next === undefined) return;
-    this.#active = next;
-    await this.#run(next);
+    if (this.#pumping) {
+      this.#again = true;
+      return;
+    }
+    this.#pumping = true;
+    try {
+      do {
+        this.#again = false;
+        const started = this.#queues.startable(this.#deps.limits);
+        await Promise.all(started.map((attempt) => this.#run(attempt)));
+      } while (this.#again);
+    } finally {
+      this.#pumping = false;
+    }
   }
 
   async #finish(attempt: Attempt, check: Omit<ResultCheck, 'unitAttemptId'>): Promise<void> {
     attempt.attempts.submitResultCheck({ unitAttemptId: attempt.unitAttemptId, ...check });
-    if (this.#active === attempt) this.#active = undefined;
+    this.#queues.release(attempt);
+    await this.#pump();
+  }
+
+  /** The attempt is over without a result of its own: Core ended it, with a report or the run. */
+  async #dropped(attempt: Attempt): Promise<void> {
+    this.#queues.release(attempt);
     await this.#pump();
   }
 
@@ -171,19 +254,27 @@ export class RunExecution {
     await this.#dispatch(attempt);
   }
 
-  async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
-    const guard = this.#deps.protectedPaths;
-    if (
-      guard !== undefined &&
-      attempt.spec.unit.executionKind === 'COMMAND' &&
-      attempt.protectedBefore === undefined
-    ) {
-      try {
-        attempt.protectedBefore = await guard.snapshot();
-      } catch {
-        // Without a "before" there is nothing to compare; the sandbox still protects what exists.
-      }
+  /**
+   * What a command is judged against afterwards, taken once before its first dispatch: which
+   * protected paths exist, and what the files under its write roots look like. A snapshot that
+   * cannot be taken leaves nothing to compare; the sandbox still protects what exists.
+   */
+  async #snapshotBeforeCommand(attempt: Attempt): Promise<void> {
+    const { protectedPaths, changes } = this.#deps;
+    if (attempt.spec.unit.executionKind !== 'COMMAND' || attempt.snapshotted === true) return;
+    attempt.snapshotted = true;
+    const roots = commandRootsOf(attempt.spec);
+    try {
+      if (protectedPaths !== undefined) attempt.protectedBefore = await protectedPaths.snapshot();
+      if (changes !== undefined && roots.length > 0)
+        attempt.changedBefore = await changes.snapshot(roots);
+    } catch {
+      // See above.
     }
+  }
+
+  async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
+    await this.#snapshotBeforeCommand(attempt);
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
     const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);
@@ -203,19 +294,43 @@ export class RunExecution {
       });
       return;
     }
-    // A retry has its reservation already; only the first dispatch asks for one.
+    // A parked attempt leaves the count, so what waits behind it may start.
+    if ((await this.#reserveAndSend(attempt, built, executionId)) === 'WAITING') await this.#pump();
+  }
+
+  /**
+   * The one path from a built request to a sent one: a call slot and tokens are asked for (a retry
+   * has them already), and then it goes out. Every slot in use is no failure: the attempt waits,
+   * uncounted, and asks again when one is free (M2Design 7.2). Any other refusal means Core has
+   * ended the attempt, with a report or with the run.
+   */
+  async #reserveAndSend(
+    attempt: Attempt,
+    built: BuiltRequest,
+    executionId: string,
+  ): Promise<'SENT' | 'WAITING' | 'DROPPED'> {
     if (built.reservation !== undefined && attempt.executionId === undefined) {
       const decision = attempt.attempts.requestReservation({
         unitAttemptId: attempt.unitAttemptId,
         ...built.reservation,
       });
       if (!decision.granted) {
-        // Core has already ended the attempt, with a report or with the run.
-        if (this.#active === attempt) this.#active = undefined;
-        await this.#pump();
-        return;
+        if (decision.reason !== 'WAIT_CAPACITY') {
+          delete attempt.built;
+          await this.#dropped(attempt);
+          return 'DROPPED';
+        }
+        attempt.built = { request: built, executionId };
+        this.#queues.park(attempt);
+        return 'WAITING';
       }
     }
+    delete attempt.built;
+    this.#send(attempt, built, executionId);
+    return 'SENT';
+  }
+
+  #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
@@ -231,6 +346,20 @@ export class RunExecution {
         });
       });
     });
+  }
+
+  /**
+   * Called at the end of every message of the Session actor (M2Design 7.2): the call slots given
+   * back since are offered to the attempts that wait, oldest first, and the first that finds none
+   * ends the round, so a younger one never passes an older one.
+   */
+  async drainCapacityWaiters(): Promise<void> {
+    for (const attempt of this.#queues.waiting()) {
+      const pending = attempt.built;
+      if (pending === undefined || !this.#queues.resume(attempt, this.#deps.limits)) break;
+      if ((await this.#reserveAndSend(attempt, pending.request, pending.executionId)) === 'WAITING')
+        break;
+    }
   }
 
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
@@ -360,6 +489,20 @@ export class RunExecution {
         return;
       }
     }
+    if (
+      fact.executionKind === 'COMMAND' &&
+      attempt.changedBefore !== undefined &&
+      this.#deps.changes !== undefined
+    ) {
+      try {
+        changedFiles = await this.#deps.changes.since(
+          attempt.changedBefore,
+          commandRootsOf(attempt.spec),
+        );
+      } catch {
+        // The command ran; only the list of what it changed is missing.
+      }
+    }
     await this.#finish(attempt, {
       executionId: fact.executionId,
       outcome: 'COMPLETED',
@@ -391,8 +534,7 @@ export class RunExecution {
     if (!decision.allowed) {
       if (decision.reason !== 'BUDGET_WRAP_UP' && decision.reason !== 'BUDGET_EXHAUSTED')
         return false;
-      if (this.#active === attempt) this.#active = undefined;
-      await this.#pump();
+      await this.#dropped(attempt);
       return true;
     }
     attempt.retries += 1;
@@ -429,23 +571,28 @@ export class RunExecution {
    * cancelled, and when the Supervisor never confirms, the fallback judges it unconfirmed.
    */
   cancel(runEpoch: number): void {
-    for (const attempt of this.#queue.splice(0)) attempt.attempts.abandon(attempt.unitAttemptId);
-    const active = this.#active;
-    if (active === undefined) return;
-    if (active.executionId === undefined) {
-      active.attempts.abandon(active.unitAttemptId);
-      this.#active = undefined;
-      return;
+    for (const attempt of this.#queues.drainQueued())
+      attempt.attempts.abandon(attempt.unitAttemptId);
+    // One that waits for a call slot, or is being built, was never sent: nothing to stop.
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.executionId !== undefined) continue;
+      attempt.attempts.abandon(attempt.unitAttemptId);
+      this.#queues.release(attempt);
     }
+    const sent = this.#queues.running().filter((attempt) => attempt.executionId !== undefined);
+    if (sent.length === 0) return;
     const { config, enqueue, schedule, workflowRunId, cancelRun } = this.#deps;
     this.#cancelFallback = schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
       enqueue(() => {
-        if (this.#active !== active || active.executionId === undefined) return;
-        this.#noteStop(active, active.executionId);
-        void this.#finish(active, {
-          executionId: active.executionId,
-          outcome: 'STOP_UNCONFIRMED',
-        });
+        for (const attempt of sent) {
+          if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+            continue;
+          this.#noteStop(attempt, attempt.executionId);
+          void this.#finish(attempt, {
+            executionId: attempt.executionId,
+            outcome: 'STOP_UNCONFIRMED',
+          });
+        }
       });
     });
     cancelRun({ workflowRunId, runEpoch }).catch(() => undefined);

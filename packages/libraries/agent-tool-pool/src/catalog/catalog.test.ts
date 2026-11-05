@@ -1,4 +1,4 @@
-import type { BoundaryContext } from '@multiagentos/contracts';
+import { agentMinShare, type BoundaryContext } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
 import { InMemoryDefinitionSource } from '../adapters/memory/in-memory-definition-source.js';
@@ -31,6 +31,7 @@ async function issuesWhen(origin: string, change: (content: Content) => Content 
 }
 
 const AGENT = 'agents/main/v0.1.0.yaml';
+const WORKER = 'agents/worker/v0.1.0.yaml';
 const FILE_READ = 'units/file-read/v0.1.0.yaml';
 const MODEL_CALL = 'units/model-call/v0.1.0.yaml';
 const TEMPLATE = 'templates/analyze/v0.1.0.yaml';
@@ -40,7 +41,7 @@ describe('the repository catalog', () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
-    for (const id of ['main', 'planner', 'code-viewer']) {
+    for (const id of ['main', 'planner', 'code-viewer', 'explorer', 'worker']) {
       const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
       expect(pinned.ok).toBe(true);
     }
@@ -61,10 +62,26 @@ describe('the repository catalog', () => {
       'read_output',
       'reply',
       'run_command',
+      'run_subagents',
       'search_repository',
       'update_todos',
       'write_file',
     ]);
+  });
+
+  it('gives each SubAgent its own result tool and a share that covers its least share', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    for (const id of ['explorer', 'worker']) {
+      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      if (!pinned.ok) throw new Error(pinned.error.message);
+      const { agent, tools } = pinned.value;
+      expect(tools.filter((tool) => tool.modelName === 'finish_subagent')).toHaveLength(1);
+      expect(tools.some((tool) => tool.modelName === 'run_subagents')).toBe(false);
+      expect(agent.spawnable?.defaultShare).toBeGreaterThanOrEqual(agentMinShare(agent.budget));
+      expect(agent.capabilities).not.toContain('agent.spawn');
+    }
   });
 });
 
@@ -131,6 +148,50 @@ describe('the rules of a v1 catalog', () => {
     ],
   ])('refuses an agent with %s', async (_name, change) => {
     expect(await issuesWhen(AGENT, change)).toContain(`AGENT_INVALID ${AGENT}`);
+  });
+
+  it.each([
+    [
+      'a spawn capability without the spawn tool',
+      AGENT,
+      (c: Content) => {
+        const actions = { ...(c['actions'] as Content) };
+        delete actions['spawn'];
+        return { ...c, actions };
+      },
+    ],
+    [
+      'a SubAgent that can spawn',
+      WORKER,
+      (c: Content) => ({
+        ...c,
+        capabilities: [...(c['capabilities'] as string[]), 'agent.spawn'],
+      }),
+    ],
+    [
+      'a default share below the least share',
+      WORKER,
+      (c: Content) => ({ ...c, spawnable: { defaultShare: 1000 } }),
+    ],
+    [
+      'a SubAgent that ends by publishing',
+      WORKER,
+      (c: Content) => {
+        const actions = c['actions'] as Content;
+        return { ...c, actions: { ...actions, onDegraded: 'PUBLISH_NOTICE' } };
+      },
+    ],
+    [
+      'a result tool without a share to run on',
+      WORKER,
+      (c: Content) => {
+        const next = { ...c };
+        delete next['spawnable'];
+        return next;
+      },
+    ],
+  ])('refuses %s', async (_name, origin, change) => {
+    expect(await issuesWhen(origin, change)).toContain(`AGENT_INVALID ${origin}`);
   });
 
   it('refuses an end tool whose arguments do not fit its action', async () => {

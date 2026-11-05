@@ -144,7 +144,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
      说明"没有这个编号的调用"或"该调用的输出没有被截断，预览就是全部内容"；不说明引用。
    - 结果按普通工具结果处理：预览进入投影，计入重复调用与重复意图的检查；`REJECTED(ARTIFACT_EXPIRED)` 与其他工具拒绝一样作为工具结果交给模型。
 9. **`update_todos`**（阶段 2，worker 为阶段 4；M2Design 第 3.5 节）：
-   - 校验参数（≤30 项、每项 ≤200 字符、`in_progress` 至多一项），不合法时记录 `FEEDBACK(INVALID_ARGUMENTS)`；
+   - 校验参数（≤30 项、每项 ≤200 字符，`status` 为 `pending`、`in_progress`、`completed`、`cancelled`，可同时有多项 `in_progress`），不合法时记录 `FEEDBACK(INVALID_ARGUMENTS)`；
    - 合法时追加 `TODOS_UPDATED { agentRunId, source: { modelTurnRequestId, toolCallId }, counts }`，工具结果为一行计数，不提交 Unit；
    - 随后调用 `updateActivity({ agentRunId, todos: { total, done, current? } })`（`current` 为进行中一项的前 80 个字符），只用于界面；
    - 可以与普通工具、结束控制工具在同一次返回中出现（`CONTROL_MIXED` 的例外），先于其他调用处理；只调用它的一轮计入无进展检测，不计入重复意图。
@@ -162,6 +162,29 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 - `SessionCommand(FORK)`：复制原日志（`copyLogFrom`），对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(FORKED)`，追加 `SESSION_FORKED { fromSessionId, fromSeq }`；列出日志中的 ArtifactRef 交给 Kernel 继承。
 
 **结束**：AgentRun 状态机对所有 Agent 相同，只有三种结局：调用了定义中声明的结束工具（`ENDED`）、没能合法结束（`DEGRADED`）、致命失败（`FAILED`）。它不知道结束工具的含义。结束后做什么由 Agent 定义的 `actions.end[].then` 与 `actions.onDegraded` 决定，运行器按这一张表执行，不按 Agent 分支。发布类动作提交最后一个 Unit，它的 UnitReport 之后 AgentRun 才结束；模板运行在图没有可启动的节点时结束，`chat` 由生长规则继续。
+
+## 7a. SubAgent（阶段 4，草稿）
+
+设计以 M2Design 第 3.6、3.7 节为准。同一个 `SessionRunner` 同时持有多个未结束的 AgentRun（`#agents`），每个有自己的状态机、投影范围和（SubAgent 的）任务信息。
+
+**`run_subagents`**：它是控制工具，不提交 Unit。`agent-cycle` 把它当作只能单独出现的控制调用（与别的调用同回复、在最后一轮、参数不合 Schema 都以 FEEDBACK 退回），合格时以 `SPAWN` 结束本轮，由 runner 处理：
+
+1. **校验**（`domain/spawn/validate-spawn.ts`，纯函数）：`TOO_MANY_TASKS`、`DUPLICATE_NAME`、`UNKNOWN_DEPENDENCY`、`CYCLE`、`TOO_DEEP`、`UNKNOWN_AGENT`、`WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN`、`WRITE_SCOPE_OUTSIDE`（规范化后须在调用方的可写范围内）、`WRITE_SCOPE_OVERLAP`（没有依赖路径的两个任务范围相交）、`EFFORT_NOT_ALLOWED`、`INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物，`readableArtifacts` 从日志得出）、`SPAWN_LIMIT`。所有不满足的规则一次列出；整次调用不执行，以 `FEEDBACK(INVALID_ACTION)` 作为这次调用的结果。连续两次被拒，或触及 `SPAWN_LIMIT`，下一次组装起 `ContextAssembleInput.withdrawnTools` 带上 `run_subagents`，模型不再看到它。
+2. **委派**：校验通过后调用 `reserveDelegation`（全有或全无）。`BUDGET_INSUFFICIENT` 带回可委派的余额，同样以 FEEDBACK 告知；Kernel 的其他拒绝也如此。
+3. **扩展任务图**：追加 `GRAPH_EXTENDED(source: SPAWN)`，每个任务一个 `AGENT` 节点（`goal` 与 `spawn` 字段：范围、验收标准、产物、强度、份额），任务之间的依赖是 `DEPENDS` 边；再从调用方到每个任务加一条 `DELEGATE` 边，从每个任务回到调用方加一条 `RESUME` 边，两者带调用号与委派号。调用方此刻起是 `WAITING`（由这些边推出，不写记录），没有依赖的任务立即就绪。调用方的 AgentRun 把这次调用当作结果稍后才到的工具调用，自己没有任何 waiting 状态。
+4. **推进**：就绪的任务各登记一个 AgentRun（带 `parentAgentRunId`、`delegationId`、`taskName`，可写根目录是任务的范围）；登记被拒的任务记为 FAILED，依赖它的任务按 `all_success` 记为 SKIPPED。`#advance` 不可重入：任务在推进过程中结束时只要求再来一遍。
+5. **唤醒**：`#advance` 按 `wakeableNodes` 找到调用方（它的这次调用的全部唤醒边的前驱都结束了），调用 `releaseDelegation`，追加 `NODE_RESUMED`，并把这次调用的结果交给它的 AgentRun（`answerDelegatedCall`）。调用方的投影在 `NODE_RESUMED` 处得到这次调用的结果（一条 FEEDBACK 计数，随后按唤醒边的顺序每个任务一条 `SUBAGENT_RESULT`）。调用方在 `WAITING` 期间不提交 Unit（`#assertNotWaiting`）；运行被中断时调用以 `NODE_RESUMED` 关闭而不交付。运行器不另存派生计数：谁在等、等什么、本 Turn 已派生多少，都从图和日志推出。
+
+**任务看到什么**：`TASK`（目标、验收标准、写入范围、交给它的产物）和它所依赖任务的 `SUBAGENT_RESULT`，都是 PINNED；看不到用户的输入，也看不到调用方的步骤。`SUBAGENT_RESULT` 只引用 SubAgent 结束那次模型输出和 `toolCallId`，Kernel 组装请求时从中取出 `finish_subagent` 的参数，日志中不复制正文。
+
+**结果契约**（`#finishSubagent`）：
+- 每条验收标准都要有回应（只做形式检查），否则以 `RESULT_INCOMPLETE` 退回，计入该 AgentRun 的 Round；
+- 能运行命令的 Agent（worker）改过文件而最近一次成功的命令早于最后一次改动时，退回一次（`NOT_VERIFIED`，每个 AgentRun 至多一次）；
+- 自报的 `changedFiles` 与 Kernel 在 UnitReport 中给出的实际改动对账，不一致处写进汇合结果的说明；
+- `status` 为 `blocked` 的任务节点记为 FAILED（依赖它的任务被跳过），`partial` 与 `done` 记为 SUCCEEDED；
+- 因额度、轮次等降级的 SubAgent（`onDegraded: RETURN_PARTIAL`）不发布任何东西，交回 `PARTIAL` 和原因；失败的 SubAgent 交回 `FAILED` 与原因码。
+
+**中断**：运行被中断时，SubAgent 先停止（记为 FAILED），这样每次调用的唤醒边都已结束，调用以 `NODE_RESUMED` 关闭但不交给调用方的 AgentRun；然后调用方按自己的降级动作收尾。
 
 ## 8. 上下文
 
@@ -271,6 +294,8 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | `consecutiveErrorLimit` | 5 | 同上 |
 | `entryAgentRef` | — | 删除；入口由模板决定 |
 | `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节，阶段 2） |
+| `maxSubagentsPerCall`、`maxDependencyDepth` | 8、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节，阶段 4） |
+| `maxTasks`、`maxSpawnCalls` | 12、4 | 每个 Turn 累计派生的任务数与调用次数上限（第 7a 节，阶段 4） |
 
 ## 12. 不变量与测试
 

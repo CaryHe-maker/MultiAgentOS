@@ -731,7 +731,7 @@ describe('update_todos', () => {
     async () => {
       const place = await roots();
       const todos = [
-        { content: 'read', status: 'done' },
+        { content: 'read', status: 'completed' },
         { content: 'write', status: 'in_progress' },
       ];
       const provider = scriptedChat(
@@ -742,14 +742,14 @@ describe('update_todos', () => {
           ],
         },
         tool('update_todos', {
-          todos: [...todos, ...todos.map((t) => ({ ...t, status: 'in_progress' }))],
+          todos: todos.map((t) => ({ ...t, status: 'finished' })),
         }),
         reply('done'),
       );
       const chat = await chatOn(place, provider);
       await chat.say('work');
       const second = contents(provider.requests[1]).join('\n');
-      expect(second).toContain('Todos: 2 items, 1 done, 1 in progress.');
+      expect(second).toContain('Todos: 2 items, 1 completed, 1 in progress.');
       expect(second).toContain('one');
       expect(contents(lastRequest(provider)).join('\n')).toContain(
         'Not executed: the arguments do not match',

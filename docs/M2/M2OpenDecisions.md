@@ -245,3 +245,36 @@ node 在 `$HOME` 下的缺口（上一节）已按 Cary 的决定（2026-11-05�
 - `git_inspect` 的 `rev` 以 `-` 开头会作为选项传给 git（`--ext-diff` 会重新打开前面关掉的外部 diff）；现在拒绝。
 - 端到端用例补了结构检查：中断后提供方收到的历史里，每个工具调用恰有一个结果。
 已知局限（未修）：入口放宽堆上限用的是 shebang；npm 全局安装与直接执行有效，pnpm 的启动脚本直接调用 `node`，不经过 shebang，这时堆上限仍是 V8 默认值。要在所有安装方式下生效，需要入口在发现堆上限偏低时用 `--max-old-space-size` 重新启动自己；这涉及信号转发与终端，单独做。
+
+阶段 4 的开始（2026-11-05，`feature/phase4/main`，M2Design v1.24）：Cary 决定两项——Turn 与运行额度提高到 800 万与 2400 万；只读名单上的命令行按 READ 处理（不占 EXEC 互斥）。顺序与进度：
+- 已完成并通过测试：S4-KC-2 Monitor（AgentRun 账本与逐级委派）、S4-KC-1 Scheduler（`providerCapacity`、`WAIT_CAPACITY`）、S4-KX-1 Execution（按 AgentRun 分队列、类别、全局上限、`serialExecution`、等待调用机会）、S4-CT-1 契约（`reserveDelegation`、`releaseDelegation`、`RegisterAgentRunRequest` 的父子字段、`agent.spawn`）、S4-KC-3 Core（SubAgent 登记、委派、写入占用、`WRITE_SCOPE_CONFLICT`、`WRITE_SCOPE_DELEGATED`）。
+- 随后完成：S4-PL-1 explorer、worker 与 `run_subagents`、`finish_subagent` 的定义和提示词；S4-WF-1 Workflow（多个 AgentRun 并行推进，`run_subagents` 的校验、委派与图扩展，汇合，结果契约，改动对账，完成检查，调用方连续两次被拒后收回工具）；命令改动检测；S4-UI-1 活动区的 SubAgent 树与 `/timeline`；S4-IN-1 集成（`stage4-exit`：两个 worker 同时在各自范围内写、越界写入被拒、依赖结果传递、B2 额度不足、工具集、活动树与 `/timeline`、命令改动对账）。
+- 与设计稿的差异，留待定稿时决定：(1) 已决定：任务的 `budget` 只保留 `tokens`，`toolUnits` 与 `wallClockMs` 已从参数中删除（Cary）；(2) 在等依赖、还没有登记的任务不出现在活动区（Kernel 不认识它们），"等待 <任务名>"没有做；(3) 改动检测不进入被排除目录，也不报告它们的变化数量；(4) 业务熔断只做了"连续两次被拒或触及 SPAWN_LIMIT 收回 `run_subagents`"，"重复派生同一个失败任务"（第 14.2 节第 12 条）留给阶段 4 之后；(5) B1/B3/B4 只有 Kernel 层的测试，没有端到端版本。
+- 第一次真实模型评测（2026-11-05，WSL，DeepSeek flash；其脚本已被 `subagent-suite` 取代）：主动要求使用 SubAgent 的调研任务（三个模块各一项），main 派生了 explorer 并汇合，无被拒调用，约 43–51 秒、18–24 次请求；同一任务不用 SubAgent 约 19 秒、4 次请求——小任务派生更慢也更贵，收益要等任务重到值得并行。两项互不相干的写文件任务，main 派生了两个 worker，各在自己的范围内建成文件，没有越界，约 22 秒；一句问候没有派生。这些是单次运行的事实，不是统计结论；P3 的依赖图对照（完工时间接近关键路径）没有量，留给之后用更重的任务做。
+- 发现：`vitest` 在包目录下运行会把 `dist/` 里旧的编译测试一起跑，出现大量与改动无关的失败；测试一律在仓库根目录运行。
+- 评测（2026-11-06）：见 [Evaluation/Stage4SubAgents](Evaluation/Stage4SubAgents.md)。不提示时 DeepSeek flash 在 33 次运行中只在 30 目录的重命名上派生了 2 次；要求派生时 24/24 正确且都用了依赖图（并行度最高 5）。评测发现并修正了五处规则（被拒的派生与单独写待办不判进展、每次任务数上限、拒绝文字、待办状态值与 `in_progress` 的上限），M2Design v1.26。仍没有量化 P3（完工时间接近关键路径），需要更重的任务。
+- 任务图重构（2026-11-06，M2Design v1.27）：`run_subagents` 的派发、等待与汇合放进任务图（`DELEGATE`、`RESUME` 边，节点 `WAITING`，`NODE_RESUMED`），AgentRun 层没有 waiting；runner 里专用的等待表、汇合记录与派生计数全部删除。
+
+### 阶段 4 的退出情况（2026-11-06）
+
+M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶段 8 已完成时另加 L12。下面逐项写明现状，**阶段 4 尚未满足全部退出条件**，未完成的项目不在这里假装完成。
+
+| 条件 | 现状 | 证据或缺口 |
+|---|---|---|
+| P1 一轮 4 个 READ 并行 | 完成 | `run-execution.test.ts`：相邻的 READ 同时执行，时间重叠 |
+| P2 两个无依赖的 worker | 完成（假模型） | `stage4-exit`：两个 worker 同时在各自范围内写，互不越界。没有用真实模型验证 |
+| P3 依赖图的完工时间接近关键路径 | **未完成** | 没有量。评测任务一个上下文都装得下，派生比自己做慢；需要单个 Agent 做不完或做得很慢的重任务，并与"分批派生"及 LangGraph 同构图对照 |
+| P4 模板中两个并行 main 节点的范围相交或缺失时编译报错 | **不属于阶段 4** | 并行的 main 节点要到阶段 7 才放开（Kernel/Core 5d：同一时刻至多一个没有父的 ACTIVE 的 AgentRun），随阶段 7 实现 |
+| P5 范围跨越对方时登记被拒（`WRITE_SCOPE_CONFLICT`） | 完成（Kernel 层） | `run-work.test.ts`、`run-delegations.test.ts`。"两个并行 main 节点各自派生 worker"的部分随阶段 7 |
+| P6 派生期间父提交 WRITE 被拒（`WRITE_SCOPE_DELEGATED`） | 完成（Kernel 层） | `run-work.test.ts`、`run-delegations.test.ts`；Workflow 层另有断言：节点 `WAITING` 期间不提交 Unit |
+| B1 三个 SubAgent 并行消耗额度 | 完成（Kernel 层） | `run-ledgers-delegation.test.ts`；没有端到端版本 |
+| B2 份额之和超过可委派额度 | 完成 | Kernel 层与 `stage4-exit` 端到端 |
+| B3 子任务提前结束，剩余额度返还 | 完成（Kernel 层） | `run-ledgers-delegation.test.ts`；没有端到端版本 |
+| B4 运行级额度到达限制 | **未完成** | 只有 Kernel 层对运行级账本的测试；没有"各 AgentRun 进入最后一轮、发布注明因额度结束的回复"的端到端用例 |
+| D 派生指标（10 个适合 + 10 个不适合） | **未达到，暂不优化**（Cary 2026-11-06 决定） | 没有按 D 定义的 10 + 10 任务集。现有评测不提示时 DeepSeek flash 33 次中只派生 2 次，远低于"适合派生的任务 ≥ 8/10"；要求派生时 24/24 正确。原因是 main 的派生准则提示词没能让模型主动派生，机制本身没有问题。留待之后加强提示词并重测 |
+| A 的派生部分（SubAgent 派生不引起询问） | 完成（Kernel 层） | 没有端到端用例 |
+| L12 SubAgent 的压缩与额度不足时的收尾 | **等阶段 8** | 阶段 8 还没有做 |
+
+另外两项已知缺口，不属于退出条件：在等依赖、还没有登记的任务不出现在活动区；"重复派生同一个失败任务"的业务熔断（第 14.2 节第 12 条）留给阶段 4 之后。
+
+发布判断：机制、安全约束（范围冲突、委派期写入、额度）与确定性的结果检查已经完成并通过测试，但 P3、B4 端到端与 D 没有达到，L12 要等阶段 8，所以阶段 4 以"部分完成"合入 `feat/M2`，上表中标注的项目在之后补齐。

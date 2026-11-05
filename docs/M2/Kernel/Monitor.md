@@ -36,6 +36,18 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 - 阶段 1 中 Turn 账本就是 main 的账本：`F = F(main)`，`wrapUpMargin = wrapUpMargin(main)`，预留与状态按 M1 Monitor 第 3.2、3.3 节计算。
 - 结束：未结算的预留按 UNKNOWN 结算（M1 的 `finalize` 规则），剩余返还运行级账本；返回 `TurnUsage`。
 
+### 3.2a AgentRun 账本与逐级委派（阶段 4，草稿）
+
+设计以 M2Design 第 7.3 节为准。`RunLedgers` 在 Turn 账本之下为每个 SubAgent 持有一个账本（`Monitor` 实例），main 与没有父 AgentRun 的 AgentRun 直接使用 Turn 账本。
+
+- `reserveDelegation({ delegationId, parentAgentRunId, shares })`：可委派额度 = 上级账本余额 − 上级的收尾保留 − 上级一次普通调用的余量（`Monitor.delegable()`）。全部份额之和不超过它才一次性划出（`Monitor.lend`），否则整次不执行，返回 `BUDGET_INSUFFICIENT` 与可委派的余额。
+- `registerAgentRun({ agentRunId, delegationId, taskName, agent })`：任务登记时，委派保留中属于它的份额成为它自己的账本；份额小于该 Agent 的 `minShare` 时账本以 WRAP_UP 开启（只能收尾，Workflow 按统一收尾路径处理）。
+- `endAgentRun(agentRunId)`：未使用的部分立即还给上级；已用的与未知的（没有结算的预留）不还；重复调用无效果。Turn 关闭时尚未结束的 SubAgent 一并结束。
+- `releaseDelegation(delegationId)`：没有登记的任务的份额还给上级。
+- `budgetView(agentRunId)`：`agentRun` 是该 AgentRun 自己账本的状态，`turn`、`run` 同前。并行的 SubAgent 各用各的账本，一个的在途预留不会把另一个推进 WRAP_UP（验收 B1）。
+- Turn 的用量（`TurnUsage`、`RunSummary`）把全部 SubAgent 的用量计入。
+- 测试：`run-ledgers-delegation.test.ts`。
+
 ### 3.3 派生值
 
 由 Agent 定义的四个额度参数派生（M2Design 第 7.3 节）：
@@ -96,8 +108,8 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
 
 | 配置 | 缺省（初值） | 说明 |
 |---|---|---|
-| `runTokenLimit` | 12000000 | 运行级上限 |
-| `turnTokenLimit` | 4000000 | 每个 Turn 的上限 |
+| `runTokenLimit` | 24000000 | 运行级上限 |
+| `turnTokenLimit` | 8000000 | 每个 Turn 的上限 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。

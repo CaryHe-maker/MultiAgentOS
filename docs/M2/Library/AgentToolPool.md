@@ -39,6 +39,9 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | UNIT | `file-write`、`file-edit`、`output-read`（阶段 2） | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
 | TOOL | `write-file`、`edit-file`、`read-output`（阶段 2） | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos`（阶段 2） | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
+| AGENT | `explorer`、`worker`（阶段 4） | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 300,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 600,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（explorer 228,000，worker 396,000） |
+| TOOL | `run-subagents`、`finish-explorer`、`finish-worker`（阶段 4） | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个 |
+| PROMPT | `explorer-system`、`worker-system`（阶段 4） | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 
@@ -47,6 +50,12 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 - main 的额度参数（Interface/Definitions 第 2 节）按模型窗口取值（M2Design 第 9.3 节）：`perCallInputLimit = 880000`、`maxOutputTokens = 64000`、
   `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 80`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
+
+## 3a. 阶段 4 增加的校验
+
+- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs` 的 CONTROL 工具；
+- 结束动作含 `FINISH_SUBAGENT` 当且仅当声明了 `spawnable`；这样的 Agent 不得含 `agent.spawn`，结束动作只有 `FINISH_SUBAGENT`，`onDegraded` 为 `RETURN_PARTIAL`（此时不需要发布 Unit），`defaultShare` 不低于 `agentMinShare(budget)`（`finalInputBudget + finalMaxOutputTokens + 2 × (perCallInputLimit + maxOutputTokens)`，与 Kernel/Monitor 的最小份额是同一个函数）；
+- `pinAgent` 把 `actions.spawn` 的工具一并固定，工具名冲突检查也包括它。
 
 ## 4. 加载校验
 

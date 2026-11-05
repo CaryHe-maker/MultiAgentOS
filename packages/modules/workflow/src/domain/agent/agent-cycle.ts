@@ -48,18 +48,20 @@ export interface AgentDefinitions {
   readonly orient?: AgentUnit;
   readonly contextAssemble: AgentUnit;
   readonly modelCall: AgentUnit;
-  /** The Unit that publishes what an ended AgentRun leaves behind. */
-  readonly publish: AgentUnit;
+  /** The Unit that publishes what an ended AgentRun leaves behind; a SubAgent has none. */
+  readonly publish?: AgentUnit;
   readonly tools: readonly AgentTool[];
   /** How this Agent may end: a tool it does not declare cannot end it. */
   readonly endTools: readonly EndTool[];
   /** What is published when no end tool was called validly. */
   readonly onDegraded: DegradedAction;
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
+  readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
-export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';
-export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';
+export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
+export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';
 export interface EndTool {
   readonly toolName: string;
   readonly parameters: Schema;
@@ -75,6 +77,10 @@ export interface AgentConfig {
   readonly consecutiveErrorLimit: number;
   readonly noProgressRounds: number;
   readonly maxNestedInstructions: number;
+  readonly maxSubagentsPerCall: number;
+  readonly maxDependencyDepth: number;
+  readonly maxTasks: number;
+  readonly maxSpawnCalls: number;
   readonly regenerationLimit: number;
 }
 
@@ -88,7 +94,12 @@ type Pending =
       readonly unit: AgentUnit;
       readonly call: ModelToolCall;
       readonly intent: string;
-    };
+    }
+  /**
+   * A call that the task graph answers, not a Unit: `run_subagents`. It is one more tool call that
+   * has not come back, and the round goes on when it has (keyed by its tool call id, M2Design 3.6).
+   */
+  | { readonly role: 'DELEGATED' };
 
 export interface DeferredWrite {
   readonly tool: AgentTool;
@@ -117,6 +128,8 @@ export interface AgentState {
   readonly noProgress: number;
   readonly regenerations: number;
   readonly roundHadOk: boolean;
+  /** Rounds in a row that only kept the todo list: the first is not judged by progress. */
+  readonly todoOnlyRounds: number;
   /**
    * Writes of this reply to a path another of its writes has: each needs what the one before it
    * left, so they are submitted one at a time (Module/Workflow 7, item 10).
@@ -124,6 +137,9 @@ export interface AgentState {
   readonly deferred: readonly DeferredWrite[];
   /** Tools the user rejected in this AgentRun; they are not submitted again. */
   readonly declinedTools: readonly string[];
+  /** Calls of `run_subagents` refused one after the other; two take the tool away. */
+  readonly invalidSpawns: number;
+  readonly spawnWithdrawn: boolean;
   readonly fatal?: ReasonCode;
 }
 
@@ -143,6 +159,8 @@ export type AgentEnding =
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
     }
   | { readonly kind: 'FAILED'; readonly code: ReasonCode }
+  /** `run_subagents` was called validly in form; the runner validates the tasks. */
+  | { readonly kind: 'SPAWN'; readonly arguments: unknown; readonly source: ControlSource }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -166,6 +184,7 @@ export interface AgentContext {
   readonly assembleInput: (
     status: ContextAssembleInput['status'],
     final: boolean,
+    withdrawnTools: readonly string[],
   ) => ContextAssembleInput;
   /** The first prompt of the run: no event or log record carries its text. */
   readonly objectiveRef: ArtifactRef;
@@ -218,6 +237,29 @@ const FEEDBACK = {
 /** Word for word the tool result of the refusal itself (M2Design 5.3). */
 const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
 type FeedbackCode = keyof typeof FEEDBACK;
+
+const withdrawnOf = (state: AgentState): readonly string[] =>
+  state.spawnWithdrawn && state.definitions.spawnTool !== undefined
+    ? [state.definitions.spawnTool.toolName]
+    : [];
+
+/**
+ * Why a call's arguments were refused, so the model corrects them instead of guessing. `lead` is
+ * what the refusal says first: that the call did not run, or that it was not taken.
+ */
+function invalidArgumentsText(
+  lead: string,
+  checked: ReturnType<typeof validate> | undefined,
+  notJson: boolean,
+): string {
+  if (notJson) return `${lead}: they are not valid JSON.`;
+  if (checked === undefined || checked.ok) return `${lead}.`;
+  const text = `${lead}: ${checked.issues.slice(0, 3).join('; ')}`;
+  return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
+}
+
+const NOT_EXECUTED = 'Not executed: the arguments do not match the tool parameters';
+const NOT_TAKEN = 'The arguments of the call do not match its parameters';
 
 const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
@@ -369,7 +411,7 @@ function nextRound(
     next,
     'CONTEXT',
     next.definitions.contextAssemble,
-    context.assembleInput(status, final),
+    context.assembleInput(status, final, withdrawnOf(next)),
     'context',
     [...records, ...wrapUpRecords],
   );
@@ -393,11 +435,14 @@ export function startAgent(
     succeeded: [],
     deferred: [],
     declinedTools: [],
+    invalidSpawns: 0,
+    spawnWithdrawn: false,
     intents: [],
     consecutiveErrors: 0,
     noProgress: 0,
     regenerations: 0,
     roundHadOk: false,
+    todoOnlyRounds: 0,
   };
   const { orient } = input.definitions;
   if (orient === undefined || input.orientPackRef !== undefined) return nextRound(state, context);
@@ -419,7 +464,7 @@ const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
 
 function failed(
   state: AgentState,
-  pending: Pending,
+  pending: Exclude<Pending, { readonly role: 'DELEGATED' }>,
   code: ReasonCode,
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
@@ -470,8 +515,10 @@ function afterTools(
   context: AgentContext,
   config: AgentConfig,
   records: readonly NewLogRecord[],
+  /** False when the round is not judged by progress, such as a refused run_subagents. */
+  judged = true,
 ): AgentTransition {
-  const noProgress = state.roundHadOk ? 0 : state.noProgress + 1;
+  const noProgress = !judged ? state.noProgress : state.roundHadOk ? 0 : state.noProgress + 1;
   const next = { ...state, noProgress };
   return nextRound(
     noProgress >= config.noProgressRounds ? wrapUp(next, 'NO_PROGRESS') : next,
@@ -487,12 +534,14 @@ function invalidReply(
   context: AgentContext,
   config: AgentConfig,
   records: readonly NewLogRecord[],
+  /** What is wrong, when the model can act on it; otherwise the fixed text of the code. */
+  detail?: string,
 ): AgentTransition {
   // Every call gets its answer here, also when the AgentRun ends: the history must stay valid.
   const notes =
     calls.length === 0
       ? [feedback(state, code)]
-      : calls.map((call) => feedback(state, code, call.toolCallId));
+      : calls.map((call) => feedback(state, code, call.toolCallId, detail));
   if (state.final) return degrade(state, 'FINAL_CALL_INVALID', [...records, ...notes]);
   const regenerations = state.regenerations + 1;
   const next =
@@ -541,12 +590,21 @@ function handleModel(
   const todoTool = state.final ? undefined : state.definitions.todoTool;
   const isTodo = (call: ModelToolCall) => call.toolName === todoTool?.toolName;
   let activity: AgentTransition['activity'];
+  let refusedTodos = false;
   if (todoTool !== undefined)
     for (const call of calls.filter(isTodo)) {
       const args =
         call.arguments === null ? undefined : validate(todoTool.parameters, call.arguments);
       if (args === undefined || !args.ok) {
-        records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+        records.push(
+          feedback(
+            state,
+            'INVALID_ARGUMENTS',
+            call.toolCallId,
+            invalidArgumentsText(NOT_EXECUTED, args, call.arguments === null),
+          ),
+        );
+        refusedTodos = true;
         continue;
       }
       const { todos } = call.arguments as unknown as UpdateTodosArgs;
@@ -556,7 +614,7 @@ function handleModel(
         total: todos.length,
         pending: countOf('pending'),
         inProgress: countOf('in_progress'),
-        done: countOf('done'),
+        completed: countOf('completed'),
         cancelled: countOf('cancelled'),
       };
       records.push(
@@ -571,22 +629,84 @@ function handleModel(
           state,
           'TODOS_UPDATED',
           call.toolCallId,
-          `Todos: ${String(counts.total)} items, ${String(counts.done)} done, ${String(counts.inProgress)} in progress.`,
+          `Todos: ${String(counts.total)} items, ${String(counts.completed)} completed, ${String(counts.inProgress)} in progress.`,
         ),
       );
       const current = todos.find((todo) => todo.status === 'in_progress')?.content.slice(0, 80);
       activity = {
         total: counts.total,
-        done: counts.done,
+        completed: counts.completed,
         ...(current === undefined ? {} : { current }),
       };
     }
   const acting = calls.filter((call) => !isTodo(call));
+  // Writing the plan first is fair: a round of only todos is not judged by progress, but a second
+  // one in a row is (M2Design 3.5).
+  const todoOnlyRounds = acting.length === 0 ? state.todoOnlyRounds + 1 : 0;
   const transition =
     acting.length === 0
-      ? afterTools(state, context, config, records)
-      : actOn(state, report, acting, context, config, records);
+      ? afterTools(
+          { ...state, todoOnlyRounds },
+          context,
+          config,
+          records,
+          todoOnlyRounds > 1 && !refusedTodos,
+        )
+      : actOn({ ...state, todoOnlyRounds }, report, acting, context, config, records);
   return activity === undefined ? transition : { ...transition, activity };
+}
+
+/**
+ * A control call that must come alone: it ends the AgentRun, or suspends it until its tasks have
+ * ended (M2Design 3.5). Both are checked the same way; only the parameters, the final call and
+ * what follows differ.
+ */
+interface SoleControl {
+  readonly call: ModelToolCall;
+  readonly parameters: Schema;
+  readonly allowedInFinal: boolean;
+  readonly ending: (source: ControlSource) => AgentEnding;
+}
+
+function soleControlOf(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+): SoleControl | undefined {
+  const spawn = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
+  for (const call of calls) {
+    const tool = state.definitions.endTools.find((each) => each.toolName === call.toolName);
+    if (tool !== undefined)
+      return {
+        call,
+        parameters: tool.parameters,
+        allowedInFinal: tool.allowedInFinal,
+        ending: (source) => ({ kind: 'ENDED', tool, arguments: call.arguments, source }),
+      };
+    if (spawn !== undefined && call.toolName === spawn.toolName)
+      return {
+        call,
+        parameters: spawn.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
+      };
+  }
+  return undefined;
+}
+
+/** Why a sole control call is not taken, if it is not: with the reason the model can act on. */
+function soleRefusal(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+  { call, parameters, allowedInFinal }: SoleControl,
+): { readonly code: FeedbackCode; readonly detail?: string } | undefined {
+  if (calls.length > 1) return { code: 'CONTROL_MIXED' };
+  if (state.final && !allowedInFinal) return { code: 'CONTROL_NOT_ALLOWED' };
+  const checked = call.arguments === null ? undefined : validate(parameters, call.arguments);
+  if (checked !== undefined && checked.ok) return undefined;
+  return {
+    code: 'CONTROL_ARGUMENTS_INVALID',
+    detail: invalidArgumentsText(NOT_TAKEN, checked, call.arguments === null),
+  };
 }
 
 function actOn(
@@ -597,32 +717,28 @@ function actOn(
   config: AgentConfig,
   records: NewLogRecord[],
 ): AgentTransition {
-  const endTool = (call: ModelToolCall) =>
-    state.definitions.endTools.find((tool) => tool.toolName === call.toolName);
-  const control = calls.find((call) => endTool(call) !== undefined);
-  const tool = control === undefined ? undefined : endTool(control);
-  if (control !== undefined && tool !== undefined) {
-    if (calls.length > 1)
-      return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
-    if (state.final && !tool.allowedInFinal)
-      return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    if (control.arguments === null || !validate(tool.parameters, control.arguments).ok)
-      return invalidReply(state, 'CONTROL_ARGUMENTS_INVALID', calls, context, config, records);
+  const sole = soleControlOf(state, calls);
+  if (sole !== undefined) {
+    const refusal = soleRefusal(state, calls, sole);
+    if (refusal !== undefined)
+      return invalidReply(state, refusal.code, calls, context, config, records, refusal.detail);
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
-    return ended(
-      state,
-      {
-        kind: 'ENDED',
-        tool,
-        arguments: control.arguments,
-        source: {
-          modelTurnRequestId: report.requestId,
-          modelOutputRef: report.outputRef,
-          toolCallId: control.toolCallId,
-        },
-      },
-      records,
-    );
+    const ending = sole.ending({
+      modelTurnRequestId: report.requestId,
+      modelOutputRef: report.outputRef,
+      toolCallId: sole.call.toolCallId,
+    });
+    const transition = ended(state, ending, records);
+    // A delegated call is pending until the graph answers it; any other control call ends the run.
+    return ending.kind === 'SPAWN'
+      ? {
+          ...transition,
+          state: {
+            ...transition.state,
+            pending: new Map([[sole.call.toolCallId, { role: 'DELEGATED' } as const]]),
+          },
+        }
+      : transition;
   }
   if (state.final)
     return degrade(state, 'FINAL_CALL_INVALID', [
@@ -651,8 +767,16 @@ function actOn(
       records.push(feedback(state, 'TOO_MANY_TOOL_CALLS', call.toolCallId));
       continue;
     }
-    if (call.arguments === null || !validate(tool.parameters, call.arguments).ok) {
-      records.push(feedback(state, 'INVALID_ARGUMENTS', call.toolCallId));
+    const checked = call.arguments === null ? undefined : validate(tool.parameters, call.arguments);
+    if (checked === undefined || !checked.ok) {
+      records.push(
+        feedback(
+          state,
+          'INVALID_ARGUMENTS',
+          call.toolCallId,
+          invalidArgumentsText(NOT_EXECUTED, checked, call.arguments === null),
+        ),
+      );
       continue;
     }
     const intent = intentOf(call);
@@ -877,7 +1001,9 @@ export function closeAgent(
   input: UnitInput,
   source: ControlSource | undefined,
 ): AgentTransition {
-  const made = one(state, 'CLOSING', state.definitions.publish, input, 'publish');
+  const { publish } = state.definitions;
+  if (publish === undefined) throw new Error('This Agent has no publishing Unit');
+  const made = one(state, 'CLOSING', publish, input, 'publish');
   if (source === undefined) return made;
   return {
     ...made,
@@ -903,7 +1029,8 @@ export function receiveAgentReport(
   config: AgentConfig,
 ): AgentTransition {
   const pending = current.pending.get(report.requestId);
-  if (pending === undefined) return { state: current, records: [], submissions: [] };
+  if (pending === undefined || pending.role === 'DELEGATED')
+    return { state: current, records: [], submissions: [] };
   const remaining = new Map(current.pending);
   remaining.delete(report.requestId);
   const state = applyBudget({ ...current, pending: remaining }, report);
@@ -960,4 +1087,62 @@ export function receiveAgentReport(
         records,
       );
   }
+}
+
+/** An answer to a call that is not a Unit: the model reads it as the result of the call. */
+export function answerRecord(
+  state: AgentState,
+  code: string,
+  toolCallId: string,
+  message: string,
+): NewLogRecord {
+  return {
+    ...base(state),
+    type: 'FEEDBACK',
+    agentRunId: state.agentRunId,
+    code,
+    message,
+    toolCallId,
+  };
+}
+
+/** The AgentRun goes on after a finishing call was sent back: that is no progress (M2Design 3.7). */
+export function resumeAfterRefusal(
+  state: AgentState,
+  records: readonly NewLogRecord[],
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  return afterTools({ ...state, roundHadOk: false }, context, config, records);
+}
+
+/**
+ * The call to `run_subagents` has its answer: it was refused (`refused`), or its tasks ended and
+ * the graph says so. The round goes on as it does when any other call comes back. A refused call is
+ * no progress, and two in a row take the tool away (M2Design 3.6).
+ */
+export function answerDelegatedCall(
+  state: AgentState,
+  toolCallId: string,
+  outcome: {
+    readonly refused: boolean;
+    /** The tool is taken away at once: a limit was reached. */
+    readonly withdraw?: boolean;
+    readonly records: readonly NewLogRecord[];
+  },
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  const invalidSpawns = outcome.refused ? state.invalidSpawns + 1 : 0;
+  const pending = new Map(state.pending);
+  pending.delete(toolCallId);
+  const next: AgentState = {
+    ...state,
+    pending,
+    invalidSpawns,
+    spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
+    roundHadOk: !outcome.refused,
+  };
+  // A refused call has its own limit (two take the tool away); it does not also end the AgentRun.
+  return afterTools(next, context, config, outcome.records, !outcome.refused);
 }

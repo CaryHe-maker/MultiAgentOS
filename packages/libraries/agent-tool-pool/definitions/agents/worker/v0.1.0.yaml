@@ -1,0 +1,68 @@
+schemaVersion: v1
+kind: AGENT
+id: worker
+version: v0.1.0
+description: A SubAgent that changes files inside its write scope and checks its work.
+role: scoped implementer
+modelRef:
+  id: deepseek-flash
+  version: v0.1.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - low
+    - high
+    - max
+promptRef:
+  id: worker-system
+  version: v0.1.0
+unitRefs:
+  - id: repository-list
+    version: v0.1.0
+  - id: repository-search
+    version: v0.1.0
+  - id: file-read
+    version: v0.1.0
+  - id: file-write
+    version: v0.1.0
+  - id: file-edit
+    version: v0.1.0
+  - id: output-read
+    version: v0.1.0
+  - id: run-command
+    version: v0.1.0
+  - id: git-inspect
+    version: v0.1.0
+  - id: context-assemble
+    version: v0.1.0
+  - id: model-call
+    version: v0.1.0
+startUnitRefs: []
+actions:
+  end:
+    - toolRef:
+        id: finish-worker
+        version: v0.1.0
+      then: FINISH_SUBAGENT
+      allowedInFinal: true
+  onDegraded: RETURN_PARTIAL
+  todos:
+    toolRef:
+      id: update-todos
+      version: v0.1.0
+spawnable:
+  defaultShare: 600000
+capabilities:
+  - repo.read
+  - workspace.write
+  - command.exec
+limits:
+  maxRounds: 30
+  maxToolCallsPerRound: 8
+  maxToolUnits: 120
+  maxWallClockMs: 1200000
+budget:
+  perCallInputLimit: 100000
+  maxOutputTokens: 32000
+  finalInputBudget: 100000
+  finalMaxOutputTokens: 32000

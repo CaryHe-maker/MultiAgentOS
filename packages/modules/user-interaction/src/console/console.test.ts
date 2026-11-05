@@ -267,6 +267,49 @@ describe('Console', () => {
     expect(t.live()?.activity).toEqual([]);
   });
 
+  it('draws SubAgents under the AgentRun that started them, and lists the run on /timeline', async () => {
+    const t = setup({ clock: { ms: 60_000 } });
+    await t.console.submit('hi');
+    const at = (ms: number) => new Date(ms).toISOString();
+    const activity = (
+      agentRunId: string,
+      label: string,
+      phase: 'THINKING' | 'WAITING_SUBTASKS' | 'ENDED',
+      ms: number,
+      parentAgentRunId?: string,
+    ) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId,
+        ...(parentAgentRunId === undefined ? {} : { parentAgentRunId }),
+        label,
+        phase,
+        at: at(ms),
+      });
+    await activity('arn_main', 'main', 'THINKING', 0);
+    await activity('arn_main', 'main', 'WAITING_SUBTASKS', 1000);
+    await activity('arn_a', 'explorer survey', 'THINKING', 2000, 'arn_main');
+    await activity('arn_b', 'worker fix', 'THINKING', 2500, 'arn_main');
+    await activity('arn_a', 'explorer survey', 'ENDED', 9000, 'arn_main');
+    expect(t.live()?.activity.map((line) => [line.branch, line.label, line.phase])).toEqual([
+      ['', 'main', '等待子任务'],
+      ['  └─ ', 'worker fix', '思考中'],
+    ]);
+    await activity('arn_c', 'worker test', 'THINKING', 9500, 'arn_main');
+    expect(t.live()?.activity.map((line) => line.branch)).toEqual(['', '  ├─ ', '  └─ ']);
+
+    await t.console.submit('/timeline');
+    expect(t.printed.at(-1)).toEqual({
+      kind: 'NOTICE',
+      text: [
+        'main  00:00:00 → 进行中（60.0s）',
+        '  explorer survey  00:00:02 → 00:00:09（7.0s）',
+        '  worker fix  00:00:02 → 进行中（57.5s）',
+        '  worker test  00:00:09 → 进行中（50.5s）',
+      ].join('\n'),
+    });
+  });
+
   it('gives queued messages back when the run ends and offers to continue after BUDGET', async () => {
     const t = setup();
     await t.console.submit('hi');

@@ -133,6 +133,10 @@ export const InteractionMessages = Object.freeze({
     PROTECTED_PATH_CREATED: '命令新建了受保护的路径，已移出仓库。',
     NOT_A_GIT_REPOSITORY: '这里不是 git 仓库。',
     MEMORY_PRESSURE: '系统内存紧张，暂不接受新的任务。',
+    WRITE_SCOPE_CONFLICT: '这个子任务要写的范围正被另一个任务占用，没有启动。',
+    WRITE_SCOPE_DELEGATED: '已经交给子任务去写的范围，在它们结束之前不能再写。',
+    BUDGET_INSUFFICIENT: '额度不够同时派生这些子任务。',
+    DELEGATION_NOT_FOUND: '这次派生已经失效。',
   } satisfies Record<ReasonCode, string>,
 });
 

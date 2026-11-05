@@ -23,7 +23,9 @@ import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 import type { PinnedAgent } from './run-attempts.js';
-import type { CommandSupport, ProjectFileRead } from './run-work.js';
+import type { CommandSupport, ProjectFileRead, RunWorkDeps } from './run-work.js';
+import { RunLedgers, minShare } from '../monitor/index.js';
+import { testAgentBudget } from '../test-support/run-work.js';
 
 const sessionId = newId('ses');
 const fileRead = testUnitDefinition('FILE_READ');
@@ -49,6 +51,10 @@ async function setup(
     command?: CommandSupport;
     interrupted?: () => void;
     memoryLevel?: () => 'WARNING' | 'DANGER' | undefined;
+    /** Which Agent a registration pins; by default the one given. */
+    pin?: (request: RegisterAgentRunRequest) => PinnedAgent;
+    /** More of RunWork's own wiring, for the delegation cases. */
+    runWork?: Partial<RunWorkDeps>;
   } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
@@ -88,7 +94,8 @@ async function setup(
         testRunWork(host, {
           createAttempt: execution.createAttempt,
           cancelExecutions: execution.cancelExecutions,
-          pinAgent: () => Promise.resolve({ ok: true, agent }),
+          pinAgent: (request) =>
+            Promise.resolve({ ok: true, agent: options.pin?.(request) ?? agent }),
           preset: options.preset ?? 'standard',
           ...(options.command === undefined ? {} : { command: options.command }),
           ...(options.memoryLevel === undefined ? {} : { memoryLevel: options.memoryLevel }),
@@ -106,6 +113,7 @@ async function setup(
               timers.splice(timers.indexOf(timer), 1);
             };
           },
+          ...options.runWork,
         }),
       writeRunSummary: (summary) => {
         summaries.push(assertValid(RunSummarySchema, summary));
@@ -1017,5 +1025,379 @@ describe('memory pressure', () => {
       expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
       expect(interrupted).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
+  const fileWrite = testUnitDefinition('FILE_WRITE');
+  const childBudget = {
+    perCallInputLimit: 40,
+    maxOutputTokens: 20,
+    finalInputBudget: 30,
+    finalMaxOutputTokens: 10,
+  };
+  const defaultShare = minShare(childBudget) * 2;
+  /** main may spawn and write; a worker writes; an explorer only reads. */
+  const mainAgent = testPinnedAgent({
+    id: 'main',
+    capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+    units: [fileRead, fileWrite, publish],
+  });
+  const workerAgent = testPinnedAgent({
+    id: 'worker',
+    capabilities: ['repo.read', 'workspace.write'],
+    units: [fileRead, fileWrite, publish],
+    budget: childBudget,
+  });
+  const explorerAgent = testPinnedAgent({
+    id: 'explorer',
+    capabilities: ['repo.read'],
+    units: [fileRead, publish],
+    budget: childBudget,
+  });
+  const agents: Record<string, PinnedAgent> = {
+    main: mainAgent,
+    worker: workerAgent,
+    explorer: explorerAgent,
+  };
+  const ref = (id: string) => ({
+    kind: 'AGENT' as const,
+    id,
+    version: 'v1.0.0',
+    digest: 'd'.repeat(64),
+  });
+  const runWork: Partial<RunWorkDeps> = {
+    ledgers: new RunLedgers(
+      {
+        runTokenLimit: minShare(testAgentBudget) * 40,
+        turnTokenLimit: minShare(testAgentBudget) * 20,
+      },
+      testAgentBudget,
+    ),
+    agentShare: (agentRef) => {
+      const agent = agents[agentRef.id];
+      return agent === undefined
+        ? { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' }
+        : {
+            ok: true,
+            defaultShare: agent.id === 'main' ? undefined : defaultShare,
+            budget: agent.budget,
+          };
+    },
+  };
+  const open = async (over: { budgetTurns?: number } = {}) => {
+    const kernel = await setup(mainAgent, {
+      pin: (request) => agents[request.agentRef.id] ?? mainAgent,
+      runWork:
+        over.budgetTurns === undefined
+          ? {
+              ...runWork,
+              ledgers: new RunLedgers(
+                {
+                  runTokenLimit: minShare(testAgentBudget) * 40,
+                  turnTokenLimit: minShare(testAgentBudget) * 20,
+                },
+                testAgentBudget,
+              ),
+            }
+          : runWork,
+    });
+    await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write', 'agent.spawn']);
+    return kernel;
+  };
+  type Kernel = Awaited<ReturnType<typeof open>>;
+
+  const reserve = (
+    kernel: Kernel,
+    tasks: { name: string; agent: string; roots?: string[]; tokens?: number }[],
+    parent = kernel.agentRunId,
+  ) =>
+    kernel.actor.call(() =>
+      kernel.run().work.reserveDelegation({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        parentAgentRunId: parent,
+        tasks: tasks.map((task) => ({
+          name: task.name,
+          agentRef: ref(task.agent),
+          writeRoots: task.roots ?? [],
+          ...(task.tokens === undefined ? {} : { tokens: task.tokens }),
+        })),
+      }),
+    );
+  const registerChild = (
+    kernel: Kernel,
+    over: {
+      id: string;
+      agent: string;
+      delegationId: string;
+      taskName: string;
+      roots?: string[];
+      capabilities?: RegisterAgentRunRequest['requestedCapabilities'];
+      parent?: string;
+    },
+  ) =>
+    kernel.actor.call(() =>
+      kernel.run().work.registerAgentRun({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        agentRunId: over.id,
+        nodeId: pathDerivedId('nod', over.id),
+        agentRef: ref(over.agent),
+        effort: 'high',
+        workspaceViewId: 'main',
+        requestedCapabilities:
+          over.capabilities ??
+          (over.agent === 'explorer' ? ['repo.read'] : ['repo.read', 'workspace.write']),
+        writeRoots: over.roots ?? [],
+        display: { label: over.id },
+        parentAgentRunId: over.parent ?? kernel.agentRunId,
+        delegationId: over.delegationId,
+        taskName: over.taskName,
+      }),
+    );
+  const reasonOf = (response: unknown) =>
+    (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
+  const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
+
+  it('reserves the shares of the tasks and says what each got, kept within the Agent limits (B2 in part)', async () => {
+    const kernel = await open();
+    const response = await reserve(kernel, [
+      { name: 'a', agent: 'worker', roots: ['src/a'] },
+      { name: 'b', agent: 'worker', roots: ['src/b'], tokens: 1 },
+      { name: 'c', agent: 'explorer', tokens: 10_000_000 },
+    ]);
+    expect(response).toMatchObject({
+      outcome: 'ACCEPTED',
+      shares: [
+        { name: 'a', tokens: defaultShare },
+        { name: 'b', tokens: minShare(childBudget), clamped: 'MIN' },
+        { name: 'c', tokens: 2 * defaultShare, clamped: 'MAX' },
+      ],
+    });
+    expect(delegationIdOf(response)).toMatch(/^dlg_/u);
+  });
+
+  it('refuses all of it when the shares are more than the parent can lend, and says how much it can (B2)', async () => {
+    const kernel = await open();
+    const response = await reserve(kernel, [{ name: 'a', agent: 'explorer', tokens: 1 }]);
+    expect(response).toMatchObject({ outcome: 'ACCEPTED' });
+    // Far more than the Turn holds.
+    const refused = await reserve(
+      kernel,
+      Array.from({ length: 12 }, (_, index) => ({
+        name: `t${String(index)}`,
+        agent: 'explorer',
+        tokens: 2 * defaultShare,
+      })),
+    );
+    expect(refused).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'BUDGET_INSUFFICIENT',
+      delegable: expect.any(Number) as number,
+    });
+  });
+
+  it('is only for an AgentRun with agent.spawn, a known parent and tasks of known Agents', async () => {
+    const kernel = await setup(mainAgent, {
+      pin: (request) => agents[request.agentRef.id] ?? mainAgent,
+      runWork,
+    });
+    // main registered without agent.spawn in its ceiling.
+    await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write']);
+    expect(reasonOf(await reserve(kernel, [{ name: 'a', agent: 'explorer' }]))).toBe('FORBIDDEN');
+    const spawner = await open();
+    expect(reasonOf(await reserve(spawner, [{ name: 'a', agent: 'explorer' }], newId('agr')))).toBe(
+      'AGENT_RUN_NOT_FOUND',
+    );
+    expect(reasonOf(await reserve(spawner, [{ name: 'a', agent: 'nobody' }]))).toBe(
+      'DEFINITION_UNAVAILABLE',
+    );
+    expect(reasonOf(await reserve(spawner, [{ name: 'a', agent: 'main' }]))).toBe('FORBIDDEN');
+    expect(
+      reasonOf(await reserve(spawner, [{ name: 'a', agent: 'worker', roots: ['../outside'] }])),
+    ).toBe('INVALID_INPUT');
+    expect(
+      reasonOf(
+        await reserve(spawner, [
+          { name: 'a', agent: 'explorer' },
+          { name: 'a', agent: 'explorer' },
+        ]),
+      ),
+    ).toBe('INVALID_INPUT');
+  });
+
+  it('registers a SubAgent for its task, and only for its task', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [
+        { name: 'a', agent: 'worker', roots: ['src/a'] },
+        { name: 'b', agent: 'explorer' },
+      ]),
+    );
+    const worker = { id: newId('agr'), agent: 'worker', delegationId: dlg, taskName: 'a' };
+    expect(reasonOf(await registerChild(kernel, { ...worker, roots: ['src/a'] }))).toBe('ACCEPTED');
+    // A task is taken once.
+    expect(
+      reasonOf(await registerChild(kernel, { ...worker, id: newId('agr'), roots: ['src/a'] })),
+    ).toBe('DELEGATION_NOT_FOUND');
+    // Not named in the delegation.
+    expect(
+      reasonOf(await registerChild(kernel, { ...worker, id: newId('agr'), taskName: 'zzz' })),
+    ).toBe('DELEGATION_NOT_FOUND');
+    // Its parent must exist and be running.
+    expect(
+      reasonOf(await registerChild(kernel, { ...worker, id: newId('agr'), parent: newId('agr') })),
+    ).toBe('AGENT_RUN_NOT_FOUND');
+    // The three fields go together.
+    const partial = await kernel.actor.call(() =>
+      kernel.run().work.registerAgentRun({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        agentRunId: newId('agr'),
+        nodeId: pathDerivedId('nod', 'x'),
+        agentRef: ref('explorer'),
+        effort: 'high',
+        workspaceViewId: 'main',
+        requestedCapabilities: ['repo.read'],
+        writeRoots: [],
+        display: { label: 'x' },
+        parentAgentRunId: kernel.agentRunId,
+      }),
+    );
+    expect(reasonOf(partial)).toBe('INVALID_INPUT');
+  });
+
+  it('gives a SubAgent no more than its parent has, no agent.spawn, and no roots beyond its task (P5)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [
+        { name: 'w', agent: 'worker', roots: ['src/w'] },
+        { name: 'e', agent: 'explorer' },
+      ]),
+    );
+    const child = (name: string, agent: string) => ({
+      id: newId('agr'),
+      agent,
+      delegationId: dlg,
+      taskName: name,
+    });
+    expect(reasonOf(await registerChild(kernel, { ...child('w', 'worker'), roots: ['src'] }))).toBe(
+      'CAPABILITY_NOT_SUBSET',
+    );
+    expect(
+      reasonOf(
+        await registerChild(kernel, {
+          ...child('e', 'explorer'),
+          capabilities: ['repo.read', 'agent.spawn'],
+        }),
+      ),
+    ).toBe('CAPABILITY_NOT_SUBSET');
+    expect(
+      reasonOf(
+        await registerChild(kernel, {
+          ...child('e', 'explorer'),
+          capabilities: ['repo.read', 'command.exec'],
+        }),
+      ),
+    ).toBe('CAPABILITY_NOT_SUBSET');
+  });
+
+  it('refuses a second AgentRun whose write roots touch a running one (P5)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [
+        { name: 'a', agent: 'worker', roots: ['src'] },
+        { name: 'b', agent: 'worker', roots: ['src/b'] },
+        { name: 'c', agent: 'worker', roots: ['docs'] },
+      ]),
+    );
+    const first = { id: newId('agr'), agent: 'worker', delegationId: dlg };
+    expect(reasonOf(await registerChild(kernel, { ...first, taskName: 'a', roots: ['src'] }))).toBe(
+      'ACCEPTED',
+    );
+    expect(
+      reasonOf(
+        await registerChild(kernel, {
+          ...first,
+          id: newId('agr'),
+          taskName: 'b',
+          roots: ['src/b'],
+        }),
+      ),
+    ).toBe('WRITE_SCOPE_CONFLICT');
+    expect(
+      reasonOf(
+        await registerChild(kernel, { ...first, id: newId('agr'), taskName: 'c', roots: ['docs'] }),
+      ),
+    ).toBe('ACCEPTED');
+  });
+
+  it('refuses the parent a write while its children hold the roots, and lets it write again after (P6)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src'] }]),
+    );
+    const childId = newId('agr');
+    await registerChild(kernel, {
+      id: childId,
+      agent: 'worker',
+      delegationId: dlg,
+      taskName: 'a',
+      roots: ['src'],
+    });
+    await kernel.submit(fileWrite, { path: 'src/a.ts', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports().at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'WRITE_SCOPE_DELEGATED',
+    });
+    expect(kernel.execution.started).toHaveLength(0);
+    // The child ends, the unused task is given up: the roots are the parent's again.
+    await kernel.actor.call(() =>
+      kernel
+        .run()
+        .work.endAgentRun({ ...kernel.inRun, requestId: newId('req'), agentRunId: childId }),
+    );
+    await kernel.actor.call(() =>
+      kernel
+        .run()
+        .work.releaseDelegation({ ...kernel.inRun, requestId: newId('req'), delegationId: dlg }),
+    );
+    const before = kernel.reports().length;
+    await kernel.submit(fileWrite, { path: 'src/a.ts', content: 'x' });
+    await kernel.settled();
+    // Not refused again: it went on to ask the user to allow the write.
+    expect(kernel.reports()).toHaveLength(before);
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+  });
+
+  it('keeps the parent from registering a second top-level AgentRun while main is active', async () => {
+    const kernel = await open();
+    expect(reasonOf(await kernel.register(newId('agr')))).toBe('AGENT_RUN_ACTIVE');
+  });
+
+  it('answers a repeated or unknown release, and a repeated reservation, as the same request', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(await reserve(kernel, [{ name: 'a', agent: 'explorer' }]));
+    const release = {
+      ...kernel.inRun,
+      requestId: newId('req'),
+      delegationId: dlg,
+    };
+    const first = await kernel.actor.call(() => kernel.run().work.releaseDelegation(release));
+    const again = await kernel.actor.call(() => kernel.run().work.releaseDelegation(release));
+    expect(again).toEqual(first);
+    expect(
+      reasonOf(
+        await kernel.actor.call(() =>
+          kernel.run().work.releaseDelegation({
+            ...kernel.inRun,
+            requestId: newId('req'),
+            delegationId: 'dlg_unknown00000',
+          }),
+        ),
+      ),
+    ).toBe('DELEGATION_NOT_FOUND');
   });
 });

@@ -31,7 +31,9 @@ const outputRef = testArtifactRef();
 const fileOutput = testFileReadOutput();
 const unit = (kind: ExecutionKind) => testUnitDefinition(kind);
 
-function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boolean } = {}) {
+function setup(
+  options: { capacity?: boolean; full?: boolean; deliverable?: boolean; lease?: boolean } = {},
+) {
   const ledger = new RunLedgers(
     { runTokenLimit: minShare(main) * 4, turnTokenLimit: minShare(main) * 2 },
     main,
@@ -41,7 +43,8 @@ function setup(options: { capacity?: boolean; deliverable?: boolean; lease?: boo
   let next = 0;
   const scheduler: SchedulerDuties = {
     acquire: () => {
-      if (options.capacity === false) return { ok: false };
+      if (options.capacity === false) return { ok: false, reason: 'STOPPED' };
+      if (options.full === true) return { ok: false, reason: 'CAPACITY' };
       next += 1;
       grants.add(`grt_${next}`);
       return { ok: true, grantId: `grt_${next}` };
@@ -213,6 +216,20 @@ describe('reservations', () => {
     expect(decision.granted).toBe(false);
     expect(reports[0]).toMatchObject({ status: 'REJECTED', reasonCode: 'BUDGET_WRAP_UP' });
     expect(grants.size).toBe(0);
+  });
+
+  it('waits for a call slot instead of failing, and asks again when one is free (M2Design 7.2)', async () => {
+    const options = { full: true };
+    const { run, start, reports, faults, ended } = setup(options);
+    const id = await start('MODEL');
+    const request = { unitAttemptId: id, ...reservation, estimatedTokens: 50, final: false };
+    expect(run.requestReservation(request)).toEqual({ granted: false, reason: 'WAIT_CAPACITY' });
+    // Nothing happened to the attempt: no report, no fault, not ended.
+    expect(reports).toEqual([]);
+    expect(faults).toEqual([]);
+    expect(ended).toEqual([]);
+    options.full = false;
+    expect(run.requestReservation(request).granted).toBe(true);
   });
 
   it('retries a MODEL request only when its consumption is known', async () => {

@@ -22,6 +22,7 @@ export {
   type SessionKernelDeps,
 } from './session-kernel.js';
 export {
+  agentShareFrom,
   pinAgentFrom,
   pinnedAgentOf,
   type AgentCatalog,

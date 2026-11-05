@@ -43,7 +43,10 @@ import type {
   EndAgentRunRequest,
   ProjectFileContent,
   ReadProjectFileRequest,
+  DelegationReserved,
   RegisterAgentRunRequest,
+  ReleaseDelegationRequest,
+  ReserveDelegationRequest,
   RequestHumanRequest,
   SubmitUnitRequest,
   UpdateActivityRequest,
@@ -382,6 +385,14 @@ export type SystemFaultReporter = (fault: SystemFault) => void;
 export interface WorkflowGatewayPort {
   registerAgentRun(
     request: RegisterAgentRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  reserveDelegation(
+    request: ReserveDelegationRequest,
+    context: BoundaryContext,
+  ): Promise<DelegationReserved | SyscallRejected>;
+  releaseDelegation(
+    request: ReleaseDelegationRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   submitUnit(

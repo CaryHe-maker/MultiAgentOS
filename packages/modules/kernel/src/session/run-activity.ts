@@ -32,6 +32,7 @@ type UnitLine = NonNullable<ActivityEvent['unit']>;
 export class RunActivity {
   readonly #deps: RunActivityDeps;
   readonly #labels = new Map<string, string>();
+  readonly #parents = new Map<string, string>();
   readonly #todos = new Map<string, NonNullable<ActivityEvent['todos']>>();
 
   public constructor(deps: RunActivityDeps) {
@@ -43,17 +44,25 @@ export class RunActivity {
     this.#emit(agentRunId, 'THINKING');
   }
 
-  registered(agentRunId: string, label: string): void {
+  registered(agentRunId: string, label: string, parentAgentRunId?: string): void {
     this.#labels.set(agentRunId, label);
+    if (parentAgentRunId !== undefined) this.#parents.set(agentRunId, parentAgentRunId);
+  }
+
+  /** The AgentRun started tasks and waits for them. */
+  waitingForSubtasks(agentRunId: string): void {
+    this.#emit(agentRunId, 'WAITING_SUBTASKS');
   }
 
   #emit(agentRunId: string, phase: Exclude<Phase, 'RETRYING'>, unit?: UnitLine): void {
     const label = this.#labels.get(agentRunId);
     if (label === undefined) return;
     const todos = this.#todos.get(agentRunId);
+    const parent = this.#parents.get(agentRunId);
     this.#deps.emit({
       type: 'ActivityEvent',
       agentRunId,
+      ...(parent === undefined ? {} : { parentAgentRunId: parent }),
       label,
       phase,
       ...(unit === undefined ? {} : { unit }),
@@ -93,9 +102,11 @@ export class RunActivity {
   retrying(spec: AttemptSpec, unitAttemptId: string, attempt: number, retryAt: string): void {
     const label = this.#labels.get(spec.agentRunId);
     if (label === undefined) return;
+    const parent = this.#parents.get(spec.agentRunId);
     this.#deps.emit({
       type: 'ActivityEvent',
       agentRunId: spec.agentRunId,
+      ...(parent === undefined ? {} : { parentAgentRunId: parent }),
       label,
       phase: 'RETRYING',
       ...(NOT_TOOLS.has(spec.unit.executionKind)
@@ -139,5 +150,6 @@ export class RunActivity {
   ended(agentRunId: string): void {
     this.#emit(agentRunId, 'ENDED');
     this.#labels.delete(agentRunId);
+    this.#parents.delete(agentRunId);
   }
 }

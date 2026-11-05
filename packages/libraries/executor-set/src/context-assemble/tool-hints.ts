@@ -16,6 +16,8 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
     'this agent has used up its tools or its time; finish with what you already have',
   CAPABILITY_NOT_GRANTED: 'this agent may not use this tool; do the work another way or say so',
   ADMISSION_CHECK_FAILED: 'the system could not check this call, so it did not run it',
+  WRITE_SCOPE_DELEGATED:
+    'the files you may write are with your subtasks until they finish; wait for their results instead of writing',
   WRITE_OUT_OF_SCOPE:
     'the path is outside what you may write (absolute, `..`, or beyond your write root); use a relative path inside it',
   PROTECTED_PATH:

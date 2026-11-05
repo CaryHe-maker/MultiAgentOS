@@ -8,7 +8,22 @@ import { createHash } from 'node:crypto';
 export type NodeKind = 'AGENT' | 'HUMAN';
 export type Trigger = 'all_success' | 'all_done';
 export type NodeStatus =
-  'PENDING' | 'READY' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED' | 'INTERRUPTED';
+  | 'PENDING'
+  | 'RUNNING'
+  /**
+   * Running, with a call it dispatched that has not come back (M2Design 3.1). It is only a state of
+   * the node, read from the edges and the log: the AgentRun does not know it. While it lasts the
+   * node submits no new Unit.
+   */
+  | 'WAITING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'SKIPPED'
+  | 'INTERRUPTED';
+
+/** Ended for good: nothing more happens to the node. */
+export const isTerminal = (status: NodeStatus): boolean =>
+  status !== 'PENDING' && status !== 'RUNNING' && status !== 'WAITING';
 export type SkipReason = 'DEPENDENCY_FAILED' | 'NOT_TAKEN';
 
 export interface GraphNode {
@@ -28,12 +43,28 @@ export interface EdgeCondition {
   readonly in?: readonly (string | boolean)[];
 }
 
+/** The call a `DELEGATE` or `RESUME` edge belongs to: the model's tool call and the Kernel's reservation. */
+export interface EdgeCall {
+  readonly toolCallId: string;
+  readonly delegationId: string;
+}
+
+/**
+ * `DEPENDS` and `CONDITIONAL` decide when a node first starts. `DELEGATE` runs from a node that is
+ * running to a node it dispatched, and `RESUME` back from that node to the caller, saying the call
+ * came back. A `RESUME` edge does not start anything: it takes no part in readiness or in the check
+ * for cycles (M2Design 3.1). What the caller does while it waits is the AgentRun's business.
+ */
 export interface GraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'DEPENDS' | 'CONDITIONAL';
+  readonly kind: 'DEPENDS' | 'CONDITIONAL' | 'DELEGATE' | 'RESUME';
   readonly when?: EdgeCondition;
+  readonly call?: EdgeCall;
 }
+
+/** The edges that lead somewhere: they are followed for ancestors, loops and cycles. */
+export const isForward = (edge: GraphEdge): boolean => edge.kind !== 'RESUME';
 
 /** A back edge from `source` to its ancestor `target`; never part of readiness (M2Design 3.2). */
 export interface LoopEdge {
@@ -54,6 +85,8 @@ export interface NodeRecord {
   readonly skipReason?: SkipReason;
   /** The structured result conditions read: a confirmation, a review, a planner's `action`. */
   readonly result?: unknown;
+  /** The calls of this node that came back, by the tool call that made them. */
+  readonly resumed?: readonly string[];
 }
 
 /** Nodes with no record are PENDING. */
@@ -108,10 +141,15 @@ export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeSt
   const source = effectiveSource(graph, edge);
   if (source === undefined) return 'WAITING';
   const record = statusOf(view, source.nodeId);
+  if (edge.kind === 'DELEGATE') {
+    // Taken while the caller runs: it dispatched this node. A caller that ended leaves nobody to serve.
+    if (isTerminal(record.status)) return 'FAILED';
+    return record.status === 'RUNNING' || record.status === 'WAITING' ? 'TAKEN' : 'WAITING';
+  }
   switch (record.status) {
     case 'PENDING':
-    case 'READY':
     case 'RUNNING':
+    case 'WAITING':
       return 'WAITING';
     case 'SUCCEEDED':
       return edge.when === undefined || conditionHolds(edge.when, record.result)
@@ -127,8 +165,62 @@ export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeSt
 
 function incomingStates(graph: Graph, node: GraphNode, view: NodeView): EdgeState[] {
   return graph.edges
-    .filter((edge) => edge.to === node.nodeId)
+    .filter((edge) => edge.to === node.nodeId && isForward(edge))
     .map((edge) => edgeState(graph, edge, view));
+}
+
+export interface Wake {
+  readonly node: GraphNode;
+  readonly call: EdgeCall;
+}
+
+/** The calls a node dispatched, with the nodes that answer each, in the order of the edges. */
+function callsOf(graph: Graph, nodeId: string): { call: EdgeCall; sources: string[] }[] {
+  const calls = new Map<string, { call: EdgeCall; sources: string[] }>();
+  for (const edge of graph.edges)
+    if (edge.kind === 'RESUME' && edge.to === nodeId && edge.call !== undefined) {
+      const entry = calls.get(edge.call.toolCallId) ?? { call: edge.call, sources: [] };
+      entry.sources.push(edge.from);
+      calls.set(edge.call.toolCallId, entry);
+    }
+  return [...calls.values()];
+}
+
+/**
+ * A node that runs is WAITING while a call it dispatched has not come back, that is, while it has
+ * a `DELEGATE` call without a `NODE_RESUMED` (M2Design 3.1). The status is read from the edges and
+ * the records, never written down, so it cannot disagree with them.
+ */
+export function withWaiting(graph: Graph, view: NodeView): NodeView {
+  const next = new Map(view);
+  for (const node of graph.nodes) {
+    const record = statusOf(view, node.nodeId);
+    if (record.status !== 'RUNNING') continue;
+    const open = callsOf(graph, node.nodeId).some(
+      ({ call }) => !(record.resumed ?? []).includes(call.toolCallId),
+    );
+    if (open) next.set(node.nodeId, { ...record, status: 'WAITING' });
+  }
+  return next;
+}
+
+/**
+ * The calls that came back: a waiting node whose `RESUME` edges of one call all start from nodes
+ * that have ended, however they ended (`all_done`, M2Design 3.3). A pure function of the graph and
+ * the view.
+ */
+export function wakeableNodes(graph: Graph, view: NodeView): readonly Wake[] {
+  return graph.nodes.flatMap((node) => {
+    const { status, resumed = [] } = statusOf(view, node.nodeId);
+    if (status !== 'WAITING') return [];
+    return callsOf(graph, node.nodeId)
+      .filter(
+        ({ call, sources }) =>
+          !resumed.includes(call.toolCallId) &&
+          sources.every((source) => isTerminal(statusOf(view, source).status)),
+      )
+      .map(({ call }) => ({ node, call }));
+  });
 }
 
 export function readyNodes(graph: Graph, view: NodeView): readonly GraphNode[] {
@@ -246,14 +338,14 @@ export function validateExtension(
 
 function hasCycle(graph: Graph): boolean {
   const indegree = new Map(graph.nodes.map((node) => [node.nodeId, 0]));
-  for (const edge of graph.edges) {
+  for (const edge of graph.edges.filter(isForward)) {
     if (indegree.has(edge.to)) indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
   }
   const queue = [...indegree].filter(([, degree]) => degree === 0).map(([nodeId]) => nodeId);
   let visited = 0;
   for (let nodeId = queue.pop(); nodeId !== undefined; nodeId = queue.pop()) {
     visited += 1;
-    for (const edge of graph.edges) {
+    for (const edge of graph.edges.filter(isForward)) {
       if (edge.from !== nodeId || !indegree.has(edge.to)) continue;
       const degree = (indegree.get(edge.to) ?? 0) - 1;
       indegree.set(edge.to, degree);
@@ -267,7 +359,7 @@ function reachable(edges: readonly GraphEdge[], start: string, follow: 'from' | 
   const seen = new Set([start]);
   const stack = [start];
   for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
-    for (const edge of edges) {
+    for (const edge of edges.filter(isForward)) {
       const [here, next] = follow === 'to' ? [edge.from, edge.to] : [edge.to, edge.from];
       if (here === current && !seen.has(next)) {
         seen.add(next);

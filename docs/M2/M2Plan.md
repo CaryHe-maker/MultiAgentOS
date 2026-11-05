@@ -227,6 +227,8 @@ AgentToolPool（explorer、worker、额度参数）、相应的 `Interface/` 章
 
 **集成** S4-IN-1。**退出**：P1–P6、B、D、A 组的派生部分；阶段 8 已完成时另加 L12（SubAgent 的压缩：S4-KC-2 从 SubAgent 的账本支出摘要额度，S4-WF-1 交出 SubAgent 投影的压缩材料）。
 
+**完成情况**：阶段 4 的退出条件没有全部满足，逐项现状见 [M2OpenDecisions](M2OpenDecisions.md) 的"阶段 4 的退出情况"（P3、B4 端到端与 D 未完成，P4 属于阶段 7，L12 等阶段 8）。
+
 ### 6.6 阶段 5：人类在环控制
 
 **文档门**：Core（PAUSING、PAUSED、INTERRUPTING、计时冻结、交付条件、运行中插话 `steerRun`）、Execution 与 Supervisor（按并发类别处理暂停、

@@ -51,13 +51,20 @@ import {
 import { InProcessProviderCapacity, Scheduler } from './scheduler/index.js';
 import type { ExecutionConfig } from './session/attempt-request.js';
 import { RunExecution, type RunExecutionDeps } from './session/run-execution.js';
-import { RunWork, type CommandSupport, type PinResult, type RunHost } from './session/run-work.js';
+import {
+  RunWork,
+  type CommandSupport,
+  type PinResult,
+  type RunHost,
+  type RunWorkDeps,
+} from './session/run-work.js';
 import {
   protectedPathsOf,
   quarantineNewProtected,
   scanRepository,
   type ScanOptions,
 } from './session/sandbox-scan.js';
+import { changesBetween, fingerprintRoots, type ChangeScanOptions } from './session/change-scan.js';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { SessionActor } from './session/session-actor.js';
@@ -92,6 +99,8 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
+  readonly agentShare?: RunWorkDeps['agentShare'];
   /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
   readonly config: KernelConfig;
@@ -167,7 +176,7 @@ const schedule = (delayMs: number, due: () => void): (() => void) => {
 export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelCoreModule {
   const now = deps.now ?? (() => new Date());
   const { fabric, persistence, config, repositoryRoot } = deps;
-  const capacity = new InProcessProviderCapacity();
+  const capacity = new InProcessProviderCapacity(config.providerCapacity);
   const executionConfig = executionConfigOf(config);
   const correlations = new Map<string, string>();
   const correlationOf = (event: object): string =>
@@ -256,6 +265,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     exclusions: [...DEFAULT_REPOSITORY_EXCLUSIONS, ...config.repositoryExclusions],
     maxEntries: config.maxSnapshotFiles * 10,
   };
+  /** What a command changed: the write roots of its AgentRun, before and after (M2Design 7.1). */
+  const changeOptions: ChangeScanOptions = {
+    repositoryRoot,
+    exclusions: config.repositoryExclusions,
+    maxEntries: config.maxSnapshotFiles * 10,
+  };
   /** Where a protected path a command made is moved (M2Design 6.1). */
   const quarantineOf = (sessionId: string): string =>
     deps.workspace === undefined
@@ -292,12 +307,24 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
                 quarantineNewProtected(scanOptions, before, quarantineOf(sessionId)),
             },
           }),
+      changes: {
+        snapshot: (roots) => fingerprintRoots(changeOptions, roots),
+        since: async (before, roots) => {
+          const after = await fingerprintRoots(changeOptions, roots);
+          return after === undefined ? undefined : changesBetween(before, after);
+        },
+      },
       audit,
       enqueue: (work) => {
         host.enqueue(work);
       },
       schedule,
       now,
+      limits: {
+        maxAttempts: config.maxConcurrentAttempts,
+        maxExec: config.maxConcurrentExec,
+        serial: config.serialExecution,
+      },
     });
     executions.set(host.workflowRunId, execution);
     const work = new RunWork({
@@ -316,6 +343,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       repositoryRoot,
       repositoryExclusions: config.repositoryExclusions,
       pinAgent: deps.pinAgent,
+      ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
       inputIsValid,
       preset: deps.preset,
       ...(deps.commands === undefined
@@ -342,6 +370,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       executionsClosed: () => {
         execution.closed();
       },
+      drainCapacityWaiters: () => execution.drainCapacityWaiters(),
       unknownEffects: () => execution.unknownEffects(),
       audit,
       now,

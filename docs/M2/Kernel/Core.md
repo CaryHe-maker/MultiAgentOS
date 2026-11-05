@@ -187,6 +187,24 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 - 任一运行无法确认停止时按第 5b 节的停机处理。
 - 内存采样在 Monitor（[Monitor](Monitor.md) 第 4a 节），Core 只处理控制消息，不持有采样器。
 
+## 5d. SubAgent 的登记、委派与写入占用（阶段 4，草稿）
+
+设计以 M2Design 第 3.6、6.4、7.3 节为准。实现在 `session/run-work.ts` 与纯函数部分 `session/run-delegations.ts`。
+
+**`reserveDelegation`**（Workflow → Core）：请求带父 AgentRun 与各任务的名称、Agent 引用、写入根目录和（可选的）份额。依次判定：运行可接受工作；没有内存压力；父 AgentRun 存在且未结束；父的能力上限含 `agent.spawn`（否则 `FORBIDDEN`）；任务名不重复；每个 Agent 存在、摘要一致、可被派生（有缺省份额，否则 `FORBIDDEN`）；写入根目录合法且落在父的可写范围内（否则 `CAPABILITY_NOT_SUBSET`）。份额取请求的值，限制在 `[minShare(Agent), 缺省份额的 2 倍]` 内，被限制的在回复里标出 `MIN` 或 `MAX`。然后向 Monitor 一次性划出全部份额，不足时整次不执行，回复 `BUDGET_INSUFFICIENT` 并带可委派余额。成功时回复 `delegationId`（前缀 `dlg`，Core 生成）与各任务的份额。
+
+**`registerAgentRun` 带 `parentAgentRunId`、`delegationId`、`taskName`**（三项同有同无，否则 `INVALID_INPUT`）：父存在且未结束；任务在该委派中且没有被登记过、没有被放弃（否则 `DELEGATION_NOT_FOUND`）。SubAgent 的能力上限不得超过父的能力上限，不得含 `agent.spawn`，写入根目录须落在它的任务范围内（否则 `CAPABILITY_NOT_SUBSET`）。运行中的 AgentRun 写入占用两两不相交：与任何一个运行中的、不是它祖先的、没有把占用委派出去的 AgentRun 相交，登记被拒（`WRITE_SCOPE_CONFLICT`）。登记成功时任务的份额成为它的账本，Monitor 为它计时（墙钟）与计工具次数。
+
+**写入占用的委派**：父在派生期间（有任务在运行，或有任务尚未登记也尚未放弃）不占用写入根目录，也不参与相交检查；它此间提交的 `FILE_WRITE`、`FILE_EDIT`、`COMMAND` 一律以 `WRITE_SCOPE_DELEGATED` 拒绝（验收 P6）。父的墙钟在等待子任务期间不计时。
+
+**`releaseDelegation`**：Workflow 在这次调用被唤醒（`NODE_RESUMED`）时调用，没有登记的任务的份额还给父；委派随之结束（父的占用恢复）。不认识的委派以 `DELEGATION_NOT_FOUND` 拒绝；运行收敛时无效果地接受。
+
+**`endAgentRun`**：SubAgent 的账本结束，未用的份额还给父，任务不再占用写入根目录。
+
+- 同一时刻至多一个没有父的 ACTIVE 的 AgentRun（阶段 7 的并行模板节点放开）。
+- `agent.spawn` 在 `readonly` 预设下保留：派生出的 SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了。
+- 测试：`run-work.test.ts` 的 "SubAgents"、`run-delegations.test.ts`。
+
 ## 6. Turn 与人类请求
 
 | 消息 | 检查 | 动作 |

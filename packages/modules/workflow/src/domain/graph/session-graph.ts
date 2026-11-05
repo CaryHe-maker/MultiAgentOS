@@ -6,17 +6,23 @@ import type {
   TemplateDefinition,
 } from '@multiagentos/contracts';
 import {
+  isTerminal,
   nodeIdOf,
   nodePath,
   readyNodes,
   settleSkips,
   validateExtension,
+  wakeableNodes,
+  withWaiting,
+  type EdgeCall,
   type Graph,
+  type GraphEdge,
   type GraphNode,
   type GraphValidationError,
   type NodeRecord,
   type NodeView,
   type SkippedNode,
+  type Wake,
 } from './graph.js';
 
 /**
@@ -36,6 +42,7 @@ interface NodeSpec {
   readonly goal?: string;
   readonly inputFrom?: 'HANDOFF';
   readonly output?: boolean;
+  readonly spawn?: GraphNodeRecord['spawn'];
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
@@ -51,6 +58,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
     ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
+    ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
   };
 }
 
@@ -87,6 +95,56 @@ export function chatGrowthRevision(
     nodes: [prompt, main],
     edges: [{ from: endedMainNodeId, to: prompt.nodeId, kind: 'DEPENDS' }, depends(prompt, main)],
   };
+}
+
+/** One task of `run_subagents` as the graph holds it. */
+export interface SpawnTaskSpec {
+  readonly name: string;
+  readonly agentRef: DefinitionRef;
+  readonly goal: string;
+  readonly dependsOn: readonly string[];
+  readonly spawn: NonNullable<GraphNodeRecord['spawn']>;
+}
+
+/** The AgentRun that dispatches the tasks of a call, and waits for them. */
+export interface Caller {
+  readonly nodeId: string;
+  readonly call: EdgeCall;
+}
+
+/**
+ * The revision a `run_subagents` call adds (M2Design 3.1, 3.6): one node per task, in the order the
+ * caller wrote them; `DEPENDS` between tasks; from the caller to each task a `DELEGATE` edge, and
+ * back from each a `RESUME` edge. The caller waits, so it is the last link of the tasks it started.
+ */
+export function spawnRevision(
+  workflowRunId: string,
+  revision: number,
+  caller: Caller,
+  tasks: readonly SpawnTaskSpec[],
+): GraphRevision {
+  const nodes = tasks.map((task) =>
+    nodeOf(workflowRunId, revision, {
+      name: task.name,
+      kind: 'AGENT',
+      agentRef: task.agentRef,
+      goal: task.goal,
+      spawn: task.spawn,
+    }),
+  );
+  const byName = new Map(nodes.map((node) => [node.name, node]));
+  const dependencies = tasks.flatMap((task) =>
+    task.dependsOn.flatMap((name) => {
+      const from = byName.get(name);
+      const to = byName.get(task.name);
+      return from === undefined || to === undefined ? [] : [depends(from, to)];
+    }),
+  );
+  const calls = nodes.flatMap((node): GraphEdgeRecord[] => [
+    { from: caller.nodeId, to: node.nodeId, kind: 'DELEGATE', call: caller.call },
+    { from: node.nodeId, to: caller.nodeId, kind: 'RESUME', call: caller.call },
+  ]);
+  return { nodes, edges: [...dependencies, ...calls] };
 }
 
 /** Adds the root `HUMAN(prompt)`, which every node without a predecessor depends on (3.8). */
@@ -143,6 +201,14 @@ export function compileTemplate(
   return { revision: { nodes: [root, ...byName.values()], edges }, errors };
 }
 
+const toGraphEdge = ({ from, to, kind, when, call }: GraphEdgeRecord): GraphEdge => ({
+  from,
+  to,
+  kind,
+  ...(when === undefined ? {} : { when }),
+  ...(call === undefined ? {} : { call }),
+});
+
 const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
   nodeId: node.nodeId,
   name: node.name,
@@ -165,12 +231,7 @@ export function validateRevision(
         node: toGraphNode(node),
         ...(node.agentRef === undefined ? {} : { agentId: node.agentRef.id }),
       })),
-      edges: revision.edges.map(({ from, to, kind, when }) => ({
-        from,
-        to,
-        kind,
-        ...(when === undefined ? {} : { when }),
-      })),
+      edges: revision.edges.map(toGraphEdge),
     },
     rules,
   );
@@ -200,6 +261,12 @@ export function projectGraph(
       edges.push(...record.edges);
     } else if (record.type === 'NODE_STARTED') {
       view.set(record.nodeId, { status: 'RUNNING' });
+    } else if (record.type === 'NODE_RESUMED') {
+      const before = view.get(record.nodeId);
+      view.set(record.nodeId, {
+        status: 'RUNNING',
+        resumed: [...(before?.resumed ?? []), record.call.toolCallId],
+      });
     } else if (record.type === 'NODE_ENDED') {
       view.set(record.nodeId, {
         status: record.status,
@@ -208,44 +275,43 @@ export function projectGraph(
       });
     }
   }
-  return {
-    graph: {
-      nodes: [...nodes.values()].map(toGraphNode),
-      edges: edges.map(({ from, to, kind, when }) => ({
-        from,
-        to,
-        kind,
-        ...(when === undefined ? {} : { when }),
-      })),
-    },
-    view,
-    nodes,
-    lastRevision,
+  const graph: Graph = {
+    nodes: [...nodes.values()].map(toGraphNode),
+    edges: edges.map(toGraphEdge),
   };
+  return { graph, view: withWaiting(graph, view), nodes, lastRevision };
 }
 
 export interface Advance {
   readonly skipped: readonly SkippedNode[];
   readonly ready: readonly GraphNode[];
+  /** Nodes that wait and whose call is over (M2Design 3.3). */
+  readonly wake: readonly Wake[];
 }
 
 /** Steps 4 and 5 of M2Design 3.3: skips first, because they can change what is ready. */
 export function advanceGraph(graph: Graph, view: NodeView): Advance {
   const settled = settleSkips(graph, view);
-  return { skipped: settled.skipped, ready: readyNodes(graph, settled.view) };
+  return {
+    skipped: settled.skipped,
+    ready: readyNodes(graph, settled.view),
+    wake: wakeableNodes(graph, settled.view),
+  };
 }
 
 /** The main node that ended without a next prompt yet, which is when `chat` grows. */
 export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
   const { graph, view, nodes } = projected;
-  return graph.nodes.find((node) => {
-    const ended = !['PENDING', 'READY', 'RUNNING'].includes(
-      view.get(node.nodeId)?.status ?? 'PENDING',
-    );
-    return (
-      ended &&
+  return graph.nodes.find(
+    (node) =>
+      isTerminal(view.get(node.nodeId)?.status ?? 'PENDING') &&
       nodes.get(node.nodeId)?.kind === 'AGENT' &&
-      !graph.edges.some((edge) => edge.from === node.nodeId)
-    );
-  })?.nodeId;
+      // Nothing follows it by dependency: a call that leads on to tasks is no next step.
+      !graph.edges.some(
+        (edge) =>
+          edge.from === node.nodeId && (edge.kind === 'DEPENDS' || edge.kind === 'CONDITIONAL'),
+      ) &&
+      // A task answers to its caller; only what no call started can be a main.
+      !graph.edges.some((edge) => edge.to === node.nodeId && edge.kind === 'DELEGATE'),
+  )?.nodeId;
 }

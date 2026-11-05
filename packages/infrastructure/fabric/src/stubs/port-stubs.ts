@@ -24,6 +24,8 @@ import type {
 /** Schema IDs of the Fabric routes (Interface 4). */
 export const SCHEMA_IDS = {
   registerAgentRun: 'kernel.unit.RegisterAgentRunRequest.v1',
+  reserveDelegation: 'kernel.unit.ReserveDelegationRequest.v1',
+  releaseDelegation: 'kernel.unit.ReleaseDelegationRequest.v1',
   submitUnit: 'kernel.unit.SubmitUnitRequest.v1',
   endAgentRun: 'kernel.unit.EndAgentRunRequest.v1',
   closeRun: 'kernel.unit.CloseRunRequest.v1',
@@ -63,6 +65,8 @@ export const SCHEMA_IDS = {
 /** The syscalls Gateway serves, by the subject allowed to call them (Kernel/Gateway 3). */
 export const WORKFLOW_SYSCALLS = [
   'registerAgentRun',
+  'reserveDelegation',
+  'releaseDelegation',
   'submitUnit',
   'endAgentRun',
   'closeRun',

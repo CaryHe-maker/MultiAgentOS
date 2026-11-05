@@ -243,6 +243,8 @@ export class SessionActor {
           new Error(`STOP_UNCONFIRMED: request ${fault.requestId} could not be confirmed stopped`),
         );
     }
+    // The call slots this message gave back go to the attempts that wait (M2Design 7.2).
+    if (run.control.phase !== 'CLOSED') await run.work.drainCapacityWaiters();
     await this.#finishIfDrained(run);
     if (run.control.phase !== 'CLOSED') run.work.reconcile();
   }

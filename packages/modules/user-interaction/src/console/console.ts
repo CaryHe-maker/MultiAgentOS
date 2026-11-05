@@ -64,6 +64,37 @@ function scopeOf(
   return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
 }
 
+/** One AgentRun of the current run, for `/timeline`. */
+interface TimelineEntry {
+  readonly agentRunId: string;
+  readonly parentAgentRunId?: string;
+  readonly label: string;
+  readonly from: string;
+  to?: string;
+}
+
+/** Items in the order a tree is drawn: children under the parent that started them. */
+function inTree<
+  T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
+>(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
+  const known = new Set(items.map((item) => item.agentRunId));
+  const ordered: { item: T; depth: number; branch: string }[] = [];
+  const visit = (parent: string | undefined, depth: number, indent: string): void => {
+    const siblings = items.filter((item) =>
+      parent === undefined
+        ? item.parentAgentRunId === undefined || !known.has(item.parentAgentRunId)
+        : item.parentAgentRunId === parent,
+    );
+    for (const [index, item] of siblings.entries()) {
+      const last = index === siblings.length - 1;
+      ordered.push({ item, depth, branch: depth === 0 ? '' : `${indent}${last ? '└─ ' : '├─ '}` });
+      visit(item.agentRunId, depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+    }
+  };
+  visit(undefined, 0, '');
+  return ordered;
+}
+
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
 }
@@ -81,6 +112,9 @@ export class Console {
   /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
   #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
+  /** Every AgentRun of the current run, in the order it appeared (`/timeline`). */
+  readonly #timeline: TimelineEntry[] = [];
+  #timelineRun: string | undefined;
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
@@ -117,13 +151,37 @@ export class Console {
   #refresh(): void {
     const live: LiveState = {
       status: text.runState[this.#runState] ?? this.#runState,
-      activity: [...this.#activity.values()],
+      activity: this.#activityTree(),
       ...(this.#pending[0] === undefined ? {} : { pending: this.#pending[0] }),
       waiting: Math.max(0, this.#pending.length - 1),
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
     };
     this.#deps.view.update(live);
+  }
+
+  /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
+  #activityTree(): ActivityLine[] {
+    return inTree([...this.#activity.values()]).map(({ item, branch }) => ({ ...item, branch }));
+  }
+
+  /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
+  #showTimeline(): void {
+    if (this.#timeline.length === 0) {
+      this.#notice(text.timelineEmpty);
+      return;
+    }
+    const now = this.#now().toISOString();
+    const lines = inTree(this.#timeline).map(({ item, depth }) =>
+      text.timelineLine(
+        '  '.repeat(depth),
+        item.label,
+        item.from,
+        item.to,
+        secondsBetween(item.from, item.to ?? now),
+      ),
+    );
+    this.#notice(lines.join('\n'));
   }
 
   #notice(message: string): void {
@@ -357,6 +415,9 @@ export class Console {
       case '/exit':
         await this.shutdown();
         break;
+      case '/timeline':
+        this.#showTimeline();
+        break;
       case '/status':
         this.#notice(text.status(text.runState[this.#runState] ?? this.#runState, this.#budget));
         break;
@@ -532,6 +593,10 @@ export class Console {
   async handleRunEvent(envelope: InteractionInboxEvent): Promise<void> {
     const { event } = envelope;
     this.#workflowRunId = envelope.workflowRunId;
+    if (this.#timelineRun !== envelope.workflowRunId) {
+      this.#timelineRun = envelope.workflowRunId;
+      this.#timeline.length = 0;
+    }
     switch (event.type) {
       case 'RunStateChanged':
         this.#runState = event.state;
@@ -591,11 +656,25 @@ export class Console {
           todos === undefined
             ? undefined
             : terminalText(
-                `${String(todos.done)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
+                `${String(todos.completed)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
               );
         const shown = tool ?? progress;
+        const entry = this.#timeline.find((each) => each.agentRunId === event.agentRunId);
+        if (entry === undefined)
+          this.#timeline.push({
+            agentRunId: event.agentRunId,
+            ...(event.parentAgentRunId === undefined
+              ? {}
+              : { parentAgentRunId: event.parentAgentRunId }),
+            label: terminalText(event.label),
+            from: event.at,
+          });
+        if (event.phase === 'ENDED' && entry !== undefined) entry.to = event.at;
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
+          ...(event.parentAgentRunId === undefined
+            ? {}
+            : { parentAgentRunId: event.parentAgentRunId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           since: event.at,

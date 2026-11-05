@@ -1,4 +1,5 @@
 import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multiagentos/contracts';
+import { callResultsOf } from '../spawn/spawn-graph.js';
 
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
@@ -10,6 +11,17 @@ import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multia
  */
 const MAIN_AGENT_ID = 'main';
 
+/** What a SubAgent is given: its task and the results of the tasks it waits for (M2Design 3.6). */
+export interface TaskScope {
+  readonly name: string;
+  readonly agent: string;
+  readonly goal: string;
+  readonly acceptance: readonly string[];
+  readonly writeScope: readonly string[];
+  readonly inputs: readonly ArtifactRef[];
+  readonly dependencies: readonly Extract<ContextHistoryEntry, { kind: 'SUBAGENT_RESULT' }>[];
+}
+
 export type ProjectionScope =
   | { readonly kind: 'MAIN' }
   | {
@@ -17,6 +29,7 @@ export type ProjectionScope =
       readonly workflowRunId: string;
       readonly agentRunId: string;
       readonly handoff?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
+      readonly task?: TaskScope;
     };
 
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
@@ -29,6 +42,8 @@ export function projectHistory(
   scope: ProjectionScope,
 ): readonly ContextHistoryEntry[] {
   const mainRuns = new Set<string>();
+  /** The AgentRun that runs a node: what a node-level record is read for. */
+  const runOfNode = new Map<string, string>();
   const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
   const toolNames = new Map<string, string>();
   const entries: ContextHistoryEntry[] = [];
@@ -45,9 +60,26 @@ export function projectHistory(
         currentTurn = record.turnId;
         break;
       case 'AGENT_RUN_REGISTERED':
+        runOfNode.set(record.nodeId, record.agentRunId);
         if (scope.kind === 'NODE') {
           if (record.agentRunId !== scope.agentRunId) break;
           mainRuns.add(record.agentRunId);
+          if (scope.task !== undefined) {
+            entries.push({
+              seq: record.seq,
+              ...turnOf(record.turnId),
+              category: 'PINNED',
+              kind: 'TASK',
+              name: scope.task.name,
+              agent: scope.task.agent,
+              goal: scope.task.goal,
+              acceptance: [...scope.task.acceptance],
+              writeScope: [...scope.task.writeScope],
+              inputs: [...scope.task.inputs],
+            });
+            for (const dependency of scope.task.dependencies)
+              entries.push({ ...dependency, seq: record.seq, ...turnOf(record.turnId) });
+          }
           if (scope.handoff !== undefined)
             entries.push({
               seq: record.seq,
@@ -62,6 +94,8 @@ export function projectHistory(
         break;
       case 'HUMAN_ANSWERED':
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        // A SubAgent works from its task, not from what the user said.
+        if (scope.kind === 'NODE' && scope.task !== undefined) break;
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -217,6 +251,41 @@ export function projectHistory(
           ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
         });
         break;
+      case 'NODE_RESUMED': {
+        // The call it woke from is answered by what its tasks came to, in the order they were
+        // written (M2Design 3.3, 3.6): a pure function of the log, so no record of it is kept.
+        if (!mainRuns.has(runOfNode.get(record.nodeId) ?? '')) break;
+        const results = callResultsOf(
+          records,
+          record.workflowRunId,
+          record.nodeId,
+          record.call.toolCallId,
+        );
+        const count = (...statuses: string[]) =>
+          results.filter((result) => statuses.includes(result.status)).length;
+        entries.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: `${String(results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL', 'BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
+          toolCallId: record.call.toolCallId,
+        });
+        for (const result of results)
+          entries.push({
+            seq: record.seq,
+            ...turnOf(record.turnId),
+            category: 'NORMAL',
+            kind: 'SUBAGENT_RESULT',
+            name: result.name,
+            agent: result.agent,
+            status: result.status,
+            notes: [...result.notes],
+            ...(result.outputRef === undefined ? {} : { outputRef: result.outputRef }),
+            ...(result.toolCallId === undefined ? {} : { toolCallId: result.toolCallId }),
+          });
+        break;
+      }
       case 'STALE_UNITS_SETTLED':
         entries.push({
           seq: record.seq,

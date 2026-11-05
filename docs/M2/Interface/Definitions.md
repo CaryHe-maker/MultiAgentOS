@@ -31,13 +31,15 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
   actions: {
     end: {                                       // 至少一项；没有声明的工具不能结束这个 Agent
       toolRef: DefinitionRef;
-      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF';   // 阶段 4 增加 'FINISH_SUBAGENT'
+      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';   // FINISH_SUBAGENT：阶段 4，SubAgent 以结构化结果结束
       allowedInFinal: boolean;                   // 收尾调用中是否可用
     }[];
-    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT';   // 没有合法结束时发布什么
+    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';   // 没有合法结束时发布什么；RETURN_PARTIAL（阶段 4）：SubAgent 不发布，交回 PARTIAL 的结果
     todos?: { toolRef: DefinitionRef };          // 阶段 2：update_todos（M2Design 第 3.5 节）
-    // 阶段 4：spawn（run_subagents）；阶段 5：askUser（ask_user）
+    spawn?: { toolRef: DefinitionRef };          // 阶段 4：run_subagents；Agent 的能力白名单含 agent.spawn 时配套出现
+    // 阶段 5：askUser（ask_user）
   };
+  spawnable?: { defaultShare: number };          // 阶段 4：可以被 run_subagents 派生的 Agent 及其缺省份额；不低于 agentMinShare(budget)，结束工具只有 FINISH_SUBAGENT，onDegraded 为 RETURN_PARTIAL，不得含 agent.spawn
   limits: {
     maxRounds: number;                           // 1..100，含最后一轮（final-call）；见 Module/Workflow 第 7 节 5a
     maxToolCallsPerRound: number;                // 0..32
@@ -46,7 +48,6 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
   };
   budget: AgentBudgetProfile;
   capabilities: string[];                        // 阶段 2：能力白名单，能力上限的来源（M2Design 第 5.1 节）
-  // 阶段 4：spawnable、defaultShare、resultContract
 }
 
 type ThinkingEffort = 'none' | 'low' | 'high' | 'max';

@@ -1,4 +1,5 @@
 import {
+  SUBAGENT_RESULT_CHARS,
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
   CommandInputSchema,
@@ -359,7 +360,9 @@ export class AttemptRequestBuilder {
       final: input.final,
       tokenBudget: input.final ? agent.budget.finalInputBudget : agent.budget.perCallInputLimit,
       instructions: agent.instructions,
-      toolSpecs: agent.toolSpecs(input.final),
+      toolSpecs: agent
+        .toolSpecs(input.final)
+        .filter((spec) => !(input.withdrawnTools ?? []).includes(spec.name)),
       ...(orientPack === undefined ? {} : { orientPack }),
       history,
       status: input.status,
@@ -423,6 +426,42 @@ export class AttemptRequestBuilder {
         if (this.#deps.artifacts.isFullOutput(outputRef))
           throw new RequestBuildError('INVALID_INPUT');
         return { ...result, text: await this.#text(outputRef) };
+      }
+      case 'TASK': {
+        const lines = [
+          `Your task (${entry.name}, ${entry.agent}):`,
+          entry.goal,
+          ...(entry.writeScope.length === 0
+            ? []
+            : [`You may change only: ${entry.writeScope.join(', ')}`]),
+          ...(entry.acceptance.length === 0
+            ? []
+            : [
+                'Acceptance criteria, by index:',
+                ...entry.acceptance.map((each, index) => `${String(index)}. ${each}`),
+              ]),
+        ];
+        for (const ref of entry.inputs)
+          lines.push(`Material handed over to you:\n${await this.#text(ref)}`);
+        return { ...base, kind: 'HUMAN', text: lines.join('\n') };
+      }
+      case 'SUBAGENT_RESULT': {
+        const lines = [
+          `Result of task ${entry.name} (${entry.agent}): ${entry.status}`,
+          ...entry.notes,
+        ];
+        if (entry.outputRef !== undefined) {
+          const raw = await this.#rawOutput(entry.outputRef);
+          const call = raw.toolCalls.find((each) => each.toolCallId === entry.toolCallId);
+          if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
+          lines.push(
+            call.argumentsText.length <= SUBAGENT_RESULT_CHARS
+              ? call.argumentsText
+              : `${call.argumentsText.slice(0, SUBAGENT_RESULT_CHARS)}
+[cut: the result is ${String(call.argumentsText.length)} characters, only the first ${String(SUBAGENT_RESULT_CHARS)} are shown]`,
+          );
+        }
+        return { ...base, kind: 'NOTE', text: lines.join('\n') };
       }
       case 'HANDOFF': {
         const raw = await this.#rawOutput(entry.outputRef);

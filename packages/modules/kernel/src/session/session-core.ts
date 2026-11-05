@@ -1,5 +1,6 @@
 import type {
   ArtifactContent,
+  DelegationReserved,
   GatewayForward,
   ProjectFileContent,
   SessionAccepted,
@@ -12,7 +13,12 @@ import type { SessionArtifacts } from './session-artifacts.js';
 import type { SessionManager } from './session-manager.js';
 
 export type CoreResponse =
-  SyscallAck | SyscallRejected | SessionAccepted | ArtifactContent | ProjectFileContent;
+  | SyscallAck
+  | SyscallRejected
+  | SessionAccepted
+  | ArtifactContent
+  | ProjectFileContent
+  | DelegationReserved;
 
 export interface SessionCoreDeps {
   readonly manager: SessionManager;
@@ -122,6 +128,12 @@ export class SessionCore {
         return Promise.resolve(manager.reportSessionCommand(forward.request));
       case 'registerAgentRun':
         return this.#inRun(forward.request, (work) => work.registerAgentRun(forward.request));
+      case 'reserveDelegation':
+        return this.#inRun(forward.request, (work) => work.reserveDelegation(forward.request));
+      case 'releaseDelegation':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.releaseDelegation(forward.request)),
+        );
       case 'submitUnit':
         return this.#inRun(forward.request, (work) => work.submitUnit(forward.request));
       case 'endAgentRun':

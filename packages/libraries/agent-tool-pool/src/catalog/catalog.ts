@@ -10,6 +10,7 @@ import {
   COMMAND_KINDS,
   REPOSITORY_KINDS,
   WRITE_KINDS,
+  agentMinShare,
   canonicalJson,
   createProtocolRegistry,
   validate,
@@ -76,6 +77,15 @@ function referencesOf(body: Body): readonly Reference[] {
                 field: 'actions.todos.toolRef',
                 kind: 'TOOL' as const,
                 ref: body.actions.todos.toolRef,
+              },
+            ]),
+        ...(body.actions.spawn === undefined
+          ? []
+          : [
+              {
+                field: 'actions.spawn.toolRef',
+                kind: 'TOOL' as const,
+                ref: body.actions.spawn.toolRef,
               },
             ]),
       ];
@@ -147,11 +157,15 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
-const END_CONTRACTS = {
-  PUBLISH_REPLY: 'workflow.ReplyArgs.v1',
-  PUBLISH_REPORT: 'workflow.AnalysisReportDraft.v1',
-  HANDOFF: 'workflow.HandoffBrief.v1',
-} as const;
+const END_CONTRACTS: Readonly<
+  Record<'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT', readonly string[]>
+> = {
+  PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],
+  PUBLISH_REPORT: ['workflow.AnalysisReportDraft.v1'],
+  HANDOFF: ['workflow.HandoffBrief.v1'],
+  // Each spawnable Agent declares the result it returns (M2Design 3.7).
+  FINISH_SUBAGENT: ['workflow.ExplorerResult.v1', 'workflow.WorkerResult.v1'],
+};
 /** Kernel's refusals mean the same for every Unit, so no definition may change them. */
 const FIXED_CODES = [
   'USER_DECLINED',
@@ -536,8 +550,8 @@ function checkAgent(
   const names = new Map<string, string>();
   const tools = [
     ...units.flatMap((unit) => unit.toolRefs.flatMap((ref) => get('TOOL', ref) ?? [])),
-    ...(body.actions.todos === undefined ? [] : [body.actions.todos.toolRef]).flatMap(
-      (ref) => get('TOOL', ref) ?? [],
+    ...[body.actions.todos, body.actions.spawn].flatMap((action) =>
+      action === undefined ? [] : (get('TOOL', action.toolRef) ?? []),
     ),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
@@ -562,12 +576,12 @@ function checkAgent(
     if (
       tool !== undefined &&
       (tool.purpose !== 'CONTROL' ||
-        contractOf(tool.parametersContract) !== END_CONTRACTS[end.then])
+        !END_CONTRACTS[end.then].includes(contractOf(tool.parametersContract)))
     )
       report(
         origin,
         'AGENT_INVALID',
-        `end tool ${end.toolRef.id} must be CONTROL with ${END_CONTRACTS[end.then]}`,
+        `end tool ${end.toolRef.id} must be CONTROL with ${END_CONTRACTS[end.then].join(' or ')}`,
       );
   }
   if (body.actions.todos !== undefined) {
@@ -579,6 +593,7 @@ function checkAgent(
     )
       report(origin, 'AGENT_INVALID', 'the todos tool must be CONTROL with UpdateTodosArgs');
   }
+  checkSpawn(origin, body, get, report);
   for (const unit of units)
     for (const capability of unit.protectedCapabilities)
       if (!body.capabilities.includes(capability))
@@ -589,6 +604,43 @@ function checkAgent(
         );
   if (body.limits.maxToolCallsPerRound > 0 && !units.some((unit) => unit.toolRefs.length > 0))
     report(origin, 'AGENT_INVALID', 'maxToolCallsPerRound > 0 needs a unit with a tool');
+}
+
+/** The two sides of spawning: an Agent that starts SubAgents, and an Agent that is one (M2Design 3.6, 3.7). */
+function checkSpawn(
+  origin: string,
+  body: BodyOf<'AGENT'>,
+  get: <K extends DefinitionKind>(kind: K, ref: DefinitionRef) => BodyOf<K> | undefined,
+  report: (origin: string, code: CatalogIssueCode, message: string) => void,
+): void {
+  const spawns = body.capabilities.includes('agent.spawn');
+  if (spawns !== (body.actions.spawn !== undefined))
+    report(origin, 'AGENT_INVALID', 'agent.spawn and actions.spawn go together');
+  if (body.actions.spawn !== undefined) {
+    const tool = get('TOOL', body.actions.spawn.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' ||
+        contractOf(tool.parametersContract) !== 'workflow.RunSubagentsArgs.v1')
+    )
+      report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
+  }
+  const finishes = body.actions.end.some((end) => end.then === 'FINISH_SUBAGENT');
+  if (finishes !== (body.spawnable !== undefined))
+    report(origin, 'AGENT_INVALID', 'spawnable and the FINISH_SUBAGENT end go together');
+  if (body.spawnable === undefined) return;
+  if (spawns) report(origin, 'AGENT_INVALID', 'a SubAgent cannot spawn');
+  if (body.actions.end.some((end) => end.then !== 'FINISH_SUBAGENT'))
+    report(origin, 'AGENT_INVALID', 'a spawnable Agent ends only with FINISH_SUBAGENT');
+  if (body.actions.onDegraded !== 'RETURN_PARTIAL')
+    report(origin, 'AGENT_INVALID', 'a spawnable Agent degrades with RETURN_PARTIAL');
+  const least = agentMinShare(body.budget);
+  if (body.spawnable.defaultShare < least)
+    report(
+      origin,
+      'AGENT_INVALID',
+      `defaultShare ${String(body.spawnable.defaultShare)} is below the least share ${String(least)}`,
+    );
 }
 
 function checkTemplate(
@@ -723,6 +775,7 @@ export class DefinitionCatalog {
       ...pinnedUnits.flatMap((unit) => unit.toolRefs),
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
+      ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

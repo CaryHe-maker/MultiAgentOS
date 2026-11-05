@@ -24,6 +24,7 @@ export type {
   EndTool,
 } from './domain/agent/agent-cycle.js';
 export { projectHistory } from './domain/context/history-projection.js';
+export { callResultsOf } from './domain/spawn/spawn-graph.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { settleStaleRecords } from './session/settle-stale.js';
 export { agentBindingOf } from './session/agent-binding.js';
@@ -40,6 +41,10 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   repeatedIntent: Object.freeze({ window: 20, warnAt: 3, stopAt: 5 }),
   consecutiveErrorLimit: 5,
   maxNestedInstructions: 8,
+  maxSubagentsPerCall: 8,
+  maxDependencyDepth: 2,
+  maxTasks: 12,
+  maxSpawnCalls: 4,
 });
 
 export interface WorkflowDeps {
