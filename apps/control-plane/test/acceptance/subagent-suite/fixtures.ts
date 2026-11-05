@@ -2,7 +2,9 @@
  * The repositories and the checks of the stage 4 suite (docs/M2/Evaluation/Stage4SubAgents.md).
  * Every check runs outside the model, on the files it left, against answers fixed here.
  */
-import { createSubprocessRunner } from '@multiagentos/kernel';
+// The child-process rule guards the product's own code; this file only judges what a run left.
+// eslint-disable-next-line no-restricted-imports
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,20 +30,13 @@ const read = (repository: string, path: string) =>
   readFile(join(repository, path), 'utf8').catch(() => undefined);
 
 /** `node --test` in the repository, as the user would run it. */
-const subprocess = createSubprocessRunner();
-
-export async function testsPass(repository: string): Promise<boolean> {
-  try {
-    const result = await subprocess.run(process.execPath, ['--test'], {
-      cwd: repository,
-      signal: AbortSignal.timeout(60_000),
-      maxOutputBytes: 200_000,
-      env: {},
+/** The user's own `node --test`; this harness is not the product, so it may start a process. */
+export function testsPass(repository: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(process.execPath, ['--test'], { cwd: repository, timeout: 60_000 }, (error) => {
+      resolve(error === null);
     });
-    return result.exitCode === 0;
-  } catch {
-    return false;
-  }
+  });
 }
 
 async function importDefault(repository: string, path: string): Promise<unknown> {
