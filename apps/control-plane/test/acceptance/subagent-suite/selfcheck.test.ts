@@ -2,7 +2,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { CASES, REFERENCES } from './fixtures.js';
+import { CASES as SMALL, REFERENCES as SMALL_REFERENCES } from './fixtures.js';
+import { LARGE, LARGE_REFERENCES } from './large.js';
+
+const CASES = [...SMALL, ...LARGE];
+const REFERENCES: Readonly<Record<string, (repository: string) => Promise<void>>> = {
+  ...SMALL_REFERENCES,
+  ...LARGE_REFERENCES,
+};
 
 const made: string[] = [];
 afterAll(async () => {

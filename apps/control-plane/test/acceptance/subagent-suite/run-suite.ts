@@ -17,12 +17,17 @@ import {
   type ChatRequest,
   type ScriptedChat,
 } from '../chat-driver.js';
-import { CASES, type CaseDef } from './fixtures.js';
+import { CASES as SMALL, type CaseDef } from './fixtures.js';
+import { LARGE } from './large.js';
 
-type Mode = 'natural' | 'hint' | 'alone';
+const CASES: readonly CaseDef[] = [...SMALL, ...LARGE];
+
+type Mode = 'natural' | 'hint' | 'explicit' | 'alone';
 const SUFFIX: Readonly<Record<Mode, string>> = {
   natural: '',
   hint: ' You may use subagents if that helps.',
+  explicit:
+    ' Split the work into subtasks and run them with run_subagents; where one part needs the result of another, make it depend on that part.',
   alone: ' Do the work yourself; do not use run_subagents.',
 };
 
