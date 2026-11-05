@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import dotenv from 'dotenv';
-import { openChat, type ChatRequest, type ScriptedChat } from './chat-driver.js';
+import { openChat, until, type ChatRequest, type ScriptedChat } from './chat-driver.js';
 
 const FILES: Readonly<Record<string, string>> = {
   'README.md': '# shop\n\nA small shop library with three independent modules.\n',
@@ -86,7 +86,8 @@ async function withChat(
   });
   const started = Date.now();
   try {
-    await chat.say(message);
+    await chat.console.submit(message);
+    await until(() => chat.printed('REPLY').length > 0, 'the reply', 240_000);
     const elapsedMs = Date.now() - started;
     const calls = callsOf(provider);
     const agents = [
