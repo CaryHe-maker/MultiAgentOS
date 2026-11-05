@@ -5,7 +5,7 @@
  * skipped, so a batch killed at its time limit can be started again. The key comes from
  * `DEEPSEEK_API_KEY` or the file named by `MAO_ENV_FILE`. It costs money, hence `--yes`.
  */
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import dotenv from 'dotenv';
@@ -127,6 +127,23 @@ const statusesOf = (provider: ScriptedChat): Record<string, string> => {
   return found;
 };
 
+/** Why and when AgentRuns were wrapped up, from the session log the run left behind. */
+async function wrapUpsOf(directory: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (path: string): Promise<void> => {
+    for (const entry of await readdir(path, { withFileTypes: true }).catch(() => [])) {
+      const next = join(path, entry.name);
+      if (entry.isDirectory()) await walk(next);
+      else if (entry.name.endsWith('.jsonl'))
+        for (const line of (await readFile(next, 'utf8').catch(() => '')).split('
+'))
+          if (line.includes('"AGENT_WRAP_UP"')) found.push(line.slice(0, 200));
+    }
+  };
+  await walk(directory);
+  return found;
+}
+
 /** The update_todos calls of main and what it was told, to see why they are refused. */
 function todoCallsOf(provider: ScriptedChat): string[] {
   const last = [...provider.requests]
@@ -230,6 +247,7 @@ async function runOne(def: CaseDef, mode: Mode, run: number) {
     statuses: statusesOf(provider),
     refusals: refusalsOf(provider),
     questions: chat.questions.length,
+    wrapUps: await wrapUpsOf(dataDir),
     todoCalls: todoCallsOf(provider),
     /** What main asked in each of its rounds, and how each answer began. */
     rounds: mainRounds(provider),
