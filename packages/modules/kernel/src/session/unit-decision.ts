@@ -109,6 +109,8 @@ export type AuthorizationEntry =
       readonly effect: 'DENY';
       readonly capability: Capability;
       readonly agentRunId: string;
+      /** A refused command binds that command only (work directory and line), not the capability. */
+      readonly commandKey?: string;
     }
   | {
       readonly scope: 'ONCE';
@@ -162,7 +164,10 @@ const answered = (
   if (
     relevant.some(
       (entry) =>
-        entry.scope === 'RUN' && entry.effect === 'DENY' && entry.agentRunId === demand.agentRunId,
+        entry.scope === 'RUN' &&
+        entry.effect === 'DENY' &&
+        entry.agentRunId === demand.agentRunId &&
+        !('commandKey' in entry),
     )
   )
     return 'DENY';
@@ -207,6 +212,26 @@ const commandsCovered = (
     ),
   );
 
+/** The key of a refusal of one command: its work directory and its line. */
+export const commandKeyOf = (command: CommandDemand): string =>
+  `${command.workdir}\u0000${command.analysis.text}`;
+
+/** The user refused this very command in this AgentRun: other commands are not affected. */
+const commandRefused = (
+  entries: readonly AuthorizationEntry[],
+  agentRunId: string,
+  command: CommandDemand,
+): boolean =>
+  entries.some(
+    (entry) =>
+      entry.scope === 'RUN' &&
+      entry.effect === 'DENY' &&
+      entry.capability === 'command.exec' &&
+      entry.agentRunId === agentRunId &&
+      'commandKey' in entry &&
+      entry.commandKey === commandKeyOf(command),
+  );
+
 /** Kernel/Core 5b: the checks of a command, in the order of 5a.3. */
 function decideCommand(
   demand: UnitDemand,
@@ -235,7 +260,8 @@ function decideCommand(
   const perAttempt = critical || command.analysis.unreusable.length > 0;
   // ④ a critical command never relies on an earlier grant; a refusal of the capability still binds
   const decided = answered(entries, demand, 'command.exec');
-  if (decided === 'DENY') return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
+  if (decided === 'DENY' || commandRefused(entries, demand.agentRunId, command))
+    return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
   if (decided === 'ALLOW' || (!perAttempt && commandsCovered(entries, command, workdir)))
     return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir };
   // ⑤

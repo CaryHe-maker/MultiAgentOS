@@ -118,6 +118,53 @@ describe('buildBwrapArgs', () => {
     expect(args).not.toContain('/home/me/.mao');
   });
 
+  it('empties the host runtime directories and the other disks, before the repository comes back', () => {
+    const args = buildBwrapArgs(input({}, { repositoryRoot: '/mnt/d/work/repo' }));
+    for (const directory of ['/run', '/mnt', '/media'])
+      expect(at(args, '--tmpfs', directory)).toBeGreaterThan(-1);
+    expect(at(args, '--tmpfs', '/mnt')).toBeLessThan(
+      at(args, '--ro-bind', '/mnt/d/work/repo', '/mnt/d/work/repo'),
+    );
+    expect(at(args, '--ro-bind', '/run/systemd/resolve', '/run/systemd/resolve')).toBe(-1);
+  });
+
+  it('keeps name resolution only when the network is shared', () => {
+    const args = buildBwrapArgs(input({}, { network: true }));
+    expect(at(args, '--ro-bind', '/run/systemd/resolve', '/run/systemd/resolve')).toBeGreaterThan(
+      at(args, '--tmpfs', '/run'),
+    );
+    expect(at(args, '--ro-bind', '/mnt/wsl/resolv.conf', '/mnt/wsl/resolv.conf')).toBeGreaterThan(
+      at(args, '--tmpfs', '/mnt'),
+    );
+  });
+
+  it('sizes /tmp and limits the processes when it is told to', () => {
+    const args = buildBwrapArgs(
+      input({
+        tmpBytes: 1024,
+        limits: { maxProcesses: 300, maxFileBytes: 4096 },
+      }),
+    );
+    expect(at(args, '--size', '1024', '--tmpfs', '/tmp')).toBeGreaterThan(-1);
+    expect(args.slice(-8)).toEqual([
+      '--',
+      'prlimit',
+      '--nproc=300',
+      '--fsize=4096',
+      '--',
+      '/bin/bash',
+      '-c',
+      'npm test',
+    ]);
+  });
+
+  it('lays the credential-free copy over .git/config after .git is read-only', () => {
+    const args = buildBwrapArgs(input({ gitConfig: '/data/tmp/gitconfig-x/config' }));
+    expect(at(args, '--ro-bind', '/home/me/repo/.git', '/home/me/repo/.git')).toBeLessThan(
+      at(args, '--ro-bind', '/data/tmp/gitconfig-x/config', '/home/me/repo/.git/config'),
+    );
+  });
+
   it('ends with the shell and the command as one argument', () => {
     const args = buildBwrapArgs(input({ command: 'echo "a b" && ls' }));
     expect(args.slice(-4)).toEqual(['--', '/bin/bash', '-c', 'echo "a b" && ls']);

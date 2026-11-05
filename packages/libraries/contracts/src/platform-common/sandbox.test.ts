@@ -91,9 +91,13 @@ describe('SandboxScope', () => {
     expect(validate(SandboxScopeSchema, { ...scope, extra: 1 }).ok).toBe(false);
     expect(validate(SandboxScopeSchema, { ...scope, approvalDigest: 'abc' }).ok).toBe(false);
     const { profile, ...rest } = scope;
+    // No writable root is a read-only run, such as git_inspect.
     expect(
       validate(SandboxScopeSchema, { ...rest, profile: { ...profile, writableRoots: [] } }).ok,
-    ).toBe(false);
+    ).toBe(true);
+    expect(validate(SandboxScopeSchema, { ...rest, profile: { ...profile, network: 1 } }).ok).toBe(
+      false,
+    );
   });
 });
 

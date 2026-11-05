@@ -14,6 +14,7 @@ import type {
   EndAgentRunRequest,
   ArtifactRef,
   ExecutionScope,
+  MemoryLevel,
   ProjectFileContent,
   ReadProjectFileRequest,
   RegisterAgentRunRequest,
@@ -121,6 +122,8 @@ export interface RunWorkDeps {
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
+  /** The live memory level; a WARNING ends when it says the pressure is gone. */
+  readonly memoryLevel?: () => MemoryLevel | undefined;
 }
 
 type Response = SyscallAck | SyscallRejected;
@@ -279,6 +282,17 @@ export class RunWork {
     this.#memoryWarning = true;
   }
 
+  /** New work is refused while WARNING holds; it holds until the live level has fallen. */
+  #underWarning(): boolean {
+    if (this.#interrupting) return true;
+    if (!this.#memoryWarning) return false;
+    if (this.#deps.memoryLevel !== undefined && this.#deps.memoryLevel() === undefined) {
+      this.#memoryWarning = false;
+      return false;
+    }
+    return true;
+  }
+
   openTurn(turnId: string): void {
     this.#turns += 1;
     this.#deps.ledgers.openTurnLedger(turnId);
@@ -375,7 +389,7 @@ export class RunWork {
     if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
     if (this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_EXISTS');
-    if (this.#memoryWarning) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
+    if (this.#underWarning()) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
     if (this.#host.control().activeAgentRuns.size > 0)
       return this.#refuse(requestId, request, 'AGENT_RUN_ACTIVE');
 
@@ -447,7 +461,7 @@ export class RunWork {
 
     if (this.#interrupting && unit.executionKind !== 'MESSAGE_PUBLISH')
       return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
-    if (admission.countsAsTool && this.#memoryWarning) {
+    if (admission.countsAsTool && this.#underWarning()) {
       this.#refuseUnit(request, unit, { reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' });
       return response;
     }

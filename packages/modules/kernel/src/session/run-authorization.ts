@@ -376,6 +376,11 @@ export class RunAuthorization {
       return;
     }
     if (scope === 'DENY') {
+      // A refused command is refused as that command; the AgentRun keeps the capability.
+      const commandKey =
+        question.command === undefined
+          ? undefined
+          : `${question.command.workdir}\u0000${question.command.analysis.text}`;
       this.#entries = [
         ...this.#entries,
         ...[...question.agentRuns].map((agentRunId): AuthorizationEntry => ({
@@ -383,6 +388,7 @@ export class RunAuthorization {
           effect: 'DENY',
           capability,
           agentRunId,
+          ...(commandKey === undefined ? {} : { commandKey }),
         })),
       ];
       return;

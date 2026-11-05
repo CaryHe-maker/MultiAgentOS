@@ -1,6 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, realpathSync, statSync } from 'node:fs';
-import { posix } from 'node:path';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { release } from 'node:os';
+import { dirname, join, posix } from 'node:path';
 import {
   StopUnconfirmedError,
   approvalDigestOf,
@@ -12,6 +22,7 @@ import {
   type SandboxScope,
 } from '@multiagentos/contracts';
 import { buildBwrapArgs } from './bwrap-args.js';
+import { sanitizeGitConfig } from './git-config.js';
 
 /**
  * Starts a command in `bwrap` and ends it (M2Design 4.7, 6.1; Kernel/Supervisor 5). It checks
@@ -30,6 +41,12 @@ export interface SandboxRunnerDeps {
   readonly bwrapPath?: string;
   readonly shell?: string;
   readonly now?: () => number;
+  /** Size of the private /tmp of a command; default 512 MiB. */
+  readonly tmpBytes?: number;
+  /** Processes a command may add to what the user already runs; default 2048. */
+  readonly maxProcesses?: number;
+  /** Size of the biggest file a command may write; default 2 GiB. */
+  readonly maxFileBytes?: number;
 }
 
 export interface TrackedSandboxRunner extends SandboxRunner {
@@ -40,6 +57,53 @@ export interface TrackedSandboxRunner extends SandboxRunner {
 }
 
 const STATUS_FD = 3;
+const PRLIMIT = '/usr/bin/prlimit';
+
+/**
+ * Since Linux 5.14 the process limit counts the processes of the user namespace `bwrap` makes;
+ * before, it counted every process of the user, so the user's other processes are added.
+ */
+function countsPerNamespace(): boolean {
+  const [major = 0, minor = 0] = release()
+    .split('.')
+    .map((part) => Number.parseInt(part, 10));
+  return major > 5 || (major === 5 && minor >= 14);
+}
+
+/** Processes of the current user, anywhere: the limit counts all of them, not the command's. */
+function userProcesses(): number {
+  const uid = process.getuid?.();
+  let count = 0;
+  try {
+    for (const name of readdirSync('/proc')) {
+      if (!/^\d+$/u.test(name)) continue;
+      try {
+        if (statSync(`/proc/${name}`).uid === uid) count += 1;
+      } catch {
+        // Gone while counting.
+      }
+    }
+  } catch {
+    return 1_000;
+  }
+  return count;
+}
+
+/** The credential-free copy of `.git/config` for one command, and how to remove it. */
+function gitConfigCopy(
+  repositoryRoot: string,
+  directory: string,
+): { path: string; remove: () => void } | undefined {
+  try {
+    const text = readFileSync(posix.join(repositoryRoot, '.git/config'), 'utf8');
+    const folder = mkdtempSync(join(directory, 'gitconfig-'));
+    const path = join(folder, 'config');
+    writeFileSync(path, sanitizeGitConfig(text), { mode: 0o644 });
+    return { path, remove: () => rmSync(folder, { recursive: true, force: true }) };
+  } catch {
+    return undefined;
+  }
+}
 
 const isDirectory = (path: string): boolean => {
   try {
@@ -116,7 +180,21 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       // `UNISOLATED` is what the user approved when the sandbox is not available: the same shell,
       // the same whitelisted environment and the same work directory, but no isolation.
       const unisolated = scope.backend === 'UNISOLATED';
+      const gitConfig = unisolated
+        ? undefined
+        : gitConfigCopy(scope.profile.repositoryRoot, dirname(deps.emptyFile));
       const args = buildBwrapArgs({
+        tmpBytes: deps.tmpBytes ?? 512 * 1024 * 1024,
+        ...(existsSync(PRLIMIT)
+          ? {
+              limits: {
+                maxProcesses:
+                  (deps.maxProcesses ?? 2048) + (countsPerNamespace() ? 0 : userProcesses()),
+                maxFileBytes: deps.maxFileBytes ?? 2 * 1024 * 1024 * 1024,
+              },
+            }
+          : {}),
+        ...(gitConfig === undefined ? {} : { gitConfig: gitConfig.path }),
         profile: scope.profile,
         command,
         home: deps.home,
@@ -145,6 +223,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
               stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
             });
       } catch {
+        gitConfig?.remove();
         resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
         return;
       }
@@ -195,6 +274,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         settled = true;
         for (const timer of timers) clearTimeout(timer);
         signal.removeEventListener('abort', stop);
+        gitConfig?.remove();
         live.delete(child);
         finish();
       };

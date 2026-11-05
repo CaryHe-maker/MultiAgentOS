@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.18 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.19 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -888,9 +888,11 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 新建保护 | 不存在的受保护路径不做占位挂载（bwrap 会在宿主仓库中真实创建挂载点，改动用户的仓库）。改为事后检查：Execution 在命令前后检查这些路径是否存在（任何位置的 `.git` 与 `AGENTS.md` 由改动检测发现），命令新建了其中任一路径时，Kernel 把它移入本 Session 的隔离目录（`kernel-execution/quarantine/`），结果以 `PROTECTED_PATH_CREATED` 报告并写审计。例如在不是 git 仓库的目录中 `git init` 后写入 `.git/hooks`，这些 hook 不会留到用户以后使用 git 时执行 |
 | 遮蔽 | `<dataDir>` 位于 `$HOME` 之外时单独以空 tmpfs 遮蔽 |
 | 网络 | 缺省 `--unshare-net`；只有批准了 `command.network` 的那一条命令共享宿主网络 |
-| 进程 | `--unshare-pid`、`--die-with-parent`、`--new-session`；独立进程组 |
+| 进程 | `--unshare-pid`、`--unshare-ipc`、`--unshare-uts`、`--die-with-parent`、`--new-session`；独立进程组 |
+| 宿主暴露面 | `/run`、`/mnt`、`/media` 以空 tmpfs 遮蔽（宿主的 docker.sock、D-Bus、gpg/ssh agent 套接字，WSL 中的 Windows 盘）；共享网络时只读挂回域名解析所需的 `/run/systemd/resolve` 与 `/mnt/wsl/resolv.conf`；仓库之后重新挂回 |
+| 仓库配置 | `.git/config` 以去掉凭据的副本只读覆盖（远程 URL 里的 `user:token@`、含 token、password、secret、authorization、extraheader 的行），命令输出与日志因此带不出远程凭据；其余设置不变 |
 | 环境变量 | 白名单构造（`PATH`、`HOME`、`LANG`、`TERM` 等）；构造后再断言没有名称匹配 `*KEY*`、`*SECRET*`、`*TOKEN*`、`*PASSWORD*`、`*CREDENTIAL*` 的变量，否则拒绝启动并写审计 |
-| 资源 | 超时（缺省 2 分钟，参数上限 10 分钟）；输出保留头尾预览，全文存为 Artifact |
+| 资源 | 超时（缺省 2 分钟，参数上限 10 分钟）；`/tmp` 大小上限（缺省 512 MiB）、进程数上限（缺省 2048）、单文件大小上限（缺省 2 GiB）；输出保留头尾预览，全文存为 Artifact |
 
 ### 6.2 可用性
 
@@ -1851,3 +1853,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.13（编辑性） | 2026-11-02 | 第 8.2 节：删去"按 Unit 定义的版本选取上限"的残留，与 v1.12 一致 |
 | v1.13 | 2026-10-31 | 第 5.3、7.4 节：授权询问不再超时，删除 `authorizationTimeoutMs`、询问的 `expiresAt` 与 `TIMED_OUT`（取代 v1.9 中"授权询问 5 分钟后本次拒绝"）；询问只在运行收敛时取消；第 4.1、5.3 节：拒绝作为被拒 Unit 的工具结果交还 Agent，不结束 Turn；第 4.3、9.5、12（不变量 11）、13（H13、A）、14.1、14.2 节相应修改 |
 | v1.18 | 2026-11-05 | 第 6.1 节：`PATH` 中位于 `$HOME` 之下的目录自动以只读挂回，使命令找得到用户的 shell 找得到的工具（装在 `$HOME` 下自定义目录的 node 等），不再要求用户逐个追加白名单；可由 `sandbox.mountPath` 关闭（依据：阶段 3 的 C1–C4 真实模型评测中，node 位于 `~/.local/opt` 时沙盒内 `node: command not found`） |
+| v1.19 | 2026-11-05 | 第 6.1 节：沙盒遮蔽宿主的 `/run`、`/mnt`、`/media`，`.git/config` 以去掉凭据的副本覆盖，`/tmp` 大小、进程数、单文件大小有上限，增加 `--unshare-ipc`、`--unshare-uts`；第 5.3 节：`command.exec` 的拒绝只绑定被拒的那一条命令；第 7.7 节：内存压力中系统可用内存不足最高只到 `WARNING`，`WARNING` 在压力回落后不再拒绝新工作；第 8.1 节：`git_inspect` 的 `git` 在只读沙盒中运行（依据：阶段 3 静态审查，Cary 决定按推荐全部实现） |

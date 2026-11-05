@@ -13,7 +13,8 @@ export const SandboxProfileSchema = closed(
     /** Relative to the repository root, `''` for the root itself. */
     workdir: Type.String({ maxLength: 1024 }),
     /** Relative, `/`-separated; `.` is the repository root. */
-    writableRoots: Type.Array(text(1024), { minItems: 1 }),
+    /** Empty for a read-only run, such as `git_inspect`. */
+    writableRoots: Type.Array(text(1024)),
     network: Type.Boolean(),
     /** Absolute directories under `$HOME` that come back read-only. */
     homeReadOnly: Type.Array(text(4096)),

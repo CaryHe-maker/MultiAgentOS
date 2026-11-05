@@ -4,6 +4,7 @@ import type { MemoryPressure } from '@multiagentos/contracts';
 import {
   createMemorySampler,
   levelOf,
+  levelOfSample,
   pressureRatio,
   type MemorySample,
 } from './memory-sampler.js';
@@ -25,6 +26,20 @@ describe('levels', () => {
   });
 });
 
+describe('own memory against the machine', () => {
+  it('lets the machine running short reach WARNING only', () => {
+    const machine = (systemRatio: number): MemorySample => ({ ...sample(0.1), systemRatio });
+    expect(levelOfSample(machine(0.8), thresholds)).toBe('WARNING');
+    expect(levelOfSample(machine(0.99), thresholds)).toBe('WARNING');
+    expect(levelOfSample(machine(0.5), thresholds)).toBeUndefined();
+  });
+
+  it('lets this process reach DANGER', () => {
+    expect(levelOfSample(sample(0.95), thresholds)).toBe('DANGER');
+    expect(levelOfSample({ ...sample(0.1), heapRatio: 0.92 }, thresholds)).toBe('DANGER');
+  });
+});
+
 describe('the sampler', () => {
   const run = (ratios: (number | Error)[]) => {
     const sent: MemoryPressure[] = [];
@@ -41,8 +56,12 @@ describe('the sampler', () => {
       send: (message) => sent.push(message),
       diagnostic: (line) => diagnostics.push(line),
     });
-    for (let step = 0; step < ratios.length; step += 1) sampler.sampleOnce();
-    return { sent, diagnostics };
+    const levels: (string | undefined)[] = [];
+    for (let step = 0; step < ratios.length; step += 1) {
+      sampler.sampleOnce();
+      levels.push(sampler.level());
+    }
+    return { sent, diagnostics, levels };
   };
 
   it('sends nothing while the level is normal', () => {
@@ -55,9 +74,19 @@ describe('the sampler', () => {
     expect(sent[0]).toMatchObject({ type: 'MemoryPressure', level: 'WARNING' });
   });
 
-  it('sends DANGER after WARNING, and nothing when the pressure falls back', () => {
+  it('sends DANGER after WARNING, and nothing when the pressure falls back from DANGER', () => {
     const { sent } = run([0.8, 0.95, 0.1, 0.95]);
     expect(sent.map((message) => message.level)).toEqual(['WARNING', 'DANGER']);
+  });
+
+  it('knows the live level, and sends WARNING again after it fell back', () => {
+    const { sent, levels } = run([0.8, 0.1, 0.8]);
+    expect(levels).toEqual(['WARNING', undefined, 'WARNING']);
+    expect(sent.map((message) => message.level)).toEqual(['WARNING', 'WARNING']);
+  });
+
+  it('keeps DANGER as the level', () => {
+    expect(run([0.95, 0.1]).levels).toEqual(['DANGER', 'DANGER']);
   });
 
   it('treats a failed reading as no pressure and says so once per failure', () => {

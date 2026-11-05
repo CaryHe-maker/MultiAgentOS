@@ -6,6 +6,7 @@ import {
   type SandboxRunner,
   type SubprocessRunner,
 } from '@multiagentos/contracts';
+import { createSandboxedGit } from './sandbox/sandboxed-git.js';
 
 /** A capability that refuses without touching a credential or starting a process. */
 const DENY_CREDENTIALS: ProviderCredentials = {
@@ -45,9 +46,11 @@ export function createExecutorEnvironment(
     limits: request.limits,
     signal,
     subprocess:
-      request.executionKind === 'REPOSITORY_SEARCH' || request.executionKind === 'GIT_INSPECT'
-        ? deps.subprocess
-        : DENY_SUBPROCESS,
+      request.executionKind === 'GIT_INSPECT' && request.scope.kind === 'REPOSITORY'
+        ? createSandboxedGit(deps.subprocess, deps.sandbox, request.scope.repositoryRoot)
+        : request.executionKind === 'REPOSITORY_SEARCH' || request.executionKind === 'GIT_INSPECT'
+          ? deps.subprocess
+          : DENY_SUBPROCESS,
     sandbox: request.executionKind === 'COMMAND' ? deps.sandbox : DENY_SANDBOX,
     credentials: request.executionKind === 'MODEL' ? deps.credentials : DENY_CREDENTIALS,
     now: deps.now,

@@ -21997,8 +21997,7 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 1024
-                      },
-                      "minItems": 1
+                      }
                     },
                     "network": {
                       "type": "boolean"
@@ -23444,8 +23443,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 1024
-                  },
-                  "minItems": 1
+                  }
                 },
                 "network": {
                   "type": "boolean"

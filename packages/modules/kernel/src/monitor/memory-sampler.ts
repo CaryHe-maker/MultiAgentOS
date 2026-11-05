@@ -28,6 +28,20 @@ export interface MemoryThresholds {
   readonly dangerRatio: number;
 }
 
+/**
+ * The level of a sample. What this process holds (RSS against its limit, V8 heap) may reach
+ * DANGER; the whole machine running short (other programs) only ever reaches WARNING, because
+ * interrupting a run does not give that memory back and must not end the user's work.
+ */
+export function levelOfSample(
+  sample: MemorySample,
+  thresholds: MemoryThresholds,
+): MemoryLevel | undefined {
+  const own = levelOf(Math.max(sample.rssRatio, sample.heapRatio), thresholds);
+  const system = levelOf(sample.systemRatio ?? 0, thresholds) === undefined ? undefined : 'WARNING';
+  return own === 'DANGER' ? own : (own ?? system);
+}
+
 export function levelOf(ratio: number, thresholds: MemoryThresholds): MemoryLevel | undefined {
   if (ratio >= thresholds.dangerRatio) return 'DANGER';
   if (ratio >= thresholds.warningRatio) return 'WARNING';
@@ -70,12 +84,18 @@ export interface MemorySampler {
   stop(): void;
   /** One sample, for tests and for starting values. */
   sampleOnce(): void;
+  /** The level of the latest sample; DANGER stays, because the process is about to exit. */
+  level(): MemoryLevel | undefined;
 }
 
-/** A message is sent only when the level rises; falling back does not undo a wrap-up. */
+/**
+ * A message is sent when the level rises. Falling back from WARNING is noticed (`level()`), so a
+ * later rise is sent again; DANGER never falls back.
+ */
 export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
   const read = deps.read ?? readMemorySample;
   let sent: MemoryLevel | undefined;
+  let current: MemoryLevel | undefined;
   let timer: NodeJS.Timeout | undefined;
   const rank = (level: MemoryLevel | undefined): number =>
     level === 'DANGER' ? 2 : level === 'WARNING' ? 1 : 0;
@@ -91,7 +111,9 @@ export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
       return;
     }
     const ratio = pressureRatio(sample);
-    const level = levelOf(ratio, deps.thresholds);
+    const level = levelOfSample(sample, deps.thresholds);
+    if (sent !== 'DANGER') current = level;
+    if (level === undefined && sent === 'WARNING') sent = undefined;
     if (level === undefined || rank(level) <= rank(sent)) return;
     sent = level;
     deps.send({
@@ -105,6 +127,7 @@ export function createMemorySampler(deps: MemorySamplerDeps): MemorySampler {
   };
   return {
     sampleOnce,
+    level: () => current,
     start: () => {
       if (timer !== undefined) return;
       timer = setInterval(sampleOnce, deps.intervalMs);

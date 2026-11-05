@@ -82,8 +82,8 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
 
 | 项 | 规则 |
 |---|---|
-| 采样内容 | 进程 RSS 与 `process.constrainedMemory()`（没有限制时为物理内存）之比、V8 堆用量与 `heap_size_limit` 之比、系统可用内存（Linux 的 `MemAvailable`，能反映沙盒中命令子进程的占用）；取其中最高的占用比 |
-| 级别 | `NORMAL`、`WARNING`（缺省 75%）、`DANGER`（缺省 90%）；初值在 S3-IN-1 按实测校准，只在升高时发消息，恢复时不撤销已发生的收尾 |
+| 采样内容 | 进程 RSS 与 `process.constrainedMemory()`（没有限制时为物理内存）之比、V8 堆用量与 `heap_size_limit` 之比、系统可用内存（Linux 的 `MemAvailable`，能反映沙盒中命令子进程的占用）。进程自身的两个比（RSS、V8 堆）可以到 `DANGER`；系统可用内存不足（其他程序占用）最高只到 `WARNING`——中断本次运行换不回别的程序占用的内存，不应因此结束用户的工作 |
+| 级别 | `NORMAL`、`WARNING`（缺省 75%）、`DANGER`（缺省 90%）；初值在 S3-IN-1 按实测校准，升高时发消息；`WARNING` 回落后再次升高会再发。`level()` 给出最近一次采样的当前级别（`DANGER` 保持），供 Core 判断"压力是否还在"；已发生的收尾（本次 AgentRun 的 `MEMORY_LIMIT`）不撤销 |
 | 职责边界 | 采样器只发 `MemoryPressure`，不持有 Core、Workflow 或运行的任何句柄，不能自己取消、关闭运行或停机；采样和发送本身不分配随运行增长的内存 |
 | 定时器 | `unref`，不阻止进程退出；采样失败时记一次诊断日志，不当作压力 |
 

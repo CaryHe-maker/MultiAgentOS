@@ -324,4 +324,18 @@ describe('the command question', () => {
         reasonCode: 'USER_DECLINED',
       });
   });
+
+  it('refuses the command that was refused and asks again for any other', () => {
+    const auth = authorization();
+    const ask = auth.askCommand(shown('make clean'), false, 'r1', 'run-1');
+    if (ask.decision.kind !== 'PENDING') throw new Error('expected a question');
+    auth.answer(ask.decision.questionId, 'DENY');
+    const run = (line: string, workdir = '') =>
+      auth.decide({ ...demand(command(line, { workdir })), requestId: `r-${line}` }, mainCeiling)
+        .kind;
+    expect(run('make clean')).toBe('REFUSE');
+    expect(run('ls')).toBe('ASK');
+    expect(run('npm test')).toBe('ASK');
+    expect(run('make clean', 'pkg')).toBe('ASK');
+  });
 });

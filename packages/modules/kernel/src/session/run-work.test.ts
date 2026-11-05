@@ -48,6 +48,7 @@ async function setup(
     trusted?: string[];
     command?: CommandSupport;
     interrupted?: () => void;
+    memoryLevel?: () => 'WARNING' | 'DANGER' | undefined;
   } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
@@ -90,6 +91,7 @@ async function setup(
           pinAgent: () => Promise.resolve({ ok: true, agent }),
           preset: options.preset ?? 'standard',
           ...(options.command === undefined ? {} : { command: options.command }),
+          ...(options.memoryLevel === undefined ? {} : { memoryLevel: options.memoryLevel }),
           readProjectFile: () => Promise.resolve(options.file ?? { exists: false }),
           isTrusted: (_path, sha256) => trusted.has(sha256),
           trust: (_path, sha256) => {
@@ -921,6 +923,24 @@ describe('memory pressure', () => {
       outcome: 'REJECTED',
       reasonCode: 'MEMORY_PRESSURE',
     });
+  });
+
+  it('lets work in again once the live level says the pressure is gone', async () => {
+    let level: 'WARNING' | undefined = 'WARNING';
+    const kernel = await setup(undefined, { memoryLevel: () => level });
+    await kernel.register();
+    await kernel.actor.memoryPressure('WARNING');
+    await kernel.submit();
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' },
+    ]);
+    level = undefined;
+    await kernel.submit();
+    await kernel.settled();
+    // Not refused for memory again: the unit went on to ask the user.
+    expect(kernel.reports()).toHaveLength(1);
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
   });
 
   describe('DANGER', () => {

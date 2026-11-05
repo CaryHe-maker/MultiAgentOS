@@ -57,7 +57,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 
 ### 5.1 `repo.read`
 
-第一个需要它的 Unit 询问一次，同意后本运行内的 AgentRun 都可使用；拒绝绑定提出请求的 AgentRun，它之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问，下一个 AgentRun 可以重新询问（M2Design 第 5.3 节）。
+第一个需要它的 Unit 询问一次，同意后本运行内的 AgentRun 都可使用；拒绝绑定提出请求的 AgentRun，它之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问，下一个 AgentRun 可以重新询问（M2Design 第 5.3 节）。`command.exec` 例外：拒绝只绑定被拒的那一条命令（工作目录加命令行），同一 AgentRun 的其他命令照常判定、照常询问。
 询问不超时，一直等到用户回答；只在运行收敛时取消（M2Design 第 5.3 节）——这是相对 M1 的变化，M1 的询问计时器与 `authorizationTimeoutMs` 删除。
 拒绝作为被拒 Unit 的结果交给 Workflow，不改变运行控制状态与 Turn。
 
@@ -116,7 +116,7 @@ requestedCapabilities ⊄ capabilities，或 writeRoots 越出仓库 → 登记�
 ② 能力不在该 AgentRun 的能力上限中                → REJECTED(CAPABILITY_NOT_GRANTED)
 ③ isWritable(profile, path)                      → WRITE_OUT_OF_SCOPE 或 PROTECTED_PATH
 ④ 查找覆盖该能力与资源键的条目（极危险级跳过）   → 允许：签发 Lease；拒绝：USER_DECLINED
-   该 AgentRun 已拒绝过同一项能力                → USER_DECLINED，不询问
+   该 AgentRun 已拒绝过同一项能力                → USER_DECLINED，不询问（`command.exec`：只对同一条命令）
 ⑤ 没有条目 → 发起询问，挂起尝试；相同询问合并；回答形成条目后回到 ④
 判定过程本身出错                                 → REJECTED(ADMISSION_CHECK_FAILED)
 ```

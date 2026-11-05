@@ -271,6 +271,53 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     expect(result).toEqual({ kind: 'REFUSED', reason: 'APPROVAL_MISMATCH' });
   });
 
+  it('sees no runtime directory of the host and no other disk', async () => {
+    const result = await exec('ls -A /run | wc -l; find /mnt /media -mindepth 1 2>&1 | wc -l');
+    const [run, other] = result.output.trim().split('\n');
+    expect(run?.trim()).toBe('0');
+    expect(other?.trim()).toBe('0');
+  });
+
+  it('shows .git/config without the credentials of a remote', async () => {
+    writeFileSync(
+      join(repo, '.git', 'config'),
+      '[remote "origin"]\n\turl = https://me:ghp_secret@host/o/r.git\n',
+    );
+    try {
+      const result = await exec('cat .git/config');
+      expect(result.output).toContain('https://host/o/r.git');
+      expect(result.output).not.toContain('ghp_secret');
+      expect(readFileSync(join(repo, '.git', 'config'), 'utf8')).toContain('ghp_secret');
+    } finally {
+      writeFileSync(join(repo, '.git', 'config'), '[core]\n');
+    }
+  });
+
+  it('gives a command a /tmp of limited size and a limit on new processes', async () => {
+    const { scope, command } = scopeFor(
+      'head -c 3000000 /dev/zero > /tmp/big; echo size:$(stat -c %s /tmp/big); for i in 1 2 3 4 5 6 7 8; do sleep 2 >/dev/null 2>&1 & done; echo forked:$(jobs -p | wc -l)',
+    );
+    const limited = createSandboxRunner({
+      emptyFile,
+      cancelGraceMs: 400,
+      killGraceMs: 400,
+      home,
+      tmpBytes: 1_000_000,
+      maxProcesses: 6,
+    });
+    const result = await limited.run({
+      scope,
+      command,
+      timeoutMs: 10_000,
+      maxOutputBytes: 100_000,
+      signal: new AbortController().signal,
+    });
+    if (result.kind !== 'RAN') throw new Error('refused');
+    expect(result.output).toMatch(/size:1000000|No space left/u);
+    expect(result.output).not.toContain('size:3000000');
+    expect(result.output).not.toContain('forked:8');
+  });
+
   it('never keeps more output than it was allowed', async () => {
     const { scope, command } = scopeFor('yes | head -c 200000');
     const result = await runner().run({

@@ -301,6 +301,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         deps.mainBudget,
       ),
       scheduler: new Scheduler(capacity),
+      memoryLevel: () => sampler.level(),
       provider: config.provider,
       technicalRetryLimit: config.technicalRetryLimit,
       repositoryRoot,
