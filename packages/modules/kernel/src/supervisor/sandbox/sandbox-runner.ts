@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { release } from 'node:os';
+import { release, totalmem } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 import {
   StopUnconfirmedError,
@@ -47,6 +47,8 @@ export interface SandboxRunnerDeps {
   readonly maxProcesses?: number;
   /** Size of the biggest file a command may write; default 2 GiB. */
   readonly maxFileBytes?: number;
+  /** Memory a command may fill; default half of the machine's memory. */
+  readonly maxDataBytes?: number;
 }
 
 export interface TrackedSandboxRunner extends SandboxRunner {
@@ -191,6 +193,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
                 maxProcesses:
                   (deps.maxProcesses ?? 2048) + (countsPerNamespace() ? 0 : userProcesses()),
                 maxFileBytes: deps.maxFileBytes ?? 2 * 1024 * 1024 * 1024,
+                maxDataBytes: deps.maxDataBytes ?? Math.floor(totalmem() / 2),
               },
             }
           : {}),

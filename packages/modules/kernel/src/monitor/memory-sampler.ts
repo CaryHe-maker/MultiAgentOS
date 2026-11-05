@@ -46,10 +46,43 @@ export function systemLevelOf(
   return levelOf(sample.systemRatio ?? 0, thresholds) === undefined ? undefined : 'WARNING';
 }
 
+/** What this program may use of the memory it has: the rest is for the commands and the system. */
+export const HEAP_SHARE_OF_MEMORY = 0.6;
+
+export interface MemoryFacts {
+  readonly rssBytes: number;
+  /** `process.constrainedMemory()`: 0 or a huge number when no container limit applies. */
+  readonly constrainedBytes: number;
+  readonly physicalBytes: number;
+  readonly heapUsedBytes: number;
+  readonly heapLimitBytes: number;
+  readonly availableBytes?: number;
+}
+
+/**
+ * The two ratios of this process (M2Design 7.7). The heap is measured against the V8 limit, but
+ * never against more than 60% of the memory there is: a limit above that is not reachable before
+ * the system gives up. RSS is measured only against a container limit; without one the machine's
+ * memory is not this program's to run out of, and the system reading covers it.
+ */
+export function memorySampleOf(facts: MemoryFacts): MemorySample {
+  const constrained = facts.constrainedBytes > 0 && facts.constrainedBytes < facts.physicalBytes;
+  const memory = constrained ? facts.constrainedBytes : facts.physicalBytes;
+  const heapCeiling = Math.min(facts.heapLimitBytes, memory * HEAP_SHARE_OF_MEMORY);
+  return {
+    rssBytes: facts.rssBytes,
+    rssRatio: constrained ? facts.rssBytes / facts.constrainedBytes : 0,
+    heapRatio: facts.heapUsedBytes / heapCeiling,
+    ...(facts.availableBytes === undefined
+      ? {}
+      : {
+          systemRatio: 1 - facts.availableBytes / facts.physicalBytes,
+          availableBytes: facts.availableBytes,
+        }),
+  };
+}
+
 export function readMemorySample(): MemorySample {
-  const limit = process.constrainedMemory();
-  const total = limit > 0 && limit < totalmem() ? limit : totalmem();
-  const rssBytes = process.memoryUsage.rss();
   const heap = getHeapStatistics();
   let availableBytes: number | undefined;
   try {
@@ -58,14 +91,14 @@ export function readMemorySample(): MemorySample {
   } catch {
     availableBytes = process.platform === 'linux' ? undefined : freemem();
   }
-  return {
-    rssBytes,
-    rssRatio: rssBytes / total,
-    heapRatio: heap.used_heap_size / heap.heap_size_limit,
-    ...(availableBytes === undefined
-      ? {}
-      : { systemRatio: 1 - availableBytes / totalmem(), availableBytes }),
-  };
+  return memorySampleOf({
+    rssBytes: process.memoryUsage.rss(),
+    constrainedBytes: process.constrainedMemory(),
+    physicalBytes: totalmem(),
+    heapUsedBytes: heap.used_heap_size,
+    heapLimitBytes: heap.heap_size_limit,
+    ...(availableBytes === undefined ? {} : { availableBytes }),
+  });
 }
 
 export interface MemorySamplerDeps {

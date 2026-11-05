@@ -318,6 +318,34 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     expect(result.output).not.toContain('forked:8');
   });
 
+  it('lets a command that fills memory fail instead of the machine', async () => {
+    const { scope, command } = scopeFor(
+      `python3 -c "
+import sys
+x = bytearray(600 * 1024 * 1024)
+print('allocated')
+" 2>&1 | tail -2; echo done`,
+    );
+    const limited = createSandboxRunner({
+      emptyFile,
+      cancelGraceMs: 400,
+      killGraceMs: 400,
+      home,
+      maxDataBytes: 200 * 1024 * 1024,
+    });
+    const result = await limited.run({
+      scope,
+      command,
+      timeoutMs: 20_000,
+      maxOutputBytes: 100_000,
+      signal: new AbortController().signal,
+    });
+    if (result.kind !== 'RAN') throw new Error('refused');
+    expect(result.output).toMatch(/MemoryError|Cannot allocate/u);
+    expect(result.output).not.toContain('allocated');
+    expect(result.output).toContain('done');
+  });
+
   it('never keeps more output than it was allowed', async () => {
     const { scope, command } = scopeFor('yes | head -c 200000');
     const result = await runner().run({

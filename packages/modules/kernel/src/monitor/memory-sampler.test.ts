@@ -4,6 +4,7 @@ import type { MemoryPressure } from '@multiagentos/contracts';
 import {
   createMemorySampler,
   levelOf,
+  memorySampleOf,
   processRatio,
   systemLevelOf,
   type MemorySample,
@@ -35,6 +36,43 @@ describe('levels', () => {
     expect(systemLevelOf(sample(0.1, 0.99), thresholds)).toBe('WARNING');
     expect(systemLevelOf(sample(0.1, 0.5), thresholds)).toBeUndefined();
     expect(systemLevelOf(sample(0.1), thresholds)).toBeUndefined();
+  });
+});
+
+describe('what is measured', () => {
+  const GB = 1024 ** 3;
+  const facts = {
+    rssBytes: 1 * GB,
+    constrainedBytes: 2 ** 64,
+    physicalBytes: 8 * GB,
+    heapUsedBytes: 1 * GB,
+    heapLimitBytes: 2 * GB,
+  };
+
+  it('does not measure RSS against the machine: only a container limit counts', () => {
+    expect(memorySampleOf(facts).rssRatio).toBe(0);
+    expect(memorySampleOf({ ...facts, constrainedBytes: 0 }).rssRatio).toBe(0);
+    expect(memorySampleOf({ ...facts, constrainedBytes: 2 * GB }).rssRatio).toBe(0.5);
+  });
+
+  it('measures the heap against the V8 limit', () => {
+    expect(memorySampleOf(facts).heapRatio).toBe(0.5);
+  });
+
+  it('never against more than 60% of the memory there is', () => {
+    // A 4 GB limit on an 8 GB machine: 4.8 GB is allowed, so the limit rules.
+    expect(memorySampleOf({ ...facts, heapLimitBytes: 4 * GB }).heapRatio).toBe(0.25);
+    // The same limit on a 4 GB machine: only 2.4 GB can be used.
+    const small = memorySampleOf({ ...facts, physicalBytes: 4 * GB, heapLimitBytes: 4 * GB });
+    expect(small.heapRatio).toBeCloseTo(1 / 2.4, 5);
+    // In a 3 GB container too.
+    const boxed = memorySampleOf({ ...facts, constrainedBytes: 3 * GB, heapLimitBytes: 4 * GB });
+    expect(boxed.heapRatio).toBeCloseTo(1 / 1.8, 5);
+  });
+
+  it('reads the machine from what is available', () => {
+    expect(memorySampleOf({ ...facts, availableBytes: 2 * GB }).systemRatio).toBe(0.75);
+    expect(memorySampleOf(facts).systemRatio).toBeUndefined();
   });
 });
 

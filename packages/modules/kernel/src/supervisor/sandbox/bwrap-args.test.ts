@@ -142,15 +142,16 @@ describe('buildBwrapArgs', () => {
     const args = buildBwrapArgs(
       input({
         tmpBytes: 1024,
-        limits: { maxProcesses: 300, maxFileBytes: 4096 },
+        limits: { maxProcesses: 300, maxFileBytes: 4096, maxDataBytes: 8192 },
       }),
     );
     expect(at(args, '--size', '1024', '--tmpfs', '/tmp')).toBeGreaterThan(-1);
-    expect(args.slice(-8)).toEqual([
+    expect(args.slice(-9)).toEqual([
       '--',
       'prlimit',
       '--nproc=300',
       '--fsize=4096',
+      '--data=8192',
       '--',
       '/bin/bash',
       '-c',

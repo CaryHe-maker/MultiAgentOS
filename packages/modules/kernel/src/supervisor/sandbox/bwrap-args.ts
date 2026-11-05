@@ -31,7 +31,12 @@ export interface BwrapInput {
   /** Size of the private /tmp. */
   readonly tmpBytes?: number;
   /** Limits of the command's processes, applied with `prlimit` inside the sandbox. */
-  readonly limits?: { readonly maxProcesses: number; readonly maxFileBytes: number };
+  readonly limits?: {
+    readonly maxProcesses: number;
+    readonly maxFileBytes: number;
+    /** Private writable memory (`RLIMIT_DATA`): a command that fills it fails, the system does not. */
+    readonly maxDataBytes?: number;
+  };
   /** Mounts for paths that do not exist make `bwrap` fail; the caller says which exist. */
   readonly exists: (absolutePath: string) => boolean;
 }
@@ -117,6 +122,9 @@ export function buildBwrapArgs(input: BwrapInput): string[] {
       'prlimit',
       `--nproc=${String(input.limits.maxProcesses)}`,
       `--fsize=${String(input.limits.maxFileBytes)}`,
+      ...(input.limits.maxDataBytes === undefined
+        ? []
+        : [`--data=${String(input.limits.maxDataBytes)}`]),
       '--',
     );
   args.push(input.shell ?? '/bin/bash', '-c', input.command);
