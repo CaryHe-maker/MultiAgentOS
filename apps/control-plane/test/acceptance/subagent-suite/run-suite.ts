@@ -135,8 +135,7 @@ async function wrapUpsOf(directory: string): Promise<string[]> {
       const next = join(path, entry.name);
       if (entry.isDirectory()) await walk(next);
       else if (entry.name.endsWith('.jsonl'))
-        for (const line of (await readFile(next, 'utf8').catch(() => '')).split('
-'))
+        for (const line of (await readFile(next, 'utf8').catch(() => '')).split('\n'))
           if (line.includes('"AGENT_WRAP_UP"')) found.push(line.slice(0, 200));
     }
   };
@@ -179,7 +178,7 @@ function mainRounds(provider: ScriptedChat): string[] {
       .slice(index + 1)
       .filter((each) => each.role === 'tool')
       .slice(0, calls.length)
-      .map((each) => textOf(each).replace(/s+/gu, ' ').slice(0, 70));
+      .map((each) => textOf(each).replace(/\s+/gu, ' ').slice(0, 70));
     rounds.push(`${calls.join(',')} => ${answers.join(' | ')}`);
   }
   return rounds;
