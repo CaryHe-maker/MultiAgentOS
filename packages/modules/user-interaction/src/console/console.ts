@@ -64,6 +64,37 @@ function scopeOf(
   return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
 }
 
+/** One AgentRun of the current run, for `/timeline`. */
+interface TimelineEntry {
+  readonly agentRunId: string;
+  readonly parentAgentRunId?: string;
+  readonly label: string;
+  readonly from: string;
+  to?: string;
+}
+
+/** Items in the order a tree is drawn: children under the parent that started them. */
+function inTree<
+  T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
+>(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
+  const known = new Set(items.map((item) => item.agentRunId));
+  const ordered: { item: T; depth: number; branch: string }[] = [];
+  const visit = (parent: string | undefined, depth: number, indent: string): void => {
+    const siblings = items.filter((item) =>
+      parent === undefined
+        ? item.parentAgentRunId === undefined || !known.has(item.parentAgentRunId)
+        : item.parentAgentRunId === parent,
+    );
+    for (const [index, item] of siblings.entries()) {
+      const last = index === siblings.length - 1;
+      ordered.push({ item, depth, branch: depth === 0 ? '' : `${indent}${last ? '└─ ' : '├─ '}` });
+      visit(item.agentRunId, depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+    }
+  };
+  visit(undefined, 0, '');
+  return ordered;
+}
+
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
 }
@@ -82,10 +113,7 @@ export class Console {
   #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
   /** Every AgentRun of the current run, in the order it appeared (`/timeline`). */
-  readonly #timeline = new Map<
-    string,
-    { label: string; parent?: string; from: string; to?: string }
-  >();
+  readonly #timeline: TimelineEntry[] = [];
   #timelineRun: string | undefined;
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
@@ -134,52 +162,25 @@ export class Console {
 
   /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
   #activityTree(): ActivityLine[] {
-    const lines = [...this.#activity.values()];
-    const children = (parent: string | undefined) =>
-      lines.filter((line) =>
-        parent === undefined
-          ? line.parentAgentRunId === undefined || !this.#activity.has(line.parentAgentRunId)
-          : line.parentAgentRunId === parent,
-      );
-    const ordered: ActivityLine[] = [];
-    const visit = (parent: string | undefined, indent: string): void => {
-      const siblings = children(parent);
-      for (const [index, line] of siblings.entries()) {
-        const last = index === siblings.length - 1;
-        const branch = parent === undefined ? '' : `${indent}${last ? '└─ ' : '├─ '}`;
-        ordered.push({ ...line, branch });
-        visit(line.agentRunId, parent === undefined ? '  ' : `${indent}${last ? '   ' : '│  '}`);
-      }
-    };
-    visit(undefined, '');
-    return ordered;
+    return inTree([...this.#activity.values()]).map(({ item, branch }) => ({ ...item, branch }));
   }
 
   /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
   #showTimeline(): void {
-    if (this.#timeline.size === 0) {
+    if (this.#timeline.length === 0) {
       this.#notice(text.timelineEmpty);
       return;
     }
     const now = this.#now().toISOString();
-    const lines: string[] = [];
-    const visit = (parent: string | undefined, depth: number): void => {
-      for (const [id, entry] of this.#timeline) {
-        const isChild = entry.parent !== undefined && this.#timeline.has(entry.parent);
-        if (parent === undefined ? isChild : entry.parent !== parent) continue;
-        lines.push(
-          text.timelineLine(
-            '  '.repeat(depth),
-            entry.label,
-            entry.from,
-            entry.to,
-            secondsBetween(entry.from, entry.to ?? now),
-          ),
-        );
-        visit(id, depth + 1);
-      }
-    };
-    visit(undefined, 0);
+    const lines = inTree(this.#timeline).map(({ item, depth }) =>
+      text.timelineLine(
+        '  '.repeat(depth),
+        item.label,
+        item.from,
+        item.to,
+        secondsBetween(item.from, item.to ?? now),
+      ),
+    );
     this.#notice(lines.join('\n'));
   }
 
@@ -594,7 +595,7 @@ export class Console {
     this.#workflowRunId = envelope.workflowRunId;
     if (this.#timelineRun !== envelope.workflowRunId) {
       this.#timelineRun = envelope.workflowRunId;
-      this.#timeline.clear();
+      this.#timeline.length = 0;
     }
     switch (event.type) {
       case 'RunStateChanged':
@@ -658,13 +659,17 @@ export class Console {
                 `${String(todos.completed)}/${String(todos.total)}${todos.current === undefined ? '' : ` · ${todos.current}`}`,
               );
         const shown = tool ?? progress;
-        const known = this.#timeline.get(event.agentRunId);
-        this.#timeline.set(event.agentRunId, {
-          label: terminalText(event.label),
-          ...(event.parentAgentRunId === undefined ? {} : { parent: event.parentAgentRunId }),
-          from: known?.from ?? event.at,
-          ...(event.phase === 'ENDED' ? { to: event.at } : {}),
-        });
+        const entry = this.#timeline.find((each) => each.agentRunId === event.agentRunId);
+        if (entry === undefined)
+          this.#timeline.push({
+            agentRunId: event.agentRunId,
+            ...(event.parentAgentRunId === undefined
+              ? {}
+              : { parentAgentRunId: event.parentAgentRunId }),
+            label: terminalText(event.label),
+            from: event.at,
+          });
+        if (event.phase === 'ENDED' && entry !== undefined) entry.to = event.at;
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
           ...(event.parentAgentRunId === undefined

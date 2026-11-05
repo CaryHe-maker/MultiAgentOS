@@ -1048,14 +1048,12 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     capabilities: ['repo.read', 'workspace.write'],
     units: [fileRead, fileWrite, publish],
     budget: childBudget,
-    defaultShare,
   });
   const explorerAgent = testPinnedAgent({
     id: 'explorer',
     capabilities: ['repo.read'],
     units: [fileRead, publish],
     budget: childBudget,
-    defaultShare,
   });
   const agents: Record<string, PinnedAgent> = {
     main: mainAgent,
@@ -1080,7 +1078,11 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
       const agent = agents[agentRef.id];
       return agent === undefined
         ? { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' }
-        : { ok: true, defaultShare: agent.defaultShare, budget: agent.budget };
+        : {
+            ok: true,
+            defaultShare: agent.id === 'main' ? undefined : defaultShare,
+            budget: agent.budget,
+          };
     },
   };
   const open = async (over: { budgetTurns?: number } = {}) => {

@@ -10,7 +10,7 @@
 
 ## 2. 测试集
 
-目录 `apps/control-plane/test/acceptance/subagent-suite/`。每个任务有夹具（仓库内容）、检查脚本（在模型之外判定最终状态）和参考解（检查脚本必须在夹具上判失败、在参考解上判通过，由 `selfcheck.test.ts` 保证）。
+目录 `apps/control-plane/test/acceptance/subagent-suite/`（`cases.ts` 定义任务，`harness.ts` 是它们共用的部分，`run-suite.ts` 是运行器）。同一种任务的两个规模（C1 与 L1、C3 与 L3、C5 与 L5）由同一个构造函数生成，只有规模不同（实验之后把手写的小夹具改为生成，形状不变：端点 10 个、库 5 个、目录 6 个）。每个任务有夹具（仓库内容）、检查脚本（在模型之外判定最终状态）和参考解（检查脚本必须在夹具上判失败、在参考解上判通过，由 `selfcheck.test.ts` 保证）。
 
 | 任务 | 内容 | 依赖的由来 |
 |---|---|---|

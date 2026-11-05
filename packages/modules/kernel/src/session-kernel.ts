@@ -320,9 +320,11 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       },
       schedule,
       now,
-      maxConcurrentAttempts: config.maxConcurrentAttempts,
-      maxConcurrentExec: config.maxConcurrentExec,
-      serialExecution: config.serialExecution,
+      limits: {
+        maxAttempts: config.maxConcurrentAttempts,
+        maxExec: config.maxConcurrentExec,
+        serial: config.serialExecution,
+      },
     });
     executions.set(host.workflowRunId, execution);
     const work = new RunWork({

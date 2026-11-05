@@ -24,7 +24,13 @@ export const finalReserve = (agent: AgentBudget): number =>
   agent.finalInputBudget + agent.finalMaxOutputTokens;
 export const wrapUpMargin = (agent: AgentBudget): number =>
   agent.perCallInputLimit + agent.maxOutputTokens;
-export const minShare = (agent: AgentBudget): number => agentMinShare(agent);
+export const minShare = agentMinShare;
+
+/** A ledger whose limit is below `minShare` can only wrap up, so it is at least in WRAP_UP. */
+function stateOf(ledger: Monitor, limit: number, agent: AgentBudget): BudgetState {
+  const state = ledger.budgetState();
+  return state === 'NORMAL' && limit < minShare(agent) ? 'WRAP_UP' : state;
+}
 
 /** The startup checks that need no model or prompt (Kernel/Monitor 6). */
 export function assertBudgetsConsistent(budget: RunBudget, main: AgentBudget): void {
@@ -46,6 +52,23 @@ export function assertBudgetsConsistent(budget: RunBudget, main: AgentBudget): v
     throw new MonitorInvariantError('runTokenLimit is below turnTokenLimit');
 }
 
+/** What ledgers used: the one shape of every sum below. */
+interface Usage {
+  used: number;
+  unknown: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+const noUsage = (): Usage => ({ used: 0, unknown: 0, inputTokens: 0, outputTokens: 0 });
+
+function addUsage(target: Usage, more: Usage): void {
+  target.used += more.used;
+  target.unknown += more.unknown;
+  target.inputTokens += more.inputTokens;
+  target.outputTokens += more.outputTokens;
+}
+
 interface TurnLedger {
   readonly turnId: string;
   readonly limit: number;
@@ -53,7 +76,7 @@ interface TurnLedger {
   modelRequests: number;
   toolUnits: number;
   /** What the ledgers of the Turn's SubAgents used, for the Turn's usage. */
-  readonly below: { used: number; unknown: number; inputTokens: number; outputTokens: number };
+  readonly below: Usage;
 }
 
 /** The ledger of an AgentRun that was funded by a delegation (M2Design 7.3). */
@@ -92,15 +115,13 @@ export class RunLedgers {
   readonly #toolUnits = new Map<string, number>();
   /** AgentRuns below main, by id; main (and any AgentRun without a parent) uses the Turn's ledger. */
   readonly #agents = new Map<string, AgentLedger>();
-  /** The AgentRuns that spend from the Turn's ledger, with their definitions' budget. */
-  readonly #topLevel = new Map<string, AgentBudget>();
   readonly #delegations = new Map<string, Delegation>();
   readonly #owners = new Map<string, Monitor>();
   readonly #overTime = new Set<string>();
   #remaining: number;
   #turn: TurnLedger | undefined;
   /** What the closed Turns used, for the RunSummary. */
-  readonly #closed = { used: 0, unknown: 0, inputTokens: 0, outputTokens: 0 };
+  readonly #closed = noUsage();
 
   public constructor(budget: RunBudget, main: AgentBudget) {
     assertBudgetsConsistent(budget, main);
@@ -114,15 +135,8 @@ export class RunLedgers {
     const limit = Math.min(this.#budget.turnTokenLimit, this.#remaining);
     this.#remaining -= limit;
     const ledger = new Monitor({ ...this.#main, tokenLimit: limit }, { allowShortLimit: true });
-    this.#turn = {
-      turnId,
-      limit,
-      ledger,
-      modelRequests: 0,
-      toolUnits: 0,
-      below: { used: 0, unknown: 0, inputTokens: 0, outputTokens: 0 },
-    };
-    return { state: limit < minShare(this.#main) ? 'WRAP_UP' : ledger.budgetState() };
+    this.#turn = { turnId, limit, ledger, modelRequests: 0, toolUnits: 0, below: noUsage() };
+    return { state: stateOf(ledger, limit, this.#main) };
   }
 
   #openTurn(): TurnLedger {
@@ -137,19 +151,16 @@ export class RunLedgers {
     // An AgentRun still open ends with the Turn: what it did not settle is unknown.
     for (const id of [...this.#agents.keys()]) this.endAgentRun(id);
     this.#delegations.clear();
-    this.#topLevel.clear();
-    const summary = turn.ledger.finalize();
-    const { below } = turn;
-    this.#remaining += turn.limit - summary.used - summary.unknown - below.used - below.unknown;
-    this.#closed.used += summary.used + below.used;
-    this.#closed.unknown += summary.unknown + below.unknown;
-    this.#closed.inputTokens += summary.inputTokens + below.inputTokens;
-    this.#closed.outputTokens += summary.outputTokens + below.outputTokens;
+    const total = noUsage();
+    addUsage(total, turn.ledger.finalize());
+    addUsage(total, turn.below);
+    this.#remaining += turn.limit - total.used - total.unknown;
+    addUsage(this.#closed, total);
     this.#turn = undefined;
     return {
-      inputTokens: summary.inputTokens + below.inputTokens,
-      outputTokens: summary.outputTokens + below.outputTokens,
-      unknownTokens: summary.unknown + below.unknown,
+      inputTokens: total.inputTokens,
+      outputTokens: total.outputTokens,
+      unknownTokens: total.unknown,
       modelRequests: turn.modelRequests,
       toolUnits: turn.toolUnits,
     };
@@ -185,11 +196,6 @@ export class RunLedgers {
     const turn = this.#openTurn();
     if (agentRunId === undefined) return turn.ledger;
     return this.#agents.get(agentRunId)?.ledger ?? turn.ledger;
-  }
-
-  /** An AgentRun that spends from the Turn's ledger, such as main, with its Agent's budget. */
-  registerTopLevel(agentRunId: string, agent: AgentBudget): void {
-    this.#topLevel.set(agentRunId, agent);
   }
 
   /**
@@ -249,8 +255,7 @@ export class RunLedgers {
       share,
       ledger,
     });
-    // A share below minShare opens in WRAP_UP: it can only wrap up, and Workflow does so.
-    return { state: share < minShare(request.agent) ? 'WRAP_UP' : ledger.budgetState() };
+    return { state: stateOf(ledger, share, request.agent) };
   }
 
   /**
@@ -278,13 +283,7 @@ export class RunLedgers {
     this.#agents.delete(agentRunId);
     const summary = agent.ledger.finalize();
     this.#ledgerOf(agent.parent).settleLoan(agent.share, summary.used + summary.unknown);
-    const turn = this.#turn;
-    if (turn !== undefined) {
-      turn.below.used += summary.used;
-      turn.below.unknown += summary.unknown;
-      turn.below.inputTokens += summary.inputTokens;
-      turn.below.outputTokens += summary.outputTokens;
-    }
+    if (this.#turn !== undefined) addUsage(this.#turn.below, summary);
   }
 
   /** What the run would hold if the current Turn ended now (Kernel/Monitor 3.1). */
@@ -298,10 +297,7 @@ export class RunLedgers {
   /** The state of the Turn's ledger; a share too small to work with opens in WRAP_UP. */
   #turnState(): BudgetState {
     const turn = this.#turn;
-    if (turn === undefined) return 'NORMAL';
-    return turn.limit < minShare(this.#main) && turn.ledger.budgetState() === 'NORMAL'
-      ? 'WRAP_UP'
-      : turn.ledger.budgetState();
+    return turn === undefined ? 'NORMAL' : stateOf(turn.ledger, turn.limit, this.#main);
   }
 
   /**
@@ -311,12 +307,7 @@ export class RunLedgers {
   budgetView(agentRunId?: string): BudgetView {
     const turn = this.#turnState();
     const own = agentRunId === undefined ? undefined : this.#agents.get(agentRunId);
-    const state: BudgetState =
-      own === undefined
-        ? turn
-        : own.share < minShare(own.agent) && own.ledger.budgetState() === 'NORMAL'
-          ? 'WRAP_UP'
-          : own.ledger.budgetState();
+    const state = own === undefined ? turn : stateOf(own.ledger, own.share, own.agent);
     return { agentRun: state, turn, run: this.#runState() };
   }
 

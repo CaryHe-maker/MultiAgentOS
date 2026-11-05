@@ -238,29 +238,23 @@ const withdrawnOf = (state: AgentState): readonly string[] =>
     ? [state.definitions.spawnTool.toolName]
     : [];
 
-/** The same for a finishing call: nothing ran, and the model is told what to correct. */
-function controlArgumentsText(
+/**
+ * Why a call's arguments were refused, so the model corrects them instead of guessing. `lead` is
+ * what the refusal says first: that the call did not run, or that it was not taken.
+ */
+function invalidArgumentsText(
+  lead: string,
   checked: ReturnType<typeof validate> | undefined,
   notJson: boolean,
 ): string {
-  const base = 'The arguments of the call do not match its parameters';
-  if (notJson) return `${base}: they are not valid JSON.`;
-  if (checked === undefined || checked.ok) return `${base}.`;
-  const text = `${base}: ${checked.issues.slice(0, 3).join('; ')}`;
+  if (notJson) return `${lead}: they are not valid JSON.`;
+  if (checked === undefined || checked.ok) return `${lead}.`;
+  const text = `${lead}: ${checked.issues.slice(0, 3).join('; ')}`;
   return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
 }
 
-/** Why a tool's arguments were refused, so the model can correct them instead of guessing. */
-function invalidArgumentsText(
-  checked: ReturnType<typeof validate> | undefined,
-  notJson: boolean,
-): string {
-  const base = 'Not executed: the arguments do not match the tool parameters';
-  if (notJson) return `${base}: they are not valid JSON.`;
-  if (checked === undefined || checked.ok) return `${base}.`;
-  const text = `${base}: ${checked.issues.slice(0, 3).join('; ')}`;
-  return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
-}
+const NOT_EXECUTED = 'Not executed: the arguments do not match the tool parameters';
+const NOT_TAKEN = 'The arguments of the call do not match its parameters';
 
 const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
 
@@ -602,7 +596,7 @@ function handleModel(
             state,
             'INVALID_ARGUMENTS',
             call.toolCallId,
-            invalidArgumentsText(args, call.arguments === null),
+            invalidArgumentsText(NOT_EXECUTED, args, call.arguments === null),
           ),
         );
         refusedTodos = true;
@@ -657,6 +651,59 @@ function handleModel(
   return activity === undefined ? transition : { ...transition, activity };
 }
 
+/**
+ * A control call that must come alone: it ends the AgentRun, or suspends it until its tasks have
+ * ended (M2Design 3.5). Both are checked the same way; only the parameters, the final call and
+ * what follows differ.
+ */
+interface SoleControl {
+  readonly call: ModelToolCall;
+  readonly parameters: Schema;
+  readonly allowedInFinal: boolean;
+  readonly ending: (source: ControlSource) => AgentEnding;
+}
+
+function soleControlOf(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+): SoleControl | undefined {
+  const spawn = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
+  for (const call of calls) {
+    const tool = state.definitions.endTools.find((each) => each.toolName === call.toolName);
+    if (tool !== undefined)
+      return {
+        call,
+        parameters: tool.parameters,
+        allowedInFinal: tool.allowedInFinal,
+        ending: (source) => ({ kind: 'ENDED', tool, arguments: call.arguments, source }),
+      };
+    if (spawn !== undefined && call.toolName === spawn.toolName)
+      return {
+        call,
+        parameters: spawn.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
+      };
+  }
+  return undefined;
+}
+
+/** Why a sole control call is not taken, if it is not: with the reason the model can act on. */
+function soleRefusal(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+  { call, parameters, allowedInFinal }: SoleControl,
+): { readonly code: FeedbackCode; readonly detail?: string } | undefined {
+  if (calls.length > 1) return { code: 'CONTROL_MIXED' };
+  if (state.final && !allowedInFinal) return { code: 'CONTROL_NOT_ALLOWED' };
+  const checked = call.arguments === null ? undefined : validate(parameters, call.arguments);
+  if (checked !== undefined && checked.ok) return undefined;
+  return {
+    code: 'CONTROL_ARGUMENTS_INVALID',
+    detail: invalidArgumentsText(NOT_TAKEN, checked, call.arguments === null),
+  };
+}
+
 function actOn(
   state: AgentState,
   report: Extract<UnitReport, { status: 'OK' }>,
@@ -665,74 +712,19 @@ function actOn(
   config: AgentConfig,
   records: NewLogRecord[],
 ): AgentTransition {
-  const endTool = (call: ModelToolCall) =>
-    state.definitions.endTools.find((tool) => tool.toolName === call.toolName);
-  const control = calls.find((call) => endTool(call) !== undefined);
-  const tool = control === undefined ? undefined : endTool(control);
-  if (control !== undefined && tool !== undefined) {
-    if (calls.length > 1)
-      return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
-    if (state.final && !tool.allowedInFinal)
-      return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    const controlChecked =
-      control.arguments === null ? undefined : validate(tool.parameters, control.arguments);
-    if (controlChecked === undefined || !controlChecked.ok)
-      return invalidReply(
-        state,
-        'CONTROL_ARGUMENTS_INVALID',
-        calls,
-        context,
-        config,
-        records,
-        controlArgumentsText(controlChecked, control.arguments === null),
-      );
+  const sole = soleControlOf(state, calls);
+  if (sole !== undefined) {
+    const refusal = soleRefusal(state, calls, sole);
+    if (refusal !== undefined)
+      return invalidReply(state, refusal.code, calls, context, config, records, refusal.detail);
     if (report.outputRef === undefined) throw new Error('A model report has no output reference');
     return ended(
       state,
-      {
-        kind: 'ENDED',
-        tool,
-        arguments: control.arguments,
-        source: {
-          modelTurnRequestId: report.requestId,
-          modelOutputRef: report.outputRef,
-          toolCallId: control.toolCallId,
-        },
-      },
-      records,
-    );
-  }
-  const spawnTool = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
-  const spawn = calls.find((call) => call.toolName === spawnTool?.toolName);
-  if (spawn !== undefined && spawnTool !== undefined) {
-    if (calls.length > 1)
-      return invalidReply(state, 'CONTROL_MIXED', calls, context, config, records);
-    if (state.final)
-      return invalidReply(state, 'CONTROL_NOT_ALLOWED', calls, context, config, records);
-    const spawnChecked =
-      spawn.arguments === null ? undefined : validate(spawnTool.parameters, spawn.arguments);
-    if (spawnChecked === undefined || !spawnChecked.ok)
-      return invalidReply(
-        state,
-        'CONTROL_ARGUMENTS_INVALID',
-        calls,
-        context,
-        config,
-        records,
-        controlArgumentsText(spawnChecked, spawn.arguments === null),
-      );
-    if (report.outputRef === undefined) throw new Error('A model report has no output reference');
-    return ended(
-      state,
-      {
-        kind: 'SPAWN',
-        arguments: spawn.arguments,
-        source: {
-          modelTurnRequestId: report.requestId,
-          modelOutputRef: report.outputRef,
-          toolCallId: spawn.toolCallId,
-        },
-      },
+      sole.ending({
+        modelTurnRequestId: report.requestId,
+        modelOutputRef: report.outputRef,
+        toolCallId: sole.call.toolCallId,
+      }),
       records,
     );
   }
@@ -770,7 +762,7 @@ function actOn(
           state,
           'INVALID_ARGUMENTS',
           call.toolCallId,
-          invalidArgumentsText(checked, call.arguments === null),
+          invalidArgumentsText(NOT_EXECUTED, checked, call.arguments === null),
         ),
       );
       continue;

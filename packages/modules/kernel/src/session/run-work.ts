@@ -4,6 +4,7 @@ import {
   newId,
   normalizeRequestPath,
   writableRoots,
+  writeRootsWithin,
   type CommandInput,
   type DelegationReserved,
   type ReleaseDelegationRequest,
@@ -37,7 +38,7 @@ import { RequestLedger } from './request-ledger.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { minShare, type RunLedgers } from '../monitor/index.js';
 import type { AgentShare } from './pinned-agent.js';
-import { RunDelegations, rootsWithin } from './run-delegations.js';
+import { RunDelegations } from './run-delegations.js';
 import {
   RunAttempts,
   type AttemptAudit,
@@ -157,6 +158,13 @@ export type ProjectFileRead =
       readonly text: string;
       readonly truncated: boolean;
     };
+
+/** Who a SubAgent was started by, under which delegation, for which task. */
+interface ChildLink {
+  readonly parentAgentRunId: string;
+  readonly delegationId: string;
+  readonly taskName: string;
+}
 
 interface AgentRunRecord {
   /** The AgentRun that spawned this one; absent for a top-level AgentRun. */
@@ -404,8 +412,52 @@ export class RunWork {
       : this.#refuse(requestId, payload, decision.reasonCode);
   }
 
+  /**
+   * Where a registration stands among the AgentRuns (M2Design 6.4): a SubAgent names its parent,
+   * the delegation that funds it and its task, all three or none, and the parent must be running;
+   * a top-level AgentRun is alone until Orchestration runs several (M2Design 2.3).
+   */
+  #placement(
+    request: RegisterAgentRunRequest,
+  ):
+    | { readonly ok: true; readonly child?: ChildLink; readonly parent?: AgentRunRecord }
+    | { readonly ok: false; readonly reasonCode: CoreRejectedCode } {
+    const { parentAgentRunId, delegationId, taskName } = request;
+    const given = [parentAgentRunId, delegationId, taskName].filter((each) => each !== undefined);
+    if (given.length !== 0 && given.length !== 3) return { ok: false, reasonCode: 'INVALID_INPUT' };
+    if (parentAgentRunId === undefined || delegationId === undefined || taskName === undefined) {
+      const taken = [...this.#agentRuns.values()].some(
+        (each) => each.state === 'ACTIVE' && each.parent === undefined,
+      );
+      return taken ? { ok: false, reasonCode: 'AGENT_RUN_ACTIVE' } : { ok: true };
+    }
+    const parent = this.#agentRuns.get(parentAgentRunId);
+    if (parent === undefined) return { ok: false, reasonCode: 'AGENT_RUN_NOT_FOUND' };
+    if (parent.state === 'ENDED') return { ok: false, reasonCode: 'AGENT_RUN_ENDED' };
+    return { ok: true, child: { parentAgentRunId, delegationId, taskName }, parent };
+  }
+
+  /** A SubAgent can do no more than its parent, never spawns, and writes only where its task may. */
+  #childCeilingRefusal(
+    child: ChildLink,
+    parent: AgentRunRecord,
+    ceiling: CapabilityCeiling,
+    roots: readonly string[],
+  ): CoreRejectedCode | undefined {
+    const task = this.#delegations.openTask(
+      child.delegationId,
+      child.parentAgentRunId,
+      child.taskName,
+    );
+    if (task === undefined) return 'DELEGATION_NOT_FOUND';
+    const beyond = [...ceiling.capabilities].some(
+      (capability) => capability === 'agent.spawn' || !parent.ceiling.capabilities.has(capability),
+    );
+    return beyond || !writeRootsWithin(roots, task.roots) ? 'CAPABILITY_NOT_SUBSET' : undefined;
+  }
+
   async registerAgentRun(request: RegisterAgentRunRequest): Promise<Response> {
-    const { requestId, agentRunId, parentAgentRunId, delegationId, taskName } = request;
+    const { requestId, agentRunId } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
     const admitted = admitWork(this.#host.control());
@@ -413,27 +465,9 @@ export class RunWork {
     if (this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_EXISTS');
     if (this.#underWarning()) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
-    // A SubAgent names its parent, the delegation that funds it and its task: all three or none.
-    const given = [parentAgentRunId, delegationId, taskName].filter((each) => each !== undefined);
-    if (given.length !== 0 && given.length !== 3)
-      return this.#refuse(requestId, request, 'INVALID_INPUT');
-    const child =
-      parentAgentRunId !== undefined && delegationId !== undefined && taskName !== undefined
-        ? { parentAgentRunId, delegationId, taskName }
-        : undefined;
-    // A top-level AgentRun is alone until Orchestration runs several (M2Design 2.3).
-    if (
-      child === undefined &&
-      [...this.#agentRuns.values()].some(
-        (each) => each.state === 'ACTIVE' && each.parent === undefined,
-      )
-    )
-      return this.#refuse(requestId, request, 'AGENT_RUN_ACTIVE');
-    const parent = child === undefined ? undefined : this.#agentRuns.get(child.parentAgentRunId);
-    if (child !== undefined) {
-      if (parent === undefined) return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
-      if (parent.state === 'ENDED') return this.#refuse(requestId, request, 'AGENT_RUN_ENDED');
-    }
+    const placed = this.#placement(request);
+    if (!placed.ok) return this.#refuse(requestId, request, placed.reasonCode);
+    const { child, parent } = placed;
 
     const pinned = await this.#deps.pinAgent(request);
     if (!pinned.ok) return this.#refuse(requestId, request, pinned.reasonCode);
@@ -447,53 +481,29 @@ export class RunWork {
     if (!ceiling.ok) return this.#refuse(requestId, request, ceiling.reasonCode);
     const roots = writableRoots(ceiling.ceiling);
     if (child !== undefined && parent !== undefined) {
-      // A SubAgent can do no more than its parent, never spawns, and writes only where its task may.
-      const task = this.#delegations.taskOf(child.delegationId, child.taskName);
-      if (
-        task === undefined ||
-        this.#delegations.parentOf(child.delegationId) !== child.parentAgentRunId
-      )
-        return this.#refuse(requestId, request, 'DELEGATION_NOT_FOUND');
-      const beyond = [...ceiling.ceiling.capabilities].some(
-        (capability) =>
-          capability === 'agent.spawn' || !parent.ceiling.capabilities.has(capability),
-      );
-      if (beyond || !rootsWithin(roots, task.roots))
-        return this.#refuse(requestId, request, 'CAPABILITY_NOT_SUBSET');
+      const refusal = this.#childCeilingRefusal(child, parent, ceiling.ceiling, roots);
+      if (refusal !== undefined) return this.#refuse(requestId, request, refusal);
     }
     // Running AgentRuns write apart from each other (M2Design 6.4).
-    const writes = ceiling.ceiling.capabilities.has('workspace.write');
     const holders = [...this.#agentRuns].map(([id, each]) => ({
       agentRunId: id,
-      parent: each.parent,
       running: each.state === 'ACTIVE',
-      roots: each.ceiling.capabilities.has('workspace.write') ? writableRoots(each.ceiling) : [],
+      roots: writableRoots(each.ceiling),
     }));
-    const ancestors = this.#delegations.ancestorsOf(
-      child?.parentAgentRunId,
-      (id) => this.#agentRuns.get(id)?.parent,
-    );
-    if (
-      this.#delegations.conflict(holders, { ancestors, roots: writes ? roots : [] }) !== undefined
-    )
+    if (this.#delegations.conflict(holders, child?.parentAgentRunId, roots) !== undefined)
       return this.#refuse(requestId, request, 'WRITE_SCOPE_CONFLICT');
     const registered = this.#host.registerAgentRun(agentRunId);
     if (!registered.accepted) return this.#refuse(requestId, request, registered.reasonCode);
-    // The ledger of the AgentRun: a SubAgent spends its own share, the others the Turn's.
+    // A SubAgent spends its own share; every other AgentRun spends the Turn's.
     if (child !== undefined) {
-      this.#delegations.claim(
-        child.delegationId,
-        child.parentAgentRunId,
-        child.taskName,
-        agentRunId,
-      );
+      this.#delegations.claim(child.delegationId, child.taskName, agentRunId);
       this.#deps.ledgers.registerAgentRun({
         agentRunId,
         delegationId: child.delegationId,
         taskName: child.taskName,
         agent: pinned.agent.budget,
       });
-    } else this.#deps.ledgers.registerTopLevel(agentRunId, pinned.agent.budget);
+    }
     this.#agentRuns.set(agentRunId, {
       ...(child === undefined ? {} : { parent: child.parentAgentRunId }),
       agent: pinned.agent,
@@ -560,7 +570,7 @@ export class RunWork {
       if (share.defaultShare === undefined) return refuse('FORBIDDEN');
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);
       if (roots.length !== task.writeRoots.length) return refuse('INVALID_INPUT');
-      if (!rootsWithin(roots, parentRoots)) return refuse('CAPABILITY_NOT_SUBSET');
+      if (!writeRootsWithin(roots, parentRoots)) return refuse('CAPABILITY_NOT_SUBSET');
       // Between the least the Agent can work with and twice what it gets by default.
       const least = minShare(share.budget);
       const most = 2 * share.defaultShare;

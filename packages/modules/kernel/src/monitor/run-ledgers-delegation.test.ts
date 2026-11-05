@@ -33,7 +33,6 @@ function open(): RunLedgers {
     main,
   );
   ledgers.openTurnLedger('trn_1');
-  ledgers.registerTopLevel('agr_main', main);
   return ledgers;
 }
 

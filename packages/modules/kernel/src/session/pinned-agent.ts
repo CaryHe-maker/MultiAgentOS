@@ -86,7 +86,6 @@ export function pinnedAgentOf(
       : { maxWallClockMs: agent.limits.maxWallClockMs }),
     modelScope,
     budget: agent.budget,
-    ...(agent.spawnable === undefined ? {} : { defaultShare: agent.spawnable.defaultShare }),
     contextWindowTokens: model.limits.contextWindowTokens,
     cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
     instructions: prompt.template,

@@ -256,7 +256,6 @@ export function scriptedAgents(
     Object.entries(scripts).map(([agent, turns]) => [agent, [...(turns ?? [])]]),
   );
   const byTask = new Map(Object.entries(tasks).map(([task, turns]) => [task, [...turns]]));
-  const owner = new Map<string, string>();
   const requests: ChatRequest[] = [];
   const inner = scriptedChat();
   return {
@@ -270,7 +269,6 @@ export function scriptedAgents(
       const first = textOf(request.messages.find((message) => message.role === 'user'));
       const task = [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
       const key = task ?? agent;
-      owner.set(key, agent);
       const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
       const answer = 'then' in turn ? (await turn.wait, turn.then) : turn;

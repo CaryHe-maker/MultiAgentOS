@@ -2,14 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { CASES as SMALL, REFERENCES as SMALL_REFERENCES } from './fixtures.js';
-import { LARGE, LARGE_REFERENCES } from './large.js';
-
-const CASES = [...SMALL, ...LARGE];
-const REFERENCES: Readonly<Record<string, (repository: string) => Promise<void>>> = {
-  ...SMALL_REFERENCES,
-  ...LARGE_REFERENCES,
-};
+import { CASES } from './cases.js';
 
 const made: string[] = [];
 afterAll(async () => {
@@ -26,13 +19,15 @@ async function materialize(files: Readonly<Record<string, string>>): Promise<str
   return repository;
 }
 
-describe('the suite checks', () => {
-  for (const def of CASES.filter((each) => REFERENCES[each.id] !== undefined)) {
+describe('the checks of the suite', () => {
+  for (const def of CASES) {
+    const { reference } = def;
+    if (reference === undefined) continue;
     it(`${def.id}: fail on the fixture, pass on the reference solution`, async () => {
       const before = await def.check(await materialize(def.files), []);
       expect(Object.values(before).every(Boolean)).toBe(false);
       const solved = await materialize(def.files);
-      await REFERENCES[def.id]?.(solved);
+      await reference(solved);
       const after = await def.check(solved, []);
       expect(after).toEqual(Object.fromEntries(Object.keys(after).map((key) => [key, true])));
     }, 60_000);
@@ -49,5 +44,9 @@ describe('the suite checks', () => {
         (await def?.check(repository, ['src/config/parse.js returns an empty object {}'])) ?? {},
       ).every(Boolean),
     ).toBe(true);
+  });
+
+  it('has a distinct id for every case', () => {
+    expect(new Set(CASES.map((each) => each.id)).size).toBe(CASES.length);
   });
 });

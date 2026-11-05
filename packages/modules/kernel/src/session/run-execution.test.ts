@@ -165,10 +165,11 @@ function setup(
     now: () => new Date(NOW),
     newExecutionId: () => nextId('exe'),
     newAttemptId: () => nextId('una'),
-    ...(options.maxConcurrentAttempts === undefined
-      ? {}
-      : { maxConcurrentAttempts: options.maxConcurrentAttempts }),
-    ...(options.serialExecution === undefined ? {} : { serialExecution: options.serialExecution }),
+    limits: {
+      maxAttempts: options.maxConcurrentAttempts ?? 6,
+      maxExec: 1,
+      serial: options.serialExecution === true,
+    },
   });
   const attempts: RunAttempts = new RunAttempts({
     provider: 'deepseek',

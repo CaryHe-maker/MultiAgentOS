@@ -17,10 +17,8 @@ import {
   type ChatRequest,
   type ScriptedChat,
 } from '../chat-driver.js';
-import { CASES as SMALL, type CaseDef } from './fixtures.js';
-import { LARGE } from './large.js';
-
-const CASES: readonly CaseDef[] = [...SMALL, ...LARGE];
+import { CASES } from './cases.js';
+import type { CaseDef } from './harness.js';
 
 type Mode = 'natural' | 'hint' | 'explicit' | 'alone';
 const SUFFIX: Readonly<Record<Mode, string>> = {

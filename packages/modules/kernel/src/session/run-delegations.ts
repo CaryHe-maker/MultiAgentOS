@@ -1,4 +1,4 @@
-import { writeRootCovers } from '@multiagentos/contracts';
+import { writeRootsOverlap } from '@multiagentos/contracts';
 
 /**
  * The delegations of one run and the write occupancy that goes with them (M2Design 6.4, 7.3;
@@ -19,7 +19,6 @@ export interface DelegatedTask {
 }
 
 interface Delegation {
-  readonly id: string;
   readonly parent: string;
   readonly tasks: Map<string, DelegatedTask>;
   /** The tasks that never registered have been given up. */
@@ -28,30 +27,18 @@ interface Delegation {
   readonly live: Set<string>;
 }
 
-export type ClaimResult =
-  | { readonly ok: true; readonly task: DelegatedTask }
-  | { readonly ok: false; readonly reason: 'NOT_FOUND' | 'WRONG_PARENT' | 'TAKEN' | 'RELEASED' };
-
-/** Two sets of write roots touch the same files: one root covers the other. */
-export function rootsOverlap(left: readonly string[], right: readonly string[]): boolean {
-  return left.some((a) => right.some((b) => writeRootCovers(a, b) || writeRootCovers(b, a)));
-}
-
-/** Every root of `inner` lies within one of `outer`. */
-export function rootsWithin(inner: readonly string[], outer: readonly string[]): boolean {
-  return inner.every((root) => outer.some((container) => writeRootCovers(container, root)));
-}
-
+/** What the occupancy needs to know of an AgentRun that has registered. */
 export interface OccupancyHolder {
   readonly agentRunId: string;
-  readonly parent: string | undefined;
   readonly running: boolean;
+  /** What it may write; empty when it cannot write at all. */
   readonly roots: readonly string[];
 }
 
 export class RunDelegations {
   readonly #delegations = new Map<string, Delegation>();
-  readonly #childOf = new Map<string, string>();
+  /** The delegation a SubAgent was started by, and so its parent. */
+  readonly #delegationOf = new Map<string, string>();
 
   create(
     id: string,
@@ -59,7 +46,6 @@ export class RunDelegations {
     tasks: readonly { name: string; roots: readonly string[]; tokens: number }[],
   ): void {
     this.#delegations.set(id, {
-      id,
       parent,
       tasks: new Map(tasks.map((task) => [task.name, { ...task }])),
       released: false,
@@ -71,35 +57,27 @@ export class RunDelegations {
     return this.#delegations.has(id);
   }
 
-  /** The task of a delegation that is still open for an AgentRun: not taken, not given up. */
-  taskOf(id: string, name: string): DelegatedTask | undefined {
+  /** The task `parent` delegated that nobody has registered for and that was not given up. */
+  openTask(id: string, parent: string, name: string): DelegatedTask | undefined {
     const delegation = this.#delegations.get(id);
-    if (delegation === undefined || delegation.released) return undefined;
+    if (delegation === undefined || delegation.parent !== parent || delegation.released)
+      return undefined;
     const task = delegation.tasks.get(name);
     return task?.claimedBy === undefined ? task : undefined;
   }
 
-  parentOf(id: string): string | undefined {
-    return this.#delegations.get(id)?.parent;
-  }
-
-  /** A task registers its AgentRun. */
-  claim(id: string, parent: string, name: string, agentRunId: string): ClaimResult {
+  /** A task registers its AgentRun; `openTask` said it could. */
+  claim(id: string, name: string, agentRunId: string): void {
     const delegation = this.#delegations.get(id);
-    if (delegation === undefined) return { ok: false, reason: 'NOT_FOUND' };
-    if (delegation.parent !== parent) return { ok: false, reason: 'WRONG_PARENT' };
-    if (delegation.released) return { ok: false, reason: 'RELEASED' };
-    const task = delegation.tasks.get(name);
-    if (task === undefined) return { ok: false, reason: 'NOT_FOUND' };
-    if (task.claimedBy !== undefined) return { ok: false, reason: 'TAKEN' };
+    const task = delegation?.tasks.get(name);
+    if (delegation === undefined || task === undefined) throw new Error(`No task ${name} in ${id}`);
     task.claimedBy = agentRunId;
     delegation.live.add(agentRunId);
-    this.#childOf.set(agentRunId, id);
-    return { ok: true, task };
+    this.#delegationOf.set(agentRunId, id);
   }
 
   childEnded(agentRunId: string): void {
-    const id = this.#childOf.get(agentRunId);
+    const id = this.#delegationOf.get(agentRunId);
     if (id !== undefined) this.#delegations.get(id)?.live.delete(agentRunId);
   }
 
@@ -126,33 +104,36 @@ export class RunDelegations {
     return false;
   }
 
-  /** The ancestors of an AgentRun, nearest first. */
-  ancestorsOf(parent: string | undefined, parentOf: (id: string) => string | undefined): string[] {
+  /** The AgentRuns above `agentRunId`, nearest first; a cycle ends the walk. */
+  #ancestorsOf(agentRunId: string | undefined): string[] {
     const found: string[] = [];
-    let next = parent;
+    let next = agentRunId;
     while (next !== undefined && !found.includes(next)) {
       found.push(next);
-      next = parentOf(next);
+      const id = this.#delegationOf.get(next);
+      next = id === undefined ? undefined : this.#delegations.get(id)?.parent;
     }
     return found;
   }
 
   /**
-   * The AgentRun whose roots a new one would touch, if any: running, not an ancestor, not
-   * delegated away. Registration is refused with WRITE_SCOPE_CONFLICT (M2Design 6.4).
+   * The AgentRun whose roots a new one under `parent` would touch, if any: running, not an
+   * ancestor, not delegated away. Registration is refused with WRITE_SCOPE_CONFLICT (M2Design 6.4).
    */
   conflict(
     holders: readonly OccupancyHolder[],
-    candidate: { readonly ancestors: readonly string[]; readonly roots: readonly string[] },
+    parent: string | undefined,
+    roots: readonly string[],
   ): string | undefined {
-    if (candidate.roots.length === 0) return undefined;
+    if (roots.length === 0) return undefined;
+    const ancestors = this.#ancestorsOf(parent);
     return holders.find(
       (holder) =>
         holder.running &&
         holder.roots.length > 0 &&
-        !candidate.ancestors.includes(holder.agentRunId) &&
+        !ancestors.includes(holder.agentRunId) &&
         !this.isDelegated(holder.agentRunId) &&
-        rootsOverlap(holder.roots, candidate.roots),
+        writeRootsOverlap(holder.roots, roots),
     )?.agentRunId;
   }
 }

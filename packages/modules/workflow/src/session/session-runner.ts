@@ -10,6 +10,7 @@ import {
   type BoundaryContext,
   canonicalJson,
   type DefinitionRef,
+  type DelegationReserved,
   type GraphNodeRecord,
   type RunSubagentsArgs,
   type KernelToWorkflowEvent,
@@ -51,20 +52,22 @@ import {
 } from '../domain/agent/analysis-report.js';
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
-import {
-  projectHistory,
-  type ProjectionScope,
-  type TaskScope,
-} from '../domain/context/history-projection.js';
+import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
+import { joinedResults, spawnNodeOf, taskScopeOf, type Waiting } from '../domain/spawn/join.js';
+import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
 import {
   finishedOutcome,
-  outcomeOf,
   resultOf,
   unansweredCriteria,
   type TaskOutcome,
 } from '../domain/spawn/task-results.js';
-import { validateSpawn, type SpawnError } from '../domain/spawn/validate-spawn.js';
+import {
+  validateSpawn,
+  type SpawnAgentFacts,
+  type SpawnError,
+  type SpawnPlan,
+} from '../domain/spawn/validate-spawn.js';
 import {
   advanceGraph,
   chatGrowthPoint,
@@ -140,25 +143,14 @@ interface NodeEnding {
 
 const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
 
-/** A `run_subagents` call whose tasks have not all ended: its caller waits (M2Design 3.6). */
-interface Waiting {
-  readonly toolCallId: string;
-  readonly delegationId: string;
-  /** In the order the caller wrote them. */
-  readonly tasks: readonly {
-    readonly name: string;
-    readonly nodeId: string;
-    readonly agent: string;
-  }[];
-}
-
 interface ActiveAgent {
   readonly state: AgentState;
   readonly nodeId: string;
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
-  readonly waiting?: Waiting;
+  /** Set while the call it made to `run_subagents` has tasks that have not ended. */
+  readonly waiting?: Waiting | undefined;
   /** The task this AgentRun was started for, when it is a SubAgent. */
   readonly task?: { readonly name: string; readonly criteria: readonly string[] };
   /** What the Kernel reported this AgentRun changed (M2Design 3.7). */
@@ -168,15 +160,9 @@ interface ActiveAgent {
   readonly completionAsked: boolean;
 }
 
-/** The same AgentRun once its tasks are over. */
-function withoutWaiting(active: ActiveAgent): ActiveAgent {
-  return Object.fromEntries(
-    Object.entries(active).filter(([key]) => key !== 'waiting'),
-  ) as unknown as ActiveAgent;
-}
-
 export class SessionRunner {
   readonly #deps: SessionRunnerDeps;
+  readonly #spawnable: ReadonlyMap<string, SpawnAgentFacts>;
   #sessionId: string | undefined;
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
@@ -202,6 +188,20 @@ export class SessionRunner {
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
+    // The Agents `run_subagents` may start are those that end by returning a result (M2Design 3.9).
+    this.#spawnable = new Map(
+      [...deps.agents]
+        .filter(([, agent]) =>
+          agent.definitions.endTools.some((tool) => tool.action === 'FINISH_SUBAGENT'),
+        )
+        .map(([id, agent]) => [
+          id,
+          {
+            writes: agent.requestedCapabilities.includes('workspace.write'),
+            allowedEfforts: agent.allowedEfforts,
+          },
+        ]),
+    );
   }
 
   get records(): readonly SessionLogRecord[] {
@@ -629,7 +629,11 @@ export class SessionRunner {
     const { spawn } = node;
     const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
     const binding = this.#binding(agentId);
-    const effort = spawn?.effort ?? binding.effort;
+    const place = placementOf(node, {
+      label: binding.definitions.label,
+      effort: binding.effort,
+      writeRoots: binding.writeRoots,
+    });
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -638,8 +642,8 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort,
-        ...(spawn === undefined ? {} : { parentAgentRunId: spawn.parentAgentRunId }),
+        effort: place.effort,
+        ...(place.link === undefined ? {} : { parentAgentRunId: place.link.parentAgentRunId }),
       },
       {
         type: 'REQUEST_CONTEXT',
@@ -647,7 +651,7 @@ export class SessionRunner {
         turnId,
         agentRunId,
         modelRef: binding.modelRef,
-        thinking: effort,
+        thinking: place.effort,
         toolsDigest: binding.toolsDigest,
         runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
       },
@@ -660,28 +664,17 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort,
+        effort: place.effort,
         workspaceViewId: 'main',
-        display: {
-          label:
-            spawn === undefined
-              ? binding.definitions.label
-              : `${binding.definitions.label} ${node.name}`,
-        },
+        display: { label: place.label },
         requestedCapabilities: [...binding.requestedCapabilities],
-        writeRoots: spawn === undefined ? [...binding.writeRoots] : [...spawn.writeScope],
-        ...(spawn === undefined
-          ? {}
-          : {
-              parentAgentRunId: spawn.parentAgentRunId,
-              delegationId: spawn.delegationId,
-              taskName: node.name,
-            }),
+        writeRoots: [...place.writeRoots],
+        ...place.link,
       },
       contextOf(sessionId, workflowRunId),
     );
     if (registered.outcome === 'REJECTED') {
-      if (spawn !== undefined) {
+      if (place.link !== undefined) {
         // The caller is told why this task did not start; tasks that wait for it are skipped.
         await this.#endNode(
           workflowRunId,
@@ -704,7 +697,16 @@ export class SessionRunner {
       return;
     }
     const handoff = node.inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
-    const task = spawn === undefined ? undefined : this.#taskScope(workflowRunId, node, spawn);
+    const task =
+      spawn === undefined
+        ? undefined
+        : taskScopeOf(
+            this.#records,
+            workflowRunId,
+            projectGraph(this.#records, workflowRunId),
+            node,
+            spawn,
+          );
     const scope: ProjectionScope =
       this.#mode === 'CHAT' && spawn === undefined
         ? { kind: 'MAIN' }
@@ -737,47 +739,6 @@ export class SessionRunner {
       ...(spawn === undefined ? {} : { task: { name: node.name, criteria: spawn.acceptance } }),
     });
     await this.#apply(workflowRunId, transition);
-  }
-
-  /** What a SubAgent is given: its task, and the results of the tasks it waits for. */
-  #taskScope(
-    workflowRunId: string,
-    node: GraphNodeRecord,
-    spawn: NonNullable<GraphNodeRecord['spawn']>,
-  ): TaskScope {
-    const projected = projectGraph(this.#records, workflowRunId);
-    const dependencies = projected.graph.edges
-      .filter((edge) => edge.to === node.nodeId)
-      .flatMap((edge) => {
-        const before = projected.nodes.get(edge.from);
-        if (before === undefined) return [];
-        const outcome: TaskOutcome = outcomeOf(this.#records, workflowRunId, before.nodeId) ?? {
-          status: 'FAILED',
-          notes: [],
-        };
-        return [
-          {
-            seq: 0,
-            category: 'PINNED' as const,
-            kind: 'SUBAGENT_RESULT' as const,
-            name: before.name,
-            agent: before.agentRef?.id ?? 'unknown',
-            status: outcome.status,
-            notes: [...outcome.notes],
-            ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
-            ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
-          },
-        ];
-      });
-    return {
-      name: node.name,
-      agent: node.agentRef?.id ?? 'unknown',
-      goal: node.goal ?? '',
-      acceptance: spawn.acceptance,
-      writeScope: spawn.writeScope,
-      inputs: spawn.inputs,
-      dependencies,
-    };
   }
 
   async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
@@ -952,13 +913,12 @@ export class SessionRunner {
   ): Promise<void> {
     const { agentRunId, turnId, wrapUpReason, round, definitions } = active.state;
     this.#agents.delete(agentRunId);
-    if (active.task === undefined)
-      this.#rounds.push({
-        agentId: active.agentId,
-        agentRunId,
-        roundsUsed: round,
-        maxRounds: definitions.limits.maxRounds,
-      });
+    this.#rounds.push({
+      agentId: active.agentId,
+      agentRunId,
+      roundsUsed: round,
+      maxRounds: definitions.limits.maxRounds,
+    });
     await this.#append([
       {
         type: 'AGENT_RUN_ENDED',
@@ -1196,9 +1156,10 @@ export class SessionRunner {
         notes: ['stopped: the run was interrupted'],
       });
     for (const active of all.filter((each) => each.task === undefined)) {
-      const rest = withoutWaiting(active);
-      this.#agents.set(active.state.agentRunId, rest);
-      await this.#onDegraded(workflowRunId, rest, reason);
+      // Nobody joins the call any more: the AgentRun ends on its own terms.
+      const alone: ActiveAgent = { ...active, waiting: undefined };
+      this.#agents.set(active.state.agentRunId, alone);
+      await this.#onDegraded(workflowRunId, alone, reason);
     }
   }
 
@@ -1309,35 +1270,25 @@ export class SessionRunner {
     active: ActiveAgent,
     ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
   ): Promise<void> {
-    const sessionId = this.#sessionIdOrThrow();
     const { toolCallId } = ending.source;
-    const refuse = async (text: string, withdraw = false): Promise<void> => {
-      const transition = resumeAfterSpawn(
-        active.state,
-        {
-          refused: true,
-          withdraw,
-          records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
-        },
-        this.#context(workflowRunId, active.scope),
-        this.#deps.config,
+    const refuse = (text: string, withdraw = false): Promise<void> =>
+      this.#apply(
+        workflowRunId,
+        resumeAfterSpawn(
+          active.state,
+          {
+            refused: true,
+            withdraw,
+            records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
+          },
+          this.#context(workflowRunId, active.scope),
+          this.#deps.config,
+        ),
       );
-      await this.#apply(workflowRunId, transition);
-    };
-    const agents = new Map<
-      string,
-      { writes: boolean; allowedEfforts: readonly ThinkingEffort[] }
-    >();
-    for (const [id, binding] of this.#deps.agents)
-      if (binding.definitions.endTools.some((tool) => tool.action === 'FINISH_SUBAGENT'))
-        agents.set(id, {
-          writes: binding.requestedCapabilities.includes('workspace.write'),
-          allowedEfforts: binding.allowedEfforts,
-        });
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const checked = validateSpawn(ending.arguments as RunSubagentsArgs, {
       rules: this.#deps.config,
-      agents,
+      agents: this.#spawnable,
       callerRoots: this.#binding(active.agentId).writeRoots,
       spawned: this.#spawned,
       readable: (artifactId) => readable.has(artifactId),
@@ -1349,7 +1300,23 @@ export class SessionRunner {
         withdraw,
       );
     }
-    const { tasks } = checked.plan;
+    const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
+    if (lent.kind === 'BLOCKED') return;
+    if (lent.kind === 'REFUSED') return refuse(lent.text);
+    await this.#expandGraph(workflowRunId, active, toolCallId, checked.plan.tasks, lent.reserved);
+  }
+
+  /** Asks the Kernel to lend the shares of all the tasks, or none (M2Design 7.3, rule 2). */
+  async #lend(
+    workflowRunId: string,
+    active: ActiveAgent,
+    tasks: SpawnPlan['tasks'],
+  ): Promise<
+    | { readonly kind: 'GRANTED'; readonly reserved: DelegationReserved }
+    | { readonly kind: 'REFUSED'; readonly text: string }
+    | { readonly kind: 'BLOCKED' }
+  > {
+    const sessionId = this.#sessionIdOrThrow();
     const reserved = await this.#deps.gateway.reserveDelegation(
       {
         requestId: newId('req'),
@@ -1360,53 +1327,49 @@ export class SessionRunner {
           name: task.name,
           agentRef: this.#binding(task.agent).ref,
           writeRoots: [...task.writeRoots],
-          ...(task.budget?.tokens === undefined ? {} : { tokens: task.budget.tokens }),
+          ...(task.budget === undefined ? {} : { tokens: task.budget.tokens }),
         })),
       },
       contextOf(sessionId, workflowRunId),
     );
-    if (reserved.outcome === 'REJECTED') {
-      if (reserved.reasonCode === 'RUN_BLOCKED') return;
-      if (reserved.reasonCode === 'BUDGET_INSUFFICIENT')
-        return refuse(
-          `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total. Start fewer or smaller tasks, or do the work yourself.`,
-        );
-      return refuse(
-        `${reserved.reasonCode}: the system refused to start these tasks. Nothing was started.`,
-      );
-    }
+    if (reserved.outcome === 'ACCEPTED') return { kind: 'GRANTED', reserved };
+    // The run is closing: whoever asked is told by the run, not by this answer.
+    if (reserved.reasonCode === 'RUN_BLOCKED') return { kind: 'BLOCKED' };
+    const text =
+      reserved.reasonCode === 'BUDGET_INSUFFICIENT'
+        ? `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total. Start fewer or smaller tasks, or do the work yourself.`
+        : `${reserved.reasonCode}: the system refused to start these tasks. Nothing was started.`;
+    return { kind: 'REFUSED', text };
+  }
+
+  /** The tasks become nodes; their caller stays RUNNING and waits (M2Design 3.6). */
+  async #expandGraph(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    tasks: SpawnPlan['tasks'],
+    reserved: DelegationReserved,
+  ): Promise<void> {
+    const link = {
+      parentAgentRunId: active.state.agentRunId,
+      delegationId: reserved.delegationId,
+      callToolCallId: toolCallId,
+    };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
-    const projected = projectGraph(this.#records, workflowRunId);
-    const revisionNumber = projected.lastRevision + 1;
+    const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
     const revision = spawnRevision(
       workflowRunId,
       revisionNumber,
-      tasks.map((task) => {
-        const share = shares.get(task.name);
-        return {
-          name: task.name,
-          agentRef: this.#refOf(task.agent),
-          goal: task.goal,
-          dependsOn: task.dependsOn ?? [],
-          spawn: {
-            parentAgentRunId: active.state.agentRunId,
-            delegationId: reserved.delegationId,
-            callToolCallId: toolCallId,
-            writeScope: [...task.writeRoots],
-            acceptance: [...(task.acceptance ?? [])],
-            inputs: [...(task.inputs ?? [])],
-            ...(task.effort === undefined ? {} : { effort: task.effort }),
-            tokens: share?.tokens ?? 1,
-            ...(share?.clamped === undefined ? {} : { clamped: share.clamped }),
-          },
-        };
-      }),
+      tasks.map((task) => ({
+        name: task.name,
+        agentRef: this.#refOf(task.agent),
+        goal: task.goal,
+        dependsOn: task.dependsOn ?? [],
+        spawn: spawnNodeOf(task, link, shares.get(task.name)),
+      })),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
-    this.#spawned = {
-      tasks: this.#spawned.tasks + tasks.length,
-      calls: this.#spawned.calls + 1,
-    };
+    this.#spawned = { tasks: this.#spawned.tasks + tasks.length, calls: this.#spawned.calls + 1 };
     this.#agents.set(active.state.agentRunId, {
       ...active,
       waiting: {
@@ -1428,12 +1391,9 @@ export class SessionRunner {
     const sessionId = this.#sessionIdOrThrow();
     for (const parent of [...this.#agents.values()]) {
       const { waiting } = parent;
-      if (waiting === undefined) continue;
-      const outcomes = waiting.tasks.map((task) => ({
-        task,
-        outcome: outcomeOf(this.#records, workflowRunId, task.nodeId),
-      }));
-      if (outcomes.some((each) => each.outcome === undefined)) continue;
+      const results =
+        waiting === undefined ? undefined : joinedResults(this.#records, workflowRunId, waiting);
+      if (waiting === undefined || results === undefined) continue;
       // The shares of tasks that never started go back to the caller.
       await this.#deps.gateway.releaseDelegation(
         { requestId: newId('req'), sessionId, workflowRunId, delegationId: waiting.delegationId },
@@ -1447,32 +1407,17 @@ export class SessionRunner {
           agentRunId: parent.state.agentRunId,
           toolCallId: waiting.toolCallId,
           delegationId: waiting.delegationId,
-          results: outcomes.flatMap(({ task, outcome }) =>
-            outcome === undefined
-              ? []
-              : [
-                  {
-                    name: task.name,
-                    agent: task.agent,
-                    status: outcome.status,
-                    notes: [...outcome.notes],
-                    ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
-                    ...(outcome.toolCallId === undefined
-                      ? {}
-                      : { resultToolCallId: outcome.toolCallId }),
-                  },
-                ],
-          ),
+          results,
         },
       ]);
-      const rest = withoutWaiting(parent);
-      this.#agents.set(parent.state.agentRunId, rest);
+      const resumed: ActiveAgent = { ...parent, waiting: undefined };
+      this.#agents.set(parent.state.agentRunId, resumed);
       await this.#apply(
         workflowRunId,
         resumeAfterSpawn(
-          rest.state,
+          resumed.state,
           { refused: false, records: [] },
-          this.#context(workflowRunId, rest.scope),
+          this.#context(workflowRunId, resumed.scope),
           this.#deps.config,
         ),
       );

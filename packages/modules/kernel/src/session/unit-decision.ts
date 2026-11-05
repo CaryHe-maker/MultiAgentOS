@@ -81,7 +81,8 @@ export function ceilingOf(request: CeilingRequest): CeilingResult {
     ok: true,
     ceiling: {
       capabilities: new Set(request.requestedCapabilities),
-      writeRoots,
+      // Only a ceiling with workspace.write has roots to write under.
+      writeRoots: request.requestedCapabilities.includes('workspace.write') ? writeRoots : [],
       exclusions: request.exclusions,
     },
   };
