@@ -11,6 +11,12 @@ import {
 } from '../context/repository.js';
 import { FileReadInputSchema, FileReadOutputSchema } from '../executor/file-read.js';
 import {
+  CommandInputSchema,
+  CommandOutputSchema,
+  GitInspectInputSchema,
+  GitInspectOutputSchema,
+} from '../executor/command.js';
+import {
   FileEditInputSchema,
   FileWriteInputSchema,
   FileWriteOutputSchema,
@@ -37,6 +43,8 @@ export const UnitInputSchema = Type.Union(
     FileWriteInputSchema,
     FileEditInputSchema,
     OutputReadInputSchema,
+    CommandInputSchema,
+    GitInspectInputSchema,
   ],
   { $id: 'kernel.unit.UnitInput.v1' },
 );
@@ -54,6 +62,8 @@ export const UnitOutputSchema = Type.Union(
     ModelCallOutputSchema,
     FileWriteOutputSchema,
     OutputReadOutputSchema,
+    CommandOutputSchema,
+    GitInspectOutputSchema,
   ],
   { $id: 'kernel.unit.UnitOutput.v1' },
 );

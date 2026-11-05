@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.17 定稿（2026-11-04）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.23 定稿（2026-11-05）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收、交付顺序（只有阶段与依赖，不含日期）与待决事项。
 > 字段级接口、Schema 清单与定义实例在实现阶段写入 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -759,7 +759,7 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 | `workspace.write` | 不确定 | 发起写入的 AgentRun 的可写根目录；已批准的条目覆盖其下全部路径 | 没有覆盖的条目时询问一次。main 的可写根目录是仓库根目录，批准后也覆盖全部 SubAgent 的 `writeScope`，所以每个 WorkflowRun 通常只问一次；main 尚未写过时，worker 第一次写入按它自己的 `writeScope` 询问 |
 | `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次 |
 | `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问 |
-| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问 |
+| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问；只读名单上的命令行例外（见下文"只读名单"） |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
 | `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
 | `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
@@ -795,6 +795,14 @@ Architecture 中"危险行为每次都必须单独征得用户同意"在 M2 中�
   名单匹配照常进行（按原始文字再匹配一次，取两者的并集），不会因解析失败而漏掉禁止规则；
 - 以下情况同样不提供两个"均允许"选项：语法树中含命令替换（`$(…)`、反引号）、进程替换、`eval`、`sh -c` 或 `bash -c`、通往 `sh` 或 `bash` 的管道、heredoc 作为 shell 的输入；沙盒不可用；
   命中 `deniedCommands` 或 `criticalCommands`。
+
+**只读名单**（`command.readOnlyCommands`，与 `deniedCommands`、`criticalCommands` 分开单列，缺省见 `DEFAULT_READ_ONLY_COMMANDS`：`ls`、`cat`、`head`、`tail`、`wc`、`grep`、`rg`、`find`、`sort`、`diff`、`jq`、`pwd`、`echo`、`test`、`cd`，以及 `git` 的只读子命令 `status`、`diff`、`log`、`show`、`blame` 等；写入 `[]` 即关闭，改写即替换缺省）：
+- 命令行中**每一条**简单命令都在名单上，并且没有写文件的重定向（`> file`、`>> file`、`&> file`；`2>&1`、`>&2`、`> /dev/null` 不算）、没有命令替换或进程替换、命令名都是字面量且不是路径、没有 `find -delete`、`-exec`、`sort -o`、`rg --pre`、`git diff --output` 这类写入参数时，才算只读命令行。解析不可靠（`unreusable` 不为空）的一律不算。命中 `deniedCommands`、`criticalCommands` 的也不算。
+- 只读命令行**不单独询问**，与只读工具（`read_file`、`search_repository`）同一保护级别：需要 `repo.read`，用户同意一次之后本运行内的只读命令行直接运行；没有同意时先问 `repo.read`，问的是"读取仓库"，不是命令。一行只有 `echo`、`pwd`、`cd`、`true` 或某个程序的 `--version` 这类不打开仓库文件的命令时，连 `repo.read` 也不需要。
+- 它们在**只读沙盒**里运行：可写根目录为空、不联网、其余隔离与其他命令相同。名单是便利，不是保护：名单上有判断错的，只会使命令失败（只读文件系统），写不出去。模型看到的仍是同一个工具、同一种状态行和真实命令的输出，不需要知道有这一条捷径。
+- 不适用的情况：沙盒不可用、`network: true`；用户拒绝过本 AgentRun 的 `repo.read` 时，同一命令行按普通命令询问；用户拒绝过的这一条命令仍然被拒。
+- 每一次这样的放行写入审计（`COMMAND_READ_ONLY`：请求、AgentRun、命令、工作目录）。
+- 没有用 Executor 重新实现 `ls`、`cat`：输出格式、退出码、错误信息与管道组合都要逐字复现，且永远补不完；真实运行并让沙盒来保证只读，输出就是真实的。
 
 **极危险级的询问选项**：只有单次允许与拒绝。不提供任何"均允许"，批准不继承、不复用，每个 UnitAttempt 单独询问；询问界面以警示样式显示。
 
@@ -880,7 +888,7 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 项 | 内容 |
 |---|---|
 | 根文件系统 | `--ro-bind / /`（系统目录只读可见，命令能使用宿主的编译器与运行时） |
-| 用户目录 | `$HOME` 整体以空 tmpfs 遮蔽，再把白名单中的工具链与包缓存目录（如 `~/.nvm`、`~/.volta`、`~/.cargo`、`~/.rustup`、`~/.local/bin`、`~/.npm`）以只读挂回；白名单可追加。挂回的目录中的凭据文件（如 `~/.cargo/credentials.toml`、`~/.npmrc`）仍以空文件遮蔽，列表可追加、不可删除 |
+| 用户目录 | `$HOME` 整体以空 tmpfs 遮蔽，再把白名单中的工具链与包缓存目录（如 `~/.nvm`、`~/.volta`、`~/.cargo`、`~/.rustup`、`~/.local/bin`、`~/.npm`）以只读挂回；白名单可追加。`PATH` 中位于 `$HOME` 之下的目录也自动以只读挂回（`sandbox.mountPath`，缺省开启）：名为 `bin` 的目录若其安装前缀在 `$HOME` 之下至少两级，则一并挂回前缀（工具经 `../lib` 加载库）；`$HOME` 本身及其上级、直接位于 `$HOME` 之下的前缀、包含数据目录或仓库的目录从不挂回。挂回的目录中的凭据文件（如 `~/.cargo/credentials.toml`、`~/.npmrc`）仍以空文件遮蔽，列表可追加、不可删除 |
 | 仓库 | 仓库根目录以只读挂回（仓库通常位于 `$HOME` 之内，挂载顺序在遮蔽之后） |
 | 可写路径 | 该 AgentRun 的可写根目录（main 为仓库根目录，worker 为 `writeScope`）以 `--bind` 挂载；私有 `/tmp`（`--tmpfs /tmp`，排在仓库挂载之前，否则位于 `/tmp` 下的仓库被遮住） |
 | 敏感文件 | M1 默认排除规则中的秘密类规则（`.env*`、`*.pem`、`*.key`、`id_rsa*` 等私钥，不含 `.git` 与 `node_modules`）加上 `kernel.sandboxMaskedPatterns`（可追加）命中的仓库文件，以空的普通文件只读覆盖（`/dev/null` 在 bwrap 的 `nodev` 挂载下读取会报权限错误），目录以空 tmpfs 覆盖。列表由 Execution 在派发 EXEC 前按同一个匹配器扫描得出，复用第 7.1 节的摘要缓存。这样文件工具与命令对秘密的可见性一致，命令输出不会把它们带进模型上下文 |
@@ -888,9 +896,11 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 新建保护 | 不存在的受保护路径不做占位挂载（bwrap 会在宿主仓库中真实创建挂载点，改动用户的仓库）。改为事后检查：Execution 在命令前后检查这些路径是否存在（任何位置的 `.git` 与 `AGENTS.md` 由改动检测发现），命令新建了其中任一路径时，Kernel 把它移入本 Session 的隔离目录（`kernel-execution/quarantine/`），结果以 `PROTECTED_PATH_CREATED` 报告并写审计。例如在不是 git 仓库的目录中 `git init` 后写入 `.git/hooks`，这些 hook 不会留到用户以后使用 git 时执行 |
 | 遮蔽 | `<dataDir>` 位于 `$HOME` 之外时单独以空 tmpfs 遮蔽 |
 | 网络 | 缺省 `--unshare-net`；只有批准了 `command.network` 的那一条命令共享宿主网络 |
-| 进程 | `--unshare-pid`、`--die-with-parent`、`--new-session`；独立进程组 |
+| 进程 | `--unshare-pid`、`--unshare-ipc`、`--unshare-uts`、`--die-with-parent`、`--new-session`；独立进程组 |
+| 宿主暴露面 | `/run`、`/mnt`、`/media` 以空 tmpfs 遮蔽（宿主的 docker.sock、D-Bus、gpg/ssh agent 套接字，WSL 中的 Windows 盘）；共享网络时只读挂回域名解析所需的 `/run/systemd/resolve` 与 `/mnt/wsl/resolv.conf`；仓库之后重新挂回 |
+| 仓库配置 | `.git/config` 以去掉凭据的副本只读覆盖（远程 URL 里的 `user:token@`、含 token、password、secret、authorization、extraheader 的行），命令输出与日志因此带不出远程凭据；其余设置不变 |
 | 环境变量 | 白名单构造（`PATH`、`HOME`、`LANG`、`TERM` 等）；构造后再断言没有名称匹配 `*KEY*`、`*SECRET*`、`*TOKEN*`、`*PASSWORD*`、`*CREDENTIAL*` 的变量，否则拒绝启动并写审计 |
-| 资源 | 超时（缺省 2 分钟，参数上限 10 分钟）；输出保留头尾预览，全文存为 Artifact |
+| 资源 | 超时（缺省 2 分钟，参数上限 10 分钟）；`/tmp` 大小上限（缺省 512 MiB）、进程数上限（缺省 2048）、单文件大小上限（缺省 2 GiB）、私有可写内存上限（缺省物理内存的一半，超出时该命令自己失败）；输出保留头尾预览，全文存为 Artifact |
 
 ### 6.2 可用性
 
@@ -1166,15 +1176,16 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 内存不足时进程会被系统杀死，日志之外的状态全部丢失，用户也得不到任何说明。系统在到达那一步之前主动收尾并退出。这里不设特例路径，只有一条：
 
 1. **采样**：Kernel.Monitor 按 `memory.sampleIntervalMs`（缺省 1000）定时采样，判断级别（Kernel/Monitor 第 4a 节）。这是 Monitor 唯一自己定时运行的工作，因为内存属于进程，不属于某个运行。
-2. **上报**：级别升高时，Monitor 向 Core 发一条控制消息 `MemoryPressure(level, 采样值)`，与其他控制消息一样排队、按序处理。Monitor 不能自己取消、关闭运行或停机。
+2. **上报**：级别升高时，Monitor 向 Core 发一条控制消息 `MemoryPressure(source, level, 采样值)`，与其他控制消息一样排队、按序处理。Monitor 不能自己取消、关闭运行或停机。`source` 区分两种压力：`PROCESS`（本程序的 RSS 与 V8 堆）可以到 `DANGER`；`SYSTEM`（整机可用内存不足，多半是其他程序占用）最高只到 `WARNING`，只通知与记录，不拒绝工具、不收尾、不中断——中断本次运行换不回别的程序占用的内存。一个级别回落后再次升高会再次上报。`PROCESS` 的两个比：V8 堆用量与堆上限之比（上限取 V8 的 `heap_size_limit` 与可用内存的 60% 中较小者）；RSS 与容器内存上限之比，只在有容器上限时计算。没有容器上限时不用 RSS 去比物理内存：进程自己到不了那个程度，到了那一步系统多半已经出手。入口 `mas` 以 `--max-old-space-size=4096` 启动（shebang 使用 `env -S`），否则 V8 的默认堆上限在 7.5 GB 的机器上只有约 2.2 GB，长对话会在没有任何说明的情况下崩溃；这个标志在进程启动之后无法设置。
 3. **处理**：Core 经中断的统一入口处理，不增加新的状态、Workflow 事件或关闭方式：
 
 | 级别 | 缺省 | Core 的处理 |
 |---|---|---|
-| WARNING | 占用比 ≥ 75% | 第 7.3 节的统一收尾路径：每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），下一次模型调用是 final-call；拒绝登记新的 AgentRun 与开启新的 Turn。结束后留下报告（第 7.3 节） |
+| WARNING | 本程序占用比 ≥ 75%（整机不足也报 WARNING，但只通知与记录，见上） | 第 7.3 节的统一收尾路径：每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），下一次模型调用是 final-call；拒绝登记新的 AgentRun 与开启新的 Turn，直到本程序的内存回落（以采样器当前的级别为准，不是一个只升不降的标志）。结束后留下报告（第 7.3 节） |
 | DANGER | 占用比 ≥ 90% | 全部运行进入 INTERRUPTING（第 4.3 节，与用户中止、Turn 超时相同）：取消在途与排队的工作，经 `RunInterrupted(MEMORY_PRESSURE)` 通知 Workflow；Workflow 不再调用模型，以确定性结果收敛并 `closeRun` |
 
-4. **退出**：所有运行收敛后，日志都已落盘，Core 请求组合根按正常停机流程退出，退出码表明原因；界面说明原因与恢复方式，下次启动可以恢复 Session。任一运行无法确认停止时，按第 4.7 节处理。
+4. **通知与记录**：每一次 `MemoryPressure`（两种来源、有没有运行都一样）先追加一条系统级记录（`memory-events.jsonl`：时间、来源、级别、占用比、RSS、堆占比、可用内存），再由界面向用户显示一条提示：整机内存紧张只提示；本程序内存偏高说明当前一轮会提前收尾、新任务暂缓；本程序内存危险说明运行将被中断、对话记录完整、可以随后重新输入。强制中止本身还写在会话日志里（`RUN_INTERRUPTED`、被取消的调用的 `UNIT_INTERRUPTED`、不经模型的回复、`closeReason = INTERRUPTED`）。
+5. **中断之后继续对话**：对话（Turn-chat）不退出。运行以 `INTERRUPTED` 关闭后，对话仍打开；用户的下一条消息开启下一个运行和新的 Turn。Workflow 在中断时先给被取消、尚无结果的调用补上结果（`UNIT_INTERRUPTED`、`FEEDBACK(INTERRUPTED)`），下一个运行的历史里没有悬空的调用，并带有"上一个运行因内存紧张被中断"的说明。本程序的内存仍偏高（`WARNING` 以上）时，新的 AgentRun 被拒绝（`MEMORY_PRESSURE`），运行以 `INTERRUPTED` 关闭、界面说明原因，回落后下一条消息即可继续，不会卡住。没有运行时的 `DANGER` 同样只通知与记录。只有一次性命令（`mas run`）在 `INTERRUPTED` 时以退出码 75 退出，日志完整，下次可以恢复。任一运行无法确认停止时，按第 4.7 节处理。
 
 阶段 3 只实现内存压力这一个中断原因，同时建立中断的统一入口与 INTERRUPTING；阶段 5 的用户中止、Turn 超时、暂停超时都进入同一入口。
 
@@ -1239,7 +1250,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 
 ### 8.3 网页检索的提供方
 
-`web-search` 只有一个 Unit。提供方接口按多提供方设计，M2 实现 Tavily 一个适配器（面向 Agent 设计、返回清洗过的摘要，Open Deep Research 与 DeerFlow 都在使用）；以后可以增加自部署的 SearXNG。
+`web-search` 只有一个 Unit。提供方接口按多提供方设计，M2 实现一个适配器：DeepSeek 的搜索接口（`/v1/tools/search`，与模型共用 key，结果带 `summary`、`date`、`authority`）或 Tavily（面向 Agent 设计、返回清洗过的摘要，Open Deep Research 与 DeerFlow 都在使用），先由 S6-T-1 实测证明可用性并经 Cary 决定（M2TechStack 第 3.3 节）；以后可以增加自部署的 SearXNG。抓取同样经端口，提供方可为 DeepSeek 的 `/v1/tools/fetch` 或本地实现。
 测试使用本地的固定内容服务器，不依赖真实网络。
 
 ### 8.4 Executor 的组织
@@ -1815,7 +1826,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 3 命令与沙盒 | bwrap、`run_command`、`git_inspect`（在只读沙盒中运行，第 8.1 节）、命令按语法树拆分与表驱动的 ARITY（第 5.2 节）、敏感文件遮蔽、受保护路径的新建检查；`cancelExecution` 与停止升级、`STOP_UNCONFIRMED` 停机 | 2 | C1–C5、H6–H7、A 组的命令部分（含命令的拆分） |
 | 4 并行 | 并发类别与按 AgentRun 分队列、等待调用机会；写入占用；额度逐级委派；`run_subagents` 与结果契约；业务熔断；worker 的 `update_todos`；SubAgent 的压缩（阶段 8 已完成时） | 3 | P1–P6、B、D、A 组的派生部分（L12 在阶段 8 也完成后） |
 | 5 人类在环控制 | 暂停、继续、`steer`（暂停后附加，以及运行中 `/steer`）、中止；`ask_user`（询问不超时，等用户时 Turn 计时暂停）；交付条件与 `runEpoch` 规则（第 7.6 节） | 4 | H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分 |
-| 6 Web | `web_search`（Tavily）、`web_fetch` 与地址检查 | 1 | W、A 组的网页部分 |
+| 6 Web | `web_search`（提供方经端口替换：DeepSeek 搜索接口或 Tavily，先由 S6-T-1 实测证明可用并由 Cary 决定，见 M2TechStack 第 3.3 节）、`web_fetch` 与地址检查 | 1 | W、A 组的网页部分 |
 | 7 Orchestration | 使用者模板与校验、使用者模板中的条件边、有界循环、`all_done`；`mas run`、`/run`；额度触顶时的确定性运行报告 | 4 | O、G |
 | 8 上下文压缩 | 压缩过程（第 9.6 节）：自动、溢出、`/compact` 与空闲触发，实测加估算，材料查询，修剪与结果确认，摘要请求的两种输入与额度，投影替换；压缩与回退的关系、读取已被压缩取代或被修剪的调用（阶段 2 已完成时）；SubAgent 的压缩（阶段 4 已完成时） | 1 | L1–L5、L9–L11、L13（L7 与 L8 的压缩部分在阶段 2 与阶段 8 都完成后，L12 在阶段 4 与阶段 8 都完成后） |
 
@@ -1850,3 +1861,9 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.14 | 2026-11-02 | 第 3.9、9.2、9.5 节：`AGENTS.md` 与其他说明文档同级，第一次需要读仓库时才读，以历史条目追加，不进入 system 段；main 没有启动 Unit；第 5.3 节：拒绝绑定提出请求的 AgentRun，不计入连续出错，模型在之后的轮次再次调用时收尾（`AUTHORIZATION_DECLINED`）；思考强度只在 `registerAgentRun` 中给出；第 2.3、7.5、10、12（不变量 20）、13（A）、14.1 节相应修改 |
 | v1.13（编辑性） | 2026-11-02 | 第 8.2 节：删去"按 Unit 定义的版本选取上限"的残留，与 v1.12 一致 |
 | v1.13 | 2026-10-31 | 第 5.3、7.4 节：授权询问不再超时，删除 `authorizationTimeoutMs`、询问的 `expiresAt` 与 `TIMED_OUT`（取代 v1.9 中"授权询问 5 分钟后本次拒绝"）；询问只在运行收敛时取消；第 4.1、5.3 节：拒绝作为被拒 Unit 的工具结果交还 Agent，不结束 Turn；第 4.3、9.5、12（不变量 11）、13（H13、A）、14.1、14.2 节相应修改 |
+| v1.18 | 2026-11-05 | 第 6.1 节：`PATH` 中位于 `$HOME` 之下的目录自动以只读挂回，使命令找得到用户的 shell 找得到的工具（装在 `$HOME` 下自定义目录的 node 等），不再要求用户逐个追加白名单；可由 `sandbox.mountPath` 关闭（依据：阶段 3 的 C1–C4 真实模型评测中，node 位于 `~/.local/opt` 时沙盒内 `node: command not found`） |
+| v1.19 | 2026-11-05 | 第 6.1 节：沙盒遮蔽宿主的 `/run`、`/mnt`、`/media`，`.git/config` 以去掉凭据的副本覆盖，`/tmp` 大小、进程数、单文件大小有上限，增加 `--unshare-ipc`、`--unshare-uts`；第 5.3 节：`command.exec` 的拒绝只绑定被拒的那一条命令；第 7.7 节：内存压力中系统可用内存不足最高只到 `WARNING`，`WARNING` 在压力回落后不再拒绝新工作；第 8.1 节：`git_inspect` 的 `git` 在只读沙盒中运行（依据：阶段 3 静态审查，Cary 决定按推荐全部实现） |
+| v1.20 | 2026-11-05 | 第 15 节阶段 6：`web_search` 的提供方不再固定为 Tavily，改为经端口替换，DeepSeek 于 2026-10 开放的搜索与抓取接口先经 S6-T-1 实测证明可用并由 Cary 决定（M2TechStack 第 3.3 节、M2Plan 第 6.7 节） |
+| v1.21 | 2026-11-05 | 第 7.7 节：内存压力区分来源，整机内存不足只通知与记录；每次压力先有系统级记录再有界面提示；中断之后对话不退出，下一条消息开启新的 Turn，只有一次性命令以退出码 75 退出（取代 v1.17 中"所有运行收敛后退出"）；WARNING 以当前级别为准，不再是整个运行的粘性标志（依据：阶段 2 任务集重跑中整机内存紧张使 3 个聊天提前收尾；Cary 要求中止后可以继续输入） |
+| v1.22 | 2026-11-05 | 第 6.1、7.7 节：内存压力只度量有对应场景的两项——V8 堆（以堆上限与可用内存 60% 中较小者为分母）与容器内存上限下的 RSS；没有容器上限时不再用 RSS 对比物理内存；入口以 `--max-old-space-size=4096` 启动；沙盒命令增加私有可写内存上限（`RLIMIT_DATA`）（依据：实测 WSL 上 V8 默认堆上限仅 2240 MB，运行时设置该标志无效，命令超限应由命令自己失败；Cary 同意） |
+| v1.23 | 2026-11-05 | 第 5.2 节：新增"只读名单"（`command.readOnlyCommands`）：只读命令行与只读工具同一保护级别，需要 `repo.read` 而不单独询问，在只读沙盒中运行，写入审计（依据：阶段 2 任务集重跑中带命令一臂多出 175 个询问，大部分是 `ls`、`cat`、`grep`；Cary 同意单列名单、一次同意默认授权） |

@@ -1,3 +1,4 @@
+import type { MemoryLevel } from '@multiagentos/contracts';
 import {
   newId,
   type CoreRejectedCode,
@@ -86,6 +87,13 @@ export class SessionManager {
       });
       this.startSweepTimer();
     });
+  }
+
+  /** Memory pressure of this process reaches the open Session's run, if any. */
+  memoryPressure(level: MemoryLevel): Promise<void> {
+    const open = this.#open;
+    if (open === undefined) return Promise.resolve();
+    return open.actor.memoryPressure(level);
   }
 
   /** The open Session, when `sessionId` names it. */

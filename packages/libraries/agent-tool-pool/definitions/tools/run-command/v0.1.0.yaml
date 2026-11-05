@@ -1,0 +1,25 @@
+schemaVersion: v1
+kind: TOOL
+id: run-command
+version: v0.1.0
+description: Model-facing command execution, served by the run-command unit.
+purpose: UNIT
+modelName: run_command
+modelDescription: >-
+  Run one shell command (bash) in the repository and get its exit code and output. Every call
+  starts a fresh shell: cd and variables do not carry over, so give workdir (relative to the
+  repository root) instead of cd. The command runs in a sandbox without network and cannot read
+  secrets (.env, keys) or write outside the repository; .git, .multiagentos and AGENTS.md are
+  read-only. Set network to true only when the command really needs the internet; the user is
+  asked every time. timeoutMs defaults to 120000 and is at most 600000. A non-zero exit code is a
+  normal result, not an error: read the output. A long output is cut in the middle; read_output
+  reads the rest by this call's id. Do not chain unrelated commands, and do not use a command to
+  read or edit files when read_file and edit_file do it.
+parametersContract:
+  kind: contract
+  id: executor.RunCommandArgs
+  version: v1
+riskClass: HIGH
+sideEffect: EXTERNAL
+isIdempotent: false
+contentStatus: FINAL

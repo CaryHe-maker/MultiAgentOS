@@ -1,4 +1,55 @@
-import type { ActivityEvent, CloseReason, SessionFailed } from '@multiagentos/contracts';
+import type {
+  ActivityEvent,
+  AuthorizationRequest,
+  CloseReason,
+  SessionFailed,
+} from '@multiagentos/contracts';
+
+export type CommandQuestion = Extract<AuthorizationRequest, { capability: 'command.exec' }>;
+
+const UNREUSABLE_TEXT: Readonly<Record<string, string>> = {
+  PARSE_ERROR: '命令无法完整解析',
+  DYNAMIC_COMMAND_NAME: '命令名来自变量或替换',
+  COMMAND_SUBSTITUTION: '含命令替换',
+  PROCESS_SUBSTITUTION: '含进程替换',
+  EVAL: '含 eval',
+  SHELL_C: '含 sh -c / bash -c',
+  PIPE_TO_SHELL: '管道通往 shell',
+  HEREDOC_TO_SHELL: 'heredoc 作为 shell 的输入',
+  NO_COMMAND: '没有可执行的命令',
+  CRITICAL_COMMAND: '命中高风险命令名单',
+  NETWORK: '需要联网',
+  UNISOLATED: '沙盒不可用，命令未隔离',
+};
+
+/** What the user is shown before a command runs: exactly the command, where, and what it may do. */
+function commandQuestionText(q: CommandQuestion): string {
+  const lines = [
+    q.matched !== undefined || q.network || q.unisolated
+      ? '⚠ 高风险命令，请确认：'
+      : '允许 Agent 运行这条命令吗？',
+    '  ' + q.command,
+    '  工作目录：' + (q.workdir === '' ? '仓库根目录' : q.workdir),
+    '  可写范围：' + q.writableRoots.map((root) => (root === '.' ? '整个仓库' : root)).join('、'),
+    '  网络：' + (q.network ? '共享主机网络（命令可以联网）' : '无'),
+    ...(q.unisolated ? ['  未隔离：沙盒不可用，命令以你的权限直接运行'] : []),
+    ...(q.matched === undefined ? [] : ['  命中名单：' + q.matched]),
+  ];
+  const menu = [
+    '1 / y  只允许这一次',
+    ...(q.options.includes('COMMAND') ? ['2 / c  本次运行内，这条命令都允许'] : []),
+    ...(q.options.includes('PREFIX')
+      ? ['3 / p  本次运行内，这些命令前缀都允许：' + q.prefixes.join('、')]
+      : []),
+    'n      拒绝',
+  ];
+  const why = q.unreusable.map((reason) => UNREUSABLE_TEXT[reason] ?? reason);
+  return [
+    ...lines,
+    ...(why.length === 0 ? [] : ['  只能单次允许：' + why.join('；')]),
+    ...menu,
+  ].join('\n');
+}
 
 const DEGRADED: Readonly<Record<string, string>> = {
   BUDGET_EXHAUSTED: '额度已用完，没能完成回复。',
@@ -16,6 +67,7 @@ const DEGRADED: Readonly<Record<string, string>> = {
   PROVIDER_UNREACHABLE: '连不上模型服务，没能完成回复。',
   PROVIDER_ERROR: '模型服务出错，没能完成回复。',
   UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
+  MEMORY_PRESSURE: '系统内存紧张，运行被中断，没能完成回复。',
 };
 
 /** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
@@ -23,7 +75,9 @@ const EARLY_END: Readonly<Record<string, string>> = {
   BUDGET_WRAP_UP: '额度接近用完，这一轮提前结束了。',
   TOOL_UNIT_LIMIT: '工具调用次数到了上限，这一轮提前结束了。',
   WALL_CLOCK_LIMIT: '运行时间到了上限，这一轮提前结束了。',
-  ROUND_LIMIT: '轮次到了上限，这一轮提前结束了。',
+  ROUND_LIMIT:
+    '轮次到了上限，这一轮提前结束了；上面的回复写明了已完成与未完成的部分，可以据此决定下一条提示词。',
+  MEMORY_LIMIT: '系统内存紧张，这一轮提前结束了。',
   NO_PROGRESS: '连续几轮没有进展，这一轮提前结束了。',
   REPEATED_INTENT: '同一个调用重复太多次，这一轮提前结束了。',
   CONSECUTIVE_ERRORS: '工具连续出错，这一轮提前结束了。',
@@ -61,6 +115,7 @@ export const ConsoleText = Object.freeze({
     `是否信任这份 ${path}？信任后它作为项目指令交给 Agent；不信任则只作为仓库材料。${truncated ? '（只展示开头）' : ''}\n${text}\n[y/n]`,
   writeRoot: (root: string) =>
     `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
+  command: (q: CommandQuestion) => commandQuestionText(q),
   writeCritical: (path: string, text: string) =>
     `允许 Agent 写入 ${path} 吗？写入后它会作为可信的项目指令。只对这一次写入有效。\n${text}\n[y/n]`,
   undoConfirm: (files: readonly string[]) =>
@@ -101,6 +156,15 @@ export const ConsoleText = Object.freeze({
   degraded: DEGRADED,
   earlyEnd: EARLY_END,
   degradedOther: '没能完成回复。',
+  /** What the user is told when memory runs short; the same event is on record in the Kernel. */
+  memory: (source: 'PROCESS' | 'SYSTEM', level: 'WARNING' | 'DANGER', ratio: number): string => {
+    const percent = `${(ratio * 100).toFixed(0)}%`;
+    if (source === 'SYSTEM')
+      return `⚠ 整机内存紧张（已用 ${percent}），多半是其他程序占用；本程序的运行不受影响，必要时请关闭其他程序。`;
+    return level === 'DANGER'
+      ? `⚠ 本程序的内存危险（${percent}），正在进行的运行会被中断；对话记录完整，可以随后重新输入。`
+      : `⚠ 本程序的内存偏高（${percent}），当前一轮会提前收尾，新的任务暂缓，内存回落后即可继续。`;
+  },
   finished: {
     COMPLETED: '',
     BUDGET: '本次运行因额度结束。',
@@ -110,6 +174,7 @@ export const ConsoleText = Object.freeze({
     CANCELLED: '运行已取消。',
     ENDED_BY_USER: '运行已结束。',
     SHUTDOWN: '已退出。',
+    INTERRUPTED: '运行因内存紧张被中断，对话记录完整；可以直接重新输入，开始新的一轮。',
   } satisfies Record<CloseReason, string>,
   phase: {
     ASSEMBLING: '组织上下文',

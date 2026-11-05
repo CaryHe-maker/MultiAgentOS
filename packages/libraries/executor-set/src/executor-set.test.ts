@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DENY_SANDBOX,
   AssembleContextPackSchema,
   ExecutionResultSchema,
   assertValid,
@@ -24,6 +25,7 @@ const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment =>
   limits: { deadline, maxOutputBytes: 100_000 },
   signal: new AbortController().signal,
   subprocess: { run: () => Promise.reject(new Error('no subprocess')) },
+  sandbox: DENY_SANDBOX,
   credentials: { apiKeyFor: () => 'test-key' },
   now: () => NOW,
   ...over,
@@ -163,6 +165,28 @@ describe('context-assemble', () => {
     expect(pack.elidedEntries).toEqual([2]);
     expect(pack.items.map((item) => item.content)).toContain('hello');
     expect(pack.items.map((item) => item.content)).toContain('latest');
+  });
+
+  it('warns a few rounds before the round limit and asks for a handover in the last one', async () => {
+    const statusOf = async (over: { round: number; maxRounds: number }) => {
+      const pack = await packOf(assembleInput({ status: { ...status, ...over } }));
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    const far = await statusOf({ round: 4, maxRounds: 80 });
+    expect(far).not.toContain('round limit');
+    const near = await statusOf({ round: 77, maxRounds: 80 });
+    expect(near).toContain('After 2 more working rounds, round 80 is your final call');
+    const last = await statusOf({ round: 79, maxRounds: 80 });
+    expect(last).toContain('This is your last working round');
+    const final = await packOf(
+      assembleInput({
+        final: true,
+        status: { ...status, round: 80, maxRounds: 80, final: true, wrapUpReason: 'ROUND_LIMIT' },
+      }),
+    );
+    const text = final.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    expect(text).toContain('round limit has been reached');
+    expect(text).toContain('next prompt the user could send');
   });
 
   it('fails on a call without an answer', async () => {

@@ -470,6 +470,16 @@ describe('wrap-up', () => {
     });
   });
 
+  it('makes round maxRounds itself the final call', () => {
+    // Round 1 is the only working round of a limit of 2; round 2 is the final call.
+    let current = atModel({ limits: { maxRounds: 2, maxToolCallsPerRound: 2 } });
+    expect(current.state).toMatchObject({ round: 1, final: false });
+    current = replied(current, [call('list_files', {})]);
+    current = receive(current, report(current.state, only(current), { ok: {}, ref: ref('4') }));
+    expect(current.state).toMatchObject({ round: 2, final: true, wrapUpReason: 'ROUND_LIMIT' });
+    expect(current.records.some((record) => record.type === 'AGENT_WRAP_UP')).toBe(true);
+  });
+
   it('wraps up at maxRounds', () => {
     let current = atModel({ limits: { maxRounds: 1, maxToolCallsPerRound: 2 } });
     current = replied(current, [call('list_files', {})]);

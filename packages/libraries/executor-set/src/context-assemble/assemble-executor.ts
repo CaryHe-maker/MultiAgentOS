@@ -44,12 +44,20 @@ const WRAP_UP_TEXT: Record<NonNullable<StatusFacts['wrapUpReason']>, string> = {
   NO_PROGRESS: 'the last rounds made no progress',
   ROUND_LIMIT: 'the round limit has been reached',
   REGENERATION_LIMIT: 'too many replies were invalid',
+  MEMORY_LIMIT: 'the system is short of memory',
 };
 
 function renderContextWarning(used: number, limit: number): string {
   const percent = Math.floor((used / limit) * 100);
   return `Warning: the context is ${String(percent)}% full (${String(used)} of ${String(limit)} tokens). Read only what you need and finish soon; once it is full your next call is the final one.`;
 }
+
+/** From this many working rounds before the last one on, the status says the round limit is near. */
+const ROUND_WARNING_AHEAD = 5;
+
+/** The user reads a reply cut short by the round limit to decide what to send next. */
+const ROUND_LIMIT_HANDOVER =
+  ' The user will read this to decide what to ask next: list what is finished (files changed, what you confirmed), what remains, and the next prompt the user could send to continue.';
 
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const { round, maxRounds, budget, final, wrapUpReason } = status;
@@ -59,9 +67,22 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
+    const handover = wrapUpReason === 'ROUND_LIMIT' ? ROUND_LIMIT_HANDOVER : '';
     lines.push(
-      `This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.`,
+      `This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.${handover}`,
     );
+  } else {
+    // Round `maxRounds` is the final call, so the last working round is `maxRounds - 1`.
+    const working = maxRounds - 1 - round;
+    if (working >= 0 && working < ROUND_WARNING_AHEAD) {
+      const when =
+        working === 0
+          ? 'This is your last working round; the next round'
+          : `After ${String(working)} more working round${working === 1 ? '' : 's'}, round ${String(maxRounds)}`;
+      lines.push(
+        `Warning: the round limit is near. ${when} is your final call and you can only report. Stop starting new work; finish what you have begun, or leave it in a state you can describe to the user.`,
+      );
+    }
   }
   return lines.join('\n');
 }

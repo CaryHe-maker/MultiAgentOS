@@ -1,0 +1,30 @@
+schemaVersion: v1
+kind: UNIT
+id: run-command
+version: v0.1.0
+description: Run one shell command in the sandbox, without network unless the user allows it.
+executionKind: COMMAND
+protectedCapabilities:
+  - command.exec
+inputContract:
+  kind: contract
+  id: executor.CommandInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.CommandOutput
+  version: v1
+toolRefs:
+  - id: run-command
+    version: v0.1.0
+effect: EXTERNAL
+isIdempotent: false
+failurePolicy:
+  COMMAND_DENIED: RETURN_TO_MODEL
+  SANDBOX_UNAVAILABLE: RETURN_TO_MODEL
+  APPROVAL_MISMATCH: RETURN_TO_MODEL
+  ENV_ASSERTION_FAILED: RETURN_TO_MODEL
+  PROTECTED_PATH_CREATED: RETURN_TO_MODEL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

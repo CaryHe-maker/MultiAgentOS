@@ -1,7 +1,9 @@
 import {
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
+  CommandInputSchema,
   ExecutionRequestSchema,
+  GitInspectInputSchema,
   FileEditInputSchema,
   FileReadInputSchema,
   FileWriteInputSchema,
@@ -20,7 +22,9 @@ import {
   type AssembleExecutorInput,
   type ContextAssembleInput,
   type ContextHistoryEntry,
+  type CommandInput,
   type ExecutionKind,
+  type GitInspectInput,
   type ExecutionLimits,
   type ExecutionRequest,
   type ExecutorKind,
@@ -62,6 +66,8 @@ export interface ExecutionConfig {
     readonly FILE_WRITE: ToolExecutionLimit;
     readonly FILE_EDIT: ToolExecutionLimit;
     readonly OUTPUT_READ: ToolExecutionLimit;
+    readonly COMMAND: ToolExecutionLimit;
+    readonly GIT_INSPECT: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
@@ -235,6 +241,20 @@ export class AttemptRequestBuilder {
           ),
         };
       }
+      case 'COMMAND': {
+        // Where it runs and whether it is online were decided into the scope; the Executor gets the rest.
+        const { command, timeoutMs } = inputOf<CommandInput>(CommandInputSchema, input);
+        return {
+          request: made({ command, timeoutMs }, this.#toolLimits('COMMAND', identity)),
+        };
+      }
+      case 'GIT_INSPECT':
+        return {
+          request: made(
+            inputOf<GitInspectInput>(GitInspectInputSchema, input),
+            this.#toolLimits('GIT_INSPECT', identity),
+          ),
+        };
       case 'CONTEXT_ASSEMBLE':
         return {
           request: made(
@@ -270,7 +290,9 @@ export class AttemptRequestBuilder {
       | 'FILE_READ'
       | 'FILE_WRITE'
       | 'FILE_EDIT'
-      | 'OUTPUT_READ',
+      | 'OUTPUT_READ'
+      | 'COMMAND'
+      | 'GIT_INSPECT',
     identity: RequestIdentity,
   ) {
     const limit = this.#deps.config.executionLimits[kind];

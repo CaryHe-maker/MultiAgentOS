@@ -2,6 +2,7 @@ import { Type, type Static, type TProperties } from 'typebox';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
+import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -78,6 +79,13 @@ export const SessionLogRecordSchema = Type.Union(
       repositoryRoot: text(4096),
       definitionsDigest: Sha256Schema,
       definitionVersions: Type.Array(text(160)),
+      /** What the probe found (M2Design 6.2); absent in a log from before commands. */
+      sandbox: Type.Optional(
+        closed({
+          state: Type.Enum(['ISOLATED', 'UNISOLATED', 'UNAVAILABLE']),
+          reason: Type.Optional(Type.Enum(['NO_BWRAP', 'USERNS_DENIED', 'PROFILE_FAILED'])),
+        }),
+      ),
     }),
     record('WORKFLOW_RUN_STARTED', inRun, {
       mode: Type.Enum(['CHAT', 'ORCHESTRATION']),
@@ -243,6 +251,8 @@ export const SessionLogRecordSchema = Type.Union(
       tokenBudget: count(1),
     }),
     /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
+    /** The run was interrupted from outside the conversation (Module/Workflow 9.2a). */
+    record('RUN_INTERRUPTED', inRun, { reason: Type.Enum(INTERRUPT_REASONS) }),
     record('AGENT_WRAP_UP', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       reason: WrapUpReasonSchema,

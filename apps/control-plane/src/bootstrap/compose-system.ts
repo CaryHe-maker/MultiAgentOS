@@ -27,6 +27,8 @@ import {
 } from '@multiagentos/contracts';
 import {
   createExecutorRegistry,
+  createCommandAnalyzer,
+  createCommandParser,
   createShadowFiles,
   createWorkspaceFiles,
   readRepositoryText,
@@ -44,6 +46,9 @@ import {
   createSubprocessRunner,
   createSupervisor,
   pinAgentFrom,
+  probeSandbox,
+  type MemorySample,
+  type SandboxProbe,
   type TrackedSubprocessRunner,
 } from '@multiagentos/kernel';
 import { ModuleHost } from '@multiagentos/module-host';
@@ -82,6 +87,10 @@ export interface ComposeOptions {
   readonly timeouts?: Partial<ShutdownTimeouts>;
   /** Local fault diagnostics; defaults to stderr. */
   readonly log?: (line: string) => void;
+  /** What the sandbox probe found; a test gives its own so that it does not depend on the host. */
+  readonly sandboxProbe?: SandboxProbe;
+  /** Where memory is read; a test gives its own so that pressure can be made to order. */
+  readonly memorySample?: () => MemorySample;
   /** The runner owned by the entry so it can kill children even if composition fails. */
   readonly subprocess?: TrackedSubprocessRunner;
   /** Composition-time fault entry; the entry buffers faults until SystemControl is bound. */
@@ -194,6 +203,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const preset = hasGit ? options.preset : 'readonly';
   if (!hasGit && options.preset !== 'readonly')
     log('git was not found, so this session is read-only: nothing can be written or undone.\n');
+  // Commands run isolated or not at all (M2Design 6.2): the probe decides once for the process.
+  const sandbox = options.sandboxProbe ?? (await probeSandbox(options.repositoryRoot));
+  if (!sandbox.available && preset !== 'readonly')
+    log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
+`);
+  // Commands are offered when they can run isolated, or when the user chose to be asked about
+  // running them without isolation (M2Design 6.2).
+  const commandsOffered =
+    sandbox.available || config.kernel.sandbox.unavailable === 'ask-unisolated';
+  const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
   const internalFaults =
@@ -211,6 +230,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       'artifact-owners': ArtifactOwnerLineSchema,
     });
 
+    // The interface is built after the Kernel, which may need it before the system is up.
+    const interaction: { console?: Console } = {};
     const kernelCore = createSessionKernelCore({
       fabric: fabric.client('kernel-core'),
       artifacts,
@@ -232,6 +253,17 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
             },
           }),
       readRepositoryFile: readRepositoryText,
+      dataDir: config.dataDir,
+      // Memory ran short and no run is open: leave in control, as the interface does when a run ends.
+      onMemoryNotice: (notice) => interaction.console?.notifyMemory(notice),
+      ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
+      commands: {
+        analyze: analyzeCommand,
+        sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),
+        probe: sandbox.available
+          ? { available: true }
+          : { available: false, reason: sandbox.reason },
+      },
       reportSystemFault,
       diagnostic: log,
       now,
@@ -246,9 +278,17 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       gateway: createWorkflowGatewayPort(workflowFabric),
       persistence: forNamespaces(persistence, ['workflow']),
       agents: new Map(
-        [...builtin.sets].map(([id, set]) => [id, agentBindingOf(set, registry, preset)] as const),
+        [...builtin.sets].map(
+          ([id, set]) =>
+            [id, agentBindingOf(set, registry, preset, { commands: commandsOffered })] as const,
+        ),
       ),
       templates: builtin.templates,
+      sandbox: sandbox.available
+        ? { state: 'ISOLATED' }
+        : commandsOffered
+          ? { state: 'UNISOLATED', reason: sandbox.reason }
+          : { state: 'UNAVAILABLE', reason: sandbox.reason },
       definitionsDigest: builtin.definitionsDigest,
       definitionVersions: builtin.definitionVersions,
       config: config.workflow,
@@ -313,6 +353,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     internalFaults?.bind((fault) => control.reportFault(fault));
 
     const { console } = userInteraction;
+    interaction.console = console;
     return {
       start: () => control.start(),
       console,

@@ -55,10 +55,12 @@ describe('the repository catalog', () => {
     if (!pinned.ok) throw new Error(pinned.error.message);
     expect(pinned.value.tools.map((tool) => tool.modelName).sort()).toEqual([
       'edit_file',
+      'git_inspect',
       'list_files',
       'read_file',
       'read_output',
       'reply',
+      'run_command',
       'search_repository',
       'update_todos',
       'write_file',

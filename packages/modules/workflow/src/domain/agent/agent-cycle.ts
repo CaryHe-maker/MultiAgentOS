@@ -188,7 +188,10 @@ export type ToolInput =
     }
   | { readonly ok: false; readonly message: string };
 
-/** Kinds that change the workspace: what was read before them is no longer what is there. */
+/**
+ * Kinds that change the workspace: what was read before them is no longer what is there. A
+ * command may change it as well, but it names no path, so it only clears the "already read" memory.
+ */
 const WRITES: ReadonlySet<ExecutionKind> = new Set(WRITE_KINDS);
 /** Core's refusals of the call itself: never the Unit's failurePolicy, and never fatal. */
 const CORE_REFUSALS: ReadonlySet<string> = new Set([
@@ -329,7 +332,9 @@ function nextRound(
 ): AgentTransition {
   const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.turn === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
-  const atLimit = state.round >= state.definitions.limits.maxRounds;
+  // `maxRounds` counts the final round too: the round after `maxRounds - 1` is the final call, so a
+  // model never gets more calls than the limit says. One working round is always left.
+  const atLimit = state.round >= Math.max(state.definitions.limits.maxRounds - 1, 1);
   const wrapUpReason = state.wrapUpReason ?? (atLimit ? 'ROUND_LIMIT' : undefined);
   const final = wrapUpReason !== undefined;
   if (final && state.finalUsed) return degrade(state, wrapUpReason, records);
@@ -792,7 +797,7 @@ function handleTool(
     // After a write nothing read before it may be answered with "the result is above".
     succeeded: !ok
       ? state.succeeded
-      : WRITES.has(report.executionKind)
+      : WRITES.has(report.executionKind) || report.executionKind === 'COMMAND'
         ? []
         : [...state.succeeded, pending.intent],
   };
@@ -800,7 +805,14 @@ function handleTool(
   // Kernel's refusals have fixed meanings, not the Unit's failurePolicy (Module/Workflow 7): a quota
   // names the wrap-up, and a declined authorization is a tool result the model reads.
   if (report.status === 'REJECTED' && report.reasonCode === 'QUOTA_EXHAUSTED') {
-    next = wrapUp(next, report.quota === 'TOOL_UNITS' ? 'TOOL_UNIT_LIMIT' : 'WALL_CLOCK_LIMIT');
+    next = wrapUp(
+      next,
+      report.quota === 'TOOL_UNITS'
+        ? 'TOOL_UNIT_LIMIT'
+        : report.quota === 'MEMORY'
+          ? 'MEMORY_LIMIT'
+          : 'WALL_CLOCK_LIMIT',
+    );
   } else if (declined) {
     const { toolName } = pending.call;
     if (!next.declinedTools.includes(toolName))

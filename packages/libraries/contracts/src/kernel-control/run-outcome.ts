@@ -83,6 +83,7 @@ export const CLOSE_REASONS = [
   'CANCELLED',
   'BUDGET',
   'TIMEOUT',
+  'INTERRUPTED',
   'VIOLATION',
   'ENDED_BY_USER',
   'SHUTDOWN',

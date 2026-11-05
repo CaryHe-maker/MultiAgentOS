@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ExecutorEnvironment } from '@multiagentos/contracts';
+import { DENY_SANDBOX, type ExecutorEnvironment } from '@multiagentos/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repositoryGuardExpectations } from '../harnesses/executor-contract.js';
 import { FIXTURE_FILES, createFixtureRepository } from './repository.js';
@@ -25,6 +25,7 @@ const environment = (_kind: string, scope: ExecutorEnvironment['scope']): Execut
   subprocess: {
     run: () => Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
   },
+  sandbox: DENY_SANDBOX,
   credentials: { apiKeyFor: () => undefined },
   now: () => new Date('2026-01-01T00:00:00.000Z'),
 });

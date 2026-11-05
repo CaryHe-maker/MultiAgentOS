@@ -128,6 +128,9 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
    授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果为 `the user rejected tool "<工具名>"`；它不结束 Turn，也不结束 AgentRun，不计入连续出错（M2Design 第 5.3 节）。
    被拒绝的工具在该 AgentRun 之后的轮次不再提交，以 `FEEDBACK(TOOL_REJECTED)` 和同样的文字回答。这也是固定规则，不经过 Unit 的 `failurePolicy`。
+5a. **轮次上限**：`maxRounds` 含最后一轮。第 `maxRounds - 1` 轮结束后，第 `maxRounds` 轮就是 final-call（`wrapUpReason = ROUND_LIMIT`），与 token 额度触顶走同一条路径，模型不会得到比上限更多的调用（`maxRounds = 1` 时仍给一轮工作轮，再收尾）。
+   最后一轮之前 5 个工作轮起，STATUS 追加一行预警，写明还剩几个工作轮、第几轮起只能汇报；预警在 STATUS 中，不改变缓存前缀。
+   `ROUND_LIMIT` 的 final-call 另要求：列出已完成的（改动的文件、已确认的内容）、尚未完成的，以及用户可以接着发送的下一条提示词，供用户决定如何继续。
 6. **final-call**：每个 AgentRun 至多一次；收尾调用的模型参数（`tool_choice`、思考设置、失败后的重试）由 `context-assemble` 与 `model-call` 按 M2Design 第 9.4 节处理，Workflow 只设置 `final`。
 7. M1 的 `DUPLICATE_CALL` 检查保留；它与重复意图不同：前者拒绝同一 AgentRun 内已成功执行过的相同调用，后者计数最近 20 个 UnitIntent。
    M1 中"先前结果已被裁剪时不算重复"的例外改为：先前结果已被压缩的摘要取代（阶段 8），或在本次收尾调用的保险中被去掉时，不算重复。
@@ -238,6 +241,17 @@ reply(text) 合法 → 追加 MODEL_TURN
 与 M1 Workflow 第 10 节相同：来源核验、AnalysisReport 或降级报告、`report-publish`。结束时 `closeRun(COMPLETED, resultRef = reportRef)`；
 因额度结束时为 `closeRun(BUDGET, resultRef = 降级报告)`。
 
+### 9.2a 中断后的收敛（阶段 3，草稿）
+
+Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInterrupted(reason)` 后，Workflow 不再调用模型，也不再提交任何 Unit：
+
+1. 在途与排队的 Unit 已由 Kernel 取消。它们的结果之后到达时，Workflow 不再等待：关闭用的 Unit 取代了全部待处理的请求，迟到的报告被忽略；
+2. 每个 ACTIVE 的 AgentRun 以确定性结果结束（`endAgentRun`，没有 final-call）：main 发布 `DEGRADED_REPLY`（`reason = INTERRUPTED(<原因>)`，不经过额度检查），`analyze` 发布降级报告；
+3. 追加 `RUN_INTERRUPTED(reason)`、`NODE_ENDED(FAILED)`，然后 `closeRun(INTERRUPTED)`；Turn-chat 不再请求下一个开放输入；
+4. 重新打开该 Session 时按 Session 的恢复规则：对话照常延续，`RUN_INTERRUPTED` 以说明性记录出现在投影中，让 main 知道上一轮因何停止。
+
+内存压力的 WARNING 不走这条路径，而是统一收尾路径：`QUOTA_EXHAUSTED(quota = 'MEMORY')` → `wrapUpReason = MEMORY_LIMIT`，final-call 的 STATUS 写明"系统内存紧张"，用户提示注明原因。
+
 ### 9.3 结束保证
 
 与 M1 Workflow 第 11 节相同：任何一次处理只能落入"继续推进""等待结束""无法继续"三种情况之一。收到 `RunClosed` 后追加 `WORKFLOW_RUN_ENDED`，
@@ -279,6 +293,7 @@ reply(text) 合法 → 追加 MODEL_TURN
 |---|---|
 | 1 | 第 3–12 节（第 7 节第 8、9 条与第 8.4 节除外） |
 | 2 | Fork、`baseSha` 与 `expectAbsent`、`WORKSPACE_*` 记录与投影替换、`read_output` 的编号翻译（第 7 节第 8 条）、main 的 `update_todos`（第 7 节第 9 条）、子目录 `AGENTS.md` 的加载（第 8.2 节） |
+| 3 | 第 9.2a 节：中断后的收敛；`WrapUpReason` 增加 `MEMORY_LIMIT`；`run_command` 与 `git_inspect` 的工具调用（参数补全：工作目录、超时、联网） |
 | 4 | `run_subagents`、汇合、结果契约与改动对账、完成检查、SubAgent 的投影、worker 的 `update_todos` |
 | 5 | `steer`（暂停后附加与运行中插话）、`ask_user`、暂停后重新提交、中止后的收敛、Turn 超时后的 `closeRun(TIMEOUT)` |
 | 7 | 使用者模板（含其中的条件边）、有界循环、`all_done` 的一般使用、确定性运行报告、`/run` |

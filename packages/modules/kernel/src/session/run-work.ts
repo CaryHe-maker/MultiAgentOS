@@ -1,4 +1,10 @@
-import { isProjectInstructionPath, writableRoots } from '@multiagentos/contracts';
+import {
+  approvalDigestOf,
+  isProjectInstructionPath,
+  writableRoots,
+  type CommandInput,
+  type SandboxProfile,
+} from '@multiagentos/contracts';
 import type {
   AnswerAuthorizationRequest,
   AuthorizationRequest,
@@ -8,6 +14,7 @@ import type {
   EndAgentRunRequest,
   ArtifactRef,
   ExecutionScope,
+  MemoryLevel,
   ProjectFileContent,
   ReadProjectFileRequest,
   RegisterAgentRunRequest,
@@ -35,7 +42,13 @@ import { RunActivity, type ActivityOutput } from './run-activity.js';
 import { RunAuthorization, type QuestionResolved } from './run-authorization.js';
 import { admitWork, readsProjectFile, type Decision, type RunControl } from './run-control.js';
 import { admitUnit } from './unit-admission.js';
-import { ceilingOf, type CapabilityCeiling, type UnitDecision } from './unit-decision.js';
+import {
+  ceilingOf,
+  type CapabilityCeiling,
+  type CommandAnalysis,
+  type CommandDemand,
+  type UnitDecision,
+} from './unit-decision.js';
 import type { RetryingActivity } from './run-execution.js';
 import { WallClocks } from './wall-clocks.js';
 
@@ -66,7 +79,25 @@ export interface RunHost {
   enqueue(work: () => void): void;
 }
 
+/** What running commands needs from outside Core (Kernel/Core 5b); absent, no command runs. */
+export interface CommandSupport {
+  /** The line analysed with the lists applied; `text` is the line as the model wrote it. */
+  readonly analyze: (command: string) => CommandAnalysis;
+  /** What the probe at the start of the Session found. */
+  readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+  readonly unavailablePolicy: 'deny' | 'ask-unisolated';
+  readonly homeReadOnly: readonly string[];
+  readonly homeMaskedFiles: readonly string[];
+  /** Hidden from commands when it lies outside the home directory (M2Design 6.1). */
+  readonly dataDir?: string;
+  /** The files to mask and the protected paths that exist, found by looking at the repository. */
+  readonly scan: () => Promise<
+    Pick<SandboxProfile, 'maskedFiles' | 'maskedDirs' | 'protectedExisting'>
+  >;
+}
+
 export interface RunWorkDeps {
+  readonly command?: CommandSupport;
   readonly host: RunHost;
   readonly ledgers: RunLedgers;
   readonly scheduler: SchedulerDuties;
@@ -91,6 +122,8 @@ export interface RunWorkDeps {
   readonly audit: (entry: AttemptAudit) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
+  /** The live memory level; a WARNING ends when it says the pressure is gone. */
+  readonly memoryLevel?: () => MemoryLevel | undefined;
 }
 
 type Response = SyscallAck | SyscallRejected;
@@ -166,6 +199,10 @@ export class RunWork {
   readonly #attempts: RunAttempts;
   readonly #activity: RunActivity;
   readonly #startedAt: string;
+  /** Memory is short (Kernel/Core 5c): no new AgentRun, and the tools of running ones stop. */
+  #memoryWarning = false;
+  /** The run is being interrupted (Kernel/Core 5c): only the closing reply may still be published. */
+  #interrupting = false;
   #turns = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
@@ -239,6 +276,21 @@ export class RunWork {
 
   #countInFlight(agentRunId: string, change: number): void {
     this.#inFlight.set(agentRunId, (this.#inFlight.get(agentRunId) ?? 0) + change);
+  }
+
+  setMemoryWarning(): void {
+    this.#memoryWarning = true;
+  }
+
+  /**
+   * New work is refused while this process is short of memory. The live level decides, so a
+   * Turn after an interrupt is refused with the reason while the pressure lasts and accepted as
+   * soon as it has fallen; without a live level the message that raised the warning decides.
+   */
+  #underWarning(): boolean {
+    if (this.#interrupting) return true;
+    if (this.#deps.memoryLevel !== undefined) return this.#deps.memoryLevel() !== undefined;
+    return this.#memoryWarning;
   }
 
   openTurn(turnId: string): void {
@@ -337,6 +389,7 @@ export class RunWork {
     if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
     if (this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_EXISTS');
+    if (this.#underWarning()) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
     if (this.#host.control().activeAgentRuns.size > 0)
       return this.#refuse(requestId, request, 'AGENT_RUN_ACTIVE');
 
@@ -406,6 +459,12 @@ export class RunWork {
     const response = this.#accept(requestId, request);
     this.#units.submitted += 1;
 
+    if (this.#interrupting && unit.executionKind !== 'MESSAGE_PUBLISH')
+      return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
+    if (admission.countsAsTool && this.#underWarning()) {
+      this.#refuseUnit(request, unit, { reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' });
+      return response;
+    }
     if (admission.countsAsTool) {
       const quota = this.#deps.ledgers.countToolUnit(request.agentRunId, record.agent.maxToolUnits);
       if (!quota.ok) {
@@ -420,17 +479,25 @@ export class RunWork {
   /** Kernel/Core 5a.3; an answer to a question comes back here, because it only adds an entry. */
   async #decide(waiting: WaitingUnit): Promise<void> {
     const { request, unit, record } = waiting;
+    let readOnly = false;
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
+      const command = capability === 'command.exec' ? this.#commandDemand(request) : undefined;
+      if (capability === 'command.exec' && command === undefined) {
+        this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
+        return;
+      }
       const decision = this.#authorization.decide(
         {
           requestId: request.requestId,
           agentRunId: request.agentRunId,
           capability,
           ...(path === undefined ? {} : { path }),
+          ...(command === undefined ? {} : { command }),
         },
         record.ceiling,
       );
+      if (decision.kind === 'ALLOW' && decision.readOnly === true) readOnly = true;
       if (decision.kind === 'REFUSE') {
         this.#refuseUnit(request, unit, { reasonCode: decision.reasonCode });
         return;
@@ -440,13 +507,14 @@ export class RunWork {
         return;
       }
     }
-    await this.#startAttempt(request, unit, record);
+    await this.#startAttempt(request, unit, record, readOnly);
   }
 
   async #ask(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
     const { requestId, agentRunId, input } = waiting.request;
     let check;
-    if (decision.capability === 'repo.read')
+    if (decision.capability === 'command.exec') check = this.#askCommand(waiting, decision);
+    else if (decision.capability === 'repo.read')
       check = this.#authorization.requireRepoRead(requestId, agentRunId);
     else if (decision.critical) {
       const path = pathOf(input);
@@ -468,6 +536,49 @@ export class RunWork {
     this.#activity.awaitingAuthorization(agentRunId);
   }
 
+  #commandDemand(request: SubmitUnitRequest): CommandDemand | undefined {
+    const support = this.#deps.command;
+    if (support === undefined || !('command' in request.input) || !('timeoutMs' in request.input))
+      return undefined;
+    const { input } = request as { input: CommandInput };
+    return {
+      analysis: support.analyze(input.command),
+      workdir: input.workdir,
+      network: input.network,
+      sandbox: support.sandbox(),
+      unavailablePolicy: support.unavailablePolicy,
+      repoReadGranted: this.#authorization.lease !== undefined,
+    };
+  }
+
+  #askCommand(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
+    const { request, record } = waiting;
+    const demand = this.#commandDemand(request);
+    if (demand === undefined) throw new Error('A command question has no command');
+    const input = request.input as CommandInput;
+    const unisolated = demand.sandbox === 'UNAVAILABLE';
+    const roots = [...writableRoots(record.ceiling)];
+    return this.#authorization.askCommand(
+      {
+        analysis: demand.analysis,
+        workdir: input.workdir,
+        writableRoots: roots,
+        network: input.network,
+        unisolated,
+        approvalDigest: approvalDigestOf({
+          command: input.command,
+          workdir: input.workdir,
+          network: input.network,
+          writableRoots: roots,
+          backend: unisolated ? 'UNISOLATED' : 'BWRAP',
+        }),
+      },
+      decision.critical,
+      request.requestId,
+      request.agentRunId,
+    );
+  }
+
   #refuseUnit(
     request: SubmitUnitRequest,
     unit: UnitDefinition,
@@ -482,6 +593,41 @@ export class RunWork {
       },
       refusal,
     );
+  }
+
+  /** Where a command runs and with what; the scanned lists are not part of what was approved. */
+  async #commandScope(
+    request: SubmitUnitRequest,
+    record: AgentRunRecord,
+    readOnly: boolean,
+  ): Promise<ExecutionScope> {
+    const support = this.#deps.command;
+    if (support === undefined) throw new Error('A command needs the command support');
+    const input = request.input as CommandInput;
+    const backend = support.sandbox() === 'UNAVAILABLE' ? 'UNISOLATED' : 'BWRAP';
+    // A line of the read-only list runs where nothing can be written, whatever the AgentRun may.
+    const roots = readOnly ? [] : [...writableRoots(record.ceiling)];
+    return {
+      kind: 'SANDBOX',
+      backend,
+      approvalDigest: approvalDigestOf({
+        command: input.command,
+        workdir: input.workdir,
+        network: input.network,
+        writableRoots: roots,
+        backend,
+      }),
+      profile: {
+        repositoryRoot: this.#deps.repositoryRoot,
+        workdir: input.workdir,
+        writableRoots: roots,
+        network: input.network,
+        homeReadOnly: [...support.homeReadOnly],
+        homeMaskedFiles: [...support.homeMaskedFiles],
+        ...(support.dataDir === undefined ? {} : { dataDir: support.dataDir }),
+        ...(await support.scan()),
+      },
+    };
   }
 
   #scopeOf(unit: UnitDefinition, record: AgentRunRecord): ExecutionScope {
@@ -507,9 +653,30 @@ export class RunWork {
     request: SubmitUnitRequest,
     unit: UnitDefinition,
     record: AgentRunRecord,
+    readOnly = false,
   ): Promise<void> {
     const { turnId } = this.#host.control();
     if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
+    let scope: ExecutionScope;
+    try {
+      scope =
+        unit.executionKind === 'COMMAND'
+          ? await this.#commandScope(request, record, readOnly)
+          : this.#scopeOf(unit, record);
+    } catch (error) {
+      // E.g. the repository is too large to scan for secrets: the command does not run unmasked.
+      if (unit.executionKind !== 'COMMAND') throw error;
+      this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
+      return;
+    }
+    if (readOnly && unit.executionKind === 'COMMAND')
+      this.#deps.audit({
+        type: 'COMMAND_READ_ONLY',
+        requestId: request.requestId,
+        agentRunId: request.agentRunId,
+        command: (request.input as CommandInput).command,
+        workdir: (request.input as CommandInput).workdir,
+      });
     await this.#attempts.start({
       requestId: request.requestId,
       agentRunId: request.agentRunId,
@@ -517,7 +684,7 @@ export class RunWork {
       turnId,
       unit,
       input: request.input,
-      scope: this.#scopeOf(unit, record),
+      scope,
       runEpoch: this.#host.runEpoch(),
       agent: record.agent,
       display: request.display,
@@ -677,6 +844,25 @@ export class RunWork {
   }
 
   /** The run started converging: Units on a question end with it and get no report. */
+  /**
+   * INTERRUPTING (Kernel/Core 5c): what runs is cancelled and nothing new starts, but the run
+   * stays open so that Workflow can publish the reply that says what happened and close it. The
+   * facts of the cancelled work still arrive; Workflow no longer waits for them.
+   */
+  beginInterrupt(backstopMs: number, due: () => void): void {
+    this.#interrupting = true;
+    this.#memoryWarning = true;
+    for (const settled of this.#authorization.cancelQuestions())
+      this.#host.toInteraction(settled.resolved);
+    this.#waiting.clear();
+    this.#clocks.stop();
+    this.#deps.cancelExecutions(this.#host.runEpoch());
+    // If Workflow does not close the run, the Kernel does, so that memory is not held for ever.
+    this.#deps.schedule(backstopMs, () => {
+      this.#host.enqueue(due);
+    });
+  }
+
   beginClosing(): void {
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);

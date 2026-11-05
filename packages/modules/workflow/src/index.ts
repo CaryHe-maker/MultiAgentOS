@@ -54,6 +54,11 @@ export interface WorkflowDeps {
   readonly definitionsDigest: string;
   readonly definitionVersions: readonly string[];
   readonly config: WorkflowConfig;
+  /** What the sandbox probe found; the model is told, and `SESSION_STARTED` records it. */
+  readonly sandbox?: {
+    readonly state: 'ISOLATED' | 'UNISOLATED' | 'UNAVAILABLE';
+    readonly reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED';
+  };
   readonly now?: () => Date;
 }
 
@@ -61,6 +66,13 @@ export interface WorkflowDeps {
 export interface WorkflowModule extends LifecyclePort {
   readonly runner: SessionRunner;
 }
+
+/** What the runtime context tells the model about commands; the log keeps it: 64 characters at most. */
+const SANDBOX_TEXT = {
+  ISOLATED: 'bwrap (isolated: no network, secrets hidden)',
+  UNISOLATED: 'none (not isolated: each command is asked)',
+  UNAVAILABLE: 'none (commands cannot be run)',
+} as const;
 
 export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
   const now = deps.now ?? (() => new Date());
@@ -72,8 +84,12 @@ export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
     definitionsDigest: deps.definitionsDigest,
     definitionVersions: deps.definitionVersions,
     config: deps.config,
-    // M2 has no sandbox yet (M2Design 5); the date is the process's local date.
-    runtime: () => ({ sandbox: 'none', currentDate: now().toISOString().slice(0, 10) }),
+    ...(deps.sandbox === undefined ? {} : { sandbox: deps.sandbox }),
+    // The date is the process's local date.
+    runtime: () => ({
+      sandbox: SANDBOX_TEXT[deps.sandbox?.state ?? 'UNAVAILABLE'],
+      currentDate: now().toISOString().slice(0, 10),
+    }),
     now,
   });
   let running = false;

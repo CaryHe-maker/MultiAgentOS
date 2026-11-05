@@ -120,6 +120,14 @@ export type AttemptAudit =
       readonly reasonCode?: ReasonCode;
     }
   | { readonly type: 'STALE_FACT'; readonly unitAttemptId: string }
+  /** A command of the read-only list ran without a question of its own (Core 5b). */
+  | {
+      readonly type: 'COMMAND_READ_ONLY';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly command: string;
+      readonly workdir: string;
+    }
   | {
       readonly type: 'SETTLEMENT_ANOMALY';
       readonly unitAttemptId: string;
@@ -384,9 +392,14 @@ export class RunAttempts {
             | 'CAPABILITY_NOT_GRANTED'
             | 'WRITE_OUT_OF_SCOPE'
             | 'PROTECTED_PATH'
+            | 'COMMAND_DENIED'
+            | 'SANDBOX_UNAVAILABLE'
             | 'ADMISSION_CHECK_FAILED';
         }
-      | { readonly reasonCode: 'QUOTA_EXHAUSTED'; readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' },
+      | {
+          readonly reasonCode: 'QUOTA_EXHAUSTED';
+          readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' | 'MEMORY';
+        },
   ): void {
     this.#deliver({
       type: 'UnitReport',

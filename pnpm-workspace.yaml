@@ -6,3 +6,4 @@ packages:
   - 'packages/testing'
 allowBuilds:
   esbuild: true
+  tree-sitter-bash: false

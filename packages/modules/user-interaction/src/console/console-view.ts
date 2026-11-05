@@ -28,6 +28,8 @@ export type PendingItem =
   | {
       readonly kind: 'AUTHORIZATION';
       readonly once: boolean;
+      /** A command is answered with one of these (Kernel/Core 5b); otherwise y or n. */
+      readonly options?: readonly ('ONCE' | 'COMMAND' | 'PREFIX' | 'DENY')[];
       readonly questionId: string;
       readonly text: string;
     }

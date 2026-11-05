@@ -102,6 +102,7 @@ export class SessionLogStore {
     readonly repositoryRoot: string;
     readonly definitionsDigest: string;
     readonly definitionVersions: readonly string[];
+    readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
   }): Promise<SessionLogRecord> {
     await this.#storage(() =>
       this.#persistence.sessionDirectory('workflow', input.sessionId).create(),
@@ -113,6 +114,7 @@ export class SessionLogStore {
       repositoryRoot: input.repositoryRoot,
       definitionsDigest: input.definitionsDigest,
       definitionVersions: [...input.definitionVersions],
+      ...(input.sandbox === undefined ? {} : { sandbox: input.sandbox }),
     });
     const at = this.#now().toISOString();
     await this.#storage(() =>

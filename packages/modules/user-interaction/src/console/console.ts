@@ -36,9 +36,33 @@ export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
   CANCELLED: 130,
   SHUTDOWN: 130,
   ENDED_BY_USER: 130,
+  INTERRUPTED: 75,
 };
 
 const INTERRUPT_WINDOW_MS = 2000;
+
+/** The answer a pending question gets from the user's input. */
+function commandChoice(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  input: string,
+): 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | undefined {
+  if (item.options === undefined) return undefined;
+  const answer = input.trim().toLowerCase();
+  if (/^(n|no|否|不)$/u.test(answer)) return 'DENY';
+  if (/^(1|y|yes|是|好)$/u.test(answer)) return 'ONCE';
+  if (/^(2|c)$/u.test(answer) && item.options.includes('COMMAND')) return 'COMMAND';
+  if (/^(3|p)$/u.test(answer) && item.options.includes('PREFIX')) return 'PREFIX';
+  return undefined;
+}
+
+function scopeOf(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  yes: boolean,
+  input = '',
+): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' {
+  if (!yes) return 'DENY';
+  return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
+}
 
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
@@ -54,6 +78,8 @@ export class Console {
   readonly #now: () => Date;
   readonly #pending: PendingItem[] = [];
   readonly #queued: string[] = [];
+  /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
+  #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
   readonly #listed: string[] = [];
   /** When each running tool Unit started, for the duration on its folded line. */
@@ -71,6 +97,7 @@ export class Console {
   #interruptedAt: number | undefined;
   #finished: ((code: number) => void) | undefined;
   #exit: (() => void) | undefined;
+  #exitCode = 0;
 
   public constructor(deps: ConsoleDeps) {
     this.#deps = deps;
@@ -103,6 +130,15 @@ export class Console {
     if (message.length > 0) this.#deps.view.print({ kind: 'NOTICE', text: message });
   }
 
+  /** Memory ran short (Kernel/Monitor 4a): the user is told at once, whatever the Console is doing. */
+  notifyMemory(notice: {
+    source: 'PROCESS' | 'SYSTEM';
+    level: 'WARNING' | 'DANGER';
+    ratio: number;
+  }): void {
+    this.#notice(text.memory(notice.source, notice.level, notice.ratio));
+  }
+
   /** Interactive start: the list of this repository's Sessions, then a draft. */
   async start(): Promise<void> {
     this.#notice(text.welcome);
@@ -126,6 +162,20 @@ export class Console {
     if (accepted.outcome === 'REJECTED') return 1;
     this.#sessionId = accepted.sessionId;
     return finished;
+  }
+
+  /** 0, or the code of an interrupt that ended the session (75: out of memory, resume later). */
+  get exitCode(): number {
+    return this.#exitCode;
+  }
+
+  /**
+   * Leaves with this code, as when the user asks to: the system stops in the normal way. Used
+   * when the system must end for a reason outside the conversation and no run can say so.
+   */
+  exitWith(code: number): void {
+    this.#exitCode = code;
+    void this.shutdown().catch(() => undefined);
   }
 
   /** Resolves when the user asked to leave; the composition root then shuts down. */
@@ -171,6 +221,22 @@ export class Console {
     }
     // Nothing waits for input: the message waits in the console, Kernel never sees it (5.2).
     this.#queued.push(input);
+    // After an interrupt there is no run to wait for: this message opens the next one, and the
+    // new run's first request for input takes it. Refused while the old run is still closing; the
+    // flag stays, and the next message tries again.
+    if (this.#continueOnInput && this.#sessionId !== undefined) {
+      for (let attempt = 0; attempt < 5 && this.#sessionId !== undefined; attempt += 1) {
+        const opened = await this.#deps.gateway.openSession(
+          { requestId: newId('req'), sessionId: this.#sessionId },
+          this.#context(),
+        );
+        if (opened.outcome === 'ACCEPTED') {
+          this.#continueOnInput = false;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
     this.#refresh();
   }
 
@@ -227,8 +293,9 @@ export class Console {
   }
 
   async #answer(item: PendingItem, input: string): Promise<void> {
-    const yes = /^(y|yes|是|好)$/iu.test(input);
-    const no = /^(n|no|否|不)$/iu.test(input);
+    const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
+    const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
+    const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
     if (!yes && !no) {
       // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
       if (item.kind !== 'UNDO') return;
@@ -270,7 +337,7 @@ export class Console {
         sessionId,
         workflowRunId,
         questionId: item.questionId,
-        answer: { scope: !yes ? 'DENY' : item.once ? 'ONCE' : 'ALLOW' },
+        answer: { scope: scopeOf(item, yes, input) },
       },
       this.#context(),
     );
@@ -452,7 +519,10 @@ export class Console {
         this.#deps.view.print({ kind: 'ERROR', text: text.sessionFailed[event.code] });
         break;
       case 'SessionClosed':
-        if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
+        if (this.#sessionId === envelope.sessionId) {
+          this.#sessionId = undefined;
+          this.#continueOnInput = false;
+        }
         break;
     }
     this.#refresh();
@@ -481,6 +551,7 @@ export class Console {
           kind: 'AUTHORIZATION',
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
+          ...(event.capability === 'command.exec' ? { options: event.options } : {}),
           text: await this.#questionText(event),
         });
         break;
@@ -579,6 +650,7 @@ export class Console {
         event.truncated,
         terminalText((await this.#read(event.contentRef)) ?? ''),
       );
+    if (event.capability === 'command.exec') return text.command(event);
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),
@@ -655,6 +727,11 @@ export class Console {
     }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
+    // An interrupted conversation stays open: the log is complete, and the next message starts
+    // a new Turn (refused with the reason while memory is still short). Only a one-shot command
+    // leaves, with code 75, through the exit code of its close reason below.
+    if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined)
+      this.#continueOnInput = true;
     if (this.#finished !== undefined) {
       this.#finished(RUN_EXIT_CODES[event.closeReason]);
       return;

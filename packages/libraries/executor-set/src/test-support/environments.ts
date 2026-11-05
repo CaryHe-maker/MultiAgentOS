@@ -1,11 +1,12 @@
 import { mkdtemp, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  ExecutionScope,
-  ExecutorEnvironment,
-  ExecutorKind,
-  SubprocessRunner,
+import {
+  DENY_SANDBOX,
+  type ExecutionScope,
+  type ExecutorEnvironment,
+  type ExecutorKind,
+  type SubprocessRunner,
 } from '@multiagentos/contracts';
 
 /** Test helpers of ExecutorSet; never imported by production code. */
@@ -49,6 +50,7 @@ export function environmentFor(
             : tool,
     signal: new AbortController().signal,
     subprocess: NO_SUBPROCESS,
+    sandbox: DENY_SANDBOX,
     credentials: {
       apiKeyFor: (provider) => (provider === 'deepseek' ? 'sk-test-secret' : undefined),
     },

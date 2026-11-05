@@ -31,6 +31,35 @@ export const KernelConfigSchema = closed(
     repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
     maxReportBytes: count(1),
+    /** The sandbox of commands (Interface/KernelSupervisor 9). */
+    sandbox: closed({
+      unavailable: Type.Enum(['deny', 'ask-unisolated']),
+      homeReadOnly: Type.Array(text(4096)),
+      /** The PATH directories below $HOME come back read-only too (M2Design 6.1, v1.18). */
+      mountPath: Type.Boolean(),
+      homeMaskedFiles: Type.Array(text(4096)),
+    }),
+    /** Appended to the default secret rules; it can never remove one of them. */
+    sandboxMaskedPatterns: Type.Array(ExclusionRuleSchema),
+    command: closed({
+      deniedCommands: Type.Array(text(200)),
+      /** Appended to the defaults; a default cannot be removed. */
+      criticalCommands: Type.Array(text(200)),
+      /**
+       * The read-only list (M2Design 5.2): a line made only of these runs without a question of its
+       * own once `repo.read` is allowed, in a sandbox that cannot write. It replaces the default,
+       * so an entry can be taken out; an empty list switches the shortcut off. `git` and `command`
+       * stand for their read-only subcommands.
+       */
+      readOnlyCommands: Type.Array(text(100)),
+    }),
+    killGraceMs: ms(),
+    maxConcurrentExec: count(1),
+    memory: closed({
+      sampleIntervalMs: ms(),
+      warningRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+      dangerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+    }),
     /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
       runTokenLimit: count(1),
@@ -46,6 +75,8 @@ export const KernelConfigSchema = closed(
       FILE_WRITE: ToolLimitSchema,
       FILE_EDIT: ToolLimitSchema,
       OUTPUT_READ: ToolLimitSchema,
+      COMMAND: ToolLimitSchema,
+      GIT_INSPECT: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),
@@ -70,6 +101,60 @@ export const WorkflowConfigSchema = closed(
   'platform.config.WorkflowConfig.v1',
 );
 export type WorkflowConfig = Static<typeof WorkflowConfigSchema>;
+
+/**
+ * The read-only list a Session starts with (M2Design 5.2); `command.readOnlyCommands` replaces it.
+ */
+export const DEFAULT_READ_ONLY_COMMANDS: readonly string[] = Object.freeze([
+  // files and directories
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'stat',
+  'file',
+  'du',
+  'tree',
+  'nl',
+  'od',
+  // search
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'find',
+  // text
+  'sort',
+  'uniq',
+  'cut',
+  'tr',
+  'diff',
+  'cmp',
+  'comm',
+  'fold',
+  'jq',
+  // paths
+  'pwd',
+  'basename',
+  'dirname',
+  'realpath',
+  'readlink',
+  // the shell itself
+  'echo',
+  'printf',
+  'true',
+  'false',
+  'test',
+  '[',
+  ':',
+  'cd',
+  'type',
+  'which',
+  // `git` and `command` stand for their reading subcommands and options only
+  'git',
+  'command',
+]);
 
 export const SystemConfigSchema = closed(
   {

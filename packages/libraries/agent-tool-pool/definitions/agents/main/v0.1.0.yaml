@@ -2,7 +2,7 @@ schemaVersion: v1
 kind: AGENT
 id: main
 version: v0.1.0
-description: 'The agent of a Turn-chat: reads, lists and searches the repository and replies.'
+description: 'The agent of a Turn-chat: reads, searches, changes and tests the repository and replies.'
 role: coding assistant
 modelRef:
   id: deepseek-flash
@@ -30,6 +30,10 @@ unitRefs:
     version: v0.1.0
   - id: output-read
     version: v0.1.0
+  - id: run-command
+    version: v0.1.0
+  - id: git-inspect
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -52,6 +56,8 @@ actions:
 capabilities:
   - repo.read
   - workspace.write
+  - command.exec
+  - command.network
 limits:
   maxRounds: 80
   maxToolCallsPerRound: 8

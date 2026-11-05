@@ -37,11 +37,13 @@ describe('shipped definitions', () => {
       'TEMPLATE:analyze@v0.1.0',
       'TOOL:edit-file@v0.1.0',
       'TOOL:finish-analysis@v0.1.0',
+      'TOOL:git-inspect@v0.1.0',
       'TOOL:handoff-to-code-viewer@v0.1.0',
       'TOOL:list-files@v0.1.0',
       'TOOL:read-file@v0.1.0',
       'TOOL:read-output@v0.1.0',
       'TOOL:reply@v0.1.0',
+      'TOOL:run-command@v0.1.0',
       'TOOL:search-repository@v0.1.0',
       'TOOL:update-todos@v0.1.0',
       'TOOL:write-file@v0.1.0',
@@ -49,6 +51,7 @@ describe('shipped definitions', () => {
       'UNIT:file-edit@v0.1.0',
       'UNIT:file-read@v0.1.0',
       'UNIT:file-write@v0.1.0',
+      'UNIT:git-inspect@v0.1.0',
       'UNIT:message-publish@v0.1.0',
       'UNIT:model-call@v0.1.0',
       'UNIT:output-read@v0.1.0',
@@ -56,6 +59,7 @@ describe('shipped definitions', () => {
       'UNIT:repository-list@v0.1.0',
       'UNIT:repository-orient@v0.1.0',
       'UNIT:repository-search@v0.1.0',
+      'UNIT:run-command@v0.1.0',
     ]);
   });
 

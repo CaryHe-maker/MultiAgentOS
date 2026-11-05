@@ -9,10 +9,12 @@ import { ModelToolCallSchema } from '../executor/model-tool-call.js';
 import { RepositoryListInputSchema } from '../executor/repository-list.js';
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
+import { CommandExecutorInputSchema, GitInspectInputSchema } from '../executor/command.js';
 import { FileEditInputSchema, FileWriteInputSchema } from '../executor/file-write.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
+import { SandboxScopeSchema } from '../platform-common/sandbox.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 
 const RepositoryScopeSchema = closed({
@@ -43,7 +45,13 @@ const ModelScopeSchema = Type.Union([
 const NoScopeSchema = closed({ kind: Type.Literal('NONE') });
 /** Derived by Core: REPOSITORY and WORKSPACE from a Lease, MODEL from the pinned Model and Agent. */
 export const ExecutionScopeSchema = Type.Union(
-  [RepositoryScopeSchema, WorkspaceScopeSchema, ModelScopeSchema, NoScopeSchema],
+  [
+    RepositoryScopeSchema,
+    WorkspaceScopeSchema,
+    SandboxScopeSchema,
+    ModelScopeSchema,
+    NoScopeSchema,
+  ],
   { $id: 'kernel.execution.ExecutionScope.v1' },
 );
 export type ExecutionScope = Static<typeof ExecutionScopeSchema>;
@@ -220,6 +228,8 @@ export const ExecutionRequestSchema = Type.Union(
     request('FILE_WRITE', FileWriteInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
     request('FILE_EDIT', FileEditInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
     request('OUTPUT_READ', OutputReadExecutorInputSchema, NoScopeSchema, PlainLimitsSchema),
+    request('COMMAND', CommandExecutorInputSchema, SandboxScopeSchema, PlainLimitsSchema),
+    request('GIT_INSPECT', GitInspectInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
   ],
   { $id: 'kernel.execution.ExecutionRequest.v1' },
 );

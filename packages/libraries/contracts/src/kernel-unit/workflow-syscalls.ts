@@ -66,7 +66,7 @@ export const CloseRunRequestSchema = Type.Union(
   [
     closed({
       ...inRun,
-      outcome: Type.Enum(['COMPLETED', 'BUDGET', 'CANCELLED', 'TIMEOUT']),
+      outcome: Type.Enum(['COMPLETED', 'BUDGET', 'CANCELLED', 'TIMEOUT', 'INTERRUPTED']),
       resultRef: Type.Optional(ArtifactRefSchema),
     }),
     closed({ ...inRun, outcome: Type.Literal('FAILED'), failure: WorkflowRunFailureSchema }),

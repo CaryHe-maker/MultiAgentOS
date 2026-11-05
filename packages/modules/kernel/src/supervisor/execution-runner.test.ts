@@ -1,4 +1,5 @@
 import {
+  DENY_SANDBOX,
   ExecutionFactSchema,
   MEDIA_TYPES,
   validate,
@@ -258,6 +259,8 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
     OUTPUT_READ: unused('OUTPUT_READ'),
+    COMMAND: unused('COMMAND'),
+    GIT_INSPECT: unused('GIT_INSPECT'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
@@ -282,8 +285,10 @@ function makeRunnerWith(
     executors,
     credentials,
     subprocess,
+    sandbox: DENY_SANDBOX,
     facts: sink,
     cancelGraceMs,
+    killGraceMs: 100,
     now: () => new Date('2026-10-19T00:00:00.000Z'),
   });
   runners.push(runner);
@@ -525,8 +530,10 @@ describe('ExecutionRunner', () => {
       executors: registry(pendingUntilAbort(completedOrient)),
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       facts: sink,
       cancelGraceMs: 50,
+      killGraceMs: 50,
       now: () => new Date('2026-10-19T00:00:00.000Z'),
     });
     runners.push(runner);
@@ -549,8 +556,10 @@ describe('ExecutionRunner', () => {
       executors: registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient))),
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       facts: sink,
       cancelGraceMs: 1000,
+      killGraceMs: 100,
       now: () => new Date('2026-10-19T00:00:00.000Z'),
     });
     runners.push(runner);
@@ -892,6 +901,7 @@ describe('Executor environment', () => {
     const environment = createExecutorEnvironment(orientRequest(), new AbortController().signal, {
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       now: () => new Date(),
     });
     expect(environment.credentials.apiKeyFor('deepseek')).toBeUndefined();
@@ -908,6 +918,7 @@ describe('Executor environment', () => {
     const model = createExecutorEnvironment(modelRequest(), new AbortController().signal, {
       credentials,
       subprocess,
+      sandbox: DENY_SANDBOX,
       now: () => new Date(),
     });
     expect(model.credentials.apiKeyFor('deepseek')).toBe('test-key');
@@ -920,7 +931,7 @@ describe('Executor environment', () => {
         limits: TOOL_LIMITS,
       },
       new AbortController().signal,
-      { credentials, subprocess, now: () => new Date() },
+      { credentials, subprocess, sandbox: DENY_SANDBOX, now: () => new Date() },
     );
     await expect(
       search.subprocess.run('rg', [], {
@@ -929,5 +940,125 @@ describe('Executor environment', () => {
         maxOutputBytes: 1,
       }),
     ).resolves.toMatchObject({ stdout: 'matched' });
+  });
+});
+
+describe('cancelExecution', () => {
+  it('stops one running execution and says why, leaving the others alone', async () => {
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const first = orientRequest('exe_000001');
+    runner.execute(first, 'cor_123456');
+    runner.execute(orientRequest('exe_000002'), 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(2));
+
+    runner.cancelExecution({
+      executionId: 'exe_000001',
+      runEpoch: first.runEpoch,
+      reason: 'PAUSED',
+    });
+    await vi.waitFor(() => expect(sink.facts).toHaveLength(1));
+
+    expect(sink.facts[0]).toMatchObject({
+      executionId: 'exe_000001',
+      outcome: 'TERMINATED',
+      reasonCode: 'EXECUTION_CANCELLED',
+      cancelReason: 'PAUSED',
+      runEpoch: first.runEpoch,
+    });
+    expect(validate(ExecutionFactSchema, sink.facts[0]).ok).toBe(true);
+    expect(runner.activeCount()).toBe(1);
+  });
+
+  it('answers an execution that has not started at once, without a start time', async () => {
+    const { runner, sink } = makeRunner(
+      executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)),
+    );
+    const request = { ...orientRequest(), notBefore: '2026-10-19T00:00:10.000Z' };
+    runner.execute(request, 'cor_123456');
+
+    runner.cancelExecution({
+      executionId: request.executionId,
+      runEpoch: request.runEpoch,
+      reason: 'ABORTED',
+    });
+    const fact = await waitForFact(sink);
+
+    expect(fact).toMatchObject({ outcome: 'TERMINATED', cancelReason: 'ABORTED' });
+    expect(fact).not.toHaveProperty('startedAt');
+  });
+
+  it('reports a cancelled execution once, however often it is asked', async () => {
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const request = orientRequest();
+    runner.execute(request, 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
+
+    for (const reason of ['ABORTED', 'PAUSED'] as const)
+      runner.cancelExecution({
+        executionId: request.executionId,
+        runEpoch: request.runEpoch,
+        reason,
+      });
+    await delay(80);
+
+    expect(sink.facts).toHaveLength(1);
+    // The first reason stays: a pause that turns into an abort is Core's to say, not the fact's.
+    expect(sink.facts[0]).toMatchObject({ cancelReason: 'ABORTED' });
+  });
+
+  it.each([
+    ['an unknown execution', { executionId: 'exe_999999' }],
+    ['an execution of another epoch', { runEpoch: 99 }],
+  ])('ignores %s', async (_name, over) => {
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const request = orientRequest();
+    runner.execute(request, 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
+
+    runner.cancelExecution({
+      executionId: request.executionId,
+      runEpoch: request.runEpoch,
+      reason: 'ABORTED',
+      ...over,
+    });
+    await delay(80);
+
+    expect(sink.facts).toEqual([]);
+    expect(runner.activeCount()).toBe(1);
+  });
+
+  it('does not touch an execution that already ended', async () => {
+    const { runner, sink } = makeRunner(
+      executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)),
+    );
+    const request = orientRequest();
+    runner.execute(request, 'cor_123456');
+    await waitForFact(sink);
+
+    runner.cancelExecution({
+      executionId: request.executionId,
+      runEpoch: request.runEpoch,
+      reason: 'ABORTED',
+    });
+    await delay(20);
+
+    expect(sink.facts).toHaveLength(1);
+    expect(sink.facts[0]).toMatchObject({ outcome: 'COMPLETED' });
+  });
+
+  it('still escalates to STOP_UNCONFIRMED when the Executor will not stop', async () => {
+    const { runner, sink } = makeRunnerWith(registry(hanging()), 40);
+    const request = orientRequest();
+    runner.execute(request, 'cor_123456');
+    await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
+
+    runner.cancelExecution({
+      executionId: request.executionId,
+      runEpoch: request.runEpoch,
+      reason: 'ABORTED',
+    });
+    const fact = await waitForFact(sink);
+
+    expect(fact).toMatchObject({ outcome: 'STOP_UNCONFIRMED', reasonCode: 'EXECUTION_CANCELLED' });
   });
 });

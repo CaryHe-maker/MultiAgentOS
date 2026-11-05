@@ -80,6 +80,8 @@ function registry(): ExecutorRegistry {
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
     OUTPUT_READ: unused('OUTPUT_READ'),
+    COMMAND: unused('COMMAND'),
+    GIT_INSPECT: unused('GIT_INSPECT'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
@@ -234,6 +236,35 @@ describe('Supervisor execute over Fabric', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       executionId: 'exe_123456',
     });
+  });
+
+  it('cancels one execution over Fabric and says why', async () => {
+    const { fabric, facts } = await fixture(abortingRegistry());
+    const port = createSupervisorPort(fabric.client('kernel-core'), () => context);
+
+    await port.execute(request());
+    await delay(10);
+    await port.cancelExecution({ executionId: 'exe_123456', runEpoch: 1, reason: 'ABORTED' });
+    await vi.waitFor(() => expect(facts).toHaveLength(1));
+
+    expect((facts[0] as Envelope<ExecutionFact>).payload).toMatchObject({
+      outcome: 'TERMINATED',
+      reasonCode: 'EXECUTION_CANCELLED',
+      cancelReason: 'ABORTED',
+    });
+  });
+
+  it('rejects cancelExecution from a producer other than kernel-core, and a request with extras', async () => {
+    const { fabric } = await fixture();
+    const body = { executionId: 'exe_123456', runEpoch: 1, reason: 'ABORTED' };
+    await expect(
+      fabric.client('gateway').request(SCHEMA_IDS.cancelExecution, body, context),
+    ).rejects.toThrow('invalid producer');
+    await expect(
+      fabric
+        .client('kernel-core')
+        .request(SCHEMA_IDS.cancelExecution, { ...body, reason: 'WHATEVER' }, context),
+    ).rejects.toThrow();
   });
 
   it('reports STOP_UNCONFIRMED during stop before Fabric closes', async () => {

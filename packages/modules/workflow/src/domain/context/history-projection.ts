@@ -164,6 +164,14 @@ export function projectHistory(
           text: `These files changed outside this session since its last turn; read them again before relying on them: ${record.files.join(', ')}`,
         });
         break;
+      case 'RUN_INTERRUPTED':
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: 'The previous run was interrupted because the system ran short of memory. Work in flight was cancelled; check the workspace before relying on it.',
+        });
+        break;
       case 'PROJECT_FILE_LOADED':
         // Appended at the end like any new fact, so a later call keeps the earlier prefix;
         // the same content is not repeated in a later run.

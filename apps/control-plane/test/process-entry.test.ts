@@ -60,9 +60,9 @@ function start(
   return { child, done, stdout: () => stdout, stderr: () => stderr };
 }
 
-async function ready(running: Running): Promise<void> {
+async function ready(running: Running, marker = 'READY'): Promise<void> {
   for (let index = 0; index < 150; index += 1) {
-    if (running.stdout().includes('READY')) return;
+    if (running.stdout().includes(marker)) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`entry did not become ready; stderr=${running.stderr()}`);
@@ -106,7 +106,7 @@ describe('process entry exit codes', () => {
   it('allows the first interrupt to end with the command exit code', async () => {
     const roots = await entryRoots();
     const running = start(entry, ['first-interrupt'], roots.data, roots.repository);
-    await ready(running);
+    await ready(running, 'HANDLER_INSTALLED');
     running.child.kill('SIGINT');
     const result = await running.done;
     expect(result.code).toBe(130);

@@ -13,6 +13,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import dotenv from 'dotenv';
 import { openChat, until, type Chat, type ScriptedChat } from '../chat-driver.js';
 import { HARD_TASKS, REAL_TASKS } from './tasks-hard.js';
+import { COMMAND_TASKS } from './tasks-command.js';
 import { WRITE_TASKS, type Judged, type WriteTask } from './tasks.js';
 
 /** The list prices in USD per million tokens, off-peak (`deepseek-flash` definition). */
@@ -20,7 +21,7 @@ const RATES = { cacheHit: 0.003, cacheMiss: 0.15, output: 0.6 };
 const TURN_TIMEOUT_MS = 8 * 60_000;
 const AWAITING = '等待输入';
 
-const ALL_TASKS = [...WRITE_TASKS, ...HARD_TASKS, ...REAL_TASKS];
+const ALL_TASKS = [...WRITE_TASKS, ...HARD_TASKS, ...REAL_TASKS, ...COMMAND_TASKS];
 
 interface Usage {
   input: number;
@@ -36,6 +37,10 @@ interface Options {
   readonly shard: readonly [number, number];
   readonly out: string;
   readonly budgetUsd: number;
+  /** The Phase 2 arm: the sandbox counts as unavailable, so the model gets no `run_command`. */
+  readonly noCommand: boolean;
+  /** Starts no new chat after this many seconds, so the caller's time limit never kills one half way. */
+  readonly stopAfterSeconds: number;
 }
 
 function parse(argv: readonly string[]): Options {
@@ -52,6 +57,8 @@ function parse(argv: readonly string[]): Options {
     shard: [i, n],
     out: value('--out') ?? join('.multiagentos', 'write-eval', 'latest'),
     budgetUsd: Number(value('--budget') ?? 10),
+    noCommand: argv.includes('--no-command'),
+    stopAfterSeconds: Number(value('--stop-after') ?? 0),
   };
 }
 
@@ -181,6 +188,18 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
     provider,
     answer,
     credentials: { apiKeyFor: () => process.env['DEEPSEEK_API_KEY'] },
+    // Shards run side by side and the machine fills up: that is not this chat's memory, and a
+    // MEMORY_LIMIT wrap-up would end it before the model had done anything (seen in the first run).
+    memorySample: () => ({ rssBytes: process.memoryUsage.rss(), rssRatio: 0, heapRatio: 0 }),
+    ...(options.noCommand
+      ? {
+          sandboxProbe: {
+            available: false,
+            reason: 'NO_BWRAP',
+            hint: 'switched off for the write-only arm',
+          } as const,
+        }
+      : {}),
   });
   try {
     for (const step of task.steps) {
@@ -226,13 +245,57 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
   const changed = paths.filter(
     (path) => !original.get(path)?.equals(bytes.get(path) ?? Buffer.alloc(0)),
   );
+  // What the model was shown of its commands: the tool results of its last request.
+  const toolResults = (provider.requests.at(-1)?.messages ?? [])
+    .filter((message) => message.role === 'tool')
+    .map((message) => (typeof message.content === 'string' ? message.content : ''));
+  // Everything the model did, in order, as the last request shows it: tool, what it asked, how it went.
+  const timeline: { tool: string; arg: string; result: string }[] = [];
+  {
+    type Message = {
+      role: string;
+      content?: unknown;
+      tool_call_id?: string;
+      tool_calls?: { id: string; function: { name: string; arguments: string } }[];
+    };
+    const messages = (provider.requests.at(-1)?.messages ?? []) as unknown as Message[];
+    const results = new Map(
+      messages
+        .filter((m) => m.role === 'tool' && m.tool_call_id !== undefined)
+        .map((m) => [m.tool_call_id ?? '', typeof m.content === 'string' ? m.content : '']),
+    );
+    for (const message of messages)
+      for (const call of message.tool_calls ?? []) {
+        let arg = call.function.arguments;
+        try {
+          const parsed = JSON.parse(arg) as Record<string, unknown>;
+          const main = parsed['command'] ?? parsed['path'] ?? parsed['query'] ?? parsed['action'];
+          arg = typeof main === 'string' ? main : arg;
+        } catch {
+          // Keep the raw text.
+        }
+        timeline.push({
+          tool: call.function.name,
+          arg: arg.replaceAll('\n', ' ').slice(0, 160),
+          result: (results.get(call.id) ?? '').split('\n')[0]?.slice(0, 100) ?? '',
+        });
+      }
+  }
   const judged: Judged = {
     files: new Map([...bytes].map(([k, v]) => [k, v.toString('utf8')])),
     bytes,
     replies,
     changed,
+    toolResults,
   };
   failures.push(...(task.check?.(judged) ?? []));
+  if (task.mustRunCommands !== undefined) {
+    const ran = called.filter((name) => name === 'run_command').length;
+    if (ran < task.mustRunCommands)
+      failures.push(
+        `ran ${String(ran)} commands, fewer than the ${String(task.mustRunCommands)} expected`,
+      );
+  }
 
   await write(repository, task.hidden ?? {});
   const commands = [...(task.run === undefined ? [] : [task.run]), ...(task.runs ?? [])];
@@ -301,6 +364,7 @@ async function runTask(task: WriteTask, runIndex: number, options: Options): Pro
     ),
     questions: questions.length,
     changed,
+    timeline,
   };
   if (failures.length > 0) {
     const keep = join(options.out, 'failed', `${task.id}.${String(runIndex)}`);
@@ -382,6 +446,7 @@ if ((process.env['DEEPSEEK_API_KEY'] ?? '').trim() === '') {
 }
 await mkdir(options.out, { recursive: true });
 let spent = 0;
+const startedAt = Date.now();
 // A run that stopped half way is taken up again: what is on record is not repeated.
 const done = new Set<string>();
 for (const file of await readdir(options.out))
@@ -393,6 +458,10 @@ for (const file of await readdir(options.out))
       }
 for (const { task, run } of mine) {
   if (done.has(`${task.id}#${String(run)}`)) continue;
+  if (options.stopAfterSeconds > 0 && (Date.now() - startedAt) / 1000 > options.stopAfterSeconds) {
+    process.stdout.write('time window used; the rest is for the next launch\n');
+    break;
+  }
   if (spent > options.budgetUsd) {
     process.stdout.write(`budget reached at ${spent.toFixed(3)} USD; stopping\n`);
     break;

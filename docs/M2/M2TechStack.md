@@ -88,6 +88,37 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 - `retryAfterMs`：按 ExecutorSet 第 7 节解析 `Retry-After`（两种格式），没有这个头时省略，按指数退避重试。这是对未观察到的响应的防御性实现。
 - 摘要请求：原写法（`tool_choice = none`、关闭思考）首次不命中缓存，约 3 万 token 输入的成本约为命中时的 50 倍。M2Design v1.11 改为保留工具定义、不设 `tool_choice`、思考开启，`summaryReasoningEffort` 缺省 `low`；API 不保证模型不调用工具，调用时按摘要不合格处理。
 
+### 3.3 阶段 6 实测：DeepSeek 搜索与抓取接口（任务 S6-T-1）
+
+DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://api.deepseek.com/v1/tools/search`、`/v1/tools/fetch`，与模型共用 API key，各 0.75 美元 / 千次成功请求，搜索 100 QPS、抓取 25 QPS；规格以 <https://api-docs.deepseek.com/guides/search> 为准）。
+它可能代替 Tavily 作为 `web_search` 的提供方，并省去 `web_fetch` 中的正文提取。官方文档没有写明的事项很多，**在实测证明可用之前，不得把它定为阶段 6 的提供方**；结论由 Cary 决定。
+
+**官方文档没有写明、必须实测的事项**：抓取是否渲染 JavaScript、是否遵守 robots.txt、页面大小与超时上限、搜索词与 URL 的留存与隐私、敏感话题的结果、`rerank_score` 与 `authority` 是否有区分度。第三方文章中的限流数字（每秒 5 次）与官方不一致，以实测为准。
+
+**实验**（脚本 `apps/control-plane/test/acceptance/web-eval/run-web-eval.ts`，与 `write-eval` 同样需要 `--yes` 才运行，密钥取自 `DEEPSEEK_API_KEY`，不打印、不写入记录；原始记录写入 `<out>/records.jsonl`，只含请求、状态码、耗时、结果摘要）：
+
+| 编号 | 实验 | 通过标准 |
+|---|---|---|
+| W-T1 | 协议：以官方规格各调用一次；故意制造 401（错误 key）、400（查询超过 128 字符、`count` 越界）、404（不存在的地址）、403（私网、回环、元数据地址、`file://`）；空结果；请求体多出未知字段 | 状态码与错误体和官方文档一致；私网与回环地址不返回任何正文；空结果为 `results: []` 且 HTTP 200 |
+| W-T2 | 搜索质量：不少于 20 个查询，覆盖中文与英文、代码报错信息、某个库的最新版本号、官方 API 文档、`site:` / `-site:` / `lang:` / `after:` / `before:` 算符、含敏感词的查询；每个查询记录结果数、前 3 条是否与问题相关（人工按预先写下的判据标注）、`date` 是否存在与是否合理、`rerank_score` 的分布 | 有明确答案的查询中，前 3 条含相关结果的不少于 80%；算符有效（`site:` 的结果全部在该域名内，`after:` 的结果日期不早于给定日期）；记录敏感词查询的空结果比例，不作为通过条件 |
+| W-T3 | 抓取：不少于 20 个地址，覆盖静态文档站、GitHub 的 README、源码文件与 issue、需要 JavaScript 渲染的单页应用、PDF、超过 1 MB 的长页面、中文页面、多次重定向、404、禁止抓取的页面、需要登录的页面；每个地址记录是否成功、Markdown 的质量（标题、链接、代码块、表格是否保留）、耗时、是否被截断 | 静态文档站与 GitHub 页面的成功率不少于 90%，代码块与标题保留；其余类别如实记录，用于决定是否保留本地抓取（S6-EX-2） |
+| W-T4 | 时延与限流：搜索与抓取各 30 次串行的耗时（p50、p95）；抓取以 30 个并发突发一次，观察 429 与 `Retry-After` | p95 在 10 秒以内；超限时返回 429 且可由重试恢复 |
+| W-T5 | 计费：调用前后各读一次账户余额，成功 100 次、空结果 20 次、失败 20 次 | 扣费与"只对成功且有结果的请求计费"一致；空结果与失败不扣费 |
+| W-T6 | 内容安全：以本地固定内容服务器之外的公开页面，取一个含"忽略之前的指示"类文字的测试页；用接口抓取，并确认返回的正文原样出现，由我们的封装标为不可信内容 | 正文不被接口改写；封装在工具结果中标出来源与"不可信"；模型在评测中不执行其中的指示 |
+| W-T7 | 对照：用最小的本地实现（HTTP 取回、readability 提取、HTML 转 Markdown）抓取与 W-T3 相同的地址 | 记录成功率与质量差异，作为"保留或删除本地抓取"的依据 |
+
+**费用**：不超过 200 次请求，按官方价目约 0.15 美元以内；只有 `--yes` 才运行，`--budget` 给出上限。
+
+**结论的写法**：实测完成后，把汇总表、原始记录的位置和下列结论之一写在本节，并在 M2OpenDecisions 记录 Cary 的决定：
+
+| 结果 | 阶段 6 的做法 |
+|---|---|
+| W-T1 至 W-T6 全部通过，W-T3 的各类别都可用 | `web_search` 与 `web_fetch` 都以 DeepSeek 为默认提供方；本地抓取不做，S6-EX-2 只保留地址检查、重定向检查与结果封装 |
+| 搜索通过，抓取只覆盖静态页面（JavaScript 页面、PDF 等失败） | 搜索用 DeepSeek；抓取先用 DeepSeek，失败的类别回退到本地抓取（S6-EX-2 完整保留） |
+| 搜索质量或限流不达标 | 搜索改用 Tavily，DeepSeek 抓取是否保留看 W-T3 |
+| W-T1 或 W-T5 不达标（协议与文档不符、计费不符） | 不用 DeepSeek 的接口，按原方案使用 Tavily 与本地抓取 |
+
+无论结论如何，`web_search` 与 `web_fetch` 都经提供方端口（`SearchProvider`、`FetchProvider`）调用，提供方可以替换；搜索词与抓取的地址是数据离开本机的通道，授权（`web.search`、`web.fetch`）、审计、密钥扫描与地址检查不因提供方而减少。留存与隐私的结论写入 [M2Security](M2Security.md) 的网络部分。
 ## 4. 新增依赖
 
 每项依赖在所属阶段的文档门中确定版本与用途，并按 M1TechStack 第 13 节的规则评审。
@@ -97,8 +128,8 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 | 终端界面（三个区域、活动区刷新、输入队列） | 1 | 已定：Ink 8.0.0（及其依赖 React 19.3.1；测试用 ink-testing-library 4.0.0）；只在 `apps/cli` 中使用，UserInteraction 经 `ConsoleView` 表达终端要求，不依赖 Ink（[Module/UserInteraction](Module/UserInteraction.md) 第 3 节） |
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
-| 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 与 `tree-sitter-bash` 的 WebAssembly 语法文件（不需要原生编译），只在 ExecutorSet 的 `command/parse/` 中使用；版本在阶段 3 的文档门中确定；提前任务 E-EX-3 可先行引入 |
-| 网页检索提供方 Tavily 的客户端 | 6 | 待定 |
+| 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 0.27.1 与 `tree-sitter-bash` 0.25.1 的 WebAssembly 语法文件（`tree-sitter-bash.wasm` 随包提供，不需要原生编译；`pnpm-workspace.yaml` 中 `allowBuilds` 对 `tree-sitter-bash` 为 `false`，不运行它的构建脚本），只在 ExecutorSet 的 `command/parse/` 中使用；E-EX-3 已引入（2026-11-05，Windows 与 Ubuntu 24.04 上测试通过） |
+| 网页检索与抓取的提供方（DeepSeek 搜索与抓取接口，或 Tavily） | 6 | 待定：由第 3.3 节的实测（S6-T-1）证明可用后，Cary 决定；两者都经 `SearchProvider`、`FetchProvider` 端口调用，不引入 SDK，直接使用 Node 的 `fetch` |
 | HTML 转 Markdown | 6 | 待定：M2Design 第 8.4 节倾向于把纯函数复制到 `vendor/` 并注明来源与许可证 |
 | 模板 YAML 解析 | 1 | 不新增：沿用 AgentToolPool 已有的 YAML 1.2 core schema 解析（M1），内置模板与使用者模板都由它解析 |
 

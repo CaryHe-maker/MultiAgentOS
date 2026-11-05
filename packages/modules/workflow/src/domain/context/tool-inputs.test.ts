@@ -80,6 +80,38 @@ describe('fileBaselines', () => {
   });
 });
 
+describe('toolInputOf for a command', () => {
+  const main = { kind: 'MAIN' } as unknown as Parameters<typeof toolInputOf>[3];
+
+  it('fills what the model leaves out: the root, two minutes, no network', () => {
+    expect(toolInputOf('COMMAND', { command: 'npm test' }, [], main)).toEqual({
+      ok: true,
+      input: { command: 'npm test', workdir: '', timeoutMs: 120_000, network: false },
+      workflowFields: { command: 'npm test', workdir: '', timeoutMs: 120_000, network: false },
+    });
+  });
+
+  it('keeps what the model asked for, with the work directory normalised', () => {
+    expect(
+      toolInputOf(
+        'COMMAND',
+        { command: 'curl x', workdir: './pkg//a', timeoutMs: 5_000, network: true },
+        [],
+        main,
+      ),
+    ).toMatchObject({
+      ok: true,
+      input: { workdir: 'pkg/a', timeoutMs: 5_000, network: true },
+    });
+  });
+
+  it.each(['../x', '/etc', 'a/../../b', 'C:/x'])('refuses the work directory %s', (workdir) => {
+    expect(toolInputOf('COMMAND', { command: 'ls', workdir }, [], main)).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
 describe('toolInputOf', () => {
   const known = [completed(newId('req'), { output: { path: 'a.ts', fileSha256: sha('a') } })];
 

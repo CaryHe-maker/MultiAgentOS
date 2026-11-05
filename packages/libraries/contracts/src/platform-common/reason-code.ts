@@ -68,6 +68,13 @@ export const REASON_CODE_CATEGORY = {
   UNDO_NOT_AVAILABLE: 'CONFLICT',
   NOTHING_TO_UNDO: 'CONFLICT',
   UNDO_UNKNOWN: 'CONFLICT',
+  COMMAND_DENIED: 'POLICY',
+  SANDBOX_UNAVAILABLE: 'DEPENDENCY',
+  APPROVAL_MISMATCH: 'INTEGRITY',
+  ENV_ASSERTION_FAILED: 'INTEGRITY',
+  PROTECTED_PATH_CREATED: 'POLICY',
+  NOT_A_GIT_REPOSITORY: 'EXECUTION',
+  MEMORY_PRESSURE: 'RESOURCE',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
@@ -119,6 +126,7 @@ export const CORE_REJECTED_CODES = [
   'UNDO_NOT_AVAILABLE',
   'NOTHING_TO_UNDO',
   'UNDO_UNKNOWN',
+  'MEMORY_PRESSURE',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
@@ -136,6 +144,10 @@ export const EXECUTOR_REJECTED_CODES = [
   'FILE_CHANGED',
   'EDIT_NO_MATCH',
   'EDIT_NOT_UNIQUE',
+  'APPROVAL_MISMATCH',
+  'ENV_ASSERTION_FAILED',
+  'SANDBOX_UNAVAILABLE',
+  'NOT_A_GIT_REPOSITORY',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `FAILED` outcome. */
 export const EXECUTOR_FAILED_CODES = [
@@ -174,6 +186,8 @@ export const UNIT_REJECTED_CODES = [
   'QUOTA_EXHAUSTED',
   'CAPABILITY_NOT_GRANTED',
   'ADMISSION_CHECK_FAILED',
+  'COMMAND_DENIED',
+  'PROTECTED_PATH_CREATED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */

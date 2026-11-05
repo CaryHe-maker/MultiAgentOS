@@ -6,6 +6,24 @@ import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { runEnd } from './run-outcome.js';
 
+export const COMMAND_ANSWER_SCOPES = ['ONCE', 'COMMAND', 'PREFIX', 'DENY'] as const;
+
+/** Why "allow from now on" is not offered for a command line (ExecutorSet 5c). */
+export const UNREUSABLE_REASONS = [
+  'PARSE_ERROR',
+  'DYNAMIC_COMMAND_NAME',
+  'COMMAND_SUBSTITUTION',
+  'PROCESS_SUBSTITUTION',
+  'EVAL',
+  'SHELL_C',
+  'PIPE_TO_SHELL',
+  'HEREDOC_TO_SHELL',
+  'NO_COMMAND',
+  'CRITICAL_COMMAND',
+  'NETWORK',
+  'UNISOLATED',
+] as const;
+
 /** A question waits until the user answers or the run converges; it never times out (M2Design 5.3). */
 const question = {
   type: Type.Literal('AuthorizationRequest'),
@@ -33,6 +51,29 @@ export const AuthorizationRequestSchema = Type.Union(
       capability: Type.Literal('workspace.write'),
       writeRoot: text(1024),
       critical: Type.Literal(false),
+    }),
+    /**
+     * A command (Kernel/Core 5b). It shows exactly what will run: the command, where, what it may
+     * write, whether it shares the network or is not isolated. `options` is what may be answered;
+     * a critical or unreusable command offers ONCE and DENY only.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('command.exec'),
+      command: text(8000),
+      workdir: Type.String({ maxLength: 1024 }),
+      writableRoots: Type.Array(text(1024), { minItems: 1 }),
+      network: Type.Boolean(),
+      unisolated: Type.Boolean(),
+      critical: Type.Boolean(),
+      /** The prefixes a PREFIX answer would allow, one for each simple command. */
+      prefixes: Type.Array(text(500)),
+      /** Why only ONCE and DENY are offered; empty when COMMAND and PREFIX are. */
+      unreusable: Type.Array(Type.Enum(UNREUSABLE_REASONS)),
+      /** The critical-command pattern that matched, if any. */
+      matched: Type.Optional(text(200)),
+      approvalDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+      options: Type.Array(Type.Enum(COMMAND_ANSWER_SCOPES), { minItems: 2 }),
     }),
     /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
     closed({

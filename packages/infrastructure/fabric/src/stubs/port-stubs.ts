@@ -1,5 +1,6 @@
 import type {
   BoundaryContext,
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   ExecutionFact,
   ExecutionRequest,
@@ -48,6 +49,7 @@ export const SCHEMA_IDS = {
   sessionProjection: 'kernel.control.SessionProjection.v1',
   execute: 'kernel.execution.ExecutionRequest.v1',
   cancelRunExecutions: 'kernel.execution.CancelRunExecutionsRequest.v1',
+  cancelExecution: 'kernel.execution.CancelExecutionRequest.v1',
   supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
   executionFact: 'kernel.execution.ExecutionFact.v1',
   workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
@@ -252,6 +254,7 @@ export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInbo
 export interface SupervisorPort {
   execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
+  cancelExecution(request: CancelExecutionRequest): Promise<void>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
@@ -266,6 +269,8 @@ export function createSupervisorPort(
   return {
     execute: (request) => fabric.request(SCHEMA_IDS.execute, request, contextOf(request)),
     cancelRun: (request) => fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf({})),
+    cancelExecution: (request) =>
+      fabric.request(SCHEMA_IDS.cancelExecution, request, contextOf({})),
     shutdown: (request) => fabric.request(SCHEMA_IDS.supervisorShutdown, request, contextOf({})),
   };
 }

@@ -16,6 +16,8 @@ export interface TerminationVerdict {
   readonly requestState?: RequestState;
   /** MODEL only, and only for TERMINATED. */
   readonly usage?: TokenUsage;
+  /** Only for TERMINATED by `cancelExecution`. */
+  readonly cancelReason?: 'PAUSED' | 'ABORTED';
 }
 
 /**
@@ -128,6 +130,9 @@ export function toTerminationFact(
       reasonCode: verdict.reasonCode,
       requestState,
       ...(usage === undefined ? {} : { usage }),
+      ...(verdict.outcome === 'TERMINATED' && verdict.cancelReason !== undefined
+        ? { cancelReason: verdict.cancelReason }
+        : {}),
     } as ExecutionFact;
   }
 
@@ -135,5 +140,8 @@ export function toTerminationFact(
     ...base,
     outcome: verdict.outcome,
     reasonCode: verdict.reasonCode,
+    ...(verdict.outcome === 'TERMINATED' && verdict.cancelReason !== undefined
+      ? { cancelReason: verdict.cancelReason }
+      : {}),
   } as ExecutionFact;
 }

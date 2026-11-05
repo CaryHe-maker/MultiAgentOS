@@ -84,7 +84,7 @@ M1 的测试全部保留。增加：`v1` 各条规则的反例；`v0` 与 `v1` �
 |---|---|
 | 1 | 第 3–6 节 |
 | 2 | Unit 的能力与资源键；`file-write`、`file-edit` 与写入工具；TOOL `update-todos`（`purpose = CONTROL`，模型可见的名称 `update_todos`，参数为 `workflow.UpdateTodosArgs`，M2Design 第 3.5 节）与 Agent 的 `actions.todos`；UNIT `output-read`（`executionKind = OUTPUT_READ`，受保护能力 `repo.read`）与 TOOL `read-output`（`purpose = UNIT`，模型可见的名称 `read_output`，参数为 `executor.OutputReadInput` 中由模型填写的部分：`toolCallId`、`offset?`、`limit?`、`pattern?`）；Agent 的能力白名单 |
-| 3 | `run-command`、`git-inspect` 及其工具 |
+| 3 | UNIT `run-command`（`executionKind = COMMAND`，受保护能力 `command.exec`，`effect = EXTERNAL`，`failurePolicy` 把 `COMMAND_DENIED`、`SANDBOX_UNAVAILABLE`、`APPROVAL_MISMATCH`、`ENV_ASSERTION_FAILED`、`PROTECTED_PATH_CREATED` 交回模型）与 TOOL `run-command`（`run_command`，参数为 `executor.RunCommandArgs`：`command`、`workdir?`、`timeoutMs?`、`network?`，缺省值由 Workflow 填写）；UNIT `git-inspect`（`GIT_INSPECT`，`repo.read`）与 TOOL `git-inspect`（`git_inspect`，参数为 `executor.GitInspectInput`）；main 的能力白名单增加 `command.exec`、`command.network`，提示词 `main-system` 增加运行命令与验证的准则 |
 | 4 | explorer、worker（都带 `read_output`，worker 另带 `update_todos`）、`finish_subagent` 的结果契约、`run_subagents` 工具、Unit 的并发类别 |
 | 5 | `ask_user` 工具 |
 | 6 | `web-search`、`web-fetch` 及其工具 |
