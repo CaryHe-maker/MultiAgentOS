@@ -79,6 +79,7 @@ export interface ExecutionConfig {
   readonly orientBudget: number;
   readonly searchBudget: number;
   readonly cancelGraceMs: number;
+  readonly pauseDrainMs: number;
   readonly convergenceMarginMs: number;
 }
 
@@ -426,6 +427,22 @@ export class AttemptRequestBuilder {
         if (this.#deps.artifacts.isFullOutput(outputRef))
           throw new RequestBuildError('INVALID_INPUT');
         return { ...result, text: await this.#text(outputRef) };
+      }
+      case 'HUMAN_ANSWER': {
+        // The result of the ask_user call: what the user said, cut like any long result.
+        const said = await this.#text(entry.contentRef);
+        const shown =
+          said.length <= SUBAGENT_RESULT_CHARS
+            ? said
+            : `${said.slice(0, SUBAGENT_RESULT_CHARS)}
+[cut: the answer is ${String(said.length)} characters, only the first ${String(SUBAGENT_RESULT_CHARS)} are shown]`;
+        return {
+          ...base,
+          kind: 'FEEDBACK',
+          text: `The user answered:
+${shown}`,
+          toolCallId: entry.toolCallId,
+        };
       }
       case 'TASK': {
         const lines = [

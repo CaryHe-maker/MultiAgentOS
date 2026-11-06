@@ -16,7 +16,13 @@ import {
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, terminalText } from './console-text.js';
-import type { ActivityLine, ConsoleView, LiveState, PendingItem } from './console-view.js';
+import type {
+  ActivityLine,
+  ConsoleView,
+  LiveState,
+  PendingItem,
+  QuestionField,
+} from './console-view.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -24,7 +30,49 @@ export interface ConsoleDeps {
   readonly now?: () => Date;
 }
 
-type RunState = 'NONE' | 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'CLOSED';
+type RunState =
+  | 'NONE'
+  | 'RUNNING'
+  | 'PAUSING'
+  | 'PAUSED'
+  | 'INTERRUPTING'
+  | 'AWAITING_INPUT'
+  | 'CONVERGING'
+  | 'CLOSED';
+
+/** `@name` at the head of a message names the AgentRun it is for; the rest is the message. */
+function addressed(input: string): { readonly name?: string; readonly text: string } {
+  const match = /^@(\S+)\s*([\s\S]*)$/u.exec(input.trim());
+  return match === null ? { text: input.trim() } : { name: match[1] ?? '', text: match[2] ?? '' };
+}
+
+const SKIP = Symbol('skip');
+type FieldValue = string | boolean | readonly string[];
+
+/** What a typed answer means for a field of a question; undefined when it does not fit. */
+function fieldValue(field: QuestionField, input: string): FieldValue | typeof SKIP | undefined {
+  const answer = input.trim();
+  if (answer === '-' && field.required !== true) return SKIP;
+  const options = field.options ?? [];
+  const pick = (token: string): string | undefined =>
+    options[Number(token) - 1] ?? options.find((option) => option === token);
+  switch (field.type) {
+    case 'text':
+    case 'textarea':
+      return answer.length > 0 ? answer : undefined;
+    case 'confirm':
+      if (/^(y|yes|是|好)$/iu.test(answer)) return true;
+      return /^(n|no|否|不)$/iu.test(answer) ? false : undefined;
+    case 'select':
+      return pick(answer);
+    case 'multiselect': {
+      const picked = answer.split(/[,，]/u).map((token) => pick(token.trim()));
+      return picked.length > 0 && picked.every((value) => value !== undefined)
+        ? [...new Set(picked)]
+        : undefined;
+    }
+  }
+}
 
 /** `mas run` exits with the run's outcome (Module/UserInteraction 7). */
 export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
@@ -129,6 +177,8 @@ export class Console {
   #openRequest: string | undefined;
   #hint: string | undefined;
   #interruptedAt: number | undefined;
+  /** The run is being aborted: the open input that comes next is not given the queued messages. */
+  #aborting = false;
   #finished: ((code: number) => void) | undefined;
   #exit: (() => void) | undefined;
   #exitCode = 0;
@@ -277,6 +327,11 @@ export class Console {
       await this.#answerHuman(input);
       return;
     }
+    // A paused run goes on with what the user writes: the message is the note that comes with it.
+    if (this.#runState === 'PAUSED') {
+      await this.#resume(input);
+      return;
+    }
     // Nothing waits for input: the message waits in the console, Kernel never sees it (5.2).
     this.#queued.push(input);
     // After an interrupt there is no run to wait for: this message opens the next one, and the
@@ -305,7 +360,26 @@ export class Console {
     return last;
   }
 
+  /**
+   * Ctrl+C (Module/UserInteraction 5.4): pauses a running run, aborts a paused one, and leaves the
+   * rest as before: twice within two seconds leaves the program.
+   */
   async interrupt(): Promise<void> {
+    const sessionId = this.#sessionId;
+    const workflowRunId = this.#workflowRunId;
+    if (sessionId !== undefined && workflowRunId !== undefined) {
+      const request = { requestId: newId('req'), sessionId, workflowRunId };
+      if (this.#runState === 'RUNNING') {
+        await this.#deps.gateway.pauseRun(request, this.#context());
+        return;
+      }
+      if (this.#runState === 'PAUSING' || this.#runState === 'PAUSED') {
+        this.#notice(text.aborting);
+        await this.#deps.gateway.interruptRun(request, this.#context());
+        return;
+      }
+      if (this.#runState === 'INTERRUPTING') return;
+    }
     const now = this.#now().getTime();
     if (this.#interruptedAt !== undefined && now - this.#interruptedAt <= INTERRUPT_WINDOW_MS) {
       await this.shutdown();
@@ -320,6 +394,202 @@ export class Console {
   async shutdown(): Promise<void> {
     await this.#deps.gateway.shutdown({ requestId: newId('req') }, this.#context());
     this.#exit?.();
+  }
+
+  /** The AgentRun a `@name` stands for, by what the activity area shows. */
+  #target(name: string | undefined): { readonly agentRunId?: string; readonly error?: string } {
+    if (name === undefined) return {};
+    const lines = [...this.#activity.values()].filter(
+      (line) => line.label === name || line.label.endsWith(` ${name}`),
+    );
+    const [only] = lines;
+    if (lines.length === 1 && only !== undefined) return { agentRunId: only.agentRunId };
+    return { error: lines.length === 0 ? text.noSuchTask(name) : text.ambiguousTask(name) };
+  }
+
+  /** A note slipped into a run that goes on (Alt+Enter, `/steer`): nothing stops (M2Design 4.5). */
+  async steer(raw: string): Promise<void> {
+    const sessionId = this.#sessionId;
+    const workflowRunId = this.#workflowRunId;
+    const { name, text: note } = addressed(raw);
+    if (
+      this.#runState !== 'RUNNING' ||
+      sessionId === undefined ||
+      workflowRunId === undefined ||
+      note.length === 0
+    ) {
+      this.#notice(text.steerNotNow);
+      return;
+    }
+    const target = this.#target(name);
+    if (target.error !== undefined) {
+      this.#notice(target.error);
+      return;
+    }
+    const response = await this.#deps.gateway.steerRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        input: { inputId: newId('inp'), text: note },
+        ...(target.agentRunId === undefined ? {} : { targetAgentRunId: target.agentRunId }),
+      },
+      this.#context(),
+    );
+    if (response.outcome === 'REJECTED') {
+      this.#notice(describeReason(response.reasonCode));
+      return;
+    }
+    this.#deps.view.print({ kind: 'USER', text: terminalText(note) });
+    const line =
+      target.agentRunId === undefined
+        ? [...this.#activity.values()].find((each) => each.parentAgentRunId === undefined)
+        : this.#activity.get(target.agentRunId);
+    this.#notice(
+      text.steered(
+        line?.phase === text.phase.WAITING_SUBTASKS || line?.phase === text.phase.AWAITING_ANSWER,
+      ),
+    );
+    this.#refresh();
+  }
+
+  /** `/continue`, or a plain message while paused: the run goes on, with a note if there is one. */
+  async #resume(raw: string): Promise<void> {
+    const sessionId = this.#sessionId;
+    const workflowRunId = this.#workflowRunId;
+    if (this.#runState !== 'PAUSED' || sessionId === undefined || workflowRunId === undefined) {
+      this.#notice(text.continueNotNow);
+      return;
+    }
+    const { name, text: note } = addressed(raw);
+    const target = this.#target(name);
+    if (target.error !== undefined) {
+      this.#notice(target.error);
+      return;
+    }
+    const response = await this.#deps.gateway.resumeRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        ...(note.length === 0
+          ? {}
+          : {
+              steer: {
+                input: { inputId: newId('inp'), text: note },
+                ...(target.agentRunId === undefined ? {} : { targetAgentRunId: target.agentRunId }),
+              },
+            }),
+      },
+      this.#context(),
+    );
+    if (response.outcome === 'REJECTED') {
+      this.#notice(describeReason(response.reasonCode));
+      return;
+    }
+    if (note.length > 0) this.#deps.view.print({ kind: 'USER', text: terminalText(note) });
+    this.#notice(text.resumed);
+  }
+
+  /** A question of `ask_user`: shown with who asked it, answered field by field (M2Design 4.2). */
+  async #askQuestion(
+    event: Extract<KernelToInteractionEvent, { type: 'HumanRequest' }> & {
+      readonly kind: 'ask' | 'confirm' | 'review';
+    },
+  ): Promise<void> {
+    const agent = this.#activity.get(event.attachedAgentRunId)?.label ?? 'Agent';
+    const lines = [text.question.from(terminalText(agent)), terminalText(event.question)];
+    if (event.kind === 'review' && event.reviewRef !== undefined)
+      lines.push(text.question.review, terminalText((await this.#read(event.reviewRef)) ?? ''));
+    const item: Extract<PendingItem, { kind: 'QUESTION' }> = {
+      kind: 'QUESTION',
+      humanRequestId: event.humanRequestId,
+      question: event.kind,
+      fields: event.fields ?? [],
+      next: 0,
+      values: {},
+      body: lines.join('\n'),
+      text: '',
+    };
+    this.#pending.push({ ...item, text: this.#questionPrompt(item) });
+  }
+
+  /** What the user is asked now: the question, and the field in turn when there are fields. */
+  #questionPrompt(item: Extract<PendingItem, { kind: 'QUESTION' }>): string {
+    const field = item.fields[item.next];
+    if (field === undefined)
+      return `${item.body}\n${item.question === 'confirm' ? text.question.confirmMenu : item.question === 'review' ? text.question.review_note : ''}`.trimEnd();
+    const extra =
+      field.type === 'select' || field.type === 'multiselect'
+        ? [
+            text.question.options(field.options ?? []),
+            ...(field.type === 'multiselect' ? [text.question.multi] : []),
+          ]
+        : field.type === 'confirm'
+          ? [text.question.confirmMenu]
+          : [];
+    return [
+      item.body,
+      text.question.field(terminalText(field.label), item.next, item.fields.length),
+      ...extra.map(terminalText),
+      ...(field.required === true ? [] : [text.question.skip]),
+    ].join('\n');
+  }
+
+  async #answerQuestion(
+    item: Extract<PendingItem, { kind: 'QUESTION' }>,
+    input: string,
+  ): Promise<void> {
+    const field = item.fields[item.next];
+    if (field === undefined) {
+      const answer = input.trim();
+      let said = answer;
+      if (item.question === 'confirm') {
+        if (/^(y|yes|是|好)$/iu.test(answer)) said = 'yes';
+        else if (/^(n|no|否|不)$/iu.test(answer)) said = 'no';
+        else {
+          this.#hint = text.question.invalid;
+          return;
+        }
+      }
+      this.#pending.shift();
+      this.#deps.view.print({ kind: 'USER', text: terminalText(said) });
+      await this.#sendAnswer(item.humanRequestId, said);
+      return;
+    }
+    const value = fieldValue(field, input);
+    if (value === undefined) {
+      this.#hint = text.question.invalid;
+      this.#refresh();
+      return;
+    }
+    const values = value === SKIP ? item.values : { ...item.values, [field.name]: value };
+    const next = item.next + 1;
+    if (next < item.fields.length) {
+      const advanced = { ...item, next, values };
+      this.#pending[0] = { ...advanced, text: this.#questionPrompt(advanced) };
+      this.#refresh();
+      return;
+    }
+    this.#pending.shift();
+    await this.#sendAnswer(item.humanRequestId, JSON.stringify(values));
+  }
+
+  async #sendAnswer(humanRequestId: string, answer: string): Promise<void> {
+    const sessionId = this.#sessionId;
+    const workflowRunId = this.#workflowRunId;
+    if (sessionId === undefined || workflowRunId === undefined) return;
+    await this.#deps.gateway.answerHuman(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId,
+        input: { inputId: newId('inp'), text: answer },
+      },
+      this.#context(),
+    );
+    this.#refresh();
   }
 
   async #answerHuman(input: string): Promise<void> {
@@ -351,6 +621,10 @@ export class Console {
   }
 
   async #answer(item: PendingItem, input: string): Promise<void> {
+    if (item.kind === 'QUESTION') {
+      await this.#answerQuestion(item, input);
+      return;
+    }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
     const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
@@ -404,6 +678,7 @@ export class Console {
 
   async #command(input: string): Promise<void> {
     const [name = '', argument] = input.split(/\s+/u);
+    const rest = input.slice(name.length).trim();
     const listed = (value: string | undefined) => {
       const index = Number(value) - 1;
       return this.#listed[index] ?? value;
@@ -417,6 +692,12 @@ export class Console {
         break;
       case '/timeline':
         this.#showTimeline();
+        break;
+      case '/continue':
+        await this.#resume(rest);
+        break;
+      case '/steer':
+        await this.steer(rest);
         break;
       case '/status':
         this.#notice(text.status(text.runState[this.#runState] ?? this.#runState, this.#budget));
@@ -600,17 +881,40 @@ export class Console {
     switch (event.type) {
       case 'RunStateChanged':
         this.#runState = event.state;
-        if (event.state !== 'RUNNING') this.#activity.clear();
+        if (event.state === 'INTERRUPTING') this.#aborting = true;
+        // The tree stays while the run is held, so that a note can still name its task.
+        if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING')
+          this.#activity.clear();
+        if (event.state === 'PAUSED') this.#hint = text.paused;
+        else if (event.state === 'RUNNING') this.#hint = undefined;
         break;
       case 'HumanRequest': {
+        if (event.kind !== 'prompt') {
+          await this.#askQuestion(event);
+          break;
+        }
         this.#openRequest = event.humanRequestId;
+        // After an abort what was queued goes back to the input box, to be sent or dropped.
+        if (this.#aborting) {
+          this.#aborting = false;
+          this.#putBack();
+          break;
+        }
         const next = this.#queued.shift();
         if (next !== undefined) await this.#answerHuman(next);
         break;
       }
-      case 'HumanResolved':
+      case 'HumanResolved': {
         if (this.#openRequest === event.humanRequestId) this.#openRequest = undefined;
+        const index = this.#pending.findIndex(
+          (item) => item.kind === 'QUESTION' && item.humanRequestId === event.humanRequestId,
+        );
+        if (index >= 0) {
+          this.#pending.splice(index, 1);
+          if (event.resolution === 'CANCELLED') this.#notice(text.questionCancelled);
+        }
         break;
+      }
       case 'AuthorizationRequest':
         this.#pending.push({
           kind: 'AUTHORIZATION',
@@ -789,6 +1093,7 @@ export class Console {
 
   async #runFinished(event: RunFinished): Promise<void> {
     this.#runState = 'CLOSED';
+    this.#aborting = false;
     this.#activity.clear();
     this.#openRequest = undefined;
     this.#pending.splice(0);

@@ -100,6 +100,16 @@ export function agentBindingOf(
             ),
           },
         }),
+    ...(agent.actions.askUser === undefined
+      ? {}
+      : {
+          askTool: {
+            toolName: toolOf(agent.actions.askUser.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.askUser.toolRef).parametersContract,
+            ),
+          },
+        }),
     ...(agent.actions.todos === undefined
       ? {}
       : {

@@ -39,8 +39,9 @@ const runIds = (kernel: ReturnType<typeof createFakeSessionKernel>) => {
 const lastTurn = (kernel: ReturnType<typeof createFakeSessionKernel>): string => {
   const answer = [...kernel.workflowEvents]
     .reverse()
-    .find((event) => event.event.type === 'HumanAnswered');
-  if (answer?.event.type !== 'HumanAnswered') throw new Error('no turn');
+    .find((event) => event.event.type === 'HumanAnswered' && event.event.kind === 'prompt');
+  if (answer?.event.type !== 'HumanAnswered' || answer.event.kind !== 'prompt')
+    throw new Error('no turn');
   return answer.event.turnId;
 };
 

@@ -40,6 +40,7 @@ import * as sessionIndexes from './platform-persistence/indexes.js';
 import * as locks from './platform-persistence/locks.js';
 import * as sessionLog from './platform-persistence/session-log.js';
 import * as reply from './workflow/reply.js';
+import * as askUser from './workflow/ask-user.js';
 import * as subagents from './workflow/subagents.js';
 import * as commonSchemas from './platform-common/common-schemas.js';
 import * as systemConfig from './platform-config/system-config.js';
@@ -230,6 +231,7 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   sessionLog,
   reply,
   subagents,
+  askUser,
 ];
 
 const hasSchemaId = (value: unknown): value is TSchema =>

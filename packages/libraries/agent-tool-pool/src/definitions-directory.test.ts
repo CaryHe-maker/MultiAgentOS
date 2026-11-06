@@ -39,6 +39,7 @@ describe('shipped definitions', () => {
       'PROMPT:planner-system@v0.1.0',
       'PROMPT:worker-system@v0.1.0',
       'TEMPLATE:analyze@v0.1.0',
+      'TOOL:ask-user@v0.1.0',
       'TOOL:edit-file@v0.1.0',
       'TOOL:finish-analysis@v0.1.0',
       'TOOL:finish-explorer@v0.1.0',

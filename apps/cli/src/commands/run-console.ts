@@ -3,7 +3,7 @@ import { createInkConsole } from '../presentation/ink-console.js';
 import { createLineConsoleView, readLines } from '../presentation/line-console.js';
 import type { MasCommand } from './parse-cli.js';
 
-type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast'>;
+type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>;
 
 /** The terminal side of the console: a view to build the Console with, then its input. */
 export interface Terminal {

@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { DefinitionRefSchema, pinnedRefOf } from '../catalog/definition-schemas.js';
 import { WorkspaceRevertedSchema } from '../kernel-control/interaction-events.js';
+import { LOCAL_QUESTION_KINDS } from '../kernel-control/human-request.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { runEnd } from '../kernel-control/run-outcome.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -75,6 +76,13 @@ export const UnitReportSchema = Type.Union(
       status: Type.Literal('FAILED'),
       reasonCode: reasonCodeOf(UNIT_FAILED_CODES),
     }),
+    /** Cancelled by a pause or an abort (M2Design 4.4); what it used is already in `budget`. */
+    closed({
+      ...report,
+      unitAttemptId: IdSchemas.unitAttemptId,
+      status: Type.Literal('INTERRUPTED'),
+      interruptedBy: Type.Enum(['PAUSED', 'ABORTED']),
+    }),
   ],
   { $id: 'kernel.unit.UnitReport.v1' },
 );
@@ -88,6 +96,11 @@ const humanAnswered = {
   turnId: IdSchemas.turnId,
   template: Type.Optional(DefinitionRefSchema),
 };
+const answeredContent = {
+  type: Type.Literal('HumanAnswered'),
+  inputId: IdSchemas.inputId,
+  contentRef: ArtifactRefSchema,
+};
 export const HumanAnsweredSchema = Type.Union(
   [
     closed({ ...humanAnswered, origin: Type.Literal('initial') }),
@@ -95,6 +108,19 @@ export const HumanAnsweredSchema = Type.Union(
       ...humanAnswered,
       origin: Type.Literal('requested'),
       humanRequestId: IdSchemas.humanRequestId,
+    }),
+    /** The answer to a local question: it opens no Turn (M2Design 4.2). */
+    closed({
+      ...answeredContent,
+      kind: Type.Enum(LOCAL_QUESTION_KINDS),
+      origin: Type.Literal('requested'),
+      humanRequestId: IdSchemas.humanRequestId,
+    }),
+    /** A note slipped in while the run goes on: no request before it, no Turn after (M2Design 4.5). */
+    closed({
+      ...answeredContent,
+      kind: Type.Literal('steer'),
+      targetAgentRunId: Type.Optional(IdSchemas.agentRunId),
     }),
   ],
   { $id: 'kernel.unit.HumanAnswered.v1' },
@@ -138,6 +164,40 @@ export const RunInterruptedSchema = closed(
 );
 export type RunInterrupted = Static<typeof RunInterruptedSchema>;
 
+export const RunPausedSchema = closed(
+  { type: Type.Literal('RunPaused') },
+  'kernel.unit.RunPaused.v1',
+);
+export type RunPaused = Static<typeof RunPausedSchema>;
+
+/** `steer` is the note added while continuing; Workflow turns it into a HUMAN(steer) first. */
+export const RunResumedSchema = closed(
+  {
+    type: Type.Literal('RunResumed'),
+    steer: Type.Optional(
+      closed({
+        inputId: IdSchemas.inputId,
+        contentRef: ArtifactRefSchema,
+        targetAgentRunId: Type.Optional(IdSchemas.agentRunId),
+      }),
+    ),
+  },
+  'kernel.unit.RunResumed.v1',
+);
+export type RunResumed = Static<typeof RunResumedSchema>;
+
+/** A question that waited for the user is gone because the run was interrupted. */
+export const HumanCancelledSchema = closed(
+  {
+    type: Type.Literal('HumanCancelled'),
+    humanRequestId: IdSchemas.humanRequestId,
+    nodeId: IdSchemas.nodeId,
+    reason: Type.Enum(INTERRUPT_REASONS),
+  },
+  'kernel.unit.HumanCancelled.v1',
+);
+export type HumanCancelled = Static<typeof HumanCancelledSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   UnitReportSchema,
@@ -147,6 +207,9 @@ export const KernelToWorkflowEventSchema = Type.Union([
   WorkspaceRevertedSchema,
   WorkspaceDivergedSchema,
   RunInterruptedSchema,
+  RunPausedSchema,
+  RunResumedSchema,
+  HumanCancelledSchema,
 ]);
 export type KernelToWorkflowEvent = Static<typeof KernelToWorkflowEventSchema>;
 

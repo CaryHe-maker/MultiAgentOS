@@ -263,6 +263,35 @@
               },
               "additionalProperties": false
             },
+            "askUser": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
             "spawn": {
               "type": "object",
               "required": [
@@ -1199,6 +1228,35 @@
                   ]
                 },
                 "todos": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "askUser": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -4043,6 +4101,80 @@
                   "seq",
                   "category",
                   "kind",
+                  "toolCallId",
+                  "question",
+                  "contentRef"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "HUMAN_ANSWER"
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "question": {
+                    "enum": [
+                      "ask",
+                      "confirm",
+                      "review"
+                    ]
+                  },
+                  "contentRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -4896,6 +5028,80 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "toolCallId",
+            "question",
+            "contentRef"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "HUMAN_ANSWER"
+            },
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "question": {
+              "enum": [
+                "ask",
+                "confirm",
+                "review"
+              ]
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
             }
           },
           "additionalProperties": false
@@ -7406,6 +7612,8 @@
                 "AWAITING_AUTHORIZATION",
                 "QUEUED",
                 "WAITING_SUBTASKS",
+                "AWAITING_ANSWER",
+                "PAUSED",
                 "WRAPPING_UP",
                 "ENDED"
               ]
@@ -9318,6 +9526,80 @@
                                   "seq",
                                   "category",
                                   "kind",
+                                  "toolCallId",
+                                  "question",
+                                  "contentRef"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "HUMAN_ANSWER"
+                                  },
+                                  "toolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "question": {
+                                    "enum": [
+                                      "ask",
+                                      "confirm",
+                                      "review"
+                                    ]
+                                  },
+                                  "contentRef": {
+                                    "type": "object",
+                                    "required": [
+                                      "artifactId",
+                                      "sha256",
+                                      "size",
+                                      "mediaType"
+                                    ],
+                                    "properties": {
+                                      "artifactId": {
+                                        "type": "string",
+                                        "pattern": "^art_[a-f0-9]{64}$"
+                                      },
+                                      "sha256": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      },
+                                      "size": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "$id": "platform.common.ArtifactRef.v1"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
                                   "text"
                                 ],
                                 "properties": {
@@ -10184,42 +10466,175 @@
               "const": "requestHuman"
             },
             "request": {
-              "type": "object",
-              "required": [
-                "requestId",
-                "sessionId",
-                "workflowRunId",
-                "humanRequestId",
-                "nodeId",
-                "kind"
-              ],
-              "properties": {
-                "requestId": {
-                  "type": "string",
-                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "sessionId",
+                    "workflowRunId",
+                    "humanRequestId",
+                    "nodeId",
+                    "kind"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string",
+                      "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "workflowRunId": {
+                      "type": "string",
+                      "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "humanRequestId": {
+                      "type": "string",
+                      "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "prompt"
+                    }
+                  },
+                  "additionalProperties": false
                 },
-                "sessionId": {
-                  "type": "string",
-                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "workflowRunId": {
-                  "type": "string",
-                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "humanRequestId": {
-                  "type": "string",
-                  "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "nodeId": {
-                  "type": "string",
-                  "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "kind": {
-                  "type": "string",
-                  "const": "prompt"
+                {
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "sessionId",
+                    "workflowRunId",
+                    "humanRequestId",
+                    "nodeId",
+                    "kind",
+                    "attachedAgentRunId",
+                    "question"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string",
+                      "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "workflowRunId": {
+                      "type": "string",
+                      "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "humanRequestId": {
+                      "type": "string",
+                      "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "kind": {
+                      "enum": [
+                        "ask",
+                        "confirm",
+                        "review"
+                      ]
+                    },
+                    "attachedAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "type",
+                          "label"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "type": {
+                            "enum": [
+                              "text",
+                              "textarea",
+                              "select",
+                              "multiselect",
+                              "confirm"
+                            ]
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "minItems": 1,
+                            "maxItems": 20
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    },
+                    "reviewRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
                 }
-              },
-              "additionalProperties": false,
+              ],
               "$id": "kernel.unit.RequestHumanRequest.v1"
             }
           },
@@ -11152,6 +11567,234 @@
             },
             "requestType": {
               "type": "string",
+              "const": "pauseRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.PauseRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "resumeRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "steer": {
+                  "type": "object",
+                  "required": [
+                    "input"
+                  ],
+                  "properties": {
+                    "input": {
+                      "type": "object",
+                      "required": [
+                        "inputId",
+                        "text"
+                      ],
+                      "properties": {
+                        "inputId": {
+                          "type": "string",
+                          "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "targetAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.ResumeRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "interruptRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.InterruptRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "steerRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "input"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "input": {
+                  "type": "object",
+                  "required": [
+                    "inputId",
+                    "text"
+                  ],
+                  "properties": {
+                    "inputId": {
+                      "type": "string",
+                      "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100000
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "targetAgentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.SteerRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
               "const": "readArtifact"
             },
             "request": {
@@ -11391,27 +12034,145 @@
       "$id": "kernel.control.GatewayForward.v1"
     },
     "kernel.control.HumanRequest.v1": {
-      "type": "object",
-      "required": [
-        "type",
-        "humanRequestId",
-        "kind"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "HumanRequest"
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "humanRequestId",
+            "kind"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "HumanRequest"
+            },
+            "humanRequestId": {
+              "type": "string",
+              "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "prompt"
+            }
+          },
+          "additionalProperties": false
         },
-        "humanRequestId": {
-          "type": "string",
-          "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "kind": {
-          "type": "string",
-          "const": "prompt"
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "humanRequestId",
+            "kind",
+            "attachedAgentRunId",
+            "question"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "HumanRequest"
+            },
+            "humanRequestId": {
+              "type": "string",
+              "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "kind": {
+              "enum": [
+                "ask",
+                "confirm",
+                "review"
+              ]
+            },
+            "attachedAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "label"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "type": {
+                    "enum": [
+                      "text",
+                      "textarea",
+                      "select",
+                      "multiselect",
+                      "confirm"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  },
+                  "required": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 8
+            },
+            "reviewRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            }
+          },
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false,
+      ],
       "$id": "kernel.control.HumanRequest.v1"
     },
     "kernel.control.HumanResolved.v1": {
@@ -11821,27 +12582,145 @@
               "$id": "kernel.control.AuthorizationResolved.v1"
             },
             {
-              "type": "object",
-              "required": [
-                "type",
-                "humanRequestId",
-                "kind"
-              ],
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "HumanRequest"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "humanRequestId",
+                    "kind"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "HumanRequest"
+                    },
+                    "humanRequestId": {
+                      "type": "string",
+                      "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "prompt"
+                    }
+                  },
+                  "additionalProperties": false
                 },
-                "humanRequestId": {
-                  "type": "string",
-                  "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "kind": {
-                  "type": "string",
-                  "const": "prompt"
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "humanRequestId",
+                    "kind",
+                    "attachedAgentRunId",
+                    "question"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "HumanRequest"
+                    },
+                    "humanRequestId": {
+                      "type": "string",
+                      "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "kind": {
+                      "enum": [
+                        "ask",
+                        "confirm",
+                        "review"
+                      ]
+                    },
+                    "attachedAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "type",
+                          "label"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "type": {
+                            "enum": [
+                              "text",
+                              "textarea",
+                              "select",
+                              "multiselect",
+                              "confirm"
+                            ]
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "minItems": 1,
+                            "maxItems": 20
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    },
+                    "reviewRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
                 }
-              },
-              "additionalProperties": false,
+              ],
               "$id": "kernel.control.HumanRequest.v1"
             },
             {
@@ -11977,7 +12856,10 @@
                     "state": {
                       "enum": [
                         "RUNNING",
-                        "CONVERGING"
+                        "CONVERGING",
+                        "PAUSING",
+                        "PAUSED",
+                        "INTERRUPTING"
                       ]
                     },
                     "turnId": {
@@ -12264,6 +13146,8 @@
                         "AWAITING_AUTHORIZATION",
                         "QUEUED",
                         "WAITING_SUBTASKS",
+                        "AWAITING_ANSWER",
+                        "PAUSED",
                         "WRAPPING_UP",
                         "ENDED"
                       ]
@@ -13580,6 +14464,30 @@
       "additionalProperties": false,
       "$id": "kernel.control.InteractionInboxEvent.v1"
     },
+    "kernel.control.InterruptRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.InterruptRunRequest.v1"
+    },
     "kernel.control.ListSessionsRequest.v1": {
       "type": "object",
       "required": [
@@ -13686,6 +14594,30 @@
       "additionalProperties": false,
       "$id": "kernel.control.OpenSessionRequest.v1"
     },
+    "kernel.control.PauseRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.PauseRunRequest.v1"
+    },
     "kernel.control.ReadArtifactRequest.v1": {
       "type": "object",
       "required": [
@@ -13735,6 +14667,62 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.ReadArtifactRequest.v1"
+    },
+    "kernel.control.ResumeRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "steer": {
+          "type": "object",
+          "required": [
+            "input"
+          ],
+          "properties": {
+            "input": {
+              "type": "object",
+              "required": [
+                "inputId",
+                "text"
+              ],
+              "properties": {
+                "inputId": {
+                  "type": "string",
+                  "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                }
+              },
+              "additionalProperties": false
+            },
+            "targetAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.ResumeRunRequest.v1"
     },
     "kernel.control.RunFailure.v1": {
       "type": "object",
@@ -15078,7 +16066,10 @@
             "state": {
               "enum": [
                 "RUNNING",
-                "CONVERGING"
+                "CONVERGING",
+                "PAUSING",
+                "PAUSED",
+                "INTERRUPTING"
               ]
             },
             "turnId": {
@@ -16377,6 +17368,54 @@
         }
       ],
       "$id": "kernel.control.StartSessionRequest.v1"
+    },
+    "kernel.control.SteerRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "input"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "input": {
+          "type": "object",
+          "required": [
+            "inputId",
+            "text"
+          ],
+          "properties": {
+            "inputId": {
+              "type": "string",
+              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            }
+          },
+          "additionalProperties": false
+        },
+        "targetAgentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.SteerRunRequest.v1"
     },
     "kernel.control.SyscallAck.v1": {
       "type": "object",
@@ -26306,9 +27345,167 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "inputId",
+            "contentRef",
+            "kind",
+            "origin",
+            "humanRequestId"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "HumanAnswered"
+            },
+            "inputId": {
+              "type": "string",
+              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "kind": {
+              "enum": [
+                "ask",
+                "confirm",
+                "review"
+              ]
+            },
+            "origin": {
+              "type": "string",
+              "const": "requested"
+            },
+            "humanRequestId": {
+              "type": "string",
+              "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "inputId",
+            "contentRef",
+            "kind"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "HumanAnswered"
+            },
+            "inputId": {
+              "type": "string",
+              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "kind": {
+              "type": "string",
+              "const": "steer"
+            },
+            "targetAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.unit.HumanAnswered.v1"
+    },
+    "kernel.unit.HumanCancelled.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "humanRequestId",
+        "nodeId",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "HumanCancelled"
+        },
+        "humanRequestId": {
+          "type": "string",
+          "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "nodeId": {
+          "type": "string",
+          "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "reason": {
+          "enum": [
+            "MEMORY_PRESSURE",
+            "USER_ABORT",
+            "TURN_TIMEOUT",
+            "PAUSE_TIMEOUT"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.HumanCancelled.v1"
     },
     "kernel.unit.MessagePublishInput.v1": {
       "anyOf": [
@@ -27178,42 +28375,175 @@
       "$id": "kernel.unit.ReportSessionListRequest.v1"
     },
     "kernel.unit.RequestHumanRequest.v1": {
-      "type": "object",
-      "required": [
-        "requestId",
-        "sessionId",
-        "workflowRunId",
-        "humanRequestId",
-        "nodeId",
-        "kind"
-      ],
-      "properties": {
-        "requestId": {
-          "type": "string",
-          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "requestId",
+            "sessionId",
+            "workflowRunId",
+            "humanRequestId",
+            "nodeId",
+            "kind"
+          ],
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "humanRequestId": {
+              "type": "string",
+              "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "prompt"
+            }
+          },
+          "additionalProperties": false
         },
-        "sessionId": {
-          "type": "string",
-          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "workflowRunId": {
-          "type": "string",
-          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "humanRequestId": {
-          "type": "string",
-          "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "nodeId": {
-          "type": "string",
-          "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "kind": {
-          "type": "string",
-          "const": "prompt"
+        {
+          "type": "object",
+          "required": [
+            "requestId",
+            "sessionId",
+            "workflowRunId",
+            "humanRequestId",
+            "nodeId",
+            "kind",
+            "attachedAgentRunId",
+            "question"
+          ],
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "humanRequestId": {
+              "type": "string",
+              "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "kind": {
+              "enum": [
+                "ask",
+                "confirm",
+                "review"
+              ]
+            },
+            "attachedAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "label"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "type": {
+                    "enum": [
+                      "text",
+                      "textarea",
+                      "select",
+                      "multiselect",
+                      "confirm"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  },
+                  "required": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 8
+            },
+            "reviewRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            }
+          },
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false,
+      ],
       "$id": "kernel.unit.RequestHumanRequest.v1"
     },
     "kernel.unit.ReserveDelegationRequest.v1": {
@@ -28506,12 +29836,91 @@
         },
         "reason": {
           "enum": [
-            "MEMORY_PRESSURE"
+            "MEMORY_PRESSURE",
+            "USER_ABORT",
+            "TURN_TIMEOUT",
+            "PAUSE_TIMEOUT"
           ]
         }
       },
       "additionalProperties": false,
       "$id": "kernel.unit.RunInterrupted.v1"
+    },
+    "kernel.unit.RunPaused.v1": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "RunPaused"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.RunPaused.v1"
+    },
+    "kernel.unit.RunResumed.v1": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "RunResumed"
+        },
+        "steer": {
+          "type": "object",
+          "required": [
+            "inputId",
+            "contentRef"
+          ],
+          "properties": {
+            "inputId": {
+              "type": "string",
+              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "targetAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.RunResumed.v1"
     },
     "kernel.unit.RunStart.v1": {
       "anyOf": [
@@ -29486,6 +30895,80 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "toolCallId",
+                          "question",
+                          "contentRef"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "HUMAN_ANSWER"
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "question": {
+                            "enum": [
+                              "ask",
+                              "confirm",
+                              "review"
+                            ]
+                          },
+                          "contentRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
                           }
                         },
                         "additionalProperties": false
@@ -30991,6 +32474,80 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "toolCallId",
+                      "question",
+                      "contentRef"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "HUMAN_ANSWER"
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "question": {
+                        "enum": [
+                          "ask",
+                          "confirm",
+                          "review"
+                        ]
+                      },
+                      "contentRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "platform.common.ArtifactRef.v1"
                       }
                     },
                     "additionalProperties": false
@@ -33644,6 +35201,138 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "requestId",
+            "agentRunId",
+            "unitRunId",
+            "unitRef",
+            "executionKind",
+            "budget",
+            "unitAttemptId",
+            "status",
+            "interruptedBy"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "UnitReport"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitRunId": {
+              "type": "string",
+              "pattern": "^unr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitRef": {
+              "type": "object",
+              "required": [
+                "kind",
+                "id",
+                "version",
+                "digest"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "UNIT"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "executionKind": {
+              "enum": [
+                "REPOSITORY_ORIENT",
+                "REPOSITORY_SEARCH",
+                "FILE_READ",
+                "CONTEXT_ASSEMBLE",
+                "MODEL",
+                "REPORT_PUBLISH",
+                "FILE_WRITE",
+                "COMMAND",
+                "TEST",
+                "REPOSITORY_LIST",
+                "MESSAGE_PUBLISH",
+                "FILE_EDIT",
+                "OUTPUT_READ",
+                "GIT_INSPECT"
+              ],
+              "$id": "platform.common.ExecutionKind.v1"
+            },
+            "budget": {
+              "type": "object",
+              "required": [
+                "agentRun",
+                "turn",
+                "run"
+              ],
+              "properties": {
+                "agentRun": {
+                  "enum": [
+                    "NORMAL",
+                    "WRAP_UP",
+                    "EXHAUSTED"
+                  ],
+                  "$id": "kernel.unit.BudgetState.v1"
+                },
+                "turn": {
+                  "enum": [
+                    "NORMAL",
+                    "WRAP_UP",
+                    "EXHAUSTED"
+                  ],
+                  "$id": "kernel.unit.BudgetState.v1"
+                },
+                "run": {
+                  "enum": [
+                    "NORMAL",
+                    "WRAP_UP",
+                    "EXHAUSTED"
+                  ],
+                  "$id": "kernel.unit.BudgetState.v1"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.BudgetView.v1"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "status": {
+              "type": "string",
+              "const": "INTERRUPTED"
+            },
+            "interruptedBy": {
+              "enum": [
+                "PAUSED",
+                "ABORTED"
+              ]
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.unit.UnitReport.v1"
@@ -35198,6 +36887,138 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "requestId",
+                    "agentRunId",
+                    "unitRunId",
+                    "unitRef",
+                    "executionKind",
+                    "budget",
+                    "unitAttemptId",
+                    "status",
+                    "interruptedBy"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "UnitReport"
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "agentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "unitRunId": {
+                      "type": "string",
+                      "pattern": "^unr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "unitRef": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "id",
+                        "version",
+                        "digest"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "UNIT"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "executionKind": {
+                      "enum": [
+                        "REPOSITORY_ORIENT",
+                        "REPOSITORY_SEARCH",
+                        "FILE_READ",
+                        "CONTEXT_ASSEMBLE",
+                        "MODEL",
+                        "REPORT_PUBLISH",
+                        "FILE_WRITE",
+                        "COMMAND",
+                        "TEST",
+                        "REPOSITORY_LIST",
+                        "MESSAGE_PUBLISH",
+                        "FILE_EDIT",
+                        "OUTPUT_READ",
+                        "GIT_INSPECT"
+                      ],
+                      "$id": "platform.common.ExecutionKind.v1"
+                    },
+                    "budget": {
+                      "type": "object",
+                      "required": [
+                        "agentRun",
+                        "turn",
+                        "run"
+                      ],
+                      "properties": {
+                        "agentRun": {
+                          "enum": [
+                            "NORMAL",
+                            "WRAP_UP",
+                            "EXHAUSTED"
+                          ],
+                          "$id": "kernel.unit.BudgetState.v1"
+                        },
+                        "turn": {
+                          "enum": [
+                            "NORMAL",
+                            "WRAP_UP",
+                            "EXHAUSTED"
+                          ],
+                          "$id": "kernel.unit.BudgetState.v1"
+                        },
+                        "run": {
+                          "enum": [
+                            "NORMAL",
+                            "WRAP_UP",
+                            "EXHAUSTED"
+                          ],
+                          "$id": "kernel.unit.BudgetState.v1"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "kernel.unit.BudgetView.v1"
+                    },
+                    "unitAttemptId": {
+                      "type": "string",
+                      "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "INTERRUPTED"
+                    },
+                    "interruptedBy": {
+                      "enum": [
+                        "PAUSED",
+                        "ABORTED"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ],
               "$id": "kernel.unit.UnitReport.v1"
@@ -35373,6 +37194,131 @@
                     "humanRequestId": {
                       "type": "string",
                       "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "inputId",
+                    "contentRef",
+                    "kind",
+                    "origin",
+                    "humanRequestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "HumanAnswered"
+                    },
+                    "inputId": {
+                      "type": "string",
+                      "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "contentRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "kind": {
+                      "enum": [
+                        "ask",
+                        "confirm",
+                        "review"
+                      ]
+                    },
+                    "origin": {
+                      "type": "string",
+                      "const": "requested"
+                    },
+                    "humanRequestId": {
+                      "type": "string",
+                      "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "inputId",
+                    "contentRef",
+                    "kind"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "HumanAnswered"
+                    },
+                    "inputId": {
+                      "type": "string",
+                      "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "contentRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "steer"
+                    },
+                    "targetAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     }
                   },
                   "additionalProperties": false
@@ -36721,12 +38667,124 @@
                 },
                 "reason": {
                   "enum": [
-                    "MEMORY_PRESSURE"
+                    "MEMORY_PRESSURE",
+                    "USER_ABORT",
+                    "TURN_TIMEOUT",
+                    "PAUSE_TIMEOUT"
                   ]
                 }
               },
               "additionalProperties": false,
               "$id": "kernel.unit.RunInterrupted.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "RunPaused"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.RunPaused.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "RunResumed"
+                },
+                "steer": {
+                  "type": "object",
+                  "required": [
+                    "inputId",
+                    "contentRef"
+                  ],
+                  "properties": {
+                    "inputId": {
+                      "type": "string",
+                      "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "contentRef": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "targetAgentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.RunResumed.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "humanRequestId",
+                "nodeId",
+                "reason"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "HumanCancelled"
+                },
+                "humanRequestId": {
+                  "type": "string",
+                  "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "nodeId": {
+                  "type": "string",
+                  "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "reason": {
+                  "enum": [
+                    "MEMORY_PRESSURE",
+                    "USER_ABORT",
+                    "TURN_TIMEOUT",
+                    "PAUSE_TIMEOUT"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.HumanCancelled.v1"
             }
           ]
         }
@@ -37246,6 +39304,10 @@
       "required": [
         "provider",
         "cancelGraceMs",
+        "pauseDrainMs",
+        "turnTimeoutSeconds",
+        "orchestrationTimeoutSeconds",
+        "maxPauseSeconds",
         "convergenceMarginMs",
         "technicalRetryLimit",
         "retryBackoffBaseMs",
@@ -37274,6 +39336,22 @@
           "maxLength": 64
         },
         "cancelGraceMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pauseDrainMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "turnTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "orchestrationTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxPauseSeconds": {
           "type": "integer",
           "minimum": 1
         },
@@ -37862,6 +39940,10 @@
           "required": [
             "provider",
             "cancelGraceMs",
+            "pauseDrainMs",
+            "turnTimeoutSeconds",
+            "orchestrationTimeoutSeconds",
+            "maxPauseSeconds",
             "convergenceMarginMs",
             "technicalRetryLimit",
             "retryBackoffBaseMs",
@@ -37890,6 +39972,22 @@
               "maxLength": 64
             },
             "cancelGraceMs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pauseDrainMs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "orchestrationTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxPauseSeconds": {
               "type": "integer",
               "minimum": 1
             },
@@ -39224,7 +41322,9 @@
                 "TEMPLATE",
                 "CHAT_GROWTH",
                 "LOOP",
-                "SPAWN"
+                "SPAWN",
+                "STEER",
+                "ASK"
               ]
             },
             "nodes": {
@@ -39388,6 +41488,105 @@
                       }
                     },
                     "additionalProperties": false
+                  },
+                  "ask": {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "question"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "ask",
+                          "confirm",
+                          "review"
+                        ]
+                      },
+                      "question": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "name",
+                            "type",
+                            "label"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "type": {
+                              "enum": [
+                                "text",
+                                "textarea",
+                                "select",
+                                "multiselect",
+                                "confirm"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "minItems": 1,
+                              "maxItems": 20
+                            },
+                            "required": {
+                              "type": "boolean"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "maxItems": 8
+                      },
+                      "reviewRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "platform.common.ArtifactRef.v1"
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -39422,8 +41621,7 @@
                   "call": {
                     "type": "object",
                     "required": [
-                      "toolCallId",
-                      "delegationId"
+                      "toolCallId"
                     ],
                     "properties": {
                       "toolCallId": {
@@ -39563,8 +41761,7 @@
             "call": {
               "type": "object",
               "required": [
-                "toolCallId",
-                "delegationId"
+                "toolCallId"
               ],
               "properties": {
                 "toolCallId": {
@@ -39711,8 +41908,98 @@
               "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "kind": {
+              "enum": [
+                "prompt",
+                "ask",
+                "confirm",
+                "review"
+              ]
+            },
+            "attachedAgentRunId": {
               "type": "string",
-              "const": "prompt"
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "label"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "type": {
+                    "enum": [
+                      "text",
+                      "textarea",
+                      "select",
+                      "multiselect",
+                      "confirm"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  },
+                  "required": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 8
+            },
+            "reviewRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
             }
           },
           "additionalProperties": false
@@ -39760,13 +42047,19 @@
               "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "kind": {
-              "type": "string",
-              "const": "prompt"
+              "enum": [
+                "prompt",
+                "ask",
+                "confirm",
+                "review",
+                "steer"
+              ]
             },
             "origin": {
               "enum": [
                 "initial",
-                "requested"
+                "requested",
+                "unrequested"
               ]
             },
             "inputId": {
@@ -39804,6 +42097,10 @@
               "$id": "platform.common.ArtifactRef.v1"
             },
             "attachedAgentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "redirectedFrom": {
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
@@ -41219,8 +43516,79 @@
             },
             "reason": {
               "enum": [
-                "MEMORY_PRESSURE"
+                "MEMORY_PRESSURE",
+                "USER_ABORT",
+                "TURN_TIMEOUT",
+                "PAUSE_TIMEOUT"
               ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "RUN_PAUSED"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "RUN_RESUMED"
+            },
+            "steerInputId": {
+              "type": "string",
+              "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
           },
           "additionalProperties": false
@@ -42334,6 +44702,106 @@
       },
       "additionalProperties": false,
       "$id": "workflow.AnalysisReportDraft.v1"
+    },
+    "workflow.AskUserArgs.v1": {
+      "type": "object",
+      "required": [
+        "kind",
+        "question"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "ask",
+            "confirm",
+            "review"
+          ]
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "type",
+              "label"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "type": {
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "multiselect",
+                  "confirm"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "minItems": 1,
+                "maxItems": 20
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        },
+        "reviewArtifact": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.AskUserArgs.v1"
     },
     "workflow.ExplorerResult.v1": {
       "type": "object",

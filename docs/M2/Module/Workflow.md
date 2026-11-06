@@ -213,8 +213,8 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 **`ask_user`**（main、worker；explorer 没有）：
 - **工具**：控制工具，参数 `{ kind: 'ask' | 'confirm' | 'review', question, fields?, reviewArtifact? }`；`question` 至多 1000 字符；`fields` 至多 8 个，类型为文本、多行文本、单选、多选、确认，其他类型按文本；`kind = 'review'` 时必须有 `reviewArtifact`，且是调用方自己读得到的产物（与 `run_subagents` 的 `inputs` 同一个检查，`readableArtifacts`），否则以 `INVALID_ACTION` 退回。必须单独出现，规则与 `run_subagents` 相同（与别的调用同回复、最后一轮、参数不合 Schema 都以 FEEDBACK 退回）。
 - **图**：在任务图上追加一次修订：一个 `HUMAN(ask | confirm | review)` 节点，调用方到它一条 `DELEGATE` 边，它到调用方一条 `RESUME` 边（边上只有 `toolCallId`，没有 `delegationId`）。调用方的节点因此 `WAITING`；AgentRun 层面这次调用是 `Pending` 的 `DELEGATED`，与 `run_subagents` 完全相同，没有第二套等待。
-- **请求**：HUMAN 节点就绪时追加 `NODE_STARTED`、`HUMAN_REQUESTED`，再 `requestHuman`（`attachedAgentRunId` 是调用方，带 `question`、`fields`、`reviewRef`）。
-- **答复**：`HumanAnswered` 到达后 Workflow 按 `fields` 校验：符合则追加 `HUMAN_ANSWERED`，节点 SUCCEEDED，随后 `wakeableNodes` 唤醒调用方，答复成为这次调用的结果（投影产生 `HUMAN_ANSWER` 条目，由 `RESUME` 边的前驱推出，与 `SUBAGENT_RESULT` 同一个函数 `callResultsOf`）；不符合则以新的 `humanRequestId` 重新请求同一个节点，请求带上 `error`（哪个字段、为什么），不追加 `HUMAN_ANSWERED`。
+- **请求**：问题本身放在 HUMAN 节点上（`GraphNodeRecord.ask`：种类、问题、字段、要审阅的产物），所以重放不需要运行器另存什么。节点就绪时追加
+- **答复**：`HumanAnswered` 到达后追加 `HUMAN_ANSWERED`（`attachedAgentRunId` 是调用方），节点 SUCCEEDED（`resultRef` 是答复正文），随后 `wakeableNodes` 唤醒调用方，答复成为这次调用的结果（投影产生 `HUMAN_ANSWER` 条目，由 `RESUME` 边的前驱推出，函数是 `answerOf`，与 `callResultsOf` 同在 `spawn-graph.ts`）。Workflow 不读答复正文（正文在 Kernel 的产物库，日志只留引用），所以字段是否合格只由 UserInteraction 在提交前检查；有 `fields` 时答复是这些字段的 JSON，没有时是一段文字。
 - **不产生授权**：答复里说"可以运行命令"不构成授权（M2Design 第 5.5 节），后续的命令仍由 Kernel 询问。
 - **其他 AgentRun 照常推进**；调用方 `WAITING` 期间不提交 Unit（阶段 4 的断言原样适用），它的墙钟与 Turn 超时按"全部工作都在等用户"的规则不计时（Core 第 5e 节）。
 - **没有次数上限**；模型反复提问的代价由用户承担，这条规则以后若要收紧，在第 14.2 节登记。

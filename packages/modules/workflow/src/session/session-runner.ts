@@ -6,12 +6,14 @@ import {
   REASON_CODE_CATEGORY,
   newId,
   type AnalysisReportDraft,
+  type AskUserArgs,
   type ArtifactRef,
   type BoundaryContext,
   canonicalJson,
   type DefinitionRef,
   type DelegationReserved,
   type GraphNodeRecord,
+  type InterruptReason,
   type RunSubagentsArgs,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
@@ -32,6 +34,7 @@ import {
   answerRecord,
   closeAgent,
   receiveAgentReport,
+  resumeAfterPause,
   resumeAfterRefusal,
   answerDelegatedCall,
   startAgent,
@@ -53,7 +56,7 @@ import {
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
-import { wakeableNodes, type Wake } from '../domain/graph/graph.js';
+import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
 import { callOf, spawnedIn, spawnNodeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
@@ -76,7 +79,9 @@ import {
   compileTemplate,
   initialChatRevision,
   projectGraph,
+  askRevision,
   spawnRevision,
+  steerRevision,
   type GraphRevision,
   type ProjectedGraph,
 } from '../domain/graph/session-graph.js';
@@ -133,6 +138,39 @@ const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContext =
   ...(workflowRunId === undefined ? {} : { workflowRunId }),
 });
 
+/**
+ * Why the arguments of `ask_user` cannot be taken, in words the model can act on: what the
+ * schema leaves open (a review needs something to look at, a choice needs options, names are
+ * unique) and an artifact the asker cannot read (M2Design 3.4).
+ */
+function askProblem(args: AskUserArgs, readable: ReadonlySet<string>): string | undefined {
+  const fields = args.fields ?? [];
+  const names = new Set<string>();
+  for (const field of fields) {
+    if (names.has(field.name)) return `Not asked: two fields are named ${field.name}.`;
+    names.add(field.name);
+    if ((field.type === 'select' || field.type === 'multiselect') && field.options === undefined)
+      return `Not asked: field ${field.name} is a choice and needs options.`;
+  }
+  if (args.kind === 'review') {
+    if (args.reviewArtifact === undefined)
+      return 'Not asked: a review needs reviewArtifact, the artifact the user should look at.';
+    if (!readable.has(args.reviewArtifact.artifactId))
+      return 'Not asked: you can only hand the user an artifact that you have read yourself.';
+  }
+  return undefined;
+}
+
+/** The nodes of questions put to the user that are still waiting for an answer. */
+function questionsOf(records: readonly SessionLogRecord[], workflowRunId: string): string[] {
+  const asked = new Set<string>();
+  for (const record of records) {
+    if (record.type !== 'HUMAN_REQUESTED' || record.workflowRunId !== workflowRunId) continue;
+    if (record.kind !== 'prompt') asked.add(record.nodeId);
+  }
+  return [...asked];
+}
+
 const asHumanRequestId = (nodeId: string): string => `hrq_${nodeId.slice('nod_'.length)}`;
 
 /** How a node ends once its AgentRun closed. */
@@ -180,6 +218,8 @@ export class SessionRunner {
   #overBudget = false;
   /** The Kernel interrupted this run: the reply that says so is the last thing it publishes. */
   #interrupted = false;
+  /** Why the run is being interrupted, while it is. */
+  #interruptReason: InterruptReason | undefined;
   #advancing = false;
   #advanceAgain = false;
   #runFailure: string | undefined;
@@ -280,6 +320,7 @@ export class SessionRunner {
   }
 
   #clearRun(): void {
+    this.#interruptReason = undefined;
     this.#orientPackRef = undefined;
     this.#readRepository = false;
     this.#rounds = [];
@@ -326,6 +367,22 @@ export class SessionRunner {
         break;
       case 'HumanAnswered':
         await this.#onHumanAnswered(workflowRunId, event);
+        break;
+      case 'RunPaused':
+        await this.#append([
+          {
+            type: 'RUN_PAUSED',
+            workflowRunId,
+            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+          },
+        ]);
+        break;
+      case 'RunResumed':
+        await this.#onResumed(workflowRunId, event);
+        break;
+      case 'HumanCancelled':
+        // The question is gone: its node was ended when the interrupt came, or is ended now.
+        await this.#endQuestion(workflowRunId, event.nodeId);
         break;
       case 'UnitReport':
         await this.#onUnitReport(workflowRunId, event);
@@ -390,7 +447,7 @@ export class SessionRunner {
   async #extend(
     workflowRunId: string,
     revision: number,
-    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN',
+    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN' | 'STEER' | 'ASK',
     content: GraphRevision,
   ): Promise<void> {
     await this.#append([
@@ -447,10 +504,205 @@ export class SessionRunner {
     return binding;
   }
 
+  /** The AgentRun that dispatched a node (a task or a question), from the `DELEGATE` edge to it. */
+  #askerOf(graph: ProjectedGraph, nodeId: string): ActiveAgent | undefined {
+    const call = callOf(graph, nodeId);
+    return [...this.#agents.values()].find((each) => each.nodeId === call?.callerNodeId);
+  }
+
+  /**
+   * The user answered a question of `ask_user`: the node it stands for is done, and the graph then
+   * wakes the AgentRun that asked, which reads the answer as the result of its call (M2Design 3.3).
+   */
+  async #onAnswer(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }> & {
+      readonly kind: 'ask' | 'confirm' | 'review';
+    },
+  ): Promise<void> {
+    const requested = this.#records.find(
+      (record) =>
+        record.type === 'HUMAN_REQUESTED' &&
+        record.workflowRunId === workflowRunId &&
+        'humanRequestId' in event &&
+        record.humanRequestId === event.humanRequestId,
+    );
+    if (requested?.type !== 'HUMAN_REQUESTED') throw new Error('an answer names no question');
+    const projected = projectGraph(this.#records, workflowRunId);
+    const status = projected.view.get(requested.nodeId)?.status;
+    if (status === undefined || isTerminal(status) || this.#turnId === undefined) return;
+    const asker = this.#askerOf(projected, requested.nodeId);
+    await this.#append([
+      {
+        type: 'HUMAN_ANSWERED',
+        workflowRunId,
+        turnId: this.#turnId,
+        nodeId: requested.nodeId,
+        humanRequestId: requested.humanRequestId,
+        kind: event.kind,
+        origin: 'requested',
+        inputId: event.inputId,
+        contentRef: event.contentRef,
+        ...(asker === undefined ? {} : { attachedAgentRunId: asker.state.agentRunId }),
+      },
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        turnId: this.#turnId,
+        nodeId: requested.nodeId,
+        status: 'SUCCEEDED',
+        resultRef: event.contentRef,
+      },
+    ]);
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * `ask_user` (M2Design 3.4): what the question points at is checked, and then the graph grows by
+   * the HUMAN node that asks it. The caller waits like it waits for tasks: its node is WAITING, and
+   * its AgentRun has a call whose result has not come yet.
+   */
+  async #onAsk(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ASK' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const args = ending.arguments as AskUserArgs;
+    const problem = askProblem(args, readableArtifacts(this.#records, active.state.agentRunId));
+    if (problem !== undefined) {
+      await this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          active.state,
+          toolCallId,
+          {
+            refused: true,
+            spawn: false,
+            records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, problem)],
+          },
+          this.#context(workflowRunId, active.scope),
+          this.#deps.config,
+        ),
+      );
+      return;
+    }
+    const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    await this.#extend(
+      workflowRunId,
+      revisionNumber,
+      'ASK',
+      askRevision(
+        workflowRunId,
+        revisionNumber,
+        { nodeId: active.nodeId, toolCallId },
+        {
+          kind: args.kind,
+          question: args.question,
+          ...(args.fields === undefined ? {} : { fields: args.fields }),
+          ...(args.reviewArtifact === undefined ? {} : { reviewRef: args.reviewArtifact }),
+        },
+      ),
+    );
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * A note of the user slipped into a run that goes on (M2Design 4.5): a HUMAN(steer) node, made
+   * and ended at once, and the record that says whom it is for. The AgentRun sees it at its next
+   * assembly (history projection); nothing about its own state changes.
+   */
+  async #steer(
+    workflowRunId: string,
+    note: {
+      readonly inputId: string;
+      readonly contentRef: ArtifactRef;
+      readonly targetAgentRunId?: string;
+    },
+  ): Promise<void> {
+    const target = this.#steerTarget(note.targetAgentRunId);
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const content = steerRevision(workflowRunId, revision);
+    await this.#extend(workflowRunId, revision, 'STEER', content);
+    const node = content.nodes[0];
+    if (node === undefined) throw new Error('a steer makes one node');
+    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
+    await this.#append([
+      {
+        type: 'HUMAN_ANSWERED',
+        workflowRunId,
+        ...turn,
+        nodeId: node.nodeId,
+        kind: 'steer',
+        origin: 'unrequested',
+        inputId: note.inputId,
+        contentRef: note.contentRef,
+        ...(target === undefined ? {} : { attachedAgentRunId: target.agentRunId }),
+        ...(target?.redirectedFrom === undefined ? {} : { redirectedFrom: target.redirectedFrom }),
+      },
+      { type: 'NODE_ENDED', workflowRunId, ...turn, nodeId: node.nodeId, status: 'SUCCEEDED' },
+    ]);
+  }
+
+  /**
+   * Whom a note is for: the AgentRun it names, or main of this Turn. One that has ended hands it to
+   * the AgentRun that started it, and so on up; with nobody left it waits for the next Turn.
+   */
+  #steerTarget(
+    requested: string | undefined,
+  ): { readonly agentRunId: string; readonly redirectedFrom?: string } | undefined {
+    if (requested === undefined) {
+      const main = [...this.#agents.values()].find(
+        (each) => each.task === undefined && each.agentId === MAIN,
+      );
+      return main === undefined ? undefined : { agentRunId: main.state.agentRunId };
+    }
+    if (this.#agents.has(requested)) return { agentRunId: requested };
+    const parentOf = (agentRunId: string): string | undefined => {
+      const registered = this.#records.find(
+        (record) => record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
+      );
+      return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.parentAgentRunId : undefined;
+    };
+    for (let parent = parentOf(requested); parent !== undefined; parent = parentOf(parent))
+      if (this.#agents.has(parent)) return { agentRunId: parent, redirectedFrom: requested };
+    return undefined;
+  }
+
+  /** The user continued a paused run, perhaps with a note: the note first, then what was held. */
+  async #onResumed(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunResumed' }>,
+  ): Promise<void> {
+    await this.#append([
+      {
+        type: 'RUN_RESUMED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        ...(event.steer === undefined ? {} : { steerInputId: event.steer.inputId }),
+      },
+    ]);
+    if (event.steer !== undefined) await this.#steer(workflowRunId, event.steer);
+    for (const active of [...this.#agents.values()]) {
+      const current = this.#agents.get(active.state.agentRunId);
+      if (current === undefined) continue;
+      await this.#apply(
+        workflowRunId,
+        resumeAfterPause(
+          current.state,
+          this.#context(workflowRunId, current.scope),
+          this.#deps.config,
+        ),
+      );
+    }
+  }
+
   async #onHumanAnswered(
     workflowRunId: string,
     event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }>,
   ): Promise<void> {
+    if (event.kind === 'steer') return this.#steer(workflowRunId, event);
+    if (event.kind !== 'prompt') return this.#onAnswer(workflowRunId, event);
     const { graph, view } = projectGraph(this.#records, workflowRunId);
     const node =
       event.origin === 'initial'
@@ -544,7 +796,7 @@ export class SessionRunner {
         },
       ]);
       if (node.kind === 'HUMAN') {
-        await this.#requestHuman(workflowRunId, node.nodeId);
+        await this.#requestHuman(workflowRunId, record);
       } else {
         await this.#startAgent(workflowRunId, record);
       }
@@ -562,14 +814,42 @@ export class SessionRunner {
       await this.#close(workflowRunId, this.#overBudget ? 'BUDGET' : 'COMPLETED', this.#runResult);
   }
 
-  async #requestHuman(workflowRunId: string, nodeId: string): Promise<void> {
+  /**
+   * A HUMAN node starts: open input (`prompt`), which needs the run to be still, or the question
+   * of an `ask_user` call, which only the AgentRun that asked waits for (M2Design 4.2).
+   */
+  async #requestHuman(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
+    const { nodeId, ask } = node;
     const humanRequestId = asHumanRequestId(nodeId);
+    const asker =
+      ask === undefined
+        ? undefined
+        : this.#askerOf(projectGraph(this.#records, workflowRunId), nodeId);
+    if (ask !== undefined && asker === undefined)
+      throw new Error('a question has no AgentRun that asked it');
+    const question =
+      ask === undefined || asker === undefined
+        ? ({ kind: 'prompt' } as const)
+        : {
+            kind: ask.kind,
+            attachedAgentRunId: asker.state.agentRunId,
+            question: ask.question,
+            ...(ask.fields === undefined ? {} : { fields: ask.fields }),
+            ...(ask.reviewRef === undefined ? {} : { reviewRef: ask.reviewRef }),
+          };
     await this.#append([
-      { type: 'HUMAN_REQUESTED', workflowRunId, humanRequestId, nodeId, kind: 'prompt' },
+      { type: 'HUMAN_REQUESTED', workflowRunId, humanRequestId, nodeId, ...question },
     ]);
     const sessionId = this.#sessionIdOrThrow();
     const response = await this.#deps.gateway.requestHuman(
-      { requestId: newId('req'), sessionId, workflowRunId, humanRequestId, nodeId, kind: 'prompt' },
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId,
+        nodeId,
+        ...question,
+      },
       contextOf(sessionId, workflowRunId),
     );
     if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
@@ -624,7 +904,7 @@ export class SessionRunner {
     if (node.spawn === undefined) return undefined;
     const call = callOf(graph, node.nodeId);
     const caller = [...this.#agents.values()].find((each) => each.nodeId === call?.callerNodeId);
-    if (call === undefined || caller === undefined)
+    if (call?.delegationId === undefined || caller === undefined)
       throw new Error(`the task ${node.name} was not dispatched by a running AgentRun`);
     return { parentAgentRunId: caller.state.agentRunId, delegationId: call.delegationId };
   }
@@ -906,11 +1186,19 @@ export class SessionRunner {
     await this.#apply(workflowRunId, transition);
   }
 
+  /** A question that waited for the user ends with the run that was interrupted (M2Design 4.5). */
+  async #endQuestion(workflowRunId: string, nodeId: string): Promise<void> {
+    const { view } = projectGraph(this.#records, workflowRunId);
+    const status = view.get(nodeId)?.status;
+    if (this.#turnId === undefined || status === undefined || isTerminal(status)) return;
+    await this.#endNode(workflowRunId, this.#turnId, nodeId, 'INTERRUPTED');
+  }
+
   async #endNode(
     workflowRunId: string,
     turnId: string,
     nodeId: string,
-    status: 'SUCCEEDED' | 'FAILED',
+    status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED',
     result?: Record<string, unknown>,
     resultRef?: ArtifactRef,
   ): Promise<void> {
@@ -988,7 +1276,7 @@ export class SessionRunner {
 
   async #close(
     workflowRunId: string,
-    outcome: 'COMPLETED' | 'BUDGET' | 'INTERRUPTED',
+    outcome: 'COMPLETED' | 'BUDGET' | 'INTERRUPTED' | 'CANCELLED' | 'TIMEOUT',
     resultRef?: ArtifactRef,
   ): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
@@ -1157,20 +1445,25 @@ export class SessionRunner {
       workflowRunId,
       active.state.turnId,
       active.nodeId,
-      outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
+      // A task that was cut short with the run is INTERRUPTED, whatever it had to report.
+      this.#interrupted ? 'INTERRUPTED' : outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
       resultOf(outcome),
     );
   }
 
   /**
-   * The Kernel interrupts the run (Kernel/Core 5c): no model is called again. SubAgents stop where
-   * they are; the AgentRun that spawned them ends with the one reply that says why, which needs no
-   * model, and the run closes as INTERRUPTED. Whatever was in flight is no longer waited for.
+   * The Kernel interrupts the run (Kernel/Core 5c, 5e): no model is called again. What waits for
+   * the user is over, SubAgents stop where they are, and the AgentRun that spawned them ends with
+   * the one reply that says why, which needs no model. Whatever was in flight is no longer waited
+   * for. How the run goes on from there depends on why it was interrupted (`#finishInterrupted`).
    */
-  async #onInterrupted(workflowRunId: string, reason: string): Promise<void> {
+  async #onInterrupted(workflowRunId: string, reason: InterruptReason): Promise<void> {
     this.#interrupted = true;
+    this.#interruptReason = reason;
     const all = [...this.#agents.values()];
-    if (all.length === 0) return this.#close(workflowRunId, 'INTERRUPTED');
+    if (all.length === 0) return this.#finishInterrupted(workflowRunId);
+    for (const nodeId of questionsOf(this.#records, workflowRunId))
+      await this.#endQuestion(workflowRunId, nodeId);
     for (const active of all.filter((each) => each.task !== undefined))
       await this.#endTask(workflowRunId, active, 'FAILED', {
         status: 'FAILED',
@@ -1181,6 +1474,26 @@ export class SessionRunner {
     await this.#wake(workflowRunId, wakeableNodes(projected.graph, projected.view));
     for (const active of all.filter((each) => each.task === undefined))
       await this.#onDegraded(workflowRunId, active, reason);
+  }
+
+  /**
+   * Every AgentRun of an interrupted run has ended (Kernel/Core 5e). Memory pressure closes the
+   * run, which the system then leaves in control; any other reason ends only the Turn: a chat asks
+   * for the next input, an Orchestration run closes as cancelled or timed out.
+   */
+  async #finishInterrupted(workflowRunId: string): Promise<void> {
+    const reason = this.#interruptReason ?? 'MEMORY_PRESSURE';
+    if (reason === 'MEMORY_PRESSURE') return this.#close(workflowRunId, 'INTERRUPTED');
+    if (this.#mode === 'CHAT') {
+      this.#interrupted = false;
+      this.#interruptReason = undefined;
+      return this.#advance(workflowRunId);
+    }
+    return this.#close(
+      workflowRunId,
+      reason === 'TURN_TIMEOUT' ? 'TIMEOUT' : 'CANCELLED',
+      this.#runResult,
+    );
   }
 
   async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
@@ -1220,6 +1533,8 @@ export class SessionRunner {
         return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
       case 'SPAWN':
         return this.#onSpawn(workflowRunId, active, ending);
+      case 'ASK':
+        return this.#onAsk(workflowRunId, active, ending);
       case 'DEGRADED':
         return this.#onDegraded(workflowRunId, active, ending.reason);
       case 'CLOSED': {
@@ -1229,13 +1544,13 @@ export class SessionRunner {
           workflowRunId,
           turnId,
           active.nodeId,
-          plan.status,
+          this.#interrupted ? 'INTERRUPTED' : plan.status,
           plan.result,
           ending.outputRef,
         );
         if (plan.runOutput) this.#runResult = ending.outputRef;
         if (this.#interrupted)
-          return this.#agents.size === 0 ? this.#close(workflowRunId, 'INTERRUPTED') : undefined;
+          return this.#agents.size === 0 ? this.#finishInterrupted(workflowRunId) : undefined;
         if (this.#mode === 'CHAT' && ending.budget.run !== 'NORMAL')
           return this.#close(workflowRunId, 'BUDGET');
         return this.#advance(workflowRunId);
@@ -1251,8 +1566,8 @@ export class SessionRunner {
         if (this.#interrupted) {
           // The reply could not be published: the run still ends, and the log says why.
           await this.#endAgentRun(workflowRunId, active, ending.kind);
-          await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
-          return this.#agents.size === 0 ? this.#close(workflowRunId, 'INTERRUPTED') : undefined;
+          await this.#endNode(workflowRunId, turnId, active.nodeId, 'INTERRUPTED');
+          return this.#agents.size === 0 ? this.#finishInterrupted(workflowRunId) : undefined;
         }
         // In a chat the run goes on with the next prompt, so the user must hear of it here.
         if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
@@ -1299,6 +1614,7 @@ export class SessionRunner {
           toolCallId,
           {
             refused: true,
+            spawn: true,
             withdraw,
             records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
           },
@@ -1416,16 +1732,18 @@ export class SessionRunner {
       // A run that is closing hears no answer; an AgentRun whose call is not out has nothing to go on with.
       if (this.#interrupted || caller === undefined || !caller.state.pending.has(call.toolCallId))
         continue;
-      await this.#deps.gateway.releaseDelegation(
-        { requestId: newId('req'), sessionId, workflowRunId, delegationId: call.delegationId },
-        contextOf(sessionId, workflowRunId),
-      );
+      // A call to SubAgents has a reservation to give back; a question to the user has none.
+      if (call.delegationId !== undefined)
+        await this.#deps.gateway.releaseDelegation(
+          { requestId: newId('req'), sessionId, workflowRunId, delegationId: call.delegationId },
+          contextOf(sessionId, workflowRunId),
+        );
       await this.#apply(
         workflowRunId,
         answerDelegatedCall(
           caller.state,
           call.toolCallId,
-          { refused: false, records: [] },
+          { refused: false, spawn: call.delegationId !== undefined, records: [] },
           this.#context(workflowRunId, caller.scope),
           this.#deps.config,
         ),

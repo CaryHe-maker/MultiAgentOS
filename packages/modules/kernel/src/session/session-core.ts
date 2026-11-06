@@ -29,7 +29,12 @@ type Forward<T extends GatewayForward['requestType']> = Extract<
   GatewayForward,
   { requestType: T }
 >['request'];
-type RunRequest = Forward<'submitUnit'> | Forward<'answerHuman'>;
+type RunRequest =
+  | Forward<'submitUnit'>
+  | Forward<'answerHuman'>
+  | Forward<'pauseRun'>
+  | Forward<'resumeRun'>
+  | Forward<'steerRun'>;
 
 const refused = (
   requestId: string,
@@ -146,7 +151,9 @@ export class SessionCore {
         const { request } = forward;
         return this.#inRun(request, (work, actor, run) =>
           work.once(request.requestId, request, () =>
-            actor.requestOpenInput(run, request.humanRequestId),
+            request.kind === 'prompt'
+              ? actor.requestOpenInput(run, request.humanRequestId)
+              : Promise.resolve(actor.requestLocalQuestion(run, request)),
           ),
         );
       }
@@ -156,7 +163,35 @@ export class SessionCore {
         // The same input counts once, whatever request carries it (Kernel/Core 6).
         return this.#inRun(request, (work, actor, run) =>
           work.once(request.requestId, input, () =>
-            actor.answerOpenInput(run, humanRequestId, input, template),
+            actor.answerHuman(run, humanRequestId, input, template),
+          ),
+        );
+      }
+      case 'pauseRun': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => Promise.resolve(actor.pauseRun(run))),
+        );
+      }
+      case 'resumeRun': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => actor.resumeRun(run, request.steer)),
+        );
+      }
+      case 'interruptRun': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () =>
+            Promise.resolve(actor.interrupt(run, 'USER_ABORT')),
+          ),
+        );
+      }
+      case 'steerRun': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () =>
+            actor.steerRun(run, request.input, request.targetAgentRunId),
           ),
         );
       }

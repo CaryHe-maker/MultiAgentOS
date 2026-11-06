@@ -85,6 +85,14 @@ export const ContextHistoryEntrySchema = Type.Union(
       outputRef: Type.Optional(artifactRefOf(MEDIA_TYPES.modelOutput)),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
+    /** What the user answered to `ask_user`: the result of that call, the text in an artifact. */
+    closed({
+      ...entry,
+      kind: Type.Literal('HUMAN_ANSWER'),
+      toolCallId: ToolCallIdSchema,
+      question: Type.Enum(['ask', 'confirm', 'review']),
+      contentRef: ArtifactRefSchema,
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],

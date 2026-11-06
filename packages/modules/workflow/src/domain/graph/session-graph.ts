@@ -43,6 +43,7 @@ interface NodeSpec {
   readonly inputFrom?: 'HANDOFF';
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
+  readonly ask?: GraphNodeRecord['ask'];
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
@@ -59,6 +60,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
+    ...(spec.ask === undefined ? {} : { ask: spec.ask }),
   };
 }
 
@@ -145,6 +147,37 @@ export function spawnRevision(
     { from: node.nodeId, to: caller.nodeId, kind: 'RESUME', call: caller.call },
   ]);
   return { nodes, edges: [...dependencies, ...calls] };
+}
+
+/**
+ * The revision an `ask_user` call adds (M2Design 3.1, 3.4): one HUMAN node that asks, joined to the
+ * caller by the same pair of edges as a task, so the caller waits for the answer like it waits for a
+ * SubAgent. The call has no reservation behind it, so its edges carry the tool call alone.
+ */
+export function askRevision(
+  workflowRunId: string,
+  revision: number,
+  caller: { readonly nodeId: string; readonly toolCallId: string },
+  ask: NonNullable<GraphNodeRecord['ask']>,
+): GraphRevision {
+  const node = nodeOf(workflowRunId, revision, { name: 'ask', kind: 'HUMAN', ask });
+  const call = { toolCallId: caller.toolCallId };
+  return {
+    nodes: [node],
+    edges: [
+      { from: caller.nodeId, to: node.nodeId, kind: 'DELEGATE', call },
+      { from: node.nodeId, to: caller.nodeId, kind: 'RESUME', call },
+    ],
+  };
+}
+
+/**
+ * The HUMAN(steer) node of a note slipped in while the run goes on (M2Design 4.5): made and ended
+ * in one step, with no edge, so nothing waits for it and no readiness follows from it. Whom it is
+ * for stands in the log (`HUMAN_ANSWERED.attachedAgentRunId`), not in the graph.
+ */
+export function steerRevision(workflowRunId: string, revision: number): GraphRevision {
+  return { nodes: [nodeOf(workflowRunId, revision, { name: 'steer', kind: 'HUMAN' })], edges: [] };
 }
 
 /** Adds the root `HUMAN(prompt)`, which every node without a predecessor depends on (3.8). */

@@ -1,0 +1,24 @@
+schemaVersion: v1
+kind: TOOL
+id: ask-user
+version: v0.1.0
+description: Control tool that asks the user a question and returns the answer.
+purpose: CONTROL
+modelName: ask_user
+modelDescription: >-
+  Ask the user something and wait for the answer, which is the result of this call. kind ask is a
+  question (optionally with fields: text, textarea, select, multiselect or confirm, each with a
+  name and a label), confirm asks for a yes or no before something that cannot be undone or that
+  the user may not want, and review shows the user an artifact (reviewArtifact, required) and asks
+  what they think. The user is not required to answer quickly and nothing else of yours runs
+  meanwhile, so ask only what you cannot find out or decide yourself, and only once the answer
+  decides what you do. An answer is not a permission: a command still asks for its own.
+  Call it on its own.
+parametersContract:
+  kind: contract
+  id: workflow.AskUserArgs
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

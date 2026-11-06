@@ -297,3 +297,12 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 9. S5-IN-1 集成 `stage5-exit` 与一次真实模型检查；退出：H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分。
 
 **待决（留到定稿）**：`ask_user` 没有次数上限，若模型反复提问再收紧；暂停时 WRITE 允许完成而 READ 超时取消，若实测暂停响应太慢再调 `pauseDrainMs`。
+
+**实现进度（2026-11-06）**：九步全部实现并有测试。与文档门相比做了这些改动，文档已同步：
+- 局部询问的答复**不由 Workflow 校验**：Workflow 读不到答复正文（正文在 Kernel 的产物库），字段检查只在 UserInteraction 提交前做，答复是字段的 JSON；因此请求与日志里没有 `error` 字段，也没有"重新请求"。
+- `HUMAN_ANSWERED.origin` 增加 `unrequested`（运行中插话，没有人在等）。
+- 问题本身放在 HUMAN 节点上（`GraphNodeRecord.ask`），重放不需要运行器另存状态；`GRAPH_EXTENDED.source` 增加 `STEER`、`ASK`。
+- 暂停的完成由 Execution 报告"没有在执行的尝试"（排队与等调用机会的不算在途），不再由在途数判断；中断统一走 `abortExecutions`，各尝试以 `INTERRUPTED(ABORTED)` 交付，取代阶段 3 的静默取消。
+- 被中断的 Unit 的回答：暂停时 READ、模型调用与上下文组装重新提交，命令与写入由模型读到"被暂停打断"；投影不为 `UNIT_INTERRUPTED(PAUSED | ABORTED)` 另写一条工具结果，已有答复的调用不再重复回答。
+- 测试：`run-control.test.ts`、`run-execution.test.ts`、`run-work.test.ts`（Core 第 5e 节）、`agent-cycle.test.ts`、`pause-steer-ask.test.ts`（Workflow 与假 Kernel）、`console.test.ts`、`stage5-exit.test.ts`（真实产品、脚本化的模型）。
+- 未做：H13（询问等待超过 Turn 超时后才回答）只有 Kernel 层测试（计时冻结）；A 组"ask_user 的同意不产生授权"只有 Kernel 层测试（`answerHuman` 不改变授权记录）；没有真实模型的检查。

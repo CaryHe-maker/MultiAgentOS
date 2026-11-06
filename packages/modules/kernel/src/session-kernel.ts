@@ -159,6 +159,7 @@ const executionConfigOf = (config: KernelConfig): ExecutionConfig => ({
   orientBudget: config.budget.orientBudget,
   searchBudget: config.budget.searchBudget,
   cancelGraceMs: config.cancelGraceMs,
+  pauseDrainMs: config.pauseDrainMs,
   convergenceMarginMs: config.convergenceMarginMs,
 });
 
@@ -291,6 +292,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       artifacts,
       dispatch: (request) => supervisor.execute(request),
       cancelRun: (request) => supervisor.cancelRun(request),
+      cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
       // A write the user approved gives the content they saw standing (Kernel/Core 5a.4).
       written: (path, sha256) =>
@@ -366,6 +368,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
         execution.cancel(runEpoch);
+      },
+      pauseExecutions: (drained) => {
+        execution.pause(drained);
+      },
+      resumeExecutions: () => execution.resume(),
+      abortExecutions: () => {
+        execution.abort();
       },
       executionsClosed: () => {
         execution.closed();
@@ -499,6 +508,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         },
         onFatal: fault,
         interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
+        timeouts: {
+          turnMs: config.turnTimeoutSeconds * 1000,
+          orchestrationMs: config.orchestrationTimeoutSeconds * 1000,
+          pauseMs: config.maxPauseSeconds * 1000,
+        },
+        schedule,
         onInterrupted: () => {
           deps.diagnostic?.('memory pressure: the run was interrupted\n');
         },

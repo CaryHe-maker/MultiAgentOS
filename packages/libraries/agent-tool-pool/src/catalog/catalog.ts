@@ -70,24 +70,18 @@ function referencesOf(body: Body): readonly Reference[] {
           kind: 'TOOL' as const,
           ref: end.toolRef,
         })),
-        ...(body.actions.todos === undefined
-          ? []
-          : [
-              {
-                field: 'actions.todos.toolRef',
-                kind: 'TOOL' as const,
-                ref: body.actions.todos.toolRef,
-              },
-            ]),
-        ...(body.actions.spawn === undefined
-          ? []
-          : [
-              {
-                field: 'actions.spawn.toolRef',
-                kind: 'TOOL' as const,
-                ref: body.actions.spawn.toolRef,
-              },
-            ]),
+        ...(['todos', 'spawn', 'askUser'] as const).flatMap((action) => {
+          const declared = body.actions[action];
+          return declared === undefined
+            ? []
+            : [
+                {
+                  field: `actions.${action}.toolRef`,
+                  kind: 'TOOL' as const,
+                  ref: declared.toolRef,
+                },
+              ];
+        }),
       ];
     case 'UNIT':
       return body.toolRefs.map((ref, index) => ({
@@ -550,7 +544,7 @@ function checkAgent(
   const names = new Map<string, string>();
   const tools = [
     ...units.flatMap((unit) => unit.toolRefs.flatMap((ref) => get('TOOL', ref) ?? [])),
-    ...[body.actions.todos, body.actions.spawn].flatMap((action) =>
+    ...[body.actions.todos, body.actions.spawn, body.actions.askUser].flatMap((action) =>
       action === undefined ? [] : (get('TOOL', action.toolRef) ?? []),
     ),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
@@ -592,6 +586,15 @@ function checkAgent(
         contractOf(tool.parametersContract) !== 'workflow.UpdateTodosArgs.v1')
     )
       report(origin, 'AGENT_INVALID', 'the todos tool must be CONTROL with UpdateTodosArgs');
+  }
+  if (body.actions.askUser !== undefined) {
+    const tool = get('TOOL', body.actions.askUser.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' ||
+        contractOf(tool.parametersContract) !== 'workflow.AskUserArgs.v1')
+    )
+      report(origin, 'AGENT_INVALID', 'the ask_user tool must be CONTROL with AskUserArgs');
   }
   checkSpawn(origin, body, get, report);
   for (const unit of units)
@@ -776,6 +779,7 @@ export class DefinitionCatalog {
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
+      ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

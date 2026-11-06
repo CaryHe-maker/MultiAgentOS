@@ -57,8 +57,8 @@ interface LogRecordBase {
 | `NODE_STARTED` | `nodeId`、`path` | 1 |
 | `NODE_RESUMED` | `nodeId`、`call`（`toolCallId`、`delegationId`）：这次派发的调用回来了，节点不再 WAITING；此前调用的结果由唤醒边的前驱的结果推出（阶段 4） | 1 |
 | `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?`；以后可能增加失败原因（M2Design 第 14.2 节第 8 条） | 1 |
-| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind`；局部询问（阶段 5）另有 `attachedAgentRunId`、`question`、`fields`、`reviewRef?`、`error?`（重新请求时） | 1 |
-| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
+| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind`；局部询问（阶段 5）另有 `attachedAgentRunId`、`question`、`fields`、`reviewRef?` | 1 |
+| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`（含 `steer`）、`origin`（`initial`、`requested`；阶段 5 增加 `unrequested`：没有人在等的运行中插话）、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
 | `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） | 2 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |

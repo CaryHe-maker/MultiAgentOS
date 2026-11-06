@@ -3,6 +3,7 @@ import {
   newId,
   type ArtifactRef,
   type ExecutionScope,
+  type CancelExecutionRequest,
   type CancelRunExecutionsRequest,
   type ExecutionFact,
   type ExecutionRequest,
@@ -44,6 +45,8 @@ export interface RunExecutionDeps {
   readonly artifacts: SessionArtifacts;
   readonly dispatch: (request: ExecutionRequest) => Promise<void>;
   readonly cancelRun: (request: CancelRunExecutionsRequest) => Promise<void>;
+  /** Cancels one execution; its fact comes back saying why (M2Design 7.6). */
+  readonly cancelExecution: (request: CancelExecutionRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
   /** A write landed; awaited, so that whatever follows from it precedes the report. */
   readonly written: (path: string, sha256: string) => Promise<void>;
@@ -97,6 +100,8 @@ interface Attempt extends QueueEntry {
   changedBefore?: Fingerprints | undefined;
   /** Built, and waiting for a call slot to be reserved (M2Design 7.2). */
   built?: { readonly request: BuiltRequest; readonly executionId: string };
+  /** Set when a pause or an abort asked the Supervisor to cancel it: the fact will say so. */
+  cancelReason?: 'PAUSED' | 'ABORTED';
 }
 
 /**
@@ -152,6 +157,10 @@ export class RunExecution {
   #pumping = false;
   #again = false;
   #cancelFallback: (() => void) | undefined;
+  /** While paused or pausing nothing new starts (Kernel/Execution 4e). */
+  #held = false;
+  #onDrained: (() => void) | undefined;
+  readonly #drainTimers = new Set<() => void>();
 
   public constructor(deps: RunExecutionDeps) {
     this.#deps = deps;
@@ -215,7 +224,7 @@ export class RunExecution {
     try {
       do {
         this.#again = false;
-        const started = this.#queues.startable(this.#deps.limits);
+        const started = this.#held ? [] : this.#queues.startable(this.#deps.limits);
         await Promise.all(started.map((attempt) => this.#run(attempt)));
       } while (this.#again);
     } finally {
@@ -226,13 +235,24 @@ export class RunExecution {
   async #finish(attempt: Attempt, check: Omit<ResultCheck, 'unitAttemptId'>): Promise<void> {
     attempt.attempts.submitResultCheck({ unitAttemptId: attempt.unitAttemptId, ...check });
     this.#queues.release(attempt);
+    this.#checkDrained();
     await this.#pump();
   }
 
   /** The attempt is over without a result of its own: Core ended it, with a report or the run. */
   async #dropped(attempt: Attempt): Promise<void> {
     this.#queues.release(attempt);
+    this.#checkDrained();
     await this.#pump();
+  }
+
+  /**
+   * An attempt that never reached the Supervisor, in a run that was aborted since it was made:
+   * it answers INTERRUPTED(ABORTED) like the ones that were cancelled.
+   */
+  async #interruptedUnsent(attempt: Attempt): Promise<void> {
+    attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+    await this.#dropped(attempt);
   }
 
   async #run(attempt: Attempt): Promise<void> {
@@ -295,7 +315,10 @@ export class RunExecution {
       return;
     }
     // A parked attempt leaves the count, so what waits behind it may start.
-    if ((await this.#reserveAndSend(attempt, built, executionId)) === 'WAITING') await this.#pump();
+    if ((await this.#reserveAndSend(attempt, built, executionId)) === 'WAITING') {
+      this.#checkDrained();
+      await this.#pump();
+    }
   }
 
   /**
@@ -309,6 +332,16 @@ export class RunExecution {
     built: BuiltRequest,
     executionId: string,
   ): Promise<'SENT' | 'WAITING' | 'DROPPED'> {
+    if (attempt.cancelReason === 'ABORTED' && attempt.executionId === undefined) {
+      await this.#interruptedUnsent(attempt);
+      return 'DROPPED';
+    }
+    // A pause stops what has not been sent: it waits where the call-slot waiters do.
+    if (this.#held && attempt.executionId === undefined) {
+      attempt.built = { request: built, executionId };
+      this.#queues.park(attempt);
+      return 'WAITING';
+    }
     if (built.reservation !== undefined && attempt.executionId === undefined) {
       const decision = attempt.attempts.requestReservation({
         unitAttemptId: attempt.unitAttemptId,
@@ -354,6 +387,7 @@ export class RunExecution {
    * ends the round, so a younger one never passes an older one.
    */
   async drainCapacityWaiters(): Promise<void> {
+    if (this.#held) return;
     for (const attempt of this.#queues.waiting()) {
       const pending = attempt.built;
       if (pending === undefined || !this.#queues.resume(attempt, this.#deps.limits)) break;
@@ -373,6 +407,24 @@ export class RunExecution {
     )
       return;
     if (await this.#createdProtected(attempt, fact)) return;
+    if (
+      fact.outcome === 'TERMINATED' &&
+      fact.reasonCode === 'EXECUTION_CANCELLED' &&
+      fact.cancelReason !== undefined
+    ) {
+      await this.#finish(attempt, {
+        executionId: fact.executionId,
+        outcome: 'INTERRUPTED',
+        interruptedBy: fact.cancelReason,
+        ...(fact.executionKind === 'MODEL'
+          ? {
+              requestState: fact.requestState,
+              ...(fact.usage === undefined ? {} : { usage: fact.usage }),
+            }
+          : {}),
+      });
+      return;
+    }
     if (fact.outcome === 'COMPLETED') {
       await this.#completed(attempt, fact);
       return;
@@ -596,6 +648,106 @@ export class RunExecution {
       });
     });
     cancelRun({ workflowRunId, runEpoch }).catch(() => undefined);
+  }
+
+  #cancelSent(attempt: Attempt, reason: 'PAUSED' | 'ABORTED'): void {
+    if (attempt.executionId === undefined || attempt.cancelReason !== undefined) return;
+    attempt.cancelReason = reason;
+    this.#deps
+      .cancelExecution({
+        executionId: attempt.executionId,
+        runEpoch: attempt.spec.runEpoch,
+        reason,
+      })
+      .catch(() => undefined);
+  }
+
+  /** The pause is complete once nothing is executing; Core then moves from PAUSING to PAUSED. */
+  #checkDrained(): void {
+    if (this.#onDrained === undefined || this.#queues.running().length > 0) return;
+    const notify = this.#onDrained;
+    this.#onDrained = undefined;
+    for (const stop of this.#drainTimers) stop();
+    this.#drainTimers.clear();
+    notify();
+  }
+
+  /**
+   * PAUSING (M2Design 4.4): nothing new starts; what is executing is handled by class. A READ may
+   * finish within `pauseDrainMs`; a WRITE always finishes, since cancelling it could leave half a
+   * file; a MODEL call and an EXEC are cancelled at once. `drained` is called when none is left.
+   */
+  pause(drained: () => void): void {
+    this.#held = true;
+    this.#onDrained = drained;
+    const { config, schedule, enqueue } = this.#deps;
+    for (const attempt of this.#queues.running()) {
+      if (attempt.executionId === undefined) continue;
+      if (attempt.cls === 'MODEL' || attempt.cls === 'EXEC') this.#cancelSent(attempt, 'PAUSED');
+      else if (attempt.cls === 'READ')
+        this.#drainTimers.add(
+          schedule(config.pauseDrainMs, () => {
+            enqueue(() => {
+              if (this.#queues.running().includes(attempt)) this.#cancelSent(attempt, 'PAUSED');
+            });
+          }),
+        );
+    }
+    this.#checkDrained();
+  }
+
+  /** What was held starts again, oldest first. */
+  async resume(): Promise<void> {
+    this.#held = false;
+    this.#onDrained = undefined;
+    for (const stop of this.#drainTimers) stop();
+    this.#drainTimers.clear();
+    await this.drainCapacityWaiters();
+    await this.#pump();
+  }
+
+  /**
+   * ABORT (M2Design 4.5): everything that exists now is cancelled and answers INTERRUPTED(ABORTED),
+   * queued attempts included. Attempts made afterwards, such as the closing reply, are no concern of
+   * this: the run's admission decides what may still be submitted. `runEpoch` does not move.
+   */
+  abort(): void {
+    this.#held = false;
+    this.#onDrained = undefined;
+    for (const stop of this.#drainTimers) stop();
+    this.#drainTimers.clear();
+    for (const attempt of this.#queues.drainQueued())
+      attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+    const sent: Attempt[] = [];
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.executionId !== undefined) {
+        sent.push(attempt);
+        this.#cancelSent(attempt, 'ABORTED');
+        continue;
+      }
+      if (attempt.state === 'WAITING') {
+        // Parked, never sent: it ends here. One still being built ends when the build returns.
+        attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        this.#queues.release(attempt);
+      } else attempt.cancelReason = 'ABORTED';
+    }
+    if (sent.length === 0) return;
+    const { config, enqueue, schedule } = this.#deps;
+    this.#cancelFallback = schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
+      enqueue(() => {
+        for (const attempt of sent) {
+          if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+            continue;
+          this.#noteStop(attempt, attempt.executionId);
+          void this.#finish(attempt, {
+            executionId: attempt.executionId,
+            outcome: 'STOP_UNCONFIRMED',
+          });
+        }
+      });
+    });
+    // The pump looks again: what ended queues no more behind it.
+    void this.#pump();
   }
 
   /** Nothing is in flight any more. */

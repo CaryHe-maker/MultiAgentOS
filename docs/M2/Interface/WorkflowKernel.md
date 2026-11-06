@@ -124,7 +124,7 @@ interface RequestHumanRequest {
   question?: string;               // 局部询问必填（≤1000）
   fields?: HumanField[];           // 至多 8 个
   reviewRef?: ArtifactRef;         // kind = review 必填
-  error?: string;                  // 重新请求（答复校验失败）时给出
+
 interface HumanField { name: string; type: 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'; label: string; options?: string[]; required?: boolean }
 }
 ```

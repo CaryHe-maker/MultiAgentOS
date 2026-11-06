@@ -253,7 +253,7 @@ interface HumanRequest {
   question?: string;                 // 局部询问：问题文本（≤1000）
   fields?: HumanField[];             // 局部询问：至多 8 个，type 为 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'
   reviewRef?: ArtifactRef;           // kind = review：要审阅的产物，界面经 readArtifact 展示
-  error?: string;                    // Workflow 校验答复失败后重新请求时给出：哪个字段、为什么
+
 }
 
 interface HumanResolved {

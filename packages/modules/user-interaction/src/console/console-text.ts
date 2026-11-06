@@ -68,6 +68,9 @@ const DEGRADED: Readonly<Record<string, string>> = {
   PROVIDER_ERROR: '模型服务出错，没能完成回复。',
   UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
   MEMORY_PRESSURE: '系统内存紧张，运行被中断，没能完成回复。',
+  USER_ABORT: '已中止，没能完成回复。文件改动保留在工作区，需要撤销时用 /undo。',
+  TURN_TIMEOUT: '这一轮用时太长，被中断了，没能完成回复。文件改动保留在工作区。',
+  PAUSE_TIMEOUT: '暂停太久，运行被中断了，没能完成回复。文件改动保留在工作区。',
 };
 
 /** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
@@ -87,6 +90,9 @@ const EARLY_END: Readonly<Record<string, string>> = {
 
 const RUN_STATE: Readonly<Record<string, string>> = {
   RUNNING: '运行中',
+  PAUSING: '暂停中…',
+  PAUSED: '已暂停',
+  INTERRUPTING: '正在中止…',
   AWAITING_INPUT: '等待输入',
   CONVERGING: '正在结束',
   CLOSED: '已结束',
@@ -135,6 +141,31 @@ export const ConsoleText = Object.freeze({
   continueAfterBudget: '本次运行的额度已用完。要在这个对话中继续吗？[y/n]',
   queued: (count: number) => `已排队 ${String(count)} 条`,
   pressAgain: '再按一次 Ctrl+C 退出',
+  paused: '已暂停。/continue [说明] 继续（直接输入消息也行），Ctrl+C 中止。',
+  resumed: '已继续。',
+  steered: (waiting: boolean) =>
+    waiting
+      ? '已插入；对方正在等结果，收到结果后可见。'
+      : '已插入；对方做完当前这一轮的工具之后可见。',
+  steerNotNow: '只有运行中才能插话（暂停时请用 /continue）。',
+  continueNotNow: '只有暂停时才能继续。',
+  noSuchTask: (name: string) => `没有找到任务 @${name}；以活动区里的名字为准。`,
+  ambiguousTask: (name: string) => `@${name} 对应不止一个任务，请写得更具体。`,
+  aborting: '正在中止；已完成的结果和文件改动都保留。',
+  questionCancelled: '问题已取消。',
+  question: {
+    from: (agent: string) => `${agent} 想问你：`,
+    review: '请审阅下面的内容：',
+    confirmMenu: 'y 同意 / n 不同意',
+    field: (label: string, index: number, total: number) =>
+      `（${String(index + 1)}/${String(total)}）${label}`,
+    options: (options: readonly string[]) =>
+      options.map((option, index) => `  ${String(index + 1)}. ${option}`).join('\n'),
+    multi: '可多选，用逗号分隔编号。',
+    skip: '可选项，输入 - 跳过。',
+    invalid: '这个回答不符合要求，请重答。',
+    review_note: '写下你的意见；同意可以只回答 y。',
+  },
   truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
@@ -150,6 +181,9 @@ export const ConsoleText = Object.freeze({
     '/undo [all]       回退最近一轮（或全部）的文件改动',
     '/diff [N]         查看倒数第 N 轮改动了什么',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
+    '/continue [@任务] [说明]  暂停后继续，可附加一句说明',
+    '/steer [@任务] <说明>     运行中插话（Alt+Enter 发送输入框里的内容），不暂停',
+    'Ctrl+C 暂停，暂停后再按一次中止；退出用 /exit。',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
   ].join('\n'),
@@ -194,6 +228,8 @@ export const ConsoleText = Object.freeze({
     AWAITING_AUTHORIZATION: '等待授权',
     QUEUED: '排队',
     WAITING_SUBTASKS: '等待子任务',
+    AWAITING_ANSWER: '等待你的回答',
+    PAUSED: '已暂停',
     WRAPPING_UP: '收尾',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,

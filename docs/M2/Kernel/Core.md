@@ -312,7 +312,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | `KernelConfig.repositoryRoot` | Core | 组合根写入 |
 | `KernelConfig.provider`、`repositoryExclusions`、`convergenceMarginMs` | Core | 与 M1 相同 |
 | `KernelConfig.preset` | Core | `standard`；`readonly` 由 CLI 参数设置（M2Design 第 5.2 节） |
-| `KernelConfig.turnTimeoutSeconds`、`maxPauseSeconds` | Core | 1800（Orchestration 运行 3600）、1800（阶段 5，第 5e 节） |
+| `KernelConfig.turnTimeoutSeconds`、`orchestrationTimeoutSeconds`、`maxPauseSeconds` | Core | 1800、3600（Orchestration 运行整体是一个 Turn）、1800（阶段 5，第 5e 节） |
 | `KernelConfig.pauseDrainMs` | Execution | 5000：暂停时 READ 的排空时间（阶段 5，Execution 第 4e 节） |
 | `KernelConfig.compaction` | Core | `triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、`summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、`summaryReasoningEffort` `low`（摘要请求的思考强度，启动时按所用模型的 `effortMapping` 校验，不合法时拒绝启动）（阶段 8） |
 

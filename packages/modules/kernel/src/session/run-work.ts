@@ -18,6 +18,7 @@ import type {
   CloseReason,
   CoreRejectedCode,
   EndAgentRunRequest,
+  InterruptReason,
   ArtifactRef,
   ExecutionScope,
   MemoryLevel,
@@ -131,6 +132,11 @@ export interface RunWorkDeps {
   readonly createAttempt: (spec: AttemptSpec, attempts: RunAttempts) => Promise<string>;
   /** Stops what is queued or running; every attempt still ends through `attempts`. */
   readonly cancelExecutions: (runEpoch: number) => void;
+  /** PAUSING (Kernel/Execution 4e): `drained` is called when nothing is executing any more. */
+  readonly pauseExecutions: (drained: () => void) => void;
+  readonly resumeExecutions: () => Promise<void>;
+  /** An interrupt cancels everything that exists now; each attempt answers INTERRUPTED(ABORTED). */
+  readonly abortExecutions: () => void;
   readonly executionsClosed: () => void;
   /** Offers the call slots given back to the attempts that wait for one (M2Design 7.2). */
   readonly drainCapacityWaiters?: () => Promise<void>;
@@ -227,8 +233,8 @@ export class RunWork {
   readonly #startedAt: string;
   /** Memory is short (Kernel/Core 5c): no new AgentRun, and the tools of running ones stop. */
   #memoryWarning = false;
-  /** The run is being interrupted (Kernel/Core 5c): only the closing reply may still be published. */
-  #interrupting = false;
+  /** Ends the Kernel's wait for Workflow to close an interrupted run (Kernel/Core 5e). */
+  #cancelBackstop: (() => void) | undefined;
   #turns = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
@@ -319,9 +325,20 @@ export class RunWork {
    * soon as it has fallen; without a live level the message that raised the warning decides.
    */
   #underWarning(): boolean {
-    if (this.#interrupting) return true;
+    if (this.#interruptRefusal() !== undefined) return true;
     if (this.#deps.memoryLevel !== undefined) return this.#deps.memoryLevel() !== undefined;
     return this.#memoryWarning;
+  }
+
+  /**
+   * What an interrupted run says to the Units it refuses: the memory is the reason when it is
+   * (Kernel/Core 5c), and any other interrupt just blocks (Kernel/Core 5e). Only the closing reply
+   * may still be published.
+   */
+  #interruptRefusal(): 'MEMORY_PRESSURE' | 'RUN_BLOCKED' | undefined {
+    const { phase, interrupt } = this.#host.control();
+    if (phase !== 'INTERRUPTING') return undefined;
+    return interrupt === 'MEMORY_PRESSURE' ? 'MEMORY_PRESSURE' : 'RUN_BLOCKED';
   }
 
   openTurn(turnId: string): void {
@@ -375,7 +392,10 @@ export class RunWork {
   ): Response {
     let response: SyscallRejected;
     if (reasonCode === 'RUN_BLOCKED') {
-      const closeReason = this.#host.closeReason();
+      // A run that is interrupted is blocked for that reason, though it may stay open (Core 5e).
+      const closeReason =
+        this.#host.closeReason() ??
+        (this.#host.control().phase === 'INTERRUPTING' ? 'INTERRUPTED' : undefined);
       if (closeReason === undefined) throw new Error('RUN_BLOCKED requires closeReason');
       response = { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode, closeReason };
     } else response = { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode };
@@ -464,6 +484,8 @@ export class RunWork {
     if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
     if (this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_EXISTS');
+    const interrupted = this.#interruptRefusal();
+    if (interrupted !== undefined) return this.#refuse(requestId, request, interrupted);
     if (this.#underWarning()) return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
     const placed = this.#placement(request);
     if (!placed.ok) return this.#refuse(requestId, request, placed.reasonCode);
@@ -657,8 +679,9 @@ export class RunWork {
     const response = this.#accept(requestId, request);
     this.#units.submitted += 1;
 
-    if (this.#interrupting && unit.executionKind !== 'MESSAGE_PUBLISH')
-      return this.#refuse(requestId, request, 'MEMORY_PRESSURE');
+    const interrupted = this.#interruptRefusal();
+    if (interrupted !== undefined && unit.executionKind !== 'MESSAGE_PUBLISH')
+      return this.#refuse(requestId, request, interrupted);
     // The roots of a parent are its children's while they run; it is waiting and writes nothing
     // (M2Design 6.4). This only guards the case where it submits all the same.
     if (
@@ -1045,8 +1068,12 @@ export class RunWork {
    */
   reconcile(): void {
     const waitingFor = new Set([...this.#waiting.values()].map((w) => w.request.agentRunId));
+    // A paused run does not work, and the clocks do not count it (Kernel/Monitor 3).
+    const { phase } = this.#host.control();
+    const paused = phase === 'PAUSING' || phase === 'PAUSED';
     this.#clocks.reconcile(
       (agentRunId) =>
+        paused ||
         ((waitingFor.has(agentRunId) || this.#waitingFiles.size > 0) &&
           (this.#inFlight.get(agentRunId) ?? 0) === 0) ||
         // Waiting for its SubAgents is not working (Kernel/Monitor 4).
@@ -1056,22 +1083,61 @@ export class RunWork {
 
   /** The run started converging: Units on a question end with it and get no report. */
   /**
-   * INTERRUPTING (Kernel/Core 5c): what runs is cancelled and nothing new starts, but the run
-   * stays open so that Workflow can publish the reply that says what happened and close it. The
-   * facts of the cancelled work still arrive; Workflow no longer waits for them.
+   * INTERRUPTING (Kernel/Core 5c, 5e): what runs is cancelled and each attempt answers
+   * INTERRUPTED(ABORTED), and nothing new starts, but the run stays open so that Workflow can
+   * publish the reply that says what happened. Whether it then closes the run (memory pressure,
+   * Orchestration) or asks for the next input (Turn-chat) is Workflow's to decide.
    */
-  beginInterrupt(backstopMs: number, due: () => void): void {
-    this.#interrupting = true;
-    this.#memoryWarning = true;
+  beginInterrupt(reason: InterruptReason, backstopMs: number, due: () => void): void {
+    if (reason === 'MEMORY_PRESSURE') this.#memoryWarning = true;
     for (const settled of this.#authorization.cancelQuestions())
       this.#host.toInteraction(settled.resolved);
     this.#waiting.clear();
     this.#clocks.stop();
-    this.#deps.cancelExecutions(this.#host.runEpoch());
-    // If Workflow does not close the run, the Kernel does, so that memory is not held for ever.
-    this.#deps.schedule(backstopMs, () => {
+    this.#deps.abortExecutions();
+    // If Workflow does not answer, the Kernel closes the run, so that nothing is held for ever.
+    this.#cancelBackstop = this.#deps.schedule(backstopMs, () => {
       this.#host.enqueue(due);
     });
+  }
+
+  /** The interrupted Turn ended and the run is open again: Workflow answered in time. */
+  endInterrupt(): void {
+    this.#cancelBackstop?.();
+    this.#cancelBackstop = undefined;
+  }
+
+  /** PAUSING: Execution holds what has not started and cancels what must not run on. */
+  pause(drained: () => void): void {
+    this.#deps.pauseExecutions(drained);
+    this.reconcile();
+  }
+
+  async resume(): Promise<void> {
+    await this.#deps.resumeExecutions();
+    this.reconcile();
+  }
+
+  /** Nothing of this run is dispatched or queued, and a question waits for the user (7.4). */
+  awaitsUser(questions: number): boolean {
+    const inFlight = [...this.#inFlight.values()].reduce((sum, count) => sum + count, 0);
+    return (
+      inFlight === 0 && (this.#waiting.size > 0 || this.#waitingFiles.size > 0 || questions > 0)
+    );
+  }
+
+  /** The AgentRuns that are active: a local question names one of them. */
+  activeAgentRuns(): string[] {
+    return [...this.#agentRuns].filter(([, record]) => record.state === 'ACTIVE').map(([id]) => id);
+  }
+
+  /** The activity area shows these (M2Design 7.5). */
+  showAwaitingAnswer(agentRunId: string): void {
+    this.#activity.awaitingAnswer(agentRunId);
+  }
+
+  showPaused(): void {
+    for (const agentRunId of this.activeAgentRuns()) this.#activity.paused(agentRunId);
   }
 
   beginClosing(): void {

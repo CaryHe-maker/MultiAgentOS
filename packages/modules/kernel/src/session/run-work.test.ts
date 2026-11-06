@@ -55,6 +55,8 @@ async function setup(
     pin?: (request: RegisterAgentRunRequest) => PinnedAgent;
     /** More of RunWork's own wiring, for the delegation cases. */
     runWork?: Partial<RunWorkDeps>;
+    /** The actor's own limits, for the pause and Turn timeouts. */
+    actor?: Partial<ConstructorParameters<typeof SessionActor>[0]>;
   } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
@@ -65,6 +67,8 @@ async function setup(
   const execution = new TestExecution();
   let now = 0;
   const timers: { delayMs: number; due: () => void }[] = [];
+  /** What the actor itself armed: the Turn clock and the pause limit. */
+  const actorTimers: { delayMs: number; due: () => void }[] = [];
   const outbox = new KernelOutbox(
     {
       toWorkflow: (event) => {
@@ -94,6 +98,9 @@ async function setup(
         testRunWork(host, {
           createAttempt: execution.createAttempt,
           cancelExecutions: execution.cancelExecutions,
+          pauseExecutions: execution.pauseExecutions,
+          resumeExecutions: execution.resumeExecutions,
+          abortExecutions: execution.abortExecutions,
           pinAgent: (request) =>
             Promise.resolve({ ok: true, agent: options.pin?.(request) ?? agent }),
           preset: options.preset ?? 'standard',
@@ -124,6 +131,16 @@ async function setup(
     onClosed: () => undefined,
     admission: () => undefined,
     onFatal: (error) => faults.push(error),
+    now: () => now,
+    schedule: (delayMs, due) => {
+      const timer = { delayMs, due };
+      actorTimers.push(timer);
+      return () => {
+        const index = actorTimers.indexOf(timer);
+        if (index >= 0) actorTimers.splice(index, 1);
+      };
+    },
+    ...options.actor,
     ...(options.interrupted === undefined ? {} : { onInterrupted: options.interrupted }),
   });
   const settled = async () => {
@@ -259,6 +276,8 @@ async function setup(
     settled,
     faults,
     timers,
+    actorTimers,
+    toInteraction,
     inRun,
     agentRunId,
     advance: (ms: number) => {
@@ -985,7 +1004,7 @@ describe('memory pressure', () => {
       expect(types(kernel)).toContain('RunInterrupted');
       expect(types(kernel)).not.toContain('RunClosed');
       expect(kernel.summaries).toEqual([]);
-      expect(kernel.execution.cancels).toBeGreaterThan(0);
+      expect(kernel.execution.aborts).toBeGreaterThan(0);
     });
 
     it('lets nothing but the closing reply in, whatever the AgentRun asks', async () => {
@@ -1399,5 +1418,305 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
         ),
       ),
     ).toBe('DELEGATION_NOT_FOUND');
+  });
+});
+
+describe('run control of Kernel/Core 5e', () => {
+  type Kernel = Awaited<ReturnType<typeof setup>>;
+  const toWorkflowTypes = (kernel: Kernel) => kernel.toWorkflow.map((entry) => entry.event.type);
+  const states = (kernel: Kernel) =>
+    kernel.toInteraction.flatMap((entry) =>
+      entry.event.type === 'RunStateChanged' ? [entry.event.state] : [],
+    );
+  const eventsOf = <T extends string>(kernel: Kernel, type: T) =>
+    kernel.toWorkflow.flatMap((entry) => (entry.event.type === type ? [entry.event] : []));
+  const pause = async (kernel: Kernel) => {
+    const decision = await kernel.actor.call(() => kernel.actor.pauseRun(kernel.run()));
+    await kernel.settled();
+    return decision;
+  };
+  const drain = async (kernel: Kernel) => {
+    kernel.execution.onDrained?.();
+    await kernel.settled();
+  };
+  const prompt = (kernel: Kernel, humanRequestId = 'hrq_prompt00000001') =>
+    kernel.actor.call(() => kernel.actor.requestOpenInput(kernel.run(), humanRequestId));
+  const asked = (kernel: Kernel, asker: string, humanRequestId = 'hrq_question00001') =>
+    kernel.actor.call(() =>
+      kernel.actor.requestLocalQuestion(kernel.run(), {
+        ...kernel.inRun,
+        humanRequestId,
+        nodeId: 'nod_question00001',
+        kind: 'ask',
+        attachedAgentRunId: asker,
+        question: 'which one?',
+      }),
+    );
+
+  it('pauses: Execution is told, and the run is paused when it has drained', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    expect(await pause(kernel)).toMatchObject({ accepted: true });
+    expect(kernel.execution.pauses).toBe(1);
+    expect(kernel.run().control.phase).toBe('PAUSING');
+    expect(states(kernel)).toContain('PAUSING');
+    expect(toWorkflowTypes(kernel)).not.toContain('RunPaused');
+    await drain(kernel);
+    expect(kernel.run().control.phase).toBe('PAUSED');
+    expect(toWorkflowTypes(kernel)).toContain('RunPaused');
+    expect(states(kernel)).toContain('PAUSED');
+    expect(await pause(kernel)).toMatchObject({ accepted: false, reasonCode: 'REQUEST_CONFLICT' });
+  });
+
+  it('resumes, with or without a note, and tells Workflow', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await pause(kernel);
+    await drain(kernel);
+    const note = { inputId: newId('inp'), text: 'use the other way' };
+    expect(
+      await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run(), { input: note })),
+    ).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(kernel.execution.resumes).toBe(1);
+    expect(kernel.run().control.phase).toBe('RUNNING');
+    expect(eventsOf(kernel, 'RunResumed')[0]).toMatchObject({
+      steer: { inputId: note.inputId },
+    });
+    expect(await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()))).toMatchObject({
+      accepted: false,
+      reasonCode: 'REQUEST_CONFLICT',
+    });
+  });
+
+  it('refuses a note for an AgentRun that is not there', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await pause(kernel);
+    await drain(kernel);
+    expect(
+      await kernel.actor.call(() =>
+        kernel.actor.resumeRun(kernel.run(), {
+          input: { inputId: newId('inp'), text: 'x' },
+          targetAgentRunId: 'agr_nobody',
+        }),
+      ),
+    ).toMatchObject({ accepted: false, reasonCode: 'AGENT_RUN_NOT_FOUND' });
+    expect(kernel.run().control.phase).toBe('PAUSED');
+  });
+
+  it('takes a steer while running, and not once paused', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    const input = { inputId: newId('inp'), text: 'look at b.ts too' };
+    expect(
+      await kernel.actor.call(() => kernel.actor.steerRun(kernel.run(), input, kernel.agentRunId)),
+    ).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(eventsOf(kernel, 'HumanAnswered').at(-1)).toMatchObject({
+      kind: 'steer',
+      inputId: input.inputId,
+      targetAgentRunId: kernel.agentRunId,
+    });
+    expect(
+      await kernel.actor.call(() => kernel.actor.steerRun(kernel.run(), input, 'agr_nobody')),
+    ).toMatchObject({ accepted: false, reasonCode: 'AGENT_RUN_NOT_FOUND' });
+    await pause(kernel);
+    expect(await kernel.actor.call(() => kernel.actor.steerRun(kernel.run(), input))).toMatchObject(
+      { accepted: false, reasonCode: 'REQUEST_CONFLICT' },
+    );
+  });
+
+  it('interrupts for the user: asks cancelled, work aborted, and the Turn ends ABORTED with the run open', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.submit();
+    await kernel.settled();
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+    expect(
+      await kernel.actor.call(() => kernel.actor.interrupt(kernel.run(), 'USER_ABORT')),
+    ).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(kernel.run().control.phase).toBe('INTERRUPTING');
+    expect(kernel.execution.aborts).toBe(1);
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'USER_ABORT' });
+    expect(states(kernel)).toContain('INTERRUPTING');
+    expect(kernel.interactionTypes()).toContain('AuthorizationResolved');
+    // Not a memory problem: the Units that are refused are blocked, nothing more is said.
+    expect(await kernel.submit()).toMatchObject({ reasonCode: 'RUN_BLOCKED' });
+    expect(await kernel.register(newId('agr'))).toMatchObject({ reasonCode: 'RUN_BLOCKED' });
+    // Workflow ends the AgentRun and asks for the next input: the Turn ends ABORTED.
+    await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
+    expect(await prompt(kernel)).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(kernel.run().control.phase).toBe('AWAITING_INPUT');
+    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'ABORTED' });
+    expect(eventsOf(kernel, 'RunClosed')).toEqual([]);
+  });
+
+  it('closes an interrupted run itself when Workflow does not answer in time', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await kernel.actor.call(() => kernel.actor.interrupt(kernel.run(), 'USER_ABORT'));
+    await kernel.settled();
+    const backstop = kernel.timers.at(-1);
+    expect(backstop).toBeDefined();
+    backstop?.due();
+    await kernel.settled();
+    expect(kernel.summaries.at(-1)?.closeReason).toBe('INTERRUPTED');
+  });
+
+  it('interrupts a paused run, but not one that waits for input', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await pause(kernel);
+    await drain(kernel);
+    expect(
+      await kernel.actor.call(() => kernel.actor.interrupt(kernel.run(), 'USER_ABORT')),
+    ).toMatchObject({ accepted: true });
+    await kernel.settled();
+    await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
+    await prompt(kernel);
+    expect(
+      await kernel.actor.call(() => kernel.actor.interrupt(kernel.run(), 'USER_ABORT')),
+    ).toMatchObject({ accepted: false, reasonCode: 'REQUEST_CONFLICT' });
+  });
+
+  it('interrupts a paused run when the pause lasts too long', async () => {
+    const kernel = await setup(undefined, {
+      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+    });
+    await kernel.register();
+    await pause(kernel);
+    await drain(kernel);
+    const limit = kernel.actorTimers.find((timer) => timer.delayMs === 5_000);
+    expect(limit).toBeDefined();
+    limit?.due();
+    await kernel.settled();
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'PAUSE_TIMEOUT' });
+  });
+
+  it('forgets the pause limit once the run is continued', async () => {
+    const kernel = await setup(undefined, {
+      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+    });
+    await kernel.register();
+    await pause(kernel);
+    await drain(kernel);
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    expect(kernel.actorTimers.some((timer) => timer.delayMs === 5_000)).toBe(false);
+  });
+
+  it('times a Turn out, without counting a pause', async () => {
+    const kernel = await setup(undefined, {
+      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+    });
+    await kernel.register();
+    // A model call is out, so the run is working: the clock runs.
+    await kernel.submit();
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    const clock = kernel.actorTimers.find((timer) => timer.delayMs <= 10_000);
+    expect(clock).toBeDefined();
+    kernel.advance(4_000);
+    await pause(kernel);
+    await drain(kernel);
+    // Paused: the clock stopped, so no timer is armed for it.
+    expect(kernel.actorTimers.some((timer) => timer.delayMs < 60_000)).toBe(false);
+    kernel.advance(60_000);
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    const rest = kernel.actorTimers.find((timer) => timer.delayMs <= 6_000);
+    expect(rest).toBeDefined();
+    kernel.advance(6_000);
+    rest?.due();
+    await kernel.settled();
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'TURN_TIMEOUT' });
+    // Execution answers what it was running with INTERRUPTED; here the stand-in does it.
+    for (const { unitAttemptId } of kernel.execution.started)
+      await kernel.actor.call(() =>
+        kernel.run().work.attempts.interruptUnsent(unitAttemptId, 'ABORTED'),
+      );
+    await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
+    await prompt(kernel);
+    await kernel.settled();
+    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'TIMEOUT' });
+  });
+
+  it('does not count the time the whole run waits for the user', async () => {
+    const kernel = await setup(undefined, {
+      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+    });
+    await kernel.register();
+    // A question to the user is open and nothing runs.
+    await kernel.submit();
+    await kernel.settled();
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+    expect(kernel.actorTimers.some((timer) => timer.delayMs <= 10_000)).toBe(false);
+  });
+
+  it('asks a local question without ending the Turn, and delivers the answer to Workflow', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    expect(await asked(kernel, kernel.agentRunId)).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(kernel.run().control.phase).toBe('RUNNING');
+    expect(kernel.toInteraction.at(-2)?.event).toMatchObject({
+      type: 'ActivityEvent',
+      phase: 'AWAITING_ANSWER',
+    });
+    const request = kernel.toInteraction.find((entry) => entry.event.type === 'HumanRequest');
+    expect(request?.event).toMatchObject({
+      kind: 'ask',
+      attachedAgentRunId: kernel.agentRunId,
+      question: 'which one?',
+    });
+    const answer = { inputId: newId('inp'), text: 'the first' };
+    expect(
+      await kernel.actor.call(() =>
+        kernel.actor.answerHuman(kernel.run(), 'hrq_question00001', answer),
+      ),
+    ).toMatchObject({ accepted: true });
+    await kernel.settled();
+    expect(eventsOf(kernel, 'HumanAnswered').at(-1)).toMatchObject({
+      kind: 'ask',
+      origin: 'requested',
+      humanRequestId: 'hrq_question00001',
+      inputId: answer.inputId,
+    });
+    expect(kernel.interactionTypes()).toContain('HumanResolved');
+    expect(
+      await kernel.actor.call(() =>
+        kernel.actor.answerHuman(kernel.run(), 'hrq_question00001', answer),
+      ),
+    ).toMatchObject({ accepted: false });
+  });
+
+  it('refuses a local question from an AgentRun that is not active', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    expect(await asked(kernel, 'agr_nobody0000001')).toMatchObject({
+      accepted: false,
+      reasonCode: 'AGENT_RUN_NOT_FOUND',
+    });
+  });
+
+  it('cancels the local questions when the run is interrupted', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    await asked(kernel, kernel.agentRunId);
+    await kernel.actor.call(() => kernel.actor.interrupt(kernel.run(), 'USER_ABORT'));
+    await kernel.settled();
+    expect(eventsOf(kernel, 'HumanCancelled')[0]).toMatchObject({
+      humanRequestId: 'hrq_question00001',
+      nodeId: 'nod_question00001',
+      reason: 'USER_ABORT',
+    });
+    expect(
+      kernel.toInteraction.some(
+        (entry) => entry.event.type === 'HumanResolved' && entry.event.resolution === 'CANCELLED',
+      ),
+    ).toBe(true);
   });
 });

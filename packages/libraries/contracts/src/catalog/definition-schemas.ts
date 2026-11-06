@@ -177,6 +177,10 @@ export const AgentDefinitionSchema = Type.Object(
         todos: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The `ask_user` tool: main and worker have it, explorer does not (M2Design 3.4). */
+        askUser: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
         /** The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6). */
         spawn: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
