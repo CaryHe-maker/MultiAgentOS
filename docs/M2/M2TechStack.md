@@ -118,6 +118,8 @@ DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://
 | 搜索质量或限流不达标 | 搜索改用 Tavily，DeepSeek 抓取是否保留看 W-T3 |
 | W-T1 或 W-T5 不达标（协议与文档不符、计费不符） | 不用 DeepSeek 的接口，按原方案使用 Tavily 与本地抓取 |
 
+**实测结果（2026-11-07）**：见 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)。搜索通过（16/16 相关、算符有效、p95 约 0.5 秒）；抓取静态页面与 GitHub 可用，PDF、reddit、长列表页有缺口，Markdown 丢链接与代码围栏，GitHub 页约 10 秒；计费与隐私无法由实验证明。落在上表第二行，提供方由 Cary 决定。
+
 无论结论如何，`web_search` 与 `web_fetch` 都经提供方端口（`SearchProvider`、`FetchProvider`）调用，提供方可以替换；搜索词与抓取的地址是数据离开本机的通道，授权（`web.search`、`web.fetch`）、审计、密钥扫描与地址检查不因提供方而减少。留存与隐私的结论写入 [M2Security](M2Security.md) 的网络部分。
 ## 4. 新增依赖
 
