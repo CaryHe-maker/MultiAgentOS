@@ -3,6 +3,13 @@ import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
+import {
+  HUMAN_REQUEST_KINDS,
+  HumanFieldSchema,
+  LOCAL_QUESTION_KINDS,
+  MAX_QUESTION_CHARS,
+  MAX_QUESTION_FIELDS,
+} from '../kernel-control/human-request.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -45,6 +52,15 @@ export const GraphNodeRecordSchema = closed({
   inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
   spawn: Type.Optional(SpawnNodeSchema),
+  /** A HUMAN node that asks the user something for the AgentRun that called `ask_user`. */
+  ask: Type.Optional(
+    closed({
+      kind: Type.Enum(LOCAL_QUESTION_KINDS),
+      question: text(MAX_QUESTION_CHARS),
+      fields: Type.Optional(Type.Array(HumanFieldSchema, { maxItems: MAX_QUESTION_FIELDS })),
+      reviewRef: Type.Optional(ArtifactRefSchema),
+    }),
+  ),
 });
 export type GraphNodeRecord = Static<typeof GraphNodeRecordSchema>;
 
@@ -54,7 +70,8 @@ export type GraphNodeRecord = Static<typeof GraphNodeRecordSchema>;
  */
 export const EdgeCallSchema = closed({
   toolCallId: ToolCallIdSchema,
-  delegationId: IdSchemas.delegationId,
+  /** The Kernel's reservation that funds a call to SubAgents; a question to the user has none. */
+  delegationId: Type.Optional(IdSchemas.delegationId),
 });
 export type EdgeCall = Static<typeof EdgeCallSchema>;
 
@@ -144,7 +161,7 @@ export const SessionLogRecordSchema = Type.Union(
     }),
     record('GRAPH_EXTENDED', inTurn, {
       revision: count(1),
-      source: Type.Enum(['TEMPLATE', 'CHAT_GROWTH', 'LOOP', 'SPAWN']),
+      source: Type.Enum(['TEMPLATE', 'CHAT_GROWTH', 'LOOP', 'SPAWN', 'STEER', 'ASK']),
       nodes: Type.Array(GraphNodeRecordSchema),
       edges: Type.Array(GraphEdgeRecordSchema),
     }),
@@ -165,16 +182,24 @@ export const SessionLogRecordSchema = Type.Union(
     record('HUMAN_REQUESTED', inTurn, {
       humanRequestId: IdSchemas.humanRequestId,
       nodeId: IdSchemas.nodeId,
-      kind: Type.Literal('prompt'),
+      kind: Type.Enum(HUMAN_REQUEST_KINDS),
+      /** A local question (M2Design 4.2): who asked, and what. */
+      attachedAgentRunId: Type.Optional(IdSchemas.agentRunId),
+      question: Type.Optional(text(MAX_QUESTION_CHARS)),
+      fields: Type.Optional(Type.Array(HumanFieldSchema, { maxItems: MAX_QUESTION_FIELDS })),
+      reviewRef: Type.Optional(ArtifactRefSchema),
     }),
     record('HUMAN_ANSWERED', inTurn, {
       nodeId: IdSchemas.nodeId,
       humanRequestId: Type.Optional(IdSchemas.humanRequestId),
-      kind: Type.Literal('prompt'),
-      origin: Type.Enum(['initial', 'requested']),
+      kind: Type.Enum([...HUMAN_REQUEST_KINDS, 'steer']),
+      /** `unrequested`: a steer, which nobody was waiting for. */
+      origin: Type.Enum(['initial', 'requested', 'unrequested']),
       inputId: IdSchemas.inputId,
       contentRef: ArtifactRefSchema,
       attachedAgentRunId: Type.Optional(IdSchemas.agentRunId),
+      /** A steer whose target had ended went to its parent; this is the target it was meant for. */
+      redirectedFrom: Type.Optional(IdSchemas.agentRunId),
     }),
     record('AGENT_RUN_REGISTERED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -291,6 +316,9 @@ export const SessionLogRecordSchema = Type.Union(
     /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
     /** The run was interrupted from outside the conversation (Module/Workflow 9.2a). */
     record('RUN_INTERRUPTED', inRun, { reason: Type.Enum(INTERRUPT_REASONS) }),
+    /** The user paused the run, and resumed it, perhaps with a note (M2Design 4.3, 4.5). */
+    record('RUN_PAUSED', inTurn, {}),
+    record('RUN_RESUMED', inTurn, { steerInputId: Type.Optional(IdSchemas.inputId) }),
     record('AGENT_WRAP_UP', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       reason: WrapUpReasonSchema,

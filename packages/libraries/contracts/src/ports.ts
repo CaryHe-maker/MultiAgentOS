@@ -20,6 +20,10 @@ import type { TokenUsage } from './executor/model-call.js';
 import type {
   AnswerAuthorizationRequest,
   AnswerHumanRequest,
+  InterruptRunRequest,
+  PauseRunRequest,
+  ResumeRunRequest,
+  SteerRunRequest,
   ConfirmUndoRequest,
   DiffTurnsRequest,
   ReadArtifactRequest,
@@ -463,6 +467,22 @@ export interface InteractionGatewayPort {
     request: ReadArtifactRequest,
     context: BoundaryContext,
   ): Promise<ArtifactContent | SyscallRejected>;
+  pauseRun(
+    request: PauseRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  resumeRun(
+    request: ResumeRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  interruptRun(
+    request: InterruptRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  steerRun(
+    request: SteerRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   undoTurns(
     request: UndoTurnsRequest,
     context: BoundaryContext,

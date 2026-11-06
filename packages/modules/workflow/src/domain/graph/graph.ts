@@ -46,7 +46,8 @@ export interface EdgeCondition {
 /** The call a `DELEGATE` or `RESUME` edge belongs to: the model's tool call and the Kernel's reservation. */
 export interface EdgeCall {
   readonly toolCallId: string;
-  readonly delegationId: string;
+  /** Only a call to SubAgents has one: the Kernel's reservation that funds it. */
+  readonly delegationId?: string;
 }
 
 /**

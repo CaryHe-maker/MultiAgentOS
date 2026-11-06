@@ -119,8 +119,13 @@ interface RequestHumanRequest {
   workflowRunId: string;
   humanRequestId: string;          // 前缀 hrq，body 为对应 HUMAN 节点 ID 的 body
   nodeId: string;
-  kind: 'prompt';                  // 阶段 5 增加 'ask'、'confirm'、'review'
-  // 阶段 5：attachedAgentRunId、question、fields、reviewRef、source
+  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 阶段 5：后三种是局部询问
+  attachedAgentRunId?: string;     // 局部询问必填：发起 ask_user 的 AgentRun
+  question?: string;               // 局部询问必填（≤1000）
+  fields?: HumanField[];           // 至多 8 个
+  reviewRef?: ArtifactRef;         // kind = review 必填
+
+interface HumanField { name: string; type: 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'; label: string; options?: string[]; required?: boolean }
 }
 ```
 
@@ -247,7 +252,15 @@ interface UpdateActivityRequest {
 type KernelToWorkflowEvent =
   | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
   | WorkspaceReverted | WorkspaceDiverged;   // 阶段 2：字段见 InteractionKernel 第 3 节；WorkspaceDiverged 为 { type, files: string[] }
-  // 阶段 5：RunPaused、RunResumed、RunInterrupted、HumanCancelled；HumanAnswered 增加 kind = 'steer'
+  | RunPaused | RunResumed | RunInterrupted | HumanCancelled;   // 阶段 5
+
+interface RunPaused { type: 'RunPaused' }
+interface RunResumed {
+  type: 'RunResumed';
+  steer?: { inputId: string; contentRef: ArtifactRef; targetAgentRunId?: string };   // 继续并附加说明：Workflow 先创建 HUMAN(steer)，再重新提交被暂停打断的 READ 与 MODEL
+}
+interface RunInterrupted { type: 'RunInterrupted'; reason: InterruptReason }          // 阶段 3 已有，原因增加 USER_ABORT、TURN_TIMEOUT、PAUSE_TIMEOUT
+interface HumanCancelled { type: 'HumanCancelled'; humanRequestId: string; nodeId: string; reason: InterruptReason }   // 运行中止时待答复的局部询问被取消
   // 阶段 8：CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
 
 interface RunStart {
@@ -267,7 +280,8 @@ interface UnitReport {
   unitRef: PinnedDefinitionRef;
   executionKind: ExecutionKind;
   unitAttemptId?: string;            // 已建立尝试时必填
-  status: 'OK' | 'REJECTED' | 'FAILED';   // 阶段 5 增加 'INTERRUPTED'
+  status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED';   // INTERRUPTED：阶段 5，被暂停或中止打断（M2Design 第 4.4 节）
+  interruptedBy?: 'PAUSED' | 'ABORTED';   // status = 'INTERRUPTED' 时必填；没有 output
   reasonCode?: ReasonCode;           // REJECTED、FAILED 时必填
   output?: UnitOutput;               // OK 时必填
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
@@ -286,7 +300,7 @@ interface BudgetView {               // M2Design 第 7.3 节：三级账本各�
 
 interface HumanAnswered {
   type: 'HumanAnswered';
-  kind: 'prompt';                    // 阶段 5 增加其余种类，以及运行中插话的 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
+  kind: 'prompt' | 'ask' | 'confirm' | 'review' | 'steer';   // 阶段 5：局部询问的答复与运行中插话 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
   origin: 'initial' | 'requested';
   humanRequestId?: string;           // origin = 'requested' 时必填
   inputId: string;                   // 前缀 inp，UserInteraction 分配；用于去重

@@ -91,6 +91,12 @@ interface Run {
   pendingUnits: number;
   turnId: string | undefined;
   pendingHuman: string | undefined;
+  /** Local questions waiting for an answer (M2Design 4.2), by request, with the kind. */
+  readonly questions: Map<string, 'ask' | 'confirm' | 'review'>;
+  /** Paused (Kernel/Core 5e): every Unit that comes back is INTERRUPTED(PAUSED). */
+  paused: boolean;
+  /** Interrupted: Units come back INTERRUPTED(ABORTED), and the Turn ends ABORTED. */
+  interrupt: 'USER_ABORT' | undefined;
   closed: boolean;
   workflowSeq: number;
   interactionSeq: number;
@@ -245,6 +251,9 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       pendingUnits: 0,
       turnId: undefined,
       pendingHuman: undefined,
+      questions: new Map(),
+      paused: false,
+      interrupt: undefined,
       closed: false,
       workflowSeq: 0,
       interactionSeq: 0,
@@ -268,7 +277,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     await runToInteraction(current, {
       type: 'RunStateChanged',
       state: 'RUNNING',
-      turnId: current.turnId,
+      ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
     });
     await runToWorkflow(current, {
       type: 'HumanAnswered',
@@ -301,7 +310,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     await runToWorkflow(current, {
       type: 'TurnClosed',
       turnId,
-      reason: 'COMPLETED',
+      reason: current.interrupt === undefined ? 'COMPLETED' : 'ABORTED',
       usage: { inputTokens: 0, outputTokens: 0, unknownTokens: 0, modelRequests: 0, toolUnits: 0 },
     });
   };
@@ -322,24 +331,38 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       budget,
     };
     current.pendingUnits -= 1;
+    // The reply that says why the run stopped is the one thing that still goes through.
+    const interrupted =
+      (current.interrupt !== undefined || current.paused) &&
+      request.unitRef.id !== 'message-publish'
+        ? {
+            ...common,
+            unitAttemptId: newId('una'),
+            status: 'INTERRUPTED' as const,
+            interruptedBy:
+              current.interrupt === undefined ? ('PAUSED' as const) : ('ABORTED' as const),
+          }
+        : undefined;
     const report =
-      'reject' in scripted
-        ? { ...common, status: 'REJECTED' as const, reasonCode: scripted.reject }
-        : 'quota' in scripted
-          ? {
-              ...common,
-              status: 'REJECTED' as const,
-              reasonCode: 'QUOTA_EXHAUSTED' as const,
-              quota: scripted.quota,
-            }
-          : 'fail' in scripted
+      interrupted !== undefined
+        ? interrupted
+        : 'reject' in scripted
+          ? { ...common, status: 'REJECTED' as const, reasonCode: scripted.reject }
+          : 'quota' in scripted
             ? {
                 ...common,
-                unitAttemptId: newId('una'),
-                status: 'FAILED' as const,
-                reasonCode: scripted.fail,
+                status: 'REJECTED' as const,
+                reasonCode: 'QUOTA_EXHAUSTED' as const,
+                quota: scripted.quota,
               }
-            : { ...common, unitAttemptId: newId('una'), status: 'OK' as const, ...scripted };
+            : 'fail' in scripted
+              ? {
+                  ...common,
+                  unitAttemptId: newId('una'),
+                  status: 'FAILED' as const,
+                  reasonCode: scripted.fail,
+                }
+              : { ...common, unitAttemptId: newId('una'), status: 'OK' as const, ...scripted };
     await runToWorkflow(current, report);
     if ('input' in request && 'kind' in request.input && request.input.kind === 'REPLY') {
       await runToInteraction(current, {
@@ -418,11 +441,30 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       const current = inRun(request.workflowRunId);
       if (current === undefined)
         return Promise.resolve(rejected(request.requestId, 'RUN_NOT_FOUND'));
+      if (request.kind !== 'prompt') {
+        // A local question blocks only the AgentRun that asked, and ends no Turn.
+        if (!current.activeAgentRuns.has(request.attachedAgentRunId))
+          return Promise.resolve(rejected(request.requestId, 'AGENT_RUN_NOT_FOUND'));
+        current.questions.set(request.humanRequestId, request.kind);
+        later(() =>
+          runToInteraction(current, {
+            type: 'HumanRequest',
+            humanRequestId: request.humanRequestId,
+            kind: request.kind,
+            attachedAgentRunId: request.attachedAgentRunId,
+            question: request.question,
+            ...(request.fields === undefined ? {} : { fields: request.fields }),
+            ...(request.reviewRef === undefined ? {} : { reviewRef: request.reviewRef }),
+          }),
+        );
+        return Promise.resolve(ack(request.requestId));
+      }
       if (current.activeAgentRuns.size > 0 || current.pendingUnits > 0)
         return Promise.resolve(rejected(request.requestId, 'AGENT_RUN_ACTIVE'));
       current.pendingHuman = request.humanRequestId;
       later(async () => {
         await closeTurn(current);
+        current.interrupt = undefined;
         await runToInteraction(current, { type: 'RunStateChanged', state: 'AWAITING_INPUT' });
         await runToInteraction(current, {
           type: 'HumanRequest',
@@ -564,8 +606,112 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       return Promise.resolve(ack(request.requestId));
     },
     answerAuthorization: (request) => Promise.resolve(ack(request.requestId)),
+    pauseRun: (request) => {
+      const current = inRun(request.workflowRunId);
+      if (current === undefined || current.paused || current.turnId === undefined)
+        return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
+      current.paused = true;
+      later(async () => {
+        await runToInteraction(current, {
+          type: 'RunStateChanged',
+          state: 'PAUSED',
+          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+        });
+        await runToWorkflow(current, { type: 'RunPaused' });
+      });
+      return Promise.resolve(ack(request.requestId));
+    },
+    resumeRun: (request) => {
+      const current = inRun(request.workflowRunId);
+      if (current === undefined || !current.paused)
+        return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
+      current.paused = false;
+      later(async () => {
+        await runToInteraction(current, {
+          type: 'RunStateChanged',
+          state: 'RUNNING',
+          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+        });
+        await runToWorkflow(current, {
+          type: 'RunResumed',
+          ...(request.steer === undefined
+            ? {}
+            : {
+                steer: {
+                  inputId: request.steer.input.inputId,
+                  contentRef: store(request.steer.input.text),
+                  ...(request.steer.targetAgentRunId === undefined
+                    ? {}
+                    : { targetAgentRunId: request.steer.targetAgentRunId }),
+                },
+              }),
+        });
+      });
+      return Promise.resolve(ack(request.requestId));
+    },
+    steerRun: (request) => {
+      const current = inRun(request.workflowRunId);
+      if (current === undefined || current.paused || current.turnId === undefined)
+        return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
+      later(() =>
+        runToWorkflow(current, {
+          type: 'HumanAnswered',
+          kind: 'steer',
+          inputId: request.input.inputId,
+          contentRef: store(request.input.text),
+          ...(request.targetAgentRunId === undefined
+            ? {}
+            : { targetAgentRunId: request.targetAgentRunId }),
+        }),
+      );
+      return Promise.resolve(ack(request.requestId));
+    },
+    interruptRun: (request) => {
+      const current = inRun(request.workflowRunId);
+      if (current === undefined || current.turnId === undefined || current.interrupt !== undefined)
+        return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
+      current.interrupt = 'USER_ABORT';
+      current.paused = false;
+      later(async () => {
+        await runToWorkflow(current, { type: 'RunInterrupted', reason: 'USER_ABORT' });
+        await runToInteraction(current, {
+          type: 'RunStateChanged',
+          state: 'INTERRUPTING',
+          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+        });
+        for (const humanRequestId of current.questions.keys()) {
+          await runToInteraction(current, {
+            type: 'HumanResolved',
+            humanRequestId,
+            resolution: 'CANCELLED',
+          });
+        }
+        current.questions.clear();
+      });
+      return Promise.resolve(ack(request.requestId));
+    },
     answerHuman: (request) => {
       const current = inRun(request.workflowRunId);
+      const kind = current?.questions.get(request.humanRequestId);
+      if (current !== undefined && kind !== undefined) {
+        current.questions.delete(request.humanRequestId);
+        later(async () => {
+          await runToInteraction(current, {
+            type: 'HumanResolved',
+            humanRequestId: request.humanRequestId,
+            resolution: 'ANSWERED',
+          });
+          await runToWorkflow(current, {
+            type: 'HumanAnswered',
+            kind,
+            origin: 'requested',
+            humanRequestId: request.humanRequestId,
+            inputId: request.input.inputId,
+            contentRef: store(request.input.text),
+          });
+        });
+        return Promise.resolve(ack(request.requestId));
+      }
       if (current?.pendingHuman !== request.humanRequestId)
         return Promise.resolve(rejected(request.requestId, 'HUMAN_REQUEST_NOT_PENDING'));
       current.pendingHuman = undefined;

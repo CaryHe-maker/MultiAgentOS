@@ -2,11 +2,15 @@ import { Type, type Static } from 'typebox';
 import { closed, count } from '../platform-common/schema-helpers.js';
 
 /**
- * Why a run is interrupted from outside the conversation (M2Design 7.7). Phase 3 has the one
- * reason; the user's abort, the Turn timeout and the pause timeout join it in phase 5 through
- * the same entry in Core.
+ * Why a run is interrupted from outside the conversation (M2Design 4.3, 7.7): all of them enter
+ * Core through the same `interrupt(reason)` (Kernel/Core 5c, 5e).
  */
-export const INTERRUPT_REASONS = ['MEMORY_PRESSURE'] as const;
+export const INTERRUPT_REASONS = [
+  'MEMORY_PRESSURE',
+  'USER_ABORT',
+  'TURN_TIMEOUT',
+  'PAUSE_TIMEOUT',
+] as const;
 export type InterruptReason = (typeof INTERRUPT_REASONS)[number];
 
 export const MEMORY_LEVELS = ['WARNING', 'DANGER'] as const;

@@ -58,6 +58,8 @@ export interface AgentDefinitions {
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `ask_user`: the same shape, answered by the user through a HUMAN node (M2Design 3.4). */
+  readonly askTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
@@ -94,6 +96,8 @@ type Pending =
       readonly unit: AgentUnit;
       readonly call: ModelToolCall;
       readonly intent: string;
+      /** The model output the call came from: a resubmission after a pause cites it again. */
+      readonly modelTurnRequestId: string;
     }
   /**
    * A call that the task graph answers, not a Unit: `run_subagents`. It is one more tool call that
@@ -107,6 +111,16 @@ export interface DeferredWrite {
   readonly intent: string;
   readonly modelTurnRequestId: string;
 }
+
+/**
+ * A Unit a pause cancelled and the cycle will submit again when the run goes on (M2Design 4.4).
+ * A tool is submitted as it was; the others are made again from the log as it stands then, which
+ * is how a note added while continuing reaches the model.
+ */
+export type Held =
+  | { readonly kind: 'TOOL'; readonly planned: DeferredWrite }
+  | { readonly kind: 'ORIENT' }
+  | { readonly kind: 'ASSEMBLE' };
 
 export interface AgentState {
   readonly workflowRunId: string;
@@ -140,6 +154,8 @@ export interface AgentState {
   /** Calls of `run_subagents` refused one after the other; two take the tool away. */
   readonly invalidSpawns: number;
   readonly spawnWithdrawn: boolean;
+  /** What a pause cancelled, until `resumeAfterPause`. */
+  readonly held: readonly Held[];
   readonly fatal?: ReasonCode;
 }
 
@@ -161,6 +177,8 @@ export type AgentEnding =
   | { readonly kind: 'FAILED'; readonly code: ReasonCode }
   /** `run_subagents` was called validly in form; the runner validates the tasks. */
   | { readonly kind: 'SPAWN'; readonly arguments: unknown; readonly source: ControlSource }
+  /** `ask_user` was called validly in form; the runner checks what it points at. */
+  | { readonly kind: 'ASK'; readonly arguments: unknown; readonly source: ControlSource }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -353,7 +371,7 @@ const ended = (
   ending: AgentEnding,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition => ({
-  state: { ...state, pending: new Map() },
+  state: { ...state, pending: new Map(), held: [] },
   records,
   submissions: [],
   ending,
@@ -437,6 +455,7 @@ export function startAgent(
     declinedTools: [],
     invalidSpawns: 0,
     spawnWithdrawn: false,
+    held: [],
     intents: [],
     consecutiveErrors: 0,
     noProgress: 0,
@@ -689,6 +708,14 @@ function soleControlOf(
         allowedInFinal: false,
         ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
       };
+    const ask = state.definitions.askTool;
+    if (ask !== undefined && call.toolName === ask.toolName)
+      return {
+        call,
+        parameters: ask.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'ASK', arguments: call.arguments, source }),
+      };
   }
   return undefined;
 }
@@ -730,7 +757,7 @@ function actOn(
     });
     const transition = ended(state, ending, records);
     // A delegated call is pending until the graph answers it; any other control call ends the run.
-    return ending.kind === 'SPAWN'
+    return ending.kind === 'SPAWN' || ending.kind === 'ASK'
       ? {
           ...transition,
           state: {
@@ -860,7 +887,7 @@ function startTool(
     state: made.state,
     pending: [
       made.request.requestId,
-      { role: 'TOOL', unit: tool.unit, call, intent },
+      { role: 'TOOL', unit: tool.unit, call, intent, modelTurnRequestId },
       made.request,
     ],
   };
@@ -898,10 +925,13 @@ function releaseDeferred(
   return { state: next, submissions: [] };
 }
 
+/** A report that says how the Unit went; an interruption is handled apart. */
+type OutcomeReport = Exclude<UnitReport, { status: 'INTERRUPTED' }>;
+
 function handleTool(
   state: AgentState,
   pending: Extract<Pending, { role: 'TOOL' }>,
-  report: UnitReport,
+  report: OutcomeReport,
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
@@ -955,7 +985,8 @@ function handleTool(
   // The batch finishes first, so every call of this reply has its result in the log.
   if (next.fatal !== undefined && next.pending.size === 0)
     return ended(next, { kind: 'FAILED', code: next.fatal }, records);
-  return next.pending.size === 0
+  // A paused batch is not finished: what the pause cancelled is submitted again on resume.
+  return next.pending.size === 0 && next.held.length === 0
     ? afterTools(next, context, config, records)
     : { state: next, records, submissions: [] };
 }
@@ -975,7 +1006,7 @@ function assembled(state: AgentState, report: Extract<UnitReport, { status: 'OK'
   };
 }
 
-function completion(state: AgentState, report: UnitReport): NewLogRecord {
+function completion(state: AgentState, report: OutcomeReport): NewLogRecord {
   return {
     ...base(state),
     type: 'UNIT_COMPLETED',
@@ -1034,6 +1065,8 @@ export function receiveAgentReport(
   const remaining = new Map(current.pending);
   remaining.delete(report.requestId);
   const state = applyBudget({ ...current, pending: remaining }, report);
+  if (report.status === 'INTERRUPTED')
+    return handleInterrupted(state, pending, report, context, config);
   if (pending.role === 'TOOL') return handleTool(state, pending, report, context, config);
   const records: NewLogRecord[] = [completion(state, report)];
   if (report.status !== 'OK') {
@@ -1089,6 +1122,130 @@ export function receiveAgentReport(
   }
 }
 
+const WRITE_AND_EXEC: ReadonlySet<ExecutionKind> = new Set([...WRITE_KINDS, 'COMMAND']);
+
+/**
+ * A Unit that was cancelled by a pause or an abort (M2Design 4.4, 4.5). No Round is spent, no
+ * attempt failed, and nothing enters the history but the answer a tool call must have:
+ *  - paused: a read, a model call and the assembly of its context are submitted again on resume;
+ *    a command or a write is not (it may have gone half way), so the model reads that it was
+ *    interrupted and decides;
+ *  - aborted: nothing is submitted again, every call just gets its answer.
+ */
+function handleInterrupted(
+  state: AgentState,
+  pending: Exclude<Pending, { readonly role: 'DELEGATED' }>,
+  report: Extract<UnitReport, { status: 'INTERRUPTED' }>,
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  const records: NewLogRecord[] = [
+    {
+      ...base(state),
+      type: 'UNIT_INTERRUPTED',
+      requestId: report.requestId,
+      reason: report.interruptedBy,
+    },
+  ];
+  let next = state;
+  if (pending.role === 'TOOL') {
+    const { call } = pending;
+    const paused = report.interruptedBy === 'PAUSED';
+    if (paused && !WRITE_AND_EXEC.has(report.executionKind)) {
+      const tool = state.definitions.tools.find((each) => each.modelName === call.toolName);
+      if (tool !== undefined)
+        next = {
+          ...next,
+          held: [
+            ...next.held,
+            {
+              kind: 'TOOL',
+              planned: {
+                tool,
+                call,
+                intent: pending.intent,
+                modelTurnRequestId: pending.modelTurnRequestId,
+              },
+            },
+          ],
+        };
+    } else {
+      records.push(
+        answerRecord(
+          state,
+          'UNIT_INTERRUPTED',
+          call.toolCallId,
+          paused
+            ? 'Interrupted by a pause: the command may not have finished. Run it again if you still need it.'
+            : 'Interrupted: the run was stopped before this call finished.',
+        ),
+      );
+    }
+  } else if (report.interruptedBy === 'PAUSED') {
+    next = {
+      ...next,
+      held: [...next.held, { kind: pending.role === 'ORIENT' ? 'ORIENT' : 'ASSEMBLE' }],
+    };
+  }
+  // After an abort nothing goes on here: Workflow ends the AgentRun with what it has.
+  if (report.interruptedBy === 'ABORTED' || next.pending.size > 0 || next.held.length > 0)
+    return { state: next, records, submissions: [] };
+  return afterTools(next, context, config, records);
+}
+
+/**
+ * The run was continued: what the pause cancelled is submitted again, and a model call or its
+ * context assembly is made again from the log as it is now, so a note added meanwhile is in it.
+ */
+export function resumeAfterPause(
+  state: AgentState,
+  context: AgentContext,
+  config: AgentConfig,
+): AgentTransition {
+  if (state.held.length === 0) return { state, records: [], submissions: [] };
+  const records: NewLogRecord[] = [];
+  let next: AgentState = { ...state, held: [] };
+  const restart = state.held.find((held) => held.kind !== 'TOOL');
+  if (restart?.kind === 'ORIENT' && next.definitions.orient !== undefined)
+    return one(
+      next,
+      'ORIENT',
+      next.definitions.orient,
+      { objectiveRef: context.objectiveRef },
+      'repository_orient',
+    );
+  if (restart?.kind === 'ASSEMBLE') {
+    const status: ContextAssembleInput['status'] = {
+      round: next.round,
+      maxRounds: next.definitions.limits.maxRounds,
+      budget: next.budget,
+      final: next.final,
+      ...(next.wrapUpReason === undefined ? {} : { wrapUpReason: next.wrapUpReason }),
+    };
+    return one(
+      next,
+      'CONTEXT',
+      next.definitions.contextAssemble,
+      context.assembleInput(status, next.final, withdrawnOf(next)),
+      'context',
+    );
+  }
+  const pending = new Map(next.pending);
+  const submissions: SubmitUnitRequest[] = [];
+  for (const held of state.held) {
+    if (held.kind !== 'TOOL') continue;
+    const started = startTool(next, held.planned, context, records);
+    next = started.state;
+    if (started.pending === undefined) continue;
+    pending.set(started.pending[0], started.pending[1]);
+    submissions.push(started.pending[2]);
+  }
+  next = { ...next, pending };
+  if (submissions.length === 0 && next.pending.size === 0)
+    return afterTools(next, context, config, records);
+  return { state: next, records, submissions };
+}
+
 /** An answer to a call that is not a Unit: the model reads it as the result of the call. */
 export function answerRecord(
   state: AgentState,
@@ -1117,15 +1274,17 @@ export function resumeAfterRefusal(
 }
 
 /**
- * The call to `run_subagents` has its answer: it was refused (`refused`), or its tasks ended and
- * the graph says so. The round goes on as it does when any other call comes back. A refused call is
- * no progress, and two in a row take the tool away (M2Design 3.6).
+ * A call the task graph answers has its answer: it was refused (`refused`), or what it dispatched
+ * has ended and the graph says so. The round goes on as it does when any other call comes back. A
+ * refused call is no progress; for `run_subagents` two in a row take the tool away (M2Design 3.6).
  */
 export function answerDelegatedCall(
   state: AgentState,
   toolCallId: string,
   outcome: {
     readonly refused: boolean;
+    /** The call was `run_subagents`, whose refusals are counted; `ask_user` has no such limit. */
+    readonly spawn: boolean;
     /** The tool is taken away at once: a limit was reached. */
     readonly withdraw?: boolean;
     readonly records: readonly NewLogRecord[];
@@ -1133,7 +1292,11 @@ export function answerDelegatedCall(
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
-  const invalidSpawns = outcome.refused ? state.invalidSpawns + 1 : 0;
+  const invalidSpawns = !outcome.spawn
+    ? state.invalidSpawns
+    : outcome.refused
+      ? state.invalidSpawns + 1
+      : 0;
   const pending = new Map(state.pending);
   pending.delete(toolCallId);
   const next: AgentState = {

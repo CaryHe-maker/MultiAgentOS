@@ -4,6 +4,7 @@ import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
+import { LOCAL_QUESTION_KINDS, localQuestionProperties } from './human-request.js';
 import { runEnd } from './run-outcome.js';
 
 export const COMMAND_ANSWER_SCOPES = ['ONCE', 'COMMAND', 'PREFIX', 'DENY'] as const;
@@ -99,13 +100,21 @@ export const AuthorizationResolvedSchema = closed(
 );
 export type AuthorizationResolved = Static<typeof AuthorizationResolvedSchema>;
 
-export const HumanRequestSchema = closed(
-  {
-    type: Type.Literal('HumanRequest'),
-    humanRequestId: IdSchemas.humanRequestId,
-    kind: Type.Literal('prompt'),
-  },
-  'kernel.control.HumanRequest.v1',
+const humanRequest = {
+  type: Type.Literal('HumanRequest'),
+  humanRequestId: IdSchemas.humanRequestId,
+};
+/** Open input, or a local question that blocks only the AgentRun it is attached to. */
+export const HumanRequestSchema = Type.Union(
+  [
+    closed({ ...humanRequest, kind: Type.Literal('prompt') }),
+    closed({
+      ...humanRequest,
+      kind: Type.Enum(LOCAL_QUESTION_KINDS),
+      ...localQuestionProperties,
+    }),
+  ],
+  { $id: 'kernel.control.HumanRequest.v1' },
 );
 export type HumanRequest = Static<typeof HumanRequestSchema>;
 
@@ -178,7 +187,7 @@ export const RunStateChangedSchema = Type.Union(
     closed({ ...stateChanged, state: Type.Literal('AWAITING_INPUT') }),
     closed({
       ...stateChanged,
-      state: Type.Enum(['RUNNING', 'CONVERGING']),
+      state: Type.Enum(['RUNNING', 'CONVERGING', 'PAUSING', 'PAUSED', 'INTERRUPTING']),
       turnId: Type.Optional(IdSchemas.turnId),
     }),
   ],
@@ -195,6 +204,10 @@ export const ACTIVITY_PHASES = [
   'QUEUED',
   /** The AgentRun called `run_subagents` and waits for its tasks. */
   'WAITING_SUBTASKS',
+  /** The AgentRun called `ask_user` and waits for the answer. */
+  'AWAITING_ANSWER',
+  /** The run is paused: nothing of this AgentRun runs. */
+  'PAUSED',
   'WRAPPING_UP',
   'ENDED',
 ] as const;

@@ -13,6 +13,7 @@ function setup() {
     submit: vi.fn<(line: string) => Promise<void>>(() => Promise.resolve()),
     interrupt: vi.fn(() => Promise.resolve()),
     withdrawLast: vi.fn((): string | undefined => '排队的'),
+    steer: vi.fn<(line: string) => Promise<void>>(() => Promise.resolve()),
   };
   const ui = render(consoleApp(store, input));
   return { store, input, ui };

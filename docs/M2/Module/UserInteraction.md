@@ -96,6 +96,34 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 `/fork`、`/undo`、`/diff`（阶段 2），`/continue`、`/steer` 与 Alt+Enter（阶段 5，运行中插话，M2Design 第 4.5 节），`/run`、`/timeline`、`/thinking`（阶段 4、7），`/compact`（阶段 8，只在 AWAITING_INPUT 时可用）在对应阶段加入。
 
+### 5.4 暂停、继续、中止、插话与询问（阶段 5，草稿）
+
+设计以 M2Design 第 4.3–4.5、11 节为准。界面只发出请求，状态以 `RunStateChanged` 为准，不自己推断。
+
+| 输入 | 状态 | 效果 |
+|---|---|---|
+| Ctrl+C | RUNNING | `pauseRun`（取代阶段 1 的"再按一次退出"）；退出用 `/exit` |
+| Ctrl+C | PAUSING、PAUSED | `interruptRun`（中止） |
+| Ctrl+C | INTERRUPTING | 忽略（已在中止） |
+| Ctrl+C | AWAITING_INPUT 或草稿 | 与阶段 1 相同：清空输入；2 秒内连按两次则 `shutdown` |
+| `/continue [@任务名] [说明]` | PAUSED | `resumeRun`；有说明时带 `steer`（`targetAgentRunId` 由 `@任务名` 解析，缺省为 main）；没有 main 且没有指定目标时要求选择 |
+| 普通消息 | PAUSED | 同 `/continue <消息>`：继续并附加说明 |
+| `/steer [@任务名] <说明>`，或 Alt+Enter 发送输入框中的消息 | RUNNING | `steerRun`；不暂停、不打断；界面显示"已插入，下一轮可见"，目标正在等派发的调用时改为"在它收到结果后可见" |
+| `/steer`、`/continue` | 其余状态 | 提示当前不可用（RUNNING 以外不能插话，PAUSED 以外不能继续） |
+| 普通消息（Enter） | RUNNING、PAUSING | 排队（第 5.2 节，缺省行为不变） |
+
+- **`@任务名`**：由最近的 `ActivityEvent` 得出（`label` 的任务名部分与 `agentRunId` 的对应）；匹配不到或有歧义时提示，不猜测。
+- **排队的消息**：中止（进入 AWAITING_INPUT）时不自动提交，依次放回输入框（第 5.2 节已写，现在生效）。Kernel 与 Workflow 不知道排队。
+- **局部询问**（`HumanRequest` 的种类为 `ask`、`confirm`、`review`）：和授权询问共用待处理队列、一次一项、样式不同（第 5.1 节）；行首标明来自哪个 Agent 与任务名。
+  - 字段按类型渲染：文本、多行文本（`\` 加 Enter 换行）、单选与多选（方向键与空格）、确认（`y`/`n`）；
+  - `review` 先经 `readArtifact` 展示要审阅的产物（过长只展示开头并注明），再给出同意与修改意见（文本）；
+  - 提交前按 `fields` 逐个字段检查（类型、选项编号），不符合时留在原处并提示，不发送；这是唯一的检查（Workflow 不读答复正文）；答复是这些字段的 JSON，没有字段时是一段文字；
+  - 询问不超时，不显示期限；运行被中止时收到 `HumanResolved(CANCELLED)`，询问消失并在记录区写明"已取消"；
+  - 暂停期间可以回答，答复在继续后生效，界面注明。
+- **活动区**：`ActivityPhase` 增加 `AWAITING_ANSWER`（"等待你的回答"）与 `PAUSED`（"已暂停"）；`RunStateChanged` 为 PAUSING 时显示"暂停中…"，PAUSED 时显示"已暂停，/continue 继续，Ctrl+C 中止"，INTERRUPTING 时显示"正在中止…"。暂停期间计时器冻结。
+- **`mas run`**（一次性命令，第 7 节）：Ctrl+C 同样先暂停、再按中止；退出码沿用第 7 节的表（中止 130，超时 2，内存压力 75）。
+- 测试：组件测试（两类请求样式不同、按键在各状态下的效果、`@任务名` 解析、字段渲染与提交前检查、排队消息在中止时放回）；`stage5-exit` 的 H1、H2、H4、H11、H12、H13。
+
 ## 6. 界面
 
 | 区域 | 内容（阶段 1） |

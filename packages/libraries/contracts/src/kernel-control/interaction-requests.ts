@@ -42,6 +42,32 @@ export const AnswerHumanRequestSchema = closed(
 );
 export type AnswerHumanRequest = Static<typeof AnswerHumanRequestSchema>;
 
+/** Run control (M2Design 4.3-4.5): the requests carry only the run; Kernel never reads a note. */
+export const PauseRunRequestSchema = closed(inRun, 'kernel.control.PauseRunRequest.v1');
+export type PauseRunRequest = Static<typeof PauseRunRequestSchema>;
+
+export const InterruptRunRequestSchema = closed(inRun, 'kernel.control.InterruptRunRequest.v1');
+export type InterruptRunRequest = Static<typeof InterruptRunRequestSchema>;
+
+/** A note added while continuing is business input: it becomes a `steer` (M2Design 4.5). */
+export const ResumeRunRequestSchema = closed(
+  {
+    ...inRun,
+    steer: Type.Optional(
+      closed({ input: UserInputSchema, targetAgentRunId: Type.Optional(IdSchemas.agentRunId) }),
+    ),
+  },
+  'kernel.control.ResumeRunRequest.v1',
+);
+export type ResumeRunRequest = Static<typeof ResumeRunRequestSchema>;
+
+/** Only while the run is RUNNING; `targetAgentRunId` is the Turn's main when absent. */
+export const SteerRunRequestSchema = closed(
+  { ...inRun, input: UserInputSchema, targetAgentRunId: Type.Optional(IdSchemas.agentRunId) },
+  'kernel.control.SteerRunRequest.v1',
+);
+export type SteerRunRequest = Static<typeof SteerRunRequestSchema>;
+
 /** Artifacts belong to the Session in M2, so the run is no longer part of the request. */
 export const ReadArtifactRequestSchema = closed(
   { requestId: IdSchemas.requestId, sessionId: IdSchemas.sessionId, ref: ArtifactRefSchema },

@@ -3,10 +3,13 @@ import {
   type ArtifactRef,
   type CloseReason,
   type DefinitionRef,
+  type HumanRequest,
+  type InterruptReason,
   type KernelToWorkflowEvent,
   type ReportSessionCommandRequest,
   type RunFailure,
   type RunFinished,
+  type RequestHumanRequest,
   type RunSummary,
   type SyscallRejected,
   type TurnDiff,
@@ -18,20 +21,29 @@ import { Inbox } from '@multiagentos/fabric';
 import {
   answerOpenInput,
   attemptEnded,
+  answerLocalQuestion,
   attemptStarted,
   beginConvergence,
+  beginInterrupt,
   closeRun,
   endAgentRun,
   initialRunControl,
   openInitialTurn,
+  pauseReached,
+  pauseRun,
   registerAgentRun,
+  requestLocalQuestion,
   requestOpenInput,
+  resumeRun,
+  steerRun,
   admitWork,
+  type TurnEnd,
   type Decision,
   type RunControl,
 } from './run-control.js';
 import type { MemoryLevel } from '@multiagentos/contracts';
 import type { AttemptFault } from './run-attempts.js';
+import { WallClocks } from './wall-clocks.js';
 import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
 import type { UndoPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
@@ -97,6 +109,15 @@ export interface SessionActorDeps {
   readonly onInterrupted?: () => void;
   /** How long Workflow has to close an interrupted run before the Kernel does. */
   readonly interruptBackstopMs?: number;
+  /** The Turn and pause limits of Kernel/Core 5e; the defaults are those of M2Design 7.4. */
+  readonly timeouts?: {
+    readonly turnMs: number;
+    readonly orchestrationMs: number;
+    readonly pauseMs: number;
+  };
+  readonly now?: () => number;
+  /** Arms a timer that only enqueues; returns its cancel. */
+  readonly schedule?: (delayMs: number, due: () => void) => () => void;
   /** What Gateway may let in; pushed on every change of a run. */
   readonly admission: (
     workflowRunId: string,
@@ -111,9 +132,16 @@ type Message =
   | { readonly kind: 'COMMAND_REPORT'; readonly report: ReportSessionCommandRequest }
   | { readonly kind: 'CALL'; readonly work: () => Promise<unknown> };
 
+const DEFAULT_TIMEOUTS = { turnMs: 1_800_000, orchestrationMs: 3_600_000, pauseMs: 1_800_000 };
+
 interface Run {
   readonly workflowRunId: string;
   readonly work: RunWork;
+  readonly mode: 'CHAT' | 'ORCHESTRATION';
+  /** The Turn's working time: it stops while paused and while all work waits for the user. */
+  readonly turnClock: WallClocks;
+  /** Ends the wait for a pause to run out. */
+  pauseTimer?: () => void;
   control: RunControl;
   runEpoch: number;
   closing?: RunClosing;
@@ -180,15 +208,229 @@ export class SessionActor {
         run.work.setMemoryWarning();
         return;
       }
-      this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
-        type: 'RunInterrupted',
-        reason: 'MEMORY_PRESSURE',
-      });
-      // The run stays open for the one reply that says what happened; Workflow closes it.
-      run.work.beginInterrupt(this.#deps.interruptBackstopMs ?? 30_000, () => {
-        void this.closeRun(run, { closeReason: 'INTERRUPTED' });
-      });
+      this.interrupt(run, 'MEMORY_PRESSURE');
     }, 'control');
+  }
+
+  /**
+   * The one entry of every interrupt (Kernel/Core 5e): the user's abort, the Turn timeout, the
+   * pause limit and memory pressure. Workflow is told first, so that it stops asking for models;
+   * then what waits for the user is cancelled and what runs is cancelled with it. The run stays
+   * open for the one reply that says what happened.
+   */
+  interrupt(run: Run, reason: InterruptReason): Decision<{ readonly firstTime: boolean }> {
+    const decision = this.#apply(run, beginInterrupt(run.control, reason));
+    if (!decision.accepted || decision.effect?.firstTime !== true) return decision;
+    const { outbox } = this.#deps;
+    const sessionId = this.#sessionId;
+    this.#stopTimers(run);
+    outbox.runToWorkflow(sessionId, run.workflowRunId, { type: 'RunInterrupted', reason });
+    outbox.runToInteraction(sessionId, run.workflowRunId, {
+      type: 'RunStateChanged',
+      state: 'INTERRUPTING',
+      ...(run.control.turnId === undefined ? {} : { turnId: run.control.turnId }),
+    });
+    for (const [humanRequestId, question] of run.control.questions) {
+      outbox.runToWorkflow(sessionId, run.workflowRunId, {
+        type: 'HumanCancelled',
+        humanRequestId,
+        nodeId: question.nodeId,
+        reason,
+      });
+      outbox.runToInteraction(sessionId, run.workflowRunId, {
+        type: 'HumanResolved',
+        humanRequestId,
+        resolution: 'CANCELLED',
+      });
+    }
+    run.control = { ...run.control, questions: new Map() };
+    // If Workflow does not answer, the Kernel closes the run, so that it is not held for ever.
+    run.work.beginInterrupt(reason, this.#deps.interruptBackstopMs ?? 30_000, () => {
+      void this.closeRun(run, { closeReason: 'INTERRUPTED' });
+    });
+    return decision;
+  }
+
+  /** `pauseRun`: Execution holds what has not started and stops what must not run on. */
+  pauseRun(run: Run): Decision {
+    const decision = this.#apply(run, pauseRun(run.control));
+    if (!decision.accepted) return decision;
+    this.#state(run, 'PAUSING');
+    run.work.pause(() => {
+      this.#paused(run);
+    });
+    return decision;
+  }
+
+  #paused(run: Run): void {
+    if (run.control.phase !== 'PAUSING') return;
+    run.control = pauseReached(run.control);
+    const sessionId = this.#sessionId;
+    this.#state(run, 'PAUSED');
+    run.work.showPaused();
+    this.#deps.outbox.runToWorkflow(sessionId, run.workflowRunId, { type: 'RunPaused' });
+    const { pauseMs } = this.#timeouts();
+    run.pauseTimer = this.#schedule(pauseMs, () => {
+      this.#inbox.enqueue(
+        {
+          kind: 'CALL',
+          work: () => {
+            if (run.control.phase === 'PAUSED') this.interrupt(run, 'PAUSE_TIMEOUT');
+            return Promise.resolve();
+          },
+        },
+        'control',
+      );
+    });
+  }
+
+  /** `resumeRun`: a note added while continuing is stored and handed to Workflow as a steer. */
+  async resumeRun(
+    run: Run,
+    steer?: { readonly input: UserInput; readonly targetAgentRunId?: string },
+  ): Promise<Decision> {
+    if (run.control.phase !== 'PAUSED') return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    if (
+      steer?.targetAgentRunId !== undefined &&
+      !run.control.activeAgentRuns.has(steer.targetAgentRunId)
+    )
+      return { accepted: false, reasonCode: 'AGENT_RUN_NOT_FOUND' };
+    const contentRef =
+      steer === undefined ? undefined : await this.#deps.duties.storeUserInput(steer.input);
+    const decision = this.#apply(run, resumeRun(run.control));
+    if (!decision.accepted) return decision;
+    run.pauseTimer?.();
+    delete run.pauseTimer;
+    this.#state(run, 'RUNNING');
+    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+      type: 'RunResumed',
+      ...(steer === undefined || contentRef === undefined
+        ? {}
+        : {
+            steer: {
+              inputId: steer.input.inputId,
+              contentRef,
+              ...(steer.targetAgentRunId === undefined
+                ? {}
+                : { targetAgentRunId: steer.targetAgentRunId }),
+            },
+          }),
+    });
+    await run.work.resume();
+    return decision;
+  }
+
+  /** `steerRun`: a note slipped into a run that goes on; it opens no Turn. */
+  async steerRun(run: Run, input: UserInput, targetAgentRunId?: string): Promise<Decision> {
+    const decision = steerRun(run.control);
+    if (!decision.accepted) return decision;
+    if (targetAgentRunId !== undefined && !run.control.activeAgentRuns.has(targetAgentRunId))
+      return { accepted: false, reasonCode: 'AGENT_RUN_NOT_FOUND' };
+    const contentRef = await this.#deps.duties.storeUserInput(input);
+    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+      type: 'HumanAnswered',
+      kind: 'steer',
+      inputId: input.inputId,
+      contentRef,
+      ...(targetAgentRunId === undefined ? {} : { targetAgentRunId }),
+    });
+    return decision;
+  }
+
+  /** A local question of an AgentRun (`ask_user`): it blocks only that AgentRun (M2Design 4.2). */
+  requestLocalQuestion(
+    run: Run,
+    request: Extract<RequestHumanRequest, { kind: 'ask' | 'confirm' | 'review' }>,
+  ): Decision {
+    const { nodeId } = request;
+    const decision = this.#apply(
+      run,
+      requestLocalQuestion(run.control, request.humanRequestId, {
+        agentRunId: request.attachedAgentRunId,
+        nodeId,
+        kind: request.kind,
+      }),
+    );
+    if (!decision.accepted) return decision;
+    run.work.showAwaitingAnswer(request.attachedAgentRunId);
+    const event: HumanRequest = {
+      type: 'HumanRequest',
+      humanRequestId: request.humanRequestId,
+      kind: request.kind,
+      attachedAgentRunId: request.attachedAgentRunId,
+      question: request.question,
+      ...(request.fields === undefined ? {} : { fields: request.fields }),
+      ...(request.reviewRef === undefined ? {} : { reviewRef: request.reviewRef }),
+    };
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
+    return decision;
+  }
+
+  /** The answer to a local question: delivered, in a paused run too, where Execution holds the rest. */
+  async answerLocalQuestion(
+    run: Run,
+    humanRequestId: string,
+    kind: 'ask' | 'confirm' | 'review',
+    input: UserInput,
+  ): Promise<Decision> {
+    const decision = answerLocalQuestion(run.control, humanRequestId);
+    if (!decision.accepted) return decision;
+    const contentRef = await this.#deps.duties.storeUserInput(input);
+    run.control = decision.control;
+    const { outbox } = this.#deps;
+    outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'HumanResolved',
+      humanRequestId,
+      resolution: 'ANSWERED',
+    });
+    outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+      type: 'HumanAnswered',
+      kind,
+      origin: 'requested',
+      humanRequestId,
+      inputId: input.inputId,
+      contentRef,
+    });
+    return decision;
+  }
+
+  #timeouts() {
+    return this.#deps.timeouts ?? DEFAULT_TIMEOUTS;
+  }
+
+  #schedule(delayMs: number, due: () => void): () => void {
+    if (this.#deps.schedule !== undefined) return this.#deps.schedule(delayMs, due);
+    const timer = setTimeout(due, delayMs);
+    return () => {
+      clearTimeout(timer);
+    };
+  }
+
+  /** What the interface is told of a run state, with the Turn it belongs to. */
+  #state(run: Run, state: 'RUNNING' | 'PAUSING' | 'PAUSED'): void {
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'RunStateChanged',
+      state,
+      ...(run.control.turnId === undefined ? {} : { turnId: run.control.turnId }),
+    });
+  }
+
+  /** The pause limit and the Turn clock end with the run, or with the interrupt that ends the Turn. */
+  #stopTimers(run: Run): void {
+    run.pauseTimer?.();
+    delete run.pauseTimer;
+    run.turnClock.stop();
+  }
+
+  /** Called at the end of every message: the Turn's clock runs only while the system works. */
+  #reconcileTurnClock(run: Run): void {
+    const { phase, questions } = run.control;
+    const idle =
+      phase === 'PAUSING' ||
+      phase === 'PAUSED' ||
+      run.work.awaitsUser(questions.size) ||
+      phase === 'INTERRUPTING';
+    run.turnClock.reconcile(() => idle);
   }
 
   close(reason: 'SWITCHED' | 'SHUTDOWN'): void {
@@ -246,7 +488,10 @@ export class SessionActor {
     // The call slots this message gave back go to the attempts that wait (M2Design 7.2).
     if (run.control.phase !== 'CLOSED') await run.work.drainCapacityWaiters();
     await this.#finishIfDrained(run);
-    if (run.control.phase !== 'CLOSED') run.work.reconcile();
+    if (run.control.phase !== 'CLOSED') {
+      run.work.reconcile();
+      this.#reconcileTurnClock(run);
+    }
   }
 
   async #handle(message: Message): Promise<unknown> {
@@ -368,7 +613,7 @@ export class SessionActor {
       | { readonly mode: 'ORCHESTRATION'; readonly templateRef: DefinitionRef },
     initialInput: boolean,
   ): Run {
-    const run = this.#newRun();
+    const run = this.#newRun(runStart.mode);
     this.#run = run;
     this.#deps.admission(run.workflowRunId, 'RUNNING');
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
@@ -380,7 +625,7 @@ export class SessionActor {
     return run;
   }
 
-  #newRun(): Run {
+  #newRun(mode: Run['mode']): Run {
     const workflowRunId = newId('wfr');
     const { outbox, duties } = this.#deps;
     const sessionId = this.#sessionId;
@@ -413,6 +658,23 @@ export class SessionActor {
     const run: Run = {
       workflowRunId,
       work: duties.openRunWork(host),
+      mode,
+      turnClock: new WallClocks({
+        now: () => (this.#deps.now ?? Date.now)(),
+        schedule: (delayMs, due) => this.#schedule(delayMs, due),
+        due: () => {
+          this.#inbox.enqueue(
+            {
+              kind: 'CALL',
+              work: () => {
+                if (run.turnClock.takeExpired().length > 0) this.interrupt(run, 'TURN_TIMEOUT');
+                return Promise.resolve();
+              },
+            },
+            'control',
+          );
+        },
+      }),
       control: initialRunControl(),
       runEpoch: 1,
     };
@@ -438,6 +700,8 @@ export class SessionActor {
     if (!opened.accepted) throw new Error(`a Turn cannot open: ${opened.reasonCode}`);
     run.control = opened.control;
     run.work.openTurn(turnId);
+    const { turnMs, orchestrationMs } = this.#timeouts();
+    run.turnClock.register('turn', run.mode === 'CHAT' ? turnMs : orchestrationMs);
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -455,7 +719,8 @@ export class SessionActor {
     });
   }
 
-  async #closeTurn(run: Run, turnId: string, reason: 'COMPLETED' | 'RUN_CLOSED'): Promise<void> {
+  async #closeTurn(run: Run, turnId: string, reason: TurnEnd | 'RUN_CLOSED'): Promise<void> {
+    run.turnClock.end('turn');
     const captured = await this.#deps.duties.snapshots?.turnEnded(turnId);
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'TurnClosed',
@@ -501,11 +766,15 @@ export class SessionActor {
   async requestOpenInput(
     run: Run,
     humanRequestId: string,
-  ): Promise<Decision<{ readonly closedTurnId?: string }>> {
+  ): Promise<Decision<{ readonly closedTurnId?: string; readonly turnEnd: TurnEnd }>> {
+    const interrupted = run.control.phase === 'INTERRUPTING';
     const decision = this.#apply(run, requestOpenInput(run.control, humanRequestId));
     if (!decision.accepted) return decision;
+    // An interrupted Turn ends here, and the run is open again for the next input (Core 5e).
+    if (interrupted) run.work.endInterrupt();
     const closed = decision.effect?.closedTurnId;
-    if (closed !== undefined) await this.#closeTurn(run, closed, 'COMPLETED');
+    if (closed !== undefined)
+      await this.#closeTurn(run, closed, decision.effect?.turnEnd ?? 'COMPLETED');
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -517,6 +786,21 @@ export class SessionActor {
       kind: 'prompt',
     });
     return decision;
+  }
+
+  /**
+   * The answer to a human request: open input opens the next Turn, the answer to a local question
+   * goes to the AgentRun that asked. Which one it is, the request says (M2Design 4.2).
+   */
+  async answerHuman(
+    run: Run,
+    humanRequestId: string,
+    input: UserInput,
+    template?: DefinitionRef,
+  ): Promise<Decision> {
+    const question = run.control.questions.get(humanRequestId);
+    if (question === undefined) return this.answerOpenInput(run, humanRequestId, input, template);
+    return this.answerLocalQuestion(run, humanRequestId, question.kind, input);
   }
 
   async answerOpenInput(
@@ -651,6 +935,7 @@ export class SessionActor {
     run.control = decision.control;
     run.closing = closing;
     run.runEpoch += 1;
+    this.#stopTimers(run);
     this.#deps.admission(run.workflowRunId, 'CONVERGING', closing.closeReason);
     const closed = decision.effect?.closedTurnId;
     if (closed !== undefined) run.closingTurn = closed;

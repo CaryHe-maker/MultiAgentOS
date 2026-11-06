@@ -38,7 +38,30 @@ export type PendingItem =
       readonly text: string;
     }
   | { readonly kind: 'UNDO'; readonly undoId: string; readonly text: string }
+  /**
+   * A question an agent put to the user (`ask_user`, M2Design 4.2): it blocks only that agent. With
+   * fields the user answers them one after another, `next` being the one asked now.
+   */
+  | {
+      readonly kind: 'QUESTION';
+      readonly humanRequestId: string;
+      readonly question: 'ask' | 'confirm' | 'review';
+      readonly fields: readonly QuestionField[];
+      readonly next: number;
+      readonly values: Readonly<Record<string, string | boolean | readonly string[]>>;
+      /** What was asked, and who asked it; the prompt of the field in turn follows it. */
+      readonly body: string;
+      readonly text: string;
+    }
   | { readonly kind: 'CONTINUE'; readonly text: string };
+
+export interface QuestionField {
+  readonly name: string;
+  readonly type: 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm';
+  readonly label: string;
+  readonly options?: readonly string[];
+  readonly required?: boolean;
+}
 
 /** Everything that changes in place: redrawn whenever it changes. */
 export interface LiveState {

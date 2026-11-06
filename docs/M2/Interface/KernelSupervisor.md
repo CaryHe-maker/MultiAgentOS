@@ -119,7 +119,7 @@ interface CancelExecutionRequest { executionId: ExecutionId; runEpoch: number; r
 
 ```ts
 interface MemoryPressure { source: 'PROCESS' | 'SYSTEM'; level: 'WARNING' | 'DANGER'; ratio: number; rss: number; heapRatio: number; availableBytes?: number }  // 控制消息，Monitor → Core
-type InterruptReason = 'MEMORY_PRESSURE' /* 阶段 5 增加 USER_ABORT、TURN_TIMEOUT、PAUSE_TIMEOUT */;
+type InterruptReason = 'MEMORY_PRESSURE' | 'USER_ABORT' | 'TURN_TIMEOUT' | 'PAUSE_TIMEOUT';   // 后三种阶段 5 加入，入口同一个 `interrupt(reason)`（Core 第 5e 节）
 RunInterrupted { workflowRunId; reason: InterruptReason }                      // Kernel → Workflow 事件
 WrapUpReason += 'MEMORY_LIMIT';  QuotaKind += 'MEMORY';  RunReport / closeRun 原因 += 'INTERRUPTED'
 ```

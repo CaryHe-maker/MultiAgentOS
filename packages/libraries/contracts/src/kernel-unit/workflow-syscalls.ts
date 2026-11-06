@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { PROTECTED_CAPABILITIES, pinnedRefOf } from '../catalog/definition-schemas.js';
 import { WorkflowRunFailureSchema } from '../kernel-control/run-outcome.js';
+import { LOCAL_QUESTION_KINDS, localQuestionProperties } from '../kernel-control/human-request.js';
 import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -131,14 +132,22 @@ export const CloseRunRequestSchema = Type.Union(
 );
 export type CloseRunRequest = Static<typeof CloseRunRequestSchema>;
 
-export const RequestHumanRequestSchema = closed(
-  {
-    ...inRun,
-    humanRequestId: IdSchemas.humanRequestId,
-    nodeId: IdSchemas.nodeId,
-    kind: Type.Literal('prompt'),
-  },
-  'kernel.unit.RequestHumanRequest.v1',
+const requestHuman = {
+  ...inRun,
+  humanRequestId: IdSchemas.humanRequestId,
+  nodeId: IdSchemas.nodeId,
+};
+/** Open input, which needs stillness, or a local question attached to the AgentRun that asked. */
+export const RequestHumanRequestSchema = Type.Union(
+  [
+    closed({ ...requestHuman, kind: Type.Literal('prompt') }),
+    closed({
+      ...requestHuman,
+      kind: Type.Enum(LOCAL_QUESTION_KINDS),
+      ...localQuestionProperties,
+    }),
+  ],
+  { $id: 'kernel.unit.RequestHumanRequest.v1' },
 );
 export type RequestHumanRequest = Static<typeof RequestHumanRequestSchema>;
 

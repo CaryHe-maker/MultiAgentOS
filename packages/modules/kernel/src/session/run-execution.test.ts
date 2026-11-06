@@ -56,6 +56,7 @@ const config: ExecutionConfig = {
   orientBudget: 100,
   searchBudget: 100,
   cancelGraceMs: 10,
+  pauseDrainMs: 50,
   convergenceMarginMs: 20,
 };
 const NOW = Date.parse('2026-11-02T00:00:00.000Z');
@@ -130,6 +131,7 @@ function setup(
   const faults: AttemptFault[] = [];
   const retries: RetryingActivity[] = [];
   const cancelled: number[] = [];
+  const cancelledExecutions: { executionId: string; reason: string }[] = [];
   const timers: { delayMs: number; due: () => void; cancelled: boolean }[] = [];
   let ids = 0;
   const nextId = (prefix: string) => {
@@ -147,6 +149,10 @@ function setup(
     },
     cancelRun: (request) => {
       cancelled.push(request.runEpoch);
+      return Promise.resolve();
+    },
+    cancelExecution: (request) => {
+      cancelledExecutions.push({ executionId: request.executionId, reason: request.reason });
       return Promise.resolve();
     },
     written: () => Promise.resolve(),
@@ -263,6 +269,7 @@ function setup(
     faults,
     retries,
     cancelled,
+    cancelledExecutions,
     timers,
     submit,
     factFor,
@@ -657,5 +664,158 @@ describe('waiting for a call slot (M2Design 7.2)', () => {
     slots.free = 1;
     await run.execution.drainCapacityWaiters();
     expect(run.dispatched).toEqual([]);
+  });
+});
+
+describe('pausing and aborting (Kernel/Execution 4e)', () => {
+  const cancelledBy = (reason: 'PAUSED' | 'ABORTED') => ({
+    outcome: 'TERMINATED',
+    reasonCode: 'EXECUTION_CANCELLED',
+    cancelReason: reason,
+  });
+  const modelPack = async (run: ReturnType<typeof setup>) =>
+    run.artifacts.put(
+      canonicalJson({
+        contextPackId: testId('ctx'),
+        tokenCount: 0,
+        tokenBudget: testAgentBudget.perCallInputLimit,
+        createdAt: '2026-11-02T00:00:00.000Z',
+        operation: 'ASSEMBLE',
+        prefixSha256: 'a'.repeat(64),
+        projectionDigest: 'b'.repeat(64),
+        headDigest: 'c'.repeat(64),
+        elidedEntries: [],
+        items: [],
+      }),
+      MEDIA_TYPES.contextPack,
+      'EXPIRING',
+    );
+
+  it('starts nothing while paused, and everything held when resumed, oldest first', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    let drained = 0;
+    run.execution.pause(() => {
+      drained += 1;
+    });
+    // The read is still executing: it may finish, so the pause is not complete.
+    expect(drained).toBe(0);
+    await run.submit('FILE_READ', { path: 'b.ts' }, repository, 2);
+    expect(run.dispatched).toHaveLength(1);
+    await run.execution.handleFact(run.factFor(run.dispatched[0] as never, run.fileResult()));
+    expect(run.reports[0]).toMatchObject({ status: 'OK' });
+    expect(drained).toBe(1);
+    expect(run.dispatched).toHaveLength(1);
+    await run.execution.resume();
+    expect(run.dispatched).toHaveLength(2);
+    expect(run.last().input).toMatchObject({ path: 'b.ts' });
+  });
+
+  it('is paused at once when nothing is executing', () => {
+    const run = setup();
+    let drained = 0;
+    run.execution.pause(() => {
+      drained += 1;
+    });
+    expect(drained).toBe(1);
+  });
+
+  it('lets a read finish within pauseDrainMs and cancels it after', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    let drained = 0;
+    run.execution.pause(() => {
+      drained += 1;
+    });
+    const timer = run.timers.at(-1);
+    expect(timer?.delayMs).toBe(50);
+    expect(run.cancelledExecutions).toEqual([]);
+    timer?.due();
+    expect(run.cancelledExecutions).toEqual([
+      { executionId: run.last().executionId, reason: 'PAUSED' },
+    ]);
+    await run.execution.handleFact(run.factFor(run.last(), cancelledBy('PAUSED')));
+    expect(run.reports[0]).toMatchObject({ status: 'INTERRUPTED', interruptedBy: 'PAUSED' });
+    expect(drained).toBe(1);
+  });
+
+  it('does not cancel a read that finished within pauseDrainMs', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    run.execution.pause(() => undefined);
+    const timer = run.timers.at(-1);
+    await run.execution.handleFact(run.factFor(run.last(), run.fileResult()));
+    expect(timer?.cancelled).toBe(true);
+    expect(run.cancelledExecutions).toEqual([]);
+  });
+
+  it('cancels a model call at once when pausing, and settles what it used', async () => {
+    const run = setup();
+    const contextPackRef = await modelPack(run);
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope });
+    run.execution.pause(() => undefined);
+    expect(run.cancelledExecutions).toEqual([
+      { executionId: run.last().executionId, reason: 'PAUSED' },
+    ]);
+    await run.execution.handleFact(
+      run.factFor(run.last(), { ...cancelledBy('PAUSED'), requestState: 'NOT_SENT' }),
+    );
+    expect(run.reports[0]).toMatchObject({ status: 'INTERRUPTED', interruptedBy: 'PAUSED' });
+  });
+
+  it('answers every attempt INTERRUPTED(ABORTED) on abort, the queued ones too', async () => {
+    const run = setup();
+    const contextPackRef = await modelPack(run);
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, 1);
+    // Behind the model call of its AgentRun: queued, never sent.
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', { path: 'b.ts' }, repository, 2);
+    expect(run.dispatched).toHaveLength(2);
+    run.execution.abort();
+    expect(run.cancelledExecutions.map((entry) => entry.reason)).toEqual(['ABORTED', 'ABORTED']);
+    // The queued one answers at once; the two that were sent when their facts arrive.
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED']);
+    for (const request of run.dispatched)
+      await run.execution.handleFact(
+        run.factFor(request, {
+          ...cancelledBy('ABORTED'),
+          ...(request.executionKind === 'MODEL' ? { requestState: 'NOT_SENT' } : {}),
+        }),
+      );
+    expect(run.reports.map((report) => report.status)).toEqual([
+      'INTERRUPTED',
+      'INTERRUPTED',
+      'INTERRUPTED',
+    ]);
+    expect(
+      run.reports.every(
+        (report) => 'interruptedBy' in report && report.interruptedBy === 'ABORTED',
+      ),
+    ).toBe(true);
+    // The runEpoch did not move, so nothing was left to judge unconfirmed.
+    expect(run.faults).toEqual([]);
+  });
+
+  it('judges a run that does not stop unconfirmed after the grace', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    run.execution.abort();
+    const timer = run.timers.at(-1);
+    expect(timer?.delayMs).toBe(30);
+    timer?.due();
+    expect(run.faults).toEqual([expect.objectContaining({ kind: 'STOP_UNCONFIRMED' })]);
+  });
+
+  it('still starts what is made after an abort, such as the closing reply', async () => {
+    const run = setup();
+    await run.submit('FILE_READ', fileInput);
+    run.execution.abort();
+    await run.execution.handleFact(run.factFor(run.last(), cancelledBy('ABORTED')));
+    await run.submit(
+      'MESSAGE_PUBLISH',
+      { kind: 'DEGRADED_REPLY', agentLabel: 'main', reason: 'INTERRUPTED' },
+      { kind: 'NONE' },
+    );
+    expect(run.reports.at(-1)).toMatchObject({ status: 'OK', output: { kind: 'DEGRADED_REPLY' } });
   });
 });

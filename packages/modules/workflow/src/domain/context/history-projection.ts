@@ -1,5 +1,5 @@
 import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multiagentos/contracts';
-import { callResultsOf } from '../spawn/spawn-graph.js';
+import { answerOf, callResultsOf } from '../spawn/spawn-graph.js';
 
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
@@ -32,6 +32,19 @@ export type ProjectionScope =
       readonly task?: TaskScope;
     };
 
+/** What main is told when the previous run was cut short, and why (M2Design 4.5). */
+function interruptedNote(
+  reason: Extract<SessionLogRecord, { type: 'RUN_INTERRUPTED' }>['reason'],
+): string {
+  const cause = {
+    MEMORY_PRESSURE: 'the system ran short of memory',
+    USER_ABORT: 'the user stopped it',
+    TURN_TIMEOUT: 'it ran longer than the time allowed for one turn',
+    PAUSE_TIMEOUT: 'it stayed paused for too long',
+  }[reason];
+  return `The previous run was interrupted because ${cause}. Work in flight was cancelled; check the workspace before relying on it.`;
+}
+
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
   const { workingDirectory, sandbox, currentDate } = context.runtimeContext;
   return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}`;
@@ -47,6 +60,10 @@ export function projectHistory(
   const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
   const toolNames = new Map<string, string>();
   const entries: ContextHistoryEntry[] = [];
+  /** Notes of the user that wait for the next assembly of the AgentRun they are for. */
+  const notes: ContextHistoryEntry[] = [];
+  /** Calls that already have their answer: a second one would break the history. */
+  const answered = new Set<string>();
   const instructions = new Set<string>();
   let modelId = 'unknown';
   let currentTurn: string | undefined;
@@ -94,6 +111,27 @@ export function projectHistory(
         break;
       case 'HUMAN_ANSWERED':
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        if (record.kind === 'steer') {
+          // A note is for one AgentRun, or for the next Turn of main when its target had ended.
+          const mine =
+            scope.kind === 'NODE'
+              ? record.attachedAgentRunId === scope.agentRunId
+              : record.attachedAgentRunId === undefined || mainRuns.has(record.attachedAgentRunId);
+          if (!mine) break;
+          const note: ContextHistoryEntry = {
+            seq: record.seq,
+            ...turnOf(record.turnId),
+            category: 'NORMAL',
+            kind: 'HUMAN',
+            contentRef: record.contentRef,
+          };
+          // It joins the history where the AgentRun next assembles it, after the results of the
+          // round in flight (a result must follow its call), and earlier entries stay as they were.
+          if (record.attachedAgentRunId === undefined) entries.push(note);
+          else notes.push(note);
+          break;
+        }
+        if (record.kind !== 'prompt') break;
         // A SubAgent works from its task, not from what the user said.
         if (scope.kind === 'NODE' && scope.task !== undefined) break;
         entries.push({
@@ -119,6 +157,11 @@ export function projectHistory(
         }
         break;
       case 'UNIT_SUBMITTED':
+        // The assembly of a round takes the notes that arrived since the last one.
+        if (mainRuns.has(record.agentRunId) && record.unitRef.id === 'context-assemble') {
+          entries.push(...notes);
+          notes.length = 0;
+        }
         if (mainRuns.has(record.agentRunId) && record.inputSource.kind === 'TOOL_CALL') {
           unitOwners.set(record.requestId, {
             toolCallId: record.inputSource.toolCallId,
@@ -157,6 +200,8 @@ export function projectHistory(
         break;
       }
       case 'UNIT_INTERRUPTED': {
+        // A pause or an abort is answered by Workflow itself, or the Unit is submitted again.
+        if (record.reason === 'PAUSED' || record.reason === 'ABORTED') break;
         const owner = unitOwners.get(record.requestId);
         if (owner === undefined) break;
         entries.push({
@@ -203,7 +248,7 @@ export function projectHistory(
           seq: record.seq,
           category: 'NORMAL',
           kind: 'NOTE',
-          text: 'The previous run was interrupted because the system ran short of memory. Work in flight was cancelled; check the workspace before relying on it.',
+          text: interruptedNote(record.reason),
         });
         break;
       case 'PROJECT_FILE_LOADED':
@@ -242,6 +287,7 @@ export function projectHistory(
         break;
       case 'FEEDBACK':
         if (!mainRuns.has(record.agentRunId)) break;
+        if (record.toolCallId !== undefined) answered.add(record.toolCallId);
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -255,6 +301,28 @@ export function projectHistory(
         // The call it woke from is answered by what its tasks came to, in the order they were
         // written (M2Design 3.3, 3.6): a pure function of the log, so no record of it is kept.
         if (!mainRuns.has(runOfNode.get(record.nodeId) ?? '')) break;
+        // A run that was interrupted answered its open calls itself.
+        if (answered.has(record.call.toolCallId)) break;
+        answered.add(record.call.toolCallId);
+        // A question to the user: the answer is the result of the call.
+        const answer = answerOf(
+          records,
+          record.workflowRunId,
+          record.nodeId,
+          record.call.toolCallId,
+        );
+        if (answer !== undefined) {
+          entries.push({
+            seq: record.seq,
+            ...turnOf(record.turnId),
+            category: 'NORMAL',
+            kind: 'HUMAN_ANSWER',
+            toolCallId: record.call.toolCallId,
+            question: answer.kind,
+            contentRef: answer.contentRef,
+          });
+          break;
+        }
         const results = callResultsOf(
           records,
           record.workflowRunId,
@@ -298,6 +366,8 @@ export function projectHistory(
         break;
     }
   }
+  // A note that came after the last assembly is the last thing in the history.
+  entries.push(...notes);
   return entries.map((entry) =>
     entry.kind === 'HUMAN' &&
     (scope.kind === 'NODE' || (entry.turnId !== undefined && entry.turnId === currentTurn))

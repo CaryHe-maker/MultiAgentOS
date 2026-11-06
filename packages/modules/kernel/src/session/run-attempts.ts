@@ -59,8 +59,10 @@ export interface ResultCheck {
   readonly unitAttemptId: string;
   /** Absent when the attempt ended before it was dispatched, or for a built-in Unit. */
   readonly executionId?: string;
-  readonly outcome: ExecutionOutcome | 'NOT_DISPATCHED';
+  readonly outcome: ExecutionOutcome | 'NOT_DISPATCHED' | 'INTERRUPTED';
   readonly reasonCode?: ReasonCode;
+  /** Only for INTERRUPTED: the pause or the abort that cancelled the execution (M2Design 4.4). */
+  readonly interruptedBy?: 'PAUSED' | 'ABORTED';
   readonly output?: UnitOutput;
   readonly outputRef?: ArtifactRef;
   readonly fullRef?: ArtifactRef;
@@ -236,6 +238,23 @@ export class RunAttempts {
     this.#ended(attempt);
   }
 
+  /**
+   * An attempt that never reached the Supervisor ends because the run is paused or aborted: it
+   * answers INTERRUPTED like a cancelled execution does, so Workflow sees every Unit it submitted
+   * come back (M2Design 4.4). A reservation it holds goes back unused.
+   */
+  interruptUnsent(unitAttemptId: string, interruptedBy: 'PAUSED' | 'ABORTED'): void {
+    const attempt = this.#attempts.get(unitAttemptId);
+    if (attempt === undefined || attempt.checked || attempt.executionId !== undefined) return;
+    if (attempt.reservation !== undefined) {
+      this.#settleReservation(attempt, { type: 'NOT_SENT' });
+      this.#deps.scheduler.release(attempt.reservation.grantId);
+    }
+    attempt.checked = true;
+    this.#deliverInterrupted(attempt, interruptedBy);
+    this.#ended(attempt);
+  }
+
   /** Must precede the Supervisor.execute of this executionId. */
   registerExecution(unitAttemptId: string, executionId: string): void {
     const attempt = this.#open(unitAttemptId);
@@ -341,6 +360,13 @@ export class RunAttempts {
     if (check.outcome === 'STOP_UNCONFIRMED') {
       this.#ended(attempt);
       this.#deps.onFault({ kind: 'STOP_UNCONFIRMED', requestId });
+      return;
+    }
+    if (check.outcome === 'INTERRUPTED') {
+      if (check.interruptedBy === undefined) throw new Error('An interrupted result names why');
+      if (this.#deps.isDeliverable(attempt.spec.runEpoch))
+        this.#deliverInterrupted(attempt, check.interruptedBy);
+      this.#ended(attempt);
       return;
     }
     if (
@@ -513,6 +539,18 @@ export class RunAttempts {
     return { ...base, status, reasonCode } as UnitReport;
   }
 
+  #deliverInterrupted(attempt: Attempt, interruptedBy: 'PAUSED' | 'ABORTED'): void {
+    this.#deliver(
+      {
+        ...this.#base(attempt),
+        unitAttemptId: attempt.unitAttemptId,
+        status: 'INTERRUPTED',
+        interruptedBy,
+      },
+      attempt.spec,
+    );
+  }
+
   #deliver(report: UnitReport, spec?: AttemptSpec): void {
     this.#deps.deliver(report, spec);
     this.#deps.audit({
@@ -537,6 +575,7 @@ function settlementOf(check: ResultCheck): Settlement | undefined {
       return { type: 'NOT_SENT' };
     case 'FAILED':
     case 'TERMINATED':
+    case 'INTERRUPTED':
       if (check.requestState === 'NOT_SENT') return { type: 'NOT_SENT' };
       if (check.requestState === 'SENT' && check.usage !== undefined)
         return { type: 'ACTUAL', usage: check.usage };

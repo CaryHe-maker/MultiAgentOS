@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { ConsoleStore } from './console-store.js';
 
-type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast'>;
+type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>;
 
 const COLORS: Partial<Record<TranscriptRecord['kind'], string>> = {
   USER: 'cyan',
@@ -83,6 +83,14 @@ function ConsoleApp({
     if (keys.ctrl && key === 'c') {
       setBuffer('');
       void input.interrupt();
+      return;
+    }
+    // Alt+Enter sends the box as a note to the run that goes on, instead of queueing it (5.4).
+    if (keys.return && keys.meta) {
+      if (buffer.trim().length > 0) history.current.push(buffer);
+      browsing.current = undefined;
+      setBuffer('');
+      void input.steer(buffer);
       return;
     }
     if (keys.return) {

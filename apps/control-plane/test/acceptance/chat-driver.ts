@@ -271,7 +271,14 @@ export function scriptedAgents(
       const key = task ?? agent;
       const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
-      const answer = 'then' in turn ? (await turn.wait, turn.then) : turn;
+      // A call the Kernel cancels (a pause, an abort) stops waiting, like a real request would.
+      const cancelled = new Promise<never>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+      const answer =
+        'then' in turn ? (await Promise.race([turn.wait, cancelled]), turn.then) : turn;
       inner.add(answer);
       return inner.fetch(input, init);
     },

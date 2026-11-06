@@ -22,6 +22,14 @@ export const KernelConfigSchema = closed(
   {
     provider: text(64),
     cancelGraceMs: ms(),
+    /** How long a pausing run lets its READ Units finish before it cancels them (M2Design 4.4). */
+    pauseDrainMs: ms(),
+    /** The longest a Turn of Turn-chat works, not counting a pause or waiting for the user (7.4). */
+    turnTimeoutSeconds: count(1),
+    /** The same for an Orchestration run, which is one Turn. */
+    orchestrationTimeoutSeconds: count(1),
+    /** The longest a run stays paused before it is interrupted (M2Design 4.3). */
+    maxPauseSeconds: count(1),
     convergenceMarginMs: ms(),
     technicalRetryLimit: count(),
     retryBackoffBaseMs: ms(),

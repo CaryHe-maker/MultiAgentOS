@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   closeAgent,
   receiveAgentReport,
+  resumeAfterPause,
   startAgent,
   type AgentConfig,
   type AgentContext,
@@ -688,5 +689,139 @@ describe('what the log keeps of an assembly', () => {
     );
     expect(after.submissions[0]?.input).toMatchObject({ history: [{ text: secret }] });
     expect(JSON.stringify(after.records)).not.toContain(secret);
+  });
+});
+
+describe('a pause or an abort cancels what is in flight (M2Design 4.4, 4.5)', () => {
+  const interrupted = (
+    state: AgentState,
+    requestId: string,
+    by: 'PAUSED' | 'ABORTED',
+    executionKind: 'MODEL' | 'REPOSITORY_LIST' | 'COMMAND' = 'MODEL',
+  ): UnitReport => ({
+    type: 'UnitReport',
+    requestId,
+    agentRunId: state.agentRunId,
+    unitRunId: `unr_${'b'.repeat(32)}`,
+    unitRef: unit('x').ref,
+    executionKind,
+    budget: NORMAL,
+    unitAttemptId: newId('una'),
+    status: 'INTERRUPTED',
+    interruptedBy: by,
+  });
+  const withCommand: Partial<AgentDefinitions> = {
+    tools: [
+      ...definitions.tools,
+      {
+        modelName: 'run_command',
+        executionKind: 'COMMAND',
+        unit: unit('command-run'),
+        parameters: RepositoryListInputSchema,
+      },
+    ],
+  };
+
+  it('submits a model call that a pause cancelled again, from the log as it is then', () => {
+    const asking = atModel();
+    const paused = receive(asking, interrupted(asking.state, only(asking), 'PAUSED'));
+    expect(types(paused)).toEqual(['UNIT_INTERRUPTED']);
+    expect(paused.records[0]).toMatchObject({ reason: 'PAUSED' });
+    // No Round was spent, nothing failed, and nothing is submitted until the run goes on.
+    expect(paused.submissions).toEqual([]);
+    expect(paused.state.round).toBe(asking.state.round);
+    expect(paused.state.noProgress).toBe(0);
+    expect(paused.state.consecutiveErrors).toBe(0);
+    const resumed = resumeAfterPause(paused.state, context, config);
+    expect(unitId(resumed)).toEqual(['context-assemble']);
+    expect(resumed.state.round).toBe(asking.state.round);
+    expect(resumed.state.held).toEqual([]);
+    // The assembled context goes to the model again, as it did the first time.
+    const model = receive(resumed, report(resumed.state, only(resumed), assembledOutput));
+    expect(unitId(model)).toEqual(['model-call']);
+  });
+
+  it('submits a read that a pause cancelled again, as the same call', () => {
+    const tools = replied(atModel(), [call('list_files', { path: 'a' }, 'one')]);
+    const paused = receive(
+      tools,
+      interrupted(tools.state, only(tools), 'PAUSED', 'REPOSITORY_LIST'),
+    );
+    expect(paused.submissions).toEqual([]);
+    expect(types(paused)).toEqual(['UNIT_INTERRUPTED']);
+    const resumed = resumeAfterPause(paused.state, context, config);
+    expect(unitId(resumed)).toEqual(['repository-list']);
+    expect(resumed.records.filter((r) => r.type === 'UNIT_SUBMITTED')).toMatchObject([
+      { inputSource: { kind: 'TOOL_CALL', toolCallId: 'one' } },
+    ]);
+    expect(resumed.submissions[0]?.input).toEqual({ path: 'a' });
+    // Its result ends the round as any other would.
+    const next = receive(resumed, report(resumed.state, only(resumed), { ok: {}, ref: ref('4') }));
+    expect(unitId(next)).toEqual(['context-assemble']);
+  });
+
+  it('does not begin the next round while a read of this one waits for the run to go on', () => {
+    const tools = replied(atModel(), [
+      call('list_files', { path: 'a' }, 'one'),
+      call('list_files', { path: 'b' }, 'two'),
+    ]);
+    const [first, second] = tools.submissions;
+    if (first === undefined || second === undefined) throw new Error('two expected');
+    const paused = receive(
+      tools,
+      interrupted(tools.state, first.requestId, 'PAUSED', 'REPOSITORY_LIST'),
+    );
+    // The other read finished inside the drain time: the round is still not over.
+    const done = receive(paused, report(paused.state, second.requestId, { ok: {}, ref: ref('5') }));
+    expect(done.submissions).toEqual([]);
+    expect(done.ending).toBeUndefined();
+    expect(done.state.held).toHaveLength(1);
+    const resumed = resumeAfterPause(done.state, context, config);
+    expect(unitId(resumed)).toEqual(['repository-list']);
+  });
+
+  it('does not run a command again after a pause: the model reads that it was interrupted', () => {
+    const tools = replied(atModel(withCommand), [call('run_command', {}, 'cmd')]);
+    const paused = receive(tools, interrupted(tools.state, only(tools), 'PAUSED', 'COMMAND'));
+    expect(paused.state.held).toEqual([]);
+    expect(paused.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({
+      toolCallId: 'cmd',
+      code: 'UNIT_INTERRUPTED',
+    });
+    // The call has its answer, so the round goes on: the model decides what to do about it.
+    expect(unitId(paused)).toEqual(['context-assemble']);
+  });
+
+  it('answers every call and submits nothing after an abort', () => {
+    const tools = replied(atModel(), [
+      call('list_files', { path: 'a' }, 'one'),
+      call('list_files', { path: 'b' }, 'two'),
+    ]);
+    const [first, second] = tools.submissions;
+    if (first === undefined || second === undefined) throw new Error('two expected');
+    const one = receive(
+      tools,
+      interrupted(tools.state, first.requestId, 'ABORTED', 'REPOSITORY_LIST'),
+    );
+    const both = receive(
+      one,
+      interrupted(one.state, second.requestId, 'ABORTED', 'REPOSITORY_LIST'),
+    );
+    expect(both.submissions).toEqual([]);
+    expect(both.ending).toBeUndefined();
+    expect(both.state.held).toEqual([]);
+    expect(
+      [...one.records, ...both.records]
+        .filter((r) => r.type === 'FEEDBACK')
+        .map((r) => r.toolCallId),
+    ).toEqual(['one', 'two']);
+  });
+
+  it('has nothing to submit on resume when nothing was held', () => {
+    const asking = atModel();
+    expect(resumeAfterPause(asking.state, context, config)).toMatchObject({
+      records: [],
+      submissions: [],
+    });
   });
 });

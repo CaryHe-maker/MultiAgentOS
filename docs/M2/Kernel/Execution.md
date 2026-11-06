@@ -75,6 +75,35 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 - 只读命令（可写根目录为空）不扫描；技术重试不重新取"之前"的扫描。
 - 测试：`change-scan.test.ts`；`stage4-exit` 的"命令改动"用例在真实沙盒中验证。
 
+## 4e. 暂停与中止时的尝试（阶段 5，草稿）
+
+设计以 M2Design 第 4.4、7.6 节为准。`RunExecution` 增加两个入口：`pause()` 与 `abort()`；它们由 Core 的控制状态驱动（[Core](Core.md) 第 5e 节），`AttemptQueues` 不变。
+
+**`pause()`**（进入 PAUSING）：先停止派发（队列中的尝试保留，不占并发计数，等待调用机会的尝试也保留在等待列表中），再按并发类别处理已经派发的尝试：
+
+| 并发类别 | 处理 | 结果 |
+|---|---|---|
+| READ | 允许完成；超过 `pauseDrainMs`（缺省 5000）仍未完成的，取消 | 完成：照常交付；取消：`INTERRUPTED(PAUSED)` |
+| WRITE | 允许完成，不取消 | 照常交付 |
+| MODEL | 立即取消，已消耗的 token 照常结算 | `INTERRUPTED(PAUSED)`；不计 Round，不进入历史 |
+| EXEC | `cancelExecution({ reason: 'PAUSED' })`，等 Supervisor 确认进程组已退出（升级顺序见 M2Design 第 4.7 节）；不确认时按 `STOP_UNCONFIRMED` 处理，系统停机 | `INTERRUPTED(PAUSED)` |
+| 挂起在授权询问上的 | 保留 | 回答后在继续时派发 |
+| 技术重试的等待 | 保留 | 继续后接着等 |
+
+在途尝试数为 0 时通知 Core，Core 进入 PAUSED。**`resume()`**：恢复派发；保留的尝试按建立先后依次开始，仍受第 4c 节的队列规则、全局上限与调用机会约束。被取消的 READ、MODEL 由 Workflow 重新提交（[Workflow](../Module/Workflow.md) 第 7b 节），EXEC 不自动重跑。
+
+**`abort()`**（进入 INTERRUPTING）：
+- 已派发的尝试全部取消，`INTERRUPTED(ABORTED)`；EXEC 经 `cancelExecution({ reason: 'ABORTED' })`；MODEL 的已发生用量照常结算；WRITE 与 READ 也取消（不再等完成：中止要尽快停下，写了一半的文件由 `/undo` 处理，M2Design 第 4.5 节）；
+- 排队中、等待调用机会的尝试从队列移出，同样交付 `INTERRUPTED(ABORTED)`（阶段 1 收敛时清出队列的尝试不交付，这里不同）；
+- 技术重试的等待立即结束，交付 `INTERRUPTED(ABORTED)`；
+- 之后到达的结果（`runEpoch` 不变，所以仍会交付）按取消的结果记，不会把尝试再次交付。
+
+**报告**：`UnitReport.status = 'INTERRUPTED'`，附 `interruptedBy: 'PAUSED' | 'ABORTED'`；没有 `output`；带 `budget`（已发生的用量已结算）。同一尝试至多交付一次（以尝试状态保证，与其他终态相同）。
+
+**转移**：尝试的状态在阶段 1 的基础上增加终态 `INTERRUPTED`；`CANCEL_PENDING`（已发出取消、等待确认）不是新的状态，沿用阶段 3 的"取消中"标记。
+
+- 测试：`run-execution.test.ts`（暂停时 READ 的排空与取消、WRITE 不取消、MODEL 取消并结算、EXEC 取消并等待确认、排队尝试在暂停时保留、中止时排队尝试交付 INTERRUPTED、重试等待在暂停时保留而中止时结束、继续后依次派发）；`session-actor.test.ts`（H3：授权询问挂起时其他 AgentRun 不受影响）。
+
 ## 4a. 技术重试的等待
 
 M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackoffBaseMs × 2^(n−1)`），等待时间改为（M2Design 第 7.4 节）：

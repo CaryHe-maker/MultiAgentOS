@@ -18,14 +18,23 @@ import type { ProjectedGraph } from '../graph/session-graph.js';
 export function callOf(
   graph: ProjectedGraph,
   nodeId: string,
-): { readonly callerNodeId: string; readonly delegationId: string } | undefined {
+): { readonly callerNodeId: string; readonly delegationId?: string } | undefined {
   const edge = graph.graph.edges.find((each) => each.to === nodeId && each.kind === 'DELEGATE');
   return edge?.call === undefined
     ? undefined
-    : { callerNodeId: edge.from, delegationId: edge.call.delegationId };
+    : {
+        callerNodeId: edge.from,
+        ...(edge.call.delegationId === undefined ? {} : { delegationId: edge.call.delegationId }),
+      };
 }
 
 type RecordOf<T extends SessionLogRecord['type']> = Extract<SessionLogRecord, { type: T }>;
+
+/** What the user answered to the question of a call to `ask_user`. */
+export interface CallAnswer {
+  readonly kind: 'ask' | 'confirm' | 'review';
+  readonly contentRef: ArtifactRef;
+}
 
 export interface CallResult {
   readonly name: string;
@@ -34,6 +43,38 @@ export interface CallResult {
   readonly notes: readonly string[];
   readonly outputRef?: ArtifactRef;
   readonly toolCallId?: string;
+}
+
+/**
+ * What the user said to a question of a call, from the record of the answer; undefined while no
+ * answer was given (a question the run was interrupted on has none).
+ */
+export function answerOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  callerNodeId: string,
+  toolCallId: string,
+): CallAnswer | undefined {
+  const resume = records
+    .filter((record): record is RecordOf<'GRAPH_EXTENDED'> => record.type === 'GRAPH_EXTENDED')
+    .filter((record) => record.workflowRunId === workflowRunId)
+    .flatMap((record) => record.edges)
+    .find(
+      (edge) =>
+        edge.kind === 'RESUME' && edge.to === callerNodeId && edge.call?.toolCallId === toolCallId,
+    );
+  if (resume === undefined) return undefined;
+  const answered = records.find(
+    (record): record is RecordOf<'HUMAN_ANSWERED'> =>
+      record.type === 'HUMAN_ANSWERED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodeId === resume.from &&
+      record.kind !== 'prompt' &&
+      record.kind !== 'steer',
+  );
+  return answered === undefined || answered.kind === 'prompt' || answered.kind === 'steer'
+    ? undefined
+    : { kind: answered.kind, contentRef: answered.contentRef };
 }
 
 /**

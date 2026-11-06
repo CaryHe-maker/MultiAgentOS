@@ -50,6 +50,10 @@ actions:
     toolRef:
       id: update-todos
       version: v0.1.0
+  askUser:
+    toolRef:
+      id: ask-user
+      version: v0.1.0
 spawnable:
   defaultShare: 600000
 capabilities:

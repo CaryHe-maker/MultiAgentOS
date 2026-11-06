@@ -2,17 +2,24 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   admitWork,
+  answerLocalQuestion,
   answerOpenInput,
   attemptEnded,
   attemptStarted,
   beginConvergence,
+  beginInterrupt,
   closeRun,
   endAgentRun,
   initialRunControl,
   openInitialTurn,
+  pauseReached,
+  pauseRun,
   readsProjectFile,
   registerAgentRun,
+  requestLocalQuestion,
   requestOpenInput,
+  resumeRun,
+  steerRun,
   type Decision,
   type RunControl,
 } from './run-control.js';
@@ -130,5 +137,131 @@ describe('invariants 4 and 18', () => {
         },
       ),
     );
+  });
+});
+
+describe('run control of Kernel/Core 5e', () => {
+  const active = (): RunControl => accepted(registerAgentRun(running(), 'agr_1'));
+  const question = (agentRunId: string) => ({
+    agentRunId,
+    nodeId: 'nod_q',
+    kind: 'ask' as const,
+  });
+
+  it('pauses only a running Turn, and is paused once Execution has drained', () => {
+    const pausing = accepted(pauseRun(running()));
+    expect(pausing.phase).toBe('PAUSING');
+    expect(pauseReached(pausing).phase).toBe('PAUSED');
+    expect(pauseReached(running()).phase).toBe('RUNNING');
+    expect(refused(pauseRun(pausing))).toBe('REQUEST_CONFLICT');
+    expect(refused(pauseRun(initialRunControl()))).toBe('REQUEST_CONFLICT');
+    expect(refused(pauseRun(waiting()))).toBe('REQUEST_CONFLICT');
+  });
+
+  it('resumes only a paused run', () => {
+    const paused = pauseReached(accepted(pauseRun(running())));
+    expect(accepted(resumeRun(paused)).phase).toBe('RUNNING');
+    expect(refused(resumeRun(running()))).toBe('REQUEST_CONFLICT');
+    expect(refused(resumeRun(accepted(pauseRun(attemptStarted(running(), 'u')))))).toBe(
+      'REQUEST_CONFLICT',
+    );
+  });
+
+  it('takes a steer only while running; a paused run takes it with the resume', () => {
+    expect(steerRun(running()).accepted).toBe(true);
+    const paused = pauseReached(accepted(pauseRun(running())));
+    expect(refused(steerRun(paused))).toBe('REQUEST_CONFLICT');
+    expect(refused(steerRun(waiting()))).toBe('REQUEST_CONFLICT');
+  });
+
+  it('holds work while paused instead of refusing it', () => {
+    const paused = pauseReached(accepted(pauseRun(running())));
+    expect(admitWork(paused).accepted).toBe(true);
+    expect(registerAgentRun(paused, 'agr_2').accepted).toBe(true);
+  });
+
+  it('interrupts a live Turn at the user, and any state that is not closing for memory', () => {
+    const interrupted = accepted(beginInterrupt(active(), 'USER_ABORT'));
+    expect(interrupted).toMatchObject({ phase: 'INTERRUPTING', interrupt: 'USER_ABORT' });
+    const paused = pauseReached(accepted(pauseRun(running())));
+    expect(beginInterrupt(paused, 'PAUSE_TIMEOUT').accepted).toBe(true);
+    expect(refused(beginInterrupt(waiting(), 'USER_ABORT'))).toBe('REQUEST_CONFLICT');
+    expect(accepted(beginInterrupt(waiting(), 'MEMORY_PRESSURE')).phase).toBe('INTERRUPTING');
+    expect(refused(beginInterrupt(converging(), 'MEMORY_PRESSURE'))).toBe('REQUEST_CONFLICT');
+    // Asked again, nothing changes and nothing is done twice.
+    expect(beginInterrupt(interrupted, 'TURN_TIMEOUT')).toMatchObject({
+      accepted: true,
+      effect: { firstTime: false },
+      control: { interrupt: 'USER_ABORT' },
+    });
+  });
+
+  it('lets nothing new in while interrupting, but lets the AgentRuns end and ask for input', () => {
+    const interrupted = accepted(beginInterrupt(active(), 'USER_ABORT'));
+    expect(admitWork(interrupted).accepted).toBe(true);
+    expect(refused(registerAgentRun(interrupted, 'agr_2'))).toBe('RUN_BLOCKED');
+    const ended = accepted(endAgentRun(interrupted, 'agr_1'));
+    expect(ended.activeAgentRuns.size).toBe(0);
+    expect(refused(requestOpenInput(interrupted, 'hrq_1'))).toBe('AGENT_RUN_ACTIVE');
+  });
+
+  it('ends the interrupted Turn as aborted or timed out, and keeps the run open', () => {
+    const asked = (reason: Parameters<typeof beginInterrupt>[1]) =>
+      requestOpenInput(accepted(beginInterrupt(running(), reason)), 'hrq_1');
+    expect(asked('USER_ABORT')).toMatchObject({
+      accepted: true,
+      effect: { closedTurnId: 'trn_1', turnEnd: 'ABORTED' },
+      control: { phase: 'AWAITING_INPUT' },
+    });
+    expect(asked('TURN_TIMEOUT')).toMatchObject({ effect: { turnEnd: 'TIMEOUT' } });
+    expect(asked('PAUSE_TIMEOUT')).toMatchObject({ effect: { turnEnd: 'ABORTED' } });
+    expect(requestOpenInput(running(), 'hrq_1')).toMatchObject({
+      effect: { turnEnd: 'COMPLETED' },
+    });
+    const control = accepted(asked('USER_ABORT'));
+    expect(control.interrupt).toBeUndefined();
+    expect(accepted(answerOpenInput(control, 'hrq_1', 'trn_2')).phase).toBe('RUNNING');
+  });
+
+  it('refuses open input while paused', () => {
+    const paused = pauseReached(accepted(pauseRun(running())));
+    expect(refused(requestOpenInput(paused, 'h'))).toBe('REQUEST_CONFLICT');
+  });
+
+  it('asks a local question for an active AgentRun, without needing stillness', () => {
+    const asked = accepted(requestLocalQuestion(active(), 'hrq_q', question('agr_1')));
+    expect(asked.phase).toBe('RUNNING');
+    expect(asked.questions.get('hrq_q')).toEqual({
+      agentRunId: 'agr_1',
+      nodeId: 'nod_q',
+      kind: 'ask',
+    });
+    expect(refused(requestLocalQuestion(active(), 'hrq_q', question('agr_x')))).toBe(
+      'AGENT_RUN_NOT_FOUND',
+    );
+    expect(refused(requestLocalQuestion(asked, 'hrq_q', question('agr_1')))).toBe(
+      'REQUEST_CONFLICT',
+    );
+    expect(refused(requestLocalQuestion(waiting(), 'hrq_q', question('agr_1')))).toBe(
+      'NO_OPEN_TURN',
+    );
+    expect(refused(requestLocalQuestion(converging(), 'hrq_q', question('agr_1')))).toBe(
+      'RUN_BLOCKED',
+    );
+  });
+
+  it('answers a local question once, also in a paused run, and drops it when its asker ends', () => {
+    const asked = accepted(requestLocalQuestion(active(), 'hrq_q', question('agr_1')));
+    const answered = accepted(answerLocalQuestion(asked, 'hrq_q'));
+    expect(answered.questions.size).toBe(0);
+    expect(refused(answerLocalQuestion(answered, 'hrq_q'))).toBe('HUMAN_REQUEST_NOT_PENDING');
+    const paused = pauseReached(accepted(pauseRun(asked)));
+    expect(answerLocalQuestion(paused, 'hrq_q').accepted).toBe(true);
+    expect(accepted(endAgentRun(asked, 'agr_1')).questions.size).toBe(0);
+  });
+
+  it('asks no open input while a local question is out, since the AgentRun is still active', () => {
+    const asked = accepted(requestLocalQuestion(active(), 'hrq_q', question('agr_1')));
+    expect(refused(requestOpenInput(asked, 'hrq_1'))).toBe('AGENT_RUN_ACTIVE');
   });
 });

@@ -57,6 +57,22 @@ export class TestExecution {
   readonly cancelExecutions = (): void => {
     this.cancels += 1;
   };
+
+  pauses = 0;
+  resumes = 0;
+  aborts = 0;
+  onDrained: (() => void) | undefined;
+  readonly pauseExecutions = (drained: () => void): void => {
+    this.pauses += 1;
+    this.onDrained = drained;
+  };
+  readonly resumeExecutions = (): Promise<void> => {
+    this.resumes += 1;
+    return Promise.resolve();
+  };
+  readonly abortExecutions = (): void => {
+    this.aborts += 1;
+  };
 }
 
 export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {}): RunWork {
@@ -84,6 +100,9 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     trust: () => Promise.resolve(),
     createAttempt: execution.createAttempt,
     cancelExecutions: execution.cancelExecutions,
+    pauseExecutions: execution.pauseExecutions,
+    resumeExecutions: execution.resumeExecutions,
+    abortExecutions: execution.abortExecutions,
     executionsClosed: () => undefined,
     unknownEffects: () => [],
     audit: () => undefined,

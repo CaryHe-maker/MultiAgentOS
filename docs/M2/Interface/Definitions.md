@@ -37,7 +37,7 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
     onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';   // 没有合法结束时发布什么；RETURN_PARTIAL（阶段 4）：SubAgent 不发布，交回 PARTIAL 的结果
     todos?: { toolRef: DefinitionRef };          // 阶段 2：update_todos（M2Design 第 3.5 节）
     spawn?: { toolRef: DefinitionRef };          // 阶段 4：run_subagents；Agent 的能力白名单含 agent.spawn 时配套出现
-    // 阶段 5：askUser（ask_user）
+    askUser?: { toolRef: DefinitionRef };        // 阶段 5：ask_user（M2Design 第 3.4 节）；main 与 worker 声明，explorer 不得声明；与 run_subagents 同样只能单独出现
   };
   spawnable?: { defaultShare: number };          // 阶段 4：可以被 run_subagents 派生的 Agent 及其缺省份额；不低于 agentMinShare(budget)，结束工具只有 FINISH_SUBAGENT，onDegraded 为 RETURN_PARTIAL，不得含 agent.spawn
   limits: {

@@ -117,6 +117,16 @@ export class RunActivity {
     });
   }
 
+  /** The AgentRun asked the user a question with `ask_user` and waits for the answer. */
+  awaitingAnswer(agentRunId: string): void {
+    this.#emit(agentRunId, 'AWAITING_ANSWER');
+  }
+
+  /** The run is paused: nothing of this AgentRun runs until it is continued. */
+  paused(agentRunId: string): void {
+    this.#emit(agentRunId, 'PAUSED');
+  }
+
   /** A Unit of this AgentRun waits on a question to the user. */
   awaitingAuthorization(agentRunId: string): void {
     this.#emit(agentRunId, 'AWAITING_AUTHORIZATION');

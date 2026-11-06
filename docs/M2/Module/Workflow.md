@@ -186,6 +186,53 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 **中断**：运行被中断时，SubAgent 先停止（记为 FAILED），这样每次调用的唤醒边都已结束，调用以 `NODE_RESUMED` 关闭但不交给调用方的 AgentRun；然后调用方按自己的降级动作收尾。
 
+## 7b. 暂停、插话、询问与中止（阶段 5，草稿）
+
+设计以 M2Design 第 3.1、4.2–4.5 节为准。Workflow 不决定何时暂停或中止（那是 Kernel 的控制状态，[Core](../Kernel/Core.md) 第 5e 节），只在收到事件后让图与 AgentRun 与之一致。
+
+**被打断的 Unit**：`UnitReport` 的状态增加 `INTERRUPTED`（`interruptedBy: PAUSED | ABORTED`）。收到时追加 `UNIT_INTERRUPTED(reason)`，不追加 `UNIT_COMPLETED`；`MODEL_ATTEMPT_FAILED` 之外，被打断的模型输出不进入历史，不计 Round，不计"没有进展"。AgentRun 的状态机记下"被暂停打断的尝试"（`interrupted: { unit, kind }[]`），不当作失败：
+
+| 被打断的 | `PAUSED`：继续时 | `ABORTED` |
+|---|---|---|
+| READ 工具 Unit | 原样重新提交（只读，可重跑） | 不重提；它所在的调用以"被中止"回答（见"中止后的收敛"） |
+| MODEL | 重新组装上下文后再提交；`RunResumed` 带的说明已在历史里，所以新的上下文里有它 | 不重提 |
+| EXEC | **不重跑**：这次调用的工具结果写明"命令被暂停打断，可能未完成"，模型决定是否重跑 | 同上 |
+| WRITE | 不会被打断（暂停时允许完成） | 被取消的写入：结果写明"被中止，文件可能写了一半" |
+
+一轮的其他调用（未被打断的）照常交付；这一轮的工具结果收齐（被打断的 READ 重新提交并完成、EXEC 的结果已写明）之后，下一轮才开始。
+
+**`RunPaused`**：追加 `RUN_PAUSED`；此后 Workflow 仍可提交 Unit（Kernel 保留在队列里，不派发），不再为暂停做别的事。**`RunResumed`**：追加 `RUN_RESUMED`；带 `steer` 时先按下一条创建 `HUMAN(steer)` 节点，再重新提交被暂停打断的 READ 与 MODEL。
+
+**`steer`**（`HumanAnswered(kind: 'steer')` 与 `RunResumed.steer`，运行中插话与暂停后附加说明同一条路径）：
+1. 目标：`targetAgentRunId`，缺省为本 Turn 的 main 的 AgentRun；
+2. 目标已结束：目标是 SubAgent 时改为附属于它的父 AgentRun，`HUMAN_ANSWERED` 记 `redirectedFrom`（原定目标）；目标是 main 而本 Turn 已在收尾时，说明留在日志里，出现在下一个 Turn 的历史中（main 的投影跨 Turn），界面提示这一点；
+3. 在任务图上创建 `HUMAN(steer)` 节点，`attachedTo` 目标节点（不是 `DELEGATE`：目标不等它，状态不变），追加 `HUMAN_ANSWERED`，节点随即 SUCCEEDED（创建即完成）；
+4. **投影**：产生历史条目 `STEER`（引用 `contentRef`、带 `redirectedFrom?`），排在目标这一轮全部工具结果之后、下一次模型调用之前——不会插在工具调用与它的结果之间。目标此刻正在等一次派发的调用（`WAITING`）时，说明在那次调用回来、下一次组装时可见，界面已提示；
+5. 说明正文不进入日志，只有 `contentRef`；条目的预览规则与用户输入相同。
+
+**`ask_user`**（main、worker；explorer 没有）：
+- **工具**：控制工具，参数 `{ kind: 'ask' | 'confirm' | 'review', question, fields?, reviewArtifact? }`；`question` 至多 1000 字符；`fields` 至多 8 个，类型为文本、多行文本、单选、多选、确认，其他类型按文本；`kind = 'review'` 时必须有 `reviewArtifact`，且是调用方自己读得到的产物（与 `run_subagents` 的 `inputs` 同一个检查，`readableArtifacts`），否则以 `INVALID_ACTION` 退回。必须单独出现，规则与 `run_subagents` 相同（与别的调用同回复、最后一轮、参数不合 Schema 都以 FEEDBACK 退回）。
+- **图**：在任务图上追加一次修订：一个 `HUMAN(ask | confirm | review)` 节点，调用方到它一条 `DELEGATE` 边，它到调用方一条 `RESUME` 边（边上只有 `toolCallId`，没有 `delegationId`）。调用方的节点因此 `WAITING`；AgentRun 层面这次调用是 `Pending` 的 `DELEGATED`，与 `run_subagents` 完全相同，没有第二套等待。
+- **请求**：问题本身放在 HUMAN 节点上（`GraphNodeRecord.ask`：种类、问题、字段、要审阅的产物），所以重放不需要运行器另存什么。节点就绪时追加
+- **答复**：`HumanAnswered` 到达后追加 `HUMAN_ANSWERED`（`attachedAgentRunId` 是调用方），节点 SUCCEEDED（`resultRef` 是答复正文），随后 `wakeableNodes` 唤醒调用方，答复成为这次调用的结果（投影产生 `HUMAN_ANSWER` 条目，由 `RESUME` 边的前驱推出，函数是 `answerOf`，与 `callResultsOf` 同在 `spawn-graph.ts`）。Workflow 不读答复正文（正文在 Kernel 的产物库，日志只留引用），所以字段是否合格只由 UserInteraction 在提交前检查；有 `fields` 时答复是这些字段的 JSON，没有时是一段文字。
+- **不产生授权**：答复里说"可以运行命令"不构成授权（M2Design 第 5.5 节），后续的命令仍由 Kernel 询问。
+- **其他 AgentRun 照常推进**；调用方 `WAITING` 期间不提交 Unit（阶段 4 的断言原样适用），它的墙钟与 Turn 超时按"全部工作都在等用户"的规则不计时（Core 第 5e 节）。
+- **没有次数上限**；模型反复提问的代价由用户承担，这条规则以后若要收紧，在第 14.2 节登记。
+
+**中止后的收敛**（`RunInterrupted(reason)`；阶段 3 的第 9.2a 节扩展到所有原因）：
+1. 在途与排队的 Unit 已由 Kernel 以 `INTERRUPTED(ABORTED)` 交付，Workflow 逐个追加 `UNIT_INTERRUPTED`，不重提；
+2. 待答复的人类请求由 `HumanCancelled` 取消：对应的 HUMAN 节点记为 `INTERRUPTED`（追加 `NODE_ENDED(INTERRUPTED)`）；
+3. 每个 ACTIVE 的 AgentRun 以确定性结果结束（`endAgentRun`，没有 final-call），运行中的节点记为 `INTERRUPTED`；SubAgent 先结束，调用以 `NODE_RESUMED` 关闭而不交给调用方的 AgentRun（阶段 4 规则）；等 `ask_user` 的调用方同样：HUMAN 节点已 `INTERRUPTED`，调用关闭；
+4. 追加 `RUN_INTERRUPTED(reason)`；Turn-chat：请求下一个 `HUMAN(prompt)`（Kernel 以 `ABORTED` 结束本 Turn，运行回到 AWAITING_INPUT），main 发布 `DEGRADED_REPLY`（`reason = INTERRUPTED(<原因>)`）；Orchestration：输出节点没有运行时发布确定性报告，然后 `closeRun(CANCELLED | TIMEOUT)`；`MEMORY_PRESSURE` 仍是 `closeRun(INTERRUPTED)`；
+5. 中止不是回滚：已完成的 Unit 结果、已提交的输入都留在日志里，文件改动保留在工作区，撤销用 `/undo`；
+6. 下一个 Turn 的 main 历史里有 `RUN_INTERRUPTED` 的说明条目，让它知道上一轮因何停止。
+
+**日志**：新增 `RUN_PAUSED`、`RUN_RESUMED`（`steerInputId?`）、`HUMAN_REQUESTED` 增加 `attachedAgentRunId?`、`question?`、`fields?`、`reviewRef?`（见 [Persistence](../Interface/Persistence.md)）；`UNIT_INTERRUPTED.reason` 为 `PAUSED | ABORTED | RECOVERED`；`NODE_ENDED.status` 已有 `INTERRUPTED`。`RUN_INTERRUPTED` 阶段 3 已有，原因增加 `USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`。
+
+**重放**：全部状态由日志得出——某个 AgentRun 有没有被暂停打断的 Unit，由 `UNIT_INTERRUPTED(PAUSED)` 与其后有没有再提交得出；节点是否 `WAITING` 由 `DELEGATE` 边与 `NODE_RESUMED` 得出（与阶段 4 相同）。进程在 `ask_user` 等待中退出：重新打开 Session 时，打开时结算把没有答复的请求与调用方的 Unit 记为 `INTERRUPTED(RECOVERED)`，对话照常延续（M2Design 第 10.3 节"重新展示最后一个人类请求"只适用于 `prompt`；局部询问的调用方 AgentRun 已不存在，不重新展示）。
+
+- 测试：`agent-cycle.test.ts`（被暂停打断的尝试、继续后重新提交）、`graph.test.ts`、`spawn-graph.test.ts`（HUMAN 节点作为被派发节点，`callResultsOf` 的 `HUMAN_ANSWER`）、`session-runner` 级测试 `packages/testing/src/pause-steer-ask.test.ts`（H1–H4、H11、H12 的中止部分、H13 的 Workflow 部分）。
+
 ## 8. 上下文
 
 ### 8.1 投影
