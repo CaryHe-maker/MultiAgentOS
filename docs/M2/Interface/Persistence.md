@@ -57,14 +57,14 @@ interface LogRecordBase {
 | `NODE_STARTED` | `nodeId`、`path` | 1 |
 | `NODE_RESUMED` | `nodeId`、`call`（`toolCallId`、`delegationId`）：这次派发的调用回来了，节点不再 WAITING；此前调用的结果由唤醒边的前驱的结果推出（阶段 4） | 1 |
 | `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?`；以后可能增加失败原因（M2Design 第 14.2 节第 8 条） | 1 |
-| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind` | 1 |
+| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind`；局部询问（阶段 5）另有 `attachedAgentRunId`、`question`、`fields`、`reviewRef?`、`error?`（重新请求时） | 1 |
 | `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`、`origin`、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
 | `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
 | `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） | 2 |
 | `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
 | `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
 | `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
-| `UNIT_INTERRUPTED` | `requestId`、`reason`（打开 Session 时的修复，或阶段 5 的暂停与中止） | 1 |
+| `UNIT_INTERRUPTED` | `requestId`、`reason`：`RECOVERED`（打开 Session 时的修复）、`PAUSED`、`ABORTED`（阶段 5） | 1 |
 | `MODEL_TURN` | `requestId`、`agentRunId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
 | `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
 | `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
@@ -82,7 +82,9 @@ interface LogRecordBase {
 | `WORKSPACE_DIVERGED` | `files` | 2 |
 | `SESSION_FORKED` | `fromSessionId`、`fromSeq` | 2 |
 | `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` | 2 |
-| `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED` | 见阶段 5 | 5 |
+| `RUN_PAUSED` | 无附加字段（阶段 5） | 5 |
+| `RUN_RESUMED` | `steerInputId?`（继续时附加了说明；说明本身是 `HUMAN_ANSWERED(kind: steer)`）（阶段 5） | 5 |
+| `RUN_INTERRUPTED` | `reason`（阶段 3 已有；阶段 5 增加 `USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`） | 3 |
 | `LOOP_EXHAUSTED` | 见阶段 7 | 7 |
 
 - M2Design 第 10.2 节的 `UNIT_COMPLETED` 带结构化输出与 ArtifactRef。`UNIT_SUBMITTED` 不复制工具参数，只指向 `MODEL_TURN` 中的工具调用；

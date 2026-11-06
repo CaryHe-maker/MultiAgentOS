@@ -278,3 +278,22 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 另外两项已知缺口，不属于退出条件：在等依赖、还没有登记的任务不出现在活动区；"重复派生同一个失败任务"的业务熔断（第 14.2 节第 12 条）留给阶段 4 之后。
 
 发布判断：机制、安全约束（范围冲突、委派期写入、额度）与确定性的结果检查已经完成并通过测试，但 P3、B4 端到端与 D 没有达到，L12 要等阶段 8，所以阶段 4 以"部分完成"合入 `feat/M2`，上表中标注的项目在之后补齐。
+
+## 5. 阶段 5 进度（`feature/phase5/main`，2026-11-06）
+
+阶段 5 开始（M2Design v1.28）。Cary 决定两项：`ask_user` 的 HUMAN 节点用 `DELEGATE` 与 `RESUME`（调用方 `WAITING`），`steer` 用附属（`attachedTo`），不等待；阶段 5 先写文档门、经 Cary 确认后再写代码。
+
+**文档门**（待 Cary 确认）：M2Design 第 3.1、4.2 节与 v1.28；[Kernel/Core](Kernel/Core.md) 第 5e 节（控制状态、`pauseRun`/`resumeRun`/`interruptRun`/`steerRun`、`interrupt(reason)` 的统一处理、Turn 超时与暂停上限、局部询问）；[Kernel/Execution](Kernel/Execution.md) 第 4e 节（暂停与中止时按并发类别处理尝试、`INTERRUPTED` 报告）；[Module/Workflow](Module/Workflow.md) 第 7b 节（被打断的 Unit、`steer`、`ask_user`、中止后的收敛）；[Module/UserInteraction](Module/UserInteraction.md) 第 5.4 节（按键、`/continue`、`/steer`、局部询问的界面）；Interface 各章的类型与记录。
+
+**实现顺序**（单人串行；Core 与 Execution 先于 Workflow，界面最后）：
+1. S5-CT-1 契约：四个运行控制请求、`HumanRequest`/`RequestHumanRequest` 的局部询问字段、`HumanAnswered` 的种类、`RunPaused`/`RunResumed`/`HumanCancelled`、`UnitReport.INTERRUPTED`、`InterruptReason`、`RunStateChanged` 与 `ActivityPhase` 的新值、日志记录的新字段、`EdgeCall.delegationId` 可缺省；重新生成 Schema 快照。
+2. S5-KC-1a Core 的纯函数 `run-control.ts`：`PAUSING`/`PAUSED`/`INTERRUPTING` 并入 `RunPhase`，转移表与准入表；阶段 3 的 `#interrupting` 标志并入。
+3. S5-KX-1 Execution：`pause()`、`resume()`、`abort()`，按并发类别处理，`INTERRUPTED` 报告，排队与重试等待的处理。
+4. S5-KC-1b Core 的消息与计时：`pauseRun`/`resumeRun`/`interruptRun`/`steerRun`、统一的 `interrupt(reason)`（取消询问、取消尝试、`RunInterrupted`）、Turn 超时（含"全部工作都在等用户"时冻结）、暂停上限、局部询问不要求静止。
+5. S5-WF-1a Workflow：被打断 Unit 的处理与重新提交（READ、MODEL；EXEC 不重跑）、`RunPaused`/`RunResumed`、中止后的收敛（扩展阶段 3 的路径到所有原因）。
+6. S5-WF-1b Workflow：`steer`（`attachedTo`、投影的 `STEER` 条目、目标已结束时改投）。
+7. S5-WF-1c Workflow 与定义：`ask_user`（工具、HUMAN 节点作为被派发节点、`callResultsOf` 的 `HUMAN_ANSWER`、答复校验与重新请求、explorer 不带该工具）。
+8. S5-UI-1 界面：按键、`/continue`、`/steer`、Alt+Enter、局部询问的渲染、活动区与排队消息放回。
+9. S5-IN-1 集成 `stage5-exit` 与一次真实模型检查；退出：H1–H4、H11、H12 的中止部分、H13、A 组的 `ask_user` 与暂停部分。
+
+**待决（留到定稿）**：`ask_user` 没有次数上限，若模型反复提问再收紧；暂停时 WRITE 允许完成而 READ 超时取消，若实测暂停响应太慢再调 `pauseDrainMs`。

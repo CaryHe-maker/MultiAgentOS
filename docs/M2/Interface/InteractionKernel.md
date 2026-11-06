@@ -38,7 +38,10 @@ interface InteractionGatewayPort {
   undoTurns(request: UndoTurnsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;      // 阶段 2
   confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;  // 阶段 2
   diffTurns(request: DiffTurnsRequest, context: BoundaryContext): Promise<TurnDiff | SyscallRejected>;        // 阶段 2
-  // 阶段 5：pauseRun、resumeRun、interruptRun、steerRun（运行中插话，只在 RUNNING 时受理，M2Design 第 4.5 节）
+  pauseRun(request: PauseRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 阶段 5
+  resumeRun(request: ResumeRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;        // 阶段 5
+  interruptRun(request: InterruptRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;  // 阶段 5
+  steerRun(request: SteerRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 阶段 5：运行中插话，只在 RUNNING 时受理（M2Design 第 4.5 节）
   // 阶段 8：compactContext（第 2.4 节）
 }
 ```
@@ -140,12 +143,24 @@ interface TurnDiff {                 // 阶段 2
   diffRef: ArtifactRef;              // 统一 diff 文本；被排除的文件不在其中
 }
 
-interface AnswerHumanRequest {
+// 阶段 5：运行控制。四个请求都只带运行的标识；Kernel 不解释说明的内容，只存正文并转交 Workflow
+interface PauseRunRequest { requestId: string; sessionId: string; workflowRunId: string }
+interface InterruptRunRequest { requestId: string; sessionId: string; workflowRunId: string }
+interface ResumeRunRequest {
+  requestId: string; sessionId: string; workflowRunId: string;
+  steer?: { input: UserInput; targetAgentRunId?: string };   // 继续并附加说明；缺省目标为本 Turn 的 main
+}
+interface SteerRunRequest {
+  requestId: string; sessionId: string; workflowRunId: string;
+  input: UserInput;                  // kind = 'steer'
+  targetAgentRunId?: string;         // 缺省为本 Turn 的 main；给出时必须是本运行的 AgentRun（否则 INVALID_INPUT）
+}
+
   requestId: string;
   sessionId: string;
   workflowRunId: string;
   humanRequestId: string;
-  input: UserInput;                  // kind = 'prompt'；阶段 5 增加结构化答复
+  input: UserInput;                  // kind = 'prompt'（开放输入）；阶段 5：局部询问的答复，kind 为 'ask' | 'confirm' | 'review'，正文是答复文本，结构化字段按 UserInput 的 `fields` 给出
   template?: DefinitionRef;          // 以 /run 发起本 Turn 时给出（阶段 7）
 }
 
@@ -233,7 +248,12 @@ interface AuthorizationResolved {
 interface HumanRequest {
   type: 'HumanRequest';
   humanRequestId: string;
-  kind: 'prompt';                    // 阶段 5 增加其余种类与 source
+  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 阶段 5：后三种是局部询问，不要求静止，不结束 Turn
+  attachedAgentRunId?: string;       // 局部询问：发起 ask_user 的 AgentRun；界面据此标明来自哪个 Agent 与任务名
+  question?: string;                 // 局部询问：问题文本（≤1000）
+  fields?: HumanField[];             // 局部询问：至多 8 个，type 为 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'
+  reviewRef?: ArtifactRef;           // kind = review：要审阅的产物，界面经 readArtifact 展示
+  error?: string;                    // Workflow 校验答复失败后重新请求时给出：哪个字段、为什么
 }
 
 interface HumanResolved {
@@ -252,7 +272,7 @@ interface MessagePublished {         // message-publish 完成时发出
 
 interface RunStateChanged {
   type: 'RunStateChanged';
-  state: 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING';   // 阶段 5 增加 PAUSING、PAUSED、INTERRUPTING
+  state: 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'PAUSING' | 'PAUSED' | 'INTERRUPTING';   // 阶段 5 增加后三种
   turnId?: string;                   // 有开启中的 Turn 时给出
 }
 
@@ -271,7 +291,7 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
 type ActivityPhase =
   | 'ASSEMBLING' | 'THINKING' | 'RETRYING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
   | 'QUEUED' | 'WRAPPING_UP' | 'ENDED';
-  // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER、PAUSED；阶段 8：COMPACTING
+  // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER（等待 ask_user 的答复）、PAUSED；阶段 8：COMPACTING
 
 interface RunFinished extends RunEnd {   // RunEnd 见 WorkflowKernel 第 3.1 节
   type: 'RunFinished';

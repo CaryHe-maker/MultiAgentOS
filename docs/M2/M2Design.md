@@ -282,7 +282,7 @@ Architecture 已据此修改（Module/Kernel 3.2、3.3，Evolution 第 2、4 节
 | 循环边（`loop`） | 从一个节点回到它的某个祖先，带 `maxIterations`；见第 3.2 节的展开规则 |
 | 派发边（`DELEGATE`） | 从一个正在运行的 AGENT 节点（调用方）指向它派发的节点：调用方运行期间这条边被选中，被派发的节点才有可能就绪。它让被派发的节点在图上有来历；调用方在这次调用回来之前处于 `WAITING`（见下面的节点状态） |
 | 唤醒边（`RESUME`） | 从被派发的节点回到调用方，与 `DELEGATE` 成对出现，带同一个调用号。它不决定谁第一次就绪，只表示"这次调用回来了"：同一调用的全部唤醒边的前驱都结束，调用方就被唤醒（见第 3.3 节）。它是一种回边，和循环边一样不参与就绪判定与无环检查，也不是正向路径。阶段 4 只有 `run_subagents` 一种派发，派发了就必须等；后期 Orchestration 可能增加不需要等待的派发，阶段 4 没有考虑，到时再扩展 |
-| `attachedTo`（附属） | HUMAN 节点附属于一个 AGENT 节点：由该 AgentRun 发起的 `ask_user`，或投递给该 AgentRun 的 `steer`。附属关系不参与就绪判定，只决定答复交给谁。阶段 5 的 `ask_user` 与 `run_subagents` 形状相同（派发、等待、被唤醒），将用 `DELEGATE` 与 `RESUME` 表达 |
+| `attachedTo`（附属） | HUMAN 节点附属于一个 AGENT 节点：只用于投递给该 AgentRun 的 `steer`。附属关系不参与就绪判定，不改变目标的状态（目标不会因此 `WAITING`），只决定说明交给谁。`ask_user` 不用附属：调用方等待答复，所以它派发 HUMAN 节点并等待，用 `DELEGATE` 与 `RESUME` 表达，与 `run_subagents` 同一条路径（Cary 2026-11-06 决定） |
 
 `Edge` 的 `kind` 为 `DEPENDS`、`CONDITIONAL`、`LOOP`、`DELEGATE` 或 `RESUME`。`DELEGATE` 与 `RESUME` 带调用号（发起调用的那次模型输出里的 `toolCallId`）和委派号（Kernel 为这次调用借出额度时给的编号）；额度与写入占用属于 Kernel，图只表达谁等谁。
 
@@ -399,11 +399,11 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 | `reply` | main | 以文字结果完成本节点，结束该 AgentRun。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
 | `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方的节点在这次调用回来之前处于 `WAITING`（第 3.1 节），所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
 | `finish_subagent` | explorer、worker | 以结构化结果结束本 AgentRun（第 3.7 节） |
-| `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上追加一个附属于调用方的 `HUMAN(ask / confirm / review)` 节点：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |
+| `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上派发一个 `HUMAN(ask / confirm / review)` 节点（调用方到它一条 `DELEGATE` 边，它回到调用方一条 `RESUME` 边，调用方在答复回来之前处于 `WAITING`）：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |
 | `update_todos` | main、worker | 以完整列表替换该 AgentRun 的待办（见下文）；不改变任务图，不结束 AgentRun |
 | `finish`、`handoff-to-code-viewer` | M1 的 planner、code-viewer | 只在 `analyze` 模板中使用，语义见第 3.8 节 |
 
-`ask_user` 与 `run_subagents`、`handoff` 一样，是 Agent 主动改变任务图的控制工具：
+`ask_user` 与 `run_subagents` 走同一条路径：AgentRun 层面是一次结果稍后才到的工具调用（`Pending` 的 `DELEGATED`），任务图上是 `DELEGATE` 与 `RESUME`。与 `run_subagents` 不同的是被派发的节点是 HUMAN 节点，没有 Kernel 的委派保留，所以边上的调用号之外没有委派号（`delegationId` 可缺省）。
 它只阻塞调用它的 AgentRun，其他 AgentRun 照常推进。参数为种类、问题文本、可选的结构化字段（字段类型只有文本、多行文本、单选、多选、确认五种，
 其他类型降级为文本）与 `review` 时要展示的 ArtifactRef。
 
@@ -587,7 +587,7 @@ main 的派生准则写进它的 Prompt，要点如下：
 |---|---|---|---|---|
 | `prompt` | 用户主动输入：Turn-chat 的第一条提示词与之后的每条消息、`mas run` 的目标、`/run` 的目标 | 两种来源（`origin`）：<br>- `initial`：只用于 Session 的第一条消息（新建或 Fork）与 `mas run` 的目标，节点创建时已带有内容；<br>- `requested`：此后运行中的 `prompt` 一律是请求式，main 结束（不论成败）后 Workflow 先创建节点并发出请求，系统进入 AWAITING_INPUT，用户输入后完成 | 下游的 main AgentRun 或模板实例依赖它 | 收到用户输入；Kernel 随即开启新的 Turn（第 2.3 节） |
 | `steer` | 用户在运行中插入的说明，或暂停后附加的说明 | 运行中 `/steer <说明>`（或 Alt+Enter 发送），或暂停后 `/continue <说明>` 时创建，创建时已带有内容 | 附属于目标 AgentRun | 创建即完成；内容出现在目标下一次组装的上下文末尾 |
-| `ask`、`confirm`、`review` | 模板预设，或 Agent 调用 `ask_user` | 模板节点在就绪时请求；`ask_user` 在调用时请求 | 模板节点：后继依赖它；`ask_user`：附属于调用方 | 收到符合 `answerSchema` 的答复（不超时） |
+| `ask`、`confirm`、`review` | 模板预设，或 Agent 调用 `ask_user` | 模板节点在就绪时请求；`ask_user` 在调用时请求 | 模板节点：后继依赖它；`ask_user`：被调用方派发（`DELEGATE`），答复回来时唤醒调用方（`RESUME`） | 收到符合 `answerSchema` 的答复（不超时）；运行被中止时记为 INTERRUPTED，调用以不交付答复的方式关闭 |
 
 | 字段 | 内容 |
 |---|---|
@@ -1889,3 +1889,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.25 | 2026-11-05 | 第 3.6 节：增加 `INPUT_NOT_READABLE`（`inputs` 只能是调用方自己读得到的产物）；第 3.7 节：`blocked` 的任务节点记为失败；汇合结果以日志记录 `SUBAGENTS_JOINED` 与历史条目 `SUBAGENT_RESULT` 表达（引用 SubAgent 结束那次模型输出，正文不进日志）；`TASK` 条目承载 SubAgent 的目标与验收标准；第 7.1 节：命令改动检测用 `lstat` 指纹，暂不报告被排除目录的变化数量；`budget` 只保留 `tokens`（Cary 决定）：`toolUnits` 与 `wallClockMs` 从参数中删除，一个任务的工具次数与墙钟上限只由所用 Agent 的定义决定；汇合时每个子任务的结果最多 8000 字符（见第 3.7 节） |
 | v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）；第 3.5 节：只调用 `update_todos` 的一轮不判进展，连续第二个才计入，参数不合要求的那一轮始终不判进展；`status` 的取值 `done` 改为 `completed`（模型的惯用词），`in_progress` 不再限制至多一项，进度计数与活动事件中的 `done` 随之改为 `completed`（Cary 2026-11-06 决定） |
 | v1.27 | 2026-11-06 | 第 3.1、3.3、3.6 节：`run_subagents` 的派发、等待与汇合放进任务图（Cary 2026-11-06 决定）。边增加 `DELEGATE`（派发，调用方运行期间被选中）与 `RESUME`（唤醒，不参与就绪与无环检查的回边）；节点增加 `WAITING` 状态，只在节点层面，凡派发了而尚未被唤醒的节点都默认是 `WAITING`，由边与日志推出、不单独记录，期间不得提交新的 Unit；AgentRun 层面不增加 waiting，`run_subagents` 只是结果稍后到的工具调用；增加 `wakeableNodes`（一次调用的全部唤醒边的前驱都结束，`all_done`）；日志记录 `NODE_RESUMED` 取代 `SUBAGENTS_JOINED`，汇合结果与已派生的任务数、调用次数由图推出；说明后期 Orchestration 可能增加不需要等待的派发，阶段 4 未考虑；阶段 5 的 `ask_user` 将复用同一对边 |
+| v1.28 | 2026-11-06 | 阶段 5 文档门：第 3.1 节与第 4.2 节：`ask_user` 的 HUMAN 节点用 `DELEGATE` 与 `RESUME`（调用方 `WAITING`），`attachedTo` 只留给 `steer`，边上的 `delegationId` 对 `ask_user` 缺省（Cary 2026-11-06 决定）；阶段 5 的各模块章节见 Kernel/Core 第 5e 节、Kernel/Execution 第 4e 节、Module/Workflow 第 7b 节、Module/UserInteraction 第 5.4 节与相应的 Interface |
