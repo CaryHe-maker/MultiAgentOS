@@ -157,6 +157,8 @@ describe('H4: ask_user', () => {
       await chat.console.submit('work on the files');
       await until(() => chat.lives.at(-1)?.pending?.kind === 'QUESTION', 'the question');
       expect(chat.lives.at(-1)?.pending?.text).toContain('which file first?');
+      // The model is offered the tool, which is what makes it possible to ask.
+      expect(provider.requests[0]?.tools?.map((each) => each.function.name)).toContain('ask_user');
       // The agent waits: no further call of the model, and the run is not over.
       expect(provider.requests).toHaveLength(1);
       expect(chat.printed('REPLY')).toEqual([]);

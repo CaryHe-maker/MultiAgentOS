@@ -210,15 +210,28 @@ describe('the tools of each Agent', () => {
           return names.includes('finish_subagent') && !names.includes('write_file');
         });
       expect(toolNames(request('main'))).toEqual(
-        expect.arrayContaining(['run_subagents', 'reply']),
+        expect.arrayContaining(['run_subagents', 'reply', 'ask_user']),
       );
       const explorer = toolNames(request('explorer'));
       expect(explorer).toEqual(expect.arrayContaining(['read_file', 'finish_subagent']));
-      for (const forbidden of ['write_file', 'edit_file', 'run_command', 'run_subagents', 'reply'])
+      for (const forbidden of [
+        'write_file',
+        'edit_file',
+        'run_command',
+        'run_subagents',
+        'reply',
+        'ask_user',
+      ])
         expect(explorer).not.toContain(forbidden);
       const worker = toolNames(request('worker'));
       expect(worker).toEqual(
-        expect.arrayContaining(['write_file', 'edit_file', 'finish_subagent', 'update_todos']),
+        expect.arrayContaining([
+          'write_file',
+          'edit_file',
+          'finish_subagent',
+          'update_todos',
+          'ask_user',
+        ]),
       );
       for (const forbidden of ['run_subagents', 'reply']) expect(worker).not.toContain(forbidden);
     },

@@ -306,3 +306,4 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 - 被中断的 Unit 的回答：暂停时 READ、模型调用与上下文组装重新提交，命令与写入由模型读到"被暂停打断"；投影不为 `UNIT_INTERRUPTED(PAUSED | ABORTED)` 另写一条工具结果，已有答复的调用不再重复回答。
 - 测试：`run-control.test.ts`、`run-execution.test.ts`、`run-work.test.ts`（Core 第 5e 节）、`agent-cycle.test.ts`、`pause-steer-ask.test.ts`（Workflow 与假 Kernel）、`console.test.ts`、`stage5-exit.test.ts`（真实产品、脚本化的模型）。
 - 未做：H13（询问等待超过 Turn 超时后才回答）只有 Kernel 层测试（计时冻结）；A 组"ask_user 的同意不产生授权"只有 Kernel 层测试（`answerHuman` 不改变授权记录）；没有真实模型的检查。
+- 真实模型检查（2026-11-06）：见 [Evaluation/Stage5HumanInTheLoop](Evaluation/Stage5HumanInTheLoop.md)，五个场景各 3 次共 15/15 通过；发现并修正了"Kernel 的工具表没有提供 `ask_user`"。
