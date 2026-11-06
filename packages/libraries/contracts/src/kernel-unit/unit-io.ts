@@ -27,6 +27,12 @@ import {
   RepositoryListInputSchema,
   RepositoryListOutputSchema,
 } from '../executor/repository-list.js';
+import {
+  WebFetchInputSchema,
+  WebFetchOutputSchema,
+  WebSearchInputSchema,
+  WebSearchOutputSchema,
+} from '../executor/web.js';
 import { MessagePublishInputSchema, MessagePublishOutputSchema } from './message-publish.js';
 import { ReportPublishInputSchema, ReportPublishOutputSchema } from './report-publish.js';
 
@@ -45,6 +51,8 @@ export const UnitInputSchema = Type.Union(
     OutputReadInputSchema,
     CommandInputSchema,
     GitInspectInputSchema,
+    WebSearchInputSchema,
+    WebFetchInputSchema,
   ],
   { $id: 'kernel.unit.UnitInput.v1' },
 );
@@ -64,6 +72,8 @@ export const UnitOutputSchema = Type.Union(
     OutputReadOutputSchema,
     CommandOutputSchema,
     GitInspectOutputSchema,
+    WebSearchOutputSchema,
+    WebFetchOutputSchema,
   ],
   { $id: 'kernel.unit.UnitOutput.v1' },
 );

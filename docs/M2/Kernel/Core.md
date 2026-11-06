@@ -260,20 +260,20 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 | 能力 | 级别 | 资源键 | 询问 |
 |---|---|---|---|
 | `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次，`ALLOW` 与 `DENY`；询问写明查询会发给哪个提供方 |
-| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目只覆盖这个主机 | 每个新主机第一次访问时询问一次，`ALLOW` 与 `DENY`；询问写明主机名与第一个地址 |
+| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目只覆盖这个主机 | 每个新主机第一次访问时询问一次，`ALLOW` 与 `DENY`；询问写明主机名与完整地址 |
 
 **第 ① 步**（在能力上限检查之后、查找条目之前）：
-- `web.fetch` 的地址里有字面量的 IP 或 `localhost`、`*.localhost`、`*.local`、`*.internal`、单标签名，落在 ExecutorSet 第 5d 节的禁止范围内：`REJECTED(ADDRESS_FORBIDDEN)`，**不询问**；协议不是 `http(s)` 或带用户信息的同样拒绝；
+- `web.fetch` 的地址里有字面量的 IP 或 `localhost`、`*.localhost`、`*.local`、`*.internal`、单标签名，落在 ExecutorSet 第 5d 节的禁止范围内：`REJECTED(ADDRESS_FORBIDDEN)`，**不询问**；协议不是 `http(s)`、带用户信息或无法解析的同样拒绝（判断用 contracts 里与 Executor 相同的 `checkUrlLiteral`）；
 - 主机名命中 `kernel.web.deniedDomains`（按后缀匹配，如 `example.com` 也覆盖 `a.example.com`）：`REJECTED(DOMAIN_DENIED)`，不询问。
 
 要点：
-- 询问的合并与拒绝的绑定与其他能力相同（第 5a.4 节）：并行的 explorer 访问同一个新主机时合并为一个询问；用户拒绝后，该 AgentRun 对同一主机不再询问；`ask_user` 里的同意不产生授权（第 5.5 节）。
+- 询问的合并与拒绝的绑定与其他能力相同（第 5a.4 节）：并行的 explorer 访问同一个新主机时合并为一个询问；用户拒绝后，Core 的拒绝条目绑定这个 AgentRun 与这个主机（条目的 `hostKey`），同一主机不再询问，其他主机照常询问；`ask_user` 里的同意不产生授权（第 5.5 节）。Workflow 另外按工具名记住被拒绝的工具（所有工具相同，Workflow 第 7 节），所以同一个 AgentRun 之后的 `web_fetch`（含其他主机）不经 Core，直接得到"用户拒绝了这个工具"的结果；下一个 AgentRun 可以重新询问。
 - 并行访问不同主机时询问可能偏多，评估"本运行内全部域名均允许"选项留在限制清单（M2Design 第 14 节第 5 项），阶段 6 不做。
-- 能力上限：main 与 explorer 的定义声明两项能力；worker 不声明（它改文件、跑命令，不联网）。一个 AgentRun 的上限里没有它们时是 `CAPABILITY_NOT_GRANTED`。
+- 能力上限：main 与 explorer 的定义声明两项能力；worker 不声明（它改文件、跑命令，不联网）。一个 AgentRun 的上限里没有它们时是 `CAPABILITY_NOT_GRANTED`。两项能力把数据发出本机，不属于安全能力：`readonly` 预设下它们被去掉（`capabilitiesUnderPreset`）。资源键里的主机只按原样比较（`a.example` 的授权不覆盖 `b.a.example`），不像写入根那样按路径包含。
 - 配置 `KernelConfig.web`：`deniedDomains: string[]`（缺省空）、`maxContentBytes`（缺省 2097152）、`search: { provider: 'deepseek', baseUrl }`、`fetch: { provider: 'deepseek', fallback: boolean, baseUrl }`（`fallback` 缺省 `true`）。密钥取自与模型相同的凭据，不在配置里。
-- 审计：授权的询问与回答、拒绝都写审计（已有机制）；Executor 的 `WEB_SEARCH`、`WEB_FETCH` 行见 ExecutorSet 第 5d 节。
+- 审计：授权的询问与回答、拒绝都写审计（已有机制）；`WEB_SEARCH`、`WEB_FETCH` 行由 Execution 写（`kernel-core/audit.jsonl`，内容见 ExecutorSet 第 5d 节）。询问事件 `AuthorizationRequest` 带 `capability: 'web.search'`（`queries`、`provider`）或 `'web.fetch'`（`url`、`host`），回答是 `ALLOW` 或 `DENY`。
 - 界面：询问的文字、活动区的 `web_search`、`web_fetch` 行与折叠行（UserInteraction 第 6 节增补）。
-- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、合并与拒绝绑定）、`run-work.test.ts`（询问流程）、`stage6-exit`（A 组网页部分）。
+- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、拒绝绑定主机、readonly）、`run-work.test.ts`（询问流程、范围为 `NONE`）、`stage6-exit`（W1–W3、A 组网页部分）。
 
 ## 6. Turn 与人类请求
 

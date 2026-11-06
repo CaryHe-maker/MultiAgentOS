@@ -11,6 +11,7 @@ import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
 import { CommandExecutorInputSchema, GitInspectInputSchema } from '../executor/command.js';
 import { FileEditInputSchema, FileWriteInputSchema } from '../executor/file-write.js';
+import { WebFetchInputSchema, WebSearchInputSchema } from '../executor/web.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
@@ -230,6 +231,9 @@ export const ExecutionRequestSchema = Type.Union(
     request('OUTPUT_READ', OutputReadExecutorInputSchema, NoScopeSchema, PlainLimitsSchema),
     request('COMMAND', CommandExecutorInputSchema, SandboxScopeSchema, PlainLimitsSchema),
     request('GIT_INSPECT', GitInspectInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
+    // The provider and its key belong to the Executor, so a web call has no scope of its own.
+    request('WEB_SEARCH', WebSearchInputSchema, NoScopeSchema, PlainLimitsSchema),
+    request('WEB_FETCH', WebFetchInputSchema, NoScopeSchema, PlainLimitsSchema),
   ],
   { $id: 'kernel.execution.ExecutionRequest.v1' },
 );

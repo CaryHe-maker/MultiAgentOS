@@ -83,6 +83,8 @@ export interface CommandQuestion {
 
 interface Question {
   readonly command?: CommandQuestion;
+  /** The host of a `web.fetch` question: a refusal binds that host. */
+  readonly host?: string;
   readonly questionId: string;
   readonly capability: AuthorizationRequest['capability'];
   /** Asked again by this key is the same question; a critical one has none (Kernel/Core 5a.2). */
@@ -144,7 +146,9 @@ export class RunAuthorization {
   }
 
   #open(
-    fields: Pick<Question, 'capability' | 'critical' | 'command'> & { readonly key?: string },
+    fields: Pick<Question, 'capability' | 'critical' | 'command' | 'host'> & {
+      readonly key?: string;
+    },
     waiter: string,
     agentRunId: string | undefined,
   ): string {
@@ -227,6 +231,55 @@ export class RunAuthorization {
         capability: 'workspace.write',
         writeRoot: question.writeRoot,
         critical: false,
+      },
+    };
+  }
+
+  /** `web.search`: once for the run, whoever asks (Kernel/Core 5f). */
+  askWebSearch(
+    queries: readonly string[],
+    provider: string,
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const key = resourceKey('web.search', REPOSITORY_ROOT_PATH);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'web.search', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'web.search',
+        queries: [...queries],
+        provider,
+      },
+    };
+  }
+
+  /** `web.fetch`: once for each host; AgentRuns that reach for the same new host share the question. */
+  askWebFetch(url: string, host: string, waiter: string, agentRunId: string): AccessCheck {
+    const key = resourceKey('web.fetch', host);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'web.fetch', critical: false, key, host },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'web.fetch',
+        url,
+        host,
       },
     };
   }
@@ -389,6 +442,7 @@ export class RunAuthorization {
           capability,
           agentRunId,
           ...(commandKey === undefined ? {} : { commandKey }),
+          ...(question.host === undefined ? {} : { hostKey: question.host }),
         })),
       ];
       return;

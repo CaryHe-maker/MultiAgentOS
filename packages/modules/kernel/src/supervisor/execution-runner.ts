@@ -385,6 +385,10 @@ function runExecutor(
       return registry.COMMAND.execute(request.input, environment);
     case 'GIT_INSPECT':
       return registry.GIT_INSPECT.execute(request.input, environment);
+    case 'WEB_SEARCH':
+      return registry.WEB_SEARCH.execute(request.input, environment);
+    case 'WEB_FETCH':
+      return registry.WEB_FETCH.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':
       return registry.CONTEXT_ASSEMBLE.execute(request.input, environment);
     case 'MODEL':

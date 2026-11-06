@@ -330,3 +330,5 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 - **退出**：W、A 组网页部分通过；S6-T-1 的实测结果与 Cary 的提供方决定已写入 M2TechStack 第 3.3 节与本文件。
 
 **提供方决定（2026-11-07）**：Cary 决定搜索用 DeepSeek、抓取先用 DeepSeek 再回退本地抓取（依据 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)）。文档门（待 Cary 确认）：M2Design v1.29（第 8.1、8.3 节）、[Library/ExecutorSet](Library/ExecutorSet.md) 第 5d 节、[Kernel/Core](Kernel/Core.md) 第 5f 节、[M2Security](M2Security.md) 第 3c 节。未决（不阻塞实现）：DeepSeek 计费需要有余额的账户补测；搜索词与抓取地址的留存没有证据，按最坏情况写进安全文档。
+
+**阶段 6 实现状态（2026-11-07）**：S6-CT-1 至 S6-IN-1 全部完成，文档门已由 Cary 确认。契约（两个执行种类、`executor.WebSearch*`/`WebFetch*`、`web.search`/`web.fetch` 能力、`KernelConfig.web`、新错误码、两种询问事件）；`web/`（地址检查的纯函数放在 contracts，两个提供方端口与 DeepSeek 适配器、带固定地址连接与逐跳重定向检查的本地抓取、回退、HTML 转 Markdown、密钥扫描）；Core（第 5f 节：资源键、第 ① 步的两种拒绝、按主机绑定的拒绝、审计）；定义（`web-search`、`web-fetch` 的工具与 Unit，main 与 explorer 带上，worker 不带）；界面询问文字；`stage6-exit`（W1–W3、A 组网页部分共 12 项）；真实模型检查 3/3（[Evaluation/Stage6Web](Evaluation/Stage6Web.md)）。实现时对文档做的调整已回写：请求范围是 `NONE`；跨主机重定向是成功结果里的说明而不是错误；审计由 Execution 写；询问只写主机与地址；`readonly` 预设不带这两项能力；拒绝在 Workflow 按工具名记住，同一 AgentRun 之后的 `web_fetch` 不再询问任何主机。

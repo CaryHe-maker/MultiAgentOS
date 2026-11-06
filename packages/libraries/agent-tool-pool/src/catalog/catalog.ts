@@ -138,6 +138,8 @@ const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string
   OUTPUT_READ: ['executor.OutputReadInput.v1', 'executor.OutputReadOutput.v1'],
   COMMAND: ['executor.CommandInput.v1', 'executor.CommandOutput.v1'],
   GIT_INSPECT: ['executor.GitInspectInput.v1', 'executor.GitInspectOutput.v1'],
+  WEB_SEARCH: ['executor.WebSearchInput.v1', 'executor.WebSearchOutput.v1'],
+  WEB_FETCH: ['executor.WebFetchInput.v1', 'executor.WebFetchOutput.v1'],
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],

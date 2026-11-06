@@ -1,0 +1,34 @@
+schemaVersion: v1
+kind: UNIT
+id: web-search
+version: v0.1.0
+description: Search the web through the provider and list the pages found.
+executionKind: WEB_SEARCH
+protectedCapabilities:
+  - web.search
+inputContract:
+  kind: contract
+  id: executor.WebSearchInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.WebSearchOutput
+  version: v1
+toolRefs:
+  - id: web-search
+    version: v0.1.0
+effect: EXTERNAL
+isIdempotent: true
+failurePolicy:
+  INVALID_QUERY: RETURN_TO_MODEL
+  ADDRESS_FORBIDDEN: RETURN_TO_MODEL
+  DOMAIN_DENIED: RETURN_TO_MODEL
+  SECRET_IN_REQUEST: RETURN_TO_MODEL
+  UNSUPPORTED_CONTENT: RETURN_TO_MODEL
+  PAGE_UNAVAILABLE: RETURN_TO_MODEL
+  PROVIDER_UNREACHABLE: RETURN_TO_MODEL
+  PROVIDER_RATE_LIMITED: RETURN_TO_MODEL
+  PROVIDER_AUTH: RETURN_TO_MODEL
+  PROVIDER_ERROR: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

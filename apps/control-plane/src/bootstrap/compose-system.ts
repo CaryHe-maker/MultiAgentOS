@@ -330,7 +330,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     // The root keeps the runner so that it can end the child processes without the Supervisor.
     const supervisor = createSupervisor({
       fabric: fabric.client('supervisor'),
-      executors: options.executors ?? createExecutorRegistry(),
+      executors:
+        options.executors ?? createExecutorRegistry({ web: { config: config.kernel.web } }),
       credentials: options.credentials,
       moduleHost,
       config: config.kernel,

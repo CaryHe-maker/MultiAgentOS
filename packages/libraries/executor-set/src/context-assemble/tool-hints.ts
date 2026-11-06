@@ -47,13 +47,22 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   ENV_ASSERTION_FAILED: 'the command environment held a secret, so it did not run',
   SANDBOX_UNAVAILABLE: 'commands cannot run here because the sandbox is unavailable; tell the user',
   NOT_A_GIT_REPOSITORY: 'this directory is not a git repository',
+  ADDRESS_FORBIDDEN:
+    'this address leads into this machine or a private network; web_fetch reaches only the public internet',
+  DOMAIN_DENIED: 'the user has forbidden this site; do not try it again, use another source',
+  SECRET_IN_REQUEST:
+    'the query or address contains something that looks like a credential, so it was not sent; leave it out',
+  UNSUPPORTED_CONTENT:
+    'the page is not text (an image, a PDF or another binary file); web_fetch reads only HTML, plain text, Markdown and JSON',
 };
 
 export const FAILED_HINTS: Record<UnitFailedCode, string> = {
-  PROVIDER_UNREACHABLE: 'the model provider could not be reached',
-  PROVIDER_RATE_LIMITED: 'the model provider is rate limiting',
-  PROVIDER_AUTH: 'the model provider refused the credentials',
-  PROVIDER_ERROR: 'the model provider returned an error',
+  PROVIDER_UNREACHABLE: 'the provider could not be reached',
+  PROVIDER_RATE_LIMITED: 'the provider is rate limiting',
+  PROVIDER_AUTH: 'the provider refused the credentials or the account has no balance',
+  PROVIDER_ERROR: 'the provider returned an error',
+  PAGE_UNAVAILABLE:
+    'the page cannot be fetched (not found, needs a login, or its site refused); try another source',
   PROVIDER_TOOL_CHOICE_IGNORED: 'the model did not call the required tool',
   INTERNAL: 'the tool failed internally; try a different request',
   UNIT_TIMEOUT: 'the tool took too long; try a narrower request',

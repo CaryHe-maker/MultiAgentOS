@@ -1034,6 +1034,10 @@ export class Console {
         terminalText((await this.#read(event.contentRef)) ?? ''),
       );
     if (event.capability === 'command.exec') return text.command(event);
+    if (event.capability === 'web.search')
+      return text.webSearch(event.queries.map(terminalText), terminalText(event.provider));
+    if (event.capability === 'web.fetch')
+      return text.webFetch(terminalText(event.host), terminalText(event.url));
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),

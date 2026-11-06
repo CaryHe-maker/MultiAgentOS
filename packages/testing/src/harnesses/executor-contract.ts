@@ -95,6 +95,11 @@ function factOf(kind: ExecutorKind, outcome: ExecutorOutcome): object {
 function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome): void {
   if (outcome.outcome !== 'COMPLETED') return;
   const { output, artifact } = outcome.result;
+  if (kind === 'WEB_SEARCH' || kind === 'WEB_FETCH') {
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.markdown);
+    expect(artifact.text.length).toBeGreaterThan(0);
+    return;
+  }
   if (kind === 'FILE_READ') {
     expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
     expect(artifact.text).toContain((output as FileReadOutput).path);

@@ -1,6 +1,7 @@
 import type { RepositoryListInput } from './executor/repository-list.js';
 import type { FileEditInput, FileWriteInput } from './executor/file-write.js';
 import type { CommandExecutorInput, GitInspectInput } from './executor/command.js';
+import type { WebFetchInput, WebSearchInput } from './executor/web.js';
 import type { SandboxBackend, SandboxScope } from './platform-common/sandbox.js';
 import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
@@ -117,6 +118,8 @@ export interface ExecutorInputByKind {
   readonly OUTPUT_READ: OutputReadExecutorInput;
   readonly COMMAND: CommandExecutorInput;
   readonly GIT_INSPECT: GitInspectInput;
+  readonly WEB_SEARCH: WebSearchInput;
+  readonly WEB_FETCH: WebFetchInput;
 }
 
 /**

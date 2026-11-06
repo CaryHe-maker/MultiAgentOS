@@ -61,6 +61,20 @@ export const KernelConfigSchema = closed(
        */
       readOnlyCommands: Type.Array(text(100)),
     }),
+    /** The web tools (Kernel/Core 5f, ExecutorSet 5d); the key is the model provider's, not here. */
+    web: closed({
+      /** Hosts that are refused without asking; `example.com` also covers `a.example.com`. */
+      deniedDomains: Type.Array(text(253)),
+      /** A fetched page is cut here. */
+      maxContentBytes: count(1),
+      search: closed({ provider: Type.Literal('deepseek'), baseUrl: text(200) }),
+      fetch: closed({
+        provider: Type.Literal('deepseek'),
+        baseUrl: text(200),
+        /** Fetch again on this program's own when the provider fails (not on 400 or 403). */
+        fallback: Type.Boolean(),
+      }),
+    }),
     killGraceMs: ms(),
     maxConcurrentExec: count(1),
     /** UnitAttempts executing at the same time, over all AgentRuns (M2Design 7.1). */
@@ -91,6 +105,8 @@ export const KernelConfigSchema = closed(
       OUTPUT_READ: ToolLimitSchema,
       COMMAND: ToolLimitSchema,
       GIT_INSPECT: ToolLimitSchema,
+      WEB_SEARCH: ToolLimitSchema,
+      WEB_FETCH: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),

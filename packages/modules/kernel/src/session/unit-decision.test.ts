@@ -258,3 +258,196 @@ describe('properties', () => {
     );
   });
 });
+
+describe('the web capabilities (Kernel/Core 5f)', () => {
+  const web: CapabilityCeiling = {
+    capabilities: new Set<Capability>(['web.search', 'web.fetch']),
+    writeRoots: [],
+    exclusions: [],
+  };
+  const search = (): UnitDemand => ({
+    requestId: 'req-1',
+    agentRunId: 'run-1',
+    capability: 'web.search',
+  });
+  const fetchOf = (
+    url: string,
+    deniedDomains: string[] = [],
+    agentRunId = 'run-1',
+  ): UnitDemand => ({
+    requestId: 'req-1',
+    agentRunId,
+    capability: 'web.fetch',
+    web: { url, deniedDomains },
+  });
+  const allowHost = (host: string): AuthorizationEntry => ({
+    scope: 'RUN',
+    effect: 'ALLOW',
+    capability: 'web.fetch',
+    resourceKey: host,
+  });
+
+  it('asks a search once for the whole capability, and then lets it through', () => {
+    expect(decideUnit(search(), web, [])).toEqual({
+      kind: 'ASK',
+      capability: 'web.search',
+      resourceKey: '.',
+      critical: false,
+    });
+    const granted: AuthorizationEntry = {
+      scope: 'RUN',
+      effect: 'ALLOW',
+      capability: 'web.search',
+      resourceKey: '.',
+    };
+    expect(decideUnit(search(), web, [granted])).toMatchObject({ kind: 'ALLOW' });
+  });
+
+  it('asks a fetch per host, in lower case', () => {
+    expect(decideUnit(fetchOf('https://Docs.Example.com/a'), web, [])).toMatchObject({
+      kind: 'ASK',
+      capability: 'web.fetch',
+      resourceKey: 'docs.example.com',
+    });
+  });
+
+  it('lets a fetch through for the host that was allowed, and for no other', () => {
+    const entries = [allowHost('docs.example.com')];
+    expect(decideUnit(fetchOf('https://docs.example.com/b?q=1'), web, entries)).toMatchObject({
+      kind: 'ALLOW',
+    });
+    for (const other of [
+      'https://example.com/',
+      'https://a.docs.example.com/',
+      'https://docs.example.com.evil.test/',
+    ])
+      expect(decideUnit(fetchOf(other), web, entries)).toMatchObject({ kind: 'ASK' });
+  });
+
+  it('does not take a search grant for a fetch, nor the other way round', () => {
+    const grant = (capability: 'web.search' | 'web.fetch'): AuthorizationEntry => ({
+      scope: 'RUN',
+      effect: 'ALLOW',
+      capability,
+      resourceKey: '.',
+    });
+    expect(decideUnit(fetchOf('https://example.com/'), web, [grant('web.search')])).toMatchObject({
+      kind: 'ASK',
+    });
+    expect(decideUnit(search(), web, [grant('web.fetch')])).toMatchObject({ kind: 'ASK' });
+  });
+
+  it.each([
+    'http://127.0.0.1/',
+    'http://localhost:8080/',
+    'http://169.254.169.254/latest/meta-data',
+    'http://10.0.0.1/',
+    'http://[::1]/',
+    'http://intranet/',
+    'http://printer.local/',
+    'http://user:pw@example.com/',
+    'ftp://example.com/',
+    'file:///etc/passwd',
+    'not a url',
+  ])('① refuses %s without asking, even where the host was allowed', (url) => {
+    const host = 'localhost';
+    expect(decideUnit(fetchOf(url), web, [allowHost(host), allowHost('127.0.0.1')])).toEqual({
+      kind: 'REFUSE',
+      reasonCode: 'ADDRESS_FORBIDDEN',
+    });
+  });
+
+  it('① refuses a denied domain and everything under it, without asking', () => {
+    const denied = ['Example.com'];
+    for (const url of ['https://example.com/', 'https://a.b.example.com/x'])
+      expect(decideUnit(fetchOf(url, denied), web, [])).toEqual({
+        kind: 'REFUSE',
+        reasonCode: 'DOMAIN_DENIED',
+      });
+    expect(decideUnit(fetchOf('https://notexample.com/', denied), web, [])).toMatchObject({
+      kind: 'ASK',
+    });
+  });
+
+  it('② refuses what the ceiling lacks, before the address is looked at', () => {
+    const none = { ...web, capabilities: new Set<Capability>(['repo.read']) };
+    expect(decideUnit(fetchOf('http://127.0.0.1/'), none, [])).toEqual({
+      kind: 'REFUSE',
+      reasonCode: 'CAPABILITY_NOT_GRANTED',
+    });
+    expect(decideUnit(search(), none, [])).toEqual({
+      kind: 'REFUSE',
+      reasonCode: 'CAPABILITY_NOT_GRANTED',
+    });
+  });
+
+  it('keeps a refusal to its host and its AgentRun', () => {
+    const refused: AuthorizationEntry = {
+      scope: 'RUN',
+      effect: 'DENY',
+      capability: 'web.fetch',
+      agentRunId: 'run-1',
+      hostKey: 'bad.example.com',
+    };
+    expect(decideUnit(fetchOf('https://bad.example.com/'), web, [refused])).toEqual({
+      kind: 'REFUSE',
+      reasonCode: 'USER_DECLINED',
+    });
+    // Another host is asked about, and so is another AgentRun for the same host.
+    expect(decideUnit(fetchOf('https://good.example.com/'), web, [refused])).toMatchObject({
+      kind: 'ASK',
+    });
+    expect(
+      decideUnit(fetchOf('https://bad.example.com/', [], 'run-2'), web, [refused]),
+    ).toMatchObject({
+      kind: 'ASK',
+    });
+  });
+
+  it('keeps a refusal of a search to the AgentRun for the whole capability', () => {
+    const refused: AuthorizationEntry = {
+      scope: 'RUN',
+      effect: 'DENY',
+      capability: 'web.search',
+      agentRunId: 'run-1',
+    };
+    expect(decideUnit(search(), web, [refused])).toEqual({
+      kind: 'REFUSE',
+      reasonCode: 'USER_DECLINED',
+    });
+    expect(decideUnit({ ...search(), agentRunId: 'run-2' }, web, [refused])).toMatchObject({
+      kind: 'ASK',
+    });
+  });
+
+  it('a refusal of a host does not bind the other hosts of the capability', () => {
+    const refused: AuthorizationEntry = {
+      scope: 'RUN',
+      effect: 'DENY',
+      capability: 'web.fetch',
+      agentRunId: 'run-1',
+      hostKey: 'bad.example.com',
+    };
+    expect(decideUnit(fetchOf('https://other.example.org/'), web, [refused])).toMatchObject({
+      kind: 'ASK',
+    });
+  });
+
+  it('is a refusal when the fetch demand carries no address', () => {
+    expect(
+      decideUnit({ requestId: 'r', agentRunId: 'a', capability: 'web.fetch' }, web, []),
+    ).toEqual({ kind: 'REFUSE', reasonCode: 'ADMISSION_CHECK_FAILED' });
+  });
+
+  it('is not offered under the readonly preset', () => {
+    expect(
+      ceilingOf({
+        agentCapabilities: ['repo.read', 'web.search', 'web.fetch'],
+        requestedCapabilities: ['web.search'],
+        writeRoots: [],
+        preset: 'readonly',
+        exclusions: [],
+      }),
+    ).toMatchObject({ ok: false });
+  });
+});

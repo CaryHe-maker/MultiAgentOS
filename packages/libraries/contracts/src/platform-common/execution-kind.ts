@@ -19,6 +19,8 @@ export const EXECUTION_KINDS = [
   'FILE_EDIT',
   'OUTPUT_READ',
   'GIT_INSPECT',
+  'WEB_SEARCH',
+  'WEB_FETCH',
 ] as const;
 export const ExecutionKindSchema = Type.Enum(EXECUTION_KINDS, {
   $id: 'platform.common.ExecutionKind.v1',
@@ -38,6 +40,8 @@ export const EXECUTOR_KINDS = [
   'OUTPUT_READ',
   'COMMAND',
   'GIT_INSPECT',
+  'WEB_SEARCH',
+  'WEB_FETCH',
 ] as const;
 export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 

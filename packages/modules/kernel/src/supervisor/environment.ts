@@ -33,7 +33,7 @@ export interface ExecutorEnvironmentDeps {
 
 /**
  * Builds the smallest environment an Executor needs:
- * only MODEL receives credentials, REPOSITORY_SEARCH and GIT_INSPECT receive the real runner of
+ * only MODEL and the web tools receive credentials, REPOSITORY_SEARCH and GIT_INSPECT receive the real runner of
  * `rg` and `git`, and only COMMAND receives the sandbox.
  */
 export function createExecutorEnvironment(
@@ -52,7 +52,13 @@ export function createExecutorEnvironment(
           ? deps.subprocess
           : DENY_SUBPROCESS,
     sandbox: request.executionKind === 'COMMAND' ? deps.sandbox : DENY_SANDBOX,
-    credentials: request.executionKind === 'MODEL' ? deps.credentials : DENY_CREDENTIALS,
+    // The model provider's key also serves the web tools, since DeepSeek's interface takes it.
+    credentials:
+      request.executionKind === 'MODEL' ||
+      request.executionKind === 'WEB_SEARCH' ||
+      request.executionKind === 'WEB_FETCH'
+        ? deps.credentials
+        : DENY_CREDENTIALS,
     now: deps.now,
   };
 }

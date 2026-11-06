@@ -19,13 +19,20 @@ import { resolveRepositoryScope } from './repository-access/repository-scope.js'
 import { createOrientExecutor } from './repository-orient/orient-executor.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
 import { createListExecutor } from './repository-list/list-executor.js';
+import {
+  createWebFetchExecutor,
+  createWebSearchExecutor,
+  type WebOptions,
+} from './web/web-executors.js';
 
 /**
  * Called by the composition root, which injects the result into the Supervisor. The registry
  * owns one digest cache, so the snapshot of a repository is hashed once per process and only
  * changed files are hashed again.
  */
-export function createExecutorRegistry(): ExecutorRegistry {
+export function createExecutorRegistry(
+  options: { readonly web?: WebOptions } = {},
+): ExecutorRegistry {
   const cache = new FileDigestCache();
   const locks = new PathLocks();
   return {
@@ -38,6 +45,8 @@ export function createExecutorRegistry(): ExecutorRegistry {
     OUTPUT_READ: createOutputReadExecutor(),
     COMMAND: createRunCommandExecutor(),
     GIT_INSPECT: createGitInspectExecutor(),
+    WEB_SEARCH: createWebSearchExecutor(options.web),
+    WEB_FETCH: createWebFetchExecutor(options.web),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
     MODEL: createModelCallExecutor(),
   };
@@ -74,3 +83,20 @@ export {
   DEFAULT_CRITICAL_COMMANDS,
   type CommandAnalysisResult,
 } from './command/command-analyzer.js';
+
+export {
+  DEFAULT_WEB_CONFIG,
+  createWebFetchExecutor,
+  createWebSearchExecutor,
+  type WebConfig,
+  type WebOptions,
+} from './web/web-executors.js';
+export {
+  PUBLIC_ONLY,
+  allowedAddresses,
+  checkUrlLiteral,
+  hostKeyOf,
+  isForbiddenAddress,
+  type AddressPolicy,
+  type Resolve,
+} from './web/address-policy.js';

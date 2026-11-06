@@ -5,6 +5,7 @@
  */
 import { realpath } from 'node:fs/promises';
 import type { ExecutorRegistry, SystemConfig, SystemFaultReporter } from '@multiagentos/contracts';
+import { createExecutorRegistry, type WebOptions } from '@multiagentos/executor-set';
 import type { MemorySample, SandboxProbe, TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
@@ -123,6 +124,8 @@ export interface ChatOptions {
   readonly preset?: 'standard' | 'readonly';
   /** Replaces Executors, for a case that needs an Executor to fail in a way a real one cannot. */
   readonly executors?: ExecutorRegistry;
+  /** What the web tools reach: a stand-in for DeepSeek's interface and for DNS (stage 6). */
+  readonly web?: WebOptions;
   readonly sandboxProbe?: SandboxProbe;
   readonly memorySample?: () => MemorySample;
   readonly reportSystemFault?: SystemFaultReporter;
@@ -177,11 +180,12 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
   globalThis.fetch = options.provider.fetch;
   let system: System;
   try {
+    const config = (options.configure ?? ((each) => each))({
+      ...defaultSystemConfig(),
+      dataDir: options.dataDir,
+    });
     system = await composeSystem({
-      config: (options.configure ?? ((config) => config))({
-        ...defaultSystemConfig(),
-        dataDir: options.dataDir,
-      }),
+      config,
       repositoryRoot: await realpath(options.repository),
       preset: options.preset ?? 'standard',
       view,
@@ -189,7 +193,16 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
       log: () => undefined,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.subprocess === undefined ? {} : { subprocess: options.subprocess }),
-      ...(options.executors === undefined ? {} : { executors: options.executors }),
+      ...(options.executors !== undefined
+        ? { executors: options.executors }
+        : options.web === undefined
+          ? {}
+          : // Built here, while `fetch` is the provider's stand-in: the model-call Executor keeps it.
+            {
+              executors: createExecutorRegistry({
+                web: { config: config.kernel.web, ...options.web },
+              }),
+            }),
       ...(options.sandboxProbe === undefined ? {} : { sandboxProbe: options.sandboxProbe }),
       ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
       ...(options.reportSystemFault === undefined

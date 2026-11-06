@@ -102,6 +102,8 @@ interface Attempt extends QueueEntry {
   built?: { readonly request: BuiltRequest; readonly executionId: string };
   /** Set when a pause or an abort asked the Supervisor to cancel it: the fact will say so. */
   cancelReason?: 'PAUSED' | 'ABORTED';
+  /** What a web tool was asked, kept for the audit line its fact completes (Core 5f). */
+  webInput?: unknown;
 }
 
 /**
@@ -366,6 +368,8 @@ export class RunExecution {
   #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
+    if (built.request.executionKind === 'WEB_SEARCH' || built.request.executionKind === 'WEB_FETCH')
+      attempt.webInput = built.request.input;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
     this.#deps.dispatch(built.request).catch(() => {
       this.#deps.enqueue(() => {
@@ -407,6 +411,7 @@ export class RunExecution {
     )
       return;
     if (await this.#createdProtected(attempt, fact)) return;
+    this.#auditWeb(attempt, fact);
     if (
       fact.outcome === 'TERMINATED' &&
       fact.reasonCode === 'EXECUTION_CANCELLED' &&
@@ -443,6 +448,28 @@ export class RunExecution {
             ...(fact.usage === undefined ? {} : { usage: fact.usage }),
           }
         : {}),
+    });
+  }
+
+  /**
+   * What a web tool was asked goes on record with how it ended (Kernel/Core 5f). What a request
+   * the Executor refused as holding a secret said is not written: the audit must not become the
+   * place where the secret is kept.
+   */
+  #auditWeb(attempt: Attempt, fact: ExecutionFact): void {
+    if (fact.executionKind !== 'WEB_SEARCH' && fact.executionKind !== 'WEB_FETCH') return;
+    const ended = fact.outcome === 'COMPLETED' ? {} : { reasonCode: fact.reasonCode };
+    const secret = fact.outcome !== 'COMPLETED' && fact.reasonCode === 'SECRET_IN_REQUEST';
+    const input = secret ? undefined : (attempt.webInput as Record<string, unknown> | undefined);
+    this.#deps.audit?.({
+      type: fact.executionKind,
+      unitAttemptId: attempt.unitAttemptId,
+      agentRunId: attempt.spec.agentRunId,
+      outcome: fact.outcome,
+      ...ended,
+      ...(fact.executionKind === 'WEB_SEARCH'
+        ? { queries: input?.['queries'] }
+        : { url: input?.['url'] }),
     });
   }
 

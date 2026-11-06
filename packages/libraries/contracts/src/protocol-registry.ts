@@ -27,6 +27,7 @@ import * as artifactRefs from './platform-artifact/artifact-refs.js';
 import * as historyEntry from './context/history-entry.js';
 import * as fileWrite from './executor/file-write.js';
 import * as outputRead from './executor/output-read.js';
+import * as web from './executor/web.js';
 import * as command from './executor/command.js';
 import * as updateTodos from './workflow/update-todos.js';
 import * as repositoryList from './executor/repository-list.js';
@@ -217,6 +218,7 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   historyEntry,
   fileWrite,
   outputRead,
+  web,
   command,
   updateTodos,
   repositoryList,

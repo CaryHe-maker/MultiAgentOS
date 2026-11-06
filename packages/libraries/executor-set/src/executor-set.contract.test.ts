@@ -96,9 +96,23 @@ const fakeProvider: typeof fetch = () =>
     chatCompletion([{ id: 'call_1', name: 'read_file', arguments: '{"path":"src/math.ts"}' }]),
   );
 
-/** The real registry with the provider faked at the HTTP layer. */
+/** DeepSeek's search and fetch interface, faked at the HTTP layer. */
+const fakeWeb: typeof fetch = (input) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const body = url.endsWith('/v1/tools/search')
+    ? { results: [{ title: 'Contract', url: 'https://example.com/a', summary: 'A page.' }] }
+    : { title: 'Page', content: '# Page\n\nText.' };
+  return Promise.resolve(Response.json(body));
+};
+
+/** The real registry with the providers faked at the HTTP layer. */
 function registryUnderTest(): ExecutorRegistry {
-  return { ...createExecutorRegistry(), MODEL: createModelCallExecutor({ fetch: fakeProvider }) };
+  return {
+    ...createExecutorRegistry({
+      web: { fetch: fakeWeb, resolve: () => Promise.resolve(['93.184.216.34']) },
+    }),
+    MODEL: createModelCallExecutor({ fetch: fakeProvider }),
+  };
 }
 
 const INPUTS: ExecutorInputByKind = {
@@ -113,6 +127,8 @@ const INPUTS: ExecutorInputByKind = {
   MODEL: { contextPack: pack, final: false },
   COMMAND: { command: 'echo hello', timeoutMs: 1_000 },
   GIT_INSPECT: { action: 'status' },
+  WEB_SEARCH: { queries: ['executor contract'] },
+  WEB_FETCH: { url: 'https://example.com/page' },
 };
 
 /** The cases share one repository, so each write has a file of its own. */
@@ -135,7 +151,10 @@ function inputFor(kind: ExecutorKind): ExecutorInputByKind[ExecutorKind] {
 const scopeOf = (kind: ExecutorKind): ExecutionScope =>
   kind === 'MODEL'
     ? MODEL_SCOPE
-    : kind === 'CONTEXT_ASSEMBLE' || kind === 'OUTPUT_READ'
+    : kind === 'CONTEXT_ASSEMBLE' ||
+        kind === 'OUTPUT_READ' ||
+        kind === 'WEB_SEARCH' ||
+        kind === 'WEB_FETCH'
       ? ({ kind: 'NONE' } as const)
       : kind === 'FILE_WRITE' || kind === 'FILE_EDIT'
         ? {

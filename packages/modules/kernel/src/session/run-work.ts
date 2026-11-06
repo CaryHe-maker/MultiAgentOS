@@ -6,6 +6,8 @@ import {
   writableRoots,
   writeRootsWithin,
   type CommandInput,
+  type WebFetchInput,
+  type WebSearchInput,
   type DelegationReserved,
   type ReleaseDelegationRequest,
   type ReserveDelegationRequest,
@@ -57,6 +59,7 @@ import {
   type CommandAnalysis,
   type CommandDemand,
   type UnitDecision,
+  type UnitDemand,
 } from './unit-decision.js';
 import type { RetryingActivity } from './run-execution.js';
 import { WallClocks } from './wall-clocks.js';
@@ -107,6 +110,8 @@ export interface CommandSupport {
 
 export interface RunWorkDeps {
   readonly command?: CommandSupport;
+  /** The sites the user forbade, and who receives a search (`KernelConfig.web`, Core 5f). */
+  readonly web?: { readonly deniedDomains: readonly string[]; readonly searchProvider: string };
   readonly host: RunHost;
   readonly ledgers: RunLedgers;
   readonly scheduler: SchedulerDuties;
@@ -715,6 +720,7 @@ export class RunWork {
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
       const command = capability === 'command.exec' ? this.#commandDemand(request) : undefined;
+      const web = capability === 'web.fetch' ? this.#webDemand(request) : undefined;
       if (capability === 'command.exec' && command === undefined) {
         this.#refuseUnit(request, unit, { reasonCode: 'ADMISSION_CHECK_FAILED' });
         return;
@@ -726,6 +732,7 @@ export class RunWork {
           capability,
           ...(path === undefined ? {} : { path }),
           ...(command === undefined ? {} : { command }),
+          ...(web === undefined ? {} : { web }),
         },
         record.ceiling,
       );
@@ -746,6 +753,20 @@ export class RunWork {
     const { requestId, agentRunId, input } = waiting.request;
     let check;
     if (decision.capability === 'command.exec') check = this.#askCommand(waiting, decision);
+    else if (decision.capability === 'web.search')
+      check = this.#authorization.askWebSearch(
+        (input as WebSearchInput).queries,
+        this.#deps.web?.searchProvider ?? 'deepseek',
+        requestId,
+        agentRunId,
+      );
+    else if (decision.capability === 'web.fetch')
+      check = this.#authorization.askWebFetch(
+        (input as WebFetchInput).url,
+        decision.resourceKey,
+        requestId,
+        agentRunId,
+      );
     else if (decision.capability === 'repo.read')
       check = this.#authorization.requireRepoRead(requestId, agentRunId);
     else if (decision.critical) {
@@ -766,6 +787,13 @@ export class RunWork {
     if (check.requested !== undefined) this.#host.toInteraction(check.requested);
     this.#waiting.set(requestId, waiting);
     this.#activity.awaitingAuthorization(agentRunId);
+  }
+
+  #webDemand(request: SubmitUnitRequest): UnitDemand['web'] | undefined {
+    const { input } = request as { input: Partial<WebFetchInput> };
+    return typeof input.url === 'string'
+      ? { url: input.url, deniedDomains: this.#deps.web?.deniedDomains ?? [] }
+      : undefined;
   }
 
   #commandDemand(request: SubmitUnitRequest): CommandDemand | undefined {
