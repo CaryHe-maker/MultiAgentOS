@@ -131,7 +131,7 @@ DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
 | 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 0.27.1 与 `tree-sitter-bash` 0.25.1 的 WebAssembly 语法文件（`tree-sitter-bash.wasm` 随包提供，不需要原生编译；`pnpm-workspace.yaml` 中 `allowBuilds` 对 `tree-sitter-bash` 为 `false`，不运行它的构建脚本），只在 ExecutorSet 的 `command/parse/` 中使用；E-EX-3 已引入（2026-11-05，Windows 与 Ubuntu 24.04 上测试通过） |
-| 网页检索与抓取的提供方（DeepSeek 搜索与抓取接口，或 Tavily） | 6 | 待定：由第 3.3 节的实测（S6-T-1）证明可用后，Cary 决定；两者都经 `SearchProvider`、`FetchProvider` 端口调用，不引入 SDK，直接使用 Node 的 `fetch` |
+| 网页检索与抓取的提供方 | 6 | 已定（Cary 2026-11-07，依据第 3.3 节的实测）：搜索用 DeepSeek 的搜索接口，抓取先用 DeepSeek 的抓取接口、失败回退到本地抓取；不用 Tavily；两者都经 `SearchProvider`、`FetchProvider` 端口。HTML 转 Markdown 自己写（`web/html-to-markdown.ts`），**不增加依赖** |
 | HTML 转 Markdown | 6 | 待定：M2Design 第 8.4 节倾向于把纯函数复制到 `vendor/` 并注明来源与许可证 |
 | 模板 YAML 解析 | 1 | 不新增：沿用 AgentToolPool 已有的 YAML 1.2 core schema 解析（M1），内置模板与使用者模板都由它解析 |
 

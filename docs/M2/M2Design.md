@@ -1220,8 +1220,8 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 | `write_file` | `file-write` | WRITE | `workspace.write` | 新建或整体覆盖。覆盖已有文件时 Workflow 填入 `baseSha`，新建时填入 `expectAbsent`（第 6.4 节）；`append: true` 追加，同样要求先读或文件不存在；读到"不存在"之后只允许新建 |
 | `edit_file` | `file-edit` | WRITE | `workspace.write` | `oldString` 必须唯一匹配，否则要求 `replaceAll`；保持原有换行符；精确匹配失败时依次忽略排版引号、空白差异重试；按 Workflow 填入的 `baseSha` 校验（第 6.4 节） |
 | `run_command` | `run-command` | EXEC | `command.exec`（`network: true` 时加 `command.network`） | 参数为 `command`、`workdir?`（相对仓库根目录）、`timeoutMs?`、`network?`；缺省不联网；每次在全新的 shell 中执行，不保留 `cd` 与变量；非零退出码是正常结果；预览保留输出的头尾，超出时全文另存（第 8.2 节）；结果带 `sandboxDenials`、`backend`、`changedFiles` |
-| `web_search` | `web-search` | READ | `web.search` | `queries: string[]`（≤5 个）并行查询，结果按 URL 去重；`timeRange?`；每条结果包含标题、URL、摘要，URL 先经地址检查 |
-| `web_fetch` | `web-fetch` | READ | `web.fetch` | 只允许 http 与 https；解析时与建立连接时各检查一次地址，重定向逐跳检查；大小上限；HTML 转为 Markdown；预览为正文的开头一段，超出时全文另存（第 8.2 节） |
+| `web_search` | `web-search` | READ | `web.search` | `queries: string[]`（1–5 个，每个 ≤128 字符）并行查询，结果按 URL 去重、按相关度排序、至多 20 条；`count?`（1–20）；`timeRange?: { after?, before? }`；每条结果包含标题、URL、日期、摘要，URL 先经地址检查（详见 ExecutorSet 第 5d 节） |
+| `web_fetch` | `web-fetch` | READ | `web.fetch` | `url`（≤2048）；只允许 http 与 https；Core 在询问前拒绝字面量的内网地址，Executor 解析后所有结果都必须是公网地址，本地抓取连接到检查过的地址，重定向逐跳检查、换主机即拒绝；大小上限；结果是带来源与"不可信"标记的封装，正文为 Markdown；预览为开头一段，超出时全文另存（第 8.2 节） |
 | `read_output` | `output-read` | READ | `repo.read` | 分段读取此前某次工具调用被截断的完整输出，或在压缩中被修剪的工具结果（第 8.2、9.6 节）。参数为 `toolCallId`（那次调用的编号）、`offset?`（起始行，从 1 开始）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（只返回含有这段文字的行，按字面匹配）；结果带行号，同样受预览上限约束，不再产生完整输出。模型只给出编号，不接触 ArtifactRef 或存储地址 |
 
 内建 Unit：`context-assemble`、`model-call`（MODEL）、`report-publish`（M1）、`message-publish`（新增，由 Execution 直接发布 `reply` 与运行结果）。
@@ -1268,7 +1268,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 
 ### 8.3 网页检索的提供方
 
-`web-search` 只有一个 Unit。提供方接口按多提供方设计，M2 实现一个适配器：DeepSeek 的搜索接口（`/v1/tools/search`，与模型共用 key，结果带 `summary`、`date`、`authority`）或 Tavily（面向 Agent 设计、返回清洗过的摘要，Open Deep Research 与 DeerFlow 都在使用），先由 S6-T-1 实测证明可用性并经 Cary 决定（M2TechStack 第 3.3 节）；以后可以增加自部署的 SearXNG。抓取同样经端口，提供方可为 DeepSeek 的 `/v1/tools/fetch` 或本地实现。
+`web-search` 只有一个 Unit。提供方经端口（`SearchProvider`、`FetchProvider`）调用。**实测之后的决定（Cary 2026-11-07，[实测记录](Evaluation/Stage6WebProviders.md)）**：搜索用 DeepSeek 的 `/v1/tools/search`（与模型共用 key；16/16 的有答案查询前 3 条相关，算符有效，p95 约 0.5 秒）；抓取先用 DeepSeek 的 `/v1/tools/fetch`，除 400 与 403 外的失败回退到本地抓取（本地抓取保留链接与代码围栏，DeepSeek 的 Markdown 丢了它们；两者在长列表页与 issue 页上互补）；不使用 Tavily。以后可以增加自部署的 SearXNG。搜索词与抓取地址会发给 DeepSeek，留存情况文档没有说明，按最坏情况处理（[M2Security](M2Security.md) 第 3c 节）。
 测试使用本地的固定内容服务器，不依赖真实网络。
 
 ### 8.4 Executor 的组织
@@ -1890,3 +1890,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.26 | 2026-11-06 | 第 3.6 节：`maxSubagentsPerCall` 缺省改为 8（"先并行、再汇总、再写文档"的任务图常需要 5–6 个；真实并行度仍由 `maxConcurrentAttempts` 与 `providerCapacity` 限制，每个 Turn 总数仍是 12），拒绝文字说明可分批、后一批不能依赖前一批的任务名；被校验拒绝的 `run_subagents` 不计入"无进展"的轮次（它有自己的限制：连续两次被拒收回工具）；参数不合要求的工具调用，退回的文字写明哪里不合（真实模型实验发现：8 次明确要求派生的运行里有 8 次因"连续几轮没有进展"被强制收尾）；第 3.5 节：只调用 `update_todos` 的一轮不判进展，连续第二个才计入，参数不合要求的那一轮始终不判进展；`status` 的取值 `done` 改为 `completed`（模型的惯用词），`in_progress` 不再限制至多一项，进度计数与活动事件中的 `done` 随之改为 `completed`（Cary 2026-11-06 决定） |
 | v1.27 | 2026-11-06 | 第 3.1、3.3、3.6 节：`run_subagents` 的派发、等待与汇合放进任务图（Cary 2026-11-06 决定）。边增加 `DELEGATE`（派发，调用方运行期间被选中）与 `RESUME`（唤醒，不参与就绪与无环检查的回边）；节点增加 `WAITING` 状态，只在节点层面，凡派发了而尚未被唤醒的节点都默认是 `WAITING`，由边与日志推出、不单独记录，期间不得提交新的 Unit；AgentRun 层面不增加 waiting，`run_subagents` 只是结果稍后到的工具调用；增加 `wakeableNodes`（一次调用的全部唤醒边的前驱都结束，`all_done`）；日志记录 `NODE_RESUMED` 取代 `SUBAGENTS_JOINED`，汇合结果与已派生的任务数、调用次数由图推出；说明后期 Orchestration 可能增加不需要等待的派发，阶段 4 未考虑；阶段 5 的 `ask_user` 将复用同一对边 |
 | v1.28 | 2026-11-06 | 阶段 5 文档门：第 3.1 节与第 4.2 节：`ask_user` 的 HUMAN 节点用 `DELEGATE` 与 `RESUME`（调用方 `WAITING`），`attachedTo` 只留给 `steer`，边上的 `delegationId` 对 `ask_user` 缺省（Cary 2026-11-06 决定）；阶段 5 的各模块章节见 Kernel/Core 第 5e 节、Kernel/Execution 第 4e 节、Module/Workflow 第 7b 节、Module/UserInteraction 第 5.4 节与相应的 Interface |
+| v1.29 | 2026-11-07 | 阶段 6 文档门：第 8.1 节 `web_search`、`web_fetch` 的参数与结果封装；第 8.3 节记入实测之后的提供方决定（搜索 DeepSeek，抓取 DeepSeek 加本地回退，Cary 决定）；Kernel/Core 第 5f 节、Library/ExecutorSet 第 5d 节、M2Security 第 3c 节 |

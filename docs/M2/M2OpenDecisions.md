@@ -328,3 +328,5 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 - **W3** 访问私网地址、DNS 重绑定、重定向到内网：全部以 `ADDRESS_FORBIDDEN` 拒绝，没有任何请求到达内网。
 - **A（网页部分）** `web.search` 每个 WorkflowRun 第一次使用时询问一次，之后不再问；`web.fetch` 每个新域名询问一次，同域名不再问；私网地址不询问直接拒绝；`ask_user` 里的同意不构成授权；SubAgent 并行访问网页时每个新域名仍只问一次；用户拒绝后模型收到工具结果并继续；搜索词与抓取地址写入审计，经密钥扫描，含密钥的查询被拒。
 - **退出**：W、A 组网页部分通过；S6-T-1 的实测结果与 Cary 的提供方决定已写入 M2TechStack 第 3.3 节与本文件。
+
+**提供方决定（2026-11-07）**：Cary 决定搜索用 DeepSeek、抓取先用 DeepSeek 再回退本地抓取（依据 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)）。文档门（待 Cary 确认）：M2Design v1.29（第 8.1、8.3 节）、[Library/ExecutorSet](Library/ExecutorSet.md) 第 5d 节、[Kernel/Core](Kernel/Core.md) 第 5f 节、[M2Security](M2Security.md) 第 3c 节。未决（不阻塞实现）：DeepSeek 计费需要有余额的账户补测；搜索词与抓取地址的留存没有证据，按最坏情况写进安全文档。

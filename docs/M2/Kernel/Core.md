@@ -253,6 +253,28 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 - **不变量**：4（PAUSED 时在途尝试数为 0）与 18（AWAITING_INPUT 时没有 ACTIVE 的 AgentRun 且在途为 0）原样成立；新增：INTERRUPTING 之后的 `submitUnit` 一律 `RUN_BLOCKED`；`runEpoch` 不因暂停与中止前进。
 - 测试：`run-control.test.ts`（状态转移与准入表，纯函数）、`session-actor.test.ts`（暂停到 PAUSED 的时序、暂停超时、Turn 超时与"等用户时冻结"、中止后回到 AWAITING_INPUT 与 Turn 的 ABORTED）、`run-work.test.ts`（中止时询问被取消、局部询问不要求静止）。
 
+## 5f. 网页能力：`web.search` 与 `web.fetch`（阶段 6，草稿）
+
+设计以 M2Design 第 5.3、8.1 节为准。能力表（第 5a.2 节）增加两行，判定顺序（第 5a.3 节）不变，第 ① 步在这里补上：
+
+| 能力 | 级别 | 资源键 | 询问 |
+|---|---|---|---|
+| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次，`ALLOW` 与 `DENY`；询问写明查询会发给哪个提供方 |
+| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目只覆盖这个主机 | 每个新主机第一次访问时询问一次，`ALLOW` 与 `DENY`；询问写明主机名与第一个地址 |
+
+**第 ① 步**（在能力上限检查之后、查找条目之前）：
+- `web.fetch` 的地址里有字面量的 IP 或 `localhost`、`*.localhost`、`*.local`、`*.internal`、单标签名，落在 ExecutorSet 第 5d 节的禁止范围内：`REJECTED(ADDRESS_FORBIDDEN)`，**不询问**；协议不是 `http(s)` 或带用户信息的同样拒绝；
+- 主机名命中 `kernel.web.deniedDomains`（按后缀匹配，如 `example.com` 也覆盖 `a.example.com`）：`REJECTED(DOMAIN_DENIED)`，不询问。
+
+要点：
+- 询问的合并与拒绝的绑定与其他能力相同（第 5a.4 节）：并行的 explorer 访问同一个新主机时合并为一个询问；用户拒绝后，该 AgentRun 对同一主机不再询问；`ask_user` 里的同意不产生授权（第 5.5 节）。
+- 并行访问不同主机时询问可能偏多，评估"本运行内全部域名均允许"选项留在限制清单（M2Design 第 14 节第 5 项），阶段 6 不做。
+- 能力上限：main 与 explorer 的定义声明两项能力；worker 不声明（它改文件、跑命令，不联网）。一个 AgentRun 的上限里没有它们时是 `CAPABILITY_NOT_GRANTED`。
+- 配置 `KernelConfig.web`：`deniedDomains: string[]`（缺省空）、`maxContentBytes`（缺省 2097152）、`search: { provider: 'deepseek', baseUrl }`、`fetch: { provider: 'deepseek', fallback: boolean, baseUrl }`（`fallback` 缺省 `true`）。密钥取自与模型相同的凭据，不在配置里。
+- 审计：授权的询问与回答、拒绝都写审计（已有机制）；Executor 的 `WEB_SEARCH`、`WEB_FETCH` 行见 ExecutorSet 第 5d 节。
+- 界面：询问的文字、活动区的 `web_search`、`web_fetch` 行与折叠行（UserInteraction 第 6 节增补）。
+- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、合并与拒绝绑定）、`run-work.test.ts`（询问流程）、`stage6-exit`（A 组网页部分）。
+
 ## 6. Turn 与人类请求
 
 | 消息 | 检查 | 动作 |
@@ -338,5 +360,5 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 4 | 多个 ACTIVE 的 AgentRun、`agent.spawn`、写入占用、委派保留 |
 | 2 | `updateActivity` 的转发 |
 | 5 | PAUSING、PAUSED、INTERRUPTING，Turn 超时（全部工作都在等用户时暂停计时，M2Design 第 7.4 节），人类请求的取消，运行中插话 `steerRun` |
-| 6 | `web.search`、`web.fetch` |
+| 6 | 第 5f 节：`web.search`、`web.fetch` 的资源键与询问、地址与域名的拒绝 |
 | 8 | 第 6a 节：压缩过程（检查点、空闲触发、修剪、摘要请求的回退）；压缩的审计与配置 |
