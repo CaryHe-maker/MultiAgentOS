@@ -1268,7 +1268,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 
 ### 8.3 网页检索的提供方
 
-`web-search` 只有一个 Unit。提供方经端口（`SearchProvider`、`FetchProvider`）调用。**实测之后的决定（Cary 2026-11-07，[实测记录](Evaluation/Stage6WebProviders.md)）**：搜索用 DeepSeek 的 `/v1/tools/search`（与模型共用 key；16/16 的有答案查询前 3 条相关，算符有效，p95 约 0.5 秒）；抓取先用 DeepSeek 的 `/v1/tools/fetch`，除 400 与 403 外的失败回退到本地抓取（本地抓取保留链接与代码围栏，DeepSeek 的 Markdown 丢了它们；两者在长列表页与 issue 页上互补）；不使用 Tavily。以后可以增加自部署的 SearXNG。搜索词与抓取地址会发给 DeepSeek，留存情况文档没有说明，按最坏情况处理（[M2Security](M2Security.md) 第 3c 节）。
+`web-search` 只有一个 Unit。提供方经端口（`SearchProvider`、`FetchProvider`）调用。**实测之后的决定（Cary 2026-11-07，[实测记录](Evaluation/Stage6WebProviders.md)）**：搜索用 DeepSeek 的 `/v1/tools/search`（与模型共用 key；16/16 的有答案查询前 3 条相关，算符有效，p95 约 0.5 秒）；抓取**先用本地抓取**，它做不到时（站点拒绝、连接失败、页面靠脚本生成）才用 DeepSeek 的 `/v1/tools/fetch`，不存在的页面和被拒绝的请求不回退（同日评测 61 个真实地址：本地 51、DeepSeek 47、组合 52，本地保留了 DeepSeek 丢掉的链接与代码围栏，[Evaluation/Stage6FetchOrder](Evaluation/Stage6FetchOrder.md)）；提供方按名字选择，换搜索引擎是改配置加适配器；不使用 Tavily。以后可以增加自部署的 SearXNG。搜索词与抓取地址会发给 DeepSeek，留存情况文档没有说明，按最坏情况处理（[M2Security](M2Security.md) 第 3c 节）。
 测试使用本地的固定内容服务器，不依赖真实网络。
 
 ### 8.4 Executor 的组织

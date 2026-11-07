@@ -1,7 +1,8 @@
 import {
+  WebFailure,
+  exchange,
   failureOfStatus,
-  networkFailure,
-  retryAfterMs,
+  type AdapterOptions,
   type FetchProvider,
   type SearchHit,
   type SearchProvider,
@@ -12,57 +13,43 @@ import {
  * api-docs.deepseek.com/guides/search; measured in Evaluation/Stage6WebProviders). The key is the
  * model provider's and goes only into the header of the request.
  */
-export interface DeepSeekOptions {
-  readonly baseUrl: string;
-  readonly apiKey: string;
-  readonly fetch: typeof globalThis.fetch;
-  readonly now?: () => number;
-}
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-async function post(
-  options: DeepSeekOptions,
+const post = (
+  options: AdapterOptions,
   tool: 'search' | 'fetch',
   body: unknown,
   signal: AbortSignal,
-): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await options.fetch(`${options.baseUrl.replace(/\/$/u, '')}/v1/tools/${tool}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    throw networkFailure();
-  }
-  if (response.status !== 200)
-    throw failureOfStatus(
-      response.status,
-      retryAfterMs(response.headers.get('retry-after'), (options.now ?? Date.now)()),
-    );
-  try {
-    return await response.json();
-  } catch {
-    throw failureOfStatus(500, undefined);
-  }
-}
+  ownStatus?: (status: number, retryAfter: number | undefined) => WebFailure | undefined,
+) =>
+  exchange(
+    options,
+    {
+      url: `${options.baseUrl.replace(/\/$/u, '')}/v1/tools/${tool}`,
+      init: {
+        method: 'POST',
+        headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    },
+    signal,
+    ownStatus,
+  );
 
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+/** DeepSeek takes the time range as operators in the query text. */
+const withTimeRange = (query: string, after?: string, before?: string): string =>
+  `${query}${after === undefined ? '' : ` after:${after}`}${before === undefined ? '' : ` before:${before}`}`;
 
-export function createDeepSeekSearch(options: DeepSeekOptions): SearchProvider {
+export function createDeepSeekSearch(options: AdapterOptions): SearchProvider {
   return {
     name: 'deepseek',
-    search: async ({ query, count }, signal) => {
+    search: async ({ query, count, after, before }, signal) => {
       const answer = (await post(
         options,
         'search',
-        { query, count, need_content: false },
+        { query: withTimeRange(query, after, before), count, need_content: false },
         signal,
-      )) as {
-        results?: Record<string, unknown>[];
-      };
+      )) as { results?: Record<string, unknown>[] };
       return (answer.results ?? []).flatMap((item): SearchHit[] => {
         const url = text(item['url']);
         if (url === '') return [];
@@ -85,14 +72,18 @@ export function createDeepSeekSearch(options: DeepSeekOptions): SearchProvider {
   };
 }
 
-export function createDeepSeekFetch(options: DeepSeekOptions): FetchProvider {
+export function createDeepSeekFetch(options: AdapterOptions): FetchProvider {
   return {
     name: 'deepseek',
     fetch: async ({ url }, signal) => {
-      const answer = (await post(options, 'fetch', { url }, signal)) as {
-        title?: unknown;
-        content?: unknown;
-      };
+      const answer = (await post(options, 'fetch', { url }, signal, (status) =>
+        // For a fetch, 403 is the other side's security policy, not a bad key (its guide, "Errors").
+        status === 403
+          ? new WebFailure({ kind: 'REJECTED', code: 'ADDRESS_FORBIDDEN' }, status)
+          : status === 404
+            ? failureOfStatus(404, undefined)
+            : undefined,
+      )) as { title?: unknown; content?: unknown };
       return { title: text(answer.title), markdown: text(answer.content), via: 'deepseek' };
     },
   };

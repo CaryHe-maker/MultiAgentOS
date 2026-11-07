@@ -100,3 +100,20 @@ export {
   type AddressPolicy,
   type Resolve,
 } from './web/address-policy.js';
+export { createBraveSearch } from './web/brave.js';
+export { createDeepSeekFetch, createDeepSeekSearch } from './web/deepseek.js';
+export {
+  FETCH_ADAPTERS,
+  SEARCH_ADAPTERS,
+  type FetchAdapter,
+  type SearchAdapter,
+} from './web/provider-registry.js';
+export {
+  WebFailure,
+  type AdapterOptions,
+  type FetchProvider,
+  type FetchedPage,
+  type SearchHit,
+  type SearchProvider,
+  type SearchRequest,
+} from './web/providers.js';

@@ -153,12 +153,17 @@ export function createLocalFetch(options: LocalFetchOptions): FetchProvider {
         const page = /html/iu.test(type)
           ? htmlToMarkdown(body, current)
           : { title: '', markdown: body };
+        // No text at all, or next to none on a page of some size: it builds its content with scripts.
+        const text = page.markdown.trim().length;
+        const thin =
+          /html/iu.test(type) && (text === 0 || (answer.body.length >= 1_500 && text < 300));
         return {
           title: page.title,
           markdown: page.markdown,
           via: 'local',
           finalUrl: current.href,
           truncated: answer.truncated,
+          ...(thin ? { thin: true } : {}),
         };
       }
       throw unavailable();

@@ -1,10 +1,15 @@
 import { WebFailure, type FetchProvider, type FetchedPage } from './providers.js';
 
 /**
- * DeepSeek's fetch first, this program's own when it fails (ExecutorSet 5d). Not on 400, which
- * says the request itself is wrong, and not on 403, which is the other side's security policy:
- * neither may be got round by asking again elsewhere. A 429 that says it is over within a few
- * seconds is waited out, twice, before the fall back.
+ * This program's own fetch first, a provider's when it cannot (ExecutorSet 5d). The own fetch is
+ * free, keeps links and code, and sends the address to nobody; a provider is for what it cannot
+ * do: a site that turns a program away (403, 429, a challenge page, 5xx), a connection that
+ * fails, and a page that builds its content with scripts and so comes out thin.
+ *
+ * Never to the provider, whatever the status: a request the address checks or the content rules
+ * refused (REJECTED), and a page that is not there (404, 410): asking elsewhere is no use and
+ * gives the address away for nothing. A 429 of the provider that says it is over within a few
+ * seconds is waited out, twice, before the own answer is given.
  */
 const WAIT_AT_MOST_MS = 10_000;
 const ATTEMPTS = 3;
@@ -31,45 +36,57 @@ export interface FallbackOptions {
   readonly wait?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
+/** The page is not there: nobody else will have it. */
+const isGone = (error: WebFailure): boolean => error.status === 404 || error.status === 410;
+
 export function createFallbackFetch(
-  primary: FetchProvider,
-  fallback: FetchProvider,
+  own: FetchProvider,
+  remote: FetchProvider,
   options: FallbackOptions = {},
 ): FetchProvider {
   const wait = options.wait ?? sleep;
-  return {
-    name: `${primary.name}+${fallback.name}`,
-    fetch: async (request, signal) => {
-      let failure: unknown;
-      for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-        try {
-          const page: FetchedPage = await primary.fetch(request, signal);
-          if (page.markdown.trim() !== '') return page;
-          failure = new WebFailure({ kind: 'FAILED', code: 'PAGE_UNAVAILABLE', retryable: false });
-          break;
-        } catch (error) {
-          if (signal.aborted) throw error;
-          if (!(error instanceof WebFailure)) throw error;
-          if (error.status === 400 || error.status === 403) throw error;
-          failure = error;
-          const again =
-            error.status === 429 &&
-            error.detail.kind === 'FAILED' &&
-            error.detail.retryAfterMs !== undefined &&
-            error.detail.retryAfterMs <= WAIT_AT_MOST_MS &&
-            attempt < ATTEMPTS;
-          if (!again) break;
-          await wait(error.detail.kind === 'FAILED' ? (error.detail.retryAfterMs ?? 0) : 0, signal);
-        }
-      }
+
+  async function fromRemote(
+    request: { url: string },
+    signal: AbortSignal,
+  ): Promise<FetchedPage | undefined> {
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
       try {
-        return await fallback.fetch(request, signal);
+        const page = await remote.fetch(request, signal);
+        return page.markdown.trim() === '' ? undefined : page;
       } catch (error) {
-        // When the fall back could not either, what the first one said is the better account.
         if (signal.aborted) throw error;
-        if (error instanceof WebFailure && error.detail.kind === 'REJECTED') throw error;
-        throw failure instanceof WebFailure ? failure : error;
+        if (!(error instanceof WebFailure)) throw error;
+        const delay =
+          error.status === 429 && error.detail.kind === 'FAILED'
+            ? error.detail.retryAfterMs
+            : undefined;
+        if (delay === undefined || delay > WAIT_AT_MOST_MS || attempt === ATTEMPTS)
+          return undefined;
+        await wait(delay, signal);
       }
+    }
+    return undefined;
+  }
+
+  return {
+    name: `${own.name}+${remote.name}`,
+    fetch: async (request, signal) => {
+      let page: FetchedPage;
+      try {
+        page = await own.fetch(request, signal);
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (!(error instanceof WebFailure)) throw error;
+        if (error.detail.kind === 'REJECTED' || isGone(error)) throw error;
+        // What the own fetch said is the account to give when the provider cannot either.
+        const viaRemote = await fromRemote(request, signal);
+        if (viaRemote !== undefined) return viaRemote;
+        throw error;
+      }
+      if (page.thin !== true) return page;
+      const better = await fromRemote(request, signal);
+      return better !== undefined && better.markdown.length > page.markdown.length ? better : page;
     },
   };
 }

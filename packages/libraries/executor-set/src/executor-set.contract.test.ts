@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,6 +13,7 @@ import type {
   SandboxRunner,
   SubprocessRunner,
 } from '@multiagentos/contracts';
+import { afterAll } from 'vitest';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import {
   createFixtureRepository,
@@ -105,11 +108,29 @@ const fakeWeb: typeof fetch = (input) => {
   return Promise.resolve(Response.json(body));
 };
 
+/** A page of this process's own: this program fetches first, so the contract reads a real one. */
+const pageServer = createServer((_request, response) => {
+  response.setHeader('content-type', 'text/html');
+  response.end(
+    '<html><head><title>Page</title></head><body><h1>Page</h1><p>Text.</p></body></html>',
+  );
+});
+await new Promise<void>((resolve) => pageServer.listen(0, '127.0.0.1', resolve));
+afterAll(() => {
+  pageServer.close();
+});
+const pageUrl = `http://contract.example:${String((pageServer.address() as AddressInfo).port)}/page`;
+
 /** The real registry with the providers faked at the HTTP layer. */
 function registryUnderTest(): ExecutorRegistry {
   return {
     ...createExecutorRegistry({
-      web: { fetch: fakeWeb, resolve: () => Promise.resolve(['93.184.216.34']) },
+      web: {
+        fetch: fakeWeb,
+        resolve: () => Promise.resolve(['127.0.0.1']),
+        // Only the address of the page server is let through.
+        policy: { forbids: (address) => address !== '127.0.0.1' },
+      },
     }),
     MODEL: createModelCallExecutor({ fetch: fakeProvider }),
   };
@@ -128,7 +149,7 @@ const INPUTS: ExecutorInputByKind = {
   COMMAND: { command: 'echo hello', timeoutMs: 1_000 },
   GIT_INSPECT: { action: 'status' },
   WEB_SEARCH: { queries: ['executor contract'] },
-  WEB_FETCH: { url: 'https://example.com/page' },
+  WEB_FETCH: { url: pageUrl },
 };
 
 /** The cases share one repository, so each write has a file of its own. */

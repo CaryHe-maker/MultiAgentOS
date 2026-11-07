@@ -67,12 +67,14 @@ export const KernelConfigSchema = closed(
       deniedDomains: Type.Array(text(253)),
       /** A fetched page is cut here. */
       maxContentBytes: count(1),
-      search: closed({ provider: Type.Literal('deepseek'), baseUrl: text(200) }),
+      /** The provider is named; the name is also what its key is looked up under (`<NAME>_API_KEY`). */
+      search: closed({ provider: text(32), baseUrl: text(200) }),
+      /**
+       * This program fetches first. `remote` is asked only when it cannot (ExecutorSet 5d); null
+       * means never, and then no address is given to anyone.
+       */
       fetch: closed({
-        provider: Type.Literal('deepseek'),
-        baseUrl: text(200),
-        /** Fetch again on this program's own when the provider fails (not on 400 or 403). */
-        fallback: Type.Boolean(),
+        remote: Type.Union([Type.Null(), closed({ provider: text(32), baseUrl: text(200) })]),
       }),
     }),
     killGraceMs: ms(),

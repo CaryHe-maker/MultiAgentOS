@@ -43,11 +43,9 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   web: Object.freeze({
     deniedDomains: [],
     maxContentBytes: 2_097_152,
-    search: Object.freeze({ provider: 'deepseek' as const, baseUrl: 'https://api.deepseek.com' }),
+    search: Object.freeze({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }),
     fetch: Object.freeze({
-      provider: 'deepseek' as const,
-      baseUrl: 'https://api.deepseek.com',
-      fallback: true,
+      remote: Object.freeze({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }),
     }),
   }),
   killGraceMs: 2_000,

@@ -127,22 +127,26 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 ```ts
 interface SearchProvider {
   readonly name: string;
-  search(request: { query: string; count: number }, signal: AbortSignal): Promise<SearchHit[]>;
+  search(request: { query: string; count: number; after?: string; before?: string }, signal: AbortSignal): Promise<SearchHit[]>;
 }
 interface SearchHit { title: string; url: string; summary: string; snippet?: string; date?: string; authority?: number; rerankScore?: number }
 interface FetchProvider {
   readonly name: string;
   fetch(request: { url: string }, signal: AbortSignal): Promise<FetchedPage>;
 }
-interface FetchedPage { title: string; markdown: string; via: 'deepseek' | 'local'; finalUrl?: string; truncated?: boolean; redirectTo?: string }
+interface FetchedPage { title: string; markdown: string; via: string; finalUrl?: string; truncated?: boolean; redirectTo?: string; thin?: boolean }
 ```
 
-适配器（M2TechStack 第 3.3 节的结论，Cary 2026-11-07 决定）：
-- `DeepSeekSearchProvider`、`DeepSeekFetchProvider`：`POST {baseUrl}/v1/tools/search`、`/v1/tools/fetch`，与模型共用 API key；搜索的 `need_content` 恒为 `false`（摘要 `summary` 已够模型阅读），错误体按官方格式解析；
-- `LocalFetchProvider`：本地抓取（下文），承担地址检查、重定向检查与 HTML 转 Markdown；
-- `FallbackFetchProvider(primary, fallback)`：先用 DeepSeek，**除 400 与 403 之外**的失败（404、408、429 在 `Retry-After` ≤ 10 秒内至多重试两次后仍失败、5xx、504、网络错误、401、402、空内容）回退到本地抓取，结果注明由谁提供（`via`）。400 是请求本身不合要求，403 是对方的安全策略拒绝，都不回退（不得借回退绕过）。
+**提供方按名字选择**（`web/provider-registry.ts`）：`KernelConfig.web.search.provider` 与 `web.fetch.remote.provider` 是一个名字，注册表里有它的适配器就用，没有就在系统启动、构造 Executor 时报错；同一个名字也是密钥的名字（`apiKeyFor(<名字>)`，生产环境读 `<名字>_API_KEY`）。组合根可以经 `WebOptions.searchAdapters`、`fetchAdapters` 带来更多适配器，所以换提供方是改配置加一个适配器，工具、授权、地址检查、密钥扫描、结果封装、界面都不动。**属于某个提供方的东西都留在它的适配器里**：查询算符（DeepSeek 把 `timeRange` 写成查询里的 `after:`、`before:`，Brave 用 `freshness` 参数）、状态码的含义（对 DeepSeek 抓取 403 是对方的安全策略，对搜索接口 403 是认证问题，422 是参数错误）、返回字段的名字。每个搜索适配器必须通过同一套契约测试（`web/search-providers.test.ts`），新增适配器就是在那份清单里加一项。
 
-**`web-search`**：输入 `{ queries: string[1..5]（每个 1–128 字符）, count?: 1–20（缺省 5）, timeRange?: { after?: string, before?: string }（`YYYY`、`YYYY-MM-DD`） }`。每个查询加上 `after:`、`before:` 算符（加上后超过 128 字符的以 `INVALID_QUERY` 拒绝），所有查询并行；结果按规范化后的 URL 去重（保留 `rerankScore` 较高的一条），按 `rerankScore` 降序，至多 20 条；每条的 URL 先过地址检查，指向私网、回环等地址的结果丢弃。输出（预览）是 Markdown 列表：标题、URL、日期、`summary`；结构化的 `output` 只有查询数与结果数。没有结果时是成功的空列表（DeepSeek 的搜索是语义检索，几乎不会为空）。
+适配器（M2TechStack 第 3.3 节；搜索由 Cary 2026-11-07 决定用 DeepSeek，抓取的顺序由 Cary 2026-11-07 的评测后决定改为本地优先，见 [Evaluation/Stage6FetchOrder](../Evaluation/Stage6FetchOrder.md)）：
+- `createDeepSeekSearch`、`createDeepSeekFetch`（`web/deepseek.ts`）：`POST {baseUrl}/v1/tools/search`、`/v1/tools/fetch`，与模型共用 API key；搜索的 `need_content` 恒为 `false`（摘要 `summary` 已够模型阅读），错误体按官方格式解析；
+- `createBraveSearch`（`web/brave.ts`）：`GET {baseUrl}/res/v1/web/search`，密钥名 `brave`。它只证明搜索不依赖某一家，没有启用；
+- `createLocalFetch`：本地抓取（下文），承担地址检查、重定向检查与 HTML 转 Markdown；
+- `createFallbackFetch(own, remote)`：**先用本地抓取，它做不到时才用提供方**。回退的条件：站点把程序拒之门外（403、429、验证页、5xx）、连接失败、以及页面靠脚本生成内容而本地抓到的几乎没有文字（`thin`：没有任何文字，或页面在 1500 字节以上而文字少于 300 字符），后一种只有提供方给出更多文字时才采用。**永不回退**的情形：被地址检查或内容规则拒绝的请求（REJECTED，如 `ADDRESS_FORBIDDEN`、`UNSUPPORTED_CONTENT`）、页面不存在（404、410，别处也不会有，还白白交出地址）、没有配置提供方或没有它的密钥。提供方的 429 若给出 ≤ 10 秒的 `Retry-After`，等待后至多重试两次；提供方也不行时，给出的失败是本地抓取自己的，因为它最准确。结果注明由谁提供（`via`）。地址只在本地抓取失败之后才交给提供方，且那时地址已经过全部检查；这也是隐私上的好处：成功的抓取不把地址交给任何人。
+- 最终内容为空（本地没有文字、提供方也没有）以 FAILED 的 `PAGE_UNAVAILABLE` 回答，不把空页面当作成功交给模型。
+
+**`web-search`**：输入 `{ queries: string[1..5]（每个 1–128 字符）, count?: 1–20（缺省 5）, timeRange?: { after?: string, before?: string }（`YYYY`、`YYYY-MM-DD`） }`。每个查询（去掉首尾空白后为空或超过 128 字符的以 `INVALID_QUERY` 拒绝；时间范围由适配器翻译，不占这 128 字符）并行发给提供方；结果按规范化后的 URL 去重（保留 `rerankScore` 较高的一条），按 `rerankScore` 降序，至多 20 条；每条的 URL 先过地址检查，指向私网、回环等地址的结果丢弃。输出（预览）是 Markdown 列表：标题、URL、日期、`summary`；结构化的 `output` 只有查询数与结果数。没有结果时是成功的空列表（DeepSeek 的搜索是语义检索，几乎不会为空）。
 
 **`web-fetch`**：输入 `{ url: string（≤2048） }`。只允许 `http`、`https`，不得带用户名与密码。结果为带来源的封装，正文原样放在其后：
 

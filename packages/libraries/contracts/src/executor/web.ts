@@ -34,13 +34,11 @@ export const WebFetchInputSchema = closed(
 );
 export type WebFetchInput = Static<typeof WebFetchInputSchema>;
 
-/** Who served the page: DeepSeek's interface, or this program's own fetch. */
-export const WEB_FETCH_VIA = ['deepseek', 'local'] as const;
-
 export const WebFetchOutputSchema = closed(
   {
     url: text(WEB_FETCH_URL_CHARS),
-    via: Type.Enum(WEB_FETCH_VIA),
+    /** Who served the page: `local` (this program's own fetch) or the name of a provider. */
+    via: text(32),
     bytes: count(),
     /** The page was longer than `maxContentBytes` and was cut. */
     truncated: Type.Boolean(),

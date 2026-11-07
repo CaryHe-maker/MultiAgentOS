@@ -223,6 +223,30 @@ const pages: Record<string, (request: IncomingMessage, response: ServerResponse)
     response.setHeader('content-type', 'text/plain');
     response.end('x'.repeat(5_000));
   },
+  '/forbidden': (_request, response) => {
+    response.statusCode = 403;
+    response.end('Just a moment...');
+  },
+  '/ratelimited': (_request, response) => {
+    response.statusCode = 429;
+    response.end('slow down');
+  },
+  '/shell': (_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end(
+      `<html><head><title>App</title><script>${'x'.repeat(3_000)}</script></head><body><div id="root"></div></body></html>`,
+    );
+  },
+  '/thin': (_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end(
+      `<html><head><script>${'x'.repeat(1_600)}</script></head><body><p>A little text.</p></body></html>`,
+    );
+  },
+  '/empty': (_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end('<html><body><div id="root"></div></body></html>');
+  },
   '/missing': (_request, response) => {
     response.statusCode = 404;
     response.end('no');
@@ -256,11 +280,10 @@ const policy: AddressPolicy = {
 };
 const localConfig: WebConfig = {
   ...DEFAULT_WEB_CONFIG,
-  fetch: { ...DEFAULT_WEB_CONFIG.fetch, fallback: true },
   maxContentBytes: 2_000,
 };
 const resolveSite = (host: string) =>
-  Promise.resolve(host === 'site.example' ? ['127.0.0.1'] : [PUBLIC]);
+  Promise.resolve(host === 'site.example' || host === 'down.example' ? ['127.0.0.1'] : [PUBLIC]);
 
 const fetchPage = (url: string, options: WebOptions, withKey = true) =>
   createWebFetchExecutor({ config: localConfig, resolve: resolveSite, policy, ...options }).execute(
@@ -368,133 +391,169 @@ describe('web_fetch: the address checks (before anyone is asked)', () => {
   });
 });
 
-describe('web_fetch: DeepSeek first', () => {
+describe('web_fetch: this program first, a provider when it cannot', () => {
+  const ok = { title: 'Provider page', content: '# Provider page\n\nFrom the provider.' };
+  const provider = (answer: () => Response = () => json(ok)) =>
+    fakeDeepSeek({ search: () => json({}), fetch: answer });
+
+  it('reads the page itself and does not give its address to the provider', async () => {
+    const deepseek = provider();
+    const outcome = await fetchPage(`${origin}/article`, { fetch: deepseek.fetch });
+    expect(completedText(outcome)).toContain('via local');
+    expect(deepseek.calls).toHaveLength(0);
+  });
+
   it('wraps the page as untrusted content with where it came from', async () => {
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => json({ title: 'Docs', content: '# Docs\n\nBody.' }),
-    });
-    const outcome = await createWebFetchExecutor({
-      fetch: deepseek.fetch,
-      resolve: () => Promise.resolve([PUBLIC]),
-    }).execute({ url: 'https://docs.example/a' }, environmentFor('WEB_FETCH', NONE));
-    const text = completedText(outcome);
-    expect(text).toContain('Source: https://docs.example/a');
-    expect(text).toContain('Title: Docs');
-    expect(text).toContain('via deepseek');
+    const text = completedText(await fetchPage(`${origin}/article`, { fetch: provider().fetch }));
+    expect(text).toContain(`Source: ${origin}/article`);
+    expect(text).toContain('Title: Article');
     expect(text).toContain('Untrusted web content');
-    expect(text).toContain('# Docs');
-    expect(outcome).toMatchObject({
-      result: { output: { url: 'https://docs.example/a', via: 'deepseek', truncated: false } },
-    });
-    expect(deepseek.calls[0]).toMatchObject({
-      tool: 'fetch',
-      body: { url: 'https://docs.example/a' },
-      authorization: 'Bearer sk-test-secret',
-    });
   });
 
-  it('falls back to the local fetch when DeepSeek cannot', async () => {
-    for (const status of [404, 500, 504]) {
-      const deepseek = fakeDeepSeek({ search: () => json({}), fetch: () => json({}, status) });
-      const text = completedText(await fetchPage(`${origin}/article`, { fetch: deepseek.fetch }));
-      expect(text).toContain('via local');
-    }
+  it.each(['/forbidden', '/ratelimited', '/broken'])(
+    'asks the provider when the site turns it away (%s)',
+    async (path) => {
+      const deepseek = provider();
+      const outcome = await fetchPage(`${origin}${path}`, { fetch: deepseek.fetch });
+      const text = completedText(outcome);
+      expect(text).toContain('via deepseek');
+      expect(text).toContain('From the provider.');
+      expect(deepseek.calls).toEqual([
+        {
+          tool: 'fetch',
+          body: { url: `${origin}${path}` },
+          authorization: 'Bearer sk-test-secret',
+        },
+      ]);
+    },
+  );
+
+  it('asks the provider when the connection fails', async () => {
+    const deepseek = provider();
+    const outcome = await fetchPage('http://down.example:1/', { fetch: deepseek.fetch });
+    expect(completedText(outcome)).toContain('via deepseek');
   });
 
-  it('falls back when DeepSeek answers with nothing', async () => {
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => json({ title: '', content: '  ' }),
-    });
-    expect(
-      completedText(await fetchPage(`${origin}/article`, { fetch: deepseek.fetch })),
-    ).toContain('via local');
+  it('asks the provider for a page that builds its content with scripts, and keeps the better one', async () => {
+    const deepseek = provider();
+    const better = completedText(await fetchPage(`${origin}/shell`, { fetch: deepseek.fetch }));
+    expect(better).toContain('via deepseek');
+    // A provider that has no more to give leaves a page with a little text as the own fetch read it.
+    const empty = provider(() => json({ title: '', content: '' }));
+    const kept = completedText(await fetchPage(`${origin}/thin`, { fetch: empty.fetch }));
+    expect(kept).toContain('via local');
+    expect(kept).toContain('A little text.');
+    expect(empty.calls).toHaveLength(1);
   });
 
-  it('does not get round a 403 or a 400 by asking elsewhere', async () => {
-    for (const [status, reasonCode] of [
-      [403, 'ADDRESS_FORBIDDEN'],
-      [400, 'INVALID_QUERY'],
-    ] as const) {
-      const before = requested.length;
-      const deepseek = fakeDeepSeek({ search: () => json({}), fetch: () => json({}, status) });
-      expect(await fetchPage(`${origin}/article`, { fetch: deepseek.fetch })).toMatchObject({
-        outcome: 'REJECTED',
-        reasonCode,
-      });
-      expect(requested).toHaveLength(before);
-    }
-  });
-
-  it('waits out a short 429 twice, then falls back', async () => {
-    const wait = vi.fn(() => Promise.resolve());
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => json({}, 429, { 'retry-after': '2' }),
-    });
-    const text = completedText(
-      await fetchPage(`${origin}/article`, { fetch: deepseek.fetch, wait }),
+  it('asks the provider for a page with no text at all, however small, and says so when there is none', async () => {
+    const deepseek = provider();
+    expect(completedText(await fetchPage(`${origin}/empty`, { fetch: deepseek.fetch }))).toContain(
+      'via deepseek',
     );
+    const nothing = provider(() => json({ title: '', content: '' }));
+    expect(await fetchPage(`${origin}/empty`, { fetch: nothing.fetch })).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PAGE_UNAVAILABLE',
+      retryable: false,
+    });
+    expect(await local(`${origin}/empty`)).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PAGE_UNAVAILABLE',
+    });
+  });
+
+  it('does not ask the provider for a page that is not there, nor for one it may not read', async () => {
+    const deepseek = provider();
+    expect(await fetchPage(`${origin}/missing`, { fetch: deepseek.fetch })).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PAGE_UNAVAILABLE',
+      retryable: false,
+    });
+    expect(await fetchPage(`${origin}/pdf`, { fetch: deepseek.fetch })).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'UNSUPPORTED_CONTENT',
+    });
+    expect(deepseek.calls).toHaveLength(0);
+  });
+
+  it('does not ask the provider when none is configured, or no key is there', async () => {
+    const deepseek = provider();
+    const none = await fetchPage(`${origin}/forbidden`, {
+      fetch: deepseek.fetch,
+      config: { ...localConfig, fetch: { remote: null } },
+    });
+    expect(none).toMatchObject({ outcome: 'FAILED', reasonCode: 'PAGE_UNAVAILABLE' });
+    const keyless = await fetchPage(`${origin}/forbidden`, { fetch: deepseek.fetch }, false);
+    expect(keyless).toMatchObject({ outcome: 'FAILED', reasonCode: 'PAGE_UNAVAILABLE' });
+    expect(deepseek.calls).toHaveLength(0);
+  });
+
+  it('gives the own fetch as the failure when the provider cannot either', async () => {
+    for (const status of [400, 403, 404, 500]) {
+      const deepseek = provider(() => json({}, status));
+      expect(await fetchPage(`${origin}/forbidden`, { fetch: deepseek.fetch })).toMatchObject({
+        outcome: 'FAILED',
+        reasonCode: 'PAGE_UNAVAILABLE',
+      });
+    }
+  });
+
+  it('waits out a short 429 of the provider twice, then gives the own failure', async () => {
+    const wait = vi.fn(() => Promise.resolve());
+    const deepseek = provider(() => json({}, 429, { 'retry-after': '2' }));
+    const outcome = await fetchPage(`${origin}/forbidden`, { fetch: deepseek.fetch, wait });
     expect(deepseek.calls).toHaveLength(3);
     expect(wait).toHaveBeenCalledTimes(2);
     expect(wait).toHaveBeenCalledWith(2_000, expect.anything());
-    expect(text).toContain('via local');
-  });
-
-  it('does not wait out a long 429', async () => {
-    const wait = vi.fn(() => Promise.resolve());
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => json({}, 429, { 'retry-after': '60' }),
-    });
-    await fetchPage(`${origin}/article`, { fetch: deepseek.fetch, wait });
-    expect(wait).not.toHaveBeenCalled();
-    expect(deepseek.calls).toHaveLength(1);
-  });
-
-  it('succeeds on the second try of a 429', async () => {
-    let calls = 0;
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => {
-        calls += 1;
-        return calls === 1
-          ? json({}, 429, { 'retry-after': '1' })
-          : json({ title: 'T', content: 'second' });
-      },
-    });
-    const text = completedText(
-      await fetchPage('https://docs.example/a', {
-        fetch: deepseek.fetch,
-        resolve: () => Promise.resolve([PUBLIC]),
-        wait: () => Promise.resolve(),
-      }),
-    );
-    expect(text).toContain('via deepseek');
-    expect(text).toContain('second');
-  });
-
-  it('reports DeepSeek as the failure when the fallback is off', async () => {
-    const deepseek = fakeDeepSeek({ search: () => json({}), fetch: () => json({}, 404) });
-    const outcome = await fetchPage(`${origin}/article`, {
-      fetch: deepseek.fetch,
-      config: { ...localConfig, fetch: { ...localConfig.fetch, fallback: false } },
-    });
     expect(outcome).toMatchObject({ outcome: 'FAILED', reasonCode: 'PAGE_UNAVAILABLE' });
   });
 
-  it('cuts a page at the content limit', async () => {
-    const deepseek = fakeDeepSeek({
-      search: () => json({}),
-      fetch: () => json({ title: 'Long', content: 'y'.repeat(5_000) }),
+  it('does not wait out a long 429, and succeeds on the second try of a short one', async () => {
+    const wait = vi.fn(() => Promise.resolve());
+    const long = provider(() => json({}, 429, { 'retry-after': '60' }));
+    await fetchPage(`${origin}/forbidden`, { fetch: long.fetch, wait });
+    expect(wait).not.toHaveBeenCalled();
+    expect(long.calls).toHaveLength(1);
+    let calls = 0;
+    const second = provider(() => {
+      calls += 1;
+      return calls === 1 ? json({}, 429, { 'retry-after': '1' }) : json(ok);
     });
-    const outcome = await fetchPage('https://docs.example/long', {
-      fetch: deepseek.fetch,
-      resolve: () => Promise.resolve([PUBLIC]),
-    });
+    const text = completedText(
+      await fetchPage(`${origin}/forbidden`, { fetch: second.fetch, wait }),
+    );
+    expect(text).toContain('From the provider.');
+  });
+
+  it('cuts what the provider gives at the content limit', async () => {
+    const deepseek = provider(() => json({ title: 'Long', content: 'y'.repeat(5_000) }));
+    const outcome = await fetchPage(`${origin}/forbidden`, { fetch: deepseek.fetch });
     expect(outcome).toMatchObject({ result: { output: { truncated: true, bytes: 2_000 } } });
     expect(completedText(outcome)).toContain('the rest is cut');
+  });
+
+  it('never gives the provider an address the checks refused', async () => {
+    const deepseek = provider();
+    const outcome = await createWebFetchExecutor({
+      fetch: deepseek.fetch,
+      resolve: () => Promise.resolve(['10.1.2.3']),
+    }).execute({ url: 'https://rebind.example/' }, environmentFor('WEB_FETCH', NONE));
+    expect(outcome).toMatchObject({ outcome: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' });
+    expect(deepseek.calls).toHaveLength(0);
+  });
+
+  it('refuses a configuration that names a provider nobody knows, when it is built', () => {
+    expect(() =>
+      createWebFetchExecutor({
+        config: { ...localConfig, fetch: { remote: { provider: 'nope', baseUrl: 'https://x' } } },
+      }),
+    ).toThrow(/no provider named "nope"/u);
+    expect(() =>
+      createWebSearchExecutor({
+        config: { ...localConfig, search: { provider: 'nope', baseUrl: 'https://x' } },
+      }),
+    ).toThrow(/no provider named "nope"/u);
   });
 });
 

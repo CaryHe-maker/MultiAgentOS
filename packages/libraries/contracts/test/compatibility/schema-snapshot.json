@@ -7395,10 +7395,9 @@
           "maxLength": 2048
         },
         "via": {
-          "enum": [
-            "deepseek",
-            "local"
-          ]
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
         },
         "bytes": {
           "type": "integer",
@@ -20610,10 +20609,9 @@
                       "maxLength": 2048
                     },
                     "via": {
-                      "enum": [
-                        "deepseek",
-                        "local"
-                      ]
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
                     },
                     "bytes": {
                       "type": "integer",
@@ -26131,10 +26129,9 @@
                   "maxLength": 2048
                 },
                 "via": {
-                  "enum": [
-                    "deepseek",
-                    "local"
-                  ]
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
                 },
                 "bytes": {
                   "type": "integer",
@@ -35174,10 +35171,9 @@
               "maxLength": 2048
             },
             "via": {
-              "enum": [
-                "deepseek",
-                "local"
-              ]
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
             },
             "bytes": {
               "type": "integer",
@@ -36089,10 +36085,9 @@
                       "maxLength": 2048
                     },
                     "via": {
-                      "enum": [
-                        "deepseek",
-                        "local"
-                      ]
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
                     },
                     "bytes": {
                       "type": "integer",
@@ -37851,10 +37846,9 @@
                               "maxLength": 2048
                             },
                             "via": {
-                              "enum": [
-                                "deepseek",
-                                "local"
-                              ]
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
                             },
                             "bytes": {
                               "type": "integer",
@@ -41058,7 +41052,8 @@
               "properties": {
                 "provider": {
                   "type": "string",
-                  "const": "deepseek"
+                  "minLength": 1,
+                  "maxLength": 32
                 },
                 "baseUrl": {
                   "type": "string",
@@ -41071,22 +41066,35 @@
             "fetch": {
               "type": "object",
               "required": [
-                "provider",
-                "baseUrl",
-                "fallback"
+                "remote"
               ],
               "properties": {
-                "provider": {
-                  "type": "string",
-                  "const": "deepseek"
-                },
-                "baseUrl": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
-                },
-                "fallback": {
-                  "type": "boolean"
+                "remote": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "baseUrl"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        "baseUrl": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "additionalProperties": false
@@ -41829,7 +41837,8 @@
                   "properties": {
                     "provider": {
                       "type": "string",
-                      "const": "deepseek"
+                      "minLength": 1,
+                      "maxLength": 32
                     },
                     "baseUrl": {
                       "type": "string",
@@ -41842,22 +41851,35 @@
                 "fetch": {
                   "type": "object",
                   "required": [
-                    "provider",
-                    "baseUrl",
-                    "fallback"
+                    "remote"
                   ],
                   "properties": {
-                    "provider": {
-                      "type": "string",
-                      "const": "deepseek"
-                    },
-                    "baseUrl": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 200
-                    },
-                    "fallback": {
-                      "type": "boolean"
+                    "remote": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "provider",
+                            "baseUrl"
+                          ],
+                          "properties": {
+                            "provider": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
+                            },
+                            "baseUrl": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   },
                   "additionalProperties": false
