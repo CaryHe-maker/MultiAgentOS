@@ -405,6 +405,8 @@ export class AttemptRequestBuilder {
         return { ...base, kind: 'HUMAN', text: await this.#text(entry.contentRef) };
       case 'NOTE':
         return { ...base, kind: 'NOTE', text: entry.text };
+      case 'SUMMARY':
+        return { ...base, kind: 'SUMMARY', text: await this.#text(entry.contentRef) };
       case 'PROJECT_INSTRUCTIONS':
         return {
           ...base,

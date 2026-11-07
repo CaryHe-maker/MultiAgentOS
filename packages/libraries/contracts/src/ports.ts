@@ -25,6 +25,7 @@ import type {
   PauseRunRequest,
   ResumeRunRequest,
   SteerRunRequest,
+  CompactContextRequest,
   ConfirmUndoRequest,
   DiffTurnsRequest,
   ReadArtifactRequest,
@@ -51,6 +52,8 @@ import type {
   DelegationReserved,
   RegisterAgentRunRequest,
   ReleaseDelegationRequest,
+  ReportCompactionSourceRequest,
+  AckCompactionRequest,
   ReserveDelegationRequest,
   RequestHumanRequest,
   SubmitUnitRequest,
@@ -402,6 +405,16 @@ export interface WorkflowGatewayPort {
     request: ReleaseDelegationRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
+  /** The material of a compaction, as Kernel asked for it with `CompactionSourceQuery` (阶段 8). */
+  reportCompactionSource(
+    request: ReportCompactionSourceRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** The result of a compaction is in the log, or could not be put there (阶段 8). */
+  ackCompaction(
+    request: AckCompactionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   submitUnit(
     request: SubmitUnitRequest,
     context: BoundaryContext,
@@ -484,6 +497,11 @@ export interface InteractionGatewayPort {
   ): Promise<SyscallAck | SyscallRejected>;
   steerRun(
     request: SteerRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** `/compact` (阶段 8): only while the run awaits input. */
+  compactContext(
+    request: CompactContextRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   undoTurns(

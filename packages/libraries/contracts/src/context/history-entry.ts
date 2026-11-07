@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { BudgetViewSchema } from '../kernel-unit/budget-state.js';
+import { MeasuredUsageSchema } from './compaction.js';
 import { ArtifactRefSchema, artifactRefOf } from '../platform-common/common-schemas.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
@@ -28,6 +29,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
       reasoningRef: Type.Optional(ArtifactRefSchema),
       replayable: Type.Boolean(),
+      /** Only in the material of a compaction: what the provider counted for this turn. */
+      measured: Type.Optional(MeasuredUsageSchema),
     }),
     closed({
       ...entry,
@@ -37,6 +40,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeSchema),
+      /** `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6). */
+      pruned: Type.Optional(Type.Literal(true)),
     }),
     /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
     closed({
@@ -91,6 +96,18 @@ export const ContextHistoryEntrySchema = Type.Union(
       kind: Type.Literal('HUMAN_ANSWER'),
       toolCallId: ToolCallIdSchema,
       question: Type.Enum(['ask', 'confirm', 'review']),
+      contentRef: ArtifactRefSchema,
+    }),
+    /**
+     * The summary that took the place of `[fromSeq, toSeq]` of the log (M2Design 9.6). `seq` is the
+     * record of the compaction; the entry stands where the first replaced entry stood.
+     */
+    closed({
+      ...entry,
+      kind: Type.Literal('SUMMARY'),
+      compactionId: IdSchemas.compactionId,
+      fromSeq: count(1),
+      toSeq: count(1),
       contentRef: ArtifactRefSchema,
     }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */

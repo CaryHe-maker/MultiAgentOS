@@ -36,6 +36,8 @@ export const IdSchemas = {
   /** One reservation of shares for the tasks of a `run_subagents` call (M2Design 7.3). */
   delegationId: Id('dlg'),
   queryId: Id('slq'),
+  /** One compaction of a projection (M2Design 9.6). */
+  compactionId: Id('cmp'),
 } as const;
 
 /** Returned by the model provider and used as is. */

@@ -238,6 +238,7 @@ export const ConsoleText = Object.freeze({
     WAITING_SUBTASKS: '等待子任务',
     AWAITING_ANSWER: '等待你的回答',
     PAUSED: '已暂停',
+    COMPACTING: '压缩上下文',
     WRAPPING_UP: '收尾',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,

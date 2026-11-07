@@ -2087,6 +2087,14 @@
                       "FATAL"
                     ]
                   },
+                  "CONTEXT_COMPACTED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "OUT_OF_SCOPE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -2231,6 +2239,14 @@
                       "FATAL"
                     ]
                   },
+                  "CONTEXT_OVERFLOW": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "PROVIDER_UNREACHABLE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -2272,6 +2288,14 @@
                     ]
                   },
                   "PAGE_UNAVAILABLE": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "COMPACTION_SUMMARY_INVALID": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -3190,6 +3214,14 @@
                 "FATAL"
               ]
             },
+            "CONTEXT_COMPACTED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "OUT_OF_SCOPE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -3334,6 +3366,14 @@
                 "FATAL"
               ]
             },
+            "CONTEXT_OVERFLOW": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "PROVIDER_UNREACHABLE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -3375,6 +3415,14 @@
               ]
             },
             "PAGE_UNAVAILABLE": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "COMPACTION_SUMMARY_INVALID": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3454,6 +3502,87 @@
       },
       "additionalProperties": false,
       "$id": "checkpoint.WorkflowCheckpointRef.v1"
+    },
+    "context.CompactionSummaryInput.v1": {
+      "type": "object",
+      "required": [
+        "mode",
+        "omittedEntries"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "PREFIX",
+            "TEXT"
+          ]
+        },
+        "omittedEntries": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "context.CompactionSummaryInput.v1"
+    },
+    "context.CompactionTarget.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "MAIN"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "agentRunId"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "AGENT_RUN"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "context.CompactionTarget.v1"
+    },
+    "context.CompactionUsage.v1": {
+      "type": "object",
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "cachedInputTokens"
+      ],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cachedInputTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "context.CompactionUsage.v1"
     },
     "context.ContextAssembleInput.v1": {
       "type": "object",
@@ -3652,6 +3781,30 @@
                   },
                   "replayable": {
                     "type": "boolean"
+                  },
+                  "measured": {
+                    "type": "object",
+                    "required": [
+                      "inputTokens",
+                      "outputTokens",
+                      "headDigest"
+                    ],
+                    "properties": {
+                      "inputTokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "outputTokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "headDigest": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "context.MeasuredUsage.v1"
                   }
                 },
                 "additionalProperties": false
@@ -3815,9 +3968,16 @@
                       "DOMAIN_DENIED",
                       "SECRET_IN_REQUEST",
                       "UNSUPPORTED_CONTENT",
-                      "PAGE_UNAVAILABLE"
+                      "PAGE_UNAVAILABLE",
+                      "CONTEXT_COMPACTED",
+                      "COMPACTION_SUMMARY_INVALID",
+                      "COMPACTION_UNKNOWN"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
+                  },
+                  "pruned": {
+                    "type": "boolean",
+                    "const": true
                   }
                 },
                 "additionalProperties": false
@@ -4272,6 +4432,81 @@
                   "seq",
                   "category",
                   "kind",
+                  "compactionId",
+                  "fromSeq",
+                  "toSeq",
+                  "contentRef"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SUMMARY"
+                  },
+                  "compactionId": {
+                    "type": "string",
+                    "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "fromSeq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "toSeq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "contentRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -4594,6 +4829,30 @@
             },
             "replayable": {
               "type": "boolean"
+            },
+            "measured": {
+              "type": "object",
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "headDigest"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "headDigest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "context.MeasuredUsage.v1"
             }
           },
           "additionalProperties": false
@@ -4757,9 +5016,16 @@
                 "DOMAIN_DENIED",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
-                "PAGE_UNAVAILABLE"
+                "PAGE_UNAVAILABLE",
+                "CONTEXT_COMPACTED",
+                "COMPACTION_SUMMARY_INVALID",
+                "COMPACTION_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
+            },
+            "pruned": {
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
@@ -5174,6 +5440,81 @@
                 "confirm",
                 "review"
               ]
+            },
+            "contentRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "compactionId",
+            "fromSeq",
+            "toSeq",
+            "contentRef"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "SUMMARY"
+            },
+            "compactionId": {
+              "type": "string",
+              "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "fromSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "toSeq": {
+              "type": "integer",
+              "minimum": 1
             },
             "contentRef": {
               "type": "object",
@@ -5981,6 +6322,30 @@
       ],
       "$id": "context.ContextPack.v1"
     },
+    "context.MeasuredUsage.v1": {
+      "type": "object",
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "headDigest"
+      ],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "headDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "context.MeasuredUsage.v1"
+    },
     "context.ModelToolSpec.v1": {
       "type": "object",
       "required": [
@@ -6014,6 +6379,93 @@
       },
       "additionalProperties": false,
       "$id": "context.ModelToolSpec.v1"
+    },
+    "context.PrunedItem.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "toolCallId",
+        "prunedRef",
+        "readableRef",
+        "omittedBytes"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prunedRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        },
+        "readableRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        },
+        "omittedBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "context.PrunedItem.v1"
     },
     "context.RepositoryOrientInput.v1": {
       "type": "object",
@@ -7830,6 +8282,7 @@
                 "WAITING_SUBTASKS",
                 "AWAITING_ANSWER",
                 "PAUSED",
+                "COMPACTING",
                 "WRAPPING_UP",
                 "ENDED"
               ]
@@ -8515,6 +8968,61 @@
       ],
       "$id": "kernel.control.CloseReason.v1"
     },
+    "kernel.control.CompactContextRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.CompactContextRequest.v1"
+    },
+    "kernel.control.CompactionFailed.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "trigger",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "CompactionFailed"
+        },
+        "trigger": {
+          "enum": [
+            "AUTO",
+            "OVERFLOW",
+            "USER"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "NOTHING_TO_COMPACT",
+            "BUDGET_INSUFFICIENT",
+            "SUMMARY_FAILED",
+            "NOT_RECORDED"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.CompactionFailed.v1"
+    },
     "kernel.control.ConfirmUndoRequest.v1": {
       "type": "object",
       "required": [
@@ -8550,6 +9058,69 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.ConfirmUndoRequest.v1"
+    },
+    "kernel.control.ContextCompacted.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "trigger",
+        "compactedTurns",
+        "prunedResults"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "ContextCompacted"
+        },
+        "trigger": {
+          "enum": [
+            "AUTO",
+            "OVERFLOW",
+            "USER",
+            "IDLE"
+          ]
+        },
+        "summaryRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        },
+        "compactedTurns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prunedResults": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.ContextCompacted.v1"
     },
     "kernel.control.DeleteSessionRequest.v1": {
       "type": "object",
@@ -8900,6 +9471,1034 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.ReleaseDelegationRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "reportCompactionSource"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "compactionId",
+                "entries"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "compactionId": {
+                  "type": "string",
+                  "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "contentRef"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "HUMAN"
+                          },
+                          "contentRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "modelId",
+                          "outputRef",
+                          "replayable"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "MODEL_TURN"
+                          },
+                          "modelId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "reasoningRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          },
+                          "replayable": {
+                            "type": "boolean"
+                          },
+                          "measured": {
+                            "type": "object",
+                            "required": [
+                              "inputTokens",
+                              "outputTokens",
+                              "headDigest"
+                            ],
+                            "properties": {
+                              "inputTokens": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "outputTokens": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "headDigest": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "context.MeasuredUsage.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "toolCallId",
+                          "toolName",
+                          "status"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "TOOL_RESULT"
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "toolName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "OK",
+                              "REJECTED",
+                              "FAILED",
+                              "INTERRUPTED"
+                            ]
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          },
+                          "reasonCode": {
+                            "enum": [
+                              "INVALID_REQUEST",
+                              "CALLER_FORBIDDEN",
+                              "RUN_NOT_FOUND",
+                              "RUN_BLOCKED",
+                              "REQUEST_CONFLICT",
+                              "RUN_LIMIT",
+                              "REPOSITORY_INVALID",
+                              "DEFINITION_MISMATCH",
+                              "DEFINITION_UNAVAILABLE",
+                              "AGENT_RUN_ACTIVE",
+                              "AGENT_RUN_EXISTS",
+                              "AGENT_RUN_NOT_FOUND",
+                              "AGENT_RUN_ENDED",
+                              "FORBIDDEN",
+                              "UNSUPPORTED_CAPABILITY",
+                              "INVALID_INPUT",
+                              "QUESTION_NOT_PENDING",
+                              "INVALID_ARTIFACT_REF",
+                              "USER_DECLINED",
+                              "BUDGET_WRAP_UP",
+                              "BUDGET_EXHAUSTED",
+                              "FINAL_CALL_USED",
+                              "OUT_OF_SCOPE",
+                              "NOT_FOUND",
+                              "UNSUPPORTED_FILE",
+                              "INVALID_RANGE",
+                              "INVALID_QUERY",
+                              "LIMIT_EXCEEDED",
+                              "PROVIDER_UNREACHABLE",
+                              "PROVIDER_RATE_LIMITED",
+                              "PROVIDER_AUTH",
+                              "PROVIDER_ERROR",
+                              "PROVIDER_TOOL_CHOICE_IGNORED",
+                              "UNIT_TIMEOUT",
+                              "INTERNAL",
+                              "EXECUTION_CANCELLED",
+                              "SCOPE_MISSING",
+                              "PATH_ESCAPE",
+                              "GUARD_FAILURE",
+                              "EXECUTION_STOP_UNCONFIRMED",
+                              "PIN_FAILED",
+                              "WORKFLOW_INTERNAL",
+                              "KERNEL_INTERNAL",
+                              "NO_OPEN_TURN",
+                              "SESSION_COMMAND_UNKNOWN",
+                              "SESSION_QUERY_UNKNOWN",
+                              "PROJECT_FILE_FORBIDDEN",
+                              "ARTIFACT_EXPIRED",
+                              "SESSION_NOT_FOUND",
+                              "SESSION_IN_USE",
+                              "TEMPLATE_UNSUPPORTED",
+                              "HUMAN_REQUEST_NOT_PENDING",
+                              "CONTEXT_OVERFLOW",
+                              "QUOTA_EXHAUSTED",
+                              "CAPABILITY_NOT_SUBSET",
+                              "CAPABILITY_NOT_GRANTED",
+                              "WRITE_OUT_OF_SCOPE",
+                              "PROTECTED_PATH",
+                              "ADMISSION_CHECK_FAILED",
+                              "FILE_CHANGED",
+                              "EDIT_NO_MATCH",
+                              "EDIT_NOT_UNIQUE",
+                              "UNDO_NOT_AVAILABLE",
+                              "NOTHING_TO_UNDO",
+                              "UNDO_UNKNOWN",
+                              "COMMAND_DENIED",
+                              "SANDBOX_UNAVAILABLE",
+                              "APPROVAL_MISMATCH",
+                              "ENV_ASSERTION_FAILED",
+                              "PROTECTED_PATH_CREATED",
+                              "NOT_A_GIT_REPOSITORY",
+                              "MEMORY_PRESSURE",
+                              "WRITE_SCOPE_CONFLICT",
+                              "WRITE_SCOPE_DELEGATED",
+                              "BUDGET_INSUFFICIENT",
+                              "DELEGATION_NOT_FOUND",
+                              "ADDRESS_FORBIDDEN",
+                              "DOMAIN_DENIED",
+                              "SECRET_IN_REQUEST",
+                              "UNSUPPORTED_CONTENT",
+                              "PAGE_UNAVAILABLE",
+                              "CONTEXT_COMPACTED",
+                              "COMPACTION_SUMMARY_INVALID",
+                              "COMPACTION_UNKNOWN"
+                            ],
+                            "$id": "platform.common.ReasonCode.v1"
+                          },
+                          "pruned": {
+                            "type": "boolean",
+                            "const": true
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "HANDOFF"
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "text"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "FEEDBACK"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "path",
+                          "ref",
+                          "trusted"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "PROJECT_INSTRUCTIONS"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "ref": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          },
+                          "trusted": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "name",
+                          "agent",
+                          "goal",
+                          "acceptance",
+                          "writeScope",
+                          "inputs"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "TASK"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "agent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "goal": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          },
+                          "acceptance": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "maxItems": 10
+                          },
+                          "writeScope": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            },
+                            "maxItems": 10
+                          },
+                          "inputs": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "artifactId",
+                                "sha256",
+                                "size",
+                                "mediaType"
+                              ],
+                              "properties": {
+                                "artifactId": {
+                                  "type": "string",
+                                  "pattern": "^art_[a-f0-9]{64}$"
+                                },
+                                "sha256": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "mediaType": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                }
+                              },
+                              "additionalProperties": false,
+                              "$id": "platform.common.ArtifactRef.v1"
+                            },
+                            "maxItems": 10
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "name",
+                          "agent",
+                          "status",
+                          "notes"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SUBAGENT_RESULT"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "agent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "enum": [
+                              "DONE",
+                              "PARTIAL",
+                              "BLOCKED",
+                              "FAILED",
+                              "SKIPPED"
+                            ]
+                          },
+                          "notes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "maxItems": 10
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "toolCallId",
+                          "question",
+                          "contentRef"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "HUMAN_ANSWER"
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "question": {
+                            "enum": [
+                              "ask",
+                              "confirm",
+                              "review"
+                            ]
+                          },
+                          "contentRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "compactionId",
+                          "fromSeq",
+                          "toSeq",
+                          "contentRef"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SUMMARY"
+                          },
+                          "compactionId": {
+                            "type": "string",
+                            "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "fromSeq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "toSeq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "contentRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "text"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "NOTE"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ],
+                    "$id": "context.ContextHistoryEntry.v1"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ReportCompactionSourceRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "ackCompaction"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "compactionId",
+                "stage",
+                "outcome"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "compactionId": {
+                  "type": "string",
+                  "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "stage": {
+                  "enum": [
+                    "PRUNE",
+                    "SUMMARY"
+                  ]
+                },
+                "outcome": {
+                  "enum": [
+                    "RECORDED",
+                    "FAILED"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.AckCompactionRequest.v1"
             }
           },
           "additionalProperties": false
@@ -9278,6 +10877,30 @@
                                   },
                                   "replayable": {
                                     "type": "boolean"
+                                  },
+                                  "measured": {
+                                    "type": "object",
+                                    "required": [
+                                      "inputTokens",
+                                      "outputTokens",
+                                      "headDigest"
+                                    ],
+                                    "properties": {
+                                      "inputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "outputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "headDigest": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "$id": "context.MeasuredUsage.v1"
                                   }
                                 },
                                 "additionalProperties": false
@@ -9441,9 +11064,16 @@
                                       "DOMAIN_DENIED",
                                       "SECRET_IN_REQUEST",
                                       "UNSUPPORTED_CONTENT",
-                                      "PAGE_UNAVAILABLE"
+                                      "PAGE_UNAVAILABLE",
+                                      "CONTEXT_COMPACTED",
+                                      "COMPACTION_SUMMARY_INVALID",
+                                      "COMPACTION_UNKNOWN"
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
+                                  },
+                                  "pruned": {
+                                    "type": "boolean",
+                                    "const": true
                                   }
                                 },
                                 "additionalProperties": false
@@ -9858,6 +11488,81 @@
                                       "confirm",
                                       "review"
                                     ]
+                                  },
+                                  "contentRef": {
+                                    "type": "object",
+                                    "required": [
+                                      "artifactId",
+                                      "sha256",
+                                      "size",
+                                      "mediaType"
+                                    ],
+                                    "properties": {
+                                      "artifactId": {
+                                        "type": "string",
+                                        "pattern": "^art_[a-f0-9]{64}$"
+                                      },
+                                      "sha256": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      },
+                                      "size": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "$id": "platform.common.ArtifactRef.v1"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
+                                  "compactionId",
+                                  "fromSeq",
+                                  "toSeq",
+                                  "contentRef"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "SUMMARY"
+                                  },
+                                  "compactionId": {
+                                    "type": "string",
+                                    "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "fromSeq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "toSeq": {
+                                    "type": "integer",
+                                    "minimum": 1
                                   },
                                   "contentRef": {
                                     "type": "object",
@@ -10762,7 +12467,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -12134,6 +13842,49 @@
               },
               "additionalProperties": false,
               "$id": "kernel.control.SteerRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "compactContext"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.CompactContextRequest.v1"
             }
           },
           "additionalProperties": false
@@ -13580,6 +15331,7 @@
                         "WAITING_SUBTASKS",
                         "AWAITING_ANSWER",
                         "PAUSED",
+                        "COMPACTING",
                         "WRAPPING_UP",
                         "ENDED"
                       ]
@@ -14135,7 +15887,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -14395,7 +16150,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -14911,6 +16669,100 @@
               },
               "additionalProperties": false,
               "$id": "kernel.control.WorkspaceReverted.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "trigger",
+                "compactedTurns",
+                "prunedResults"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ContextCompacted"
+                },
+                "trigger": {
+                  "enum": [
+                    "AUTO",
+                    "OVERFLOW",
+                    "USER",
+                    "IDLE"
+                  ]
+                },
+                "summaryRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "compactedTurns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "prunedResults": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.ContextCompacted.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "trigger",
+                "reason"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "CompactionFailed"
+                },
+                "trigger": {
+                  "enum": [
+                    "AUTO",
+                    "OVERFLOW",
+                    "USER"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "NOTHING_TO_COMPACT",
+                    "BUDGET_INSUFFICIENT",
+                    "SUMMARY_FAILED",
+                    "NOT_RECORDED"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.CompactionFailed.v1"
             }
           ]
         }
@@ -15268,7 +17120,10 @@
             "DOMAIN_DENIED",
             "SECRET_IN_REQUEST",
             "UNSUPPORTED_CONTENT",
-            "PAGE_UNAVAILABLE"
+            "PAGE_UNAVAILABLE",
+            "CONTEXT_COMPACTED",
+            "COMPACTION_SUMMARY_INVALID",
+            "COMPACTION_UNKNOWN"
           ],
           "$id": "platform.common.ReasonCode.v1"
         },
@@ -15851,7 +17706,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -16111,7 +17969,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -17274,7 +19135,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -18016,7 +19880,8 @@
                 "UNDO_UNKNOWN",
                 "MEMORY_PRESSURE",
                 "WRITE_SCOPE_CONFLICT",
-                "DELEGATION_NOT_FOUND"
+                "DELEGATION_NOT_FOUND",
+                "COMPACTION_UNKNOWN"
               ]
             }
           },
@@ -18882,7 +20747,10 @@
                       "DOMAIN_DENIED",
                       "SECRET_IN_REQUEST",
                       "UNSUPPORTED_CONTENT",
-                      "PAGE_UNAVAILABLE"
+                      "PAGE_UNAVAILABLE",
+                      "CONTEXT_COMPACTED",
+                      "COMPACTION_SUMMARY_INVALID",
+                      "COMPACTION_UNKNOWN"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
@@ -18969,6 +20837,39 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SUMMARY"
+                  },
+                  "text": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -21216,7 +23117,8 @@
                 "NOT_A_GIT_REPOSITORY",
                 "ADDRESS_FORBIDDEN",
                 "SECRET_IN_REQUEST",
-                "UNSUPPORTED_CONTENT"
+                "UNSUPPORTED_CONTENT",
+                "CONTEXT_OVERFLOW"
               ]
             }
           },
@@ -21294,6 +23196,7 @@
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
                 "PAGE_UNAVAILABLE",
+                "COMPACTION_SUMMARY_INVALID",
                 "INTERNAL"
               ]
             },
@@ -21626,7 +23529,8 @@
                 "NOT_A_GIT_REPOSITORY",
                 "ADDRESS_FORBIDDEN",
                 "SECRET_IN_REQUEST",
-                "UNSUPPORTED_CONTENT"
+                "UNSUPPORTED_CONTENT",
+                "CONTEXT_OVERFLOW"
               ]
             }
           },
@@ -21723,6 +23627,7 @@
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
                 "PAGE_UNAVAILABLE",
+                "COMPACTION_SUMMARY_INVALID",
                 "INTERNAL"
               ]
             },
@@ -23236,7 +25141,10 @@
                               "DOMAIN_DENIED",
                               "SECRET_IN_REQUEST",
                               "UNSUPPORTED_CONTENT",
-                              "PAGE_UNAVAILABLE"
+                              "PAGE_UNAVAILABLE",
+                              "CONTEXT_COMPACTED",
+                              "COMPACTION_SUMMARY_INVALID",
+                              "COMPACTION_UNKNOWN"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
@@ -23323,6 +25231,39 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "text"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SUMMARY"
+                          },
+                          "text": {
+                            "type": "string"
                           }
                         },
                         "additionalProperties": false
@@ -27992,6 +29933,49 @@
       "additionalProperties": false,
       "$id": "kernel.session.WorkflowSystemEvent.v1"
     },
+    "kernel.unit.AckCompactionRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "compactionId",
+        "stage",
+        "outcome"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "compactionId": {
+          "type": "string",
+          "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "stage": {
+          "enum": [
+            "PRUNE",
+            "SUMMARY"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "RECORDED",
+            "FAILED"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.AckCompactionRequest.v1"
+    },
     "kernel.unit.BudgetState.v1": {
       "enum": [
         "NORMAL",
@@ -28217,7 +30201,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -28257,6 +30244,214 @@
         }
       ],
       "$id": "kernel.unit.CloseRunRequest.v1"
+    },
+    "kernel.unit.CompactionSourceQuery.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "compactionId",
+        "target"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "CompactionSourceQuery"
+        },
+        "compactionId": {
+          "type": "string",
+          "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "MAIN"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "agentRunId"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "AGENT_RUN"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "$id": "context.CompactionTarget.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.CompactionSourceQuery.v1"
+    },
+    "kernel.unit.ContextCompacted.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "compactionId",
+        "target",
+        "fromSeq",
+        "toSeq",
+        "keptSeqs",
+        "summaryRef",
+        "summaryInput",
+        "usage"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "ContextCompacted"
+        },
+        "compactionId": {
+          "type": "string",
+          "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "MAIN"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "agentRunId"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "AGENT_RUN"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "$id": "context.CompactionTarget.v1"
+        },
+        "fromSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "toSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "keptSeqs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "summaryRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        },
+        "summaryInput": {
+          "type": "object",
+          "required": [
+            "mode",
+            "omittedEntries"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "PREFIX",
+                "TEXT"
+              ]
+            },
+            "omittedEntries": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "$id": "context.CompactionSummaryInput.v1"
+        },
+        "usage": {
+          "type": "object",
+          "required": [
+            "inputTokens",
+            "outputTokens",
+            "cachedInputTokens"
+          ],
+          "properties": {
+            "inputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cachedInputTokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "$id": "context.CompactionUsage.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ContextCompacted.v1"
     },
     "kernel.unit.DelegationReserved.v1": {
       "type": "object",
@@ -29175,6 +31370,953 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.ReleaseDelegationRequest.v1"
+    },
+    "kernel.unit.ReportCompactionSourceRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "compactionId",
+        "entries"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "compactionId": {
+          "type": "string",
+          "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "contentRef"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "HUMAN"
+                  },
+                  "contentRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "modelId",
+                  "outputRef",
+                  "replayable"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "MODEL_TURN"
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "reasoningRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "replayable": {
+                    "type": "boolean"
+                  },
+                  "measured": {
+                    "type": "object",
+                    "required": [
+                      "inputTokens",
+                      "outputTokens",
+                      "headDigest"
+                    ],
+                    "properties": {
+                      "inputTokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "outputTokens": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "headDigest": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "context.MeasuredUsage.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "toolCallId",
+                  "toolName",
+                  "status"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "TOOL_RESULT"
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "status": {
+                    "enum": [
+                      "OK",
+                      "REJECTED",
+                      "FAILED",
+                      "INTERRUPTED"
+                    ]
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "reasonCode": {
+                    "enum": [
+                      "INVALID_REQUEST",
+                      "CALLER_FORBIDDEN",
+                      "RUN_NOT_FOUND",
+                      "RUN_BLOCKED",
+                      "REQUEST_CONFLICT",
+                      "RUN_LIMIT",
+                      "REPOSITORY_INVALID",
+                      "DEFINITION_MISMATCH",
+                      "DEFINITION_UNAVAILABLE",
+                      "AGENT_RUN_ACTIVE",
+                      "AGENT_RUN_EXISTS",
+                      "AGENT_RUN_NOT_FOUND",
+                      "AGENT_RUN_ENDED",
+                      "FORBIDDEN",
+                      "UNSUPPORTED_CAPABILITY",
+                      "INVALID_INPUT",
+                      "QUESTION_NOT_PENDING",
+                      "INVALID_ARTIFACT_REF",
+                      "USER_DECLINED",
+                      "BUDGET_WRAP_UP",
+                      "BUDGET_EXHAUSTED",
+                      "FINAL_CALL_USED",
+                      "OUT_OF_SCOPE",
+                      "NOT_FOUND",
+                      "UNSUPPORTED_FILE",
+                      "INVALID_RANGE",
+                      "INVALID_QUERY",
+                      "LIMIT_EXCEEDED",
+                      "PROVIDER_UNREACHABLE",
+                      "PROVIDER_RATE_LIMITED",
+                      "PROVIDER_AUTH",
+                      "PROVIDER_ERROR",
+                      "PROVIDER_TOOL_CHOICE_IGNORED",
+                      "UNIT_TIMEOUT",
+                      "INTERNAL",
+                      "EXECUTION_CANCELLED",
+                      "SCOPE_MISSING",
+                      "PATH_ESCAPE",
+                      "GUARD_FAILURE",
+                      "EXECUTION_STOP_UNCONFIRMED",
+                      "PIN_FAILED",
+                      "WORKFLOW_INTERNAL",
+                      "KERNEL_INTERNAL",
+                      "NO_OPEN_TURN",
+                      "SESSION_COMMAND_UNKNOWN",
+                      "SESSION_QUERY_UNKNOWN",
+                      "PROJECT_FILE_FORBIDDEN",
+                      "ARTIFACT_EXPIRED",
+                      "SESSION_NOT_FOUND",
+                      "SESSION_IN_USE",
+                      "TEMPLATE_UNSUPPORTED",
+                      "HUMAN_REQUEST_NOT_PENDING",
+                      "CONTEXT_OVERFLOW",
+                      "QUOTA_EXHAUSTED",
+                      "CAPABILITY_NOT_SUBSET",
+                      "CAPABILITY_NOT_GRANTED",
+                      "WRITE_OUT_OF_SCOPE",
+                      "PROTECTED_PATH",
+                      "ADMISSION_CHECK_FAILED",
+                      "FILE_CHANGED",
+                      "EDIT_NO_MATCH",
+                      "EDIT_NOT_UNIQUE",
+                      "UNDO_NOT_AVAILABLE",
+                      "NOTHING_TO_UNDO",
+                      "UNDO_UNKNOWN",
+                      "COMMAND_DENIED",
+                      "SANDBOX_UNAVAILABLE",
+                      "APPROVAL_MISMATCH",
+                      "ENV_ASSERTION_FAILED",
+                      "PROTECTED_PATH_CREATED",
+                      "NOT_A_GIT_REPOSITORY",
+                      "MEMORY_PRESSURE",
+                      "WRITE_SCOPE_CONFLICT",
+                      "WRITE_SCOPE_DELEGATED",
+                      "BUDGET_INSUFFICIENT",
+                      "DELEGATION_NOT_FOUND",
+                      "ADDRESS_FORBIDDEN",
+                      "DOMAIN_DENIED",
+                      "SECRET_IN_REQUEST",
+                      "UNSUPPORTED_CONTENT",
+                      "PAGE_UNAVAILABLE",
+                      "CONTEXT_COMPACTED",
+                      "COMPACTION_SUMMARY_INVALID",
+                      "COMPACTION_UNKNOWN"
+                    ],
+                    "$id": "platform.common.ReasonCode.v1"
+                  },
+                  "pruned": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "outputRef",
+                  "toolCallId"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "HANDOFF"
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "FEEDBACK"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "path",
+                  "ref",
+                  "trusted"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "PROJECT_INSTRUCTIONS"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "ref": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "trusted": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "name",
+                  "agent",
+                  "goal",
+                  "acceptance",
+                  "writeScope",
+                  "inputs"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "TASK"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "goal": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "maxItems": 10
+                  },
+                  "writeScope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "maxItems": 10
+                  },
+                  "inputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "maxItems": 10
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "name",
+                  "agent",
+                  "status",
+                  "notes"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SUBAGENT_RESULT"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "status": {
+                    "enum": [
+                      "DONE",
+                      "PARTIAL",
+                      "BLOCKED",
+                      "FAILED",
+                      "SKIPPED"
+                    ]
+                  },
+                  "notes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "maxItems": 10
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "toolCallId",
+                  "question",
+                  "contentRef"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "HUMAN_ANSWER"
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "question": {
+                    "enum": [
+                      "ask",
+                      "confirm",
+                      "review"
+                    ]
+                  },
+                  "contentRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "compactionId",
+                  "fromSeq",
+                  "toSeq",
+                  "contentRef"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SUMMARY"
+                  },
+                  "compactionId": {
+                    "type": "string",
+                    "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "fromSeq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "toSeq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "contentRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "NOTE"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "$id": "context.ContextHistoryEntry.v1"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ReportCompactionSourceRequest.v1"
     },
     "kernel.unit.ReportPublishInput.v1": {
       "type": "object",
@@ -30354,7 +33496,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -30614,7 +33759,10 @@
                     "DOMAIN_DENIED",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
-                    "PAGE_UNAVAILABLE"
+                    "PAGE_UNAVAILABLE",
+                    "CONTEXT_COMPACTED",
+                    "COMPACTION_SUMMARY_INVALID",
+                    "COMPACTION_UNKNOWN"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -31557,6 +34705,30 @@
                           },
                           "replayable": {
                             "type": "boolean"
+                          },
+                          "measured": {
+                            "type": "object",
+                            "required": [
+                              "inputTokens",
+                              "outputTokens",
+                              "headDigest"
+                            ],
+                            "properties": {
+                              "inputTokens": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "outputTokens": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "headDigest": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "context.MeasuredUsage.v1"
                           }
                         },
                         "additionalProperties": false
@@ -31720,9 +34892,16 @@
                               "DOMAIN_DENIED",
                               "SECRET_IN_REQUEST",
                               "UNSUPPORTED_CONTENT",
-                              "PAGE_UNAVAILABLE"
+                              "PAGE_UNAVAILABLE",
+                              "CONTEXT_COMPACTED",
+                              "COMPACTION_SUMMARY_INVALID",
+                              "COMPACTION_UNKNOWN"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
+                          },
+                          "pruned": {
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "additionalProperties": false
@@ -32137,6 +35316,81 @@
                               "confirm",
                               "review"
                             ]
+                          },
+                          "contentRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false,
+                            "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "compactionId",
+                          "fromSeq",
+                          "toSeq",
+                          "contentRef"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SUMMARY"
+                          },
+                          "compactionId": {
+                            "type": "string",
+                            "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "fromSeq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "toSeq": {
+                            "type": "integer",
+                            "minimum": 1
                           },
                           "contentRef": {
                             "type": "object",
@@ -32793,6 +36047,154 @@
       "additionalProperties": false,
       "$id": "kernel.unit.SubmitUnitRequest.v1"
     },
+    "kernel.unit.ToolResultsPruned.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "compactionId",
+        "target",
+        "items"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "ToolResultsPruned"
+        },
+        "compactionId": {
+          "type": "string",
+          "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "MAIN"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "agentRunId"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "AGENT_RUN"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "$id": "context.CompactionTarget.v1"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "requestId",
+              "toolCallId",
+              "prunedRef",
+              "readableRef",
+              "omittedBytes"
+            ],
+            "properties": {
+              "requestId": {
+                "type": "string",
+                "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "toolCallId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "prunedRef": {
+                "type": "object",
+                "required": [
+                  "artifactId",
+                  "sha256",
+                  "size",
+                  "mediaType"
+                ],
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "pattern": "^art_[a-f0-9]{64}$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false,
+                "$id": "platform.common.ArtifactRef.v1"
+              },
+              "readableRef": {
+                "type": "object",
+                "required": [
+                  "artifactId",
+                  "sha256",
+                  "size",
+                  "mediaType"
+                ],
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "pattern": "^art_[a-f0-9]{64}$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false,
+                "$id": "platform.common.ArtifactRef.v1"
+              },
+              "omittedBytes": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false,
+            "$id": "context.PrunedItem.v1"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ToolResultsPruned.v1"
+    },
     "kernel.unit.TurnClosed.v1": {
       "type": "object",
       "required": [
@@ -33195,6 +36597,30 @@
                       },
                       "replayable": {
                         "type": "boolean"
+                      },
+                      "measured": {
+                        "type": "object",
+                        "required": [
+                          "inputTokens",
+                          "outputTokens",
+                          "headDigest"
+                        ],
+                        "properties": {
+                          "inputTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "outputTokens": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "headDigest": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "context.MeasuredUsage.v1"
                       }
                     },
                     "additionalProperties": false
@@ -33358,9 +36784,16 @@
                           "DOMAIN_DENIED",
                           "SECRET_IN_REQUEST",
                           "UNSUPPORTED_CONTENT",
-                          "PAGE_UNAVAILABLE"
+                          "PAGE_UNAVAILABLE",
+                          "CONTEXT_COMPACTED",
+                          "COMPACTION_SUMMARY_INVALID",
+                          "COMPACTION_UNKNOWN"
                         ],
                         "$id": "platform.common.ReasonCode.v1"
+                      },
+                      "pruned": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "additionalProperties": false
@@ -33775,6 +37208,81 @@
                           "confirm",
                           "review"
                         ]
+                      },
+                      "contentRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "platform.common.ArtifactRef.v1"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "compactionId",
+                      "fromSeq",
+                      "toSeq",
+                      "contentRef"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "SUMMARY"
+                      },
+                      "compactionId": {
+                        "type": "string",
+                        "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "fromSeq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "toSeq": {
+                        "type": "integer",
+                        "minimum": 1
                       },
                       "contentRef": {
                         "type": "object",
@@ -36348,6 +39856,7 @@
                 "PROTECTED_PATH_CREATED",
                 "WRITE_SCOPE_DELEGATED",
                 "DOMAIN_DENIED",
+                "CONTEXT_COMPACTED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
                 "UNSUPPORTED_FILE",
@@ -36365,7 +39874,8 @@
                 "NOT_A_GIT_REPOSITORY",
                 "ADDRESS_FORBIDDEN",
                 "SECRET_IN_REQUEST",
-                "UNSUPPORTED_CONTENT"
+                "UNSUPPORTED_CONTENT",
+                "CONTEXT_OVERFLOW"
               ]
             }
           },
@@ -36639,6 +40149,7 @@
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
                 "PAGE_UNAVAILABLE",
+                "COMPACTION_SUMMARY_INVALID",
                 "INTERNAL",
                 "UNIT_TIMEOUT"
               ]
@@ -38109,6 +41620,7 @@
                         "PROTECTED_PATH_CREATED",
                         "WRITE_SCOPE_DELEGATED",
                         "DOMAIN_DENIED",
+                        "CONTEXT_COMPACTED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
                         "UNSUPPORTED_FILE",
@@ -38126,7 +41638,8 @@
                         "NOT_A_GIT_REPOSITORY",
                         "ADDRESS_FORBIDDEN",
                         "SECRET_IN_REQUEST",
-                        "UNSUPPORTED_CONTENT"
+                        "UNSUPPORTED_CONTENT",
+                        "CONTEXT_OVERFLOW"
                       ]
                     }
                   },
@@ -38400,6 +41913,7 @@
                         "PROVIDER_ERROR",
                         "PROVIDER_TOOL_CHOICE_IGNORED",
                         "PAGE_UNAVAILABLE",
+                        "COMPACTION_SUMMARY_INVALID",
                         "INTERNAL",
                         "UNIT_TIMEOUT"
                       ]
@@ -39470,7 +42984,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -39730,7 +43247,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -40328,6 +43848,362 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.HumanCancelled.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "compactionId",
+                "target"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "CompactionSourceQuery"
+                },
+                "compactionId": {
+                  "type": "string",
+                  "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "MAIN"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "agentRunId"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "AGENT_RUN"
+                        },
+                        "agentRunId": {
+                          "type": "string",
+                          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ],
+                  "$id": "context.CompactionTarget.v1"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.CompactionSourceQuery.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "compactionId",
+                "target",
+                "items"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ToolResultsPruned"
+                },
+                "compactionId": {
+                  "type": "string",
+                  "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "MAIN"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "agentRunId"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "AGENT_RUN"
+                        },
+                        "agentRunId": {
+                          "type": "string",
+                          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ],
+                  "$id": "context.CompactionTarget.v1"
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "requestId",
+                      "toolCallId",
+                      "prunedRef",
+                      "readableRef",
+                      "omittedBytes"
+                    ],
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "prunedRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "platform.common.ArtifactRef.v1"
+                      },
+                      "readableRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "platform.common.ArtifactRef.v1"
+                      },
+                      "omittedBytes": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "context.PrunedItem.v1"
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ToolResultsPruned.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "compactionId",
+                "target",
+                "fromSeq",
+                "toSeq",
+                "keptSeqs",
+                "summaryRef",
+                "summaryInput",
+                "usage"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ContextCompacted"
+                },
+                "compactionId": {
+                  "type": "string",
+                  "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "MAIN"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "agentRunId"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "AGENT_RUN"
+                        },
+                        "agentRunId": {
+                          "type": "string",
+                          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ],
+                  "$id": "context.CompactionTarget.v1"
+                },
+                "fromSeq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "toSeq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "keptSeqs": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "summaryRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "summaryInput": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "omittedEntries"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "PREFIX",
+                        "TEXT"
+                      ]
+                    },
+                    "omittedEntries": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "context.CompactionSummaryInput.v1"
+                },
+                "usage": {
+                  "type": "object",
+                  "required": [
+                    "inputTokens",
+                    "outputTokens",
+                    "cachedInputTokens"
+                  ],
+                  "properties": {
+                    "inputTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "outputTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "cachedInputTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "context.CompactionUsage.v1"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ContextCompacted.v1"
             }
           ]
         }
@@ -40819,7 +44695,10 @@
         "DOMAIN_DENIED",
         "SECRET_IN_REQUEST",
         "UNSUPPORTED_CONTENT",
-        "PAGE_UNAVAILABLE"
+        "PAGE_UNAVAILABLE",
+        "CONTEXT_COMPACTED",
+        "COMPACTION_SUMMARY_INVALID",
+        "COMPACTION_UNKNOWN"
       ],
       "$id": "platform.common.ReasonCode.v1"
     },
@@ -40870,6 +44749,7 @@
         "sandboxMaskedPatterns",
         "command",
         "web",
+        "compaction",
         "killGraceMs",
         "maxConcurrentExec",
         "maxConcurrentAttempts",
@@ -41098,6 +44978,91 @@
                 }
               },
               "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "compaction": {
+          "type": "object",
+          "required": [
+            "triggerRatio",
+            "idleTriggerRatio",
+            "idleEnabled",
+            "keepTokens",
+            "keepHumanBytes",
+            "pruneMinBytes",
+            "pruneHeadBytes",
+            "pruneTailBytes",
+            "summaryMaxTokens",
+            "overflowTargets",
+            "summaryFallbackTargets",
+            "summaryReasoningEffort"
+          ],
+          "properties": {
+            "triggerRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "idleTriggerRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "idleEnabled": {
+              "type": "boolean"
+            },
+            "keepTokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "keepHumanBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pruneMinBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pruneHeadBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pruneTailBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "summaryMaxTokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "overflowTargets": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "minItems": 1,
+              "maxItems": 5
+            },
+            "summaryFallbackTargets": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "minItems": 1,
+              "maxItems": 6
+            },
+            "summaryReasoningEffort": {
+              "enum": [
+                "none",
+                "low",
+                "high",
+                "max"
+              ]
             }
           },
           "additionalProperties": false
@@ -41655,6 +45620,7 @@
             "sandboxMaskedPatterns",
             "command",
             "web",
+            "compaction",
             "killGraceMs",
             "maxConcurrentExec",
             "maxConcurrentAttempts",
@@ -41883,6 +45849,91 @@
                     }
                   },
                   "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "compaction": {
+              "type": "object",
+              "required": [
+                "triggerRatio",
+                "idleTriggerRatio",
+                "idleEnabled",
+                "keepTokens",
+                "keepHumanBytes",
+                "pruneMinBytes",
+                "pruneHeadBytes",
+                "pruneTailBytes",
+                "summaryMaxTokens",
+                "overflowTargets",
+                "summaryFallbackTargets",
+                "summaryReasoningEffort"
+              ],
+              "properties": {
+                "triggerRatio": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
+                "idleTriggerRatio": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
+                "idleEnabled": {
+                  "type": "boolean"
+                },
+                "keepTokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "keepHumanBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pruneMinBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pruneHeadBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pruneTailBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "summaryMaxTokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "overflowTargets": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 1,
+                  "maxItems": 5
+                },
+                "summaryFallbackTargets": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 1,
+                  "maxItems": 6
+                },
+                "summaryReasoningEffort": {
+                  "enum": [
+                    "none",
+                    "low",
+                    "high",
+                    "max"
+                  ]
                 }
               },
               "additionalProperties": false
@@ -44362,7 +48413,10 @@
                 "DOMAIN_DENIED",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
-                "PAGE_UNAVAILABLE"
+                "PAGE_UNAVAILABLE",
+                "CONTEXT_COMPACTED",
+                "COMPACTION_SUMMARY_INVALID",
+                "COMPACTION_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
@@ -44785,7 +48839,10 @@
                 "DOMAIN_DENIED",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
-                "PAGE_UNAVAILABLE"
+                "PAGE_UNAVAILABLE",
+                "CONTEXT_COMPACTED",
+                "COMPACTION_SUMMARY_INVALID",
+                "COMPACTION_UNKNOWN"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -45447,6 +49504,372 @@
             "steerInputId": {
               "type": "string",
               "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "compactionId",
+            "target",
+            "items"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "TOOL_RESULTS_PRUNED"
+            },
+            "compactionId": {
+              "type": "string",
+              "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "MAIN"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentRunId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "AGENT_RUN"
+                    },
+                    "agentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ],
+              "$id": "context.CompactionTarget.v1"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "requestId",
+                  "toolCallId",
+                  "prunedRef",
+                  "readableRef",
+                  "omittedBytes"
+                ],
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "prunedRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "readableRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "omittedBytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false,
+                "$id": "context.PrunedItem.v1"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "compactionId",
+            "target",
+            "fromSeq",
+            "toSeq",
+            "keptSeqs",
+            "summaryRef",
+            "summaryInput",
+            "usage"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "CONTEXT_COMPACTED"
+            },
+            "compactionId": {
+              "type": "string",
+              "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "MAIN"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentRunId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "AGENT_RUN"
+                    },
+                    "agentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ],
+              "$id": "context.CompactionTarget.v1"
+            },
+            "fromSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "toSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "keptSeqs": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "summaryRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false,
+              "$id": "platform.common.ArtifactRef.v1"
+            },
+            "summaryInput": {
+              "type": "object",
+              "required": [
+                "mode",
+                "omittedEntries"
+              ],
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "PREFIX",
+                    "TEXT"
+                  ]
+                },
+                "omittedEntries": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "context.CompactionSummaryInput.v1"
+            },
+            "usage": {
+              "type": "object",
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "cachedInputTokens"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cachedInputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "context.CompactionUsage.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "compactionId",
+            "reason"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "CONTEXT_COMPACTION_REVOKED"
+            },
+            "compactionId": {
+              "type": "string",
+              "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "reason": {
+              "type": "string",
+              "const": "TURN_REVERTED"
             }
           },
           "additionalProperties": false
@@ -46439,7 +50862,10 @@
                             "DOMAIN_DENIED",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE"
+                            "PAGE_UNAVAILABLE",
+                            "CONTEXT_COMPACTED",
+                            "COMPACTION_SUMMARY_INVALID",
+                            "COMPACTION_UNKNOWN"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         }

@@ -391,6 +391,10 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       });
     },
     releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
+    // The fake never starts a compaction; a test that needs one replaces these.
+    reportCompactionSource: (request) =>
+      Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),
+    ackCompaction: (request) => Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),
     registerAgentRun: (request) => {
       const current = inRun(request.workflowRunId);
       if (current?.turnId === undefined)
@@ -546,6 +550,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
 
   const interaction: InteractionGatewayPort = {
     undoTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    compactContext: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     confirmUndo: (request) => Promise.resolve(rejected(request.requestId, 'UNDO_UNKNOWN')),
     diffTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),

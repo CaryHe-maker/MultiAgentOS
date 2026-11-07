@@ -1,6 +1,9 @@
 import {
   AnswerAuthorizationRequestSchema,
   AnswerHumanRequestSchema,
+  AckCompactionRequestSchema,
+  CompactContextRequestSchema,
+  ReportCompactionSourceRequestSchema,
   InterruptRunRequestSchema,
   PauseRunRequestSchema,
   ResumeRunRequestSchema,
@@ -72,6 +75,17 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   releaseDelegation: {
     caller: 'workflow',
     schema: ReleaseDelegationRequestSchema,
+    needs: 'RUN',
+  },
+  reportCompactionSource: {
+    caller: 'workflow',
+    schema: ReportCompactionSourceRequestSchema,
+    needs: 'RUN',
+  },
+  ackCompaction: { caller: 'workflow', schema: AckCompactionRequestSchema, needs: 'RUN' },
+  compactContext: {
+    caller: 'user-interaction',
+    schema: CompactContextRequestSchema,
     needs: 'RUN',
   },
   submitUnit: {
@@ -247,6 +261,8 @@ export class SessionGateway {
     registerAgentRun: this.#port('workflow', 'registerAgentRun'),
     reserveDelegation: this.#port('workflow', 'reserveDelegation'),
     releaseDelegation: this.#port('workflow', 'releaseDelegation'),
+    reportCompactionSource: this.#port('workflow', 'reportCompactionSource'),
+    ackCompaction: this.#port('workflow', 'ackCompaction'),
     submitUnit: this.#port('workflow', 'submitUnit'),
     endAgentRun: this.#port('workflow', 'endAgentRun'),
     closeRun: this.#port('workflow', 'closeRun'),
@@ -270,6 +286,7 @@ export class SessionGateway {
     resumeRun: this.#port('user-interaction', 'resumeRun'),
     interruptRun: this.#port('user-interaction', 'interruptRun'),
     steerRun: this.#port('user-interaction', 'steerRun'),
+    compactContext: this.#port('user-interaction', 'compactContext'),
     readArtifact: this.#port('user-interaction', 'readArtifact'),
     undoTurns: this.#port('user-interaction', 'undoTurns'),
     confirmUndo: this.#port('user-interaction', 'confirmUndo'),

@@ -90,9 +90,35 @@ describe('context-assemble', () => {
     const history = pack.items.filter((item) => item.segment === 'HISTORY');
     expect(history.map((item) => item.role)).toEqual(['user', 'assistant', 'tool', 'user']);
     expect(history[1]).toMatchObject({ reasoningContent: 'hmm' });
-    expect(history[2]?.content).toBe('the user rejected tool "read_file"');
+    expect(history[2]?.content).toBe('the user rejected tool "read_file"\n[toolCallId: call_1]');
     expect(history[3]?.content).toContain('not trusted by the user');
     expect(pack.items.at(-1)?.segment).toBe('STATUS');
+  });
+
+  it('ends every tool result with its toolCallId, whatever the result was', async () => {
+    const second = { toolCallId: 'call_2', toolName: 'run_command', arguments: {} };
+    const pack = await packOf(
+      assembleInput({
+        history: [
+          ...conversation.slice(0, 3),
+          { ...entry(5), kind: 'MODEL_TURN', text: 'again', toolCalls: [second] },
+          {
+            ...entry(6),
+            kind: 'TOOL_RESULT',
+            toolCallId: 'call_2',
+            toolName: 'run_command',
+            status: 'OK',
+            text: 'exit code 0\nall good',
+          },
+        ],
+      }),
+    );
+    const results = pack.items.filter((item) => item.role === 'tool');
+    expect(results.map((item) => item.content.split('\n').at(-1))).toEqual([
+      '[toolCallId: call_1]',
+      '[toolCallId: call_2]',
+    ]);
+    expect(results[1]?.content).toContain('all good');
   });
 
   it('keeps AGENTS.md out of the system segments', async () => {

@@ -142,6 +142,9 @@ export const InteractionMessages = Object.freeze({
     WRITE_SCOPE_DELEGATED: '已经交给子任务去写的范围，在它们结束之前不能再写。',
     BUDGET_INSUFFICIENT: '额度不够同时派生这些子任务。',
     DELEGATION_NOT_FOUND: '这次派生已经失效。',
+    CONTEXT_COMPACTED: '较早的对话刚被压缩，需要重新组织上下文。',
+    COMPACTION_SUMMARY_INVALID: '压缩用的摘要不合格。',
+    COMPACTION_UNKNOWN: '没有这次压缩。',
   } satisfies Record<ReasonCode, string>,
 });
 

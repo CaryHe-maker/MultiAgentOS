@@ -24,6 +24,7 @@ import * as unitIo from './kernel-unit/unit-io.js';
 import * as workflowEvents from './kernel-unit/workflow-events.js';
 import * as workflowSyscalls from './kernel-unit/workflow-syscalls.js';
 import * as artifactRefs from './platform-artifact/artifact-refs.js';
+import * as compaction from './context/compaction.js';
 import * as historyEntry from './context/history-entry.js';
 import * as fileWrite from './executor/file-write.js';
 import * as outputRead from './executor/output-read.js';
@@ -216,6 +217,7 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   persistenceRefs,
   artifactRefs,
   historyEntry,
+  compaction,
   fileWrite,
   outputRead,
   web,

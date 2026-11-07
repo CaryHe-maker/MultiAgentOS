@@ -7,6 +7,7 @@ import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { pathDerivedId } from '../platform-common/new-id.js';
 import { Sha256Schema, closed, count, text } from '../platform-common/schema-helpers.js';
+import { ContextHistoryEntrySchema } from '../context/history-entry.js';
 import { UnitInputSchema } from './unit-io.js';
 
 const inRun = {
@@ -88,6 +89,29 @@ export const ReleaseDelegationRequestSchema = closed(
   'kernel.unit.ReleaseDelegationRequest.v1',
 );
 export type ReleaseDelegationRequest = Static<typeof ReleaseDelegationRequestSchema>;
+
+/** The material of a compaction: the projection of the target as it is now (Interface/WorkflowKernel 2.4). */
+export const ReportCompactionSourceRequestSchema = closed(
+  {
+    ...inRun,
+    compactionId: IdSchemas.compactionId,
+    entries: Type.Array(ContextHistoryEntrySchema),
+  },
+  'kernel.unit.ReportCompactionSourceRequest.v1',
+);
+export type ReportCompactionSourceRequest = Static<typeof ReportCompactionSourceRequestSchema>;
+
+/** The result of a compaction is in the log (`RECORDED`), or could not be put there (`FAILED`). */
+export const AckCompactionRequestSchema = closed(
+  {
+    ...inRun,
+    compactionId: IdSchemas.compactionId,
+    stage: Type.Enum(['PRUNE', 'SUMMARY']),
+    outcome: Type.Enum(['RECORDED', 'FAILED']),
+  },
+  'kernel.unit.AckCompactionRequest.v1',
+);
+export type AckCompactionRequest = Static<typeof AckCompactionRequestSchema>;
 
 const matchesPath = (request: { requestId: string; path: string }) =>
   request.requestId === pathDerivedId('req', request.path);

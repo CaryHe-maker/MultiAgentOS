@@ -1,5 +1,11 @@
 import { Type, type Static } from 'typebox';
 import { DefinitionRefSchema, pinnedRefOf } from '../catalog/definition-schemas.js';
+import {
+  CompactionTargetSchema,
+  CompactionSummaryInputSchema,
+  CompactionUsageSchema,
+  PrunedItemSchema,
+} from '../context/compaction.js';
 import { WorkspaceRevertedSchema } from '../kernel-control/interaction-events.js';
 import { LOCAL_QUESTION_KINDS } from '../kernel-control/human-request.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
@@ -198,6 +204,49 @@ export const HumanCancelledSchema = closed(
 );
 export type HumanCancelled = Static<typeof HumanCancelledSchema>;
 
+/** Kernel asks for the material of a compaction: Workflow answers with `reportCompactionSource`. */
+export const CompactionSourceQuerySchema = closed(
+  {
+    type: Type.Literal('CompactionSourceQuery'),
+    compactionId: IdSchemas.compactionId,
+    target: CompactionTargetSchema,
+  },
+  'kernel.unit.CompactionSourceQuery.v1',
+);
+export type CompactionSourceQuery = Static<typeof CompactionSourceQuerySchema>;
+
+/** Tool results were cut; Workflow records `TOOL_RESULTS_PRUNED`, then `ackCompaction(PRUNE)`. */
+export const ToolResultsPrunedSchema = closed(
+  {
+    type: Type.Literal('ToolResultsPruned'),
+    compactionId: IdSchemas.compactionId,
+    target: CompactionTargetSchema,
+    items: Type.Array(PrunedItemSchema, { minItems: 1 }),
+  },
+  'kernel.unit.ToolResultsPruned.v1',
+);
+export type ToolResultsPruned = Static<typeof ToolResultsPrunedSchema>;
+
+/**
+ * A summary was written; Workflow records `CONTEXT_COMPACTED`, then `ackCompaction(SUMMARY)`.
+ * `keptSeqs` are the user messages of the range that stay as they are (M2Design 9.6, the tiers).
+ */
+export const ContextCompactedForWorkflowSchema = closed(
+  {
+    type: Type.Literal('ContextCompacted'),
+    compactionId: IdSchemas.compactionId,
+    target: CompactionTargetSchema,
+    fromSeq: count(1),
+    toSeq: count(1),
+    keptSeqs: Type.Array(count(1)),
+    summaryRef: ArtifactRefSchema,
+    summaryInput: CompactionSummaryInputSchema,
+    usage: CompactionUsageSchema,
+  },
+  'kernel.unit.ContextCompacted.v1',
+);
+export type ContextCompactedForWorkflow = Static<typeof ContextCompactedForWorkflowSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   UnitReportSchema,
@@ -210,6 +259,9 @@ export const KernelToWorkflowEventSchema = Type.Union([
   RunPausedSchema,
   RunResumedSchema,
   HumanCancelledSchema,
+  CompactionSourceQuerySchema,
+  ToolResultsPrunedSchema,
+  ContextCompactedForWorkflowSchema,
 ]);
 export type KernelToWorkflowEvent = Static<typeof KernelToWorkflowEventSchema>;
 

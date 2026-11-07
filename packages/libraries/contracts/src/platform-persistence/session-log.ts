@@ -1,4 +1,10 @@
 import { Type, type Static, type TProperties } from 'typebox';
+import {
+  CompactionSummaryInputSchema,
+  CompactionTargetSchema,
+  CompactionUsageSchema,
+  PrunedItemSchema,
+} from '../context/compaction.js';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
@@ -319,6 +325,34 @@ export const SessionLogRecordSchema = Type.Union(
     /** The user paused the run, and resumed it, perhaps with a note (M2Design 4.3, 4.5). */
     record('RUN_PAUSED', inTurn, {}),
     record('RUN_RESUMED', inTurn, { steerInputId: Type.Optional(IdSchemas.inputId) }),
+    /**
+     * Results cut to head and tail for room (M2Design 9.6). The projection shows the cut result
+     * from here on; the full output stays readable through `read_output`.
+     */
+    record('TOOL_RESULTS_PRUNED', inRun, {
+      compactionId: IdSchemas.compactionId,
+      target: CompactionTargetSchema,
+      items: Type.Array(PrunedItemSchema, { minItems: 1 }),
+    }),
+    /**
+     * `[fromSeq, toSeq]` of the log is replaced in the projection by the summary, except the user
+     * messages in `keptSeqs`, which Kernel chose and the projection must not choose again.
+     */
+    record('CONTEXT_COMPACTED', inRun, {
+      compactionId: IdSchemas.compactionId,
+      target: CompactionTargetSchema,
+      fromSeq: count(1),
+      toSeq: count(1),
+      keptSeqs: Type.Array(count(1)),
+      summaryRef: ArtifactRefSchema,
+      summaryInput: CompactionSummaryInputSchema,
+      usage: CompactionUsageSchema,
+    }),
+    /** The Turns the summary covered were undone: it stands in for nothing any more. */
+    record('CONTEXT_COMPACTION_REVOKED', inRun, {
+      compactionId: IdSchemas.compactionId,
+      reason: Type.Literal('TURN_REVERTED'),
+    }),
     record('AGENT_WRAP_UP', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       reason: WrapUpReasonSchema,

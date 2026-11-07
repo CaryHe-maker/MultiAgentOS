@@ -140,6 +140,14 @@ const ResolvedHistoryEntrySchema = Type.Union([
     text: Type.String(),
     toolCallId: Type.Optional(ToolCallIdSchema),
   }),
+  /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Literal('SUMMARY'),
+    text: Type.String(),
+  }),
 ]);
 export type ResolvedHistoryEntry = Static<typeof ResolvedHistoryEntrySchema>;
 

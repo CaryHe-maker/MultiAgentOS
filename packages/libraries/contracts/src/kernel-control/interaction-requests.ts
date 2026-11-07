@@ -68,6 +68,13 @@ export const SteerRunRequestSchema = closed(
 );
 export type SteerRunRequest = Static<typeof SteerRunRequestSchema>;
 
+/** Only while the run awaits input (Kernel/Core 6a); main's projection is what is compacted. */
+export const CompactContextRequestSchema = closed(
+  { ...inRun },
+  'kernel.control.CompactContextRequest.v1',
+);
+export type CompactContextRequest = Static<typeof CompactContextRequestSchema>;
+
 /** Artifacts belong to the Session in M2, so the run is no longer part of the request. */
 export const ReadArtifactRequestSchema = closed(
   { requestId: IdSchemas.requestId, sessionId: IdSchemas.sessionId, ref: ArtifactRefSchema },
