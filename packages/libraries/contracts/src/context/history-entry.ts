@@ -42,6 +42,9 @@ export const ContextHistoryEntrySchema = Type.Union(
       reasonCode: Type.Optional(ReasonCodeSchema),
       /** `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6). */
       pruned: Type.Optional(Type.Literal(true)),
+      /** Only in the material of a compaction (Kernel never shows these to the model). */
+      requestId: Type.Optional(IdSchemas.requestId),
+      fullRef: Type.Optional(ArtifactRefSchema),
     }),
     /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
     closed({

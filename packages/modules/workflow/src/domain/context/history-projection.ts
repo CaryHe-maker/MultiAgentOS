@@ -1,4 +1,10 @@
-import type { ArtifactRef, ContextHistoryEntry, SessionLogRecord } from '@multiagentos/contracts';
+import {
+  applyCompactions,
+  type ArtifactRef,
+  type CompactionRecords,
+  type ContextHistoryEntry,
+  type SessionLogRecord,
+} from '@multiagentos/contracts';
 import { answerOf, callResultsOf } from '../spawn/spawn-graph.js';
 
 /**
@@ -50,9 +56,19 @@ function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT
   return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}`;
 }
 
+export interface ProjectionOptions {
+  /**
+   * The material of a compaction: what the provider counted on every model turn (`measured`),
+   * and the request and the full output of every tool result. Kernel wants them, the model
+   * never sees them, and an ordinary projection must stay as it is for the digest.
+   */
+  readonly material?: boolean;
+}
+
 export function projectHistory(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
+  options: ProjectionOptions = {},
 ): readonly ContextHistoryEntry[] {
   const mainRuns = new Set<string>();
   /** The AgentRun that runs a node: what a node-level record is read for. */
@@ -65,6 +81,14 @@ export function projectHistory(
   /** Calls that already have their answer: a second one would break the history. */
   const answered = new Set<string>();
   const instructions = new Set<string>();
+  /** The AgentRun an assembly was for, and the head of the last assembly of each AgentRun. */
+  const assemblyOwner = new Map<string, string>();
+  const lastHead = new Map<string, string>();
+  const compaction: CompactionRecords = { pruned: [], compacted: [], revoked: new Set() };
+  const isTarget = (target: { kind: 'MAIN' } | { kind: 'AGENT_RUN'; agentRunId: string }) =>
+    scope.kind === 'MAIN'
+      ? target.kind === 'MAIN'
+      : target.kind === 'AGENT_RUN' && target.agentRunId === scope.agentRunId;
   let modelId = 'unknown';
   let currentTurn: string | undefined;
   let lastNote: string | undefined;
@@ -161,6 +185,7 @@ export function projectHistory(
         if (mainRuns.has(record.agentRunId) && record.unitRef.id === 'context-assemble') {
           entries.push(...notes);
           notes.length = 0;
+          assemblyOwner.set(record.requestId, record.agentRunId);
         }
         if (mainRuns.has(record.agentRunId) && record.inputSource.kind === 'TOOL_CALL') {
           unitOwners.set(record.requestId, {
@@ -169,9 +194,24 @@ export function projectHistory(
           });
         }
         break;
-      case 'MODEL_TURN':
+      case 'CONTEXT_ASSEMBLED': {
+        const owner = assemblyOwner.get(record.requestId);
+        if (owner !== undefined) lastHead.set(owner, record.headDigest);
+        break;
+      }
+      case 'TOOL_RESULTS_PRUNED':
+        if (isTarget(record.target)) compaction.pruned.push(record);
+        break;
+      case 'CONTEXT_COMPACTED':
+        if (isTarget(record.target)) compaction.compacted.push(record);
+        break;
+      case 'CONTEXT_COMPACTION_REVOKED':
+        compaction.revoked.add(record.compactionId);
+        break;
+      case 'MODEL_TURN': {
         if (!mainRuns.has(record.agentRunId)) break;
         for (const call of record.toolCalls) toolNames.set(call.toolCallId, call.toolName);
+        const head = lastHead.get(record.agentRunId);
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -181,8 +221,18 @@ export function projectHistory(
           outputRef: record.outputRef,
           ...(record.reasoningRef === undefined ? {} : { reasoningRef: record.reasoningRef }),
           replayable: record.replayable,
+          ...(options.material === true && record.usage !== undefined && head !== undefined
+            ? {
+                measured: {
+                  inputTokens: record.usage.inputTokens,
+                  outputTokens: record.usage.outputTokens,
+                  headDigest: head,
+                },
+              }
+            : {}),
         });
         break;
+      }
       case 'UNIT_COMPLETED': {
         const owner = unitOwners.get(record.requestId);
         if (owner === undefined) break;
@@ -196,6 +246,12 @@ export function projectHistory(
           status: record.status,
           ...(record.outputRef === undefined ? {} : { outputRef: record.outputRef }),
           ...(record.reasonCode === undefined ? {} : { reasonCode: record.reasonCode }),
+          ...(options.material === true
+            ? {
+                requestId: record.requestId,
+                ...(record.fullRef === undefined ? {} : { fullRef: record.fullRef }),
+              }
+            : {}),
         });
         break;
       }
@@ -368,10 +424,11 @@ export function projectHistory(
   }
   // A note that came after the last assembly is the last thing in the history.
   entries.push(...notes);
-  return entries.map((entry) =>
+  const shown = entries.map((entry) =>
     entry.kind === 'HUMAN' &&
     (scope.kind === 'NODE' || (entry.turnId !== undefined && entry.turnId === currentTurn))
-      ? { ...entry, category: 'PINNED' }
+      ? { ...entry, category: 'PINNED' as const }
       : entry,
   );
+  return applyCompactions(shown, compaction);
 }

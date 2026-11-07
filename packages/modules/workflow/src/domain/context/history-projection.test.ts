@@ -259,3 +259,155 @@ describe('a template node', () => {
     expect(JSON.stringify(entries)).not.toContain('call_1');
   });
 });
+
+describe('compaction in a projection (M2Design 9.6)', () => {
+  const assembled = newId('req');
+  const head = 'b'.repeat(64);
+  const modelRequest = newId('req');
+  const resultRequest = newId('req');
+  const submittedAssembly = {
+    type: 'UNIT_SUBMITTED',
+    turnId: turn,
+    requestId: assembled,
+    path: 'agr_abcdef/round-1/0#1',
+    agentRunId: mainRun,
+    unitRunId: `unr_${'c'.repeat(32)}`,
+    unitRef: { kind: 'UNIT', id: 'context-assemble', version: 'v1.0.0', digest },
+    inputSource: { kind: 'AGENT_RUN', agentRunId: mainRun },
+  };
+  const log = (extra: readonly object[] = []) =>
+    stamped([
+      { type: 'TURN_STARTED', turnId: turn, promptNodeId: `nod_${'c'.repeat(32)}` },
+      human(turn, 'c'),
+      {
+        type: 'AGENT_RUN_REGISTERED',
+        turnId: turn,
+        agentRunId: mainRun,
+        nodeId: `nod_${'d'.repeat(32)}`,
+        agentRef: agentRef('main'),
+        effort: 'high',
+      },
+      context('2026-10-31'),
+      submittedAssembly,
+      {
+        type: 'CONTEXT_ASSEMBLED',
+        turnId: turn,
+        requestId: assembled,
+        projectionDigest: digest,
+        headDigest: head,
+        tokenCount: 100,
+        tokenBudget: 1000,
+      },
+      {
+        type: 'MODEL_TURN',
+        turnId: turn,
+        agentRunId: mainRun,
+        requestId: modelRequest,
+        outputRef: ref('1'),
+        toolCalls: [{ toolName: 'read_file', toolCallId, argsDigest: digest }],
+        replayable: false,
+        usage: { inputTokens: 1234, outputTokens: 56 },
+      },
+      submitted(resultRequest, mainRun, toolCallId),
+      {
+        type: 'UNIT_COMPLETED',
+        turnId: turn,
+        requestId: resultRequest,
+        status: 'OK',
+        output: {},
+        outputRef: ref('3'),
+        fullRef: ref('4'),
+        budget,
+      },
+      ...extra,
+    ]);
+
+  it('hands over what the provider counted and the request of each result, in the material only', () => {
+    const material = projectHistory(log(), { kind: 'MAIN' }, { material: true });
+    expect(material.find((entry) => entry.kind === 'MODEL_TURN')).toMatchObject({
+      measured: { inputTokens: 1234, outputTokens: 56, headDigest: head },
+    });
+    expect(material.find((entry) => entry.kind === 'TOOL_RESULT')).toMatchObject({
+      requestId: resultRequest,
+      fullRef: ref('4'),
+    });
+    const shown = projectMainHistory(log());
+    expect(JSON.stringify(shown)).not.toContain('measured');
+    expect(JSON.stringify(shown)).not.toContain(ref('4').artifactId);
+  });
+
+  const compacted = (target: object) => ({
+    type: 'CONTEXT_COMPACTED',
+    turnId: turn,
+    compactionId: newId('cmp'),
+    target,
+    fromSeq: 2,
+    toSeq: 9,
+    keptSeqs: [2],
+    summaryRef: ref('5'),
+    summaryInput: { mode: 'PREFIX', omittedEntries: 0 },
+    usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 },
+  });
+
+  it('replaces the range of the target with the summary and keeps what was chosen', () => {
+    const entries = projectMainHistory(log([compacted({ kind: 'MAIN' })]));
+    expect(entries.map((entry) => entry.kind)).toEqual(['SUMMARY', 'HUMAN']);
+    expect(entries[0]).toMatchObject({ kind: 'SUMMARY', contentRef: ref('5') });
+  });
+
+  it('leaves the other targets alone', () => {
+    const other = compacted({ kind: 'AGENT_RUN', agentRunId: viewerRun });
+    expect(projectMainHistory(log([other])).map((entry) => entry.kind)).not.toContain('SUMMARY');
+    const mine = compacted({ kind: 'AGENT_RUN', agentRunId: mainRun });
+    expect(projectMainHistory(log([mine])).map((entry) => entry.kind)).not.toContain('SUMMARY');
+  });
+
+  it('shows the cut result where the result was, and the revoked summary replaces nothing', () => {
+    const summary = compacted({ kind: 'MAIN' });
+    const records = log([
+      {
+        type: 'TOOL_RESULTS_PRUNED',
+        turnId: turn,
+        compactionId: newId('cmp'),
+        target: { kind: 'MAIN' },
+        items: [
+          {
+            requestId: resultRequest,
+            toolCallId,
+            prunedRef: ref('6'),
+            readableRef: ref('4'),
+            omittedBytes: 99,
+          },
+        ],
+      },
+      summary,
+      {
+        type: 'CONTEXT_COMPACTION_REVOKED',
+        compactionId: summary.compactionId,
+        reason: 'TURN_REVERTED',
+      },
+    ]);
+    const entries = projectMainHistory(records);
+    expect(entries.find((entry) => entry.kind === 'TOOL_RESULT')).toMatchObject({
+      pruned: true,
+      outputRef: ref('6'),
+    });
+    expect(entries.map((entry) => entry.kind)).not.toContain('SUMMARY');
+  });
+
+  it('only ever appends between two prefixes of a log once a summary is in it (invariant 27)', () => {
+    const records = log([compacted({ kind: 'MAIN' })]);
+    const more = stamped([
+      ...records.map((record) => {
+        const rest: Record<string, unknown> = { ...record };
+        delete rest['seq'];
+        return rest;
+      }),
+      { type: 'TURN_ENDED', turnId: turn, reason: 'COMPLETED' },
+      { type: 'WORKFLOW_RUN_ENDED', closeReason: 'ENDED_BY_USER' },
+    ]);
+    const shorter = projectMainHistory(records);
+    const longer = projectMainHistory(more);
+    expect(longer.slice(0, shorter.length)).toEqual(shorter);
+  });
+});
