@@ -421,6 +421,7 @@ interface ContextCompacted {
   target: CompactionTarget;
   fromSeq: number;                   // 被摘要取代的日志范围（含两端）
   toSeq: number;
+  keptSeqs: number[];                // 范围内原样保留的用户消息（按分级由 Kernel 选出，M2Design 第 9.6 节），投影不取代它们
   summaryRef: ArtifactRef;           // 长期保留
   summaryInput: { mode: 'PREFIX' | 'TEXT'; omittedEntries: number };   // 摘要请求的方式；TEXT 为纯文本回退，omittedEntries 为去掉的条目数
   usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number };   // 各次摘要请求的合计

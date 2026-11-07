@@ -300,7 +300,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 额度 | 写摘要之前请 Monitor 预留（Monitor 第 3.5 节）；额度检查的结果先记下：不足时只修剪，修剪后仍超出时挂起的组装以 `BUDGET_WRAP_UP` 返回；用户触发时发出 `CompactionFailed(BUDGET_INSUFFICIENT)`；空闲触发时直接结束 |
 | 材料 | 审计 `COMPACTION_STARTED`；Outbox 发出 `CompactionSourceQuery`，按 `compactionId` 等待 `reportCompactionSource` |
 | 修剪 | 按 M2Design 第 9.6 节第 4.5 步划出保留区并选出候选，请 Execution 修剪（Execution 第 6a 节）；有结果时 Outbox 发出 `ToolResultsPruned`，等待 `ackCompaction(stage: PRUNE, RECORDED)`；生效后重新估算，已低于目标（自动、溢出）或 `idleTriggerRatio`（空闲）时结束，挂起的组装以 `REJECTED(CONTEXT_COMPACTED)` 返回 |
-| 范围 | 按 M2Design 第 9.6 节第 5 步选定；没有可压缩的范围时结束（自动触发时挂起的组装照常执行，有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回；用户触发时发出 `CompactionFailed(NOTHING_TO_COMPACT)`，有修剪时发出只含修剪的 `ContextCompacted`） |
+| 范围 | 按 M2Design 第 9.6 节第 5 步选定，并按"条目的分级"从范围内的用户消息里选出原样保留的 `keptSeqs`（不超过 `keepHumanBytes`，从新到旧累计，单条超过一半的不留）；没有可压缩的范围时结束（自动触发时挂起的组装照常执行，有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回；用户触发时发出 `CompactionFailed(NOTHING_TO_COMPACT)`，有修剪时发出只含修剪的 `ContextCompacted`） |
 | 摘要 | 请 Execution 组装并执行摘要请求（Execution 第 6a 节）：先用前缀式；`COMPACTION_SUMMARY_INVALID` 时追加更严格的指令重试一次；前缀式超出窗口或 `CONTEXT_OVERFLOW` 时改用纯文本式，依次以 `summaryFallbackTargets` 为目标重试；每次请求各自预留与结算 |
 | 写回 | Outbox 发出 `ContextCompacted`，等待 `ackCompaction(stage: SUMMARY, RECORDED)`；收到后审计 `COMPACTION_ENDED`，向 UserInteraction 发出 `ContextCompacted`（空闲触发同样发出），挂起的组装以 `REJECTED(CONTEXT_COMPACTED)` 返回 |
 | 失败 | 任何一步失败：结算预留，审计 `COMPACTION_FAILED`；已生效的修剪保留；自动触发时挂起的组装照常执行（有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回，仍超出时 `LIMIT_EXCEEDED`），用户触发时发出 `CompactionFailed`，空闲触发时只写审计 |
