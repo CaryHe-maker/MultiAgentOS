@@ -175,6 +175,30 @@ describe('toolInputOf', () => {
       });
     });
 
+    it('reads a result that a compaction cut from what the cut kept for it', () => {
+      const uncut = newId('req');
+      const readable = testArtifactRef('readable');
+      const cut = line({
+        type: 'TOOL_RESULTS_PRUNED',
+        compactionId: newId('cmp'),
+        target: { kind: 'MAIN' },
+        items: [
+          {
+            requestId: uncut,
+            toolCallId: 'call_2',
+            prunedRef: testArtifactRef('pruned'),
+            readableRef: readable,
+            omittedBytes: 100,
+          },
+        ],
+      });
+      const whole = [...log, submitted(uncut, 'call_2'), completed(uncut, { output: {} }), cut];
+      expect(toolInputOf('OUTPUT_READ', { toolCallId: 'call_2' }, whole, main)).toMatchObject({
+        ok: true,
+        input: { fullRef: readable },
+      });
+    });
+
     it('does not reach a reverted Turn, and takes the latest of a repeated id', () => {
       const reverted = line({ type: 'WORKSPACE_REVERTED', revertedTurnIds: [base.turnId] });
       expect(

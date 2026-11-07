@@ -280,7 +280,10 @@ export function scriptedAgents(
       const request = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest;
       requests.push(request);
       // A request for a summary of the history (a compaction) has its own queue, when there is one.
-      const asksSummary = textOf(request.messages.at(-1)).includes('Use exactly these sections');
+      // In prefix form the instruction ends the history, in text form it is inside the transcript.
+      const asksSummary = request.messages.some((message) =>
+        textOf(message).includes('Use exactly these sections'),
+      );
       const agent = asksSummary && queues.has('summary') ? 'summary' : agentOfRequest(request);
       // A task is known by the first user message that carries its name.
       const first = textOf(request.messages.find((message) => message.role === 'user'));
