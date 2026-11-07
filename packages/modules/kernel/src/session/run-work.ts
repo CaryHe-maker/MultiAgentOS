@@ -45,7 +45,7 @@ import type {
 } from '@multiagentos/contracts';
 import { RequestLedger } from './request-ledger.js';
 import type { Compacting } from './run-compactor.js';
-import type { CompactionConfig, CompactionResult } from './run-compaction.js';
+import type { CompactionConfig } from './run-compaction.js';
 import type { AssemblyInfo } from './run-execution.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { minShare, type RunLedgers } from '../monitor/index.js';
@@ -106,7 +106,7 @@ export interface RunHost {
   toWorkflowEvent(event: KernelToWorkflowEvent): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
-  enqueue(work: () => void): void;
+  enqueue(work: () => void | Promise<void>): void;
 }
 
 /** What running commands needs from outside Core (Kernel/Core 5b); absent, no command runs. */
@@ -1009,42 +1009,63 @@ export class RunWork {
   }
 
   /**
-   * An ordinary assembly came back (Kernel/Execution): is the context past what it should be, or
-   * was it refused for its size, or was the model refused for it? Then it is compacted first, and
-   * the assembly is answered `CONTEXT_COMPACTED` so that Workflow assembles again. At most once
-   * a round for the automatic trigger; the overflow trigger goes as far as `overflowTargets` go.
+   * What an ordinary assembly calls for (Kernel/Execution): a compaction of its context to run
+   * first, or waiting for one that is going on. The overflow trigger goes as far as
+   * `overflowTargets` go, the automatic one runs once a round.
    */
-  async afterAssemble(info: AssemblyInfo): Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'> {
+  #checkpoint(
+    info: AssemblyInfo,
+  ):
+    | { readonly kind: 'WAIT'; readonly going: Promise<unknown> }
+    | { readonly kind: 'RUN'; readonly request: Parameters<Compacting['run']>[0] }
+    | undefined {
     const { compactor, compaction } = this.#deps;
-    if (compactor === undefined || compaction === undefined) return 'PROCEED';
+    if (compactor === undefined || compaction === undefined) return undefined;
     const target = this.#targetOf(info.agentRunId);
     // What an idle or a user's compaction of the same context is doing changes what this
     // assembly was made of: wait for it, and have the assembly made again.
     const going = compactor.runningFor(target);
-    if (going !== undefined) {
-      await going;
-      return 'COMPACTED';
-    }
+    if (going !== undefined) return { kind: 'WAIT', going };
     const overflows = this.#overflows.get(info.agentRunId) ?? 0;
     const overflowShare = compaction.overflowTargets[overflows - 1];
     const size = Math.max(info.tokenCount, info.tokenBudget);
-    let request: Parameters<Compacting['run']>[0] | undefined;
-    if (overflows > 0 && overflowShare !== undefined)
-      request = {
-        trigger: 'OVERFLOW',
-        target,
-        currentTokens: size,
-        goalTokens: Math.floor(size * overflowShare),
-      };
-    else if (
-      overflows === 0 &&
+    if (overflows > 0)
+      return overflowShare === undefined
+        ? undefined
+        : {
+            kind: 'RUN',
+            request: {
+              trigger: 'OVERFLOW',
+              target,
+              currentTokens: size,
+              goalTokens: Math.floor(size * overflowShare),
+            },
+          };
+    if (
       !this.#compactedInRound.has(info.agentRunId) &&
       (info.kind === 'OVERSIZE' || info.tokenCount >= compaction.triggerRatio * info.tokenBudget)
     )
-      request = { trigger: 'AUTO', target, currentTokens: info.tokenCount };
-    if (request === undefined) return 'PROCEED';
+      return {
+        kind: 'RUN',
+        request: { trigger: 'AUTO', target, currentTokens: info.tokenCount },
+      };
+    return undefined;
+  }
+
+  compactionDue(info: AssemblyInfo): boolean {
+    return this.#checkpoint(info) !== undefined;
+  }
+
+  async afterAssemble(info: AssemblyInfo): Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'> {
+    const step = this.#checkpoint(info);
+    const { compactor } = this.#deps;
+    if (step === undefined || compactor === undefined) return 'PROCEED';
+    if (step.kind === 'WAIT') {
+      await step.going;
+      return 'COMPACTED';
+    }
     this.#compactedInRound.add(info.agentRunId);
-    const result = await compactor.run(request);
+    const result = await compactor.run(step.request);
     if (result.kind === 'CHANGED') return 'COMPACTED';
     return result.kind === 'BUDGET' ? 'BUDGET' : 'PROCEED';
   }

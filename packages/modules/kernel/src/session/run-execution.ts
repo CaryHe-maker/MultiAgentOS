@@ -53,7 +53,8 @@ export interface RunExecutionDeps {
   /** Undefined when the file does not exist. */
   readonly readRepositoryFile: (path: string, scope: ExecutionScope) => Promise<string | undefined>;
   /** Runs `work` as a control message of the actor; a timer only does this. */
-  readonly enqueue: (work: () => void) => void;
+  /** The actor awaits what `work` returns before it sends what the message produced. */
+  readonly enqueue: (work: () => void | Promise<void>) => void;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
   /**
@@ -82,6 +83,8 @@ export interface RunExecutionDeps {
    * (Kernel/Core 6a); `BUDGET` that the compaction could not be paid for.
    */
   readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
+  /** Decided at once, inside the actor: is a compaction due for this assembly? */
+  readonly compactionDue?: (info: AssemblyInfo) => boolean;
   /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
   readonly modelAnswered?: (info: {
     readonly agentRunId: string;
@@ -458,13 +461,20 @@ export class RunExecution {
         completed: fact.outcome === 'COMPLETED',
         overflow: fact.outcome === 'REJECTED' && fact.reasonCode === 'CONTEXT_OVERFLOW',
       });
-    if (fact.executionKind === 'CONTEXT_ASSEMBLE') {
-      const verdict = await this.#checkpoint(attempt, fact);
-      if (verdict !== undefined) {
-        await this.#finish(attempt, { executionId: fact.executionId, ...verdict });
-        return;
-      }
+    // An assembly that came out too big is not delivered: a compaction runs first. That waits for
+    // Workflow, so it cannot be waited for here, inside the actor's own message (Kernel/Core 6a).
+    const due = this.#assemblyDue(attempt, fact);
+    if (due !== undefined) {
+      void this.#compactBeforeDelivering(attempt, fact, due);
+      return;
     }
+    await this.#settle(attempt, fact);
+  }
+
+  /** What the rest of a fact comes to once nothing holds it back. */
+  async #settle(attempt: Attempt, fact: ExecutionFact): Promise<void> {
+    // Kernel's own execution of a compaction never gets here: it was answered to its asker.
+    if (fact.executionKind === 'CONTEXT_PRUNE') return;
     if (
       fact.outcome === 'TERMINATED' &&
       fact.reasonCode === 'EXECUTION_CANCELLED' &&
@@ -506,16 +516,11 @@ export class RunExecution {
 
   /**
    * The checkpoint of a compaction (M2Design 9.6): an ordinary assembly that came out too big, or
-   * was refused for it, is not delivered; the compaction runs first and Workflow assembles again.
+   * was refused for it, is not delivered until the compaction has run. What it is, when it is due.
    */
-  async #checkpoint(
-    attempt: Attempt,
-    fact: ExecutionFact,
-  ): Promise<
-    { outcome: 'REJECTED'; reasonCode: 'CONTEXT_COMPACTED' | 'BUDGET_WRAP_UP' } | undefined
-  > {
-    const { afterAssemble } = this.#deps;
-    if (afterAssemble === undefined || (attempt.spec.input as { final?: boolean }).final === true)
+  #assemblyDue(attempt: Attempt, fact: ExecutionFact): AssemblyInfo | undefined {
+    const { compactionDue } = this.#deps;
+    if (compactionDue === undefined || (attempt.spec.input as { final?: boolean }).final === true)
       return undefined;
     const { perCallInputLimit } = attempt.spec.agent.budget;
     const info: AssemblyInfo | undefined =
@@ -534,11 +539,27 @@ export class RunExecution {
               tokenBudget: perCallInputLimit,
             }
           : undefined;
-    if (info === undefined) return undefined;
-    const verdict = await afterAssemble(info);
-    if (verdict === 'COMPACTED') return { outcome: 'REJECTED', reasonCode: 'CONTEXT_COMPACTED' };
-    if (verdict === 'BUDGET') return { outcome: 'REJECTED', reasonCode: 'BUDGET_WRAP_UP' };
-    return undefined;
+    return info !== undefined && compactionDue(info) ? info : undefined;
+  }
+
+  /** Runs outside the actor; what comes of it goes back in as a message of the actor. */
+  async #compactBeforeDelivering(
+    attempt: Attempt,
+    fact: ExecutionFact,
+    info: AssemblyInfo,
+  ): Promise<void> {
+    const verdict = (await this.#deps.afterAssemble?.(info)) ?? 'PROCEED';
+    this.#deps.enqueue(async () => {
+      // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
+      if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;
+      if (verdict === 'PROCEED') await this.#settle(attempt, fact);
+      else
+        await this.#finish(attempt, {
+          executionId: attempt.executionId ?? '',
+          outcome: 'REJECTED',
+          reasonCode: verdict === 'COMPACTED' ? 'CONTEXT_COMPACTED' : 'BUDGET_WRAP_UP',
+        });
+    });
   }
 
   /**

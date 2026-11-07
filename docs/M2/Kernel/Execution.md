@@ -206,7 +206,7 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 - **估算**（`estimateAssembly`）：取条目中该对象最近一次模型轮带的实测用量（`MODEL_TURN.usage` 的输入与输出 token，Workflow 随条目交来）与它对应的 `headDigest`；
   与本次组装的 `headDigest` 相同、且其后没有修剪后的条目或摘要条目时，估算 = 实测输入 + 实测输出 + 其后新增条目的字节估算；否则全部按字节估算（M1 的 `estimatePackTokens`）。
   额度预留不用这个估算，仍用字节估算（Monitor 第 3.4 节）。空闲触发时 Core 用 main 最近一次模型调用的实测值，不需要条目；
-- **修剪**（第 4.5 步）：按 Core 给出的候选（保留区之前、预览超过 `pruneMinBytes`、尚未修剪的 `NORMAL` 工具结果）读出预览正文，作为 Kernel 内部尝试交给 `context-assemble` Executor（`purpose = 'PRUNE'`，ExecutorSet 第 6.4 节）；
+- **修剪**（第 4.5 步）：按 Core 给出的候选（保留区之前、预览超过 `pruneMinBytes`、尚未修剪的 `NORMAL` 工具结果）读出预览正文，作为 Kernel 内部尝试交给 `CONTEXT_PRUNE` Executor（Kernel 自己的执行种类，ExecutorSet 第 6.4 节）；
   修剪后的结果存为 `SESSION` 类产物；没有截断的结果补登 `fullOutput: true`（第 3 节）；交回每项的 `toolCallId`、修剪后的引用与可读回的引用（截断时为 `fullRef`，否则为原预览）；
 - **组装**：前缀式用 Workflow 交回的投影条目中 `seq ≤ toSeq` 的部分，按该对象普通请求的方式经 `context-assemble` Executor 组装，末尾追加 Prompt `compaction-system` 的指令；
   前缀式的估算超出 `perCallInputLimit − summaryMaxTokens`，或 `model-call` 返回 `CONTEXT_OVERFLOW` 时，按 Core 给出的目标改用纯文本式（ExecutorSet 第 6.4 节）；

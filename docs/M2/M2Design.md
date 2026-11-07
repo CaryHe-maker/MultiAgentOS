@@ -1389,7 +1389,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | 项目指令（`AGENTS.md`）、system 段、工具定义 | 不在被压缩的范围内 | 每次请求都带 |
 | 先前的摘要 | 并入新的摘要 | 摘要不叠加 |
 
-被保留的用户消息不是 `PINNED`：再次压缩时重新按上限计算，更旧的会被挤出并入摘要；它们的相对顺序不变，在投影里排在摘要之后（与 `PINNED` 的位置规则相同），所以摘要之后紧跟的是用户在这一段里说过的话，再往后是保留区的原文。**哪些用户消息被保留由 Kernel 决定并写入 `CONTEXT_COMPACTED.keptSeqs`**，投影只按记录替换，不按当前配置重新计算（配置改了，重放日志的结果也不变，不变量 7）。
+被保留的用户消息不是 `PINNED`：再次压缩时重新按上限计算，更旧的会被挤出并入摘要；它们的相对顺序不变，在投影里排在摘要之后（与 `PINNED` 的位置规则相同），所以摘要之后紧跟的是用户在这一段里说过的话，再往后是保留区的原文。**哪些条目被保留由 Kernel 决定并写入 `CONTEXT_COMPACTED.keptSeqs`**（范围内的 `PINNED` 条目一并列入，投影只按它取代范围内其余条目）。范围被取代的内容不足 `summaryMaxTokens / 8` 个 token 时不做摘要（`minReplacedTokens`）：为几十个 token 发一次摘要请求不值得。自动触发的检查点在组装完成之后进行（组装过大才压缩，再重新组装），实现为 `RunCompactor`；`/compact` 在控制台就是同名指令，结果以"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"或失败原因显示，投影只按记录替换，不按当前配置重新计算（配置改了，重放日志的结果也不变，不变量 7）。
 
 **触发**
 
@@ -1909,3 +1909,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.29 | 2026-11-07 | 阶段 6 文档门：第 8.1 节 `web_search`、`web_fetch` 的参数与结果封装；第 8.3 节记入实测之后的提供方决定（搜索 DeepSeek，抓取 DeepSeek 加本地回退，Cary 决定）；Kernel/Core 第 5f 节、Library/ExecutorSet 第 5d 节、M2Security 第 3c 节 |
 | v1.30 | 2026-11-07 | 阶段 8 实测后：第 8.2 节，每个工具结果末尾写 `[toolCallId: <编号>]`（DeepSeek 看不到工具调用的结构化 id，`read_output` 的编号 4 次有 0 次写对）；第 9.6 节，摘要保留的编号来自这行文字，缓存的结论补充（前面有同样设置的普通请求时与思考开关无关）；ExecutorSet 第 7 节，超限错误的识别与溢出规模；[Evaluation/Stage8Compaction](Evaluation/Stage8Compaction.md) |
 | v1.31 | 2026-11-07 | 第 9.6 节：条目的分级（Cary 决定）——旧的用户消息在 `keepHumanBytes`（16384）内原样保留，由 Kernel 选出并记入 `CONTEXT_COMPACTED.keptSeqs`，`ask_user` 答复、模型输出、工具结果走修剪与摘要；配置 `keepHumanBytes`；L1 增加逐字保留的检查；Workflow 第 8.4 节、Core 第 6a 节、Interface/Persistence 与 WorkflowKernel 相应修改 |
+| v1.32 | 2026-11-07 | 第 9.6 节：`keptSeqs` 含范围内的 `PINNED`；`minReplacedTokens`（取代的内容太少不摘要）；修剪是 Kernel 自己的执行种类 `CONTEXT_PRUNE`；检查点在组装之后；控制台 `/compact` 与压缩的提示 |

@@ -301,6 +301,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
       afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
+      compactionDue: (info) => holder.work?.compactionDue(info) ?? false,
       modelAnswered: (info) => {
         holder.work?.modelAnswered(info);
       },

@@ -140,6 +140,16 @@ export const ConsoleText = Object.freeze({
     SESSION_CLOSED: '已取消回退，没有修改任何文件。',
     FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
   },
+  compacted: (turns: number, pruned: number) =>
+    turns > 0
+      ? `已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）。`
+      : `已修剪 ${String(pruned)} 个较大的工具结果。`,
+  compactionFailed: {
+    NOTHING_TO_COMPACT: '没有可压缩的内容。',
+    BUDGET_INSUFFICIENT: '额度不够，没有压缩。',
+    SUMMARY_FAILED: '摘要没有生成，没有压缩。',
+    NOT_RECORDED: '压缩没能记录，没有压缩。',
+  } as const,
   undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
   noDiff: '没有可以显示的改动。',
   diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
@@ -187,6 +197,7 @@ export const ConsoleText = Object.freeze({
     '/status           当前运行与额度状态',
     '/output <编号>    查看被截断的工具输出',
     '/undo [all]       回退最近一轮（或全部）的文件改动',
+    '/compact          压缩较早的对话，腾出上下文空间',
     '/diff [N]         查看倒数第 N 轮改动了什么',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',

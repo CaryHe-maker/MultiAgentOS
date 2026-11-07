@@ -773,6 +773,20 @@ export class Console {
         if (undone.outcome === 'REJECTED') this.#notice(describeReason(undone.reasonCode));
         break;
       }
+      case '/compact': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (sessionId === undefined || workflowRunId === undefined || argument !== undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const asked = await this.#deps.gateway.compactContext(
+          { requestId: newId('req'), sessionId, workflowRunId },
+          this.#context(),
+        );
+        if (asked.outcome === 'REJECTED') this.#notice(describeReason(asked.reasonCode));
+        break;
+      }
       case '/diff':
         await this.#showDiff(argument === undefined ? 1 : Number(argument));
         break;
@@ -939,6 +953,12 @@ export class Console {
         this.#notice(text.undoCancelled[event.reason]);
         break;
       }
+      case 'ContextCompacted':
+        this.#notice(text.compacted(event.compactedTurns, event.prunedResults));
+        break;
+      case 'CompactionFailed':
+        this.#notice(text.compactionFailed[event.reason]);
+        break;
       case 'WorkspaceReverted':
         this.#notice(text.undone(event.revertedTurnIds.length));
         break;

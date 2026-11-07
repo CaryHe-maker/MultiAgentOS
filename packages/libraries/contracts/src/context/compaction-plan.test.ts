@@ -13,7 +13,12 @@ const ref = (size: number, digit = 'a'): ArtifactRef => ({
   mediaType: 'text/plain',
 });
 const TURN = 'trn_aaaaaaaa';
-const CONFIG = { keepTokens: 1_000, keepHumanBytes: 1_000, pruneMinBytes: 2_000 };
+const CONFIG = {
+  keepTokens: 1_000,
+  keepHumanBytes: 1_000,
+  pruneMinBytes: 2_000,
+  minReplacedTokens: 100,
+};
 
 /** A user message, a model turn and the result of its call, one after another. */
 let next = 1;
@@ -143,6 +148,13 @@ describe('what a compaction touches', () => {
     const late: ContextHistoryEntry = { seq: 2, category: 'NORMAL', kind: 'NOTE', text: 'late' };
     const plan = planCompaction([...entries, ...rounds(3, 800), late], CONFIG);
     expect(plan.range?.toSeq).toBeLessThan(2);
+  });
+
+  it('does not make a range of what is not worth a summary', () => {
+    next = 1;
+    const entries = [turn(40), result('call_a', 40), turn(40), result('call_b', 40)];
+    const plan = planCompaction(entries, { ...CONFIG, keepTokens: 20 });
+    expect(plan.range).toBeUndefined();
   });
 
   it('puts an earlier summary into the range of the next one', () => {

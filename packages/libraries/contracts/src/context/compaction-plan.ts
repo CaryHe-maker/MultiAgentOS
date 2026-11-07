@@ -16,6 +16,11 @@ export interface CompactionPlanConfig {
   readonly keepTokens: number;
   readonly keepHumanBytes: number;
   readonly pruneMinBytes: number;
+  /**
+   * A summary that takes the place of less than this is not worth its own cost (it is about
+   * `summaryMaxTokens` long): a range that replaces less is not made.
+   */
+  readonly minReplacedTokens: number;
 }
 
 /** What a character of this kind of text costs: measured at 0.34 token per byte, with room. */
@@ -171,7 +176,9 @@ export function planCompaction(
   const replaced = older.filter(
     (entry) => inRange(entry) && (entry.kind === 'SUMMARY' || !kept.has(entry.seq)),
   );
-  if (replaced.length === 0) return { keepFrom, prunable };
+  const replacedTokens = replaced.reduce((total, entry) => total + entryTokens(entry), 0);
+  if (replaced.length === 0 || replacedTokens < config.minReplacedTokens)
+    return { keepFrom, prunable };
   const turns = new Set(
     replaced.flatMap((entry) => (entry.turnId === undefined ? [] : [entry.turnId])),
   );

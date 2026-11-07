@@ -190,6 +190,7 @@ export class CompactionProcess {
       keepTokens: config.keepTokens,
       keepHumanBytes: config.keepHumanBytes,
       pruneMinBytes: config.pruneMinBytes,
+      minReplacedTokens: Math.floor(config.summaryMaxTokens / 8),
     };
 
     // 1. Cut the big old results: no model, so no budget.

@@ -261,7 +261,9 @@ export type RoutedTurn =
  * is answered from the queue of the Agent it is for, so the order between Agents does not matter.
  */
 export function scriptedAgents(
-  scripts: Readonly<Partial<Record<'main' | 'explorer' | 'worker', readonly RoutedTurn[]>>>,
+  scripts: Readonly<
+    Partial<Record<'main' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
+  >,
   /** Worker scripts by task, for a case where two workers say different things. */
   tasks: Readonly<Record<string, readonly RoutedTurn[]>> = {},
 ): ScriptedChat {
@@ -277,7 +279,9 @@ export function scriptedAgents(
     fetch: async (input, init) => {
       const request = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest;
       requests.push(request);
-      const agent = agentOfRequest(request);
+      // A request for a summary of the history (a compaction) has its own queue, when there is one.
+      const asksSummary = textOf(request.messages.at(-1)).includes('Use exactly these sections');
+      const agent = asksSummary && queues.has('summary') ? 'summary' : agentOfRequest(request);
       // A task is known by the first user message that carries its name.
       const first = textOf(request.messages.find((message) => message.role === 'user'));
       const task = [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
