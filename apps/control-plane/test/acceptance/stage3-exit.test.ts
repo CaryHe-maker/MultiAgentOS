@@ -122,7 +122,8 @@ const seen = (provider: ScriptedChat): string =>
 const toolResults = (request: ChatRequest | undefined): string[] =>
   (request?.messages ?? []).filter((m) => m.role === 'tool').map((m) => textOf(m));
 const lastResult = (provider: ScriptedChat): string =>
-  toolResults(provider.requests.at(-1)).at(-1) ?? '';
+  // Every result ends with the line that names its call (stage 8); what it says is above it.
+  (toolResults(provider.requests.at(-1)).at(-1) ?? '').replace(/\s*\[toolCallId: [^\]]+\]$/u, '');
 const run = (command: string, extra: Record<string, unknown> = {}) =>
   tool('run_command', { command, ...extra });
 const exists = (path: string) =>

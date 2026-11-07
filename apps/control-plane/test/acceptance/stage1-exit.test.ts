@@ -391,7 +391,7 @@ describe('A: repo.read and the root AGENTS.md', () => {
       const chat = await chatOn(place, provider, () => answers.shift() ?? 'hold');
       await chat.say('read it');
       const refusal = provider.requests[1]?.messages.filter((message) => message.role === 'tool');
-      expect(textOf(refusal?.[0])).toBe('the user rejected tool "read_file"');
+      expect(textOf(refusal?.[0])).toContain('the user rejected tool "read_file"');
       expect(provider.requests[1]?.tools?.map((spec) => spec.function.name)).toContain('read_file');
       expect(chat.questions, 'the same AgentRun does not ask again').toHaveLength(1);
       expect(chat.printed('REPLY').join()).toContain('without the file');
