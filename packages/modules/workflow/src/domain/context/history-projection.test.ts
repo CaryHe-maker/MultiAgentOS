@@ -389,7 +389,7 @@ describe('compaction in a projection (M2Design 9.6)', () => {
     ]);
     const entries = projectMainHistory(records);
     expect(entries.find((entry) => entry.kind === 'TOOL_RESULT')).toMatchObject({
-      pruned: true,
+      prunedAt: expect.any(Number) as number,
       outputRef: ref('6'),
     });
     expect(entries.map((entry) => entry.kind)).not.toContain('SUMMARY');

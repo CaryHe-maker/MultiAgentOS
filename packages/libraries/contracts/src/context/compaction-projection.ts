@@ -35,12 +35,15 @@ export function prune(
   records: CompactionRecords['pruned'],
 ): ContextHistoryEntry[] {
   if (records.length === 0) return [...entries];
-  const cut = new Map<string, (typeof records)[number]['items'][number]>();
-  for (const record of records) for (const item of record.items) cut.set(item.toolCallId, item);
+  const cut = new Map<string, { item: (typeof records)[number]['items'][number]; at: number }>();
+  for (const record of records)
+    for (const item of record.items) cut.set(item.toolCallId, { item, at: record.seq });
   return entries.map((entry) => {
     if (entry.kind !== 'TOOL_RESULT') return entry;
-    const item = cut.get(entry.toolCallId);
-    return item === undefined ? entry : { ...entry, outputRef: item.prunedRef, pruned: true };
+    const found = cut.get(entry.toolCallId);
+    return found === undefined
+      ? entry
+      : { ...entry, outputRef: found.item.prunedRef, prunedAt: found.at };
   });
 }
 

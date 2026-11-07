@@ -127,7 +127,7 @@ export function planCompaction(
   const prunable = older.flatMap((entry): PruneCandidate[] =>
     entry.kind === 'TOOL_RESULT' &&
     entry.category === 'NORMAL' &&
-    entry.pruned !== true &&
+    entry.prunedAt === undefined &&
     entry.outputRef !== undefined &&
     entry.outputRef.size > config.pruneMinBytes &&
     entry.requestId !== undefined

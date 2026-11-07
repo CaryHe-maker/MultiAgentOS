@@ -40,8 +40,11 @@ export const ContextHistoryEntrySchema = Type.Union(
       status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeSchema),
-      /** `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6). */
-      pruned: Type.Optional(Type.Literal(true)),
+      /**
+       * `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6); this is the
+       * `seq` of the record that cut it, which the estimate needs to know what a measurement predates.
+       */
+      prunedAt: Type.Optional(count(1)),
       /** Only in the material of a compaction (Kernel never shows these to the model). */
       requestId: Type.Optional(IdSchemas.requestId),
       fullRef: Type.Optional(ArtifactRefSchema),

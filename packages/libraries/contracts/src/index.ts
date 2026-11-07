@@ -48,6 +48,7 @@ export * from './platform-artifact/artifact-refs.js';
 export * from './context/history-entry.js';
 export * from './context/compaction.js';
 export * from './context/compaction-plan.js';
+export * from './context/compaction-estimate.js';
 export * from './context/compaction-projection.js';
 export * from './executor/repository-list.js';
 export * from './executor/file-write.js';

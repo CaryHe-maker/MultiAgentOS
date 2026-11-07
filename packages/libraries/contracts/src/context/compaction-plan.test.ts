@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { ArtifactRef } from '../platform-common/common-schemas.js';
 import { applyCompactions } from './compaction-projection.js';
+import { estimateContext } from './compaction-estimate.js';
 import { planCompaction } from './compaction-plan.js';
 import type { ContextHistoryEntry } from './history-entry.js';
 
@@ -127,7 +128,7 @@ describe('what a compaction touches', () => {
       turn(100),
       result('call_small', 500),
       turn(100),
-      result('call_done', 9_000, { pruned: true }),
+      result('call_done', 9_000, { prunedAt: 3 }),
       ...rounds(6, 800),
     ];
     const plan = planCompaction(entries, CONFIG);
@@ -235,7 +236,7 @@ describe('what the records do to the entries', () => {
     const cut = shown.find(
       (entry) => entry.kind === 'TOOL_RESULT' && entry.toolCallId === target.toolCallId,
     );
-    expect(cut).toMatchObject({ pruned: true, outputRef: { size: 5 } });
+    expect(cut).toMatchObject({ prunedAt: 400, outputRef: { size: 5 } });
     expect(shown).toHaveLength(entries.length);
   });
 
@@ -292,5 +293,98 @@ describe('what the records do to the entries', () => {
         },
       ),
     );
+  });
+});
+
+describe('how big the next request will be', () => {
+  const head = 'h'.repeat(64);
+  const measuredTurn = (inputTokens: number, headDigest = head, at?: number): ContextHistoryEntry =>
+    ({
+      seq: at ?? seq(),
+      category: 'NORMAL',
+      kind: 'MODEL_TURN',
+      modelId: 'm',
+      outputRef: ref(100),
+      replayable: false,
+      measured: { inputTokens, outputTokens: 50, headDigest },
+    }) as ContextHistoryEntry;
+  const input = (entries: ContextHistoryEntry[]) => ({
+    entries,
+    headDigest: head,
+    headTokens: 1_000,
+    statusTokens: 100,
+  });
+
+  it('starts from what the provider counted, and adds what came after', () => {
+    next = 1;
+    const entries = [human(4_000), measuredTurn(30_000), result('call_1', 4_000)];
+    const estimate = estimateContext(input(entries));
+    expect(estimate.measured).toBe(true);
+    expect(estimate.tokens).toBe(30_000 + 50 + Math.ceil((4_000 + 24) * 0.4) + 100);
+  });
+
+  it('counts the bytes when the head of the request is not the one that was counted', () => {
+    next = 1;
+    const entries = [human(4_000), measuredTurn(30_000, 'x'.repeat(64)), result('call_1', 4_000)];
+    const estimate = estimateContext(input(entries));
+    expect(estimate.measured).toBe(false);
+    expect(estimate.tokens).toBeLessThan(10_000);
+  });
+
+  it('does not rely on a count that a summary or a cut came after', () => {
+    next = 1;
+    const afterSummary: ContextHistoryEntry[] = [
+      measuredTurn(30_000, head, 5),
+      {
+        seq: 9,
+        category: 'NORMAL',
+        kind: 'SUMMARY',
+        compactionId: 'cmp_aaaaaaaa',
+        fromSeq: 1,
+        toSeq: 4,
+        contentRef: ref(100),
+      },
+    ];
+    expect(estimateContext(input(afterSummary)).measured).toBe(false);
+    const afterCut: ContextHistoryEntry[] = [
+      measuredTurn(30_000, head, 5),
+      {
+        seq: 6,
+        category: 'NORMAL',
+        kind: 'TOOL_RESULT',
+        toolCallId: 'call_1',
+        toolName: 'x',
+        status: 'OK',
+        outputRef: ref(10),
+        prunedAt: 8,
+      },
+    ];
+    expect(estimateContext(input(afterCut)).measured).toBe(false);
+  });
+
+  it('relies on a count that was made after the summary', () => {
+    next = 1;
+    const entries: ContextHistoryEntry[] = [
+      {
+        seq: 9,
+        category: 'NORMAL',
+        kind: 'SUMMARY',
+        compactionId: 'cmp_aaaaaaaa',
+        fromSeq: 1,
+        toSeq: 4,
+        contentRef: ref(100),
+      },
+      measuredTurn(12_000, head, 12),
+    ];
+    expect(estimateContext(input(entries))).toMatchObject({
+      measured: true,
+      tokens: 12_000 + 50 + 100,
+    });
+  });
+
+  it('uses the last turn that was counted, not an older one', () => {
+    next = 1;
+    const entries = [measuredTurn(5_000), result('call_1', 100), measuredTurn(9_000)];
+    expect(estimateContext(input(entries)).tokens).toBe(9_000 + 50 + 100);
   });
 });
