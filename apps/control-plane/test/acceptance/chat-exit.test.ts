@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { FileInstanceLock } from '@multiagentos/persistence';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  listSessions,
   openChat,
   reply,
   scriptedChat,
@@ -82,8 +83,7 @@ const contents = (request: ChatRequest | undefined) =>
 /** Resumes the only listed Session and waits until the console holds it. */
 async function resumeFirst(chat: Chat): Promise<void> {
   await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
-  await chat.console.submit('/sessions');
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await listSessions(chat);
   await chat.console.submit('/resume 1');
   await until(() => chat.console.sessionId !== undefined, 'the resumed Session');
 }
@@ -289,8 +289,7 @@ describe('L: the request prefix and artifact collection', () => {
       const count = async () => (await readdir(join(place.dataDir, 'artifacts'))).length;
       const removing = await chatOn(place, provider);
       await until(() => removing.printed('NOTICE').length > 0, 'the welcome');
-      await removing.console.submit('/sessions');
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await listSessions(removing);
       await removing.console.submit('/delete 1');
       await until(
         () => removing.printed('NOTICE').some((text) => text.includes('删除')),

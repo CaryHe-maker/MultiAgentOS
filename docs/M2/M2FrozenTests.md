@@ -45,7 +45,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 | I13 | Every user input is a HUMAN node; an answer never creates a grant; authorization questions come only from Core | `acceptance/web-exit.test.ts`：does not take consent given in ask_user for a grant<br>`testing/src/pause-steer-ask.test.ts`：waits for the answer without submitting a Unit, and reads the answer as the call result |
 | I14 | A critical operation is asked every time; no approval is reusable | `acceptance/command-sandbox-exit.test.ts`：git push and the like are asked every time, in warning style, with no standing allowance<br>`acceptance/command-sandbox-exit.test.ts`：the network is asked every time, says so, and the command is not told yes by an old answer<br>`executor-set/src/command/command-analyzer.test.ts`：cannot be talked out of a critical command by wrapping it |
 | I15 | The session log is written by Workflow only, the artifact store by Execution only; the log holds references, not bodies | `persistence/src/session-store.test.ts`：offers the Session lock to Workflow only<br>`testing/src/architecture.test.ts`：declares only the allowed internal dependencies |
-| I16 | .git/ and .multiagentos/ cannot be written by any tool or command; AGENTS.md cannot be written by a command; what a command creates there does not stay | `acceptance/command-sandbox-exit.test.ts`：keeps existing .git and AGENTS.md read-only, and moves out what a command creates<br>`contracts/src/platform-common/write-access.test.ts`：never allows anything below a protected directory, in any case<br>`system/compromised-model.test.ts`：cannot write into .git/hooks, and the run goes on<br>`system/compromised-model.test.ts`：cannot become project instruction by writing AGENTS.md: the user is asked with the content, and refuses |
+| I16 | .git/ and .multiagentos/ cannot be written by any tool or command; AGENTS.md cannot be written by a command; what a command creates there does not stay | `acceptance/command-sandbox-exit.test.ts`：keeps existing .git and AGENTS.md read-only, and moves out what a command creates<br>`contracts/src/platform-common/write-access.test.ts`：never allows anything below a protected directory, in any case<br>`system/compromised-model.test.ts`：cannot write into .git/hooks, and the run goes on<br>`kernel/src/session/run-execution.test.ts`：does not run a command whose protected paths cannot be listed, and says the check failed<br>`system/compromised-model.test.ts`：cannot become project instruction by writing AGENTS.md: the user is asked with the content, and refuses |
 | I17 | A template carries no permission: ceilings come from the Agent definition, grants from the human | `contracts/src/catalog/definition-schemas.test.ts`：forbids duplicate references in closed sets<br>**待做**：No user templates exist yet; the adversarial case for a template that asks for more is written with them (M2ReleasePlan phase 2). |
 | I18 | A Turn is opened and closed by Kernel from open input; at its end no ACTIVE AgentRun and no attempt in flight | `kernel/src/session/session-actor.test.ts`：ends the Turn first, then RunClosed, then RunFinished<br>`kernel/src/session/run-work.test.ts`：interrupts for the user: asks cancelled, work aborted, and the Turn ends ABORTED with the run open |
 | I19 | A sandboxed command cannot read $HOME, the data directory or sensitive repository files; the file tools see the same | `acceptance/command-sandbox-exit.test.ts`：cannot read the system data directory, where the logs and the artifacts are<br>`acceptance/command-sandbox-exit.test.ts`：reads a secret file as empty, so the secret never reaches the model or any log<br>`kernel/src/session/sandbox-scan.test.ts`：finds the secret files at any depth and the protected paths that exist |
@@ -65,7 +65,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 | 编号 | 内容 | 测试 |
 |---|---|---|
-| B1 | Any item of the C5 trap list not intercepted | `system/compromised-model.test.ts`：writes what a repository file told it to write only if the user agrees, and the user does not<br>`system/compromised-model.test.ts`：cannot read a private address through web_fetch, and is not asked either<br>`acceptance/command-sandbox-exit.test.ts`：keeps existing .git and AGENTS.md read-only, and moves out what a command creates<br>`acceptance/command-sandbox-exit.test.ts`：cannot write outside the repository, and the files stay where they were<br>`acceptance/command-sandbox-exit.test.ts`：follows a link out of the repository to nothing: the target is not there<br>`executor-set/src/fs/file-write-executor.test.ts`：does not follow a link in the target or on the way to it |
+| B1 | Any item of the C5 trap list not intercepted | `kernel/src/session/run-execution.test.ts`：does not run a command whose protected paths cannot be listed, and says the check failed<br>`system/compromised-model.test.ts`：writes what a repository file told it to write only if the user agrees, and the user does not<br>`system/compromised-model.test.ts`：cannot read a private address through web_fetch, and is not asked either<br>`acceptance/command-sandbox-exit.test.ts`：keeps existing .git and AGENTS.md read-only, and moves out what a command creates<br>`acceptance/command-sandbox-exit.test.ts`：cannot write outside the repository, and the files stay where they were<br>`acceptance/command-sandbox-exit.test.ts`：follows a link out of the repository to nothing: the target is not there<br>`executor-set/src/fs/file-write-executor.test.ts`：does not follow a link in the target or on the way to it |
 | B2 | A restored Session reuses an old authorization | `acceptance/command-sandbox-exit.test.ts`：does not carry over to a new WorkflowRun: the same command asks again after a restart<br>`acceptance/chat-exit.test.ts`：S1: continues after the process was killed, without replay, and asks again |
 | B3 | Thinking content replay causes a 400 or a silent stop | `executor-set/src/executor-set.test.ts`：replays the thinking of earlier turns and hands back the new one apart<br>`executor-set/src/executor-set.test.ts`：leaves a final call free first, and forces the tool with thinking off on the retry |
 | B4 | An attempt in flight after a pause | `kernel/src/session/run-control.test.ts`：pauses only a running Turn, and is paused once Execution has drained |
@@ -141,6 +141,31 @@ pnpm run gate:phase
 
 每个 phase 发布前运行一次，结果必须是全部通过、没有跳过；M2 发布前在实体机上（不是虚拟机）再运行一次，核对沙盒。
 
-## 8. 与日常测试的关系
+## 8. 偶发失败
+
+只有在机器空闲时才通过的测试，是下一个会让 CI 红的测试：等待太短、日志比界面早一点被读到、临时目录的随机名字碰巧像别的东西。三条规矩：
+
+- **等界面，不等日志，不等固定的时间。**"运行在等待输入"看控制台显示的状态（`chat.lives`），"列表出来了"看控制台打印了什么（`listSessions`），不看日志里某条记录是否出现，也不 `sleep` 一个估计的时间。固定的等待只用在"没有发生什么"的反向断言上，那种断言在慢机器上只会空过，不会失败。
+- **断言不依赖随机名字。** 临时目录的名字出现在运行时上下文里，断言里的字符串不能是它可能碰巧包含的。
+- **改动后在满载下重复运行：**
+
+```bash
+node scripts/repeat-under-load.mjs --times 5 --load 4 apps/control-plane/test/acceptance apps/control-plane/test/system
+```
+
+它在后台开几个占满 CPU 的进程，把给定的测试文件反复运行，任何一次失败都列出来。新增或修改了冻结的测试、验收用例或评测任务之后运行一遍。
+
+## 9. 脚本
+
+| 脚本 | 做什么 |
+|---|---|
+| `pnpm run gate:phase` | 构建并运行 phase 发布检查（第 7 节） |
+| `bash scripts/gate.sh` | 这个 checkout 上的完整检查：安装、构建、格式、lint、类型、全部测试，再加 phase 发布检查 |
+| `bash scripts/wsl-gate.sh <提交> [补丁]` | 在 WSL 的克隆里检出某个提交（或加上未提交的补丁）并运行完整检查，用于代码在 Windows 上的开发者；用法见脚本头 |
+| `node scripts/repeat-under-load.mjs` | 满载下重复运行测试（第 8 节） |
+
+CI 的 `quality-gate` 有一个单独的 `phase-gate` 任务：装好 bubblewrap 并放行它的用户命名空间，运行同一个 `node scripts/phase-gate.mjs`；沙盒测试在那里不会被跳过。
+
+## 10. 与日常测试的关系
 
 `pnpm run test` 跑全部测试（含冻结的这些），在 CI 的质量门里运行。phase 发布检查是它的子集加上"不得跳过"与平台要求，用来出证据；日常提交只要质量门通过。

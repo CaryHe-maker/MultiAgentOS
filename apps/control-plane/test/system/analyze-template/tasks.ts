@@ -5,7 +5,8 @@
  * a real-model run asks the same question and is judged by the same assertions.
  */
 import type { AnalysisReport, RunSummary as RunSummary } from '@multiagentos/contracts';
-import type { ModelScript, ScriptedCall, ScriptedTurn } from './scripted-provider.js';
+import type { ScriptedCall, ScriptedTurn } from '../../support/scripted-model.js';
+import type { ModelScript } from './scripted-provider.js';
 
 /** A line range of the prepared repository; a source counts when it overlaps the range. */
 export interface ExpectedSource {

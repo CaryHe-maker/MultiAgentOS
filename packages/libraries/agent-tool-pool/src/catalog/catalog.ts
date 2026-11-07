@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   DefinitionStatusFileSchema,
   type DefinitionStatus,
@@ -13,6 +12,7 @@ import {
   agentMinShare,
   canonicalJson,
   createProtocolRegistry,
+  sha256Hex,
   validate,
   type BoundaryContext,
   type DefinitionByKind,
@@ -119,9 +119,7 @@ function digestOf(body: Body, digests: ReadonlyMap<string, string>): string | un
       Object.entries(record).map(([field, inner]) => [field, replace(inner)]),
     );
   };
-  return createHash('sha256')
-    .update(canonicalJson(replace(body)), 'utf8')
-    .digest('hex');
+  return sha256Hex(canonicalJson(replace(body)));
 }
 
 const ORDER: readonly DefinitionKind[] = ['TOOL', 'PROMPT', 'MODEL', 'UNIT', 'AGENT', 'TEMPLATE'];

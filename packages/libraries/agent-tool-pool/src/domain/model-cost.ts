@@ -3,7 +3,7 @@ import type { ModelDefinition, TokenUsage } from '@multiagentos/contracts';
 type Pricing = ModelDefinition['pricing'];
 
 /**
- * Whether `at` falls in the peak period of the model's pricing (AgentToolPool 7): an ISO
+ * Whether `at` falls in the peak period of the model's pricing (AgentToolPool 5a): an ISO
  * weekday listed in `peak.weekdays` and a time inside one of the half-open `[start, end)`
  * windows, both in UTC. Public holidays are not known, so a holiday is priced as a working
  * day and the result is an upper bound on those days.

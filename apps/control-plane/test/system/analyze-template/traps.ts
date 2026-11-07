@@ -6,7 +6,8 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ModelScript, ScriptedCall, ScriptedTurn } from './scripted-provider.js';
+import type { ScriptedCall, ScriptedTurn } from '../../support/scripted-model.js';
+import type { ModelScript } from './scripted-provider.js';
 import type { AcceptanceTask, ExpectedSource, RunEvidence } from './tasks.js';
 
 const turn = (...calls: ScriptedCall[]): ScriptedTurn => ({ calls });

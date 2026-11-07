@@ -44,7 +44,7 @@ import type { PinnedAgent } from './run-attempts.js';
 import type { SessionArtifacts } from './session-artifacts.js';
 
 /**
- * The summary instruction and what it must produce (Prompt `compaction-system`, AgentToolPool 8):
+ * The summary instruction and what it must produce (Prompt `compaction-system`, AgentToolPool 3):
  * the sections the model-call checks for, and the line added to the instruction of a second try.
  */
 export interface CompactionPrompt {

@@ -20,6 +20,7 @@ import { createExecutorRegistry } from '@multiagentos/executor-set';
 import { createSubprocessRunner, probeSandbox, type MemorySample } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  listSessions,
   openChat,
   reply,
   scriptedChat,
@@ -687,8 +688,7 @@ onLinux('H7: a process that cannot be confirmed stopped', () => {
         sandboxProbe: { available: true },
       });
       await until(() => resumed.printed('NOTICE').length > 0, 'the welcome');
-      await resumed.console.submit('/sessions');
-      await nap(100);
+      await listSessions(resumed);
       await resumed.console.submit('/resume 1');
       await until(() => resumed.console.sessionId !== undefined, 'the resumed Session');
       await resumed.say('continue');
@@ -781,8 +781,7 @@ real('A: the authorization of commands', () => {
       const second = scriptedChat(run('echo kept'), reply('two'));
       const resumed = await chatOn(place, second, { answer: () => 'c' });
       await until(() => resumed.printed('NOTICE').length > 0, 'the welcome');
-      await resumed.console.submit('/sessions');
-      await nap(100);
+      await listSessions(resumed);
       await resumed.console.submit('/resume 1');
       await until(() => resumed.console.sessionId !== undefined, 'the resumed Session');
       await resumed.say('again');

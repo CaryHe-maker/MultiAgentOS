@@ -298,6 +298,10 @@
         "title": "cannot write into .git/hooks, and the run goes on"
       },
       {
+        "file": "packages/modules/kernel/src/session/run-execution.test.ts",
+        "title": "does not run a command whose protected paths cannot be listed, and says the check failed"
+      },
+      {
         "file": "apps/control-plane/test/system/compromised-model.test.ts",
         "title": "cannot become project instruction by writing AGENTS.md: the user is asked with the content, and refuses"
       }
@@ -543,6 +547,10 @@
     "kind": "blocker",
     "statement": "Any item of the C5 trap list not intercepted",
     "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-execution.test.ts",
+        "title": "does not run a command whose protected paths cannot be listed, and says the check failed"
+      },
       {
         "file": "apps/control-plane/test/system/compromised-model.test.ts",
         "title": "writes what a repository file told it to write only if the user agrees, and the user does not"

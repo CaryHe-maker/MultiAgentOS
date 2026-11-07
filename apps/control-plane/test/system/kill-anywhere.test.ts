@@ -10,7 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openChat, reply, scriptedChat, until, type Chat } from '../acceptance/chat-driver.js';
+import {
+  listSessions,
+  openChat,
+  reply,
+  scriptedChat,
+  until,
+  type Chat,
+} from '../acceptance/chat-driver.js';
 import { metricsOf } from '../eval/metrics.js';
 
 const TIMEOUT = 90_000;
@@ -77,8 +84,7 @@ describe('a process killed between any two records of the log', () => {
         open.push(chat);
         await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
         if ((await readdir(join(dataDir, 'sessions')).catch(() => [])).length > 0) {
-          await chat.console.submit('/sessions');
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          await listSessions(chat);
           await chat.console.submit('/resume 1');
           await until(() => chat.console.sessionId !== undefined, 'the resumed Session');
         }

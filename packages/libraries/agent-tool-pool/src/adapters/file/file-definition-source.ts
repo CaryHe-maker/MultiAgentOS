@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, relative, sep } from 'node:path';
 import { isMap, parseDocument } from 'yaml';
-import type { DefinitionKind } from '@multiagentos/contracts';
+import { sha256Hex, type DefinitionKind } from '@multiagentos/contracts';
 import type { CatalogIssue } from '../../domain/catalog-issue.js';
 import type {
   SealPatch,
@@ -196,7 +195,7 @@ function toOrigin(root: string, path: string): string {
 }
 
 function hashText(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+  return sha256Hex(text);
 }
 
 function errorMessage(error: unknown): string {

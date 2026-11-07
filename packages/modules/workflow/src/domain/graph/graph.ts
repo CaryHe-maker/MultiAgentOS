@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
-
 /**
  * The TaskGraph as pure functions of what the session log records (M2Design 3.1-3.3): readiness,
  * skipping and loop expansion read only nodes, edges and finished nodes' structured results, so
  * replaying any log prefix gives the same answer as the run that wrote it.
  */
+import { pathDerivedId } from '@multiagentos/contracts';
+
 export type NodeKind = 'AGENT' | 'HUMAN';
 export type Trigger = 'all_success' | 'all_done';
 export type NodeStatus =
@@ -96,7 +96,7 @@ export type NodeView = ReadonlyMap<string, NodeRecord>;
 export type EdgeState = 'WAITING' | 'TAKEN' | 'NOT_TAKEN' | 'FAILED';
 
 export function nodeIdOf(path: string): string {
-  return `nod_${createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 32)}`;
+  return pathDerivedId('nod', path);
 }
 
 export function nodePath(

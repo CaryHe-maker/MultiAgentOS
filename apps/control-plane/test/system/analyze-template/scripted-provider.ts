@@ -4,16 +4,14 @@
  * that sent it, so the whole product chain, the provider SDK included, runs without network.
  */
 
-/** One tool call the scripted model makes; `arguments` is sent as its JSON text. */
-export interface ScriptedCall {
-  readonly name: string;
-  readonly arguments: unknown;
-}
+import {
+  agentOfTools,
+  completionResponse,
+  type ScriptedTurn,
+} from '../../support/scripted-model.js';
 
-export interface ScriptedTurn {
-  readonly calls: readonly ScriptedCall[];
-  readonly text?: string;
-}
+/** The tokens an offline run of the analyze template reports for every answer. */
+const USAGE = { promptTokens: 1_500, completionTokens: 120 };
 
 /** The turns of each agent in order; the planner is told apart by its handoff tool. */
 export interface ModelScript {
@@ -39,38 +37,6 @@ const toolNamesOf = (body: unknown): string[] => {
     typeof tool.function?.name === 'string' ? [tool.function.name] : [],
   );
 };
-
-function completion(turn: ScriptedTurn, prefix: string): Response {
-  return new Response(
-    JSON.stringify({
-      id: `chatcmpl-${prefix}`,
-      object: 'chat.completion',
-      created: 1_767_225_600,
-      model: 'deepseek-flash',
-      choices: [
-        {
-          index: 0,
-          message: {
-            role: 'assistant',
-            content: turn.text ?? null,
-            ...(turn.calls.length === 0
-              ? {}
-              : {
-                  tool_calls: turn.calls.map((call, index) => ({
-                    id: `call_${prefix}_${index}`,
-                    type: 'function',
-                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                  })),
-                }),
-          },
-          finish_reason: turn.calls.length === 0 ? 'stop' : 'tool_calls',
-        },
-      ],
-      usage: { prompt_tokens: 1_500, completion_tokens: 120, total_tokens: 1_620 },
-    }),
-    { status: 200, headers: { 'content-type': 'application/json' } },
-  );
-}
 
 /**
  * A `fetch` that serves `script` for the provider host and refuses every other host, so an
@@ -99,11 +65,10 @@ export function scriptedProvider(
       return Promise.reject(new TypeError(`offline acceptance run: no network to ${url.host}`));
     const body = typeof init?.body === 'string' ? init.body : '';
     log.bodies.push(body);
-    const agent = toolNamesOf(JSON.parse(body === '' ? '{}' : body)).includes(
-      'handoff_to_code_viewer',
-    )
-      ? 'planner'
-      : 'codeViewer';
+    const agent =
+      agentOfTools(new Set(toolNamesOf(JSON.parse(body === '' ? '{}' : body)))) === 'planner'
+        ? 'planner'
+        : 'codeViewer';
     const repeating =
       agent === 'codeViewer' && script.endless === true && queues.codeViewer.length === 1;
     const turn = repeating ? queues.codeViewer[0] : queues[agent].shift();
@@ -113,9 +78,11 @@ export function scriptedProvider(
     );
     if (turn === undefined) {
       log.problems.push(`the ${agent} asked for turn ${counters[agent]}, beyond the script`);
-      return Promise.resolve(completion({ calls: [], text: 'Script exhausted.' }, 'exhausted'));
+      return Promise.resolve(
+        completionResponse({ calls: [], text: 'Script exhausted.' }, 'exhausted', USAGE),
+      );
     }
-    return Promise.resolve(completion(turn, `${agent}_${counters[agent]}`));
+    return Promise.resolve(completionResponse(turn, `${agent}_${counters[agent]}`, USAGE));
   };
   return { fetch, log };
 }

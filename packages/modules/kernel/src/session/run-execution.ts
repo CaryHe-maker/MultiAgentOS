@@ -60,7 +60,7 @@ export interface RunExecutionDeps {
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
   /**
-   * Protected paths a command may not create (Kernel/Execution 9, M2Design 6.1): the set that
+   * Protected paths a command may not create (Kernel/Execution 4d, M2Design 6.1): the set that
    * exists before it runs, and the moving of whatever is new afterwards.
    */
   readonly protectedPaths?: {
@@ -308,25 +308,39 @@ export class RunExecution {
 
   /**
    * What a command is judged against afterwards, taken once before its first dispatch: which
-   * protected paths exist, and what the files under its write roots look like. A snapshot that
-   * cannot be taken leaves nothing to compare; the sandbox still protects what exists.
+   * protected paths exist, and what the files under its write roots look like. Without the
+   * protected paths nothing a command creates there could be taken away again (M2Design 12, 16),
+   * so a command whose protected paths cannot be listed does not run; the list of changed files
+   * only serves the report, and its absence does not stop anything. Returns whether to go on.
    */
-  async #snapshotBeforeCommand(attempt: Attempt): Promise<void> {
+  async #snapshotBeforeCommand(attempt: Attempt): Promise<boolean> {
     const { protectedPaths, changes } = this.#deps;
-    if (attempt.spec.unit.executionKind !== 'COMMAND' || attempt.snapshotted === true) return;
+    if (attempt.spec.unit.executionKind !== 'COMMAND' || attempt.snapshotted === true) return true;
     attempt.snapshotted = true;
+    if (protectedPaths !== undefined)
+      try {
+        attempt.protectedBefore = await protectedPaths.snapshot();
+      } catch {
+        return false;
+      }
     const roots = commandRootsOf(attempt.spec);
-    try {
-      if (protectedPaths !== undefined) attempt.protectedBefore = await protectedPaths.snapshot();
-      if (changes !== undefined && roots.length > 0)
+    if (changes !== undefined && roots.length > 0)
+      try {
         attempt.changedBefore = await changes.snapshot(roots);
-    } catch {
-      // See above.
-    }
+      } catch {
+        // The command still runs; only the list of what it changed will be missing.
+      }
+    return true;
   }
 
   async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
-    await this.#snapshotBeforeCommand(attempt);
+    if (!(await this.#snapshotBeforeCommand(attempt))) {
+      await this.#finish(attempt, {
+        outcome: 'NOT_DISPATCHED',
+        reasonCode: 'ADMISSION_CHECK_FAILED',
+      });
+      return;
+    }
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
     const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);

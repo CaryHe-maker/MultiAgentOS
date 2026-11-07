@@ -41,7 +41,7 @@ const WORKSPACE_GROUPS = [
 ];
 
 /**
- * Kernel components whose data is isolated (Kernel/Interaction 3.2). The Session layer holds
+ * Kernel components whose data is isolated (the archived M1 interaction document, 3.2). The Session layer holds
  * Core and Execution and drives Monitor and Scheduler; none of those reaches back into it, and it
  * reaches the Supervisor only through Fabric.
  */

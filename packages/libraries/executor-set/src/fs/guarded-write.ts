@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, rm, type FileHandle } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import {
   isValidExclusionRule,
   isWritable,
@@ -254,7 +254,3 @@ async function commit(
     await rm(temporary, { force: true });
   }
 }
-
-/** The `/`-separated path as Workflow and the user read it. */
-export const displayPath = (root: string, absolute: string): string =>
-  relative(root, absolute).split(sep).join('/');
