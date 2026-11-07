@@ -4,6 +4,7 @@
  * that sent it, so the whole product chain, the provider SDK included, runs without network.
  */
 
+import { streamedIfAsked } from '@multiagentos/testing';
 import {
   agentOfTools,
   completionResponse,
@@ -78,11 +79,12 @@ export function scriptedProvider(
     );
     if (turn === undefined) {
       log.problems.push(`the ${agent} asked for turn ${counters[agent]}, beyond the script`);
-      return Promise.resolve(
+      return streamedIfAsked(
+        init,
         completionResponse({ calls: [], text: 'Script exhausted.' }, 'exhausted', USAGE),
       );
     }
-    return Promise.resolve(completionResponse(turn, `${agent}_${counters[agent]}`, USAGE));
+    return streamedIfAsked(init, completionResponse(turn, `${agent}_${counters[agent]}`, USAGE));
   };
   return { fetch, log };
 }

@@ -16,6 +16,8 @@ import * as responses from './kernel-control/responses.js';
 import * as runOutcome from './kernel-control/run-outcome.js';
 import * as runSummary from './kernel-control/run-summary.js';
 import * as executionFact from './kernel-execution/execution-fact.js';
+import * as modelProgress from './kernel-execution/model-progress.js';
+import * as modelStream from './kernel-control/model-stream.js';
 import * as executionRequest from './kernel-execution/execution-request.js';
 import * as supervisorRequests from './kernel-execution/supervisor-requests.js';
 import * as budgetState from './kernel-unit/budget-state.js';
@@ -207,6 +209,8 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   gatewayForward,
   executionRequest,
   executionFact,
+  modelProgress,
+  modelStream,
   supervisorRequests,
   systemConfig,
   checkpointRefs,

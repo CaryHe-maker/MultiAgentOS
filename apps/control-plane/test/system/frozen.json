@@ -779,5 +779,22 @@
         "file": "apps/control-plane/test/system/kill-anywhere.test.ts"
       }
     ]
+  },
+  {
+    "id": "G-STREAM",
+    "kind": "group",
+    "statement": "The thinking of a model call is shown beside the work: it never enters the Session log, never changes what the Executor returns, is dropped when it cannot be delivered, and reaches the screen without control characters",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/thinking-stream.test.ts"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/model-progress.test.ts"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/model-call/model-call-executor.test.ts",
+        "title": "MODEL streamed for a watcher"
+      }
+    ]
   }
 ]

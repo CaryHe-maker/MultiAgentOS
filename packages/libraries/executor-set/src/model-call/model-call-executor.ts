@@ -7,6 +7,7 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
   type ModelCallOutput,
+  type ModelProgressEvent,
   type ModelExecutorInput,
   type ModelRawOutput,
   type ModelToolCall,
@@ -35,6 +36,96 @@ export function retryAfterMsOf(header: string | undefined, now: Date): number | 
   if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
   const at = Date.parse(header);
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
+}
+
+type StreamOptions = Parameters<LanguageModel['doStream']>[0];
+
+/** The thinking a streamed chunk carries; the OpenAI adapter does not read DeepSeek's field. */
+export function reasoningDeltaOf(raw: unknown): string | undefined {
+  const delta = (raw as { choices?: { delta?: { reasoning_content?: unknown } }[] } | null)
+    ?.choices?.[0]?.delta?.reasoning_content;
+  return typeof delta === 'string' && delta.length > 0 ? delta : undefined;
+}
+
+/**
+ * One streamed request read to its end and put together as the answer `doGenerate` would have
+ * given: the same content parts, finish reason and usage, so everything after it is unchanged.
+ * Progress is told without waiting and a failure of the callback never reaches the call.
+ */
+async function generateByStreaming(
+  model: LanguageModel,
+  options: StreamOptions,
+  progress: (event: ModelProgressEvent) => void,
+): Promise<GenerateResult> {
+  const tell = (event: ModelProgressEvent): void => {
+    try {
+      progress(event);
+    } catch {
+      // Watching must not change what the call does.
+    }
+  };
+  const { stream } = await model.doStream({ ...options, includeRawChunks: true });
+  const reader = stream.getReader();
+  let text = '';
+  let reasoning = '';
+  let rawUsage: unknown;
+  const calls: { toolCallId: string; toolName: string; input: string }[] = [];
+  let finish:
+    { finishReason: GenerateResult['finishReason']; usage: GenerateResult['usage'] } | undefined;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      switch (value.type) {
+        case 'raw': {
+          // The adapter's own `usage.raw` has lost the fields it does not know, DeepSeek's cache
+          // hits among them, so the chunk as it came is kept.
+          const chunkUsage = (value.rawValue as { usage?: unknown } | null)?.usage;
+          if (typeof chunkUsage === 'object' && chunkUsage !== null) rawUsage = chunkUsage;
+          const delta = reasoningDeltaOf(value.rawValue);
+          if (delta === undefined) break;
+          reasoning += delta;
+          tell({ kind: 'REASONING', delta });
+          break;
+        }
+        case 'text-delta':
+          text += value.delta;
+          break;
+        case 'tool-call':
+          calls.push({
+            toolCallId: value.toolCallId,
+            toolName: value.toolName,
+            input: value.input,
+          });
+          break;
+        case 'finish':
+          finish = { finishReason: value.finishReason, usage: value.usage };
+          break;
+        case 'error':
+          throw value.error instanceof Error
+            ? value.error
+            : new Error('the provider stream failed');
+        default:
+          break;
+      }
+    }
+  } finally {
+    tell({ kind: 'END' });
+    reader.releaseLock();
+  }
+  if (finish === undefined) throw new Error('the stream ended without a finish');
+  return {
+    content: [
+      ...(reasoning.length > 0 ? [{ type: 'reasoning' as const, text: reasoning }] : []),
+      ...(text.length > 0 ? [{ type: 'text' as const, text }] : []),
+      ...calls.map((call) => ({ type: 'tool-call' as const, ...call })),
+    ],
+    finishReason: finish.finishReason,
+    usage: finish.usage,
+    warnings: [],
+    // `usageOf` reads DeepSeek's cache hits from the body of the answer.
+    response: { body: { usage: rawUsage } },
+  };
 }
 
 function reasoningOf(result: GenerateResult): string | undefined {
@@ -111,19 +202,27 @@ async function callModel(
   const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
   const { limits } = environment;
   let result: GenerateResult;
+  const callOptions = {
+    prompt: toPrompt(pack),
+    ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
+    ...(specs.length === 0
+      ? {}
+      : {
+          tools: toTools(specs),
+          toolChoice:
+            forced && end !== undefined
+              ? { type: 'tool' as const, toolName: end }
+              : { type: 'auto' as const },
+        }),
+    abortSignal: environment.signal,
+  };
   try {
-    result = await model.doGenerate({
-      prompt: toPrompt(pack),
-      ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
-      ...(specs.length === 0
-        ? {}
-        : {
-            tools: toTools(specs),
-            toolChoice:
-              forced && end !== undefined ? { type: 'tool', toolName: end } : { type: 'auto' },
-          }),
-      abortSignal: environment.signal,
-    });
+    // With a progress callback the request streams, so the person watching sees the thinking as
+    // it comes; the result is built from the whole stream and is the same as a one-shot answer.
+    result =
+      environment.progress === undefined
+        ? await model.doGenerate(callOptions)
+        : await generateByStreaming(model, callOptions, environment.progress);
   } catch (error) {
     const outcome = classifyCall(error, progress, environment.signal);
     if (

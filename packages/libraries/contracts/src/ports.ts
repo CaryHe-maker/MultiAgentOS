@@ -235,6 +235,14 @@ export class StopUnconfirmedError extends Error {
   }
 }
 
+/**
+ * What a model call may say while it runs, for the person watching (docs/M2/Phase1Console.md 4).
+ * It is best effort and never part of the result: an Executor calls it without waiting, ignores
+ * anything it throws, and works the same when it is absent.
+ */
+export type ModelProgressEvent =
+  { readonly kind: 'REASONING'; readonly delta: string } | { readonly kind: 'END' };
+
 export interface ExecutorEnvironment {
   readonly scope: ExecutionScope;
   readonly limits: ExecutionLimits;
@@ -243,6 +251,8 @@ export interface ExecutorEnvironment {
   readonly subprocess: SubprocessRunner;
   readonly sandbox: SandboxRunner;
   readonly credentials: ProviderCredentials;
+  /** Only the MODEL Executor gets one; present means the caller wants the call streamed. */
+  readonly progress?: (event: ModelProgressEvent) => void;
   now(): Date;
 }
 
@@ -314,6 +324,9 @@ export const FABRIC_ADDRESSES = [
   'gateway.admission',
   'gateway.session',
   'kernel-core.execution-facts',
+  // The side channel of streaming model calls (docs/M2/Phase1Console.md 4): lossy by design.
+  'kernel-core.model-progress',
+  'inbox.user-interaction-stream',
 ] as const;
 export type FabricAddress = (typeof FABRIC_ADDRESSES)[number];
 

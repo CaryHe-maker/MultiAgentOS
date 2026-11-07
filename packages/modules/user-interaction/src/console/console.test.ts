@@ -576,3 +576,198 @@ describe('pause, continue, steer and questions (Module/UserInteraction 5.4)', ()
     expect(t.printed).toEqual([]);
   });
 });
+
+describe('a long command in a question (Phase1Console 2.1, UI-4)', () => {
+  const askFor = (command: string) =>
+    ({
+      type: 'AuthorizationRequest',
+      questionId: 'qst_cmd',
+      capability: 'command.exec',
+      command,
+      workdir: '',
+      writableRoots: ['.'],
+      network: false,
+      unisolated: false,
+      options: ['ONCE', 'COMMAND', 'DENY'],
+      prefixes: [],
+      unreusable: [],
+    }) as unknown as KernelToInteractionEvent;
+
+  it('shows a short command as it is', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(askFor('ls -la src'));
+    const asked = t.live()?.pending;
+    expect(asked?.text).toContain('  ls -la src');
+    expect(asked?.text).not.toContain('输入 v');
+    expect(asked).not.toHaveProperty('detail');
+  });
+
+  it('shows the head of a long command, says how much was left out, and `v` prints all of it', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    const body = Array.from({ length: 40 }, (_, index) => `line ${String(index)} of the file`);
+    const command = `cat > notes.md <<'EOF'\n${body.join('\n')}\nEOF`;
+    await t.event(askFor(command));
+    const asked = t.live()?.pending;
+    expect(asked?.text).toContain("cat > notes.md <<'EOF'");
+    expect(asked?.text).toContain('line 1 of the file');
+    expect(asked?.text).not.toContain('line 30 of the file');
+    expect(asked?.text).toContain('共 42 行');
+    expect(asked?.text).toContain('v      查看完整命令');
+
+    // Looking is not answering: the question stays, and nothing was sent to the Kernel.
+    await t.console.submit('v');
+    expect(t.printed.at(-1)).toMatchObject({ kind: 'NOTICE' });
+    expect(t.printed.at(-1)?.text).toContain('line 30 of the file');
+    expect(t.printed.at(-1)?.text).toContain('\nEOF');
+    expect(t.live()?.pending).toMatchObject({ questionId: 'qst_cmd' });
+    expect(t.named('answerAuthorization')).toHaveLength(0);
+
+    await t.console.submit('1');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      answer: { scope: 'ONCE' },
+    });
+  });
+
+  it('writes escape sequences in a command as text, so they cannot draw on the screen', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(askFor('echo \u001b[2Jgone'));
+    expect(t.live()?.pending?.text).not.toContain('\u001b');
+    expect(t.live()?.pending?.text).toContain('\\u001b');
+  });
+});
+
+describe('thinking streamed beside the run (Phase1Console 4)', () => {
+  const stream = (kind: 'REASONING' | 'END', callId: string, delta = '') =>
+    ({
+      sessionId: SESSION,
+      workflowRunId: RUN,
+      agentRunId: 'arn_1',
+      callId,
+      at: new Date(0).toISOString(),
+      kind,
+      ...(kind === 'REASONING' ? { delta } : {}),
+    }) as Parameters<Console['handleModelStream']>[0];
+
+  const running = (turnId: string) =>
+    ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
+
+  /** A Turn: the run starts, the model thinks and the run waits for the next message. */
+  async function turn(
+    t: ReturnType<typeof setup>,
+    id: string,
+    callId: string,
+    thought: string,
+  ): Promise<void> {
+    await t.event(running(id));
+    t.console.handleModelStream(stream('REASONING', callId, thought));
+    t.console.handleModelStream(stream('END', callId));
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+  }
+
+  it('draws the thinking as it arrives, under the AgentRun that is thinking', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({
+      type: 'ActivityEvent',
+      agentRunId: 'arn_1',
+      label: 'planner',
+      phase: 'THINKING',
+      at: new Date(0).toISOString(),
+    });
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'First, '));
+    expect(t.live()?.thinking).toMatchObject([
+      { id: 'exe_1', label: 'planner', turn: 1, state: 'OPEN', text: 'First, ' },
+    ]);
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'then more.'));
+    t.console.handleModelStream(stream('END', 'exe_1'));
+    expect(t.live()?.thinking).toMatchObject([{ state: 'DONE', text: 'First, then more.' }]);
+  });
+
+  it('ignores what is not for the Session in view, and writes control characters as text', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream({
+      ...stream('REASONING', 'exe_x', 'other'),
+      sessionId: 'ses_01J00000000000000000000002',
+    });
+    expect(t.live()?.thinking).toEqual([]);
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'ok\u001b[2J'));
+    expect(t.live()?.thinking?.[0]?.text).toBe('ok\\u001b[2J');
+  });
+
+  it('closes a block that never got its end when the run waits for the user', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'cut off'));
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    expect(t.live()?.thinking?.[0]?.state).toBe('DONE');
+  });
+
+  it('keeps the current and the previous Turn in view and folds older ones to one line', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await turn(t, 'trn_1', 'exe_1', 'one');
+    await turn(t, 'trn_2', 'exe_2', 'two');
+    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([1, 2]);
+    expect(t.printed.filter((entry) => entry.kind === 'THINKING')).toEqual([]);
+
+    await turn(t, 'trn_3', 'exe_3', 'three');
+    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([2, 3]);
+    const folded = t.printed.filter((entry) => entry.kind === 'THINKING');
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.text).toContain('第 1 轮思考 1 段');
+    expect(folded[0]?.text).toContain('/think 1');
+  });
+
+  it('counts coming back from a pause as the same Turn', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'a'));
+    await t.event({ type: 'RunStateChanged', state: 'PAUSED', turnId: 'trn_1' });
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_2', 'b'));
+    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([1, 1]);
+  });
+
+  it('lists the Turns with /think and prints the whole of one with /think <n>', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await turn(t, 'trn_1', 'exe_1', 'the whole first thought');
+    await turn(t, 'trn_2', 'exe_2', 'the second');
+    await t.console.submit('/think');
+    expect(t.printed.at(-1)?.text).toContain('第 1 轮：1 段');
+    expect(t.printed.at(-1)?.text).toContain('第 2 轮：1 段');
+    await t.console.submit('/think 1');
+    expect(t.printed.at(-1)).toMatchObject({ kind: 'THINKING' });
+    expect(t.printed.at(-1)?.text).toContain('the whole first thought');
+    await t.console.submit('/think 7');
+    expect(t.printed.at(-1)?.text).toContain('第 7 轮没有思考内容');
+  });
+
+  it('says there is nothing to show before any thinking arrived', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.console.submit('/think');
+    expect(t.printed.at(-1)?.text).toContain('还没有思考内容');
+  });
+
+  it('keeps no more Turns than it is allowed to', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    for (let index = 1; index <= 23; index += 1)
+      await turn(t, `trn_${String(index)}`, `exe_${String(index)}`, `thought ${String(index)}`);
+    await t.console.submit('/think');
+    const lines = t.printed.at(-1)?.text ?? '';
+    expect(lines).not.toContain('第 1 轮：');
+    expect(lines).not.toContain('第 3 轮：');
+    expect(lines).toContain('第 4 轮：');
+    expect(lines).toContain('第 23 轮：');
+  });
+});

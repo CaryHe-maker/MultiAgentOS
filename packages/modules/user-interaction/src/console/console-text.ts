@@ -22,13 +22,32 @@ const UNREUSABLE_TEXT: Readonly<Record<string, string>> = {
   UNISOLATED: '沙盒不可用，命令未隔离',
 };
 
-/** What the user is shown before a command runs: exactly the command, where, and what it may do. */
+/** A command longer than this is shown by its first lines; `v` shows all of it. */
+export const COMMAND_PREVIEW_LINES = 3;
+export const COMMAND_PREVIEW_CHARS = 240;
+
+/** The command as the question shows it: all of it when short, else the head and a count. */
+export function commandPreview(command: string): { readonly text: string; readonly cut: boolean } {
+  const clean = terminalText(command);
+  const lines = clean.split('\n');
+  if (lines.length <= COMMAND_PREVIEW_LINES && clean.length <= COMMAND_PREVIEW_CHARS)
+    return { text: clean, cut: false };
+  const head = lines.slice(0, COMMAND_PREVIEW_LINES).join('\n');
+  const shown = head.length > COMMAND_PREVIEW_CHARS ? head.slice(0, COMMAND_PREVIEW_CHARS) : head;
+  return {
+    text: `${shown}\n…（共 ${String(lines.length)} 行、${String(clean.length)} 个字符，输入 v 查看全文）`,
+    cut: true,
+  };
+}
+
+/** What the user is shown before a command runs: the command, where, and what it may do. */
 function commandQuestionText(q: CommandQuestion): string {
+  const preview = commandPreview(q.command);
   const lines = [
     q.matched !== undefined || q.network || q.unisolated
       ? '⚠ 高风险命令，请确认：'
       : '允许 Agent 运行这条命令吗？',
-    '  ' + q.command,
+    '  ' + preview.text.split('\n').join('\n  '),
     '  工作目录：' + (q.workdir === '' ? '仓库根目录' : q.workdir),
     '  可写范围：' + q.writableRoots.map((root) => (root === '.' ? '整个仓库' : root)).join('、'),
     '  网络：' + (q.network ? '共享主机网络（命令可以联网）' : '无'),
@@ -41,6 +60,7 @@ function commandQuestionText(q: CommandQuestion): string {
     ...(q.options.includes('PREFIX')
       ? ['3 / p  本次运行内，这些命令前缀都允许：' + q.prefixes.join('、')]
       : []),
+    ...(preview.cut ? ['v      查看完整命令'] : []),
     'n      拒绝',
   ];
   const why = q.unreusable.map((reason) => UNREUSABLE_TEXT[reason] ?? reason);
@@ -200,12 +220,26 @@ export const ConsoleText = Object.freeze({
     '/compact          压缩较早的对话，腾出上下文空间',
     '/diff [N]         查看倒数第 N 轮改动了什么',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
+    '/think [N]        列出有思考内容的轮；带编号则显示第 N 轮的全部思考',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',
     '/steer [@任务] <说明>     运行中插话（Alt+Enter 发送输入框里的内容），不暂停',
     'Ctrl+C 暂停，暂停后再按一次中止；退出用 /exit。',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
+    'Ctrl+O 折叠或展开正在显示的思考；思考只保存在这个进程的内存里。',
   ].join('\n'),
+  thinkingNone: '还没有思考内容（只有开启思考的模型调用才有）。',
+  thinkingMissing: (turn: number) => `第 ${String(turn)} 轮没有思考内容。`,
+  thinkingTurnLine: (turn: number, blocks: number, seconds: string) =>
+    `  第 ${String(turn)} 轮：${String(blocks)} 段，共 ${seconds}`,
+  thinkingList: '有思考内容的轮（/think <N> 查看）：',
+  /** The one line an older Turn leaves in the transcript. */
+  thinkingFolded: (turn: number, blocks: number, seconds: string) =>
+    `✻ 第 ${String(turn)} 轮思考 ${String(blocks)} 段，共 ${seconds}（/think ${String(turn)} 展开）`,
+  thinkingHeader: (label: string, seconds: string, state: 'OPEN' | 'DONE' | 'ABORTED') =>
+    `✻ ${label} 思考 ${seconds}${state === 'ABORTED' ? '（已中止）' : ''}`,
+  thinkingCut: '（内容太长，后面的没有保留）',
+  thinkingEarlier: (count: number) => `… 还有 ${String(count)} 段更早的思考（/think 查看）`,
   timelineEmpty: '本次运行还没有 AgentRun。',
   timelineLine: (
     indent: string,

@@ -40,6 +40,7 @@ import {
   createInteractionGatewayPort,
   createWorkflowGatewayPort,
   serveInteractionInbox,
+  serveModelStream,
   serveWorkflowInbox,
 } from '@multiagentos/fabric';
 import {
@@ -324,6 +325,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       now,
     });
     serveInteractionInbox(interactionFabric, userInteraction.console);
+    // The thinking of the model calls, beside the ordered events (Phase1Console 4).
+    serveModelStream(interactionFabric, (stream) =>
+      userInteraction.console.handleModelStream(stream),
+    );
 
     const moduleHost = new ModuleHost({
       startTimeoutMs: MODULE_START_TIMEOUT_MS,

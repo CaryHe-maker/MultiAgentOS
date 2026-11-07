@@ -16,7 +16,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 - 第 14.1 节的 8 个**发布阻断项**；
 - 第 13 节中确定性的验收组（C5、S、H、A、W、L、B、P 的确定性部分）。
 
-另有两类专项：**被攻陷的模型**的对抗用例（第 4 节）和**随时杀进程**的恢复用例（第 5 节）。
+另有三类专项：**被攻陷的模型**的对抗用例（第 4 节）、**随时杀进程**的恢复用例（第 5 节）和**思考流**（旁路显示模型的思考，第 6 节）。
 
 "冻结"的含义：
 
@@ -87,6 +87,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 | G-B-P | Acceptance group B-P: every case of these files is frozen | `acceptance/subagents-exit.test.ts`（整个文件） |
 | G-ADV | Adversarial cases with a compromised model: every case is frozen | `system/compromised-model.test.ts`（整个文件） |
 | G-KILL | Kill the process between any two records of the log and carry on: every case is frozen | `system/kill-anywhere.test.ts`（整个文件） |
+| G-STREAM | The thinking of a model call is shown beside the work: it never enters the Session log, never changes what the Executor returns, is dropped when it cannot be delivered, and reaches the screen without control characters | `acceptance/thinking-stream.test.ts`（整个文件）<br>`kernel/src/supervisor/model-progress.test.ts`（整个文件）<br>`executor-set/src/model-call/model-call-executor.test.ts`：MODEL streamed for a watcher |
 
 ### 清点中的缺口
 
@@ -122,14 +123,24 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 杀的位置是系统控制不了的，所以多点尝试。S1（杀在模型调用中）与 S2（日志尾部损坏）在 `acceptance/chat-exit.test.ts`。
 
-## 6. 内置模板的系统测试
+## 6. 思考流
+
+`acceptance/thinking-stream.test.ts`、`kernel/supervisor/model-progress.test.ts` 与执行器的"流式给旁观者"用例（[Phase1Console](Phase1Console.md) 第 4 节）。流式只让使用者看到模型正在想什么，不能成为系统的一部分，所以冻结的是它的边界：
+
+- 不进 Session 日志：日志里只有指向完整思考的引用，流式的内容不出现在日志里；
+- 不改变结果：开启流式与不开启，执行器返回的结果（输出、思考、用量、缓存命中）逐字相同；旁观者抛出异常也不改变；
+- 送不到就丢：旁路没有序号、不重试、积压过多时丢弃，不拖慢业务；
+- 流中途断开是明确的失败（不是成功，也不可重试），结束信号仍会发出；
+- 到达屏幕前，模型输出里的控制字符与转义序列被写成文字。
+
+## 7. 内置模板的系统测试
 
 `system/analyze-template/`：`mas run analyze` 的完整路径（命令行解析、组合根、Kernel、Workflow、控制台、ExecutorSet），provider 是脚本。它是 Turn-chat 之外唯一经过真实组合根的内置模板，预置工作流到来时，同类的测试加在这里。含：
 
 - 固定任务 F1–F5 的离线运行：报告的每个结论都有读过的来源，仓库没有变化，退出码与结束原因正确；
 - 安全陷阱：密钥、仓库外路径、超大文件、二进制、非 UTF-8 编码、仓库内容里的指令。
 
-## 7. phase 发布检查
+## 8. phase 发布检查
 
 ```bash
 pnpm run gate:phase
@@ -141,7 +152,7 @@ pnpm run gate:phase
 
 每个 phase 发布前运行一次，结果必须是全部通过、没有跳过；M2 发布前在实体机上（不是虚拟机）再运行一次，核对沙盒。
 
-## 8. 偶发失败
+## 9. 偶发失败
 
 只有在机器空闲时才通过的测试，是下一个会让 CI 红的测试：等待太短、日志比界面早一点被读到、临时目录的随机名字碰巧像别的东西。三条规矩：
 
@@ -155,7 +166,7 @@ node scripts/repeat-under-load.mjs --times 5 --load 4 apps/control-plane/test/ac
 
 它在后台开几个占满 CPU 的进程，把给定的测试文件反复运行，任何一次失败都列出来。新增或修改了冻结的测试、验收用例或评测任务之后运行一遍。
 
-## 9. 脚本
+## 10. 脚本
 
 | 脚本 | 做什么 |
 |---|---|
@@ -166,6 +177,6 @@ node scripts/repeat-under-load.mjs --times 5 --load 4 apps/control-plane/test/ac
 
 CI 的 `quality-gate` 有一个单独的 `phase-gate` 任务：装好 bubblewrap 并放行它的用户命名空间，运行同一个 `node scripts/phase-gate.mjs`；沙盒测试在那里不会被跳过。
 
-## 10. 与日常测试的关系
+## 11. 与日常测试的关系
 
 `pnpm run test` 跑全部测试（含冻结的这些），在 CI 的质量门里运行。phase 发布检查是它的子集加上"不得跳过"与平台要求，用来出证据；日常提交只要质量门通过。

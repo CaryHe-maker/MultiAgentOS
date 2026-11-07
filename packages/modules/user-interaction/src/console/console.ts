@@ -12,18 +12,21 @@ import {
   type InteractionSessionEvent,
   type InteractionSystemEvent,
   type KernelToInteractionEvent,
+  type ModelStream,
   type RunFinished,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
-import { ConsoleText as text, terminalText } from './console-text.js';
+import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
 import type {
   ActivityLine,
   ConsoleView,
   LiveState,
   PendingItem,
   QuestionField,
+  ThinkingView,
 } from './console-view.js';
+import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -144,6 +147,13 @@ function inTree<
   return ordered;
 }
 
+/** The phases in which the run waits for the user, not for a machine. */
+const WAITS_FOR_USER: ReadonlySet<string> = new Set([
+  'AWAITING_AUTHORIZATION',
+  'AWAITING_ANSWER',
+  'PAUSED',
+]);
+
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
 }
@@ -170,6 +180,14 @@ export class Console {
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
+  /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
+  readonly #thinking = new ThinkingLog();
+  /** The Session the thinking belongs to, and the Turns of it, counted as runs begin. */
+  #thinkingSession: string | undefined;
+  #turn = 0;
+  #turnId: string | undefined;
+  /** Turns whose thinking already left one line in the transcript. */
+  readonly #foldedTurns = new Set<number>();
   /** Set by /fork until the draft's first prompt. */
   #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
@@ -207,8 +225,119 @@ export class Console {
       waiting: Math.max(0, this.#pending.length - 1),
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
+      thinking: this.#thinkingInView(),
     };
     this.#deps.view.update(live);
+  }
+
+  /** The thinking of the current Turn and the one before it; older Turns are one line each. */
+  #thinkingInView(): ThinkingView[] {
+    return this.#thinking
+      .blocks()
+      .filter((block) => block.turn >= this.#turn - 1)
+      .map((block) => ({
+        id: block.callId,
+        label: block.label,
+        turn: block.turn,
+        state: block.state,
+        startedAt: block.startedAt,
+        ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
+        text: block.text,
+      }));
+  }
+
+  /** A Turn that is no longer shown leaves one line, and `/think` still has all of it. */
+  #foldOlderThinking(): void {
+    for (const turn of this.#thinking.turns()) {
+      if (turn >= this.#turn - 1 || this.#foldedTurns.has(turn)) continue;
+      this.#foldedTurns.add(turn);
+      const blocks = this.#thinking.ofTurn(turn);
+      this.#deps.view.print({
+        kind: 'THINKING',
+        text: text.thinkingFolded(turn, blocks.length, this.#thinkingSeconds(blocks)),
+      });
+    }
+  }
+
+  #thinkingSeconds(blocks: readonly ThinkingBlock[]): string {
+    const now = this.#now().toISOString();
+    const ms = blocks.reduce(
+      (sum, block) =>
+        sum + Math.max(0, Date.parse(block.endedAt ?? now) - Date.parse(block.startedAt)),
+      0,
+    );
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  /** A different Session starts a different story: nothing of the old one is kept. */
+  #thinkingBelongsTo(sessionId: string | undefined): void {
+    if (this.#thinkingSession === sessionId) return;
+    this.#thinkingSession = sessionId;
+    this.#thinking.clear();
+    this.#foldedTurns.clear();
+    this.#turn = 0;
+    this.#turnId = undefined;
+  }
+
+  /**
+   * The thinking of a model call, as it comes (docs/M2/Phase1Console.md 4). It is not an event of
+   * the run: it changes nothing but what is drawn, and a piece that does not fit a Session in
+   * view is dropped.
+   */
+  handleModelStream(stream: ModelStream): void {
+    if (this.#sessionId === undefined || stream.sessionId !== this.#sessionId) return;
+    this.#thinkingBelongsTo(stream.sessionId);
+    if (stream.kind === 'END') this.#thinking.end(stream.callId, stream.at);
+    else
+      this.#thinking.append(
+        {
+          callId: stream.callId,
+          agentRunId: stream.agentRunId,
+          label: this.#activity.get(stream.agentRunId)?.label ?? 'main',
+          turn: Math.max(1, this.#turn),
+        },
+        terminalText(stream.delta),
+        stream.at,
+      );
+    this.#refresh();
+  }
+
+  /** `/think`: the Turns that have thinking, or all of one Turn. */
+  #showThinking(argument: string | undefined): void {
+    const turns = this.#thinking.turns();
+    if (argument === undefined) {
+      if (turns.length === 0) {
+        this.#notice(text.thinkingNone);
+        return;
+      }
+      this.#notice(
+        [
+          text.thinkingList,
+          ...turns.map((turn) => {
+            const blocks = this.#thinking.ofTurn(turn);
+            return text.thinkingTurnLine(turn, blocks.length, this.#thinkingSeconds(blocks));
+          }),
+        ].join('\n'),
+      );
+      return;
+    }
+    const blocks = this.#thinking.ofTurn(Number(argument));
+    if (blocks.length === 0) {
+      this.#notice(text.thinkingMissing(Number(argument)));
+      return;
+    }
+    this.#deps.view.print({
+      kind: 'THINKING',
+      text: blocks
+        .map((block) =>
+          [
+            text.thinkingHeader(block.label, this.#thinkingSeconds([block]), block.state),
+            block.text,
+            ...(block.cut ? [text.thinkingCut] : []),
+          ].join('\n'),
+        )
+        .join('\n\n'),
+    });
   }
 
   /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
@@ -626,6 +755,15 @@ export class Console {
       await this.#answerQuestion(item, input);
       return;
     }
+    if (
+      item.kind === 'AUTHORIZATION' &&
+      item.detail !== undefined &&
+      /^(v|view|查看)$/iu.test(input.trim())
+    ) {
+      // Looking is not answering: the question stays where it is.
+      this.#notice(item.detail);
+      return;
+    }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
     const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
@@ -693,6 +831,9 @@ export class Console {
         break;
       case '/timeline':
         this.#showTimeline();
+        break;
+      case '/think':
+        this.#showThinking(argument);
         break;
       case '/continue':
         await this.#resume(rest);
@@ -894,7 +1035,21 @@ export class Console {
       this.#timeline.length = 0;
     }
     switch (event.type) {
-      case 'RunStateChanged':
+      case 'RunStateChanged': {
+        const idle = ['NONE', 'AWAITING_INPUT', 'CLOSED'].includes(this.#runState);
+        this.#thinkingBelongsTo(this.#sessionId);
+        // The Turn the Kernel names is the next one; coming back from a pause names the same one.
+        const turnId = 'turnId' in event ? event.turnId : undefined;
+        if (event.state === 'RUNNING' && (turnId === undefined ? idle : turnId !== this.#turnId)) {
+          this.#turn += 1;
+          if (turnId !== undefined) this.#turnId = turnId;
+          this.#foldOlderThinking();
+        }
+        // Nothing streams once the run waits for the user or is over: no block stays open.
+        const at = this.#now().toISOString();
+        if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
+          this.#thinking.closeAll(at, 'DONE');
+        else if (event.state === 'INTERRUPTING') this.#thinking.closeAll(at, 'ABORTED');
         this.#runState = event.state;
         if (event.state === 'INTERRUPTING') this.#aborting = true;
         // The tree stays while the run is held, so that a note can still name its task.
@@ -903,6 +1058,7 @@ export class Console {
         if (event.state === 'PAUSED') this.#hint = text.paused;
         else if (event.state === 'RUNNING') this.#hint = undefined;
         break;
+      }
       case 'HumanRequest': {
         if (event.kind !== 'prompt') {
           await this.#askQuestion(event);
@@ -936,6 +1092,10 @@ export class Console {
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
           ...(event.capability === 'command.exec' ? { options: event.options } : {}),
+          // A long command is shown by its head; the whole of it is one key away.
+          ...(event.capability === 'command.exec' && commandPreview(event.command).cut
+            ? { detail: terminalText(event.command) }
+            : {}),
           text: await this.#questionText(event),
         });
         break;
@@ -1002,6 +1162,8 @@ export class Console {
             : { parentAgentRunId: event.parentAgentRunId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
+          // Waiting for the user is not work that is taking long: no seconds are counted for it.
+          ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),
           since: event.at,
           ...(shown === undefined ? {} : { tool: shown }),
           ...('retry' in event ? { retry: event.retry } : {}),

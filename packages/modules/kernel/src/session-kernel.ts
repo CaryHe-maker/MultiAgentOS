@@ -39,7 +39,9 @@ import {
   SCHEMA_IDS,
   WORKFLOW_SYSCALLS,
   createInteractionEventSender,
+  createModelStreamSender,
   createSupervisorPort,
+  serveModelProgress,
   createWorkflowEventSender,
 } from '@multiagentos/fabric';
 import {
@@ -206,6 +208,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const toWorkflow = createWorkflowEventSender(fabric, correlationOf);
   const toInteraction = createInteractionEventSender(fabric, correlationOf);
   const outbox = new KernelOutbox({ toWorkflow, toInteraction }, fault, now);
+  // The thinking of model calls on its way to the console (docs/M2/Phase1Console.md 4): beside the
+  // ordered events, never logged, and only for calls this Kernel started.
+  const streamToInteraction = createModelStreamSender(fabric, correlationOf);
+  const watchedCalls = new Map<
+    string,
+    { readonly sessionId: string; readonly agentRunId: string }
+  >();
   const refs = new SessionRefs(
     persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'session-refs' }),
     repositoryRoot,
@@ -297,6 +306,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       config: executionConfig,
       artifacts,
       dispatch: (request) => supervisor.execute(request),
+      modelStarted: (call) =>
+        void watchedCalls.set(call.executionId, { sessionId, agentRunId: call.agentRunId }),
       cancelRun: (request) => supervisor.cancelRun(request),
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
@@ -647,6 +658,21 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
           await supervisor.shutdown({ requestId: forward.request.requestId });
         }
         return response;
+      });
+      serveModelProgress(fabric, (progress) => {
+        const call = watchedCalls.get(progress.executionId);
+        if (call === undefined || call.sessionId !== progress.sessionId) return;
+        const stream = {
+          sessionId: progress.sessionId,
+          workflowRunId: progress.workflowRunId,
+          agentRunId: call.agentRunId,
+          callId: progress.executionId,
+          at: progress.at,
+        };
+        if (progress.kind === 'END') {
+          watchedCalls.delete(progress.executionId);
+          streamToInteraction({ ...stream, kind: 'END' });
+        } else streamToInteraction({ ...stream, kind: 'REASONING', delta: progress.delta });
       });
       fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', async (envelope) => {
         if (envelope.producer !== 'supervisor')

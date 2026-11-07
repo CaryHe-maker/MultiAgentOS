@@ -5,6 +5,7 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
 } from '@multiagentos/contracts';
+import { asksForStream, streamedIfAsked } from '@multiagentos/testing';
 import { APICallError } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { createAssembleExecutor } from '../context-assemble/assemble-executor.js';
@@ -370,5 +371,147 @@ describe('a summary request (ExecutorSet 7)', () => {
   it('leaves an ordinary call alone', async () => {
     const { outcome } = await call(() => chatCompletion([], { text: 'just text' }));
     expect(outcome.outcome).toBe('COMPLETED');
+  });
+});
+
+describe('MODEL streamed for a watcher (docs/M2/Phase1Console.md 4)', () => {
+  /** An answer with thinking and a cache hit, as DeepSeek sends it in one piece. */
+  const withThinking = () =>
+    new Response(
+      JSON.stringify({
+        id: 'chatcmpl-think',
+        object: 'chat.completion',
+        created: 1_767_225_600,
+        model: 'deepseek-flash',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: 'Reading.',
+              reasoning_content: 'First I need to look at a.ts, then decide what to change.',
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 80,
+          total_tokens: 1280,
+          prompt_cache_hit_tokens: 1000,
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const run = async (
+    fetchOf: (init: RequestInit | undefined) => Promise<Response>,
+    progress?: ExecutorEnvironment['progress'],
+  ) => {
+    const executor = createModelCallExecutor({ fetch: (_input, init) => fetchOf(init) });
+    return executor.execute(
+      { contextPack: pack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, progress === undefined ? {} : { progress }),
+    );
+  };
+
+  it('gives the same result as the one-piece answer, and tells the watcher the thinking as it comes', async () => {
+    const oneShot = await run(() => Promise.resolve(withThinking()));
+    const events: { kind: string; delta?: string }[] = [];
+    let asked = false;
+    const streamed = await run(
+      async (init) => {
+        asked = asksForStream(init);
+        return streamedIfAsked(init, withThinking());
+      },
+      (event) => void events.push(event),
+    );
+    expect(asked).toBe(true);
+    // Everything the Workflow and the Kernel see is the same.
+    expect(streamed).toEqual(oneShot);
+    expect(streamed).toMatchObject({
+      outcome: 'COMPLETED',
+      usage: { inputTokens: 1200, outputTokens: 80, inputCacheHitTokens: 1000 },
+      result: {
+        reasoning: { text: 'First I need to look at a.ts, then decide what to change.' },
+      },
+    });
+    // The watcher got the thinking in several pieces that make up the whole, then the end.
+    const pieces = events.filter((event) => event.kind === 'REASONING');
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.map((event) => event.delta).join('')).toBe(
+      'First I need to look at a.ts, then decide what to change.',
+    );
+    expect(events.at(-1)).toEqual({ kind: 'END' });
+  });
+
+  it('does not stream when nobody watches', async () => {
+    let asked = true;
+    await run((init) => {
+      asked = asksForStream(init);
+      return Promise.resolve(withThinking());
+    });
+    expect(asked).toBe(false);
+  });
+
+  it('is not changed by a watcher that throws', async () => {
+    const oneShot = await run(() => Promise.resolve(withThinking()));
+    const streamed = await run(
+      (init) => streamedIfAsked(init, withThinking()),
+      () => {
+        throw new Error('the watcher broke');
+      },
+    );
+    expect(streamed).toEqual(oneShot);
+  });
+
+  it('fails as UNKNOWN, not retryable, when the stream breaks after it began', async () => {
+    const events: string[] = [];
+    const pieces: Uint8Array[] = [];
+    const broken = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start() {
+            // The adapter reads on until the first piece of an answer, so the stream has begun
+            // properly (a piece of text) before the thinking arrives and the connection breaks.
+            const chunk = (delta: object) =>
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({
+                  id: 'x',
+                  object: 'chat.completion.chunk',
+                  created: 1,
+                  model: 'deepseek-flash',
+                  choices: [{ index: 0, delta }],
+                })}\n\n`,
+              );
+            // `error` would drop what is queued, so each piece goes out on its own turn first.
+            pieces.push(chunk({ content: 'Hi' }), chunk({ reasoning_content: 'half a thought' }));
+          },
+          pull(controller) {
+            const next = pieces.shift();
+            if (next === undefined) controller.error(new TypeError('terminated'));
+            else controller.enqueue(next);
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const outcome = await run(
+      () => Promise.resolve(broken()),
+      (event) => void events.push(event.kind),
+    );
+    expect(outcome).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PROVIDER_ERROR',
+      retryable: false,
+      requestState: 'UNKNOWN',
+    });
+    expect(events.at(-1)).toBe('END');
   });
 });

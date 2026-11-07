@@ -17029,6 +17029,93 @@
       "additionalProperties": false,
       "$id": "kernel.control.MessagePublished.v1"
     },
+    "kernel.control.ModelStream.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind",
+            "delta"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "REASONING"
+            },
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "END"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "kernel.control.ModelStream.v1"
+    },
     "kernel.control.OpenSessionRequest.v1": {
       "type": "object",
       "required": [
@@ -29884,6 +29971,83 @@
       },
       "additionalProperties": false,
       "$id": "kernel.execution.ModelExecutorInput.v1"
+    },
+    "kernel.execution.ModelProgress.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind",
+            "delta"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "REASONING"
+            },
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "END"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "kernel.execution.ModelProgress.v1"
     },
     "kernel.execution.OrientExecutorInput.v1": {
       "type": "object",

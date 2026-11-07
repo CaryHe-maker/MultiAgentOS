@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The check every phase has to pass before it is released (docs/M2/M2FrozenTests.md 5):
+ * The check every phase has to pass before it is released (docs/M2/M2FrozenTests.md 8):
  *
  *   node scripts/phase-gate.mjs
  *

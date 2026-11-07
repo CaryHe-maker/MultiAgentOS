@@ -95,6 +95,14 @@ export interface RunExecutionDeps {
   }) => void;
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
+  /**
+   * A model call was sent to the Supervisor: its thinking may now be streamed to the console, so
+   * the Kernel remembers whose call it is. Not a fact, nothing waits for it.
+   */
+  readonly modelStarted?: (call: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+  }) => void;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
@@ -412,6 +420,8 @@ export class RunExecution {
   #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
+    if (built.request.executionKind === 'MODEL')
+      this.#deps.modelStarted?.({ executionId, agentRunId: attempt.spec.agentRunId });
     if (built.request.executionKind === 'WEB_SEARCH' || built.request.executionKind === 'WEB_FETCH')
       attempt.webInput = built.request.input;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).

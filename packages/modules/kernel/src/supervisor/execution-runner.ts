@@ -6,6 +6,7 @@ import type {
   ExecutorEnvironment,
   ExecutorOutcome,
   ExecutorRegistry,
+  ModelProgress,
   ProviderCredentials,
   RequestState,
   SandboxRunner,
@@ -27,6 +28,8 @@ export interface ExecutionRunnerDeps {
   /** After SIGKILL a command is waited for this long more (M2Design 4.7). */
   readonly killGraceMs: number;
   readonly now: () => Date;
+  /** The side channel of a streaming model call; absent means calls are not streamed. */
+  readonly progress?: (progress: ModelProgress) => void;
 }
 
 interface TerminationExtras {
@@ -48,6 +51,7 @@ export class ExecutionRunner {
   readonly #killGraceMs: number;
   readonly #facts: { report(fact: ExecutionFact): Promise<void> };
   readonly #cancelGraceMs: number;
+  readonly #progress: ((progress: ModelProgress) => void) | undefined;
   readonly #now: () => Date;
   readonly #table = new ExecutionTable();
   readonly #cancelledEpochs = new Map<string, number>();
@@ -63,6 +67,7 @@ export class ExecutionRunner {
     this.#killGraceMs = deps.killGraceMs;
     this.#facts = deps.facts;
     this.#cancelGraceMs = deps.cancelGraceMs;
+    this.#progress = deps.progress;
     this.#now = deps.now;
   }
 
@@ -192,6 +197,7 @@ export class ExecutionRunner {
       subprocess: this.#subprocess,
       sandbox: this.#sandbox,
       now: this.#now,
+      ...(this.#progress === undefined ? {} : { progress: this.#progress }),
     });
 
     this.#active += 1;

@@ -14,6 +14,7 @@ export type {
   ConsoleView,
   LiveState,
   PendingItem,
+  ThinkingView,
   TranscriptRecord,
 } from './console/console-view.js';
 export { renderReport } from './domain/report-view.js';

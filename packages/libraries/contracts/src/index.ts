@@ -36,6 +36,8 @@ export * from './kernel-control/run-summary.js';
 export * from './kernel-control/gateway-forward.js';
 export * from './kernel-execution/execution-request.js';
 export * from './kernel-execution/execution-fact.js';
+export * from './kernel-execution/model-progress.js';
+export * from './kernel-control/model-stream.js';
 export * from './kernel-execution/supervisor-requests.js';
 export * from './platform-config/system-config.js';
 export * from './checkpoint/checkpoint-refs.js';

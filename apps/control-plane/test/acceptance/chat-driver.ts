@@ -6,6 +6,7 @@
 import { realpath } from 'node:fs/promises';
 import type { ExecutorRegistry, SystemConfig, SystemFaultReporter } from '@multiagentos/contracts';
 import { createExecutorRegistry, type WebOptions } from '@multiagentos/executor-set';
+import { streamedIfAsked } from '@multiagentos/testing';
 import type { MemorySample, SandboxProbe, TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
@@ -69,9 +70,10 @@ export function scriptedChat(...turns: readonly ProviderTurn[]): ScriptedChat {
       requests.push(JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest);
       const turn = queue.shift();
       if (turn === undefined) throw new Error('a request beyond the script');
-      if ('response' in turn) return turn.response();
+      // The product asks for a stream; the script is written once, as whole answers.
+      if ('response' in turn) return streamedIfAsked(init, await turn.response());
       calls += 1;
-      return completionResponse(turn, String(calls));
+      return streamedIfAsked(init, completionResponse(turn, String(calls)));
     },
   };
 }
