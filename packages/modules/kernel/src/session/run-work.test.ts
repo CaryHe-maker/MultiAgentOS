@@ -936,6 +936,104 @@ describe('a command', () => {
   });
 });
 
+describe('the web tools (Kernel/Core 5f)', () => {
+  const searchUnit = testUnitDefinition('WEB_SEARCH', { protectedCapabilities: ['web.search'] });
+  const fetchUnit = testUnitDefinition('WEB_FETCH', { protectedCapabilities: ['web.fetch'] });
+  const caps = ['repo.read', 'web.search', 'web.fetch'] as const;
+  const agent = testPinnedAgent({
+    units: [fileRead, searchUnit, fetchUnit, publish],
+    capabilities: [...caps],
+  });
+  const options = {
+    runWork: { web: { deniedDomains: ['blocked.example'], searchProvider: 'deepseek' } },
+  };
+  const webQuestions = (kernel: Awaited<ReturnType<typeof setup>>) =>
+    kernel.questions().filter((q) => q.capability === 'web.search' || q.capability === 'web.fetch');
+
+  it('asks a search once per run, names the queries and who receives them, and runs without a scope', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(searchUnit, { queries: ['vitest mock timers'] });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toMatchObject([
+      { capability: 'web.search', queries: ['vitest mock timers'], provider: 'deepseek' },
+    ]);
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.execution.started.at(-1)?.spec.scope).toEqual({ kind: 'NONE' });
+    await kernel.submit(searchUnit, { queries: ['another'] });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started).toHaveLength(2);
+  });
+
+  it('asks a fetch once for each host', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(fetchUnit, { url: 'https://Docs.Example.com/a' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toMatchObject([
+      { capability: 'web.fetch', host: 'docs.example.com', url: 'https://Docs.Example.com/a' },
+    ]);
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    await kernel.submit(fetchUnit, { url: 'https://docs.example.com/b' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(1);
+    await kernel.submit(fetchUnit, { url: 'https://other.example.org/' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(2);
+  });
+
+  it('refuses an address into a private network and a denied domain, without asking and without a run', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    for (const url of [
+      'http://127.0.0.1:8080/',
+      'http://169.254.169.254/',
+      'https://a.blocked.example/x',
+    ])
+      await kernel.submit(fetchUnit, { url });
+    await kernel.settled();
+    expect(kernel.questions()).toEqual([]);
+    expect(kernel.execution.started).toHaveLength(0);
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'DOMAIN_DENIED' },
+    ]);
+  });
+
+  it('binds a refusal to the host: it is not asked again, other hosts are', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(fetchUnit, { url: 'https://bad.example.net/' });
+    await kernel.settled();
+    await kernel.answer('DENY');
+    await kernel.settled();
+    await kernel.submit(fetchUnit, { url: 'https://bad.example.net/other' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(1);
+    await kernel.submit(fetchUnit, { url: 'https://fine.example.net/' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(2);
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'USER_DECLINED' },
+      { status: 'REJECTED', reasonCode: 'USER_DECLINED' },
+    ]);
+  });
+
+  it('refuses a web tool the Agent has no capability for', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, ['repo.read']);
+    await kernel.submit(searchUnit, { queries: ['q'] });
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'CAPABILITY_NOT_GRANTED' },
+    ]);
+  });
+});
+
 describe('memory pressure', () => {
   it('WARNING refuses the next AgentRun and the tools of the running one', async () => {
     const kernel = await setup();

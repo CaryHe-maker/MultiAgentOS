@@ -1,5 +1,7 @@
 import {
   capabilitiesUnderPreset,
+  checkUrlLiteral,
+  hostKeyOf,
   isProjectInstructionPath,
   isWritable,
   normalizeRequestPath,
@@ -118,6 +120,8 @@ export type AuthorizationEntry =
       readonly agentRunId: string;
       /** A refused command binds that command only (work directory and line), not the capability. */
       readonly commandKey?: string;
+      /** A refused host binds that host only, not `web.fetch` as a whole. */
+      readonly hostKey?: string;
     }
   | {
       readonly scope: 'ONCE';
@@ -134,6 +138,8 @@ export interface UnitDemand {
   /** The path of a write, from the Unit's input. */
   readonly path?: string;
   readonly command?: CommandDemand;
+  /** What a `web.fetch` asks for, and the sites the user has forbidden beforehand. */
+  readonly web?: { readonly url: string; readonly deniedDomains: readonly string[] };
 }
 
 export type UnitDecision =
@@ -152,6 +158,8 @@ export type UnitDecision =
         | 'PROTECTED_PATH'
         | 'USER_DECLINED'
         | 'COMMAND_DENIED'
+        | 'ADDRESS_FORBIDDEN'
+        | 'DOMAIN_DENIED'
         | 'SANDBOX_UNAVAILABLE'
         | 'ADMISSION_CHECK_FAILED';
     }
@@ -180,7 +188,8 @@ const answered = (
         entry.scope === 'RUN' &&
         entry.effect === 'DENY' &&
         entry.agentRunId === demand.agentRunId &&
-        !('commandKey' in entry),
+        !('commandKey' in entry) &&
+        !('hostKey' in entry),
     )
   )
     return 'DENY';
@@ -198,8 +207,33 @@ const granted = (
       entry.scope === 'RUN' &&
       entry.effect === 'ALLOW' &&
       'resourceKey' in entry &&
-      writeRootCovers(entry.resourceKey, resourceKey),
+      // A host is one host; "a.example" says nothing of "b.a.example".
+      (capability === 'web.fetch'
+        ? entry.resourceKey === resourceKey
+        : writeRootCovers(entry.resourceKey, resourceKey)),
   );
+
+/** The user refused this very host in this AgentRun: other hosts are not affected. */
+const hostRefused = (
+  entries: readonly AuthorizationEntry[],
+  agentRunId: string,
+  host: string,
+): boolean =>
+  entries.some(
+    (entry) =>
+      entry.scope === 'RUN' &&
+      entry.effect === 'DENY' &&
+      entry.capability === 'web.fetch' &&
+      entry.agentRunId === agentRunId &&
+      'hostKey' in entry &&
+      entry.hostKey === host,
+  );
+
+/** `example.com` covers itself and every name under it. */
+const domainCovers = (domain: string, host: string): boolean => {
+  const suffix = domain.toLowerCase().replace(/^\.+|\.+$/gu, '');
+  return suffix !== '' && (host === suffix || host.endsWith(`.${suffix}`));
+};
 
 /** True when `words` start with every word of `prefix`. */
 const startsWith = (words: readonly string[], prefix: string): boolean =>
@@ -331,6 +365,18 @@ function decide(
     if (!access.writable) return { kind: 'REFUSE', reasonCode: access.reasonCode };
     resourceKey = access.writeRoot;
     critical = isProjectInstructionPath(access.path);
+  }
+
+  // ① what the system forbids before anyone is asked (Kernel/Core 5f)
+  if (capability === 'web.fetch') {
+    if (demand.web === undefined) return { kind: 'REFUSE', reasonCode: 'ADMISSION_CHECK_FAILED' };
+    const checked = checkUrlLiteral(demand.web.url);
+    if (!checked.ok) return { kind: 'REFUSE', reasonCode: 'ADDRESS_FORBIDDEN' };
+    resourceKey = hostKeyOf(checked.url);
+    if (demand.web.deniedDomains.some((domain) => domainCovers(domain, resourceKey)))
+      return { kind: 'REFUSE', reasonCode: 'DOMAIN_DENIED' };
+    if (hostRefused(entries, demand.agentRunId, resourceKey))
+      return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
   }
 
   // ④ A critical write never relies on an earlier grant; a refusal of the capability still binds.

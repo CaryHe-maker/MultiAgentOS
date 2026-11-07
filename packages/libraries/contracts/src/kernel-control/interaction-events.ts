@@ -76,6 +76,20 @@ export const AuthorizationRequestSchema = Type.Union(
       approvalDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
       options: Type.Array(Type.Enum(COMMAND_ANSWER_SCOPES), { minItems: 2 }),
     }),
+    /** The web tools (Kernel/Core 5f): ALLOW or DENY, for the whole run (search) or for a host (fetch). */
+    closed({
+      ...question,
+      capability: Type.Literal('web.search'),
+      queries: Type.Array(text(128), { minItems: 1, maxItems: 5 }),
+      /** Who receives the queries. */
+      provider: text(64),
+    }),
+    closed({
+      ...question,
+      capability: Type.Literal('web.fetch'),
+      url: text(2048),
+      host: text(253),
+    }),
     /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
     closed({
       ...question,

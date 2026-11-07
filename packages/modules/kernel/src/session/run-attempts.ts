@@ -437,6 +437,8 @@ export class RunAttempts {
             | 'WRITE_OUT_OF_SCOPE'
             | 'PROTECTED_PATH'
             | 'COMMAND_DENIED'
+            | 'ADDRESS_FORBIDDEN'
+            | 'DOMAIN_DENIED'
             | 'SANDBOX_UNAVAILABLE'
             | 'WRITE_SCOPE_DELEGATED'
             | 'ADMISSION_CHECK_FAILED';

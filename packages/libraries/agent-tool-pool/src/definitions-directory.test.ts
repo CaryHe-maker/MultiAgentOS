@@ -54,6 +54,8 @@ describe('shipped definitions', () => {
       'TOOL:run-subagents@v0.1.0',
       'TOOL:search-repository@v0.1.0',
       'TOOL:update-todos@v0.1.0',
+      'TOOL:web-fetch@v0.1.0',
+      'TOOL:web-search@v0.1.0',
       'TOOL:write-file@v0.1.0',
       'UNIT:context-assemble@v0.1.0',
       'UNIT:file-edit@v0.1.0',
@@ -68,6 +70,8 @@ describe('shipped definitions', () => {
       'UNIT:repository-orient@v0.1.0',
       'UNIT:repository-search@v0.1.0',
       'UNIT:run-command@v0.1.0',
+      'UNIT:web-fetch@v0.1.0',
+      'UNIT:web-search@v0.1.0',
     ]);
   });
 

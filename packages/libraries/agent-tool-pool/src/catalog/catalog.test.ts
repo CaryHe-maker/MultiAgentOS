@@ -66,8 +66,29 @@ describe('the repository catalog', () => {
       'run_subagents',
       'search_repository',
       'update_todos',
+      'web_fetch',
+      'web_search',
       'write_file',
     ]);
+  });
+
+  it('gives the web tools to main and explorer, and not to worker', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    for (const [id, web] of [
+      ['main', true],
+      ['explorer', true],
+      ['worker', false],
+    ] as const) {
+      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      if (!pinned.ok) throw new Error(pinned.error.message);
+      const names = pinned.value.tools.map((tool) => tool.modelName);
+      expect(names.includes('web_search')).toBe(web);
+      expect(names.includes('web_fetch')).toBe(web);
+      expect(pinned.value.agent.capabilities.includes('web.search')).toBe(web);
+      expect(pinned.value.agent.capabilities.includes('web.fetch')).toBe(web);
+    }
   });
 
   it('gives each SubAgent its own result tool and a share that covers its least share', async () => {

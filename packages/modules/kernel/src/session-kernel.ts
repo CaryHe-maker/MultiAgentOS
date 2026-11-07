@@ -348,6 +348,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
       inputIsValid,
       preset: deps.preset,
+      web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },
       ...(deps.commands === undefined
         ? {}
         : {

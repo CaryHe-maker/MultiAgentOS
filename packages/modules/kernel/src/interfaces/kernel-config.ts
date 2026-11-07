@@ -40,6 +40,14 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     criticalCommands: [],
     readOnlyCommands: [...DEFAULT_READ_ONLY_COMMANDS],
   }),
+  web: Object.freeze({
+    deniedDomains: [],
+    maxContentBytes: 2_097_152,
+    search: Object.freeze({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }),
+    fetch: Object.freeze({
+      remote: Object.freeze({ provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }),
+    }),
+  }),
   killGraceMs: 2_000,
   maxConcurrentExec: 1,
   maxConcurrentAttempts: 6,
@@ -62,6 +70,8 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     OUTPUT_READ: toolLimit(10_000, 51_200),
     COMMAND: toolLimit(600_000, 8_388_608),
     GIT_INSPECT: toolLimit(30_000, 1_048_576),
+    WEB_SEARCH: toolLimit(30_000, 1_048_576),
+    WEB_FETCH: toolLimit(60_000, 4_194_304),
     CONTEXT_ASSEMBLE: Object.freeze({ timeoutMs: 30_000, maxOutputBytes: 16_777_216 }),
     MODEL: Object.freeze({ timeoutMs: 900_000, maxOutputBytes: 1_048_576 }),
   }),

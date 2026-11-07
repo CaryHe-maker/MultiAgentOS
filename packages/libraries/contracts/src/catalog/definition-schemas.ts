@@ -127,6 +127,9 @@ export const PROTECTED_CAPABILITIES = [
   'workspace.write',
   'command.exec',
   'command.network',
+  /** The two web tools (M2Design 5.2, 8.1); asked per WorkflowRun and per host. */
+  'web.search',
+  'web.fetch',
   /** Only a top-level AgentRun has it: a SubAgent cannot spawn (M2Design 5.2, 5.4). */
   'agent.spawn',
 ] as const;

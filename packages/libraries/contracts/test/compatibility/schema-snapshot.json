@@ -345,6 +345,8 @@
               "workspace.write",
               "command.exec",
               "command.network",
+              "web.search",
+              "web.fetch",
               "agent.spawn"
             ]
           },
@@ -1338,6 +1340,8 @@
                   "workspace.write",
                   "command.exec",
                   "command.network",
+                  "web.search",
+                  "web.fetch",
                   "agent.spawn"
                 ]
               },
@@ -1878,7 +1882,9 @@
                   "MESSAGE_PUBLISH",
                   "FILE_EDIT",
                   "OUTPUT_READ",
-                  "GIT_INSPECT"
+                  "GIT_INSPECT",
+                  "WEB_SEARCH",
+                  "WEB_FETCH"
                 ],
                 "$id": "platform.common.ExecutionKind.v1"
               },
@@ -1890,6 +1896,8 @@
                     "workspace.write",
                     "command.exec",
                     "command.network",
+                    "web.search",
+                    "web.fetch",
                     "agent.spawn"
                   ]
                 },
@@ -2071,6 +2079,14 @@
                       "FATAL"
                     ]
                   },
+                  "DOMAIN_DENIED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "OUT_OF_SCOPE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -2191,6 +2207,30 @@
                       "FATAL"
                     ]
                   },
+                  "ADDRESS_FORBIDDEN": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "SECRET_IN_REQUEST": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "UNSUPPORTED_CONTENT": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
                   "PROVIDER_UNREACHABLE": {
                     "enum": [
                       "RETURN_TO_MODEL",
@@ -2224,6 +2264,14 @@
                     ]
                   },
                   "PROVIDER_TOOL_CHOICE_IGNORED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "PAGE_UNAVAILABLE": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -2937,7 +2985,9 @@
             "MESSAGE_PUBLISH",
             "FILE_EDIT",
             "OUTPUT_READ",
-            "GIT_INSPECT"
+            "GIT_INSPECT",
+            "WEB_SEARCH",
+            "WEB_FETCH"
           ],
           "$id": "platform.common.ExecutionKind.v1"
         },
@@ -2949,6 +2999,8 @@
               "workspace.write",
               "command.exec",
               "command.network",
+              "web.search",
+              "web.fetch",
               "agent.spawn"
             ]
           },
@@ -3130,6 +3182,14 @@
                 "FATAL"
               ]
             },
+            "DOMAIN_DENIED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "OUT_OF_SCOPE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -3250,6 +3310,30 @@
                 "FATAL"
               ]
             },
+            "ADDRESS_FORBIDDEN": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "SECRET_IN_REQUEST": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "UNSUPPORTED_CONTENT": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
             "PROVIDER_UNREACHABLE": {
               "enum": [
                 "RETURN_TO_MODEL",
@@ -3283,6 +3367,14 @@
               ]
             },
             "PROVIDER_TOOL_CHOICE_IGNORED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "PAGE_UNAVAILABLE": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3718,7 +3810,12 @@
                       "WRITE_SCOPE_CONFLICT",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
-                      "DELEGATION_NOT_FOUND"
+                      "DELEGATION_NOT_FOUND",
+                      "ADDRESS_FORBIDDEN",
+                      "DOMAIN_DENIED",
+                      "SECRET_IN_REQUEST",
+                      "UNSUPPORTED_CONTENT",
+                      "PAGE_UNAVAILABLE"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   }
@@ -4655,7 +4752,12 @@
                 "WRITE_SCOPE_CONFLICT",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
-                "DELEGATION_NOT_FOUND"
+                "DELEGATION_NOT_FOUND",
+                "ADDRESS_FORBIDDEN",
+                "DOMAIN_DENIED",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT",
+                "PAGE_UNAVAILABLE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -7263,6 +7365,120 @@
       "additionalProperties": false,
       "$id": "executor.TokenUsage.v1"
     },
+    "executor.WebFetchInput.v1": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.WebFetchInput.v1"
+    },
+    "executor.WebFetchOutput.v1": {
+      "type": "object",
+      "required": [
+        "url",
+        "via",
+        "bytes",
+        "truncated"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "via": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.WebFetchOutput.v1"
+    },
+    "executor.WebSearchInput.v1": {
+      "type": "object",
+      "required": [
+        "queries"
+      ],
+      "properties": {
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "minItems": 1,
+          "maxItems": 5
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "timeRange": {
+          "type": "object",
+          "properties": {
+            "after": {
+              "type": "string",
+              "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+            },
+            "before": {
+              "type": "string",
+              "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.WebSearchInput.v1"
+    },
+    "executor.WebSearchOutput.v1": {
+      "type": "object",
+      "required": [
+        "queries",
+        "results",
+        "provider"
+      ],
+      "properties": {
+        "queries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "results": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      },
+      "additionalProperties": false,
+      "$id": "executor.WebSearchOutput.v1"
+    },
     "integration.ChangeSetRef.v1": {
       "type": "object",
       "required": [
@@ -8121,6 +8337,81 @@
             "type",
             "questionId",
             "capability",
+            "queries",
+            "provider"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "web.search"
+            },
+            "queries": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "minItems": 1,
+              "maxItems": 5
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
+            "url",
+            "host"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "web.fetch"
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
             "path",
             "contentRef",
             "critical"
@@ -8419,6 +8710,8 @@
                       "workspace.write",
                       "command.exec",
                       "command.network",
+                      "web.search",
+                      "web.fetch",
                       "agent.spawn"
                     ]
                   },
@@ -9143,7 +9436,12 @@
                                       "WRITE_SCOPE_CONFLICT",
                                       "WRITE_SCOPE_DELEGATED",
                                       "BUDGET_INSUFFICIENT",
-                                      "DELEGATION_NOT_FOUND"
+                                      "DELEGATION_NOT_FOUND",
+                                      "ADDRESS_FORBIDDEN",
+                                      "DOMAIN_DENIED",
+                                      "SECRET_IN_REQUEST",
+                                      "UNSUPPORTED_CONTENT",
+                                      "PAGE_UNAVAILABLE"
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
                                   }
@@ -10134,6 +10432,60 @@
                       },
                       "additionalProperties": false,
                       "$id": "executor.GitInspectInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "queries"
+                      ],
+                      "properties": {
+                        "queries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "minItems": 1,
+                          "maxItems": 5
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 20
+                        },
+                        "timeRange": {
+                          "type": "object",
+                          "properties": {
+                            "after": {
+                              "type": "string",
+                              "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                            },
+                            "before": {
+                              "type": "string",
+                              "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.WebSearchInput.v1"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "url"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.WebFetchInput.v1"
                     }
                   ],
                   "$id": "kernel.unit.UnitInput.v1"
@@ -10405,7 +10757,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -12492,6 +12849,81 @@
                     "type",
                     "questionId",
                     "capability",
+                    "queries",
+                    "provider"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "web.search"
+                    },
+                    "queries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "minItems": 1,
+                      "maxItems": 5
+                    },
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
+                    "url",
+                    "host"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "web.fetch"
+                    },
+                    "url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 253
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
                     "path",
                     "contentRef",
                     "critical"
@@ -13234,7 +13666,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -13394,7 +13828,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -13531,7 +13967,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -13692,7 +14130,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -13808,7 +14251,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -13945,7 +14390,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -14061,7 +14511,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -14250,7 +14702,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -14809,7 +15263,12 @@
             "WRITE_SCOPE_CONFLICT",
             "WRITE_SCOPE_DELEGATED",
             "BUDGET_INSUFFICIENT",
-            "DELEGATION_NOT_FOUND"
+            "DELEGATION_NOT_FOUND",
+            "ADDRESS_FORBIDDEN",
+            "DOMAIN_DENIED",
+            "SECRET_IN_REQUEST",
+            "UNSUPPORTED_CONTENT",
+            "PAGE_UNAVAILABLE"
           ],
           "$id": "platform.common.ReasonCode.v1"
         },
@@ -14923,7 +15382,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -15083,7 +15544,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -15220,7 +15683,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -15381,7 +15846,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -15497,7 +15967,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -15634,7 +16106,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -15750,7 +16227,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -15939,7 +16418,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -16338,7 +16819,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -16651,7 +17134,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -16784,7 +17269,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -17080,7 +17570,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -17856,7 +18348,9 @@
                 "FILE_EDIT",
                 "OUTPUT_READ",
                 "COMMAND",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ]
             },
             "effect": {
@@ -18383,7 +18877,12 @@
                       "WRITE_SCOPE_CONFLICT",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
-                      "DELEGATION_NOT_FOUND"
+                      "DELEGATION_NOT_FOUND",
+                      "ADDRESS_FORBIDDEN",
+                      "DOMAIN_DENIED",
+                      "SECRET_IN_REQUEST",
+                      "UNSUPPORTED_CONTENT",
+                      "PAGE_UNAVAILABLE"
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
@@ -19963,6 +20462,254 @@
             },
             "executionKind": {
               "type": "string",
+              "const": "WEB_SEARCH"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "queries",
+                    "results",
+                    "provider"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "results": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.WebSearchOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "WEB_FETCH"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "via",
+                    "bytes",
+                    "truncated"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    "via": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 0,
+                      "maxLength": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.WebFetchOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fullOutput": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
               "const": "CONTEXT_ASSEMBLE"
             },
             "outcome": {
@@ -20437,6 +21184,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -20464,7 +21213,10 @@
                 "APPROVAL_MISMATCH",
                 "ENV_ASSERTION_FAILED",
                 "SANDBOX_UNAVAILABLE",
-                "NOT_A_GIT_REPOSITORY"
+                "NOT_A_GIT_REPOSITORY",
+                "ADDRESS_FORBIDDEN",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT"
               ]
             }
           },
@@ -20521,6 +21273,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -20539,6 +21293,7 @@
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
+                "PAGE_UNAVAILABLE",
                 "INTERNAL"
               ]
             },
@@ -20597,6 +21352,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -20673,6 +21430,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -20743,6 +21502,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE"
               ]
             },
@@ -20862,7 +21623,10 @@
                 "APPROVAL_MISMATCH",
                 "ENV_ASSERTION_FAILED",
                 "SANDBOX_UNAVAILABLE",
-                "NOT_A_GIT_REPOSITORY"
+                "NOT_A_GIT_REPOSITORY",
+                "ADDRESS_FORBIDDEN",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT"
               ]
             }
           },
@@ -20958,6 +21722,7 @@
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
+                "PAGE_UNAVAILABLE",
                 "INTERNAL"
               ]
             },
@@ -22466,7 +23231,12 @@
                               "WRITE_SCOPE_CONFLICT",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
-                              "DELEGATION_NOT_FOUND"
+                              "DELEGATION_NOT_FOUND",
+                              "ADDRESS_FORBIDDEN",
+                              "DOMAIN_DENIED",
+                              "SECRET_IN_REQUEST",
+                              "UNSUPPORTED_CONTENT",
+                              "PAGE_UNAVAILABLE"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
@@ -24289,6 +25059,260 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "WEB_SEARCH"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "queries"
+              ],
+              "properties": {
+                "queries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "minItems": 1,
+                  "maxItems": 5
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "timeRange": {
+                  "type": "object",
+                  "properties": {
+                    "after": {
+                      "type": "string",
+                      "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                    },
+                    "before": {
+                      "type": "string",
+                      "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebSearchInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "NONE"
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "WEB_FETCH"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebFetchInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "NONE"
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes",
+                "preview",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "preview": {
+                  "type": "object",
+                  "required": [
+                    "maxBytes",
+                    "maxLines"
+                  ],
+                  "properties": {
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
         }
       ],
       "$id": "kernel.execution.ExecutionRequest.v1"
@@ -24984,6 +26008,146 @@
               },
               "additionalProperties": false,
               "$id": "executor.GitInspectOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "queries",
+                "results",
+                "provider"
+              ],
+              "properties": {
+                "queries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "results": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebSearchOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "fullOutput": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "url",
+                "via",
+                "bytes",
+                "truncated"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "via": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 500
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebFetchOutput.v1"
             },
             "artifact": {
               "type": "object",
@@ -27048,7 +28212,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -27946,6 +29115,8 @@
               "workspace.write",
               "command.exec",
               "command.network",
+              "web.search",
+              "web.fetch",
               "agent.spawn"
             ]
           },
@@ -28714,7 +29885,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -28874,7 +30047,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -29011,7 +30186,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -29172,7 +30349,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -29288,7 +30470,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -29425,7 +30609,12 @@
                     "WRITE_SCOPE_CONFLICT",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
-                    "DELEGATION_NOT_FOUND"
+                    "DELEGATION_NOT_FOUND",
+                    "ADDRESS_FORBIDDEN",
+                    "DOMAIN_DENIED",
+                    "SECRET_IN_REQUEST",
+                    "UNSUPPORTED_CONTENT",
+                    "PAGE_UNAVAILABLE"
                   ],
                   "$id": "platform.common.ReasonCode.v1"
                 },
@@ -29541,7 +30730,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -29730,7 +30921,9 @@
                           "FILE_EDIT",
                           "OUTPUT_READ",
                           "COMMAND",
-                          "GIT_INSPECT"
+                          "GIT_INSPECT",
+                          "WEB_SEARCH",
+                          "WEB_FETCH"
                         ]
                       },
                       "effect": {
@@ -30522,7 +31715,12 @@
                               "WRITE_SCOPE_CONFLICT",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
-                              "DELEGATION_NOT_FOUND"
+                              "DELEGATION_NOT_FOUND",
+                              "ADDRESS_FORBIDDEN",
+                              "DOMAIN_DENIED",
+                              "SECRET_IN_REQUEST",
+                              "UNSUPPORTED_CONTENT",
+                              "PAGE_UNAVAILABLE"
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           }
@@ -31513,6 +32711,60 @@
               },
               "additionalProperties": false,
               "$id": "executor.GitInspectInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "queries"
+              ],
+              "properties": {
+                "queries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "minItems": 1,
+                  "maxItems": 5
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "timeRange": {
+                  "type": "object",
+                  "properties": {
+                    "after": {
+                      "type": "string",
+                      "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                    },
+                    "before": {
+                      "type": "string",
+                      "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebSearchInput.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.WebFetchInput.v1"
             }
           ],
           "$id": "kernel.unit.UnitInput.v1"
@@ -32101,7 +33353,12 @@
                           "WRITE_SCOPE_CONFLICT",
                           "WRITE_SCOPE_DELEGATED",
                           "BUDGET_INSUFFICIENT",
-                          "DELEGATION_NOT_FOUND"
+                          "DELEGATION_NOT_FOUND",
+                          "ADDRESS_FORBIDDEN",
+                          "DOMAIN_DENIED",
+                          "SECRET_IN_REQUEST",
+                          "UNSUPPORTED_CONTENT",
+                          "PAGE_UNAVAILABLE"
                         ],
                         "$id": "platform.common.ReasonCode.v1"
                       }
@@ -33092,6 +34349,60 @@
           },
           "additionalProperties": false,
           "$id": "executor.GitInspectInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "queries"
+          ],
+          "properties": {
+            "queries": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "minItems": 1,
+              "maxItems": 5
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "timeRange": {
+              "type": "object",
+              "properties": {
+                "after": {
+                  "type": "string",
+                  "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                },
+                "before": {
+                  "type": "string",
+                  "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.WebSearchInput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "url"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.WebFetchInput.v1"
         }
       ],
       "$id": "kernel.unit.UnitInput.v1"
@@ -33819,6 +35130,66 @@
           },
           "additionalProperties": false,
           "$id": "executor.GitInspectOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "queries",
+            "results",
+            "provider"
+          ],
+          "properties": {
+            "queries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "results": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.WebSearchOutput.v1"
+        },
+        {
+          "type": "object",
+          "required": [
+            "url",
+            "via",
+            "bytes",
+            "truncated"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "via": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 500
+            }
+          },
+          "additionalProperties": false,
+          "$id": "executor.WebFetchOutput.v1"
         }
       ],
       "$id": "kernel.unit.UnitOutput.v1"
@@ -33900,7 +35271,9 @@
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
                 "OUTPUT_READ",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -34671,6 +36044,66 @@
                   },
                   "additionalProperties": false,
                   "$id": "executor.GitInspectOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "queries",
+                    "results",
+                    "provider"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "results": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.WebSearchOutput.v1"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "via",
+                    "bytes",
+                    "truncated"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    },
+                    "via": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 0,
+                      "maxLength": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "executor.WebFetchOutput.v1"
                 }
               ],
               "$id": "kernel.unit.UnitOutput.v1"
@@ -34850,7 +36283,9 @@
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
                 "OUTPUT_READ",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -34912,6 +36347,7 @@
                 "COMMAND_DENIED",
                 "PROTECTED_PATH_CREATED",
                 "WRITE_SCOPE_DELEGATED",
+                "DOMAIN_DENIED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
                 "UNSUPPORTED_FILE",
@@ -34926,7 +36362,10 @@
                 "APPROVAL_MISMATCH",
                 "ENV_ASSERTION_FAILED",
                 "SANDBOX_UNAVAILABLE",
-                "NOT_A_GIT_REPOSITORY"
+                "NOT_A_GIT_REPOSITORY",
+                "ADDRESS_FORBIDDEN",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT"
               ]
             }
           },
@@ -35007,7 +36446,9 @@
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
                 "OUTPUT_READ",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -35140,7 +36581,9 @@
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
                 "OUTPUT_READ",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -35195,6 +36638,7 @@
                 "PROVIDER_AUTH",
                 "PROVIDER_ERROR",
                 "PROVIDER_TOOL_CHOICE_IGNORED",
+                "PAGE_UNAVAILABLE",
                 "INTERNAL",
                 "UNIT_TIMEOUT"
               ]
@@ -35277,7 +36721,9 @@
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
                 "OUTPUT_READ",
-                "GIT_INSPECT"
+                "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -35586,7 +37032,9 @@
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
                         "OUTPUT_READ",
-                        "GIT_INSPECT"
+                        "GIT_INSPECT",
+                        "WEB_SEARCH",
+                        "WEB_FETCH"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -36357,6 +37805,66 @@
                           },
                           "additionalProperties": false,
                           "$id": "executor.GitInspectOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "queries",
+                            "results",
+                            "provider"
+                          ],
+                          "properties": {
+                            "queries": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "results": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "provider": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.WebSearchOutput.v1"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "url",
+                            "via",
+                            "bytes",
+                            "truncated"
+                          ],
+                          "properties": {
+                            "url": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            },
+                            "via": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 0,
+                              "maxLength": 500
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "executor.WebFetchOutput.v1"
                         }
                       ],
                       "$id": "kernel.unit.UnitOutput.v1"
@@ -36536,7 +38044,9 @@
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
                         "OUTPUT_READ",
-                        "GIT_INSPECT"
+                        "GIT_INSPECT",
+                        "WEB_SEARCH",
+                        "WEB_FETCH"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -36598,6 +38108,7 @@
                         "COMMAND_DENIED",
                         "PROTECTED_PATH_CREATED",
                         "WRITE_SCOPE_DELEGATED",
+                        "DOMAIN_DENIED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
                         "UNSUPPORTED_FILE",
@@ -36612,7 +38123,10 @@
                         "APPROVAL_MISMATCH",
                         "ENV_ASSERTION_FAILED",
                         "SANDBOX_UNAVAILABLE",
-                        "NOT_A_GIT_REPOSITORY"
+                        "NOT_A_GIT_REPOSITORY",
+                        "ADDRESS_FORBIDDEN",
+                        "SECRET_IN_REQUEST",
+                        "UNSUPPORTED_CONTENT"
                       ]
                     }
                   },
@@ -36693,7 +38207,9 @@
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
                         "OUTPUT_READ",
-                        "GIT_INSPECT"
+                        "GIT_INSPECT",
+                        "WEB_SEARCH",
+                        "WEB_FETCH"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -36826,7 +38342,9 @@
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
                         "OUTPUT_READ",
-                        "GIT_INSPECT"
+                        "GIT_INSPECT",
+                        "WEB_SEARCH",
+                        "WEB_FETCH"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -36881,6 +38399,7 @@
                         "PROVIDER_AUTH",
                         "PROVIDER_ERROR",
                         "PROVIDER_TOOL_CHOICE_IGNORED",
+                        "PAGE_UNAVAILABLE",
                         "INTERNAL",
                         "UNIT_TIMEOUT"
                       ]
@@ -36963,7 +38482,9 @@
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
                         "OUTPUT_READ",
-                        "GIT_INSPECT"
+                        "GIT_INSPECT",
+                        "WEB_SEARCH",
+                        "WEB_FETCH"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -37480,7 +39001,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -37640,7 +39163,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -37777,7 +39302,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -37938,7 +39465,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -38054,7 +39586,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -38191,7 +39725,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         },
@@ -38307,7 +39846,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -38496,7 +40037,9 @@
                                   "FILE_EDIT",
                                   "OUTPUT_READ",
                                   "COMMAND",
-                                  "GIT_INSPECT"
+                                  "GIT_INSPECT",
+                                  "WEB_SEARCH",
+                                  "WEB_FETCH"
                                 ]
                               },
                               "effect": {
@@ -39082,7 +40625,9 @@
         "MESSAGE_PUBLISH",
         "FILE_EDIT",
         "OUTPUT_READ",
-        "GIT_INSPECT"
+        "GIT_INSPECT",
+        "WEB_SEARCH",
+        "WEB_FETCH"
       ],
       "$id": "platform.common.ExecutionKind.v1"
     },
@@ -39269,7 +40814,12 @@
         "WRITE_SCOPE_CONFLICT",
         "WRITE_SCOPE_DELEGATED",
         "BUDGET_INSUFFICIENT",
-        "DELEGATION_NOT_FOUND"
+        "DELEGATION_NOT_FOUND",
+        "ADDRESS_FORBIDDEN",
+        "DOMAIN_DENIED",
+        "SECRET_IN_REQUEST",
+        "UNSUPPORTED_CONTENT",
+        "PAGE_UNAVAILABLE"
       ],
       "$id": "platform.common.ReasonCode.v1"
     },
@@ -39319,6 +40869,7 @@
         "sandbox",
         "sandboxMaskedPatterns",
         "command",
+        "web",
         "killGraceMs",
         "maxConcurrentExec",
         "maxConcurrentAttempts",
@@ -39471,6 +41022,86 @@
           },
           "additionalProperties": false
         },
+        "web": {
+          "type": "object",
+          "required": [
+            "deniedDomains",
+            "maxContentBytes",
+            "search",
+            "fetch"
+          ],
+          "properties": {
+            "deniedDomains": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              }
+            },
+            "maxContentBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "search": {
+              "type": "object",
+              "required": [
+                "provider",
+                "baseUrl"
+              ],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "baseUrl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "additionalProperties": false
+            },
+            "fetch": {
+              "type": "object",
+              "required": [
+                "remote"
+              ],
+              "properties": {
+                "remote": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "baseUrl"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        "baseUrl": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "killGraceMs": {
           "type": "integer",
           "minimum": 1
@@ -39555,6 +41186,8 @@
             "OUTPUT_READ",
             "COMMAND",
             "GIT_INSPECT",
+            "WEB_SEARCH",
+            "WEB_FETCH",
             "CONTEXT_ASSEMBLE",
             "MODEL"
           ],
@@ -39856,6 +41489,72 @@
               },
               "additionalProperties": false
             },
+            "WEB_SEARCH": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "WEB_FETCH": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes",
+                "previewMaxBytes",
+                "previewMaxLines",
+                "maxFullOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "previewMaxLines": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxFullOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "CONTEXT_ASSEMBLE": {
               "type": "object",
               "required": [
@@ -39955,6 +41654,7 @@
             "sandbox",
             "sandboxMaskedPatterns",
             "command",
+            "web",
             "killGraceMs",
             "maxConcurrentExec",
             "maxConcurrentAttempts",
@@ -40107,6 +41807,86 @@
               },
               "additionalProperties": false
             },
+            "web": {
+              "type": "object",
+              "required": [
+                "deniedDomains",
+                "maxContentBytes",
+                "search",
+                "fetch"
+              ],
+              "properties": {
+                "deniedDomains": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253
+                  }
+                },
+                "maxContentBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "search": {
+                  "type": "object",
+                  "required": [
+                    "provider",
+                    "baseUrl"
+                  ],
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "baseUrl": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fetch": {
+                  "type": "object",
+                  "required": [
+                    "remote"
+                  ],
+                  "properties": {
+                    "remote": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "provider",
+                            "baseUrl"
+                          ],
+                          "properties": {
+                            "provider": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
+                            },
+                            "baseUrl": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "killGraceMs": {
               "type": "integer",
               "minimum": 1
@@ -40191,6 +41971,8 @@
                 "OUTPUT_READ",
                 "COMMAND",
                 "GIT_INSPECT",
+                "WEB_SEARCH",
+                "WEB_FETCH",
                 "CONTEXT_ASSEMBLE",
                 "MODEL"
               ],
@@ -40460,6 +42242,72 @@
                   "additionalProperties": false
                 },
                 "GIT_INSPECT": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "WEB_SEARCH": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes",
+                    "previewMaxBytes",
+                    "previewMaxLines",
+                    "maxFullOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "previewMaxLines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxFullOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "WEB_FETCH": {
                   "type": "object",
                   "required": [
                     "timeoutMs",
@@ -42509,7 +44357,12 @@
                 "WRITE_SCOPE_CONFLICT",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
-                "DELEGATION_NOT_FOUND"
+                "DELEGATION_NOT_FOUND",
+                "ADDRESS_FORBIDDEN",
+                "DOMAIN_DENIED",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT",
+                "PAGE_UNAVAILABLE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
@@ -42927,7 +44780,12 @@
                 "WRITE_SCOPE_CONFLICT",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
-                "DELEGATION_NOT_FOUND"
+                "DELEGATION_NOT_FOUND",
+                "ADDRESS_FORBIDDEN",
+                "DOMAIN_DENIED",
+                "SECRET_IN_REQUEST",
+                "UNSUPPORTED_CONTENT",
+                "PAGE_UNAVAILABLE"
               ],
               "$id": "platform.common.ReasonCode.v1"
             }
@@ -44576,7 +46434,12 @@
                             "WRITE_SCOPE_CONFLICT",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND"
+                            "DELEGATION_NOT_FOUND",
+                            "ADDRESS_FORBIDDEN",
+                            "DOMAIN_DENIED",
+                            "SECRET_IN_REQUEST",
+                            "UNSUPPORTED_CONTENT",
+                            "PAGE_UNAVAILABLE"
                           ],
                           "$id": "platform.common.ReasonCode.v1"
                         }

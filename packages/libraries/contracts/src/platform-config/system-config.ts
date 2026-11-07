@@ -61,6 +61,22 @@ export const KernelConfigSchema = closed(
        */
       readOnlyCommands: Type.Array(text(100)),
     }),
+    /** The web tools (Kernel/Core 5f, ExecutorSet 5d); the key is the model provider's, not here. */
+    web: closed({
+      /** Hosts that are refused without asking; `example.com` also covers `a.example.com`. */
+      deniedDomains: Type.Array(text(253)),
+      /** A fetched page is cut here. */
+      maxContentBytes: count(1),
+      /** The provider is named; the name is also what its key is looked up under (`<NAME>_API_KEY`). */
+      search: closed({ provider: text(32), baseUrl: text(200) }),
+      /**
+       * This program fetches first. `remote` is asked only when it cannot (ExecutorSet 5d); null
+       * means never, and then no address is given to anyone.
+       */
+      fetch: closed({
+        remote: Type.Union([Type.Null(), closed({ provider: text(32), baseUrl: text(200) })]),
+      }),
+    }),
     killGraceMs: ms(),
     maxConcurrentExec: count(1),
     /** UnitAttempts executing at the same time, over all AgentRuns (M2Design 7.1). */
@@ -91,6 +107,8 @@ export const KernelConfigSchema = closed(
       OUTPUT_READ: ToolLimitSchema,
       COMMAND: ToolLimitSchema,
       GIT_INSPECT: ToolLimitSchema,
+      WEB_SEARCH: ToolLimitSchema,
+      WEB_FETCH: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),

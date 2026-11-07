@@ -46,6 +46,8 @@ const config: ExecutionConfig = {
     OUTPUT_READ: tool,
     COMMAND: tool,
     GIT_INSPECT: tool,
+    WEB_SEARCH: tool,
+    WEB_FETCH: tool,
     CONTEXT_ASSEMBLE: { timeoutMs: 1000, maxOutputBytes: 1000 },
     MODEL: { timeoutMs: 1000, maxOutputBytes: 1000 },
   },

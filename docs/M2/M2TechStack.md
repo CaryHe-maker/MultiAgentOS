@@ -114,9 +114,11 @@ DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://
 | 结果 | 阶段 6 的做法 |
 |---|---|
 | W-T1 至 W-T6 全部通过，W-T3 的各类别都可用 | `web_search` 与 `web_fetch` 都以 DeepSeek 为默认提供方；本地抓取不做，S6-EX-2 只保留地址检查、重定向检查与结果封装 |
-| 搜索通过，抓取只覆盖静态页面（JavaScript 页面、PDF 等失败） | 搜索用 DeepSeek；抓取先用 DeepSeek，失败的类别回退到本地抓取（S6-EX-2 完整保留） |
+| 搜索通过，抓取只覆盖静态页面（JavaScript 页面、PDF 等失败） | 搜索用 DeepSeek；抓取**先用本地抓取**，它做不到时才用 DeepSeek（Cary 2026-11-07，依据 [Evaluation/Stage6FetchOrder](Evaluation/Stage6FetchOrder.md) 的 61 个真实地址对比） |
 | 搜索质量或限流不达标 | 搜索改用 Tavily，DeepSeek 抓取是否保留看 W-T3 |
 | W-T1 或 W-T5 不达标（协议与文档不符、计费不符） | 不用 DeepSeek 的接口，按原方案使用 Tavily 与本地抓取 |
+
+**实测结果（2026-11-07）**：见 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)。搜索通过（16/16 相关、算符有效、p95 约 0.5 秒）；抓取静态页面与 GitHub 可用，PDF、reddit、长列表页有缺口，Markdown 丢链接与代码围栏，GitHub 页约 10 秒；计费与隐私无法由实验证明。落在上表第二行，提供方由 Cary 决定。
 
 无论结论如何，`web_search` 与 `web_fetch` 都经提供方端口（`SearchProvider`、`FetchProvider`）调用，提供方可以替换；搜索词与抓取的地址是数据离开本机的通道，授权（`web.search`、`web.fetch`）、审计、密钥扫描与地址检查不因提供方而减少。留存与隐私的结论写入 [M2Security](M2Security.md) 的网络部分。
 ## 4. 新增依赖
@@ -129,7 +131,7 @@ DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://
 | 影子 git 快照（调用系统 `git`，不引入库） | 2 | 已定：系统 `git` |
 | 沙盒（调用系统 `bwrap`，不引入库） | 3 | 已定：系统 `bwrap` |
 | 命令的语法树拆分（M2Design 第 5.2 节） | 3 | 已定：`web-tree-sitter` 0.27.1 与 `tree-sitter-bash` 0.25.1 的 WebAssembly 语法文件（`tree-sitter-bash.wasm` 随包提供，不需要原生编译；`pnpm-workspace.yaml` 中 `allowBuilds` 对 `tree-sitter-bash` 为 `false`，不运行它的构建脚本），只在 ExecutorSet 的 `command/parse/` 中使用；E-EX-3 已引入（2026-11-05，Windows 与 Ubuntu 24.04 上测试通过） |
-| 网页检索与抓取的提供方（DeepSeek 搜索与抓取接口，或 Tavily） | 6 | 待定：由第 3.3 节的实测（S6-T-1）证明可用后，Cary 决定；两者都经 `SearchProvider`、`FetchProvider` 端口调用，不引入 SDK，直接使用 Node 的 `fetch` |
+| 网页检索与抓取的提供方 | 6 | 已定（Cary 2026-11-07，依据第 3.3 节的实测）：搜索用 DeepSeek 的搜索接口（按名字选择，换提供方是改配置加适配器，已有 Brave 适配器验证这一点），抓取先用本地抓取、做不到时才用 DeepSeek 的抓取接口（顺序于同日评测后由先 DeepSeek 改为先本地）；不用 Tavily；两者都经 `SearchProvider`、`FetchProvider` 端口。HTML 转 Markdown 自己写（`web/html-to-markdown.ts`），**不增加依赖** |
 | HTML 转 Markdown | 6 | 待定：M2Design 第 8.4 节倾向于把纯函数复制到 `vendor/` 并注明来源与许可证 |
 | 模板 YAML 解析 | 1 | 不新增：沿用 AgentToolPool 已有的 YAML 1.2 core schema 解析（M1），内置模板与使用者模板都由它解析 |
 

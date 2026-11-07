@@ -8,6 +8,7 @@ import { CommandOutputSchema, GitInspectOutputSchema } from '../executor/command
 import { FileReadOutputSchema } from '../executor/file-read.js';
 import { FileWriteOutputSchema } from '../executor/file-write.js';
 import { OutputReadOutputSchema } from '../executor/output-read.js';
+import { WebFetchOutputSchema, WebSearchOutputSchema } from '../executor/web.js';
 import { ModelCallOutputSchema, TokenUsageSchema } from '../executor/model-call.js';
 import { RepositoryListOutputSchema } from '../executor/repository-list.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -124,6 +125,8 @@ const FileWriteResultSchema = toolResult(FileWriteOutputSchema);
 const OutputReadResultSchema = toolResult(OutputReadOutputSchema);
 const CommandResultSchema = toolResult(CommandOutputSchema);
 const GitInspectResultSchema = toolResult(GitInspectOutputSchema);
+const WebSearchResultSchema = toolResult(WebSearchOutputSchema);
+const WebFetchResultSchema = toolResult(WebFetchOutputSchema);
 const AssembleResultSchema = closed({
   output: ContextAssembleOutputSchema,
   artifact: artifact,
@@ -145,6 +148,8 @@ export const ExecutionResultSchema = Type.Union(
     OutputReadResultSchema,
     CommandResultSchema,
     GitInspectResultSchema,
+    WebSearchResultSchema,
+    WebFetchResultSchema,
     AssembleResultSchema,
     ModelResultSchema,
   ],
@@ -163,6 +168,8 @@ const NON_MODEL_KINDS = Type.Enum([
   'OUTPUT_READ',
   'COMMAND',
   'GIT_INSPECT',
+  'WEB_SEARCH',
+  'WEB_FETCH',
   'CONTEXT_ASSEMBLE',
 ]);
 const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = notCompleted(
@@ -181,6 +188,8 @@ export const ExecutionFactSchema = Type.Union(
     completed('OUTPUT_READ', OutputReadResultSchema, inSession),
     completed('COMMAND', CommandResultSchema, inSession),
     completed('GIT_INSPECT', GitInspectResultSchema, inSession),
+    completed('WEB_SEARCH', WebSearchResultSchema, inSession),
+    completed('WEB_FETCH', WebFetchResultSchema, inSession),
     completed('CONTEXT_ASSEMBLE', AssembleResultSchema, inSession),
     completed('MODEL', ModelResultSchema, {
       ...inSession,

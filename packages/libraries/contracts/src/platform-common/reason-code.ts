@@ -79,6 +79,11 @@ export const REASON_CODE_CATEGORY = {
   WRITE_SCOPE_DELEGATED: 'CONFLICT',
   BUDGET_INSUFFICIENT: 'RESOURCE',
   DELEGATION_NOT_FOUND: 'VALIDATION',
+  ADDRESS_FORBIDDEN: 'POLICY',
+  DOMAIN_DENIED: 'POLICY',
+  SECRET_IN_REQUEST: 'POLICY',
+  UNSUPPORTED_CONTENT: 'EXECUTION',
+  PAGE_UNAVAILABLE: 'EXECUTION',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
@@ -154,6 +159,9 @@ export const EXECUTOR_REJECTED_CODES = [
   'ENV_ASSERTION_FAILED',
   'SANDBOX_UNAVAILABLE',
   'NOT_A_GIT_REPOSITORY',
+  'ADDRESS_FORBIDDEN',
+  'SECRET_IN_REQUEST',
+  'UNSUPPORTED_CONTENT',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `FAILED` outcome. */
 export const EXECUTOR_FAILED_CODES = [
@@ -162,6 +170,7 @@ export const EXECUTOR_FAILED_CODES = [
   'PROVIDER_AUTH',
   'PROVIDER_ERROR',
   'PROVIDER_TOOL_CHOICE_IGNORED',
+  'PAGE_UNAVAILABLE',
   'INTERNAL',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `VIOLATION` outcome, and the `failure.code` of a run closed as VIOLATION. */
@@ -195,6 +204,7 @@ export const UNIT_REJECTED_CODES = [
   'COMMAND_DENIED',
   'PROTECTED_PATH_CREATED',
   'WRITE_SCOPE_DELEGATED',
+  'DOMAIN_DENIED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */

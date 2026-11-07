@@ -26,6 +26,10 @@ unitRefs:
     version: v0.1.0
   - id: git-inspect
     version: v0.1.0
+  - id: web-search
+    version: v0.1.0
+  - id: web-fetch
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -43,6 +47,8 @@ spawnable:
   defaultShare: 300000
 capabilities:
   - repo.read
+  - web.search
+  - web.fetch
 limits:
   maxRounds: 20
   maxToolCallsPerRound: 8

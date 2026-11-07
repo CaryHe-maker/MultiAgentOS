@@ -5,6 +5,8 @@ import {
   CommandInputSchema,
   ExecutionRequestSchema,
   GitInspectInputSchema,
+  WebFetchInputSchema,
+  WebSearchInputSchema,
   FileEditInputSchema,
   FileReadInputSchema,
   FileWriteInputSchema,
@@ -26,6 +28,8 @@ import {
   type CommandInput,
   type ExecutionKind,
   type GitInspectInput,
+  type WebFetchInput,
+  type WebSearchInput,
   type ExecutionLimits,
   type ExecutionRequest,
   type ExecutorKind,
@@ -69,6 +73,8 @@ export interface ExecutionConfig {
     readonly OUTPUT_READ: ToolExecutionLimit;
     readonly COMMAND: ToolExecutionLimit;
     readonly GIT_INSPECT: ToolExecutionLimit;
+    readonly WEB_SEARCH: ToolExecutionLimit;
+    readonly WEB_FETCH: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
@@ -257,6 +263,20 @@ export class AttemptRequestBuilder {
             this.#toolLimits('GIT_INSPECT', identity),
           ),
         };
+      case 'WEB_SEARCH':
+        return {
+          request: made(
+            inputOf<WebSearchInput>(WebSearchInputSchema, input),
+            this.#toolLimits('WEB_SEARCH', identity),
+          ),
+        };
+      case 'WEB_FETCH':
+        return {
+          request: made(
+            inputOf<WebFetchInput>(WebFetchInputSchema, input),
+            this.#toolLimits('WEB_FETCH', identity),
+          ),
+        };
       case 'CONTEXT_ASSEMBLE':
         return {
           request: made(
@@ -294,7 +314,9 @@ export class AttemptRequestBuilder {
       | 'FILE_EDIT'
       | 'OUTPUT_READ'
       | 'COMMAND'
-      | 'GIT_INSPECT',
+      | 'GIT_INSPECT'
+      | 'WEB_SEARCH'
+      | 'WEB_FETCH',
     identity: RequestIdentity,
   ) {
     const limit = this.#deps.config.executionLimits[kind];
