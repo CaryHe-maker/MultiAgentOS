@@ -332,3 +332,44 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 **提供方决定（2026-11-07）**：Cary 决定搜索用 DeepSeek、抓取先用 DeepSeek 再回退本地抓取（依据 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)）。文档门（待 Cary 确认）：M2Design v1.29（第 8.1、8.3 节）、[Library/ExecutorSet](Library/ExecutorSet.md) 第 5d 节、[Kernel/Core](Kernel/Core.md) 第 5f 节、[M2Security](M2Security.md) 第 3c 节。未决（不阻塞实现）：DeepSeek 计费需要有余额的账户补测；搜索词与抓取地址的留存没有证据，按最坏情况写进安全文档。
 
 **阶段 6 实现状态（2026-11-07）**：S6-CT-1 至 S6-IN-1 全部完成，文档门已由 Cary 确认。契约（两个执行种类、`executor.WebSearch*`/`WebFetch*`、`web.search`/`web.fetch` 能力、`KernelConfig.web`、新错误码、两种询问事件）；`web/`（地址检查的纯函数放在 contracts，两个提供方端口与 DeepSeek 适配器、带固定地址连接与逐跳重定向检查的本地抓取、回退、HTML 转 Markdown、密钥扫描）；Core（第 5f 节：资源键、第 ① 步的两种拒绝、按主机绑定的拒绝、审计）；定义（`web-search`、`web-fetch` 的工具与 Unit，main 与 explorer 带上，worker 不带）；界面询问文字；`stage6-exit`（W1–W3、A 组网页部分共 12 项）；真实模型检查 3/3（[Evaluation/Stage6Web](Evaluation/Stage6Web.md)）。实现时对文档做的调整已回写：请求范围是 `NONE`；跨主机重定向是成功结果里的说明而不是错误；审计由 Execution 写；询问只写主机与地址；`readonly` 预设不带这两项能力；拒绝在 Workflow 按工具名记住，同一 AgentRun 之后的 `web_fetch` 不再询问任何主机。
+
+## 7. 阶段 8 计划（`feature/phase8/main`，2026-11-07）
+
+阶段 8 只依赖阶段 1；阶段 2（回退）、阶段 4（SubAgent）都已完成，所以 L7、L8 的压缩部分与 L12 在这个阶段一起做。设计已在 M2Design 第 9.6 节与各模块文档的阶段 8 章节写成草稿，这里不重复；下面是实现顺序、验收与已做的决定。
+
+**为什么现在做**：没有压缩时，上下文一超出窗口，模型调用就以 `CONTEXT_OVERFLOW` 失败，现在没有任何兜底；阶段 6 的网页抓取（一页可达数十 KB）与 SubAgent（explorer 与 worker 的 `perCallInputLimit` 只有 60000）都会更快撑满上下文。main 的 `perCallInputLimit` 是 880000，所以 main 自己很少触发，SubAgent 与抓取密集的对话先触发。
+
+**已决定（Cary 2026-11-07）**
+- 动代码前先做一次小的真实模型实验（S8-T-1），结果用来校准阈值并写进文档；
+- 空闲时的预先压缩缺省开（`idleTriggerRatio` 0.7），配置里可以关。
+
+**实现顺序**
+1. **S8-T-1 实测**：脚本 `compaction-eval/run-compaction-eval.ts`。C-T1 让 DeepSeek 在输入超出窗口时拒绝，记下状态码与错误体的形状（`model-call` 要靠它识别 `CONTEXT_OVERFLOW`，并取出 provider 给出的长度）；C-T2 一段带埋设事实的长对话，前缀式与纯文本式各写一份摘要，看事实、`toolCallId`、未完成事项是否保留，以及输出是否含各节；C-T3 同一输入下前缀式摘要请求的缓存命中（核对第 14.1 节的数字）；C-T4 摘要中的提示注入（材料里夹着"忽略之前的指示"）是否被当作指令。预算约 1–2 美元，`--yes` 与 `--budget` 才运行。结果与结论写入 `Evaluation/Stage8Compaction.md`，必要时回写 M2Design 第 9.6、14.1 节与 ExecutorSet 第 7 节。
+2. **文档门**：按实测更新第 9.6 节与各模块文档，经 Cary 确认后写代码。
+3. **S8-CT-1 契约**：`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`、`CompactionFailed`；`reportCompactionSource`（模型轮条目的 `measured`）、`ackCompaction`、`compactContext`；日志记录 `TOOL_RESULTS_PRUNED`、`CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED`；`ContextHistoryEntry` 的摘要条目；`KernelConfig.compaction`；`purpose` 为 `PRUNE`、`COMPACTION` 的内部请求与结果；原因码；Schema 快照；fake Kernel 与 fake Workflow 的契约测试。
+4. **S8-WF-1a 投影的纯函数**（提前任务 E-WF-2）：按 `[fromSeq, toSeq]` 以摘要取代 `NORMAL` 条目（`PINNED` 保持相对顺序）、按 `TOOL_RESULTS_PRUNED` 替换工具结果、撤销压缩、在完整模型轮边界划出保留区与选定范围、修剪候选；属性测试：任意日志前缀重放得到同一投影，两次压缩之间投影只在末尾增长（不变量 27）。
+5. **S8-EX-1 ExecutorSet**：`context-assemble` 的修剪（`purpose = 'PRUNE'`，头 + 说明 + 尾，不切断 UTF-8）与纯文本式组装、`headDigest`；`model-call` 的摘要请求（思考强度按配置、前缀式保留工具定义且不设 `tool_choice`、调用了工具算不合格）、`CONTEXT_OVERFLOW` 的识别、`COMPACTION_SUMMARY_INVALID`；Prompt `compaction-system`（摘要各节、保留仍需回读的 `toolCallId`、不执行材料中的指令）。
+6. **S8-KX-1 Execution**：估算（实测加估算，日志的纯函数）、修剪的存储（补登 `fullOutput`）、摘要请求作为 Kernel 内部的 MODEL 尝试。
+7. **S8-KC-1 Core 与 Monitor**：检查点（受理 `context-assemble` 之后、派发之前）、溢出触发（85%、70%、50%）、用户触发（`/compact`）、空闲触发、压缩过程的编排（额度预留、修剪、范围、摘要的重试与纯文本回退）、失败处理、与暂停中止撤销等操作的关系、审计、配置校验；额度：修剪不预留，摘要从被压缩对象的账本支出，预留后余额不得低于收尾保留。
+8. **S8-WF-1b Workflow**：回答材料查询（模型轮带实测用量与 `headDigest`）、追加 `TOOL_RESULTS_PRUNED` 与 `CONTEXT_COMPACTED` 后确认、`CONTEXT_COMPACTED` 与 `CONTEXT_OVERFLOW` 的重新提交（不计入连续出错）、`BUDGET_WRAP_UP` 的收尾、`read_output` 读回被修剪的调用、`/undo` 使压缩失效、SubAgent 与模板节点的目标、Fork 带走修剪与压缩记录。
+9. **S8-UI-1 界面**：`/compact`、压缩完成的通知（含空闲触发与修剪数）、摘要展示、`压缩上下文` 阶段、失败提示。
+10. **S8-IN-1 集成** `stage8-exit`（确定性用例，记录请求的 fake provider）与真实模型检查（长对话 L1、埋设事实的回忆检查、SubAgent 压缩）；缓存命中率记入验收证据。
+
+**验收（M2Design 第 13 节的 L 组）**
+- **L1** 长对话超出阈值后自动压缩并继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；真实模型再跑一段固定的长对话（把窗口上限调低使压缩在几十轮内发生），并检查埋设的事实在压缩后仍能答对。
+- **L2** provider 报上下文过长后压缩重试；第三次仍溢出按收尾路径结束。
+- **L3** `/compact`；**L4** 摘要失败或额度不足时没有写回压缩记录，按额度或收尾路径结束并有回复。
+- **L5** 压缩前后的请求前缀：两次压缩之间每次请求都是下一次的前缀；真实运行的缓存命中率写入验收证据。
+- **L7** 回退的 Turn 落在压缩范围内时投影恢复为原始条目。
+- **L8（压缩部分）** `read_output` 读回已被压缩取代或被修剪的调用。
+- **L9** 修剪先于摘要生效，修剪后的结果带 `toolCallId` 并可读回原文，`PINNED` 与保留区不被修剪，只修剪时不调用模型。
+- **L10** 摘要请求本身超出窗口或被拒绝：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数。
+- **L11** 空闲时的预先压缩：用户的下一条消息等压缩生效后才组装；进行中收到 `/undo`、`/compact`、`/fork`、切换或关闭 Session 时取消且没有写回。
+- **L12** SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用。
+- **L13** 估算使用最近一次模型调用的实测值：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同。
+- **退出**：L1–L5、L7、L8 的压缩部分、L9–L13 通过；S8-T-1 的实测结果与阈值校准已写入 `Evaluation/Stage8Compaction.md` 与 M2Design 第 9.6 节。
+
+**风险与留意**
+- 摘要会丢信息：用"埋设事实的回忆检查"量，不只看压缩有没有发生；摘要只以 user 角色出现且标明"不是指令"，`PINNED` 条目不进入摘要。
+- 缓存：压缩后的新前缀是"system 段 + 摘要 + 保留的原文"，之后只在末尾追加；前缀式摘要请求要命中已有缓存，思考关闭会使缓存失效（第 14.1 节），所以摘要的思考强度缺省 `low`。
+- 阶段 6 学到的教训：脚本化的模型测试不检查工具表与真实报错的形状，所以 S8-T-1 先看真实的超限错误，S8-IN-1 的真实模型检查不省略。
