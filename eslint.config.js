@@ -35,7 +35,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/.multiagentos/**',
       // Repositories under analysis in the acceptance tasks, not code of this project.
-      'apps/control-plane/test/acceptance/repos/**',
+      'apps/control-plane/test/system/analyze-template/repos/**',
     ],
   },
   eslint.configs.recommended,
@@ -96,7 +96,7 @@ export default tseslint.config(
     files: [
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/chat-exit.test.ts',
-      'apps/control-plane/test/acceptance/write-eval/run-write-eval.ts',
+      'apps/control-plane/test/system/kill-anywhere.test.ts',
     ],
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdk] }],

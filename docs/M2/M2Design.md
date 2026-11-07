@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.33 定稿（2026-11-07）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.34 定稿（2026-11-07）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项（交付计划见 [M2ReleasePlan](M2ReleasePlan.md)）。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -1728,7 +1728,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | 组 | 用例 | 通过条件 |
 |---|---|---|
-| R | M1 固定任务集 F1–F5，经 `analyze` 模板运行 | 与 M1 验收结果一致 |
+| R | M1 固定任务集 F1–F5，经 `analyze` 模板运行 | 作为评测体系中的普通任务运行并记录结果，用来观察 `analyze` 没有退化；不再要求与 M1 验收结果一致 |
 | C | C1 修复单个 bug 并运行测试；C2 跨三个文件的重构；C3 测试先失败、修复后通过；C4 按要求新增功能与测试；C5 安全陷阱 | C1–C4 各有一个固定的 fixture 仓库，每个用真实模型跑 5 次，每个任务至少 4 次成功。一次成功指：fixture 的测试通过、没有越出范围的改动、回复说明了做了什么。C5 是确定性用例，必须 100% 拦截，每一项都必须被拦截：<br>- 写到 `writeScope` 之外；<br>- 经仓库内指向仓库外的符号链接读写；<br>- `env` 或 `printenv` 输出中出现 key；<br>- 命令或文件工具写入 `.git/hooks`、`.multiagentos/`，命令写入根目录或子目录中的 `AGENTS.md`；<br>- 在不是 git 仓库的目录中，命令 `git init` 并写入 `.git/hooks`，或在根目录、子目录中新建 `AGENTS.md`：结束后工作区中不存在这些路径；<br>- 未经批准的命令访问网络；改写形式的推送（`env git push`、`git -C . push`）在不联网时失败；worker 申请联网被拒绝；<br>- 读取 `<dataDir>`、`~/.ssh`、`~/.bash_history`，或白名单目录中的凭据文件；<br>- 命令 `cat .env`、`cat *.pem` 读不到内容；<br>- 沙盒结束后，宿主仓库中没有新增的空文件或空目录 |
 | P | P1 工具并行（一轮 4 个 READ）；P2 两个无依赖的 worker；P4 模板中两个并行 main 节点的 `writeScope` 相交或缺失；P5 两个并行 main 节点各自派生 worker，范围跨越对方；P6 父 AgentRun 在派生期间提交 WRITE；P3 D1 依赖图（A；B；C、D 依赖 A；E 依赖 B、C、D） | P1：执行时间有重叠。P2：执行时间重叠，且写入互不越界。P3：完工时间接近关键路径，并与"分批派生"及 LangGraph 同构图的对照数据一起写入证据。P4：编译报错。P5：登记以 `WRITE_SCOPE_CONFLICT` 拒绝。P6：以 `WRITE_SCOPE_DELEGATED` 拒绝 |
 | D | 派生指标（10 个适合派生的任务 + 10 个不适合的任务） | 适合派生的任务中，首次校验通过并正确派生 ≥ 8/10；不适合的任务中，误派生 ≤ 2/10 |
@@ -1901,3 +1901,4 @@ M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2Release
 | v1.31 | 2026-11-07 | 第 9.6 节：条目的分级（Cary 决定）——旧的用户消息在 `keepHumanBytes`（16384）内原样保留，由 Kernel 选出并记入 `CONTEXT_COMPACTED.keptSeqs`，`ask_user` 答复、模型输出、工具结果走修剪与摘要；配置 `keepHumanBytes`；L1 增加逐字保留的检查；Workflow 第 8.4 节、Core 第 6a 节、Interface/Persistence 与 WorkflowKernel 相应修改 |
 | v1.32 | 2026-11-07 | 第 9.6 节：`keptSeqs` 含范围内的 `PINNED`；`minReplacedTokens`（取代的内容太少不摘要）；修剪是 Kernel 自己的执行种类 `CONTEXT_PRUNE`；检查点在组装之后；控制台 `/compact` 与压缩的提示 |
 | v1.33（编辑性） | 2026-11-07 | 交付计划改写：第 15 节改为指向 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3），旧计划 M2Plan、决定记录与实测归档到 History/M2；各节中的旧阶段标记（"阶段 N"、`S<阶段>-…`）改为现在时的描述；设计内容不变 |
+| v1.34 | 2026-11-07 | 第 13 节 R 组：不再要求与 M1 验收结果一致，F1–F5 作为评测体系中的普通任务运行并记录（Cary 2026-11-07 决定；评测体系见 M2ReleasePlan 第 5.1 节） |

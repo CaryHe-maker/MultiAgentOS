@@ -6,7 +6,7 @@
 ## 1. 口径
 
 - **已实现**：代码在 `feat/M2`，有确定性测试（假模型、假 provider、假时钟），在 Ubuntu 24.04（WSL）与 GitHub Actions 的质量门中通过。
-- **真实模型已验证**：另在真实模型（`deepseek-flash`）上跑过，记录在 [History/M2/Evaluation](../History/M2/Evaluation/) 或 `apps/control-plane/test/acceptance/*/results/`。这些数据来自单个模型与少量运行，不是统计结论。
+- **真实模型已验证**：另在真实模型（`deepseek-flash`）上跑过，当时的数字与结论记录在 [History/M2/Evaluation](../History/M2/Evaluation/)；原始记录与脚本已随评测体系的重建删除（[Evaluation](Evaluation.md)）。这些数据来自单个模型与少量运行，不是统计结论。
 - **缺口**：设计里要求、尚未做到的部分。第 5 节汇总。
 - 质量门：117 个测试文件、约 1900 个用例；Windows 本机有 18 个与符号链接、ripgrep 相关的用例失败，在 Ubuntu 上全部通过，所以以 Ubuntu 为准。
 
@@ -48,8 +48,8 @@
 
 | 评测 | 结果 | 记录 |
 |---|---|---|
-| `analyze` 回归 F1–F5 | 5/5，49 条结论带来源，缓存命中 77% | `.multiagentos/acceptance/`（本地） |
-| 写入任务 | 39/40；main 写入 6/6 | `apps/control-plane/test/acceptance/write-eval/` |
+| `analyze` 回归 F1–F5 | 5/5，49 条结论带来源，缓存命中 77% | 本地记录，已不在仓库 |
+| 写入任务 | 39/40；main 写入 6/6 | 记录与脚本已删除 |
 | 命令任务 C1–C4（自动挂载） | 12/12，约 $0.018 | 同上 |
 | SubAgent | 要求派生 24/24；不提示 2/33；小任务派生比自己做更慢更贵 | [Stage4SubAgents](../History/M2/Evaluation/Stage4SubAgents.md) |
 | 人类在环 | 5 个场景 15/15 | [Stage5HumanInTheLoop](../History/M2/Evaluation/Stage5HumanInTheLoop.md) |
@@ -57,7 +57,7 @@
 | 上下文压缩 | 长对话六个事实 8/8；两处缺陷由这次评测发现并修复 | [Stage8Compaction](../History/M2/Evaluation/Stage8Compaction.md) |
 
 这些评测的共同点：每次真实模型检查都发现了脚本化测试看不到的问题（工具表缺 `ask_user`、模型看不见调用 id、抓取顺序、摘要读到已修剪的历史）。
-评测运行器各自独立，场景、判分与记录格式不统一；统一它们是 [M2ReleasePlan](M2ReleasePlan.md) phase 0 的任务。
+这些评测当时各有各的运行器，现在由统一的[评测体系](Evaluation.md)取代；这张表是历史基线，新的基线在 phase 1、2 开头按各模式的任务集重新记录。
 
 ## 5. 已知缺口与遗留
 
@@ -77,7 +77,7 @@
 9. 提示注入只试过少数几种写法，且模型这几次识破了；防线不依赖模型的判断，但没有系统的对抗用例集。
 
 **评测与流程**
-10. 没有统一的评测任务集与运行器；C1–C4 没有按发布口径重跑；成本与延迟没有记录成回归门槛。
+10. 评测体系已建立，但 Turn-chat 与预置工作流的任务集和基线还没有；C1–C4 没有按发布口径重跑；成本与延迟没有记录成回归门槛。
 11. 发布文档（`M2Usage.md`、`M2Limitations.md`、验收证据）没有开始；代码注释里仍有指向 M1 文档的路径与旧阶段编号。
 12. 实体机（非 Azure 虚拟机、`generic` 内核）上的沙盒行为没有复核。
 

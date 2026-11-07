@@ -1,0 +1,775 @@
+[
+  {
+    "id": "I1",
+    "kind": "invariant",
+    "statement": "Only Kernel produces external side effects; Workflow and UserInteraction write only their own namespaces",
+    "tests": [
+      {
+        "file": "packages/testing/src/architecture.test.ts",
+        "title": "confines child processes to the Supervisor"
+      },
+      {
+        "file": "packages/testing/src/architecture.test.ts",
+        "title": "keeps the Session layer away from the Supervisor"
+      },
+      {
+        "file": "packages/testing/src/architecture.test.ts",
+        "title": "declares only the allowed internal dependencies"
+      }
+    ]
+  },
+  {
+    "id": "I2",
+    "kind": "invariant",
+    "statement": "Ceilings, grants and Leases only in Core memory; a SubAgent never exceeds its parent; outside the ceiling is refused without asking",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-work.test.ts",
+        "title": "gives a SubAgent no more than its parent has"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/unit-decision.test.ts",
+        "title": "② refuses what the ceiling lacks, before anything else is looked at"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/command-decision.test.ts",
+        "title": "refuses outside the ceiling, and network without command.network"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-work.test.ts",
+        "title": "refuses a capability the Agent does not have"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot make a read-only SubAgent write: the tool is not its own, and nothing is asked"
+      }
+    ]
+  },
+  {
+    "id": "I3",
+    "kind": "invariant",
+    "statement": "The in-process write check, Core and the sandbox agree on every path",
+    "tests": [
+      {
+        "file": "packages/libraries/contracts/src/platform-common/write-access.test.ts",
+        "title": "agrees with writableRoots"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/sandbox/sandbox-runner.test.ts",
+        "title": "writes only inside a narrower writable root"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/unit-decision.test.ts",
+        "title": "no entries can ever allow a protected or escaping path"
+      }
+    ]
+  },
+  {
+    "id": "I4",
+    "kind": "invariant",
+    "statement": "PAUSED means no attempt in flight; AWAITING_INPUT means no ACTIVE AgentRun and no attempt",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-control.test.ts",
+        "title": "pauses only a running Turn, and is paused once Execution has drained"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-control.test.ts",
+        "title": "refuses open input while paused"
+      },
+      {
+        "file": "packages/libraries/contracts/src/major-one.test.ts",
+        "title": "forbids a turn in AWAITING_INPUT"
+      }
+    ]
+  },
+  {
+    "id": "I5",
+    "kind": "invariant",
+    "statement": "Every accepted submitUnit gets exactly one UnitReport, or ends with RunClosed",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-execution.test.ts",
+        "title": "answers every attempt INTERRUPTED(ABORTED) on abort"
+      },
+      {
+        "file": "packages/modules/workflow/src/domain/agent/agent-cycle.test.ts",
+        "title": "answers every call that does not run"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-attempts.test.ts",
+        "title": "treats a second check, a wrong execution or a lost Lease as stale"
+      }
+    ]
+  },
+  {
+    "id": "I6",
+    "kind": "invariant",
+    "statement": "Every registered AgentRun can wrap up: its final-call budget is reserved at registration",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/monitor/run-ledgers.test.ts",
+        "title": "turns to WRAP_UP when the run could not fund another Turn"
+      },
+      {
+        "file": "packages/modules/kernel/src/monitor/run-ledgers-delegation.test.ts",
+        "title": "opens a SubAgent whose share is below its minimum in WRAP_UP"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "WARNING takes the run to its wrap-up"
+      }
+    ]
+  },
+  {
+    "id": "I7",
+    "kind": "invariant",
+    "statement": "Node states, the ready set and the model context are pure functions of the Session log; any prefix replays to the same result",
+    "tests": [
+      {
+        "file": "packages/modules/workflow/src/domain/context/history-projection.test.ts",
+        "title": "only ever appends between two prefixes of a log (invariant 27)"
+      },
+      {
+        "file": "packages/modules/workflow/src/domain/graph/graph.test.ts",
+        "title": "gives the same ready set as the run, and every run terminates"
+      },
+      {
+        "file": "packages/modules/workflow/src/domain/graph/session-graph.test.ts",
+        "title": "gives the same ready set from any prefix of a chat log"
+      }
+    ]
+  },
+  {
+    "id": "I8",
+    "kind": "invariant",
+    "statement": "The log is append-only; undo, interruption and repair are appended records",
+    "tests": [
+      {
+        "file": "packages/infrastructure/persistence/src/session-store.test.ts",
+        "title": "appends lines and reads them back in order"
+      },
+      {
+        "file": "packages/infrastructure/persistence/src/session-store.test.ts",
+        "title": "keeps the existing prefix byte for byte"
+      },
+      {
+        "file": "packages/modules/workflow/src/session/session-log-store.test.ts",
+        "title": "records a repaired tail"
+      }
+    ]
+  },
+  {
+    "id": "I9",
+    "kind": "invariant",
+    "statement": "Write occupations of running AgentRuns are disjoint; a parent that delegated cannot WRITE or EXEC",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-delegations.test.ts",
+        "title": "is none for roots that are apart"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/subagents-exit.test.ts",
+        "title": "refuses a write outside the worker scope, leaves the other scope alone, and says so in the result"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-work.test.ts",
+        "title": "gives a SubAgent no more than its parent has, no agent.spawn, and no roots beyond its task (P5)"
+      }
+    ]
+  },
+  {
+    "id": "I10",
+    "kind": "invariant",
+    "statement": "An interrupted EXEC is never re-run; completed Units are not redone on continue",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "S1: continues after the process was killed, without replay, and asks again"
+      },
+      {
+        "file": "apps/control-plane/test/system/kill-anywhere.test.ts",
+        "title": "the next process opens the Session, redoes nothing, and carries on"
+      }
+    ]
+  },
+  {
+    "id": "I11",
+    "kind": "invariant",
+    "statement": "Authorization errors refuse; a question waits for the user, silence is neither yes nor no",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-authorization.test.ts",
+        "title": "keeps waiting until the user answers"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-work.test.ts",
+        "title": "has no timer: the Unit stays suspended however long it takes"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-authorization.test.ts",
+        "title": "cancels every pending question and keeps the Lease until the run drains"
+      }
+    ]
+  },
+  {
+    "id": "I12",
+    "kind": "invariant",
+    "statement": "Credentials never reach a child process environment, the model context or ordinary logs",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "gives no credential in the environment, however the model asks for it"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "reads a secret file as empty, so the secret never reaches the model or any log"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/sandbox/sandbox-runner.test.ts",
+        "title": "gives the command only the whitelisted environment"
+      }
+    ]
+  },
+  {
+    "id": "I13",
+    "kind": "invariant",
+    "statement": "Every user input is a HUMAN node; an answer never creates a grant; authorization questions come only from Core",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/web-exit.test.ts",
+        "title": "does not take consent given in ask_user for a grant"
+      },
+      {
+        "file": "packages/testing/src/pause-steer-ask.test.ts",
+        "title": "waits for the answer without submitting a Unit, and reads the answer as the call result"
+      }
+    ]
+  },
+  {
+    "id": "I14",
+    "kind": "invariant",
+    "statement": "A critical operation is asked every time; no approval is reusable",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "git push and the like are asked every time, in warning style, with no standing allowance"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "the network is asked every time, says so, and the command is not told yes by an old answer"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/command/command-analyzer.test.ts",
+        "title": "cannot be talked out of a critical command by wrapping it"
+      }
+    ]
+  },
+  {
+    "id": "I15",
+    "kind": "invariant",
+    "statement": "The session log is written by Workflow only, the artifact store by Execution only; the log holds references, not bodies",
+    "tests": [
+      {
+        "file": "packages/infrastructure/persistence/src/session-store.test.ts",
+        "title": "offers the Session lock to Workflow only"
+      },
+      {
+        "file": "packages/testing/src/architecture.test.ts",
+        "title": "declares only the allowed internal dependencies"
+      }
+    ]
+  },
+  {
+    "id": "I16",
+    "kind": "invariant",
+    "statement": ".git/ and .multiagentos/ cannot be written by any tool or command; AGENTS.md cannot be written by a command; what a command creates there does not stay",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "keeps existing .git and AGENTS.md read-only, and moves out what a command creates"
+      },
+      {
+        "file": "packages/libraries/contracts/src/platform-common/write-access.test.ts",
+        "title": "never allows anything below a protected directory, in any case"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot write into .git/hooks, and the run goes on"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot become project instruction by writing AGENTS.md: the user is asked with the content, and refuses"
+      }
+    ]
+  },
+  {
+    "id": "I17",
+    "kind": "invariant",
+    "statement": "A template carries no permission: ceilings come from the Agent definition, grants from the human",
+    "tests": [
+      {
+        "file": "packages/libraries/contracts/src/catalog/definition-schemas.test.ts",
+        "title": "forbids duplicate references in closed sets"
+      }
+    ],
+    "deferred": "No user templates exist yet; the adversarial case for a template that asks for more is written with them (M2ReleasePlan phase 2)."
+  },
+  {
+    "id": "I18",
+    "kind": "invariant",
+    "statement": "A Turn is opened and closed by Kernel from open input; at its end no ACTIVE AgentRun and no attempt in flight",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/session-actor.test.ts",
+        "title": "ends the Turn first, then RunClosed, then RunFinished"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-work.test.ts",
+        "title": "interrupts for the user: asks cancelled, work aborted, and the Turn ends ABORTED with the run open"
+      }
+    ]
+  },
+  {
+    "id": "I19",
+    "kind": "invariant",
+    "statement": "A sandboxed command cannot read $HOME, the data directory or sensitive repository files; the file tools see the same",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "cannot read the system data directory, where the logs and the artifacts are"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "reads a secret file as empty, so the secret never reaches the model or any log"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/sandbox-scan.test.ts",
+        "title": "finds the secret files at any depth and the protected paths that exist"
+      }
+    ]
+  },
+  {
+    "id": "I20",
+    "kind": "invariant",
+    "statement": "Only AGENTS.md of exactly the trusted content is project instruction, appended at the end; the rest is untrusted material; never in the system segment",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "keeps an untrusted AGENTS.md out of the system segment and marks it as material"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "remembers trust for exact content, and asks again when it changes"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/executor-set.test.ts",
+        "title": "keeps AGENTS.md out of the system segments"
+      }
+    ]
+  },
+  {
+    "id": "I21",
+    "kind": "invariant",
+    "statement": "Security does not depend on the command list: without command.network a command cannot reach the network when the sandbox is available",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "has no network: an address on the loopback or outside is unreachable"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "the network is asked every time, says so, and the command is not told yes by an old answer"
+      }
+    ]
+  },
+  {
+    "id": "I22",
+    "kind": "invariant",
+    "statement": "At most one reservation in flight per ledger; shares come only from the level above; what remains returns",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/monitor/run-ledgers-delegation.test.ts",
+        "title": "gives every SubAgent a ledger of its own"
+      },
+      {
+        "file": "packages/modules/kernel/src/monitor/monitor.test.ts",
+        "title": "accounts for unreturned reservations as unknown and preserves monotonic budget state"
+      },
+      {
+        "file": "packages/modules/kernel/src/monitor/monitor.test.ts",
+        "title": "accounts for an in-flight final reservation and rejects another that exceeds the limit"
+      }
+    ]
+  },
+  {
+    "id": "I23",
+    "kind": "invariant",
+    "statement": "A run whose execution cannot be confirmed stopped stops the system; nothing goes on in any state",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-execution.test.ts",
+        "title": "judges a run that does not stop unconfirmed after the grace"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/execution-runner.test.ts",
+        "title": "reports STOP_UNCONFIRMED when the Executor ignores abort"
+      }
+    ]
+  },
+  {
+    "id": "I24",
+    "kind": "invariant",
+    "statement": "At most one instance per data directory",
+    "tests": [
+      {
+        "file": "packages/infrastructure/persistence/src/session-store.test.ts",
+        "title": "refuses a second holder while the first is alive"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "S5: a second instance on one data directory exits and names the holder"
+      }
+    ]
+  },
+  {
+    "id": "I25",
+    "kind": "invariant",
+    "statement": "The ready set depends only on structured records of the log; loop expansion is decided in one event",
+    "tests": [
+      {
+        "file": "packages/modules/workflow/src/domain/graph/graph.test.ts",
+        "title": "gives the same ready set as the run, and every run terminates"
+      },
+      {
+        "file": "packages/modules/workflow/src/domain/graph/session-graph.test.ts",
+        "title": "gives the same ready set from any prefix of a chat log"
+      }
+    ]
+  },
+  {
+    "id": "I26",
+    "kind": "invariant",
+    "statement": "/undo changes only what the undone Turn changed; with outside changes nothing is touched unless the user forces, and a backup always precedes a forced undo",
+    "tests": [
+      {
+        "file": "packages/libraries/executor-set/src/fs/workspace-snapshots.test.ts",
+        "title": "names an external change, and only a forced undo overwrites it, keeping a backup"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/write-undo-exit.test.ts",
+        "title": "names them; cancel touches nothing, force overwrites"
+      }
+    ]
+  },
+  {
+    "id": "I27",
+    "kind": "invariant",
+    "statement": "Between two compactions the requests of an AgentRun only grow at the end",
+    "tests": [
+      {
+        "file": "packages/modules/workflow/src/domain/context/history-projection.test.ts",
+        "title": "only ever appends between two prefixes of a log (invariant 27)"
+      }
+    ]
+  },
+  {
+    "id": "I28",
+    "kind": "invariant",
+    "statement": "A cut or a summary takes effect only after Workflow logged it; summaries never in the system segment; PINNED entries never summarised or cut; compaction never spends the wrap-up reserve",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-compaction.test.ts",
+        "title": "does not write a summary that Workflow could not record"
+      },
+      {
+        "file": "packages/modules/kernel/src/session/run-compaction.test.ts",
+        "title": "writes nothing when the ledger will not pay, and tells a user who asked"
+      },
+      {
+        "file": "packages/libraries/contracts/src/context/compaction-plan.test.ts",
+        "title": "replaces the older entries, keeps the PINNED ones and the newest user messages that fit"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/compaction-exit.test.ts",
+        "title": "is told to the user, leaves the history as it was, and the work goes on"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot put an order into the system segment or have it obeyed: the summary is material, in the history"
+      }
+    ]
+  },
+  {
+    "id": "I29",
+    "kind": "invariant",
+    "statement": "Only an ACTIVE Session keeps bodies from being reclaimed; SESSION bodies are never reclaimed while owned",
+    "tests": [
+      {
+        "file": "apps/control-plane/src/bootstrap/artifact-sweep.test.ts",
+        "title": "removes what no ACTIVE Session keeps, before it serves"
+      },
+      {
+        "file": "packages/infrastructure/artifacts/src/global-store.test.ts",
+        "title": "removes only old bodies outside the retained set"
+      }
+    ]
+  },
+  {
+    "id": "I30",
+    "kind": "invariant",
+    "statement": "The model refers to a full output only by toolCallId, never by ArtifactRef; read_output reaches only the caller's own, unexpired outputs",
+    "tests": [
+      {
+        "file": "packages/modules/workflow/src/domain/context/tool-inputs.test.ts",
+        "title": "does not reach a reverted Turn, and takes the latest of a repeated id"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/compaction-exit.test.ts",
+        "title": "still reads the whole of it back by its call id"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/write-undo-exit.test.ts",
+        "title": "says the output has expired, once its seven days are over"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot reach the output of a call that does not exist, however it names it"
+      }
+    ]
+  },
+  {
+    "id": "B1",
+    "kind": "blocker",
+    "statement": "Any item of the C5 trap list not intercepted",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "writes what a repository file told it to write only if the user agrees, and the user does not"
+      },
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts",
+        "title": "cannot read a private address through web_fetch, and is not asked either"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "keeps existing .git and AGENTS.md read-only, and moves out what a command creates"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "cannot write outside the repository, and the files stay where they were"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "follows a link out of the repository to nothing: the target is not there"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/fs/file-write-executor.test.ts",
+        "title": "does not follow a link in the target or on the way to it"
+      }
+    ]
+  },
+  {
+    "id": "B2",
+    "kind": "blocker",
+    "statement": "A restored Session reuses an old authorization",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "does not carry over to a new WorkflowRun: the same command asks again after a restart"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "S1: continues after the process was killed, without replay, and asks again"
+      }
+    ]
+  },
+  {
+    "id": "B3",
+    "kind": "blocker",
+    "statement": "Thinking content replay causes a 400 or a silent stop",
+    "tests": [
+      {
+        "file": "packages/libraries/executor-set/src/executor-set.test.ts",
+        "title": "replays the thinking of earlier turns and hands back the new one apart"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/executor-set.test.ts",
+        "title": "leaves a final call free first, and forces the tool with thinking off on the retry"
+      }
+    ]
+  },
+  {
+    "id": "B4",
+    "kind": "blocker",
+    "statement": "An attempt in flight after a pause",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-control.test.ts",
+        "title": "pauses only a running Turn, and is paused once Execution has drained"
+      }
+    ]
+  },
+  {
+    "id": "B5",
+    "kind": "blocker",
+    "statement": "An interrupted command is re-run automatically",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "S1: continues after the process was killed, without replay, and asks again"
+      },
+      {
+        "file": "apps/control-plane/test/system/kill-anywhere.test.ts",
+        "title": "the next process opens the Session, redoes nothing, and carries on"
+      }
+    ]
+  },
+  {
+    "id": "B6",
+    "kind": "blocker",
+    "statement": "The system goes on after STOP_UNCONFIRMED",
+    "tests": [
+      {
+        "file": "packages/modules/kernel/src/session/run-execution.test.ts",
+        "title": "judges a run that does not stop unconfirmed after the grace"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/execution-runner.test.ts",
+        "title": "reports STOP_UNCONFIRMED when the Executor ignores abort"
+      }
+    ]
+  },
+  {
+    "id": "B7",
+    "kind": "blocker",
+    "statement": "A credential leaks to a child process or a log",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts",
+        "title": "gives no credential in the environment, however the model asks for it"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/web-exit.test.ts",
+        "title": "writes what was searched and fetched to the audit, and not a query that held a secret"
+      }
+    ]
+  },
+  {
+    "id": "B8",
+    "kind": "blocker",
+    "statement": "Reclaiming deletes a body that rebuilding the context needs, or a compacted context cannot be rebuilt from the log",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts",
+        "title": "L6: expired bodies go at startup, deleted Sessions keep nothing, and context survives"
+      },
+      {
+        "file": "packages/modules/workflow/src/domain/context/history-projection.test.ts",
+        "title": "only ever appends between two prefixes of a log (invariant 27)"
+      }
+    ]
+  },
+  {
+    "id": "G-C5",
+    "kind": "group",
+    "statement": "Acceptance group C5: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-S",
+    "kind": "group",
+    "statement": "Acceptance group S: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-H",
+    "kind": "group",
+    "statement": "Acceptance group H: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/human-in-loop-exit.test.ts"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/write-undo-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-A",
+    "kind": "group",
+    "statement": "Acceptance group A: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/write-undo-exit.test.ts"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/command-sandbox-exit.test.ts"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/web-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-W",
+    "kind": "group",
+    "statement": "Acceptance group W: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/web-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-L",
+    "kind": "group",
+    "statement": "Acceptance group L: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/compaction-exit.test.ts"
+      },
+      {
+        "file": "apps/control-plane/test/acceptance/chat-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-B-P",
+    "kind": "group",
+    "statement": "Acceptance group B-P: every case of these files is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/subagents-exit.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-ADV",
+    "kind": "group",
+    "statement": "Adversarial cases with a compromised model: every case is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/system/compromised-model.test.ts"
+      }
+    ]
+  },
+  {
+    "id": "G-KILL",
+    "kind": "group",
+    "statement": "Kill the process between any two records of the log and carry on: every case is frozen",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/system/kill-anywhere.test.ts"
+      }
+    ]
+  }
+]
