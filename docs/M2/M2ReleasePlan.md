@@ -20,7 +20,7 @@ M2 发布必须同时满足（承接旧计划的完成定义与阻断项，重�
 3. 每个组件文档的状态都是"已实现"，文档与实现一致；`Interface/`、SharedContracts 与 AgentToolPool 一致。
 4. 在 Ubuntu 24.04 LTS 上，`pnpm run check`、端到端测试与全部验收用例通过，真实模型评测的结果写入验收证据。
 5. `M2Usage.md`、`M2Limitations.md`（含威胁模型的结论）、`docs/` 根目录的 `M2AcceptanceEvidence.md` 与 README、索引一致。
-6. 发布阻断项全部清零：M2Design 第 14.1 节列出的阻断项；不变量缺少测试；接缝修改未经契约门进入 `feat/M2`；文档状态与实现不一致；M2Baseline 第 5 节的缺口要么修复，要么逐条写入 `M2Limitations.md`。
+6. 发布阻断项全部清零：M2Design 第 14.1 节列出的阻断项；不变量缺少测试；接缝修改未经契约门进入主分支；文档状态与实现不一致；M2Baseline 第 5 节的缺口要么修复，要么逐条写入 `M2Limitations.md`。
 
 ## 3. 侧重点
 
@@ -69,10 +69,12 @@ M2 发布必须同时满足（承接旧计划的完成定义与阻断项，重�
 
 ### 4.3 分支与共享接缝
 
-- `feat/M2` 是集成分支，M2 发布时经 PR 合入 `main`。工作分支 `feature/M2/rp<N>-<主题>`（文档用 `docs/M2/rp<N>-<主题>`），从 `feat/M2` 创建，经 PR 合回，使用 merge commit；每个 phase 完成后合入一次，合入前在 Ubuntu 24.04（WSL）跑完整质量门。
-- 当前工作分支 `feature/M2/prompt-agent` 承载 phase 0 的整理；phase 1 起按上面的命名另开分支。
+- 三层分支：`main` ← `feat/M2` ← `feature/M2/prompt-agent`（本计划的**主分支**）← 各 phase 的工作分支。
+- 每个 phase 的工作分支 `feature/M2/rp<N>-<主题>`（文档用 `docs/M2/rp<N>-<主题>`）从 `feature/M2/prompt-agent` 创建，完成后 PR 回 `feature/M2/prompt-agent`，使用 merge commit；合入前在 Ubuntu 24.04（WSL）跑完整质量门。同一 phase 内按工作流可以再开分支，同样合回该 phase 的分支或主分支。
+- 四个 phase 全部完成、发布标准满足之后，`feature/M2/prompt-agent` 一次性 PR 合入 `feat/M2`；`feat/M2` 在此之前不接收本计划的 phase 分支。M2 发布时 `feat/M2` 经 PR 合入 `main`。
+- phase 0 的整理（本文与文档对齐）直接在 `feature/M2/prompt-agent` 上完成；phase 0 其余任务（评测基础设施、测试环境）从它另开分支。
 - 以下内容是接缝，只在契约门或集成任务中修改：`packages/libraries/contracts`、`packages/testing`、`packages/modules/kernel/src/interfaces`、各包的 `XxxDeps` 与工厂签名、根目录的构建与检查配置（`package.json`、`tsconfig*.json`、`eslint.config.js`、`vitest.config.ts`、`pnpm-lock.yaml`）。
-- 修改规则：先合入 `feat/M2`，其他任务分支同步之后再依赖它；任务发现接缝缺口时先用本地 fake 继续，同时提出契约任务补齐；每次同步之后在 Ubuntu 24.04 上运行 `pnpm run check`。
+- 修改规则：先合入 `feature/M2/prompt-agent`，其他任务分支同步之后再依赖它；任务发现接缝缺口时先用本地 fake 继续，同时提出契约任务补齐；每次同步之后在 Ubuntu 24.04 上运行 `pnpm run check`。
 
 ### 4.4 真实模型评测的规矩
 
@@ -162,7 +164,7 @@ M2 发布必须同时满足（承接旧计划的完成定义与阻断项，重�
 | RP3-EF-1 | **效率**：缓存命中、成本与延迟优化、压缩与并行参数的校准、并发上限；与 phase 0 的基线比较，写入验收证据 |
 | RP3-CO-1 | **完成度**：M2Baseline 第 5 节的缺口逐条修复或登记；控制台与错误文字；配置项的文档；`/thinking`、图视图等推迟的非安全功能按范围决定 |
 | RP3-DOC-1 | `M2Usage.md`、`M2Limitations.md`（含威胁模型的结论）、`M2AcceptanceEvidence.md`；README 与索引；各组件文档的状态改为"已实现" |
-| RP3-REL-1 | 冻结功能；在 Ubuntu 24.04 上运行全部质量门、全部验收用例与真实模型评测；`feat/M2` 经 PR 合入 `main` |
+| RP3-REL-1 | 冻结功能；在 Ubuntu 24.04 上运行全部质量门、全部验收用例与真实模型评测；`feature/M2/prompt-agent` 经 PR 合入 `feat/M2`，再合入 `main` |
 
 **退出。** 第 2 节的发布标准全部满足；阻断项清零；验收证据完整。
 
