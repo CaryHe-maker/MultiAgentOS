@@ -176,7 +176,7 @@ describe('L3: /compact', () => {
       expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(false);
 
       // The reply is printed a little before the run waits for the next input.
-      await waitFor(async () => (await logOf(dataDir)).some((r) => r.type === 'HUMAN_REQUESTED'));
+      await awaitingInput(chat);
       await chat.console.submit('/compact');
       await until(
         () => chat.records.some((r) => r.text.includes('已压缩较早的对话')),
@@ -204,7 +204,7 @@ describe('L4: a summary that does not come', () => {
       });
       const { chat, dataDir } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
       await chat.say('read a.txt');
-      await waitFor(async () => (await logOf(dataDir)).some((r) => r.type === 'HUMAN_REQUESTED'));
+      await awaitingInput(chat);
       await chat.console.submit('/compact');
       await until(
         () => chat.records.some((r) => r.text.includes('摘要没有生成')),
@@ -277,9 +277,12 @@ describe('L2: the provider says the context is too long', () => {
   );
 });
 
-/** A reply is printed before its Turn ends; a command that needs the run to wait waits for this. */
-const turnEnded = (dataDir: string) =>
-  waitFor(async () => (await logOf(dataDir)).some((r) => r.type === 'HUMAN_REQUESTED'));
+/**
+ * A reply is printed before the run waits for the next input; a command that needs the run to
+ * wait (`/compact`, `/undo`) waits for what the interface shows, not for the log.
+ */
+const awaitingInput = (chat: Chat) =>
+  until(() => chat.lives.at(-1)?.status.includes('等待输入') === true, 'the end of the Turn');
 const turnsEnded = async (dataDir: string) =>
   (await logOf(dataDir)).filter((r) => r.type === 'TURN_ENDED').length;
 const afterTurns = (dataDir: string, count: number) =>
@@ -311,6 +314,7 @@ describe('L7: undoing a Turn that a summary covers', () => {
       await afterTurns(dataDir, 2);
       expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(true);
 
+      await awaitingInput(chat);
       await chat.console.submit('/undo');
       await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
       await waitFor(async () =>
@@ -369,7 +373,7 @@ describe('L10: a summary request that is too big', () => {
       });
       const { chat, dataDir } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
       await chat.say('read a.txt');
-      await turnEnded(dataDir);
+      await awaitingInput(chat);
       await chat.console.submit('/compact');
       await until(
         () => chat.records.some((r) => r.text.includes('已压缩较早的对话')),
@@ -402,7 +406,7 @@ describe('L11: compacting while the run waits for the user', () => {
         () => provider.requests.some((r) => textOf(r.messages.at(-1)).includes('Use exactly')),
         'the summary request of the idle compaction',
       );
-      await turnEnded(dataDir);
+      await awaitingInput(chat);
       await chat.console.submit('go on');
       // The message is not handed to the model while the summary is out.
       await new Promise((resolve) => setTimeout(resolve, 300));
