@@ -61,6 +61,14 @@ jobs:
           }
           EOF
           sudo apparmor_parser -r /etc/apparmor.d/bwrap
+      # The sandbox cases for tools under the home directory (M2Design 6.1) only run when Node is
+      # there, as it is with nvm on a developer machine; the runner keeps it in /opt, so a copy
+      # goes under $HOME and first on the PATH. Skipped tests fail this job.
+      - name: Put Node under the home directory
+        run: |
+          cp -r "$(dirname "$(dirname "$(command -v node)")")" "$HOME/node-home"
+          echo "$HOME/node-home/bin" >> "$GITHUB_PATH"
+      - run: node -p "process.execPath"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - run: node scripts/phase-gate.mjs
