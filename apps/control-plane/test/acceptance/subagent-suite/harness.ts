@@ -1,5 +1,5 @@
 /**
- * What every case of the stage 4 suite is made of (docs/M2/Evaluation/Stage4SubAgents.md): a
+ * What every case of the SubAgent suite is made of (docs/History/M2/Evaluation/Stage4SubAgents.md): a
  * repository, a prompt, a check that runs outside the model on the files a run left, and a
  * reference solution the check must accept.
  */

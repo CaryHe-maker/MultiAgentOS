@@ -201,7 +201,7 @@ describe('file-edit', () => {
   });
 });
 
-/** The exit condition of stage 2 (M2Design 6.3): here the code is the only defence. */
+/** A release condition (M2Design 6.3): here the code is the only defence. */
 describe('against an attacker', () => {
   it.each([
     ['/etc/passwd', 'WRITE_OUT_OF_SCOPE'],

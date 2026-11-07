@@ -5,7 +5,7 @@ MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执
 
 ## 快速开始
 
-M2 在开发中。当前可用的是阶段 1：在一个本地仓库上持续对话，Session 可以保存、切换和继续；系统只读，不修改仓库、不执行命令。
+M2 在开发中。当前可用的是 Turn-chat：在一个本地仓库上持续对话，main 可以读、写、运行命令（在沙盒中）、联网、派生 SubAgent，Session 可以保存、切换、回退和继续，长对话会自动压缩；写入、命令与联网都先询问。预置的编排工作流与使用者模板还没有做，见 [M2ReleasePlan](docs/M2/M2ReleasePlan.md)。
 以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、pnpm 11.25.0 与 DeepSeek 的 API key。
 
 ```bash
@@ -24,7 +24,7 @@ node apps/control-plane/dist/bin.js --repo /home/me/projects/my-app
 node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app analyze "登录失败时错误信息是在哪里生成的？"
 ```
 
-第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/delete` 等指令。
+第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。
 
 ## 架构
 
@@ -60,7 +60,7 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 ## 当前交付范围
 
 M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前开发 M2：范围与设计见 [M2Design](docs/M2/M2Design.md)，
-任务与阶段见 [M2Plan](docs/M2/M2Plan.md)，进度见 [M2OpenDecisions](docs/M2/M2OpenDecisions.md)。不应将架构文档中的长期能力理解为已经交付。
+发布计划见 [M2ReleasePlan](docs/M2/M2ReleasePlan.md)，现状见 [M2Baseline](docs/M2/M2Baseline.md)。不应将架构文档中的长期能力理解为已经交付。
 
 ## 仓库结构
 
@@ -85,10 +85,10 @@ packages/
   testing/                Fakes、Contract tests、架构测试和 fixtures
 docs/
   Architecture/         长期概念与架构
-  M2/                   当前交付范围、机制与接口
+  M2/                   当前设计、发布计划、现状、机制与接口
   Requirements/         当前依赖
   Meetings/             原始会议记录
-  History/              已归档的阶段工作文档，包括 M1
+  History/              已归档的文档：M1，以及 M2 第一轮实现的旧计划与实测
   Style.md              工程协作规范
 ```
 
@@ -123,5 +123,6 @@ Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 - [运行实例](docs/Architecture/Instance.md)
 - [M2 文档](docs/M2/README.md)
 - [M1 归档](docs/History/M1/README.md)
+- [M2 历史（旧计划与实测）](docs/History/M2/README.md)
 
 所有合并到 `feat/M2` 或 `main` 的变更都必须通过 Pull Request。

@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 2 (M2Plan 6.3; M2Design 14): group A for writes and nested
+ * The deterministic acceptance cases (M2Design 14): group A for writes and nested
  * `AGENTS.md`, H5, H8, H10, S4 and L8. All run through the real product, git included, with a
  * scripted provider; H9 and the attacks on the file tools are tested where they can be timed.
  */
@@ -33,8 +33,8 @@ afterEach(async () => {
 });
 
 async function roots(files: Readonly<Record<string, string>> = {}) {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage2-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage2-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-write-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-write-repo-'));
   directories.push(dataDir, repository);
   for (const [name, content] of Object.entries({ 'a.txt': 'one\n', ...files })) {
     await mkdir(dirname(join(repository, name)), { recursive: true });
@@ -697,7 +697,7 @@ describe('H5: an Orchestration run that has ended', () => {
       );
       const provider = scriptedChat(
         {
-          // No Agent of the analyze template writes yet (stage 7), so the change comes from here.
+          // No Agent of the analyze template writes yet , so the change comes from here.
           response: async () => {
             await writeFile(file, 'two\n');
             return handoff.fetch('https://api.invalid', { body: '{}' });

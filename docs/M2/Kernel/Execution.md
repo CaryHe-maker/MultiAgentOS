@@ -1,28 +1,28 @@
 # MultiAgentOS M2 Kernel.Execution
 
-> 状态：已评审（阶段 1、2）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
-Execution 负责 UnitAttempt、执行队列、产物与内建 Unit；阶段 2 起还负责工作区快照、快照索引与改动检测。
+Execution 负责 UnitAttempt、执行队列、产物与内建 Unit；还负责工作区快照、快照索引与改动检测。
 组件间交互见 [Interaction](Interaction.md)，长期规划见 [Execution 架构](../../Architecture/Kernel/Execution.md)。
 
 ## 2. 相对 M1 的变化
 
-| M1 | M2 | 依据 | 阶段 |
-|---|---|---|---|
-| 产物归属按运行登记，引用只能在本运行内使用 | 按 Session 登记（Session 级状态），写入 `artifact-owners.jsonl`；引用在本 Session 内有效 | M2Design 第 10.1 节 | 1 |
-| 正文只有执行产物、报告与运行摘要 | 增加用户输入的正文（`storeUserInput`）与发布的消息（`message-publish`） | M2Design 第 4.2、8.1 节 | 1 |
-| 只有内建 Unit `report-publish` | 增加 `message-publish` | M2Design 第 8.1 节 | 1 |
-| 不读取项目文件 | `readProjectFile`：按白名单读取 `AGENTS.md` 与模板文件，正文存为产物 | M2Design 第 7.5 节 | 1 |
-| 产物没有保留类别 | 登记 `SESSION` 或 `EXPIRING`：工具结果的预览长期保留，完整输出与 ContextPack 7 天过期 | M2Design 第 8.2、10.1 节 | 1 |
-| 启动时不回收产物 | 启动时与每小时回收：只按 ACTIVE 的 Session 的登记与保留期标记，其余在本次回收开始之前写入的正文删除 | [ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节 | 1 |
-| 预览上限就是 `maxOutputBytes` | 预览上限为 `previewMaxBytes`、`previewMaxLines`，并且不超过 `maxOutputBytes` | M2Design 第 8.2 节 | 1 |
-| 技术重试只按指数退避等待 | 以指数退避与 `Retry-After` 中较大者等待，超过 `retryAfterMaxMs` 不再重试；等待期间发出"重试中"的活动 | M2Design 第 7.4 节 | 1 |
-| — | `output-read` 的输入解析：`fullRef` 的归属与过期检查 | M2Design 第 8.2 节 | 2 |
-| — | 压缩中的规模估算（实测加估算）、修剪的截取与存储、摘要请求的两种组装与执行 | M2Design 第 9.6 节 | 8 |
-| 唯一的 FIFO | 阶段 1 不变；阶段 4 改为按 AgentRun 分队列与并发类别 | M2Design 第 7.1 节 | 4 |
-| 不做快照 | 工作区快照、快照索引、改动检测、回退 | M2Design 第 4.6、7.1 节 | 2 |
+| M1 | M2 | 依据 |
+|---|---|---|
+| 产物归属按运行登记，引用只能在本运行内使用 | 按 Session 登记（Session 级状态），写入 `artifact-owners.jsonl`；引用在本 Session 内有效 | M2Design 第 10.1 节 |
+| 正文只有执行产物、报告与运行摘要 | 增加用户输入的正文（`storeUserInput`）与发布的消息（`message-publish`） | M2Design 第 4.2、8.1 节 |
+| 只有内建 Unit `report-publish` | 增加 `message-publish` | M2Design 第 8.1 节 |
+| 不读取项目文件 | `readProjectFile`：按白名单读取 `AGENTS.md` 与模板文件，正文存为产物 | M2Design 第 7.5 节 |
+| 产物没有保留类别 | 登记 `SESSION` 或 `EXPIRING`：工具结果的预览长期保留，完整输出与 ContextPack 7 天过期 | M2Design 第 8.2、10.1 节 |
+| 启动时不回收产物 | 启动时与每小时回收：只按 ACTIVE 的 Session 的登记与保留期标记，其余在本次回收开始之前写入的正文删除 | [ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节 |
+| 预览上限就是 `maxOutputBytes` | 预览上限为 `previewMaxBytes`、`previewMaxLines`，并且不超过 `maxOutputBytes` | M2Design 第 8.2 节 |
+| 技术重试只按指数退避等待 | 以指数退避与 `Retry-After` 中较大者等待，超过 `retryAfterMaxMs` 不再重试；等待期间发出"重试中"的活动 | M2Design 第 7.4 节 |
+| — | `output-read` 的输入解析：`fullRef` 的归属与过期检查 | M2Design 第 8.2 节 |
+| — | 压缩中的规模估算（实测加估算）、修剪的截取与存储、摘要请求的两种组装与执行 | M2Design 第 9.6 节 |
+| 唯一的 FIFO | 改为按 AgentRun 分队列与并发类别 | M2Design 第 7.1 节 |
+| 不做快照 | 工作区快照、快照索引、改动检测、回退 | M2Design 第 4.6、7.1 节 |
 
 UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`ExecutionRequest` 的构建与上下文构建记录与 M1 相同，见归档的 [M1 Execution](../../History/M1/Kernel/Execution.md) 第 3、6–8 节。
 
@@ -50,10 +50,10 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 ## 4. 用户输入与项目文件
 
 - `storeUserInput({ inputId, text })`：把正文以 `text/plain; charset=utf-8` 存为产物，登记归属；同一 `inputId` 再次调用返回同一引用。
-- `readProjectFile(path, scope)`：只接受 Interface/WorkflowKernel 第 2.2 节的白名单路径（阶段 2 起包括子目录的 `AGENTS.md`，路径须不在排除规则内）；经 `RepositoryAccess` 读取（与 `file-read` 共用路径检查与排除规则），
+- `readProjectFile(path, scope)`：只接受 Interface/WorkflowKernel 第 2.2 节的白名单路径（包括子目录的 `AGENTS.md`，路径须不在排除规则内）；经 `RepositoryAccess` 读取（与 `file-read` 共用路径检查与排除规则），
   不跟随符号链接；文件不存在时返回 `exists: false`；存在时把正文存为产物并返回 SHA-256。不计入任何 AgentRun 的额度。
 
-## 4c. 按 AgentRun 分队列（阶段 4，草稿）
+## 4c. 按 AgentRun 分队列
 
 设计以 M2Design 第 7.1、7.2 节为准。`RunExecution` 的队列由纯函数部分 `AttemptQueues`（`session/execution-queues.ts`）管理，它不启动任何东西，只回答"现在哪些可以开始"。
 
@@ -65,7 +65,7 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 - **收敛**：没有开始的尝试与等待调用机会的尝试直接结束（`abandon`），没有东西需要停止；已发出的执行发出取消，Supervisor 不确认时全部按 `STOP_UNCONFIRMED` 判定。
 - 测试：`execution-queues.test.ts`（纯函数）、`run-execution.test.ts`（P1：相邻 READ 一起派发；P2：两个 AgentRun 并行；屏障；全局上限；`serialExecution`；等待调用机会）。
 
-## 4d. 命令改动检测（阶段 4，草稿）
+## 4d. 命令改动检测
 
 设计以 M2Design 第 7.1 节为准。`session/change-scan.ts` 在沙盒命令（可写根目录非空）第一次派发前，按指纹（大小、mtime、ctime、inode）扫描该 AgentRun 的可写根目录，命令完成后再扫一次，差异（新增、修改、删除，排序）作为 `changedFiles` 放进 UnitReport，与 `FILE_WRITE`、`FILE_EDIT` 的 `changedFiles` 同一字段。要点：
 
@@ -73,9 +73,9 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 - 不进入 `.git`、`node_modules` 和被排除规则命中的路径（M2Design 说的"只报告变化数量"尚未实现，这些路径的改动不出现）；
 - 条目数超过 `maxSnapshotFiles × 10` 时放弃，报告里没有 `changedFiles`（不影响命令本身）；
 - 只读命令（可写根目录为空）不扫描；技术重试不重新取"之前"的扫描。
-- 测试：`change-scan.test.ts`；`stage4-exit` 的"命令改动"用例在真实沙盒中验证。
+- 测试：`change-scan.test.ts`；`subagents-exit` 的"命令改动"用例在真实沙盒中验证。
 
-## 4e. 暂停与中止时的尝试（阶段 5，草稿）
+## 4e. 暂停与中止时的尝试
 
 设计以 M2Design 第 4.4、7.6 节为准。`RunExecution` 增加两个入口：`pause()` 与 `abort()`；它们由 Core 的控制状态驱动（[Core](Core.md) 第 5e 节），`AttemptQueues` 不变。
 
@@ -94,13 +94,13 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 **`abort()`**（进入 INTERRUPTING）：
 - 已派发的尝试全部取消，`INTERRUPTED(ABORTED)`；EXEC 经 `cancelExecution({ reason: 'ABORTED' })`；MODEL 的已发生用量照常结算；WRITE 与 READ 也取消（不再等完成：中止要尽快停下，写了一半的文件由 `/undo` 处理，M2Design 第 4.5 节）；
-- 排队中、等待调用机会的尝试从队列移出，同样交付 `INTERRUPTED(ABORTED)`（阶段 1 收敛时清出队列的尝试不交付，这里不同）；
+- 排队中、等待调用机会的尝试从队列移出，同样交付 `INTERRUPTED(ABORTED)`（收敛时清出队列的尝试不交付，这里不同）；
 - 技术重试的等待立即结束，交付 `INTERRUPTED(ABORTED)`；
 - 之后到达的结果（`runEpoch` 不变，所以仍会交付）按取消的结果记，不会把尝试再次交付。
 
 **报告**：`UnitReport.status = 'INTERRUPTED'`，附 `interruptedBy: 'PAUSED' | 'ABORTED'`；没有 `output`；带 `budget`（已发生的用量已结算）。同一尝试至多交付一次（以尝试状态保证，与其他终态相同）。
 
-**转移**：尝试的状态在阶段 1 的基础上增加终态 `INTERRUPTED`；`CANCEL_PENDING`（已发出取消、等待确认）不是新的状态，沿用阶段 3 的"取消中"标记。
+**转移**：尝试的状态在 M1 的基础上增加终态 `INTERRUPTED`；`CANCEL_PENDING`（已发出取消、等待确认）不是新的状态，沿用"取消中"标记。
 
 - 测试：`run-execution.test.ts`（暂停时 READ 的排空与取消、WRITE 不取消、MODEL 取消并结算、EXEC 取消并等待确认、排队尝试在暂停时保留、中止时排队尝试交付 INTERRUPTED、重试等待在暂停时保留而中止时结束、继续后依次派发）；`session-actor.test.ts`（H3：授权询问挂起时其他 AgentRun 不受影响）。
 
@@ -122,9 +122,9 @@ M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackof
 
 ```text
 取到 message-publish 尝试；输入已在受理时按 Schema 校验：
-  { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }      // 阶段 1
-  { kind: 'DEGRADED_REPLY', agentLabel, reason }                              // 阶段 1：降级回复，只有结构化原因
-  { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 阶段 7：确定性运行报告
+  { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }
+  { kind: 'DEGRADED_REPLY', agentLabel, reason }                              // 降级回复，只有结构化原因
+  { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 确定性运行报告
 REPLY：
   → modelOutputRef 必须属于本 Session（第 3 节）；从中取出 toolCallId 对应的 reply 调用的 text 参数
   → 把 text 以 text/markdown 存为新的产物，登记归属
@@ -139,7 +139,7 @@ Core 在结果检查后向 UserInteraction 发出 MessagePublished(messageRef = 
 回复的正文只存在于模型调用的输出中，Unit 输入只带引用与 `toolCallId`，因此会话日志中没有正文（M2Design 第 10.1 节）。
 确定性运行报告是结构化数据（节点的状态、结果引用、触顶项），可以作为 Unit 输入写入日志（M2Design 第 7.3 节"必有报告"）。
 
-## 5a. `output-read` 的输入解析（阶段 2）
+## 5a. `output-read` 的输入解析
 
 `read_output` 的 Unit 输入中，Workflow 已按 `toolCallId` 填入 `fullRef`（[Module/Workflow](../Module/Workflow.md) 第 7 节第 8 条）。Execution 派发前：
 
@@ -166,7 +166,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 **Session 删除与失败时的清理**：`deleteSession` 时，不论 Workflow 是否删除成功，Execution 都删除该 Session 的 `kernel-execution` 目录；
 新建 Session 失败时（Workflow 回复 `CREATE` 失败），Execution 同样删除已为它写入的归属文件（第一条输入的登记）。正文由下一次回收删除。
 
-## 6b. 工作区快照（阶段 2）
+## 6b. 工作区快照
 
 影子 git 仓库在 `sessions/<id>/kernel-execution/snapshots/`，经 Supervisor 的 `git` 子进程操作（[Supervisor](Supervisor.md) 第 3 节），不要求被分析的仓库是 git 仓库：
 
@@ -183,7 +183,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 - 快照失败时 Turn 照常进行，但在索引中记为没有快照：这个 Turn 不能回退，`/undo` 说明原因。写入与回退依赖 git，启动探测见 M2Design 第 4.6 节。
 - 拍摄读文件内容，只在静止点进行，读取结束后不持有任何状态。
 
-## 6c. 回退（阶段 2）
+## 6c. 回退
 
 Execution 提供 `planUndo`、`applyUndo`、`diffTurn`，由 Core 发起（Core 第 5a.5 节）。步骤与 M2Design 第 4.6 节相同：
 
@@ -195,11 +195,11 @@ Execution 提供 `planUndo`、`applyUndo`、`diffTurn`，由 Core 发起（Core 
 
 Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn。切换或打开 Session 时，比较当前工作区与最后一个 Turn 的结束快照，差异作为 `divergedFiles` 与 `WorkspaceDiverged` 告知（M2Design 第 2.3 节 Session 第 6 条）。
 
-## 6d. Fork 的产物继承（阶段 2）
+## 6d. Fork 的产物继承
 
 `inheritArtifacts(refs)`：Workflow 复制日志时列出其中的 ArtifactRef，Execution 从原 Session 的归属索引读取每个引用的登记，以 `source: INHERITED` 写入新 Session，保留类别、`retainedSince` 与 `fullOutput` 不变；原 Session 没有登记的引用跳过并写审计。
 
-## 6a. 压缩中的估算、修剪与摘要请求（阶段 8）
+## 6a. 压缩中的估算、修剪与摘要请求
 
 压缩过程（M2Design 第 9.6 节）中，Core 请 Execution 估算规模、修剪工具结果、组装并执行摘要请求：
 
@@ -221,7 +221,7 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 | `executionLimits.MESSAGE_PUBLISH`、`REPOSITORY_LIST` | Execution | 前者为内建，不设截止时间；后者 `timeoutMs` 30000、`maxOutputBytes` 1048576 |
 | `executionLimits.<工具 Unit>.previewMaxBytes`、`previewMaxLines` | Execution、Executor | 51200、2000（M2Design 第 8.2 节） |
 | `executionLimits.<工具 Unit>.maxFullOutputBytes` | Execution、Executor | 8388608（8 MiB） |
-| `executionLimits.OUTPUT_READ` | Execution | `timeoutMs` 30000、`maxOutputBytes` 51200（阶段 2） |
+| `executionLimits.OUTPUT_READ` | Execution | `timeoutMs` 30000、`maxOutputBytes` 51200 |
 | `KernelConfig.retryAfterMaxMs` | Execution | 120000 |
 | `artifactRetention.expiringRetentionDays` | Execution | 7 |
 | `artifactRetention.sweepIntervalMinutes` | Execution | 60 |
@@ -231,23 +231,12 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
-| 12（阶段 1 部分）：凭据不进入模型上下文与普通日志 | 单元测试：provider 凭据只在执行时交给 `model-call` Executor；以带标记的假凭据运行，扫描审计、会话日志、ContextPack 与全部产物，不出现该标记；子进程环境的部分在阶段 3（Supervisor） |
+| 12：凭据不进入模型上下文与普通日志 | 单元测试：provider 凭据只在执行时交给 `model-call` Executor；以带标记的假凭据运行，扫描审计、会话日志、ContextPack 与全部产物，不出现该标记；子进程环境的部分由 Supervisor 保证 |
 | 15：ArtifactStore 只由 Execution 写入；日志中只有引用 | 架构测试：只有 Execution 持有 `ArtifactStorePort` |
 | 产物引用只在本 Session 内有效 | 单元测试：另一 Session 的引用返回 `INVALID_ARTIFACT_REF`；重开 Session 后旧引用仍然有效 |
 | 29：只有 ACTIVE 的 Session 的登记能让正文免于回收 | 单元测试：`EXPIRING` 满 7 天后被回收（启动时与定期回收各一例，以假时钟驱动），读取得到 `ARTIFACT_EXPIRED`；到期而尚未回收的正文读取同样得到 `ARTIFACT_EXPIRED`；回收开始后再次写入的正文不被删除；`SESSION` 的正文在 ACTIVE 的 Session 拥有期间不被回收；DELETED 的 Session 残留的归属文件不影响回收；同一正文在两个 Session 中、以不同类别登记时取最长的保留 |
 | 7：重建只需要长期保留的正文 | 集成测试：删除全部 `EXPIRING` 正文后，重放日志得到相同的 `context-assemble` 输入（包括 `read_output` 的结果与修剪后的结果） |
 | 预览上限 | 单元测试：预览不超过 `previewMaxBytes` 与 `previewMaxLines` |
 | 技术重试的等待 | 单元测试（假时钟）：`retryAfterMs` 大于指数退避时按它等待；超过 `retryAfterMaxMs` 时不再重试；等待期间有 `RETRYING` 活动，中止时交付 `INTERRUPTED(ABORTED)` |
-| 30：`read_output` 只读到本 Session、未过期的完整输出（阶段 2） | 单元测试：另一 Session 的 `fullRef` 得到 `INVALID_ARTIFACT_REF`；不带 `fullOutput` 标记的引用得到 `INVALID_INPUT`；到期得到 `ARTIFACT_EXPIRED` 且不派发；修剪时补登的预览可以读取且不过期（阶段 8）；`context-assemble` 输入中的 `fullRef` 被拒绝 |
-| 压缩的估算是日志的纯函数（阶段 8） | 单元测试：`headDigest` 相同且其后没有修剪与摘要时使用实测值，否则按字节估算；同一组条目得到相同的估算 |
-
-## 9. 阶段
-
-| 阶段 | 本文增加的内容 |
-|---|---|
-| 1 | 第 3–8 节（第 5a、6a 节除外），包括第 4a 节 |
-| 2 | 影子 git 快照、快照索引、改动检测、`/undo`、`/undo all`、`/diff` 的六个步骤、Fork 时继承产物（沿用原 Session 的保留类别、`retainedSince` 与 `fullOutput` 标记）、打开 Session 时比较工作区、第 5a 节 |
-| 3 | 敏感文件列表、受保护路径的新建检查与隔离（包括任一目录中的 `AGENTS.md`：已存在的只读挂载，新建的由改动检测发现后隔离）、EXEC 互斥 |
-| 4 | 按 AgentRun 分队列、并发类别与屏障、全局上限、等待调用机会、改动归属 |
-| 5 | 按并发类别处理暂停、按执行取消、中止时排队中的尝试也交付 |
-| 8 | 第 6a 节：估算、修剪、摘要请求的两种组装与执行 |
+| 30：`read_output` 只读到本 Session、未过期的完整输出 | 单元测试：另一 Session 的 `fullRef` 得到 `INVALID_ARTIFACT_REF`；不带 `fullOutput` 标记的引用得到 `INVALID_INPUT`；到期得到 `ARTIFACT_EXPIRED` 且不派发；修剪时补登的预览可以读取且不过期；`context-assemble` 输入中的 `fullRef` 被拒绝 |
+| 压缩的估算是日志的纯函数 | 单元测试：`headDigest` 相同且其后没有修剪与摘要时使用实测值，否则按字节估算；同一组条目得到相同的估算 |

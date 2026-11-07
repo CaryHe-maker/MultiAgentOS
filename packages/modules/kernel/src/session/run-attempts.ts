@@ -276,7 +276,7 @@ export class RunAttempts {
 
   /**
    * What the provider counted for this Agent's last request, next to the estimate of it. By Agent:
-   * main is a new AgentRun each Turn, with the same history. Stage 4 narrows it to one history.
+   * main is a new AgentRun each Turn, with the same history. A SubAgent has a history of its own.
    */
   calibrationOf(agentId: string): TokenCalibration | undefined {
     return this.#calibrations.get(agentId);

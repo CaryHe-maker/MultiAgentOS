@@ -485,7 +485,7 @@ const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
   unit.failurePolicy[code] ?? 'FATAL';
 
 /**
- * The same round's context is assembled again (stage 8, Module/Workflow 8.4): Kernel compacted
+ * The same round's context is assembled again (Module/Workflow 8.4): Kernel compacted
  * what the last assembly was made of, or the model was refused for its size. No round is spent,
  * and nothing is counted as an error: it is not the model's doing.
  */

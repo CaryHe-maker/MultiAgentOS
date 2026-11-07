@@ -18,7 +18,7 @@ const inRun = {
 };
 
 /**
- * ONCE is the only grant of a critical question, and ends with that attempt. Stage 3 adds the
+ * ONCE is the only grant of a critical question, and ends with that attempt. The sandbox adds the
  * command and prefix answers.
  */
 export const AnswerAuthorizationRequestSchema = closed(

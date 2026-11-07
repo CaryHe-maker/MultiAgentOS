@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Supervisor
 
-> 状态：已评审（阶段 2）；阶段 3 的第 5、6 节为草稿，待评审。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -9,13 +9,13 @@ M1 的机制见归档的 [M1 Supervisor](../../History/M1/Kernel/Supervisor.md)�
 
 ## 2. 相对 M1 的变化
 
-| M1 | M2 | 阶段 |
-|---|---|---|
-| 子进程只有 `rg` | 增加 `git`（影子仓库的快照与恢复） | 2 |
-| 无写入 Executor | `FILE_WRITE`、`FILE_EDIT` 在进程内运行（M2Design 第 2.5 节） | 2 |
-| — | bwrap、`cancelExecution`、`STOP_UNCONFIRMED` 停机 | 3 |
+| M1 | M2 |
+|---|---|
+| 子进程只有 `rg` | 增加 `git`（影子仓库的快照与恢复） |
+| 无写入 Executor | `FILE_WRITE`、`FILE_EDIT` 在进程内运行（M2Design 第 2.5 节） |
+| — | bwrap、`cancelExecution`、`STOP_UNCONFIRMED` 停机 |
 
-## 3. `git` 子进程（阶段 2）
+## 3. `git` 子进程
 
 - `SubprocessRunner.run` 的命令扩展为 `'rg' | 'git'`，并接受 `env` 与 `stdin`。`git` 的环境只含调用方给出的变量与 `PATH`，不继承其余环境。
 - 只有 Execution 的快照使用 `git`；Executor 不能启动它。
@@ -25,7 +25,7 @@ M1 的机制见归档的 [M1 Supervisor](../../History/M1/Kernel/Supervisor.md)�
 
 组合根在启动 Supervisor 之前执行一次 `git --version`。失败时把启动预设降为 `readonly` 并提示用户（M2Design 第 4.6 节）。
 
-## 5. 沙盒（阶段 3）
+## 5. 沙盒
 
 字段见 [Interface/KernelSupervisor](../Interface/KernelSupervisor.md)。Supervisor 只做三件事：把 `SandboxProfile` 变成 bwrap 的参数并启动、管理进程的生命周期、探测可用性。判断允许与否是 Core 的事，Supervisor 只校验批准的内容没有被换掉。
 
@@ -40,13 +40,6 @@ M1 的机制见归档的 [M1 Supervisor](../../History/M1/Kernel/Supervisor.md)�
 - **探测**：Session 开始时以真实 profile 运行 `/bin/true`；失败时按原因分类（没有 `bwrap`、命名空间被限制、profile 启动失败），并给出使用说明中的修复提示。
 - **没有 `bwrap` 的平台**（如 Windows）：探测为 `NO_BWRAP`，按 `sandbox.unavailable` 处理。
 
-## 6. 停机（阶段 3）
+## 6. 停机
 
 `STOP_UNCONFIRMED` 是系统故障：Execution 收到该事实后，经 Core 的 `reportSystemFault` 请求组合根停机（[SystemFaultHandling](../SystemFaultHandling.md)）。Supervisor 在停机时对全部子进程组发 SIGKILL。
-
-## 7. 阶段
-
-| 阶段 | 本文增加的内容 |
-|---|---|
-| 2 | 第 3、4 节 |
-| 3 | 第 5、6 节：bwrap、SandboxProfile、遮蔽、进程组、SIGKILL 升级、`STOP_UNCONFIRMED`、`cancelExecution` |

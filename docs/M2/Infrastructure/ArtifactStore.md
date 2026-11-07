@@ -1,6 +1,6 @@
 # MultiAgentOS M2 ArtifactStore
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -52,7 +52,3 @@ interface ArtifactStorePort {                     // 只注入 Kernel 核心，�
 | 内容寻址与完整性（M1） | 单元测试：重复写入同一内容得到同一引用；损坏的正文读取失败 |
 | `sweep` 只删除未被保留的旧正文 | 单元测试：在 `retained` 中、或晚于 `olderThan` 写入的正文不被删除；回收开始后被再次 `put` 的已有正文不被删除；`put` 与 `sweep` 并发时不出现引用已返回而正文缺失 |
 | 29：只有 ACTIVE 的 Session 的登记能让正文免于回收 | 见 [Kernel/Execution](../Kernel/Execution.md) 第 8 节 |
-
-## 6. 阶段
-
-全部内容属于阶段 1。

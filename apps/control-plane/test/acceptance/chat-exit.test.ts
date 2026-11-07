@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 1 (M2Plan 6.2 and 8.3; M2Design 14): S1-S3, S5, S7, the
+ * The deterministic acceptance cases (M2Design 14): S1-S3, S5, S7, the
  * part of L5 without compaction, L6, H12 without aborting, and group A for `repo.read` and the
  * root `AGENTS.md`. All run through the real product with a scripted provider.
  */
@@ -38,8 +38,8 @@ afterEach(async () => {
 });
 
 async function roots(files: Readonly<Record<string, string>> = {}) {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage1-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage1-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-chat-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-chat-repo-'));
   directories.push(dataDir, repository);
   await writeFile(join(repository, 'a.txt'), 'line one\nline two\n');
   for (const [name, content] of Object.entries(files))

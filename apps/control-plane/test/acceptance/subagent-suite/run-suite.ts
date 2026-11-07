@@ -1,6 +1,6 @@
 /**
  * `tsx .../run-suite.ts --yes --out <file> [--runs N] [--modes natural,hint,alone] [case ids...]`:
- * the stage 4 suite on the real model (docs/M2/Evaluation/Stage4SubAgents.md). Each run is one
+ * the SubAgent suite on the real model (docs/History/M2/Evaluation/Stage4SubAgents.md). Each run is one
  * case in one mode; a line of facts is appended to `--out`, and a run already in the file is
  * skipped, so a batch killed at its time limit can be started again. The key comes from
  * `DEEPSEEK_API_KEY` or the file named by `MAO_ENV_FILE`. It costs money, hence `--yes`.

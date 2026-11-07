@@ -1,6 +1,6 @@
 /**
- * `tsx .../run-stage6.ts --yes --out <file> [--runs N] [scenario ids...]`: stage 6 on the real model
- * and DeepSeek's real search (docs/M2/Evaluation/Stage6Web.md). A scenario asks a chat to look
+ * `tsx .../run-web-chat.ts --yes --out <file> [--runs N] [scenario ids...]`: the web tools on the real model
+ * and DeepSeek's real search (docs/History/M2/Evaluation/Stage6Web.md). A scenario asks a chat to look
  * something up, to read a page that gives orders, or to read an address of a private network, and
  * judges the files, the questions and the conversation it leaves. A line of facts per run is
  * appended to `--out`; a run that is already there is skipped. The key comes from

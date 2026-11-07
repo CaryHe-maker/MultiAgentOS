@@ -1,6 +1,6 @@
 /**
- * `tsx .../run-stage8.ts --yes --out <file> --budget N [--runs N]`: S8-IN-1, the product's own
- * compaction on the real model (docs/M2/Evaluation/Stage8Compaction.md). A chat reads four long
+ * `tsx .../run-long-dialog.ts --yes --out <file> --budget N [--runs N]`: the product's own
+ * compaction on the real model (docs/History/M2/Evaluation/Stage8Compaction.md). A chat reads four long
  * documents, one per message, with a few facts told by the user and a few planted in the
  * documents; the compaction thresholds are lowered so that the context is compacted in the middle
  * of the dialog (the window is not made smaller, the thresholds are); then the user asks for the
@@ -21,9 +21,7 @@ const option = (name: string): string | undefined => {
   return index < 0 ? undefined : argv[index + 1];
 };
 if (!argv.includes('--yes')) {
-  process.stdout.write(
-    'S8-IN-1: the long dialog. Nothing was run. Add --yes --out <file> --budget N.\n',
-  );
+  process.stdout.write('The long dialog. Nothing was run. Add --yes --out <file> --budget N.\n');
   process.exit(0);
 }
 const out = option('--out');

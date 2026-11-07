@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 3 (M2Plan 6.4; M2Design 13): commands and the sandbox
+ * The deterministic acceptance cases (M2Design 13): commands and the sandbox
  * (C5), the authorization of commands (A), H6 and H7, and memory pressure. Every case runs the
  * real product from the console down to `bwrap` and `git`, with only the provider's HTTP API
  * scripted. What the model would see is read from the requests the provider received.
@@ -59,7 +59,7 @@ afterEach(async (context) => {
     }
   }
   traces.splice(0);
-  delete process.env['MAS_STAGE3_SECRET_TOKEN'];
+  delete process.env['MAS_SANDBOX_SECRET_TOKEN'];
   await Promise.all(open.splice(0).map((chat) => chat.close().catch(() => undefined)));
   await Promise.all(
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
@@ -76,8 +76,8 @@ async function roots(
   files: Readonly<Record<string, string>> = {},
   options: { readonly git?: boolean } = {},
 ): Promise<Place> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage3-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage3-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-sandbox-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-sandbox-repo-'));
   directories.push(dataDir, repository);
   for (const [name, content] of Object.entries({ 'a.txt': 'one\n', ...files })) {
     await mkdir(dirname(join(repository, name)), { recursive: true });
@@ -122,7 +122,7 @@ const seen = (provider: ScriptedChat): string =>
 const toolResults = (request: ChatRequest | undefined): string[] =>
   (request?.messages ?? []).filter((m) => m.role === 'tool').map((m) => textOf(m));
 const lastResult = (provider: ScriptedChat): string =>
-  // Every result ends with the line that names its call (stage 8); what it says is above it.
+  // Every result ends with the line that names its call ; what it says is above it.
   (toolResults(provider.requests.at(-1)).at(-1) ?? '').replace(/\s*\[toolCallId: [^\]]+\]$/u, '');
 const run = (command: string, extra: Record<string, unknown> = {}) =>
   tool('run_command', { command, ...extra });
@@ -367,7 +367,7 @@ real('C: running a command, in the sandbox', () => {
       );
       const chat = await chatOn(place, provider, { answer: () => 'y' });
       await chat.say('two shells');
-      expect(lastResult(provider)).toMatch(/cwd=mas-stage3-repo-\S+ kept=\[\]/u);
+      expect(lastResult(provider)).toMatch(/cwd=mas-sandbox-repo-\S+ kept=\[\]/u);
     },
     TIMEOUT,
   );
@@ -380,13 +380,13 @@ real('C5: what the sandbox keeps a command from', () => {
     'reads a secret file as empty, so the secret never reaches the model or any log',
     async () => {
       const place = await roots({
-        '.env': 'DB_PASSWORD=hunter2-stage3\n',
-        'keys/server.pem': 'PRIVATE-KEY-stage3\n',
-        'src/deep/id_rsa': 'SSH-KEY-stage3\n',
+        '.env': 'DB_PASSWORD=hunter2-sandbox\n',
+        'keys/server.pem': 'PRIVATE-KEY-sandbox\n',
+        'src/deep/id_rsa': 'SSH-KEY-sandbox\n',
       });
       const provider = scriptedChat(
         run(
-          'wc -c < .env; wc -c < keys/server.pem; wc -c < src/deep/id_rsa; grep -r stage3 . 2>&1 | wc -l',
+          'wc -c < .env; wc -c < keys/server.pem; wc -c < src/deep/id_rsa; grep -r sandbox . 2>&1 | wc -l',
         ),
         reply('done'),
       );
@@ -394,9 +394,9 @@ real('C5: what the sandbox keeps a command from', () => {
       await chat.say('look for secrets');
       const lines = lastResult(provider).split('\n');
       expect(lines.slice(-5).join(' ')).toMatch(/0\s+0\s+0\s+0/u);
-      for (const secret of ['hunter2-stage3', 'PRIVATE-KEY-stage3', 'SSH-KEY-stage3'])
+      for (const secret of ['hunter2-sandbox', 'PRIVATE-KEY-sandbox', 'SSH-KEY-sandbox'])
         expect(seen(provider)).not.toContain(secret);
-      expect(await filesHolding(place.dataDir, 'hunter2-stage3')).toEqual([]);
+      expect(await filesHolding(place.dataDir, 'hunter2-sandbox')).toEqual([]);
       // The files themselves are untouched.
       expect(await readFile(join(place.repository, '.env'), 'utf8')).toContain('hunter2');
     },
@@ -406,11 +406,11 @@ real('C5: what the sandbox keeps a command from', () => {
   it(
     'gives no credential in the environment, however the model asks for it',
     async () => {
-      process.env['MAS_STAGE3_SECRET_TOKEN'] = 'leak-me-stage3';
+      process.env['MAS_SANDBOX_SECRET_TOKEN'] = 'leak-me-sandbox';
       const place = await roots();
       const provider = scriptedChat(
         run('env'),
-        run('printenv MAS_STAGE3_SECRET_TOKEN; echo "status=$?"'),
+        run('printenv MAS_SANDBOX_SECRET_TOKEN; echo "status=$?"'),
         run('cat /proc/self/environ | tr "\\0" "\\n"'),
         reply('done'),
       );
@@ -419,9 +419,9 @@ real('C5: what the sandbox keeps a command from', () => {
       const results = toolResults(provider.requests.at(-1));
       expect(results[0]).toContain('PATH=');
       expect(results[1]).toContain('status=1');
-      expect(seen(provider)).not.toContain('leak-me-stage3');
+      expect(seen(provider)).not.toContain('leak-me-sandbox');
       expect(seen(provider)).not.toContain('sk-acceptance-offline-key');
-      expect(await filesHolding(place.dataDir, 'leak-me-stage3')).toEqual([]);
+      expect(await filesHolding(place.dataDir, 'leak-me-sandbox')).toEqual([]);
     },
     TIMEOUT,
   );
@@ -429,7 +429,7 @@ real('C5: what the sandbox keeps a command from', () => {
   it(
     'cannot write outside the repository, and the files stay where they were',
     async () => {
-      const outside = await mkdtemp(join(tmpdir(), 'mas-stage3-outside-'));
+      const outside = await mkdtemp(join(tmpdir(), 'mas-sandbox-outside-'));
       directories.push(outside);
       const place = await roots();
       const provider = scriptedChat(
@@ -449,9 +449,9 @@ real('C5: what the sandbox keeps a command from', () => {
   it(
     'follows a link out of the repository to nothing: the target is not there',
     async () => {
-      const outside = await mkdtemp(join(tmpdir(), 'mas-stage3-outside-'));
+      const outside = await mkdtemp(join(tmpdir(), 'mas-sandbox-outside-'));
       directories.push(outside);
-      await writeFile(join(outside, 'secret.txt'), 'OUTSIDE-SECRET-stage3\n');
+      await writeFile(join(outside, 'secret.txt'), 'OUTSIDE-SECRET-sandbox\n');
       const place = await roots();
       await symlink(join(outside, 'secret.txt'), join(place.repository, 'link'));
       const provider = scriptedChat(
@@ -461,9 +461,9 @@ real('C5: what the sandbox keeps a command from', () => {
       );
       const chat = await chatOn(place, provider, { answer: () => 'y' });
       await chat.say('read the link');
-      expect(seen(provider)).not.toContain('OUTSIDE-SECRET-stage3');
+      expect(seen(provider)).not.toContain('OUTSIDE-SECRET-sandbox');
       expect(toolResults(provider.requests.at(-1))[0]).toContain('status=1');
-      expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('OUTSIDE-SECRET-stage3\n');
+      expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('OUTSIDE-SECRET-sandbox\n');
     },
     TIMEOUT,
   );
@@ -997,7 +997,7 @@ onLinux('the sandbox is not there', () => {
   it(
     'with ask-unisolated, asks for each command, says it is not isolated, and then runs it as it is',
     async () => {
-      const place = await roots({ '.env': 'VISIBLE-stage3\n' });
+      const place = await roots({ '.env': 'VISIBLE-sandbox\n' });
       const provider = scriptedChat(
         run('echo hi; echo "env=$(cat .env)"'),
         run('echo again'),
@@ -1025,7 +1025,7 @@ onLinux('the sandbox is not there', () => {
       const results = toolResults(provider.requests.at(-1));
       expect(results[0]).toContain('[not isolated]');
       // Without a sandbox the mask is not there either; that is what the question warned of.
-      expect(results[0]).toContain('VISIBLE-stage3');
+      expect(results[0]).toContain('VISIBLE-sandbox');
     },
     TIMEOUT,
   );
@@ -1062,11 +1062,11 @@ onLinux('git_inspect', () => {
     'shows status, log, diff and blame, and never the content of a hidden file',
     async () => {
       const place = await roots(
-        { 'src/a.ts': 'one\n', '.env': 'SECRET-stage3=1\n' },
+        { 'src/a.ts': 'one\n', '.env': 'SECRET-sandbox=1\n' },
         { git: true },
       );
       await writeFile(join(place.repository, 'src/a.ts'), 'one\ntwo\n');
-      await writeFile(join(place.repository, '.env'), 'SECRET-stage3=2\n');
+      await writeFile(join(place.repository, '.env'), 'SECRET-sandbox=2\n');
       const provider = scriptedChat(
         tool('git_inspect', { action: 'status' }),
         tool('git_inspect', { action: 'diff' }),
@@ -1083,7 +1083,7 @@ onLinux('git_inspect', () => {
       expect(results[2]).toContain('first commit');
       expect(results[3]).toContain('one');
       expect(results[4]).toContain('first commit');
-      expect(seen(provider)).not.toContain('SECRET-stage3');
+      expect(seen(provider)).not.toContain('SECRET-sandbox');
       // It only needs the repository, which is asked once.
       expect(chat.questions).toHaveLength(1);
       expect(chat.questions[0]).toContain('读取仓库');

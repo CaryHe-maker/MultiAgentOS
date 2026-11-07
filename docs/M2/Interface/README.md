@@ -1,6 +1,6 @@
 # MultiAgentOS M2 接口
 
-> 状态：已评审（阶段 1 的部分）。本目录是 M2 全部跨模块数据结构与 Port 的字段级权威。
+> 状态：已实现；发布前再与代码核对一次。
 > `packages/libraries/contracts` 按本目录实现 Schema 与 Port；二者不一致时以本目录为准，并在同一 PR 中修正代码。
 
 ## 1. 文档分工
@@ -10,7 +10,7 @@
 | 本文 | 规范约定、版本规则、标识、通讯主体与路由、Schema 清单 |
 | [WorkflowKernel](WorkflowKernel.md) | Workflow 与 Kernel 之间的 syscall 与事件 |
 | [InteractionKernel](InteractionKernel.md) | UserInteraction 与 Kernel 之间的请求与事件 |
-| `KernelSupervisor.md` | Kernel 核心与 Supervisor 之间的执行请求、取消与执行事实（阶段 2 起） |
+| `KernelSupervisor.md` | Kernel 核心与 Supervisor 之间的执行请求、取消与执行事实 |
 | [Persistence](Persistence.md) | 系统数据目录、会话日志的记录格式、各类索引、实例锁 |
 | [Definitions](Definitions.md) | Agent、Unit、Tool、Model、Prompt 与模板的定义格式 |
 | [SharedContracts](../Library/SharedContracts.md) | 上述类型在 `packages/libraries/contracts` 中的 Schema ID、文件位置与测试 |
@@ -33,9 +33,9 @@
 ### 2.2 版本规则
 
 1. `schemaName + major` 唯一确定语义；未知 major 必须拒绝。
-2. M1 的全部 Schema 为 major 0，已随 S1-IN-1 删除。发布版只有 major 1 一套契约。
+2. M1 的全部 Schema 为 major 0，已删除。发布版只有 major 1 一套契约。
 3. M2 运行时只产生 major 1 的版本；内置模板 `analyze` 同样使用 major 1。
-4. 阶段 1 之前，major 1 的 Schema 属于草稿，按本目录原地修改；M2 发布时冻结。冻结后的规则同 M1Interface 第 1.2 节。
+4. major 1 的 Schema 在 M2 发布前按本目录原地修改，发布时冻结。冻结后的规则同 M1Interface 第 1.2 节。
 5. 所有边界数据先经过运行时 Schema 校验；对象一律 `additionalProperties: false`。
 
 ## 3. 标识
@@ -49,12 +49,12 @@
 | `nodeId` | `nod` | Workflow | 节点路径 SHA-256 的前 32 位小写十六进制 | 节点路径见 [M2Design](../M2Design.md) 第 3.2 节 |
 | `unitRunId` | `unr` | Workflow | UnitRun 路径 SHA-256 的前 32 位 | 同上 |
 | `requestId`（提交 Unit 时） | `req` | Workflow | 提交路径 SHA-256 的前 32 位 | 其他请求的 `requestId` 仍为 ULID |
-| `delegationId` | `dlg` | Core | ULID | 一次委派保留（阶段 4） |
+| `delegationId` | `dlg` | Core | ULID | 一次委派保留 |
 | `humanRequestId` | `hrq` | Workflow | 节点 ID 的 body | 一个人类请求，与 HUMAN 节点一一对应 |
 | `inputId` | `inp` | UserInteraction | ULID | 一次用户输入；重复提交按它去重（M2Design 第 10.3 节写入规则第 5 条） |
 | `commandId` | `scm` | Core | ULID | Kernel 下达给 Workflow 的一条 Session 命令（包括系统级的 `DELETE`） |
 | `queryId` | `slq` | Core | ULID | 一次 Session 列表查询 |
-| `compactionId` | `cmp` | Core | ULID | 一次上下文压缩（阶段 8，M2Design 第 9.6 节） |
+| `compactionId` | `cmp` | Core | ULID | 一次上下文压缩（M2Design 第 9.6 节） |
 
 - 由路径派生的 ID：路径按 UTF-8 编码后计算 SHA-256，取前 32 位小写十六进制。可读路径作为同一记录中的 `path` 字段保存。
 - `workflowRunId` 在 M1 中由 Gateway 在 `createRun` 时生成；M2 中由 Core 在开启 WorkflowRun 时生成，随该运行的事件信封交给接收方。
@@ -83,13 +83,13 @@ interface BoundaryContext {
 
 **路由**（只列 M2 新增与改变的部分，其余见 M1Interface 第 2.2 节）：
 
-| schemaName 或地址 | 方式 | 发送方 | 处理方 | 阶段 |
-|---|---|---|---|---|
-| Workflow 的 syscall（[WorkflowKernel](WorkflowKernel.md) 第 2 节） | request | workflow | gateway | 1 |
-| UserInteraction 的请求（[InteractionKernel](InteractionKernel.md) 第 2 节） | request | user-interaction | gateway | 1 |
-| 地址 `inbox.workflow`：运行级事件 `kernel.unit.WorkflowInboxEvent.v1`、Session 级事件 `kernel.session.WorkflowSessionEvent.v1`、系统级事件 `kernel.session.WorkflowSystemEvent.v1` | send | kernel-core | workflow | 1 |
-| 地址 `inbox.user-interaction`：运行级事件 `kernel.control.InteractionInboxEvent.v1`、Session 级事件 `kernel.session.InteractionSessionEvent.v1`、系统级事件 `kernel.session.InteractionSystemEvent.v1` | send | kernel-core | user-interaction | 1 |
-| Kernel 核心与 Supervisor 之间的新消息（`KernelSupervisor.md`） | request / send | kernel-core、supervisor | supervisor、kernel-core | 2、3、5 |
+| schemaName 或地址 | 方式 | 发送方 | 处理方 |
+|---|---|---|---|
+| Workflow 的 syscall（[WorkflowKernel](WorkflowKernel.md) 第 2 节） | request | workflow | gateway |
+| UserInteraction 的请求（[InteractionKernel](InteractionKernel.md) 第 2 节） | request | user-interaction | gateway |
+| 地址 `inbox.workflow`：运行级事件 `kernel.unit.WorkflowInboxEvent.v1`、Session 级事件 `kernel.session.WorkflowSessionEvent.v1`、系统级事件 `kernel.session.WorkflowSystemEvent.v1` | send | kernel-core | workflow |
+| 地址 `inbox.user-interaction`：运行级事件 `kernel.control.InteractionInboxEvent.v1`、Session 级事件 `kernel.session.InteractionSessionEvent.v1`、系统级事件 `kernel.session.InteractionSystemEvent.v1` | send | kernel-core | user-interaction |
+| Kernel 核心与 Supervisor 之间的新消息（`KernelSupervisor.md`） | request / send | kernel-core、supervisor | supervisor、kernel-core |
 
 **事件的三个序列**（[M2Design](../M2Design.md) 第 2.6 节）：
 
@@ -127,15 +127,15 @@ interface SystemInboxEvent<T> {        // 系统级事件：不属于任何 Sess
 
 只列 M2 新增或升到 major 1 的 Schema；"状态"一栏随文档推进更新。
 
-| Schema | 定义位置 | 阶段 | 状态 |
-|---|---|---|---|
-| `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 1 | 已评审 |
-| Workflow 的 syscall 与运行级、Session 级、系统级事件 | [WorkflowKernel](WorkflowKernel.md) | 1 起 | 已评审（阶段 1） |
-| UserInteraction 的请求与运行级、Session 级、系统级事件 | [InteractionKernel](InteractionKernel.md) | 1 起 | 已评审（阶段 1） |
-| 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 1 起 | 已评审（阶段 1） |
-| Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 1 起 | 已评审（阶段 1） |
-| Kernel 核心与 Supervisor 的消息 | `KernelSupervisor.md` | 2 起 | 未开始 |
-| 上下文压缩的请求、事件与日志记录 | [WorkflowKernel](WorkflowKernel.md) 第 2.4、3.4 节；[InteractionKernel](InteractionKernel.md) 第 2.4、3.4 节；[Persistence](Persistence.md) 第 2.2 节 | 8 | 草稿（字段已列出，阶段 8 的文档门中评审） |
+| Schema | 定义位置 | 状态 |
+|---|---|---|
+| `platform.common.BoundaryContext.v1`、`platform.common.Envelope.v1` | 本文第 4 节 | 已评审 |
+| Workflow 的 syscall 与运行级、Session 级、系统级事件 | [WorkflowKernel](WorkflowKernel.md) | 已评审 |
+| UserInteraction 的请求与运行级、Session 级、系统级事件 | [InteractionKernel](InteractionKernel.md) | 已评审 |
+| 会话日志记录、Session 列表、Session 引用、实例锁 | [Persistence](Persistence.md) | 已评审 |
+| Agent、Model、模板定义的 major 1 | [Definitions](Definitions.md) | 已评审 |
+| Kernel 核心与 Supervisor 的消息 | `KernelSupervisor.md` | 未开始 |
+| 上下文压缩的请求、事件与日志记录 | [WorkflowKernel](WorkflowKernel.md) 第 2.4、3.4 节；[InteractionKernel](InteractionKernel.md) 第 2.4、3.4 节；[Persistence](Persistence.md) 第 2.2 节 | 已实现 |
 
 ## 6. 原因码
 

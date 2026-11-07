@@ -194,7 +194,7 @@ function drafts(group: Group): readonly Draft[] | undefined {
         role: 'tool',
         toolCallId: call.toolCallId,
         // One tool message per call id, even when it was answered twice. The id is written into
-        // the text because the model does not see the id field of a call (Evaluation/Stage8Compaction):
+        // the text because the model does not see the id field of a call (History/M2/Evaluation/Stage8Compaction):
         // without it `read_output` gets a made-up id, and a summary cannot keep one.
         content: `${answers
           .map((answer) => (answer.kind === 'TOOL_RESULT' ? toolText(answer) : answer.text))

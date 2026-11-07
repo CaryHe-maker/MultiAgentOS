@@ -1,6 +1,6 @@
 /**
  * `tsx .../run-fetch-compare.ts --yes --out <file> --budget N [ids...]`: the same real addresses
- * read three ways (docs/M2/Evaluation/Stage6FetchOrder.md): by this program's own fetch alone, by
+ * read three ways (docs/History/M2/Evaluation/Stage6FetchOrder.md): by this program's own fetch alone, by
  * DeepSeek's fetch alone, and by the combination the product uses (own first, DeepSeek when it
  * cannot). A case is good when it completed, held a word that only the real page has, and gave
  * the answer the case expects (a missing page and a PDF are expected to fail, an address that

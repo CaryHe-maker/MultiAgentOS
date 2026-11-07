@@ -1,6 +1,6 @@
 # MultiAgentOS M2 SharedContracts
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -12,12 +12,12 @@ SharedContracts 是静态库 `@multiagentos/contracts`，提供全部跨模块 S
 M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Library/SharedContracts.md) 第 2 节）：TypeBox、`$id = <family>.<Name>.v<major>`、
 条件必填以联合变体表达、类型由 Schema 派生、文件之间无导入环。M2 补充：
 
-- 只有 major 1：major 0 已随 S1-IN-1 全部删除（Interface 第 2.2 节）。
+- 只有 major 1：major 0 已全部删除（Interface 第 2.2 节）。
 - Schema 放在各 family 目录中，文件名与代码中的名字都不带版本。
-- 每个阶段的契约门（M2Plan 第 2.2 节）只增加本阶段需要的 Schema；major 1 在 M2 发布前属于草稿，可以原地修改。
+- 每个 phase 的契约门（M2ReleasePlan 第 4.1 节）只增加该 phase 需要的 Schema；major 1 在 M2 发布前属于草稿，可以原地修改。
 - Interface 各文档"Schema 强制的约束"小节中的每一条，都必须由 Schema 强制，并有反例测试。
 
-## 3. Schema 清单（阶段 1）
+## 3. Schema 清单
 
 ### 3.1 `platform.common`
 
@@ -65,7 +65,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 |---|---|---|
 | `executor.RepositoryListInput.v1`、`RepositoryListOutput.v1` | `executor/repository-list.ts` | [ExecutorSet](ExecutorSet.md) 第 5 节 |
 | `executor.FileReadOutput.v1` | `executor/file-read.ts` | 增加内容的 SHA-256 |
-| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `finalMode`（思考强度在登记时给出，随 `scope` 交给 Executor）；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（阶段 8）（ExecutorSet 第 7 节） |
+| `executor.ModelCallInput.v1`、`ModelCallOutput.v1` | `executor/model-call.ts` | 增加 `finalMode`（思考强度在登记时给出，随 `scope` 交给 Executor）；思考内容单独返回；可重试失败带 `retryAfterMs`；摘要请求（ExecutorSet 第 7 节） |
 | `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines }`（M2Design 第 8.2 节） |
 | `kernel.execution.ExecutionResult.v1`、`ExecutionFact.v1` | `kernel-execution/execution-fact.ts` | 带 `sessionId`，增加 `REPOSITORY_LIST`；工具结果分为预览 `artifact` 与截断时的 `fullOutput`；模型结果带 `reasoning`；模型的 `FAILED` 带 `retryAfterMs`（Kernel/Execution 第 3、4a 节） |
 | `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`）；工具结果带 `status`、`reasonCode`，没有预览时的文字由 Executor 写 |
@@ -101,13 +101,3 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 - 协议快照守卫（M1 的做法）覆盖 major 1；M2 发布前 `frozen: false`，注册的 Schema 必须与快照相同，发布时冻结。
 - **测试数据**：各包的测试从子路径 `@multiagentos/contracts/test-support` 取得合法的定义、产物引用、输出与 ID；每个构造函数返回前按 Schema 校验，测试中不以类型断言编造契约值。
   `testUnitDefinition` 按目录加载时的同一规则声明 `repo.read`（AgentToolPool 第 5 节）。
-
-## 5. 阶段
-
-本文第 3 节为阶段 1 的清单；后续阶段的 Schema 在各自的契约门中加入本文。
-阶段 2 加入 `executor.OutputReadInput.v1`、`OutputReadOutput.v1`（`executor/output-read.ts`，ExecutorSet 第 5a 节）与日志记录 `ArtifactOwnerLine` 的 `fullOutput` 字段（Interface/Persistence 第 4.3 节）；
-`workflow.UpdateTodosArgs.v1`（`workflow/update-todos.ts`）、`kernel.unit.UpdateActivityRequest.v1`（WorkflowKernel 第 2.5 节）、`ActivityEvent.todos` 与日志记录 `TODOS_UPDATED`。
-子目录 `AGENTS.md`：`FileReadOutput.nestedInstructions`、`ReadProjectFileRequest.path` 的扩展、`PROJECT_FILE_LOADED` 的 `agentRunId` 与 `skipped`、`TrustedInstructionLine.path` 与 `AuthorizationRequest(project.instructions).path` 改为相对路径。
-阶段 5 加入 `kernel.control.SteerRunRequest.v1` 与 `HumanAnswered` 的 `kind = 'steer'`、`HUMAN_ANSWERED.redirectedFrom`。
-阶段 8 加入压缩相关的类型：`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`（含 `summaryInput`）、`CompactionFailed`（运行级事件）、`ReportCompactionSourceRequest`（模型轮条目的 `measured`）、`AckCompactionRequest`（含 `stage`）、`CompactContextRequest`，
-修剪与纯文本式摘要请求的 Executor 输入输出（ExecutorSet 第 6.4 节），以及日志记录 `TOOL_RESULTS_PRUNED`、`CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED` 与 `CONTEXT_ASSEMBLED.headDigest`、`ContextPack.headDigest`（Interface/WorkflowKernel 第 3.4 节、InteractionKernel、Persistence 第 2.2 节）。

@@ -1,5 +1,8 @@
 # 阶段 8 上下文压缩的实测（S8-T-1）
 
+> **历史数据（旧阶段的实测记录）。** 本文写于 M2 第一轮实现期间，记录当时的实验与结论，不再修改。
+> 数据来自单个模型与少量运行，是当时的事实，不是统计结论。当前的设计依据是 [M2Design](../../../M2/M2Design.md)，文中的"阶段 N"是旧编号，见 [History/M2](../README.md)。
+
 > 2026-11-07。模型 `deepseek-flash`，直接调用 DeepSeek 的聊天接口（不经产品），脚本 `apps/control-plane/test/acceptance/compaction-eval/run-compaction-eval.ts`，原始记录在 `results/2026-11-07/`。共约 60 个请求，费用不到 1 美元。数据是单个模型、每格 3–4 次运行的事实，不是统计结论。
 
 ## 1. 要回答的问题

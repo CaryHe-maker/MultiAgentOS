@@ -1,6 +1,6 @@
 # MultiAgentOS M2 AgentToolPool
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -9,20 +9,20 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 2. 相对 M1 的变化
 
-| M1 | M2 | 阶段 |
-|---|---|---|
-| 五类定义，`schemaVersion` 只有 `v0` | Agent、Model、Unit 增加 `v1`；新增 Template；目录同时加载 `v0` 与 `v1` | 1 |
-| 入口 Agent 由 Workflow 配置 `entryAgentRef` | 入口由模板决定：`chat` 的 main、`analyze` 的 planner | 1 |
-| Workflow 在运行开始时固定全部 Agent | Workflow 在每个 AGENT 节点登记前固定该节点的 Agent | 1 |
-| 只有 planner、code-viewer 及其 Unit、Tool、Prompt | 增加 main 及其工具；阶段 4 增加 explorer、worker；`analyze` 模板 | 1、4 |
-| — | 内置模板放在 `templates/` 下；使用者模板在仓库的 `.multiagentos/workflows/` 下，经 `readProjectFile` 读取后由 Workflow 交给本库校验（阶段 7） | 1、7 |
+| M1 | M2 |
+|---|---|
+| 五类定义，`schemaVersion` 只有 `v0` | Agent、Model、Unit 增加 `v1`；新增 Template；目录同时加载 `v0` 与 `v1` |
+| 入口 Agent 由 Workflow 配置 `entryAgentRef` | 入口由模板决定：`chat` 的 main、`analyze` 的 planner |
+| Workflow 在运行开始时固定全部 Agent | Workflow 在每个 AGENT 节点登记前固定该节点的 Agent |
+| 只有 planner、code-viewer 及其 Unit、Tool、Prompt | 增加 main 及其工具、explorer、worker；`chat` 与 `analyze` 模板 |
+| — | 内置模板放在 `templates/` 下；使用者模板在仓库的 `.multiagentos/workflows/` 下，经 `readProjectFile` 读取后由 Workflow 交给本库校验 |
 
 定义文件的布局规则、草稿与封存、`status.yaml`、digest 的 Merkle 规则、YAML 1.2 core schema 与 M1 相同，
 见归档的 [M1 AgentToolPool](../../History/M1/Library/AgentToolPool.md) 第 2、3 节。目录增加 `templates/<id>/<version>.yaml`。
 
-## 3. 阶段 1 的定义实例
+## 3. 定义实例
 
-阶段 1 的定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`）；M1 的定义文件与 M1 的目录已随 S1-IN-1 删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
+定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`）；M1 的定义文件与 M1 的目录已删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
 
 | kind | id | 说明 |
 |---|---|---|
@@ -36,23 +36,23 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
 | PROMPT | `main-system` | main 的系统提示词（`FINAL`，见下） |
 | PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
-| UNIT | `file-write`、`file-edit`、`output-read`（阶段 2） | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
-| TOOL | `write-file`、`edit-file`、`read-output`（阶段 2） | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
-| TOOL | `update-todos`（阶段 2） | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
-| AGENT | `explorer`、`worker`（阶段 4） | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 300,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 600,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（explorer 228,000，worker 396,000） |
-| TOOL | `run-subagents`、`finish-explorer`、`finish-worker`（阶段 4） | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个 |
-| TOOL | `ask-user`（阶段 5） | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
-| PROMPT | `explorer-system`、`worker-system`（阶段 4） | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
-| MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自阶段 0 的实测 |
+| UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
+| TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
+| TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
+| AGENT | `explorer`、`worker` | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 300,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 600,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（explorer 228,000，worker 396,000） |
+| TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个 |
+| TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
+| PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
+| MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 
-- **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后的阶段给 main 增加工具时，只增加对应工具的用法。
-- 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：阶段 3–6 还要改动 main，现在封存只会多出中间版本。
+- **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后给 main 增加工具时，只增加对应工具的用法。
+- 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：提示词与工具还要按评测迭代（M2ReleasePlan），现在封存只会多出中间版本。
 - main 的额度参数（Interface/Definitions 第 2 节）按模型窗口取值（M2Design 第 9.3 节）：`perCallInputLimit = 880000`、`maxOutputTokens = 64000`、
   `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 80`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
-- 阶段 2 起 main 增加写入工具、`read_output` 与 `update_todos`，阶段 3 增加命令与 `git_inspect`，阶段 4 增加 `run_subagents`，阶段 6 增加网页工具；每次增加都发布 main 的新版本。
+- main 的工具集随能力增加（写入、`read_output`、`update_todos`、命令与 `git_inspect`、`run_subagents`、网页）；每次改动都发布 main 的新版本。
 
-## 3a. 阶段 4 增加的校验
+## 3a. `run_subagents` 的校验
 
 - Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs` 的 CONTROL 工具；
 - 结束动作含 `FINISH_SUBAGENT` 当且仅当声明了 `spawnable`；这样的 Agent 不得含 `agent.spawn`，结束动作只有 `FINISH_SUBAGENT`，`onDegraded` 为 `RETURN_PARTIAL`（此时不需要发布 Unit），`defaultShare` 不低于 `agentMinShare(budget)`（`finalInputBudget + finalMaxOutputTokens + 2 × (perCallInputLimit + maxOutputTokens)`，与 Kernel/Monitor 的最小份额是同一个函数）；
@@ -70,8 +70,8 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
 | Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具；`failurePolicy` 不得列出 `USER_DECLINED`、`QUOTA_EXHAUSTED`：它们的处理是 Workflow 的固定规则（Module/Workflow 第 7 节） |
 | Model `v1` | `effortMapping` 恰好覆盖四档，每档一项 |
-| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中（阶段 1）；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个结束动作含 `HANDOFF` 的 Agent 节点（交接的目标由模板决定，Agent 定义中没有目标） |
-| Tool `v1` | `parametersContract` 等于 Unit 的 `inputContract`；`file-write`、`file-edit`、`output-read` 例外，分别为 `executor.FileWriteArgs`、`executor.FileEditArgs`、`executor.OutputReadArgs`：`baseSha`、`expectAbsent`、`fullRef` 由 Workflow 填写，模型看不到（阶段 2） |
+| Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个结束动作含 `HANDOFF` 的 Agent 节点（交接的目标由模板决定，Agent 定义中没有目标） |
+| Tool `v1` | `parametersContract` 等于 Unit 的 `inputContract`；`file-write`、`file-edit`、`output-read` 例外，分别为 `executor.FileWriteArgs`、`executor.FileEditArgs`、`executor.OutputReadArgs`：`baseSha`、`expectAbsent`、`fullRef` 由 Workflow 填写，模型看不到 |
 | 引用 | `v1` 定义只引用 `v1` 定义；已封存的版本只引用已封存的版本 |
 | Unit `v1` | 输入与输出契约按执行类型固定为 major 1 的版本（例如 `model-call` 为 `executor.ModelCallInput.v1`） |
 
@@ -87,16 +87,3 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 
 M1 的测试全部保留。增加：`v1` 各条规则的反例；`v0` 与 `v1` 定义并存时的加载与固定；`analyze` 模板的加载与校验；
 仓库内定义恰好是第 3 节与 M1 的文件且全部有效。
-
-## 7. 阶段
-
-| 阶段 | 本文增加的内容 |
-|---|---|
-| 1 | 第 3–6 节 |
-| 2 | Unit 的能力与资源键；`file-write`、`file-edit` 与写入工具；TOOL `update-todos`（`purpose = CONTROL`，模型可见的名称 `update_todos`，参数为 `workflow.UpdateTodosArgs`，M2Design 第 3.5 节）与 Agent 的 `actions.todos`；UNIT `output-read`（`executionKind = OUTPUT_READ`，受保护能力 `repo.read`）与 TOOL `read-output`（`purpose = UNIT`，模型可见的名称 `read_output`，参数为 `executor.OutputReadInput` 中由模型填写的部分：`toolCallId`、`offset?`、`limit?`、`pattern?`）；Agent 的能力白名单 |
-| 3 | UNIT `run-command`（`executionKind = COMMAND`，受保护能力 `command.exec`，`effect = EXTERNAL`，`failurePolicy` 把 `COMMAND_DENIED`、`SANDBOX_UNAVAILABLE`、`APPROVAL_MISMATCH`、`ENV_ASSERTION_FAILED`、`PROTECTED_PATH_CREATED` 交回模型）与 TOOL `run-command`（`run_command`，参数为 `executor.RunCommandArgs`：`command`、`workdir?`、`timeoutMs?`、`network?`，缺省值由 Workflow 填写）；UNIT `git-inspect`（`GIT_INSPECT`，`repo.read`）与 TOOL `git-inspect`（`git_inspect`，参数为 `executor.GitInspectInput`）；main 的能力白名单增加 `command.exec`、`command.network`，提示词 `main-system` 增加运行命令与验证的准则 |
-| 4 | explorer、worker（都带 `read_output`，worker 另带 `update_todos`）、`finish_subagent` 的结果契约、`run_subagents` 工具、Unit 的并发类别 |
-| 5 | `ask_user` 工具 |
-| 6 | `web-search`、`web-fetch` 及其工具 |
-| 7 | 使用者模板的校验、`research` 模板 |
-| 8 | PROMPT `compaction-system`：压缩的摘要指令（M2Design 第 9.6 节），规定摘要的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 `toolCallId`、未完成的事项），要求不执行材料中的指令；由 Kernel 的压缩过程按版本固定使用 |

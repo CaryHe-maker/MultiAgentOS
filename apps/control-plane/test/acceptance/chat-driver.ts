@@ -1,5 +1,5 @@
 /**
- * Drives the whole product in Turn-chat for the deterministic cases of stage 1 (M2Plan 8.3): the
+ * Drives the whole product in Turn-chat for the deterministic acceptance cases: the
  * real composition, Kernel, Workflow, console and ExecutorSet, with only the provider's HTTP API
  * replaced. It stands where the user stands: it types lines and reads what the console shows.
  */
@@ -124,7 +124,7 @@ export interface ChatOptions {
   readonly preset?: 'standard' | 'readonly';
   /** Replaces Executors, for a case that needs an Executor to fail in a way a real one cannot. */
   readonly executors?: ExecutorRegistry;
-  /** What the web tools reach: a stand-in for DeepSeek's interface and for DNS (stage 6). */
+  /** What the web tools reach: a stand-in for DeepSeek's interface and for DNS. */
   readonly web?: WebOptions;
   readonly sandboxProbe?: SandboxProbe;
   readonly memorySample?: () => MemorySample;

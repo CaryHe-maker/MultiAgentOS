@@ -407,12 +407,12 @@ export interface WorkflowGatewayPort {
     request: ReleaseDelegationRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  /** The material of a compaction, as Kernel asked for it with `CompactionSourceQuery` (阶段 8). */
+  /** The material of a compaction, as Kernel asked for it with `CompactionSourceQuery`. */
   reportCompactionSource(
     request: ReportCompactionSourceRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  /** The result of a compaction is in the log, or could not be put there (阶段 8). */
+  /** The result of a compaction is in the log, or could not be put there. */
   ackCompaction(
     request: AckCompactionRequest,
     context: BoundaryContext,
@@ -501,7 +501,7 @@ export interface InteractionGatewayPort {
     request: SteerRunRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  /** `/compact` (阶段 8): only while the run awaits input. */
+  /** `/compact`: only while the run awaits input. */
   compactContext(
     request: CompactContextRequest,
     context: BoundaryContext,

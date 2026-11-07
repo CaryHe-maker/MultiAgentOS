@@ -1,6 +1,6 @@
 # MultiAgentOS M2 接口：Kernel 内部的沙盒与执行取消
 
-> 状态：草稿（阶段 3，待评审）。设计以 [M2Design](../M2Design.md) 第 4.7、5、6、7.6、7.7 节为准，本文只写字段与调用关系。
+> 状态：已实现；发布前再与代码核对一次。设计以 [M2Design](../M2Design.md) 第 4.7、5、6、7.6、7.7 节为准，本文只写字段与调用关系。
 > 版本规则、命名与 Schema 清单见 [README](README.md)；发布版只有 major 1。
 
 ## 1. 范围
@@ -20,7 +20,7 @@ SandboxProfile 由 Core 在签发 `command.exec` 的 Lease 时计算，Execution
 interface SandboxProfile {
   repositoryRoot: string;          // realpath
   workdir: string;                 // 相对仓库根目录，根目录为 ''；realpath 后必须在仓库内
-  writableRoots: string[];         // 相对仓库根目录；main 为 ['']，worker 为 writeScope（阶段 4）
+  writableRoots: string[];         // 相对仓库根目录；main 为 ['']，worker 为 writeScope
   network: boolean;                // 只有批准了 command.network 的那一条命令为 true
   homeReadOnly: string[];          // 以只读挂回的 $HOME 下的工具链与缓存目录（绝对路径；配置 kernel.sandboxHomeReadOnly）
   homeMaskedFiles: string[];       // 挂回目录中的凭据文件，以空文件遮蔽（绝对路径；缺省列表可追加、不可删除）
@@ -39,7 +39,7 @@ type SandboxScope = {
 };
 ```
 
-`writableRoots` 与 Core 的第 ③ 步判定、文件工具使用同一个函数 `writableRoots(profile)`（contracts，阶段 2 的 `isWritable` 旁）；沙盒的 `--bind` 参数由它得出，三处使用同一份结果（不变量 5.4 的第 4 层）。
+`writableRoots` 与 Core 的第 ③ 步判定、文件工具使用同一个函数 `writableRoots(profile)`（contracts，在 `isWritable` 旁）；沙盒的 `--bind` 参数由它得出，三处使用同一份结果（不变量 5.4 的第 4 层）。
 
 ## 3. 批准绑定确切内容
 
@@ -113,13 +113,13 @@ Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportS
 interface CancelExecutionRequest { executionId: ExecutionId; runEpoch: number; reason: 'PAUSED' | 'ABORTED' }
 ```
 
-`SupervisorPort.cancelExecution`（阶段 3 已实现；未知、已结束或 `runEpoch` 不符的执行被忽略，重复请求保留第一个原因）：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（阶段 5 用 `PAUSED`）。`cancelRun` 保留，用于收敛。
+`SupervisorPort.cancelExecution`（未知、已结束或 `runEpoch` 不符的执行被忽略，重复请求保留第一个原因）：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（暂停用 `PAUSED`）。`cancelRun` 保留，用于收敛。
 
 ## 8. 内存压力与中断
 
 ```ts
 interface MemoryPressure { source: 'PROCESS' | 'SYSTEM'; level: 'WARNING' | 'DANGER'; ratio: number; rss: number; heapRatio: number; availableBytes?: number }  // 控制消息，Monitor → Core
-type InterruptReason = 'MEMORY_PRESSURE' | 'USER_ABORT' | 'TURN_TIMEOUT' | 'PAUSE_TIMEOUT';   // 后三种阶段 5 加入，入口同一个 `interrupt(reason)`（Core 第 5e 节）
+type InterruptReason = 'MEMORY_PRESSURE' | 'USER_ABORT' | 'TURN_TIMEOUT' | 'PAUSE_TIMEOUT';   // 入口都是同一个 `interrupt(reason)`（Core 第 5e 节）
 RunInterrupted { workflowRunId; reason: InterruptReason }                      // Kernel → Workflow 事件
 WrapUpReason += 'MEMORY_LIMIT';  QuotaKind += 'MEMORY';  RunReport / closeRun 原因 += 'INTERRUPTED'
 ```

@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 8 (M2Plan 6.9; M2Design 13, group L): the compaction of a
+ * The deterministic acceptance cases (M2Design 13, group L): the compaction of a
  * context, from the console down to the Executors, with only the provider's chat API scripted. The
  * window is not made small, the thresholds are: a compaction starts as soon as there is something
  * old enough to replace, so a few rounds are enough. What the model would have seen is read from
@@ -52,8 +52,8 @@ async function chatOn(
     compaction?: Record<string, unknown>;
   } & Partial<ChatOptions> = {},
 ): Promise<{ chat: Chat; dataDir: string; repository: string }> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage8-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage8-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-compaction-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-compaction-repo-'));
   directories.push(dataDir, repository);
   for (const [name, content] of Object.entries(
     options.files ?? {

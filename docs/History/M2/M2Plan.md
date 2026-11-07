@@ -1,7 +1,12 @@
 # MultiAgentOS M2 计划
 
+> **已冻结的历史文档（2026-11-07）。** 本文是 M2 第一轮实现的计划，按旧编号"阶段 0–8"组织。
+> 它不再是计划标准：后续工作以 [M2ReleasePlan](../../M2/M2ReleasePlan.md) 为准，已实现部分的现状见 [M2Baseline](../../M2/M2Baseline.md)。
+> 文中的任务编号（`S<阶段>-…`）、分支名（`feature/phase<N>/main`）与"阶段"一词都只指旧的一轮，不要与新计划的 `RP<phase>-…` 混用。
+> 本文不再修改；其中的"退出条件"与"完成定义"已由 M2ReleasePlan 重新表述。
+
 > 本文组织 M2 的交付：阶段、工作流、任务与依赖、分支、各阶段的门与退出条件。
-> 范围与设计以 [M2Design](M2Design.md) 为准，本文不重新定义机制。本文只按阶段划分，不设日期。
+> 范围与设计以 [M2Design](../../M2/M2Design.md) 为准，本文不重新定义机制。本文只按阶段划分，不设日期。
 
 ## 1. 权威与范围
 
@@ -62,7 +67,7 @@
 
 ### 4.1 分支
 
-按 [Style](../Style.md) 第 4 节：
+按 [Style](../../Style.md) 第 4 节：
 
 - `feat/M2`：M2 的集成分支，从 `main` 创建；M2 发布时经 PR 合入 `main`。
 - 工作分支 `<type>/M2/<scope>`，从 `feat/M2` 创建，经 PR 合回。`<scope>` 以任务编号开头，
@@ -335,7 +340,7 @@ E-KX-1 的函数由 EX 与 KC 共用，完成后在 S2-CT-1 中移入共享接�
 ### 8.1 `analyze` 回归（M2Design 第 14.2 节 #1）
 
 `analyze` 没有特殊额度，按 planner、code-viewer 定义中的额度参数运行，模型调用关闭思考。运行 M1 固定任务集 F1–F5，
-成功率与来源完整性不得低于 M1 的验收基线（[M1AcceptanceEvidence](../History/M1/M1AcceptanceEvidence.md)）。回归比较结果，不要求模型看到的内容与 M1 相同。
+成功率与来源完整性不得低于 M1 的验收基线（[M1AcceptanceEvidence](../M1/M1AcceptanceEvidence.md)）。回归比较结果，不要求模型看到的内容与 M1 相同。
 
 ### 8.2 量化标准（M2Design 第 14.2 节 #3）
 

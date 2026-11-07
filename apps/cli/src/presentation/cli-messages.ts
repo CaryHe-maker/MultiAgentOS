@@ -3,7 +3,7 @@ export const CLI_MESSAGES = Object.freeze({
   help: [
     '用法：',
     '  mas [--repo <路径>] [--readonly]                     交互式对话',
-    '  mas run [--repo <路径>] [--readonly] <模板> "<目标>"  以模板运行一次（阶段 1 只有 analyze）',
+    '  mas run [--repo <路径>] [--readonly] <模板> "<目标>"  以模板运行一次（目前只有 analyze）',
     '',
     '选项：',
     '  --repo <路径>  本进程的仓库，缺省为当前工作目录',

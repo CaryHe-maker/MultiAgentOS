@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 4 (M2Plan 6.5; M2Design 13): SubAgents running together
+ * The deterministic acceptance cases (M2Design 13): SubAgents running together
  * (P), their budgets (B) and what the user sees of them. Every case runs the real product from
  * the console down to the Executors, with only the provider's HTTP API scripted per Agent; what
  * the model would see is read from the requests the provider received.
@@ -41,8 +41,8 @@ interface Place {
 }
 
 async function roots(files: Readonly<Record<string, string>> = {}): Promise<Place> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage4-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage4-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-subagents-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-subagents-repo-'));
   directories.push(dataDir, repository);
   for (const [name, content] of Object.entries({ 'a.txt': 'one\n', ...files })) {
     await mkdir(dirname(join(repository, name)), { recursive: true });

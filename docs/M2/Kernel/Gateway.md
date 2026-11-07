@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Gateway
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -20,20 +20,20 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 
 ## 3. 调用方与请求
 
-| 请求 | 允许的 producer | 需要已知的标识 | 阶段 |
-|---|---|---|---|
-| `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun`、`requestHuman`、`readProjectFile` | `workflow` | `sessionId`、`workflowRunId` | 1 |
-| `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） | 1 |
-| `updateActivity` | `workflow` | `sessionId`、`workflowRunId` | 2 |
-| `reserveDelegation`、`releaseDelegation` | `workflow` | `sessionId`、`workflowRunId` | 4 |
-| `startSession`、`startRun` | `user-interaction` | 无 | 1 |
-| `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 | 1 |
-| `answerAuthorization`、`answerHuman` | `user-interaction` | `sessionId`、`workflowRunId` | 1 |
-| `readArtifact` | `user-interaction` | `sessionId` | 1 |
-| `undoTurns`、`confirmUndo`、`diffTurns` | `user-interaction` | `sessionId`、`workflowRunId` | 2 |
-| `pauseRun`、`resumeRun`、`interruptRun`、`steerRun` | `user-interaction` | `sessionId`、`workflowRunId` | 5 |
-| `reportCompactionSource`、`ackCompaction` | `workflow` | `sessionId`、`workflowRunId` | 8 |
-| `compactContext` | `user-interaction` | `sessionId`、`workflowRunId` | 8 |
+| 请求 | 允许的 producer | 需要已知的标识 |
+|---|---|---|
+| `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun`、`requestHuman`、`readProjectFile` | `workflow` | `sessionId`、`workflowRunId` |
+| `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） |
+| `updateActivity` | `workflow` | `sessionId`、`workflowRunId` |
+| `reserveDelegation`、`releaseDelegation` | `workflow` | `sessionId`、`workflowRunId` |
+| `startSession`、`startRun` | `user-interaction` | 无 |
+| `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 |
+| `answerAuthorization`、`answerHuman` | `user-interaction` | `sessionId`、`workflowRunId` |
+| `readArtifact` | `user-interaction` | `sessionId` |
+| `undoTurns`、`confirmUndo`、`diffTurns` | `user-interaction` | `sessionId`、`workflowRunId` |
+| `pauseRun`、`resumeRun`、`interruptRun`、`steerRun` | `user-interaction` | `sessionId`、`workflowRunId` |
+| `reportCompactionSource`、`ackCompaction` | `workflow` | `sessionId`、`workflowRunId` |
+| `compactContext` | `user-interaction` | `sessionId`、`workflowRunId` |
 
 | 检查 | 不通过时的原因码 |
 |---|---|
@@ -53,7 +53,3 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 ## 5. 不实现
 
 请求速率限制与按分片路由（与 M1 相同）。
-
-## 6. 阶段
-
-第 3 节表格中各行按"阶段"一栏加入，其余内容属于阶段 1。

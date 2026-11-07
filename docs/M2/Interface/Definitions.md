@@ -1,6 +1,6 @@
 # 定义格式
 
-> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
+> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
 > 定义的加载、校验与目录机制见 [Library/AgentToolPool](../Library/AgentToolPool.md)；本文只定义字段。
 
 ## 1. 范围与版本
@@ -8,8 +8,8 @@
 M1 的定义格式见 M1Interface 第 9 节（`DefinitionHeader.schemaVersion = 'v0'`）。M2 中：
 
 - 全部定义种类都发布 `schemaVersion = 'v1'`，新增种类 Template；
-- Unit 在阶段 1 就升到 `v1`，因为 `ExecutionKind` 要增加取值（第 5 节），在冻结的 `v0` 中增加枚举值属于破坏性变更；
-  阶段 2 增加能力与资源键、阶段 4 增加并发类别，都在 `v1` 草稿期内原地增加；
+- Unit 直接是 `v1`，因为 `ExecutionKind` 要增加取值（第 5 节），在冻结的 `v0` 中增加枚举值属于破坏性变更；
+  能力与资源键、并发类别都在 `v1` 草稿期内原地增加；
 - Tool、Prompt 的字段不变；
 - `planner`、`code-viewer` 及其 Unit 全部改写为 `v1` 定义，与 main 使用同一种格式；Prompt 与 Tool 的内容可以按需调整。M1 的定义文件随 major 0 一起删除。
 
@@ -26,20 +26,20 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
     allowedEfforts: ThinkingEffort[];            // 包含 defaultEffort
   };
   promptRef: DefinitionRef;
-  unitRefs: DefinitionRef[];                     // 封闭集合；阶段 2 起与能力白名单一起决定能力上限
+  unitRefs: DefinitionRef[];                     // 封闭集合；与能力白名单一起决定能力上限
   startUnitRefs: DefinitionRef[];                // ⊆ unitRefs；main 为空：运行开启时不碰仓库
   actions: {
     end: {                                       // 至少一项；没有声明的工具不能结束这个 Agent
       toolRef: DefinitionRef;
-      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';   // FINISH_SUBAGENT：阶段 4，SubAgent 以结构化结果结束
+      then: 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';   // FINISH_SUBAGENT：SubAgent 以结构化结果结束
       allowedInFinal: boolean;                   // 收尾调用中是否可用
     }[];
-    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';   // 没有合法结束时发布什么；RETURN_PARTIAL（阶段 4）：SubAgent 不发布，交回 PARTIAL 的结果
-    todos?: { toolRef: DefinitionRef };          // 阶段 2：update_todos（M2Design 第 3.5 节）
-    spawn?: { toolRef: DefinitionRef };          // 阶段 4：run_subagents；Agent 的能力白名单含 agent.spawn 时配套出现
-    askUser?: { toolRef: DefinitionRef };        // 阶段 5：ask_user（M2Design 第 3.4 节）；main 与 worker 声明，explorer 不得声明；与 run_subagents 同样只能单独出现
+    onDegraded: 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';   // 没有合法结束时发布什么；RETURN_PARTIAL：SubAgent 不发布，交回 PARTIAL 的结果
+    todos?: { toolRef: DefinitionRef };          // update_todos（M2Design 第 3.5 节）
+    spawn?: { toolRef: DefinitionRef };          // run_subagents；Agent 的能力白名单含 agent.spawn 时配套出现
+    askUser?: { toolRef: DefinitionRef };        // ask_user（M2Design 第 3.4 节）；main 与 worker 声明，explorer 不得声明；与 run_subagents 同样只能单独出现
   };
-  spawnable?: { defaultShare: number };          // 阶段 4：可以被 run_subagents 派生的 Agent 及其缺省份额；不低于 agentMinShare(budget)，结束工具只有 FINISH_SUBAGENT，onDegraded 为 RETURN_PARTIAL，不得含 agent.spawn
+  spawnable?: { defaultShare: number };          // 可以被 run_subagents 派生的 Agent 及其缺省份额；不低于 agentMinShare(budget)，结束工具只有 FINISH_SUBAGENT，onDegraded 为 RETURN_PARTIAL，不得含 agent.spawn
   limits: {
     maxRounds: number;                           // 1..100，含最后一轮（final-call）；见 Module/Workflow 第 7 节 5a
     maxToolCallsPerRound: number;                // 0..32
@@ -47,7 +47,7 @@ interface AgentDefinition extends DefinitionHeader<'AGENT'> {   // schemaVersion
     maxWallClockMs?: number;                     // 省略时以 Turn 超时为上限（main）
   };
   budget: AgentBudgetProfile;
-  capabilities: string[];                        // 阶段 2：能力白名单，能力上限的来源（M2Design 第 5.1 节）
+  capabilities: string[];                        // 能力白名单，能力上限的来源（M2Design 第 5.1 节）
 }
 
 type ThinkingEffort = 'none' | 'low' | 'high' | 'max';
@@ -88,7 +88,7 @@ type ThinkingRequest =
   | { thinking: 'ENABLED'; providerEffort?: string };
 ```
 
-`ThinkingFeature` 各字段的取值来自阶段 0 的实测（[M2TechStack](../M2TechStack.md) 第 3.2 节）。`deepseek-flash` 与 `deepseek-v4-pro` 的取值相同：
+`ThinkingFeature` 各字段的取值来自实测（[M2TechStack](../M2TechStack.md) 第 3.2 节）。`deepseek-flash` 与 `deepseek-v4-pro` 的取值相同：
 
 | 字段 | 取值 |
 |---|---|
@@ -104,7 +104,7 @@ type ThinkingRequest =
 
 ```ts
 interface TemplateDefinition extends DefinitionHeader<'TEMPLATE'> {      // schemaVersion = 'v1'
-  origin: 'BUILTIN' | 'REPOSITORY';               // REPOSITORY 在阶段 7 开放
+  origin: 'BUILTIN' | 'REPOSITORY';               // REPOSITORY：使用者模板，尚未开放（M2ReleasePlan phase 2）
   nodes: TemplateNode[];                           // ≥1
 }
 
@@ -117,19 +117,19 @@ type TemplateNode =
       dependsOn?: TemplateDependency[];
       inputFrom?: 'HANDOFF';                       // analyze：以前驱的交接内容（HandoffBrief）为输入
       output?: boolean;                            // 该节点的结果作为运行结果发布
-      // 阶段 7：writeScope、effort、budget、trigger、loop
+      // writeScope、effort、budget、trigger、loop
       // 预留（M2Design 第 14.2 节第 9、10 条）：结构化结果、显式引用祖先节点的结果
     }
   | {
       name: string;
       kind: 'HUMAN';
-      // 阶段 7：request（ask、confirm、review）、dependsOn；预留：询问的显式超时与缺省答复（第 14.2 节第 18 条）
+      // request（ask、confirm、review）、dependsOn；预留：询问的显式超时与缺省答复（第 14.2 节第 18 条）
     };
   // 预留：kind 以后可能增加取值，例如模板组合（M2Design 第 14.2 节第 17 条）
 
 type TemplateDependency =
   | string                                         // 依赖边
-  | { node: string; when: EdgeCondition };         // 条件边；阶段 1 只允许内置模板使用，阶段 7 对使用者模板开放
+  | { node: string; when: EdgeCondition };         // 条件边；目前只允许内置模板使用，使用者模板的开放见 M2ReleasePlan phase 2
 
 interface EdgeCondition {                         // 以后可能增加按前驱结束状态的谓词（失败边，M2Design 第 14.2 节第 8 条）
   field: string;                                   // 前驱结构化结果中的字段路径
@@ -141,7 +141,7 @@ interface EdgeCondition {                         // 以后可能增加按前驱
 - 根节点 `HUMAN(prompt)`（`mas run` 的目标或 `/run` 的输入）不写在模板中，由 Workflow 在编译时加入，模板中没有前驱的节点都依赖它（M2Design 第 3.8 节）。
 - `chat` 是内置的生长规则，写在代码中，不是模板文件（M2Design 第 3.8 节）；因此 `RunStart` 与 `WORKFLOW_RUN_STARTED` 在 `mode = 'CHAT'` 时没有 `templateRef`。
 - `analyze` 引用 `v1` 的 planner 与 code-viewer；交接的目标由模板中的 `view` 节点决定（`inputFrom: HANDOFF` 且以条件边依赖 `plan`），`v1` Agent 定义中没有交接目标（[AgentToolPool](../Library/AgentToolPool.md) 第 4 节）。
-- 阶段 1 的内置模板只有 `analyze`：
+- 目前的内置模板有 `chat` 与 `analyze`；`analyze`：
 
 ```yaml
 schemaVersion: v1
@@ -164,15 +164,15 @@ nodes:
 ```ts
 interface UnitDefinition extends Omit<M1UnitDefinition, 'schemaVersion' | 'executionKind'> {   // schemaVersion = 'v1'；M1UnitDefinition 见归档的 M1Interface
   executionKind: ExecutionKind;
-  // 能力即 protectedCapabilities（阶段 2 增加 workspace.write）；资源键由 Core 从输入的 path 提取，不写在定义中；阶段 4：concurrencyClass
+  // 能力即 protectedCapabilities；资源键由 Core 从输入的 path 提取，不写在定义中；concurrencyClass
 }
 
-type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH' | 'OUTPUT_READ' | 'FILE_EDIT';   // 阶段 2；M1 的 FILE_WRITE 开放；阶段 3–6 增加各新工具的类别
+type ExecutionKind = M1ExecutionKind | 'REPOSITORY_LIST' | 'MESSAGE_PUBLISH' | 'OUTPUT_READ' | 'FILE_EDIT';   // M1 的 FILE_WRITE 开放；各新工具有自己的类别
 ```
 
 - `REPOSITORY_LIST`：`list_files` 的 Unit `repository-list`；
 - `MESSAGE_PUBLISH`：Kernel 内建 Unit `message-publish`，由 Execution 直接完成，不派发给 Supervisor（与 M1 的 `report-publish` 相同）；
-- `OUTPUT_READ`（阶段 2）：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
+- `OUTPUT_READ`：`read_output` 的 Unit `output-read`，Executor 在进程内运行（ExecutorSet 第 5a 节）。
 
 工具 Unit 的预览上限使用 Kernel 配置的 `previewMaxBytes` 与 `previewMaxLines`；上限不写在定义中。
 

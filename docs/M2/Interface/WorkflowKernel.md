@@ -1,25 +1,25 @@
 # Workflow 与 Kernel 的接口
 
-> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
-> 标"阶段 N"的条目在该阶段的文档门中补全；major 1 冻结之前可以原地增加字段。
+> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
+> major 1 冻结之前可以原地增加字段。
 
 ## 1. 范围
 
 本文定义 `WorkflowGatewayPort`（Workflow 调用 Kernel）与发往 `inbox.workflow` 的事件（Kernel 通知 Workflow）。
 Workflow 只持有 `WorkflowGatewayPort`；Gateway 以 `Envelope.producer = 'workflow'` 判定身份（M1Interface 第 2.1 节第 4 条）。
 
-| 方向 | 内容 | 阶段 |
-|---|---|---|
-| Workflow → Kernel | AgentRun 登记与结束、Unit 提交、运行结束报告、人类请求、读取项目文件、Session 命令的回复 | 1 |
-| Workflow → Kernel | 委派保留与返还 | 4 |
-| Kernel → Workflow，Session 级 | 打开、新建、关闭 Session（Fork 为 2） | 1 |
-| Kernel → Workflow，系统级 | Session 列表查询、删除未打开的 Session | 1 |
-| Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 | 1 |
-| Kernel → Workflow，运行级 | 工作区回退与差异 | 2 |
-| Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 | 5 |
-| Workflow → Kernel | 待办进度（`updateActivity`，只用于界面） | 2 |
-| Kernel → Workflow，运行级 | 运行中插话（`HumanAnswered(kind: steer)`） | 5 |
-| 双向，运行级 | 上下文压缩：材料查询与回答、修剪结果与压缩结果及其确认 | 8 |
+| 方向 | 内容 |
+|---|---|
+| Workflow → Kernel | AgentRun 登记与结束、Unit 提交、运行结束报告、人类请求、读取项目文件、Session 命令的回复 |
+| Workflow → Kernel | 委派保留与返还 |
+| Kernel → Workflow，Session 级 | 打开、新建、关闭 Session（Fork 为 2） |
+| Kernel → Workflow，系统级 | Session 列表查询、删除未打开的 Session |
+| Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 |
+| Kernel → Workflow，运行级 | 工作区回退与差异 |
+| Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 |
+| Workflow → Kernel | 待办进度（`updateActivity`，只用于界面） |
+| Kernel → Workflow，运行级 | 运行中插话（`HumanAnswered(kind: steer)`） |
+| 双向，运行级 | 上下文压缩：材料查询与回答、修剪结果与压缩结果及其确认 |
 
 ## 2. Workflow → Kernel
 
@@ -35,10 +35,10 @@ interface WorkflowGatewayPort {
   readProjectFile(request: ReadProjectFileRequest, context: BoundaryContext): Promise<ProjectFileContent | SyscallRejected>;
   reportSessionCommand(request: ReportSessionCommandRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   reportSessionList(request: ReportSessionListRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  updateActivity(request: UpdateActivityRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 阶段 2，第 2.5 节
-  reserveDelegation(request: ReserveDelegationRequest, context: BoundaryContext): Promise<DelegationReserved | SyscallRejected>;   // 阶段 4
-  releaseDelegation(request: ReleaseDelegationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 阶段 4
-  // 阶段 8：reportCompactionSource、ackCompaction（第 2.4 节）
+  updateActivity(request: UpdateActivityRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.5 节
+  reserveDelegation(request: ReserveDelegationRequest, context: BoundaryContext): Promise<DelegationReserved | SyscallRejected>;
+  releaseDelegation(request: ReleaseDelegationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  // reportCompactionSource、ackCompaction（第 2.4 节）
 }
 ```
 
@@ -59,15 +59,15 @@ interface RegisterAgentRunRequest {
   effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内；AgentRun 的思考强度只在这里给出，Unit 输入中没有
   workspaceViewId: 'main';         // M2Design 第 6.5 节
   display: { label: string };      // ≤80，只用于界面
-  requestedCapabilities: string[]; // 阶段 2：不超出能力上限，否则 CAPABILITY_NOT_SUBSET（Kernel/Core 第 5a.1 节）
-  writeRoots: string[];            // 阶段 2：相对仓库根目录；main 为 ['.']；没有 workspace.write 时为空
-  // 阶段 4：SubAgent 带 parentAgentRunId、delegationId、taskName（三项同有同无，Kernel/Core 第 5d 节）
+  requestedCapabilities: string[]; // 不超出能力上限，否则 CAPABILITY_NOT_SUBSET（Kernel/Core 第 5a.1 节）
+  writeRoots: string[];            // 相对仓库根目录；main 为 ['.']；没有 workspace.write 时为空
+  // SubAgent 带 parentAgentRunId、delegationId、taskName（三项同有同无，Kernel/Core 第 5d 节）
   parentAgentRunId?: string;
   delegationId?: string;           // 前缀 dlg，Core 生成
   taskName?: string;
 }
 
-// 阶段 4
+
 interface ReserveDelegationRequest {
   requestId: string; sessionId: string; workflowRunId: string;
   parentAgentRunId: string;
@@ -119,7 +119,7 @@ interface RequestHumanRequest {
   workflowRunId: string;
   humanRequestId: string;          // 前缀 hrq，body 为对应 HUMAN 节点 ID 的 body
   nodeId: string;
-  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 阶段 5：后三种是局部询问
+  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 后三种是局部询问
   attachedAgentRunId?: string;     // 局部询问必填：发起 ask_user 的 AgentRun
   question?: string;               // 局部询问必填（≤1000）
   fields?: HumanField[];           // 至多 8 个
@@ -138,7 +138,7 @@ interface ReadProjectFileRequest {
   requestId: string;
   sessionId: string;
   workflowRunId: string;
-  path: 'AGENTS.md' | `${string}/AGENTS.md` | `.multiagentos/workflows/${string}.yaml`;   // 白名单，Schema 以正则约束；子目录的 AGENTS.md 在阶段 2 开放
+  path: 'AGENTS.md' | `${string}/AGENTS.md` | `.multiagentos/workflows/${string}.yaml`;   // 白名单，Schema 以正则约束；子目录的 AGENTS.md 也可以
 }
 
 type ProjectFileContent =
@@ -199,7 +199,7 @@ interface SessionListEntry {
   日志中最后一个人类请求没有答复时（M2Design 第 10.3 节第 6 步），Workflow 在新的运行中重新发起这个请求；Kernel 不保留、不转发上一个运行的请求。
 - `FAILED` 时 Kernel 不开启运行，把失败原因以 Session 级事件（`DELETE` 为系统级事件）告知 UserInteraction。
 
-### 2.4 压缩的材料与确认（阶段 8）
+### 2.4 压缩的材料与确认
 
 压缩过程见 M2Design 第 9.6 节；Workflow 只按固定规则回答，不决定是否压缩。
 
@@ -227,7 +227,7 @@ interface AckCompactionRequest {
   同一次压缩至多两次确认（先 `PRUNE`，后 `SUMMARY`），每次至多一个未确认的结果。
 - 回答查询与确认都不改变节点状态，也不计入任何 AgentRun 的 Round。
 
-### 2.5 待办进度（阶段 2）
+### 2.5 待办进度
 
 ```ts
 interface UpdateActivityRequest {
@@ -251,17 +251,16 @@ interface UpdateActivityRequest {
 ```ts
 type KernelToWorkflowEvent =
   | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
-  | WorkspaceReverted | WorkspaceDiverged;   // 阶段 2：字段见 InteractionKernel 第 3 节；WorkspaceDiverged 为 { type, files: string[] }
-  | RunPaused | RunResumed | RunInterrupted | HumanCancelled;   // 阶段 5
-
+  | WorkspaceReverted | WorkspaceDiverged;   // 字段见 InteractionKernel 第 3 节；WorkspaceDiverged 为 { type, files: string[] }
+  | RunPaused | RunResumed | RunInterrupted | HumanCancelled;
 interface RunPaused { type: 'RunPaused' }
 interface RunResumed {
   type: 'RunResumed';
   steer?: { inputId: string; contentRef: ArtifactRef; targetAgentRunId?: string };   // 继续并附加说明：Workflow 先创建 HUMAN(steer)，再重新提交被暂停打断的 READ 与 MODEL
 }
-interface RunInterrupted { type: 'RunInterrupted'; reason: InterruptReason }          // 阶段 3 已有，原因增加 USER_ABORT、TURN_TIMEOUT、PAUSE_TIMEOUT
+interface RunInterrupted { type: 'RunInterrupted'; reason: InterruptReason }
 interface HumanCancelled { type: 'HumanCancelled'; humanRequestId: string; nodeId: string; reason: InterruptReason }   // 运行中止时待答复的局部询问被取消
-  // 阶段 8：CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
+  // CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
 
 interface RunStart {
   type: 'RunStart';
@@ -280,7 +279,7 @@ interface UnitReport {
   unitRef: PinnedDefinitionRef;
   executionKind: ExecutionKind;
   unitAttemptId?: string;            // 已建立尝试时必填
-  status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED';   // INTERRUPTED：阶段 5，被暂停或中止打断（M2Design 第 4.4 节）
+  status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED';   // INTERRUPTED：被暂停或中止打断（M2Design 第 4.4 节）
   interruptedBy?: 'PAUSED' | 'ABORTED';   // status = 'INTERRUPTED' 时必填；没有 output
   reasonCode?: ReasonCode;           // REJECTED、FAILED 时必填
   output?: UnitOutput;               // OK 时必填
@@ -289,7 +288,7 @@ interface UnitReport {
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
   quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
-  changedFiles?: string[];           // 阶段 2：写入工具改动的文件
+  changedFiles?: string[];           // 写入工具改动的文件
 }
 
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
@@ -300,7 +299,7 @@ interface BudgetView {               // M2Design 第 7.3 节：三级账本各�
 
 interface HumanAnswered {
   type: 'HumanAnswered';
-  kind: 'prompt' | 'ask' | 'confirm' | 'review' | 'steer';   // 阶段 5：局部询问的答复与运行中插话 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
+  kind: 'prompt' | 'ask' | 'confirm' | 'review' | 'steer';   // 局部询问的答复与运行中插话 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
   origin: 'initial' | 'requested';
   humanRequestId?: string;           // origin = 'requested' 时必填
   inputId: string;                   // 前缀 inp，UserInteraction 分配；用于去重
@@ -314,7 +313,7 @@ interface TurnClosed {
   turnId: string;
   reason: 'COMPLETED' | 'ABORTED' | 'TIMEOUT' | 'BUDGET' | 'RUN_CLOSED';
   usage: TurnUsage;
-  startSnapshot?: string;            // 阶段 2：快照失败时没有
+  startSnapshot?: string;            // 快照失败时没有
   endSnapshot?: string;
   changedFileCount?: number;
 }
@@ -362,7 +361,7 @@ type KernelToWorkflowSessionEvent = SessionCommand;
 type SessionCommand =
   | { type: 'SessionCommand'; commandId: string; command: 'OPEN'; repositoryRoot: string }
   | { type: 'SessionCommand'; commandId: string; command: 'CREATE'; repositoryRoot: string }
-  | { type: 'SessionCommand'; commandId: string; command: 'FORK'; repositoryRoot: string; fromSessionId: string }   // 阶段 2
+  | { type: 'SessionCommand'; commandId: string; command: 'FORK'; repositoryRoot: string; fromSessionId: string }
   | { type: 'SessionCommand'; commandId: string; command: 'CLOSE' };
 ```
 
@@ -395,7 +394,7 @@ interface SessionDelete {
 - `SessionDelete`：Workflow 删除该 Session 目录中 `workflow` 命名空间的文件，并在 Session 列表中追加 `status: DELETED`，
   以 `reportSessionCommand({ command: 'DELETE', ... })` 回复。
 
-### 3.4 压缩事件（阶段 8）
+### 3.4 压缩事件
 
 运行级事件，属于 `KernelToWorkflowEvent`。
 
@@ -471,7 +470,7 @@ type WrapUpReason =                                // 下一次模型调用为�
 |---|---|
 | 运行内请求 | `sessionId`、`workflowRunId` 必须与 `BoundaryContext` 中的一致 |
 | `SubmitUnitRequest` | `requestId` 的 body 等于 `path` 的 SHA-256 前 32 位；`path` 以 `unitRunId` 对应的 UnitRun 路径开头 |
-| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md`、匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$`，或（阶段 2）以 `/AGENTS.md` 结尾、不以 `/` 开头、不含 `..` 段与空段、≤512 字符的相对路径；是否在排除规则内由 Kernel 检查 |
+| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md`、匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$`，或以 `/AGENTS.md` 结尾、不以 `/` 开头、不含 `..` 段与空段、≤512 字符的相对路径；是否在排除规则内由 Kernel 检查 |
 | `CloseRunRequest` | `outcome = 'FAILED'` 时必须有 `failure` 且不得有 `resultRef` |
 | `ReportSessionCommandRequest.result` | `command` 与事件中的命令一致；`FAILED` 时必须有 `failure` |
 | `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |
@@ -491,13 +490,13 @@ type WrapUpReason =                                // 下一次模型调用为�
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
 
 | `QUOTA_EXHAUSTED` | UnitReport（`REJECTED`） | 该 AgentRun 的工具次数或墙钟已触顶（`quota` 说明是哪一项）；后续的非收尾 Unit 都以它拒绝，Workflow 进入收尾（Kernel/Monitor 第 3 节） |
-| `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中（阶段 2），Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
-| `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 阶段 8：组装期间完成了压缩，须以新的投影重新提交 |
-| `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | 阶段 8：provider 报告上下文过长 |
-| `COMPACTION_UNKNOWN` | `SyscallRejected`（`reportCompactionSource`、`ackCompaction`） | 阶段 8：`compactionId` 不存在或已回复 |
+| `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中，Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
+| `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 组装期间完成了压缩，须以新的投影重新提交 |
+| `CONTEXT_OVERFLOW` | UnitReport（`model-call`，`REJECTED`） | provider 报告上下文过长 |
+| `COMPACTION_UNKNOWN` | `SyscallRejected`（`reportCompactionSource`、`ackCompaction`） | `compactionId` 不存在或已回复 |
 
 M1 的 `AGENT_RUN_ACTIVE` 原本用于"已有 ACTIVE 的 AgentRun 时再次登记"，M2 允许多个 ACTIVE 的 AgentRun，该用法删除，只保留上表的含义。
-阶段 2 增加：
+另有：
 
 | 原因码 | 出现位置 | 含义 |
 |---|---|---|
@@ -510,4 +509,3 @@ M1 的 `AGENT_RUN_ACTIVE` 原本用于"已有 ACTIVE 的 AgentRun 时再次登�
 | `EDIT_NO_MATCH`、`EDIT_NOT_UNIQUE` | UnitReport（`REJECTED`） | `oldString` 没有匹配，或匹配不唯一 |
 | `UNDO_NOT_AVAILABLE`、`NOTHING_TO_UNDO`、`UNDO_UNKNOWN` | `SyscallRejected`（`undoTurns`、`confirmUndo`、`diffTurns`） | 不在 AWAITING_INPUT、没有可回退的 Turn、`undoId` 不存在 |
 
-其余阶段的原因码在对应阶段补充。

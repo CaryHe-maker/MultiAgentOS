@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Fabric
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -24,7 +24,7 @@ Port、路由表与事件信封见 [Interface](../Interface/README.md) 第 4 节
   系统级事件放在 Session 管理的系统级 Outbox；每个接收方仍只有一个有序发送器，三个 Outbox 的事件按登记顺序交给同一个发送器，
   因此对同一接收方的投递顺序与登记顺序一致。
 - **Inbox**：Workflow 与 UserInteraction 的 Inbox 仍为单通道，按 `eventId` 去重；它们按信封区分三个序列，各自检查 `seq` 是否连续。
-  Kernel 核心的 Session Inbox 使用控制与工作两个通道，不去重（与 M1 的运行 Inbox 相同）；控制通道增加暂停与中止（阶段 5）。
+  Kernel 核心的 Session Inbox 使用控制与工作两个通道，不去重（与 M1 的运行 Inbox 相同）；控制通道增加暂停与中止。
 - 序列之间的先后由同一个发送器保证：例如 `SessionOpened` 一定在该 Session 第一个运行的 `RunStart` 之前到达。
 
 ## 4. 不变量与测试
@@ -33,7 +33,3 @@ Port、路由表与事件信封见 [Interface](../Interface/README.md) 第 4 节
 |---|---|
 | 同一接收方的事件按登记顺序投递 | 单元测试：交错登记运行级、Session 级与系统级事件，接收顺序与登记顺序一致 |
 | 每个序列的 `seq` 连续 | 契约测试：fake Kernel 的输出满足三个序列各自连续 |
-
-## 5. 阶段
-
-全部内容属于阶段 1；阶段 5 在 Session Inbox 的控制通道中增加暂停与中止。

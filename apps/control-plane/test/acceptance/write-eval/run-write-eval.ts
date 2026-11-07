@@ -37,7 +37,7 @@ interface Options {
   readonly shard: readonly [number, number];
   readonly out: string;
   readonly budgetUsd: number;
-  /** The Phase 2 arm: the sandbox counts as unavailable, so the model gets no `run_command`. */
+  /** The arm without commands: the sandbox counts as unavailable, so the model gets no `run_command`. */
   readonly noCommand: boolean;
   /** Starts no new chat after this many seconds, so the caller's time limit never kills one half way. */
   readonly stopAfterSeconds: number;

@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 5 (M2Plan 6.6; M2Design 13): what the user does to a run
+ * The deterministic acceptance cases (M2Design 13): what the user does to a run
  * while it works (H1, H2, H11, H12) and a question the agent waits on (H4). Every case runs the real
  * product from the console down to the Executors, with only the provider's HTTP API scripted; what
  * the model would see is read from the requests the provider received. A model call that waits is
@@ -31,8 +31,8 @@ afterEach(async () => {
 });
 
 async function chatOn(provider: ScriptedChat, options: Partial<ChatOptions> = {}): Promise<Chat> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage5-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage5-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-human-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-human-repo-'));
   directories.push(dataDir, repository);
   await mkdir(dirname(join(repository, 'a.txt')), { recursive: true });
   await writeFile(join(repository, 'a.txt'), 'one\n');

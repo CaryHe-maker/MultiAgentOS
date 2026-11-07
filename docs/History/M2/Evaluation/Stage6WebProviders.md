@@ -1,5 +1,8 @@
 # 阶段 6 网页提供方的实测：DeepSeek 搜索与抓取接口（S6-T-1）
 
+> **历史数据（旧阶段的实测记录）。** 本文写于 M2 第一轮实现期间，记录当时的实验与结论，不再修改。
+> 数据来自单个模型与少量运行，是当时的事实，不是统计结论。当前的设计依据是 [M2Design](../../../M2/M2Design.md)，文中的"阶段 N"是旧编号，见 [History/M2](../README.md)。
+
 > 2026-11-07。接口 `POST https://api.deepseek.com/v1/tools/search` 与 `/v1/tools/fetch`，规格以 <https://api-docs.deepseek.com/guides/search> 及其 `api/search`、`api/fetch` 两页为准（已读，字段、状态码、价格与 M2TechStack 第 3.3 节的描述一致）。脚本 `apps/control-plane/test/acceptance/web-eval/run-web-eval.ts`，共 107 次请求；原始记录与汇总在 `apps/control-plane/test/acceptance/web-eval/results/2026-11-07/`（只含请求、状态码、耗时与结果摘要，不含密钥）。**这是单次实测，不是统计结论。**
 
 ## 1. 结果

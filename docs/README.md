@@ -5,10 +5,10 @@
 | 目录 | 内容 |
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
-| [M2](M2/README.md) | 当前里程碑：总体设计 [M2Design](M2/M2Design.md)（v1.12）、阶段计划与各组件文档 |
+| [M2](M2/README.md) | 当前里程碑：总体设计 [M2Design](M2/M2Design.md)（v1.33）、发布计划 [M2ReleasePlan](M2/M2ReleasePlan.md)、现状 [M2Baseline](M2/M2Baseline.md) 与各组件文档 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
-| [History](History/) | 已归档的文档，不作为当前规范；其中 [M1](History/M1/README.md) 是已发布的 M1 的规范、发布计划与验收证据 |
+| [History](History/) | 已归档的文档，不作为当前规范；其中 [M1](History/M1/README.md) 是已发布的 M1 的规范、发布计划与验收证据，[M2](History/M2/README.md) 是 M2 第一轮实现的旧计划、决定记录与实测（已冻结，不再是计划标准） |
 | [experiments](experiments.md) | 为选择技术路径做过的实验与决定 |
 | [Style](Style.md) | 工程与文档协作规范 |
 
@@ -24,7 +24,7 @@ M1 已发布，其文档归档在 [History/M1](History/M1/README.md)；当前开
 5. [Protocol](Architecture/Protocol.md)：请求、事实、结果、事件与恢复的共同语义。
 6. [Instance](Architecture/Instance.md)：运行、控制与恢复示例。
 7. [Architecture 指南](Architecture/README.md)：全部长期文档入口。
-8. [M2 指南](M2/README.md)：M2 的设计、阶段计划与组件文档。
+8. [M2 指南](M2/README.md)：M2 的设计、发布计划、现状与组件文档。
 
 ## 3. 模块、静态库与基础设施
 

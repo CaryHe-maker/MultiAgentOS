@@ -1,6 +1,6 @@
 /**
  * `tsx .../run-compaction-eval.ts --yes --out <dir> --budget N [C-T1 C-T2 ...]`: S8-T-1, the
- * measurements stage 8 stands on (docs/M2/Evaluation/Stage8Compaction.md). Direct calls to
+ * measurements the compaction stands on (docs/History/M2/Evaluation/Stage8Compaction.md). Direct calls to
  * DeepSeek's chat API, not through the product:
  *
  *   C-T1  what the API answers when the input is longer than the window (status and body), and

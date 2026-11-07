@@ -9,7 +9,7 @@ import { WrapUpReasonSchema } from '../context/history-entry.js';
  * The reply's text exists only in the model output, so the input carries a reference and a
  * `toolCallId` and the session log stays free of bodies (Kernel/Execution 5). A degraded reply
  * carries only the reason, as structured data; UserInteraction words it. RUN_RESULT comes with
- * stage 7.
+ * the user templates.
  */
 export const MessagePublishInputSchema = Type.Union(
   [

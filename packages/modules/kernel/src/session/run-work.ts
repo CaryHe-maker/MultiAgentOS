@@ -102,7 +102,7 @@ export interface RunHost {
       | ContextCompacted
       | CompactionFailed,
   ): void;
-  /** An event of the run to Workflow other than a report (stage 8: the compaction's). */
+  /** An event of the run to Workflow other than a report (the compaction's). */
   toWorkflowEvent(event: KernelToWorkflowEvent): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
@@ -129,7 +129,7 @@ export interface CommandSupport {
 export interface RunWorkDeps {
   /**
    * The compaction of this run's contexts and its thresholds (M2Design 9.6); absent: nothing is
-   * ever compacted, and a context that outgrows its window ends the way it did before stage 8.
+   * ever compacted, and a context that outgrows its window ends the way it does without compaction.
    */
   readonly compactor?: Compacting;
   readonly compaction?: CompactionConfig;

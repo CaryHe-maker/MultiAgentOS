@@ -1,6 +1,6 @@
 # MultiAgentOS M2 UserInteraction
 
-> 状态：已评审（阶段 1、2）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -11,14 +11,14 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 
 ## 2. 相对 M1 的变化
 
-| M1 | M2 | 依据 | 阶段 |
-|---|---|---|---|
-| `multiagentos analyze --repo <路径> "<目标>"`：一次输入、一次报告，展示完即关闭 | `mas`：交互式对话，进程绑定一个仓库，可以新建、打开、切换 Session；`mas run <模板> "<目标>"`：一次运行后退出 | M2Design 第 2.3 节 | 1 |
-| 逐行输出（readline） | 三个区域的终端界面（Ink）：记录区、活动区、输入区 | M2Design 第 11.1 节、M2TechStack 第 4 节 | 1 |
-| 只有授权询问 | 授权询问与人类请求排成同一个队列，一次处理一项，每项标明来源 | M2Design 第 4.1 节 | 1 |
-| Ctrl+C 取消运行 | 阶段 1：运行中两次 Ctrl+C 退出；阶段 5 起 Ctrl+C 为暂停、再按为中止 | M2Design 第 11.2 节 | 1、5 |
-| 展示 AnalysisReport | 展示 `reply`、运行结果与 `analyze` 的报告；报告的展示规则沿用 M1 | — | 1 |
-| 运行中不接受输入 | 运行中输入的消息在界面中排队，AWAITING_INPUT 时作为下一条消息提交；阶段 5 起 Alt+Enter 或 `/steer` 为运行中插话 | M2Design 第 4.5 节 | 1、5 |
+| M1 | M2 | 依据 |
+|---|---|---|
+| `multiagentos analyze --repo <路径> "<目标>"`：一次输入、一次报告，展示完即关闭 | `mas`：交互式对话，进程绑定一个仓库，可以新建、打开、切换 Session；`mas run <模板> "<目标>"`：一次运行后退出 | M2Design 第 2.3 节 |
+| 逐行输出（readline） | 三个区域的终端界面（Ink）：记录区、活动区、输入区 | M2Design 第 11.1 节、M2TechStack 第 4 节 |
+| 只有授权询问 | 授权询问与人类请求排成同一个队列，一次处理一项，每项标明来源 | M2Design 第 4.1 节 |
+| Ctrl+C 取消运行 | Ctrl+C 为暂停、再按为中止；退出用 `/exit` | M2Design 第 11.2 节 |
+| 展示 AnalysisReport | 展示 `reply`、运行结果与 `analyze` 的报告；报告的展示规则沿用 M1 | — |
+| 运行中不接受输入 | 运行中输入的消息在界面中排队，AWAITING_INPUT 时作为下一条消息提交； Alt+Enter 或 `/steer` 为运行中插话 | M2Design 第 4.5 节 |
 
 报告的展示、控制字符的转义、`InteractionMessages` 文案表、自身错误的捕获边界与 M1 相同，见归档的
 [M1 UserInteraction](../../History/M1/Module/UserInteraction.md) 第 5、6.1 节。
@@ -34,7 +34,7 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 
 ```text
 mas [--repo <路径>] [--readonly]                    交互式；仓库缺省为当前工作目录
-mas run [--repo <路径>] [--readonly] <模板> "<目标>"   阶段 1 只接受内置模板 analyze
+mas run [--repo <路径>] [--readonly] <模板> "<目标>"   目前只接受内置模板 analyze（使用者模板见 M2ReleasePlan phase 2）
 ```
 
 - 仓库路径由组合根取 realpath 后写入 Kernel 的配置（M2Design 第 2.3 节 Session 第 0 条）；UserInteraction 不传仓库路径。
@@ -62,7 +62,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 ### 5.1 待处理队列
 
-- 授权询问与人类请求按到达顺序排成一个队列，一次只处理一项；两类以不同样式显示，每项标明来自哪个 Agent（阶段 4 起还有任务名）。
+- 授权询问与人类请求按到达顺序排成一个队列，一次只处理一项；两类以不同样式显示，每项标明来自哪个 Agent。
 - 授权询问的展示：
   - `repo.read`：仓库路径、排除规则、"读取的内容会发送至 <provider>"；询问不超时，不显示回答期限；
   - `project.instructions`：`AGENTS.md` 的全文（经 `readArtifact` 读取；`truncated` 时注明只展示开头）、"信任这份内容"与"不信任"两个选项。
@@ -71,13 +71,13 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 
 ### 5.2 排队的消息
 
-- 运行处于 RUNNING 时（阶段 5 起还有 PAUSING），在输入框中按 Enter 的普通消息进入排队，显示在输入区（"已排队 1 条"，可展开）；Kernel 与 Workflow 不知道排队的存在。
+- 运行处于 RUNNING 时，在输入框中按 Enter 的普通消息进入排队，显示在输入区（"已排队 1 条"，可展开）；Kernel 与 Workflow 不知道排队的存在。
 - 收到 `HumanRequest(prompt)` 时，取排队的第一条，分配 `inputId` 后以 `answerHuman` 提交；其余的依次等待之后的开放输入请求。
 - 排队的消息在提交前可以用 ↑ 取回编辑，或用 Esc 撤回最后一条。
-- 运行因中止进入 AWAITING_INPUT（阶段 5）、运行因额度结束、切换或关闭 Session 时，不自动提交，排队的消息依次放回输入框。
+- 运行因中止进入 AWAITING_INPUT、运行因额度结束、切换或关闭 Session 时，不自动提交，排队的消息依次放回输入框。
 - 以 `/` 开头的指令不排队，按第 5.3 节立即处理或提示当前不可用。
 
-### 5.3 指令与按键（阶段 1）
+### 5.3 指令与按键
 
 | 输入 | 状态 | 效果 |
 |---|---|---|
@@ -92,20 +92,20 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | `/help`、`/exit` | 任意 | 帮助；`shutdown` |
 | Enter、`\` 加 Enter、Esc、↑/↓ | 任意 | 发送、换行、清空输入、浏览输入历史 |
 | Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
-| Ctrl+C | RUNNING | 阶段 1：提示"再按一次退出"，2 秒内再按则 `shutdown`（当前运行以 `SHUTDOWN` 收敛）；阶段 5 改为暂停 |
+| Ctrl+C | RUNNING | 暂停（`pauseRun`）；再按一次为中止 |
 
-`/fork`、`/undo`、`/diff`（阶段 2），`/continue`、`/steer` 与 Alt+Enter（阶段 5，运行中插话，M2Design 第 4.5 节），`/run`、`/timeline`、`/thinking`（阶段 4、7），`/compact`（阶段 8，只在 AWAITING_INPUT 时可用）在对应阶段加入。
+`/fork`、`/undo`、`/diff`，`/continue`、`/steer` 与 Alt+Enter（运行中插话，M2Design 第 4.5 节）、`/timeline`、`/compact`（只在 AWAITING_INPUT 时可用）已实现；`/run` 与 `/thinking` 尚未做（M2ReleasePlan）。
 
-### 5.4 暂停、继续、中止、插话与询问（阶段 5，草稿）
+### 5.4 暂停、继续、中止、插话与询问
 
 设计以 M2Design 第 4.3–4.5、11 节为准。界面只发出请求，状态以 `RunStateChanged` 为准，不自己推断。
 
 | 输入 | 状态 | 效果 |
 |---|---|---|
-| Ctrl+C | RUNNING | `pauseRun`（取代阶段 1 的"再按一次退出"）；退出用 `/exit` |
+| Ctrl+C | RUNNING | `pauseRun`；退出用 `/exit` |
 | Ctrl+C | PAUSING、PAUSED | `interruptRun`（中止） |
 | Ctrl+C | INTERRUPTING | 忽略（已在中止） |
-| Ctrl+C | AWAITING_INPUT 或草稿 | 与阶段 1 相同：清空输入；2 秒内连按两次则 `shutdown` |
+| Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
 | `/continue [@任务名] [说明]` | PAUSED | `resumeRun`；有说明时带 `steer`（`targetAgentRunId` 由 `@任务名` 解析，缺省为 main）；没有 main 且没有指定目标时要求选择 |
 | 普通消息 | PAUSED | 同 `/continue <消息>`：继续并附加说明 |
 | `/steer [@任务名] <说明>`，或 Alt+Enter 发送输入框中的消息 | RUNNING | `steerRun`；不暂停、不打断；界面显示"已插入，下一轮可见"，目标正在等派发的调用时改为"在它收到结果后可见" |
@@ -122,23 +122,23 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
   - 暂停期间可以回答，答复在继续后生效，界面注明。
 - **活动区**：`ActivityPhase` 增加 `AWAITING_ANSWER`（"等待你的回答"）与 `PAUSED`（"已暂停"）；`RunStateChanged` 为 PAUSING 时显示"暂停中…"，PAUSED 时显示"已暂停，/continue 继续，Ctrl+C 中止"，INTERRUPTING 时显示"正在中止…"。暂停期间计时器冻结。
 - **`mas run`**（一次性命令，第 7 节）：Ctrl+C 同样先暂停、再按中止；退出码沿用第 7 节的表（中止 130，超时 2，内存压力 75）。
-- 测试：组件测试（两类请求样式不同、按键在各状态下的效果、`@任务名` 解析、字段渲染与提交前检查、排队消息在中止时放回）；`stage5-exit` 的 H1、H2、H4、H11、H12、H13。
+- 测试：组件测试（两类请求样式不同、按键在各状态下的效果、`@任务名` 解析、字段渲染与提交前检查、排队消息在中止时放回）；`human-in-loop-exit` 的 H1、H2、H4、H11、H12、H13。
 
 ## 6. 界面
 
-| 区域 | 内容（阶段 1） |
+| 区域 | 内容 |
 |---|---|
 | 记录区 | 用户输入、`reply`、运行结果、已完成步骤的折叠行（如 `✓ read_file src/a.ts 0.3s`）、授权与人类请求的处理结果；以 Ink 的静态区域输出，不重绘 |
 | 活动区 | 每个 ACTIVE 的 AgentRun 一行：阶段、计时（每秒刷新）、转动指示（100 毫秒）；正在执行的工具作为子行 |
 | 输入区 | 输入框与待处理队列 |
 
-- 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`重试中（第 n 次，x 秒后）`（按 `retry.retryAt` 每秒倒计时）、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`；阶段 8 增加 `压缩上下文`。
-- 阶段 2 的询问：`workspace.write` 展示可写根目录，选项为允许与拒绝；写 `AGENTS.md` 以警示样式展示路径与确切内容，选项为单次允许与拒绝。
-- 阶段 2 的回退：`/undo`、`/undo all` 只在等待输入时可用；有外部修改时列出文件，并说明被覆盖的内容保留在快照中，`y` 强制、`n` 取消，其他任何输入都按取消处理并照常发送；`/diff [N]` 打印差异；`/fork` 进入草稿，发送第一条提示词时以 `mode: 'FORK'` 新建。
-- 阶段 4：`ActivityEvent.parentAgentRunId` 让控制台把 SubAgent 画成树（`├─`、`└─`，缩进两格），行首是 Agent 与任务名（如 `worker fix-api`）；调用了 `run_subagents` 的 AgentRun 显示 `等待子任务`（Kernel 受理委派时发出）。还没有开始的任务（在等依赖）Kernel 并不认识，所以没有行。`/timeline` 把本次运行见到的每个 AgentRun 的起止时间按父子关系列出（只记在控制台内存中，换到新的 WorkflowRun 时清空）。
-- 阶段 2 起，ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
+- 阶段名称由 `ActivityPhase` 映射：`组织上下文`、`思考中`、`重试中（第 n 次，x 秒后）`（按 `retry.retryAt` 每秒倒计时）、`调用 <工具> <参数摘要>`、`等待授权`、`排队`、`收尾`、`压缩上下文`。
+- 授权询问：`workspace.write` 展示可写根目录，选项为允许与拒绝；写 `AGENTS.md` 以警示样式展示路径与确切内容，选项为单次允许与拒绝。
+- 回退：`/undo`、`/undo all` 只在等待输入时可用；有外部修改时列出文件，并说明被覆盖的内容保留在快照中，`y` 强制、`n` 取消，其他任何输入都按取消处理并照常发送；`/diff [N]` 打印差异；`/fork` 进入草稿，发送第一条提示词时以 `mode: 'FORK'` 新建。
+- SubAgent：`ActivityEvent.parentAgentRunId` 让控制台把 SubAgent 画成树（`├─`、`└─`，缩进两格），行首是 Agent 与任务名（如 `worker fix-api`）；调用了 `run_subagents` 的 AgentRun 显示 `等待子任务`（Kernel 受理委派时发出）。还没有开始的任务（在等依赖）Kernel 并不认识，所以没有行。`/timeline` 把本次运行见到的每个 AgentRun 的起止时间按父子关系列出（只记在控制台内存中，换到新的 WorkflowRun 时清空）。
+- ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
 - 工具结果被截断时（`ActivityEvent.unit` 在 `DONE` 时带 `fullRef`），折叠行注明"输出已截断"及编号；`/output <编号>` 经 `readArtifact` 读取完整输出，已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
-- 阶段 8：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
+- 压缩：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
 - 思考内容与回复都不流式显示。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
 - 展示文本中的控制字符按 M1 的规则转义。
 
@@ -172,17 +172,5 @@ RunFinished → 展示运行结果（analyze 为报告）→ shutdown → 进程
 |---|---|
 | 不保存任何 Session 信息（M2Design 第 2.4 节） | 架构测试：UserInteraction 不持有 Persistence 的 Port；重启后 Session 列表只来自 Kernel |
 | 13：用户输入只经 Kernel 交给 Workflow | 单元测试：提交的每条消息都带 `inputId`，重复提交被去重 |
-| 授权与人类请求不混淆 | 组件测试：两类请求在队列中样式不同；`ask_user` 的同意不会提交授权回答（阶段 5） |
+| 授权与人类请求不混淆 | 组件测试：两类请求在队列中样式不同；`ask_user` 的同意不会提交授权回答 |
 | 界面 | Ink 组件测试：活动区刷新、静态记录区不重绘、非 TTY 退化为逐行输出 |
-
-## 10. 阶段
-
-| 阶段 | 本文增加的内容 |
-|---|---|
-| 1 | 第 3–9 节（含排队的消息与"重试中"的倒计时） |
-| 2 | 授权询问的各级选项、`/fork`、`/undo`（含外部修改时的强制确认）、`/diff`、打开 Session 时的工作区差异提示、待办进度 |
-| 3 | 命令询问的四个选项、警示样式、"未隔离"提示、停机提示 |
-| 4 | SubAgent 树、`/timeline` |
-| 5 | Ctrl+C 暂停与中止、`/continue`、运行中插话（`/steer`、Alt+Enter，`steerRun`）、中止时排队消息的放回、`ask_user` 的问题与结构化字段 |
-| 7 | `mas run` 的使用者模板、`/run` |
-| 8 | `/compact`、压缩的通知与摘要展示、`压缩上下文` 阶段 |

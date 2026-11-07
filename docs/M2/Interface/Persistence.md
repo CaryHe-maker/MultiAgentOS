@@ -1,6 +1,6 @@
 # 持久化接口
 
-> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
+> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
 > 存储机制与写入规则见 [Infrastructure/Persistence](../Infrastructure/Persistence.md)；本文只定义目录、记录格式与 Port。
 
 ## 1. 目录
@@ -18,9 +18,9 @@
     workflow/log.v1.jsonl                  会话日志（第 2 节）
     kernel-core/audit.jsonl                Kernel 审计（第 5 节）
     kernel-execution/artifact-owners.jsonl 本 Session 拥有的产物（第 4.3 节）
-    kernel-execution/snapshot-index.jsonl  快照索引（阶段 2）
-    kernel-execution/snapshots/            影子 git 目录（阶段 2）
-    kernel-execution/quarantine/           隔离目录（阶段 3）
+    kernel-execution/snapshot-index.jsonl  快照索引
+    kernel-execution/snapshots/            影子 git 目录
+    kernel-execution/quarantine/           隔离目录
 ```
 
 - 命名空间：`workflow`、`kernel-core`、`kernel-execution`。每个 Owner 只拿到自己命名空间的 Port（M1 的规则，M2 增加 `kernel-execution`）。
@@ -46,46 +46,46 @@ interface LogRecordBase {
 
 只保存结构化字段与产物引用，不保存任何正文（M2Design 第 10.1 节）。
 
-| 类型 | 字段（除公共字段外） | 阶段 |
-|---|---|---|
-| `SESSION_STARTED` | `formatVersion: 1`、`repositoryRoot`、`definitionsDigest`、`definitionVersions`（Agent、Unit、Tool、Model、Prompt 与模板的 `id@version` 列表） | 1 |
-| `WORKFLOW_RUN_STARTED` | `mode`、`templateRef?`（与 `RunStart` 相同：`ORCHESTRATION` 时必填）、`preset`、`initialInput` | 1 |
-| `WORKFLOW_RUN_ENDED` | `closeReason`（含 `PROCESS_EXITED`、`FORKED`） | 1 |
-| `TURN_STARTED` | `promptNodeId`、`template?` | 1 |
-| `TURN_ENDED` | `reason`（含 `PROCESS_EXITED`）、`usage?` | 1 |
-| `GRAPH_EXTENDED` | `revision`、`source: 'TEMPLATE' \| 'CHAT_GROWTH' \| 'LOOP' \| 'SPAWN'`、`nodes`、`edges` | 1 |
-| `NODE_STARTED` | `nodeId`、`path` | 1 |
-| `NODE_RESUMED` | `nodeId`、`call`（`toolCallId`、`delegationId`）：这次派发的调用回来了，节点不再 WAITING；此前调用的结果由唤醒边的前驱的结果推出（阶段 4） | 1 |
-| `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?`；以后可能增加失败原因（M2Design 第 14.2 节第 8 条） | 1 |
-| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind`；局部询问（阶段 5）另有 `attachedAgentRunId`、`question`、`fields`、`reviewRef?` | 1 |
-| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`（含 `steer`）、`origin`（`initial`、`requested`；阶段 5 增加 `unrequested`：没有人在等的运行中插话）、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标，阶段 5） | 1 |
-| `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` | 1 |
-| `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） | 2 |
-| `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` | 1 |
-| `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`（阶段 2）；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） | 1 |
-| `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` | 1 |
-| `UNIT_INTERRUPTED` | `requestId`、`reason`：`RECOVERED`（打开 Session 时的修复）、`PAUSED`、`ABORTED`（阶段 5） | 1 |
-| `MODEL_TURN` | `requestId`、`agentRunId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` | 1 |
-| `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 | 1 |
-| `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 | 1 |
-| `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`（阶段 2）另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` | 1 |
-| `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） | 1 |
-| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`tokenCount`、`tokenBudget`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用，阶段 8）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） | 1 |
-| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` | 2 |
-| `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） | 8 |
-| `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`keptSeqs`（范围内原样保留的条目的 `seq`：`PINNED` 条目与 Kernel 选出的用户消息，M2Design 第 9.6 节）、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` | 8 |
-| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'`；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 | 8（阶段 2 已完成时） |
-| `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 | 1 |
-| `LOG_TAIL_REPAIRED` | `truncatedBytes` | 1 |
-| `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` | 1 |
-| `WORKSPACE_REVERTED` | `revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?` | 2 |
-| `WORKSPACE_DIVERGED` | `files` | 2 |
-| `SESSION_FORKED` | `fromSessionId`、`fromSeq` | 2 |
-| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` | 2 |
-| `RUN_PAUSED` | 无附加字段（阶段 5） | 5 |
-| `RUN_RESUMED` | `steerInputId?`（继续时附加了说明；说明本身是 `HUMAN_ANSWERED(kind: steer)`）（阶段 5） | 5 |
-| `RUN_INTERRUPTED` | `reason`（阶段 3 已有；阶段 5 增加 `USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`） | 3 |
-| `LOOP_EXHAUSTED` | 见阶段 7 | 7 |
+| 类型 | 字段（除公共字段外） |
+|---|---|
+| `SESSION_STARTED` | `formatVersion: 1`、`repositoryRoot`、`definitionsDigest`、`definitionVersions`（Agent、Unit、Tool、Model、Prompt 与模板的 `id@version` 列表） |
+| `WORKFLOW_RUN_STARTED` | `mode`、`templateRef?`（与 `RunStart` 相同：`ORCHESTRATION` 时必填）、`preset`、`initialInput` |
+| `WORKFLOW_RUN_ENDED` | `closeReason`（含 `PROCESS_EXITED`、`FORKED`） |
+| `TURN_STARTED` | `promptNodeId`、`template?` |
+| `TURN_ENDED` | `reason`（含 `PROCESS_EXITED`）、`usage?` |
+| `GRAPH_EXTENDED` | `revision`、`source: 'TEMPLATE' \| 'CHAT_GROWTH' \| 'LOOP' \| 'SPAWN'`、`nodes`、`edges` |
+| `NODE_STARTED` | `nodeId`、`path` |
+| `NODE_RESUMED` | `nodeId`、`call`（`toolCallId`、`delegationId`）：这次派发的调用回来了，节点不再 WAITING；此前调用的结果由唤醒边的前驱的结果推出 |
+| `NODE_ENDED` | `nodeId`、`status`、`skipReason?`、`resultRef?`；以后可能增加失败原因（M2Design 第 14.2 节第 8 条） |
+| `HUMAN_REQUESTED` | `humanRequestId`、`nodeId`、`kind`；局部询问另有 `attachedAgentRunId`、`question`、`fields`、`reviewRef?` |
+| `HUMAN_ANSWERED` | `nodeId`、`humanRequestId?`、`kind`（含 `steer`）、`origin`（`initial`、`requested`；`unrequested`：没有人在等的运行中插话）、`inputId`、`contentRef`、`attachedAgentRunId?`、`redirectedFrom?`（运行中插话的目标已结束、改投父 AgentRun 时为原定目标） |
+| `AGENT_RUN_REGISTERED` | `agentRunId`、`nodeId`、`agentRef`、`effort` |
+| `AGENT_WRAP_UP` | `agentRunId`、`reason`、`round`：下一次模型调用是最后一次（M2Design 第 7.3 节） |
+| `AGENT_RUN_ENDED` | `agentRunId`、`outcome`、`wrapUpReason?` |
+| `UNIT_SUBMITTED` | `requestId`、`path`、`agentRunId`、`unitRunId`、`unitRef`、`inputSource`：工具 Unit 为 `{ kind: 'TOOL_CALL', modelTurnRequestId, toolCallId, workflowFields? }`（参数正文在模型调用的输出产物中，`workflowFields` 是 Workflow 填写的字段，如 `baseSha`，以及 `read_output` 的 `fullRef`；内建 Unit 为 `{ kind: 'STRUCTURED', input }`（只含结构化字段与产物引用） |
+| `UNIT_COMPLETED` | `requestId`、`status`、`reasonCode?`、`output?`、`outputRef?`（预览）、`fullRef?`（截断时的完整输出，7 天后过期；不进入投影，模型只能经 `read_output` 按 `toolCallId` 分段读取）、`budget` |
+| `UNIT_INTERRUPTED` | `requestId`、`reason`：`RECOVERED`（打开 Session 时的修复）、`PAUSED`、`ABORTED` |
+| `MODEL_TURN` | `requestId`、`agentRunId`、`outputRef`（模型调用的完整输出，含工具调用参数）、`toolCalls`（名称、`toolCallId`、参数摘要）、`reasoningRef?`、`replayable`（是否可回传思考内容：没有被打断、没有出错，写入时决定）、`usage` |
+| `MODEL_ATTEMPT_FAILED` | `requestId`、`reasonCode`；不进入模型历史 |
+| `FEEDBACK` | `agentRunId`、`code`、`message`（≤1000，不含模型的参数值）、`toolCallId?`；没有执行的工具调用的回答，或对没有动作的回复的纠正，进入投影 |
+| `PROJECT_FILE_LOADED` | `path`、`ref`、`sha256`、`trusted?`；子目录的 `AGENTS.md`另带 `agentRunId`（加载它的投影），超过数量上限时只有 `path`、`agentRunId` 与 `skipped: 'LIMIT'` |
+| `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） |
+| `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`tokenCount`、`tokenBudget`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） |
+| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` |
+| `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） |
+| `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`keptSeqs`（范围内原样保留的条目的 `seq`：`PINNED` 条目与 Kernel 选出的用户消息，M2Design 第 9.6 节）、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` |
+| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'`；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 |
+| `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 |
+| `LOG_TAIL_REPAIRED` | `truncatedBytes` |
+| `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` |
+| `WORKSPACE_REVERTED` | `revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?` |
+| `WORKSPACE_DIVERGED` | `files` |
+| `SESSION_FORKED` | `fromSessionId`、`fromSeq` |
+| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` |
+| `RUN_PAUSED` | 无附加字段 |
+| `RUN_RESUMED` | `steerInputId?`（继续时附加了说明；说明本身是 `HUMAN_ANSWERED(kind: steer)`） |
+| `RUN_INTERRUPTED` | `reason`（`MEMORY_PRESSURE`、`USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`） |
+| `LOOP_EXHAUSTED` | 条件边的有界循环用尽时记录（使用者模板，M2ReleasePlan phase 2） |
 
 - M2Design 第 10.2 节的 `UNIT_COMPLETED` 带结构化输出与 ArtifactRef。`UNIT_SUBMITTED` 不复制工具参数，只指向 `MODEL_TURN` 中的工具调用；
   工具调用的参数正文由 `model-call` 的输出产物保存。这样先写日志、再提交（第 10.3 节写入规则第 1、2 条）不需要额外的产物写入。
@@ -102,7 +102,7 @@ interface GraphNodeRecord {
   kind: 'AGENT' | 'HUMAN';
   trigger: 'all_success' | 'all_done';
   iteration: number;
-  loopId?: string;              // 所属循环；不在循环中时省略（阶段 7）
+  loopId?: string;              // 所属循环；不在循环中时省略
   agentRef?: DefinitionRef;     // AGENT 必填
   goal?: string;                // ≤4000
   inputFrom?: 'HANDOFF';
@@ -158,7 +158,7 @@ interface SessionRefLine {
 ```ts
 interface TrustedInstructionLine {
   repositoryRoot: string;
-  path: string;                // 'AGENTS.md'，阶段 2 起也可以是子目录中 AGENTS.md 的相对路径
+  path: string;                // 'AGENTS.md'，也可以是子目录中 AGENTS.md 的相对路径
   sha256: string;
   source: 'USER_CONFIRMED' | 'APPROVED_WRITE';
   at: string;
@@ -176,8 +176,8 @@ interface ArtifactOwnerLine {
   sha256: string;
   size: number;
   retention: 'SESSION' | 'EXPIRING';  // M2Design 第 10.1 节
-  source: 'PRODUCED' | 'INHERITED';   // INHERITED：Fork 时从原 Session 继承（阶段 2）
-  fullOutput?: true;                  // 某次工具调用的完整输出：截断时另存的完整输出（阶段 2），或修剪时为未截断的预览补登的一行（阶段 8）；output-read 只接受带此标记的引用
+  source: 'PRODUCED' | 'INHERITED';   // INHERITED：Fork 时从原 Session 继承
+  fullOutput?: true;                  // 某次工具调用的完整输出：截断时另存的完整输出，或修剪时为未截断的预览补登的一行；output-read 只接受带此标记的引用
   retainedSince: string;              // 保留期的起点：PRODUCED 为写入时间，INHERITED 沿用原 Session 的登记
   at: string;
 }
@@ -186,7 +186,7 @@ interface ArtifactOwnerLine {
 - `EXPIRING` 的正文在 `retainedSince` 之后满 `expiringRetentionDays`（缺省 7 天）即可回收，此后读取一律返回 `ARTIFACT_EXPIRED`，不论正文是否已被删除；`SESSION` 的正文只在没有任何 ACTIVE 的 Session 拥有时回收。
 - 只有 Session 引用为 ACTIVE 的 Session 的归属文件参与回收的标记（[Infrastructure/ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
 
-### 4.4 快照索引（阶段 2）
+### 4.4 快照索引
 
 `sessions/<sessionId>/kernel-execution/snapshot-index.jsonl`，只追加，最后一行为准：
 
@@ -248,7 +248,7 @@ interface AppendLogPort<T> {
 
 interface SessionDirectoryPort {
   create(): Promise<void>;                                // 已存在时失败
-  copyLogFrom(fromSessionId: string): Promise<void>;      // Fork：复制整个会话日志（阶段 2）
+  copyLogFrom(fromSessionId: string): Promise<void>;      // Fork：复制整个会话日志
   remove(): Promise<void>;                                // 删除本命名空间在该 Session 下的全部文件
   lock(): Promise<LockResult>;                            // 只在 workflow 命名空间提供：Session 锁
 }

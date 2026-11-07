@@ -1,5 +1,5 @@
 /**
- * The cases of the stage 4 suite. A task that comes in two sizes (C1 and L1, C3 and L3, C5 and
+ * The cases of the SubAgent suite. A task that comes in two sizes (C1 and L1, C3 and L3, C5 and
  * L5) is one builder called twice, so the only difference between them is the size. Every check
  * runs outside the model, on the files it left, against answers fixed here.
  */

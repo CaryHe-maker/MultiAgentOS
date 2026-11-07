@@ -1,5 +1,5 @@
 /**
- * The deterministic exit cases of stage 6 (M2Plan 6.7; M2Design 13): search and read with sources
+ * The deterministic acceptance cases (M2Design 13): search and read with sources
  * (W1), a page that gives orders (W2), addresses that lead into a private network (W3), and the
  * questions the web tools ask (A, web part). Every case runs the real product from the console
  * down to the Executors. The provider's chat API is scripted, DeepSeek's search interface is a
@@ -131,8 +131,8 @@ async function chatOn(
   provider: ScriptedChat,
   options: Partial<ChatOptions> = {},
 ): Promise<{ chat: Chat; place: Place; search: ReturnType<typeof deepSeek> }> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-stage6-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-stage6-repo-'));
+  const dataDir = await mkdtemp(join(tmpdir(), 'mas-web-data-'));
+  const repository = await mkdtemp(join(tmpdir(), 'mas-web-repo-'));
   directories.push(dataDir, repository);
   await mkdir(repository, { recursive: true });
   await writeFile(join(repository, 'a.txt'), 'one\n');

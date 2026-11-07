@@ -430,7 +430,7 @@ if (runs('W-T6')) {
     status: page.status,
     bytes: text.length,
     containsInjectionWording: /ignore (all )?(previous|prior) instructions/iu.test(text),
-    note: 'the wrapper that marks the text untrusted is ours and is tested apart (stage6-exit)',
+    note: 'the wrapper that marks the text untrusted is ours and is tested apart (web-exit)',
   };
 }
 

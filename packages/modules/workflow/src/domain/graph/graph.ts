@@ -301,7 +301,7 @@ export interface GraphExtension {
 
 export interface ExtensionRules {
   readonly builtInAgents: ReadonlySet<string>;
-  /** Stage 1 allows conditional edges only in built-in templates. */
+  /** Conditional edges are allowed only in built-in templates. */
   readonly allowConditions: boolean;
 }
 

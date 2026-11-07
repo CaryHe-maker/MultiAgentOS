@@ -1,6 +1,6 @@
 /**
- * `tsx .../run-stage5.ts --yes --out <file> [--runs N] [scenario ids...]`: stage 5 on the real model
- * (docs/M2/Evaluation/Stage5HumanInTheLoop.md). A scenario does to a running chat what a user does
+ * `tsx .../run-human-in-loop.ts --yes --out <file> [--runs N] [scenario ids...]`: the human-in-the-loop controls on the real model
+ * (docs/History/M2/Evaluation/Stage5HumanInTheLoop.md). A scenario does to a running chat what a user does
  * (answers an `ask_user`, pauses and continues with a note, slips in a note, aborts) and judges the
  * files and the conversation it leaves. A line of facts per run is appended to `--out`; a run that
  * is already there is skipped, so a batch killed at its time limit can be started again. The key

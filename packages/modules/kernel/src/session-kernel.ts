@@ -102,7 +102,7 @@ export interface SessionKernelDeps {
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
   /**
    * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without
-   * it nothing is compacted, and a context that outgrows its window ends as it did before stage 8.
+   * it nothing is compacted, and a context that outgrows its window ends as it does without compaction.
    */
   readonly compactionPrompt?: CompactionPrompt;
   /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */

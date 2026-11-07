@@ -1,5 +1,9 @@
 # MultiAgentOS M2 待决定事项
 
+> **已冻结的历史文档（2026-11-07）。** 本文记录 M2 第一轮实现期间的决定、各阶段的计划与进度，按旧编号"阶段 0–8"组织，不再修改。
+> 仍然有效的决定已迁入 [M2Decisions](../../M2/M2Decisions.md)；各项能力的现状见 [M2Baseline](../../M2/M2Baseline.md)；后续计划见 [M2ReleasePlan](../../M2/M2ReleasePlan.md)。
+> 文中"未完成""留待"等字样描述的是写作当时的状态，当前状态以 M2Baseline 为准。
+
 > 本文收集自主推进期间留给负责人（Cary）判断的问题，以及已经先行作出、需要复核的决定。
 > 决定之后，把结论写入相应文档，并从本文删除该条。
 
@@ -39,7 +43,7 @@
 
 阶段 2 发布前审核（2026-11-04，M2Design v1.17）：审核发现的 24 条问题与端到端用例查出的 2 条问题已全部修复；Ubuntu 24.04 完整质量门通过。真实模型复查：写入任务 39/40（本仓库任务 4/4；唯一的失败是模型写的代码没过隐藏测试），`analyze` 回归 F1–F5 5/5。
 
-真实模型写入实验（2026-11-04）：小仓库任务全部通过；真实仓库任务大多在写入之前被叫停，主因是上下文上限按字节计，高估约 3.3 倍（待决定）。tree-sitter 不引入，见 [experiments](../experiments.md)。
+真实模型写入实验（2026-11-04）：小仓库任务全部通过；真实仓库任务大多在写入之前被叫停，主因是上下文上限按字节计，高估约 3.3 倍（待决定）。tree-sitter 不引入，见 [experiments](../../experiments.md)。
 
 main 写入的真实模型检查（`run-main-write.ts`，2026-11-04，`deepseek-flash@v0.1.0`，Ubuntu 24.04）：6/6 通过。改名（三个文件）、新建文件、只问问题时不写、打招呼不调用工具、`.env` 没有被写入、`/undo` 恢复原内容。只跑了一轮，不是评测基线；`.env` 那一例模型没有尝试写入，所以这一轮没有在真实模型上触发 `PROTECTED_PATH`，这条拒绝由 `stage2-exit.test.ts` 与对抗测试覆盖。
 
@@ -118,7 +122,7 @@ M1 遗留的清理（2026-11-04）：`M1`、`major 0`、`docs/M1` 不再出现�
 
 ## 4. 阶段 3 进度（`feature/phase3/main`，2026-11-05）
 
-阶段 3 的文档门是草稿，待评审（[KernelSupervisor](Interface/KernelSupervisor.md)、[SystemFaultHandling](SystemFaultHandling.md)、Core 第 5b、5c 节、Supervisor 第 5、6 节、ExecutorSet 第 5c 节、M2Security 第 3b 节、Workflow 第 9.2a 节）。
+阶段 3 的文档门是草稿，待评审（[KernelSupervisor](../../M2/Interface/KernelSupervisor.md)、[SystemFaultHandling](../../M2/SystemFaultHandling.md)、Core 第 5b、5c 节、Supervisor 第 5、6 节、ExecutorSet 第 5c 节、M2Security 第 3b 节、Workflow 第 9.2a 节）。
 
 | 任务 | 状态 | 已完成 | 未完成 |
 |---|---|---|---|
@@ -283,7 +287,7 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 
 阶段 5 开始（M2Design v1.28）。Cary 决定两项：`ask_user` 的 HUMAN 节点用 `DELEGATE` 与 `RESUME`（调用方 `WAITING`），`steer` 用附属（`attachedTo`），不等待；阶段 5 先写文档门、经 Cary 确认后再写代码。
 
-**文档门**（待 Cary 确认）：M2Design 第 3.1、4.2 节与 v1.28；[Kernel/Core](Kernel/Core.md) 第 5e 节（控制状态、`pauseRun`/`resumeRun`/`interruptRun`/`steerRun`、`interrupt(reason)` 的统一处理、Turn 超时与暂停上限、局部询问）；[Kernel/Execution](Kernel/Execution.md) 第 4e 节（暂停与中止时按并发类别处理尝试、`INTERRUPTED` 报告）；[Module/Workflow](Module/Workflow.md) 第 7b 节（被打断的 Unit、`steer`、`ask_user`、中止后的收敛）；[Module/UserInteraction](Module/UserInteraction.md) 第 5.4 节（按键、`/continue`、`/steer`、局部询问的界面）；Interface 各章的类型与记录。
+**文档门**（待 Cary 确认）：M2Design 第 3.1、4.2 节与 v1.28；[Kernel/Core](../../M2/Kernel/Core.md) 第 5e 节（控制状态、`pauseRun`/`resumeRun`/`interruptRun`/`steerRun`、`interrupt(reason)` 的统一处理、Turn 超时与暂停上限、局部询问）；[Kernel/Execution](../../M2/Kernel/Execution.md) 第 4e 节（暂停与中止时按并发类别处理尝试、`INTERRUPTED` 报告）；[Module/Workflow](../../M2/Module/Workflow.md) 第 7b 节（被打断的 Unit、`steer`、`ask_user`、中止后的收敛）；[Module/UserInteraction](../../M2/Module/UserInteraction.md) 第 5.4 节（按键、`/continue`、`/steer`、局部询问的界面）；Interface 各章的类型与记录。
 
 **实现顺序**（单人串行；Core 与 Execution 先于 Workflow，界面最后）：
 1. S5-CT-1 契约：四个运行控制请求、`HumanRequest`/`RequestHumanRequest` 的局部询问字段、`HumanAnswered` 的种类、`RunPaused`/`RunResumed`/`HumanCancelled`、`UnitReport.INTERRUPTED`、`InterruptReason`、`RunStateChanged` 与 `ActivityPhase` 的新值、日志记录的新字段、`EdgeCall.delegationId` 可缺省；重新生成 Schema 快照。
@@ -329,7 +333,7 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 - **A（网页部分）** `web.search` 每个 WorkflowRun 第一次使用时询问一次，之后不再问；`web.fetch` 每个新域名询问一次，同域名不再问；私网地址不询问直接拒绝；`ask_user` 里的同意不构成授权；SubAgent 并行访问网页时每个新域名仍只问一次；用户拒绝后模型收到工具结果并继续；搜索词与抓取地址写入审计，经密钥扫描，含密钥的查询被拒。
 - **退出**：W、A 组网页部分通过；S6-T-1 的实测结果与 Cary 的提供方决定已写入 M2TechStack 第 3.3 节与本文件。
 
-**提供方决定（2026-11-07）**：Cary 决定搜索用 DeepSeek、抓取先用 DeepSeek 再回退本地抓取（依据 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)）。文档门（待 Cary 确认）：M2Design v1.29（第 8.1、8.3 节）、[Library/ExecutorSet](Library/ExecutorSet.md) 第 5d 节、[Kernel/Core](Kernel/Core.md) 第 5f 节、[M2Security](M2Security.md) 第 3c 节。未决（不阻塞实现）：DeepSeek 计费需要有余额的账户补测；搜索词与抓取地址的留存没有证据，按最坏情况写进安全文档。
+**提供方决定（2026-11-07）**：Cary 决定搜索用 DeepSeek、抓取先用 DeepSeek 再回退本地抓取（依据 [Evaluation/Stage6WebProviders](Evaluation/Stage6WebProviders.md)）。文档门（待 Cary 确认）：M2Design v1.29（第 8.1、8.3 节）、[Library/ExecutorSet](../../M2/Library/ExecutorSet.md) 第 5d 节、[Kernel/Core](../../M2/Kernel/Core.md) 第 5f 节、[M2Security](../../M2/M2Security.md) 第 3c 节。未决（不阻塞实现）：DeepSeek 计费需要有余额的账户补测；搜索词与抓取地址的留存没有证据，按最坏情况写进安全文档。
 
 **阶段 6 实现状态（2026-11-07）**：S6-CT-1 至 S6-IN-1 全部完成，文档门已由 Cary 确认。契约（两个执行种类、`executor.WebSearch*`/`WebFetch*`、`web.search`/`web.fetch` 能力、`KernelConfig.web`、新错误码、两种询问事件）；`web/`（地址检查的纯函数放在 contracts，两个提供方端口与 DeepSeek 适配器、带固定地址连接与逐跳重定向检查的本地抓取、回退、HTML 转 Markdown、密钥扫描）；Core（第 5f 节：资源键、第 ① 步的两种拒绝、按主机绑定的拒绝、审计）；定义（`web-search`、`web-fetch` 的工具与 Unit，main 与 explorer 带上，worker 不带）；界面询问文字；`stage6-exit`（W1–W3、A 组网页部分共 12 项）；真实模型检查 3/3（[Evaluation/Stage6Web](Evaluation/Stage6Web.md)）。实现时对文档做的调整已回写：请求范围是 `NONE`；跨主机重定向是成功结果里的说明而不是错误；审计由 Execution 写；询问只写主机与地址；`readonly` 预设不带这两项能力；拒绝在 Workflow 按工具名记住，同一 AgentRun 之后的 `web_fetch` 不再询问任何主机。
 

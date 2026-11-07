@@ -251,7 +251,7 @@ const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
   ...(node.loopId === undefined ? {} : { loopId: node.loopId }),
 });
 
-/** Stage 1 rules; later stages widen them in the same function (Module/Workflow 6.1). */
+/** The rules of an extension; the same function checks every extension (Module/Workflow 6.1). */
 export function validateRevision(
   current: Graph,
   revision: GraphRevision,
