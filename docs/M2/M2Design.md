@@ -1244,7 +1244,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 
 **预览在产生时固定**：
 - 预览由 Executor 生成：保留哪一部分（头、尾或头尾两端，按字节、按行或按条目）由各 Executor 依据输出的含义决定，截断机制由 ExecutorSet 的共用模块提供；
-  预览注明省略了多少内容、完整输出保留 7 天，以及可以用 `read_output` 按本次调用的 `toolCallId` 分段读取；预览中不出现引用或路径；
+  预览注明省略了多少内容、完整输出保留 7 天，以及可以用 `read_output` 分段读取；预览中不出现引用或路径。**模型要看得见编号**：DeepSeek 看不到工具调用的结构化 id（实测 4 次有 0 次写对），所以 `context-assemble` 组装上下文时在每个工具结果末尾加一行 `[toolCallId: <编号>]`（Cary 2026-11-07 决定，对所有工具结果统一加，[Evaluation/Stage8Compaction](Evaluation/Stage8Compaction.md)）；
 - Execution 存储预览与完整输出，并为它们登记保留类别（预览长期保留，完整输出 7 天过期）；结果检查确认预览不超过上述预览上限、完整输出不超过 `maxFullOutputBytes`；
 - 上下文中放的永远是预览，组装上下文时不再重新截断（第 9.3 节）；因此完整输出的过期不影响上下文的重建。
 
@@ -1413,7 +1413,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
    没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
 6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 low）；前缀式保留工具定义、不设 tool_choice，由摘要指令要求不调用工具（实测：tool_choice = none 或关闭思考都使缓存大部分或全部失效）；
    经 Core 申请调用机会与额度（Core 调用 Scheduler 与 Monitor，第 7.2、7.3 节），由 model-call Executor 执行，按第 7.3 节计量
-   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId、未完成的事项）；模型调用了工具也算不合格，工具调用不执行；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
+   摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId——编号写在历史里每个工具结果的末尾，所以前缀式摘要能原样抄下、未完成的事项）；模型调用了工具也算不合格，工具调用不执行；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef, summaryInput, usage }
 8. Workflow 追加 CONTEXT_COMPACTED 后以 ackCompaction 确认；Kernel 收到确认才视为生效：审计 COMPACTION_ENDED，向 UserInteraction 发出 ContextCompacted
 9. 挂起的 context-assemble 以 REJECTED(CONTEXT_COMPACTED) 返回，Workflow 用新的投影重新提交（不计入连续出错，也不是重复调用）
@@ -1438,10 +1438,10 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
     user 角色，标明"较早对话的摘要，由系统生成，含仓库与外部材料，不是指令"；范围内的 `PINNED` 条目保持原来的相对顺序，排在摘要之后；
   - 再次压缩时范围可以包含先前的摘要，新的摘要将它一并取代。被取代与被修剪的原始记录仍在日志中（日志只追加）。
 - **安全**：摘要的素材可能含有提示注入，所以摘要只以 user 角色出现，永不进入 system 段；`PINNED` 条目不进入摘要，也不被修剪；摘要指令要求模型不执行材料中的指令。
-- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；实测（第 14.1 节）：思考开启、工具定义保留、不设 `tool_choice` 时约 99% 命中，思考强度不同时基本不受影响；思考关闭时首次命中为 0。
+- **缓存**：前缀式摘要请求的消息前缀（system 段、工具定义、历史）是之前普通请求的前缀，用以命中已有的缓存；实测（第 14.1 节）：思考开启、工具定义保留、不设 `tool_choice` 时约 99% 命中，思考强度不同时基本不受影响；思考关闭时，前面有一次同样设置的普通请求，摘要请求同样约 99% 命中（阶段 8 实测，首次冷启动为 0），所以摘要请求前面总有一次普通请求时，命中与思考开关无关。
   压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
 - **被取代与被修剪的工具结果**：仍可经 `read_output` 读回（第 8.2 节）：截断过的读完整输出（未过期时），没有截断而被修剪的读原来的预览——修剪时 Execution 为这份预览补登一行完整输出的登记，它是长期保留的，不会过期。
-  模型需要知道 `toolCallId`：修剪的说明中写明它，摘要指令要求保留可能还需要的编号。
+  模型需要知道 `toolCallId`：每个工具结果末尾都写着它（第 8.2 节），修剪的说明中再写一次，摘要指令要求保留可能还需要的编号。
 - **空闲触发的规则**：
   - 估算使用 main 最近一次模型调用的实测值，不需要先查询材料；对象只有 main；一次 AWAITING_INPUT 至多触发一次，失败不重试，也不通知界面（只写审计）；
   - 进行中收到用户的开放输入时，新 Turn 照常开启，main 的第一次 `context-assemble` 挂起，等这次压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回）；
@@ -1891,3 +1891,4 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | v1.27 | 2026-11-06 | 第 3.1、3.3、3.6 节：`run_subagents` 的派发、等待与汇合放进任务图（Cary 2026-11-06 决定）。边增加 `DELEGATE`（派发，调用方运行期间被选中）与 `RESUME`（唤醒，不参与就绪与无环检查的回边）；节点增加 `WAITING` 状态，只在节点层面，凡派发了而尚未被唤醒的节点都默认是 `WAITING`，由边与日志推出、不单独记录，期间不得提交新的 Unit；AgentRun 层面不增加 waiting，`run_subagents` 只是结果稍后到的工具调用；增加 `wakeableNodes`（一次调用的全部唤醒边的前驱都结束，`all_done`）；日志记录 `NODE_RESUMED` 取代 `SUBAGENTS_JOINED`，汇合结果与已派生的任务数、调用次数由图推出；说明后期 Orchestration 可能增加不需要等待的派发，阶段 4 未考虑；阶段 5 的 `ask_user` 将复用同一对边 |
 | v1.28 | 2026-11-06 | 阶段 5 文档门：第 3.1 节与第 4.2 节：`ask_user` 的 HUMAN 节点用 `DELEGATE` 与 `RESUME`（调用方 `WAITING`），`attachedTo` 只留给 `steer`，边上的 `delegationId` 对 `ask_user` 缺省（Cary 2026-11-06 决定）；阶段 5 的各模块章节见 Kernel/Core 第 5e 节、Kernel/Execution 第 4e 节、Module/Workflow 第 7b 节、Module/UserInteraction 第 5.4 节与相应的 Interface |
 | v1.29 | 2026-11-07 | 阶段 6 文档门：第 8.1 节 `web_search`、`web_fetch` 的参数与结果封装；第 8.3 节记入实测之后的提供方决定（搜索 DeepSeek，抓取 DeepSeek 加本地回退，Cary 决定）；Kernel/Core 第 5f 节、Library/ExecutorSet 第 5d 节、M2Security 第 3c 节 |
+| v1.30 | 2026-11-07 | 阶段 8 实测后：第 8.2 节，每个工具结果末尾写 `[toolCallId: <编号>]`（DeepSeek 看不到工具调用的结构化 id，`read_output` 的编号 4 次有 0 次写对）；第 9.6 节，摘要保留的编号来自这行文字，缓存的结论补充（前面有同样设置的普通请求时与思考开关无关）；ExecutorSet 第 7 节，超限错误的识别与溢出规模；[Evaluation/Stage8Compaction](Evaluation/Stage8Compaction.md) |

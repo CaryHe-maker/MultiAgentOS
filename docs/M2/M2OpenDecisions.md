@@ -341,10 +341,12 @@ M2Plan 第 6.5 节的退出条件是 P1–P6、B、D、A 的派生部分；阶�
 
 **已决定（Cary 2026-11-07）**
 - 动代码前先做一次小的真实模型实验（S8-T-1），结果用来校准阈值并写进文档；
-- 空闲时的预先压缩缺省开（`idleTriggerRatio` 0.7），配置里可以关。
+- 空闲时的预先压缩缺省开（`idleTriggerRatio` 0.7），配置里可以关；
+- 实验发现 DeepSeek 看不到工具调用的 id，`read_output` 的编号会乱填：**每个工具结果的末尾都写一行 `[toolCallId: <编号>]`**（见下面的 S8-EX-0）。
 
 **实现顺序**
-1. **S8-T-1 实测**：脚本 `compaction-eval/run-compaction-eval.ts`。C-T1 让 DeepSeek 在输入超出窗口时拒绝，记下状态码与错误体的形状（`model-call` 要靠它识别 `CONTEXT_OVERFLOW`，并取出 provider 给出的长度）；C-T2 一段带埋设事实的长对话，前缀式与纯文本式各写一份摘要，看事实、`toolCallId`、未完成事项是否保留，以及输出是否含各节；C-T3 同一输入下前缀式摘要请求的缓存命中（核对第 14.1 节的数字）；C-T4 摘要中的提示注入（材料里夹着"忽略之前的指示"）是否被当作指令。预算约 1–2 美元，`--yes` 与 `--budget` 才运行。结果与结论写入 `Evaluation/Stage8Compaction.md`，必要时回写 M2Design 第 9.6、14.1 节与 ExecutorSet 第 7 节。
+0. **S8-EX-0 编号可见**（从阶段 1 就有的缺陷，S8-T-1 发现）：`context-assemble` 在每个工具结果末尾加 `[toolCallId: <编号>]`，系统提示与工具说明不变；测试要断言每个工具结果都带编号，并用真实模型检查 `read_output` 写对编号。
+1. **S8-T-1 实测（已完成，[Evaluation/Stage8Compaction](Evaluation/Stage8Compaction.md)）**：脚本 `compaction-eval/run-compaction-eval.ts`。C-T1 让 DeepSeek 在输入超出窗口时拒绝，记下状态码与错误体的形状（`model-call` 要靠它识别 `CONTEXT_OVERFLOW`，并取出 provider 给出的长度）；C-T2 一段带埋设事实的长对话，前缀式与纯文本式各写一份摘要，看事实、`toolCallId`、未完成事项是否保留，以及输出是否含各节；C-T3 同一输入下前缀式摘要请求的缓存命中（核对第 14.1 节的数字）；C-T4 摘要中的提示注入（材料里夹着"忽略之前的指示"）是否被当作指令。预算约 1–2 美元，`--yes` 与 `--budget` 才运行。结果与结论写入 `Evaluation/Stage8Compaction.md`，必要时回写 M2Design 第 9.6、14.1 节与 ExecutorSet 第 7 节。
 2. **文档门**：按实测更新第 9.6 节与各模块文档，经 Cary 确认后写代码。
 3. **S8-CT-1 契约**：`CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`、`CompactionFailed`；`reportCompactionSource`（模型轮条目的 `measured`）、`ackCompaction`、`compactContext`；日志记录 `TOOL_RESULTS_PRUNED`、`CONTEXT_COMPACTED`、`CONTEXT_COMPACTION_REVOKED`；`ContextHistoryEntry` 的摘要条目；`KernelConfig.compaction`；`purpose` 为 `PRUNE`、`COMPACTION` 的内部请求与结果；原因码；Schema 快照；fake Kernel 与 fake Workflow 的契约测试。
 4. **S8-WF-1a 投影的纯函数**（提前任务 E-WF-2）：按 `[fromSeq, toSeq]` 以摘要取代 `NORMAL` 条目（`PINNED` 保持相对顺序）、按 `TOOL_RESULTS_PRUNED` 替换工具结果、撤销压缩、在完整模型轮边界划出保留区与选定范围、修剪候选；属性测试：任意日志前缀重放得到同一投影，两次压缩之间投影只在末尾增长（不变量 27）。
