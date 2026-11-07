@@ -564,7 +564,7 @@ homeCases('the tools on PATH that live under the home directory (M2Design 6.1, v
       const result = lastResult(provider);
       expect(result).toContain('exit code 0');
       expect(result).toContain(process.version);
-      expect(result).toMatch(/\n\d+\.\d+\.\d+\n4\n/u);
+      expect(result).toMatch(/\n\d+\.\d+\.\d+\n4$/u);
     },
     TIMEOUT,
   );

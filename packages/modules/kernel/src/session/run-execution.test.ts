@@ -162,7 +162,7 @@ function setup(
     retrying: (activity) => retries.push(activity),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
-      work();
+      void work();
     },
     schedule: (delayMs, due) => {
       const timer = { delayMs, due, cancelled: false };
