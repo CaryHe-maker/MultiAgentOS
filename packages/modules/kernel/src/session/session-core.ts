@@ -145,10 +145,19 @@ export class SessionCore {
           Promise.resolve(work.releaseDelegation(forward.request)),
         );
       case 'reportCompactionSource':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.reportCompactionSource(forward.request)),
+        );
       case 'ackCompaction':
-      case 'compactContext':
-        // Stage 8 (Kernel/Core 6a): the compaction process answers these once it is wired in.
-        return Promise.resolve(refused(forward.request.requestId, 'COMPACTION_UNKNOWN'));
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.ackCompaction(forward.request)),
+        );
+      case 'compactContext': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => Promise.resolve(actor.compactContext(run))),
+        );
+      }
       case 'submitUnit':
         return this.#inRun(forward.request, (work) => work.submitUnit(forward.request));
       case 'endAgentRun':

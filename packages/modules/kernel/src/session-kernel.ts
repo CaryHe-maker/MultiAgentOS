@@ -49,7 +49,8 @@ import {
   type MemorySample,
 } from './monitor/index.js';
 import { InProcessProviderCapacity, Scheduler } from './scheduler/index.js';
-import type { ExecutionConfig } from './session/attempt-request.js';
+import { AttemptRequestBuilder, type ExecutionConfig } from './session/attempt-request.js';
+import { RunCompactor, type CompactionPrompt } from './session/run-compactor.js';
 import { RunExecution, type RunExecutionDeps } from './session/run-execution.js';
 import {
   RunWork,
@@ -99,6 +100,11 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /**
+   * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without
+   * it nothing is compacted, and a context that outgrows its window ends as it did before stage 8.
+   */
+  readonly compactionPrompt?: CompactionPrompt;
   /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
   readonly agentShare?: RunWorkDeps['agentShare'];
   /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
@@ -294,6 +300,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       cancelRun: (request) => supervisor.cancelRun(request),
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
+      afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
+      modelAnswered: (info) => {
+        holder.work?.modelAnswered(info);
+      },
       // A write the user approved gives the content they saw standing (Kernel/Core 5a.4).
       written: (path, sha256) =>
         isProjectInstructionPath(path)
@@ -329,16 +339,53 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       },
     });
     executions.set(host.workflowRunId, execution);
+    const ledgers = new RunLedgers(
+      {
+        runTokenLimit: config.budget.runTokenLimit,
+        turnTokenLimit: config.budget.turnTokenLimit,
+      },
+      deps.mainBudget,
+    );
+    const scheduler = new Scheduler(capacity);
+    const compactor =
+      deps.compactionPrompt === undefined
+        ? undefined
+        : new RunCompactor({
+            sessionId,
+            workflowRunId: host.workflowRunId,
+            compaction: config.compaction,
+            limits: executionConfig.executionLimits,
+            artifacts,
+            builder: new AttemptRequestBuilder({ config: executionConfig, artifacts, now }),
+            prompt: deps.compactionPrompt,
+            provider: config.provider,
+            ledgers,
+            scheduler,
+            dispatch: (request) => supervisor.execute(request),
+            cancelExecution: (request) => supervisor.cancelExecution(request),
+            expectInternal: (unitAttemptId, handler) => {
+              execution.expectInternal(unitAttemptId, handler);
+            },
+            runEpoch: () => host.runEpoch(),
+            enqueue: (work) => {
+              host.enqueue(work);
+            },
+            toWorkflow: (event) => {
+              host.toWorkflowEvent(event);
+            },
+            toInteraction: (event) => {
+              host.toInteraction(event);
+            },
+            audit,
+            now,
+            schedule,
+            agentOf: (target) => holder.work?.compactionAgent(target),
+          });
     const work = new RunWork({
       host,
-      ledgers: new RunLedgers(
-        {
-          runTokenLimit: config.budget.runTokenLimit,
-          turnTokenLimit: config.budget.turnTokenLimit,
-        },
-        deps.mainBudget,
-      ),
-      scheduler: new Scheduler(capacity),
+      ledgers,
+      scheduler,
+      ...(compactor === undefined ? {} : { compactor, compaction: config.compaction }),
       memoryLevel: () => sampler.level(),
       provider: config.provider,
       technicalRetryLimit: config.technicalRetryLimit,

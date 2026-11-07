@@ -53,6 +53,21 @@ export interface CompactionPrompt {
   readonly requiredSections: readonly string[];
 }
 
+/** What RunWork needs of a compactor; tests bring their own. */
+export interface Compacting {
+  run(request: Omit<CompactionRequest, 'signal'>): Promise<CompactionResult>;
+  /** The compaction of this target that is going on, to wait for; undefined when none. */
+  runningFor(target: CompactionTarget): Promise<unknown> | undefined;
+  reportSource(compactionId: string, entries: readonly ContextHistoryEntry[]): boolean;
+  acknowledge(
+    compactionId: string,
+    stage: 'PRUNE' | 'SUMMARY',
+    outcome: 'RECORDED' | 'FAILED',
+  ): boolean;
+  /** A pause, an abort, `/undo` or the end of the run. */
+  cancel(): void;
+}
+
 export interface RunCompactorDeps {
   readonly sessionId: string;
   readonly workflowRunId: string;
@@ -111,7 +126,7 @@ const usageOf = (usage: TokenUsage | undefined): CompactionUsage => ({
  * request as Kernel's own executions, the budget they are paid from, and the way they stop when
  * the run is paused, interrupted or closed.
  */
-export class RunCompactor {
+export class RunCompactor implements Compacting {
   readonly #deps: RunCompactorDeps;
   readonly #process: CompactionProcess;
   readonly #sources = new Map<
@@ -126,6 +141,7 @@ export class RunCompactor {
   readonly #grants = new Set<string>();
   #controller = new AbortController();
   #active = 0;
+  readonly #going = new Map<string, Promise<unknown>>();
 
   public constructor(deps: RunCompactorDeps) {
     this.#deps = deps;
@@ -138,12 +154,20 @@ export class RunCompactor {
   }
 
   public async run(request: Omit<CompactionRequest, 'signal'>): Promise<CompactionResult> {
+    const key = canonicalJson(request.target);
     this.#active += 1;
+    const running = this.#process.run({ ...request, signal: this.#controller.signal });
+    this.#going.set(key, running);
     try {
-      return await this.#process.run({ ...request, signal: this.#controller.signal });
+      return await running;
     } finally {
       this.#active -= 1;
+      if (this.#going.get(key) === running) this.#going.delete(key);
     }
+  }
+
+  public runningFor(target: CompactionTarget): Promise<unknown> | undefined {
+    return this.#going.get(canonicalJson(target))?.catch(() => undefined);
   }
 
   /** Workflow answered the question for the material of a compaction. */

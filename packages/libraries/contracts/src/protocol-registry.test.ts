@@ -177,6 +177,7 @@ const EXPECTED = {
   ],
   'kernel.execution': [
     'CommandExecutorInput',
+    'PruneExecutorInput',
     'OutputReadExecutorInput',
     'AssembleExecutorInput',
     'CancelExecutionRequest',

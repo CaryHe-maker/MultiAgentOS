@@ -224,6 +224,7 @@ export class SessionActor {
     const { outbox } = this.#deps;
     const sessionId = this.#sessionId;
     this.#stopTimers(run);
+    run.work.cancelCompaction();
     outbox.runToWorkflow(sessionId, run.workflowRunId, { type: 'RunInterrupted', reason });
     outbox.runToInteraction(sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -251,11 +252,21 @@ export class SessionActor {
     return decision;
   }
 
+  /** `compactContext`: only while the run awaits input, and only when there is a context to compact. */
+  compactContext(run: Run): Decision {
+    if (run.control.phase !== 'AWAITING_INPUT')
+      return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    return run.work.startMainCompaction('USER')
+      ? { accepted: true, control: run.control }
+      : { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+  }
+
   /** `pauseRun`: Execution holds what has not started and stops what must not run on. */
   pauseRun(run: Run): Decision {
     const decision = this.#apply(run, pauseRun(run.control));
     if (!decision.accepted) return decision;
     this.#state(run, 'PAUSING');
+    run.work.cancelCompaction();
     run.work.pause(() => {
       this.#paused(run);
     });
@@ -648,6 +659,9 @@ export class SessionActor {
       toInteraction: (event) => {
         outbox.runToInteraction(sessionId, workflowRunId, event);
       },
+      toWorkflowEvent: (event) => {
+        outbox.runToWorkflow(sessionId, workflowRunId, event);
+      },
       fault: (fault) => {
         run.fault ??= fault;
       },
@@ -785,6 +799,8 @@ export class SessionActor {
       humanRequestId,
       kind: 'prompt',
     });
+    // Ahead of the next message: a long context is compacted while the user is away.
+    run.work.startMainCompaction('IDLE');
     return decision;
   }
 
@@ -855,6 +871,7 @@ export class SessionActor {
     if (snapshots === undefined || run.control.phase !== 'AWAITING_INPUT')
       return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
     this.#cancelUndo(run, 'USER_CANCELLED');
+    run.work.cancelCompaction();
     const planned = await snapshots.planUndo(scope);
     if (planned.kind === 'NOTHING_TO_UNDO')
       return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
@@ -932,6 +949,7 @@ export class SessionActor {
     const decision = beginConvergence(run.control);
     if (!decision.accepted || run.closing !== undefined) return;
     this.#cancelUndo(run, 'SESSION_CLOSED');
+    run.work.cancelCompaction();
     run.control = decision.control;
     run.closing = closing;
     run.runEpoch += 1;

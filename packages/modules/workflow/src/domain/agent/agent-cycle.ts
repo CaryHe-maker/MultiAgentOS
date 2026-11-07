@@ -141,6 +141,8 @@ export interface AgentState {
   readonly consecutiveErrors: number;
   readonly noProgress: number;
   readonly regenerations: number;
+  /** How many times in a row the model was refused for the size of the context (Core 6a). */
+  readonly overflows: number;
   readonly roundHadOk: boolean;
   /** Rounds in a row that only kept the todo list: the first is not judged by progress. */
   readonly todoOnlyRounds: number;
@@ -460,6 +462,7 @@ export function startAgent(
     consecutiveErrors: 0,
     noProgress: 0,
     regenerations: 0,
+    overflows: 0,
     roundHadOk: false,
     todoOnlyRounds: 0,
   };
@@ -481,6 +484,36 @@ function applyBudget(state: AgentState, report: UnitReport): AgentState {
 const handlingOf = (unit: AgentUnit, code: string): FailureHandling =>
   unit.failurePolicy[code] ?? 'FATAL';
 
+/**
+ * The same round's context is assembled again (stage 8, Module/Workflow 8.4): Kernel compacted
+ * what the last assembly was made of, or the model was refused for its size. No round is spent,
+ * and nothing is counted as an error: it is not the model's doing.
+ */
+function reassemble(
+  state: AgentState,
+  context: AgentContext,
+  records: readonly NewLogRecord[],
+): AgentTransition {
+  const status: ContextAssembleInput['status'] = {
+    round: state.round,
+    maxRounds: state.definitions.limits.maxRounds,
+    budget: state.budget,
+    final: state.final,
+    ...(state.wrapUpReason === undefined ? {} : { wrapUpReason: state.wrapUpReason }),
+  };
+  return one(
+    state,
+    'CONTEXT',
+    state.definitions.contextAssemble,
+    context.assembleInput(status, state.final, withdrawnOf(state)),
+    'context',
+    records,
+  );
+}
+
+/** The model was refused this many times in a row for the size: the compaction cannot help. */
+const OVERFLOW_LIMIT = 3;
+
 function failed(
   state: AgentState,
   pending: Exclude<Pending, { readonly role: 'DELEGATED' }>,
@@ -488,6 +521,15 @@ function failed(
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
+  if (code === 'CONTEXT_COMPACTED' && pending.role === 'CONTEXT')
+    return reassemble(state, context, records);
+  if (code === 'CONTEXT_OVERFLOW' && pending.role === 'MODEL') {
+    const overflows = state.overflows + 1;
+    if (overflows < OVERFLOW_LIMIT) return reassemble({ ...state, overflows }, context, records);
+    return state.final
+      ? degrade({ ...state, overflows }, 'CONTEXT_LIMIT', records)
+      : nextRound(wrapUp({ ...state, overflows: 0 }, 'CONTEXT_LIMIT'), context, records);
+  }
   if (code === 'LIMIT_EXCEEDED' && (pending.role === 'CONTEXT' || pending.role === 'MODEL'))
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
@@ -1108,7 +1150,7 @@ export function receiveAgentReport(
         records,
       );
     case 'MODEL':
-      return handleModel(state, report, context, config);
+      return handleModel({ ...state, overflows: 0 }, report, context, config);
     case 'CLOSING':
       return ended(
         state,

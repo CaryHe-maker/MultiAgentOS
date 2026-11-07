@@ -7,6 +7,8 @@ import {
 import { GlobalArtifactStore } from '@multiagentos/artifacts';
 import {
   ArtifactOwnerLineSchema,
+  COMPACTION_SECTIONS,
+  COMPACTION_STRICT_SUFFIX,
   SessionIndexLineSchema,
   SessionRefLineSchema,
   TrustedInstructionLineSchema,
@@ -193,6 +195,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     options.catalog ??
     (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
   const builtin = builtIns(catalog);
+  // The instruction of the summary request of a compaction: without the Prompt nothing is compacted.
+  const compactionDefinition = catalog.latest('PROMPT', 'compaction-system');
+  const compactionPrompt =
+    compactionDefinition?.kind === 'PROMPT'
+      ? {
+          instruction: compactionDefinition.template,
+          strictSuffix: COMPACTION_STRICT_SUFFIX,
+          requiredSections: [...COMPACTION_SECTIONS],
+        }
+      : undefined;
   assertStartupChecks(config.kernel, [...builtin.sets.values()], registry, options.credentials);
   const main = builtin.sets.get('main');
   if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
@@ -246,6 +258,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       registry,
       pinAgent: pinAgentFrom(catalog, registry),
       agentShare: agentShareFrom(catalog),
+      ...(compactionPrompt === undefined ? {} : { compactionPrompt }),
       mainBudget: main.agent.budget,
       config: config.kernel,
       repositoryRoot: options.repositoryRoot,

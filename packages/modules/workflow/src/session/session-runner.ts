@@ -55,6 +55,7 @@ import {
 } from '../domain/agent/analysis-report.js';
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
+import { revokedCompactions } from '../domain/context/compaction-revocation.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
@@ -399,6 +400,36 @@ export class SessionRunner {
         ]);
         await this.#deps.store.recordTurnClosed();
         break;
+      case 'CompactionSourceQuery':
+        await this.#onCompactionQuery(workflowRunId, event);
+        break;
+      case 'ToolResultsPruned':
+        await this.#recordCompaction(workflowRunId, event.compactionId, 'PRUNE', [
+          {
+            type: 'TOOL_RESULTS_PRUNED',
+            workflowRunId,
+            compactionId: event.compactionId,
+            target: event.target,
+            items: event.items,
+          },
+        ]);
+        break;
+      case 'ContextCompacted':
+        await this.#recordCompaction(workflowRunId, event.compactionId, 'SUMMARY', [
+          {
+            type: 'CONTEXT_COMPACTED',
+            workflowRunId,
+            compactionId: event.compactionId,
+            target: event.target,
+            fromSeq: event.fromSeq,
+            toSeq: event.toSeq,
+            keptSeqs: event.keptSeqs,
+            summaryRef: event.summaryRef,
+            summaryInput: event.summaryInput,
+            usage: event.usage,
+          },
+        ]);
+        break;
       case 'WorkspaceReverted':
         await this.#append([
           {
@@ -410,6 +441,8 @@ export class SessionRunner {
             ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
           },
         ]);
+        // A summary of work that was undone stands for nothing any more (Module/Workflow 8.4).
+        await this.#append(revokedCompactions(this.#records, workflowRunId, event.revertedTurnIds));
         break;
       case 'WorkspaceDiverged': {
         // Measured against the last Turn, so reopening without one finds the same files again.
@@ -437,6 +470,53 @@ export class SessionRunner {
         this.#clearRun();
         break;
     }
+  }
+
+  /** Kernel asks for the material of a compaction: the projection of the target, as it is now. */
+  async #onCompactionQuery(
+    workflowRunId: string,
+    event: Extract<WorkflowInboxEvent['event'], { type: 'CompactionSourceQuery' }>,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const scope: ProjectionScope | undefined =
+      event.target.kind === 'MAIN'
+        ? { kind: 'MAIN' }
+        : this.#agents.get(event.target.agentRunId)?.scope;
+    // An AgentRun that is gone has nothing to compact; Kernel then finds nothing to do.
+    const entries =
+      scope === undefined ? [] : projectHistory(this.#records, scope, { material: true });
+    await this.#deps.gateway.reportCompactionSource(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        compactionId: event.compactionId,
+        entries: [...entries],
+      },
+      contextOf(sessionId),
+    );
+  }
+
+  /** What Kernel did to a context goes in the log first; only then does it take effect (9.6). */
+  async #recordCompaction(
+    workflowRunId: string,
+    compactionId: string,
+    stage: 'PRUNE' | 'SUMMARY',
+    records: readonly NewLogRecord[],
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const acknowledge = (outcome: 'RECORDED' | 'FAILED') =>
+      this.#deps.gateway.ackCompaction(
+        { requestId: newId('req'), sessionId, workflowRunId, compactionId, stage, outcome },
+        contextOf(sessionId),
+      );
+    try {
+      await this.#append(records);
+    } catch (error) {
+      await acknowledge('FAILED');
+      throw error;
+    }
+    await acknowledge('RECORDED');
   }
 
   #sessionIdOrThrow(): string {

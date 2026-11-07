@@ -76,10 +76,30 @@ export interface RunExecutionDeps {
     ) => Promise<readonly string[] | undefined>;
   };
   readonly audit?: (entry: object) => void;
+  /**
+   * After an ordinary assembly came back (or was refused for its size): is a compaction needed
+   * first? `COMPACTED` makes the assembly answer `CONTEXT_COMPACTED` so Workflow assembles again
+   * (Kernel/Core 6a); `BUDGET` that the compaction could not be paid for.
+   */
+  readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
+  /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
+  readonly modelAnswered?: (info: {
+    readonly agentRunId: string;
+    readonly completed: boolean;
+    readonly overflow: boolean;
+  }) => void;
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
+}
+
+/** What an ordinary assembly came to: its size, or that it was refused for being too big. */
+export interface AssemblyInfo {
+  readonly agentRunId: string;
+  readonly kind: 'COMPLETED' | 'OVERSIZE';
+  readonly tokenCount: number;
+  readonly tokenBudget: number;
 }
 
 /** The roots a sandboxed command may write: what a scan before and after looks at. */
@@ -432,6 +452,19 @@ export class RunExecution {
       return;
     if (await this.#createdProtected(attempt, fact)) return;
     this.#auditWeb(attempt, fact);
+    if (fact.executionKind === 'MODEL')
+      this.#deps.modelAnswered?.({
+        agentRunId: attempt.spec.agentRunId,
+        completed: fact.outcome === 'COMPLETED',
+        overflow: fact.outcome === 'REJECTED' && fact.reasonCode === 'CONTEXT_OVERFLOW',
+      });
+    if (fact.executionKind === 'CONTEXT_ASSEMBLE') {
+      const verdict = await this.#checkpoint(attempt, fact);
+      if (verdict !== undefined) {
+        await this.#finish(attempt, { executionId: fact.executionId, ...verdict });
+        return;
+      }
+    }
     if (
       fact.outcome === 'TERMINATED' &&
       fact.reasonCode === 'EXECUTION_CANCELLED' &&
@@ -469,6 +502,43 @@ export class RunExecution {
           }
         : {}),
     });
+  }
+
+  /**
+   * The checkpoint of a compaction (M2Design 9.6): an ordinary assembly that came out too big, or
+   * was refused for it, is not delivered; the compaction runs first and Workflow assembles again.
+   */
+  async #checkpoint(
+    attempt: Attempt,
+    fact: ExecutionFact,
+  ): Promise<
+    { outcome: 'REJECTED'; reasonCode: 'CONTEXT_COMPACTED' | 'BUDGET_WRAP_UP' } | undefined
+  > {
+    const { afterAssemble } = this.#deps;
+    if (afterAssemble === undefined || (attempt.spec.input as { final?: boolean }).final === true)
+      return undefined;
+    const { perCallInputLimit } = attempt.spec.agent.budget;
+    const info: AssemblyInfo | undefined =
+      fact.outcome === 'COMPLETED' && fact.executionKind === 'CONTEXT_ASSEMBLE'
+        ? {
+            agentRunId: attempt.spec.agentRunId,
+            kind: 'COMPLETED',
+            tokenCount: fact.result.output.tokenCount,
+            tokenBudget: perCallInputLimit,
+          }
+        : fact.outcome === 'REJECTED' && fact.reasonCode === 'LIMIT_EXCEEDED'
+          ? {
+              agentRunId: attempt.spec.agentRunId,
+              kind: 'OVERSIZE',
+              tokenCount: perCallInputLimit,
+              tokenBudget: perCallInputLimit,
+            }
+          : undefined;
+    if (info === undefined) return undefined;
+    const verdict = await afterAssemble(info);
+    if (verdict === 'COMPACTED') return { outcome: 'REJECTED', reasonCode: 'CONTEXT_COMPACTED' };
+    if (verdict === 'BUDGET') return { outcome: 'REJECTED', reasonCode: 'BUDGET_WRAP_UP' };
+    return undefined;
   }
 
   /**
