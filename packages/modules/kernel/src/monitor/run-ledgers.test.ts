@@ -159,3 +159,43 @@ describe('the final call always fits (invariant 6)', () => {
     );
   });
 });
+
+describe('the ledger of a compaction with no Turn open (Kernel/Monitor 3.4)', () => {
+  it('takes its share from the run, pays for what was used, and gives back the rest', () => {
+    const ledgers = new RunLedgers({ runTokenLimit: share * 10, turnTokenLimit: share * 2 }, main);
+    const before = ledgers.usage();
+    const ledger = ledgers.openCompactionLedger(300);
+    if (!ledger.ok) throw new Error('refused');
+    const reservation = ledger.reserve(1);
+    expect(reservation).toBeDefined();
+    if (reservation === undefined) return;
+    ledger.settle(reservation, used(120));
+    ledger.close();
+    ledger.close();
+    const after = ledgers.usage();
+    expect(after.inputTokens - before.inputTokens).toBe(120);
+    // Only what was used is gone: the Turn that follows gets its full share.
+    ledgers.openTurnLedger('trn_aaaaaaaa');
+    expect(ledgers.budgetView().turn).toBe('NORMAL');
+  });
+
+  it('is refused when the run would be left below the share of main', () => {
+    const ledgers = new RunLedgers({ runTokenLimit: share * 2, turnTokenLimit: share * 2 }, main);
+    expect(ledgers.openCompactionLedger(share)).toEqual({
+      ok: false,
+      reasonCode: 'BUDGET_INSUFFICIENT',
+    });
+  });
+
+  it('can be open while a Turn is, and the two do not take from each other', () => {
+    const ledgers = new RunLedgers({ runTokenLimit: share * 10, turnTokenLimit: share * 2 }, main);
+    const ledger = ledgers.openCompactionLedger(200);
+    if (!ledger.ok) throw new Error('refused');
+    expect(ledgers.hasOpenTurn()).toBe(false);
+    ledgers.openTurnLedger('trn_bbbbbbbb');
+    expect(ledgers.hasOpenTurn()).toBe(true);
+    expect(ledger.reserve(1)).toBeDefined();
+    ledger.close();
+    expect(ledgers.closeTurnLedger('trn_bbbbbbbb').modelRequests).toBe(0);
+  });
+});

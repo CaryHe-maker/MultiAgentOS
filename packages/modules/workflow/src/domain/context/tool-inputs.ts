@@ -81,7 +81,13 @@ function fullOutputOf(
     (record) => record.type === 'UNIT_COMPLETED' && record.requestId === requestId,
   );
   if (completed?.type !== 'UNIT_COMPLETED') return undefined;
-  return completed.fullRef === undefined ? {} : { fullRef: completed.fullRef };
+  if (completed.fullRef !== undefined) return { fullRef: completed.fullRef };
+  // A result that was cut by a compaction reads back from what the cut kept for it.
+  for (const record of records)
+    if (record.type === 'TOOL_RESULTS_PRUNED')
+      for (const item of record.items)
+        if (item.requestId === requestId) return { fullRef: item.readableRef };
+  return {};
 }
 
 const READ_FIRST =

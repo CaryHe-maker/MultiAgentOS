@@ -147,6 +147,7 @@ export function failureOf(
     | 'PROVIDER_AUTH'
     | 'PROVIDER_ERROR'
     | 'PROVIDER_TOOL_CHOICE_IGNORED'
+    | 'COMPACTION_SUMMARY_INVALID'
     | 'INTERNAL',
   retryable: boolean,
   requestState: RequestState,
@@ -183,7 +184,7 @@ export function classifyCall(
     if (status === 429) return failureOf('PROVIDER_RATE_LIMITED', true, 'NOT_SENT');
     if (status === 401 || status === 403) return failureOf('PROVIDER_AUTH', false, 'NOT_SENT');
     if (status === 408 || status >= 500) return failureOf('PROVIDER_ERROR', false, 'UNKNOWN');
-    if (status === 400 && isContextOverflow(error)) return rejected('LIMIT_EXCEEDED');
+    if (status === 400 && isContextOverflow(error)) return rejected('CONTEXT_OVERFLOW');
     if (status >= 400) return failureOf('INTERNAL', false, 'NOT_SENT');
   }
   if (!progress.started || progress.failedBeforeSending)
@@ -220,6 +221,17 @@ function completedCall(
       only.arguments === null)
   )
     return failureOf('PROVIDER_TOOL_CHOICE_IGNORED', true, 'SENT', usage);
+  // A summary request: the answer is the summary, so a call of a tool, or a summary without the
+  // sections that were asked for, is not one. Kernel asks again with a stricter instruction.
+  const { compaction } = input;
+  if (
+    compaction !== undefined &&
+    (rawCalls.length > 0 ||
+      compaction.requiredSections.some(
+        (section) => !text.toLowerCase().includes(section.toLowerCase()),
+      ))
+  )
+    return failureOf('COMPACTION_SUMMARY_INVALID', true, 'SENT', usage);
   const reasoning = reasoningOf(result);
   const hasReasoning = reasoning !== undefined;
   const raw: ModelRawOutput = {

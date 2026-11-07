@@ -38,7 +38,12 @@ type RunRequest =
 
 const refused = (
   requestId: string,
-  reasonCode: 'RUN_NOT_FOUND' | 'SESSION_NOT_FOUND' | 'INVALID_ARTIFACT_REF' | 'ARTIFACT_EXPIRED',
+  reasonCode:
+    | 'RUN_NOT_FOUND'
+    | 'SESSION_NOT_FOUND'
+    | 'INVALID_ARTIFACT_REF'
+    | 'ARTIFACT_EXPIRED'
+    | 'COMPACTION_UNKNOWN',
 ): SyscallRejected => ({ requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode });
 
 /**
@@ -139,6 +144,20 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.releaseDelegation(forward.request)),
         );
+      case 'reportCompactionSource':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.reportCompactionSource(forward.request)),
+        );
+      case 'ackCompaction':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.ackCompaction(forward.request)),
+        );
+      case 'compactContext': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => Promise.resolve(actor.compactContext(run))),
+        );
+      }
       case 'submitUnit':
         return this.#inRun(forward.request, (work) => work.submitUnit(forward.request));
       case 'endAgentRun':

@@ -14,19 +14,25 @@ import {
   type SandboxProfile,
 } from '@multiagentos/contracts';
 import type {
+  AckCompactionRequest,
   AnswerAuthorizationRequest,
+  ArtifactRef,
   AuthorizationRequest,
   AuthorizationResolved,
   CloseReason,
+  CompactionFailed,
+  CompactionTarget,
+  ContextCompacted,
   CoreRejectedCode,
   EndAgentRunRequest,
-  InterruptReason,
-  ArtifactRef,
   ExecutionScope,
+  InterruptReason,
+  KernelToWorkflowEvent,
   MemoryLevel,
   ProjectFileContent,
   ReadProjectFileRequest,
   RegisterAgentRunRequest,
+  ReportCompactionSourceRequest,
   RunSummary,
   SubmitUnitRequest,
   SyscallAck,
@@ -38,6 +44,9 @@ import type {
   UpdateActivityRequest,
 } from '@multiagentos/contracts';
 import { RequestLedger } from './request-ledger.js';
+import type { Compacting } from './run-compactor.js';
+import type { CompactionConfig } from './run-compaction.js';
+import type { AssemblyInfo } from './run-execution.js';
 import type { SchedulerDuties } from '../interfaces/index.js';
 import { minShare, type RunLedgers } from '../monitor/index.js';
 import type { AgentShare } from './pinned-agent.js';
@@ -85,10 +94,19 @@ export interface RunHost {
   attemptStarted(unitAttemptId: string): void;
   attemptEnded(unitAttemptId: string): void;
   toWorkflow(report: UnitReport): void;
-  toInteraction(event: AuthorizationRequest | AuthorizationResolved | ActivityOutput): void;
+  toInteraction(
+    event:
+      | AuthorizationRequest
+      | AuthorizationResolved
+      | ActivityOutput
+      | ContextCompacted
+      | CompactionFailed,
+  ): void;
+  /** An event of the run to Workflow other than a report (stage 8: the compaction's). */
+  toWorkflowEvent(event: KernelToWorkflowEvent): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
-  enqueue(work: () => void): void;
+  enqueue(work: () => void | Promise<void>): void;
 }
 
 /** What running commands needs from outside Core (Kernel/Core 5b); absent, no command runs. */
@@ -109,6 +127,12 @@ export interface CommandSupport {
 }
 
 export interface RunWorkDeps {
+  /**
+   * The compaction of this run's contexts and its thresholds (M2Design 9.6); absent: nothing is
+   * ever compacted, and a context that outgrows its window ends the way it did before stage 8.
+   */
+  readonly compactor?: Compacting;
+  readonly compaction?: CompactionConfig;
   readonly command?: CommandSupport;
   /** The sites the user forbade, and who receives a search (`KernelConfig.web`, Core 5f). */
   readonly web?: { readonly deniedDomains: readonly string[]; readonly searchProvider: string };
@@ -236,6 +260,10 @@ export class RunWork {
   readonly #attempts: RunAttempts;
   readonly #activity: RunActivity;
   readonly #startedAt: string;
+  /** AgentRuns that had an automatic compaction in the round they are in: at most one (9.6). */
+  readonly #compactedInRound = new Set<string>();
+  /** How many times in a row the provider refused the context of an AgentRun for its size. */
+  readonly #overflows = new Map<string, number>();
   /** Memory is short (Kernel/Core 5c): no new AgentRun, and the tools of running ones stop. */
   #memoryWarning = false;
   /** Ends the Kernel's wait for Workflow to close an interrupted run (Kernel/Core 5e). */
@@ -949,6 +977,163 @@ export class RunWork {
       agent: record.agent,
       display: request.display,
     });
+  }
+
+  // ---- compaction (Kernel/Core 6a) -------------------------------------------------------
+
+  /** What a compaction of this target is made with: its AgentRun's pinned agent. */
+  compactionAgent(
+    target: CompactionTarget,
+  ): { readonly agent: PinnedAgent; readonly agentRunId?: string } | undefined {
+    if (target.kind === 'AGENT_RUN') {
+      const record = this.#agentRuns.get(target.agentRunId);
+      if (record === undefined) return undefined;
+      // A SubAgent pays from its own ledger; a top-level AgentRun from the Turn's.
+      return {
+        agent: record.agent,
+        ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }),
+      };
+    }
+    const mains = [...this.#agentRuns.values()].filter(
+      (record) => record.parent === undefined && record.agent.id === 'main',
+    );
+    const main = mains.at(-1);
+    return main === undefined ? undefined : { agent: main.agent };
+  }
+
+  #targetOf(agentRunId: string): CompactionTarget {
+    const record = this.#agentRuns.get(agentRunId);
+    return record !== undefined && record.parent === undefined && record.agent.id === 'main'
+      ? { kind: 'MAIN' }
+      : { kind: 'AGENT_RUN', agentRunId };
+  }
+
+  /**
+   * What an ordinary assembly calls for (Kernel/Execution): a compaction of its context to run
+   * first, or waiting for one that is going on. The overflow trigger goes as far as
+   * `overflowTargets` go, the automatic one runs once a round.
+   */
+  #checkpoint(
+    info: AssemblyInfo,
+  ):
+    | { readonly kind: 'WAIT'; readonly going: Promise<unknown> }
+    | { readonly kind: 'RUN'; readonly request: Parameters<Compacting['run']>[0] }
+    | undefined {
+    const { compactor, compaction } = this.#deps;
+    if (compactor === undefined || compaction === undefined) return undefined;
+    const target = this.#targetOf(info.agentRunId);
+    // What an idle or a user's compaction of the same context is doing changes what this
+    // assembly was made of: wait for it, and have the assembly made again.
+    const going = compactor.runningFor(target);
+    if (going !== undefined) return { kind: 'WAIT', going };
+    const overflows = this.#overflows.get(info.agentRunId) ?? 0;
+    const overflowShare = compaction.overflowTargets[overflows - 1];
+    const size = Math.max(info.tokenCount, info.tokenBudget);
+    if (overflows > 0)
+      return overflowShare === undefined
+        ? undefined
+        : {
+            kind: 'RUN',
+            request: {
+              trigger: 'OVERFLOW',
+              target,
+              currentTokens: size,
+              goalTokens: Math.floor(size * overflowShare),
+            },
+          };
+    if (
+      !this.#compactedInRound.has(info.agentRunId) &&
+      (info.kind === 'OVERSIZE' || info.tokenCount >= compaction.triggerRatio * info.tokenBudget)
+    )
+      return {
+        kind: 'RUN',
+        request: { trigger: 'AUTO', target, currentTokens: info.tokenCount },
+      };
+    return undefined;
+  }
+
+  compactionDue(info: AssemblyInfo): boolean {
+    return this.#checkpoint(info) !== undefined;
+  }
+
+  async afterAssemble(info: AssemblyInfo): Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'> {
+    const step = this.#checkpoint(info);
+    const { compactor } = this.#deps;
+    if (step === undefined || compactor === undefined) return 'PROCEED';
+    if (step.kind === 'WAIT') {
+      await step.going;
+      return 'COMPACTED';
+    }
+    this.#compactedInRound.add(info.agentRunId);
+    this.#host.enqueue(() => {
+      this.#activity.compacting(info.agentRunId);
+    });
+    const result = await compactor.run(step.request);
+    if (result.kind === 'CHANGED') return 'COMPACTED';
+    return result.kind === 'BUDGET' ? 'BUDGET' : 'PROCEED';
+  }
+
+  /** The model answered or refused a call: a new round has begun, or a size was refused. */
+  modelAnswered(info: {
+    readonly agentRunId: string;
+    readonly completed: boolean;
+    readonly overflow: boolean;
+  }): void {
+    if (info.completed) {
+      this.#compactedInRound.delete(info.agentRunId);
+      this.#overflows.delete(info.agentRunId);
+    } else if (info.overflow)
+      this.#overflows.set(info.agentRunId, (this.#overflows.get(info.agentRunId) ?? 0) + 1);
+  }
+
+  /** Workflow hands over the material that Kernel asked for. */
+  reportCompactionSource(request: ReportCompactionSourceRequest): Response {
+    const known = this.#deps.compactor?.reportSource(request.compactionId, request.entries);
+    return known === true
+      ? { requestId: request.requestId, outcome: 'ACCEPTED' }
+      : {
+          requestId: request.requestId,
+          outcome: 'REJECTED',
+          issuer: 'CORE',
+          reasonCode: 'COMPACTION_UNKNOWN',
+        };
+  }
+
+  /** Workflow says whether it put the result of a compaction in the log. */
+  ackCompaction(request: AckCompactionRequest): Response {
+    const known = this.#deps.compactor?.acknowledge(
+      request.compactionId,
+      request.stage,
+      request.outcome,
+    );
+    return known === true
+      ? { requestId: request.requestId, outcome: 'ACCEPTED' }
+      : {
+          requestId: request.requestId,
+          outcome: 'REJECTED',
+          issuer: 'CORE',
+          reasonCode: 'COMPACTION_UNKNOWN',
+        };
+  }
+
+  /**
+   * main's context compacted while the run awaits input: `/compact` (the user asked) or ahead of
+   * time (idle). Not awaited by the actor; what comes of it reaches Workflow and the interface as
+   * events. Nothing happens without a main to compact, or when idle compaction is off.
+   */
+  startMainCompaction(trigger: 'USER' | 'IDLE'): boolean {
+    const { compactor, compaction } = this.#deps;
+    if (compactor === undefined || compaction === undefined) return false;
+    if (trigger === 'IDLE' && !compaction.idleEnabled) return false;
+    if (this.compactionAgent({ kind: 'MAIN' }) === undefined) return false;
+    if (compactor.runningFor({ kind: 'MAIN' }) !== undefined) return false;
+    void compactor.run({ trigger, target: { kind: 'MAIN' } }).catch(() => undefined);
+    return true;
+  }
+
+  /** A pause, an abort, `/undo`, `/fork` or the end of the run stops what compacts. */
+  cancelCompaction(): void {
+    this.#deps.compactor?.cancel();
   }
 
   /** Execution waits before the next try; Core says so in the activity area (Kernel/Execution 4a). */

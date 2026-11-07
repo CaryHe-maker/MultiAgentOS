@@ -421,6 +421,7 @@ interface ContextCompacted {
   target: CompactionTarget;
   fromSeq: number;                   // 被摘要取代的日志范围（含两端）
   toSeq: number;
+  keptSeqs: number[];                // 范围内原样保留的条目：`PINNED` 条目与按分级由 Kernel 选出的用户消息（M2Design 第 9.6 节），投影不取代它们
   summaryRef: ArtifactRef;           // 长期保留
   summaryInput: { mode: 'PREFIX' | 'TEXT'; omittedEntries: number };   // 摘要请求的方式；TEXT 为纯文本回退，omittedEntries 为去掉的条目数
   usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number };   // 各次摘要请求的合计
@@ -429,7 +430,7 @@ interface ContextCompacted {
 
 - Workflow 收到 `ToolResultsPruned` 后追加 `TOOL_RESULTS_PRUNED`，收到 `ContextCompacted` 后追加 `CONTEXT_COMPACTED`（Interface/Persistence 第 2.2 节），再分别 `ackCompaction`；投影规则见 M2Design 第 9.6 节。
 - 触发压缩的 `context-assemble` 在修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回，Workflow 用新的投影重新提交；这次拒绝不计入连续出错。
-- `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；第三次溢出后按收尾处理。
+- `model-call` 以 `REJECTED(CONTEXT_OVERFLOW)` 返回时，Workflow 重新提交 `context-assemble`（同一轮，提交路径的次数加一）；Kernel 在前三次之后各压缩一次，第四次溢出后按收尾处理。
 
 ### 3.5 上下文投影的条目
 

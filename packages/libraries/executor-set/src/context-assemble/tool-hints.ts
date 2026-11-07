@@ -49,6 +49,9 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
   NOT_A_GIT_REPOSITORY: 'this directory is not a git repository',
   ADDRESS_FORBIDDEN:
     'this address leads into this machine or a private network; web_fetch reaches only the public internet',
+  CONTEXT_COMPACTED:
+    'the earlier conversation was just compacted; the system sets the context up again',
+  CONTEXT_OVERFLOW: 'the conversation is longer than the model can take',
   DOMAIN_DENIED: 'the user has forbidden this site; do not try it again, use another source',
   SECRET_IN_REQUEST:
     'the query or address contains something that looks like a credential, so it was not sent; leave it out',
@@ -61,6 +64,7 @@ export const FAILED_HINTS: Record<UnitFailedCode, string> = {
   PROVIDER_RATE_LIMITED: 'the provider is rate limiting',
   PROVIDER_AUTH: 'the provider refused the credentials or the account has no balance',
   PROVIDER_ERROR: 'the provider returned an error',
+  COMPACTION_SUMMARY_INVALID: 'the summary of the earlier conversation could not be written',
   PAGE_UNAVAILABLE:
     'the page cannot be fetched (not found, needs a login, or its site refused); try another source',
   PROVIDER_TOOL_CHOICE_IGNORED: 'the model did not call the required tool',

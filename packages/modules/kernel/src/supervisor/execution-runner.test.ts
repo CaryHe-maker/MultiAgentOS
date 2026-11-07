@@ -263,6 +263,7 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
     GIT_INSPECT: unused('GIT_INSPECT'),
     WEB_SEARCH: unused('WEB_SEARCH'),
     WEB_FETCH: unused('WEB_FETCH'),
+    CONTEXT_PRUNE: unused('CONTEXT_PRUNE'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };

@@ -140,6 +140,14 @@ const ResolvedHistoryEntrySchema = Type.Union([
     text: Type.String(),
     toolCallId: Type.Optional(ToolCallIdSchema),
   }),
+  /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
+  closed({
+    seq: count(1),
+    turnId: Type.Optional(IdSchemas.turnId),
+    category: Type.Enum(['PINNED', 'NORMAL']),
+    kind: Type.Literal('SUMMARY'),
+    text: Type.String(),
+  }),
 ]);
 export type ResolvedHistoryEntry = Static<typeof ResolvedHistoryEntrySchema>;
 
@@ -154,6 +162,19 @@ export const AssembleExecutorInputSchema = Type.Refine(
       orientPack: Type.Optional(OrientContextPackSchema),
       history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
+      /**
+       * A request for the summary of a compaction instead of a call of the AgentRun (M2Design 9.6):
+       * PREFIX is the history as it is with the instruction after it, TEXT is the history written
+       * out as one transcript, without tools, from which the oldest whole model turns are left
+       * until it is estimated under `targetTokens`.
+       */
+      compaction: Type.Optional(
+        closed({
+          mode: Type.Enum(['PREFIX', 'TEXT']),
+          instruction: Type.String({ maxLength: 20000 }),
+          targetTokens: Type.Optional(count(1)),
+        }),
+      ),
       /** The AgentRun's last measured request; Kernel fills it, Workflow never holds tokens. */
       tokenCalibration: Type.Optional(
         closed({ measuredInputTokens: count(1), estimatedInputTokens: count(1) }),
@@ -171,10 +192,26 @@ export const ModelExecutorInputSchema = closed(
     contextPack: AssembleContextPackSchema,
     final: Type.Boolean(),
     finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+    /** A summary request: no tool may be called, and these sections must be in the answer. */
+    compaction: Type.Optional(closed({ requiredSections: Type.Array(text(100), { minItems: 1 }) })),
   },
   'kernel.execution.ModelExecutorInput.v1',
 );
 export type ModelExecutorInput = Static<typeof ModelExecutorInputSchema>;
+
+/** Tool results to cut to head and tail (M2Design 9.6): the text is the preview the model sees now. */
+export const PruneExecutorInputSchema = closed(
+  {
+    headBytes: count(1),
+    tailBytes: count(1),
+    items: Type.Array(closed({ toolCallId: ToolCallIdSchema, text: Type.String() }), {
+      minItems: 1,
+      maxItems: 500,
+    }),
+  },
+  'kernel.execution.PruneExecutorInput.v1',
+);
+export type PruneExecutorInput = Static<typeof PruneExecutorInputSchema>;
 
 /** `read_output` after Execution resolved `fullRef`; the Executor never sees a reference. */
 export const OutputReadExecutorInputSchema = closed(
@@ -225,6 +262,7 @@ export const ExecutionRequestSchema = Type.Union(
     request('REPOSITORY_LIST', RepositoryListInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
     request('FILE_READ', FileReadInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
     request('CONTEXT_ASSEMBLE', AssembleExecutorInputSchema, NoScopeSchema, AssembleLimitsSchema),
+    request('CONTEXT_PRUNE', PruneExecutorInputSchema, NoScopeSchema, AssembleLimitsSchema),
     request('MODEL', ModelExecutorInputSchema, ModelScopeSchema, ModelLimitsSchema),
     request('FILE_WRITE', FileWriteInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
     request('FILE_EDIT', FileEditInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),

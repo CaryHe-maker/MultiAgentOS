@@ -21,6 +21,8 @@ export const EXECUTION_KINDS = [
   'GIT_INSPECT',
   'WEB_SEARCH',
   'WEB_FETCH',
+  /** Kernel's own, for a compaction (M2Design 9.6): no Unit has it. */
+  'CONTEXT_PRUNE',
 ] as const;
 export const ExecutionKindSchema = Type.Enum(EXECUTION_KINDS, {
   $id: 'platform.common.ExecutionKind.v1',
@@ -42,6 +44,7 @@ export const EXECUTOR_KINDS = [
   'GIT_INSPECT',
   'WEB_SEARCH',
   'WEB_FETCH',
+  'CONTEXT_PRUNE',
 ] as const;
 export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 

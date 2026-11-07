@@ -1,3 +1,4 @@
+import { COMPACTION_FAILURES, COMPACTION_TRIGGERS } from '../context/compaction.js';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
@@ -222,6 +223,8 @@ export const ACTIVITY_PHASES = [
   'AWAITING_ANSWER',
   /** The run is paused: nothing of this AgentRun runs. */
   'PAUSED',
+  /** Its context is being compacted: nothing of this AgentRun runs until it is done. */
+  'COMPACTING',
   'WRAPPING_UP',
   'ENDED',
 ] as const;
@@ -273,6 +276,31 @@ export const RunFinishedSchema = Type.Union([...runEnd('RunFinished')], {
 });
 export type RunFinished = Static<typeof RunFinishedSchema>;
 
+/** A compaction took effect (Workflow has recorded it); only a prune has no summary. */
+export const ContextCompactedSchema = closed(
+  {
+    type: Type.Literal('ContextCompacted'),
+    trigger: Type.Enum(COMPACTION_TRIGGERS),
+    summaryRef: Type.Optional(ArtifactRefSchema),
+    /** Turns the summary replaced, partly replaced ones included; 0 when only results were cut. */
+    compactedTurns: count(),
+    prunedResults: count(),
+  },
+  'kernel.control.ContextCompacted.v1',
+);
+export type ContextCompacted = Static<typeof ContextCompactedSchema>;
+
+/** A compaction the user or the run asked for did not happen; an idle one is never reported. */
+export const CompactionFailedSchema = closed(
+  {
+    type: Type.Literal('CompactionFailed'),
+    trigger: Type.Enum(COMPACTION_TRIGGERS.filter((trigger) => trigger !== 'IDLE')),
+    reason: Type.Enum(COMPACTION_FAILURES),
+  },
+  'kernel.control.CompactionFailed.v1',
+);
+export type CompactionFailed = Static<typeof CompactionFailedSchema>;
+
 export const KernelToInteractionEventSchema = Type.Union([
   AuthorizationRequestSchema,
   AuthorizationResolvedSchema,
@@ -285,6 +313,8 @@ export const KernelToInteractionEventSchema = Type.Union([
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,
   WorkspaceRevertedSchema,
+  ContextCompactedSchema,
+  CompactionFailedSchema,
 ]);
 export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 

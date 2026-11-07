@@ -46,6 +46,7 @@ const config: ExecutionConfig = {
     OUTPUT_READ: tool,
     COMMAND: tool,
     GIT_INSPECT: tool,
+    CONTEXT_PRUNE: { timeoutMs: 1000, maxOutputBytes: 1000 },
     WEB_SEARCH: tool,
     WEB_FETCH: tool,
     CONTEXT_ASSEMBLE: { timeoutMs: 1000, maxOutputBytes: 1000 },
@@ -161,7 +162,7 @@ function setup(
     retrying: (activity) => retries.push(activity),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
-      work();
+      void work();
     },
     schedule: (delayMs, due) => {
       const timer = { delayMs, due, cancelled: false };

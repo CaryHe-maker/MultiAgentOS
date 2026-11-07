@@ -17,6 +17,7 @@ export function ulid(now: number = Date.now()): string {
 
 export type IdPrefix =
   | 'wfr'
+  | 'cmp'
   | 'agr'
   | 'req'
   | 'una'

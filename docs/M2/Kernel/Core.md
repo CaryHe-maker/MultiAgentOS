@@ -300,14 +300,14 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 额度 | 写摘要之前请 Monitor 预留（Monitor 第 3.5 节）；额度检查的结果先记下：不足时只修剪，修剪后仍超出时挂起的组装以 `BUDGET_WRAP_UP` 返回；用户触发时发出 `CompactionFailed(BUDGET_INSUFFICIENT)`；空闲触发时直接结束 |
 | 材料 | 审计 `COMPACTION_STARTED`；Outbox 发出 `CompactionSourceQuery`，按 `compactionId` 等待 `reportCompactionSource` |
 | 修剪 | 按 M2Design 第 9.6 节第 4.5 步划出保留区并选出候选，请 Execution 修剪（Execution 第 6a 节）；有结果时 Outbox 发出 `ToolResultsPruned`，等待 `ackCompaction(stage: PRUNE, RECORDED)`；生效后重新估算，已低于目标（自动、溢出）或 `idleTriggerRatio`（空闲）时结束，挂起的组装以 `REJECTED(CONTEXT_COMPACTED)` 返回 |
-| 范围 | 按 M2Design 第 9.6 节第 5 步选定；没有可压缩的范围时结束（自动触发时挂起的组装照常执行，有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回；用户触发时发出 `CompactionFailed(NOTHING_TO_COMPACT)`，有修剪时发出只含修剪的 `ContextCompacted`） |
+| 范围 | 按 M2Design 第 9.6 节第 5 步选定，并按"条目的分级"从范围内的用户消息里选出原样保留的 `keptSeqs`（不超过 `keepHumanBytes`，从新到旧累计，单条超过一半的不留）；没有可压缩的范围时结束（自动触发时挂起的组装照常执行，有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回；用户触发时发出 `CompactionFailed(NOTHING_TO_COMPACT)`，有修剪时发出只含修剪的 `ContextCompacted`） |
 | 摘要 | 请 Execution 组装并执行摘要请求（Execution 第 6a 节）：先用前缀式；`COMPACTION_SUMMARY_INVALID` 时追加更严格的指令重试一次；前缀式超出窗口或 `CONTEXT_OVERFLOW` 时改用纯文本式，依次以 `summaryFallbackTargets` 为目标重试；每次请求各自预留与结算 |
 | 写回 | Outbox 发出 `ContextCompacted`，等待 `ackCompaction(stage: SUMMARY, RECORDED)`；收到后审计 `COMPACTION_ENDED`，向 UserInteraction 发出 `ContextCompacted`（空闲触发同样发出），挂起的组装以 `REJECTED(CONTEXT_COMPACTED)` 返回 |
 | 失败 | 任何一步失败：结算预留，审计 `COMPACTION_FAILED`；已生效的修剪保留；自动触发时挂起的组装照常执行（有修剪时以 `REJECTED(CONTEXT_COMPACTED)` 返回，仍超出时 `LIMIT_EXCEEDED`），用户触发时发出 `CompactionFailed`，空闲触发时只写审计 |
 
 - 压缩进行期间，该对象不会有新的模型调用：触发它的组装被挂起，Workflow 在收到这次组装的结果之前不会提交下一次 `model-call`。
 - 同一对象同一时刻至多一次压缩；同一轮中至多因自动触发压缩一次，之后重新提交的组装照常执行（M2Design 第 9.6 节"不循环"）；
-  溢出触发按 `overflowTargets` 依次缩小目标，第三次后不再压缩。
+  溢出触发按 `overflowTargets` 依次缩小目标（第 n 次溢出之后以第 n 个为目标），三次之后不再压缩。
 - 压缩不改变运行控制状态与 Turn；它占用的时间计入 AgentRun 的墙钟。
 - **空闲压缩与其他操作**：进行中收到 `HUMAN_ANSWER` 时照常开启 Turn，main 的第一次 `context-assemble` 挂起到压缩结束；进行中收到 `compactContext`、`undoTurns`、Fork、切换或关闭 Session 时，先取消空闲压缩（取消摘要尝试，按失败处理，不写回摘要），再处理该请求。
 - **SubAgent**：对象为 `AGENT_RUN`，额度从它自己的账本支出；额度不足以写摘要时按统一收尾路径进入最后一轮，以 `finish_subagent` 结束（M2Design 第 7.3 节）。

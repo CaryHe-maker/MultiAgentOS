@@ -6,6 +6,7 @@ import type { SandboxBackend, SandboxScope } from './platform-common/sandbox.js'
 import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
   AssembleExecutorInput,
+  PruneExecutorInput,
   ExecutionLimits,
   ModelExecutorInput,
   OutputReadExecutorInput,
@@ -25,6 +26,7 @@ import type {
   PauseRunRequest,
   ResumeRunRequest,
   SteerRunRequest,
+  CompactContextRequest,
   ConfirmUndoRequest,
   DiffTurnsRequest,
   ReadArtifactRequest,
@@ -51,6 +53,8 @@ import type {
   DelegationReserved,
   RegisterAgentRunRequest,
   ReleaseDelegationRequest,
+  ReportCompactionSourceRequest,
+  AckCompactionRequest,
   ReserveDelegationRequest,
   RequestHumanRequest,
   SubmitUnitRequest,
@@ -112,6 +116,7 @@ export interface ExecutorInputByKind {
   readonly REPOSITORY_LIST: RepositoryListInput;
   readonly FILE_READ: FileReadInput;
   readonly CONTEXT_ASSEMBLE: AssembleExecutorInput;
+  readonly CONTEXT_PRUNE: PruneExecutorInput;
   readonly MODEL: ModelExecutorInput;
   readonly FILE_WRITE: FileWriteInput;
   readonly FILE_EDIT: FileEditInput;
@@ -402,6 +407,16 @@ export interface WorkflowGatewayPort {
     request: ReleaseDelegationRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
+  /** The material of a compaction, as Kernel asked for it with `CompactionSourceQuery` (阶段 8). */
+  reportCompactionSource(
+    request: ReportCompactionSourceRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** The result of a compaction is in the log, or could not be put there (阶段 8). */
+  ackCompaction(
+    request: AckCompactionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   submitUnit(
     request: SubmitUnitRequest,
     context: BoundaryContext,
@@ -484,6 +499,11 @@ export interface InteractionGatewayPort {
   ): Promise<SyscallAck | SyscallRejected>;
   steerRun(
     request: SteerRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** `/compact` (阶段 8): only while the run awaits input. */
+  compactContext(
+    request: CompactContextRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   undoTurns(

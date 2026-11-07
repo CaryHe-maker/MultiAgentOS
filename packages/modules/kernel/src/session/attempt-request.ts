@@ -76,6 +76,7 @@ export interface ExecutionConfig {
     readonly WEB_SEARCH: ToolExecutionLimit;
     readonly WEB_FETCH: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
+    readonly CONTEXT_PRUNE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
   readonly retryBackoffBaseMs: number;
@@ -240,7 +241,9 @@ export class AttemptRequestBuilder {
         };
       case 'OUTPUT_READ': {
         const { fullRef, ...window } = inputOf<OutputReadInput>(OutputReadInputSchema, input);
-        if (!this.#deps.artifacts.isFullOutput(fullRef))
+        // The reference comes from Workflow's log: a full output, or the preview of a result that a
+        // compaction cut and kept to be read.
+        if (!this.#deps.artifacts.isFullOutput(fullRef) && !this.#deps.artifacts.owns(fullRef))
           throw new RequestBuildError('INVALID_ARTIFACT_REF');
         return {
           request: made(
@@ -397,6 +400,13 @@ export class AttemptRequestBuilder {
     return this.#json<ModelRawOutput>(ref, ModelRawOutputSchema);
   }
 
+  /** The entries of a projection with their texts, for a request Kernel makes itself. */
+  async resolveHistory(entries: readonly ContextHistoryEntry[]): Promise<ResolvedHistoryEntry[]> {
+    const resolved: ResolvedHistoryEntry[] = [];
+    for (const entry of entries) resolved.push(await this.#resolved(entry));
+    return resolved;
+  }
+
   async #resolved(entry: ContextHistoryEntry): Promise<ResolvedHistoryEntry> {
     const { seq, category } = entry;
     const base = { seq, category, ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }) };
@@ -405,6 +415,8 @@ export class AttemptRequestBuilder {
         return { ...base, kind: 'HUMAN', text: await this.#text(entry.contentRef) };
       case 'NOTE':
         return { ...base, kind: 'NOTE', text: entry.text };
+      case 'SUMMARY':
+        return { ...base, kind: 'SUMMARY', text: await this.#text(entry.contentRef) };
       case 'PROJECT_INSTRUCTIONS':
         return {
           ...base,

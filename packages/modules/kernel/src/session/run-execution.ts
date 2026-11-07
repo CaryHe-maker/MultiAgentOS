@@ -52,8 +52,11 @@ export interface RunExecutionDeps {
   readonly written: (path: string, sha256: string) => Promise<void>;
   /** Undefined when the file does not exist. */
   readonly readRepositoryFile: (path: string, scope: ExecutionScope) => Promise<string | undefined>;
-  /** Runs `work` as a control message of the actor; a timer only does this. */
-  readonly enqueue: (work: () => void) => void;
+  /**
+   * Runs `work` as a control message of the actor; a timer only does this. The actor awaits what
+   * `work` returns before it sends what the message produced.
+   */
+  readonly enqueue: (work: () => void | Promise<void>) => void;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
   /**
@@ -76,10 +79,32 @@ export interface RunExecutionDeps {
     ) => Promise<readonly string[] | undefined>;
   };
   readonly audit?: (entry: object) => void;
+  /**
+   * After an ordinary assembly came back (or was refused for its size): is a compaction needed
+   * first? `COMPACTED` makes the assembly answer `CONTEXT_COMPACTED` so Workflow assembles again
+   * (Kernel/Core 6a); `BUDGET` that the compaction could not be paid for.
+   */
+  readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
+  /** Decided at once, inside the actor: is a compaction due for this assembly? */
+  readonly compactionDue?: (info: AssemblyInfo) => boolean;
+  /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
+  readonly modelAnswered?: (info: {
+    readonly agentRunId: string;
+    readonly completed: boolean;
+    readonly overflow: boolean;
+  }) => void;
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
+}
+
+/** What an ordinary assembly came to: its size, or that it was refused for being too big. */
+export interface AssemblyInfo {
+  readonly agentRunId: string;
+  readonly kind: 'COMPLETED' | 'OVERSIZE';
+  readonly tokenCount: number;
+  readonly tokenBudget: number;
 }
 
 /** The roots a sandboxed command may write: what a scan before and after looks at. */
@@ -131,7 +156,11 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   }
 }
 
-type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
+/** What a Unit attempt completes with; CONTEXT_PRUNE is Kernel's own and answers the compaction. */
+type Completed = Exclude<
+  Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
+  { executionKind: 'CONTEXT_PRUNE' }
+>;
 type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
 /** The overview is a structure with its own token budget, not a preview of an output. */
@@ -154,6 +183,7 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
+  readonly #internal = new Map<string, (fact: ExecutionFact) => void>();
   readonly #effects: UnknownEffect[] = [];
   #seq = 0;
   #pumping = false;
@@ -400,8 +430,23 @@ export class RunExecution {
     }
   }
 
+  /**
+   * Kernel's own executions (a prune or a summary of a compaction) have no Unit attempt: the
+   * compaction that started one hears its fact here, once.
+   */
+  expectInternal(unitAttemptId: string, handler: (fact: ExecutionFact) => void): void {
+    this.#internal.set(unitAttemptId, handler);
+  }
+
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
   async handleFact(fact: ExecutionFact): Promise<void> {
+    const internal = this.#internal.get(fact.unitAttemptId);
+    if (internal !== undefined) {
+      this.#internal.delete(fact.unitAttemptId);
+      internal(fact);
+      return;
+    }
+    if (fact.executionKind === 'CONTEXT_PRUNE') return;
     const attempt = this.#byId.get(fact.unitAttemptId);
     if (
       attempt === undefined ||
@@ -412,6 +457,26 @@ export class RunExecution {
       return;
     if (await this.#createdProtected(attempt, fact)) return;
     this.#auditWeb(attempt, fact);
+    if (fact.executionKind === 'MODEL')
+      this.#deps.modelAnswered?.({
+        agentRunId: attempt.spec.agentRunId,
+        completed: fact.outcome === 'COMPLETED',
+        overflow: fact.outcome === 'REJECTED' && fact.reasonCode === 'CONTEXT_OVERFLOW',
+      });
+    // An assembly that came out too big is not delivered: a compaction runs first. That waits for
+    // Workflow, so it cannot be waited for here, inside the actor's own message (Kernel/Core 6a).
+    const due = this.#assemblyDue(attempt, fact);
+    if (due !== undefined) {
+      void this.#compactBeforeDelivering(attempt, fact, due);
+      return;
+    }
+    await this.#settle(attempt, fact);
+  }
+
+  /** What the rest of a fact comes to once nothing holds it back. */
+  async #settle(attempt: Attempt, fact: ExecutionFact): Promise<void> {
+    // Kernel's own execution of a compaction never gets here: it was answered to its asker.
+    if (fact.executionKind === 'CONTEXT_PRUNE') return;
     if (
       fact.outcome === 'TERMINATED' &&
       fact.reasonCode === 'EXECUTION_CANCELLED' &&
@@ -448,6 +513,56 @@ export class RunExecution {
             ...(fact.usage === undefined ? {} : { usage: fact.usage }),
           }
         : {}),
+    });
+  }
+
+  /**
+   * The checkpoint of a compaction (M2Design 9.6): an ordinary assembly that came out too big, or
+   * was refused for it, is not delivered until the compaction has run. What it is, when it is due.
+   */
+  #assemblyDue(attempt: Attempt, fact: ExecutionFact): AssemblyInfo | undefined {
+    const { compactionDue } = this.#deps;
+    if (compactionDue === undefined || (attempt.spec.input as { final?: boolean }).final === true)
+      return undefined;
+    const { perCallInputLimit } = attempt.spec.agent.budget;
+    const info: AssemblyInfo | undefined =
+      fact.outcome === 'COMPLETED' && fact.executionKind === 'CONTEXT_ASSEMBLE'
+        ? {
+            agentRunId: attempt.spec.agentRunId,
+            kind: 'COMPLETED',
+            tokenCount: fact.result.output.tokenCount,
+            tokenBudget: perCallInputLimit,
+          }
+        : fact.outcome === 'REJECTED' && fact.reasonCode === 'LIMIT_EXCEEDED'
+          ? {
+              agentRunId: attempt.spec.agentRunId,
+              kind: 'OVERSIZE',
+              tokenCount: perCallInputLimit,
+              tokenBudget: perCallInputLimit,
+            }
+          : undefined;
+    return info !== undefined && compactionDue(info) ? info : undefined;
+  }
+
+  /** Runs outside the actor; what comes of it goes back in as a message of the actor. */
+  async #compactBeforeDelivering(
+    attempt: Attempt,
+    fact: ExecutionFact,
+    info: AssemblyInfo,
+  ): Promise<void> {
+    // A compaction that breaks must not break the call it was to make room for.
+    const verdict =
+      (await this.#deps.afterAssemble?.(info).catch(() => 'PROCEED' as const)) ?? 'PROCEED';
+    this.#deps.enqueue(async () => {
+      // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
+      if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;
+      if (verdict === 'PROCEED') await this.#settle(attempt, fact);
+      else
+        await this.#finish(attempt, {
+          executionId: attempt.executionId ?? '',
+          outcome: 'REJECTED',
+          reasonCode: verdict === 'COMPACTED' ? 'CONTEXT_COMPACTED' : 'BUDGET_WRAP_UP',
+        });
     });
   }
 

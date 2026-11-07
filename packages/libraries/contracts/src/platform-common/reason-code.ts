@@ -84,6 +84,9 @@ export const REASON_CODE_CATEGORY = {
   SECRET_IN_REQUEST: 'POLICY',
   UNSUPPORTED_CONTENT: 'EXECUTION',
   PAGE_UNAVAILABLE: 'EXECUTION',
+  CONTEXT_COMPACTED: 'RESOURCE',
+  COMPACTION_SUMMARY_INVALID: 'EXECUTION',
+  COMPACTION_UNKNOWN: 'CONFLICT',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
@@ -138,6 +141,7 @@ export const CORE_REJECTED_CODES = [
   'MEMORY_PRESSURE',
   'WRITE_SCOPE_CONFLICT',
   'DELEGATION_NOT_FOUND',
+  'COMPACTION_UNKNOWN',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
@@ -162,6 +166,7 @@ export const EXECUTOR_REJECTED_CODES = [
   'ADDRESS_FORBIDDEN',
   'SECRET_IN_REQUEST',
   'UNSUPPORTED_CONTENT',
+  'CONTEXT_OVERFLOW',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `FAILED` outcome. */
 export const EXECUTOR_FAILED_CODES = [
@@ -171,6 +176,7 @@ export const EXECUTOR_FAILED_CODES = [
   'PROVIDER_ERROR',
   'PROVIDER_TOOL_CHOICE_IGNORED',
   'PAGE_UNAVAILABLE',
+  'COMPACTION_SUMMARY_INVALID',
   'INTERNAL',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `VIOLATION` outcome, and the `failure.code` of a run closed as VIOLATION. */
@@ -205,6 +211,8 @@ export const UNIT_REJECTED_CODES = [
   'PROTECTED_PATH_CREATED',
   'WRITE_SCOPE_DELEGATED',
   'DOMAIN_DENIED',
+  /** The assembly was held for a compaction that has now taken effect: submit it again (Core 6a). */
+  'CONTEXT_COMPACTED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */

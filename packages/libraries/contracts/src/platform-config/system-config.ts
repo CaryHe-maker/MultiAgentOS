@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { ThinkingEffortSchema } from '../executor/model-call.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { closed, count, text } from '../platform-common/schema-helpers.js';
 
@@ -77,6 +78,34 @@ export const KernelConfigSchema = closed(
         remote: Type.Union([Type.Null(), closed({ provider: text(32), baseUrl: text(200) })]),
       }),
     }),
+    /** Context compaction (M2Design 9.6, Kernel/Core 6a); the values were checked on one model only. */
+    compaction: closed({
+      /** Compact at a checkpoint when the estimate passes this share of `perCallInputLimit`. */
+      triggerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+      /** Compact ahead of time, while the run awaits input, past this share (`idleEnabled`). */
+      idleTriggerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
+      idleEnabled: Type.Boolean(),
+      /** The newest part of a projection that stays as it is, counted from a whole model turn. */
+      keepTokens: count(1),
+      /** User messages kept as they are, at most this many bytes together (M2Design 9.6, tiers). */
+      keepHumanBytes: count(0),
+      /** A tool result is cut only when its preview is longer than this. */
+      pruneMinBytes: count(1),
+      pruneHeadBytes: count(1),
+      pruneTailBytes: count(1),
+      summaryMaxTokens: count(1),
+      /** After an overflow, the shares of the size it had that the next try aims at. */
+      overflowTargets: Type.Array(Type.Number({ exclusiveMinimum: 0, maximum: 1 }), {
+        minItems: 1,
+        maxItems: 5,
+      }),
+      /** A summary request that is itself refused for size is tried again at these shares. */
+      summaryFallbackTargets: Type.Array(Type.Number({ exclusiveMinimum: 0, maximum: 1 }), {
+        minItems: 1,
+        maxItems: 6,
+      }),
+      summaryReasoningEffort: ThinkingEffortSchema,
+    }),
     killGraceMs: ms(),
     maxConcurrentExec: count(1),
     /** UnitAttempts executing at the same time, over all AgentRuns (M2Design 7.1). */
@@ -110,6 +139,7 @@ export const KernelConfigSchema = closed(
       WEB_SEARCH: ToolLimitSchema,
       WEB_FETCH: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
+      CONTEXT_PRUNE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),
     artifactRetention: closed({

@@ -88,6 +88,7 @@ async function call(
   options: {
     final?: boolean;
     finalMode?: 'AUTO' | 'FORCED';
+    compaction?: { requiredSections: string[] };
     environment?: Partial<ExecutorEnvironment>;
   } = {},
 ): Promise<{ outcome: ExecutorOutcome; recorded: Recorded }> {
@@ -98,6 +99,7 @@ async function call(
       contextPack: options.final === true ? finalPack : pack,
       final: options.final === true,
       ...(options.finalMode === undefined ? {} : { finalMode: options.finalMode }),
+      ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     },
     environmentFor('MODEL', MODEL_SCOPE, options.environment),
   );
@@ -325,7 +327,48 @@ describe('a size the provider refuses', () => {
     const progress = { started: true, failedBeforeSending: false, responded: true };
     expect(classifyCall(error, progress, new AbortController().signal)).toEqual({
       outcome: 'REJECTED',
-      reasonCode: 'LIMIT_EXCEEDED',
+      reasonCode: 'CONTEXT_OVERFLOW',
     });
+  });
+});
+
+describe('a summary request (ExecutorSet 7)', () => {
+  const sections = { requiredSections: ['Goal', 'Open items'] };
+  const summary = '1. Goal and requirements\nfix it\n6. Open items\nnone';
+
+  it('is a completed call whose text is the summary', async () => {
+    const { outcome } = await call(() => chatCompletion([], { text: summary }), {
+      compaction: sections,
+    });
+    expect(outcome).toMatchObject({ outcome: 'COMPLETED', requestState: 'SENT' });
+  });
+
+  it('is not a summary when a section is missing, and Kernel may ask again', async () => {
+    const { outcome } = await call(() => chatCompletion([], { text: 'Goal: fix it' }), {
+      compaction: sections,
+    });
+    expect(outcome).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'COMPACTION_SUMMARY_INVALID',
+      retryable: true,
+      requestState: 'SENT',
+      usage: { inputTokens: 1200 },
+    });
+  });
+
+  it('is not a summary when the model calls a tool, and the call is not carried out', async () => {
+    const { outcome } = await call(
+      () =>
+        chatCompletion([{ id: 'call_1', name: 'read_file', arguments: '{"path":"a"}' }], {
+          text: summary,
+        }),
+      { compaction: sections },
+    );
+    expect(outcome).toMatchObject({ outcome: 'FAILED', reasonCode: 'COMPACTION_SUMMARY_INVALID' });
+  });
+
+  it('leaves an ordinary call alone', async () => {
+    const { outcome } = await call(() => chatCompletion([], { text: 'just text' }));
+    expect(outcome.outcome).toBe('COMPLETED');
   });
 });
