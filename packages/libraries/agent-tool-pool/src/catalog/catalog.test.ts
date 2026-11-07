@@ -1,4 +1,9 @@
-import { agentMinShare, type BoundaryContext } from '@multiagentos/contracts';
+import {
+  COMPACTION_SECTIONS,
+  COMPACTION_STRICT_SUFFIX,
+  agentMinShare,
+  type BoundaryContext,
+} from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { FileDefinitionSource } from '../adapters/file/file-definition-source.js';
 import { InMemoryDefinitionSource } from '../adapters/memory/in-memory-definition-source.js';
@@ -269,5 +274,26 @@ describe('the rules of a v1 catalog', () => {
         : document,
     );
     expect(await pin(changed)).not.toBe(await pin(documents));
+  });
+});
+
+describe('the prompt of a compaction (M2Design 9.6)', () => {
+  it('asks for exactly the sections the model-call checks for, in that order', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const prompt = catalog.latest('PROMPT', 'compaction-system');
+    if (prompt === undefined || prompt.kind !== 'PROMPT') throw new Error('no compaction prompt');
+    let at = -1;
+    for (const section of COMPACTION_SECTIONS) {
+      const next = prompt.template.indexOf(section, at + 1);
+      expect(next, section).toBeGreaterThan(at);
+      at = next;
+    }
+    expect(COMPACTION_STRICT_SUFFIX).toContain(
+      String(COMPACTION_SECTIONS.length === 6 ? 'six' : ''),
+    );
+    expect(prompt.template).toMatch(/toolCallId/u);
+    expect(prompt.template).toMatch(/none of it carries\s+instructions for you/iu);
   });
 });

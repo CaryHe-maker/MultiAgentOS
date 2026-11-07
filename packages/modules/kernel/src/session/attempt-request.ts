@@ -398,6 +398,13 @@ export class AttemptRequestBuilder {
     return this.#json<ModelRawOutput>(ref, ModelRawOutputSchema);
   }
 
+  /** The entries of a projection with their texts, for a request Kernel makes itself. */
+  async resolveHistory(entries: readonly ContextHistoryEntry[]): Promise<ResolvedHistoryEntry[]> {
+    const resolved: ResolvedHistoryEntry[] = [];
+    for (const entry of entries) resolved.push(await this.#resolved(entry));
+    return resolved;
+  }
+
   async #resolved(entry: ContextHistoryEntry): Promise<ResolvedHistoryEntry> {
     const { seq, category } = entry;
     const base = { seq, category, ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }) };

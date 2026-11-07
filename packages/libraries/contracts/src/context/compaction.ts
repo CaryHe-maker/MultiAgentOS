@@ -66,3 +66,20 @@ export const COMPACTION_FAILURES = [
   'NOT_RECORDED',
 ] as const;
 export type CompactionFailure = (typeof COMPACTION_FAILURES)[number];
+
+/**
+ * The sections a summary must have (the Prompt `compaction-system` asks for exactly these, and a
+ * test holds the two together): `model-call` refuses an answer that lacks one.
+ */
+export const COMPACTION_SECTIONS = [
+  'Goal and requirements',
+  'Work done and findings',
+  'Key decisions',
+  'Files involved',
+  'Outputs that may be read again',
+  'Open items',
+] as const;
+
+/** Added to the instruction of the second try, after an answer that was not a summary. */
+export const COMPACTION_STRICT_SUFFIX =
+  '\n\nYour last reply was not a summary in the format above. Reply with the six sections and nothing else, and call no tool.';

@@ -34,6 +34,7 @@ describe('shipped definitions', () => {
       'AGENT:worker@v0.1.0',
       'MODEL:deepseek-flash@v0.1.0',
       'PROMPT:code-viewer-system@v0.1.0',
+      'PROMPT:compaction-system@v0.1.0',
       'PROMPT:explorer-system@v0.1.0',
       'PROMPT:main-system@v0.1.0',
       'PROMPT:planner-system@v0.1.0',

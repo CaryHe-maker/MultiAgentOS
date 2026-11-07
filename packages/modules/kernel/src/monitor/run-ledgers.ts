@@ -166,6 +166,49 @@ export class RunLedgers {
     };
   }
 
+  /** A Turn ledger is open: main's calls are paid from it. */
+  hasOpenTurn(): boolean {
+    return this.#turn !== undefined;
+  }
+
+  /**
+   * A ledger of its own for a compaction while no Turn is open (`/compact`, an idle compaction;
+   * Kernel/Monitor 3.4). The share is taken out of the run's balance, which must stay at least
+   * `minShare(main)`, and what is not used goes back when it is closed. It can sit beside a Turn
+   * ledger, since a Turn may open while an idle compaction is still going.
+   */
+  openCompactionLedger(estimatedTokens: number):
+    | { readonly ok: false; readonly reasonCode: 'BUDGET_INSUFFICIENT' }
+    | {
+        readonly ok: true;
+        reserve(cacheHitWeight: number): string | undefined;
+        settle(reservationId: string, settlement: Settlement): SettlementResult;
+        close(): void;
+      } {
+    const share = estimatedTokens + finalReserve(this.#main);
+    if (!Number.isSafeInteger(share) || this.#remaining - share < minShare(this.#main))
+      return { ok: false, reasonCode: 'BUDGET_INSUFFICIENT' };
+    this.#remaining -= share;
+    const ledger = new Monitor({ ...this.#main, tokenLimit: share }, { allowShortLimit: true });
+    let closed = false;
+    return {
+      ok: true,
+      reserve: (cacheHitWeight) => {
+        const reserved = ledger.reserve({ estimatedTokens, final: false, cacheHitWeight });
+        return reserved.ok ? reserved.reservationId : undefined;
+      },
+      settle: (reservationId, settlement) => ledger.settle(reservationId, settlement),
+      close: () => {
+        if (closed) return;
+        closed = true;
+        const total = noUsage();
+        addUsage(total, ledger.finalize());
+        this.#remaining += share - total.used - total.unknown;
+        addUsage(this.#closed, total);
+      },
+    };
+  }
+
   /** Reserves in the ledger of `agentRunId`; without it, in the Turn's (main's own). */
   reserve(
     request: {
