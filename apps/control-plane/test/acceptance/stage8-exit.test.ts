@@ -554,3 +554,23 @@ describe('L1: what the user said stays word for word', () => {
     TIMEOUT,
   );
 });
+
+describe('L9: a result that was cut and is read again', () => {
+  it(
+    'reads the same file once more and the work goes on',
+    async () => {
+      const provider = scriptedAgents({
+        main: [read('a.txt'), read('b.txt'), read('c.txt'), read('a.txt'), reply('read again')],
+        summary: Array.from({ length: 8 }, () => text(SUMMARY)),
+      });
+      const { chat, dataDir } = await chatOn(provider, {
+        files: { 'a.txt': 'alpha\n'.repeat(400), 'b.txt': 'beta\n'.repeat(400), 'c.txt': 'g\n' },
+      });
+      await chat.say('read a, b, c, and a again');
+      expect(chat.printed('REPLY')).toEqual(['read again']);
+      expect((await logOf(dataDir)).some((r) => r.type === 'TOOL_RESULTS_PRUNED')).toBe(true);
+      expect(chat.printed('ERROR')).toEqual([]);
+    },
+    TIMEOUT,
+  );
+});

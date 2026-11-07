@@ -548,7 +548,9 @@ export class RunExecution {
     fact: ExecutionFact,
     info: AssemblyInfo,
   ): Promise<void> {
-    const verdict = (await this.#deps.afterAssemble?.(info)) ?? 'PROCEED';
+    // A compaction that breaks must not break the call it was to make room for.
+    const verdict =
+      (await this.#deps.afterAssemble?.(info).catch(() => 'PROCEED' as const)) ?? 'PROCEED';
     this.#deps.enqueue(async () => {
       // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
       if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;

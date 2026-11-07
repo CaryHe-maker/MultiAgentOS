@@ -394,11 +394,10 @@ export class RunCompactor implements Compacting {
       const prunedRef = await artifacts.put(each.text, MEDIA_TYPES.fileText, 'SESSION');
       // A result that was not cut before has only its preview: that becomes what `read_output`
       // reads, and it is kept for good (Execution 6a).
+      // (Not marked as a full output: the same bytes are what the context shows as the preview.)
       const readableRef =
         origin.fullRef ??
-        (await artifacts.put(origin.text, origin.previewRef.mediaType, 'SESSION', {
-          fullOutput: true,
-        }));
+        (await artifacts.put(origin.text, origin.previewRef.mediaType, 'SESSION'));
       done.push({
         requestId: origin.requestId,
         toolCallId: each.toolCallId,

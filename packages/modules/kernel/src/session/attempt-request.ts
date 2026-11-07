@@ -241,7 +241,9 @@ export class AttemptRequestBuilder {
         };
       case 'OUTPUT_READ': {
         const { fullRef, ...window } = inputOf<OutputReadInput>(OutputReadInputSchema, input);
-        if (!this.#deps.artifacts.isFullOutput(fullRef))
+        // The reference comes from Workflow's log: a full output, or the preview of a result that a
+        // compaction cut and kept to be read.
+        if (!this.#deps.artifacts.owns(fullRef))
           throw new RequestBuildError('INVALID_ARTIFACT_REF');
         return {
           request: made(

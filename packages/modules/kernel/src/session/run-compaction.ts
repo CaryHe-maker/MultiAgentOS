@@ -193,7 +193,10 @@ export class CompactionProcess {
       minReplacedTokens: Math.floor(config.summaryMaxTokens / 8),
     };
 
-    // 1. Cut the big old results: no model, so no budget.
+    // 1. Cut the big old results: no model, so no budget. What the summary reads is what the
+    // model last saw, not the cut: a fact in the middle of a long result is in it, and the
+    // request is the cached prefix.
+    const uncut = entries;
     let pruned = 0;
     const candidates = planCompaction(entries, planConfig).prunable;
     if (candidates.length > 0) {
@@ -239,7 +242,7 @@ export class CompactionProcess {
         : { kind: 'UNCHANGED', reason: 'NOTHING_TO_COMPACT' };
 
     // 4. The summary: the history as it is when it fits, otherwise as a transcript, smaller.
-    const older = entries.slice(0, plan.keepFrom);
+    const older = uncut.slice(0, plan.keepFrom);
     const kept = new Set(range.keptSeqs);
     const replaced = older.filter(
       (entry) => entry.kind === 'SUMMARY' || (entry.category === 'NORMAL' && !kept.has(entry.seq)),
