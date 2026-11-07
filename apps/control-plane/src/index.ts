@@ -15,6 +15,7 @@ import { createDeferredFaultReporter } from './bootstrap/deferred-fault-reporter
 import { installProcessGuards } from './bootstrap/process-guards.js';
 import { EXIT_CODE_SYSTEM_FAULT } from './bootstrap/system-control.js';
 import { loadSystemConfig } from './config/system-config.js';
+import { runLogCommand } from './log-command.js';
 
 export { composeSystem, type ComposeOptions, type System } from './bootstrap/compose-system.js';
 export { installProcessGuards } from './bootstrap/process-guards.js';
@@ -50,6 +51,23 @@ export async function main(argv: readonly string[]): Promise<number> {
   const parsed = await parseCli(argv, write);
   if (!parsed.ok) return parsed.exitCode;
   const { command } = parsed;
+
+  if (command.kind === 'LOG') {
+    // Reads a log: no module, no lock, no model.
+    try {
+      dotenv.config({ quiet: true });
+      const { dataDir } = await loadSystemConfig(process.env);
+      return await runLogCommand(command, {
+        dataDir,
+        cwd: process.cwd(),
+        write,
+        writeError: (text) => void process.stderr.write(text),
+      });
+    } catch {
+      process.stderr.write('配置有误，无法找到数据目录。\n');
+      return EXIT_CODE_SYSTEM_FAULT;
+    }
+  }
 
   const subprocess = createSubprocessRunner();
   const faults = createDeferredFaultReporter();

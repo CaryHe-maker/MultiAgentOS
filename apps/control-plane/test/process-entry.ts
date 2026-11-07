@@ -118,10 +118,12 @@ try {
   process.stdout.write('READY\n');
   if (RUNS.has(mode)) {
     const parsed = await parseCli(['run', 'analyze', 'process fixture'], () => undefined);
-    if (!parsed.ok) throw new Error('the fixture command line is invalid');
+    if (!parsed.ok || parsed.command.kind === 'LOG')
+      throw new Error('the fixture command line is invalid');
+    const { command: running } = parsed;
     const template = system.templateRef('analyze');
     process.exitCode = await system.run((console) =>
-      runCommand(parsed.command, console, terminal, template),
+      runCommand(running, console, terminal, template),
     );
   } else {
     process.exitCode = await system.run(() => command(system));

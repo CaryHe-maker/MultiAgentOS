@@ -1,7 +1,7 @@
 import type { Console, ConsoleView } from '@multiagentos/user-interaction';
 import { createInkConsole } from '../presentation/ink-console.js';
 import { createLineConsoleView, readLines } from '../presentation/line-console.js';
-import type { MasCommand } from './parse-cli.js';
+import type { RunningCommand } from './parse-cli.js';
 
 type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>;
 
@@ -40,7 +40,7 @@ export function createTerminal(
  * user left (interactive) or the run finished and the system was asked to shut down (`mas run`).
  */
 export async function runCommand(
-  command: MasCommand,
+  command: RunningCommand,
   console: Console,
   terminal: Terminal,
   template?: { readonly id: string; readonly version: string },

@@ -266,6 +266,7 @@ async function runIn(root: string, task: AcceptanceTask, options: RunOptions): P
     );
     if (!parsed.ok) throw new Error(`the CLI refused the task: exit code ${parsed.exitCode}`);
     const { command } = parsed;
+    if (command.kind === 'LOG') throw new Error('the CLI read this task as `mas log`');
     const system = await composeSystem({
       config,
       repositoryRoot: await realpath(repository),

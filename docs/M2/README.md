@@ -21,6 +21,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2ReleasePlan](M2ReleasePlan.md) | 当前计划：发布标准、侧重点、phase 0–3 的任务与退出条件、待负责人决定的问题 |
 | [M2Baseline](M2Baseline.md) | 现状基线：每项能力做到哪里、证据、已知缺口 |
 | [M2Decisions](M2Decisions.md) | 仍然约束设计与实现的已定决定 |
+| [Phase1Console](Phase1Console.md) | phase 1 控制台与流式输出：问题记录、流式的记录与删除规则、任务顺序 |
 | [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、phase 发布检查 |
 | [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |

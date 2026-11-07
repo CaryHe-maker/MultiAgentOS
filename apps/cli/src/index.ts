@@ -9,6 +9,14 @@ export {
   parseCli,
   type CliParseResult,
   type MasCommand,
+  type RunningCommand,
 } from './commands/parse-cli.js';
 export { createTerminal, runCommand, type Terminal } from './commands/run-console.js';
 export { CLI_MESSAGES } from './presentation/cli-messages.js';
+export { buildTimeline, type ReadText, type SessionTimeline } from './log/timeline.js';
+export {
+  renderSessionList,
+  renderTimeline,
+  type RenderOptions,
+  type SessionListItem,
+} from './log/render.js';
