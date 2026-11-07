@@ -1884,7 +1884,8 @@
                   "OUTPUT_READ",
                   "GIT_INSPECT",
                   "WEB_SEARCH",
-                  "WEB_FETCH"
+                  "WEB_FETCH",
+                  "CONTEXT_PRUNE"
                 ],
                 "$id": "platform.common.ExecutionKind.v1"
               },
@@ -3011,7 +3012,8 @@
             "OUTPUT_READ",
             "GIT_INSPECT",
             "WEB_SEARCH",
-            "WEB_FETCH"
+            "WEB_FETCH",
+            "CONTEXT_PRUNE"
           ],
           "$id": "platform.common.ExecutionKind.v1"
         },
@@ -4702,6 +4704,10 @@
             "type": "integer",
             "minimum": 1
           }
+        },
+        "omittedEntries": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false,
@@ -15556,7 +15562,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -15718,7 +15725,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -15857,7 +15865,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -16144,7 +16153,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -16407,7 +16417,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -16598,7 +16609,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -17375,7 +17387,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -17537,7 +17550,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -17676,7 +17690,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -17963,7 +17978,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -18226,7 +18242,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -18417,7 +18434,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -18818,7 +18836,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -19133,7 +19152,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -19572,7 +19592,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -20351,7 +20372,8 @@
                 "COMMAND",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ]
             },
             "effect": {
@@ -21082,6 +21104,30 @@
                 "REGENERATION_LIMIT",
                 "MEMORY_LIMIT"
               ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "compaction": {
+          "type": "object",
+          "required": [
+            "mode",
+            "instruction"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "PREFIX",
+                "TEXT"
+              ]
+            },
+            "instruction": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "targetTokens": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -22802,10 +22848,114 @@
                         "type": "integer",
                         "minimum": 1
                       }
+                    },
+                    "omittedEntries": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "additionalProperties": false,
                   "$id": "context.ContextAssembleOutput.v1"
+                },
+                "artifact": {
+                  "type": "object",
+                  "required": [
+                    "mediaType",
+                    "text"
+                  ],
+                  "properties": {
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "endedAt",
+            "startedAt",
+            "sessionId",
+            "executionKind",
+            "outcome",
+            "result"
+          ],
+          "properties": {
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "CONTEXT_PRUNE"
+            },
+            "outcome": {
+              "type": "string",
+              "const": "COMPLETED"
+            },
+            "result": {
+              "type": "object",
+              "required": [
+                "output",
+                "artifact"
+              ],
+              "properties": {
+                "output": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "omittedBytes"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omittedBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "artifact": {
                   "type": "object",
@@ -23223,7 +23373,8 @@
                 "GIT_INSPECT",
                 "WEB_SEARCH",
                 "WEB_FETCH",
-                "CONTEXT_ASSEMBLE"
+                "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE"
               ]
             },
             "startedAt": {
@@ -23313,7 +23464,8 @@
                 "GIT_INSPECT",
                 "WEB_SEARCH",
                 "WEB_FETCH",
-                "CONTEXT_ASSEMBLE"
+                "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE"
               ]
             },
             "startedAt": {
@@ -23393,7 +23545,8 @@
                 "GIT_INSPECT",
                 "WEB_SEARCH",
                 "WEB_FETCH",
-                "CONTEXT_ASSEMBLE"
+                "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE"
               ]
             },
             "startedAt": {
@@ -23471,7 +23624,8 @@
                 "GIT_INSPECT",
                 "WEB_SEARCH",
                 "WEB_FETCH",
-                "CONTEXT_ASSEMBLE"
+                "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE"
               ]
             },
             "startedAt": {
@@ -23543,7 +23697,8 @@
                 "GIT_INSPECT",
                 "WEB_SEARCH",
                 "WEB_FETCH",
-                "CONTEXT_ASSEMBLE"
+                "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE"
               ]
             },
             "startedAt": {
@@ -25480,6 +25635,30 @@
                   },
                   "additionalProperties": false
                 },
+                "compaction": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "instruction"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "PREFIX",
+                        "TEXT"
+                      ]
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "maxLength": 20000
+                    },
+                    "targetTokens": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "tokenCalibration": {
                   "type": "object",
                   "required": [
@@ -25501,6 +25680,125 @@
               },
               "additionalProperties": false,
               "$id": "kernel.execution.AssembleExecutorInput.v1"
+            },
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "NONE"
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "deadline",
+                "maxOutputBytes"
+              ],
+              "properties": {
+                "deadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "notBefore": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "unitAttemptId",
+            "executionId",
+            "runEpoch",
+            "executionKind",
+            "input",
+            "scope",
+            "limits"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "unitAttemptId": {
+              "type": "string",
+              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "runEpoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "executionKind": {
+              "type": "string",
+              "const": "CONTEXT_PRUNE"
+            },
+            "input": {
+              "type": "object",
+              "required": [
+                "headBytes",
+                "tailBytes",
+                "items"
+              ],
+              "properties": {
+                "headBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "tailBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "toolCallId",
+                      "text"
+                    ],
+                    "properties": {
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 500
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.execution.PruneExecutorInput.v1"
             },
             "scope": {
               "type": "object",
@@ -26189,6 +26487,24 @@
                     "AUTO",
                     "FORCED"
                   ]
+                },
+                "compaction": {
+                  "type": "object",
+                  "required": [
+                    "requiredSections"
+                  ],
+                  "properties": {
+                    "requiredSections": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false,
@@ -28308,10 +28624,60 @@
                     "type": "integer",
                     "minimum": 1
                   }
+                },
+                "omittedEntries": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "additionalProperties": false,
               "$id": "context.ContextAssembleOutput.v1"
+            },
+            "artifact": {
+              "type": "object",
+              "required": [
+                "mediaType",
+                "text"
+              ],
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "output",
+            "artifact"
+          ],
+          "properties": {
+            "output": {
+              "type": "object",
+              "required": [
+                "items",
+                "omittedBytes"
+              ],
+              "properties": {
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "omittedBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
             },
             "artifact": {
               "type": "object",
@@ -29496,6 +29862,24 @@
             "AUTO",
             "FORCED"
           ]
+        },
+        "compaction": {
+          "type": "object",
+          "required": [
+            "requiredSections"
+          ],
+          "properties": {
+            "requiredSections": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
@@ -29552,6 +29936,49 @@
       },
       "additionalProperties": false,
       "$id": "kernel.execution.OutputReadExecutorInput.v1"
+    },
+    "kernel.execution.PruneExecutorInput.v1": {
+      "type": "object",
+      "required": [
+        "headBytes",
+        "tailBytes",
+        "items"
+      ],
+      "properties": {
+        "headBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tailBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "toolCallId",
+              "text"
+            ],
+            "properties": {
+              "toolCallId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.PruneExecutorInput.v1"
     },
     "kernel.execution.SearchExecutorInput.v1": {
       "type": "object",
@@ -33199,7 +33626,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -33361,7 +33789,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -33500,7 +33929,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -33787,7 +34217,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -34050,7 +34481,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -34241,7 +34673,8 @@
                           "COMMAND",
                           "GIT_INSPECT",
                           "WEB_SEARCH",
-                          "WEB_FETCH"
+                          "WEB_FETCH",
+                          "CONTEXT_PRUNE"
                         ]
                       },
                       "effect": {
@@ -38430,6 +38863,10 @@
                 "type": "integer",
                 "minimum": 1
               }
+            },
+            "omittedEntries": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false,
@@ -39019,7 +39456,8 @@
                 "OUTPUT_READ",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -39344,6 +39782,10 @@
                         "type": "integer",
                         "minimum": 1
                       }
+                    },
+                    "omittedEntries": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   },
                   "additionalProperties": false,
@@ -40031,7 +40473,8 @@
                 "OUTPUT_READ",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -40196,7 +40639,8 @@
                 "OUTPUT_READ",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -40331,7 +40775,8 @@
                 "OUTPUT_READ",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -40472,7 +40917,8 @@
                 "OUTPUT_READ",
                 "GIT_INSPECT",
                 "WEB_SEARCH",
-                "WEB_FETCH"
+                "WEB_FETCH",
+                "CONTEXT_PRUNE"
               ],
               "$id": "platform.common.ExecutionKind.v1"
             },
@@ -40783,7 +41229,8 @@
                         "OUTPUT_READ",
                         "GIT_INSPECT",
                         "WEB_SEARCH",
-                        "WEB_FETCH"
+                        "WEB_FETCH",
+                        "CONTEXT_PRUNE"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -41108,6 +41555,10 @@
                                 "type": "integer",
                                 "minimum": 1
                               }
+                            },
+                            "omittedEntries": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false,
@@ -41795,7 +42246,8 @@
                         "OUTPUT_READ",
                         "GIT_INSPECT",
                         "WEB_SEARCH",
-                        "WEB_FETCH"
+                        "WEB_FETCH",
+                        "CONTEXT_PRUNE"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -41960,7 +42412,8 @@
                         "OUTPUT_READ",
                         "GIT_INSPECT",
                         "WEB_SEARCH",
-                        "WEB_FETCH"
+                        "WEB_FETCH",
+                        "CONTEXT_PRUNE"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -42095,7 +42548,8 @@
                         "OUTPUT_READ",
                         "GIT_INSPECT",
                         "WEB_SEARCH",
-                        "WEB_FETCH"
+                        "WEB_FETCH",
+                        "CONTEXT_PRUNE"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -42236,7 +42690,8 @@
                         "OUTPUT_READ",
                         "GIT_INSPECT",
                         "WEB_SEARCH",
-                        "WEB_FETCH"
+                        "WEB_FETCH",
+                        "CONTEXT_PRUNE"
                       ],
                       "$id": "platform.common.ExecutionKind.v1"
                     },
@@ -42755,7 +43210,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -42917,7 +43373,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -43056,7 +43513,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -43343,7 +43801,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -43606,7 +44065,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -43797,7 +44257,8 @@
                                   "COMMAND",
                                   "GIT_INSPECT",
                                   "WEB_SEARCH",
-                                  "WEB_FETCH"
+                                  "WEB_FETCH",
+                                  "CONTEXT_PRUNE"
                                 ]
                               },
                               "effect": {
@@ -44741,7 +45202,8 @@
         "OUTPUT_READ",
         "GIT_INSPECT",
         "WEB_SEARCH",
-        "WEB_FETCH"
+        "WEB_FETCH",
+        "CONTEXT_PRUNE"
       ],
       "$id": "platform.common.ExecutionKind.v1"
     },
@@ -45392,6 +45854,7 @@
             "WEB_SEARCH",
             "WEB_FETCH",
             "CONTEXT_ASSEMBLE",
+            "CONTEXT_PRUNE",
             "MODEL"
           ],
           "properties": {
@@ -45759,6 +46222,24 @@
               "additionalProperties": false
             },
             "CONTEXT_ASSEMBLE": {
+              "type": "object",
+              "required": [
+                "timeoutMs",
+                "maxOutputBytes"
+              ],
+              "properties": {
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxOutputBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "CONTEXT_PRUNE": {
               "type": "object",
               "required": [
                 "timeoutMs",
@@ -46263,6 +46744,7 @@
                 "WEB_SEARCH",
                 "WEB_FETCH",
                 "CONTEXT_ASSEMBLE",
+                "CONTEXT_PRUNE",
                 "MODEL"
               ],
               "properties": {
@@ -46630,6 +47112,24 @@
                   "additionalProperties": false
                 },
                 "CONTEXT_ASSEMBLE": {
+                  "type": "object",
+                  "required": [
+                    "timeoutMs",
+                    "maxOutputBytes"
+                  ],
+                  "properties": {
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "maxOutputBytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "CONTEXT_PRUNE": {
                   "type": "object",
                   "required": [
                     "timeoutMs",

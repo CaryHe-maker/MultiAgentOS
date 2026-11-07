@@ -7,6 +7,7 @@ import { createRunCommandExecutor } from './command/run-command-executor.js';
 import { createGitInspectExecutor } from './git/git-inspect-executor.js';
 import type { ExecutionScope, ExecutorRegistry } from '@multiagentos/contracts';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
+import { createPruneExecutor } from './context-assemble/prune-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
 import { createFileEditExecutor, createFileWriteExecutor } from './fs/file-write-executor.js';
 import { PathLocks } from './fs/guarded-write.js';
@@ -48,6 +49,7 @@ export function createExecutorRegistry(
     WEB_SEARCH: createWebSearchExecutor(options.web),
     WEB_FETCH: createWebFetchExecutor(options.web),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
+    CONTEXT_PRUNE: createPruneExecutor(),
     MODEL: createModelCallExecutor(),
   };
 }

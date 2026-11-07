@@ -176,6 +176,8 @@ export const ContextAssembleOutputSchema = Type.Refine(
       projectionDigest: Sha256Schema,
       headDigest: Sha256Schema,
       elidedEntries: Type.Array(count(1)),
+      /** A summary request in text form: the older whole model turns it left out. */
+      omittedEntries: Type.Optional(count()),
     },
     'context.ContextAssembleOutput.v1',
   ),

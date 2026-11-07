@@ -76,6 +76,7 @@ export interface ExecutionConfig {
     readonly WEB_SEARCH: ToolExecutionLimit;
     readonly WEB_FETCH: ToolExecutionLimit;
     readonly CONTEXT_ASSEMBLE: ExecutionLimit;
+    readonly CONTEXT_PRUNE: ExecutionLimit;
     readonly MODEL: ExecutionLimit;
   };
   readonly retryBackoffBaseMs: number;

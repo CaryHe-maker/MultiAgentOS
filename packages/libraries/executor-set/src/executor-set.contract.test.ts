@@ -150,6 +150,11 @@ const INPUTS: ExecutorInputByKind = {
   GIT_INSPECT: { action: 'status' },
   WEB_SEARCH: { queries: ['executor contract'] },
   WEB_FETCH: { url: pageUrl },
+  CONTEXT_PRUNE: {
+    headBytes: 8,
+    tailBytes: 4,
+    items: [{ toolCallId: 'call_1', text: 'x'.repeat(100) }],
+  },
 };
 
 /** The cases share one repository, so each write has a file of its own. */

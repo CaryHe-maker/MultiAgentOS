@@ -6,6 +6,7 @@ import type { SandboxBackend, SandboxScope } from './platform-common/sandbox.js'
 import type { ExecutionResult } from './kernel-execution/execution-fact.js';
 import type {
   AssembleExecutorInput,
+  PruneExecutorInput,
   ExecutionLimits,
   ModelExecutorInput,
   OutputReadExecutorInput,
@@ -115,6 +116,7 @@ export interface ExecutorInputByKind {
   readonly REPOSITORY_LIST: RepositoryListInput;
   readonly FILE_READ: FileReadInput;
   readonly CONTEXT_ASSEMBLE: AssembleExecutorInput;
+  readonly CONTEXT_PRUNE: PruneExecutorInput;
   readonly MODEL: ModelExecutorInput;
   readonly FILE_WRITE: FileWriteInput;
   readonly FILE_EDIT: FileEditInput;

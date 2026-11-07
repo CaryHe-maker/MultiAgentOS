@@ -127,6 +127,11 @@ const CommandResultSchema = toolResult(CommandOutputSchema);
 const GitInspectResultSchema = toolResult(GitInspectOutputSchema);
 const WebSearchResultSchema = toolResult(WebSearchOutputSchema);
 const WebFetchResultSchema = toolResult(WebFetchOutputSchema);
+/** `artifact.text` is the JSON `{ items: [{ toolCallId, text, omittedBytes }] }` (ExecutorSet 6.4). */
+const PruneResultSchema = closed({
+  output: closed({ items: count(), omittedBytes: count() }),
+  artifact: artifact,
+});
 const AssembleResultSchema = closed({
   output: ContextAssembleOutputSchema,
   artifact: artifact,
@@ -151,6 +156,7 @@ export const ExecutionResultSchema = Type.Union(
     WebSearchResultSchema,
     WebFetchResultSchema,
     AssembleResultSchema,
+    PruneResultSchema,
     ModelResultSchema,
   ],
   { $id: 'kernel.execution.ExecutionResult.v1' },
@@ -171,6 +177,7 @@ const NON_MODEL_KINDS = Type.Enum([
   'WEB_SEARCH',
   'WEB_FETCH',
   'CONTEXT_ASSEMBLE',
+  'CONTEXT_PRUNE',
 ]);
 const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = notCompleted(
   Type.Literal('MODEL'),
@@ -191,6 +198,7 @@ export const ExecutionFactSchema = Type.Union(
     completed('WEB_SEARCH', WebSearchResultSchema, inSession),
     completed('WEB_FETCH', WebFetchResultSchema, inSession),
     completed('CONTEXT_ASSEMBLE', AssembleResultSchema, inSession),
+    completed('CONTEXT_PRUNE', PruneResultSchema, inSession),
     completed('MODEL', ModelResultSchema, {
       ...inSession,
       requestState: Type.Literal('SENT'),

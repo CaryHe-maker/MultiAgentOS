@@ -131,7 +131,11 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   }
 }
 
-type Completed = Extract<ExecutionFact, { outcome: 'COMPLETED' }>;
+/** What a Unit attempt completes with; CONTEXT_PRUNE is Kernel's own and answers the compaction. */
+type Completed = Exclude<
+  Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
+  { executionKind: 'CONTEXT_PRUNE' }
+>;
 type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
 /** The overview is a structure with its own token budget, not a preview of an output. */
@@ -154,6 +158,7 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
+  readonly #internal = new Map<string, (fact: ExecutionFact) => void>();
   readonly #effects: UnknownEffect[] = [];
   #seq = 0;
   #pumping = false;
@@ -401,7 +406,22 @@ export class RunExecution {
   }
 
   /** One terminal fact of the Supervisor; anything stale is dropped here. */
+  /**
+   * Kernel's own executions (a prune or a summary of a compaction) have no Unit attempt: the
+   * compaction that started one hears its fact here, once.
+   */
+  expectInternal(unitAttemptId: string, handler: (fact: ExecutionFact) => void): void {
+    this.#internal.set(unitAttemptId, handler);
+  }
+
   async handleFact(fact: ExecutionFact): Promise<void> {
+    const internal = this.#internal.get(fact.unitAttemptId);
+    if (internal !== undefined) {
+      this.#internal.delete(fact.unitAttemptId);
+      internal(fact);
+      return;
+    }
+    if (fact.executionKind === 'CONTEXT_PRUNE') return;
     const attempt = this.#byId.get(fact.unitAttemptId);
     if (
       attempt === undefined ||

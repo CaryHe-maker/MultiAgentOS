@@ -139,6 +139,7 @@ export const KernelConfigSchema = closed(
       WEB_SEARCH: ToolLimitSchema,
       WEB_FETCH: ToolLimitSchema,
       CONTEXT_ASSEMBLE: ExecutionLimitSchema,
+      CONTEXT_PRUNE: ExecutionLimitSchema,
       MODEL: ExecutionLimitSchema,
     }),
     artifactRetention: closed({

@@ -391,6 +391,8 @@ function runExecutor(
       return registry.WEB_FETCH.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':
       return registry.CONTEXT_ASSEMBLE.execute(request.input, environment);
+    case 'CONTEXT_PRUNE':
+      return registry.CONTEXT_PRUNE.execute(request.input, environment);
     case 'MODEL':
       return registry.MODEL.execute(request.input, environment);
   }

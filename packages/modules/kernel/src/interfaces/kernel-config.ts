@@ -87,6 +87,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     WEB_SEARCH: toolLimit(30_000, 1_048_576),
     WEB_FETCH: toolLimit(60_000, 4_194_304),
     CONTEXT_ASSEMBLE: Object.freeze({ timeoutMs: 30_000, maxOutputBytes: 16_777_216 }),
+    CONTEXT_PRUNE: Object.freeze({ timeoutMs: 30_000, maxOutputBytes: 16_777_216 }),
     MODEL: Object.freeze({ timeoutMs: 900_000, maxOutputBytes: 1_048_576 }),
   }),
   artifactRetention: Object.freeze({ expiringRetentionDays: 7, sweepIntervalMinutes: 60 }),

@@ -7,5 +7,6 @@ export const MEDIA_TYPES = {
   runSummary: 'application/vnd.multiagentos.run-summary+json',
   reasoning: 'application/vnd.multiagentos.reasoning+json',
   markdown: 'text/markdown; charset=utf-8',
+  json: 'application/json',
 } as const;
 export type MediaType = (typeof MEDIA_TYPES)[keyof typeof MEDIA_TYPES];

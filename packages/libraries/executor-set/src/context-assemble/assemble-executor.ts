@@ -1,6 +1,7 @@
 import {
   calibratedTokens,
   canonicalJson,
+  estimateTextTokens,
   sha256Hex,
   type AssembleContextPack,
   type AssembleExecutorInput,
@@ -227,6 +228,7 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
   throwIfAborted(environment.signal);
   const groups = grouped(input.history);
   if (groups === undefined) return failed('INTERNAL', false);
+  if (input.compaction?.mode === 'TEXT') return assembleTranscript(input, environment, groups);
   const history: (readonly Draft[])[] = [];
   for (const group of groups) {
     const items = drafts(group);
@@ -255,11 +257,16 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       provenance: item.provenance,
     })),
   ];
+  // A summary request in prefix form ends with its instruction where a call ends with its status.
+  const asking = input.compaction?.mode === 'PREFIX';
   let status: Draft = {
     segment: 'STATUS',
     role: 'user',
-    content: renderStatus(input.status, input.toolSpecs),
-    reason: 'run status',
+    content:
+      input.compaction?.mode === 'PREFIX'
+        ? input.compaction.instruction
+        : renderStatus(input.status, input.toolSpecs),
+    reason: asking ? 'summary request' : 'run status',
   };
 
   const elided: number[] = [];
@@ -276,7 +283,7 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       history[index] = group.filter(isPinned);
     }
     if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
-  } else if (!input.final && measured() >= input.tokenBudget * CONTEXT_WARNING_SHARE) {
+  } else if (!asking && !input.final && measured() >= input.tokenBudget * CONTEXT_WARNING_SHARE) {
     const warning = renderContextWarning(measured(), input.tokenBudget);
     const warned = { ...status, content: `${status.content}\n${warning}` };
     total += draftTokens(warned) - draftTokens(status);
@@ -313,6 +320,133 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       projectionDigest,
       headDigest: prefixSha256,
       elidedEntries: elided,
+    },
+    artifact: packArtifact(pack),
+  });
+}
+
+/** A history entry written out for a reader who was not there. */
+function transcriptOf(group: Group): string {
+  const lines: string[] = [];
+  const turn = group.assistant;
+  if (turn !== undefined) {
+    const calls = turn.toolCalls.map(
+      (call) => `${call.toolCallId}: ${call.toolName}(${canonicalJson(call.arguments)})`,
+    );
+    lines.push(
+      `[assistant]\n${[turn.text ?? '', ...calls].filter((line) => line !== '').join('\n')}`,
+    );
+    for (const [toolCallId, answers] of group.answers)
+      lines.push(
+        `[result of ${toolCallId}]\n${answers
+          .map((answer) => (answer.kind === 'TOOL_RESULT' ? toolText(answer) : answer.text))
+          .join('\n\n')}`,
+      );
+  }
+  for (const entry of group.after) {
+    if (entry.kind === 'HUMAN') lines.push(`[user]\n${entry.text}`);
+    else if ('text' in entry && entry.text !== undefined) lines.push(`[note]\n${entry.text}`);
+  }
+  return lines.join('\n\n');
+}
+
+const entriesOf = (group: Group): number =>
+  (group.assistant === undefined ? 0 : 1) +
+  [...group.answers.values()].reduce((total, answers) => total + answers.length, 0) +
+  group.after.length;
+
+/**
+ * A summary request in text form (M2Design 9.6): no tools, the instruction alone as the system
+ * segment, and the history written out as one transcript. When it is too long the oldest whole
+ * model turns are left out, until the estimate is under `compaction.targetTokens`; an earlier
+ * summary is never left out, and the transcript says how many turns were.
+ */
+function assembleTranscript(
+  input: AssembleExecutorInput,
+  environment: ExecutorEnvironment,
+  groups: readonly Group[],
+): ExecutorOutcome {
+  const { compaction } = input;
+  if (compaction === undefined) return failed('INTERNAL', false);
+  const summaries = input.history.filter((entry) => entry.kind === 'SUMMARY');
+  const rest = groups.map((group) => ({
+    ...group,
+    after: group.after.filter((entry) => entry.kind !== 'SUMMARY'),
+  }));
+  const target = compaction.targetTokens ?? input.tokenBudget;
+  const fixed = [
+    estimateTextTokens(compaction.instruction),
+    ...summaries.map((entry) => estimateTextTokens(entry.text)),
+  ].reduce((a, b) => a + b, 0);
+  let first = 0;
+  let omittedEntries = 0;
+  let omittedTurns = 0;
+  const sizes = rest.map((group) => estimateTextTokens(transcriptOf(group)));
+  let total = fixed + sizes.reduce((a, b) => a + b, 0);
+  while (total > target && first < rest.length - 1) {
+    total -= sizes[first] ?? 0;
+    const group = rest[first];
+    omittedEntries += group === undefined ? 0 : entriesOf(group);
+    if (group?.assistant !== undefined) omittedTurns += 1;
+    first += 1;
+  }
+  if (total > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
+  const body = [
+    ...summaries.map((entry) => `[summary of earlier work]\n${entry.text}`),
+    ...(omittedTurns === 0
+      ? []
+      : [`[${String(omittedTurns)} earlier turn(s) are left out: they did not fit]`]),
+    ...rest.slice(first).map(transcriptOf),
+  ]
+    .filter((part) => part !== '')
+    .join('\n\n');
+  const seq = Math.max(1, ...input.history.map((entry) => entry.seq));
+  const drafts: Draft[] = [
+    {
+      segment: 'INSTRUCTIONS',
+      role: 'system',
+      content: compaction.instruction,
+      reason: 'summary request',
+    },
+    { segment: 'TOOLS', role: 'system', content: '', reason: 'no tools', toolSpecs: [] },
+    {
+      segment: 'HISTORY',
+      seq,
+      category: 'NORMAL',
+      role: 'user',
+      content: body,
+      reason: 'transcript',
+    },
+  ];
+  const contextPackId = newContextPackId();
+  const items = finishItems<Item>(contextPackId, drafts);
+  const prefixSha256 = sha256Hex(
+    canonicalJson({ instructions: compaction.instruction, toolSpecs: [] }),
+  );
+  const projectionDigest = sha256Hex(canonicalJson(input.history));
+  const tokenCount = packTokens(items);
+  const pack: AssembleContextPack = {
+    contextPackId,
+    tokenCount,
+    tokenBudget: input.tokenBudget,
+    createdAt: environment.now().toISOString(),
+    operation: 'ASSEMBLE',
+    prefixSha256,
+    projectionDigest,
+    headDigest: prefixSha256,
+    elidedEntries: [],
+    items,
+  };
+  return completed({
+    output: {
+      contextPackId,
+      tokenCount,
+      tokenBudget: input.tokenBudget,
+      prefixSha256,
+      projectionDigest,
+      headDigest: prefixSha256,
+      elidedEntries: [],
+      omittedEntries,
     },
     artifact: packArtifact(pack),
   });
