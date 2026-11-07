@@ -1,5 +1,6 @@
 import {
   AnalysisReportSchema,
+  EXIT_CODE_MEMORY_PRESSURE,
   newId,
   validate,
   type AnalysisReport,
@@ -84,7 +85,7 @@ export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
   CANCELLED: 130,
   SHUTDOWN: 130,
   ENDED_BY_USER: 130,
-  INTERRUPTED: 75,
+  INTERRUPTED: EXIT_CODE_MEMORY_PRESSURE,
 };
 
 const INTERRUPT_WINDOW_MS = 2000;

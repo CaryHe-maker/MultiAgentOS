@@ -14,9 +14,9 @@ import { composeSystem, type System } from '../src/bootstrap/compose-system.js';
 import { createDeferredFaultReporter } from '../src/bootstrap/deferred-fault-reporter.js';
 import { installProcessGuards } from '../src/bootstrap/process-guards.js';
 import { defaultSystemConfig } from '../src/config/system-config.js';
-import { answeringTerminal, prepareRepository } from './acceptance/harness.js';
-import { scriptedProvider } from './acceptance/scripted-provider.js';
-import { TASKS } from './acceptance/tasks.js';
+import { answeringTerminal, prepareRepository } from './system/analyze-template/harness.js';
+import { scriptedProvider } from './system/analyze-template/scripted-provider.js';
+import { TASKS } from './system/analyze-template/tasks.js';
 
 const mode = process.argv[2] ?? 'normal';
 const dataDir = process.env['ENTRY_DATA_DIR'] ?? join(tmpdir(), 'multiagentos-entry');

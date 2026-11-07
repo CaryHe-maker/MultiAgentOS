@@ -110,7 +110,7 @@ pnpm run check
 检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
-`pnpm run acceptance` 用真实模型运行固定任务集（不加 `--yes` 只列出费用上限）。
+`pnpm run gate:phase` 在 Ubuntu 24.04 上运行冻结的系统测试（每个 phase 发布前必须通过，任何测试被跳过都算失败）；`pnpm run eval` 是评测体系（[Evaluation](docs/M2/Evaluation.md)），真实模型的评测需要 `--yes` 与请求预算。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 

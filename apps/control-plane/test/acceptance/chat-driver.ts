@@ -15,16 +15,18 @@ import type {
 } from '@multiagentos/user-interaction';
 import { composeSystem, type System } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
+import {
+  agentOfTools,
+  completionResponse,
+  type ScriptedAgent,
+  type ScriptedCall,
+  type ScriptedTurn,
+} from '../support/scripted-model.js';
 
-export interface ChatCall {
-  readonly name: string;
-  readonly arguments: unknown;
-}
+export type ChatCall = ScriptedCall;
 
 /** One provider answer: tool calls, or text, or a raw response such as a rate limit. */
-export type ProviderTurn =
-  | { readonly calls: readonly ChatCall[]; readonly text?: string }
-  | { readonly response: () => Response | Promise<Response> };
+export type ProviderTurn = ScriptedTurn | { readonly response: () => Response | Promise<Response> };
 
 export const reply = (text: string): ProviderTurn => ({
   calls: [{ name: 'reply', arguments: { text } }],
@@ -69,31 +71,7 @@ export function scriptedChat(...turns: readonly ProviderTurn[]): ScriptedChat {
       if (turn === undefined) throw new Error('a request beyond the script');
       if ('response' in turn) return turn.response();
       calls += 1;
-      return new Response(
-        JSON.stringify({
-          id: `chatcmpl-${String(calls)}`,
-          object: 'chat.completion',
-          created: 1_767_225_600,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: turn.text ?? null,
-                tool_calls: turn.calls.map((call, index) => ({
-                  id: `call_${String(calls)}_${String(index)}`,
-                  type: 'function',
-                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                })),
-              },
-              finish_reason: 'tool_calls',
-            },
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return completionResponse(turn, String(calls));
     },
   };
 }
@@ -245,11 +223,18 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
 }
 
 /** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
-export function agentOfRequest(request: ChatRequest): 'main' | 'explorer' | 'worker' | 'unknown' {
-  const names = new Set((request.tools ?? []).map((each) => each.function.name));
-  if (names.has('run_subagents')) return 'main';
-  if (names.has('finish_subagent')) return names.has('write_file') ? 'worker' : 'explorer';
-  return 'unknown';
+export function agentOfRequest(request: ChatRequest): ScriptedAgent {
+  return agentOfTools(new Set((request.tools ?? []).map((each) => each.function.name)));
+}
+
+/**
+ * Asks for the list of Sessions and waits until the console has shown it: `/resume <n>` and
+ * `/delete <n>` refer to that list, so they must not be typed before it is there.
+ */
+export async function listSessions(chat: Chat): Promise<void> {
+  const before = chat.printed('NOTICE').length;
+  await chat.console.submit('/sessions');
+  await until(() => chat.printed('NOTICE').length > before, 'the list of Sessions');
 }
 
 /** A turn that is answered only after `wait` has settled: two Agents can be made to overlap. */

@@ -84,6 +84,7 @@ function setup(
     serialExecution?: boolean;
     /** Call slots; the test can change them. */
     slots?: { free: number };
+    protectedPaths?: { snapshot: () => Promise<ReadonlySet<string>> };
   } = {},
 ) {
   const bodies = new Map<string, Uint8Array>();
@@ -159,6 +160,14 @@ function setup(
       return Promise.resolve();
     },
     written: () => Promise.resolve(),
+    ...(options.protectedPaths === undefined
+      ? {}
+      : {
+          protectedPaths: {
+            snapshot: options.protectedPaths.snapshot,
+            quarantine: () => Promise.resolve([]),
+          },
+        }),
     retrying: (activity) => retries.push(activity),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
@@ -820,5 +829,25 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
       { kind: 'NONE' },
     );
     expect(run.reports.at(-1)).toMatchObject({ status: 'OK', output: { kind: 'DEGRADED_REPLY' } });
+  });
+
+  it('does not run a command whose protected paths cannot be listed, and says the check failed', async () => {
+    const run = setup({
+      protectedPaths: { snapshot: () => Promise.reject(new Error('SANDBOX_SCAN_INCOMPLETE')) },
+    });
+    await run.submit('COMMAND', { command: 'ls', workdir: '', timeoutMs: 1000, network: false });
+    // Nothing was sent: what such a command created in a protected place could not be taken away.
+    expect(run.dispatched).toEqual([]);
+    expect(run.reports.at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'ADMISSION_CHECK_FAILED',
+    });
+  });
+
+  it('goes on to build the request of a command whose protected paths could be listed', async () => {
+    const run = setup({ protectedPaths: { snapshot: () => Promise.resolve(new Set<string>()) } });
+    await run.submit('COMMAND', { command: 'ls', workdir: '', timeoutMs: 1000, network: false });
+    // (This scope is no sandbox, so the request is refused later, and for another reason.)
+    expect(run.reports.at(-1)).not.toMatchObject({ reasonCode: 'ADMISSION_CHECK_FAILED' });
   });
 });

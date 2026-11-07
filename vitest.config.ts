@@ -12,7 +12,11 @@ export default defineConfig({
       'packages/**/*.spec.ts',
     ],
     // Repositories under analysis in the acceptance tasks carry their own tests.
-    exclude: ['**/node_modules/**', '**/dist/**', 'apps/control-plane/test/acceptance/repos/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'apps/control-plane/test/system/analyze-template/repos/**',
+    ],
     passWithNoTests: true,
     clearMocks: true,
     restoreMocks: true,

@@ -35,6 +35,36 @@ jobs:
       - run: pnpm run check
       - run: git diff --check
 
+  # The frozen system tests of docs/M2/M2FrozenTests.md with a working sandbox: any of them that
+  # fails or is skipped fails the job. Ubuntu 24.04 restricts unprivileged user namespaces, so
+  # bubblewrap gets the AppArmor profile that sandbox-probe.yml measured.
+  phase-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap
+      - name: Let bubblewrap create user namespaces
+        run: |
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+            include if exists <local/bwrap>
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: node scripts/phase-gate.mjs
+
   # The other cells of the matrix run the whole offline chain under one changed condition each.
   compatibility:
     name: compatibility (${{ matrix.cell }})

@@ -20,6 +20,8 @@ M2 的第一轮实现把系统层做到了基本完善：Session、写入与回�
 | [M2OpenDecisions](M2OpenDecisions.md) | 旧的决定记录与各阶段的计划和进度，含阶段 4 的退出情况。仍然有效的决定已迁入 [M2Decisions](../../M2/M2Decisions.md) |
 | [Evaluation/](Evaluation/) | 各阶段做过的实测与评测：子 Agent、人类在环、网页提供方与抓取顺序、上下文压缩。数据是当时的事实，不是统计结论 |
 
+> 旧阶段的评测脚本与原始记录已经删除（评测体系重建，见 [Evaluation](../../M2/Evaluation.md)）。`Evaluation/` 里的文档保留当时的数字与结论，其中"复现"一节的命令不再可用；脚本留在 git 历史中（`feat/M2` 的 e7ea34b 及以前）。
+
 ## 3. 旧阶段编号与结果
 
 | 旧阶段 | 内容 | 合入 `feat/M2` 时的情况 |
@@ -35,7 +37,7 @@ M2 的第一轮实现把系统层做到了基本完善：Session、写入与回�
 | 8 上下文压缩 | 自动、溢出、`/compact`、空闲触发，修剪与摘要 | 完成 |
 
 旧阶段的任务编号（`S1-…`、`S8-…`）与分支名（`feature/phase<N>/main`）只指这一轮；
-新的任务编号是 `RP<phase>-…`，分支是 `feature/M2/rp<N>-<主题>`。
+新的任务编号是 `RP<phase>-…`，分支是 `feature/PLphase<N>/main`。
 
 ## 4. 如何引用
 

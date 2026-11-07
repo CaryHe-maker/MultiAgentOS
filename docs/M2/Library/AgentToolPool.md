@@ -83,6 +83,14 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 - Workflow 在 AGENT 节点登记前调用 `pinAgent`；Core 在 `registerAgentRun` 时同样固定并比较 digest（M1 原样）。
 - 模板在运行开始时由 Workflow 查找并固定；固定后的模板与 `GRAPH_EXTENDED` 一起记入日志（模板 ID、版本、digest），重放时不再查找。
 
+## 5a. 模型数据与价目
+
+`deepseek-flash` 与 `deepseek-v4-pro` 的 `pricing`（缓存命中、缓存未命中、输出的非高峰价格，高峰的倍率、星期与时段）沿用 M1 填写的数值与来源（归档的 [M1 AgentToolPool](../../History/M1/Library/AgentToolPool.md) 第 7 节），价格变动时发布新的 ModelDefinition 版本。
+
+- 费用由 `modelCallCost(model, usage, at)` 计算：缓存命中按命中价，其余输入按未命中价，没有缓存数字时全部按未命中计（上限）；`at` 落在高峰时段时乘 `ratePercent / 100`。结果以微美元为单位。
+- 额度按这个价格折算缓存命中的输入（M2Design 7.3）；评测体系用它给每次运行与每次压缩的摘要请求计价（[Evaluation](../Evaluation.md)）。
+- 节假日按非高峰计费而没有节假日日历，所以节假日的成本是上限。
+
 ## 6. 测试
 
 M1 的测试全部保留。增加：`v1` 各条规则的反例；`v0` 与 `v1` 定义并存时的加载与固定；`analyze` 模板的加载与校验；

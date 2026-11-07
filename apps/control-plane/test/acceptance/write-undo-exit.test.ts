@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  listSessions,
   openChat,
   reply,
   scriptedChat,
@@ -488,8 +489,7 @@ describe('S4: forks', () => {
       expect(await readFile(file, 'utf8')).toBe('two\n');
       await writeFile(file, 'fork again\n');
 
-      await chat.console.submit('/sessions');
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await listSessions(chat);
       await chat.console.submit(`/resume ${fromHistory ?? ''}`);
       await until(() => chat.console.sessionId === fromHistory, 'the original Session');
       await until(() => chat.printed('NOTICE').some((n) => n.includes('被改动过')), 'the note');
@@ -712,8 +712,7 @@ describe('H5: an Orchestration run that has ended', () => {
 
       const [sessionId = ''] = await sessionsIn(place.dataDir);
       const chat = await chatOn(place, scriptedChat());
-      await chat.console.submit('/sessions');
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await listSessions(chat);
       await chat.console.submit(`/resume ${sessionId}`);
       await until(() => chat.console.sessionId === sessionId, 'the Session');
       await turnEnded(chat);
