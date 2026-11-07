@@ -262,10 +262,9 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
   let status: Draft = {
     segment: 'STATUS',
     role: 'user',
-    content:
-      input.compaction?.mode === 'PREFIX'
-        ? input.compaction.instruction
-        : renderStatus(input.status, input.toolSpecs),
+    content: asking
+      ? (input.compaction?.instruction ?? '')
+      : renderStatus(input.status, input.toolSpecs),
     reason: asking ? 'summary request' : 'run status',
   };
 

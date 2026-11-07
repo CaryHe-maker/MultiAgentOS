@@ -1,4 +1,6 @@
 import type { SessionLogRecord } from '../platform-persistence/session-log.js';
+import { spanOf } from './compaction-plan.js';
+import type { PrunedItem } from './compaction.js';
 import type { ContextHistoryEntry } from './history-entry.js';
 
 /**
@@ -23,19 +25,19 @@ export interface CompactionRecords {
 
 type Compacted = CompactionRecords['compacted'][number];
 
-/** Where an entry stands in the log; a summary stands where the entries it replaced stood. */
-const spanOf = (entry: ContextHistoryEntry): { from: number; to: number } =>
-  entry.kind === 'SUMMARY'
-    ? { from: entry.fromSeq, to: entry.toSeq }
-    : { from: entry.seq, to: entry.seq };
+/** What a cut needs of its record: where it stands in the log, and what it cut. */
+export interface PruneRecord {
+  readonly seq: number;
+  readonly items: readonly PrunedItem[];
+}
 
 /** What a prune record does to a list of entries; the plan of a compaction reads it too. */
 export function prune(
   entries: readonly ContextHistoryEntry[],
-  records: CompactionRecords['pruned'],
+  records: readonly PruneRecord[],
 ): ContextHistoryEntry[] {
   if (records.length === 0) return [...entries];
-  const cut = new Map<string, { item: (typeof records)[number]['items'][number]; at: number }>();
+  const cut = new Map<string, { item: PrunedItem; at: number }>();
   for (const record of records)
     for (const item of record.items) cut.set(item.toolCallId, { item, at: record.seq });
   return entries.map((entry) => {

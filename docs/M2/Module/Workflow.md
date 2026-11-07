@@ -278,7 +278,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 | `ContextCompacted { compactionId, target, fromSeq, toSeq, summaryRef }` | 追加 `CONTEXT_COMPACTED`，成功后 `ackCompaction(RECORDED)`；追加失败时 `ackCompaction(FAILED)`，按内部错误处理（第 10 节） |
 | `context-assemble` 以 `CONTEXT_COMPACTED` 被拒 | 用新的投影重新提交（同一轮，提交路径的次数加一）；不计入连续出错，不是重复调用 |
 | `context-assemble` 以 `BUDGET_WRAP_UP` 被拒（压缩的额度不足） | 与 M1 的 `BUDGET_WRAP_UP` 相同：设置 `wrapUpReason`，以 `final` 重新组装，进入最后一轮 |
-| `model-call` 以 `CONTEXT_OVERFLOW` 被拒 | 重新提交 `context-assemble`（Kernel 据此压缩）；同一轮第三次溢出时按收尾处理 |
+| `model-call` 以 `CONTEXT_OVERFLOW` 被拒 | 重新提交 `context-assemble`（Kernel 据此压缩）；同一轮连续三次压缩后仍被拒（第四次溢出）时按收尾处理 |
 | `/undo` 回退的 Turn 与某次压缩的范围相交（阶段 2 已完成时） | 追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目 |
 
 投影规则（M2Design 第 9.6 节）：`TOOL_RESULTS_PRUNED` 之后，该对象投影中被列出的工具结果改用修剪后的引用，位置不变；`CONTEXT_COMPACTED` 之后，该对象投影中 `seq` 在 `[fromSeq, toSeq]` 内的 `NORMAL` 条目（`keptSeqs` 列出的用户消息除外，它们由 Kernel 按分级选出并记入日志，M2Design 第 9.6 节"条目的分级"）由一条摘要条目取代，摘要放在第一个被取代条目的位置

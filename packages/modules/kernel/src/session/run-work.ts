@@ -16,23 +16,23 @@ import {
 import type {
   AckCompactionRequest,
   AnswerAuthorizationRequest,
-  CompactionFailed,
-  CompactionTarget,
-  ContextCompacted,
-  KernelToWorkflowEvent,
-  ReportCompactionSourceRequest,
+  ArtifactRef,
   AuthorizationRequest,
   AuthorizationResolved,
   CloseReason,
+  CompactionFailed,
+  CompactionTarget,
+  ContextCompacted,
   CoreRejectedCode,
   EndAgentRunRequest,
-  InterruptReason,
-  ArtifactRef,
   ExecutionScope,
+  InterruptReason,
+  KernelToWorkflowEvent,
   MemoryLevel,
   ProjectFileContent,
   ReadProjectFileRequest,
   RegisterAgentRunRequest,
+  ReportCompactionSourceRequest,
   RunSummary,
   SubmitUnitRequest,
   SyscallAck,
@@ -1065,6 +1065,9 @@ export class RunWork {
       return 'COMPACTED';
     }
     this.#compactedInRound.add(info.agentRunId);
+    this.#host.enqueue(() => {
+      this.#activity.compacting(info.agentRunId);
+    });
     const result = await compactor.run(step.request);
     if (result.kind === 'CHANGED') return 'COMPACTED';
     return result.kind === 'BUDGET' ? 'BUDGET' : 'PROCEED';

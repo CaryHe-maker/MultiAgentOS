@@ -307,7 +307,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 
 - 压缩进行期间，该对象不会有新的模型调用：触发它的组装被挂起，Workflow 在收到这次组装的结果之前不会提交下一次 `model-call`。
 - 同一对象同一时刻至多一次压缩；同一轮中至多因自动触发压缩一次，之后重新提交的组装照常执行（M2Design 第 9.6 节"不循环"）；
-  溢出触发按 `overflowTargets` 依次缩小目标，第三次后不再压缩。
+  溢出触发按 `overflowTargets` 依次缩小目标（第 n 次溢出之后以第 n 个为目标），三次之后不再压缩。
 - 压缩不改变运行控制状态与 Turn；它占用的时间计入 AgentRun 的墙钟。
 - **空闲压缩与其他操作**：进行中收到 `HUMAN_ANSWER` 时照常开启 Turn，main 的第一次 `context-assemble` 挂起到压缩结束；进行中收到 `compactContext`、`undoTurns`、Fork、切换或关闭 Session 时，先取消空闲压缩（取消摘要尝试，按失败处理，不写回摘要），再处理该请求。
 - **SubAgent**：对象为 `AGENT_RUN`，额度从它自己的账本支出；额度不足以写摘要时按统一收尾路径进入最后一轮，以 `finish_subagent` 结束（M2Design 第 7.3 节）。

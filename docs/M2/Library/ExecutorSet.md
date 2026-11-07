@@ -211,12 +211,12 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 
 ### 6.4 修剪与摘要请求（阶段 8）
 
-压缩过程（M2Design 第 9.6 节）以两种内部用途调用本 Executor，都不属于任何 Workflow 提交的 Unit：
+压缩过程（M2Design 第 9.6 节）有两处内部调用，都是 Kernel 自己发起的执行，不属于任何 Workflow 提交的 Unit：
 
-- **修剪**（`purpose = 'PRUNE'`，第 4.5 步）：输入为 Execution 解析好的若干工具结果的预览正文与 `toolCallId`，以及 `pruneHeadBytes`、`pruneTailBytes`；
+- **修剪**（执行种类 `CONTEXT_PRUNE`，由 `prune-executor` 执行，第 4.5 步）：输入为 Execution 解析好的若干工具结果的预览正文与 `toolCallId`，以及 `pruneHeadBytes`、`pruneTailBytes`；
   每条输出"头部 + 说明 + 尾部"，说明写明省略的字节数，以及"可用 read_output 按 toolCallId=<编号> 读回原文"；截取经 `retention/` 的按字节保留器，不切断 UTF-8；
   同一输入总是得到逐字节相同的结果。
-- **摘要请求的组装**（`purpose = 'COMPACTION'`，第 6 步）：
+- **摘要请求的组装**（`context-assemble` 的 `compaction` 参数，第 6 步；随后以 `model-call` 的 `compaction` 参数发出）：
   - 前缀式：按该对象普通请求的方式组装 `seq ≤ toSeq` 的条目（保留区不在其中），末尾追加 Prompt `compaction-system` 的指令；工具定义保持不变，使消息前缀与之前的普通请求相同；
   - 纯文本式：不带工具定义，system 段只有摘要指令；范围内的 `NORMAL` 条目渲染为一份纯文本记录（模型轮、工具调用与结果按"调用 / 结果"标注来源），
     先前的摘要放在开头；从最早的完整模型轮开始去掉，直到估算低于 Kernel 给出的目标，开头注明省略了几轮；输出带 `omittedEntries`；

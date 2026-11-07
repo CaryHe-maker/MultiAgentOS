@@ -78,7 +78,7 @@ export const KernelConfigSchema = closed(
         remote: Type.Union([Type.Null(), closed({ provider: text(32), baseUrl: text(200) })]),
       }),
     }),
-    /** Context compaction (M2Design 9.6, Kernel/Core 6a); the values still need calibration. */
+    /** Context compaction (M2Design 9.6, Kernel/Core 6a); the values were checked on one model only. */
     compaction: closed({
       /** Compact at a checkpoint when the estimate passes this share of `perCallInputLimit`. */
       triggerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),

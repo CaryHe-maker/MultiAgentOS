@@ -229,7 +229,8 @@ export type ToolResultsPruned = Static<typeof ToolResultsPrunedSchema>;
 
 /**
  * A summary was written; Workflow records `CONTEXT_COMPACTED`, then `ackCompaction(SUMMARY)`.
- * `keptSeqs` are the user messages of the range that stay as they are (M2Design 9.6, the tiers).
+ * `keptSeqs` are the entries of the range that stay as they are: its PINNED ones and the user
+ * messages Kernel chose to keep (M2Design 9.6, the tiers).
  */
 export const ContextCompactedForWorkflowSchema = closed(
   {

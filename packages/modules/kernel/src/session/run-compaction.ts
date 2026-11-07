@@ -1,7 +1,7 @@
 import {
-  applyCompactions,
   entryBytes,
   planCompaction,
+  prune,
   type ArtifactRef,
   type CompactionFailed,
   type CompactionSummaryInput,
@@ -208,19 +208,7 @@ export class CompactionProcess {
         if (recorded === 'FAILED') return { kind: 'FAILED', reason: 'NOT_RECORDED' };
         pruned = cut.items.length;
         const at = Math.max(0, ...entries.map((entry) => entry.seq)) + 1;
-        entries = applyCompactions(entries, {
-          compacted: [],
-          revoked: new Set(),
-          pruned: [
-            {
-              type: 'TOOL_RESULTS_PRUNED',
-              seq: at,
-              compactionId: id,
-              target,
-              items: [...cut.items],
-            } as never,
-          ],
-        });
+        entries = prune(entries, [{ seq: at, items: cut.items }]);
       }
     }
 

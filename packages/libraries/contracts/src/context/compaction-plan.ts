@@ -72,7 +72,7 @@ export const entryTokens = (entry: ContextHistoryEntry): number =>
   Math.ceil(entryBytes(entry) * TOKENS_PER_BYTE);
 
 /** The span of log records an entry stands for: a summary stands for all it replaced. */
-const spanOf = (entry: ContextHistoryEntry): { from: number; to: number } =>
+export const spanOf = (entry: ContextHistoryEntry): { from: number; to: number } =>
   entry.kind === 'SUMMARY'
     ? { from: entry.fromSeq, to: entry.toSeq }
     : { from: entry.seq, to: entry.seq };
@@ -152,11 +152,11 @@ export function planCompaction(
 
   // The range is an interval of the log. The newest part has to lie outside it: a note that was
   // added late carries an early `seq`, so the interval stops before the lowest `seq` of the part.
-  const fromSeq = Math.min(...replaceable.map((entry) => spanOf(entry).from));
-  const newestFrom = Math.min(...newest.map((entry) => spanOf(entry).from));
+  const fromSeq = replaceable.reduce((low, entry) => Math.min(low, spanOf(entry).from), Infinity);
+  const newestFrom = newest.reduce((low, entry) => Math.min(low, spanOf(entry).from), Infinity);
   const toSeq = Math.min(
-    Math.max(...older.map((entry) => spanOf(entry).to)),
-    Number.isFinite(newestFrom) ? newestFrom - 1 : Number.POSITIVE_INFINITY,
+    older.reduce((high, entry) => Math.max(high, spanOf(entry).to), 0),
+    newestFrom - 1,
   );
   const inRange = (entry: ContextHistoryEntry) =>
     spanOf(entry).from >= fromSeq && spanOf(entry).to <= toSeq;

@@ -1328,7 +1328,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
   判断上限时再用校准：同一 AgentRun 上一次请求的实测输入 ÷ 当时的估算，乘以本次估算；本次估算不足上次的 70%（工具列表或历史已变，不再共享前缀）时不校准。校准值只在 Kernel 内存中，由 Kernel 填入 `context-assemble` 的输入，Workflow 不接触 token 数。
   实测误差低于 5%。判断压缩的"实测加估算"见第 9.6 节"触发"。额度预留 = 校准后的输入 × 1.05 + 该次调用的输出上限，留出估算偏差。
 - **上下文上限**：`perCallInputLimit` 取模型窗口减去输出上限，再留约 6% 的估算余量。`deepseek-flash` 的窗口为 1,000,000、输出取 64,000，所以输入上限为 880,000。
-- **provider 拒绝**：估算偏差使 provider 以上下文超长拒绝时，`model-call` 返回 `LIMIT_EXCEEDED`，按超出上限处理。
+- **provider 拒绝**：估算偏差使 provider 以上下文超长拒绝时，`model-call` 返回 `CONTEXT_OVERFLOW`（阶段 8 之前为 `LIMIT_EXCEEDED`），触发压缩并重新组装，连续三次压缩仍被拒才按超出上限处理（第 9.6 节）。
 - **接近上限的预警**：上下文达到 `perCallInputLimit` 的 85% 时，STATUS 写明已用比例与 token 数，要求模型只读必要内容、尽快结束；到达上限时按下一条进入最后一轮。预警在 STATUS 中，不改变缓存前缀，写入日志的 `CONTEXT_ASSEMBLED` 带这次的 token 数。
 - **收尾调用的保险**：收尾调用是该 AgentRun 的最后一次调用，不再压缩。组装超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，
   以完整的模型轮为单位（工具调用与它的结果不拆开），直到装下为止；`PINNED` 条目与最近一轮永不去掉。去掉的条目记入 `CONTEXT_ASSEMBLED`，结果可以复现。
@@ -1396,11 +1396,12 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | 触发 | 时机 | 说明 |
 |---|---|---|
 | 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.85） | 这是检查点：此时该 AgentRun 处在两次模型调用之间 |
-| 溢出 | `model-call` 以 `CONTEXT_OVERFLOW` 返回后，Workflow 按固定规则重新提交 `context-assemble`；Kernel 记住溢出时的规模，依次以它的 85%、70%、50% 为压缩目标 | 第三次仍溢出时不再压缩，按第 9.3 节的收尾路径结束 |
+| 溢出 | `model-call` 以 `CONTEXT_OVERFLOW` 返回后，Workflow 按固定规则重新提交 `context-assemble`；Kernel 记住溢出时的规模，依次以它的 85%、70%、50% 为压缩目标 | 三次压缩之后仍溢出（第四次）时不再压缩，按第 9.3 节的收尾路径结束 |
 | 用户 | `/compact`（`compactContext`），只在 Turn-chat 的 AWAITING_INPUT 时受理 | 立即执行；对象为 main 的投影；修剪之后总是继续写摘要 |
 | 空闲 | Turn-chat 的运行进入 AWAITING_INPUT 时，main 的估算超过 `idleTriggerRatio × perCallInputLimit`（缺省 0.7） | 预先压缩，避免用户发出下一条消息后还要等压缩（参考 OpenCode 的 `precompute` 与 DeepSeek Harness 的空闲维护）；代价是用户可能不再继续，这次摘要的 token 白花 |
 
 **估算**（判断是否压缩时使用，参考 OpenCode 的 `measured + estimated` 与 DeepSeek Harness 的 `tokenMeter`）：
+- 检查点（自动触发）用的是组装结果的 token 数，它已按上一次实测校准（第 9.3 节）；一次压缩内部判断"是否已够小"与"摘要请求能否装下"时，用下面这个纯函数估算（`estimateContext`）。两者都以实测为起点，用途不同，没有第三种估算。
 - 该对象最近一次 `MODEL_TURN` 中 provider 报告的实际输入 token（含缓存命中）与输出 token，加上它之后新增条目的字节估算；
 - 只有那一轮请求的头部（system 段、工具定义与模型，以 `CONTEXT_ASSEMBLED.headDigest` 比较）与本次相同、且其后没有修剪、压缩或撤销压缩的记录时才使用实测值，否则全部按字节估算；
 - 实测值来自日志，估算因此仍是日志的纯函数，进程重启后结果相同。额度预留不用这个估算（第 9.3 节"两种规模估算"）。

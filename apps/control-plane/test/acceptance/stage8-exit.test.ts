@@ -156,6 +156,8 @@ describe('L1, L5, L9: a context that has something old in it is compacted and th
       const audit = await auditOf(dataDir);
       expect(audit).toContain('COMPACTION_STARTED');
       expect(audit).toContain('COMPACTION_ENDED');
+      // The activity area said so while it ran.
+      expect(chat.lives.some((live) => JSON.stringify(live).includes('压缩上下文'))).toBe(true);
     },
     TIMEOUT,
   );
@@ -249,12 +251,13 @@ describe('L2: the provider says the context is too long', () => {
   );
 
   it(
-    'ends the Turn after the third refusal, and says the context is too long',
+    'ends the Turn after the fourth refusal, and says the context is too long',
     async () => {
       const provider = scriptedAgents({
         main: [
           read('a.txt'),
           read('b.txt'),
+          overflow(),
           overflow(),
           overflow(),
           overflow(),

@@ -196,9 +196,7 @@ async function runOne(run: number) {
   };
   await chat.close().catch(() => undefined);
   if (result.ok) await rm(dataDir, { recursive: true, force: true });
-  else
-    process.stdout.write(`kept ${dataDir}
-`);
+  else process.stdout.write(`kept ${dataDir}\n`);
   await rm(repository, { recursive: true, force: true });
   return result;
 }

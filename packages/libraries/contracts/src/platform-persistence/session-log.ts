@@ -335,8 +335,9 @@ export const SessionLogRecordSchema = Type.Union(
       items: Type.Array(PrunedItemSchema, { minItems: 1 }),
     }),
     /**
-     * `[fromSeq, toSeq]` of the log is replaced in the projection by the summary, except the user
-     * messages in `keptSeqs`, which Kernel chose and the projection must not choose again.
+     * `[fromSeq, toSeq]` of the log is replaced in the projection by the summary, except the
+     * entries in `keptSeqs` (PINNED ones and the user messages Kernel chose); the projection must
+     * not choose again.
      */
     record('CONTEXT_COMPACTED', inRun, {
       compactionId: IdSchemas.compactionId,

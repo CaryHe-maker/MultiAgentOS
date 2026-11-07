@@ -140,7 +140,6 @@ export class RunCompactor implements Compacting {
   >();
   readonly #grants = new Set<string>();
   #controller = new AbortController();
-  #active = 0;
   readonly #going = new Map<string, Promise<unknown>>();
 
   public constructor(deps: RunCompactorDeps) {
@@ -148,20 +147,13 @@ export class RunCompactor implements Compacting {
     this.#process = new CompactionProcess(this.#ports());
   }
 
-  /** A compaction is in progress: the AgentRun it is for does not call the model meanwhile. */
-  get active(): boolean {
-    return this.#active > 0;
-  }
-
   public async run(request: Omit<CompactionRequest, 'signal'>): Promise<CompactionResult> {
     const key = canonicalJson(request.target);
-    this.#active += 1;
     const running = this.#process.run({ ...request, signal: this.#controller.signal });
     this.#going.set(key, running);
     try {
       return await running;
     } finally {
-      this.#active -= 1;
       if (this.#going.get(key) === running) this.#going.delete(key);
     }
   }
@@ -393,8 +385,8 @@ export class RunCompactor implements Compacting {
       if (origin === undefined || each.omittedBytes === 0) continue;
       const prunedRef = await artifacts.put(each.text, MEDIA_TYPES.fileText, 'SESSION');
       // A result that was not cut before has only its preview: that becomes what `read_output`
-      // reads, and it is kept for good (Execution 6a).
-      // (Not marked as a full output: the same bytes are what the context shows as the preview.)
+      // reads, and it is kept for good (Execution 6a). It is not marked as a full output: the
+      // same bytes are what the context shows as the preview.
       const readableRef =
         origin.fullRef ??
         (await artifacts.put(origin.text, origin.previewRef.mediaType, 'SESSION'));
@@ -412,7 +404,6 @@ export class RunCompactor implements Compacting {
   // ---- the summary request --------------------------------------------------------------------
 
   async #reserve(
-    target: CompactionTarget,
     estimatedTokens: number,
     cacheHitWeight: number,
     agentRunId: string | undefined,
@@ -457,7 +448,6 @@ export class RunCompactor implements Compacting {
       release();
       return 'REFUSED';
     }
-    void target;
     return {
       settle: (settlement) => {
         own.settle(reservationId, settlement);
@@ -512,7 +502,6 @@ export class RunCompactor implements Compacting {
       Math.min(Math.ceil(inputTokens * RESERVE_MARGIN), agent.budget.perCallInputLimit) +
       compaction.summaryMaxTokens;
     const reservation = await this.#reserve(
-      target,
       estimatedTokens,
       agent.cacheHitWeight,
       found.agentRunId,

@@ -52,8 +52,10 @@ export interface RunExecutionDeps {
   readonly written: (path: string, sha256: string) => Promise<void>;
   /** Undefined when the file does not exist. */
   readonly readRepositoryFile: (path: string, scope: ExecutionScope) => Promise<string | undefined>;
-  /** Runs `work` as a control message of the actor; a timer only does this. */
-  /** The actor awaits what `work` returns before it sends what the message produced. */
+  /**
+   * Runs `work` as a control message of the actor; a timer only does this. The actor awaits what
+   * `work` returns before it sends what the message produced.
+   */
   readonly enqueue: (work: () => void | Promise<void>) => void;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
@@ -428,7 +430,6 @@ export class RunExecution {
     }
   }
 
-  /** One terminal fact of the Supervisor; anything stale is dropped here. */
   /**
    * Kernel's own executions (a prune or a summary of a compaction) have no Unit attempt: the
    * compaction that started one hears its fact here, once.
@@ -437,6 +438,7 @@ export class RunExecution {
     this.#internal.set(unitAttemptId, handler);
   }
 
+  /** One terminal fact of the Supervisor; anything stale is dropped here. */
   async handleFact(fact: ExecutionFact): Promise<void> {
     const internal = this.#internal.get(fact.unitAttemptId);
     if (internal !== undefined) {

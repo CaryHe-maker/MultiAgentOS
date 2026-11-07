@@ -511,8 +511,12 @@ function reassemble(
   );
 }
 
-/** The model was refused this many times in a row for the size: the compaction cannot help. */
-const OVERFLOW_LIMIT = 3;
+/**
+ * The model was refused this many times in a row for the size: the compaction cannot help. Kernel
+ * compacts after each of the first three (`KernelConfig.compaction.overflowTargets`), so the
+ * fourth refusal is the one that ends the round's work.
+ */
+const OVERFLOW_LIMIT = 4;
 
 function failed(
   state: AgentState,

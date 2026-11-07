@@ -127,6 +127,11 @@ export class RunActivity {
     this.#emit(agentRunId, 'PAUSED');
   }
 
+  /** Its context is being compacted before its next call: nothing of this AgentRun runs. */
+  compacting(agentRunId: string): void {
+    this.#emit(agentRunId, 'COMPACTING');
+  }
+
   /** A Unit of this AgentRun waits on a question to the user. */
   awaitingAuthorization(agentRunId: string): void {
     this.#emit(agentRunId, 'AWAITING_AUTHORIZATION');
