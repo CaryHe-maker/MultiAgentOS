@@ -298,16 +298,19 @@ describe('what the records do to the entries', () => {
 
 describe('how big the next request will be', () => {
   const head = 'h'.repeat(64);
-  const measuredTurn = (inputTokens: number, headDigest = head, at?: number): ContextHistoryEntry =>
-    ({
-      seq: at ?? seq(),
-      category: 'NORMAL',
-      kind: 'MODEL_TURN',
-      modelId: 'm',
-      outputRef: ref(100),
-      replayable: false,
-      measured: { inputTokens, outputTokens: 50, headDigest },
-    }) as ContextHistoryEntry;
+  const measuredTurn = (
+    inputTokens: number,
+    headDigest = head,
+    at?: number,
+  ): ContextHistoryEntry => ({
+    seq: at ?? seq(),
+    category: 'NORMAL',
+    kind: 'MODEL_TURN',
+    modelId: 'm',
+    outputRef: ref(100),
+    replayable: false,
+    measured: { inputTokens, outputTokens: 50, headDigest },
+  });
   const input = (entries: ContextHistoryEntry[]) => ({
     entries,
     headDigest: head,
