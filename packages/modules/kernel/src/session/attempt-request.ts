@@ -243,7 +243,7 @@ export class AttemptRequestBuilder {
         const { fullRef, ...window } = inputOf<OutputReadInput>(OutputReadInputSchema, input);
         // The reference comes from Workflow's log: a full output, or the preview of a result that a
         // compaction cut and kept to be read.
-        if (!this.#deps.artifacts.owns(fullRef))
+        if (!this.#deps.artifacts.isFullOutput(fullRef) && !this.#deps.artifacts.owns(fullRef))
           throw new RequestBuildError('INVALID_ARTIFACT_REF');
         return {
           request: made(
