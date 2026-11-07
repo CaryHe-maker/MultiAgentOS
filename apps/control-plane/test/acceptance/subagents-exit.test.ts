@@ -280,7 +280,8 @@ describe('dependencies and results', () => {
       expect(workerSees).toContain('Result of task survey (explorer): DONE');
       expect(workerSees).toContain('auth lives in src/auth.ts, nothing else');
       // The worker is not shown what the user typed.
-      expect(workerSees).not.toContain('go\n');
+      // (A message of its own: the name of the temporary directory may end in the same letters.)
+      expect(worker?.messages.map((m) => textOf(m)) ?? []).not.toContain('go');
       const lastMessages =
         provider.requests
           .at(-1)
