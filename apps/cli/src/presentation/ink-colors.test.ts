@@ -56,7 +56,7 @@ describe('Ink console colours', () => {
     expect(ui.lastFrame()).toContain('\u001b[38;2;47;109;246mmain: 正在写');
   });
 
-  it('keeps the thinking in its own colours: magenta while it streams, grey after', async () => {
+  it('writes the thinking in grey, while it streams and after', async () => {
     const { store, ui } = setup();
     const block = (state: 'OPEN' | 'DONE') => ({
       id: 'exe_1',
@@ -67,24 +67,17 @@ describe('Ink console colours', () => {
       ...(state === 'OPEN' ? {} : { endedAt: new Date().toISOString() }),
       text: '想一想',
     });
-    store.update({
-      status: '',
-      activity: [],
-      waiting: 0,
-      queued: [],
-      thinking: [block('OPEN')],
-    });
-    await tick();
-    expect(ui.lastFrame()).toContain('\u001b[95m▾ ✻ main 思考');
-    store.update({
-      status: '',
-      activity: [],
-      waiting: 0,
-      queued: [],
-      thinking: [block('DONE')],
-    });
-    await tick();
-    expect(ui.lastFrame()).toContain('\u001b[90m▾ ✻ main 思考');
+    for (const state of ['OPEN', 'DONE'] as const) {
+      store.update({
+        status: '',
+        activity: [],
+        waiting: 0,
+        queued: [],
+        thinking: [block(state)],
+      });
+      await tick();
+      expect(ui.lastFrame()).toContain('[90m▾ ✻ main 思考');
+    }
   });
 
   it('draws the cursor on the character it stands on, and the typed text in green', async () => {

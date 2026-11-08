@@ -344,7 +344,8 @@ function ConsoleApp({
                 Text,
                 {
                   key: `b${String(item.seq)}-${String(index)}`,
-                  color: line.kind === 'HEADER' && line.live ? 'magentaBright' : 'gray',
+                  // Thinking is grey while it streams and after, like the rest of the status text.
+                  color: 'gray',
                   ...(line.kind === 'BODY' ? { dimColor: true } : {}),
                   wrap: 'truncate-end',
                 },
