@@ -16,7 +16,7 @@ describe('streamTap', () => {
     return events;
   };
 
-  it('tells the thinking as it comes and, once, that the answer began (its text is not passed on)', () => {
+  it('tells the thinking as it comes and, once, that the reply began (its text is not passed on)', () => {
     const events = run((tap) => {
       tap(sse({ role: 'assistant', content: '' }));
       tap(sse({ reasoning_content: 'Let me ' }));
@@ -36,12 +36,17 @@ describe('streamTap', () => {
     ]);
   });
 
-  it('takes plain text for the start of an answer too, and tells it once', () => {
+  it('does not take text that comes with tool calls for an answer', () => {
     const events = run((tap) => {
-      tap(sse({ content: 'First, ' }));
-      tap(sse({ content: 'then more.' }));
+      tap(sse({ content: 'I will write the file now. ' }));
+      tap(
+        sse({
+          tool_calls: [{ index: 0, id: 'c1', function: { name: 'file_write', arguments: '' } }],
+        }),
+      );
+      tap(sse({ tool_calls: [{ index: 0, function: { arguments: '{"path":"a.docx"}' } }] }));
     });
-    expect(events).toEqual([{ kind: 'ANSWER' }]);
+    expect(events).toEqual([]);
   });
 
   it('tells nothing of a tool that does not answer the user', () => {

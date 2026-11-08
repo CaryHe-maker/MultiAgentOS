@@ -16,7 +16,6 @@ export type {
   PendingItem,
   ThinkingView,
   TranscriptRecord,
-  AnsweringView,
 } from './console/console-view.js';
 export { renderReport } from './domain/report-view.js';
 

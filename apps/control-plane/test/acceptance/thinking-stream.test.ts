@@ -66,13 +66,18 @@ describe('thinking streamed to the console', () => {
       const { chat } = await conversation(thinking('short thought', text));
       await chat.say('hi');
       await until(() => chat.printed('REPLY').length === 1, 'the reply');
-      const seen = chat.lives.flatMap((live) => live.answering ?? []);
+      const writing = (live: (typeof chat.lives)[number]) =>
+        live.activity.filter((line) => line.phase === '正在输出回答');
+      const seen = chat.lives.flatMap(writing);
       expect(seen.length).toBeGreaterThan(0);
       expect(seen[0]).toMatchObject({ label: 'main' });
       // The text is only there when it is published: the live state carries none of it.
       expect(JSON.stringify(chat.lives)).not.toContain(text);
       // Once the reply is printed, nothing is being written any more.
-      await until(() => chat.lives.at(-1)?.answering?.length === 0, 'the line to go');
+      await until(
+        () => chat.lives.at(-1) !== undefined && writing(chat.lives.at(-1)!).length === 0,
+        'the line to go',
+      );
       expect(chat.printed('REPLY')).toEqual([text]);
     },
     TIMEOUT,

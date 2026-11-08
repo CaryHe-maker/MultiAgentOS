@@ -1,9 +1,4 @@
-import type {
-  ActivityLine,
-  AnsweringView,
-  Console,
-  TranscriptRecord,
-} from '@multiagentos/user-interaction';
+import type { ActivityLine, Console, TranscriptRecord } from '@multiagentos/user-interaction';
 import { ConsoleText } from '@multiagentos/user-interaction';
 import { Box, Static, Text, render, useCursor, useInput, useStdout, type Instance } from 'ink';
 import {
@@ -108,22 +103,6 @@ function Activity({
   );
 }
 
-/** One line like the other activity: the answer is being written; the text comes whole when it is published. */
-function Answering({
-  line,
-  now,
-}: {
-  readonly line: AnsweringView;
-  readonly now: number;
-}): ReactElement {
-  const until = line.endedAt === undefined ? now : Date.parse(line.endedAt);
-  return h(
-    Text,
-    { color: 'gray', wrap: 'truncate-end' },
-    ConsoleText.answering(line.label, `${String(seconds(line.startedAt, until))}s`),
-  );
-}
-
 function useClock(running: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -192,8 +171,7 @@ function ConsoleApp({
   const history = useRef<string[]>([]);
   const browsing = useRef<number | undefined>(undefined);
   const open = tail.some((item) => item.kind === 'BLOCK' && item.block.state === 'OPEN');
-  const answering = live.answering ?? [];
-  const now = useClock(live.activity.length > 0 || answering.length > 0 || open);
+  const now = useClock(live.activity.length > 0 || open);
 
   useEffect(() => {
     if (restored.messages.length > 0) setBox(inputOf(restored.messages.join('\n')));
@@ -296,12 +274,7 @@ function ConsoleApp({
     pendingText === undefined
       ? []
       : pendingText.split('\n').flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)));
-  const below =
-    live.activity.length +
-    answering.length +
-    questionLines.length +
-    (live.queued.length > 0 ? 1 : 0) +
-    1;
+  const below = live.activity.length + questionLines.length + (live.queued.length > 0 ? 1 : 0) + 1;
   const others = below + boxRows(box, PROMPT, CONTINUATION, columns);
   const room = Math.max(1, rows - others - 3);
   // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
@@ -367,7 +340,6 @@ function ConsoleApp({
             ),
       ),
       ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
-      ...answering.map((line) => h(Answering, { key: line.id, line, now })),
       ...questionLines.map((line, index) =>
         h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, row(line)),
       ),

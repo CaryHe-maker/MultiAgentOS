@@ -189,7 +189,14 @@ const conversation = async (columns: number, rows: number, wideAmbiguous: boolea
       ...idle,
       status: '运行中',
       thinking: [...blocks],
-      answering: [{ id: `w${String(turn)}`, label: 'main', startedAt: new Date().toISOString() }],
+      activity: [
+        {
+          agentRunId: `a${String(turn)}`,
+          label: 'main',
+          phase: '正在输出回答',
+          since: new Date().toISOString(),
+        },
+      ],
     });
     await tick();
     blocks[blocks.length - 1] = block(
@@ -304,7 +311,6 @@ describe('where the cursor is left', () => {
         },
       ],
       thinking: [block(1, '想一\n想二\n想三', 'OPEN')],
-      answering: [{ id: 'w1', label: 'main', startedAt: new Date().toISOString() }],
       pending: { kind: 'CONTINUE', text: '本次运行的额度已用完。要继续吗？[y/n]' },
       queued: ['下一条'],
     });

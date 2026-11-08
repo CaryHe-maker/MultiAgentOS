@@ -20,8 +20,9 @@ interface ChunkDelta {
 /**
  * Reads the server-sent events of a streamed answer as their bytes arrive, and tells what is in
  * them for the person watching: the thinking, and the moment the model begins its answer for the
- * user, which is either plain text or a call of an answer tool such as the reply (`answerTools`:
- * their names). The text itself is not passed on; it is shown when it is published. It stands on
+ * user: the call of an answer tool, the reply (`answerTools`: their names). Plain text that comes
+ * with other tool calls is not an answer, and the text itself is not passed on: it is shown when
+ * it is published. It stands on
  * the network side of the provider SDK on purpose: the SDK reads ahead until the first piece of the
  * answer proper before it passes the stream on, and the thinking comes first, so through the SDK
  * nothing would reach the screen until the thinking is over. Anything it cannot read is skipped;
@@ -38,9 +39,9 @@ export function streamTap(
   const onDelta = (delta: ChunkDelta): void => {
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
       tell({ kind: 'REASONING', delta: delta.reasoning_content });
-    const writes =
-      (typeof delta.content === 'string' && delta.content.length > 0) ||
-      (delta.tool_calls ?? []).some((piece) => answerTools.has(piece.function?.name ?? ''));
+    const writes = (delta.tool_calls ?? []).some((piece) =>
+      answerTools.has(piece.function?.name ?? ''),
+    );
     if (writes && !answering) {
       answering = true;
       tell({ kind: 'ANSWER' });

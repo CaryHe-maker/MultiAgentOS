@@ -879,7 +879,12 @@ describe('a compaction in the history', () => {
 });
 
 describe('an answer being written for the user (Phase1Console 4)', () => {
-  const stream = (callId: string, kind: 'ANSWER' | 'END', at = 0, agentRunId = 'arn_1') =>
+  const stream = (
+    callId: string,
+    kind: 'REASONING' | 'ANSWER' | 'END',
+    at = 0,
+    agentRunId = 'arn_1',
+  ) =>
     ({
       sessionId: SESSION,
       workflowRunId: RUN,
@@ -887,44 +892,49 @@ describe('an answer being written for the user (Phase1Console 4)', () => {
       callId,
       at: new Date(at).toISOString(),
       kind,
+      ...(kind === 'REASONING' ? { delta: 'thinking' } : {}),
     }) as Parameters<Console['handleModelStream']>[0];
   const running = (turnId: string) =>
     ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
+  const thinkingPhase = {
+    type: 'ActivityEvent',
+    agentRunId: 'arn_1',
+    label: 'planner',
+    phase: 'THINKING',
+    at: new Date(0).toISOString(),
+  } as unknown as KernelToInteractionEvent;
 
-  it('knows that it is being written, since when, under the label of the agent that writes it', async () => {
+  it('turns the line of the agent that writes it into one that says so, with its own time', async () => {
     const t = setup();
     await t.console.submit('hi');
-    await t.event({
-      type: 'ActivityEvent',
-      agentRunId: 'arn_1',
-      label: 'planner',
-      phase: 'THINKING',
-      at: new Date(0).toISOString(),
-    });
+    await t.event(thinkingPhase);
     await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
     t.console.handleModelStream(stream('exe_1', 'ANSWER', 1000));
-    expect(t.live()?.answering).toEqual([
-      { id: 'exe_1', label: 'planner', startedAt: new Date(1000).toISOString() },
-    ]);
-    t.console.handleModelStream(stream('exe_1', 'END', 4000));
-    expect(t.live()?.answering).toEqual([
+    // One line for the agent, not a second one beside it: one clock, not two.
+    expect(t.live()?.activity).toMatchObject([
       {
-        id: 'exe_1',
         label: 'planner',
-        startedAt: new Date(1000).toISOString(),
-        endedAt: new Date(4000).toISOString(),
+        phase: '正在输出回答',
+        since: new Date(1000).toISOString(),
       },
     ]);
+    // The thinking is over when the answer begins: its clock stops there too.
+    expect(t.live()?.thinking?.[0]).toMatchObject({
+      state: 'DONE',
+      endedAt: new Date(1000).toISOString(),
+    });
   });
 
-  it('keeps the line after the call ends, until the message itself is published', async () => {
+  it('keeps saying so until the message itself is published', async () => {
     const artifacts = new Map<string, string>();
     const u = setup({ artifacts });
     await u.console.submit('hi');
+    await u.event(thinkingPhase);
     await u.event(running('trn_1'));
     u.console.handleModelStream(stream('exe_1', 'ANSWER'));
     u.console.handleModelStream(stream('exe_1', 'END'));
-    expect(u.live()?.answering).toHaveLength(1);
+    expect(u.live()?.activity[0]?.phase).toBe('正在输出回答');
     const ref = testArtifactRef('Hello!');
     artifacts.set(ref.artifactId, 'Hello!');
     await u.event({
@@ -933,26 +943,37 @@ describe('an answer being written for the user (Phase1Console 4)', () => {
       agentLabel: 'main',
       messageRef: ref,
     } as unknown as KernelToInteractionEvent);
-    expect(u.live()?.answering).toEqual([]);
+    expect(u.live()?.activity[0]?.phase).toBe('思考中');
     expect(u.printed.some((entry) => entry.kind === 'REPLY')).toBe(true);
   });
 
   it('lets the next call of an agent replace the line of the one before', async () => {
     const t = setup();
     await t.console.submit('hi');
+    await t.event(thinkingPhase);
     await t.event(running('trn_1'));
-    t.console.handleModelStream(stream('exe_1', 'ANSWER'));
+    t.console.handleModelStream(stream('exe_1', 'ANSWER', 1000));
     t.console.handleModelStream(stream('exe_1', 'END'));
-    t.console.handleModelStream(stream('exe_2', 'ANSWER'));
-    expect(t.live()?.answering?.map((line) => line.id)).toEqual(['exe_2']);
+    t.console.handleModelStream(stream('exe_2', 'ANSWER', 5000));
+    expect(t.live()?.activity).toMatchObject([{ since: new Date(5000).toISOString() }]);
+  });
+
+  it('does not say it of an agent that only thinks or calls tools', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
+    expect(t.live()?.activity[0]?.phase).toBe('思考中');
   });
 
   it('is gone when the run waits for the user', async () => {
     const t = setup();
     await t.console.submit('hi');
+    await t.event(thinkingPhase);
     await t.event(running('trn_1'));
     t.console.handleModelStream(stream('exe_1', 'ANSWER'));
     await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
-    expect(t.live()?.answering).toEqual([]);
+    expect(t.live()?.activity).toEqual([]);
   });
 });

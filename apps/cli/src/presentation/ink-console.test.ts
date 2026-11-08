@@ -241,47 +241,6 @@ describe('Ink console: waiting, colours and thinking', () => {
   });
 });
 
-describe('Ink console: the answer being written', () => {
-  it('shows one line with the time above the status, and never the text itself', async () => {
-    const { store, ui } = setup();
-    store.update({
-      status: '运行中',
-      activity: [],
-      waiting: 0,
-      queued: [],
-      answering: [
-        { id: 'exe_1', label: 'main', startedAt: new Date(Date.now() - 5000).toISOString() },
-      ],
-    });
-    await tick();
-    const lines = (ui.lastFrame() ?? '').split('\n');
-    const written = lines.findIndex((line) => /· main 正在输出回答 [45]s/u.test(line));
-    expect(written).toBeGreaterThanOrEqual(0);
-    expect(lines.findIndex((line) => line.includes('运行中'))).toBeGreaterThan(written);
-  });
-
-  it('stops counting when the model has finished writing, until the message is published', async () => {
-    const { store, ui } = setup();
-    const startedAt = new Date(Date.now() - 60_000).toISOString();
-    store.update({
-      status: '运行中',
-      activity: [],
-      waiting: 0,
-      queued: [],
-      answering: [
-        {
-          id: 'exe_1',
-          label: 'main',
-          startedAt,
-          endedAt: new Date(Date.now() - 57_000).toISOString(),
-        },
-      ],
-    });
-    await tick();
-    expect(ui.lastFrame()).toContain('正在输出回答 3s');
-  });
-});
-
 describe('Ink console: thinking among what happened', () => {
   const block = (number: number, text: string, state: 'OPEN' | 'DONE' = 'DONE'): ThinkingView => ({
     id: `exe_${String(number)}`,

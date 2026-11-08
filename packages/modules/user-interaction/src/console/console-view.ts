@@ -85,19 +85,6 @@ export interface ThinkingView {
   readonly text: string;
 }
 
-/**
- * An agent is writing its answer for the user. Only that it is, and since when, is shown (one line
- * with the time, like any other activity); the text itself appears whole when the message is
- * published. It goes then, or when the run moves on.
- */
-export interface AnsweringView {
-  readonly id: string;
-  readonly label: string;
-  readonly startedAt: string;
-  /** Set once the model's stream has ended, before the message is published. */
-  readonly endedAt?: string;
-}
-
 /** Everything that changes in place: redrawn whenever it changes. */
 export interface LiveState {
   readonly status: string;
@@ -108,8 +95,6 @@ export interface LiveState {
   readonly hint?: string;
   /** Every block the console keeps, oldest first. */
   readonly thinking?: readonly ThinkingView[];
-  /** The agents that are writing their answer for the user right now. */
-  readonly answering?: readonly AnsweringView[];
 }
 
 export interface ConsoleView {

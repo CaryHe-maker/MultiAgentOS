@@ -26,7 +26,6 @@ import type {
   PendingItem,
   QuestionField,
   ThinkingView,
-  AnsweringView,
 } from './console-view.js';
 import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
@@ -188,10 +187,7 @@ export class Console {
   /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
   readonly #thinking = new ThinkingLog();
   /** The answers agents are writing for the user, by the call that writes them; only that they are. */
-  readonly #answering = new Map<
-    string,
-    { agentRunId: string; label: string; startedAt: string; endedAt?: string }
-  >();
+  readonly #answering = new Map<string, { agentRunId: string; startedAt: string }>();
   /** The Session the thinking belongs to. */
   #thinkingSession: string | undefined;
   /** Set by /fork until the draft's first prompt. */
@@ -235,7 +231,6 @@ export class Console {
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
       thinking: this.#thinkingInView(),
-      answering: this.#answeringInView(),
     };
     this.#deps.view.update(live);
   }
@@ -253,15 +248,6 @@ export class Console {
       startedAt: block.startedAt,
       ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
       text: block.text,
-    }));
-  }
-
-  #answeringInView(): AnsweringView[] {
-    return [...this.#answering].map(([id, block]) => ({
-      id,
-      label: block.label,
-      startedAt: block.startedAt,
-      ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
     }));
   }
 
@@ -289,16 +275,15 @@ export class Console {
     const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
     if (stream.kind === 'END') {
       this.#thinking.end(stream.callId, stream.at);
-      const answer = this.#answering.get(stream.callId);
-      if (answer !== undefined) answer.endedAt = stream.at;
     } else if (stream.kind === 'ANSWER') {
+      // The thinking is over when the answer begins: one clock runs, not two.
+      this.#thinking.end(stream.callId, stream.at);
       if (!this.#answering.has(stream.callId)) {
         // The next call of an agent replaces what it wrote before.
         for (const [id, earlier] of this.#answering)
           if (earlier.agentRunId === stream.agentRunId) this.#answering.delete(id);
         this.#answering.set(stream.callId, {
           agentRunId: stream.agentRunId,
-          label,
           startedAt: stream.at,
         });
       }
@@ -351,7 +336,19 @@ export class Console {
 
   /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
   #activityTree(): ActivityLine[] {
-    return inTree([...this.#activity.values()]).map(({ item, branch }) => ({ ...item, branch }));
+    // An AgentRun that is writing its answer for the user says so on its own line, with its own
+    // time: that is what it does now, and a second line would run a second clock.
+    const answering = new Map(
+      [...this.#answering.values()].map((answer) => [answer.agentRunId, answer.startedAt]),
+    );
+    return inTree(
+      [...this.#activity.values()].map((line) => {
+        const startedAt = answering.get(line.agentRunId);
+        return startedAt === undefined || line.waitsForUser === true
+          ? line
+          : { ...line, phase: text.answeringPhase, since: startedAt };
+      }),
+    ).map(({ item, branch }) => ({ ...item, branch }));
   }
 
   /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
