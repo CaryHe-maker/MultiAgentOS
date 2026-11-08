@@ -57,7 +57,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 命令 | 处理 | 回复 |
 |---|---|---|
 | `CREATE` | 创建 Session 目录与日志；追加 `SESSION_STARTED`；在 Session 列表追加一行；取得 Session 锁 | `READY` |
-| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId` |
+| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId`、`turnCount` 与（有名称时的）`titleRef`，取自 Session 列表索引，Kernel 据此在 `SessionOpened` 里写出名称与轮数（打开已有 Session 时和列表一致） |
 | `CLOSE` | 释放 Session 锁；清空内存投影 | `DONE` |
 | `DELETE`（系统级事件 `SessionDelete`，Session 未打开） | 删除 Session 目录中 `workflow` 命名空间的文件；Session 列表追加 `status: DELETED` | `DONE` |
 | `FORK` | 从当前 Session 分出 | — |

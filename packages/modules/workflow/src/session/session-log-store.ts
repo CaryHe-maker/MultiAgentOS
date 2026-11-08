@@ -39,6 +39,9 @@ export interface OpenedSession {
   readonly records: readonly SessionLogRecord[];
   /** Recorded digest and the current one differ, so rebuilt context is no longer exact. */
   readonly definitionsChanged: boolean;
+  /** What the Session list says of it: the Turns it has, and the reference of its name. */
+  readonly turnCount: number;
+  readonly titleRef?: NonNullable<SessionIndexLine['titleRef']>;
 }
 
 export interface ForkedSession {
@@ -196,7 +199,10 @@ export class SessionLogStore {
         appended.push(await this.append({ type: 'LOG_TAIL_REPAIRED', truncatedBytes }));
       for (const record of settleStaleRecords(records)) appended.push(await this.append(record));
       const started = records[0];
+      const listed = (await this.#latest()).get(sessionId);
       return {
+        turnCount: listed?.turnCount ?? 0,
+        ...(listed?.titleRef === undefined ? {} : { titleRef: listed.titleRef }),
         records: [...records, ...appended],
         definitionsChanged:
           started?.type === 'SESSION_STARTED' && started.definitionsDigest !== definitionsDigest,

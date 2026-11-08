@@ -166,7 +166,7 @@ interface ReportSessionCommandRequest {
   sessionId: string;                // 命令所针对的 Session
   commandId: string;                // 前缀 scm，来自事件
   result:
-    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string }
+    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string; turnCount: number; titleRef?: ArtifactRef }
     | { command: 'CREATE'; outcome: 'READY' }
     | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[]; fromTurnCount: number }   // 复制的日志中出现的全部产物引用；原 Session 的 Turn 数，用于 SessionOpened.fork
     | { command: 'CLOSE' | 'DELETE'; outcome: 'DONE' }

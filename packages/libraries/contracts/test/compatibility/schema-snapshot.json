@@ -13025,7 +13025,8 @@
                       "type": "object",
                       "required": [
                         "command",
-                        "outcome"
+                        "outcome",
+                        "turnCount"
                       ],
                       "properties": {
                         "command": {
@@ -13039,6 +13040,40 @@
                         "lastTurnId": {
                           "type": "string",
                           "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "turnCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "titleRef": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
                         }
                       },
                       "additionalProperties": false
@@ -33271,7 +33306,8 @@
               "type": "object",
               "required": [
                 "command",
-                "outcome"
+                "outcome",
+                "turnCount"
               ],
               "properties": {
                 "command": {
@@ -33285,6 +33321,40 @@
                 "lastTurnId": {
                   "type": "string",
                   "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "turnCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "titleRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
                 }
               },
               "additionalProperties": false

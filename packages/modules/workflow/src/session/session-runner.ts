@@ -295,6 +295,8 @@ export class SessionRunner {
         await reply({
           command: 'OPEN',
           outcome: 'READY',
+          turnCount: opened.turnCount,
+          ...(opened.titleRef === undefined ? {} : { titleRef: opened.titleRef }),
           ...(lastTurn?.type === 'TURN_STARTED' && lastTurn.turnId !== undefined
             ? { lastTurnId: lastTurn.turnId }
             : {}),

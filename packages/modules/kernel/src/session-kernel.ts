@@ -549,6 +549,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               audit({ type: 'ARTIFACT_NOT_INHERITED', artifactId: ref.artifactId });
           },
           storeUserInput: (input) => artifacts.storeUserInput(input),
+          titleOf: async (ref) => {
+            try {
+              return Buffer.from(await deps.artifacts.get(ref))
+                .toString('utf8')
+                .slice(0, 80);
+            } catch {
+              return undefined;
+            }
+          },
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {
             try {

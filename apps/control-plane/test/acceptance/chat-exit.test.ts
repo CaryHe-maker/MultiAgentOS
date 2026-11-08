@@ -467,3 +467,23 @@ describe('A: repo.read and the root AGENTS.md', () => {
     TIMEOUT,
   );
 });
+
+describe('S: opening a Session says what the list says of it', () => {
+  it(
+    'gives its name and its Turns when it is opened again, not an untitled empty one',
+    async () => {
+      const place = await roots();
+      const first = await chatOn(place, scriptedChat(reply('one'), reply('two')));
+      await first.say('name of this conversation');
+      await first.say('second question');
+      await finish(first);
+
+      const chat = await chatOn(place, scriptedChat(reply('three')));
+      await resumeFirst(chat);
+      const openedLine = () => chat.printed('NOTICE').find((text) => text.startsWith('已打开：'));
+      await until(() => openedLine() !== undefined, 'the opened notice');
+      expect(openedLine()).toBe('已打开：name of this conversation（2 轮）');
+    },
+    TIMEOUT,
+  );
+});
