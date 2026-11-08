@@ -727,6 +727,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         if (envelope.producer !== 'supervisor')
           throw new Error('Kernel core execution fact has an invalid producer');
         const fact = envelope.payload;
+        // The side channel is lossy: its END may never come, but the call's fact always does.
+        watchedCalls.delete(fact.executionId);
         const actor = manager.actor(fact.sessionId);
         const execution = executions.get(fact.workflowRunId);
         // A fact of a Session that already closed has nothing left to settle.

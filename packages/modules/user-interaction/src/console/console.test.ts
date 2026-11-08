@@ -860,6 +860,16 @@ describe('a compaction the user asks for', () => {
     expect(t.live()?.activity).toEqual([]);
   });
 
+  it('takes the line away when the run changes state without a result, as after a cancelled compaction', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    expect(t.live()?.activity).toHaveLength(1);
+    await t.event({ type: 'RunStateChanged', state: 'RUNNING' });
+    expect(t.live()?.activity).toEqual([]);
+  });
+
   it('says the context is too short, in plain words, when there is nothing worth compacting', async () => {
     const t = setup();
     await t.console.submit('hi');

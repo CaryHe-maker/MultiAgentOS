@@ -126,10 +126,10 @@ interface TimelineEntry {
   to?: string;
 }
 
-/** Items in the order a tree is drawn: children under the parent that started them. */
 /** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
 const COMPACTION_LINE = 'compaction';
 
+/** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
   T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
 >(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
@@ -267,7 +267,7 @@ export class Console {
   }
 
   /** A different Session starts a different story: nothing of the old one is kept. */
-  #thinkingBelongsTo(sessionId: string | undefined): void {
+  #streamBelongsTo(sessionId: string | undefined): void {
     if (this.#thinkingSession === sessionId) return;
     this.#thinkingSession = sessionId;
     this.#thinking.clear();
@@ -282,7 +282,7 @@ export class Console {
    */
   handleModelStream(stream: ModelStream): void {
     if (this.#sessionId === undefined || stream.sessionId !== this.#sessionId) return;
-    this.#thinkingBelongsTo(stream.sessionId);
+    this.#streamBelongsTo(stream.sessionId);
     const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
     if (stream.kind === 'END') {
       this.#thinking.end(stream.callId, stream.at);
@@ -1105,7 +1105,7 @@ export class Console {
     }
     switch (event.type) {
       case 'RunStateChanged': {
-        this.#thinkingBelongsTo(this.#sessionId);
+        this.#streamBelongsTo(this.#sessionId);
         // Nothing streams once the run waits for the user or is over: no block stays open.
         if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED') {
           this.#answering.clear();
@@ -1116,6 +1116,9 @@ export class Console {
           this.#thinking.closeAll(at, 'DONE');
         else if (event.state === 'INTERRUPTING') this.#thinking.closeAll(at, 'ABORTED');
         this.#runState = event.state;
+        // A requested compaction ends with its own event or with a change of the run's state (a
+        // fork that cancels it); the run does not change state while it is compacting.
+        this.#activity.delete(COMPACTION_LINE);
         if (event.state === 'INTERRUPTING') this.#aborting = true;
         // The tree stays while the run is held, so that a note can still name its task.
         if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING')
