@@ -59,7 +59,7 @@ async function command(system: System): Promise<number> {
       return new Promise<number>((resolve) => {
         process.once('SIGINT', () => {
           clearInterval(timer);
-          void system.console.shutdown().then(
+          void system.console.shutdown('EXIT_CODE').then(
             () => resolve(130),
             () => resolve(130),
           );
@@ -69,7 +69,7 @@ async function command(system: System): Promise<number> {
       });
     }
     default:
-      await system.console.shutdown();
+      await system.console.shutdown('EXIT_CODE');
       return mode === 'cancelled' ? 130 : 0;
   }
 }
