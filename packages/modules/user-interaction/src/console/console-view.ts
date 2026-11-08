@@ -70,8 +70,9 @@ export interface QuestionField {
 }
 
 /**
- * One piece of the model's thinking: one model call. Every block is passed; the view shows the
- * latest two open, among the records they stand between, and leaves a line for each older one.
+ * One piece of the model's thinking: one model call. Every block is passed; the view decides
+ * which are shown open, among the records they stand between, and leaves a line for each that it
+ * folds (it keeps to 90% of the rows it has).
  */
 export interface ThinkingView {
   readonly id: string;

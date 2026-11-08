@@ -1,21 +1,9 @@
 import type { ActivityLine, Console, TranscriptRecord } from '@multiagentos/user-interaction';
 import { ConsoleText } from '@multiagentos/user-interaction';
-import {
-  Box,
-  Static,
-  Text,
-  measureElement,
-  render,
-  useCursor,
-  useInput,
-  useStdout,
-  type DOMElement,
-  type Instance,
-} from 'ink';
+import { Box, Static, Text, render, useCursor, useInput, useStdout, type Instance } from 'ink';
 import {
   createElement as h,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -109,7 +97,7 @@ function Activity({
         : [line.phase, line.tool, `${String(seconds(line.since, now))}s`];
   return h(
     Text,
-    { color: 'gray' },
+    { color: 'gray', wrap: 'truncate-end' },
     `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`,
   );
 }
@@ -279,17 +267,14 @@ function ConsoleApp({
     .filter((part) => part !== undefined && part.length > 0)
     .join(' · ');
 
-  // What the tail may take: what is left of the screen after the rest of the live area.
-  const others =
-    live.activity.length +
-    (pendingText === undefined
-      ? 0
-      : pendingText
-          .split('\n')
-          .reduce((sum, line) => sum + wrapLines(line, Math.max(10, columns - MARGIN)).length, 0)) +
-    (live.queued.length > 0 ? 1 : 0) +
-    1 +
-    boxRows(box, PROMPT, CONTINUATION, columns);
+  // Every line of the part drawn in place is one row (cut to the screen, or truncated), so the
+  // rows can be counted: what is below the tail, and, for the cursor, what is above the box.
+  const questionLines =
+    pendingText === undefined
+      ? []
+      : pendingText.split('\n').flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)));
+  const below = live.activity.length + questionLines.length + (live.queued.length > 0 ? 1 : 0) + 1;
+  const others = below + boxRows(box, PROMPT, CONTINUATION, columns);
   // What is being written for the user comes first and gets what it needs; the tail gets the rest.
   const room = Math.max(1, rows - others - 3);
   // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
@@ -313,15 +298,9 @@ function ConsoleApp({
   }, [commitBefore, foldKey, elidedKey, store]);
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
-  // and not below the status line. The rows above the box are measured after they are laid out.
-  const above = useRef<DOMElement | null>(null);
-  const [aboveRows, setAboveRows] = useState(0);
-  useLayoutEffect(() => {
-    const measured = above.current === null ? 0 : measureElement(above.current).height;
-    if (measured !== aboveRows) setAboveRows(measured);
-  });
+  // and not below the status line: after the rows above the box, in the row and column of the text.
   const cell = cursorCell(box, PROMPT, CONTINUATION, columns);
-  setCursorPosition({ x: cell.column, y: aboveRows + cell.row });
+  setCursorPosition({ x: cell.column, y: plan.rows + writingLines.length + below + cell.row });
 
   return h(
     Box,
@@ -335,7 +314,7 @@ function ConsoleApp({
     }),
     h(
       Box,
-      { flexDirection: 'column', ref: above },
+      { flexDirection: 'column' },
       ...plan.items.flatMap((item): ReactElement[] =>
         item.kind === 'RECORD'
           ? item.lines.map((line, index) =>
@@ -370,18 +349,13 @@ function ConsoleApp({
       ...writingLines.map((line, index) =>
         h(Text, { key: `w${String(index)}`, color: REPLY_COLOR, wrap: 'truncate-end' }, line),
       ),
-      ...(pendingText === undefined
-        ? []
-        : pendingText
-            .split('\n')
-            .flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)))
-            .map((line, index) =>
-              h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, line),
-            )),
+      ...questionLines.map((line, index) =>
+        h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, line),
+      ),
       live.queued.length > 0
-        ? h(Text, { color: 'gray' }, ConsoleText.queued(live.queued.length))
+        ? h(Text, { color: 'gray', wrap: 'truncate-end' }, ConsoleText.queued(live.queued.length))
         : null,
-      h(Text, { color: 'gray' }, status.length > 0 ? status : ' '),
+      h(Text, { color: 'gray', wrap: 'truncate-end' }, status.length > 0 ? status : ' '),
     ),
     h(InputBox, { state: box }),
   );

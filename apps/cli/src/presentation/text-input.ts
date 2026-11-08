@@ -87,7 +87,7 @@ export const lineEnd = (state: InputState): InputState => ({
 });
 
 /** Index of the line the cursor is on, and how many lines there are. */
-export function linePosition(state: InputState): { readonly line: number; readonly lines: number } {
+function linePosition(state: InputState): { readonly line: number; readonly lines: number } {
   const lines = state.value.split('\n').length;
   const line = state.value.slice(0, state.cursor).split('\n').length - 1;
   return { line, lines };
@@ -192,7 +192,7 @@ export function displayWidth(text: string): number {
 }
 
 /** Rows a line of `width` columns takes when the terminal is `columns` wide (an empty line takes one). */
-export const rowsOf = (width: number, columns: number): number =>
+const rowsOf = (width: number, columns: number): number =>
   Math.max(1, Math.ceil(width / Math.max(1, columns)));
 
 /**

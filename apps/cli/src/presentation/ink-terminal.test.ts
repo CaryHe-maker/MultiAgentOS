@@ -109,6 +109,15 @@ class Terminal {
     }
   }
 
+  /** Where the cursor is on the screen, and what is on each row of the screen. */
+  public cursor(): { readonly row: number; readonly column: number; readonly rows: string[] } {
+    return {
+      row: this.#row,
+      column: this.#column,
+      rows: this.#screen.map((line) => line.join('').trimEnd()),
+    };
+  }
+
   /** Everything the person can scroll through: the scroll-back, then the screen. */
   public everything(): string {
     return [...this.scrollback, ...this.#screen.map((line) => line.join('').trimEnd())].join('\n');
@@ -274,5 +283,49 @@ describe('long thinkings that grow while they run', () => {
       expect(text.split(`回答${String(turn)}`).length - 1, `reply ${String(turn)}`).toBe(1);
       expect(text.split(`问题${String(turn)}`).length - 1, `question ${String(turn)}`).toBe(1);
     }
+  });
+});
+
+describe('where the cursor is left', () => {
+  it('stands in the input box, at the text, whatever is drawn above it', async () => {
+    const { terminal, stdin, stdout } = connect(60, 30, false);
+    const ink = createInkConsole(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+    );
+    const instance = ink.mount({
+      submit: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(),
+      withdrawLast: () => undefined,
+      steer: () => Promise.resolve(),
+    });
+    unmount = () => instance.unmount();
+    await tick();
+    const idle = { status: '运行中', activity: [], waiting: 0, queued: [] };
+    ink.store.print({ kind: 'USER', text: '问题' });
+    ink.store.update({
+      ...idle,
+      activity: [
+        {
+          agentRunId: 'a1',
+          label: 'main',
+          phase: '思考中',
+          since: new Date().toISOString(),
+        },
+      ],
+      thinking: [block(1, '想一\n想二\n想三', 'OPEN')],
+      writing: [{ id: 'w1', label: 'main', state: 'OPEN', text: '正在写的\n回答' }],
+      pending: { kind: 'CONTINUE', text: '本次运行的额度已用完。要继续吗？[y/n]' },
+      queued: ['下一条'],
+    });
+    for (const key of ['你', '好', '[D']) {
+      stdin.write(key);
+      await tick();
+    }
+    const { row, column, rows } = terminal.cursor();
+    // The input box is the last row of the picture, and the cursor is on it: after the prompt
+    // and the first character, between the two.
+    expect(rows[row]).toContain('› 你好');
+    expect(column).toBe(2 + 2);
   });
 });

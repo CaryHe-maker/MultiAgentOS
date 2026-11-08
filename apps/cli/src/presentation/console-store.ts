@@ -18,7 +18,7 @@ export type TailItem =
 
 export interface ConsoleSnapshot {
   readonly static: readonly StaticItem[];
-  /** The latest two blocks of thinking and what happened since the older of them, in order. */
+  /** The blocks of thinking that are still open and what happened since the oldest, in order. */
   readonly tail: readonly TailItem[];
   readonly live: LiveState;
   /** Messages put back into the input box; `seq` changes each time so the box takes them once. */

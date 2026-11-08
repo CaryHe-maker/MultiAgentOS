@@ -33,7 +33,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | UNIT | `message-publish` | `executionKind = MESSAGE_PUBLISH`，Kernel 内建，无工具 |
 | TOOL | `read-file`、`search-repository`、`finish-analysis`、`handoff-to-code-viewer` | M1 内容的 `v1` 版本 |
 | TOOL | `list-files` | `purpose = UNIT`，参数为 `executor.RepositoryListInput` |
-| TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符） |
+| TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符）；`liveText: text`：`text` 是写给使用者的文字，模型写的时候就逐段显示 |
 | PROMPT | `main-system` | main 的系统提示词（`FINAL`，见下） |
 | PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
 | UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
@@ -71,7 +71,7 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 | Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_ORIENT`、`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具；`failurePolicy` 不得列出 `USER_DECLINED`、`QUOTA_EXHAUSTED`：它们的处理是 Workflow 的固定规则（Module/Workflow 第 7 节） |
 | Model `v1` | `effortMapping` 恰好覆盖四档，每档一项 |
 | Template | 节点名唯一；`agent` 只能引用内置 Agent；依赖存在且无环；条件边只出现在 `origin = BUILTIN` 的模板中；`inputFrom: HANDOFF` 的节点必须以条件边依赖一个结束动作含 `HANDOFF` 的 Agent 节点（交接的目标由模板决定，Agent 定义中没有目标） |
-| Tool `v1` | `parametersContract` 等于 Unit 的 `inputContract`；`file-write`、`file-edit`、`output-read` 例外，分别为 `executor.FileWriteArgs`、`executor.FileEditArgs`、`executor.OutputReadArgs`：`baseSha`、`expectAbsent`、`fullRef` 由 Workflow 填写，模型看不到 |
+| Tool `v1` | 可选的 `liveText` 是参数里的一个字符串参数名，标明那个参数是写给使用者的文字（流式显示用，不影响任何校验和执行）；`parametersContract` 等于 Unit 的 `inputContract`；`file-write`、`file-edit`、`output-read` 例外，分别为 `executor.FileWriteArgs`、`executor.FileEditArgs`、`executor.OutputReadArgs`：`baseSha`、`expectAbsent`、`fullRef` 由 Workflow 填写，模型看不到 |
 | 引用 | `v1` 定义只引用 `v1` 定义；已封存的版本只引用已封存的版本 |
 | Unit `v1` | 输入与输出契约按执行类型固定为 major 1 的版本（例如 `model-call` 为 `executor.ModelCallInput.v1`） |
 

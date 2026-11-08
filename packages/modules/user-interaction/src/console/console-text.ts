@@ -23,8 +23,8 @@ const UNREUSABLE_TEXT: Readonly<Record<string, string>> = {
 };
 
 /** A command longer than this is shown by its first lines; `v` shows all of it. */
-export const COMMAND_PREVIEW_LINES = 3;
-export const COMMAND_PREVIEW_CHARS = 240;
+const COMMAND_PREVIEW_LINES = 3;
+const COMMAND_PREVIEW_CHARS = 240;
 
 /** The command as the question shows it: all of it when short, else the head and a count. */
 export function commandPreview(command: string): { readonly text: string; readonly cut: boolean } {
@@ -242,7 +242,6 @@ export const ConsoleText = Object.freeze({
   thinkingHeader: (label: string, seconds: string, state: 'OPEN' | 'DONE' | 'ABORTED') =>
     `✻ ${label} 思考 ${seconds}${state === 'ABORTED' ? '（已中止）' : ''}`,
   thinkingCut: '（内容太长，后面的没有保留）',
-  thinkingEarlier: (count: number) => `… 还有 ${String(count)} 段更早的思考（/think 查看）`,
   timelineEmpty: '本次运行还没有 AgentRun。',
   timelineLine: (
     indent: string,

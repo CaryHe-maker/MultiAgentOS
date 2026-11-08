@@ -18,8 +18,6 @@ import { safeCharWidth } from './text-input.js';
 export interface ThinkingLine {
   readonly text: string;
   readonly kind: 'HEADER' | 'BODY';
-  /** Streaming right now. */
-  readonly live: boolean;
 }
 
 /**
@@ -115,14 +113,13 @@ export function blockLines(
   const header: ThinkingLine = {
     text: `${options.folded ? '▸' : '▾'} ${ConsoleText.thinkingHeader(block.label, seconds(block, options.now), block.state)}`,
     kind: 'HEADER',
-    live: block.state === 'OPEN',
   };
   if (options.folded) return [header];
   const wrapped = bodyOf(block, options.columns);
   const shown = options.bodyLines <= 0 ? [] : wrapped.slice(-options.bodyLines);
-  const body = shown.map((text) => ({ text: `  ${text}`, kind: 'BODY' as const, live: false }));
+  const body = shown.map((text) => ({ text: `  ${text}`, kind: 'BODY' as const }));
   return options.elided === true
-    ? [header, { text: '  …', kind: 'BODY' as const, live: false }, ...body]
+    ? [header, { text: '  …', kind: 'BODY' as const }, ...body]
     : [header, ...body];
 }
 

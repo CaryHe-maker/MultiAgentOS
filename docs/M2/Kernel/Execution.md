@@ -104,6 +104,10 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 - 测试：`run-execution.test.ts`（暂停时 READ 的排空与取消、WRITE 不取消、MODEL 取消并结算、EXEC 取消并等待确认、排队尝试在暂停时保留、中止时排队尝试交付 INTERRUPTED、重试等待在暂停时保留而中止时结束、继续后依次派发）；`session-actor.test.ts`（H3：授权询问挂起时其他 AgentRun 不受影响）。
 
+## 4f. 模型调用的实时预览
+
+Execution 把 MODEL 的请求交给 Supervisor 时，记下这次执行属于哪个 AgentRun（`modelStarted`），Kernel 核心据此把 Supervisor 发来的 `kernel.execution.ModelProgress` 转成 `kernel.control.ModelStream` 发给 UserInteraction。这只是给使用者看的预览：不是事实、不进日志、不经过 Workflow、不改变任何决定，对不在记下的执行不转发；这次执行的流结束（`END`）时记录即删除。
+
 ## 4a. 技术重试的等待
 
 M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackoffBaseMs × 2^(n−1)`），等待时间改为（M2Design 第 7.4 节）：

@@ -66,7 +66,7 @@ describe('blockLines', () => {
 
   it('counts the time of a block that is still streaming up to now', () => {
     const shown = blockLines(block(1, 'x', 'OPEN'), { ...options, bodyLines: 5 });
-    expect(shown[0]).toMatchObject({ text: '▾ ✻ main 思考 5.0s', live: true });
+    expect(shown[0]).toMatchObject({ text: '▾ ✻ main 思考 5.0s' });
   });
 
   it('is the header only when folded', () => {
