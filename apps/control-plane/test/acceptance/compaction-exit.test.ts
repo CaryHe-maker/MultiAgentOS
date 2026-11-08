@@ -212,6 +212,26 @@ describe('L4: a summary that does not come', () => {
       );
       expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(false);
 
+      // Why it did not come is on the audit for whoever looks: the stage and the code of each try,
+      // never what was written.
+      // The audit is written beside the work; the failure entry comes after both problems.
+      for (let wait = 0; wait < 400; wait += 1) {
+        if ((await auditOf(dataDir)).includes('COMPACTION_FAILED')) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const problems = (await auditOf(dataDir))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((entry) => entry['type'] === 'COMPACTION_SUMMARY_PROBLEM');
+      expect(
+        problems.map((entry) => [entry['stage'], entry['reasonCode'], entry['strict']]),
+      ).toEqual([
+        ['MODEL', 'COMPACTION_SUMMARY_INVALID', false],
+        ['MODEL', 'COMPACTION_SUMMARY_INVALID', true],
+      ]);
+      expect(JSON.stringify(problems)).not.toContain('I will not summarise');
+
       await chat.say('are you there?');
       expect(chat.printed('REPLY')).toEqual(['a read', 'still here']);
     },

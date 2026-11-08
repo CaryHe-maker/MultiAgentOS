@@ -487,6 +487,16 @@ export class RunCompactor implements Compacting {
     const instruction = request.strict
       ? `${prompt.instruction}${prompt.strictSuffix}`
       : prompt.instruction;
+    // What a summary that did not come about ran into, for whoever looks at the audit afterwards:
+    // the outcome and its code, never any content.
+    const problem = (stage: string, detail: Readonly<Record<string, unknown>>): void =>
+      deps.audit({
+        type: 'COMPACTION_SUMMARY_PROBLEM',
+        stage,
+        mode: request.mode,
+        strict: request.strict,
+        ...detail,
+      });
 
     // What it will cost, before anything is sent: the input of this form plus the summary.
     const inputTokens =
@@ -540,15 +550,21 @@ export class RunCompactor implements Compacting {
       return { kind: 'INTERRUPTED' };
     }
     if (assembled.outcome === 'REJECTED' && assembled.reasonCode === 'LIMIT_EXCEEDED') {
+      problem('ASSEMBLE', { outcome: assembled.outcome, reasonCode: assembled.reasonCode });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'OVERFLOW', usage: usageOf(undefined) };
     }
     if (assembled.outcome !== 'COMPLETED' || assembled.executionKind !== 'CONTEXT_ASSEMBLE') {
+      problem('ASSEMBLE', {
+        outcome: assembled.outcome,
+        ...('reasonCode' in assembled ? { reasonCode: assembled.reasonCode } : {}),
+      });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'FAILED', usage: usageOf(undefined) };
     }
     const pack = JSON.parse(assembled.result.artifact.text) as AssembleContextPack;
     if (!validate<AssembleContextPack>(AssembleContextPackSchema, pack).ok) {
+      problem('ASSEMBLE', { outcome: 'INVALID_PACK' });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'FAILED', usage: usageOf(undefined) };
     }
@@ -575,6 +591,7 @@ export class RunCompactor implements Compacting {
         return { kind: 'INTERRUPTED' };
       }
       if (fact.executionKind !== 'MODEL') {
+        problem('MODEL', { outcome: 'WRONG_EXECUTION_KIND' });
         reservation.settle({ type: 'UNKNOWN' });
         return { kind: 'FAILED', usage: usageOf(undefined) };
       }
@@ -599,6 +616,13 @@ export class RunCompactor implements Compacting {
               fact.requestState === 'SENT'
             ? { type: 'ACTUAL', usage: fact.usage }
             : { type: 'UNKNOWN' };
+      problem('MODEL', {
+        attempt,
+        outcome: fact.outcome,
+        ...('reasonCode' in fact ? { reasonCode: fact.reasonCode } : {}),
+        ...('retryable' in fact ? { retryable: fact.retryable } : {}),
+        ...('requestState' in fact ? { requestState: fact.requestState } : {}),
+      });
       if (fact.outcome === 'FAILED' && fact.reasonCode === 'COMPACTION_SUMMARY_INVALID') {
         reservation.settle(settlement);
         return { kind: 'INVALID', usage: usageOf('usage' in fact ? fact.usage : undefined) };
