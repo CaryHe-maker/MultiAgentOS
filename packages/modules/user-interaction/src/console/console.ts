@@ -218,7 +218,10 @@ export class Console {
       tenantId: 'local',
       projectId: 'local',
       ...(this.#sessionId === undefined ? {} : { sessionId: this.#sessionId }),
-      ...(this.#workflowRunId === undefined ? {} : { workflowRunId: this.#workflowRunId }),
+      // A run belongs to a Session: without one, the run that was last seen is not named.
+      ...(this.#sessionId === undefined || this.#workflowRunId === undefined
+        ? {}
+        : { workflowRunId: this.#workflowRunId }),
     };
   }
 
@@ -931,7 +934,12 @@ export class Console {
           { requestId: newId('req'), sessionId, workflowRunId },
           this.#context(),
         );
-        if (asked.outcome === 'REJECTED') this.#notice(describeReason(asked.reasonCode));
+        if (asked.outcome === 'REJECTED')
+          this.#notice(
+            asked.reasonCode === 'REQUEST_CONFLICT'
+              ? text.compactNotNow
+              : describeReason(asked.reasonCode),
+          );
         else {
           // From now on the screen says that the system works, and for how long, like for any tool.
           this.#activity.set(COMPACTION_LINE, {
@@ -1028,12 +1036,16 @@ export class Console {
           this.#notice(text.diverged(event.divergedFiles.length));
         break;
       case 'SessionFailed':
-        if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
+        if (this.#sessionId === envelope.sessionId) {
+          this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
+        }
         this.#deps.view.print({ kind: 'ERROR', text: text.sessionFailed[event.code] });
         break;
       case 'SessionClosed':
         if (this.#sessionId === envelope.sessionId) {
           this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
           this.#continueOnInput = false;
         }
         break;

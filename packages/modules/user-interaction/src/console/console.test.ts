@@ -12,16 +12,25 @@ const SESSION = 'ses_01J00000000000000000000001';
 const RUN = 'wfr_01J00000000000000000000001';
 
 function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number } } = {}) {
-  const calls: { name: string; request: Record<string, unknown> }[] = [];
+  const calls: {
+    name: string;
+    request: Record<string, unknown>;
+    context?: Record<string, unknown>;
+  }[] = [];
   const artifacts = options.artifacts ?? new Map<string, string>();
   const ack = { outcome: 'ACCEPTED' } as const;
   const record =
     (name: string, result: unknown = ack) =>
-    (request: unknown) => {
-      calls.push({ name, request: request as Record<string, unknown> });
+    (request: unknown, context?: unknown) => {
+      calls.push({
+        name,
+        request: request as Record<string, unknown>,
+        ...(context === undefined ? {} : { context: context as Record<string, unknown> }),
+      });
       return Promise.resolve(result);
     };
   const accepted = { outcome: 'ACCEPTED', sessionId: SESSION };
+  let compactResult: unknown = ack;
   const gateway = {
     startSession: record('startSession', accepted),
     openSession: record('openSession', accepted),
@@ -30,7 +39,8 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     deleteSession: record('deleteSession'),
     answerAuthorization: record('answerAuthorization'),
     answerHuman: record('answerHuman'),
-    compactContext: record('compactContext'),
+    compactContext: (request: unknown, context?: unknown) =>
+      record('compactContext', compactResult)(request, context),
     pauseRun: record('pauseRun'),
     resumeRun: record('resumeRun'),
     interruptRun: record('interruptRun'),
@@ -77,6 +87,9 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     printed,
     restored,
     live: () => live,
+    setCompactResult: (result: unknown) => {
+      compactResult = result;
+    },
     event,
     named: (name: string) => calls.filter((call) => call.name === name),
   };
@@ -764,7 +777,37 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
   });
 });
 
+describe('after the Session is closed', () => {
+  it('starts the next message in a new Session, naming no run of the closed one', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    await t.console.handleSessionEvent({
+      eventId: 'evt_x',
+      sessionId: SESSION,
+      seq: 1,
+      occurredAt: new Date(0).toISOString(),
+      event: { type: 'SessionClosed', reason: 'SHUTDOWN' },
+    } as unknown as Parameters<Console['handleSessionEvent']>[0]);
+    await t.console.submit('again');
+    const starts = t.calls.filter((call) => call.name === 'startSession');
+    expect(starts).toHaveLength(2);
+    expect(starts.at(-1)?.context).toBeDefined();
+    expect(starts.at(-1)?.context).not.toHaveProperty('workflowRunId');
+  });
+});
+
 describe('a compaction the user asks for', () => {
+  it('is told why it cannot be done now, not that a request conflicted', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    t.setCompactResult({ outcome: 'REJECTED', reasonCode: 'REQUEST_CONFLICT' });
+    await t.console.submit('/compact');
+    expect(t.printed.at(-1)?.text).toContain('现在不能压缩');
+    expect(t.live()?.activity).toEqual([]);
+  });
+
   const running = () =>
     ({ type: 'RunStateChanged', state: 'AWAITING_INPUT' }) as KernelToInteractionEvent;
 
