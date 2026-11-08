@@ -53,6 +53,8 @@ export function trackedFetch(
   progress: RequestProgress,
   /** `reasoning_content` of each assistant message, in order (ExecutorSet 6.3). */
   replay: readonly (string | undefined)[] = [],
+  /** Sees the bytes of a streamed answer as they arrive, before the SDK has read them. */
+  tap?: (bytes: Uint8Array) => void,
 ): typeof globalThis.fetch {
   return async (input, init) => {
     progress.started = true;
@@ -77,10 +79,38 @@ export function trackedFetch(
     try {
       const response = await inner(input, request);
       progress.responded = true;
-      return response;
+      return tap === undefined ? response : tapped(response, tap);
     } catch (error) {
       progress.failedBeforeSending = failedBeforeSending(error);
       throw error;
     }
   };
+}
+
+/**
+ * The same response with its body passed through `tap`, a chunk at a time, as it comes off the
+ * network. The provider SDK reads ahead until the first piece of an answer before it hands the
+ * stream on, so thinking, which comes first, would reach nobody until it is over; this sees it at
+ * once. A failure of `tap` never reaches the body.
+ */
+function tapped(response: Response, tap: (bytes: Uint8Array) => void): Response {
+  const type = response.headers.get('content-type') ?? '';
+  if (response.body === null || !type.includes('text/event-stream')) return response;
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        try {
+          tap(chunk);
+        } catch {
+          // Watching must not change what the call receives.
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }

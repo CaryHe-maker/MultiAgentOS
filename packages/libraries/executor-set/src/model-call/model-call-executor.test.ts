@@ -515,3 +515,64 @@ describe('MODEL streamed for a watcher (docs/M2/Phase1Console.md 4)', () => {
     expect(events.at(-1)).toBe('END');
   });
 });
+
+describe('MODEL thinking reaches the watcher before the answer does', () => {
+  it('tells the thinking while the stream is still open, not when the call is over', async () => {
+    const event = (delta: object, finish: string | null = null) =>
+      new TextEncoder().encode(
+        `data: ${JSON.stringify({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-flash',
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        })}\n\n`,
+      );
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let step = 0;
+    const slow = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            step += 1;
+            if (step === 1) controller.enqueue(event({ reasoning_content: 'thinking hard ' }));
+            else if (step === 2) controller.enqueue(event({ reasoning_content: 'still thinking' }));
+            else if (step === 3) {
+              // The answer proper comes only now, and only when the test lets it.
+              await gate;
+              controller.enqueue(event({ content: 'done' }));
+              controller.enqueue(event({}, 'stop'));
+              controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            } else controller.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const events: string[] = [];
+    let finished = false;
+    const executor = createModelCallExecutor({ fetch: () => Promise.resolve(slow()) });
+    const outcome = executor
+      .execute(
+        { contextPack: pack, final: false },
+        environmentFor('MODEL', MODEL_SCOPE, {
+          progress: (each) => void events.push(each.kind === 'REASONING' ? each.delta : each.kind),
+        }),
+      )
+      .finally(() => {
+        finished = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The call is still waiting for the answer, and the watcher already has both pieces.
+    expect(finished).toBe(false);
+    expect(events).toEqual(['thinking hard ', 'still thinking']);
+    release();
+    expect(await outcome).toMatchObject({
+      outcome: 'COMPLETED',
+      result: { reasoning: { text: 'thinking hard still thinking' } },
+    });
+    expect(events.at(-1)).toBe('END');
+  });
+});

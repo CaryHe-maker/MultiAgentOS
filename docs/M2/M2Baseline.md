@@ -85,6 +85,7 @@
 14. 协议注册表里有一批只登记、从不使用的"暂不支持"引用族（检查点、恢复、人工审阅、集成、日志位置、保留令牌、消费者位移，SharedContracts 3.9 为长期架构预留）。它们不进入任何产品路径，是否在 M2 发布前删除由负责人决定。
 15. **日志里的 `MODEL_TURN.usage` 从未被写入。** 记录格式有这个字段，压缩的"实测词元数"（`measured`）和评测的词元、成本、缓存命中都从它读取，但 Kernel 给 Workflow 的 `UnitReport` 不带用量，Workflow 写 `MODEL_TURN` 时也没有填。后果：压缩的触发一直用估算而不是实测；`metricsOf` 对真实运行得到的词元为 0、成本为空（评测体系自己的测试用手写记录，没有发现）。用量其实在模型输出产物里（`ModelRawOutput.usage`），`mas log` 从那里读。修法需要改 Kernel 与 Workflow 之间的合同，待负责人决定（见 Phase1Console）。
 16. `mas run --repo` 与 `--readonly` 曾被程序级选项吞掉（已修：`enablePositionalOptions`，有回归测试）。
+17. **Windows 上 `search_repository` 的 SYMBOL 与 TEXT 搜索一直返回"没有匹配"**：`rg` 在 Windows 上输出 `.\src\a.ts`，而结果按 `./` 去掉前缀，路径对不上文件集，所有匹配被丢弃（真实模型运行时发现；目标平台 Ubuntu 不受影响）。已修（`search-backends.ts`），原有的"rg 与扫描一致"用例在 Windows 上也通过了。
 
 ## 6. 静态审核记录
 
@@ -102,7 +103,7 @@
 5. 代码注释中 4 处指向不存在章节的文档引用；M2 的 AgentToolPool 文档缺少模型价目一节（只在归档的 M1 文档里），补上第 5a 节。
 6. 测试夹具：脚本化 provider 的响应格式与请求路由各写了两份，合并为 `test/support/scripted-model.ts`；五处"列出 Session 后等 100 毫秒再 `/resume`"改为等到列表真的显示出来。
 
-仍然开着的，记在上面的缺口 13、14、15；16 已修复。
+仍然开着的，记在上面的缺口 13、14、15；16、17 已修复。
 
 ## 7. 本文怎么用
 
