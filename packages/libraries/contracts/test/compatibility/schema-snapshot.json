@@ -2422,6 +2422,10 @@
                 "additionalProperties": false,
                 "$id": "catalog.ContractRef.v1"
               },
+              "liveText": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+              },
               "riskClass": {
                 "anyOf": [
                   {
@@ -2894,6 +2898,10 @@
           },
           "additionalProperties": false,
           "$id": "catalog.ContractRef.v1"
+        },
+        "liveText": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
         },
         "riskClass": {
           "anyOf": [
@@ -5976,6 +5984,10 @@
                                 "UNIT",
                                 "CONTROL"
                               ]
+                            },
+                            "liveText": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
                             }
                           },
                           "additionalProperties": false,
@@ -6449,6 +6461,10 @@
             "UNIT",
             "CONTROL"
           ]
+        },
+        "liveText": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
         }
       },
       "additionalProperties": false,
@@ -17064,8 +17080,10 @@
               "format": "date-time"
             },
             "kind": {
-              "type": "string",
-              "const": "REASONING"
+              "enum": [
+                "REASONING",
+                "TEXT"
+              ]
             },
             "delta": {
               "type": "string",
@@ -20567,6 +20585,10 @@
                   "UNIT",
                   "CONTROL"
                 ]
+              },
+              "liveText": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
               }
             },
             "additionalProperties": false,
@@ -25094,6 +25116,10 @@
                           "UNIT",
                           "CONTROL"
                         ]
+                      },
+                      "liveText": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
                       }
                     },
                     "additionalProperties": false,
@@ -26149,6 +26175,10 @@
                                         "UNIT",
                                         "CONTROL"
                                       ]
+                                    },
+                                    "liveText": {
+                                      "type": "string",
+                                      "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
                                     }
                                   },
                                   "additionalProperties": false,
@@ -29524,6 +29554,10 @@
                                 "UNIT",
                                 "CONTROL"
                               ]
+                            },
+                            "liveText": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
                             }
                           },
                           "additionalProperties": false,
@@ -30002,8 +30036,10 @@
               "format": "date-time"
             },
             "kind": {
-              "type": "string",
-              "const": "REASONING"
+              "enum": [
+                "REASONING",
+                "TEXT"
+              ]
             },
             "delta": {
               "type": "string",

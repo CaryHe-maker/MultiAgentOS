@@ -70,3 +70,31 @@ describe('modelProgressOf', () => {
     ).toBe(MODEL_PROGRESS_MAX_DELTA * 2 + 5);
   });
 });
+
+describe('modelProgressOf keeps thinking and written text apart', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends what it holds when the kind changes, so the order of the pieces is kept', () => {
+    const sent: ModelProgress[] = [];
+    const progress = modelProgressOf(
+      request,
+      (message) => void sent.push(message),
+      () => new Date(0),
+    );
+    progress({ kind: 'REASONING', delta: 'think ' });
+    progress({ kind: 'REASONING', delta: 'more' });
+    progress({ kind: 'TEXT', delta: 'Hel' });
+    progress({ kind: 'TEXT', delta: 'lo' });
+    progress({ kind: 'END' });
+    expect(sent.map((message) => [message.kind, 'delta' in message ? message.delta : ''])).toEqual([
+      ['REASONING', 'think more'],
+      ['TEXT', 'Hello'],
+      ['END', ''],
+    ]);
+  });
+});

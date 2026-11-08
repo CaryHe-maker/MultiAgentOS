@@ -87,7 +87,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 | G-B-P | Acceptance group B-P: every case of these files is frozen | `acceptance/subagents-exit.test.ts`（整个文件） |
 | G-ADV | Adversarial cases with a compromised model: every case is frozen | `system/compromised-model.test.ts`（整个文件） |
 | G-KILL | Kill the process between any two records of the log and carry on: every case is frozen | `system/kill-anywhere.test.ts`（整个文件） |
-| G-STREAM | The thinking of a model call is shown beside the work: it never enters the Session log, never changes what the Executor returns, is dropped when it cannot be delivered, and reaches the screen without control characters | `acceptance/thinking-stream.test.ts`（整个文件）<br>`kernel/src/supervisor/model-progress.test.ts`（整个文件）<br>`executor-set/src/model-call/model-call-executor.test.ts`：MODEL streamed for a watcher |
+| G-STREAM | The thinking of a model call and the text it writes for the user are shown beside the work: they never enter the Session log, never change what the Executor returns, are dropped when they cannot be delivered, are read from the stream as it arrives and not when it is over, and reach the screen without control characters | `acceptance/thinking-stream.test.ts`（整个文件）<br>`kernel/src/supervisor/model-progress.test.ts`（整个文件）<br>`executor-set/src/model-call/model-call-executor.test.ts`：MODEL streamed for a watcher<br>`executor-set/src/model-call/stream-tap.test.ts`（整个文件） |
 
 ### 清点中的缺口
 
@@ -132,6 +132,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 - 送不到就丢：旁路没有序号、不重试、积压过多时丢弃，不拖慢业务；
 - 流中途断开是明确的失败（不是成功，也不可重试），结束信号仍会发出；
 - 到达屏幕前，模型输出里的控制字符与转义序列被写成文字。
+- 思考和写给使用者的文字是**随到随给**的：流还开着、回答还没写完时，旁观者已经有了前面的部分（不是等整段结束）；一个字符串参数写到一半时就能取出已经写好的文字，无论怎样切分、有没有被切开的转义或代理对，取出的总和等于完整解析的结果。
 
 ## 7. 内置模板的系统测试
 

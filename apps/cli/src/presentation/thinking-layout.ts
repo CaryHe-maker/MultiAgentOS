@@ -4,7 +4,7 @@
  * the budget goes to the tail of the newest blocks, so what the model is thinking now is always on
  * screen. A folded block (Ctrl+O) is its header only. Pure: the Ink component draws the lines.
  */
-import { ConsoleText, type ThinkingView } from '@multiagentos/user-interaction';
+import { ConsoleText, type ThinkingView, type WritingView } from '@multiagentos/user-interaction';
 import { charWidth } from './text-input.js';
 
 export interface ThinkingLine {
@@ -78,4 +78,19 @@ export function layoutThinking(
       ? []
       : [{ text: ConsoleText.thinkingEarlier(skipped), kind: 'NOTE', live: false }];
   return [...note, ...shown.flat()];
+}
+
+/**
+ * The lines of what agents are writing for the user: each block as the message will read
+ * (`main: text`), the newest at the bottom, cut to the last `budget` lines so what is being
+ * written now is always on screen.
+ */
+export function layoutWriting(
+  blocks: readonly WritingView[],
+  options: { readonly columns: number; readonly budget: number },
+): string[] {
+  const lines = blocks.flatMap((block) =>
+    wrapLines(`${block.label}: ${block.text}`.trimEnd(), Math.max(10, options.columns - 1)),
+  );
+  return options.budget <= 0 ? [] : lines.slice(-options.budget);
 }

@@ -25,8 +25,9 @@ import type {
   PendingItem,
   QuestionField,
   ThinkingView,
+  WritingView,
 } from './console-view.js';
-import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
+import { THINKING_MAX_CHARS, ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -182,6 +183,11 @@ export class Console {
   #sessionId: string | undefined;
   /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
   readonly #thinking = new ThinkingLog();
+  /** The text agents are writing for the user, by the call that writes it. */
+  readonly #writing = new Map<
+    string,
+    { agentRunId: string; label: string; text: string; state: 'OPEN' | 'DONE' }
+  >();
   /** The Session the thinking belongs to, and the Turns of it, counted as runs begin. */
   #thinkingSession: string | undefined;
   #turn = 0;
@@ -226,6 +232,7 @@ export class Console {
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
       thinking: this.#thinkingInView(),
+      writing: this.#writingInView(),
     };
     this.#deps.view.update(live);
   }
@@ -244,6 +251,15 @@ export class Console {
         ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
         text: block.text,
       }));
+  }
+
+  #writingInView(): WritingView[] {
+    return [...this.#writing].map(([id, block]) => ({
+      id,
+      label: block.label,
+      state: block.state,
+      text: block.text,
+    }));
   }
 
   /** A Turn that is no longer shown leaves one line, and `/think` still has all of it. */
@@ -275,6 +291,7 @@ export class Console {
     this.#thinkingSession = sessionId;
     this.#thinking.clear();
     this.#foldedTurns.clear();
+    this.#writing.clear();
     this.#turn = 0;
     this.#turnId = undefined;
   }
@@ -287,13 +304,27 @@ export class Console {
   handleModelStream(stream: ModelStream): void {
     if (this.#sessionId === undefined || stream.sessionId !== this.#sessionId) return;
     this.#thinkingBelongsTo(stream.sessionId);
-    if (stream.kind === 'END') this.#thinking.end(stream.callId, stream.at);
-    else
+    const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
+    if (stream.kind === 'END') {
+      this.#thinking.end(stream.callId, stream.at);
+      const written = this.#writing.get(stream.callId);
+      if (written !== undefined) written.state = 'DONE';
+    } else if (stream.kind === 'TEXT') {
+      let block = this.#writing.get(stream.callId);
+      if (block === undefined) {
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, earlier] of this.#writing)
+          if (earlier.agentRunId === stream.agentRunId) this.#writing.delete(id);
+        block = { agentRunId: stream.agentRunId, label, text: '', state: 'OPEN' };
+        this.#writing.set(stream.callId, block);
+      }
+      if (block.text.length < THINKING_MAX_CHARS) block.text += terminalText(stream.delta);
+    } else
       this.#thinking.append(
         {
           callId: stream.callId,
           agentRunId: stream.agentRunId,
-          label: this.#activity.get(stream.agentRunId)?.label ?? 'main',
+          label,
           turn: Math.max(1, this.#turn),
         },
         terminalText(stream.delta),
@@ -1046,6 +1077,8 @@ export class Console {
           this.#foldOlderThinking();
         }
         // Nothing streams once the run waits for the user or is over: no block stays open.
+        if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED')
+          this.#writing.clear();
         const at = this.#now().toISOString();
         if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
           this.#thinking.closeAll(at, 'DONE');
@@ -1187,6 +1220,8 @@ export class Console {
         break;
       }
       case 'MessagePublished':
+        // What was being written is now the message itself.
+        this.#writing.clear();
         await this.#published(event.kind, event.agentLabel, event.messageRef);
         if (event.wrapUpReason !== undefined)
           this.#deps.view.print({

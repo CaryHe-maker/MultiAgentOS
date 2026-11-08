@@ -83,6 +83,17 @@ export interface ThinkingView {
   readonly text: string;
 }
 
+/**
+ * The text an agent is writing for the user, shown as it is written (a reply is a tool call whose
+ * text argument is read while it grows). It goes when the message is published, or the run moves on.
+ */
+export interface WritingView {
+  readonly id: string;
+  readonly label: string;
+  readonly state: 'OPEN' | 'DONE';
+  readonly text: string;
+}
+
 /** Everything that changes in place: redrawn whenever it changes. */
 export interface LiveState {
   readonly status: string;
@@ -93,6 +104,8 @@ export interface LiveState {
   readonly hint?: string;
   /** Thinking of the current and the previous Turn, oldest first. */
   readonly thinking?: readonly ThinkingView[];
+  /** What agents are writing for the user right now. */
+  readonly writing?: readonly WritingView[];
 }
 
 export interface ConsoleView {

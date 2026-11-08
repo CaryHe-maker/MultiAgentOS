@@ -39,6 +39,19 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[94mmain: 回答');
   });
 
+  it('writes the text an agent is writing in the colour of its replies', async () => {
+    const { store, ui } = setup();
+    store.update({
+      status: '',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      writing: [{ id: 'exe_1', label: 'main', state: 'OPEN', text: '正在写' }],
+    });
+    await tick();
+    expect(ui.lastFrame()).toContain('[94mmain: 正在写');
+  });
+
   it('draws the cursor on the character it stands on, and the typed text in green', async () => {
     const { ui } = setup();
     await tick();

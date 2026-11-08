@@ -672,7 +672,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         if (progress.kind === 'END') {
           watchedCalls.delete(progress.executionId);
           streamToInteraction({ ...stream, kind: 'END' });
-        } else streamToInteraction({ ...stream, kind: 'REASONING', delta: progress.delta });
+        } else streamToInteraction({ ...stream, kind: progress.kind, delta: progress.delta });
       });
       fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', async (envelope) => {
         if (envelope.producer !== 'supervisor')

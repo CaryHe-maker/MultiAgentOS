@@ -576,3 +576,84 @@ describe('MODEL thinking reaches the watcher before the answer does', () => {
     expect(events.at(-1)).toBe('END');
   });
 });
+
+describe('MODEL shows the text of a reply as the model writes it', () => {
+  const REPLY = {
+    name: 'reply',
+    description: 'Reply to the user.',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    purpose: 'CONTROL' as const,
+    liveText: 'text',
+  };
+
+  async function replyPack(): Promise<AssembleContextPack> {
+    const outcome = await createAssembleExecutor().execute(
+      {
+        final: false,
+        tokenBudget: 64_000,
+        instructions: 'Chat.',
+        toolSpecs: [REPLY],
+        history: [{ seq: 1, category: 'PINNED', kind: 'HUMAN', text: 'hi' }],
+        status: {
+          round: 1,
+          maxRounds: 5,
+          final: false,
+          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        },
+      },
+      environmentFor('CONTEXT_ASSEMBLE', { kind: 'NONE' }),
+    );
+    if (outcome.outcome !== 'COMPLETED') throw new Error('assemble');
+    return JSON.parse(outcome.result.artifact.text) as AssembleContextPack;
+  }
+
+  const answer = () =>
+    chatCompletion(
+      [
+        {
+          id: 'call_r',
+          name: 'reply',
+          arguments: JSON.stringify({ text: 'Hello,\n"friend" 你好 😀!' }),
+        },
+      ],
+      {},
+    );
+
+  it('tells the text while it is written, and the result is the same as without watching', async () => {
+    const contextPack = await replyPack();
+    const make = (progress?: ExecutorEnvironment['progress']) =>
+      createModelCallExecutor({
+        fetch: (_input, init) => streamedIfAsked(init, answer()),
+      }).execute(
+        { contextPack, final: false },
+        environmentFor('MODEL', MODEL_SCOPE, progress === undefined ? {} : { progress }),
+      );
+    const plain = await createModelCallExecutor({ fetch: () => Promise.resolve(answer()) }).execute(
+      { contextPack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE),
+    );
+    const events: { kind: string; delta?: string }[] = [];
+    const watched = await make((event) => void events.push(event));
+    expect(watched).toEqual(plain);
+    const written = events.filter((event) => event.kind === 'TEXT');
+    expect(written.length).toBeGreaterThan(1);
+    expect(written.map((event) => event.delta).join('')).toBe('Hello,\n"friend" 你好 😀!');
+    expect(events.at(-1)).toEqual({ kind: 'END' });
+  });
+
+  it('shows nothing of a tool that is not marked as text for the user', async () => {
+    const contextPack = await replyPack();
+    const events: string[] = [];
+    await createModelCallExecutor({
+      fetch: (_input, init) =>
+        streamedIfAsked(
+          init,
+          chatCompletion([{ id: 'c', name: 'other', arguments: '{"text":"secret plan"}' }], {}),
+        ),
+    }).execute(
+      { contextPack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, { progress: (event) => void events.push(event.kind) }),
+    );
+    expect(events).not.toContain('TEXT');
+  });
+});

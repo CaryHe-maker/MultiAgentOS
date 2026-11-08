@@ -3,6 +3,7 @@ import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleStore } from './console-store.js';
 import { consoleApp } from './ink-console.js';
+import { layoutWriting } from './thinking-layout.js';
 import { createLineConsoleView } from './line-console.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -237,5 +238,39 @@ describe('Ink console: waiting, colours and thinking', () => {
     view.print({ kind: 'THINKING', text: '✻ 第 1 轮思考 2 段，共 3.0s（/think 1 展开）' });
     view.update({ status: '', activity: [], waiting: 0, queued: [], thinking: [thinking('x')] });
     expect(chunks.join('')).toBe('✻ 第 1 轮思考 2 段，共 3.0s（/think 1 展开）\n');
+  });
+});
+
+describe('Ink console: the text being written', () => {
+  it('draws what an agent is writing, the newest lines at the bottom, above the status', async () => {
+    const { store, ui } = setup();
+    store.update({
+      status: '运行中',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      writing: [{ id: 'exe_1', label: 'main', state: 'OPEN', text: '你好，\n这是正在写的回答' }],
+    });
+    await tick();
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const written = lines.findIndex((line) => line.includes('main: 你好，'));
+    expect(written).toBeGreaterThanOrEqual(0);
+    expect(lines[written + 1]).toContain('这是正在写的回答');
+    expect(lines.findIndex((line) => line.includes('运行中'))).toBeGreaterThan(written);
+  });
+
+  it('gives the writing the lines first and the thinking what is left', () => {
+    const lines = layoutWriting(
+      [{ id: 'a', label: 'main', state: 'OPEN', text: 'one\ntwo\nthree\nfour' }],
+      { columns: 40, budget: 3 },
+    );
+    expect(lines).toEqual(['two', 'three', 'four']);
+    expect(layoutWriting([], { columns: 40, budget: 3 })).toEqual([]);
+    expect(
+      layoutWriting([{ id: 'a', label: 'main', state: 'OPEN', text: 'x' }], {
+        columns: 40,
+        budget: 0,
+      }),
+    ).toEqual([]);
   });
 });

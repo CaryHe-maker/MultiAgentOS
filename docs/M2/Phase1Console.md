@@ -58,7 +58,7 @@ ModelCall Executor ──(progress 回调)──▶ Supervisor ──▶ Kernel 
 
 1. **Executor**：把 `doGenerate` 换成 `doStream`；流累积出的结果（工具调用参数保持 provider 原文、用量、结束原因）必须与现在逐字相同，业务路径不变。请求带 `include_usage`，否则缓存命中数据会丢，评测会受影响。
 2. **旁路出口**：`ExecutorEnvironment` 增加可选的 `progress` 回调；Supervisor 转交 Kernel；Kernel 直接发给 UserInteraction。这类事件不盖 seq、不进有序队列、不写日志、不经过 Workflow。Supervisor 仍然只报告**一个**终态。
-3. **事件**：Supervisor 发给 Kernel 核心的是 `kernel.execution.ModelProgress`（`executionId`、`kind: REASONING|END`、`delta`），Kernel 核心按它记着的"这次调用属于哪个 AgentRun"转成 `kernel.control.ModelStream`（加上 `agentRunId` 与 `callId`）发给 UserInteraction。发送前合并（50 毫秒一批，单条不超过 16 KB），消费不及时就丢（积压超过 64 条丢弃），**不能拖慢业务**。只流式思考；回复来自 `reply` 工具调用，不流式。
+3. **事件**：Supervisor 发给 Kernel 核心的是 `kernel.execution.ModelProgress`（`executionId`、`kind: REASONING|END`、`delta`），Kernel 核心按它记着的"这次调用属于哪个 AgentRun"转成 `kernel.control.ModelStream`（加上 `agentRunId` 与 `callId`）发给 UserInteraction。发送前合并（50 毫秒一批，单条不超过 16 KB），消费不及时就丢（积压超过 64 条丢弃），**不能拖慢业务**。流式的有两种：**思考**（`REASONING`）和**写给使用者的文字**（`TEXT`）。后者有两个来源：模型直接写的正文，和被标为"给使用者的文字"的工具调用里的那个字符串参数——`reply` 的回复就是这样（工具定义里 `liveText: text`，经 Kernel 的 `pinned-agent` 写进 `ModelToolSpec.liveText`，到执行器）。执行器边收字节边读 JSON，`JsonStringField` 在参数还没写完时就把 `text` 这个字符串逐段取出来（转义、被切开的 `é`、半个代理对都处理），所以回复是一个字一个字出现的，而不是整段出现。
 4. **安全**：模型输出直接打印到终端，旁路事件在进入界面前**过滤控制字符与转义序列**。
 5. **失败**：流中途断开要归入明确的失败类别并说明能否重试（现有重试判定依赖"请求是否发出、是否收到响应"），不能当成功；abort 时同时取消流。
 
@@ -83,6 +83,7 @@ ModelCall Executor ──(progress 回调)──▶ Supervisor ──▶ Kernel 
 ### 4.3 界面
 
 - 思考块在活动区下面、输入框上面，标题一行（"▾ ✻ main 思考 3.2s"，正在流式时是品红色，结束后灰色）与它下面的内容。内容可用的行数是终端高度减去活动区、询问和输入框之后剩下的；**每个块先得到标题，剩下的行给最新块的末尾**，放不下的更早的块折成一行"… 还有 N 段更早的思考"。`Ctrl+O` 把所有正在显示的块折成只剩标题（▸），再按展开。
+- **写给使用者的文字**画在思考的下面、状态行的上面，样子就是消息最终的样子（亮蓝，`main: 正文`），行数不够时留最新的几行，并且**先于思考分得行数**。调用结束后它留着，直到消息真正发布（`MessagePublished`）才让位给记录区里的回复，所以中间没有空档；同一个 Agent 的下一次调用、运行转为等待输入、中断，也会清掉它。
 - 超过"当前轮与上一轮"的轮从活动区消失，记录区留下一行；它们的全文在内存里，`/think <N>` 打印。
 - 非 TTY 的逐行适配器不画思考块，只在 `/think` 时和折叠行出现时打印文字。
 

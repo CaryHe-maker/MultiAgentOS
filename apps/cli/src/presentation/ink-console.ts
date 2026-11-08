@@ -22,7 +22,7 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import { layoutThinking } from './thinking-layout.js';
+import { layoutThinking, layoutWriting } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
   backspace,
@@ -280,10 +280,14 @@ function ConsoleApp({
     (live.queued.length > 0 ? 1 : 0) +
     1 +
     boxRows(box, PROMPT, CONTINUATION, columns);
+  // What is being written for the user comes first and gets what it needs; the thinking gets the
+  // rest of the lines.
+  const room = Math.max(4, rows - others - 2);
+  const writingLines = layoutWriting(live.writing ?? [], { columns, budget: room });
   const thinkingLines = layoutThinking(thinking, {
     now,
     columns,
-    budget: Math.max(4, rows - others - 2),
+    budget: Math.max(0, room - writingLines.length),
     folded,
   });
 
@@ -320,6 +324,9 @@ function ConsoleApp({
           },
           line.text,
         ),
+      ),
+      ...writingLines.map((line, index) =>
+        h(Text, { key: `w${String(index)}`, color: REPLY_COLOR }, line),
       ),
       pendingText === undefined ? null : h(Text, { color: 'yellow' }, pendingText),
       live.queued.length > 0

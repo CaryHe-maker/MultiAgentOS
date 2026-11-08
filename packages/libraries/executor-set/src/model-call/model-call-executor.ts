@@ -17,7 +17,7 @@ import {
 import { rejected, violation } from '../outcome/outcomes.js';
 import { createLanguageModel, type LanguageModel, type ModelScope } from './language-model.js';
 import { toPrompt, toTools, toolSpecsOf } from './provider-request.js';
-import { reasoningDeltaOf, reasoningTap } from './reasoning-tap.js';
+import { reasoningDeltaOf, streamTap } from './stream-tap.js';
 import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
 
 type GenerateResult = Awaited<ReturnType<LanguageModel['doGenerate']>>;
@@ -44,7 +44,7 @@ type StreamOptions = Parameters<LanguageModel['doStream']>[0];
 /**
  * One streamed request read to its end and put together as the answer `doGenerate` would have
  * given: the same content parts, finish reason and usage, so everything after it is unchanged.
- * The watcher is not told from here: it is fed from the network side (`reasoningTap`).
+ * The watcher is not told from here: it is fed from the network side (`streamTap`).
  */
 async function generateByStreaming(
   model: LanguageModel,
@@ -188,13 +188,19 @@ async function callModel(
       // Watching must not change what the call does.
     }
   };
-  const tap = environment.progress === undefined ? undefined : reasoningTap(tell);
+  const specs = toolSpecsOf(pack);
+  // The tools whose text argument is text for the user (a reply) are shown as it is written.
+  const liveText = new Map(
+    specs.flatMap((spec) =>
+      spec.liveText === undefined ? [] : [[spec.name, spec.liveText] as const],
+    ),
+  );
+  const tap = environment.progress === undefined ? undefined : streamTap(tell, liveText);
   const model = createLanguageModel(
     scope,
     apiKey,
     trackedFetch(inner, scope, progress, replay, tap),
   );
-  const specs = toolSpecsOf(pack);
   const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
   const { limits } = environment;
   let result: GenerateResult;

@@ -60,6 +60,33 @@ describe('thinking streamed to the console', () => {
   );
 
   it(
+    'shows the text of a reply while it is written, and hands over to the reply itself',
+    async () => {
+      const { chat } = await conversation(
+        thinking(
+          'short thought',
+          'The answer is a rather long sentence, written in several pieces.',
+        ),
+      );
+      await chat.say('hi');
+      await until(() => chat.printed('REPLY').length === 1, 'the reply');
+      const seen = chat.lives.flatMap((live) => live.writing ?? []).map((block) => block.text);
+      expect(seen.at(-1)).toBe('The answer is a rather long sentence, written in several pieces.');
+      // Every state it passed through is a start of the final text.
+      for (const text of seen)
+        expect(
+          'The answer is a rather long sentence, written in several pieces.'.startsWith(text),
+        ).toBe(true);
+      // Once the reply is printed, nothing is being written any more.
+      await until(() => chat.lives.at(-1)?.writing?.length === 0, 'the writing to go');
+      expect(chat.printed('REPLY')).toEqual([
+        'The answer is a rather long sentence, written in several pieces.',
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'is not written into the Session log, which holds only the reference to the whole thinking',
     async () => {
       const secret = 'a-very-distinctive-thought-that-must-not-be-in-the-log';

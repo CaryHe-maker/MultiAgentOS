@@ -24,7 +24,7 @@ export const ModelProgressSchema = Type.Union(
   [
     closed({
       ...progress,
-      kind: Type.Literal('REASONING'),
+      kind: Type.Enum(['REASONING', 'TEXT']),
       delta: text(MODEL_PROGRESS_MAX_DELTA),
     }),
     closed({ ...progress, kind: Type.Literal('END') }),

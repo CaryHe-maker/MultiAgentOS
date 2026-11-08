@@ -283,6 +283,8 @@ export const ToolDefinitionSchema = Type.Object(
     modelDescription: TextSchema(4_000),
     /** For a UNIT tool, the inputContract of its Unit, or the part of it the model writes. */
     parametersContract: ContractRefSchema,
+    /** A string argument of `parametersContract` that is text for the user, such as a reply: it is shown while the model writes it. */
+    liveText: Type.Optional(Type.String({ pattern: '^[a-zA-Z][a-zA-Z0-9_]{0,63}$' })),
     riskClass: Type.Union([
       Type.Literal('READ_ONLY'),
       Type.Literal('LOW'),

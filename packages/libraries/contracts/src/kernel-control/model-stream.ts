@@ -21,7 +21,7 @@ export const ModelStreamSchema = Type.Union(
   [
     closed({
       ...stream,
-      kind: Type.Literal('REASONING'),
+      kind: Type.Enum(['REASONING', 'TEXT']),
       delta: text(MODEL_PROGRESS_MAX_DELTA),
     }),
     closed({ ...stream, kind: Type.Literal('END') }),
