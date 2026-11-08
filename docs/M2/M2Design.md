@@ -1428,7 +1428,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
 5. Kernel 选定范围 [fromSeq, toSeq]：从最早的 NORMAL 条目（包括先前的摘要）开始，到保留区之前最后一个完整的模型轮为止；工具调用与它的结果不拆开；
    范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；范围内的用户消息按上面的分级由 Kernel 选出要原样保留的（`keptSeqs`），其余与别的 NORMAL 条目一起被取代；
    没有可压缩的范围时结束，挂起的组装照常执行（第 4.5 步有修剪时以 REJECTED(CONTEXT_COMPACTED) 返回）
-6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 low）；前缀式保留工具定义、不设 tool_choice，由摘要指令要求不调用工具（实测：tool_choice = none 或关闭思考都使缓存大部分或全部失效）；
+6. 生成摘要（摘要请求的输入见下文"摘要请求的输入"）：思考强度取配置 summaryReasoningEffort（缺省 none：不思考，输出额度全部用于正文；见下文真实使用的发现）；前缀式保留工具定义、不设 tool_choice，由摘要指令要求不调用工具（实测：tool_choice = none 使缓存大部分失效；关闭思考不影响命中，见阶段 8 的评测，2026-11-08 又在一个 33 轮的真实对话上测得：普通请求思考开启、摘要请求关闭思考，87326 个输入 token 中 87168 个命中缓存，99.8%）；
    经 Core 申请调用机会与额度（Core 调用 Scheduler 与 Monitor，第 7.2、7.3 节），由 model-call Executor 执行，按第 7.3 节计量
    摘要须包含指令规定的各节（目标与要求、已完成的工作与结论、关键决定、涉及的文件、仍可能需要回读的完整输出的 toolCallId——编号写在历史里每个工具结果的末尾，所以前缀式摘要能原样抄下、未完成的事项）；模型调用了工具也算不合格，工具调用不执行；不合格时追加更严格的指令重试一次，仍不合格则摘要失败
 7. 摘要存为长期保留的产物；向 Workflow 发出 ContextCompacted { compactionId, target, fromSeq, toSeq, keptSeqs, summaryRef, summaryInput, usage }
@@ -1467,8 +1467,8 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
   只回退压缩范围之后的 Turn 不受影响。修剪不随之撤销：被回退 Turn 中的工具结果在投影中已只剩一条说明，其余的修剪与回退无关。
 - **Fork**：复制的日志中带着修剪与压缩记录，新 Session 沿用；修剪后的结果与摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
 - **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`keepHumanBytes` 16384、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
-  `summaryMaxTokens` 8192、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
-  `summaryReasoningEffort` `low`（取值同 Agent 的思考强度；设为 `none` 时关闭思考，放弃缓存命中，启动时按摘要所用模型的 `effortMapping` 校验）；初值经真实模型检查（M2Baseline 第 4 节），改配置即可调整，重启后生效。
+  `summaryMaxTokens` 16384、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
+  `summaryReasoningEffort` `none`（取值同 Agent 的思考强度；`none` 关闭思考，实测缓存命中不受影响（99.8%，见第 6 步的说明）；启动时按摘要所用模型的 `effortMapping` 校验）；初值最初是 `low` 与 8192，真实使用中 33 轮的对话两次都在写完摘要前被截断（第一次全部额度花在思考上，一个字的正文都没有；第二次写了 5711 字，缺后三节），所以改为不思考与 16384，改配置即可调整，重启后生效。
 
 ## 10. Session 与持久化
 
