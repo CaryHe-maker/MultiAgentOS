@@ -22,7 +22,7 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import { layoutThinking, layoutWriting } from './thinking-layout.js';
+import { layoutWriting, planTail, prefixOf } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
   backspace,
@@ -48,14 +48,17 @@ type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'ste
 
 /** What the user typed: a bright green that stands out from everything the system says. */
 export const USER_COLOR = '#39ff14';
-const REPLY_COLOR = 'blueBright';
+/** What the system says (a new conversation, opened, allowed): a light blue. */
+export const SYSTEM_COLOR = '#8fd3ff';
+/** What an agent answers: a deep blue. */
+export const REPLY_COLOR = '#2f6df6';
 
 const COLORS: Partial<Record<TranscriptRecord['kind'], string>> = {
   USER: USER_COLOR,
   REPLY: REPLY_COLOR,
   THINKING: 'gray',
   STEP: 'gray',
-  NOTICE: 'yellow',
+  NOTICE: SYSTEM_COLOR,
   ERROR: 'red',
 };
 
@@ -63,8 +66,7 @@ const PROMPT = '› ';
 const CONTINUATION = '  ';
 
 function Record({ record }: { readonly record: TranscriptRecord }): ReactElement {
-  const prefix =
-    record.kind === 'USER' ? '> ' : record.kind === 'REPLY' ? `${record.agentLabel}: ` : '';
+  const prefix = prefixOf(record);
   const color = COLORS[record.kind];
   return h(
     Text,
@@ -151,7 +153,12 @@ function ConsoleApp({
   readonly store: ConsoleStore;
   readonly input: ConsoleInput;
 }): ReactElement {
-  const { records, live, restored } = useSyncExternalStore(store.subscribe, store.snapshot);
+  const {
+    static: written,
+    tail,
+    live,
+    restored,
+  } = useSyncExternalStore(store.subscribe, store.snapshot);
   const { stdout } = useStdout();
   const { setCursorPosition } = useCursor();
   // Not every stream has a size (a pipe, a test); a plain terminal is the fallback.
@@ -169,10 +176,8 @@ function ConsoleApp({
   const [folded, setFolded] = useState(false);
   const history = useRef<string[]>([]);
   const browsing = useRef<number | undefined>(undefined);
-  const thinking = live.thinking ?? [];
-  const now = useClock(
-    live.activity.length > 0 || thinking.some((block) => block.state === 'OPEN'),
-  );
+  const open = tail.some((item) => item.kind === 'BLOCK' && item.block.state === 'OPEN');
+  const now = useClock(live.activity.length > 0 || open);
 
   useEffect(() => {
     if (restored.messages.length > 0) setBox(inputOf(restored.messages.join('\n')));
@@ -269,7 +274,7 @@ function ConsoleApp({
     .filter((part) => part !== undefined && part.length > 0)
     .join(' · ');
 
-  // What the thinking may take: what is left of the screen after the rest of the live area.
+  // What the tail may take: what is left of the screen after the rest of the live area.
   const others =
     live.activity.length +
     (pendingText === undefined
@@ -280,16 +285,21 @@ function ConsoleApp({
     (live.queued.length > 0 ? 1 : 0) +
     1 +
     boxRows(box, PROMPT, CONTINUATION, columns);
-  // What is being written for the user comes first and gets what it needs; the thinking gets the
-  // rest of the lines.
+  // What is being written for the user comes first and gets what it needs; the tail gets the rest.
   const room = Math.max(4, rows - others - 2);
   const writingLines = layoutWriting(live.writing ?? [], { columns, budget: room });
-  const thinkingLines = layoutThinking(thinking, {
+  const plan = planTail(tail, {
     now,
     columns,
-    budget: Math.max(0, room - writingLines.length),
+    room: Math.max(0, room - writingLines.length),
     folded,
   });
+  // When even the records and the headers do not fit, the oldest of the tail goes into the
+  // scroll-back, so that the screen is never taller than the terminal.
+  const second = tail[1];
+  useEffect(() => {
+    if (plan.overflow && second !== undefined) store.advanceFloor(second.seq);
+  }, [plan.overflow, second, store]);
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line. The rows above the box are measured after they are laid out.
@@ -305,26 +315,33 @@ function ConsoleApp({
   return h(
     Box,
     { flexDirection: 'column' },
-    h(Static<(typeof records)[number]>, {
-      items: [...records],
-      children: (record) => h(Record, { key: record.id, record }),
+    h(Static<(typeof written)[number]>, {
+      items: [...written],
+      children: (item) =>
+        item.kind === 'RECORD'
+          ? h(Record, { key: item.id, record: item.record })
+          : h(Text, { key: item.id, color: 'gray', dimColor: true }, item.text),
     }),
     h(
       Box,
       { flexDirection: 'column', ref: above },
-      ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
-      ...thinkingLines.map((line, index) =>
-        h(
-          Text,
-          {
-            key: `t${String(index)}`,
-            color: line.kind === 'HEADER' && line.live ? 'magentaBright' : 'gray',
-            ...(line.kind === 'BODY' ? { dimColor: true } : {}),
-            wrap: 'truncate-end',
-          },
-          line.text,
-        ),
+      ...plan.items.flatMap((item): ReactElement[] =>
+        item.kind === 'RECORD'
+          ? [h(Record, { key: `r${String(item.seq)}`, record: item.record })]
+          : item.lines.map((line, index) =>
+              h(
+                Text,
+                {
+                  key: `b${String(item.seq)}-${String(index)}`,
+                  color: line.kind === 'HEADER' && line.live ? 'magentaBright' : 'gray',
+                  ...(line.kind === 'BODY' ? { dimColor: true } : {}),
+                  wrap: 'truncate-end',
+                },
+                line.text,
+              ),
+            ),
       ),
+      ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
       ...writingLines.map((line, index) =>
         h(Text, { key: `w${String(index)}`, color: REPLY_COLOR }, line),
       ),

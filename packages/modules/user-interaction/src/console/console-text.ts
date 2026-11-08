@@ -220,22 +220,23 @@ export const ConsoleText = Object.freeze({
     '/compact          压缩较早的对话，腾出上下文空间',
     '/diff [N]         查看倒数第 N 轮改动了什么',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
-    '/think [N]        列出有思考内容的轮；带编号则显示第 N 轮的全部思考',
+    '/think [N]        列出思考内容；带编号则显示第 N 段思考的全文',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',
     '/steer [@任务] <说明>     运行中插话（Alt+Enter 发送输入框里的内容），不暂停',
     'Ctrl+C 暂停，暂停后再按一次中止；退出用 /exit。',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
-    'Ctrl+O 折叠或展开正在显示的思考；思考只保存在这个进程的内存里。',
+    'Ctrl+O 折叠或展开最近两段思考；更早的思考已折叠成一行，用 /think 查看；思考只保存在这个进程的内存里。',
   ].join('\n'),
   thinkingNone: '还没有思考内容（只有开启思考的模型调用才有）。',
-  thinkingMissing: (turn: number) => `第 ${String(turn)} 轮没有思考内容。`,
-  thinkingTurnLine: (turn: number, blocks: number, seconds: string) =>
-    `  第 ${String(turn)} 轮：${String(blocks)} 段，共 ${seconds}`,
-  thinkingList: '有思考内容的轮（/think <N> 查看）：',
-  /** The one line an older Turn leaves in the transcript. */
-  thinkingFolded: (turn: number, blocks: number, seconds: string) =>
-    `✻ 第 ${String(turn)} 轮思考 ${String(blocks)} 段，共 ${seconds}（/think ${String(turn)} 展开）`,
+  thinkingMissing: (number: number) =>
+    `没有第 ${String(number)} 段思考（可能已经太久，或编号不对）。`,
+  thinkingBlockLine: (number: number, label: string, seconds: string) =>
+    `  第 ${String(number)} 段：${label} 思考 ${seconds}`,
+  thinkingList: '思考内容（/think <N> 查看全文）：',
+  /** The one line a block that is no longer in view leaves in the transcript. */
+  thinkingFolded: (number: number, label: string, seconds: string) =>
+    `✻ ${label} 思考 ${seconds}（/think ${String(number)} 展开）`,
   thinkingHeader: (label: string, seconds: string, state: 'OPEN' | 'DONE' | 'ABORTED') =>
     `✻ ${label} 思考 ${seconds}${state === 'ABORTED' ? '（已中止）' : ''}`,
   thinkingCut: '（内容太长，后面的没有保留）',

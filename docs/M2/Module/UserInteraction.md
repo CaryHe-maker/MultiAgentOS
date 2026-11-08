@@ -91,7 +91,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | `/output <编号>` | 任意 | 经 `readArtifact` 展示第几个被截断的工具结果的完整输出（第 6 节） |
 | `/help`、`/exit` | 任意 | 帮助；`shutdown` |
 | Enter、`\` 加 Enter、Esc、↑/↓ | 任意 | 发送、换行、清空输入、浏览输入历史（多行输入框里上下键先在行间移动）；左右、Home/End、Ctrl+A/E/U/K/W 在光标处编辑 |
-| `/think [N]` | 任意 | 列出有思考内容的轮；带编号则打印那一轮的全部思考（第 6 节） |
+| `/think [N]` | 任意 | 列出思考内容；带编号则打印第 N 段思考的全文（第 6 节） |
 | Ctrl+O | 任意 | 折叠或展开正在显示的思考 |
 | Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
 | Ctrl+C | RUNNING | 暂停（`pauseRun`）；再按一次为中止 |
@@ -141,8 +141,8 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 - ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
 - 工具结果被截断时（`ActivityEvent.unit` 在 `DONE` 时带 `fullRef`），折叠行注明"输出已截断"及编号；`/output <编号>` 经 `readArtifact` 读取完整输出，已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
 - 压缩：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
-- 思考内容流式显示，回复不流式：Kernel 核心把 `kernel.control.ModelStream` 经 Fabric 的 `inbox.user-interaction-stream` 发来，这条旁路不是有序事件，没有序号、不进日志、来不及送达就丢；控制台在进程内存里按 Turn 保存思考（单段 64 KB、最近 20 个 Turn，切换 Session 或退出即清空），当前轮与上一轮画在活动区下面，更早的轮留下一行（[Phase1Console](../Phase1Console.md) 第 4 节）。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
-- 授权询问里超过 3 行或 240 个字符的命令只显示开头，输入 `v` 查看完整命令（不算回答）。用户输入是荧光绿，助手回复是亮蓝。
+- 思考内容流式显示，回复不流式：Kernel 核心把 `kernel.control.ModelStream` 经 Fabric 的 `inbox.user-interaction-stream` 发来，这条旁路不是有序事件，没有序号、不进日志、来不及送达就丢；控制台在进程内存里按块保存思考（单段 64 KB、最近 100 段，切换 Session 或退出即清空）；最近两个块展开，放在末尾一段里，和它们之间、之后的授权、步骤、回复按发生的先后顺序排，更早的块在记录里是一行（[Phase1Console](../Phase1Console.md) 第 4 节）。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
+- 授权询问里超过 3 行或 240 个字符的命令只显示开头，输入 `v` 查看完整命令（不算回答）。用户输入是荧光绿，系统的话是浅蓝，助手回复是深蓝，思考保持原来的颜色。
 - 展示文本中的控制字符按 M1 的规则转义。
 
 ## 7. `mas run`

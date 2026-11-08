@@ -188,12 +188,8 @@ export class Console {
     string,
     { agentRunId: string; label: string; text: string; state: 'OPEN' | 'DONE' }
   >();
-  /** The Session the thinking belongs to, and the Turns of it, counted as runs begin. */
+  /** The Session the thinking belongs to. */
   #thinkingSession: string | undefined;
-  #turn = 0;
-  #turnId: string | undefined;
-  /** Turns whose thinking already left one line in the transcript. */
-  readonly #foldedTurns = new Set<number>();
   /** Set by /fork until the draft's first prompt. */
   #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
@@ -237,20 +233,20 @@ export class Console {
     this.#deps.view.update(live);
   }
 
-  /** The thinking of the current Turn and the one before it; older Turns are one line each. */
+  /**
+   * Every block the log still has, oldest first. Which of them are shown open, and where among the
+   * records they stand, is for the view to decide: it knows the screen.
+   */
   #thinkingInView(): ThinkingView[] {
-    return this.#thinking
-      .blocks()
-      .filter((block) => block.turn >= this.#turn - 1)
-      .map((block) => ({
-        id: block.callId,
-        label: block.label,
-        turn: block.turn,
-        state: block.state,
-        startedAt: block.startedAt,
-        ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
-        text: block.text,
-      }));
+    return this.#thinking.blocks().map((block) => ({
+      id: block.callId,
+      number: block.number,
+      label: block.label,
+      state: block.state,
+      startedAt: block.startedAt,
+      ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
+      text: block.text,
+    }));
   }
 
   #writingInView(): WritingView[] {
@@ -262,27 +258,9 @@ export class Console {
     }));
   }
 
-  /** A Turn that is no longer shown leaves one line, and `/think` still has all of it. */
-  #foldOlderThinking(): void {
-    for (const turn of this.#thinking.turns()) {
-      if (turn >= this.#turn - 1 || this.#foldedTurns.has(turn)) continue;
-      this.#foldedTurns.add(turn);
-      const blocks = this.#thinking.ofTurn(turn);
-      this.#deps.view.print({
-        kind: 'THINKING',
-        text: text.thinkingFolded(turn, blocks.length, this.#thinkingSeconds(blocks)),
-      });
-    }
-  }
-
-  #thinkingSeconds(blocks: readonly ThinkingBlock[]): string {
-    const now = this.#now().toISOString();
-    const ms = blocks.reduce(
-      (sum, block) =>
-        sum + Math.max(0, Date.parse(block.endedAt ?? now) - Date.parse(block.startedAt)),
-      0,
-    );
-    return `${(ms / 1000).toFixed(1)}s`;
+  #thinkingSeconds(block: ThinkingBlock): string {
+    const end = block.endedAt ?? this.#now().toISOString();
+    return `${(Math.max(0, Date.parse(end) - Date.parse(block.startedAt)) / 1000).toFixed(1)}s`;
   }
 
   /** A different Session starts a different story: nothing of the old one is kept. */
@@ -290,10 +268,7 @@ export class Console {
     if (this.#thinkingSession === sessionId) return;
     this.#thinkingSession = sessionId;
     this.#thinking.clear();
-    this.#foldedTurns.clear();
     this.#writing.clear();
-    this.#turn = 0;
-    this.#turnId = undefined;
   }
 
   /**
@@ -325,7 +300,6 @@ export class Console {
           callId: stream.callId,
           agentRunId: stream.agentRunId,
           label,
-          turn: Math.max(1, this.#turn),
         },
         terminalText(stream.delta),
         stream.at,
@@ -333,41 +307,36 @@ export class Console {
     this.#refresh();
   }
 
-  /** `/think`: the Turns that have thinking, or all of one Turn. */
+  /** `/think`: the blocks there are, or the whole of one. */
   #showThinking(argument: string | undefined): void {
-    const turns = this.#thinking.turns();
+    const blocks = this.#thinking.blocks();
     if (argument === undefined) {
-      if (turns.length === 0) {
+      if (blocks.length === 0) {
         this.#notice(text.thinkingNone);
         return;
       }
       this.#notice(
         [
           text.thinkingList,
-          ...turns.map((turn) => {
-            const blocks = this.#thinking.ofTurn(turn);
-            return text.thinkingTurnLine(turn, blocks.length, this.#thinkingSeconds(blocks));
-          }),
+          ...blocks.map((block) =>
+            text.thinkingBlockLine(block.number, block.label, this.#thinkingSeconds(block)),
+          ),
         ].join('\n'),
       );
       return;
     }
-    const blocks = this.#thinking.ofTurn(Number(argument));
-    if (blocks.length === 0) {
+    const block = this.#thinking.byNumber(Number(argument));
+    if (block === undefined) {
       this.#notice(text.thinkingMissing(Number(argument)));
       return;
     }
     this.#deps.view.print({
       kind: 'THINKING',
-      text: blocks
-        .map((block) =>
-          [
-            text.thinkingHeader(block.label, this.#thinkingSeconds([block]), block.state),
-            block.text,
-            ...(block.cut ? [text.thinkingCut] : []),
-          ].join('\n'),
-        )
-        .join('\n\n'),
+      text: [
+        text.thinkingHeader(block.label, this.#thinkingSeconds(block), block.state),
+        block.text,
+        ...(block.cut ? [text.thinkingCut] : []),
+      ].join('\n'),
     });
   }
 
@@ -1067,15 +1036,7 @@ export class Console {
     }
     switch (event.type) {
       case 'RunStateChanged': {
-        const idle = ['NONE', 'AWAITING_INPUT', 'CLOSED'].includes(this.#runState);
         this.#thinkingBelongsTo(this.#sessionId);
-        // The Turn the Kernel names is the next one; coming back from a pause names the same one.
-        const turnId = 'turnId' in event ? event.turnId : undefined;
-        if (event.state === 'RUNNING' && (turnId === undefined ? idle : turnId !== this.#turnId)) {
-          this.#turn += 1;
-          if (turnId !== undefined) this.#turnId = turnId;
-          this.#foldOlderThinking();
-        }
         // Nothing streams once the run waits for the user or is over: no block stays open.
         if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED')
           this.#writing.clear();

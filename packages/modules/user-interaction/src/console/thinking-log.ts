@@ -1,23 +1,24 @@
 /**
  * What the model is thinking, kept for the person watching and nowhere else
  * (docs/M2/Phase1Console.md 4.2). It lives in the memory of the console process: it is not in the
- * Session log, not on disk, and nothing in the system reads it. Each model call makes one block;
- * blocks are grouped by the Turn they belong to, a block is cut at `THINKING_MAX_CHARS`, and the
- * oldest Turns go when there are more than `THINKING_MAX_TURNS`. Switching to another Session
- * or leaving drops all of it. The complete thinking of a finished call is in the Session log
+ * Session log, not on disk, and nothing in the system reads it. Each model call makes one block,
+ * numbered in the order they began (`/think <N>`); a block is cut at `THINKING_MAX_CHARS`, and the
+ * oldest go when there are more than `THINKING_MAX_BLOCKS`. Switching to another Session or
+ * leaving drops all of it. The complete thinking of a finished call is in the Session log
  * (`mas log` shows it); this is the preview that was there while the call ran.
  */
 
 export const THINKING_MAX_CHARS = 64 * 1024;
-export const THINKING_MAX_TURNS = 20;
+export const THINKING_MAX_BLOCKS = 100;
 
 export type ThinkingState = 'OPEN' | 'DONE' | 'ABORTED';
 
 export interface ThinkingBlock {
+  /** 1 for the first block of the Session in view, then upwards. */
+  readonly number: number;
   readonly callId: string;
   readonly agentRunId: string;
   readonly label: string;
-  readonly turn: number;
   readonly startedAt: string;
   readonly endedAt?: string;
   readonly text: string;
@@ -27,10 +28,10 @@ export interface ThinkingBlock {
 }
 
 interface MutableBlock {
+  number: number;
   callId: string;
   agentRunId: string;
   label: string;
-  turn: number;
   startedAt: string;
   endedAt?: string;
   text: string;
@@ -40,6 +41,7 @@ interface MutableBlock {
 
 export class ThinkingLog {
   readonly #blocks: MutableBlock[] = [];
+  #next = 1;
 
   /** Adds a piece to the block of `callId`, which this opens when it is the first. */
   append(
@@ -47,16 +49,16 @@ export class ThinkingLog {
       readonly callId: string;
       readonly agentRunId: string;
       readonly label: string;
-      readonly turn: number;
     },
     delta: string,
     at: string,
   ): void {
     let block = this.#blocks.find((candidate) => candidate.callId === call.callId);
     if (block === undefined) {
-      block = { ...call, startedAt: at, text: '', cut: false, state: 'OPEN' };
+      block = { ...call, number: this.#next, startedAt: at, text: '', cut: false, state: 'OPEN' };
+      this.#next += 1;
       this.#blocks.push(block);
-      this.#forget(call.turn);
+      if (this.#blocks.length > THINKING_MAX_BLOCKS) this.#blocks.shift();
     }
     if (block.state !== 'OPEN') return;
     const room = THINKING_MAX_CHARS - block.text.length;
@@ -87,22 +89,13 @@ export class ThinkingLog {
     return this.#blocks;
   }
 
-  ofTurn(turn: number): readonly ThinkingBlock[] {
-    return this.#blocks.filter((block) => block.turn === turn);
-  }
-
-  /** The Turns that have thinking, oldest first. */
-  turns(): readonly number[] {
-    return [...new Set(this.#blocks.map((block) => block.turn))];
+  /** The block with this number, while it is still kept. */
+  byNumber(number: number): ThinkingBlock | undefined {
+    return this.#blocks.find((block) => block.number === number);
   }
 
   clear(): void {
     this.#blocks.length = 0;
-  }
-
-  #forget(newest: number): void {
-    const oldest = newest - THINKING_MAX_TURNS + 1;
-    for (let index = this.#blocks.length - 1; index >= 0; index -= 1)
-      if ((this.#blocks[index]?.turn ?? 0) < oldest) this.#blocks.splice(index, 1);
+    this.#next = 1;
   }
 }

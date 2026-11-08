@@ -1,15 +1,23 @@
 /**
- * How the thinking of the Turns in view is laid out in the lines the terminal has to give it
- * (docs/M2/Phase1Console.md 4.3). Newest first: every block gets its header, and what is left of
- * the budget goes to the tail of the newest blocks, so what the model is thinking now is always on
- * screen. A folded block (Ctrl+O) is its header only. Pure: the Ink component draws the lines.
+ * How the part of the conversation that is still drawn in place is laid out in the lines the
+ * terminal has to give it (docs/M2/Phase1Console.md 4.3). The tail holds the latest two blocks of
+ * thinking and what happened between and after them, in the order it happened; the records have
+ * the room they need, every block its header, and what is left goes to the tail of the newest
+ * blocks first, so what the model is thinking now is always on screen. A folded block (Ctrl+O) is
+ * its header only. Pure: the Ink component draws the lines.
  */
-import { ConsoleText, type ThinkingView, type WritingView } from '@multiagentos/user-interaction';
-import { charWidth } from './text-input.js';
+import {
+  ConsoleText,
+  type ThinkingView,
+  type TranscriptRecord,
+  type WritingView,
+} from '@multiagentos/user-interaction';
+import type { TailItem } from './console-store.js';
+import { charWidth, displayWidth, rowsOf } from './text-input.js';
 
 export interface ThinkingLine {
   readonly text: string;
-  readonly kind: 'HEADER' | 'BODY' | 'NOTE';
+  readonly kind: 'HEADER' | 'BODY';
   /** Streaming right now, for the header's colour. */
   readonly live: boolean;
 }
@@ -40,44 +48,106 @@ const seconds = (view: ThinkingView, now: number): string => {
   return `${(Math.max(0, end - Date.parse(view.startedAt)) / 1000).toFixed(1)}s`;
 };
 
-export function layoutThinking(
-  blocks: readonly ThinkingView[],
+/** The prefix a record is written with. */
+export function prefixOf(record: TranscriptRecord): string {
+  return record.kind === 'USER' ? '> ' : record.kind === 'REPLY' ? `${record.agentLabel}: ` : '';
+}
+
+/** Screen rows a record takes. */
+export function recordRows(record: TranscriptRecord, columns: number): number {
+  const prefix = prefixOf(record);
+  return `${prefix}${record.text}`
+    .split('\n')
+    .reduce((sum, line) => sum + rowsOf(displayWidth(line), columns), 0);
+}
+
+/** The header of a block, and the last `bodyLines` lines of its text under it. */
+export function blockLines(
+  block: ThinkingView,
   options: {
     readonly now: number;
     readonly columns: number;
-    /** The most lines these blocks may take together. */
-    readonly budget: number;
     readonly folded: boolean;
+    readonly bodyLines: number;
   },
 ): ThinkingLine[] {
-  const shown: ThinkingLine[][] = [];
-  // Headers first: every block that fits at all gets its header before any block gets a body.
-  const headers = Math.min(blocks.length, Math.max(0, options.budget));
-  let room = Math.max(0, options.budget) - headers;
-  const skipped = blocks.length - headers;
-  for (let index = blocks.length - 1; index >= blocks.length - headers; index -= 1) {
-    const block = blocks[index];
-    if (block === undefined) continue;
-    const header: ThinkingLine = {
-      text: `${options.folded ? '▸' : '▾'} ${ConsoleText.thinkingHeader(block.label, seconds(block, options.now), block.state)}`,
-      kind: 'HEADER',
-      live: block.state === 'OPEN',
+  const header: ThinkingLine = {
+    text: `${options.folded ? '▸' : '▾'} ${ConsoleText.thinkingHeader(block.label, seconds(block, options.now), block.state)}`,
+    kind: 'HEADER',
+    live: block.state === 'OPEN',
+  };
+  if (options.folded || block.text.length === 0 || options.bodyLines <= 0) return [header];
+  const wrapped = wrapLines(block.text.trimEnd(), Math.max(10, options.columns - 2));
+  return [
+    header,
+    ...wrapped
+      .slice(-options.bodyLines)
+      .map((text) => ({ text: `  ${text}`, kind: 'BODY' as const, live: false })),
+  ];
+}
+
+export type PlannedItem =
+  | { readonly kind: 'RECORD'; readonly seq: number; readonly record: TranscriptRecord }
+  | {
+      readonly kind: 'BLOCK';
+      readonly seq: number;
+      readonly lines: readonly ThinkingLine[];
     };
-    let body: ThinkingLine[] = [];
-    if (!options.folded && block.text.length > 0 && room > 0) {
-      const wrapped = wrapLines(block.text.trimEnd(), Math.max(10, options.columns - 2));
-      body = wrapped
-        .slice(-room)
-        .map((text) => ({ text: `  ${text}`, kind: 'BODY' as const, live: false }));
-      room -= body.length;
-    }
-    shown.unshift([header, ...body]);
+
+export interface TailPlan {
+  readonly items: readonly PlannedItem[];
+  readonly rows: number;
+  /** Even without any text of the blocks the tail does not fit: the oldest has to go. */
+  readonly overflow: boolean;
+}
+
+/**
+ * The tail in `room` rows. The records and the headers of the blocks come first; the rows that
+ * remain are given to the text of the blocks, the newest first.
+ */
+export function planTail(
+  tail: readonly TailItem[],
+  options: {
+    readonly now: number;
+    readonly columns: number;
+    readonly room: number;
+    readonly folded: boolean;
+  },
+): TailPlan {
+  const fixed = tail.reduce(
+    (sum, item) => sum + (item.kind === 'RECORD' ? recordRows(item.record, options.columns) : 1),
+    0,
+  );
+  let left = Math.max(0, options.room - fixed);
+  const bodies = new Map<number, number>();
+  for (let index = tail.length - 1; index >= 0; index -= 1) {
+    const item = tail[index];
+    if (item === undefined || item.kind !== 'BLOCK' || options.folded) continue;
+    const wanted = wrapLines(item.block.text.trimEnd(), Math.max(10, options.columns - 2)).length;
+    const given = Math.min(wanted, left);
+    bodies.set(item.seq, given);
+    left -= given;
   }
-  const note: ThinkingLine[] =
-    skipped === 0
-      ? []
-      : [{ text: ConsoleText.thinkingEarlier(skipped), kind: 'NOTE', live: false }];
-  return [...note, ...shown.flat()];
+  const items: PlannedItem[] = tail.map((item) =>
+    item.kind === 'RECORD'
+      ? item
+      : {
+          kind: 'BLOCK',
+          seq: item.seq,
+          lines: blockLines(item.block, {
+            now: options.now,
+            columns: options.columns,
+            folded: options.folded,
+            bodyLines: bodies.get(item.seq) ?? 0,
+          }),
+        },
+  );
+  const rows = items.reduce(
+    (sum, item) =>
+      sum + (item.kind === 'RECORD' ? recordRows(item.record, options.columns) : item.lines.length),
+    0,
+  );
+  return { items, rows, overflow: fixed > options.room };
 }
 
 /**

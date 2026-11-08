@@ -70,13 +70,14 @@ export interface QuestionField {
 }
 
 /**
- * One piece of the model's thinking to draw in place: the Turns that are still in view, each call
- * as it streams in. Older Turns are written once, as a line, into the transcript.
+ * One piece of the model's thinking: one model call. Every block is passed; the view shows the
+ * latest two open, among the records they stand between, and leaves a line for each older one.
  */
 export interface ThinkingView {
   readonly id: string;
+  /** 1 for the first block of the Session in view; `/think <number>` shows it whole. */
+  readonly number: number;
   readonly label: string;
-  readonly turn: number;
   readonly state: 'OPEN' | 'DONE' | 'ABORTED';
   readonly startedAt: string;
   readonly endedAt?: string;
@@ -102,7 +103,7 @@ export interface LiveState {
   readonly waiting: number;
   readonly queued: readonly string[];
   readonly hint?: string;
-  /** Thinking of the current and the previous Turn, oldest first. */
+  /** Every block the console keeps, oldest first. */
   readonly thinking?: readonly ThinkingView[];
   /** What agents are writing for the user right now. */
   readonly writing?: readonly WritingView[];

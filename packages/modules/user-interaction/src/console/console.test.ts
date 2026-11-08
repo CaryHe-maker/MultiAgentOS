@@ -654,20 +654,13 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
   const running = (turnId: string) =>
     ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
 
-  /** A Turn: the run starts, the model thinks and the run waits for the next message. */
-  async function turn(
-    t: ReturnType<typeof setup>,
-    id: string,
-    callId: string,
-    thought: string,
-  ): Promise<void> {
-    await t.event(running(id));
-    t.console.handleModelStream(stream('REASONING', callId, thought));
+  /** One model call that thinks, as it comes. */
+  const thought = (t: ReturnType<typeof setup>, callId: string, words: string) => {
+    t.console.handleModelStream(stream('REASONING', callId, words));
     t.console.handleModelStream(stream('END', callId));
-    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
-  }
+  };
 
-  it('draws the thinking as it arrives, under the AgentRun that is thinking', async () => {
+  it('passes the thinking as it arrives, numbered, under the AgentRun that is thinking', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event({
@@ -680,11 +673,25 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
     await t.event(running('trn_1'));
     t.console.handleModelStream(stream('REASONING', 'exe_1', 'First, '));
     expect(t.live()?.thinking).toMatchObject([
-      { id: 'exe_1', label: 'planner', turn: 1, state: 'OPEN', text: 'First, ' },
+      { id: 'exe_1', number: 1, label: 'planner', state: 'OPEN', text: 'First, ' },
     ]);
     t.console.handleModelStream(stream('REASONING', 'exe_1', 'then more.'));
     t.console.handleModelStream(stream('END', 'exe_1'));
     expect(t.live()?.thinking).toMatchObject([{ state: 'DONE', text: 'First, then more.' }]);
+  });
+
+  it('numbers every call, also several in one Turn, in the order they began', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    thought(t, 'exe_1', 'one');
+    thought(t, 'exe_2', 'two');
+    thought(t, 'exe_3', 'three');
+    expect(t.live()?.thinking?.map((block) => [block.number, block.text])).toEqual([
+      [1, 'one'],
+      [2, 'two'],
+      [3, 'three'],
+    ]);
   });
 
   it('ignores what is not for the Session in view, and writes control characters as text', async () => {
@@ -709,46 +716,29 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
     expect(t.live()?.thinking?.[0]?.state).toBe('DONE');
   });
 
-  it('keeps the current and the previous Turn in view and folds older ones to one line', async () => {
-    const t = setup();
-    await t.console.submit('hi');
-    await turn(t, 'trn_1', 'exe_1', 'one');
-    await turn(t, 'trn_2', 'exe_2', 'two');
-    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([1, 2]);
-    expect(t.printed.filter((entry) => entry.kind === 'THINKING')).toEqual([]);
-
-    await turn(t, 'trn_3', 'exe_3', 'three');
-    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([2, 3]);
-    const folded = t.printed.filter((entry) => entry.kind === 'THINKING');
-    expect(folded).toHaveLength(1);
-    expect(folded[0]?.text).toContain('第 1 轮思考 1 段');
-    expect(folded[0]?.text).toContain('/think 1');
-  });
-
-  it('counts coming back from a pause as the same Turn', async () => {
+  it('closes it as aborted when the run is interrupted', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event(running('trn_1'));
-    t.console.handleModelStream(stream('REASONING', 'exe_1', 'a'));
-    await t.event({ type: 'RunStateChanged', state: 'PAUSED', turnId: 'trn_1' });
-    await t.event(running('trn_1'));
-    t.console.handleModelStream(stream('REASONING', 'exe_2', 'b'));
-    expect(t.live()?.thinking?.map((block) => block.turn)).toEqual([1, 1]);
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'cut off'));
+    await t.event({ type: 'RunStateChanged', state: 'INTERRUPTING' });
+    expect(t.live()?.thinking?.[0]?.state).toBe('ABORTED');
   });
 
-  it('lists the Turns with /think and prints the whole of one with /think <n>', async () => {
+  it('lists the blocks with /think and prints the whole of one with /think <n>', async () => {
     const t = setup();
     await t.console.submit('hi');
-    await turn(t, 'trn_1', 'exe_1', 'the whole first thought');
-    await turn(t, 'trn_2', 'exe_2', 'the second');
+    await t.event(running('trn_1'));
+    thought(t, 'exe_1', 'the whole first thought');
+    thought(t, 'exe_2', 'the second');
     await t.console.submit('/think');
-    expect(t.printed.at(-1)?.text).toContain('第 1 轮：1 段');
-    expect(t.printed.at(-1)?.text).toContain('第 2 轮：1 段');
+    expect(t.printed.at(-1)?.text).toContain('第 1 段：main 思考');
+    expect(t.printed.at(-1)?.text).toContain('第 2 段：main 思考');
     await t.console.submit('/think 1');
     expect(t.printed.at(-1)).toMatchObject({ kind: 'THINKING' });
     expect(t.printed.at(-1)?.text).toContain('the whole first thought');
     await t.console.submit('/think 7');
-    expect(t.printed.at(-1)?.text).toContain('第 7 轮没有思考内容');
+    expect(t.printed.at(-1)?.text).toContain('没有第 7 段思考');
   });
 
   it('says there is nothing to show before any thinking arrived', async () => {
@@ -758,17 +748,18 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
     expect(t.printed.at(-1)?.text).toContain('还没有思考内容');
   });
 
-  it('keeps no more Turns than it is allowed to', async () => {
+  it('keeps no more blocks than it is allowed to, and the numbers go on', async () => {
     const t = setup();
     await t.console.submit('hi');
-    for (let index = 1; index <= 23; index += 1)
-      await turn(t, `trn_${String(index)}`, `exe_${String(index)}`, `thought ${String(index)}`);
-    await t.console.submit('/think');
-    const lines = t.printed.at(-1)?.text ?? '';
-    expect(lines).not.toContain('第 1 轮：');
-    expect(lines).not.toContain('第 3 轮：');
-    expect(lines).toContain('第 4 轮：');
-    expect(lines).toContain('第 23 轮：');
+    await t.event(running('trn_1'));
+    for (let index = 1; index <= 103; index += 1)
+      thought(t, `exe_${String(index)}`, `thought ${String(index)}`);
+    const numbers = t.live()?.thinking?.map((block) => block.number) ?? [];
+    expect(numbers).toHaveLength(100);
+    expect(numbers[0]).toBe(4);
+    expect(numbers.at(-1)).toBe(103);
+    await t.console.submit('/think 1');
+    expect(t.printed.at(-1)?.text).toContain('没有第 1 段思考');
   });
 });
 

@@ -7,7 +7,7 @@ vi.hoisted(() => {
 });
 
 import { ConsoleStore } from './console-store.js';
-import { USER_COLOR, consoleApp } from './ink-console.js';
+import { REPLY_COLOR, SYSTEM_COLOR, USER_COLOR, consoleApp } from './ink-console.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -27,16 +27,20 @@ function setup() {
 }
 
 describe('Ink console colours', () => {
-  it('writes what the user typed in bright green and what the agent said in blue', async () => {
+  it('writes what the user typed in bright green, the system in light blue and the agent in deep blue', async () => {
     const { store, ui } = setup();
     store.print({ kind: 'USER', text: '问题' });
+    store.print({ kind: 'NOTICE', text: '已允许。' });
     store.print({ kind: 'REPLY', agentLabel: 'main', text: '回答' });
     await tick();
     const frame = ui.lastFrame() ?? '';
     expect(USER_COLOR).toBe('#39ff14');
-    // 24-bit green for the user, bright blue for the agent.
+    expect(SYSTEM_COLOR).toBe('#8fd3ff');
+    expect(REPLY_COLOR).toBe('#2f6df6');
+    // 24-bit colours: green for the user, light blue for the system, deep blue for the agent.
     expect(frame).toContain('\u001b[38;2;57;255;20m> 问题');
-    expect(frame).toContain('\u001b[94mmain: 回答');
+    expect(frame).toContain('\u001b[38;2;143;211;255m已允许。');
+    expect(frame).toContain('\u001b[38;2;47;109;246mmain: 回答');
   });
 
   it('writes the text an agent is writing in the colour of its replies', async () => {
@@ -49,7 +53,38 @@ describe('Ink console colours', () => {
       writing: [{ id: 'exe_1', label: 'main', state: 'OPEN', text: '正在写' }],
     });
     await tick();
-    expect(ui.lastFrame()).toContain('[94mmain: 正在写');
+    expect(ui.lastFrame()).toContain('\u001b[38;2;47;109;246mmain: 正在写');
+  });
+
+  it('keeps the thinking in its own colours: magenta while it streams, grey after', async () => {
+    const { store, ui } = setup();
+    const block = (state: 'OPEN' | 'DONE') => ({
+      id: 'exe_1',
+      number: 1,
+      label: 'main',
+      state,
+      startedAt: new Date(Date.now() - 2000).toISOString(),
+      ...(state === 'OPEN' ? {} : { endedAt: new Date().toISOString() }),
+      text: '想一想',
+    });
+    store.update({
+      status: '',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      thinking: [block('OPEN')],
+    });
+    await tick();
+    expect(ui.lastFrame()).toContain('\u001b[95m▾ ✻ main 思考');
+    store.update({
+      status: '',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      thinking: [block('DONE')],
+    });
+    await tick();
+    expect(ui.lastFrame()).toContain('\u001b[90m▾ ✻ main 思考');
   });
 
   it('draws the cursor on the character it stands on, and the typed text in green', async () => {

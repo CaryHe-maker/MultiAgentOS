@@ -1,11 +1,16 @@
-import type { ThinkingView } from '@multiagentos/user-interaction';
+import type { ThinkingView, TranscriptRecord } from '@multiagentos/user-interaction';
 import { describe, expect, it } from 'vitest';
-import { layoutThinking, wrapLines } from './thinking-layout.js';
+import type { TailItem } from './console-store.js';
+import { blockLines, layoutWriting, planTail, recordRows, wrapLines } from './thinking-layout.js';
 
-const block = (id: string, text: string, state: ThinkingView['state'] = 'DONE'): ThinkingView => ({
-  id,
+const block = (
+  number: number,
+  text: string,
+  state: ThinkingView['state'] = 'DONE',
+): ThinkingView => ({
+  id: `exe_${String(number)}`,
+  number,
   label: 'main',
-  turn: 1,
   state,
   startedAt: '2026-11-07T10:00:00.000Z',
   ...(state === 'OPEN' ? {} : { endedAt: '2026-11-07T10:00:03.200Z' }),
@@ -13,8 +18,7 @@ const block = (id: string, text: string, state: ThinkingView['state'] = 'DONE'):
 });
 
 const NOW = Date.parse('2026-11-07T10:00:05.000Z');
-const lay = (blocks: ThinkingView[], budget: number, folded = false) =>
-  layoutThinking(blocks, { now: NOW, columns: 40, budget, folded });
+const options = { now: NOW, columns: 40, folded: false };
 
 describe('wrapLines', () => {
   it('keeps line breaks and cuts what is too wide, counting wide characters as two', () => {
@@ -25,49 +29,114 @@ describe('wrapLines', () => {
   });
 });
 
-describe('layoutThinking', () => {
-  it('shows a header with the time and the text under it', () => {
-    const lines = lay([block('a', 'first\nsecond')], 10);
-    expect(lines.map((line) => line.text)).toEqual(['▾ ✻ main 思考 3.2s', '  first', '  second']);
+describe('blockLines', () => {
+  it('shows a header with the time and the last lines of the text under it', () => {
+    const lines = blockLines(block(1, 'first\nsecond\nthird'), { ...options, bodyLines: 2 });
+    expect(lines.map((line) => line.text)).toEqual(['▾ ✻ main 思考 3.2s', '  second', '  third']);
     expect(lines[0]?.kind).toBe('HEADER');
   });
 
   it('counts the time of a block that is still streaming up to now', () => {
-    const lines = lay([block('a', 'x', 'OPEN')], 10);
+    const lines = blockLines(block(1, 'x', 'OPEN'), { ...options, bodyLines: 5 });
     expect(lines[0]).toMatchObject({ text: '▾ ✻ main 思考 5.0s', live: true });
   });
 
-  it('shows the header only when folded', () => {
-    const lines = lay([block('a', 'one\ntwo')], 10, true);
-    expect(lines.map((line) => line.text)).toEqual(['▸ ✻ main 思考 3.2s']);
+  it('is the header only when folded or when it has no lines to show', () => {
+    expect(
+      blockLines(block(1, 'one\ntwo'), { ...options, folded: true, bodyLines: 5 }).map(
+        (line) => line.text,
+      ),
+    ).toEqual(['▸ ✻ main 思考 3.2s']);
+    expect(blockLines(block(1, 'one'), { ...options, bodyLines: 0 })).toHaveLength(1);
+  });
+});
+
+const record = (kind: TranscriptRecord['kind'], text: string, seq: number): TailItem => ({
+  kind: 'RECORD',
+  seq,
+  record: { kind, text } as TranscriptRecord,
+});
+const blockItem = (view: ThinkingView, seq: number): TailItem => ({
+  kind: 'BLOCK',
+  seq,
+  block: view,
+});
+
+describe('planTail', () => {
+  it('keeps the order of what happened: thinking, then the step, then the next thinking', () => {
+    const tail = [
+      blockItem(block(1, 'a1\na2'), 1),
+      record('NOTICE', '已允许。', 2),
+      record('STEP', '✓ read_file 0.1s', 3),
+      blockItem(block(2, 'b1'), 4),
+    ];
+    const plan = planTail(tail, { ...options, room: 20 });
+    expect(plan.items.map((item) => item.kind)).toEqual(['BLOCK', 'RECORD', 'RECORD', 'BLOCK']);
+    expect(plan.items.map((item) => item.seq)).toEqual([1, 2, 3, 4]);
+    expect(plan.overflow).toBe(false);
   });
 
-  it('gives what is left of the budget to the tail of the newest block', () => {
-    const lines = lay([block('old', 'o1\no2\no3'), block('new', 'n1\nn2\nn3\nn4')], 5);
-    // Both blocks get a header; what is left (3 lines) goes to the tail of the newest one.
-    expect(lines.map((line) => line.text)).toEqual([
+  it('gives the rows that are left to the text of the newest block first', () => {
+    const tail = [
+      blockItem(block(1, 'a1\na2\na3\na4'), 1),
+      record('STEP', '✓ step', 2),
+      blockItem(block(2, 'b1\nb2\nb3'), 3),
+    ];
+    // 2 headers + 1 record = 3 rows; 4 rows are left: 3 for the newest, 1 for the older one.
+    const plan = planTail(tail, { ...options, room: 7 });
+    const [older, , newer] = plan.items;
+    expect(newer?.kind === 'BLOCK' ? newer.lines.map((line) => line.text) : []).toEqual([
       '▾ ✻ main 思考 3.2s',
-      '▾ ✻ main 思考 3.2s',
-      '  n2',
-      '  n3',
-      '  n4',
+      '  b1',
+      '  b2',
+      '  b3',
     ]);
+    expect(older?.kind === 'BLOCK' ? older.lines.map((line) => line.text) : []).toEqual([
+      '▾ ✻ main 思考 3.2s',
+      '  a4',
+    ]);
+    expect(plan.rows).toBe(7);
   });
 
-  it('says how many older blocks did not fit', () => {
-    const lines = lay([block('a', 'a1'), block('b', 'b1'), block('c', 'c1')], 2);
-    expect(lines.map((line) => line.kind)).toEqual(['NOTE', 'HEADER', 'HEADER']);
-    expect(lines[0]?.text).toBe('… 还有 1 段更早的思考（/think 查看）');
+  it('shows only the headers when folded', () => {
+    const plan = planTail([blockItem(block(1, 'a\nb'), 1), blockItem(block(2, 'c\nd'), 2)], {
+      ...options,
+      room: 20,
+      folded: true,
+    });
+    expect(plan.rows).toBe(2);
   });
 
-  it('gives every block a header before any block a body, when room is short', () => {
-    const lines = lay([block('a', 'a1'), block('b', 'b1'), block('c', 'c1')], 3);
-    expect(lines.filter((line) => line.kind === 'HEADER')).toHaveLength(3);
-    expect(lines.filter((line) => line.kind === 'BODY')).toHaveLength(0);
+  it('says it overflows when the records and the headers alone do not fit', () => {
+    const tail = [
+      blockItem(block(1, 'x'), 1),
+      record('REPLY', 'a long reply\nof several\nlines', 2),
+      blockItem(block(2, 'y'), 3),
+    ];
+    expect(planTail(tail, { ...options, room: 4 }).overflow).toBe(true);
+    expect(planTail(tail, { ...options, room: 5 }).overflow).toBe(false);
   });
 
-  it('draws nothing when there is no room', () => {
-    expect(lay([block('a', 'x')], 0).map((line) => line.kind)).toEqual(['NOTE']);
-    expect(lay([], 10)).toEqual([]);
+  it('counts the rows of a record, with its prefix and the width of the screen', () => {
+    expect(recordRows({ kind: 'USER', text: 'hi' }, 40)).toBe(1);
+    expect(recordRows({ kind: 'REPLY', agentLabel: 'main', text: 'a\nb' }, 40)).toBe(2);
+    expect(recordRows({ kind: 'NOTICE', text: 'x'.repeat(85) }, 40)).toBe(3);
+  });
+});
+
+describe('layoutWriting', () => {
+  it('gives the newest lines of what is being written, with the label like the message', () => {
+    const lines = layoutWriting(
+      [{ id: 'a', label: 'main', state: 'OPEN', text: 'one\ntwo\nthree\nfour' }],
+      { columns: 40, budget: 3 },
+    );
+    expect(lines).toEqual(['two', 'three', 'four']);
+    expect(layoutWriting([], { columns: 40, budget: 3 })).toEqual([]);
+    expect(
+      layoutWriting([{ id: 'a', label: 'main', state: 'OPEN', text: 'x' }], {
+        columns: 40,
+        budget: 0,
+      }),
+    ).toEqual([]);
   });
 });

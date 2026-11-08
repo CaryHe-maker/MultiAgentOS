@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream';
 import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleStore } from './console-store.js';
+import type { ThinkingView } from '@multiagentos/user-interaction';
 import { consoleApp } from './ink-console.js';
 import { layoutWriting } from './thinking-layout.js';
 import { createLineConsoleView } from './line-console.js';
@@ -198,8 +199,8 @@ describe('Ink console: waiting, colours and thinking', () => {
 
   const thinking = (text: string, state: 'OPEN' | 'DONE' = 'DONE') => ({
     id: 'exe_1',
+    number: 1,
     label: 'main',
-    turn: 1,
     state,
     startedAt: new Date(Date.now() - 3000).toISOString(),
     ...(state === 'OPEN' ? {} : { endedAt: new Date().toISOString() }),
@@ -230,14 +231,14 @@ describe('Ink console: waiting, colours and thinking', () => {
     expect(ui.lastFrame()).toContain('先看看 a.ts');
   });
 
-  it('prints a folded Turn and what /think asks for as plain lines in the line console', () => {
+  it('prints a folded block and what /think asks for as plain lines in the line console', () => {
     const output = new PassThrough();
     const chunks: string[] = [];
     output.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
     const view = createLineConsoleView(output);
-    view.print({ kind: 'THINKING', text: '✻ 第 1 轮思考 2 段，共 3.0s（/think 1 展开）' });
+    view.print({ kind: 'THINKING', text: '✻ main 思考 3.0s（/think 1 展开）' });
     view.update({ status: '', activity: [], waiting: 0, queued: [], thinking: [thinking('x')] });
-    expect(chunks.join('')).toBe('✻ 第 1 轮思考 2 段，共 3.0s（/think 1 展开）\n');
+    expect(chunks.join('')).toBe('✻ main 思考 3.0s（/think 1 展开）\n');
   });
 });
 
@@ -272,5 +273,132 @@ describe('Ink console: the text being written', () => {
         budget: 0,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('Ink console: thinking among what happened', () => {
+  const block = (number: number, text: string, state: 'OPEN' | 'DONE' = 'DONE'): ThinkingView => ({
+    id: `exe_${String(number)}`,
+    number,
+    label: 'main',
+    state,
+    startedAt: new Date(Date.now() - 3000).toISOString(),
+    ...(state === 'OPEN' ? {} : { endedAt: new Date().toISOString() }),
+    text,
+  });
+  const live = (...blocks: ThinkingView[]) => ({
+    status: '运行中',
+    activity: [],
+    waiting: 0,
+    queued: [],
+    thinking: blocks,
+  });
+  const order = (frame: string, ...needles: string[]) =>
+    needles.map((needle) => frame.indexOf(needle));
+
+  it('puts each thinking above the step that followed it, in the order it happened', async () => {
+    const { store, ui } = setup();
+    store.print({ kind: 'USER', text: '读一下 a.ts' });
+    store.update(live(block(1, '先要读文件')));
+    store.print({ kind: 'NOTICE', text: '已允许。' });
+    store.print({ kind: 'STEP', text: '✓ read_file a.ts 0.1s' });
+    store.update(live(block(1, '先要读文件'), block(2, '读完了，来总结', 'OPEN')));
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    const [question, first, allowed, step, second] = order(
+      frame,
+      '> 读一下 a.ts',
+      '先要读文件',
+      '已允许。',
+      '✓ read_file',
+      '读完了，来总结',
+    );
+    expect(question).toBeGreaterThanOrEqual(0);
+    expect([question, first, allowed, step, second]).toEqual(
+      [question, first, allowed, step, second].sort((left, right) => (left ?? 0) - (right ?? 0)),
+    );
+    expect(new Set([question, first, allowed, step, second]).size).toBe(5);
+  });
+
+  it('keeps only the latest two thinkings open and folds the older ones to a line', async () => {
+    const { store, ui } = setup();
+    store.print({ kind: 'USER', text: '问题' });
+    store.update(live(block(1, '第一段思考的内容')));
+    store.print({ kind: 'STEP', text: '步骤一' });
+    store.update(live(block(1, '第一段思考的内容'), block(2, '第二段思考的内容')));
+    store.print({ kind: 'STEP', text: '步骤二' });
+    store.update(
+      live(
+        block(1, '第一段思考的内容'),
+        block(2, '第二段思考的内容'),
+        block(3, '第三段思考的内容', 'OPEN'),
+      ),
+    );
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    // The first one is a line now; the second and third are open with their text.
+    expect(frame).toContain('✻ main 思考 3.0s（/think 1 展开）');
+    expect(frame).not.toContain('第一段思考的内容');
+    expect(frame).toContain('第二段思考的内容');
+    expect(frame).toContain('第三段思考的内容');
+    const [folded, firstStep, second, secondStep, third] = order(
+      frame,
+      '（/think 1 展开）',
+      '步骤一',
+      '第二段思考的内容',
+      '步骤二',
+      '第三段思考的内容',
+    );
+    expect([folded, firstStep, second, secondStep, third]).toEqual(
+      [folded, firstStep, second, secondStep, third].sort((a, b) => (a ?? 0) - (b ?? 0)),
+    );
+
+    // A fourth pushes the second out in the same way.
+    store.update(
+      live(
+        block(1, '第一段思考的内容'),
+        block(2, '第二段思考的内容'),
+        block(3, '第三段思考的内容'),
+        block(4, '第四段思考的内容', 'OPEN'),
+      ),
+    );
+    await tick();
+    expect(ui.lastFrame()).toContain('（/think 2 展开）');
+    expect(ui.lastFrame()).not.toContain('第二段思考的内容');
+    expect(ui.lastFrame()).toContain('第三段思考的内容');
+    expect(ui.lastFrame()).toContain('第四段思考的内容');
+  });
+
+  it('folds and opens the two open ones with Ctrl+O', async () => {
+    const { store, ui } = setup();
+    store.update(live(block(1, '甲的内容'), block(2, '乙的内容', 'OPEN')));
+    await tick();
+    expect(ui.lastFrame()).toContain('甲的内容');
+    ui.stdin.write('\u000f');
+    await tick();
+    expect(ui.lastFrame()).not.toContain('甲的内容');
+    expect(ui.lastFrame()).not.toContain('乙的内容');
+    expect(ui.lastFrame()?.match(/▸ ✻ main 思考/gu)).toHaveLength(2);
+    ui.stdin.write('\u000f');
+    await tick();
+    expect(ui.lastFrame()).toContain('甲的内容');
+  });
+
+  it('never draws more rows than the terminal has, by moving the oldest into the scroll-back', async () => {
+    const { store, ui } = setup();
+    store.update(live(block(1, '甲')));
+    for (let index = 1; index <= 40; index += 1)
+      store.print({ kind: 'STEP', text: `步骤 ${String(index)}` });
+    await tick();
+    await tick();
+    // ink-testing-library has a terminal 100 columns wide and 24 rows high by default; the part
+    // drawn in place has to fit, and the steps that left it are not lost.
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('步骤 1\n');
+    expect(frame).toContain('步骤 40');
+    const inPlace = frame.slice(
+      frame.indexOf('✻ main 思考') < 0 ? 0 : frame.indexOf('▾ ✻ main 思考'),
+    );
+    expect(inPlace.split('\n').length).toBeLessThanOrEqual(24);
   });
 });

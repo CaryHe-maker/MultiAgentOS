@@ -52,7 +52,7 @@ describe('thinking streamed to the console', () => {
       // A scripted answer comes whole, inside one merge window; that it arrives in pieces for a
       // real provider is covered by the Executor's and the merger's tests.
       expect(seen.at(-1)).toBe('The user says hi. I should greet back and keep it short.');
-      expect(chat.lives.at(-1)?.thinking?.[0]).toMatchObject({ label: 'main', turn: 1 });
+      expect(chat.lives.at(-1)?.thinking?.[0]).toMatchObject({ label: 'main', number: 1 });
       // The answer is the same as without watching.
       expect(chat.printed('REPLY')).toEqual(['Hello!']);
     },
@@ -105,44 +105,36 @@ describe('thinking streamed to the console', () => {
   );
 
   it(
-    'shows the current and the previous Turn, folds older ones to a line, and /think has them all',
+    'numbers every model call, and /think has the whole of each',
     async () => {
       const { chat } = await conversation(
-        thinking('first turn thought', 'one'),
-        thinking('second turn thought', 'two'),
-        thinking('third turn thought', 'three'),
+        thinking('first thought', 'one'),
+        thinking('second thought', 'two'),
+        thinking('third thought', 'three'),
       );
       await chat.say('a');
       await chat.say('b');
-      await until(
-        () => chat.lives.at(-1)?.thinking?.some((block) => block.turn === 2) === true,
-        'the second Turn',
-      );
-      // Two Turns are in view, nothing folded yet.
-      expect(chat.printed('THINKING')).toEqual([]);
-      expect(chat.lives.at(-1)?.thinking?.map((block) => block.turn)).toEqual([1, 2]);
-
       await chat.say('c');
-      await until(
-        () => chat.printed('THINKING').some((line) => line.includes('第 1 轮思考')),
-        'the first Turn to fold',
-      );
-      // The live area now holds Turns 2 and 3 only.
       await until(
         () =>
           chat.lives
             .at(-1)
-            ?.thinking?.map((block) => block.turn)
-            .join() === '2,3',
-        'the view to move on',
+            ?.thinking?.map((block) => block.number)
+            .join() === '1,2,3',
+        'three numbered blocks',
       );
+      expect(chat.lives.at(-1)?.thinking?.map((block) => block.text)).toEqual([
+        'first thought',
+        'second thought',
+        'third thought',
+      ]);
 
       await chat.console.submit('/think 1');
-      expect(chat.printed('THINKING').at(-1)).toContain('first turn thought');
+      expect(chat.printed('THINKING').at(-1)).toContain('first thought');
       await chat.console.submit('/think');
-      expect(chat.printed('NOTICE').at(-1)).toContain('第 3 轮');
+      expect(chat.printed('NOTICE').at(-1)).toContain('第 3 段');
       await chat.console.submit('/think 9');
-      expect(chat.printed('NOTICE').at(-1)).toContain('第 9 轮没有思考内容');
+      expect(chat.printed('NOTICE').at(-1)).toContain('没有第 9 段思考');
     },
     TIMEOUT,
   );
