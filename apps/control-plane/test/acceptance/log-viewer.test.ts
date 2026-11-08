@@ -3,7 +3,7 @@
  * the log and the artifacts of a scripted conversation, also while that conversation is still
  * open, and says what it cannot show instead of failing.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,6 +78,27 @@ describe('mas log', () => {
       // The provider's usage is kept with the model's output, not on the log record.
       expect(shown.out).toMatch(/模型 main .*输入 100 输出 10/u);
       expect(shown.out).toContain('2 次模型调用');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'finds the tokens of every model call on its record in the log, as the provider counted them',
+    async () => {
+      const { chat, dataDir } = await conversation();
+      await chat.close();
+      const [sessionId] = await readdir(join(dataDir, 'sessions'));
+      const text = await readFile(
+        join(dataDir, 'sessions', sessionId ?? '', 'workflow', 'log.v1.jsonl'),
+        'utf8',
+      );
+      const turns = text
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { type: string; usage?: unknown })
+        .filter((record) => record.type === 'MODEL_TURN');
+      expect(turns).toHaveLength(2);
+      for (const turn of turns) expect(turn.usage).toEqual({ inputTokens: 100, outputTokens: 10 });
     },
     TIMEOUT,
   );

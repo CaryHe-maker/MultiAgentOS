@@ -40586,6 +40586,29 @@
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
             },
+            "usage": {
+              "type": "object",
+              "required": [
+                "inputTokens",
+                "outputTokens"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inputCacheHitTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.TokenUsage.v1"
+            },
             "changedFiles": {
               "type": "array",
               "items": {
@@ -42358,6 +42381,29 @@
                       },
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "required": [
+                        "inputTokens",
+                        "outputTokens"
+                      ],
+                      "properties": {
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "inputCacheHitTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.TokenUsage.v1"
                     },
                     "changedFiles": {
                       "type": "array",

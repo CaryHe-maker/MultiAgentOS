@@ -79,6 +79,17 @@ describe('what the runner records', () => {
   );
 
   it(
+    'measures the tokens of a run from the log the product wrote, not from anything a task says',
+    async () => {
+      const record = await runTask(failing, 1, ENV);
+      // One scripted answer of 100 input and 10 output tokens: the model turn of the log has them.
+      expect(record.metrics.modelRequests).toBe(1);
+      expect(record.metrics.tokens).toMatchObject({ input: 100, output: 10 });
+    },
+    TIMEOUT,
+  );
+
+  it(
     'marks a task failed when the steps do not finish, and still judges what is there',
     async () => {
       const stuck: TaskSpec = {

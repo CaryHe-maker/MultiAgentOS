@@ -20,6 +20,7 @@ import {
 } from '../platform-common/reason-code.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { BudgetViewSchema, TurnUsageSchema } from './budget-state.js';
+import { TokenUsageSchema } from '../executor/model-call.js';
 import { UnitOutputSchema } from './unit-io.js';
 
 /** `templateRef` is required for ORCHESTRATION; CHAT is a growth rule in code and has none. */
@@ -60,6 +61,8 @@ export const UnitReportSchema = Type.Union(
       outputRef: Type.Optional(ArtifactRefSchema),
       fullRef: Type.Optional(ArtifactRefSchema),
       reasoningRef: Type.Optional(ArtifactRefSchema),
+      /** Of a model call: what the provider counted, for the log (`MODEL_TURN.usage`). */
+      usage: Type.Optional(TokenUsageSchema),
       /** The files a write tool changed. */
       changedFiles: Type.Optional(Type.Array(text(1024))),
     }),
