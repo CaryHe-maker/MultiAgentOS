@@ -127,6 +127,9 @@ interface TimelineEntry {
 }
 
 /** Items in the order a tree is drawn: children under the parent that started them. */
+/** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
+const COMPACTION_LINE = 'compaction';
+
 function inTree<
   T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
 >(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
@@ -929,6 +932,16 @@ export class Console {
           this.#context(),
         );
         if (asked.outcome === 'REJECTED') this.#notice(describeReason(asked.reasonCode));
+        else {
+          // From now on the screen says that the system works, and for how long, like for any tool.
+          this.#activity.set(COMPACTION_LINE, {
+            agentRunId: COMPACTION_LINE,
+            label: text.system,
+            phase: text.phase.COMPACTING,
+            since: this.#now().toISOString(),
+          });
+          this.#refresh();
+        }
         break;
       }
       case '/diff':
@@ -1111,12 +1124,14 @@ export class Console {
         break;
       }
       case 'ContextCompacted':
+        this.#activity.delete(COMPACTION_LINE);
         this.#deps.view.print({
           kind: 'STEP',
           text: text.compacted(event.compactedTurns, event.prunedResults),
         });
         break;
       case 'CompactionFailed':
+        this.#activity.delete(COMPACTION_LINE);
         this.#notice(text.compactionFailed[event.reason]);
         break;
       case 'WorkspaceReverted':

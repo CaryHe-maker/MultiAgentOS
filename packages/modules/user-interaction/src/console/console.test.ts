@@ -30,6 +30,7 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     deleteSession: record('deleteSession'),
     answerAuthorization: record('answerAuthorization'),
     answerHuman: record('answerHuman'),
+    compactContext: record('compactContext'),
     pauseRun: record('pauseRun'),
     resumeRun: record('resumeRun'),
     interruptRun: record('interruptRun'),
@@ -760,6 +761,40 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
     expect(numbers.at(-1)).toBe(103);
     await t.console.submit('/think 1');
     expect(t.printed.at(-1)?.text).toContain('没有第 1 段思考');
+  });
+});
+
+describe('a compaction the user asks for', () => {
+  const running = () =>
+    ({ type: 'RunStateChanged', state: 'AWAITING_INPUT' }) as KernelToInteractionEvent;
+
+  it('shows the system at work, with the time, from the moment it is asked until it is done', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    expect(t.live()?.activity).toMatchObject([{ label: '系统', phase: '正在压缩上下文' }]);
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'USER',
+      compactedTurns: 2,
+      prunedResults: 0,
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  it('stops saying so when it did not happen, and says why', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    await t.event({
+      type: 'CompactionFailed',
+      trigger: 'USER',
+      reason: 'SUMMARY_FAILED',
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.activity).toEqual([]);
+    expect(t.printed.at(-1)?.text).toBe('摘要没有生成，没有压缩。');
   });
 });
 

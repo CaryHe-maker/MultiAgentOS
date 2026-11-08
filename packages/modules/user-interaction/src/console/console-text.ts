@@ -236,6 +236,8 @@ export const ConsoleText = Object.freeze({
       : `没有第 ${String(number)} 段思考；现有第 ${String(first)}–${String(last)} 段（编号每次启动从 1 开始，更早的已丢弃）。`,
   thinkingBlockLine: (number: number, label: string, seconds: string) =>
     `  第 ${String(number)} 段：${label} 思考 ${seconds}`,
+  /** The label of an activity line that no AgentRun stands behind. */
+  system: '系统',
   thinkingList: '思考内容（/think <N> 查看全文）：',
   /** While an agent writes its answer: the text itself comes whole, when it is published. */
   answering: (label: string, seconds: string) => `· ${label} 正在输出回答 ${seconds}`,
@@ -288,7 +290,7 @@ export const ConsoleText = Object.freeze({
     WAITING_SUBTASKS: '等待子任务',
     AWAITING_ANSWER: '等待你的回答',
     PAUSED: '已暂停',
-    COMPACTING: '压缩上下文',
+    COMPACTING: '正在压缩上下文',
     WRAPPING_UP: '收尾',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,

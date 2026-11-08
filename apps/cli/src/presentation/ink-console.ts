@@ -403,6 +403,9 @@ export function createInkConsole(
         stdout,
         exitOnCtrlC: false,
         patchConsole: false,
+        // A terminal is a terminal: Ink would otherwise draw only the last frame when the CI
+        // variable is set, which leaves a person who has it set in their shell with a dead screen.
+        interactive: Boolean(stdout.isTTY),
       }),
   };
 }
