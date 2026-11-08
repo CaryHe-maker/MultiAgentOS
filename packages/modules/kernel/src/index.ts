@@ -23,9 +23,11 @@ export {
 } from './session-kernel.js';
 export {
   agentShareFrom,
+  compactionAgentFrom,
   pinAgentFrom,
   pinnedAgentOf,
   type AgentCatalog,
+  type CompactionCatalog,
   type PinFailure,
 } from './session/pinned-agent.js';
 export type { PinnedAgent } from './session/run-attempts.js';

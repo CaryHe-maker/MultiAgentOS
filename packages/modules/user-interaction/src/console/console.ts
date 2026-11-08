@@ -193,6 +193,8 @@ export class Console {
     string,
     { agentRunId: string; startedAt: string; name: string; target?: string }
   >();
+  /** The share of its limit the context took at the last assembly, and the Session it is of. */
+  #contextShare: { readonly sessionId: string; readonly percent: number } | undefined;
   /** The Session the thinking belongs to. */
   #thinkingSession: string | undefined;
   /** Set by /fork until the draft's first prompt. */
@@ -236,6 +238,9 @@ export class Console {
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
       thinking: this.#thinkingInView(),
+      ...(this.#contextShare !== undefined && this.#contextShare.sessionId === this.#sessionId
+        ? { context: this.#contextShare.percent }
+        : {}),
     };
     this.#deps.view.update(live);
   }
@@ -283,6 +288,11 @@ export class Console {
       this.#thinking.end(stream.callId, stream.at);
       // The call is written: what comes next is told by the activity of the tool itself.
       this.#generating.delete(stream.callId);
+    } else if (stream.kind === 'CONTEXT') {
+      this.#contextShare = {
+        sessionId: stream.sessionId,
+        percent: Math.min(100, Math.round((stream.used / stream.limit) * 100)),
+      };
     } else if (stream.kind === 'TOOL') {
       this.#thinking.end(stream.callId, stream.at);
       const earlier = this.#generating.get(stream.callId);
@@ -972,6 +982,7 @@ export class Console {
           );
         else {
           // From now on the screen says that the system works, and for how long, like for any tool.
+          this.#contextShare = undefined;
           this.#activity.set(COMPACTION_LINE, {
             agentRunId: COMPACTION_LINE,
             label: text.system,
@@ -1190,6 +1201,8 @@ export class Console {
         break;
       }
       case 'ActivityEvent': {
+        // A compaction that begins (the run's own, before a call) hides the share: it is about to change.
+        if (event.phase === 'COMPACTING') this.#contextShare = undefined;
         const { unit } = event;
         const tool =
           unit === undefined

@@ -258,7 +258,7 @@ export class SessionActor {
   compactContext(run: Run): Decision {
     if (run.control.phase !== 'AWAITING_INPUT')
       return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
-    return run.work.startMainCompaction('USER')
+    return run.work.startMainCompaction()
       ? { accepted: true, control: run.control }
       : { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
   }
@@ -806,8 +806,6 @@ export class SessionActor {
       humanRequestId,
       kind: 'prompt',
     });
-    // Ahead of the next message: a long context is compacted while the user is away.
-    run.work.startMainCompaction('IDLE');
     return decision;
   }
 

@@ -270,6 +270,8 @@ function ConsoleApp({
       : live.waiting > 0
         ? `${pending.text}（另有 ${String(live.waiting)} 项等待）`
         : pending.text;
+  // How full the context is, beside the status, whatever the status is.
+  const share = live.context === undefined ? '' : ` (上下文已用${String(live.context)}%)`;
   const status = [live.status, live.hint]
     .filter((part) => part !== undefined && part.length > 0)
     .join(' · ');
@@ -359,7 +361,7 @@ function ConsoleApp({
       h(
         Text,
         { color: STATUS_COLOR, wrap: 'truncate-end' },
-        status.length > 0 ? `------ ${status} ------` : ' ',
+        status.length > 0 ? `------ ${status}${share} ------` : ' ',
       ),
     ),
     h(InputBox, { state: box }),

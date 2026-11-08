@@ -13,6 +13,7 @@ import {
   SessionRefLineSchema,
   TrustedInstructionLineSchema,
   canonicalJson,
+  commandsOffered as commandsOfferedFor,
   createProtocolRegistry,
   newId,
   sha256Hex,
@@ -49,6 +50,7 @@ import {
   createSubprocessRunner,
   createSupervisor,
   agentShareFrom,
+  compactionAgentFrom,
   pinAgentFrom,
   probeSandbox,
   type MemorySample,
@@ -228,10 +230,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   if (!sandbox.available && preset !== 'readonly')
     log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
 `);
-  // Commands are offered when they can run isolated, or when the user chose to be asked about
-  // running them without isolation (M2Design 6.2).
-  const commandsOffered =
-    sandbox.available || config.kernel.sandbox.unavailable === 'ask-unisolated';
+  const commandsOffered = commandsOfferedFor(sandbox.available, config.kernel.sandbox.unavailable);
   const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
@@ -258,6 +257,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       persistence: forNamespaces(persistence, ['kernel-core', 'kernel-execution']),
       registry,
       pinAgent: pinAgentFrom(catalog, registry),
+      compactionAgent: compactionAgentFrom(catalog, registry, {
+        preset,
+        commands: commandsOffered,
+      }),
       agentShare: agentShareFrom(catalog),
       ...(compactionPrompt === undefined ? {} : { compactionPrompt }),
       mainBudget: main.agent.budget,

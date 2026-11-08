@@ -365,7 +365,7 @@ interface SessionDeleted {
 ```ts
 interface ContextCompacted {         // 压缩生效（Workflow 已记入日志）之后发出
   type: 'ContextCompacted';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER' | 'IDLE';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   summaryRef?: ArtifactRef;          // 界面可以经 readArtifact 展示摘要；只有修剪、没有写摘要时省略
   compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）；只有修剪时为 0
   prunedResults: number;            // 被修剪的工具结果数
@@ -373,7 +373,7 @@ interface ContextCompacted {         // 压缩生效（Workflow 已记入日志�
 
 interface CompactionFailed {
   type: 'CompactionFailed';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER';   // 空闲触发的失败不通知界面（M2Design 第 9.6 节）
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   reason: 'NOTHING_TO_COMPACT' | 'BUDGET_INSUFFICIENT' | 'SUMMARY_FAILED' | 'NOT_RECORDED';
 }
 ```

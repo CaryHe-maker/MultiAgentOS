@@ -1080,8 +1080,8 @@ M1 Monitor 的结论（NORMAL 状态下普通预留必然成功、收尾预留�
 Kernel 在调用摘要之前检查：账本余额扣除 F 之后能否容纳一次摘要调用的估算；回退为纯文本的每次重试各自预留与结算，同样受这一检查约束。不能时不调用摘要，按额度到达限制的统一路径处理——该 AgentRun 进入最后一轮，
 回复或结果中注明因额度结束（收尾调用按第 9.3 节的保险组装）。SubAgent 因此总能用自己账本中的 F 做最后一次调用，以 `finish_subagent` 整理交给 main 的结果。
 Turn-chat 的下一个 Turn 有新的份额，届时可以压缩；运行级额度也已不足时，按上文以 `closeRun(BUDGET)` 结束，用户确认后在同一 Session 的新运行中继续。
-AWAITING_INPUT 时的压缩（用户的 `/compact` 与空闲时的预先压缩）没有开启中的 Turn，从运行级账本支出，扣除后余额仍须不低于 `minShare(main)`；
-不满足时 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝并告知用户，预先压缩直接不做。
+AWAITING_INPUT 时的压缩（用户的 `/compact`）没有开启中的 Turn，从运行级账本支出，扣除后余额仍须不低于 `minShare(main)`；
+不满足时 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝并告知用户。
 
 ### 7.4 时间
 
@@ -1395,10 +1395,9 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 
 | 触发 | 时机 | 说明 |
 |---|---|---|
-| 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.85） | 这是检查点：此时该 AgentRun 处在两次模型调用之间 |
+| 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.9） | 这是检查点：此时该 AgentRun 处在两次模型调用之间；因此总是用户的下一个请求发出之后、或一个多轮运行的某一轮之前才压缩，不会在一个 Turn 结束之后预先压缩 |
 | 溢出 | `model-call` 以 `CONTEXT_OVERFLOW` 返回后，Workflow 按固定规则重新提交 `context-assemble`；Kernel 记住溢出时的规模，依次以它的 85%、70%、50% 为压缩目标 | 三次压缩之后仍溢出（第四次）时不再压缩，按第 9.3 节的收尾路径结束 |
 | 用户 | `/compact`（`compactContext`），只在 Turn-chat 的 AWAITING_INPUT 时受理 | 立即执行；对象为 main 的投影；修剪之后总是继续写摘要 |
-| 空闲 | Turn-chat 的运行进入 AWAITING_INPUT 时，main 的估算超过 `idleTriggerRatio × perCallInputLimit`（缺省 0.7） | 预先压缩，避免用户发出下一条消息后还要等压缩（参考 OpenCode 的 `precompute` 与 DeepSeek Harness 的空闲维护）；代价是用户可能不再继续，这次摘要的 token 白花 |
 
 **估算**（判断是否压缩时使用，参考 OpenCode 的 `measured + estimated` 与 DeepSeek Harness 的 `tokenMeter`）：
 - 检查点（自动触发）用的是组装结果的 token 数，它已按上一次实测校准（第 9.3 节）；一次压缩内部判断"是否已够小"与"摘要请求能否装下"时，用下面这个纯函数估算（`estimateContext`）。两者都以实测为起点，用途不同，没有第三种估算。
@@ -1407,23 +1406,24 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 - 实测值来自日志，估算因此仍是日志的纯函数，进程重启后结果相同。额度预留不用这个估算（第 9.3 节"两种规模估算"）。
 
 **对象**：Turn-chat 中为 main 的投影（整个 Session，跨 WorkflowRun）；模板中的 AGENT 节点与 SubAgent（explorer、worker）为该 AgentRun 的投影（参考 OpenCode 与 DeepSeek Harness：子 Agent 是完整的会话，使用同一套压缩）。
+**压缩所用的 Agent**：所有对象走同一条路径，由目录得到 Agent（系统指令、工具、模型、单次输入上限），工具范围按 `requestedCapabilitiesOf(Agent 的能力, 预设, 命令是否提供)` 计算，这个函数与 Workflow 注册 AgentRun 时用的是同一个，所以摘要请求的开头与该 Agent 平时的请求逐字相同，能命中缓存。对象说的是哪个 Agent：main 是目录里 main 的当前定义，不需要任何 AgentRun，所以刚打开 Session、还没有运行过任何 Turn 时也能压缩；SubAgent 与模板节点是它注册时记下的 Agent 引用。AgentRun 的状态、上限、轮数，压缩一概不读；只有付钱的账本随对象而定（SubAgent 用自己的账本）。
 SubAgent 的压缩从它自己的账本支出，不动用它的收尾保留 F；额度不足以写摘要时进入最后一轮，以 `finish_subagent` 整理交给 main 的结果（第 7.3 节"压缩的额度"）。
 SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任务的结果与验收标准。
 
 **过程**
 
 ```text
-1. 挂起触发它的 context-assemble（用户与空闲触发时没有），该 AgentRun 因此没有进行中的模型调用
+1. 挂起触发它的 context-assemble（用户触发时没有），该 AgentRun 因此没有进行中的模型调用
 2. 额度检查（第 7.3 节"压缩的额度"），结果先记下：不足时只做第 4.5 步的修剪，修剪之后仍超出才以 BUDGET_WRAP_UP 返回挂起的组装，该 AgentRun 进入最后一轮
-   （用户触发时以 BUDGET_INSUFFICIENT 拒绝，空闲触发时不做）
+   （用户触发时以 BUDGET_INSUFFICIENT 拒绝）
 3. 审计 COMPACTION_STARTED；向 Workflow 发出 CompactionSourceQuery { compactionId, target }
 4. Workflow 以 reportCompactionSource 交回该对象当前的投影条目（与 context-assemble 的历史条目结构相同，带 seq、所属 Turn 与类别）
-4.5 修剪（参考 DeepSeek Harness 的 tool-result-pruner）：Kernel 先划出保留区——最近 keepTokens（缺省 20000）的原文，从完整模型轮的边界算起；
+4.5 修剪（参考 DeepSeek Harness 的 tool-result-pruner）：Kernel 先划出保留区——最近 `keepRatio × perCallInputLimit`（缺省 0.15）的原文，从完整模型轮的边界算起；
    保留区之前、预览超过 pruneMinBytes（缺省 8192）且尚未修剪过的 NORMAL 工具结果，改写为"头部 pruneHeadBytes（4096）+ 说明 + 尾部 pruneTailBytes（1024）"，
    说明写明省略的字节数与"可用 read_output 按 toolCallId 读回"；截取由 context-assemble Executor 完成（不切断 UTF-8），修剪后的结果存为长期保留的产物
    - 没有可修剪的结果时直接进入第 5 步
    - 有时向 Workflow 发出 ToolResultsPruned { compactionId, target, items }；Workflow 追加 TOOL_RESULTS_PRUNED 后以 ackCompaction 确认，Kernel 收到确认才视为生效
-   - 生效后按修剪后的条目重新估算：自动与溢出触发已低于目标、空闲触发已低于 idleTriggerRatio 时到此结束，转到第 9 步；
+   - 生效后按修剪后的条目重新估算：自动与溢出触发已低于目标时到此结束，转到第 9 步；
      否则（以及用户触发时）进入第 5 步，范围选定与摘要都使用修剪后的条目
 5. Kernel 选定范围 [fromSeq, toSeq]：从最早的 NORMAL 条目（包括先前的摘要）开始，到保留区之前最后一个完整的模型轮为止；工具调用与它的结果不拆开；
    范围内的 PINNED 条目不被取代（MAIN 的材料中，当前 Turn 的人类输入由 Workflow 标为 PINNED）；范围内的用户消息按上面的分级由 Kernel 选出要原样保留的（`keptSeqs`），其余与别的 NORMAL 条目一起被取代；
@@ -1459,14 +1459,13 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
   压缩之后新的前缀是"system 段 + 摘要 + 保留的原文"（只有修剪时为修剪后的历史），此后又只在末尾追加。
 - **被取代与被修剪的工具结果**：仍可经 `read_output` 读回（第 8.2 节）：截断过的读完整输出（未过期时），没有截断而被修剪的读原来的预览——修剪时 Execution 为这份预览补登一行完整输出的登记，它是长期保留的，不会过期。
   模型需要知道 `toolCallId`：每个工具结果末尾都写着它（第 8.2 节），修剪的说明中再写一次，摘要指令要求保留可能还需要的编号。
-- **空闲触发的规则**：
-  - 估算使用 main 最近一次模型调用的实测值，不需要先查询材料；对象只有 main；一次 AWAITING_INPUT 至多触发一次，失败不重试，也不通知界面（只写审计）；
-  - 进行中收到用户的开放输入时，新 Turn 照常开启，main 的第一次 `context-assemble` 挂起，等这次压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回）；
+- **进行中的压缩与其他操作**：
+  - 用户的 `/compact` 进行中收到开放输入时，新 Turn 照常开启，main 的第一次 `context-assemble` 挂起，等这次压缩结束（生效后以 `REJECTED(CONTEXT_COMPACTED)` 返回）；
   - 进行中收到 `/compact`、`/undo`、`/fork`、切换或关闭 Session 时，先取消这次压缩（按失败处理，不写回摘要），再执行该操作。
 - **与回退的关系**：`/undo` 回退的 Turn 与某次压缩的摘要范围相交时，Workflow 按固定规则追加 `CONTEXT_COMPACTION_REVOKED`，投影恢复为原始条目，之后需要时再压缩；
   只回退压缩范围之后的 Turn 不受影响。修剪不随之撤销：被回退 Turn 中的工具结果在投影中已只剩一条说明，其余的修剪与回退无关。
 - **Fork**：复制的日志中带着修剪与压缩记录，新 Session 沿用；修剪后的结果与摘要的产物随其他引用一起被新 Session 登记拥有（第 10.4 节）。
-- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.85、`idleTriggerRatio` 0.7、`keepTokens` 20000、`keepHumanBytes` 16384、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
+- **配置**（`KernelConfig.compaction`）：`triggerRatio` 0.9、`keepRatio` 0.15、`keepHumanBytes` 16384、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、
   `summaryMaxTokens` 16384、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、
   `summaryReasoningEffort` `none`（取值同 Agent 的思考强度；`none` 关闭思考，实测缓存命中不受影响（99.8%，见第 6 步的说明）；启动时按摘要所用模型的 `effortMapping` 校验）；初值最初是 `low` 与 8192，真实使用中 33 轮的对话两次都在写完摘要前被截断（第一次全部额度花在思考上，一个字的正文都没有；第二次写了 5711 字，缺后三节），所以改为不思考与 16384，改配置即可调整，重启后生效。
 

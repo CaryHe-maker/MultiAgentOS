@@ -208,8 +208,8 @@ export const ConsoleText = Object.freeze({
   truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
-  /** `/compact` is refused when no run waits for input, when there is nothing said yet, or one is already compacting. */
-  compactNotNow: '暂时无法压缩：请先发一条消息，或等当前运行、压缩结束后再试。',
+  /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
+  compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',

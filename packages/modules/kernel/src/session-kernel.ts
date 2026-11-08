@@ -102,6 +102,8 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** The Agent a compaction is made as, by reference; none means main (`compactionAgentFrom`). */
+  readonly compactionAgent: RunWorkDeps['compactionAgent'];
   /**
    * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without
    * it nothing is compacted, and a context that outgrows its window ends as it does without compaction.
@@ -313,6 +315,20 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       retrying: (retry) => holder.work?.retrying(retry),
       afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
       compactionDue: (info) => holder.work?.compactionDue(info) ?? false,
+      // How full the conversation's context is, told to the console beside the ordered events.
+      contextLevel: (level) => {
+        if (holder.work?.isMain(level.agentRunId) !== true) return;
+        streamToInteraction({
+          sessionId,
+          workflowRunId: host.workflowRunId,
+          agentRunId: level.agentRunId,
+          callId: level.executionId,
+          at: now().toISOString(),
+          kind: 'CONTEXT',
+          used: level.used,
+          limit: level.limit,
+        });
+      },
       modelAnswered: (info) => {
         holder.work?.modelAnswered(info);
       },
@@ -404,6 +420,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       repositoryRoot,
       repositoryExclusions: config.repositoryExclusions,
       pinAgent: deps.pinAgent,
+      compactionAgent: deps.compactionAgent,
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
       inputIsValid,
       preset: deps.preset,

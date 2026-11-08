@@ -156,9 +156,8 @@ export class CompactionProcess {
       return;
     }
     this.#ports.audit({ type: 'COMPACTION_FAILED', compactionId: id, trigger, result });
-    // An idle compaction was not asked for, so its failure is not the user's business; an
-    // automatic one that merely had nothing to do, or no budget, ends in the usual wrap-up.
-    if (trigger === 'IDLE' || result.kind === 'CANCELLED') return;
+    // An automatic one that merely had nothing to do, or no budget, ends in the usual wrap-up.
+    if (result.kind === 'CANCELLED') return;
     const reason =
       result.kind === 'FAILED'
         ? result.reason
@@ -180,14 +179,9 @@ export class CompactionProcess {
     const startTokens = request.currentTokens ?? this.#ports.sizeOf(target, entries);
     const startBytes = Math.max(totalBytes(entries), 1);
     const goal =
-      request.goalTokens ??
-      (trigger === 'IDLE'
-        ? config.idleTriggerRatio * limit
-        : trigger === 'AUTO'
-          ? config.triggerRatio * limit
-          : undefined);
+      request.goalTokens ?? (trigger === 'AUTO' ? config.triggerRatio * limit : undefined);
     const planConfig = {
-      keepTokens: config.keepTokens,
+      keepTokens: Math.floor(config.keepRatio * limit),
       keepHumanBytes: config.keepHumanBytes,
       pruneMinBytes: config.pruneMinBytes,
       minReplacedTokens: Math.floor(config.summaryMaxTokens / 8),

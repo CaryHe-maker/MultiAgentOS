@@ -150,3 +150,29 @@ describe('thinking streamed to the console', () => {
     TIMEOUT,
   );
 });
+
+describe('how full the context is, from the Kernel to the console', () => {
+  it(
+    'is told after each assembly of main, never before the first, and is a share of its limit',
+    async () => {
+      const { chat } = await conversation(thinking('a thought', 'one'), thinking('another', 'two'));
+      await chat.say('hi');
+      await until(() => chat.printed('REPLY').length === 1, 'the first reply');
+      await until(
+        () => chat.lives.some((live) => live.context !== undefined),
+        'the share of the context',
+      );
+      // Nothing of the kind before the first assembly of this Session.
+      expect(chat.lives.find((live) => live.context !== undefined)).toBeDefined();
+      const first = chat.lives.findIndex((live) => live.context !== undefined);
+      expect(chat.lives.slice(0, first).every((live) => live.context === undefined)).toBe(true);
+      const shares = chat.lives.flatMap((live) =>
+        live.context === undefined ? [] : [live.context],
+      );
+      expect(shares.every((share) => share >= 0 && share <= 100)).toBe(true);
+      // A small conversation takes a small share of the limit of main.
+      expect(Math.max(...shares)).toBeLessThan(5);
+    },
+    TIMEOUT,
+  );
+});

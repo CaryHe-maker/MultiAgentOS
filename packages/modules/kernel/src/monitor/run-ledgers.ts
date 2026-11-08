@@ -172,10 +172,10 @@ export class RunLedgers {
   }
 
   /**
-   * A ledger of its own for a compaction while no Turn is open (`/compact`, an idle compaction;
-   * Kernel/Monitor 3.4). The share is taken out of the run's balance, which must stay at least
-   * `minShare(main)`, and what is not used goes back when it is closed. It can sit beside a Turn
-   * ledger, since a Turn may open while an idle compaction is still going.
+   * A ledger of its own for a compaction while no Turn is open (`/compact`; Kernel/Monitor 3.4).
+   * The share is taken out of the run's balance, which must stay at least `minShare(main)`, and
+   * what is not used goes back when it is closed. It can sit beside a Turn ledger, since a Turn
+   * may open while the compaction is still going.
    */
   openCompactionLedger(estimatedTokens: number):
     | { readonly ok: false; readonly reasonCode: 'BUDGET_INSUFFICIENT' }

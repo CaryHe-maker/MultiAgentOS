@@ -64,6 +64,28 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[38;2;249;241;165m已排队 1 条');
   });
 
+  it('says how full the context is on the status line, in whatever state it is', async () => {
+    const { store, ui } = setup();
+    store.update({ status: '等待输入', activity: [], waiting: 0, queued: [], context: 30 });
+    await tick();
+    expect(ui.lastFrame()).toContain('------ 等待输入 (上下文已用30%) ------');
+    store.update({
+      status: '运行中',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      hint: '再按一次 Ctrl+C 退出',
+      context: 92,
+    });
+    await tick();
+    expect(ui.lastFrame()).toContain('------ 运行中 · 再按一次 Ctrl+C 退出 (上下文已用92%) ------');
+    // Without a share, the line is as it was.
+    store.update({ status: '等待输入', activity: [], waiting: 0, queued: [] });
+    await tick();
+    expect(ui.lastFrame()).toContain('------ 等待输入 ------');
+    expect(ui.lastFrame()).not.toContain('上下文已用');
+  });
+
   it('writes the thinking in grey, while it streams and after', async () => {
     const { store, ui } = setup();
     const block = (state: 'OPEN' | 'DONE') => ({

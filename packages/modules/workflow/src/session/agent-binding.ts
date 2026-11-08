@@ -1,6 +1,6 @@
 import {
-  capabilitiesUnderPreset,
   canonicalJson,
+  requestedCapabilitiesOf,
   sha256Hex,
   type ExecutionKind,
   type PinnedDefinitionSet,
@@ -29,10 +29,10 @@ export function agentBindingOf(
   options: { readonly commands?: boolean } = {},
 ): AgentBinding {
   const { agent, model, units, tools } = set;
-  const requestedCapabilities = capabilitiesUnderPreset(agent.capabilities, preset).filter(
-    (capability) =>
-      options.commands !== false ||
-      (capability !== 'command.exec' && capability !== 'command.network'),
+  const requestedCapabilities = requestedCapabilitiesOf(
+    agent.capabilities,
+    preset,
+    options.commands !== false,
   );
   const offered = units.filter((unit) =>
     unit.protectedCapabilities.every((c) => requestedCapabilities.includes(c)),

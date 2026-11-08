@@ -87,6 +87,16 @@ export interface RunExecutionDeps {
   readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   /** Decided at once, inside the actor: is a compaction due for this assembly? */
   readonly compactionDue?: (info: AssemblyInfo) => boolean;
+  /**
+   * An ordinary assembly that needs no compaction came back with this size: how full the context
+   * of its AgentRun is. Not a fact, nothing waits for it.
+   */
+  readonly contextLevel?: (level: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+    readonly used: number;
+    readonly limit: number;
+  }) => void;
   /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
   readonly modelAnswered?: (info: {
     readonly agentRunId: string;
@@ -565,7 +575,17 @@ export class RunExecution {
               tokenBudget: perCallInputLimit,
             }
           : undefined;
-    return info !== undefined && compactionDue(info) ? info : undefined;
+    if (info === undefined) return undefined;
+    if (compactionDue(info)) return info;
+    // An assembly that is made again after a compaction tells its size then, not this one.
+    if (info.kind === 'COMPLETED')
+      this.#deps.contextLevel?.({
+        executionId: fact.executionId,
+        agentRunId: info.agentRunId,
+        used: info.tokenCount,
+        limit: info.tokenBudget,
+      });
+    return undefined;
   }
 
   /** Runs outside the actor; what comes of it goes back in as a message of the actor. */

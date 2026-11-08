@@ -49,10 +49,8 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     }),
   }),
   compaction: Object.freeze({
-    triggerRatio: 0.85,
-    idleTriggerRatio: 0.7,
-    idleEnabled: true,
-    keepTokens: 20_000,
+    triggerRatio: 0.9,
+    keepRatio: 0.15,
     keepHumanBytes: 16_384,
     pruneMinBytes: 8_192,
     pruneHeadBytes: 4_096,

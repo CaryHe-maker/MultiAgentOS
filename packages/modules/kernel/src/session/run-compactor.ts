@@ -90,11 +90,14 @@ export interface RunCompactorDeps {
   readonly audit: (entry: object) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
-  /** The AgentRun a target is, and whether a Turn pays for it; undefined when it is gone. */
+  /**
+   * The Agent a target is compacted as (one lookup for every target), and the AgentRun that pays
+   * for it from a ledger of its own, if any; undefined when the Agent is not known.
+   */
   readonly agentOf: (target: CompactionTarget) =>
     | {
         readonly agent: PinnedAgent;
-        /** The Turn ledger is open and main (or this AgentRun) pays from it. */
+        /** Set when this AgentRun pays from its own ledger (a SubAgent); otherwise the run or Turn pays. */
         readonly agentRunId?: string;
       }
     | undefined;

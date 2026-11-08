@@ -1045,3 +1045,59 @@ describe('an answer being written for the user (Phase1Console 4)', () => {
     expect(t.live()?.activity).toEqual([]);
   });
 });
+
+describe('how full the context is', () => {
+  const level = (used: number, limit = 1000, sessionId = SESSION) =>
+    ({
+      sessionId,
+      workflowRunId: RUN,
+      agentRunId: 'arn_1',
+      callId: 'exe_1',
+      at: new Date(0).toISOString(),
+      kind: 'CONTEXT',
+      used,
+      limit,
+    }) as Parameters<Console['handleModelStream']>[0];
+  const awaitingInput = {
+    type: 'RunStateChanged',
+    state: 'AWAITING_INPUT',
+  } as KernelToInteractionEvent;
+
+  it('is not there before the first assembly, then is the share of the limit in whole percent', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(awaitingInput);
+    expect(t.live()?.context).toBeUndefined();
+    t.console.handleModelStream(level(304));
+    expect(t.live()?.context).toBe(30);
+    t.console.handleModelStream(level(5000));
+    expect(t.live()?.context).toBe(100);
+  });
+
+  it('is not shown for another Session', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    t.console.handleModelStream(level(300, 1000, 'ses_other'));
+    expect(t.live()?.context).toBeUndefined();
+  });
+
+  it('goes when a compaction begins, whoever began it, and comes back with the next assembly', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(awaitingInput);
+    t.console.handleModelStream(level(300));
+    await t.console.submit('/compact');
+    expect(t.live()?.context).toBeUndefined();
+    t.console.handleModelStream(level(100));
+    expect(t.live()?.context).toBe(10);
+    // The run's own compaction, before a call.
+    await t.event({
+      type: 'ActivityEvent',
+      agentRunId: 'arn_1',
+      label: 'main',
+      phase: 'COMPACTING',
+      at: new Date(0).toISOString(),
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.context).toBeUndefined();
+  });
+});

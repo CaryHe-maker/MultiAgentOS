@@ -97,6 +97,12 @@ export interface LiveState {
   readonly hint?: string;
   /** Every block the console keeps, oldest first. */
   readonly thinking?: readonly ThinkingView[];
+  /**
+   * How much of its limit the context of the conversation takes, in whole percent, as the last
+   * assembly counted it. Absent when there has been none since the Session was entered, or since
+   * a compaction began.
+   */
+  readonly context?: number;
 }
 
 export interface ConsoleView {

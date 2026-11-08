@@ -9162,8 +9162,7 @@
           "enum": [
             "AUTO",
             "OVERFLOW",
-            "USER",
-            "IDLE"
+            "USER"
           ]
         },
         "summaryRef": {
@@ -16891,8 +16890,7 @@
                   "enum": [
                     "AUTO",
                     "OVERFLOW",
-                    "USER",
-                    "IDLE"
+                    "USER"
                   ]
                 },
                 "summaryRef": {
@@ -17214,6 +17212,54 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind",
+            "used",
+            "limit"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "CONTEXT"
+            },
+            "used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false
@@ -46172,9 +46218,7 @@
           "type": "object",
           "required": [
             "triggerRatio",
-            "idleTriggerRatio",
-            "idleEnabled",
-            "keepTokens",
+            "keepRatio",
             "keepHumanBytes",
             "pruneMinBytes",
             "pruneHeadBytes",
@@ -46190,17 +46234,10 @@
               "exclusiveMinimum": 0,
               "maximum": 1
             },
-            "idleTriggerRatio": {
+            "keepRatio": {
               "type": "number",
               "exclusiveMinimum": 0,
               "maximum": 1
-            },
-            "idleEnabled": {
-              "type": "boolean"
-            },
-            "keepTokens": {
-              "type": "integer",
-              "minimum": 1
             },
             "keepHumanBytes": {
               "type": "integer",
@@ -47062,9 +47099,7 @@
               "type": "object",
               "required": [
                 "triggerRatio",
-                "idleTriggerRatio",
-                "idleEnabled",
-                "keepTokens",
+                "keepRatio",
                 "keepHumanBytes",
                 "pruneMinBytes",
                 "pruneHeadBytes",
@@ -47080,17 +47115,10 @@
                   "exclusiveMinimum": 0,
                   "maximum": 1
                 },
-                "idleTriggerRatio": {
+                "keepRatio": {
                   "type": "number",
                   "exclusiveMinimum": 0,
                   "maximum": 1
-                },
-                "idleEnabled": {
-                  "type": "boolean"
-                },
-                "keepTokens": {
-                  "type": "integer",
-                  "minimum": 1
                 },
                 "keepHumanBytes": {
                   "type": "integer",

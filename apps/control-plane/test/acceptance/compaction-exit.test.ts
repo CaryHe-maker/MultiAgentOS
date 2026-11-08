@@ -18,6 +18,7 @@ import {
   type ChatOptions,
   type ScriptedChat,
   agentOfRequest,
+  listSessions,
   until,
 } from './chat-driver.js';
 
@@ -50,21 +51,27 @@ async function chatOn(
   options: {
     files?: Record<string, string>;
     compaction?: Record<string, unknown>;
+    /** Another process on the place an earlier one left: the same data and the same repository. */
+    place?: { dataDir: string; repository: string };
   } & Partial<ChatOptions> = {},
 ): Promise<{ chat: Chat; dataDir: string; repository: string }> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-compaction-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-compaction-repo-'));
-  directories.push(dataDir, repository);
-  for (const [name, content] of Object.entries(
-    options.files ?? {
-      'a.txt': 'alpha\n'.repeat(60),
-      'b.txt': 'beta\n'.repeat(60),
-      'c.txt': 'gamma\n',
-    },
-  ))
-    await writeFile(join(repository, name), content);
+  const dataDir = options.place?.dataDir ?? (await mkdtemp(join(tmpdir(), 'mas-compaction-data-')));
+  const repository =
+    options.place?.repository ?? (await mkdtemp(join(tmpdir(), 'mas-compaction-repo-')));
+  if (options.place === undefined) {
+    directories.push(dataDir, repository);
+    for (const [name, content] of Object.entries(
+      options.files ?? {
+        'a.txt': 'alpha\n'.repeat(60),
+        'b.txt': 'beta\n'.repeat(60),
+        'c.txt': 'gamma\n',
+      },
+    ))
+      await writeFile(join(repository, name), content);
+  }
   const { compaction, ...rest } = options;
   delete (rest as { files?: unknown }).files;
+  delete (rest as { place?: unknown }).place;
   const chat = await openChat({
     dataDir,
     repository,
@@ -77,8 +84,7 @@ async function chatOn(
           ...config.kernel.compaction,
           // Anything old is worth compacting; a context of a few rounds has something old.
           triggerRatio: 0.0001,
-          idleEnabled: false,
-          keepTokens: 30,
+          keepRatio: 0.00004,
           keepHumanBytes: 200,
           pruneMinBytes: 100,
           pruneHeadBytes: 40,
@@ -406,36 +412,47 @@ describe('L10: a summary request that is too big', () => {
   );
 });
 
-describe('L11: compacting while the run waits for the user', () => {
+describe('L11: /compact in a Session that was just opened', () => {
   it(
-    'starts by itself, and a message that comes meanwhile waits for it',
+    'compacts right away, as it does in the middle of a conversation, with no AgentRun of this process',
     async () => {
-      let release: () => void = () => undefined;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
+      // A conversation with history in it; nothing compacts by itself.
+      const earlier = scriptedAgents({
+        main: [read('a.txt'), read('b.txt'), reply('both read')],
+        summary: [],
       });
-      const provider = scriptedAgents({
-        main: [read('a.txt'), reply('a read'), reply('and the next')],
-        summary: [{ wait: held, then: text(SUMMARY) }],
+      const first = await chatOn(earlier, { compaction: { triggerRatio: 0.99 } });
+      await first.chat.say('read the two files');
+      await awaitingInput(first.chat);
+      await first.chat.close();
+      open.splice(open.indexOf(first.chat), 1);
+
+      // A new process opens it and, before anything is said, asks for a compaction.
+      const later = scriptedAgents({ main: [reply('and now')], summary: [text(SUMMARY)] });
+      const { chat, dataDir } = await chatOn(later, {
+        place: { dataDir: first.dataDir, repository: first.repository },
+        compaction: { triggerRatio: 0.99 },
       });
-      const { chat, dataDir } = await chatOn(provider, {
-        compaction: { triggerRatio: 0.99, idleEnabled: true, idleTriggerRatio: 0.0001 },
-      });
-      await chat.say('read a.txt');
+      await listSessions(chat);
+      await chat.console.submit('/resume 1');
       await until(
-        () => provider.requests.some((r) => textOf(r.messages.at(-1)).includes('Use exactly')),
-        'the summary request of the idle compaction',
+        () => chat.printed('NOTICE').some((text) => text.includes('已打开')),
+        'the Session to be open',
       );
       await awaitingInput(chat);
-      await chat.console.submit('go on');
-      // The message is not handed to the model while the summary is out.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(chat.printed('REPLY')).toEqual(['a read']);
-      release();
-      await until(() => chat.printed('REPLY').length === 2, 'the reply after the compaction');
-      const types = (await logOf(dataDir)).map((r) => r.type);
-      expect(types.indexOf('CONTEXT_COMPACTED')).toBeLessThan(types.lastIndexOf('MODEL_TURN'));
-      expect(everything(provider.requests.at(-1))).toContain('Goal and requirements');
+      await chat.console.submit('/compact');
+      await until(
+        () => chat.printed('STEP').some((text) => text.includes('已压缩较早的对话')),
+        'the compaction',
+      );
+      // Nothing was said to the model before it: the one request so far is the summary request.
+      expect(later.requests).toHaveLength(1);
+      expect(everything(later.requests[0])).toContain('Use exactly');
+      expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(true);
+
+      await chat.say('go on');
+      expect(chat.printed('REPLY')).toContain('and now');
+      expect(everything(later.requests.at(-1))).toContain('Goal and requirements');
     },
     TIMEOUT,
   );

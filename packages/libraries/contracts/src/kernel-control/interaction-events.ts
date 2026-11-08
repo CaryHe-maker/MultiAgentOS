@@ -290,11 +290,11 @@ export const ContextCompactedSchema = closed(
 );
 export type ContextCompacted = Static<typeof ContextCompactedSchema>;
 
-/** A compaction the user or the run asked for did not happen; an idle one is never reported. */
+/** A compaction the user or the run asked for did not happen. */
 export const CompactionFailedSchema = closed(
   {
     type: Type.Literal('CompactionFailed'),
-    trigger: Type.Enum(COMPACTION_TRIGGERS.filter((trigger) => trigger !== 'IDLE')),
+    trigger: Type.Enum(COMPACTION_TRIGGERS),
     reason: Type.Enum(COMPACTION_FAILURES),
   },
   'kernel.control.CompactionFailed.v1',

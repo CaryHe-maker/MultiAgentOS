@@ -66,7 +66,7 @@ M2Design 第 7.3 节"压缩的额度"：
 - 修剪不调用模型，不预留；只有摘要请求预留，纯文本回退的每次请求各自预留与结算；
 - 预留量 = 摘要请求的输入估算（与普通调用的预留同一方法，不用压缩检查点的实测加估算）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不写摘要，
   按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮；SubAgent 以 `finish_subagent` 结束）；
-- 用户 `/compact` 与空闲时的预先压缩没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则 `/compact` 以 `BUDGET_INSUFFICIENT` 拒绝，预先压缩不做；
+- 用户 `/compact` 没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝；
 - 结算按实际用量（M1 的方式）；缓存命中的输入按模型定义的计价计入。
 
 ## 4. 资源上限

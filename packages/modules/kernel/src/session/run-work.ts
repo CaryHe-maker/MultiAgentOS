@@ -144,6 +144,11 @@ export interface RunWorkDeps {
   readonly repositoryRoot: string;
   readonly repositoryExclusions: readonly string[];
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** The Agent a compaction is made as, by reference; none means main (`compactionAgentFrom`). */
+  readonly compactionAgent: (ref?: {
+    readonly id: string;
+    readonly version: string;
+  }) => PinnedAgent | undefined;
   /** The share and the budget of an Agent a task names; absent: nothing can be delegated. */
   readonly agentShare?: (
     ref: ReserveDelegationRequest['tasks'][number]['agentRef'],
@@ -985,20 +990,19 @@ export class RunWork {
   compactionAgent(
     target: CompactionTarget,
   ): { readonly agent: PinnedAgent; readonly agentRunId?: string } | undefined {
-    if (target.kind === 'AGENT_RUN') {
-      const record = this.#agentRuns.get(target.agentRunId);
-      if (record === undefined) return undefined;
-      // A SubAgent pays from its own ledger; a top-level AgentRun from the Turn's.
-      return {
-        agent: record.agent,
-        ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }),
-      };
+    // One way to find the Agent of every target (`compactionAgentFrom`). The target says which:
+    // main is the Agent of the Session's Turn-chat, an AgentRun is the Agent it was registered as.
+    // Which AgentRun pays for it is the one thing that is not the Agent's.
+    if (target.kind === 'MAIN') {
+      const agent = this.#deps.compactionAgent();
+      return agent === undefined ? undefined : { agent };
     }
-    const mains = [...this.#agentRuns.values()].filter(
-      (record) => record.parent === undefined && record.agent.id === 'main',
-    );
-    const main = mains.at(-1);
-    return main === undefined ? undefined : { agent: main.agent };
+    const record = this.#agentRuns.get(target.agentRunId);
+    if (record === undefined) return undefined;
+    const agent = this.#deps.compactionAgent(record.agentRef);
+    if (agent === undefined) return undefined;
+    // A SubAgent pays from its own ledger; a top-level AgentRun from the Turn's.
+    return { agent, ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }) };
   }
 
   #targetOf(agentRunId: string): CompactionTarget {
@@ -1022,7 +1026,7 @@ export class RunWork {
     const { compactor, compaction } = this.#deps;
     if (compactor === undefined || compaction === undefined) return undefined;
     const target = this.#targetOf(info.agentRunId);
-    // What an idle or a user's compaction of the same context is doing changes what this
+    // What a user's compaction of the same context is doing changes what this
     // assembly was made of: wait for it, and have the assembly made again.
     const going = compactor.runningFor(target);
     if (going !== undefined) return { kind: 'WAIT', going };
@@ -1117,18 +1121,23 @@ export class RunWork {
   }
 
   /**
-   * main's context compacted while the run awaits input: `/compact` (the user asked) or ahead of
-   * time (idle). Not awaited by the actor; what comes of it reaches Workflow and the interface as
-   * events. Nothing happens without a main to compact, or when idle compaction is off.
+   * `/compact`: the context of main is compacted while the run awaits input. Not awaited by the
+   * actor; what comes of it reaches Workflow and the interface as events. It needs the Agent main
+   * and nothing else: not an AgentRun of it, so it works as well right after a Session is opened.
+   * Refused while main is being compacted already.
    */
-  startMainCompaction(trigger: 'USER' | 'IDLE'): boolean {
+  startMainCompaction(): boolean {
     const { compactor, compaction } = this.#deps;
     if (compactor === undefined || compaction === undefined) return false;
-    if (trigger === 'IDLE' && !compaction.idleEnabled) return false;
     if (this.compactionAgent({ kind: 'MAIN' }) === undefined) return false;
     if (compactor.runningFor({ kind: 'MAIN' }) !== undefined) return false;
-    void compactor.run({ trigger, target: { kind: 'MAIN' } }).catch(() => undefined);
+    void compactor.run({ trigger: 'USER', target: { kind: 'MAIN' } }).catch(() => undefined);
     return true;
+  }
+
+  /** Is this AgentRun the one whose context the Session's conversation is made of (main)? */
+  isMain(agentRunId: string): boolean {
+    return this.#targetOf(agentRunId).kind === 'MAIN';
   }
 
   /** A pause, an abort, `/undo`, `/fork` or the end of the run stops what compacts. */
