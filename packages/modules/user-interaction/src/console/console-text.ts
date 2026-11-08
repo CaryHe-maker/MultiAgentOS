@@ -236,6 +236,8 @@ export const ConsoleText = Object.freeze({
   thinkingBlockLine: (number: number, label: string, seconds: string) =>
     `  第 ${String(number)} 段：${label} 思考 ${seconds}`,
   thinkingList: '思考内容（/think <N> 查看全文）：',
+  /** While an agent writes its answer: the text itself comes whole, when it is published. */
+  answering: (label: string, seconds: string) => `· ${label} 正在输出回答 ${seconds}`,
   /** The one line a block that is no longer in view leaves in the transcript. */
   thinkingFolded: (number: number, label: string, seconds: string) =>
     `✻ ${label} 思考 ${seconds}（/think ${String(number)} 展开）`,

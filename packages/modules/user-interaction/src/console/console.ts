@@ -25,9 +25,9 @@ import type {
   PendingItem,
   QuestionField,
   ThinkingView,
-  WritingView,
+  AnsweringView,
 } from './console-view.js';
-import { THINKING_MAX_CHARS, ThinkingLog, type ThinkingBlock } from './thinking-log.js';
+import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -183,10 +183,10 @@ export class Console {
   #sessionId: string | undefined;
   /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
   readonly #thinking = new ThinkingLog();
-  /** The text agents are writing for the user, by the call that writes it. */
-  readonly #writing = new Map<
+  /** The answers agents are writing for the user, by the call that writes them; only that they are. */
+  readonly #answering = new Map<
     string,
-    { agentRunId: string; label: string; text: string; state: 'OPEN' | 'DONE' }
+    { agentRunId: string; label: string; startedAt: string; endedAt?: string }
   >();
   /** The Session the thinking belongs to. */
   #thinkingSession: string | undefined;
@@ -228,7 +228,7 @@ export class Console {
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
       thinking: this.#thinkingInView(),
-      writing: this.#writingInView(),
+      answering: this.#answeringInView(),
     };
     this.#deps.view.update(live);
   }
@@ -249,12 +249,12 @@ export class Console {
     }));
   }
 
-  #writingInView(): WritingView[] {
-    return [...this.#writing].map(([id, block]) => ({
+  #answeringInView(): AnsweringView[] {
+    return [...this.#answering].map(([id, block]) => ({
       id,
       label: block.label,
-      state: block.state,
-      text: block.text,
+      startedAt: block.startedAt,
+      ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
     }));
   }
 
@@ -268,7 +268,7 @@ export class Console {
     if (this.#thinkingSession === sessionId) return;
     this.#thinkingSession = sessionId;
     this.#thinking.clear();
-    this.#writing.clear();
+    this.#answering.clear();
   }
 
   /**
@@ -282,18 +282,19 @@ export class Console {
     const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
     if (stream.kind === 'END') {
       this.#thinking.end(stream.callId, stream.at);
-      const written = this.#writing.get(stream.callId);
-      if (written !== undefined) written.state = 'DONE';
-    } else if (stream.kind === 'TEXT') {
-      let block = this.#writing.get(stream.callId);
-      if (block === undefined) {
+      const answer = this.#answering.get(stream.callId);
+      if (answer !== undefined) answer.endedAt = stream.at;
+    } else if (stream.kind === 'ANSWER') {
+      if (!this.#answering.has(stream.callId)) {
         // The next call of an agent replaces what it wrote before.
-        for (const [id, earlier] of this.#writing)
-          if (earlier.agentRunId === stream.agentRunId) this.#writing.delete(id);
-        block = { agentRunId: stream.agentRunId, label, text: '', state: 'OPEN' };
-        this.#writing.set(stream.callId, block);
+        for (const [id, earlier] of this.#answering)
+          if (earlier.agentRunId === stream.agentRunId) this.#answering.delete(id);
+        this.#answering.set(stream.callId, {
+          agentRunId: stream.agentRunId,
+          label,
+          startedAt: stream.at,
+        });
       }
-      if (block.text.length < THINKING_MAX_CHARS) block.text += terminalText(stream.delta);
     } else
       this.#thinking.append(
         {
@@ -1040,7 +1041,7 @@ export class Console {
         this.#thinkingBelongsTo(this.#sessionId);
         // Nothing streams once the run waits for the user or is over: no block stays open.
         if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED')
-          this.#writing.clear();
+          this.#answering.clear();
         const at = this.#now().toISOString();
         if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
           this.#thinking.closeAll(at, 'DONE');
@@ -1183,7 +1184,7 @@ export class Console {
       }
       case 'MessagePublished':
         // What was being written is now the message itself.
-        this.#writing.clear();
+        this.#answering.clear();
         await this.#published(event.kind, event.agentLabel, event.messageRef);
         if (event.wrapUpReason !== undefined)
           this.#deps.view.print({

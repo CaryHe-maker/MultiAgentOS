@@ -189,13 +189,11 @@ async function callModel(
     }
   };
   const specs = toolSpecsOf(pack);
-  // The tools whose text argument is text for the user (a reply) are shown as it is written.
-  const liveText = new Map(
-    specs.flatMap((spec) =>
-      spec.liveText === undefined ? [] : [[spec.name, spec.liveText] as const],
-    ),
+  // Calling a tool that answers the user (the reply) is told as the start of the answer.
+  const answerTools = new Set(
+    specs.filter((spec) => spec.answer === true).map((spec) => spec.name),
   );
-  const tap = environment.progress === undefined ? undefined : streamTap(tell, liveText);
+  const tap = environment.progress === undefined ? undefined : streamTap(tell, answerTools);
   const model = createLanguageModel(
     scope,
     apiKey,

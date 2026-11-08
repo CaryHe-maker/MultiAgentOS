@@ -577,13 +577,13 @@ describe('MODEL thinking reaches the watcher before the answer does', () => {
   });
 });
 
-describe('MODEL shows the text of a reply as the model writes it', () => {
+describe('MODEL tells that the answer for the user has begun', () => {
   const REPLY = {
     name: 'reply',
     description: 'Reply to the user.',
     parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     purpose: 'CONTROL' as const,
-    liveText: 'text',
+    answer: true,
   };
 
   async function replyPack(): Promise<AssembleContextPack> {
@@ -619,7 +619,7 @@ describe('MODEL shows the text of a reply as the model writes it', () => {
       {},
     );
 
-  it('tells the text while it is written, and the result is the same as without watching', async () => {
+  it('tells once that the answer began, and the result is the same as without watching', async () => {
     const contextPack = await replyPack();
     const make = (progress?: ExecutorEnvironment['progress']) =>
       createModelCallExecutor({
@@ -635,13 +635,12 @@ describe('MODEL shows the text of a reply as the model writes it', () => {
     const events: { kind: string; delta?: string }[] = [];
     const watched = await make((event) => void events.push(event));
     expect(watched).toEqual(plain);
-    const written = events.filter((event) => event.kind === 'TEXT');
-    expect(written.length).toBeGreaterThan(1);
-    expect(written.map((event) => event.delta).join('')).toBe('Hello,\n"friend" 你好 😀!');
+    expect(events.filter((event) => event.kind === 'ANSWER')).toHaveLength(1);
+    expect(events.some((event) => event.delta !== undefined)).toBe(false);
     expect(events.at(-1)).toEqual({ kind: 'END' });
   });
 
-  it('shows nothing of a tool that is not marked as text for the user', async () => {
+  it('tells nothing of a tool that is not marked as the answer to the user', async () => {
     const contextPack = await replyPack();
     const events: string[] = [];
     await createModelCallExecutor({
@@ -654,6 +653,6 @@ describe('MODEL shows the text of a reply as the model writes it', () => {
       { contextPack, final: false },
       environmentFor('MODEL', MODEL_SCOPE, { progress: (event) => void events.push(event.kind) }),
     );
-    expect(events).not.toContain('TEXT');
+    expect(events).not.toContain('ANSWER');
   });
 });

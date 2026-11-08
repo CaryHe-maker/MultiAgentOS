@@ -763,30 +763,20 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
   });
 });
 
-describe('text an agent is writing for the user (Phase1Console 4)', () => {
-  const written = (callId: string, delta: string, agentRunId = 'arn_1') =>
+describe('an answer being written for the user (Phase1Console 4)', () => {
+  const stream = (callId: string, kind: 'ANSWER' | 'END', at = 0, agentRunId = 'arn_1') =>
     ({
       sessionId: SESSION,
       workflowRunId: RUN,
       agentRunId,
       callId,
-      at: new Date(0).toISOString(),
-      kind: 'TEXT',
-      delta,
-    }) as Parameters<Console['handleModelStream']>[0];
-  const end = (callId: string) =>
-    ({
-      sessionId: SESSION,
-      workflowRunId: RUN,
-      agentRunId: 'arn_1',
-      callId,
-      at: new Date(0).toISOString(),
-      kind: 'END',
+      at: new Date(at).toISOString(),
+      kind,
     }) as Parameters<Console['handleModelStream']>[0];
   const running = (turnId: string) =>
     ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
 
-  it('shows the text as it grows, under the label of the agent that writes it', async () => {
+  it('knows that it is being written, since when, under the label of the agent that writes it', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event({
@@ -797,25 +787,29 @@ describe('text an agent is writing for the user (Phase1Console 4)', () => {
       at: new Date(0).toISOString(),
     });
     await t.event(running('trn_1'));
-    t.console.handleModelStream(written('exe_1', 'Hel'));
-    expect(t.live()?.writing).toEqual([
-      { id: 'exe_1', label: 'planner', state: 'OPEN', text: 'Hel' },
+    t.console.handleModelStream(stream('exe_1', 'ANSWER', 1000));
+    expect(t.live()?.answering).toEqual([
+      { id: 'exe_1', label: 'planner', startedAt: new Date(1000).toISOString() },
     ]);
-    t.console.handleModelStream(written('exe_1', 'lo!'));
-    t.console.handleModelStream(end('exe_1'));
-    expect(t.live()?.writing).toEqual([
-      { id: 'exe_1', label: 'planner', state: 'DONE', text: 'Hello!' },
+    t.console.handleModelStream(stream('exe_1', 'END', 4000));
+    expect(t.live()?.answering).toEqual([
+      {
+        id: 'exe_1',
+        label: 'planner',
+        startedAt: new Date(1000).toISOString(),
+        endedAt: new Date(4000).toISOString(),
+      },
     ]);
   });
 
-  it('keeps the text after the call ends, until the message itself is published', async () => {
+  it('keeps the line after the call ends, until the message itself is published', async () => {
     const artifacts = new Map<string, string>();
     const u = setup({ artifacts });
     await u.console.submit('hi');
     await u.event(running('trn_1'));
-    u.console.handleModelStream(written('exe_1', 'Hello!'));
-    u.console.handleModelStream(end('exe_1'));
-    expect(u.live()?.writing).toHaveLength(1);
+    u.console.handleModelStream(stream('exe_1', 'ANSWER'));
+    u.console.handleModelStream(stream('exe_1', 'END'));
+    expect(u.live()?.answering).toHaveLength(1);
     const ref = testArtifactRef('Hello!');
     artifacts.set(ref.artifactId, 'Hello!');
     await u.event({
@@ -824,27 +818,26 @@ describe('text an agent is writing for the user (Phase1Console 4)', () => {
       agentLabel: 'main',
       messageRef: ref,
     } as unknown as KernelToInteractionEvent);
-    expect(u.live()?.writing).toEqual([]);
+    expect(u.live()?.answering).toEqual([]);
     expect(u.printed.some((entry) => entry.kind === 'REPLY')).toBe(true);
   });
 
-  it('lets the next call of an agent replace what it wrote before', async () => {
+  it('lets the next call of an agent replace the line of the one before', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event(running('trn_1'));
-    t.console.handleModelStream(written('exe_1', 'I will look.'));
-    t.console.handleModelStream(end('exe_1'));
-    t.console.handleModelStream(written('exe_2', 'Here is the answer.'));
-    expect(t.live()?.writing?.map((block) => block.text)).toEqual(['Here is the answer.']);
+    t.console.handleModelStream(stream('exe_1', 'ANSWER'));
+    t.console.handleModelStream(stream('exe_1', 'END'));
+    t.console.handleModelStream(stream('exe_2', 'ANSWER'));
+    expect(t.live()?.answering?.map((line) => line.id)).toEqual(['exe_2']);
   });
 
-  it('is gone when the run waits for the user, and does not leak control characters', async () => {
+  it('is gone when the run waits for the user', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event(running('trn_1'));
-    t.console.handleModelStream(written('exe_1', 'ok\u001b[2J'));
-    expect(t.live()?.writing?.[0]?.text).toBe('ok\\u001b[2J');
+    t.console.handleModelStream(stream('exe_1', 'ANSWER'));
     await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
-    expect(t.live()?.writing).toEqual([]);
+    expect(t.live()?.answering).toEqual([]);
   });
 });

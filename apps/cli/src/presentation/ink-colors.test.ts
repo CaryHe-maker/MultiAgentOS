@@ -43,17 +43,19 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[38;2;47;109;246mmain: 回答');
   });
 
-  it('writes the text an agent is writing in the colour of its replies', async () => {
+  it('shows that an answer is being written as one line with the time, like other activity', async () => {
     const { store, ui } = setup();
     store.update({
       status: '',
       activity: [],
       waiting: 0,
       queued: [],
-      writing: [{ id: 'exe_1', label: 'main', state: 'OPEN', text: '正在写' }],
+      answering: [
+        { id: 'exe_1', label: 'main', startedAt: new Date(Date.now() - 3000).toISOString() },
+      ],
     });
     await tick();
-    expect(ui.lastFrame()).toContain('\u001b[38;2;47;109;246mmain: 正在写');
+    expect(ui.lastFrame()).toMatch(/· main 正在输出回答 [23]s/u);
   });
 
   it('writes the thinking in grey, while it streams and after', async () => {

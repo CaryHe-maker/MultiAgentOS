@@ -60,28 +60,20 @@ describe('thinking streamed to the console', () => {
   );
 
   it(
-    'shows the text of a reply while it is written, and hands over to the reply itself',
+    'says that a reply is being written, without its text, and hands over to the reply itself',
     async () => {
-      const { chat } = await conversation(
-        thinking(
-          'short thought',
-          'The answer is a rather long sentence, written in several pieces.',
-        ),
-      );
+      const text = 'The answer is a rather long sentence, written in several pieces.';
+      const { chat } = await conversation(thinking('short thought', text));
       await chat.say('hi');
       await until(() => chat.printed('REPLY').length === 1, 'the reply');
-      const seen = chat.lives.flatMap((live) => live.writing ?? []).map((block) => block.text);
-      expect(seen.at(-1)).toBe('The answer is a rather long sentence, written in several pieces.');
-      // Every state it passed through is a start of the final text.
-      for (const text of seen)
-        expect(
-          'The answer is a rather long sentence, written in several pieces.'.startsWith(text),
-        ).toBe(true);
+      const seen = chat.lives.flatMap((live) => live.answering ?? []);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen[0]).toMatchObject({ label: 'main' });
+      // The text is only there when it is published: the live state carries none of it.
+      expect(JSON.stringify(chat.lives)).not.toContain(text);
       // Once the reply is printed, nothing is being written any more.
-      await until(() => chat.lives.at(-1)?.writing?.length === 0, 'the writing to go');
-      expect(chat.printed('REPLY')).toEqual([
-        'The answer is a rather long sentence, written in several pieces.',
-      ]);
+      await until(() => chat.lives.at(-1)?.answering?.length === 0, 'the line to go');
+      expect(chat.printed('REPLY')).toEqual([text]);
     },
     TIMEOUT,
   );

@@ -2422,9 +2422,8 @@
                 "additionalProperties": false,
                 "$id": "catalog.ContractRef.v1"
               },
-              "liveText": {
-                "type": "string",
-                "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+              "answer": {
+                "type": "boolean"
               },
               "riskClass": {
                 "anyOf": [
@@ -2899,9 +2898,8 @@
           "additionalProperties": false,
           "$id": "catalog.ContractRef.v1"
         },
-        "liveText": {
-          "type": "string",
-          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+        "answer": {
+          "type": "boolean"
         },
         "riskClass": {
           "anyOf": [
@@ -5985,9 +5983,8 @@
                                 "CONTROL"
                               ]
                             },
-                            "liveText": {
-                              "type": "string",
-                              "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                            "answer": {
+                              "type": "boolean"
                             }
                           },
                           "additionalProperties": false,
@@ -6462,9 +6459,8 @@
             "CONTROL"
           ]
         },
-        "liveText": {
-          "type": "string",
-          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+        "answer": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -17080,15 +17076,51 @@
               "format": "date-time"
             },
             "kind": {
-              "enum": [
-                "REASONING",
-                "TEXT"
-              ]
+              "type": "string",
+              "const": "REASONING"
             },
             "delta": {
               "type": "string",
               "minLength": 1,
               "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ANSWER"
             }
           },
           "additionalProperties": false
@@ -20586,9 +20618,8 @@
                   "CONTROL"
                 ]
               },
-              "liveText": {
-                "type": "string",
-                "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+              "answer": {
+                "type": "boolean"
               }
             },
             "additionalProperties": false,
@@ -25117,9 +25148,8 @@
                           "CONTROL"
                         ]
                       },
-                      "liveText": {
-                        "type": "string",
-                        "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                      "answer": {
+                        "type": "boolean"
                       }
                     },
                     "additionalProperties": false,
@@ -26176,9 +26206,8 @@
                                         "CONTROL"
                                       ]
                                     },
-                                    "liveText": {
-                                      "type": "string",
-                                      "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                                    "answer": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "additionalProperties": false,
@@ -29555,9 +29584,8 @@
                                 "CONTROL"
                               ]
                             },
-                            "liveText": {
-                              "type": "string",
-                              "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                            "answer": {
+                              "type": "boolean"
                             }
                           },
                           "additionalProperties": false,
@@ -30036,15 +30064,46 @@
               "format": "date-time"
             },
             "kind": {
-              "enum": [
-                "REASONING",
-                "TEXT"
-              ]
+              "type": "string",
+              "const": "REASONING"
             },
             "delta": {
               "type": "string",
               "minLength": 1,
               "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ANSWER"
             }
           },
           "additionalProperties": false

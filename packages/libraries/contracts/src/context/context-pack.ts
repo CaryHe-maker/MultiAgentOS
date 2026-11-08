@@ -22,8 +22,8 @@ export const ModelToolSpecSchema = closed(
     description: text(4000),
     parameters: Type.Record(Type.String(), Type.Unknown()),
     purpose: Type.Enum(['UNIT', 'CONTROL']),
-    /** The string argument that is text for the user, shown while the model writes it. */
-    liveText: Type.Optional(Type.String({ pattern: '^[a-zA-Z][a-zA-Z0-9_]{0,63}$' })),
+    /** The tool is the answer to the user (the reply): the console says so while the model writes it. */
+    answer: Type.Optional(Type.Boolean()),
   },
   'context.ModelToolSpec.v1',
 );

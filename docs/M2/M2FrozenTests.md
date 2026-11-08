@@ -87,7 +87,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 | G-B-P | Acceptance group B-P: every case of these files is frozen | `acceptance/subagents-exit.test.ts`（整个文件） |
 | G-ADV | Adversarial cases with a compromised model: every case is frozen | `system/compromised-model.test.ts`（整个文件） |
 | G-KILL | Kill the process between any two records of the log and carry on: every case is frozen | `system/kill-anywhere.test.ts`（整个文件） |
-| G-STREAM | The thinking of a model call and the text it writes for the user are shown beside the work: they never enter the Session log, never change what the Executor returns, are dropped when they cannot be delivered, are read from the stream as it arrives and not when it is over, and reach the screen without control characters | `acceptance/thinking-stream.test.ts`（整个文件）<br>`kernel/src/supervisor/model-progress.test.ts`（整个文件）<br>`executor-set/src/model-call/model-call-executor.test.ts`：MODEL streamed for a watcher<br>`executor-set/src/model-call/stream-tap.test.ts`（整个文件） |
+| G-STREAM | The thinking of a model call, and the fact that it has begun its answer for the user (not the answer's text), are shown beside the work: they never enter the Session log, never change what the Executor returns, are dropped when they cannot be delivered, are read from the stream as it arrives and not when it is over, and reach the screen without control characters | `acceptance/thinking-stream.test.ts`（整个文件）<br>`kernel/src/supervisor/model-progress.test.ts`（整个文件）<br>`executor-set/src/model-call/model-call-executor.test.ts`：MODEL streamed for a watcher<br>`executor-set/src/model-call/stream-tap.test.ts`（整个文件） |
 
 ### 清点中的缺口
 

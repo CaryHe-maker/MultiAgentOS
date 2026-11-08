@@ -184,24 +184,14 @@ const conversation = async (columns: number, rows: number, wideAmbiguous: boolea
     blocks.push(block(blocks.length + 1, '先想想要做什么\n再看有哪些工具\n然后整理成清单', 'OPEN'));
     ink.store.update({ ...idle, status: '运行中', thinking: [...blocks] });
     await tick();
-    // The reply grows a few lines at a time, as it is written.
-    const lines = reply(turn).split('\n');
-    for (let upto = 3; upto <= lines.length; upto += 4) {
-      ink.store.update({
-        ...idle,
-        status: '运行中',
-        thinking: [...blocks],
-        writing: [
-          {
-            id: `w${String(turn)}`,
-            label: 'main',
-            state: 'OPEN',
-            text: lines.slice(0, upto).join('\n'),
-          },
-        ],
-      });
-      await tick();
-    }
+    // The answer is being written: one line with the time; the text comes whole when published.
+    ink.store.update({
+      ...idle,
+      status: '运行中',
+      thinking: [...blocks],
+      answering: [{ id: `w${String(turn)}`, label: 'main', startedAt: new Date().toISOString() }],
+    });
+    await tick();
     blocks[blocks.length - 1] = block(
       blocks.length,
       '先想想要做什么\n再看有哪些工具\n然后整理成清单',
@@ -314,7 +304,7 @@ describe('where the cursor is left', () => {
         },
       ],
       thinking: [block(1, '想一\n想二\n想三', 'OPEN')],
-      writing: [{ id: 'w1', label: 'main', state: 'OPEN', text: '正在写的\n回答' }],
+      answering: [{ id: 'w1', label: 'main', startedAt: new Date().toISOString() }],
       pending: { kind: 'CONTINUE', text: '本次运行的额度已用完。要继续吗？[y/n]' },
       queued: ['下一条'],
     });

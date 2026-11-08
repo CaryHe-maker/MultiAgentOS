@@ -71,7 +71,7 @@ describe('modelProgressOf', () => {
   });
 });
 
-describe('modelProgressOf keeps thinking and written text apart', () => {
+describe('modelProgressOf sends the start of the answer and the end at once', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -79,7 +79,7 @@ describe('modelProgressOf keeps thinking and written text apart', () => {
     vi.useRealTimers();
   });
 
-  it('sends what it holds when the kind changes, so the order of the pieces is kept', () => {
+  it('sends the thinking it holds before the start of the answer, so the order is kept', () => {
     const sent: ModelProgress[] = [];
     const progress = modelProgressOf(
       request,
@@ -88,12 +88,11 @@ describe('modelProgressOf keeps thinking and written text apart', () => {
     );
     progress({ kind: 'REASONING', delta: 'think ' });
     progress({ kind: 'REASONING', delta: 'more' });
-    progress({ kind: 'TEXT', delta: 'Hel' });
-    progress({ kind: 'TEXT', delta: 'lo' });
+    progress({ kind: 'ANSWER' });
     progress({ kind: 'END' });
     expect(sent.map((message) => [message.kind, 'delta' in message ? message.delta : ''])).toEqual([
       ['REASONING', 'think more'],
-      ['TEXT', 'Hello'],
+      ['ANSWER', ''],
       ['END', ''],
     ]);
   });

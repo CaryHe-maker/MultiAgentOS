@@ -1,4 +1,9 @@
-import type { ActivityLine, Console, TranscriptRecord } from '@multiagentos/user-interaction';
+import type {
+  ActivityLine,
+  AnsweringView,
+  Console,
+  TranscriptRecord,
+} from '@multiagentos/user-interaction';
 import { ConsoleText } from '@multiagentos/user-interaction';
 import { Box, Static, Text, render, useCursor, useInput, useStdout, type Instance } from 'ink';
 import {
@@ -10,14 +15,7 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import {
-  MARGIN,
-  TAIL_SHARE,
-  layoutWriting,
-  planTail,
-  prefixOf,
-  wrapLines,
-} from './thinking-layout.js';
+import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
   backspace,
@@ -102,6 +100,22 @@ function Activity({
   );
 }
 
+/** One line like the other activity: the answer is being written; the text comes whole when it is published. */
+function Answering({
+  line,
+  now,
+}: {
+  readonly line: AnsweringView;
+  readonly now: number;
+}): ReactElement {
+  const until = line.endedAt === undefined ? now : Date.parse(line.endedAt);
+  return h(
+    Text,
+    { color: 'gray', wrap: 'truncate-end' },
+    ConsoleText.answering(line.label, `${String(seconds(line.startedAt, until))}s`),
+  );
+}
+
 function useClock(running: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -170,7 +184,8 @@ function ConsoleApp({
   const history = useRef<string[]>([]);
   const browsing = useRef<number | undefined>(undefined);
   const open = tail.some((item) => item.kind === 'BLOCK' && item.block.state === 'OPEN');
-  const now = useClock(live.activity.length > 0 || open);
+  const answering = live.answering ?? [];
+  const now = useClock(live.activity.length > 0 || answering.length > 0 || open);
 
   useEffect(() => {
     if (restored.messages.length > 0) setBox(inputOf(restored.messages.join('\n')));
@@ -273,19 +288,17 @@ function ConsoleApp({
     pendingText === undefined
       ? []
       : pendingText.split('\n').flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)));
-  const below = live.activity.length + questionLines.length + (live.queued.length > 0 ? 1 : 0) + 1;
+  const below =
+    live.activity.length +
+    answering.length +
+    questionLines.length +
+    (live.queued.length > 0 ? 1 : 0) +
+    1;
   const others = below + boxRows(box, PROMPT, CONTINUATION, columns);
-  // What is being written for the user comes first and gets what it needs; the tail gets the rest.
   const room = Math.max(1, rows - others - 3);
   // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
   const limit = Math.max(1, Math.floor(room * TAIL_SHARE));
-  const writingLines = layoutWriting(live.writing ?? [], { columns, budget: limit });
-  const plan = planTail(tail, {
-    now,
-    columns,
-    limit: Math.max(0, limit - writingLines.length),
-    folded,
-  });
+  const plan = planTail(tail, { now, columns, limit, folded });
   // What does not fit goes into the scroll-back, so that a frame is never as tall as the
   // terminal: that would make the terminal library clear the screen and write it all again.
   const { commitBefore } = plan;
@@ -300,7 +313,7 @@ function ConsoleApp({
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line: after the rows above the box, in the row and column of the text.
   const cell = cursorCell(box, PROMPT, CONTINUATION, columns);
-  setCursorPosition({ x: cell.column, y: plan.rows + writingLines.length + below + cell.row });
+  setCursorPosition({ x: cell.column, y: plan.rows + below + cell.row });
 
   return h(
     Box,
@@ -346,9 +359,7 @@ function ConsoleApp({
             ),
       ),
       ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
-      ...writingLines.map((line, index) =>
-        h(Text, { key: `w${String(index)}`, color: REPLY_COLOR, wrap: 'truncate-end' }, line),
-      ),
+      ...answering.map((line) => h(Answering, { key: line.id, line, now })),
       ...questionLines.map((line, index) =>
         h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, line),
       ),

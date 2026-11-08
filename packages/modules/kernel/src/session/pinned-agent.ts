@@ -51,7 +51,7 @@ export function pinnedAgentOf(
     description: tool.modelDescription,
     parameters: registry.jsonSchemaOf(tool.parametersContract),
     purpose: tool.purpose,
-    ...(tool.liveText === undefined ? {} : { liveText: tool.liveText }),
+    ...(tool.answer === undefined ? {} : { answer: tool.answer }),
   });
   const toolOf = (ref: { readonly id: string; readonly version: string }) =>
     tools.find((tool) => tool.id === ref.id && tool.version === ref.version);

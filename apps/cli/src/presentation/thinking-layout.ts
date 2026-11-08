@@ -10,7 +10,6 @@ import {
   ConsoleText,
   type ThinkingView,
   type TranscriptRecord,
-  type WritingView,
 } from '@multiagentos/user-interaction';
 import type { TailItem } from './console-store.js';
 import { safeCharWidth } from './text-input.js';
@@ -240,19 +239,4 @@ export function planTail(
   );
   const rows = items.reduce((sum, item) => sum + item.lines.length, 0);
   return { items, rows, commitBefore, fold, elided };
-}
-
-/**
- * The lines of what agents are writing for the user: each block as the message will read
- * (`main: text`), the newest at the bottom, cut to the last `budget` lines so what is being
- * written now is always on screen.
- */
-export function layoutWriting(
-  blocks: readonly WritingView[],
-  options: { readonly columns: number; readonly budget: number },
-): string[] {
-  const lines = blocks.flatMap((block) =>
-    wrapLines(`${block.label}: ${block.text}`.trimEnd(), Math.max(10, options.columns - MARGIN)),
-  );
-  return options.budget <= 0 ? [] : lines.slice(-options.budget);
 }

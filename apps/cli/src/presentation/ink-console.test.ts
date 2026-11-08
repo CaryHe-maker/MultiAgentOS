@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleStore } from './console-store.js';
 import type { ThinkingView } from '@multiagentos/user-interaction';
 import { consoleApp } from './ink-console.js';
-import { layoutWriting } from './thinking-layout.js';
 import { createLineConsoleView } from './line-console.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -242,37 +241,44 @@ describe('Ink console: waiting, colours and thinking', () => {
   });
 });
 
-describe('Ink console: the text being written', () => {
-  it('draws what an agent is writing, the newest lines at the bottom, above the status', async () => {
+describe('Ink console: the answer being written', () => {
+  it('shows one line with the time above the status, and never the text itself', async () => {
     const { store, ui } = setup();
     store.update({
       status: '运行中',
       activity: [],
       waiting: 0,
       queued: [],
-      writing: [{ id: 'exe_1', label: 'main', state: 'OPEN', text: '你好，\n这是正在写的回答' }],
+      answering: [
+        { id: 'exe_1', label: 'main', startedAt: new Date(Date.now() - 5000).toISOString() },
+      ],
     });
     await tick();
     const lines = (ui.lastFrame() ?? '').split('\n');
-    const written = lines.findIndex((line) => line.includes('main: 你好，'));
+    const written = lines.findIndex((line) => /· main 正在输出回答 [45]s/u.test(line));
     expect(written).toBeGreaterThanOrEqual(0);
-    expect(lines[written + 1]).toContain('这是正在写的回答');
     expect(lines.findIndex((line) => line.includes('运行中'))).toBeGreaterThan(written);
   });
 
-  it('gives the writing the lines first and the thinking what is left', () => {
-    const lines = layoutWriting(
-      [{ id: 'a', label: 'main', state: 'OPEN', text: 'one\ntwo\nthree\nfour' }],
-      { columns: 40, budget: 3 },
-    );
-    expect(lines).toEqual(['two', 'three', 'four']);
-    expect(layoutWriting([], { columns: 40, budget: 3 })).toEqual([]);
-    expect(
-      layoutWriting([{ id: 'a', label: 'main', state: 'OPEN', text: 'x' }], {
-        columns: 40,
-        budget: 0,
-      }),
-    ).toEqual([]);
+  it('stops counting when the model has finished writing, until the message is published', async () => {
+    const { store, ui } = setup();
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    store.update({
+      status: '运行中',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      answering: [
+        {
+          id: 'exe_1',
+          label: 'main',
+          startedAt,
+          endedAt: new Date(Date.now() - 57_000).toISOString(),
+        },
+      ],
+    });
+    await tick();
+    expect(ui.lastFrame()).toContain('正在输出回答 3s');
   });
 });
 

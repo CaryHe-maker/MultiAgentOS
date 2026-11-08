@@ -241,8 +241,11 @@ export class StopUnconfirmedError extends Error {
  * anything it throws, and works the same when it is absent.
  */
 export type ModelProgressEvent =
-  /** A piece of the thinking, or of the text the model is writing for the user. */
-  { readonly kind: 'REASONING' | 'TEXT'; readonly delta: string } | { readonly kind: 'END' };
+  /** A piece of the thinking. */
+  | { readonly kind: 'REASONING'; readonly delta: string }
+  /** The model has begun its answer for the user (its text is not passed on, only that it began). */
+  | { readonly kind: 'ANSWER' }
+  | { readonly kind: 'END' };
 
 export interface ExecutorEnvironment {
   readonly scope: ExecutionScope;

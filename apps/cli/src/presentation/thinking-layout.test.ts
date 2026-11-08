@@ -2,14 +2,7 @@ import type { ThinkingView, TranscriptRecord } from '@multiagentos/user-interact
 import { describe, expect, it } from 'vitest';
 import type { TailItem } from './console-store.js';
 import { safeCharWidth } from './text-input.js';
-import {
-  blockLines,
-  layoutWriting,
-  planTail,
-  recordLines,
-  recordRows,
-  wrapLines,
-} from './thinking-layout.js';
+import { blockLines, planTail, recordLines, recordRows, wrapLines } from './thinking-layout.js';
 
 const lines = (count: number, prefix = 'line'): string =>
   Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1)}`).join('\n');
@@ -259,22 +252,5 @@ describe('planTail', () => {
     expect(safeCharWidth(0x2713)).toBe(2);
     expect(safeCharWidth(0x41)).toBe(1);
     expect(safeCharWidth(0x4f60)).toBe(2);
-  });
-});
-
-describe('layoutWriting', () => {
-  it('gives the newest lines of what is being written, with the label like the message', () => {
-    const shown = layoutWriting(
-      [{ id: 'a', label: 'main', state: 'OPEN', text: 'one\ntwo\nthree\nfour' }],
-      { columns: 40, budget: 3 },
-    );
-    expect(shown).toEqual(['two', 'three', 'four']);
-    expect(layoutWriting([], { columns: 40, budget: 3 })).toEqual([]);
-    expect(
-      layoutWriting([{ id: 'a', label: 'main', state: 'OPEN', text: 'x' }], {
-        columns: 40,
-        budget: 0,
-      }),
-    ).toEqual([]);
   });
 });

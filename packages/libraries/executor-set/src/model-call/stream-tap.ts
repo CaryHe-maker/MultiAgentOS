@@ -1,5 +1,4 @@
 import type { ModelProgressEvent } from '@multiagentos/contracts';
-import { JsonStringField } from './json-string-field.js';
 
 /** The thinking a streamed chunk carries; the OpenAI adapter does not read DeepSeek's field. */
 export function reasoningDeltaOf(raw: unknown): string | undefined {
@@ -9,8 +8,7 @@ export function reasoningDeltaOf(raw: unknown): string | undefined {
 }
 
 interface ToolCallDelta {
-  readonly index?: number;
-  readonly function?: { readonly name?: string; readonly arguments?: string };
+  readonly function?: { readonly name?: string };
 }
 
 interface ChunkDelta {
@@ -21,43 +19,31 @@ interface ChunkDelta {
 
 /**
  * Reads the server-sent events of a streamed answer as their bytes arrive, and tells what is in
- * them for the person watching: the thinking, and the text the model writes for the user, which is
- * either plain text or the text argument of a tool call such as a reply (`liveText`: tool name to
- * the name of its argument). It stands on the network side of the provider SDK on purpose: the SDK
- * reads ahead until the first piece of the answer proper before it passes the stream on, and the
- * thinking comes first, so through the SDK nothing would reach the screen until the thinking is
- * over. Anything it cannot read is skipped; the SDK reads the same bytes for the result.
+ * them for the person watching: the thinking, and the moment the model begins its answer for the
+ * user, which is either plain text or a call of an answer tool such as the reply (`answerTools`:
+ * their names). The text itself is not passed on; it is shown when it is published. It stands on
+ * the network side of the provider SDK on purpose: the SDK reads ahead until the first piece of the
+ * answer proper before it passes the stream on, and the thinking comes first, so through the SDK
+ * nothing would reach the screen until the thinking is over. Anything it cannot read is skipped;
+ * the SDK reads the same bytes for the result.
  */
 export function streamTap(
   tell: (event: ModelProgressEvent) => void,
-  liveText: ReadonlyMap<string, string> = new Map(),
+  answerTools: ReadonlySet<string> = new Set(),
 ): (bytes: Uint8Array) => void {
   const decoder = new TextDecoder();
   let pending = '';
-  /** Per tool call of the answer: the tool it names and, for a live one, the reader of its text. */
-  const calls = new Map<number, { name: string; reader: JsonStringField | undefined }>();
+  let answering = false;
 
   const onDelta = (delta: ChunkDelta): void => {
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
       tell({ kind: 'REASONING', delta: delta.reasoning_content });
-    if (typeof delta.content === 'string' && delta.content.length > 0)
-      tell({ kind: 'TEXT', delta: delta.content });
-    for (const piece of delta.tool_calls ?? []) {
-      const index = piece.index ?? 0;
-      let call = calls.get(index);
-      const name = piece.function?.name;
-      if (call === undefined || (name !== undefined && name.length > 0 && call.name === '')) {
-        const field = name === undefined ? undefined : liveText.get(name);
-        call = {
-          name: name ?? '',
-          reader: field === undefined ? undefined : new JsonStringField(field),
-        };
-        calls.set(index, call);
-      }
-      const written = piece.function?.arguments;
-      if (call.reader === undefined || typeof written !== 'string') continue;
-      const text = call.reader.feed(written);
-      if (text.length > 0) tell({ kind: 'TEXT', delta: text });
+    const writes =
+      (typeof delta.content === 'string' && delta.content.length > 0) ||
+      (delta.tool_calls ?? []).some((piece) => answerTools.has(piece.function?.name ?? ''));
+    if (writes && !answering) {
+      answering = true;
+      tell({ kind: 'ANSWER' });
     }
   };
 
