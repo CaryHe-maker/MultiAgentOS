@@ -166,7 +166,7 @@ export const ConsoleText = Object.freeze({
       ? `✓ 已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）`
       : `✓ 已修剪 ${String(pruned)} 个较大的工具结果`,
   compactionFailed: {
-    NOTHING_TO_COMPACT: '没有可压缩的内容。',
+    NOTHING_TO_COMPACT: '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',
     BUDGET_INSUFFICIENT: '额度不够，没有压缩。',
     SUMMARY_FAILED: '摘要没有生成，没有压缩。',
     NOT_RECORDED: '压缩没能记录，没有压缩。',
@@ -209,8 +209,7 @@ export const ConsoleText = Object.freeze({
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
   /** `/compact` is refused when no run waits for input, when there is nothing said yet, or one is already compacting. */
-  compactNotNow:
-    '现在不能压缩：要等当前运行结束，并且这次打开之后已经说过话；已经在压缩时也不能重复。',
+  compactNotNow: '暂时无法压缩：请先发一条消息，或等当前运行、压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',

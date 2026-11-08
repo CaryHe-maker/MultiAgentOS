@@ -838,7 +838,7 @@ describe('a compaction the user asks for', () => {
     await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
     t.setCompactResult({ outcome: 'REJECTED', reasonCode: 'REQUEST_CONFLICT' });
     await t.console.submit('/compact');
-    expect(t.printed.at(-1)?.text).toContain('现在不能压缩');
+    expect(t.printed.at(-1)?.text).toContain('暂时无法压缩');
     expect(t.live()?.activity).toEqual([]);
   });
 
@@ -857,6 +857,20 @@ describe('a compaction the user asks for', () => {
       compactedTurns: 2,
       prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  it('says the context is too short, in plain words, when there is nothing worth compacting', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    await t.event({
+      type: 'CompactionFailed',
+      trigger: 'USER',
+      reason: 'NOTHING_TO_COMPACT',
+    } as unknown as KernelToInteractionEvent);
+    expect(t.printed.at(-1)?.text).toBe('无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩');
     expect(t.live()?.activity).toEqual([]);
   });
 
