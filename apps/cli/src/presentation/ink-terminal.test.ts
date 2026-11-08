@@ -220,3 +220,59 @@ describe('the conversation a terminal is left with', () => {
       }
     });
 });
+
+describe('long thinkings that grow while they run', () => {
+  it('leave no copy of a frame behind, and every line of thinking is there at most once', async () => {
+    const { terminal, stdin, stdout } = connect(76, 30, true);
+    const ink = createInkConsole(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+    );
+    const instance = ink.mount({
+      submit: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(),
+      withdrawLast: () => undefined,
+      steer: () => Promise.resolve(),
+    });
+    unmount = () => instance.unmount();
+    await tick();
+    const idle = { status: '等待输入', activity: [], waiting: 0, queued: [] };
+    const blocks: ThinkingView[] = [];
+    const thought = (number: number, count: number) =>
+      Array.from(
+        { length: count },
+        (_, index) => `思考${String(number)}_${String(index + 1)} — 一行比较长的推理内容`,
+      ).join('\n');
+    let number = 0;
+    for (let turn = 1; turn <= 4; turn += 1) {
+      ink.store.print({ kind: 'USER', text: `问题${String(turn)}` });
+      for (let call = 0; call < 2; call += 1) {
+        number += 1;
+        blocks.push(block(number, thought(number, 3), 'OPEN'));
+        // The thinking grows by ten lines at a time, up to far more than the terminal holds.
+        for (let count = 10; count <= 60; count += 10) {
+          blocks[blocks.length - 1] = block(number, thought(number, count), 'OPEN');
+          ink.store.update({ ...idle, status: '运行中', thinking: [...blocks] });
+          await tick();
+        }
+        blocks[blocks.length - 1] = block(number, thought(number, 60));
+        ink.store.update({ ...idle, status: '运行中', thinking: [...blocks] });
+        ink.store.print({ kind: 'STEP', text: `✓ list_files ${String(number)}` });
+        await tick();
+      }
+      ink.store.print({ kind: 'REPLY', agentLabel: 'main', text: `回答${String(turn)}\n第二行` });
+      ink.store.update({ ...idle, thinking: [...blocks] });
+      await tick();
+    }
+    const text = terminal.everything();
+    for (let at = 1; at <= number; at += 1)
+      for (let line = 1; line <= 60; line += 1) {
+        const seen = text.split(`思考${String(at)}_${String(line)} —`).length - 1;
+        expect(seen, `line ${String(line)} of thinking ${String(at)}`).toBeLessThanOrEqual(1);
+      }
+    for (let turn = 1; turn <= 4; turn += 1) {
+      expect(text.split(`回答${String(turn)}`).length - 1, `reply ${String(turn)}`).toBe(1);
+      expect(text.split(`问题${String(turn)}`).length - 1, `question ${String(turn)}`).toBe(1);
+    }
+  });
+});

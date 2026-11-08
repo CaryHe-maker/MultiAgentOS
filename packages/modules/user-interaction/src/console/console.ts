@@ -327,7 +327,8 @@ export class Console {
     }
     const block = this.#thinking.byNumber(Number(argument));
     if (block === undefined) {
-      this.#notice(text.thinkingMissing(Number(argument)));
+      const all = this.#thinking.blocks();
+      this.#notice(text.thinkingMissing(Number(argument), all[0]?.number, all.at(-1)?.number));
       return;
     }
     this.#deps.view.print({

@@ -22,7 +22,14 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import { MARGIN, layoutWriting, planTail, prefixOf, wrapLines } from './thinking-layout.js';
+import {
+  MARGIN,
+  TAIL_SHARE,
+  layoutWriting,
+  planTail,
+  prefixOf,
+  wrapLines,
+} from './thinking-layout.js';
 import {
   EMPTY_INPUT,
   backspace,
@@ -285,19 +292,25 @@ function ConsoleApp({
     boxRows(box, PROMPT, CONTINUATION, columns);
   // What is being written for the user comes first and gets what it needs; the tail gets the rest.
   const room = Math.max(1, rows - others - 3);
-  const writingLines = layoutWriting(live.writing ?? [], { columns, budget: room });
+  // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
+  const limit = Math.max(1, Math.floor(room * TAIL_SHARE));
+  const writingLines = layoutWriting(live.writing ?? [], { columns, budget: limit });
   const plan = planTail(tail, {
     now,
     columns,
-    room: Math.max(0, room - writingLines.length),
+    limit: Math.max(0, limit - writingLines.length),
     folded,
   });
   // What does not fit goes into the scroll-back, so that a frame is never as tall as the
   // terminal: that would make the terminal library clear the screen and write it all again.
   const { commitBefore } = plan;
+  const foldKey = plan.fold.join(',');
+  const elidedKey = plan.elided.join(',');
   useEffect(() => {
+    if (foldKey.length > 0) store.foldBlocks(foldKey.split(','));
+    if (elidedKey.length > 0) store.markElided(elidedKey.split(','));
     if (commitBefore !== undefined) store.advanceFloor(commitBefore);
-  }, [commitBefore, store]);
+  }, [commitBefore, foldKey, elidedKey, store]);
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line. The rows above the box are measured after they are laid out.

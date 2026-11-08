@@ -320,56 +320,77 @@ describe('Ink console: thinking among what happened', () => {
     expect(new Set([question, first, allowed, step, second]).size).toBe(5);
   });
 
-  it('keeps only the latest two thinkings open and folds the older ones to a line', async () => {
+  it('keeps earlier thinkings open while everything fits, and folds the oldest when it does not', async () => {
     const { store, ui } = setup();
+    const text = (number: number, lines = 5) =>
+      Array.from(
+        { length: lines },
+        (_, index) => `第${String(number)}段第${String(index + 1)}行`,
+      ).join('\n');
     store.print({ kind: 'USER', text: '问题' });
-    store.update(live(block(1, '第一段思考的内容')));
-    store.print({ kind: 'STEP', text: '步骤一' });
-    store.update(live(block(1, '第一段思考的内容'), block(2, '第二段思考的内容')));
-    store.print({ kind: 'STEP', text: '步骤二' });
-    store.update(
-      live(
-        block(1, '第一段思考的内容'),
-        block(2, '第二段思考的内容'),
-        block(3, '第三段思考的内容', 'OPEN'),
-      ),
-    );
+    store.update(live(block(1, text(1, 2))));
+    store.update(live(block(1, text(1, 2)), block(2, text(2, 2), 'OPEN')));
+    await tick();
+    // Two short thinkings fit together: both are open.
+    expect(ui.lastFrame()).toContain('第1段第2行');
+    expect(ui.lastFrame()).toContain('第2段第2行');
+
+    // The thinkings grow: together they no longer fit in the part of the screen for them.
+    store.update(live(block(1, text(1)), block(2, text(2)), block(3, text(3), 'OPEN')));
+    await tick();
     await tick();
     const frame = ui.lastFrame() ?? '';
-    // The first one is a line now; the second and third are open with their text.
+    // The oldest is one line now, in the scroll-back; the newer ones are open.
     expect(frame).toContain('✻ main 思考 3.0s（/think 1 展开）');
-    expect(frame).not.toContain('第一段思考的内容');
-    expect(frame).toContain('第二段思考的内容');
-    expect(frame).toContain('第三段思考的内容');
-    const [folded, firstStep, second, secondStep, third] = order(
-      frame,
-      '（/think 1 展开）',
-      '步骤一',
-      '第二段思考的内容',
-      '步骤二',
-      '第三段思考的内容',
-    );
-    expect([folded, firstStep, second, secondStep, third]).toEqual(
-      [folded, firstStep, second, secondStep, third].sort((a, b) => (a ?? 0) - (b ?? 0)),
-    );
-
-    // A fourth pushes the second out in the same way.
-    store.update(
-      live(
-        block(1, '第一段思考的内容'),
-        block(2, '第二段思考的内容'),
-        block(3, '第三段思考的内容'),
-        block(4, '第四段思考的内容', 'OPEN'),
-      ),
-    );
+    expect(frame).not.toContain('第1段第1行');
+    expect(frame).toContain('第3段第5行');
+    // What is folded does not open again, even when what follows is short.
+    store.update(live(block(1, text(1)), block(2, text(2)), block(3, text(3))));
     await tick();
-    expect(ui.lastFrame()).toContain('（/think 2 展开）');
-    expect(ui.lastFrame()).not.toContain('第二段思考的内容');
-    expect(ui.lastFrame()).toContain('第三段思考的内容');
-    expect(ui.lastFrame()).toContain('第四段思考的内容');
+    expect(ui.lastFrame()).toContain('（/think 1 展开）');
+    expect(ui.lastFrame()).not.toContain('第1段第1行');
   });
 
-  it('folds and opens the two open ones with Ctrl+O', async () => {
+  it('cuts the beginning of a thinking that is too long on its own, and folds it when the next begins', async () => {
+    const { store, ui } = setup();
+    const long = Array.from({ length: 60 }, (_, index) => `长思考第${String(index + 1)}行`).join(
+      '\n',
+    );
+    store.print({ kind: 'USER', text: '问题' });
+    store.update(live(block(1, long, 'OPEN')));
+    await tick();
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    // The end is there, the beginning is a …, and the frame is shorter than the terminal.
+    expect(frame).toContain('长思考第60行');
+    expect(frame).not.toContain('长思考第1行');
+    expect(frame).toMatch(/^ {2}…$/mu);
+    expect(frame.split('\n').length).toBeLessThan(24);
+
+    // It finishes: it stays as it is, cut. The next thinking begins: it is folded at once.
+    store.update(live(block(1, long)));
+    await tick();
+    expect(ui.lastFrame()).toContain('长思考第60行');
+    store.update(live(block(1, long), block(2, '下一段', 'OPEN')));
+    await tick();
+    await tick();
+    expect(ui.lastFrame()).toContain('（/think 1 展开）');
+    expect(ui.lastFrame()).not.toContain('长思考第60行');
+    expect(ui.lastFrame()).toContain('下一段');
+  });
+
+  it('shows a thinking that fits in full when it is done', async () => {
+    const { store, ui } = setup();
+    const text = Array.from({ length: 6 }, (_, index) => `完整第${String(index + 1)}行`).join('\n');
+    store.update(live(block(1, text)));
+    await tick();
+    await tick();
+    for (let line = 1; line <= 6; line += 1)
+      expect(ui.lastFrame()).toContain(`完整第${String(line)}行`);
+    expect(ui.lastFrame()).not.toMatch(/^ {2}…$/mu);
+  });
+
+  it('folds and opens the open ones with Ctrl+O', async () => {
     const { store, ui } = setup();
     store.update(live(block(1, '甲的内容'), block(2, '乙的内容', 'OPEN')));
     await tick();
@@ -382,23 +403,5 @@ describe('Ink console: thinking among what happened', () => {
     ui.stdin.write('\u000f');
     await tick();
     expect(ui.lastFrame()).toContain('甲的内容');
-  });
-
-  it('never draws more rows than the terminal has, by moving the oldest into the scroll-back', async () => {
-    const { store, ui } = setup();
-    store.update(live(block(1, '甲')));
-    for (let index = 1; index <= 40; index += 1)
-      store.print({ kind: 'STEP', text: `步骤 ${String(index)}` });
-    await tick();
-    await tick();
-    // ink-testing-library has a terminal 100 columns wide and 24 rows high by default; the part
-    // drawn in place has to fit, and the steps that left it are not lost.
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('步骤 1\n');
-    expect(frame).toContain('步骤 40');
-    const inPlace = frame.slice(
-      frame.indexOf('✻ main 思考') < 0 ? 0 : frame.indexOf('▾ ✻ main 思考'),
-    );
-    expect(inPlace.split('\n').length).toBeLessThanOrEqual(24);
   });
 });

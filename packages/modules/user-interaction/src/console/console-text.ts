@@ -226,11 +226,13 @@ export const ConsoleText = Object.freeze({
     'Ctrl+C 暂停，暂停后再按一次中止；退出用 /exit。',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
-    'Ctrl+O 折叠或展开最近两段思考；更早的思考已折叠成一行，用 /think 查看；思考只保存在这个进程的内存里。',
+    'Ctrl+O 折叠或展开正在显示的思考；折叠过的思考是一行，用 /think N 查看全文；思考只保存在这个进程的内存里。',
   ].join('\n'),
   thinkingNone: '还没有思考内容（只有开启思考的模型调用才有）。',
-  thinkingMissing: (number: number) =>
-    `没有第 ${String(number)} 段思考（可能已经太久，或编号不对）。`,
+  thinkingMissing: (number: number, first: number | undefined, last: number | undefined) =>
+    first === undefined || last === undefined
+      ? `没有第 ${String(number)} 段思考：这个进程里还没有思考内容。`
+      : `没有第 ${String(number)} 段思考；现有第 ${String(first)}–${String(last)} 段（编号每次启动从 1 开始，更早的已丢弃）。`,
   thinkingBlockLine: (number: number, label: string, seconds: string) =>
     `  第 ${String(number)} 段：${label} 思考 ${seconds}`,
   thinkingList: '思考内容（/think <N> 查看全文）：',

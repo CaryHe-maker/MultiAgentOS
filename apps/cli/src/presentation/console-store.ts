@@ -32,10 +32,13 @@ const EMPTY: LiveState = { status: '', activity: [], waiting: 0, queued: [] };
  *
  * The terminal only lets a program add lines to what is already written; what is drawn in place is
  * only the bottom of the screen. So the store keeps the end of the conversation in place, and lets
- * it go into the scroll-back only when it can no longer change: everything from the second latest
- * block of thinking on (the two blocks, and the authorizations, steps and messages between and
- * after them) stays in place and in order; a third block moves everything before the second one
- * into the scroll-back, the oldest block as a single folded line (docs/M2/Phase1Console.md 4.3).
+ * it go into the scroll-back only when it can no longer change. The end of the conversation starts
+ * at the oldest block of thinking that is still open: that block, the blocks after it, and the
+ * authorizations, steps and messages between and after them stay in place and in order. A block is
+ * folded by the view (it asks for it with `foldBlocks`) when the part in place gets too tall, and
+ * is folded for good: everything before the oldest open block moves into the scroll-back, a folded
+ * block as a single line (docs/M2/Phase1Console.md 4.3). A block that was drawn with its
+ * beginning left out (`markElided`) is folded when the next block begins.
  */
 export class ConsoleStore implements ConsoleView {
   readonly #listeners = new Set<() => void>();
@@ -44,6 +47,10 @@ export class ConsoleStore implements ConsoleView {
   readonly #blocks = new Map<string, { seq: number; view: ThinkingView }>();
   /** Blocks the console passed in its latest update, in the order they began. */
   #present: string[] = [];
+  /** Blocks the view folded: they leave the part in place and never come back. */
+  readonly #folded = new Set<string>();
+  /** Blocks drawn with their beginning left out; the next block to begin folds them. */
+  readonly #elided = new Set<string>();
   /** Blocks that are in the scroll-back already: the console still passes them, and they stay there. */
   readonly #committed = new Set<string>();
   readonly #static: StaticItem[] = [];
@@ -68,6 +75,9 @@ export class ConsoleStore implements ConsoleView {
       if (this.#committed.has(view.id)) continue;
       const known = this.#blocks.get(view.id);
       if (known === undefined) {
+        // The next thinking has begun: what was cut at its beginning is folded now.
+        for (const id of this.#elided) this.#folded.add(id);
+        this.#elided.clear();
         this.#sequence += 1;
         this.#blocks.set(view.id, { seq: this.#sequence, view });
       } else known.view = view;
@@ -92,6 +102,20 @@ export class ConsoleStore implements ConsoleView {
     this.#settle();
   }
 
+  /** The view folds these blocks for good: they leave the part in place. */
+  public foldBlocks(ids: readonly string[]): void {
+    const fresh = ids.filter((id) => !this.#folded.has(id) && !this.#committed.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) this.#folded.add(id);
+    this.#settle();
+  }
+
+  /** The view drew these blocks with their beginning left out. */
+  public markElided(ids: readonly string[]): void {
+    for (const id of ids)
+      if (!this.#folded.has(id) && !this.#committed.has(id)) this.#elided.add(id);
+  }
+
   public readonly subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
@@ -104,10 +128,9 @@ export class ConsoleStore implements ConsoleView {
     const present = this.#present
       .map((id) => this.#blocks.get(id))
       .filter((block): block is { seq: number; view: ThinkingView } => block !== undefined);
+    // The part in place starts at the oldest block that is still open; without one it is empty.
     const boundary =
-      present.length === 0
-        ? Number.POSITIVE_INFINITY
-        : (present[Math.max(0, present.length - 2)]?.seq ?? Number.POSITIVE_INFINITY);
+      present.find((block) => !this.#folded.has(block.view.id))?.seq ?? Number.POSITIVE_INFINITY;
     const commitBelow = Math.max(boundary, this.#floor);
     const gone = [...this.#blocks.entries()].filter(([id]) => !this.#present.includes(id));
     const due = [
