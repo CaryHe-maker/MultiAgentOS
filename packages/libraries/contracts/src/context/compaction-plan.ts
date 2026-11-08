@@ -177,7 +177,11 @@ export function planCompaction(
     (entry) => inRange(entry) && (entry.kind === 'SUMMARY' || !kept.has(entry.seq)),
   );
   const replacedTokens = replaced.reduce((total, entry) => total + entryTokens(entry), 0);
-  if (replaced.length === 0 || replacedTokens < config.minReplacedTokens)
+  // An earlier summary alone is not a range: a summary of a summary says nothing that is new.
+  if (
+    replaced.every((entry) => entry.kind === 'SUMMARY') ||
+    replacedTokens < config.minReplacedTokens
+  )
     return { keepFrom, prunable };
   const turns = new Set(
     replaced.flatMap((entry) => (entry.turnId === undefined ? [] : [entry.turnId])),

@@ -173,6 +173,24 @@ describe('what a compaction touches', () => {
     expect(plan.range?.fromSeq).toBe(1);
     expect(plan.range?.replacedEntries).toBeGreaterThanOrEqual(2);
   });
+
+  it('does not make a range of an earlier summary alone, however large it is', () => {
+    next = 1;
+    const summary: ContextHistoryEntry = {
+      seq: 90,
+      category: 'NORMAL',
+      kind: 'SUMMARY',
+      compactionId: 'cmp_aaaaaaaa',
+      fromSeq: 1,
+      toSeq: 40,
+      contentRef: ref(30_000),
+    };
+    // Nothing since the summary but the newest part: a summary of a summary says nothing new.
+    next = 100;
+    const plan = planCompaction([summary, ...rounds(2, 800)], { ...CONFIG, keepTokens: 500 });
+    expect(plan.keepFrom).toBeGreaterThan(0);
+    expect(plan.range).toBeUndefined();
+  });
 });
 
 describe('what the records do to the entries', () => {

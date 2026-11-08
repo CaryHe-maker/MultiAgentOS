@@ -48,6 +48,10 @@ describe('system configuration', () => {
     ['a value of the wrong type', JSON.stringify({ kernel: { cancelGraceMs: 'soon' } })],
     ['a relative dataDir', JSON.stringify({ dataDir: 'relative/dir' })],
     ['a zero port deadline', JSON.stringify({ portReturnTimeoutMs: 0 })],
+    [
+      'a compaction that keeps more than it triggers at',
+      JSON.stringify({ kernel: { compaction: { triggerRatio: 0.5, keepRatio: 0.5 } } }),
+    ],
     ['a fractional port deadline', JSON.stringify({ portReturnTimeoutMs: 1.5 })],
     ['a file that is not JSON', '{'],
   ])('rejects %s', async (_label, content) => {

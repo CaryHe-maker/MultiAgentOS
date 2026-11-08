@@ -1183,7 +1183,11 @@ export class Console {
         this.#activity.delete(COMPACTION_LINE);
         this.#deps.view.print({
           kind: 'STEP',
-          text: text.compacted(event.compactedTurns, event.prunedResults),
+          text: text.compacted(
+            event.compactedTurns,
+            event.prunedResults,
+            event.summaryRef !== undefined,
+          ),
         });
         break;
       case 'CompactionFailed':

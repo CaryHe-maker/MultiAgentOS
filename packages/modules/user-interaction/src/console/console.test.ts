@@ -902,13 +902,23 @@ describe('a compaction in the history', () => {
     await t.event({
       type: 'ContextCompacted',
       trigger: 'AUTO',
+      summaryRef: testArtifactRef('summary'),
       compactedTurns: 3,
       prunedResults: 2,
+    } as unknown as KernelToInteractionEvent);
+    // A summary that took in entries without a Turn of their own is a compaction all the same.
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'USER',
+      summaryRef: testArtifactRef('summary'),
+      compactedTurns: 0,
+      prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
     const steps = t.printed.filter((entry) => entry.kind === 'STEP').map((entry) => entry.text);
     expect(steps).toEqual([
       '✓ 已修剪 1 个较大的工具结果',
       '✓ 已压缩较早的对话（3 个 Turn，修剪 2 个工具结果）',
+      '✓ 已压缩较早的对话',
     ]);
     expect(t.printed.some((entry) => entry.kind === 'NOTICE' && entry.text.includes('修剪'))).toBe(
       false,
