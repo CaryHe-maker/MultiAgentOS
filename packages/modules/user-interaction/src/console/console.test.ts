@@ -763,6 +763,33 @@ describe('thinking streamed beside the run (Phase1Console 4)', () => {
   });
 });
 
+describe('a compaction in the history', () => {
+  it('is one step line like a tool call, not a notice', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'AUTO',
+      compactedTurns: 0,
+      prunedResults: 1,
+    } as unknown as KernelToInteractionEvent);
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'AUTO',
+      compactedTurns: 3,
+      prunedResults: 2,
+    } as unknown as KernelToInteractionEvent);
+    const steps = t.printed.filter((entry) => entry.kind === 'STEP').map((entry) => entry.text);
+    expect(steps).toEqual([
+      '✓ 已修剪 1 个较大的工具结果',
+      '✓ 已压缩较早的对话（3 个 Turn，修剪 2 个工具结果）',
+    ]);
+    expect(t.printed.some((entry) => entry.kind === 'NOTICE' && entry.text.includes('修剪'))).toBe(
+      false,
+    );
+  });
+});
+
 describe('an answer being written for the user (Phase1Console 4)', () => {
   const stream = (callId: string, kind: 'ANSWER' | 'END', at = 0, agentRunId = 'arn_1') =>
     ({

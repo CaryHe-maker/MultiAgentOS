@@ -1111,7 +1111,10 @@ export class Console {
         break;
       }
       case 'ContextCompacted':
-        this.#notice(text.compacted(event.compactedTurns, event.prunedResults));
+        this.#deps.view.print({
+          kind: 'STEP',
+          text: text.compacted(event.compactedTurns, event.prunedResults),
+        });
         break;
       case 'CompactionFailed':
         this.#notice(text.compactionFailed[event.reason]);

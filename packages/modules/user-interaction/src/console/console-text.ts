@@ -160,10 +160,11 @@ export const ConsoleText = Object.freeze({
     SESSION_CLOSED: '已取消回退，没有修改任何文件。',
     FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
   },
+  /** One step line in the history, like a tool call: it happened here, and that is all it says. */
   compacted: (turns: number, pruned: number) =>
     turns > 0
-      ? `已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）。`
-      : `已修剪 ${String(pruned)} 个较大的工具结果。`,
+      ? `✓ 已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）`
+      : `✓ 已修剪 ${String(pruned)} 个较大的工具结果`,
   compactionFailed: {
     NOTHING_TO_COMPACT: '没有可压缩的内容。',
     BUDGET_INSUFFICIENT: '额度不够，没有压缩。',

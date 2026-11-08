@@ -144,7 +144,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 - SubAgent：`ActivityEvent.parentAgentRunId` 让控制台把 SubAgent 画成树（`├─`、`└─`，缩进两格），行首是 Agent 与任务名（如 `worker fix-api`）；调用了 `run_subagents` 的 AgentRun 显示 `等待子任务`（Kernel 受理委派时发出）。还没有开始的任务（在等依赖）Kernel 并不认识，所以没有行。`/timeline` 把本次运行见到的每个 AgentRun 的起止时间按父子关系列出（只记在控制台内存中，换到新的 WorkflowRun 时清空）。
 - ActivityEvent 带 `todos` 时，该 AgentRun 的行末显示"3/7 · <进行中的一项>"。
 - 工具结果被截断时（`ActivityEvent.unit` 在 `DONE` 时带 `fullRef`），折叠行注明"输出已截断"及编号；`/output <编号>` 经 `readArtifact` 读取完整输出，已过期（`ARTIFACT_EXPIRED`）时显示"完整输出已在 7 天后删除"。
-- 压缩：`ContextCompacted` 在记录区显示一行"已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，有摘要时可展开查看；空闲时的预先压缩同样显示；`CompactionFailed` 显示原因。
+- 压缩：`ContextCompacted` 和工具调用一样，在它发生的位置记一行步骤（灰色）"✓ 已压缩较早的对话（N 个 Turn，修剪 M 个工具结果）"，只修剪工具结果时是"✓ 已修剪 N 个较大的工具结果"；它是历史里的一行，不是系统提示，不常驻显示区；空闲时的预先压缩同样记一行；`CompactionFailed` 显示原因。
 - 思考内容流式显示，回复不流式（只显示"正在输出回答"和计时，发布时整条进入记录）：Kernel 核心把 `kernel.control.ModelStream`（`REASONING`、`ANSWER`、`END`）经 Fabric 的 `inbox.user-interaction-stream` 发来，这条旁路不是有序事件，没有序号、不进日志、来不及送达就丢；控制台在进程内存里按块保存思考（单段 64 KB、最近 100 段，切换 Session 或退出即清空）；展开着的块放在末尾一段里，和它们之间、之后的授权、步骤、回复按发生的先后顺序排，画面只用限额的 90%：放不下就把最老的块整块折叠进记录（折了不再展开），最新的块自己就太长才省略开头用 … 代替；折叠过的块在记录里是一行（[Phase1Console](../Phase1Console.md) 第 4 节）。非 TTY 环境退化为逐行日志；遵守 `NO_COLOR`。
 - 授权询问里超过 3 行或 240 个字符的命令只显示开头，输入 `v` 查看完整命令（不算回答）。用户输入是荧光绿，系统的话是浅蓝，助手回复是深蓝，思考与状态是灰色。
 - 展示文本中的控制字符按 M1 的规则转义。
