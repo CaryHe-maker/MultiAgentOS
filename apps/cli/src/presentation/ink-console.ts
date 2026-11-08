@@ -34,8 +34,11 @@ type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'ste
 
 /** What the user typed: a bright green that stands out from everything the system says. */
 export const USER_COLOR = '#39ff14';
-/** What the system says (a new conversation, opened, allowed): a light blue. */
-export const SYSTEM_COLOR = '#8fd3ff';
+/**
+ * Everything the system says at its own level is yellow: its notices (a new conversation, opened,
+ * allowed), what it asks (authorization, questions), what is waiting and the status line.
+ */
+export const SYSTEM_COLOR = 'yellow';
 /** What an agent answers: a deep blue. */
 export const REPLY_COLOR = '#2f6df6';
 
@@ -341,12 +344,16 @@ function ConsoleApp({
       ),
       ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
       ...questionLines.map((line, index) =>
-        h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, row(line)),
+        h(Text, { key: `q${String(index)}`, color: SYSTEM_COLOR, wrap: 'truncate-end' }, row(line)),
       ),
       live.queued.length > 0
-        ? h(Text, { color: 'gray', wrap: 'truncate-end' }, ConsoleText.queued(live.queued.length))
+        ? h(
+            Text,
+            { color: SYSTEM_COLOR, wrap: 'truncate-end' },
+            ConsoleText.queued(live.queued.length),
+          )
         : null,
-      h(Text, { color: 'gray', wrap: 'truncate-end' }, status.length > 0 ? status : ' '),
+      h(Text, { color: SYSTEM_COLOR, wrap: 'truncate-end' }, status.length > 0 ? status : ' '),
     ),
     h(InputBox, { state: box }),
   );

@@ -27,7 +27,7 @@ function setup() {
 }
 
 describe('Ink console colours', () => {
-  it('writes what the user typed in bright green, the system in light blue and the agent in deep blue', async () => {
+  it('writes what the user typed in bright green, the system in yellow and the agent in deep blue', async () => {
     const { store, ui } = setup();
     store.print({ kind: 'USER', text: '问题' });
     store.print({ kind: 'NOTICE', text: '已允许。' });
@@ -35,12 +35,28 @@ describe('Ink console colours', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
     expect(USER_COLOR).toBe('#39ff14');
-    expect(SYSTEM_COLOR).toBe('#8fd3ff');
+    expect(SYSTEM_COLOR).toBe('yellow');
     expect(REPLY_COLOR).toBe('#2f6df6');
-    // 24-bit colours: green for the user, light blue for the system, deep blue for the agent.
+    // Green for the user, yellow for the system, deep blue for the agent.
     expect(frame).toContain('\u001b[38;2;57;255;20m> 问题');
-    expect(frame).toContain('\u001b[38;2;143;211;255m已允许。');
+    expect(frame).toContain('\u001b[33m已允许。');
     expect(frame).toContain('\u001b[38;2;47;109;246mmain: 回答');
+  });
+
+  it('writes everything the system says at its own level in yellow: status, queue, questions', async () => {
+    const { store, ui } = setup();
+    store.update({
+      status: '运行中',
+      activity: [],
+      waiting: 0,
+      queued: ['下一条'],
+      pending: { kind: 'CONTINUE', text: '本次运行的额度已用完。要继续吗？[y/n]' },
+    });
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('\u001b[33m运行中');
+    expect(frame).toContain('\u001b[33m本次运行的额度已用完');
+    expect(frame).toContain('\u001b[33m已排队 1 条');
   });
 
   it('writes the thinking in grey, while it streams and after', async () => {
