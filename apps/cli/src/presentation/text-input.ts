@@ -156,6 +156,34 @@ export function charWidth(codePoint: number): number {
   return 1;
 }
 
+/**
+ * Columns a character takes if the terminal is generous: the characters whose width depends on the
+ * font and the locale (dashes and quotes, arrows, boxes, the symbols of dingbats) count as two.
+ * The part of the screen that is drawn in place is cut to lines that fit by this measure, so that
+ * a terminal that draws them wide still never wraps a line: a wrapped line takes a row more than
+ * Ink counted, Ink then erases one row too few on the next frame, and a copy of the old frame
+ * stays behind.
+ */
+export function safeCharWidth(codePoint: number): number {
+  const width = charWidth(codePoint);
+  if (width !== 1) return width;
+  if (
+    codePoint === 0x00a1 ||
+    codePoint === 0x00a4 ||
+    (codePoint >= 0x00a7 && codePoint <= 0x00ae) ||
+    (codePoint >= 0x00b0 && codePoint <= 0x00bf) ||
+    codePoint === 0x00d7 ||
+    codePoint === 0x00f7 ||
+    (codePoint >= 0x2010 && codePoint <= 0x2027) ||
+    (codePoint >= 0x2030 && codePoint <= 0x205e) ||
+    (codePoint >= 0x2100 && codePoint <= 0x23ff) ||
+    (codePoint >= 0x2460 && codePoint <= 0x27bf) ||
+    (codePoint >= 0xe000 && codePoint <= 0xf8ff)
+  )
+    return 2;
+  return 1;
+}
+
 /** Columns `text` takes on one terminal line. */
 export function displayWidth(text: string): number {
   let width = 0;

@@ -13,7 +13,7 @@ import {
   type WritingView,
 } from '@multiagentos/user-interaction';
 import type { TailItem } from './console-store.js';
-import { charWidth, displayWidth, rowsOf } from './text-input.js';
+import { safeCharWidth } from './text-input.js';
 
 export interface ThinkingLine {
   readonly text: string;
@@ -22,14 +22,17 @@ export interface ThinkingLine {
   readonly live: boolean;
 }
 
-/** Text cut into pieces that fit `width` columns, line breaks kept. */
+/**
+ * Text cut into pieces that fit `width` columns by the generous measure (`safeCharWidth`), line
+ * breaks kept.
+ */
 export function wrapLines(text: string, width: number): string[] {
   const lines: string[] = [];
   for (const line of text.split('\n')) {
     let current = '';
     let used = 0;
     for (const character of line) {
-      const columns = charWidth(character.codePointAt(0) ?? 0);
+      const columns = safeCharWidth(character.codePointAt(0) ?? 0);
       if (used + columns > width && current.length > 0) {
         lines.push(current);
         current = '';
@@ -53,12 +56,17 @@ export function prefixOf(record: TranscriptRecord): string {
   return record.kind === 'USER' ? '> ' : record.kind === 'REPLY' ? `${record.agentLabel}: ` : '';
 }
 
+/** Columns left unused at the right edge of everything drawn in place. */
+export const MARGIN = 2;
+
+/** The lines a record is drawn as: its prefix and text, cut to fit the screen. */
+export function recordLines(record: TranscriptRecord, columns: number): string[] {
+  return wrapLines(`${prefixOf(record)}${record.text}`, Math.max(10, columns - MARGIN));
+}
+
 /** Screen rows a record takes. */
 export function recordRows(record: TranscriptRecord, columns: number): number {
-  const prefix = prefixOf(record);
-  return `${prefix}${record.text}`
-    .split('\n')
-    .reduce((sum, line) => sum + rowsOf(displayWidth(line), columns), 0);
+  return recordLines(record, columns).length;
 }
 
 /** The header of a block, and the last `bodyLines` lines of its text under it. */
@@ -77,7 +85,7 @@ export function blockLines(
     live: block.state === 'OPEN',
   };
   if (options.folded || block.text.length === 0 || options.bodyLines <= 0) return [header];
-  const wrapped = wrapLines(block.text.trimEnd(), Math.max(10, options.columns - 2));
+  const wrapped = wrapLines(block.text.trimEnd(), Math.max(10, options.columns - MARGIN - 2));
   return [
     header,
     ...wrapped
@@ -87,7 +95,12 @@ export function blockLines(
 }
 
 export type PlannedItem =
-  | { readonly kind: 'RECORD'; readonly seq: number; readonly record: TranscriptRecord }
+  | {
+      readonly kind: 'RECORD';
+      readonly seq: number;
+      readonly record: TranscriptRecord;
+      readonly lines: readonly string[];
+    }
   | {
       readonly kind: 'BLOCK';
       readonly seq: number;
@@ -95,15 +108,21 @@ export type PlannedItem =
     };
 
 export interface TailPlan {
+  /** What is drawn: the newest items of the tail that fit, oldest first. */
   readonly items: readonly PlannedItem[];
   readonly rows: number;
-  /** Even without any text of the blocks the tail does not fit: the oldest has to go. */
-  readonly overflow: boolean;
+  /**
+   * What does not fit goes into the scroll-back at once: everything before this sequence number.
+   * Undefined when the whole tail fits. A frame as tall as the terminal makes the terminal library
+   * clear the screen and write everything again, which is not wanted.
+   */
+  readonly commitBefore: number | undefined;
 }
 
 /**
- * The tail in `room` rows. The records and the headers of the blocks come first; the rows that
- * remain are given to the text of the blocks, the newest first.
+ * The tail in `room` rows. The newest items that fit are kept; each record takes what it needs
+ * and each block its header, and the rows that remain go to the text of the blocks, the newest
+ * first. What is older than that is for the scroll-back (`commitBefore`) and is not drawn.
  */
 export function planTail(
   tail: readonly TailItem[],
@@ -114,23 +133,33 @@ export function planTail(
     readonly folded: boolean;
   },
 ): TailPlan {
-  const fixed = tail.reduce(
-    (sum, item) => sum + (item.kind === 'RECORD' ? recordRows(item.record, options.columns) : 1),
-    0,
-  );
+  const least = (item: TailItem): number =>
+    item.kind === 'RECORD' ? recordRows(item.record, options.columns) : 1;
+  let fixed = 0;
+  let first = tail.length;
+  while (first > 0) {
+    const item = tail[first - 1];
+    if (item === undefined || fixed + least(item) > options.room) break;
+    fixed += least(item);
+    first -= 1;
+  }
+  const kept = tail.slice(first);
   let left = Math.max(0, options.room - fixed);
   const bodies = new Map<number, number>();
-  for (let index = tail.length - 1; index >= 0; index -= 1) {
-    const item = tail[index];
+  for (let index = kept.length - 1; index >= 0; index -= 1) {
+    const item = kept[index];
     if (item === undefined || item.kind !== 'BLOCK' || options.folded) continue;
-    const wanted = wrapLines(item.block.text.trimEnd(), Math.max(10, options.columns - 2)).length;
+    const wanted = wrapLines(
+      item.block.text.trimEnd(),
+      Math.max(10, options.columns - MARGIN - 2),
+    ).length;
     const given = Math.min(wanted, left);
     bodies.set(item.seq, given);
     left -= given;
   }
-  const items: PlannedItem[] = tail.map((item) =>
+  const items: PlannedItem[] = kept.map((item) =>
     item.kind === 'RECORD'
-      ? item
+      ? { ...item, lines: recordLines(item.record, options.columns) }
       : {
           kind: 'BLOCK',
           seq: item.seq,
@@ -142,12 +171,17 @@ export function planTail(
           }),
         },
   );
-  const rows = items.reduce(
-    (sum, item) =>
-      sum + (item.kind === 'RECORD' ? recordRows(item.record, options.columns) : item.lines.length),
-    0,
-  );
-  return { items, rows, overflow: fixed > options.room };
+  const rows = items.reduce((sum, item) => sum + item.lines.length, 0);
+  const next = kept[0];
+  const last = tail[tail.length - 1];
+  const commitBefore =
+    first === 0 || last === undefined
+      ? undefined
+      : next === undefined
+        ? // Not even the newest fits: all of it goes, and what comes after is new.
+          last.seq + 1
+        : next.seq;
+  return { items, rows, commitBefore };
 }
 
 /**
@@ -160,7 +194,7 @@ export function layoutWriting(
   options: { readonly columns: number; readonly budget: number },
 ): string[] {
   const lines = blocks.flatMap((block) =>
-    wrapLines(`${block.label}: ${block.text}`.trimEnd(), Math.max(10, options.columns - 1)),
+    wrapLines(`${block.label}: ${block.text}`.trimEnd(), Math.max(10, options.columns - MARGIN)),
   );
   return options.budget <= 0 ? [] : lines.slice(-options.budget);
 }

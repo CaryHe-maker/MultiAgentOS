@@ -1,7 +1,15 @@
 import type { ThinkingView, TranscriptRecord } from '@multiagentos/user-interaction';
 import { describe, expect, it } from 'vitest';
 import type { TailItem } from './console-store.js';
-import { blockLines, layoutWriting, planTail, recordRows, wrapLines } from './thinking-layout.js';
+import { safeCharWidth } from './text-input.js';
+import {
+  blockLines,
+  layoutWriting,
+  planTail,
+  recordLines,
+  recordRows,
+  wrapLines,
+} from './thinking-layout.js';
 
 const block = (
   number: number,
@@ -73,7 +81,7 @@ describe('planTail', () => {
     const plan = planTail(tail, { ...options, room: 20 });
     expect(plan.items.map((item) => item.kind)).toEqual(['BLOCK', 'RECORD', 'RECORD', 'BLOCK']);
     expect(plan.items.map((item) => item.seq)).toEqual([1, 2, 3, 4]);
-    expect(plan.overflow).toBe(false);
+    expect(plan.commitBefore).toBeUndefined();
   });
 
   it('gives the rows that are left to the text of the newest block first', () => {
@@ -107,20 +115,67 @@ describe('planTail', () => {
     expect(plan.rows).toBe(2);
   });
 
-  it('says it overflows when the records and the headers alone do not fit', () => {
+  it('keeps the newest items that fit and sends the older ones to the scroll-back', () => {
     const tail = [
       blockItem(block(1, 'x'), 1),
       record('REPLY', 'a long reply\nof several\nlines', 2),
       blockItem(block(2, 'y'), 3),
     ];
-    expect(planTail(tail, { ...options, room: 4 }).overflow).toBe(true);
-    expect(planTail(tail, { ...options, room: 5 }).overflow).toBe(false);
+    // Header 1 + three-line reply + header 1 = 5 rows.
+    const fits = planTail(tail, { ...options, room: 5 });
+    expect(fits.commitBefore).toBeUndefined();
+    expect(fits.items.map((item) => item.seq)).toEqual([1, 2, 3]);
+    // With 4 rows the oldest does not fit: it is not drawn, and it goes into the scroll-back.
+    const short = planTail(tail, { ...options, room: 4 });
+    expect(short.items.map((item) => item.seq)).toEqual([2, 3]);
+    expect(short.commitBefore).toBe(2);
+    expect(short.rows).toBeLessThanOrEqual(4);
   });
 
-  it('counts the rows of a record, with its prefix and the width of the screen', () => {
+  it('commits everything when not even the newest item fits, and what comes later is new', () => {
+    const long = Array.from({ length: 30 }, (_, index) => `line ${String(index)}`).join('\n');
+    const tail = [record('USER', 'question', 5), record('REPLY', long, 6)];
+    const plan = planTail(tail, { ...options, room: 10 });
+    expect(plan.items).toEqual([]);
+    expect(plan.rows).toBe(0);
+    // Every item has a number below this; the next one that comes has this number or more.
+    expect(plan.commitBefore).toBe(7);
+  });
+
+  it('never gives a frame more rows than it was allowed', () => {
+    for (let room = 0; room <= 12; room += 1) {
+      const tail = [
+        blockItem(block(1, 'a\nb\nc\nd\ne'), 1),
+        record('STEP', 'step', 2),
+        record('REPLY', 'x\ny\nz\nw', 3),
+        blockItem(block(2, 'f\ng\nh\ni\nj'), 4),
+      ];
+      expect(planTail(tail, { ...options, room }).rows).toBeLessThanOrEqual(room);
+    }
+  });
+
+  it('cuts a record to lines with the prefix of its kind, and counts the rows from them', () => {
     expect(recordRows({ kind: 'USER', text: 'hi' }, 40)).toBe(1);
     expect(recordRows({ kind: 'REPLY', agentLabel: 'main', text: 'a\nb' }, 40)).toBe(2);
+    // 38 columns are usable of 40 (two stay free at the right edge).
     expect(recordRows({ kind: 'NOTICE', text: 'x'.repeat(85) }, 40)).toBe(3);
+    expect(recordLines({ kind: 'USER', text: 'hi' }, 40)).toEqual(['> hi']);
+  });
+
+  it('counts dashes, quotes and symbols as wide, so a terminal that draws them wide never wraps a line', () => {
+    // 20 em dashes are 20 columns when narrow and 40 when wide: they have to be cut for the wide
+    // measure, or the terminal would wrap the line and Ink would erase one row too few.
+    const lines = recordLines({ kind: 'NOTICE', text: '—'.repeat(20) }, 30);
+    expect(lines.length).toBe(2);
+    for (const line of lines)
+      expect(
+        [...line].reduce((sum, ch) => sum + safeCharWidth(ch.codePointAt(0) ?? 0), 0),
+      ).toBeLessThanOrEqual(28);
+    expect(safeCharWidth(0x2014)).toBe(2);
+    expect(safeCharWidth(0x201c)).toBe(2);
+    expect(safeCharWidth(0x2713)).toBe(2);
+    expect(safeCharWidth(0x41)).toBe(1);
+    expect(safeCharWidth(0x4f60)).toBe(2);
   });
 });
 

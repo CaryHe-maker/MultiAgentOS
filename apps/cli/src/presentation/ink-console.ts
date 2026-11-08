@@ -22,7 +22,7 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import { layoutWriting, planTail, prefixOf } from './thinking-layout.js';
+import { MARGIN, layoutWriting, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
   backspace,
@@ -39,8 +39,6 @@ import {
   lineStart,
   moveVertical,
   right,
-  rowsOf,
-  displayWidth,
   type InputState,
 } from './text-input.js';
 
@@ -281,12 +279,12 @@ function ConsoleApp({
       ? 0
       : pendingText
           .split('\n')
-          .reduce((sum, line) => sum + rowsOf(displayWidth(line), columns), 0)) +
+          .reduce((sum, line) => sum + wrapLines(line, Math.max(10, columns - MARGIN)).length, 0)) +
     (live.queued.length > 0 ? 1 : 0) +
     1 +
     boxRows(box, PROMPT, CONTINUATION, columns);
   // What is being written for the user comes first and gets what it needs; the tail gets the rest.
-  const room = Math.max(4, rows - others - 2);
+  const room = Math.max(1, rows - others - 3);
   const writingLines = layoutWriting(live.writing ?? [], { columns, budget: room });
   const plan = planTail(tail, {
     now,
@@ -294,12 +292,12 @@ function ConsoleApp({
     room: Math.max(0, room - writingLines.length),
     folded,
   });
-  // When even the records and the headers do not fit, the oldest of the tail goes into the
-  // scroll-back, so that the screen is never taller than the terminal.
-  const second = tail[1];
+  // What does not fit goes into the scroll-back, so that a frame is never as tall as the
+  // terminal: that would make the terminal library clear the screen and write it all again.
+  const { commitBefore } = plan;
   useEffect(() => {
-    if (plan.overflow && second !== undefined) store.advanceFloor(second.seq);
-  }, [plan.overflow, second, store]);
+    if (commitBefore !== undefined) store.advanceFloor(commitBefore);
+  }, [commitBefore, store]);
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line. The rows above the box are measured after they are laid out.
@@ -327,7 +325,20 @@ function ConsoleApp({
       { flexDirection: 'column', ref: above },
       ...plan.items.flatMap((item): ReactElement[] =>
         item.kind === 'RECORD'
-          ? [h(Record, { key: `r${String(item.seq)}`, record: item.record })]
+          ? item.lines.map((line, index) =>
+              h(
+                Text,
+                {
+                  key: `r${String(item.seq)}-${String(index)}`,
+                  ...(COLORS[item.record.kind] === undefined
+                    ? {}
+                    : { color: COLORS[item.record.kind] }),
+                  ...(item.record.kind === 'THINKING' ? { dimColor: true } : {}),
+                  wrap: 'truncate-end',
+                },
+                line,
+              ),
+            )
           : item.lines.map((line, index) =>
               h(
                 Text,
@@ -343,9 +354,16 @@ function ConsoleApp({
       ),
       ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
       ...writingLines.map((line, index) =>
-        h(Text, { key: `w${String(index)}`, color: REPLY_COLOR }, line),
+        h(Text, { key: `w${String(index)}`, color: REPLY_COLOR, wrap: 'truncate-end' }, line),
       ),
-      pendingText === undefined ? null : h(Text, { color: 'yellow' }, pendingText),
+      ...(pendingText === undefined
+        ? []
+        : pendingText
+            .split('\n')
+            .flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)))
+            .map((line, index) =>
+              h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, line),
+            )),
       live.queued.length > 0
         ? h(Text, { color: 'gray' }, ConsoleText.queued(live.queued.length))
         : null,
