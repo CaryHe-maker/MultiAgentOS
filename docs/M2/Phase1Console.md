@@ -111,4 +111,4 @@ ModelCall Executor ──(progress 回调)──▶ Supervisor ──▶ Kernel 
 - **白底终端的配色**：灰色（思考、状态、步骤）在白底上近似黑色，浅蓝 `#8fd3ff` 与荧光绿 `#39ff14` 在白底上又很淡。设想：配色分浅色和深色两套，用 `MAS_THEME=light|dark` 选择，默认按 `COLORFGBG` 猜；系统的话和系统状态统一成同一个蓝色系。**没有确认，没有实现。**
 - **长回复发布时的折叠**：回复很长（放不进限额）时，它之前的思考块只能以折叠的一行进入记录，不能在回复前面保持展开（时间顺序决定回复在它们后面）。
 - **每次模型调用的用量不在日志里**（[M2Baseline](M2Baseline.md) 缺口 15）：`mas log` 取自模型输出产物；要不要在合同里补上，待定。
-- **平台**：在 Windows 原生没有沙盒（`NO_BWRAP`），按设计拒绝运行命令；完整功能请用 WSL2（Ubuntu 24.04）。是否为 Windows 原生做"不运行命令"的受支持模式，见 [M2Baseline](M2Baseline.md) 缺口 18。
+- **平台**：M2 只支持 Linux 与 WSL2，不适配 Windows 原生（[M2Decisions](M2Decisions.md) 2a）。Windows 原生没有沙盒，不能运行命令，这是预期的行为。

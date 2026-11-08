@@ -8,7 +8,7 @@
 - **已实现**：代码在 `feat/M2`，有确定性测试（假模型、假 provider、假时钟），在 Ubuntu 24.04（WSL）与 GitHub Actions 的质量门中通过。
 - **真实模型已验证**：另在真实模型（`deepseek-flash`）上跑过，当时的数字与结论记录在 [History/M2/Evaluation](../History/M2/Evaluation/)；原始记录与脚本已随评测体系的重建删除（[Evaluation](Evaluation.md)）。这些数据来自单个模型与少量运行，不是统计结论。
 - **缺口**：设计里要求、尚未做到的部分。第 5 节汇总。
-- 质量门：约 130 个测试文件、约 2090 个用例；Windows 本机还有几个与符号链接（需要管理员权限）、第二个实例的检测和进程退出码相关的用例失败，在 Ubuntu 上全部通过，所以以 Ubuntu 为准（`rg` 的路径问题已修，见缺口 17）。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
+- 质量门：约 130 个测试文件、约 2090 个用例，在 Ubuntu 24.04（含 WSL2）上全部通过。**Windows 原生不是支持平台**（[M2Decisions](M2Decisions.md) 2a）：那里还有几个与符号链接、第二个实例的检测和进程退出码相关的用例失败，不算缺陷（缺口 17 是真实模型测试时顺手修的，不代表适配 Windows）。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
 
 ## 2. 能力现状
 
@@ -85,7 +85,7 @@
 14. 协议注册表里有一批只登记、从不使用的"暂不支持"引用族（检查点、恢复、人工审阅、集成、日志位置、保留令牌、消费者位移，SharedContracts 3.9 为长期架构预留）。它们不进入任何产品路径，是否在 M2 发布前删除由负责人决定。
 15. **日志里的 `MODEL_TURN.usage` 从未被写入。** 记录格式有这个字段，压缩的"实测词元数"（`measured`）和评测的词元、成本、缓存命中都从它读取，但 Kernel 给 Workflow 的 `UnitReport` 不带用量，Workflow 写 `MODEL_TURN` 时也没有填。后果：压缩的触发一直用估算而不是实测；`metricsOf` 对真实运行得到的词元为 0、成本为空（评测体系自己的测试用手写记录，没有发现）。用量其实在模型输出产物里（`ModelRawOutput.usage`），`mas log` 从那里读。修法需要改 Kernel 与 Workflow 之间的合同，待负责人决定（见 Phase1Console）。
 16. `mas run --repo` 与 `--readonly` 曾被程序级选项吞掉（已修：`enablePositionalOptions`，有回归测试）。
-18. **Windows 原生没有沙盒，不能运行命令。** 沙盒是 bubblewrap，只有 Linux 有；Windows 上探测为 `NO_BWRAP`，按设计拒绝运行命令（不降级）。读、搜、写文件、联网、子 Agent、流式、`mas log` 在 Windows 上可用（`rg` 路径问题见缺口 17）。Windows 用户要完整功能请用 WSL2。还有实例锁判断进程是否存活用了 Linux 的 `/proc`、符号链接测试需要管理员权限，是 Windows 原生要做"不运行命令"的受支持模式时要处理的。是否做这个模式，待定。
+18. **Windows 原生不支持（已决定，不是缺口）。** 沙盒是 bubblewrap，只有 Linux 有；Windows 原生探测为 `NO_BWRAP`，按设计拒绝运行命令，不降级。M2 只支持 Linux 与 WSL2，写入 [M2Decisions](M2Decisions.md) 2a 与 README；不做原生沙盒，也不做"不运行命令"的原生模式。
 17. **Windows 上 `search_repository` 的 SYMBOL 与 TEXT 搜索一直返回"没有匹配"**：`rg` 在 Windows 上输出 `.\src\a.ts`，而结果按 `./` 去掉前缀，路径对不上文件集，所有匹配被丢弃（真实模型运行时发现；目标平台 Ubuntu 不受影响）。已修（`search-backends.ts`），原有的"rg 与扫描一致"用例在 Windows 上也通过了。
 
 ## 6. 静态审核记录
@@ -104,7 +104,7 @@
 5. 代码注释中 4 处指向不存在章节的文档引用；M2 的 AgentToolPool 文档缺少模型价目一节（只在归档的 M1 文档里），补上第 5a 节。
 6. 测试夹具：脚本化 provider 的响应格式与请求路由各写了两份，合并为 `test/support/scripted-model.ts`；五处"列出 Session 后等 100 毫秒再 `/resume`"改为等到列表真的显示出来。
 
-仍然开着的，记在上面的缺口 13、14、15、18；16、17 已修复。
+仍然开着的，记在上面的缺口 13、14、15；16、17 已修复，18 已决定不适配。
 
 ## 7. 本文怎么用
 

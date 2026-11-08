@@ -38,7 +38,7 @@ M1 的机制见归档的 [M1 Supervisor](../../History/M1/Kernel/Supervisor.md)�
 - **进程**：以 `child-pid` 为内层进程组；停止的升级顺序见 M2Design 第 4.7 节。进程内的 Executor 没有 SIGKILL 一步。
 - **输出**：stdout 与 stderr 合并读取，超过 `maxOutputBytes` 时保留头尾，其余丢弃并标记 `truncated`；Supervisor 不解释内容，只识别沙盒拒绝的固定文字（`Read-only file system`、`Network is unreachable`）并计数。
 - **探测**：Session 开始时以真实 profile 运行 `/bin/true`；失败时按原因分类（没有 `bwrap`、命名空间被限制、profile 启动失败），并给出使用说明中的修复提示。
-- **没有 `bwrap` 的平台**（如 Windows）：探测为 `NO_BWRAP`，按 `sandbox.unavailable` 处理。
+- **没有 `bwrap` 的平台**（如 Windows 原生，M2 不支持）：探测为 `NO_BWRAP`，按 `sandbox.unavailable` 处理。
 - **模型调用的预览**：MODEL 的 `ExecutorEnvironment` 带 `progress`，Supervisor 把执行器的通知按 40 毫秒合并（思考与文字分开、保持先后）成 `kernel.execution.ModelProgress`，不等待地发给 Kernel 核心（地址 `kernel-core.model-progress`）。它不是执行事实，终态事实仍然只有一个；Kernel 核心记着这次执行属于哪个 AgentRun，转成 `kernel.control.ModelStream` 发给 UserInteraction。
 
 ## 6. 停机
