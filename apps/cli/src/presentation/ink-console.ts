@@ -69,6 +69,14 @@ function Record({ record }: { readonly record: TranscriptRecord }): ReactElement
   );
 }
 
+/**
+ * Ink draws an empty line as no row at all, which would make the count of rows (and with it the
+ * place of the cursor and what fits) wrong by one for every blank line: a blank line is a space.
+ */
+function row(line: string): string {
+  return line.length === 0 ? ' ' : line;
+}
+
 function seconds(from: string, now: number): number {
   return Math.max(0, Math.round((now - Date.parse(from)) / 1000));
 }
@@ -341,7 +349,7 @@ function ConsoleApp({
                   ...(item.record.kind === 'THINKING' ? { dimColor: true } : {}),
                   wrap: 'truncate-end',
                 },
-                line,
+                row(line),
               ),
             )
           : item.lines.map((line, index) =>
@@ -354,14 +362,14 @@ function ConsoleApp({
                   ...(line.kind === 'BODY' ? { dimColor: true } : {}),
                   wrap: 'truncate-end',
                 },
-                line.text,
+                row(line.text),
               ),
             ),
       ),
       ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
       ...answering.map((line) => h(Answering, { key: line.id, line, now })),
       ...questionLines.map((line, index) =>
-        h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, line),
+        h(Text, { key: `q${String(index)}`, color: 'yellow', wrap: 'truncate-end' }, row(line)),
       ),
       live.queued.length > 0
         ? h(Text, { color: 'gray', wrap: 'truncate-end' }, ConsoleText.queued(live.queued.length))

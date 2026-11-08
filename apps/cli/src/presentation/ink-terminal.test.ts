@@ -318,4 +318,43 @@ describe('where the cursor is left', () => {
     expect(rows[row]).toContain('› 你好');
     expect(column).toBe(2 + 2);
   });
+
+  it('stays on the input row when a reply in the drawn part has blank lines', async () => {
+    const { terminal, stdin, stdout } = connect(60, 30, false);
+    const ink = createInkConsole(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+    );
+    const instance = ink.mount({
+      submit: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(),
+      withdrawLast: () => undefined,
+      steer: () => Promise.resolve(),
+    });
+    unmount = () => instance.unmount();
+    await tick();
+    ink.store.print({ kind: 'USER', text: '问题' });
+    // An open thinking keeps what comes after it in the drawn part, blank lines included.
+    ink.store.update({
+      status: '运行中',
+      activity: [],
+      waiting: 0,
+      queued: [],
+      thinking: [block(1, '想一\n想二', 'OPEN')],
+    });
+    ink.store.print({
+      kind: 'REPLY',
+      agentLabel: 'main',
+      text: '第一段\n\n第二段\n\n\n第三段',
+    });
+    await tick();
+    stdin.write('你');
+    await tick();
+    const { row, column, rows } = terminal.cursor();
+    expect(rows[row]).toContain('› 你');
+    expect(column).toBe(2 + 2);
+    // The blank lines are there too.
+    const text = rows.join('\n');
+    expect(text).toMatch(/第一段\s*\n\s*\n\s*第二段/u);
+  });
 });
