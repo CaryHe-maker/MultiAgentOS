@@ -38,7 +38,7 @@ export const USER_COLOR = '#39ff14';
  * Everything the system says at its own level is yellow: its notices (a new conversation, opened,
  * allowed), what it asks (authorization, questions), what is waiting and the status line.
  */
-export const SYSTEM_COLOR = 'yellow';
+export const SYSTEM_COLOR = '#F9F1A5';
 /** The status line above the input box: a pink of its own, between dashes. */
 export const STATUS_COLOR = '#ff79c6';
 /** What an agent answers: a deep blue. */

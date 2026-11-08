@@ -27,7 +27,7 @@ function setup() {
 }
 
 describe('Ink console colours', () => {
-  it('writes what the user typed in bright green, the system in yellow and the agent in deep blue', async () => {
+  it('writes what the user typed in bright green, the system in pale yellow and the agent in deep blue', async () => {
     const { store, ui } = setup();
     store.print({ kind: 'USER', text: '问题' });
     store.print({ kind: 'NOTICE', text: '已允许。' });
@@ -36,17 +36,17 @@ describe('Ink console colours', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
     expect(USER_COLOR).toBe('#39ff14');
-    expect(SYSTEM_COLOR).toBe('yellow');
+    expect(SYSTEM_COLOR).toBe('#F9F1A5');
     expect(REPLY_COLOR).toBe('#2f6df6');
-    // Green for the user, yellow for the system, deep blue for the agent.
+    // Green for the user, pale yellow for the system, deep blue for the agent.
     expect(frame).toContain('\u001b[38;2;57;255;20m> 问题');
-    expect(frame).toContain('\u001b[33m已允许。');
+    expect(frame).toContain('\u001b[38;2;249;241;165m已允许。');
     // What may be picked from is quiet: grey, below the notice that introduces it.
     expect(frame).toContain('\u001b[90m  1. 你好（2 轮）');
     expect(frame).toContain('\u001b[38;2;47;109;246mmain: 回答');
   });
 
-  it('writes everything the system says at its own level in yellow: status, queue, questions', async () => {
+  it('writes everything the system says at its own level in pale yellow: status, queue, questions', async () => {
     const { store, ui } = setup();
     store.update({
       status: '运行中',
@@ -60,8 +60,8 @@ describe('Ink console colours', () => {
     // The status line has a colour of its own, pink, and sits between dashes.
     expect(STATUS_COLOR).toBe('#ff79c6');
     expect(frame).toContain('\u001b[38;2;255;121;198m------ 运行中 ------');
-    expect(frame).toContain('\u001b[33m本次运行的额度已用完');
-    expect(frame).toContain('\u001b[33m已排队 1 条');
+    expect(frame).toContain('\u001b[38;2;249;241;165m本次运行的额度已用完');
+    expect(frame).toContain('\u001b[38;2;249;241;165m已排队 1 条');
   });
 
   it('writes the thinking in grey, while it streams and after', async () => {
