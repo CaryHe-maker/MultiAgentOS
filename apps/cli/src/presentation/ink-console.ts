@@ -32,8 +32,8 @@ import {
 
 type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>;
 
-/** What the user typed: a bright green that stands out from everything the system says. */
-export const USER_COLOR = '#39ff14';
+/** What the user typed: a soft green that stands out from everything the system says. */
+export const USER_COLOR = '#7ee787';
 /**
  * Everything the system says at its own level is yellow: its notices (a new conversation, opened,
  * allowed), what it asks (authorization, questions), what is waiting and the status line.
@@ -41,8 +41,8 @@ export const USER_COLOR = '#39ff14';
 export const SYSTEM_COLOR = '#F9F1A5';
 /** The status line above the input box: a pink of its own, between dashes. */
 export const STATUS_COLOR = '#ff79c6';
-/** What an agent answers: a deep blue. */
-export const REPLY_COLOR = '#2f6df6';
+/** What an agent answers: a light blue. */
+export const REPLY_COLOR = '#79c0ff';
 
 const COLORS: Partial<Record<TranscriptRecord['kind'], string>> = {
   USER: USER_COLOR,

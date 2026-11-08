@@ -27,7 +27,7 @@ function setup() {
 }
 
 describe('Ink console colours', () => {
-  it('writes what the user typed in bright green, the system in pale yellow and the agent in deep blue', async () => {
+  it('writes what the user typed in soft green, the system in pale yellow and the agent in light blue', async () => {
     const { store, ui } = setup();
     store.print({ kind: 'USER', text: '问题' });
     store.print({ kind: 'NOTICE', text: '已允许。' });
@@ -35,15 +35,15 @@ describe('Ink console colours', () => {
     store.print({ kind: 'REPLY', agentLabel: 'main', text: '回答' });
     await tick();
     const frame = ui.lastFrame() ?? '';
-    expect(USER_COLOR).toBe('#39ff14');
+    expect(USER_COLOR).toBe('#7ee787');
     expect(SYSTEM_COLOR).toBe('#F9F1A5');
-    expect(REPLY_COLOR).toBe('#2f6df6');
-    // Green for the user, pale yellow for the system, deep blue for the agent.
-    expect(frame).toContain('\u001b[38;2;57;255;20m> 问题');
+    expect(REPLY_COLOR).toBe('#79c0ff');
+    // Green for the user, pale yellow for the system, light blue for the agent.
+    expect(frame).toContain('\u001b[38;2;126;231;135m> 问题');
     expect(frame).toContain('\u001b[38;2;249;241;165m已允许。');
     // What may be picked from is quiet: grey, below the notice that introduces it.
     expect(frame).toContain('\u001b[90m  1. 你好（2 轮）');
-    expect(frame).toContain('\u001b[38;2;47;109;246mmain: 回答');
+    expect(frame).toContain('\u001b[38;2;121;192;255mmain: 回答');
   });
 
   it('writes everything the system says at its own level in pale yellow: status, queue, questions', async () => {
@@ -98,6 +98,6 @@ describe('Ink console colours', () => {
     const frame = ui.lastFrame() ?? '';
     // The character under the cursor is in reverse video; the rest of the box is green.
     expect(frame).toContain('\u001b[7mb\u001b[27m');
-    expect(frame).toContain('\u001b[38;2;57;255;20m');
+    expect(frame).toContain('\u001b[38;2;126;231;135m');
   });
 });
