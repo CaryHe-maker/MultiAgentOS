@@ -14,6 +14,7 @@ import {
   type KernelToInteractionEvent,
   type ModelStream,
   type RunFinished,
+  type ShutdownSource,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
@@ -421,7 +422,7 @@ export class Console {
    */
   exitWith(code: number): void {
     this.#exitCode = code;
-    void this.shutdown().catch(() => undefined);
+    void this.shutdown('EXIT_CODE').catch(() => undefined);
   }
 
   /** Resolves when the user asked to leave; the composition root then shuts down. */
@@ -520,7 +521,7 @@ export class Console {
     }
     const now = this.#now().getTime();
     if (this.#interruptedAt !== undefined && now - this.#interruptedAt <= INTERRUPT_WINDOW_MS) {
-      await this.shutdown();
+      await this.shutdown('INTERRUPT_TWICE');
       return;
     }
     this.#interruptedAt = now;
@@ -529,8 +530,8 @@ export class Console {
   }
 
   /** Asks the Kernel to close the Session and stop the system; `exited()` then resolves. */
-  async shutdown(): Promise<void> {
-    await this.#deps.gateway.shutdown({ requestId: newId('req') }, this.#context());
+  async shutdown(source: ShutdownSource): Promise<void> {
+    await this.#deps.gateway.shutdown({ requestId: newId('req'), source }, this.#context());
     this.#exit?.();
   }
 
@@ -835,7 +836,7 @@ export class Console {
         this.#notice(text.help);
         break;
       case '/exit':
-        await this.shutdown();
+        await this.shutdown('EXIT_COMMAND');
         break;
       case '/timeline':
         this.#showTimeline();

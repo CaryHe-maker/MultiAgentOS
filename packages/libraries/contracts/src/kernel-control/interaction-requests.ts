@@ -5,8 +5,24 @@ import { closed, count, text } from '../platform-common/schema-helpers.js';
 import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { UserInputSchema } from './session-requests.js';
 
+/**
+ * Who asked the system to stop. It goes into the developer-only system record of the Kernel
+ * (`shutdown-requests`) and nowhere else: not to Workflow, not to the Session log, not to the user.
+ */
+export const SHUTDOWN_SOURCES = [
+  /** `/exit`. */
+  'EXIT_COMMAND',
+  /** Ctrl+C twice within the window. */
+  'INTERRUPT_TWICE',
+  /** `mas run`: the run is over. */
+  'RUN_FINISHED',
+  /** The console has to end for a reason outside the conversation (an exit code). */
+  'EXIT_CODE',
+] as const;
+export type ShutdownSource = (typeof SHUTDOWN_SOURCES)[number];
+
 export const ShutdownRequestSchema = closed(
-  { requestId: IdSchemas.requestId },
+  { requestId: IdSchemas.requestId, source: Type.Enum(SHUTDOWN_SOURCES) },
   'kernel.control.ShutdownRequest.v1',
 );
 export type ShutdownRequest = Static<typeof ShutdownRequestSchema>;

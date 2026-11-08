@@ -170,7 +170,7 @@ interface ReadArtifactRequest {
 }
 ```
 
-`ArtifactContent`、`ShutdownRequest` 的字段与 M1Interface 第 4.2、4.3 节相同，以 major 1 发布。
+`ArtifactContent` 的字段与 M1Interface 第 4.2 节相同，以 major 1 发布。`ShutdownRequest` 在 M1 的基础上增加 `source`（`EXIT_COMMAND`、`INTERRUPT_TWICE`、`RUN_FINISHED`、`EXIT_CODE`）：谁请求了退出，只写进 Kernel 的系统级开发者记录（[Persistence](Persistence.md) 第 4.5 节），不转给 Workflow、不进 Session 日志。
 `readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
 
 ### 2.4 `/compact`

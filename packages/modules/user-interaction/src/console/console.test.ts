@@ -369,7 +369,17 @@ describe('Console', () => {
     clock.ms = 4000;
     await t.console.interrupt();
     expect(t.named('shutdown')).toHaveLength(1);
+    expect(t.named('shutdown')[0]?.request).toMatchObject({ source: 'INTERRUPT_TWICE' });
     await exited;
+  });
+
+  it('says who asks for the system to stop: /exit, and the code of an exit from outside', async () => {
+    const t = setup();
+    await t.console.submit('/exit');
+    expect(t.named('shutdown')[0]?.request).toMatchObject({ source: 'EXIT_COMMAND' });
+    t.console.exitWith(75);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(t.named('shutdown')[1]?.request).toMatchObject({ source: 'EXIT_CODE' });
   });
 });
 

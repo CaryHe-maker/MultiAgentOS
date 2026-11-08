@@ -487,3 +487,58 @@ describe('S: opening a Session says what the list says of it', () => {
     TIMEOUT,
   );
 });
+
+describe('S: /compact right after opening a Session', () => {
+  it(
+    'is refused with a reason and the next message runs normally',
+    async () => {
+      const place = await roots();
+      const first = await chatOn(place, scriptedChat(reply('one')));
+      await first.say('first');
+      await finish(first);
+
+      const chat = await chatOn(place, scriptedChat(reply('two')));
+      await resumeFirst(chat);
+      await chat.console.submit('/compact');
+      await chat.say('hello');
+      expect(chat.printed('REPLY')).toEqual(['two']);
+      expect(chat.printed('ERROR')).toEqual([]);
+      expect(chat.console.sessionId).toBeDefined();
+    },
+    TIMEOUT,
+  );
+});
+
+describe('S: who asked the system to stop', () => {
+  it(
+    'is on the developer record of the Kernel and nowhere the conversation can read it',
+    async () => {
+      const place = await roots();
+      const chat = await chatOn(place, scriptedChat(reply('one')));
+      await chat.say('first');
+      // `close` types `/exit`, the same way the user ends a conversation.
+      await finish(chat);
+
+      const record = await readFile(
+        join(place.dataDir, 'kernel-core', 'shutdown-requests.jsonl'),
+        'utf8',
+      );
+      const lines = record
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { type: string; source: string });
+      expect(lines.map((line) => [line.type, line.source])).toContainEqual([
+        'SHUTDOWN_REQUESTED',
+        'EXIT_COMMAND',
+      ]);
+
+      // The Session log, which Workflow writes, says only that the run closed with SHUTDOWN.
+      const [sessionId] = await sessionIds(place.dataDir);
+      const log = await logOf(place.dataDir, sessionId as string);
+      expect(log).toContain('"closeReason":"SHUTDOWN"');
+      expect(log).not.toContain('EXIT_COMMAND');
+      expect(log).not.toContain('SHUTDOWN_REQUESTED');
+    },
+    TIMEOUT,
+  );
+});

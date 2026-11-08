@@ -602,6 +602,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     scope: 'SYSTEM',
     file: 'memory-events',
   });
+  // Who asked the system to stop, for whoever looks into why a conversation ended: the Session
+  // log and Workflow know only that the run closed with SHUTDOWN, as before.
+  const shutdownRequests = persistence.appendLog<object>('kernel-core', {
+    scope: 'SYSTEM',
+    file: 'shutdown-requests',
+  });
   let started = false;
   // The sampler's only way out is this one message to Core (Kernel/Monitor 4a).
   const sampler = createMemorySampler({
@@ -658,6 +664,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         if (envelope.producer !== 'gateway')
           throw new Error('Kernel core request has an invalid producer');
         const forward = envelope.payload;
+        if (forward.requestType === 'shutdown')
+          await shutdownRequests
+            .append({
+              at: now().toISOString(),
+              type: 'SHUTDOWN_REQUESTED',
+              source: forward.request.source,
+              requestId: forward.request.requestId,
+            })
+            .catch(fault);
         const response = await core.handle(
           forward,
           'sessionId' in forward ? forward.sessionId : undefined,

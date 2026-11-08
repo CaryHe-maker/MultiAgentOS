@@ -14313,12 +14313,21 @@
             "request": {
               "type": "object",
               "required": [
-                "requestId"
+                "requestId",
+                "source"
               ],
               "properties": {
                 "requestId": {
                   "type": "string",
                   "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "source": {
+                  "enum": [
+                    "EXIT_COMMAND",
+                    "INTERRUPT_TWICE",
+                    "RUN_FINISHED",
+                    "EXIT_CODE"
+                  ]
                 }
               },
               "additionalProperties": false,
@@ -19902,12 +19911,21 @@
     "kernel.control.ShutdownRequest.v1": {
       "type": "object",
       "required": [
-        "requestId"
+        "requestId",
+        "source"
       ],
       "properties": {
         "requestId": {
           "type": "string",
           "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "source": {
+          "enum": [
+            "EXIT_COMMAND",
+            "INTERRUPT_TWICE",
+            "RUN_FINISHED",
+            "EXIT_CODE"
+          ]
         }
       },
       "additionalProperties": false,
