@@ -850,6 +850,8 @@ real('A: the authorization of commands', () => {
       const provider = scriptedChat(run(command), reply('d'));
       const chat = await chatOn(place, provider, { answer: () => 'hold' });
       await sayAndSettle(chat, 'go', 800);
+      // A slow machine may not have asked after the pause: wait for the question itself.
+      await until(() => chat.questions.length > 0, 'the question');
       const question = chat.questions[0] ?? '';
       expect(question).toContain('只能单次允许');
       expect(question).toContain(why);
