@@ -958,7 +958,37 @@ describe('an answer being written for the user (Phase1Console 4)', () => {
     expect(t.live()?.activity).toMatchObject([{ since: new Date(5000).toISOString() }]);
   });
 
-  it('does not say it of an agent that only thinks or calls tools', async () => {
+  it('says which tool and which file an agent is writing a call for, with its own time', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
+    t.console.handleModelStream({
+      ...stream('exe_1', 'REASONING', 2000),
+      kind: 'TOOL',
+      name: 'write_file',
+    });
+    expect(t.live()?.activity).toMatchObject([
+      { phase: '正在生成 write_file', since: new Date(2000).toISOString() },
+    ]);
+    expect(t.live()?.thinking?.[0]).toMatchObject({ state: 'DONE' });
+    // The file is known later; the clock goes on from where it began.
+    t.console.handleModelStream({
+      ...stream('exe_1', 'REASONING', 3000),
+      kind: 'TOOL',
+      name: 'write_file',
+      target: 'docs/a.docx',
+    });
+    expect(t.live()?.activity).toMatchObject([
+      { phase: '正在生成 write_file docs/a.docx', since: new Date(2000).toISOString() },
+    ]);
+    // Once the call is written, the line is the tool's own again.
+    t.console.handleModelStream(stream('exe_1', 'END', 4000));
+    expect(t.live()?.activity[0]?.phase).toBe('思考中');
+  });
+
+  it('does not say it of an agent that only thinks', async () => {
     const t = setup();
     await t.console.submit('hi');
     await t.event(thinkingPhase);

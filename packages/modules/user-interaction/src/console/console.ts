@@ -188,6 +188,11 @@ export class Console {
   readonly #thinking = new ThinkingLog();
   /** The answers agents are writing for the user, by the call that writes them; only that they are. */
   readonly #answering = new Map<string, { agentRunId: string; startedAt: string }>();
+  /** The tool calls agents are writing, by the call that writes them: which tool, on which file. */
+  readonly #generating = new Map<
+    string,
+    { agentRunId: string; startedAt: string; name: string; target?: string }
+  >();
   /** The Session the thinking belongs to. */
   #thinkingSession: string | undefined;
   /** Set by /fork until the draft's first prompt. */
@@ -262,6 +267,7 @@ export class Console {
     this.#thinkingSession = sessionId;
     this.#thinking.clear();
     this.#answering.clear();
+    this.#generating.clear();
   }
 
   /**
@@ -275,6 +281,21 @@ export class Console {
     const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
     if (stream.kind === 'END') {
       this.#thinking.end(stream.callId, stream.at);
+      // The call is written: what comes next is told by the activity of the tool itself.
+      this.#generating.delete(stream.callId);
+    } else if (stream.kind === 'TOOL') {
+      this.#thinking.end(stream.callId, stream.at);
+      const earlier = this.#generating.get(stream.callId);
+      if (earlier === undefined)
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, other] of this.#generating)
+          if (other.agentRunId === stream.agentRunId) this.#generating.delete(id);
+      this.#generating.set(stream.callId, {
+        agentRunId: stream.agentRunId,
+        startedAt: earlier?.startedAt ?? stream.at,
+        name: terminalText(stream.name),
+        ...(stream.target === undefined ? {} : { target: terminalText(stream.target) }),
+      });
     } else if (stream.kind === 'ANSWER') {
       // The thinking is over when the answer begins: one clock runs, not two.
       this.#thinking.end(stream.callId, stream.at);
@@ -341,12 +362,23 @@ export class Console {
     const answering = new Map(
       [...this.#answering.values()].map((answer) => [answer.agentRunId, answer.startedAt]),
     );
+    const generating = new Map(
+      [...this.#generating.values()].map((call) => [call.agentRunId, call]),
+    );
     return inTree(
       [...this.#activity.values()].map((line) => {
+        if (line.waitsForUser === true) return line;
         const startedAt = answering.get(line.agentRunId);
-        return startedAt === undefined || line.waitsForUser === true
+        if (startedAt !== undefined)
+          return { ...line, phase: text.answeringPhase, since: startedAt };
+        const call = generating.get(line.agentRunId);
+        return call === undefined
           ? line
-          : { ...line, phase: text.answeringPhase, since: startedAt };
+          : {
+              ...line,
+              phase: text.generating(call.name, call.target),
+              since: call.startedAt,
+            };
       }),
     ).map(({ item, branch }) => ({ ...item, branch }));
   }
@@ -1063,8 +1095,10 @@ export class Console {
       case 'RunStateChanged': {
         this.#thinkingBelongsTo(this.#sessionId);
         // Nothing streams once the run waits for the user or is over: no block stays open.
-        if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED')
+        if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED') {
           this.#answering.clear();
+          this.#generating.clear();
+        }
         const at = this.#now().toISOString();
         if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
           this.#thinking.closeAll(at, 'DONE');

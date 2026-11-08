@@ -88,10 +88,12 @@ describe('modelProgressOf sends the start of the answer and the end at once', ()
     );
     progress({ kind: 'REASONING', delta: 'think ' });
     progress({ kind: 'REASONING', delta: 'more' });
+    progress({ kind: 'TOOL', name: 'write_file', target: 'a.docx' });
     progress({ kind: 'ANSWER' });
     progress({ kind: 'END' });
     expect(sent.map((message) => [message.kind, 'delta' in message ? message.delta : ''])).toEqual([
       ['REASONING', 'think more'],
+      ['TOOL', ''],
       ['ANSWER', ''],
       ['END', ''],
     ]);

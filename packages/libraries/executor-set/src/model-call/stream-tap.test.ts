@@ -46,21 +46,65 @@ describe('streamTap', () => {
       );
       tap(sse({ tool_calls: [{ index: 0, function: { arguments: '{"path":"a.docx"}' } }] }));
     });
-    expect(events).toEqual([]);
+    expect(events.some((event) => event.kind === 'ANSWER')).toBe(false);
+    expect(events).toEqual([
+      { kind: 'TOOL', name: 'file_write' },
+      { kind: 'TOOL', name: 'file_write', target: 'a.docx' },
+    ]);
   });
 
-  it('tells nothing of a tool that does not answer the user', () => {
+  it('tells the tool a call is for, and the file it names once the path is written', () => {
+    const events = run((tap) => {
+      tap(
+        sse({
+          tool_calls: [{ index: 0, id: 'c1', function: { name: 'write_file', arguments: '' } }],
+        }),
+      );
+      tap(sse({ tool_calls: [{ index: 0, function: { arguments: '{"pa' } }] }));
+      tap(sse({ tool_calls: [{ index: 0, function: { arguments: 'th":"docs/a.d' } }] }));
+      tap(sse({ tool_calls: [{ index: 0, function: { arguments: 'ocx","content":"x"}' } }] }));
+    });
+    expect(events).toEqual([
+      { kind: 'TOOL', name: 'write_file' },
+      { kind: 'TOOL', name: 'write_file', target: 'docs/a.docx' },
+    ]);
+  });
+
+  it('tells only the tool of a call that names no file, and keeps calls apart by their index', () => {
     const events = run((tap) => {
       tap(
         sse({
           tool_calls: [
-            { index: 0, id: 'c1', function: { name: 'read_file', arguments: '{"path":"' } },
+            { index: 0, id: 'a', function: { name: 'run_command', arguments: '{"command":"ls"}' } },
           ],
         }),
       );
-      tap(sse({ tool_calls: [{ index: 0, function: { arguments: 'a.txt"}' } }] }));
+      tap(
+        sse({
+          tool_calls: [{ index: 1, id: 'b', function: { name: 'read_file', arguments: '' } }],
+        }),
+      );
+      tap(sse({ tool_calls: [{ index: 1, function: { arguments: '{"path":"b.txt"}' } }] }));
     });
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      { kind: 'TOOL', name: 'run_command' },
+      { kind: 'TOOL', name: 'read_file' },
+      { kind: 'TOOL', name: 'read_file', target: 'b.txt' },
+    ]);
+  });
+
+  it('tells nothing of a piece that names no tool, and no tool for a reply', () => {
+    const events = run((tap) => {
+      tap(sse({ tool_calls: [{ index: 0, function: { arguments: '{"path":"' } }] }));
+      tap(
+        sse({
+          tool_calls: [
+            { index: 1, id: 'r', function: { name: 'reply', arguments: '{"text":"hi"}' } },
+          ],
+        }),
+      );
+    });
+    expect(events).toEqual([{ kind: 'ANSWER' }]);
   });
 
   it('reads lines that are cut anywhere between the bytes, and ignores what it cannot read', () => {

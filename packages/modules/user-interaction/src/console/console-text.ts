@@ -244,6 +244,9 @@ export const ConsoleText = Object.freeze({
   thinkingList: '思考内容（/think <N> 查看全文）：',
   /** The phase of an agent that writes its answer for the user: the text comes whole, when published. */
   answeringPhase: '正在输出回答',
+  /** The phase of an agent that writes the call of a tool, and the file it names once that is known. */
+  generating: (tool: string, target?: string) =>
+    target === undefined ? `正在生成 ${tool}` : `正在生成 ${tool} ${target}`,
   /** The one line a block that is no longer in view leaves in the transcript. */
   thinkingFolded: (number: number, label: string, seconds: string) =>
     `✻ ${label} 思考 ${seconds}（/think ${String(number)} 展开）`,

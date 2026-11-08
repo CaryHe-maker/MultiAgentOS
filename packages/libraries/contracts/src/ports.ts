@@ -245,6 +245,8 @@ export type ModelProgressEvent =
   | { readonly kind: 'REASONING'; readonly delta: string }
   /** The model has begun its answer for the user (its text is not passed on, only that it began). */
   | { readonly kind: 'ANSWER' }
+  /** The model is writing the call of a tool, and the file it names once that has been written. */
+  | { readonly kind: 'TOOL'; readonly name: string; readonly target?: string }
   | { readonly kind: 'END' };
 
 export interface ExecutorEnvironment {

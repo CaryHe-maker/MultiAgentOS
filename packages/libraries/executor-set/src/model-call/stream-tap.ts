@@ -1,4 +1,10 @@
 import type { ModelProgressEvent } from '@multiagentos/contracts';
+import { JsonStringField } from './json-string-field.js';
+
+/** The argument that names the file a tool works on. */
+const TARGET_FIELD = 'path';
+/** What of a path goes to the screen. */
+const TARGET_MAX = 200;
 
 /** The thinking a streamed chunk carries; the OpenAI adapter does not read DeepSeek's field. */
 export function reasoningDeltaOf(raw: unknown): string | undefined {
@@ -8,7 +14,8 @@ export function reasoningDeltaOf(raw: unknown): string | undefined {
 }
 
 interface ToolCallDelta {
-  readonly function?: { readonly name?: string };
+  readonly index?: number;
+  readonly function?: { readonly name?: string; readonly arguments?: string };
 }
 
 interface ChunkDelta {
@@ -22,7 +29,8 @@ interface ChunkDelta {
  * them for the person watching: the thinking, and the moment the model begins its answer for the
  * user: the call of an answer tool, the reply (`answerTools`: their names). Plain text that comes
  * with other tool calls is not an answer, and the text itself is not passed on: it is shown when
- * it is published. It stands on
+ * it is published. For any other tool call it tells the tool as soon as its name is written and,
+ * once its `path` argument is complete, the file it names. It stands on
  * the network side of the provider SDK on purpose: the SDK reads ahead until the first piece of the
  * answer proper before it passes the stream on, and the thinking comes first, so through the SDK
  * nothing would reach the screen until the thinking is over. Anything it cannot read is skipped;
@@ -35,16 +43,33 @@ export function streamTap(
   const decoder = new TextDecoder();
   let pending = '';
   let answering = false;
+  /** Per tool call of the answer: its name and the reader of the file it names. */
+  const calls = new Map<number, { name: string; reader: JsonStringField; path: string }>();
 
   const onDelta = (delta: ChunkDelta): void => {
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0)
       tell({ kind: 'REASONING', delta: delta.reasoning_content });
-    const writes = (delta.tool_calls ?? []).some((piece) =>
-      answerTools.has(piece.function?.name ?? ''),
-    );
-    if (writes && !answering) {
-      answering = true;
-      tell({ kind: 'ANSWER' });
+    for (const piece of delta.tool_calls ?? []) {
+      const name = piece.function?.name ?? '';
+      if (answerTools.has(name)) {
+        if (!answering) {
+          answering = true;
+          tell({ kind: 'ANSWER' });
+        }
+        continue;
+      }
+      const index = piece.index ?? 0;
+      let call = calls.get(index);
+      if (call === undefined && name.length > 0) {
+        call = { name, reader: new JsonStringField(TARGET_FIELD), path: '' };
+        calls.set(index, call);
+        tell({ kind: 'TOOL', name });
+      }
+      const written = piece.function?.arguments;
+      if (call === undefined || call.reader.done || typeof written !== 'string') continue;
+      call.path += call.reader.feed(written);
+      if (call.reader.done && call.path.length > 0)
+        tell({ kind: 'TOOL', name: call.name, target: call.path.slice(0, TARGET_MAX) });
     }
   };
 

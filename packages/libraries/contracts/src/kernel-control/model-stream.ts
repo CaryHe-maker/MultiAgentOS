@@ -25,6 +25,12 @@ export const ModelStreamSchema = Type.Union(
       delta: text(MODEL_PROGRESS_MAX_DELTA),
     }),
     closed({ ...stream, kind: Type.Literal('ANSWER') }),
+    closed({
+      ...stream,
+      kind: Type.Literal('TOOL'),
+      name: text(64),
+      target: Type.Optional(text(512)),
+    }),
     closed({ ...stream, kind: Type.Literal('END') }),
   ],
   { $id: 'kernel.control.ModelStream.v1' },

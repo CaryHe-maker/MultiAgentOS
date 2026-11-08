@@ -29,6 +29,12 @@ export const ModelProgressSchema = Type.Union(
       delta: text(MODEL_PROGRESS_MAX_DELTA),
     }),
     closed({ ...progress, kind: Type.Literal('ANSWER') }),
+    closed({
+      ...progress,
+      kind: Type.Literal('TOOL'),
+      name: text(64),
+      target: Type.Optional(text(512)),
+    }),
     closed({ ...progress, kind: Type.Literal('END') }),
   ],
   { $id: 'kernel.execution.ModelProgress.v1' },

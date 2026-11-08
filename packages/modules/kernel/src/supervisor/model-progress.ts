@@ -7,8 +7,8 @@ export const PROGRESS_COALESCE_MS = 40;
 /**
  * What a model call tells while it streams (docs/M2/Phase1Console.md 4), as messages for the
  * person watching: small pieces merged into one every few milliseconds, so a provider that sends a
- * word at a time costs a few dozen messages a second at most. The start of the answer and the END
- * of the stream go out at once, after whatever thinking is still held. It only reports; nothing it
+ * word at a time costs a few dozen messages a second at most. The start of the answer, a tool call
+ * being written and the END of the stream go out at once, after whatever thinking is still held. It only reports; nothing it
  * does can reach the call.
  */
 export function modelProgressOf(
@@ -36,7 +36,7 @@ export function modelProgressOf(
   return (event) => {
     if (event.kind !== 'REASONING') {
       flush();
-      report({ ...base(), kind: event.kind });
+      report({ ...base(), ...event });
       return;
     }
     held += event.delta;
