@@ -10,6 +10,8 @@ export type TranscriptRecord =
   | { readonly kind: 'REPORT'; readonly text: string }
   | { readonly kind: 'STEP'; readonly text: string }
   | { readonly kind: 'NOTICE'; readonly text: string }
+  /** Lines the user may pick from (the Sessions of the repository): quiet, below the notice that introduces them. */
+  | { readonly kind: 'LIST'; readonly text: string }
   /** What the model thought: a one-line summary of an older Turn, or a block `/think` asked for. */
   | { readonly kind: 'THINKING'; readonly text: string }
   | { readonly kind: 'ERROR'; readonly text: string };

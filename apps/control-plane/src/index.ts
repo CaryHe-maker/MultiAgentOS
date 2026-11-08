@@ -6,7 +6,13 @@
  */
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { CLI_MESSAGES, createTerminal, parseCli, runCommand } from '@multiagentos/cli';
+import {
+  CLI_MESSAGES,
+  createTerminal,
+  parseCli,
+  runCommand,
+  type Terminal,
+} from '@multiagentos/cli';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { FileInstanceLock } from '@multiagentos/persistence';
 import dotenv from 'dotenv';
@@ -73,9 +79,24 @@ export async function main(argv: readonly string[]): Promise<number> {
   const faults = createDeferredFaultReporter();
   const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });
   let releaseLock: () => Promise<void> = () => Promise.resolve();
+  let releaseTerminal: () => void = () => undefined;
   try {
     let system: System;
-    const terminal = createTerminal();
+    // A fault ends the run before the command does: the terminal is let go of here as well, or
+    // the process would stay behind with a screen that nothing answers.
+    const detachers: (() => void)[] = [];
+    const attached = createTerminal();
+    const terminal: Terminal = {
+      view: attached.view,
+      attach: (input) => {
+        const detach = attached.attach(input);
+        detachers.push(detach);
+        return detach;
+      },
+    };
+    releaseTerminal = () => {
+      for (const detach of detachers.splice(0)) detach();
+    };
     try {
       dotenv.config({ quiet: true });
       const config = await loadSystemConfig(process.env);
@@ -130,6 +151,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       return EXIT_CODE_SYSTEM_FAULT;
     }
   } finally {
+    releaseTerminal();
     removeGuards();
     try {
       subprocess.killAll();

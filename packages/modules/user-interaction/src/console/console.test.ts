@@ -348,6 +348,30 @@ describe('Console', () => {
     await expect(exit).resolves.toBe(3);
   });
 
+  it('welcomes by name, and lists the Sessions as a quiet list of their own below the notice', async () => {
+    const t = setup();
+    await t.console.start();
+    expect(t.printed[0]).toMatchObject({ kind: 'NOTICE' });
+    expect(t.printed[0]?.text).toBe(
+      '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
+    );
+    await t.console.handleSystemEvent({
+      event: {
+        type: 'SessionList',
+        sessions: [
+          { sessionId: 'ses_1', title: 'one', turnCount: 8 },
+          { sessionId: 'ses_2', turnCount: 22 },
+        ],
+      },
+    } as never);
+    const [header, list] = t.printed.slice(-2);
+    expect(header).toMatchObject({ kind: 'NOTICE' });
+    expect(header?.text).toBe('本仓库最近的对话（/resume <编号> 打开）：');
+    expect(list).toMatchObject({ kind: 'LIST' });
+    expect(list?.text.split('\n')).toHaveLength(2);
+    expect(list?.text).toContain('1. one（8 轮）');
+  });
+
   it('resumes a listed Session by its number and exits on a second Ctrl+C in time', async () => {
     const clock = { ms: 0 };
     const t = setup({ clock });

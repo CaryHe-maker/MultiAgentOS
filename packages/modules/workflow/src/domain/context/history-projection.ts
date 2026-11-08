@@ -65,6 +65,27 @@ export interface ProjectionOptions {
   readonly material?: boolean;
 }
 
+/** A NOTE is at most 2000 characters; a workspace can differ in hundreds of files. */
+const DIVERGED_NOTE_MAX = 1600;
+const DIVERGED_PATH_MAX = 200;
+
+/** Names as many of the changed files as fit, and says how many more there are. */
+export function divergedNote(files: readonly string[]): string {
+  const head =
+    'These files changed outside this session since its last turn; read them again before relying on them: ';
+  const named: string[] = [];
+  let length = head.length;
+  for (const file of files) {
+    const path = file.length > DIVERGED_PATH_MAX ? `${file.slice(0, DIVERGED_PATH_MAX)}…` : file;
+    // Leave room for ", " and for the sentence that counts the rest.
+    if (length + path.length + 2 > DIVERGED_NOTE_MAX) break;
+    named.push(path);
+    length += path.length + 2;
+  }
+  const rest = files.length - named.length;
+  return `${head}${named.join(', ')}${rest > 0 ? ` (and ${String(rest)} more; use git status to see them all)` : ''}`;
+}
+
 export function projectHistory(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
@@ -296,7 +317,7 @@ export function projectHistory(
           seq: record.seq,
           category: 'NORMAL',
           kind: 'NOTE',
-          text: `These files changed outside this session since its last turn; read them again before relying on them: ${record.files.join(', ')}`,
+          text: divergedNote(record.files),
         });
         break;
       case 'RUN_INTERRUPTED':

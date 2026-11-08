@@ -39,6 +39,8 @@ export const USER_COLOR = '#39ff14';
  * allowed), what it asks (authorization, questions), what is waiting and the status line.
  */
 export const SYSTEM_COLOR = 'yellow';
+/** The status line above the input box: a pink of its own, between dashes. */
+export const STATUS_COLOR = '#ff79c6';
 /** What an agent answers: a deep blue. */
 export const REPLY_COLOR = '#2f6df6';
 
@@ -48,6 +50,7 @@ const COLORS: Partial<Record<TranscriptRecord['kind'], string>> = {
   THINKING: 'gray',
   STEP: 'gray',
   NOTICE: SYSTEM_COLOR,
+  LIST: 'gray',
   ERROR: 'red',
 };
 
@@ -353,7 +356,11 @@ function ConsoleApp({
             ConsoleText.queued(live.queued.length),
           )
         : null,
-      h(Text, { color: SYSTEM_COLOR, wrap: 'truncate-end' }, status.length > 0 ? status : ' '),
+      h(
+        Text,
+        { color: STATUS_COLOR, wrap: 'truncate-end' },
+        status.length > 0 ? `------ ${status} ------` : ' ',
+      ),
     ),
     h(InputBox, { state: box }),
   );

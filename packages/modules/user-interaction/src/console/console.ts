@@ -1034,21 +1034,22 @@ export class Console {
         ...event.sessions.map((session) => session.sessionId),
       );
       if (event.sessions.length === 0) this.#notice(text.noSessions);
-      else
-        this.#notice(
-          [
-            text.recentSessions,
-            ...event.sessions
-              .slice(0, 10)
-              .map((session, index) =>
-                text.sessionLine(
-                  index + 1,
-                  terminalText(session.title ?? text.untitled),
-                  session.turnCount,
-                ),
+      else {
+        this.#notice(text.recentSessions);
+        this.#deps.view.print({
+          kind: 'LIST',
+          text: event.sessions
+            .slice(0, 10)
+            .map((session, index) =>
+              text.sessionLine(
+                index + 1,
+                terminalText(session.title ?? text.untitled),
+                session.turnCount,
               ),
-          ].join('\n'),
-        );
+            )
+            .join('\n'),
+        });
+      }
     }
     this.#refresh();
     return Promise.resolve();

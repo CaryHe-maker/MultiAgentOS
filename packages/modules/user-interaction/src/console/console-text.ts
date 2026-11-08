@@ -121,7 +121,7 @@ const RUN_STATE: Readonly<Record<string, string>> = {
 
 /** The words of the console; the logic never builds user text itself. */
 export const ConsoleText = Object.freeze({
-  welcome: '新对话。输入问题后按 Enter 开始；/help 查看指令。',
+  welcome: '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
   noSessions: '本仓库还没有对话。',
   sessionLine: (index: number, title: string, turns: number) =>
