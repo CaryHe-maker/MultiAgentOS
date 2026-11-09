@@ -21,8 +21,9 @@
 | 并行：按 AgentRun 分队列、写入占用、额度逐级委派、`run_subagents`、结果契约 | 已实现；机制已验证 | `subagents-exit`、Kernel 层测试；要求派生时 24/24 正确 | P3（完工时间接近关键路径）没有量；B4 没有端到端用例；D（派生指标）不达标：不提示时 33 次只派生 2 次 |
 | 人类在环：暂停、继续、`/steer`、中止、`ask_user` | 已实现；真实模型已验证 | `human-in-loop-exit`、`pause-steer-ask.test.ts`；5 个场景 15/15 | H13 与"`ask_user` 的同意不产生授权"只有 Kernel 层测试；`ask_user` 没有次数上限 |
 | Web：`web_search`、`web_fetch`、地址检查、重定向与 DNS 重绑定 | 已实现；真实模型已验证 | `web-exit`；3 个场景 3/3（含注入页面与私网地址） | Brave 适配器只用假实现测过；`readonly` 预设不含网页；DeepSeek 抓取的计费与搜索词留存没有证据；Workflow 在同一 AgentRun 内记住被拒的工具 |
-| 上下文压缩：自动、溢出、`/compact`，修剪与摘要，撤销时使摘要失效 | 已实现；真实模型已验证 | `compaction-exit`（L1–L4、L7–L13）；长对话六个事实 8/8，摘要请求缓存命中 66% | 早先只修剪的压缩切掉的结果，之后的摘要仍读到修剪后的内容；压缩后上下文没有硬上限（最新一段不受压缩影响）；"额度不足"只有单元测试 |
-| 终端交互：控制台、`/help`、`/status`、`/timeline`、`/output`、`/undo`、`/diff`、`/compact` | 已实现 | `console` 的单元与验收测试 | `/thinking`、图视图等非安全功能未做 |
+| 上下文压缩：自动、溢出、`/compact`，修剪与摘要，撤销时使摘要失效 | 已实现；真实模型已验证 | `compaction-exit`（L1–L4、L7–L21：刚新建就压缩、打开旧对话后压缩与再压缩、重开后压缩与 Fork、反复压缩、打开时已超阈值、压缩中来消息、被拒、被 Fork 取消）；真实模型：长对话六个事实 8/8，新建即压缩、打开旧对话后压缩、反复压缩、压缩后重开均通过，摘要请求缓存命中约 99.8% | 早先只修剪的压缩切掉的结果，之后的摘要仍读到修剪后的内容；压缩后上下文没有硬上限（最新一段不受压缩影响）；"额度不足"只有单元测试 |
+| 终端交互：控制台、`/help`、`/status`、`/timeline`、`/output`、`/undo`、`/diff`、`/compact` | 已实现 | `console` 的单元与验收测试 | 图视图等非安全功能未做 |
+| 日志查看器 `mas log`、思考的流式显示（回复不流式）、状态行与上下文占比、带光标的输入框、字符宽度的启动测量 | 已实现 | `log.test.ts`、`thinking-stream`、`ink-*.test.ts`、`input-box-ink*.test.ts`、`terminal-width.test.ts`（[Phase1Console](Phase1Console.md)） | 授权与工作区、并行优化未做；白底终端的配色未定 |
 | 使用者模板、条件边、有界循环、`all_done`、`mas run`、`/run`、`research` 模板 | **未做** | 仅内置 `chat`、`analyze`；`analyze` 用到条件边 | 整块工作，见 [M2ReleasePlan](M2ReleasePlan.md) phase 2 |
 | 并行的 main 节点（P4、P5 的并行节点部分） | **未做** | 没有模板就没有并行 main | 随模板一起做 |
 | Agent 与 Prompt 定义（main、explorer、worker、planner、code-viewer、`compaction-system`） | 草稿 `v0.1.0`；main 已验证 | AgentToolPool 第 3 节 | 其余未经评测定稿；没有固定任务集可比较版本 |

@@ -2,8 +2,8 @@ import { renderToString } from 'ink';
 import { createElement as h } from 'react';
 import stringWidth from 'string-width';
 import { describe, expect, it } from 'vitest';
-import { InputBox } from './ink-console.js';
-import { boxRows, cursorCell, type InputState } from './text-input.js';
+import { InputBox } from '../presentation/ink-console.js';
+import { boxRows, cursorCell, type InputState } from '../presentation/text-input.js';
 
 /**
  * The box is drawn by Ink itself, and the cursor is placed from the same cut and measure. This

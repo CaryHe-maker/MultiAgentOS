@@ -1,3 +1,3 @@
-import { inputBoxAgreesWithInk } from './input-box-check.js';
+import { inputBoxAgreesWithInk } from '../test-support/input-box-check.js';
 
 inputBoxAgreesWithInk();

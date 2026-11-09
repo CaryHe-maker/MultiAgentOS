@@ -1,8 +1,8 @@
 import { PassThrough } from 'node:stream';
 import { expect } from 'vitest';
 import type { ThinkingView } from '@multiagentos/user-interaction';
-import { createInkConsole } from './ink-console.js';
-import { setAmbiguousWidth } from './terminal-width.js';
+import { createInkConsole } from '../presentation/ink-console.js';
+import { setAmbiguousWidth } from '../presentation/terminal-width.js';
 
 /**
  * What a terminal draws, in a model of its own that does not borrow from the library under test:

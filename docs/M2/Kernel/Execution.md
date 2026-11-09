@@ -106,7 +106,7 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 ## 4f. 模型调用的实时预览
 
-Execution 把 MODEL 的请求交给 Supervisor 时，记下这次执行属于哪个 AgentRun（`modelStarted`），Kernel 核心据此把 Supervisor 发来的 `kernel.execution.ModelProgress` 转成 `kernel.control.ModelStream` 发给 UserInteraction。这只是给使用者看的预览：不是事实、不进日志、不经过 Workflow、不改变任何决定，对不在记下的执行不转发；这次执行的流结束（`END`）时记录即删除。
+Execution 把 MODEL 的请求交给 Supervisor 时，记下这次执行属于哪个 AgentRun（`modelStarted`），Kernel 核心据此把 Supervisor 发来的 `kernel.execution.ModelProgress` 转成 `kernel.control.ModelStream` 发给 UserInteraction。这只是给使用者看的预览：不是事实、不进日志、不经过 Workflow、不改变任何决定，对不在记下的执行不转发；这次执行的流结束（`END`）时记录即删除；旁路是有损的，`END` 可能丢，所以这次执行的终态事实到达时也删除。
 
 ## 4a. 技术重试的等待
 

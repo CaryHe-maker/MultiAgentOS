@@ -9,7 +9,7 @@ import {
   expectEveryReplyOnce,
   mounted,
   tick,
-} from './terminal-emulator.js';
+} from '../test-support/terminal-emulator.js';
 import { setAmbiguousWidth } from './terminal-width.js';
 
 afterEach(() => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, it } from 'vitest';
-import { conversation, expectEveryReplyOnce, mounted } from './terminal-emulator.js';
+import { conversation, expectEveryReplyOnce, mounted } from '../test-support/terminal-emulator.js';
 import { setAmbiguousWidth } from './terminal-width.js';
 
 // Its own file: Ink keeps what it measured and cut in a cache for the life of the process, and the
