@@ -6,7 +6,7 @@ import {
   type QueueLimits,
 } from './execution-queues.js';
 
-const limits: QueueLimits = { maxAttempts: 6, maxExec: 1, serial: false };
+const limits: QueueLimits = { maxAttempts: 6, maxExec: 1, maxWeb: 10, serial: false };
 let counter = 0;
 const entry = (agentRunId: string, cls: ConcurrencyClass): QueueEntry => {
   counter += 1;
@@ -145,5 +145,59 @@ describe('converging', () => {
     expect(queues.drainQueued()).toEqual([queued, other]);
     expect(queues.running()).toEqual([running]);
     expect(queues.size()).toBe(1);
+  });
+});
+
+describe('the web, which has a pool of its own', () => {
+  it('starts neighbouring web attempts of one AgentRun together: the web is no barrier', () => {
+    const queues = new AttemptQueues();
+    const web = [entry('a', 'WEB'), entry('a', 'WEB'), entry('a', 'WEB')];
+    for (const each of web) queues.add(each);
+    expect(ids(queues.startable(limits))).toEqual(ids(web));
+  });
+
+  it('takes no place of the six attempts, and the six take none of the web', () => {
+    const queues = new AttemptQueues();
+    const models = Array.from({ length: 6 }, (_, index) => entry(`m${String(index)}`, 'MODEL'));
+    const web = Array.from({ length: 10 }, (_, index) => entry(`w${String(index)}`, 'WEB'));
+    const seventh = entry('m6', 'MODEL');
+    for (const each of [...models, ...web, seventh]) queues.add(each);
+    const started = queues.startable(limits);
+    // Six models and ten web calls run; the seventh model waits for one of the six.
+    expect(started).toHaveLength(16);
+    expect(started).not.toContain(seventh);
+    queues.release(models[0] as QueueEntry);
+    expect(queues.startable(limits)).toEqual([seventh]);
+  });
+
+  it('lets ten web attempts run and keeps the eleventh waiting, whatever the attempts do', () => {
+    const queues = new AttemptQueues();
+    const web = Array.from({ length: 11 }, (_, index) => entry(`w${String(index)}`, 'WEB'));
+    for (const each of web) queues.add(each);
+    const started = queues.startable(limits);
+    expect(started).toHaveLength(10);
+    expect(started).not.toContain(web[10]);
+    queues.release(web[3] as QueueEntry);
+    expect(queues.startable(limits)).toEqual([web[10]]);
+  });
+
+  it('is held behind a barrier of its own AgentRun, like a read', () => {
+    const queues = new AttemptQueues();
+    const [model, web] = [entry('a', 'MODEL'), entry('a', 'WEB')] as const;
+    queues.add(model);
+    queues.add(web);
+    expect(queues.startable(limits)).toEqual([model]);
+    queues.release(model);
+    expect(queues.startable(limits)).toEqual([web]);
+  });
+
+  it('counts with the rest when one attempt at a time is asked for', () => {
+    const queues = new AttemptQueues();
+    const [web, read] = [entry('a', 'WEB'), entry('b', 'READ')] as const;
+    queues.add(web);
+    queues.add(read);
+    expect(queues.startable({ ...limits, serial: true })).toEqual([web]);
+    queues.release(web);
+    expect(queues.startable({ ...limits, serial: true })).toEqual([read]);
   });
 });

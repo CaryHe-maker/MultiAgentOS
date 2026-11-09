@@ -60,6 +60,8 @@ async function setup(
   } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
+  /** How many times the answer "for this folder" was kept. */
+  let webSearchTrust = 0;
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const faults: unknown[] = [];
@@ -108,6 +110,10 @@ async function setup(
           ...(options.memoryLevel === undefined ? {} : { memoryLevel: options.memoryLevel }),
           readProjectFile: () => Promise.resolve(options.file ?? { exists: false }),
           isTrusted: (_path, sha256) => trusted.has(sha256),
+          trustWebSearch: () => {
+            webSearchTrust += 1;
+            return Promise.resolve();
+          },
           trust: (_path, sha256) => {
             trusted.add(sha256);
             return Promise.resolve();
@@ -222,7 +228,7 @@ async function setup(
     return asked.event.questionId;
   };
   const answer = (
-    scope: 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY',
+    scope: 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER',
     questionId = question(),
   ) =>
     actor.call(() =>
@@ -268,6 +274,7 @@ async function setup(
     question,
     readFile,
     trusted,
+    trustedWebSearch: () => webSearchTrust,
     reports,
     interactionTypes,
     questions,
@@ -983,6 +990,72 @@ describe('the web tools (Kernel/Core 5f)', () => {
     await kernel.submit(fetchUnit, { url: 'https://other.example.org/' });
     await kernel.settled();
     expect(webQuestions(kernel)).toHaveLength(2);
+  });
+
+  it('allows every public site with one answer: the questions open meanwhile are answered, and no other is asked', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    for (const url of [
+      'https://a.example.net/',
+      'https://b.example.net/',
+      'https://c.example.net/',
+    ])
+      await kernel.submit(fetchUnit, { url });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(3);
+    await kernel.answer('ANY_HOST', webQuestions(kernel)[0]?.questionId);
+    await kernel.settled();
+    // All three run, though only one question was answered.
+    expect(kernel.execution.started).toHaveLength(3);
+    await kernel.submit(fetchUnit, { url: 'https://d.example.net/' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(3);
+    expect(kernel.execution.started).toHaveLength(4);
+  });
+
+  it('still refuses a private address and a denied domain after every public site was allowed', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(fetchUnit, { url: 'https://a.example.net/' });
+    await kernel.settled();
+    await kernel.answer('ANY_HOST');
+    await kernel.settled();
+    for (const url of [
+      'http://127.0.0.1/',
+      'http://169.254.169.254/',
+      'https://x.blocked.example/',
+    ])
+      await kernel.submit(fetchUnit, { url });
+    await kernel.settled();
+    expect(kernel.reports().slice(-3)).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'DOMAIN_DENIED' },
+    ]);
+  });
+
+  it('keeps the answer for the folder, and the run goes on as if it had said yes', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(searchUnit, { queries: ['one'] });
+    await kernel.settled();
+    await kernel.answer('FOLDER');
+    await kernel.settled();
+    await kernel.submit(searchUnit, { queries: ['two'] });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started).toHaveLength(2);
+    expect(kernel.trustedWebSearch()).toBe(1);
+  });
+
+  it('does not keep it for the folder when the answer was for the run', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(searchUnit, { queries: ['one'] });
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.trustedWebSearch()).toBe(0);
   });
 
   it('refuses an address into a private network and a denied domain, without asking and without a run', async () => {

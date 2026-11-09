@@ -186,6 +186,7 @@ function setup(
     limits: {
       maxAttempts: options.maxConcurrentAttempts ?? 6,
       maxExec: 1,
+      maxWeb: 10,
       serial: options.serialExecution === true,
     },
   });

@@ -109,13 +109,24 @@ function commandChoice(
   return undefined;
 }
 
+/** The wider answer a question about the web takes, when the user gave it. */
+function widerChoice(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  input: string,
+): 'ANY_HOST' | 'FOLDER' | undefined {
+  const answer = input.trim().toLowerCase();
+  if (item.wider === 'ANY_HOST' && /^(a|all|所有|全部)$/u.test(answer)) return 'ANY_HOST';
+  if (item.wider === 'FOLDER' && /^(f|folder|文件夹)$/u.test(answer)) return 'FOLDER';
+  return undefined;
+}
+
 function scopeOf(
   item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
   yes: boolean,
   input = '',
-): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' {
+): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER' {
   if (!yes) return 'DENY';
-  return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
+  return widerChoice(item, input) ?? commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
 }
 
 /** One AgentRun of the current run, for `/timeline`. */
@@ -822,7 +833,10 @@ export class Console {
       return;
     }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
-    const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
+    const wider = item.kind === 'AUTHORIZATION' ? widerChoice(item, input) : undefined;
+    const yes =
+      wider !== undefined ||
+      (choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input));
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
     if (!yes && !no) {
       // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
@@ -1169,6 +1183,11 @@ export class Console {
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
           ...(event.capability === 'command.exec' ? { options: event.options } : {}),
+          ...(event.capability === 'web.fetch'
+            ? { wider: 'ANY_HOST' as const }
+            : event.capability === 'web.search'
+              ? { wider: 'FOLDER' as const }
+              : {}),
           // A long command is shown by its head; the whole of it is one key away.
           ...(event.capability === 'command.exec' && commandPreview(event.command).cut
             ? { detail: terminalText(event.command) }

@@ -57,13 +57,14 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 设计以 M2Design 第 7.1、7.2 节为准。`RunExecution` 的队列由纯函数部分 `AttemptQueues`（`session/execution-queues.ts`）管理，它不启动任何东西，只回答"现在哪些可以开始"。
 
-- **并发类别**：`concurrencyClassOf`（`run-execution.ts`）由执行类型得出：`MODEL`；`FILE_WRITE`、`FILE_EDIT`、`MESSAGE_PUBLISH`、`REPORT_PUBLISH` 为 WRITE；`COMMAND` 为 EXEC，**但可写根目录为空的沙盒命令（只读名单上的命令行，M2Design 第 5.2 节）为 READ**，不占全局 EXEC 互斥、也不是屏障；其余为 READ。
-- **同一 AgentRun 内**：按建立先后开始；相邻的 READ 一起开始；WRITE、EXEC、MODEL 是屏障——前面的全部结束后才开始，它结束之后后面的才开始。
-- **不同 AgentRun**：队列并行，受三项全局约束：`kernel.maxConcurrentAttempts`（缺省 6）、`kernel.maxConcurrentExec`（缺省 1，只数 EXEC）、`kernel.serialExecution`（缺省 `false`；开启时每个 Unit 都是屏障、全局只有一个在执行）。多个可以开始时先开始最早的（FCFS，不区分 Agent）。
+- **并发类别**：`concurrencyClassOf`（`run-execution.ts`）由执行类型得出：`MODEL`；`FILE_WRITE`、`FILE_EDIT`、`MESSAGE_PUBLISH`、`REPORT_PUBLISH` 为 WRITE；`COMMAND` 为 EXEC，**但可写根目录为空的沙盒命令（只读名单上的命令行，M2Design 第 5.2 节）为 READ**，不占全局 EXEC 互斥、也不是屏障；`WEB_SEARCH`、`WEB_FETCH` 为 WEB；其余为 READ。
+- **同一 AgentRun 内**：按建立先后开始；相邻的 READ 与 WEB 一起开始；WRITE、EXEC、MODEL 是屏障——前面的全部结束后才开始，它结束之后后面的才开始。
+- **不同 AgentRun**：队列并行，受四项全局约束：`kernel.maxConcurrentAttempts`（缺省 6，**不数 WEB**）、`kernel.maxConcurrentWeb`（缺省 10，只数 WEB：网页的搜索与抓取有自己的池，慢的网站占不了模型调用的名额，超出的排队）、`kernel.maxConcurrentExec`（缺省 1，只数 EXEC）、`kernel.serialExecution`（缺省 `false`；开启时每个 Unit 都是屏障、全局只有一个在执行，WEB 也数在内）。多个可以开始时先开始最早的（FCFS，不区分 Agent）。
 - **只有真正在执行的尝试占用并发计数**：排队的、等待调用机会的、挂在授权询问上的都不占。
 - **等待调用机会**（第 7.2 节）：`requestReservation` 返回 `WAIT_CAPACITY` 不是失败。该尝试保持在自己队列的队首、不占并发计数，登记在等待列表中；Session actor 每处理完一条消息，调用 `drainCapacityWaiters()`，按建立先后为等待的尝试重新申请，第一个仍申请不到的结束这一轮，较晚的不会越过较早的。技术重试保留自己的调用机会，不会在重试时丢给别的 AgentRun。
 - **收敛**：没有开始的尝试与等待调用机会的尝试直接结束（`abandon`），没有东西需要停止；已发出的执行发出取消，Supervisor 不确认时全部按 `STOP_UNCONFIRMED` 判定。
-- 测试：`execution-queues.test.ts`（纯函数）、`run-execution.test.ts`（P1：相邻 READ 一起派发；P2：两个 AgentRun 并行；屏障；全局上限；`serialExecution`；等待调用机会）。
+- `web-fetch` 的 `timeoutMs` 为 30000（`executionLimits.WEB_FETCH`，原来是 60000）：坏站点占着名额的时间减半以上；`web-search` 仍是 30000。
+- 测试：`execution-queues.test.ts`（纯函数；WEB 池：不占那六个名额、第十一个排队、不是屏障、`serial` 时一起数）、`run-execution.test.ts`（P1：相邻 READ 一起派发；P2：两个 AgentRun 并行；屏障；全局上限；`serialExecution`；等待调用机会）。
 
 ## 4d. 命令改动检测
 

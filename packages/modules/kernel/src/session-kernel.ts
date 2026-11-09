@@ -83,7 +83,7 @@ import {
 import { SessionManager } from './session/session-manager.js';
 import { KernelOutbox } from './session/session-outbox.js';
 import { ArtifactSweep } from './session/artifact-sweep.js';
-import { SessionRefs, TrustRecords } from './session/session-refs.js';
+import { SessionRefs, TrustRecords, WebSearchTrust } from './session/session-refs.js';
 
 /** What the user is told when memory runs short (Kernel/Monitor 4a). */
 export interface MemoryNotice {
@@ -226,6 +226,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'trusted-instructions' }),
     now,
   );
+  const webTrust = new WebSearchTrust(
+    persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'trusted-web-search' }),
+    now,
+  );
   const sessionArtifacts = new Map<string, SessionArtifacts>();
   const executions = new Map<string, RunExecution>();
 
@@ -363,6 +367,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       limits: {
         maxAttempts: config.maxConcurrentAttempts,
         maxExec: config.maxConcurrentExec,
+        maxWeb: config.maxConcurrentWeb,
         serial: config.serialExecution,
       },
     });
@@ -441,6 +446,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       readProjectFile: (path, scope) => execution.readProjectFile(path, scope),
       isTrusted: (path, sha256) => trust.isTrusted(repositoryRoot, path, sha256),
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
+      webSearchTrusted: () => webTrust.isTrusted(repositoryRoot),
+      trustWebSearch: () => webTrust.record(repositoryRoot),
       storeQuestionContent: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
@@ -673,6 +680,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       if (started) return;
       await refs.load();
       await trust.load();
+      await webTrust.load();
       // Before any service opens (Infrastructure/ModuleHost 3); a failure does not block startup.
       await sweep.run();
       manager.startSweepTimer();

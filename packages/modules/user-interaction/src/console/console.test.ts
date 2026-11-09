@@ -1147,3 +1147,70 @@ describe('the size of a message', () => {
     expect(t.printed.at(-1)?.text).toContain('太长');
   });
 });
+
+describe('the questions about the web', () => {
+  const fetchRequest = {
+    type: 'AuthorizationRequest',
+    questionId: 'qst_f',
+    capability: 'web.fetch',
+    url: 'https://a.example/page',
+    host: 'a.example',
+  } as unknown as KernelToInteractionEvent;
+  const searchRequest = {
+    type: 'AuthorizationRequest',
+    questionId: 'qst_s',
+    capability: 'web.search',
+    queries: ['q'],
+    provider: 'deepseek',
+  } as unknown as KernelToInteractionEvent;
+
+  it('says what each answer allows', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    const text = (t.live()?.pending as { text: string } | undefined)?.text ?? '';
+    expect(text).toContain('y 本次运行内只允许这个网站');
+    expect(text).toContain('a 本次运行内允许所有公开网站');
+    await t.console.submit('n');
+    await t.event(searchRequest);
+    const search = (t.live()?.pending as { text: string } | undefined)?.text ?? '';
+    expect(search).toContain('f 这个文件夹以后都允许');
+  });
+
+  it('answers a for every public site on a fetch, and f for the folder on a search', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    await t.console.submit('a');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      questionId: 'qst_f',
+      answer: { scope: 'ANY_HOST' },
+    });
+    await t.event(searchRequest);
+    await t.console.submit('f');
+    expect(t.named('answerAuthorization')[1]?.request).toMatchObject({
+      questionId: 'qst_s',
+      answer: { scope: 'FOLDER' },
+    });
+  });
+
+  it('answers y with the narrow answer, and takes no wider answer on a question that has none', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    // f is for the search: the fetch does not take it, and the question stays.
+    await t.console.submit('f');
+    expect(t.named('answerAuthorization')).toHaveLength(0);
+    await t.console.submit('y');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      answer: { scope: 'ALLOW' },
+    });
+    await t.event(searchRequest);
+    await t.console.submit('a');
+    expect(t.named('answerAuthorization')).toHaveLength(1);
+    await t.console.submit('y');
+    expect(t.named('answerAuthorization')[1]?.request).toMatchObject({
+      answer: { scope: 'ALLOW' },
+    });
+  });
+});

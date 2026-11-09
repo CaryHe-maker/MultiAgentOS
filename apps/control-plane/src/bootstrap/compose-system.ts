@@ -12,6 +12,7 @@ import {
   SessionIndexLineSchema,
   SessionRefLineSchema,
   TrustedInstructionLineSchema,
+  TrustedWebSearchLineSchema,
   canonicalJson,
   commandsOffered as commandsOfferedFor,
   createProtocolRegistry,
@@ -246,6 +247,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       'session-index': SessionIndexLineSchema,
       'session-refs': SessionRefLineSchema,
       'trusted-instructions': TrustedInstructionLineSchema,
+      'trusted-web-search': TrustedWebSearchLineSchema,
       'artifact-owners': ArtifactOwnerLineSchema,
     });
 

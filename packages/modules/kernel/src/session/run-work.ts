@@ -160,6 +160,9 @@ export interface RunWorkDeps {
   readonly readProjectFile: (path: string, scope: ExecutionScope) => Promise<ProjectFileRead>;
   readonly isTrusted: (path: string, sha256: string) => boolean;
   readonly trust: (path: string, sha256: string) => Promise<void>;
+  /** The user allowed the web search for this folder from now on (Kernel/Core 5f). */
+  readonly webSearchTrusted: () => boolean;
+  readonly trustWebSearch: () => Promise<void>;
   /** Keeps what a critical question shows; the question then only refers to it. */
   readonly storeQuestionContent: (text: string) => Promise<ArtifactRef>;
   /** Execution takes the attempt over and registers it through `attempts`. */
@@ -286,6 +289,7 @@ export class RunWork {
       repositoryRoot: deps.repositoryRoot,
       provider: deps.provider,
       repositoryExclusions: deps.repositoryExclusions,
+      webSearchTrusted: deps.webSearchTrusted(),
       now: deps.now,
     });
     const activity = new RunActivity({ emit: (event) => host.toInteraction(event), now: deps.now });
@@ -1159,7 +1163,13 @@ export class RunWork {
     const settled = this.#authorization.answer(request.questionId, request.answer.scope);
     if (settled === undefined) return this.#refuse(requestId, request, 'QUESTION_NOT_PENDING');
     this.#host.toInteraction(settled.resolved);
+    // "This folder from now on" is kept by Session management; the run has it too, for now.
+    if (request.answer.scope === 'FOLDER') await this.#deps.trustWebSearch();
     await this.#release(settled);
+    for (const covered of this.#authorization.settleCovered()) {
+      this.#host.toInteraction(covered.resolved);
+      await this.#release(covered);
+    }
     return this.#accept(requestId, request);
   }
 

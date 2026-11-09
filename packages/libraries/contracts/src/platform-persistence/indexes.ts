@@ -51,6 +51,21 @@ export const TrustedInstructionLineSchema = closed(
 );
 export type TrustedInstructionLine = Static<typeof TrustedInstructionLineSchema>;
 
+/**
+ * A folder the user allowed the web search for, from now on (docs/M2/Kernel/Core.md 5f). It
+ * grants nothing but the question that is not asked again; the fetch and the commands are not part
+ * of it, and nothing here is a path or a query.
+ */
+export const TrustedWebSearchLineSchema = closed(
+  {
+    repositoryRoot: text(4096),
+    source: Type.Enum(['USER_CONFIRMED']),
+    at: TimestampSchema,
+  },
+  'platform.persistence.TrustedWebSearchLine.v1',
+);
+export type TrustedWebSearchLine = Static<typeof TrustedWebSearchLineSchema>;
+
 export const ArtifactOwnerLineSchema = closed(
   {
     artifactId: IdSchemas.artifactId,

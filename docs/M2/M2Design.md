@@ -775,11 +775,11 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 |---|---|---|---|
 | `repo.read` | 安全 | 仓库根目录 | WorkflowRun 开始时询问一次（M1 机制）；之后该 WorkflowRun 下能力上限中有它的 AgentRun 都可用 |
 | `workspace.write` | 不确定 | 发起写入的 AgentRun 的可写根目录；已批准的条目覆盖其下全部路径 | 没有覆盖的条目时询问一次。main 的可写根目录是仓库根目录，批准后也覆盖全部 SubAgent 的 `writeScope`，所以每个 WorkflowRun 通常只问一次；main 尚未写过时，worker 第一次写入按它自己的 `writeScope` 询问 |
-| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次 |
-| `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问 |
+| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次；可以回答"这个文件夹以后都允许"，之后在这个文件夹里不再询问（只此一项，见 Kernel/Core 5f） |
+| `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；可以回答"本次运行内所有公开网站"，之后本运行内不再询问任何公开域名（不跨运行）；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问，也不受"所有公开网站"影响 |
 | `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问；只读名单上的命令行例外（见下文"只读名单"） |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
-| `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
+| `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力。**与 `web.search`、`web.fetch` 完全隔离**：网页的任何授权（包括"所有公开网站"和"这个文件夹"）都不影响命令联网的判定 |
 | `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
 | `project.instructions` | 不确定 | `AGENTS.md` 的相对路径与内容的 SHA | 不是 Agent 的能力，由 `readProjectFile` 读到未被信任的 `AGENTS.md` 时询问，决定它以项目指令还是仓库材料出现（第 9.5 节）；不产生任何执行权限 |
 | `agent.spawn` | 内部 | 无 | 不询问，也没有授权条目，只看能力上限。来自 Agent 定义的能力白名单；Kernel 只把它放进顶层 AgentRun（没有父 AgentRun 的）的能力上限，因此 SubAgent 不能再派生。`registerAgentRun` 带 `parentAgentRunId` 时，Kernel 检查父 AgentRun 的能力上限中有它，否则以 `CAPABILITY_NOT_GRANTED` 拒绝 |
@@ -980,7 +980,8 @@ M2 保持 Kernel 业务无关、拓扑无关：Kernel 只依据 ID、能力、�
   - MODEL：模型调用。
 - 同一 AgentRun 的队列中，相邻的 READ 并行执行；WRITE 与 EXEC 是屏障，要等它前面的全部 Unit 结束才执行，它结束之后后面的 Unit 才开始。
 - 不同 AgentRun 的队列并行执行，受三项全局约束：
-  - `kernel.maxConcurrentAttempts`（缺省 6）；
+  - `kernel.maxConcurrentAttempts`（缺省 6，不数网页）；
+  - `kernel.maxConcurrentWeb`（缺省 10，网页的搜索与抓取自己的池，超出的排队）；
   - `kernel.maxConcurrentExec`（缺省 1）；
   - Scheduler 按 `kernel.providerCapacity`（缺省 3）分配模型调用机会。
 - `kernel.serialExecution`（缺省 `false`）是总开关，开启时所有 Unit 都视为屏障，全局并发为 1。用于排查竞态，CI 中开与关各跑一遍。
@@ -1814,7 +1815,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 2 | `ask`、`confirm`、`review` 询问 10 分钟超时后自动继续，与"无人值守是非目标"有冲突 | 询问不超时；全部工作都在等用户时 Turn 超时暂停计时；授权询问同样不超时（v1.13） | **已决定**（v1.9，v1.13 修订），见第 4.2、5.3、7.4 节 |
 | 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2ReleasePlan 第 6 节 |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
-| 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | 评估是否为 `web.fetch` 增加"本运行内全部域名均允许"选项，并衡量它对信息外泄的影响 | Core 文档、限制清单 |
+| 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | **已做**：`web.fetch` 的询问可以回答"本次运行内所有公开网站"（`ANY_HOST`），私网与禁止的域名仍然拒绝；网址长度与像编码数据的查询值由 Executor 拒绝；`web.search` 可以按文件夹记住（Kernel/Core 5f） | 已实现 |
 | 6 | 长期保存的命令授权：授权条目只在内存中、每个 WorkflowRun 重新询问，同一条命令（如 `npm test`）每次启动都要再批准（OpenCode 把"总是允许"写入数据库，跨会话有效） | M2 暂不考虑；M2 实现之后以实验设计评估询问次数与风险，再决定是否允许用户在 dataDir 的用户配置中预先签发放行规则（不能放在仓库内） | M2 发布后 |
 | 7 | 长时间运行的命令：每条命令在新的 shell 中执行、至多 10 分钟，无法启动开发服务器后再测试（OpenCode 有持久终端与后台 shell，DeepSeek Harness 有 `jobs`） | M2 暂不实现，写入限制清单；M2 实现之后再评估后台任务的设计 | M2 发布后 |
 

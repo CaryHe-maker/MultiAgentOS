@@ -86,7 +86,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | Schema ID | 文件 | 定义 |
 |---|---|---|
 | `platform.persistence.SessionLogRecord.v1`（各记录类型的联合） | `platform-persistence/session-log.ts` | Interface/Persistence 第 2 节 |
-| `platform.persistence.SessionIndexLine.v1`、`SessionRefLine.v1`、`TrustedInstructionLine.v1`、`ArtifactOwnerLine.v1` | `platform-persistence/indexes.ts` | Interface/Persistence 第 3、4 节 |
+| `platform.persistence.SessionIndexLine.v1`、`SessionRefLine.v1`、`TrustedInstructionLine.v1`、`TrustedWebSearchLine.v1`、`ArtifactOwnerLine.v1` | `platform-persistence/indexes.ts` | Interface/Persistence 第 3、4 节 |
 | `platform.persistence.InstanceLockInfo.v1`、`SessionLockInfo.v1` | `platform-persistence/locks.ts` | Interface/Persistence 第 6 节 |
 
 ### 3.8 Port

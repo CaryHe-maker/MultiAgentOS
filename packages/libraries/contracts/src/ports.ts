@@ -553,6 +553,7 @@ export type StoragePath =
         | 'session-index'
         | 'session-refs'
         | 'trusted-instructions'
+        | 'trusted-web-search'
         | 'memory-events'
         | 'shutdown-requests';
     }

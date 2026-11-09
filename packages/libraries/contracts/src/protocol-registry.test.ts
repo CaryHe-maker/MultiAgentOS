@@ -210,6 +210,7 @@ const EXPECTED = {
     'SessionLogRecord',
     'SessionRefLine',
     'TrustedInstructionLine',
+    'TrustedWebSearchLine',
   ],
   'platform.artifact': ['RetentionTokenRef'],
   'kernel.session': [

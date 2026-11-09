@@ -110,6 +110,8 @@ export const KernelConfigSchema = closed(
     maxConcurrentExec: count(1),
     /** UnitAttempts executing at the same time, over all AgentRuns (M2Design 7.1). */
     maxConcurrentAttempts: count(1),
+    /** Web searches and fetches in flight at the same time; they take no place of the attempts, and the rest wait (M2Design 7.1). */
+    maxConcurrentWeb: count(1),
     /** Model calls in flight at the same time per provider; the rest wait (M2Design 7.2). */
     providerCapacity: count(1),
     /** Every Unit is a barrier and the global concurrency is 1: for finding races (M2Design 7.1). */

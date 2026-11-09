@@ -378,6 +378,22 @@ describe('web_fetch: the address checks (before anyone is asked)', () => {
     expect(unreachable.calls).toHaveLength(0);
   });
 
+  it('does not send an address that is too long, or carries what looks like encoded data', async () => {
+    const executor = createWebFetchExecutor({
+      fetch: unreachable.fetch,
+      resolve: () => Promise.resolve([PUBLIC]),
+    });
+    const encoded = 'dGhpcyBpcyBhIHNlY3JldCBmcm9tIHRoZSByZXBvc2l0b3J5IHdpdGggbWFueSBjaGFyYWN0ZXJz';
+    for (const url of [
+      `https://example.com/?d=${encoded}`,
+      `https://example.com/${'a/'.repeat(500)}`,
+    ]) {
+      const outcome = await executor.execute({ url }, environmentFor('WEB_FETCH', NONE));
+      expect(outcome).toMatchObject({ outcome: 'REJECTED', reasonCode: 'SECRET_IN_REQUEST' });
+    }
+    expect(unreachable.calls).toHaveLength(0);
+  });
+
   it('does not send an address that holds a secret of the environment', async () => {
     const outcome = await createWebFetchExecutor({
       fetch: unreachable.fetch,

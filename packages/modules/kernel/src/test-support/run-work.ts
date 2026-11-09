@@ -98,6 +98,8 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     preset: 'standard',
     readProjectFile: () => Promise.resolve({ exists: false }),
     isTrusted: () => false,
+    webSearchTrusted: () => false,
+    trustWebSearch: () => Promise.resolve(),
     trust: () => Promise.resolve(),
     createAttempt: execution.createAttempt,
     cancelExecutions: execution.cancelExecutions,

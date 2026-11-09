@@ -41,7 +41,9 @@ export const AnswerAuthorizationRequestSchema = closed(
   {
     ...inRun,
     questionId: IdSchemas.questionId,
-    answer: closed({ scope: Type.Enum(['ALLOW', 'ONCE', 'COMMAND', 'PREFIX', 'DENY']) }),
+    answer: closed({
+      scope: Type.Enum(['ALLOW', 'ONCE', 'COMMAND', 'PREFIX', 'DENY', 'ANY_HOST', 'FOLDER']),
+    }),
   },
   'kernel.control.AnswerAuthorizationRequest.v1',
 );

@@ -8485,7 +8485,9 @@
                 "ONCE",
                 "COMMAND",
                 "PREFIX",
-                "DENY"
+                "DENY",
+                "ANY_HOST",
+                "FOLDER"
               ]
             }
           },
@@ -13705,7 +13707,9 @@
                         "ONCE",
                         "COMMAND",
                         "PREFIX",
-                        "DENY"
+                        "DENY",
+                        "ANY_HOST",
+                        "FOLDER"
                       ]
                     }
                   },
@@ -45985,6 +45989,7 @@
         "killGraceMs",
         "maxConcurrentExec",
         "maxConcurrentAttempts",
+        "maxConcurrentWeb",
         "providerCapacity",
         "serialExecution",
         "memory",
@@ -46299,6 +46304,10 @@
           "minimum": 1
         },
         "maxConcurrentAttempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxConcurrentWeb": {
           "type": "integer",
           "minimum": 1
         },
@@ -46866,6 +46875,7 @@
             "killGraceMs",
             "maxConcurrentExec",
             "maxConcurrentAttempts",
+            "maxConcurrentWeb",
             "providerCapacity",
             "serialExecution",
             "memory",
@@ -47180,6 +47190,10 @@
               "minimum": 1
             },
             "maxConcurrentAttempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxConcurrentWeb": {
               "type": "integer",
               "minimum": 1
             },
@@ -51559,6 +51573,32 @@
       },
       "additionalProperties": false,
       "$id": "platform.persistence.TrustedInstructionLine.v1"
+    },
+    "platform.persistence.TrustedWebSearchLine.v1": {
+      "type": "object",
+      "required": [
+        "repositoryRoot",
+        "source",
+        "at"
+      ],
+      "properties": {
+        "repositoryRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "source": {
+          "enum": [
+            "USER_CONFIRMED"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "platform.persistence.TrustedWebSearchLine.v1"
     },
     "restore.RestoreOperationRef.v1": {
       "type": "object",

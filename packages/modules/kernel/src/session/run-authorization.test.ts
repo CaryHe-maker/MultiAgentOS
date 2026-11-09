@@ -16,6 +16,7 @@ const authorization = () =>
     repositoryRoot: '/repository',
     provider: 'deepseek',
     repositoryExclusions: [],
+    webSearchTrusted: false,
     now: () => new Date('2026-10-31T00:00:00.000Z'),
   });
 

@@ -158,6 +158,9 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   switch (spec.unit.executionKind) {
     case 'MODEL':
       return 'MODEL';
+    case 'WEB_SEARCH':
+    case 'WEB_FETCH':
+      return 'WEB';
     case 'FILE_WRITE':
     case 'FILE_EDIT':
     case 'MESSAGE_PUBLISH':

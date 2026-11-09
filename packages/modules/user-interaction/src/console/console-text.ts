@@ -140,13 +140,13 @@ export const ConsoleText = Object.freeze({
   instructions: (path: string, truncated: boolean, text: string) =>
     `是否信任这份 ${path}？信任后它作为项目指令交给 Agent；不信任则只作为仓库材料。${truncated ? '（只展示开头）' : ''}\n${text}\n[y/n]`,
   webSearch: (queries: readonly string[], provider: string) =>
-    `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}，本次运行内不再询问。
+    `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}。
 搜索词：${queries.join(' | ')}
-[y/n]`,
+[y 本次运行内允许 / f 这个文件夹以后都允许 / n 拒绝]`,
   webFetch: (host: string, url: string) =>
-    `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent，本次运行内对这个网站不再询问。
+    `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}
-[y/n]`,
+[y 本次运行内只允许这个网站 / a 本次运行内允许所有公开网站 / n 拒绝]`,
   writeRoot: (root: string) =>
     `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
   command: (q: CommandQuestion) => commandQuestionText(q),

@@ -12,6 +12,7 @@
   artifacts/<sha256>                       ArtifactStore 正文（Kernel.Execution）
   kernel-core/session-refs.jsonl           Session 引用（第 4.1 节）
   kernel-core/trusted-instructions.jsonl   项目指令的信任记录（第 4.2 节）
+  kernel-core/trusted-web-search.jsonl     允许网页搜索的文件夹（第 4.6 节）
   kernel-core/shutdown-requests.jsonl      谁请求了退出（只供开发者查看，第 4.5 节）
   workflow/session-index.jsonl             Session 列表（第 3 节）
   sessions/<sessionId>/
@@ -205,6 +206,22 @@ type SnapshotIndexLine =
 
 `kernel-core/shutdown-requests.jsonl`，Owner 为 Kernel.Core，系统级，**只供开发者排查"这段对话为什么结束"**：Kernel 收到 `shutdown` 请求时先追加一行 `{ at, type: 'SHUTDOWN_REQUESTED', source, requestId }`，`source` 为 `EXIT_COMMAND`（`/exit`）、`INTERRUPT_TWICE`（两秒内连按两次 Ctrl+C）、`RUN_FINISHED`（`mas run` 的运行结束）、`EXIT_CODE`（控制台因对话之外的原因要结束，如内存不足的退出码）。它不进入 Session 日志，不发给 Workflow，也不显示给用户：业务层看到的仍然只是运行以 `SHUTDOWN` 关闭。写入失败只报告，不影响退出。
 
+### 4.6 允许网页搜索的文件夹
+
+`kernel-core/trusted-web-search.jsonl`，Owner 为 Kernel.Core，系统级状态（Kernel/Core 5f）。用户对 `web.search` 的询问回答"这个文件夹以后都允许"（`FOLDER`）时追加一行；之后在这个仓库里开始的运行一开始就带着 `web.search` 的条目，不再询问。
+
+```ts
+interface TrustedWebSearchLine {
+  repositoryRoot: string;      // realpath，由 Kernel 依据本进程的仓库写入
+  source: 'USER_CONFIRMED';
+  at: string;
+}
+```
+
+- 它只管 `web.search` 这一项能力：不含 `web.fetch`，不含命令；没有路径，也没有查询内容。
+- 每个仓库至多一行（已经记下的不再追加）。启动时读入内存；尾行没写完整时丢弃（与其他追加日志相同）。
+- 数据目录里模型运行的命令写不到的位置；撤销：删除这个仓库的行，或整个文件。
+
 ## 5. Kernel 审计
 
 `sessions/<sessionId>/kernel-core/audit.jsonl`。条目的公共字段与 M1 相同（M1 Core 第 7 节：`at`、`type` 与相关标识），
@@ -242,7 +259,10 @@ interface PersistencePort {
 type PersistenceNamespace = 'workflow' | 'kernel-core' | 'kernel-execution';
 
 type StoragePath =
-  | { scope: 'SYSTEM'; file: 'session-index' | 'session-refs' | 'trusted-instructions' }
+  | {
+      scope: 'SYSTEM';
+      file: 'session-index' | 'session-refs' | 'trusted-instructions' | 'trusted-web-search';
+    }
   | { scope: 'SESSION'; sessionId: string; file: 'log' | 'audit' | 'artifact-owners' | 'snapshot-index' };
 
 interface AppendLogPort<T> {

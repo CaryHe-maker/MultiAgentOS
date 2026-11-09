@@ -196,6 +196,12 @@ const answered = (
   return undefined;
 };
 
+/**
+ * The resource key of an entry that covers every public host (`web.fetch` only): the answer "all
+ * public websites for this run". A name that is not an address is no host, so it cannot clash.
+ */
+export const ANY_HOST = '*';
+
 const granted = (
   entries: readonly AuthorizationEntry[],
   capability: Capability,
@@ -209,7 +215,7 @@ const granted = (
       'resourceKey' in entry &&
       // A host is one host; "a.example" says nothing of "b.a.example".
       (capability === 'web.fetch'
-        ? entry.resourceKey === resourceKey
+        ? entry.resourceKey === resourceKey || entry.resourceKey === ANY_HOST
         : writeRootCovers(entry.resourceKey, resourceKey)),
   );
 

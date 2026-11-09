@@ -3,6 +3,7 @@ import type {
   SessionListEntry,
   SessionRefLine,
   TrustedInstructionLine,
+  TrustedWebSearchLine,
 } from '@multiagentos/contracts';
 
 /**
@@ -104,5 +105,41 @@ export class TrustRecords {
       at: this.#now().toISOString(),
     });
     this.#trusted.add(TrustRecords.#key(repositoryRoot, path, sha256));
+  }
+}
+
+/**
+ * The folders the user allowed the web search for from now on. One line per folder; it is read at
+ * start and consulted when a run begins, and a run that has it does not ask again. It lives in the
+ * data directory, where nothing the model runs can write; deleting the line, or the file, takes
+ * the permission back.
+ */
+export class WebSearchTrust {
+  readonly #log: AppendLogPort<TrustedWebSearchLine>;
+  readonly #now: () => Date;
+  readonly #folders = new Set<string>();
+
+  public constructor(log: AppendLogPort<TrustedWebSearchLine>, now: () => Date) {
+    this.#log = log;
+    this.#now = now;
+  }
+
+  async load(): Promise<void> {
+    await this.#log.repairTail();
+    for await (const line of this.#log.readAll()) this.#folders.add(line.repositoryRoot);
+  }
+
+  isTrusted(repositoryRoot: string): boolean {
+    return this.#folders.has(repositoryRoot);
+  }
+
+  async record(repositoryRoot: string): Promise<void> {
+    if (this.#folders.has(repositoryRoot)) return;
+    await this.#log.append({
+      repositoryRoot,
+      source: 'USER_CONFIRMED',
+      at: this.#now().toISOString(),
+    });
+    this.#folders.add(repositoryRoot);
   }
 }

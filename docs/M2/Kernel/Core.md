@@ -259,8 +259,8 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 | 能力 | 级别 | 资源键 | 询问 |
 |---|---|---|---|
-| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次，`ALLOW` 与 `DENY`；询问写明查询会发给哪个提供方 |
-| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目只覆盖这个主机 | 每个新主机第一次访问时询问一次，`ALLOW` 与 `DENY`；询问写明主机名与完整地址 |
+| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次；回答 `ALLOW`（本次运行）、`FOLDER`（这个文件夹以后都允许，见下）或 `DENY`；询问写明查询会发给哪个提供方 |
+| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目覆盖这个主机，`ANY_HOST` 的条目（资源键 `*`）覆盖所有公开主机 | 每个新主机第一次访问时询问一次；回答 `ALLOW`（只这个主机，本次运行）、`ANY_HOST`（本次运行内所有公开网站）或 `DENY`；询问写明主机名与完整地址 |
 
 **第 ① 步**（在能力上限检查之后、查找条目之前）：
 - `web.fetch` 的地址里有字面量的 IP 或 `localhost`、`*.localhost`、`*.local`、`*.internal`、单标签名，落在 ExecutorSet 第 5d 节的禁止范围内：`REJECTED(ADDRESS_FORBIDDEN)`，**不询问**；协议不是 `http(s)`、带用户信息或无法解析的同样拒绝（判断用 contracts 里与 Executor 相同的 `checkUrlLiteral`）；
@@ -268,12 +268,14 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 要点：
 - 询问的合并与拒绝的绑定与其他能力相同（第 5a.4 节）：并行的 explorer 访问同一个新主机时合并为一个询问；用户拒绝后，Core 的拒绝条目绑定这个 AgentRun 与这个主机（条目的 `hostKey`），同一主机不再询问，其他主机照常询问；`ask_user` 里的同意不产生授权（第 5.5 节）。Workflow 另外按工具名记住被拒绝的工具（所有工具相同，Workflow 第 7 节），所以同一个 AgentRun 之后的 `web_fetch`（含其他主机）不经 Core，直接得到"用户拒绝了这个工具"的结果；下一个 AgentRun 可以重新询问。
-- 并行访问不同主机时询问可能偏多，评估"本运行内全部域名均允许"选项留在限制清单（M2Design 第 14 节第 5 项），目前不做。
+- **"本次运行内所有公开网站"（`ANY_HOST`，只对 `web.fetch`）**：回答之后，条目 `resourceKey: '*'` 覆盖这个运行内所有公开主机，同时正在等待的其他主机的询问一并以 GRANTED 结束（`settleCovered`，只结束被条目覆盖的 `web.fetch` 询问）。它**不取消**第 ① 步：私网、回环、链路本地、云元数据地址仍然 `ADDRESS_FORBIDDEN`，`deniedDomains` 仍然 `DOMAIN_DENIED`，用户之前拒绝过的主机仍然 `USER_DECLINED`。它只管本次运行，不跨运行、不写盘。放宽之后，网址能带走多少数据由 Executor 一侧限制：网址最长 800 个字符，查询值里长度不少于 32、只含令牌字符、不是十六进制（提交哈希）、熵不小于 4.3 比特/字符的值（base64、密钥的样子）整个调用以 `SECRET_IN_REQUEST` 拒绝（`carriesData`，与密钥扫描同一条路径，不说明匹配了什么）；一个 AgentRun 能发多少次抓取仍由它的 `maxToolUnits` 限制。
+- **"这个文件夹以后都允许"（`FOLDER`，只对 `web.search`）**：回答之后本次运行照常得到条目，并且 Session 管理把这个仓库根目录记进系统级的 `kernel-core/trusted-web-search.jsonl`（Interface/Persistence 第 4.6 节）；之后在这个文件夹里开始的运行一开始就带着这个条目，不再询问。它是授权"只管本次运行、恢复的会话不复用授权"的一个明确例外，范围只有 `web.search` 这一项能力：不含 `web.fetch`，不含命令。撤销：删除该文件里这个仓库的行（或整个文件）。
+- **与命令联网隔离**：`command.network` 是另一项能力，极危险级，每次单独询问，只有 main 的能力白名单里有；`web.search`、`web.fetch` 的任何条目（包括 `ANY_HOST` 与 `FOLDER`）都不进入命令的判定，命令的判定也不读它们。`web-authorization.test.ts` 固定这一点：全部网页条目都在时，`network: true` 的命令仍是 `ASK`（critical）；Agent 的上限里没有 `command.network` 时仍是 `CAPABILITY_NOT_GRANTED`。
 - 能力上限：main 与 explorer 的定义声明两项能力；worker 不声明（它改文件、跑命令，不联网）。一个 AgentRun 的上限里没有它们时是 `CAPABILITY_NOT_GRANTED`。两项能力把数据发出本机，不属于安全能力：`readonly` 预设下它们被去掉（`capabilitiesUnderPreset`）。资源键里的主机只按原样比较（`a.example` 的授权不覆盖 `b.a.example`），不像写入根那样按路径包含。
 - 配置 `KernelConfig.web`：`deniedDomains: string[]`（缺省空）、`maxContentBytes`（缺省 2097152）、`search: { provider: string, baseUrl }`（缺省 `deepseek`）、`fetch: { remote: { provider: string, baseUrl } | null }`（缺省 `deepseek`；本地抓取总是先用，`remote` 只在它做不到时才用，`null` 表示不用）。`provider` 是 ExecutorSet 第 5d 节注册表里的名字，也是密钥的名字（`<NAME>_API_KEY`），密钥不在配置里；名字不存在在系统启动时报错。询问里写明的"搜索词发给谁"就是这个名字。
-- 审计：授权的询问与回答、拒绝都写审计（已有机制）；`WEB_SEARCH`、`WEB_FETCH` 行由 Execution 写（`kernel-core/audit.jsonl`，内容见 ExecutorSet 第 5d 节）。询问事件 `AuthorizationRequest` 带 `capability: 'web.search'`（`queries`、`provider`）或 `'web.fetch'`（`url`、`host`），回答是 `ALLOW` 或 `DENY`。
+- 审计：授权的询问与回答、拒绝都写审计（已有机制）；`WEB_SEARCH`、`WEB_FETCH` 行由 Execution 写（`kernel-core/audit.jsonl`，内容见 ExecutorSet 第 5d 节）。询问事件 `AuthorizationRequest` 带 `capability: 'web.search'`（`queries`、`provider`）或 `'web.fetch'`（`url`、`host`），回答是 `ALLOW`、`DENY`，`web.fetch` 还可以是 `ANY_HOST`，`web.search` 还可以是 `FOLDER`；一个问题不提供别的问题的回答（`offers`）。
 - 界面：询问的文字、活动区的 `web_search`、`web_fetch` 行与折叠行（UserInteraction 第 6 节增补）。
-- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、拒绝绑定主机、readonly）、`run-work.test.ts`（询问流程、范围为 `NONE`）、`web-exit`（W1–W3、A 组网页部分）。
+- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、拒绝绑定主机、readonly）、`web-authorization.test.ts`（`ANY_HOST`、`FOLDER`、与命令联网隔离）、`run-work.test.ts`（询问流程、范围为 `NONE`、`ANY_HOST` 结束同时在等的其他询问、`FOLDER` 被记下）、`web-exit`（W1–W3、A 组网页部分）。
 
 ## 6. Turn 与人类请求
 
