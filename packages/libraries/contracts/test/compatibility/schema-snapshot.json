@@ -52413,34 +52413,43 @@
               "evidence": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
+                    {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 500
                     }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
+                  ]
                 },
                 "maxItems": 10
               }
@@ -52481,34 +52490,43 @@
               "evidence": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
+                    {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 500
                     }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
+                  ]
                 },
                 "maxItems": 10
               }
@@ -52779,34 +52797,43 @@
                 "type": "integer"
               },
               "outputRef": {
-                "type": "object",
-                "required": [
-                  "artifactId",
-                  "sha256",
-                  "size",
-                  "mediaType"
-                ],
-                "properties": {
-                  "artifactId": {
-                    "type": "string",
-                    "pattern": "^art_[a-f0-9]{64}$"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
                   },
-                  "sha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "size": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "mediaType": {
+                  {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 128
+                    "maxLength": 500
                   }
-                },
-                "additionalProperties": false,
-                "$id": "platform.common.ArtifactRef.v1"
+                ]
               }
             },
             "additionalProperties": false
@@ -52845,34 +52872,43 @@
               "evidence": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "artifactId",
+                        "sha256",
+                        "size",
+                        "mediaType"
+                      ],
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "pattern": "^art_[a-f0-9]{64}$"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
+                    {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 128
+                      "maxLength": 500
                     }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
+                  ]
                 },
                 "maxItems": 10
               }

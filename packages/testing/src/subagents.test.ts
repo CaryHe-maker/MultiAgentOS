@@ -501,6 +501,38 @@ describe('the length of a result', () => {
   });
 });
 
+describe('the evidence of a result', () => {
+  it('can be what a model has: a toolCallId, the address of a page, the lines of a file', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({
+          toolName: 'finish_subagent',
+          args: {
+            summary: 'found it',
+            findings: [
+              {
+                claim: 'the limit is 7',
+                evidence: ['call_00_abc', 'https://example.com/docs', 'src/limits.ts:1-3'],
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+  });
+});
+
 describe('a plan before the work', () => {
   const plan = { todos: [{ content: 'survey', status: 'in_progress' }] };
   const wrong = { todos: [{ content: 'survey', status: 'finished' }] };

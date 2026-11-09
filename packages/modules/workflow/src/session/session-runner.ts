@@ -1483,7 +1483,8 @@ export class SessionRunner {
         'RESULT_INCOMPLETE',
         `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
       );
-    if (canonicalJson(args).length > SUBAGENT_RESULT_CHARS)
+    // With no round left to say it shorter, what was written is kept: it is cut where it is read.
+    if (canonicalJson(args).length > SUBAGENT_RESULT_CHARS && !active.state.final)
       return this.#sendBack(
         workflowRunId,
         active,

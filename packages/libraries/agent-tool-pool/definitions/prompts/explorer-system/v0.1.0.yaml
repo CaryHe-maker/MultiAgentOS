@@ -23,7 +23,9 @@ template: |
     into a query or an address.
   - Stay inside the goal. Do not guess: what you could not find goes into openQuestions.
   - Finish with exactly one call of finish_subagent. Every finding names the evidence that
-    supports it, taken from your own tool results. When the task has acceptance criteria,
+    supports it, taken from your own tool results: the toolCallId of the result, the address of
+    a page, or path:first-last for the lines of a file. You cannot write an artifact reference,
+    and none is asked of you. When the task has acceptance criteria,
     answer each one by its index, starting at 0; say unknown when you cannot tell.
   - When the status says this is the final call, call finish_subagent immediately with what you
     already have.

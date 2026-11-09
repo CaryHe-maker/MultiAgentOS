@@ -11,6 +11,14 @@ export const SUBAGENT_RESULT_CHARS = 8000;
 
 const NameSchema = Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' });
 
+/**
+ * What a result points at as its evidence. A model has only what its own tool results show it: the
+ * `toolCallId` of a result, the address of a page, or `path:first-last` for lines of a file; it
+ * cannot write the digest and size of an artifact. Both are accepted, so that a result is not
+ * refused for a form its writer cannot produce.
+ */
+const EvidenceSchema = Type.Union([ArtifactRefSchema, text(500)]);
+
 export const SubagentTaskSchema = closed({
   name: NameSchema,
   agent: Type.Enum(['explorer', 'worker']),
@@ -35,7 +43,7 @@ export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
 export const AcceptanceAnswerSchema = closed({
   index: count(0),
   verdict: Type.Enum(['met', 'not_met', 'unknown']),
-  evidence: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
+  evidence: Type.Optional(Type.Array(EvidenceSchema, { maxItems: 10 })),
 });
 export type AcceptanceAnswer = Static<typeof AcceptanceAnswerSchema>;
 
@@ -44,7 +52,7 @@ export const ExplorerResultSchema = closed(
   {
     summary: text(4000),
     findings: Type.Array(
-      closed({ claim: text(1000), evidence: Type.Array(ArtifactRefSchema, { maxItems: 10 }) }),
+      closed({ claim: text(1000), evidence: Type.Array(EvidenceSchema, { maxItems: 10 }) }),
       { maxItems: 30 },
     ),
     openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
@@ -61,7 +69,7 @@ export const WorkerResultSchema = closed(
     changedFiles: Type.Array(text(500), { maxItems: 200 }),
     status: Type.Enum(['done', 'partial', 'blocked']),
     validation: Type.Array(
-      closed({ command: text(1000), exitCode: Type.Integer(), outputRef: ArtifactRefSchema }),
+      closed({ command: text(1000), exitCode: Type.Integer(), outputRef: EvidenceSchema }),
       { maxItems: 20 },
     ),
     blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),

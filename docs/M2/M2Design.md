@@ -444,7 +444,7 @@ run_subagents({
 | worker 有 `writeScope`，explorer 没有 | `WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN` |
 | `writeScope` 规范化后在调用方的可写范围之内；已存在的前缀做 realpath 后仍在仓库内，且根目录不是符号链接 | `WRITE_SCOPE_OUTSIDE` |
 | 任意两个可能同时运行的任务（彼此之间没有依赖路径）`writeScope` 不相交 | `WRITE_SCOPE_OVERLAP`（建议加依赖或拆分范围） |
-| `effort` 在 Agent 允许的范围内 | `EFFORT_NOT_ALLOWED` |
+| `effort`：不在 Agent 允许的范围内时**不拒绝**，改为 Agent 允许的最近的一个（两个一样近取较低的：explorer 要 `high` 得到 `low`），任务照常启动；工具说明列出每个 Agent 允许的值。effort 是工作方式不是权限，不值得为它让一批正确的任务都不启动 | （无） |
 | `inputs` 中的产物都是调用方自己读得到的（它的步骤产生的、用户给它的、交给它的项目文件） | `INPUT_NOT_READABLE` |
 | 累计任务数 ≤ `maxTasks`（缺省 12）；`run_subagents` 调用次数 ≤ `maxSpawnCalls`（缺省 4）。都按 Turn 计（Orchestration 运行整体是一个 Turn） | `SPAWN_LIMIT` |
 | 各任务的 `budget.tokens` 之和 ≤ 调用方当前可委派的额度（由 Kernel 的 `reserveDelegation` 判定，第 7.3 节） | `BUDGET_INSUFFICIENT`（写明可委派的余额与各任务的份额） |
@@ -468,16 +468,19 @@ run_subagents({
 
 ```ts
 // explorer
-{ summary: string; findings: { claim: string; evidence: ArtifactRef[] }[];
+{ summary: string; findings: { claim: string; evidence: Evidence[] }[];
   openQuestions?: string[]; acceptance?: AcceptanceAnswer[] }
 // worker
 { summary: string; changedFiles: string[]; status: 'done' | 'partial' | 'blocked';
-  validation: { command: string; exitCode: number; outputRef: ArtifactRef }[];
+  validation: { command: string; exitCode: number; outputRef: Evidence }[];
   blockers?: string[]; acceptance?: AcceptanceAnswer[] }
-type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown'; evidence?: ArtifactRef[] }
+type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown'; evidence?: Evidence[] }
+// 模型只有自己的工具结果给它的东西：结果的 toolCallId、网页地址、`path:首行-末行`；
+// 它写不出产物的摘要与大小，所以两种都收（ArtifactRef 或不超过 500 个字符的字符串）
+type Evidence = ArtifactRef | string
 ```
 
-0. **结果长度**：父 AgentRun 读到的每个子任务结果最多 8000 字符（`SUBAGENT_RESULT_CHARS`）。提示词与工具说明都告知了这个限制；超过时 Workflow 以 `RESULT_TOO_LONG` 退回一次让 SubAgent 重写，Kernel 组装上下文时仍会截断并注明；完整内容留在子任务的模型输出中。
+0. **结果长度**：父 AgentRun 读到的每个子任务结果最多 8000 字符（`SUBAGENT_RESULT_CHARS`）。提示词与工具说明都告知了这个限制；超过时 Workflow 以 `RESULT_TOO_LONG` 退回一次让 SubAgent 重写，Kernel 组装上下文时仍会截断并注明；完整内容留在子任务的模型输出中。**已经是最后一轮时不退回**（没有轮次可重写了，退回只会以 `FINAL_CALL_INVALID` 丢掉结果）：照单收下，在读它的地方截断。
 1. **Schema 校验**：Workflow 按 Schema 校验 `finish_subagent`。不合格时以 FEEDBACK 退回，计入该 AgentRun 的 Round。
 2. **验收条目**：只做形式检查，即每条验收标准都有回应，不判断内容是否属实。
 3. **blocked**：`status` 为 `blocked` 的任务，其节点记为失败，依赖它的任务因此被跳过；`partial` 与 `done` 的节点记为成功，汇合结果里仍带原来的状态。

@@ -11,7 +11,8 @@ modelDescription: >-
   files), a goal that stands on its own (the agent does not see your conversation), and optional
   dependsOn (names of other tasks of this call; a task starts after them and receives their
   results), acceptance (what its result must show), inputs (artifacts you hand over), effort and
-  budget (a token share). Each result you get back is cut after 8000 characters. A worker must have writeScope: the repository paths it may change, which must lie
+  budget (a token share). An explorer thinks at none or low, a worker at low, high or max; an
+  effort the agent does not allow is set to the nearest one it does, and the task still runs. Each result you get back is cut after 8000 characters. A worker must have writeScope: the repository paths it may change, which must lie
   within what you may write and must not overlap the scope of a worker that can run at the same
   time. An explorer has no writeScope. While the tasks run you cannot write or run commands.
   Call it on its own.
@@ -19,7 +20,7 @@ parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs
   version: v1
-riskClass: READ_ONLY
-sideEffect: NONE
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
 isIdempotent: false
 contentStatus: FINAL

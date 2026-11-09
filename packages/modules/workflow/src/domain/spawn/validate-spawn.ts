@@ -22,7 +22,6 @@ export type SpawnErrorCode =
   | 'WRITE_SCOPE_FORBIDDEN'
   | 'WRITE_SCOPE_OUTSIDE'
   | 'WRITE_SCOPE_OVERLAP'
-  | 'EFFORT_NOT_ALLOWED'
   | 'INPUT_NOT_READABLE'
   | 'SPAWN_LIMIT';
 
@@ -108,6 +107,27 @@ function depthOf(tasks: ReadonlyMap<string, readonly string[]>): number | undefi
   return longest;
 }
 
+const EFFORT_RANK: readonly ThinkingEffort[] = ['none', 'low', 'high', 'max'];
+
+/**
+ * The effort asked for, or the nearest the Agent allows (the lower one when two are as near): an
+ * explorer asked for `high` thinks at `low`. The effort is a way of working, not a permission, so
+ * it is no reason to refuse the tasks that are right.
+ */
+export function nearestEffort(
+  asked: ThinkingEffort,
+  allowed: readonly ThinkingEffort[],
+): ThinkingEffort | undefined {
+  if (allowed.length === 0 || allowed.includes(asked))
+    return allowed.length === 0 ? undefined : asked;
+  const rank = (effort: ThinkingEffort): number => EFFORT_RANK.indexOf(effort);
+  return [...allowed].sort(
+    (left, right) =>
+      Math.abs(rank(left) - rank(asked)) - Math.abs(rank(right) - rank(asked)) ||
+      rank(left) - rank(right),
+  )[0];
+}
+
 export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): SpawnValidation {
   const { rules } = context;
   const errors: SpawnError[] = [];
@@ -164,12 +184,6 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       add('UNKNOWN_AGENT', `${task.agent} cannot be started`, task.name);
       continue;
     }
-    if (task.effort !== undefined && !facts.allowedEfforts.includes(task.effort))
-      add(
-        'EFFORT_NOT_ALLOWED',
-        `${task.agent} allows the efforts ${facts.allowedEfforts.join(', ')}, not ${task.effort}`,
-        task.name,
-      );
     const scope = task.writeScope ?? [];
     if (facts.writes && scope.length === 0)
       add('WRITE_SCOPE_REQUIRED', `${task.name} needs a writeScope`, task.name);
@@ -218,7 +232,15 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
   return {
     ok: true,
     plan: {
-      tasks: tasks.map((task) => ({ ...task, writeRoots: roots.get(task.name) ?? [] })),
+      tasks: tasks.map((task) => {
+        const allowed = context.agents.get(task.agent)?.allowedEfforts ?? [];
+        const effort = task.effort === undefined ? undefined : nearestEffort(task.effort, allowed);
+        // What the caller asked for is replaced by what the Agent allows.
+        const kept = { ...task, writeRoots: roots.get(task.name) ?? [] };
+        if (effort === undefined) delete kept.effort;
+        else kept.effort = effort;
+        return kept;
+      }),
     },
   };
 }
