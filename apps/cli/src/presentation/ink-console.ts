@@ -158,9 +158,6 @@ export function InputBox({ view }: { readonly view: BoxView }): ReactElement {
   );
 }
 
-/** The input row may climb at most this many rows from where it has been (see `ConsoleApp`). */
-const BOTTOM_SLACK = 3;
-
 /** `lines` cut to `cap` rows: the first and the last ones stay, a `…` stands for the middle. */
 function elide(lines: readonly string[], cap: number): string[] {
   if (lines.length <= cap) return [...lines];
@@ -366,15 +363,7 @@ function ConsoleApp({
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line: after the rows above the box, in the row and column of the text.
-  // The frame does not shrink below what it was (less a few rows): when it does, what is below it
-  // is erased and the input row climbs up the screen. Blank rows above it hold it down.
-  const contentRows = plan.rows + below + view.shown;
-  const anchor = useRef({ key: '', peak: 0 });
-  const key = `${String(rows)}x${String(columns)}`;
-  if (anchor.current.key !== key) anchor.current = { key, peak: 0 };
-  const padRows = Math.max(0, Math.min(rows - 1, anchor.current.peak) - BOTTOM_SLACK - contentRows);
-  anchor.current.peak = Math.max(anchor.current.peak, Math.min(rows - 1, contentRows));
-  setCursorPosition({ x: view.cursorColumn, y: padRows + plan.rows + below + view.cursorRow });
+  setCursorPosition({ x: view.cursorColumn, y: plan.rows + below + view.cursorRow });
 
   return h(
     Box,
@@ -389,9 +378,6 @@ function ConsoleApp({
     h(
       Box,
       { flexDirection: 'column' },
-      ...Array.from({ length: padRows }, (_, index) =>
-        h(Text, { key: `pad${String(index)}` }, ' '),
-      ),
       ...plan.items.flatMap((item): ReactElement[] =>
         item.kind === 'RECORD'
           ? item.lines.map((line, index) =>

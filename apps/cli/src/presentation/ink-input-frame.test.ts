@@ -189,8 +189,8 @@ describe('the input box is never taller than its height', () => {
   });
 });
 
-describe('the input row does not climb up the screen', () => {
-  it('stays within three rows of where it was when what is above it shrinks', async () => {
+describe('the live area is as tall as what is in it', () => {
+  it('has no blank rows between the last output and the status line and the input, whatever was above', async () => {
     const t = mount(80, 24);
     await tick();
     const thinking: ThinkingView[] = [
@@ -202,11 +202,14 @@ describe('the input row does not climb up the screen', () => {
     ];
     t.ink.store.update({ status: '运行中', activity: [], waiting: 0, queued: [], thinking });
     await tick();
-    const tall = t.terminal.cursor().row;
+    t.ink.store.print({ kind: 'REPLY', agentLabel: 'main', text: 'the answer is here' });
     t.ink.store.update({ status: '等待输入', activity: [], waiting: 0, queued: [], thinking: [] });
     await tick();
     await tick();
-    const after = t.terminal.cursor().row;
-    expect(after).toBeGreaterThanOrEqual(tall - 3);
+    const { rows } = t.terminal.cursor();
+    const at = rows.findIndex((each) => each.includes('the answer is here'));
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(rows[at + 1]).toContain('------');
+    expect(rows[at + 2]).toContain('›');
   });
 });
