@@ -116,6 +116,12 @@ export class ConsoleStore implements ConsoleView {
       if (!this.#folded.has(id) && !this.#committed.has(id)) this.#elided.add(id);
   }
 
+  /** The screen was erased (a resize): the view is drawn again, as it is. */
+  public repaint(): void {
+    this.#snapshot = { ...this.#snapshot };
+    this.#notify();
+  }
+
   public readonly subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);

@@ -20,6 +20,7 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
+import { CLEAR_SCREEN, clearOnResize } from './resize.js';
 import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
@@ -453,8 +454,9 @@ export function createInkConsole(
   const store = new ConsoleStore();
   return {
     store,
-    mount: (input) =>
-      render(consoleApp(store, input), {
+    mount: (input) => {
+      const known = new Set(stdout.listeners('resize') as ((...args: unknown[]) => void)[]);
+      const instance = render(consoleApp(store, input), {
         stdin,
         stdout,
         exitOnCtrlC: false,
@@ -462,6 +464,17 @@ export function createInkConsole(
         // A terminal is a terminal: Ink would otherwise draw only the last frame when the CI
         // variable is set, which leaves a person who has it set in their shell with a dead screen.
         interactive: Boolean(stdout.isTTY),
-      }),
+      });
+      if (stdout.isTTY) {
+        // A resize is answered once, when it is over, with a clean screen (see `resize.ts`).
+        const stop = clearOnResize(stdout, known, () => {
+          stdout.write(CLEAR_SCREEN);
+          instance.clear();
+          store.repaint();
+        });
+        void instance.waitUntilExit().then(stop, stop);
+      }
+      return instance;
+    },
   };
 }
