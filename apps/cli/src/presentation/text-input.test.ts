@@ -9,6 +9,7 @@ import {
   deleteToLineStart,
   deleteWordBefore,
   displayWidth,
+  layoutBox,
   inputOf,
   insert,
   left,
@@ -90,9 +91,39 @@ describe('where the terminal cursor goes', () => {
 
   it('follows a line that wraps at the edge of the terminal', () => {
     const state = at('x'.repeat(25), 25);
-    // 2 columns of prompt + 25 = 27 columns on a 10-wide screen: row 2, column 7.
-    expect(cursorCell(state, '› ', '  ', 10)).toEqual({ row: 2, column: 7 });
-    expect(boxRows(state, '› ', '  ', 10)).toBe(3);
+    // A 10-wide screen leaves 8 columns; the generous measure counts › as 2,
+    // so the first row holds 5 characters (the prompt counts 3) and the others 6: 25 characters make 5 rows.
+    expect(boxRows(state, '› ', '  ', 10)).toBe(5);
+    expect(cursorCell(state, '› ', '  ', 10)).toEqual({ row: 4, column: 2 + 2 });
     expect(boxRows(at('a\n\nb', 0), '› ', '  ', 10)).toBe(3);
+  });
+
+  it('cuts by characters, never by words, and puts the rest under an indent', () => {
+    const value = `abc ${'x'.repeat(30)}`;
+    const rows = layoutBox(at(value, value.length), '› ', '  ', 20);
+    // The first row holds 15 columns after the prompt, the others 16: the long word does not move to the next row whole.
+    expect(rows.map((row) => value.slice(row.start, row.end))).toEqual([
+      'abc xxxxxxxxxxx',
+      'xxxxxxxxxxxxxxxx',
+      'xxx',
+    ]);
+    expect(rows.map((row) => row.lead)).toEqual(['› ', '  ', '  ']);
+  });
+
+  it('puts the cursor at the start of the next row where a line was cut', () => {
+    const state = at('x'.repeat(20), 15);
+    const rows = layoutBox(state, '› ', '  ', 20);
+    expect(rows).toHaveLength(2);
+    expect(cursorCell(state, '› ', '  ', 20)).toEqual({ row: 1, column: 2 });
+  });
+
+  it('keeps the cursor on the row of a CJK line that is cut', () => {
+    const value = '你好'.repeat(10);
+    const state = at(value, value.length);
+    const { row, column } = cursorCell(state, '› ', '  ', 20);
+    const rows = layoutBox(state, '› ', '  ', 20);
+    expect(row).toBe(rows.length - 1);
+    const last = rows.at(-1);
+    expect(column).toBe(2 + displayWidth(value.slice(last?.start, value.length)));
   });
 });

@@ -191,14 +191,67 @@ export function displayWidth(text: string): number {
   return width;
 }
 
-/** Rows a line of `width` columns takes when the terminal is `columns` wide (an empty line takes one). */
-const rowsOf = (width: number, columns: number): number =>
-  Math.max(1, Math.ceil(width / Math.max(1, columns)));
+/** Columns left unused at the right edge of the box, as for everything else drawn in place. */
+const BOX_MARGIN = 2;
+
+/** One screen row of the box: the part of the text it shows, and where that part is in the value. */
+export interface BoxRow {
+  /** `prefix` on the first row of the text, `continuation` on every other one. */
+  readonly lead: string;
+  /** The row shows `value.slice(start, end)`. */
+  readonly start: number;
+  readonly end: number;
+  /** Whether the logical line goes on in the next row. */
+  readonly wrapped: boolean;
+}
+
+const safeWidth = (text: string): number => {
+  let width = 0;
+  for (const character of text) width += safeCharWidth(character.codePointAt(0) ?? 0);
+  return width;
+};
 
 /**
- * Where the terminal cursor belongs, counted from the top-left of the box: the box is drawn after
- * `prefix` on its first line and after `continuation` on the others, and a line longer than the
- * terminal is wrapped, so a row is a screen row and not a line of the text.
+ * The box cut into the rows it is drawn as. The cut is made here, character by character by the
+ * generous measure, and each row is drawn as it is, so that neither the terminal nor Ink wraps
+ * anything: the row and column of the cursor computed from these rows are then where the text
+ * really is. (Ink wraps by words: a long word goes to the next row whole, and a cursor computed
+ * for a cut at the edge lands in the wrong place.)
+ */
+export function layoutBox(
+  state: InputState,
+  prefix: string,
+  continuation: string,
+  columns: number,
+): BoxRow[] {
+  const rows: BoxRow[] = [];
+  const total = Math.max(4, columns - BOX_MARGIN);
+  let offset = 0;
+  for (const [index, line] of state.value.split('\n').entries()) {
+    let lead = index === 0 ? prefix : continuation;
+    let from = 0;
+    let at = 0;
+    let used = 0;
+    for (const character of line) {
+      const width = safeCharWidth(character.codePointAt(0) ?? 0);
+      if (used + width > Math.max(2, total - safeWidth(lead)) && at > from) {
+        rows.push({ lead, start: offset + from, end: offset + at, wrapped: true });
+        lead = continuation;
+        from = at;
+        used = 0;
+      }
+      used += width;
+      at += character.length;
+    }
+    rows.push({ lead, start: offset + from, end: offset + line.length, wrapped: false });
+    offset += line.length + 1;
+  }
+  return rows;
+}
+
+/**
+ * Where the terminal cursor belongs, counted from the top-left of the box, in the rows of
+ * `layoutBox`. Where a long line was cut, the cursor is at the start of the next row.
  */
 export function cursorCell(
   state: InputState,
@@ -206,19 +259,18 @@ export function cursorCell(
   continuation: string,
   columns: number,
 ): { readonly row: number; readonly column: number } {
-  const parts = state.value.split('\n');
-  const { line } = linePosition(state);
-  let row = 0;
-  for (let index = 0; index < line; index += 1)
-    row += rowsOf(
-      displayWidth(index === 0 ? prefix : continuation) + displayWidth(parts[index] ?? ''),
-      columns,
-    );
-  const before = state.value.slice(lineBounds(state).start, state.cursor);
-  const offset = displayWidth(line === 0 ? prefix : continuation) + displayWidth(before);
+  const rows = layoutBox(state, prefix, continuation, columns);
+  const found = rows.findIndex(
+    (each) =>
+      state.cursor >= each.start &&
+      (state.cursor < each.end || (!each.wrapped && state.cursor === each.end)),
+  );
+  const row = found < 0 ? rows.length - 1 : found;
+  const at = rows[row];
+  if (at === undefined) return { row: 0, column: 0 };
   return {
-    row: row + Math.floor(offset / Math.max(1, columns)),
-    column: offset % Math.max(1, columns),
+    row,
+    column: displayWidth(at.lead) + displayWidth(state.value.slice(at.start, state.cursor)),
   };
 }
 
@@ -229,12 +281,5 @@ export function boxRows(
   continuation: string,
   columns: number,
 ): number {
-  return state.value
-    .split('\n')
-    .reduce(
-      (sum, line, index) =>
-        sum +
-        rowsOf(displayWidth(index === 0 ? prefix : continuation) + displayWidth(line), columns),
-      0,
-    );
+  return layoutBox(state, prefix, continuation, columns).length;
 }

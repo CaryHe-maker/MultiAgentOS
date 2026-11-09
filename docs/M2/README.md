@@ -22,6 +22,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2Baseline](M2Baseline.md) | 现状基线：每项能力做到哪里、证据、已知缺口 |
 | [M2Decisions](M2Decisions.md) | 仍然约束设计与实现的已定决定 |
 | [Phase1Console](Phase1Console.md) | phase 1 控制台与流式输出：问题记录、流式的记录与删除规则、任务顺序 |
+| [WorkspaceSessionReference](WorkspaceSessionReference.md) | 开源项目（OpenCode、DeepSeek Harness）的 Workspace 与 Session 绑定做法，供 phase 1 的授权与工作区使用；只是参考，没有决定 |
 | [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、phase 发布检查 |
 | [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |

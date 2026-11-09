@@ -22,6 +22,7 @@ import {
   deleteWordBefore,
   inputOf,
   insert,
+  layoutBox,
   left,
   lineEnd,
   lineStart,
@@ -120,27 +121,33 @@ function useClock(running: boolean): number {
 }
 
 /** The box drawn with a block where the cursor is, line by line. */
-function InputBox({ state }: { readonly state: InputState }): ReactElement {
-  const lines = state.value.split('\n');
-  let offset = 0;
+function InputBox({
+  state,
+  columns,
+}: {
+  readonly state: InputState;
+  readonly columns: number;
+}): ReactElement {
+  // The rows are cut by `layoutBox` and drawn as they are (never wrapped again), the same rows the
+  // cursor of the terminal is placed by.
+  const rows = layoutBox(state, PROMPT, CONTINUATION, columns);
+  const here = cursorCell(state, PROMPT, CONTINUATION, columns).row;
   return h(
     Box,
     { flexDirection: 'column' },
-    ...lines.map((line, index) => {
-      const start = offset;
-      offset += line.length + 1;
-      const prefix = index === 0 ? PROMPT : CONTINUATION;
-      const here = state.cursor >= start && state.cursor <= start + line.length;
-      if (!here) return h(Text, { key: index, color: USER_COLOR }, `${prefix}${line}`);
-      const column = state.cursor - start;
-      const under = [...line.slice(column)][0];
+    ...rows.map((each, index) => {
+      const text = state.value.slice(each.start, each.end);
+      const props = { key: index, color: USER_COLOR, wrap: 'truncate-end' } as const;
+      if (index !== here) return h(Text, props, `${each.lead}${text}`);
+      const column = state.cursor - each.start;
+      const under = [...text.slice(column)][0];
       return h(
         Text,
-        { key: index, color: USER_COLOR },
-        prefix,
-        line.slice(0, column),
+        props,
+        each.lead,
+        text.slice(0, column),
         h(Text, { inverse: true }, under ?? ' '),
-        under === undefined ? '' : line.slice(column + under.length),
+        under === undefined ? '' : text.slice(column + under.length),
       );
     }),
   );
@@ -364,7 +371,7 @@ function ConsoleApp({
         status.length > 0 ? `------ ${status}${share} ------` : ' ',
       ),
     ),
-    h(InputBox, { state: box }),
+    h(InputBox, { state: box, columns }),
   );
 }
 

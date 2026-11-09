@@ -325,6 +325,42 @@ describe('where the cursor is left', () => {
     expect(column).toBe(2 + 2);
   });
 
+  it('stays at the end of a typed text that is longer than a row, with a long word in it', async () => {
+    // Ink wraps by words: the long word used to move to the next row whole, and a cursor counted
+    // for a cut at the edge was left in the middle of the text.
+    const { terminal, stdin, stdout } = connect(40, 20, false);
+    const ink = createInkConsole(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+    );
+    const instance = ink.mount({
+      submit: () => Promise.resolve(),
+      interrupt: () => Promise.resolve(),
+      withdrawLast: () => undefined,
+      steer: () => Promise.resolve(),
+    });
+    unmount = () => instance.unmount();
+    await tick();
+    const text =
+      '帮我搜索 DeepSeek 账户的速率是多少 为什么能实现同一个 Api key同时调用不同的对话不会矛盾吗然后回到';
+    for (const character of text) stdin.write(character);
+    await tick();
+    const { row, column, rows } = terminal.cursor();
+    const box = rows.slice(Math.max(0, row - 2), row + 1).map((each) => each.trimEnd());
+    // Nothing is lost or reordered, and the first row has the prompt, the others the indent.
+    expect(box.join('').replace(/\s+/gu, '').replace('›', '')).toContain(
+      'Apikey同时调用不同的对话不会矛盾吗然后回到',
+    );
+    expect(rows[row]?.startsWith('  ')).toBe(true);
+    // The cursor is just after the last character of the last row.
+    expect(column).toBe(
+      [...(rows[row]?.trimEnd() ?? '')].reduce(
+        (sum, each) => sum + charWidth(each.codePointAt(0) ?? 0),
+        0,
+      ),
+    );
+  });
+
   it('stays on the input row when a reply in the drawn part has blank lines', async () => {
     const { terminal, stdin, stdout } = connect(60, 30, false);
     const ink = createInkConsole(
