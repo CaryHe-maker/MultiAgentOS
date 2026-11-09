@@ -143,6 +143,7 @@ interface FetchedPage { title: string; markdown: string; via: string; finalUrl?:
 - `createDeepSeekSearch`、`createDeepSeekFetch`（`web/deepseek.ts`）：`POST {baseUrl}/v1/tools/search`、`/v1/tools/fetch`，与模型共用 API key；搜索的 `need_content` 恒为 `false`（摘要 `summary` 已够模型阅读），错误体按官方格式解析；
 - `createBraveSearch`（`web/brave.ts`）：`GET {baseUrl}/res/v1/web/search`，密钥名 `brave`。它只证明搜索不依赖某一家，没有启用；
 - `createLocalFetch`：本地抓取（下文），承担地址检查、重定向检查与 HTML 转 Markdown；
+  **HTML 转 Markdown 在进程的唯一线程上同步运行**（Executor 都在进程内，只有 `rg`、`git` 与命令是子进程），所以它必须与页面大小成正比：它曾在每个块之后重数已写出的全部内容，400 KB 的页面要 12 秒、抓取允许的最大页面（4 MB）要几分钟，期间同一进程里的其他抓取、模型调用、界面与超时计时器都停着；现在 400 KB 约 40 毫秒、4 MB 约 0.3 秒，`html-to-markdown.test.ts` 有回归测试；
 - `createFallbackFetch(own, remote)`：**先用本地抓取，它做不到时才用提供方**。回退的条件：站点把程序拒之门外（403、429、验证页、5xx）、连接失败、以及页面靠脚本生成内容而本地抓到的几乎没有文字（`thin`：没有任何文字，或页面在 1500 字节以上而文字少于 300 字符），后一种只有提供方给出更多文字时才采用。**永不回退**的情形：被地址检查或内容规则拒绝的请求（REJECTED，如 `ADDRESS_FORBIDDEN`、`UNSUPPORTED_CONTENT`）、页面不存在（404、410，别处也不会有，还白白交出地址）、没有配置提供方或没有它的密钥。提供方的 429 若给出 ≤ 10 秒的 `Retry-After`，等待后至多重试两次；提供方也不行时，给出的失败是本地抓取自己的，因为它最准确。结果注明由谁提供（`via`）。地址只在本地抓取失败之后才交给提供方，且那时地址已经过全部检查；这也是隐私上的好处：成功的抓取不把地址交给任何人。
 - 最终内容为空（本地没有文字、提供方也没有）以 FAILED 的 `PAGE_UNAVAILABLE` 回答，不把空页面当作成功交给模型。
 
