@@ -1,3 +1,8 @@
+import stringWidth from 'string-width';
+import wrapAnsi from 'wrap-ansi';
+
+const NEWLINE = '\n';
+
 /**
  * The text of the input box and where the cursor is in it (docs/M2/Phase1Console.md 2.1, UI-2).
  * Pure functions, so the box can be tested without a terminal: `value` is the text, `cursor` an
@@ -184,74 +189,84 @@ export function safeCharWidth(codePoint: number): number {
   return 1;
 }
 
-/** Columns `text` takes on one terminal line. */
-export function displayWidth(text: string): number {
-  let width = 0;
-  for (const character of text) width += charWidth(character.codePointAt(0) ?? 0);
-  return width;
-}
-
-/** Columns left unused at the right edge of the box, as for everything else drawn in place. */
-const BOX_MARGIN = 2;
-
-/** One screen row of the box: the part of the text it shows, and where that part is in the value. */
-export interface BoxRow {
-  /** `prefix` on the first row of the text, `continuation` on every other one. */
-  readonly lead: string;
-  /** The row shows `value.slice(start, end)`. */
-  readonly start: number;
-  readonly end: number;
-  /** Whether the logical line goes on in the next row. */
-  readonly wrapped: boolean;
-}
-
-const safeWidth = (text: string): number => {
-  let width = 0;
-  for (const character of text) width += safeCharWidth(character.codePointAt(0) ?? 0);
-  return width;
-};
+/**
+ * Columns left unused at the right edge of the box, as for everything else drawn in place: a
+ * terminal that draws a symbol wider than `string-width` counts it still has room for it.
+ */
+export const BOX_MARGIN = 2;
 
 /**
- * The box cut into the rows it is drawn as. The cut is made here, character by character by the
- * generous measure, and each row is drawn as it is, so that neither the terminal nor Ink wraps
- * anything: the row and column of the cursor computed from these rows are then where the text
- * really is. (Ink wraps by words: a long word goes to the next row whole, and a cursor computed
- * for a cut at the edge lands in the wrong place.)
+ * The text cut into rows exactly as Ink cuts a `<Text wrap="hard">` that is `width` columns wide:
+ * the same call, with the same options, as `wrapText` in Ink (`build/wrap-text.js`), on the same
+ * measure of width (`string-width`, which `wrap-ansi` uses). Nothing here is a model of Ink: when
+ * Ink changes how it wraps, the test that draws the box with Ink and compares the rows fails.
  */
-export function layoutBox(
+export function wrapLikeInk(text: string, width: number): string[] {
+  // Ink leaves a text with no room as it is, and gives a fraction of a column one whole column.
+  if (width <= 0) return text.split(NEWLINE);
+  return wrapAnsi(text, Math.max(1, width), { trim: false, hard: true, wordWrap: false }).split(
+    NEWLINE,
+  );
+}
+
+/** What the box draws for one line of its text: the lead, and the text with the cursor in it. */
+export interface BoxLine {
+  readonly lead: string;
+  /** The text before the cursor, the character under it (a space at the end) and the rest. */
+  readonly before: string;
+  readonly under: string;
+  readonly after: string;
+  /** Whether the cursor is on this line. */
+  readonly here: boolean;
+}
+
+/** The lines of the box as they are drawn; the cursor line carries the cell the cursor stands on. */
+export function boxLines(state: InputState, prefix: string, continuation: string): BoxLine[] {
+  const lines: BoxLine[] = [];
+  let start = 0;
+  for (const [index, line] of state.value.split(NEWLINE).entries()) {
+    const lead = index === 0 ? prefix : continuation;
+    const here = state.cursor >= start && state.cursor <= start + line.length;
+    if (here) {
+      const column = state.cursor - start;
+      const real = [...line.slice(column)][0];
+      lines.push({
+        lead,
+        before: line.slice(0, column),
+        under: real ?? ' ',
+        after: real === undefined ? '' : line.slice(column + real.length),
+        here,
+      });
+    } else lines.push({ lead, before: line, under: '', after: '', here });
+    start += line.length + 1;
+  }
+  return lines;
+}
+
+/** The width of the text beside the lead: what is left of the box after it, as Ink lays it out. */
+const textWidth = (lead: string, columns: number): number =>
+  columns - BOX_MARGIN - stringWidth(lead);
+
+const textOf = (line: BoxLine): string => `${line.before}${line.under}${line.after}`;
+
+/** Rows the whole box takes: the rows each line is cut into, and a line is at least one row. */
+export function boxRows(
   state: InputState,
   prefix: string,
   continuation: string,
   columns: number,
-): BoxRow[] {
-  const rows: BoxRow[] = [];
-  const total = Math.max(4, columns - BOX_MARGIN);
-  let offset = 0;
-  for (const [index, line] of state.value.split('\n').entries()) {
-    let lead = index === 0 ? prefix : continuation;
-    let from = 0;
-    let at = 0;
-    let used = 0;
-    for (const character of line) {
-      const width = safeCharWidth(character.codePointAt(0) ?? 0);
-      if (used + width > Math.max(2, total - safeWidth(lead)) && at > from) {
-        rows.push({ lead, start: offset + from, end: offset + at, wrapped: true });
-        lead = continuation;
-        from = at;
-        used = 0;
-      }
-      used += width;
-      at += character.length;
-    }
-    rows.push({ lead, start: offset + from, end: offset + line.length, wrapped: false });
-    offset += line.length + 1;
-  }
-  return rows;
+): number {
+  return boxLines(state, prefix, continuation).reduce(
+    (sum, line) => sum + wrapLikeInk(textOf(line), textWidth(line.lead, columns)).length,
+    0,
+  );
 }
 
 /**
- * Where the terminal cursor belongs, counted from the top-left of the box, in the rows of
- * `layoutBox`. Where a long line was cut, the cursor is at the start of the next row.
+ * Where the terminal cursor belongs, counted from the top-left of the box: the row, and the column
+ * of the first cell of the character under the cursor. The text before the cursor is cut the way
+ * Ink cuts the whole line (cutting is sequential, so a prefix is cut like the beginning of the
+ * whole); if the character under the cursor does not fit on that row it starts the next one.
  */
 export function cursorCell(
   state: InputState,
@@ -259,27 +274,19 @@ export function cursorCell(
   continuation: string,
   columns: number,
 ): { readonly row: number; readonly column: number } {
-  const rows = layoutBox(state, prefix, continuation, columns);
-  const found = rows.findIndex(
-    (each) =>
-      state.cursor >= each.start &&
-      (state.cursor < each.end || (!each.wrapped && state.cursor === each.end)),
-  );
-  const row = found < 0 ? rows.length - 1 : found;
-  const at = rows[row];
-  if (at === undefined) return { row: 0, column: 0 };
-  return {
-    row,
-    column: displayWidth(at.lead) + displayWidth(state.value.slice(at.start, state.cursor)),
-  };
-}
-
-/** Rows the whole box takes. */
-export function boxRows(
-  state: InputState,
-  prefix: string,
-  continuation: string,
-  columns: number,
-): number {
-  return layoutBox(state, prefix, continuation, columns).length;
+  let row = 0;
+  for (const line of boxLines(state, prefix, continuation)) {
+    const width = textWidth(line.lead, columns);
+    if (!line.here) {
+      row += wrapLikeInk(line.before, width).length;
+      continue;
+    }
+    const before = wrapLikeInk(line.before, width);
+    const through = wrapLikeInk(`${line.before}${line.under}`, width);
+    const last = before.at(-1) ?? '';
+    return through.length > before.length
+      ? { row: row + before.length, column: stringWidth(line.lead) }
+      : { row: row + before.length - 1, column: stringWidth(line.lead) + stringWidth(last) };
+  }
+  return { row, column: 0 };
 }

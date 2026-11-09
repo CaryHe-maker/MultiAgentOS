@@ -9,11 +9,14 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from 'react';
+import stringWidth from 'string-width';
 import { ConsoleStore } from './console-store.js';
 import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
+  BOX_MARGIN,
   EMPTY_INPUT,
   backspace,
+  boxLines,
   boxRows,
   cursorCell,
   deleteForward,
@@ -22,7 +25,6 @@ import {
   deleteWordBefore,
   inputOf,
   insert,
-  layoutBox,
   left,
   lineEnd,
   lineStart,
@@ -120,36 +122,44 @@ function useClock(running: boolean): number {
   return now;
 }
 
-/** The box drawn with a block where the cursor is, line by line. */
-function InputBox({
+/**
+ * The box drawn with a block where the cursor is. Each line of the text is a row of two boxes: the
+ * lead (the prompt, or the indent) at its own width, and the text beside it, cut by Ink itself
+ * (`wrap="hard"`) in the width that is left. A line that is longer goes on under its text, not
+ * under the lead. The cursor is placed with the same cut and measure (`cursorCell`).
+ */
+export function InputBox({
   state,
   columns,
 }: {
   readonly state: InputState;
   readonly columns: number;
 }): ReactElement {
-  // The rows are cut by `layoutBox` and drawn as they are (never wrapped again), the same rows the
-  // cursor of the terminal is placed by.
-  const rows = layoutBox(state, PROMPT, CONTINUATION, columns);
-  const here = cursorCell(state, PROMPT, CONTINUATION, columns).row;
   return h(
     Box,
     { flexDirection: 'column' },
-    ...rows.map((each, index) => {
-      const text = state.value.slice(each.start, each.end);
-      const props = { key: index, color: USER_COLOR, wrap: 'truncate-end' } as const;
-      if (index !== here) return h(Text, props, `${each.lead}${text}`);
-      const column = state.cursor - each.start;
-      const under = [...text.slice(column)][0];
-      return h(
-        Text,
-        props,
-        each.lead,
-        text.slice(0, column),
-        h(Text, { inverse: true }, under ?? ' '),
-        under === undefined ? '' : text.slice(column + under.length),
-      );
-    }),
+    ...boxLines(state, PROMPT, CONTINUATION).map((line, index) =>
+      h(
+        Box,
+        { key: index, width: Math.max(1, columns - BOX_MARGIN) },
+        h(
+          Box,
+          { width: stringWidth(line.lead), flexShrink: 0 },
+          h(Text, { color: USER_COLOR, wrap: 'truncate-end' }, line.lead),
+        ),
+        h(
+          Box,
+          { flexGrow: 1 },
+          h(
+            Text,
+            { color: USER_COLOR, wrap: 'hard' },
+            line.before,
+            line.here ? h(Text, { inverse: true }, line.under) : '',
+            line.after,
+          ),
+        ),
+      ),
+    ),
   );
 }
 

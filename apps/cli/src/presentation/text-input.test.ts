@@ -8,8 +8,6 @@ import {
   deleteToLineEnd,
   deleteToLineStart,
   deleteWordBefore,
-  displayWidth,
-  layoutBox,
   inputOf,
   insert,
   left,
@@ -17,6 +15,7 @@ import {
   lineStart,
   moveVertical,
   right,
+  wrapLikeInk,
   type InputState,
 } from './text-input.js';
 
@@ -75,55 +74,42 @@ describe('the input box', () => {
 });
 
 describe('where the terminal cursor goes', () => {
-  it('counts wide characters as two columns, so the input window opens at the right place', () => {
-    expect(displayWidth('abc')).toBe(3);
-    expect(displayWidth('你好')).toBe(4);
-    expect(displayWidth('é')).toBe(1);
-    const state = at('你好吗', 6);
-    expect(cursorCell(state, '› ', '  ', 80)).toEqual({ row: 0, column: 2 + 6 });
-    expect(cursorCell(at('你好吗', 2), '› ', '  ', 80)).toEqual({ row: 0, column: 2 + 4 });
+  const lead = '› ';
+  const indent = '  ';
+
+  it('stands after the prompt and the characters before it, wide ones counting two', () => {
+    expect(cursorCell(at('你好吗', 3), lead, indent, 80)).toEqual({ row: 0, column: 2 + 6 });
+    expect(cursorCell(at('你好吗', 2), lead, indent, 80)).toEqual({ row: 0, column: 2 + 4 });
   });
 
   it('is on the line of a box of several lines', () => {
-    const state = at('first\nsecond', 9);
-    expect(cursorCell(state, '› ', '  ', 80)).toEqual({ row: 1, column: 2 + 3 });
+    expect(cursorCell(at('first\nsecond', 9), lead, indent, 80)).toEqual({ row: 1, column: 2 + 3 });
   });
 
-  it('follows a line that wraps at the edge of the terminal', () => {
-    const state = at('x'.repeat(25), 25);
-    // A 10-wide screen leaves 8 columns; the generous measure counts › as 2,
-    // so the first row holds 5 characters (the prompt counts 3) and the others 6: 25 characters make 5 rows.
-    expect(boxRows(state, '› ', '  ', 10)).toBe(5);
-    expect(cursorCell(state, '› ', '  ', 10)).toEqual({ row: 4, column: 2 + 2 });
-    expect(boxRows(at('a\n\nb', 0), '› ', '  ', 10)).toBe(3);
-  });
-
-  it('cuts by characters, never by words, and puts the rest under an indent', () => {
+  it('follows a line that is cut: the rest goes on under the text, not under the prompt', () => {
+    // 20 columns less the margin of 2 and the lead of 2: 16 columns for the text.
     const value = `abc ${'x'.repeat(30)}`;
-    const rows = layoutBox(at(value, value.length), '› ', '  ', 20);
-    // The first row holds 15 columns after the prompt, the others 16: the long word does not move to the next row whole.
-    expect(rows.map((row) => value.slice(row.start, row.end))).toEqual([
-      'abc xxxxxxxxxxx',
-      'xxxxxxxxxxxxxxxx',
-      'xxx',
-    ]);
-    expect(rows.map((row) => row.lead)).toEqual(['› ', '  ', '  ']);
-  });
-
-  it('puts the cursor at the start of the next row where a line was cut', () => {
-    const state = at('x'.repeat(20), 15);
-    const rows = layoutBox(state, '› ', '  ', 20);
-    expect(rows).toHaveLength(2);
-    expect(cursorCell(state, '› ', '  ', 20)).toEqual({ row: 1, column: 2 });
-  });
-
-  it('keeps the cursor on the row of a CJK line that is cut', () => {
-    const value = '你好'.repeat(10);
     const state = at(value, value.length);
-    const { row, column } = cursorCell(state, '› ', '  ', 20);
-    const rows = layoutBox(state, '› ', '  ', 20);
-    expect(row).toBe(rows.length - 1);
-    const last = rows.at(-1);
-    expect(column).toBe(2 + displayWidth(value.slice(last?.start, value.length)));
+    expect(boxRows(state, lead, indent, 20)).toBe(3);
+    expect(cursorCell(state, lead, indent, 20)).toEqual({ row: 2, column: 2 + 2 });
+  });
+
+  it('puts the cursor at the start of the next row when the character under it does not fit', () => {
+    const state = at('x'.repeat(20), 16);
+    expect(cursorCell(state, lead, indent, 20)).toEqual({ row: 1, column: 2 });
+  });
+
+  it('counts an empty line as a row', () => {
+    expect(boxRows(at('a\n\nb', 0), lead, indent, 10)).toBe(3);
+  });
+
+  it('cuts exactly as Ink does: the same call on the same measure', () => {
+    expect(wrapLikeInk('abc xxxxxxxxxxxxxxxxxxxxxxx', 10)).toEqual([
+      'abc xxxxxx',
+      'xxxxxxxxxx',
+      'xxxxxxx',
+    ]);
+    expect(wrapLikeInk('你好你好你好', 5)).toEqual(['你好', '你好', '你好']);
+    expect(wrapLikeInk('', 5)).toEqual(['']);
   });
 });
