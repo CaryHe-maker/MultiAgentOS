@@ -18,7 +18,7 @@ const ENV = {
 const TIMEOUT = 60_000;
 
 describe('the self-check tasks', () => {
-  for (const task of ALL_TASKS)
+  for (const task of ALL_TASKS.filter((each) => each.scripted !== undefined))
     it(
       `${task.id} runs offline and every check holds`,
       async () => {

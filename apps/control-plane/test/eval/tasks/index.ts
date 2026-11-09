@@ -3,9 +3,10 @@
  * exports an array, added here; nothing else changes (docs/M2/Evaluation.md 7).
  */
 import type { TaskSpec } from '../spec.js';
+import { DELIVERY_TASKS } from './delivery.js';
 import { SELFCHECK_TASKS } from './selfcheck.js';
 
-export const ALL_TASKS: readonly TaskSpec[] = [...SELFCHECK_TASKS];
+export const ALL_TASKS: readonly TaskSpec[] = [...SELFCHECK_TASKS, ...DELIVERY_TASKS];
 
 /** `selfcheck.answer`, or a tag as `tag:safety`, or `all`. */
 export function select(tasks: readonly TaskSpec[], wanted: readonly string[]): TaskSpec[] {
