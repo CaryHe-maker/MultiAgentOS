@@ -20,7 +20,7 @@ const context: BoundaryContext = {
   tenantId: 'local',
   projectId: 'local',
 };
-const request: ShutdownRequest = { requestId: 'req_123456' };
+const request: ShutdownRequest = { requestId: 'req_123456', source: 'EXIT_COMMAND' };
 
 async function started(): Promise<InProcessFabric> {
   const fabric = new InProcessFabric(createProtocolRegistry());

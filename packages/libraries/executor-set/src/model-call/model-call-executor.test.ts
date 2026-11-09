@@ -5,6 +5,7 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
 } from '@multiagentos/contracts';
+import { asksForStream, streamedIfAsked } from '@multiagentos/testing';
 import { APICallError } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { createAssembleExecutor } from '../context-assemble/assemble-executor.js';
@@ -370,5 +371,288 @@ describe('a summary request (ExecutorSet 7)', () => {
   it('leaves an ordinary call alone', async () => {
     const { outcome } = await call(() => chatCompletion([], { text: 'just text' }));
     expect(outcome.outcome).toBe('COMPLETED');
+  });
+});
+
+describe('MODEL streamed for a watcher (docs/M2/Phase1Console.md 4)', () => {
+  /** An answer with thinking and a cache hit, as DeepSeek sends it in one piece. */
+  const withThinking = () =>
+    new Response(
+      JSON.stringify({
+        id: 'chatcmpl-think',
+        object: 'chat.completion',
+        created: 1_767_225_600,
+        model: 'deepseek-flash',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: 'Reading.',
+              reasoning_content: 'First I need to look at a.ts, then decide what to change.',
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 80,
+          total_tokens: 1280,
+          prompt_cache_hit_tokens: 1000,
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const run = async (
+    fetchOf: (init: RequestInit | undefined) => Promise<Response>,
+    progress?: ExecutorEnvironment['progress'],
+  ) => {
+    const executor = createModelCallExecutor({ fetch: (_input, init) => fetchOf(init) });
+    return executor.execute(
+      { contextPack: pack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, progress === undefined ? {} : { progress }),
+    );
+  };
+
+  it('gives the same result as the one-piece answer, and tells the watcher the thinking as it comes', async () => {
+    const oneShot = await run(() => Promise.resolve(withThinking()));
+    const events: { kind: string; delta?: string }[] = [];
+    let asked = false;
+    const streamed = await run(
+      async (init) => {
+        asked = asksForStream(init);
+        return streamedIfAsked(init, withThinking());
+      },
+      (event) => void events.push(event),
+    );
+    expect(asked).toBe(true);
+    // Everything the Workflow and the Kernel see is the same.
+    expect(streamed).toEqual(oneShot);
+    expect(streamed).toMatchObject({
+      outcome: 'COMPLETED',
+      usage: { inputTokens: 1200, outputTokens: 80, inputCacheHitTokens: 1000 },
+      result: {
+        reasoning: { text: 'First I need to look at a.ts, then decide what to change.' },
+      },
+    });
+    // The watcher got the thinking in several pieces that make up the whole, then the end.
+    const pieces = events.filter((event) => event.kind === 'REASONING');
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.map((event) => event.delta).join('')).toBe(
+      'First I need to look at a.ts, then decide what to change.',
+    );
+    expect(events.at(-1)).toEqual({ kind: 'END' });
+  });
+
+  it('does not stream when nobody watches', async () => {
+    let asked = true;
+    await run((init) => {
+      asked = asksForStream(init);
+      return Promise.resolve(withThinking());
+    });
+    expect(asked).toBe(false);
+  });
+
+  it('is not changed by a watcher that throws', async () => {
+    const oneShot = await run(() => Promise.resolve(withThinking()));
+    const streamed = await run(
+      (init) => streamedIfAsked(init, withThinking()),
+      () => {
+        throw new Error('the watcher broke');
+      },
+    );
+    expect(streamed).toEqual(oneShot);
+  });
+
+  it('fails as UNKNOWN, not retryable, when the stream breaks after it began', async () => {
+    const events: string[] = [];
+    const pieces: Uint8Array[] = [];
+    const broken = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start() {
+            // The adapter reads on until the first piece of an answer, so the stream has begun
+            // properly (a piece of text) before the thinking arrives and the connection breaks.
+            const chunk = (delta: object) =>
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({
+                  id: 'x',
+                  object: 'chat.completion.chunk',
+                  created: 1,
+                  model: 'deepseek-flash',
+                  choices: [{ index: 0, delta }],
+                })}\n\n`,
+              );
+            // `error` would drop what is queued, so each piece goes out on its own turn first.
+            pieces.push(chunk({ content: 'Hi' }), chunk({ reasoning_content: 'half a thought' }));
+          },
+          pull(controller) {
+            const next = pieces.shift();
+            if (next === undefined) controller.error(new TypeError('terminated'));
+            else controller.enqueue(next);
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const outcome = await run(
+      () => Promise.resolve(broken()),
+      (event) => void events.push(event.kind),
+    );
+    expect(outcome).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PROVIDER_ERROR',
+      retryable: false,
+      requestState: 'UNKNOWN',
+    });
+    expect(events.at(-1)).toBe('END');
+  });
+});
+
+describe('MODEL thinking reaches the watcher before the answer does', () => {
+  it('tells the thinking while the stream is still open, not when the call is over', async () => {
+    const event = (delta: object, finish: string | null = null) =>
+      new TextEncoder().encode(
+        `data: ${JSON.stringify({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'deepseek-flash',
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        })}\n\n`,
+      );
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let step = 0;
+    const slow = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            step += 1;
+            if (step === 1) controller.enqueue(event({ reasoning_content: 'thinking hard ' }));
+            else if (step === 2) controller.enqueue(event({ reasoning_content: 'still thinking' }));
+            else if (step === 3) {
+              // The answer proper comes only now, and only when the test lets it.
+              await gate;
+              controller.enqueue(event({ content: 'done' }));
+              controller.enqueue(event({}, 'stop'));
+              controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            } else controller.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const events: string[] = [];
+    let finished = false;
+    const executor = createModelCallExecutor({ fetch: () => Promise.resolve(slow()) });
+    const outcome = executor
+      .execute(
+        { contextPack: pack, final: false },
+        environmentFor('MODEL', MODEL_SCOPE, {
+          progress: (each) => void events.push(each.kind === 'REASONING' ? each.delta : each.kind),
+        }),
+      )
+      .finally(() => {
+        finished = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The call is still waiting for the answer, and the watcher already has both pieces.
+    expect(finished).toBe(false);
+    expect(events).toEqual(['thinking hard ', 'still thinking']);
+    release();
+    expect(await outcome).toMatchObject({
+      outcome: 'COMPLETED',
+      result: { reasoning: { text: 'thinking hard still thinking' } },
+    });
+    expect(events.at(-1)).toBe('END');
+  });
+});
+
+describe('MODEL tells that the answer for the user has begun', () => {
+  const REPLY = {
+    name: 'reply',
+    description: 'Reply to the user.',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    purpose: 'CONTROL' as const,
+    answer: true,
+  };
+
+  async function replyPack(): Promise<AssembleContextPack> {
+    const outcome = await createAssembleExecutor().execute(
+      {
+        final: false,
+        tokenBudget: 64_000,
+        instructions: 'Chat.',
+        toolSpecs: [REPLY],
+        history: [{ seq: 1, category: 'PINNED', kind: 'HUMAN', text: 'hi' }],
+        status: {
+          round: 1,
+          maxRounds: 5,
+          final: false,
+          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        },
+      },
+      environmentFor('CONTEXT_ASSEMBLE', { kind: 'NONE' }),
+    );
+    if (outcome.outcome !== 'COMPLETED') throw new Error('assemble');
+    return JSON.parse(outcome.result.artifact.text) as AssembleContextPack;
+  }
+
+  const answer = () =>
+    chatCompletion(
+      [
+        {
+          id: 'call_r',
+          name: 'reply',
+          arguments: JSON.stringify({ text: 'Hello,\n"friend" 你好 😀!' }),
+        },
+      ],
+      {},
+    );
+
+  it('tells once that the answer began, and the result is the same as without watching', async () => {
+    const contextPack = await replyPack();
+    const make = (progress?: ExecutorEnvironment['progress']) =>
+      createModelCallExecutor({
+        fetch: (_input, init) => streamedIfAsked(init, answer()),
+      }).execute(
+        { contextPack, final: false },
+        environmentFor('MODEL', MODEL_SCOPE, progress === undefined ? {} : { progress }),
+      );
+    const plain = await createModelCallExecutor({ fetch: () => Promise.resolve(answer()) }).execute(
+      { contextPack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE),
+    );
+    const events: { kind: string; delta?: string }[] = [];
+    const watched = await make((event) => void events.push(event));
+    expect(watched).toEqual(plain);
+    expect(events.filter((event) => event.kind === 'ANSWER')).toHaveLength(1);
+    expect(events.some((event) => event.delta !== undefined)).toBe(false);
+    expect(events.at(-1)).toEqual({ kind: 'END' });
+  });
+
+  it('tells nothing of a tool that is not marked as the answer to the user', async () => {
+    const contextPack = await replyPack();
+    const events: string[] = [];
+    await createModelCallExecutor({
+      fetch: (_input, init) =>
+        streamedIfAsked(
+          init,
+          chatCompletion([{ id: 'c', name: 'other', arguments: '{"text":"secret plan"}' }], {}),
+        ),
+    }).execute(
+      { contextPack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, { progress: (event) => void events.push(event.kind) }),
+    );
+    expect(events).not.toContain('ANSWER');
   });
 });

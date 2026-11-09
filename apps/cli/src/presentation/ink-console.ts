@@ -1,6 +1,6 @@
 import type { ActivityLine, Console, TranscriptRecord } from '@multiagentos/user-interaction';
 import { ConsoleText } from '@multiagentos/user-interaction';
-import { Box, Static, Text, render, useInput, type Instance } from 'ink';
+import { Box, Static, Text, render, useCursor, useInput, useStdout, type Instance } from 'ink';
 import {
   createElement as h,
   useEffect,
@@ -9,29 +9,87 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from 'react';
+import stringWidth from 'string-width';
 import { ConsoleStore } from './console-store.js';
+import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
+import {
+  BOX_MARGIN,
+  EMPTY_INPUT,
+  backspace,
+  boxLines,
+  boxRows,
+  cursorCell,
+  deleteForward,
+  deleteToLineEnd,
+  deleteToLineStart,
+  deleteWordBefore,
+  inputOf,
+  insert,
+  left,
+  lineEnd,
+  lineStart,
+  moveVertical,
+  right,
+  type InputState,
+} from './text-input.js';
 
 type ConsoleInput = Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>;
 
+/** What the user typed: a soft green that stands out from everything the system says. */
+export const USER_COLOR = '#7ee787';
+/**
+ * Everything the system says at its own level is yellow: its notices (a new conversation, opened,
+ * allowed), what it asks (authorization, questions), what is waiting and the status line.
+ */
+export const SYSTEM_COLOR = '#F9F1A5';
+/** The status line above the input box: a pink of its own, between dashes. */
+export const STATUS_COLOR = '#ff79c6';
+/** What an agent answers: a light blue. */
+export const REPLY_COLOR = '#79c0ff';
+
 const COLORS: Partial<Record<TranscriptRecord['kind'], string>> = {
-  USER: 'cyan',
+  USER: USER_COLOR,
+  REPLY: REPLY_COLOR,
+  THINKING: 'gray',
   STEP: 'gray',
-  NOTICE: 'yellow',
+  NOTICE: SYSTEM_COLOR,
+  LIST: 'gray',
   ERROR: 'red',
 };
 
+const PROMPT = '› ';
+const CONTINUATION = '  ';
+
 function Record({ record }: { readonly record: TranscriptRecord }): ReactElement {
-  const prefix =
-    record.kind === 'USER' ? '> ' : record.kind === 'REPLY' ? `${record.agentLabel}: ` : '';
+  const prefix = prefixOf(record);
   const color = COLORS[record.kind];
-  return h(Text, color === undefined ? {} : { color }, `${prefix}${record.text}`);
+  return h(
+    Text,
+    {
+      ...(color === undefined ? {} : { color }),
+      ...(record.kind === 'THINKING' ? { dimColor: true } : {}),
+    },
+    `${prefix}${record.text}`,
+  );
+}
+
+/**
+ * Ink draws an empty line as no row at all, which would make the count of rows (and with it the
+ * place of the cursor and what fits) wrong by one for every blank line: a blank line is a space.
+ */
+function row(line: string): string {
+  return line.length === 0 ? ' ' : line;
 }
 
 function seconds(from: string, now: number): number {
   return Math.max(0, Math.round((now - Date.parse(from)) / 1000));
 }
 
-/** `重试中（第 n 次，x 秒后）` counts down; every other phase counts up (Module/UserInteraction 6). */
+/**
+ * `重试中（第 n 次，x 秒后）` counts down; the other phases count up while the system works. A run
+ * that waits for the user shows no seconds at all: nothing is taking long, and a counter there
+ * only reads as being hurried (docs/M2/Phase1Console.md 2.1, UI-3).
+ */
 function Activity({
   line,
   now,
@@ -40,14 +98,16 @@ function Activity({
   readonly now: number;
 }): ReactElement {
   const phase =
-    line.retry === undefined
-      ? [line.phase, line.tool, `${String(seconds(line.since, now))}s`]
-      : [
+    line.retry !== undefined
+      ? [
           `${line.phase}（第 ${String(line.retry.attempt)} 次，${String(Math.max(0, Math.round((Date.parse(line.retry.retryAt) - now) / 1000)))} 秒后）`,
-        ];
+        ]
+      : line.waitsForUser === true
+        ? [line.phase, line.tool]
+        : [line.phase, line.tool, `${String(seconds(line.since, now))}s`];
   return h(
     Text,
-    { color: 'gray' },
+    { color: 'gray', wrap: 'truncate-end' },
     `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`,
   );
 }
@@ -62,6 +122,47 @@ function useClock(running: boolean): number {
   return now;
 }
 
+/**
+ * The box drawn with a block where the cursor is. Each line of the text is a row of two boxes: the
+ * lead (the prompt, or the indent) at its own width, and the text beside it, cut by Ink itself
+ * (`wrap="hard"`) in the width that is left. A line that is longer goes on under its text, not
+ * under the lead. The cursor is placed with the same cut and measure (`cursorCell`).
+ */
+export function InputBox({
+  state,
+  columns,
+}: {
+  readonly state: InputState;
+  readonly columns: number;
+}): ReactElement {
+  return h(
+    Box,
+    { flexDirection: 'column' },
+    ...boxLines(state, PROMPT, CONTINUATION).map((line, index) =>
+      h(
+        Box,
+        { key: index, width: Math.max(1, columns - BOX_MARGIN) },
+        h(
+          Box,
+          { width: stringWidth(line.lead), flexShrink: 0 },
+          h(Text, { color: USER_COLOR, wrap: 'truncate-end' }, line.lead),
+        ),
+        h(
+          Box,
+          { flexGrow: 1 },
+          h(
+            Text,
+            { color: USER_COLOR, wrap: 'hard' },
+            line.before,
+            line.here ? h(Text, { inverse: true }, line.under) : '',
+            line.after,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 function ConsoleApp({
   store,
   input,
@@ -69,101 +170,218 @@ function ConsoleApp({
   readonly store: ConsoleStore;
   readonly input: ConsoleInput;
 }): ReactElement {
-  const { records, live, restored } = useSyncExternalStore(store.subscribe, store.snapshot);
-  const [buffer, setBuffer] = useState('');
+  const {
+    static: written,
+    tail,
+    live,
+    restored,
+  } = useSyncExternalStore(store.subscribe, store.snapshot);
+  const { stdout } = useStdout();
+  const { setCursorPosition } = useCursor();
+  // Not every stream has a size (a pipe, a test); a plain terminal is the fallback.
+  const size = stdout as { readonly columns?: number; readonly rows?: number };
+  const columns = size.columns !== undefined && size.columns > 0 ? size.columns : 80;
+  const rows = size.rows !== undefined && size.rows > 0 ? size.rows : 24;
+
+  const [box, setBoxState] = useState<InputState>(EMPTY_INPUT);
+  // Keys arrive faster than React renders: the latest state is read from here.
+  const boxRef = useRef<InputState>(EMPTY_INPUT);
+  const setBox = (next: InputState): void => {
+    boxRef.current = next;
+    setBoxState(next);
+  };
+  const [folded, setFolded] = useState(false);
   const history = useRef<string[]>([]);
   const browsing = useRef<number | undefined>(undefined);
-  const now = useClock(live.activity.length > 0);
+  const open = tail.some((item) => item.kind === 'BLOCK' && item.block.state === 'OPEN');
+  const now = useClock(live.activity.length > 0 || open);
 
   useEffect(() => {
-    if (restored.messages.length > 0) setBuffer(restored.messages.join('\n'));
+    if (restored.messages.length > 0) setBox(inputOf(restored.messages.join('\n')));
   }, [restored]);
 
   useInput((key, keys) => {
+    const current = boxRef.current;
     if (keys.ctrl && key === 'c') {
-      setBuffer('');
+      setBox(EMPTY_INPUT);
       void input.interrupt();
+      return;
+    }
+    if (keys.ctrl && key === 'o') {
+      setFolded((value) => !value);
       return;
     }
     // Alt+Enter sends the box as a note to the run that goes on, instead of queueing it (5.4).
     if (keys.return && keys.meta) {
-      if (buffer.trim().length > 0) history.current.push(buffer);
+      if (current.value.trim().length > 0) history.current.push(current.value);
       browsing.current = undefined;
-      setBuffer('');
-      void input.steer(buffer);
+      setBox(EMPTY_INPUT);
+      void input.steer(current.value);
       return;
     }
     if (keys.return) {
-      if (buffer.endsWith('\\')) {
-        setBuffer(`${buffer.slice(0, -1)}\n`);
+      // A backslash before the cursor is a line break that is not a send.
+      if (current.value[current.cursor - 1] === '\\') {
+        setBox(insert(backspace(current), '\n'));
         return;
       }
-      if (buffer.trim().length > 0) history.current.push(buffer);
+      if (current.value.trim().length > 0) history.current.push(current.value);
       browsing.current = undefined;
-      setBuffer('');
-      void input.submit(buffer);
+      setBox(EMPTY_INPUT);
+      void input.submit(current.value);
       return;
     }
     if (keys.escape) {
       // An empty box withdraws the last queued message instead (Module/UserInteraction 5.2).
-      if (buffer.length === 0) input.withdrawLast();
-      else setBuffer('');
+      if (current.value.length === 0) input.withdrawLast();
+      else setBox(EMPTY_INPUT);
       return;
     }
-    if (keys.upArrow) {
-      if (buffer.length === 0 && live.queued.length > 0) {
-        setBuffer(input.withdrawLast() ?? '');
+    if (keys.upArrow || keys.downArrow) {
+      // Inside a box of several lines the arrows move through the lines first.
+      const moved = moveVertical(current, keys.upArrow ? -1 : 1);
+      if (moved !== undefined) {
+        setBox(moved);
         return;
       }
-      const index = (browsing.current ?? history.current.length) - 1;
-      const entry = history.current[index];
-      if (entry === undefined) return;
-      browsing.current = index;
-      setBuffer(entry);
-      return;
-    }
-    if (keys.downArrow) {
+      if (keys.upArrow) {
+        if (current.value.length === 0 && live.queued.length > 0) {
+          setBox(inputOf(input.withdrawLast() ?? ''));
+          return;
+        }
+        const index = (browsing.current ?? history.current.length) - 1;
+        const entry = history.current[index];
+        if (entry === undefined) return;
+        browsing.current = index;
+        setBox(inputOf(entry));
+        return;
+      }
       if (browsing.current === undefined) return;
       const index = browsing.current + 1;
       browsing.current = index < history.current.length ? index : undefined;
-      setBuffer(history.current[index] ?? '');
+      setBox(inputOf(history.current[index] ?? ''));
       return;
     }
-    if (keys.backspace || keys.delete) {
-      setBuffer((current) => current.slice(0, -1));
+    if (keys.leftArrow) return void setBox(left(current));
+    if (keys.rightArrow) return void setBox(right(current));
+    if (keys.home) return void setBox(lineStart(current));
+    if (keys.end) return void setBox(lineEnd(current));
+    if (keys.backspace) return void setBox(backspace(current));
+    if (keys.delete) return void setBox(deleteForward(current));
+    if (keys.ctrl) {
+      if (key === 'a') setBox(lineStart(current));
+      else if (key === 'e') setBox(lineEnd(current));
+      else if (key === 'u') setBox(deleteToLineStart(current));
+      else if (key === 'k') setBox(deleteToLineEnd(current));
+      else if (key === 'w') setBox(deleteWordBefore(current));
       return;
     }
-    if (keys.ctrl || keys.meta || keys.tab) return;
-    setBuffer((current) => current + key);
+    if (keys.meta || keys.tab) return;
+    setBox(insert(current, key));
   });
 
   const { pending } = live;
+  const pendingText =
+    pending === undefined
+      ? undefined
+      : live.waiting > 0
+        ? `${pending.text}（另有 ${String(live.waiting)} 项等待）`
+        : pending.text;
+  // How full the context is, beside the status, whatever the status is.
+  const share = live.context === undefined ? '' : ` (上下文已用${String(live.context)}%)`;
+  const status = [live.status, live.hint]
+    .filter((part) => part !== undefined && part.length > 0)
+    .join(' · ');
+
+  // Every line of the part drawn in place is one row (cut to the screen, or truncated), so the
+  // rows can be counted: what is below the tail, and, for the cursor, what is above the box.
+  const questionLines =
+    pendingText === undefined
+      ? []
+      : pendingText.split('\n').flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)));
+  const below = live.activity.length + questionLines.length + (live.queued.length > 0 ? 1 : 0) + 1;
+  const others = below + boxRows(box, PROMPT, CONTINUATION, columns);
+  const room = Math.max(1, rows - others - 3);
+  // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
+  const limit = Math.max(1, Math.floor(room * TAIL_SHARE));
+  const plan = planTail(tail, { now, columns, limit, folded });
+  // What does not fit goes into the scroll-back, so that a frame is never as tall as the
+  // terminal: that would make the terminal library clear the screen and write it all again.
+  const { commitBefore } = plan;
+  const foldKey = plan.fold.join(',');
+  const elidedKey = plan.elided.join(',');
+  useEffect(() => {
+    if (foldKey.length > 0) store.foldBlocks(foldKey.split(','));
+    if (elidedKey.length > 0) store.markElided(elidedKey.split(','));
+    if (commitBefore !== undefined) store.advanceFloor(commitBefore);
+  }, [commitBefore, foldKey, elidedKey, store]);
+
+  // The terminal cursor goes where the text is typed, so the input method opens its window there
+  // and not below the status line: after the rows above the box, in the row and column of the text.
+  const cell = cursorCell(box, PROMPT, CONTINUATION, columns);
+  setCursorPosition({ x: cell.column, y: plan.rows + below + cell.row });
+
   return h(
     Box,
     { flexDirection: 'column' },
-    h(Static<(typeof records)[number]>, {
-      items: [...records],
-      children: (record) => h(Record, { key: record.id, record }),
+    h(Static<(typeof written)[number]>, {
+      items: [...written],
+      children: (item) =>
+        item.kind === 'RECORD'
+          ? h(Record, { key: item.id, record: item.record })
+          : h(Text, { key: item.id, color: 'gray', dimColor: true }, item.text),
     }),
-    ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
-    pending === undefined
-      ? null
-      : h(
-          Text,
-          { color: 'yellow' },
-          live.waiting > 0
-            ? `${pending.text}（另有 ${String(live.waiting)} 项等待）`
-            : pending.text,
-        ),
-    live.queued.length > 0
-      ? h(Text, { color: 'gray' }, ConsoleText.queued(live.queued.length))
-      : null,
-    h(Text, null, `› ${buffer}`),
     h(
-      Text,
-      { color: 'gray' },
-      [live.status, live.hint].filter((part) => part !== undefined && part.length > 0).join(' · '),
+      Box,
+      { flexDirection: 'column' },
+      ...plan.items.flatMap((item): ReactElement[] =>
+        item.kind === 'RECORD'
+          ? item.lines.map((line, index) =>
+              h(
+                Text,
+                {
+                  key: `r${String(item.seq)}-${String(index)}`,
+                  ...(COLORS[item.record.kind] === undefined
+                    ? {}
+                    : { color: COLORS[item.record.kind] }),
+                  ...(item.record.kind === 'THINKING' ? { dimColor: true } : {}),
+                  wrap: 'truncate-end',
+                },
+                row(line),
+              ),
+            )
+          : item.lines.map((line, index) =>
+              h(
+                Text,
+                {
+                  key: `b${String(item.seq)}-${String(index)}`,
+                  // Thinking is grey while it streams and after, like the rest of the status text.
+                  color: 'gray',
+                  ...(line.kind === 'BODY' ? { dimColor: true } : {}),
+                  wrap: 'truncate-end',
+                },
+                row(line.text),
+              ),
+            ),
+      ),
+      ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
+      ...questionLines.map((line, index) =>
+        h(Text, { key: `q${String(index)}`, color: SYSTEM_COLOR, wrap: 'truncate-end' }, row(line)),
+      ),
+      live.queued.length > 0
+        ? h(
+            Text,
+            { color: SYSTEM_COLOR, wrap: 'truncate-end' },
+            ConsoleText.queued(live.queued.length),
+          )
+        : null,
+      h(
+        Text,
+        { color: STATUS_COLOR, wrap: 'truncate-end' },
+        status.length > 0 ? `------ ${status}${share} ------` : ' ',
+      ),
     ),
+    h(InputBox, { state: box, columns }),
   );
 }
 
@@ -190,6 +408,9 @@ export function createInkConsole(
         stdout,
         exitOnCtrlC: false,
         patchConsole: false,
+        // A terminal is a terminal: Ink would otherwise draw only the last frame when the CI
+        // variable is set, which leaves a person who has it set in their shell with a dead screen.
+        interactive: Boolean(stdout.isTTY),
       }),
   };
 }

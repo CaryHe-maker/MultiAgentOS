@@ -84,9 +84,11 @@ function setup(options: { summaryFails?: boolean; snapshots?: SessionDuties['sna
       sessionId,
       commandId: event.commandId,
       result:
-        event.command === 'CREATE' || event.command === 'OPEN'
-          ? { command: event.command, outcome: 'READY' }
-          : { command: 'CLOSE', outcome: 'DONE' },
+        event.command === 'OPEN'
+          ? { command: 'OPEN', outcome: 'READY', turnCount: 0 }
+          : event.command === 'CREATE'
+            ? { command: 'CREATE', outcome: 'READY' }
+            : { command: 'CLOSE', outcome: 'DONE' },
     });
     await settled();
   };

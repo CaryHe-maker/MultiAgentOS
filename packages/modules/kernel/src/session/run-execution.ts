@@ -87,6 +87,16 @@ export interface RunExecutionDeps {
   readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   /** Decided at once, inside the actor: is a compaction due for this assembly? */
   readonly compactionDue?: (info: AssemblyInfo) => boolean;
+  /**
+   * An ordinary assembly that needs no compaction came back with this size: how full the context
+   * of its AgentRun is. Not a fact, nothing waits for it.
+   */
+  readonly contextLevel?: (level: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+    readonly used: number;
+    readonly limit: number;
+  }) => void;
   /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
   readonly modelAnswered?: (info: {
     readonly agentRunId: string;
@@ -95,6 +105,14 @@ export interface RunExecutionDeps {
   }) => void;
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
+  /**
+   * A model call was sent to the Supervisor: its thinking may now be streamed to the console, so
+   * the Kernel remembers whose call it is. Not a fact, nothing waits for it.
+   */
+  readonly modelStarted?: (call: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+  }) => void;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
@@ -412,6 +430,8 @@ export class RunExecution {
   #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
+    if (built.request.executionKind === 'MODEL')
+      this.#deps.modelStarted?.({ executionId, agentRunId: attempt.spec.agentRunId });
     if (built.request.executionKind === 'WEB_SEARCH' || built.request.executionKind === 'WEB_FETCH')
       attempt.webInput = built.request.input;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
@@ -555,7 +575,17 @@ export class RunExecution {
               tokenBudget: perCallInputLimit,
             }
           : undefined;
-    return info !== undefined && compactionDue(info) ? info : undefined;
+    if (info === undefined) return undefined;
+    if (compactionDue(info)) return info;
+    // An assembly that is made again after a compaction tells its size then, not this one.
+    if (info.kind === 'COMPLETED')
+      this.#deps.contextLevel?.({
+        executionId: fact.executionId,
+        agentRunId: info.agentRunId,
+        used: info.tokenCount,
+        limit: info.tokenBudget,
+      });
+    return undefined;
   }
 
   /** Runs outside the actor; what comes of it goes back in as a message of the actor. */

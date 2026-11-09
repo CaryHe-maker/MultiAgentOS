@@ -12,6 +12,7 @@
   artifacts/<sha256>                       ArtifactStore 正文（Kernel.Execution）
   kernel-core/session-refs.jsonl           Session 引用（第 4.1 节）
   kernel-core/trusted-instructions.jsonl   项目指令的信任记录（第 4.2 节）
+  kernel-core/shutdown-requests.jsonl      谁请求了退出（只供开发者查看，第 4.5 节）
   workflow/session-index.jsonl             Session 列表（第 3 节）
   sessions/<sessionId>/
     session.lock/                          Session 锁（第 6 节）
@@ -199,6 +200,10 @@ type SnapshotIndexLine =
 ```
 
 没有 `TURN_ENDED` 的 Turn 是进程退出或停机留下的（M2Design 第 4.6 节）。
+
+### 4.5 退出请求的来源
+
+`kernel-core/shutdown-requests.jsonl`，Owner 为 Kernel.Core，系统级，**只供开发者排查"这段对话为什么结束"**：Kernel 收到 `shutdown` 请求时先追加一行 `{ at, type: 'SHUTDOWN_REQUESTED', source, requestId }`，`source` 为 `EXIT_COMMAND`（`/exit`）、`INTERRUPT_TWICE`（两秒内连按两次 Ctrl+C）、`RUN_FINISHED`（`mas run` 的运行结束）、`EXIT_CODE`（控制台因对话之外的原因要结束，如内存不足的退出码）。它不进入 Session 日志，不发给 Workflow，也不显示给用户：业务层看到的仍然只是运行以 `SHUTDOWN` 关闭。写入失败只报告，不影响退出。
 
 ## 5. Kernel 审计
 

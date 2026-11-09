@@ -235,6 +235,20 @@ export class StopUnconfirmedError extends Error {
   }
 }
 
+/**
+ * What a model call may say while it runs, for the person watching (docs/M2/Phase1Console.md 4).
+ * It is best effort and never part of the result: an Executor calls it without waiting, ignores
+ * anything it throws, and works the same when it is absent.
+ */
+export type ModelProgressEvent =
+  /** A piece of the thinking. */
+  | { readonly kind: 'REASONING'; readonly delta: string }
+  /** The model has begun its answer for the user (its text is not passed on, only that it began). */
+  | { readonly kind: 'ANSWER' }
+  /** The model is writing the call of a tool, and the file it names once that has been written. */
+  | { readonly kind: 'TOOL'; readonly name: string; readonly target?: string }
+  | { readonly kind: 'END' };
+
 export interface ExecutorEnvironment {
   readonly scope: ExecutionScope;
   readonly limits: ExecutionLimits;
@@ -243,6 +257,8 @@ export interface ExecutorEnvironment {
   readonly subprocess: SubprocessRunner;
   readonly sandbox: SandboxRunner;
   readonly credentials: ProviderCredentials;
+  /** Only the MODEL Executor gets one; present means the caller wants the call streamed. */
+  readonly progress?: (event: ModelProgressEvent) => void;
   now(): Date;
 }
 
@@ -314,6 +330,9 @@ export const FABRIC_ADDRESSES = [
   'gateway.admission',
   'gateway.session',
   'kernel-core.execution-facts',
+  // The side channel of streaming model calls (docs/M2/Phase1Console.md 4): lossy by design.
+  'kernel-core.model-progress',
+  'inbox.user-interaction-stream',
 ] as const;
 export type FabricAddress = (typeof FABRIC_ADDRESSES)[number];
 
@@ -530,7 +549,12 @@ export type PersistenceNamespace = (typeof PERSISTENCE_NAMESPACES)[number];
 export type StoragePath =
   | {
       readonly scope: 'SYSTEM';
-      readonly file: 'session-index' | 'session-refs' | 'trusted-instructions' | 'memory-events';
+      readonly file:
+        | 'session-index'
+        | 'session-refs'
+        | 'trusted-instructions'
+        | 'memory-events'
+        | 'shutdown-requests';
     }
   | {
       readonly scope: 'SESSION';

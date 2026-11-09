@@ -531,6 +531,7 @@ export class RunAttempts {
         ...(check.outputRef === undefined ? {} : { outputRef: check.outputRef }),
         ...(check.fullRef === undefined ? {} : { fullRef: check.fullRef }),
         ...(check.reasoningRef === undefined ? {} : { reasoningRef: check.reasoningRef }),
+        ...(check.usage === undefined ? {} : { usage: check.usage }),
         ...(check.changedFiles === undefined ? {} : { changedFiles: [...check.changedFiles] }),
       };
     }

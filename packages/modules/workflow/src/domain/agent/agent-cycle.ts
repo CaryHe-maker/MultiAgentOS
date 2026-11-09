@@ -572,6 +572,7 @@ function modelTurnRecord(
     })),
     ...(report.reasoningRef === undefined ? {} : { reasoningRef: report.reasoningRef }),
     replayable: true,
+    ...(report.usage === undefined ? {} : { usage: report.usage }),
   };
 }
 

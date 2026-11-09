@@ -24,6 +24,9 @@ const SessionCommandResultSchema = Type.Union([
     command: Type.Literal('OPEN'),
     outcome: Type.Literal('READY'),
     lastTurnId: Type.Optional(IdSchemas.turnId),
+    /** What the Session list says of it, so that opening it says the same. */
+    turnCount: count(),
+    titleRef: Type.Optional(ArtifactRefSchema),
   }),
   closed({ command: Type.Literal('CREATE'), outcome: Type.Literal('READY') }),
   /** Every artifact the copied log refers to, and how far the original had got. */

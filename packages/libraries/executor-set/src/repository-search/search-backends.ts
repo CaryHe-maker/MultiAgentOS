@@ -150,6 +150,15 @@ export async function ripgrepSearch(
   return { lines, incomplete: result.truncated };
 }
 
+/**
+ * The path of a match as the file set writes it: `rg` prints `./a/b`, and on Windows `.\a\b`.
+ * Only there is a backslash a separator; on other systems it is part of a file name.
+ */
+function relativePath(path: string): string {
+  const slashed = process.platform === 'win32' ? path.replaceAll('\\', '/') : path;
+  return slashed.startsWith('./') ? slashed.slice(2) : slashed;
+}
+
 function parseMatch(record: string): { path: string; line: number } | undefined {
   if (!record.startsWith('{"type":"match"')) return undefined;
   try {
@@ -159,7 +168,7 @@ function parseMatch(record: string): { path: string; line: number } | undefined 
     const path = parsed.data?.path?.text;
     const line = parsed.data?.line_number;
     if (typeof path !== 'string' || typeof line !== 'number') return undefined;
-    return { path: path.startsWith('./') ? path.slice(2) : path, line };
+    return { path: relativePath(path), line };
   } catch {
     return undefined;
   }

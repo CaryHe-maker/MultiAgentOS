@@ -779,5 +779,25 @@
         "file": "apps/control-plane/test/system/kill-anywhere.test.ts"
       }
     ]
+  },
+  {
+    "id": "G-STREAM",
+    "kind": "group",
+    "statement": "The thinking of a model call, and the fact that it has begun its answer for the user (not the answer's text), are shown beside the work: they never enter the Session log, never change what the Executor returns, are dropped when they cannot be delivered, are read from the stream as it arrives and not when it is over, and reach the screen without control characters",
+    "tests": [
+      {
+        "file": "apps/control-plane/test/acceptance/thinking-stream.test.ts"
+      },
+      {
+        "file": "packages/modules/kernel/src/supervisor/model-progress.test.ts"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/model-call/model-call-executor.test.ts",
+        "title": "MODEL streamed for a watcher"
+      },
+      {
+        "file": "packages/libraries/executor-set/src/model-call/stream-tap.test.ts"
+      }
+    ]
   }
 ]

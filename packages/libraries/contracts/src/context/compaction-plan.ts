@@ -8,7 +8,7 @@ import type { ContextHistoryEntry } from './history-entry.js';
  * counted from bytes here; what decides whether to compact at all is the measured figure.
  *
  * What is kept as it is: the newest part of the history, from the start of a whole model turn
- * (`keepTokens`); the PINNED entries; and the newest user messages up to `keepHumanBytes`
+ * (`keepTokens`, which the caller takes as `keepRatio` of the limit); the PINNED entries; and the newest user messages up to `keepHumanBytes`
  * together, none of them longer than half of that. Everything else NORMAL before the newest part
  * is what the summary takes the place of; the big tool results among them are cut first.
  */
@@ -177,7 +177,11 @@ export function planCompaction(
     (entry) => inRange(entry) && (entry.kind === 'SUMMARY' || !kept.has(entry.seq)),
   );
   const replacedTokens = replaced.reduce((total, entry) => total + entryTokens(entry), 0);
-  if (replaced.length === 0 || replacedTokens < config.minReplacedTokens)
+  // An earlier summary alone is not a range: a summary of a summary says nothing that is new.
+  if (
+    replaced.every((entry) => entry.kind === 'SUMMARY') ||
+    replacedTokens < config.minReplacedTokens
+  )
     return { keepFrom, prunable };
   const turns = new Set(
     replaced.flatMap((entry) => (entry.turnId === undefined ? [] : [entry.turnId])),

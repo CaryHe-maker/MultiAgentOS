@@ -57,7 +57,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 命令 | 处理 | 回复 |
 |---|---|---|
 | `CREATE` | 创建 Session 目录与日志；追加 `SESSION_STARTED`；在 Session 列表追加一行；取得 Session 锁 | `READY` |
-| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId` |
+| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId`、`turnCount` 与（有名称时的）`titleRef`，取自 Session 列表索引，Kernel 据此在 `SessionOpened` 里写出名称与轮数（打开已有 Session 时和列表一致） |
 | `CLOSE` | 释放 Session 锁；清空内存投影 | `DONE` |
 | `DELETE`（系统级事件 `SessionDelete`，Session 未打开） | 删除 Session 目录中 `workflow` 命名空间的文件；Session 列表追加 `status: DELETED` | `DONE` |
 | `FORK` | 从当前 Session 分出 | — |
@@ -158,7 +158,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 **回退与 Fork**：
 
 - 收到 `WorkspaceReverted` 时追加 `WORKSPACE_REVERTED`；投影中，被回退各 Turn 的步骤替换为一条说明（回退了几个 Turn，文件已经还原；用户输入的正文在产物中，日志不复制，所以说明里不重复）。日志不删除任何记录。
-- 收到 `WorkspaceDiverged` 时追加 `WORKSPACE_DIVERGED { files }`；投影中为一条说明，这些文件此前的读取结果不再作为 `baseSha` 的依据。
+- 收到 `WorkspaceDiverged` 时追加 `WORKSPACE_DIVERGED { files }`；投影中为一条说明，这些文件此前的读取结果不再作为 `baseSha` 的依据。说明里只列出放得下的文件名（整条说明不超过历史条目 `NOTE` 的上限 2000 字符），其余只写个数（"…and N more; use git status to see them all"）；记录里的 `files` 仍是完整的。如果说明超过上限，整段历史都不是合法的历史，下一次模型调用会被拒绝为 `INVALID_REQUEST`（真实使用中出现过：工作区 99 个文件被改动后，重新打开的对话一发消息系统就因这个故障停止）。
 - `SessionCommand(FORK)`：复制原日志（`copyLogFrom`），对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(FORKED)`，追加 `SESSION_FORKED { fromSessionId, fromSeq }`；列出日志中的 ArtifactRef 交给 Kernel 继承。
 
 **结束**：AgentRun 状态机对所有 Agent 相同，只有三种结局：调用了定义中声明的结束工具（`ENDED`）、没能合法结束（`DEGRADED`）、致命失败（`FAILED`）。它不知道结束工具的含义。结束后做什么由 Agent 定义的 `actions.end[].then` 与 `actions.onDegraded` 决定，运行器按这一张表执行，不按 Agent 分支。发布类动作提交最后一个 Unit，它的 UnitReport 之后 AgentRun 才结束；模板运行在图没有可启动的节点时结束，`chat` 由生长规则继续。

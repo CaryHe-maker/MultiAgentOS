@@ -33,6 +33,10 @@ export function assertSystemConfig(config: unknown): SystemConfig {
   const result = validate<SystemConfig>(SystemConfigSchema, config);
   if (!result.ok) throw new ConfigError(result.issues.join('; '));
   if (!isAbsolute(result.value.dataDir)) throw new ConfigError('dataDir must be an absolute path');
+  // A compaction that keeps more than the threshold would never get below it.
+  const { keepRatio, triggerRatio } = result.value.kernel.compaction;
+  if (keepRatio >= triggerRatio)
+    throw new ConfigError('kernel.compaction.keepRatio must be less than triggerRatio');
   return result.value;
 }
 

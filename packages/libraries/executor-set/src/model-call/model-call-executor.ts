@@ -7,6 +7,7 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
   type ModelCallOutput,
+  type ModelProgressEvent,
   type ModelExecutorInput,
   type ModelRawOutput,
   type ModelToolCall,
@@ -16,6 +17,7 @@ import {
 import { rejected, violation } from '../outcome/outcomes.js';
 import { createLanguageModel, type LanguageModel, type ModelScope } from './language-model.js';
 import { toPrompt, toTools, toolSpecsOf } from './provider-request.js';
+import { reasoningDeltaOf, streamTap } from './stream-tap.js';
 import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
 
 type GenerateResult = Awaited<ReturnType<LanguageModel['doGenerate']>>;
@@ -35,6 +37,78 @@ export function retryAfterMsOf(header: string | undefined, now: Date): number | 
   if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
   const at = Date.parse(header);
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
+}
+
+type StreamOptions = Parameters<LanguageModel['doStream']>[0];
+
+/**
+ * One streamed request read to its end and put together as the answer `doGenerate` would have
+ * given: the same content parts, finish reason and usage, so everything after it is unchanged.
+ * The watcher is not told from here: it is fed from the network side (`streamTap`).
+ */
+async function generateByStreaming(
+  model: LanguageModel,
+  options: StreamOptions,
+): Promise<GenerateResult> {
+  const { stream } = await model.doStream({ ...options, includeRawChunks: true });
+  const reader = stream.getReader();
+  let text = '';
+  let reasoning = '';
+  let rawUsage: unknown;
+  const calls: { toolCallId: string; toolName: string; input: string }[] = [];
+  let finish:
+    { finishReason: GenerateResult['finishReason']; usage: GenerateResult['usage'] } | undefined;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      switch (value.type) {
+        case 'raw': {
+          // The adapter's own `usage.raw` has lost the fields it does not know, DeepSeek's cache
+          // hits among them, so the chunk as it came is kept.
+          const chunkUsage = (value.rawValue as { usage?: unknown } | null)?.usage;
+          if (typeof chunkUsage === 'object' && chunkUsage !== null) rawUsage = chunkUsage;
+          const delta = reasoningDeltaOf(value.rawValue);
+          if (delta !== undefined) reasoning += delta;
+          break;
+        }
+        case 'text-delta':
+          text += value.delta;
+          break;
+        case 'tool-call':
+          calls.push({
+            toolCallId: value.toolCallId,
+            toolName: value.toolName,
+            input: value.input,
+          });
+          break;
+        case 'finish':
+          finish = { finishReason: value.finishReason, usage: value.usage };
+          break;
+        case 'error':
+          throw value.error instanceof Error
+            ? value.error
+            : new Error('the provider stream failed');
+        default:
+          break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (finish === undefined) throw new Error('the stream ended without a finish');
+  return {
+    content: [
+      ...(reasoning.length > 0 ? [{ type: 'reasoning' as const, text: reasoning }] : []),
+      ...(text.length > 0 ? [{ type: 'text' as const, text }] : []),
+      ...calls.map((call) => ({ type: 'tool-call' as const, ...call })),
+    ],
+    finishReason: finish.finishReason,
+    usage: finish.usage,
+    warnings: [],
+    // `usageOf` reads DeepSeek's cache hits from the body of the answer.
+    response: { body: { usage: rawUsage } },
+  };
 }
 
 function reasoningOf(result: GenerateResult): string | undefined {
@@ -106,24 +180,49 @@ async function callModel(
   };
   const pack = input.contextPack;
   const replay = forced ? [] : replayOf(pack);
-  const model = createLanguageModel(scope, apiKey, trackedFetch(inner, scope, progress, replay));
+  // The person watching (if any) is told the thinking from the network side, and the end once.
+  const tell = (event: ModelProgressEvent): void => {
+    try {
+      environment.progress?.(event);
+    } catch {
+      // Watching must not change what the call does.
+    }
+  };
   const specs = toolSpecsOf(pack);
+  // Calling a tool that answers the user (the reply) is told as the start of the answer.
+  const answerTools = new Set(
+    specs.filter((spec) => spec.answer === true).map((spec) => spec.name),
+  );
+  const tap = environment.progress === undefined ? undefined : streamTap(tell, answerTools);
+  const model = createLanguageModel(
+    scope,
+    apiKey,
+    trackedFetch(inner, scope, progress, replay, tap),
+  );
   const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
   const { limits } = environment;
   let result: GenerateResult;
+  const callOptions = {
+    prompt: toPrompt(pack),
+    ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
+    ...(specs.length === 0
+      ? {}
+      : {
+          tools: toTools(specs),
+          toolChoice:
+            forced && end !== undefined
+              ? { type: 'tool' as const, toolName: end }
+              : { type: 'auto' as const },
+        }),
+    abortSignal: environment.signal,
+  };
   try {
-    result = await model.doGenerate({
-      prompt: toPrompt(pack),
-      ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
-      ...(specs.length === 0
-        ? {}
-        : {
-            tools: toTools(specs),
-            toolChoice:
-              forced && end !== undefined ? { type: 'tool', toolName: end } : { type: 'auto' },
-          }),
-      abortSignal: environment.signal,
-    });
+    // With a progress callback the request streams, so the person watching sees the thinking as
+    // it comes; the result is built from the whole stream and is the same as a one-shot answer.
+    result =
+      environment.progress === undefined
+        ? await model.doGenerate(callOptions)
+        : await generateByStreaming(model, callOptions);
   } catch (error) {
     const outcome = classifyCall(error, progress, environment.signal);
     if (
@@ -136,6 +235,8 @@ async function callModel(
       if (retryAfterMs !== undefined) return { ...outcome, retryAfterMs };
     }
     return outcome;
+  } finally {
+    if (environment.progress !== undefined) tell({ kind: 'END' });
   }
   return completedCall(result, base, environment, input);
 }

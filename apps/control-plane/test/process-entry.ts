@@ -59,7 +59,7 @@ async function command(system: System): Promise<number> {
       return new Promise<number>((resolve) => {
         process.once('SIGINT', () => {
           clearInterval(timer);
-          void system.console.shutdown().then(
+          void system.console.shutdown('EXIT_CODE').then(
             () => resolve(130),
             () => resolve(130),
           );
@@ -69,7 +69,7 @@ async function command(system: System): Promise<number> {
       });
     }
     default:
-      await system.console.shutdown();
+      await system.console.shutdown('EXIT_CODE');
       return mode === 'cancelled' ? 130 : 0;
   }
 }
@@ -118,10 +118,12 @@ try {
   process.stdout.write('READY\n');
   if (RUNS.has(mode)) {
     const parsed = await parseCli(['run', 'analyze', 'process fixture'], () => undefined);
-    if (!parsed.ok) throw new Error('the fixture command line is invalid');
+    if (!parsed.ok || parsed.command.kind === 'LOG')
+      throw new Error('the fixture command line is invalid');
+    const { command: running } = parsed;
     const template = system.templateRef('analyze');
     process.exitCode = await system.run((console) =>
-      runCommand(parsed.command, console, terminal, template),
+      runCommand(running, console, terminal, template),
     );
   } else {
     process.exitCode = await system.run(() => command(system));

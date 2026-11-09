@@ -104,6 +104,10 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 - 测试：`run-execution.test.ts`（暂停时 READ 的排空与取消、WRITE 不取消、MODEL 取消并结算、EXEC 取消并等待确认、排队尝试在暂停时保留、中止时排队尝试交付 INTERRUPTED、重试等待在暂停时保留而中止时结束、继续后依次派发）；`session-actor.test.ts`（H3：授权询问挂起时其他 AgentRun 不受影响）。
 
+## 4f. 模型调用的实时预览
+
+Execution 把 MODEL 的请求交给 Supervisor 时，记下这次执行属于哪个 AgentRun（`modelStarted`），Kernel 核心据此把 Supervisor 发来的 `kernel.execution.ModelProgress` 转成 `kernel.control.ModelStream` 发给 UserInteraction。这只是给使用者看的预览：不是事实、不进日志、不经过 Workflow、不改变任何决定，对不在记下的执行不转发；这次执行的流结束（`END`）时记录即删除；旁路是有损的，`END` 可能丢，所以这次执行的终态事实到达时也删除。
+
 ## 4a. 技术重试的等待
 
 M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackoffBaseMs × 2^(n−1)`），等待时间改为（M2Design 第 7.4 节）：
@@ -205,7 +209,7 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 
 - **估算**（`estimateAssembly`）：取条目中该对象最近一次模型轮带的实测用量（`MODEL_TURN.usage` 的输入与输出 token，Workflow 随条目交来）与它对应的 `headDigest`；
   与本次组装的 `headDigest` 相同、且其后没有修剪后的条目或摘要条目时，估算 = 实测输入 + 实测输出 + 其后新增条目的字节估算；否则全部按字节估算（M1 的 `estimatePackTokens`）。
-  额度预留不用这个估算，仍用字节估算（Monitor 第 3.4 节）。空闲触发时 Core 用 main 最近一次模型调用的实测值，不需要条目；
+  额度预留不用这个估算，仍用字节估算（Monitor 第 3.4 节）。
 - **修剪**（第 4.5 步）：按 Core 给出的候选（保留区之前、预览超过 `pruneMinBytes`、尚未修剪的 `NORMAL` 工具结果）读出预览正文，作为 Kernel 内部尝试交给 `CONTEXT_PRUNE` Executor（Kernel 自己的执行种类，ExecutorSet 第 6.4 节）；
   修剪后的结果存为 `SESSION` 类产物；没有截断的结果补登 `fullOutput: true`（第 3 节）；交回每项的 `toolCallId`、修剪后的引用与可读回的引用（截断时为 `fullRef`，否则为原预览）；
 - **组装**：前缀式用 Workflow 交回的投影条目中 `seq ≤ toSeq` 的部分，按该对象普通请求的方式经 `context-assemble` Executor 组装，末尾追加 Prompt `compaction-system` 的指令；

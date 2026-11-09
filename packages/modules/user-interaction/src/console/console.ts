@@ -12,18 +12,22 @@ import {
   type InteractionSessionEvent,
   type InteractionSystemEvent,
   type KernelToInteractionEvent,
+  type ModelStream,
   type RunFinished,
+  type ShutdownSource,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
-import { ConsoleText as text, terminalText } from './console-text.js';
+import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
 import type {
   ActivityLine,
   ConsoleView,
   LiveState,
   PendingItem,
   QuestionField,
+  ThinkingView,
 } from './console-view.js';
+import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -122,6 +126,9 @@ interface TimelineEntry {
   to?: string;
 }
 
+/** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
+const COMPACTION_LINE = 'compaction';
+
 /** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
   T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
@@ -143,6 +150,13 @@ function inTree<
   visit(undefined, 0, '');
   return ordered;
 }
+
+/** The phases in which the run waits for the user, not for a machine. */
+const WAITS_FOR_USER: ReadonlySet<string> = new Set([
+  'AWAITING_AUTHORIZATION',
+  'AWAITING_ANSWER',
+  'PAUSED',
+]);
 
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
@@ -170,6 +184,19 @@ export class Console {
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
+  /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
+  readonly #thinking = new ThinkingLog();
+  /** The answers agents are writing for the user, by the call that writes them; only that they are. */
+  readonly #answering = new Map<string, { agentRunId: string; startedAt: string }>();
+  /** The tool calls agents are writing, by the call that writes them: which tool, on which file. */
+  readonly #generating = new Map<
+    string,
+    { agentRunId: string; startedAt: string; name: string; target?: string }
+  >();
+  /** The share of its limit the context took at the last assembly, and the Session it is of. */
+  #contextShare: { readonly sessionId: string; readonly percent: number } | undefined;
+  /** The Session the thinking belongs to. */
+  #thinkingSession: string | undefined;
   /** Set by /fork until the draft's first prompt. */
   #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
@@ -195,7 +222,10 @@ export class Console {
       tenantId: 'local',
       projectId: 'local',
       ...(this.#sessionId === undefined ? {} : { sessionId: this.#sessionId }),
-      ...(this.#workflowRunId === undefined ? {} : { workflowRunId: this.#workflowRunId }),
+      // A run belongs to a Session: without one, the run that was last seen is not named.
+      ...(this.#sessionId === undefined || this.#workflowRunId === undefined
+        ? {}
+        : { workflowRunId: this.#workflowRunId }),
     };
   }
 
@@ -207,13 +237,160 @@ export class Console {
       waiting: Math.max(0, this.#pending.length - 1),
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
+      thinking: this.#thinkingInView(),
+      ...(this.#contextShare !== undefined && this.#contextShare.sessionId === this.#sessionId
+        ? { context: this.#contextShare.percent }
+        : {}),
     };
     this.#deps.view.update(live);
   }
 
+  /**
+   * Every block the log still has, oldest first. Which of them are shown open, and where among the
+   * records they stand, is for the view to decide: it knows the screen.
+   */
+  #thinkingInView(): ThinkingView[] {
+    return this.#thinking.blocks().map((block) => ({
+      id: block.callId,
+      number: block.number,
+      label: block.label,
+      state: block.state,
+      startedAt: block.startedAt,
+      ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
+      text: block.text,
+    }));
+  }
+
+  #thinkingSeconds(block: ThinkingBlock): string {
+    const end = block.endedAt ?? this.#now().toISOString();
+    return `${(Math.max(0, Date.parse(end) - Date.parse(block.startedAt)) / 1000).toFixed(1)}s`;
+  }
+
+  /** A different Session starts a different story: nothing of the old one is kept. */
+  #streamBelongsTo(sessionId: string | undefined): void {
+    if (this.#thinkingSession === sessionId) return;
+    this.#thinkingSession = sessionId;
+    this.#thinking.clear();
+    this.#answering.clear();
+    this.#generating.clear();
+  }
+
+  /**
+   * The thinking of a model call, as it comes (docs/M2/Phase1Console.md 4). It is not an event of
+   * the run: it changes nothing but what is drawn, and a piece that does not fit a Session in
+   * view is dropped.
+   */
+  handleModelStream(stream: ModelStream): void {
+    if (this.#sessionId === undefined || stream.sessionId !== this.#sessionId) return;
+    this.#streamBelongsTo(stream.sessionId);
+    const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
+    if (stream.kind === 'END') {
+      this.#thinking.end(stream.callId, stream.at);
+      // The call is written: what comes next is told by the activity of the tool itself.
+      this.#generating.delete(stream.callId);
+    } else if (stream.kind === 'CONTEXT') {
+      this.#contextShare = {
+        sessionId: stream.sessionId,
+        percent: Math.min(100, Math.round((stream.used / stream.limit) * 100)),
+      };
+    } else if (stream.kind === 'TOOL') {
+      this.#thinking.end(stream.callId, stream.at);
+      const earlier = this.#generating.get(stream.callId);
+      if (earlier === undefined)
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, other] of this.#generating)
+          if (other.agentRunId === stream.agentRunId) this.#generating.delete(id);
+      this.#generating.set(stream.callId, {
+        agentRunId: stream.agentRunId,
+        startedAt: earlier?.startedAt ?? stream.at,
+        name: terminalText(stream.name),
+        ...(stream.target === undefined ? {} : { target: terminalText(stream.target) }),
+      });
+    } else if (stream.kind === 'ANSWER') {
+      // The thinking is over when the answer begins: one clock runs, not two.
+      this.#thinking.end(stream.callId, stream.at);
+      if (!this.#answering.has(stream.callId)) {
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, earlier] of this.#answering)
+          if (earlier.agentRunId === stream.agentRunId) this.#answering.delete(id);
+        this.#answering.set(stream.callId, {
+          agentRunId: stream.agentRunId,
+          startedAt: stream.at,
+        });
+      }
+    } else
+      this.#thinking.append(
+        {
+          callId: stream.callId,
+          agentRunId: stream.agentRunId,
+          label,
+        },
+        terminalText(stream.delta),
+        stream.at,
+      );
+    this.#refresh();
+  }
+
+  /** `/think`: the blocks there are, or the whole of one. */
+  #showThinking(argument: string | undefined): void {
+    const blocks = this.#thinking.blocks();
+    if (argument === undefined) {
+      if (blocks.length === 0) {
+        this.#notice(text.thinkingNone);
+        return;
+      }
+      this.#notice(
+        [
+          text.thinkingList,
+          ...blocks.map((block) =>
+            text.thinkingBlockLine(block.number, block.label, this.#thinkingSeconds(block)),
+          ),
+        ].join('\n'),
+      );
+      return;
+    }
+    const block = this.#thinking.byNumber(Number(argument));
+    if (block === undefined) {
+      const all = this.#thinking.blocks();
+      this.#notice(text.thinkingMissing(Number(argument), all[0]?.number, all.at(-1)?.number));
+      return;
+    }
+    this.#deps.view.print({
+      kind: 'THINKING',
+      text: [
+        text.thinkingHeader(block.label, this.#thinkingSeconds(block), block.state),
+        block.text,
+        ...(block.cut ? [text.thinkingCut] : []),
+      ].join('\n'),
+    });
+  }
+
   /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
   #activityTree(): ActivityLine[] {
-    return inTree([...this.#activity.values()]).map(({ item, branch }) => ({ ...item, branch }));
+    // An AgentRun that is writing its answer for the user says so on its own line, with its own
+    // time: that is what it does now, and a second line would run a second clock.
+    const answering = new Map(
+      [...this.#answering.values()].map((answer) => [answer.agentRunId, answer.startedAt]),
+    );
+    const generating = new Map(
+      [...this.#generating.values()].map((call) => [call.agentRunId, call]),
+    );
+    return inTree(
+      [...this.#activity.values()].map((line) => {
+        if (line.waitsForUser === true) return line;
+        const startedAt = answering.get(line.agentRunId);
+        if (startedAt !== undefined)
+          return { ...line, phase: text.answeringPhase, since: startedAt };
+        const call = generating.get(line.agentRunId);
+        return call === undefined
+          ? line
+          : {
+              ...line,
+              phase: text.generating(call.name, call.target),
+              since: call.startedAt,
+            };
+      }),
+    ).map(({ item, branch }) => ({ ...item, branch }));
   }
 
   /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
@@ -284,7 +461,7 @@ export class Console {
    */
   exitWith(code: number): void {
     this.#exitCode = code;
-    void this.shutdown().catch(() => undefined);
+    void this.shutdown('EXIT_CODE').catch(() => undefined);
   }
 
   /** Resolves when the user asked to leave; the composition root then shuts down. */
@@ -383,7 +560,7 @@ export class Console {
     }
     const now = this.#now().getTime();
     if (this.#interruptedAt !== undefined && now - this.#interruptedAt <= INTERRUPT_WINDOW_MS) {
-      await this.shutdown();
+      await this.shutdown('INTERRUPT_TWICE');
       return;
     }
     this.#interruptedAt = now;
@@ -392,8 +569,8 @@ export class Console {
   }
 
   /** Asks the Kernel to close the Session and stop the system; `exited()` then resolves. */
-  async shutdown(): Promise<void> {
-    await this.#deps.gateway.shutdown({ requestId: newId('req') }, this.#context());
+  async shutdown(source: ShutdownSource): Promise<void> {
+    await this.#deps.gateway.shutdown({ requestId: newId('req'), source }, this.#context());
     this.#exit?.();
   }
 
@@ -626,6 +803,15 @@ export class Console {
       await this.#answerQuestion(item, input);
       return;
     }
+    if (
+      item.kind === 'AUTHORIZATION' &&
+      item.detail !== undefined &&
+      /^(v|view|查看)$/iu.test(input.trim())
+    ) {
+      // Looking is not answering: the question stays where it is.
+      this.#notice(item.detail);
+      return;
+    }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
     const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
@@ -689,10 +875,13 @@ export class Console {
         this.#notice(text.help);
         break;
       case '/exit':
-        await this.shutdown();
+        await this.shutdown('EXIT_COMMAND');
         break;
       case '/timeline':
         this.#showTimeline();
+        break;
+      case '/think':
+        this.#showThinking(argument);
         break;
       case '/continue':
         await this.#resume(rest);
@@ -785,7 +974,23 @@ export class Console {
           { requestId: newId('req'), sessionId, workflowRunId },
           this.#context(),
         );
-        if (asked.outcome === 'REJECTED') this.#notice(describeReason(asked.reasonCode));
+        if (asked.outcome === 'REJECTED')
+          this.#notice(
+            asked.reasonCode === 'REQUEST_CONFLICT'
+              ? text.compactNotNow
+              : describeReason(asked.reasonCode),
+          );
+        else {
+          // From now on the screen says that the system works, and for how long, like for any tool.
+          this.#contextShare = undefined;
+          this.#activity.set(COMPACTION_LINE, {
+            agentRunId: COMPACTION_LINE,
+            label: text.system,
+            phase: text.phase.COMPACTING,
+            since: this.#now().toISOString(),
+          });
+          this.#refresh();
+        }
         break;
       }
       case '/diff':
@@ -840,21 +1045,22 @@ export class Console {
         ...event.sessions.map((session) => session.sessionId),
       );
       if (event.sessions.length === 0) this.#notice(text.noSessions);
-      else
-        this.#notice(
-          [
-            text.recentSessions,
-            ...event.sessions
-              .slice(0, 10)
-              .map((session, index) =>
-                text.sessionLine(
-                  index + 1,
-                  terminalText(session.title ?? text.untitled),
-                  session.turnCount,
-                ),
+      else {
+        this.#notice(text.recentSessions);
+        this.#deps.view.print({
+          kind: 'LIST',
+          text: event.sessions
+            .slice(0, 10)
+            .map((session, index) =>
+              text.sessionLine(
+                index + 1,
+                terminalText(session.title ?? text.untitled),
+                session.turnCount,
               ),
-          ].join('\n'),
-        );
+            )
+            .join('\n'),
+        });
+      }
     }
     this.#refresh();
     return Promise.resolve();
@@ -872,12 +1078,16 @@ export class Console {
           this.#notice(text.diverged(event.divergedFiles.length));
         break;
       case 'SessionFailed':
-        if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
+        if (this.#sessionId === envelope.sessionId) {
+          this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
+        }
         this.#deps.view.print({ kind: 'ERROR', text: text.sessionFailed[event.code] });
         break;
       case 'SessionClosed':
         if (this.#sessionId === envelope.sessionId) {
           this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
           this.#continueOnInput = false;
         }
         break;
@@ -894,8 +1104,21 @@ export class Console {
       this.#timeline.length = 0;
     }
     switch (event.type) {
-      case 'RunStateChanged':
+      case 'RunStateChanged': {
+        this.#streamBelongsTo(this.#sessionId);
+        // Nothing streams once the run waits for the user or is over: no block stays open.
+        if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED') {
+          this.#answering.clear();
+          this.#generating.clear();
+        }
+        const at = this.#now().toISOString();
+        if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
+          this.#thinking.closeAll(at, 'DONE');
+        else if (event.state === 'INTERRUPTING') this.#thinking.closeAll(at, 'ABORTED');
         this.#runState = event.state;
+        // A requested compaction ends with its own event or with a change of the run's state (a
+        // fork that cancels it); the run does not change state while it is compacting.
+        this.#activity.delete(COMPACTION_LINE);
         if (event.state === 'INTERRUPTING') this.#aborting = true;
         // The tree stays while the run is held, so that a note can still name its task.
         if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING')
@@ -903,6 +1126,7 @@ export class Console {
         if (event.state === 'PAUSED') this.#hint = text.paused;
         else if (event.state === 'RUNNING') this.#hint = undefined;
         break;
+      }
       case 'HumanRequest': {
         if (event.kind !== 'prompt') {
           await this.#askQuestion(event);
@@ -936,6 +1160,10 @@ export class Console {
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
           ...(event.capability === 'command.exec' ? { options: event.options } : {}),
+          // A long command is shown by its head; the whole of it is one key away.
+          ...(event.capability === 'command.exec' && commandPreview(event.command).cut
+            ? { detail: terminalText(event.command) }
+            : {}),
           text: await this.#questionText(event),
         });
         break;
@@ -955,9 +1183,18 @@ export class Console {
         break;
       }
       case 'ContextCompacted':
-        this.#notice(text.compacted(event.compactedTurns, event.prunedResults));
+        this.#activity.delete(COMPACTION_LINE);
+        this.#deps.view.print({
+          kind: 'STEP',
+          text: text.compacted(
+            event.compactedTurns,
+            event.prunedResults,
+            event.summaryRef !== undefined,
+          ),
+        });
         break;
       case 'CompactionFailed':
+        this.#activity.delete(COMPACTION_LINE);
         this.#notice(text.compactionFailed[event.reason]);
         break;
       case 'WorkspaceReverted':
@@ -971,6 +1208,8 @@ export class Console {
         break;
       }
       case 'ActivityEvent': {
+        // A compaction that begins (the run's own, before a call) hides the share: it is about to change.
+        if (event.phase === 'COMPACTING') this.#contextShare = undefined;
         const { unit } = event;
         const tool =
           unit === undefined
@@ -1002,6 +1241,8 @@ export class Console {
             : { parentAgentRunId: event.parentAgentRunId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
+          // Waiting for the user is not work that is taking long: no seconds are counted for it.
+          ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),
           since: event.at,
           ...(shown === undefined ? {} : { tool: shown }),
           ...('retry' in event ? { retry: event.retry } : {}),
@@ -1025,6 +1266,8 @@ export class Console {
         break;
       }
       case 'MessagePublished':
+        // What was being written is now the message itself.
+        this.#answering.clear();
         await this.#published(event.kind, event.agentLabel, event.messageRef);
         if (event.wrapUpReason !== undefined)
           this.#deps.view.print({

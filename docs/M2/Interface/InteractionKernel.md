@@ -170,7 +170,7 @@ interface ReadArtifactRequest {
 }
 ```
 
-`ArtifactContent`、`ShutdownRequest` 的字段与 M1Interface 第 4.2、4.3 节相同，以 major 1 发布。
+`ArtifactContent` 的字段与 M1Interface 第 4.2 节相同，以 major 1 发布。`ShutdownRequest` 在 M1 的基础上增加 `source`（`EXIT_COMMAND`、`INTERRUPT_TWICE`、`RUN_FINISHED`、`EXIT_CODE`）：谁请求了退出，只写进 Kernel 的系统级开发者记录（[Persistence](Persistence.md) 第 4.5 节），不转给 Workflow、不进 Session 日志。
 `readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
 
 ### 2.4 `/compact`
@@ -365,7 +365,7 @@ interface SessionDeleted {
 ```ts
 interface ContextCompacted {         // 压缩生效（Workflow 已记入日志）之后发出
   type: 'ContextCompacted';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER' | 'IDLE';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   summaryRef?: ArtifactRef;          // 界面可以经 readArtifact 展示摘要；只有修剪、没有写摘要时省略
   compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）；只有修剪时为 0
   prunedResults: number;            // 被修剪的工具结果数
@@ -373,7 +373,7 @@ interface ContextCompacted {         // 压缩生效（Workflow 已记入日志�
 
 interface CompactionFailed {
   type: 'CompactionFailed';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER';   // 空闲触发的失败不通知界面（M2Design 第 9.6 节）
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   reason: 'NOTHING_TO_COMPACT' | 'BUDGET_INSUFFICIENT' | 'SUMMARY_FAILED' | 'NOT_RECORDED';
 }
 ```

@@ -796,3 +796,37 @@ describe('a machine without git', () => {
     TIMEOUT,
   );
 });
+
+describe('S4: a workspace that changed in many files', () => {
+  it(
+    'names as many as fit, counts the rest, and the Session goes on instead of ending in a fault',
+    async () => {
+      const place = await roots();
+      const { chat } = await afterOneWrite(place);
+      const original = chat.console.sessionId;
+      await chat.close();
+      open.splice(open.indexOf(chat), 1);
+
+      // More changed files than a note about them can name.
+      for (let i = 0; i < 150; i += 1) {
+        const name = `generated/${'directory-'.repeat(3)}${String(i)}/file-${String(i)}.txt`;
+        await mkdir(dirname(join(place.repository, name)), { recursive: true });
+        await writeFile(join(place.repository, name), 'x');
+      }
+
+      const provider = scriptedChat(reply('still here'));
+      const again = await chatOn(place, provider);
+      await listSessions(again);
+      await again.console.submit(`/resume ${original ?? ''}`);
+      await until(() => again.console.sessionId === original, 'the Session');
+      await until(() => again.printed('NOTICE').some((n) => n.includes('被改动过')), 'the note');
+      await again.say('go on');
+
+      expect(again.printed('REPLY')).toEqual(['still here']);
+      const seen = contents(lastRequest(provider)).join('\n');
+      expect(seen).toContain('changed outside this session');
+      expect(seen).toMatch(/\(and \d+ more; use git status to see them all\)/u);
+    },
+    TIMEOUT,
+  );
+});

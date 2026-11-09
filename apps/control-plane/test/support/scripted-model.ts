@@ -15,6 +15,8 @@ export interface ScriptedCall {
 export interface ScriptedTurn {
   readonly calls: readonly ScriptedCall[];
   readonly text?: string;
+  /** What the model thought; sent as `reasoning_content`, the way DeepSeek does. */
+  readonly reasoning?: string;
 }
 
 /** The usage a scripted answer reports; tests that look at tokens give their own. */
@@ -42,6 +44,7 @@ export function completionResponse(
           message: {
             role: 'assistant',
             content: turn.text ?? null,
+            ...(turn.reasoning === undefined ? {} : { reasoning_content: turn.reasoning }),
             ...(turn.calls.length === 0
               ? {}
               : {

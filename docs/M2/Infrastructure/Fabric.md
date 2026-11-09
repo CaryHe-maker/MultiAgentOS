@@ -25,6 +25,7 @@ Port、路由表与事件信封见 [Interface](../Interface/README.md) 第 4 节
   因此对同一接收方的投递顺序与登记顺序一致。
 - **Inbox**：Workflow 与 UserInteraction 的 Inbox 仍为单通道，按 `eventId` 去重；它们按信封区分三个序列，各自检查 `seq` 是否连续。
   Kernel 核心的 Session Inbox 使用控制与工作两个通道，不去重（与 M1 的运行 Inbox 相同）；控制通道增加暂停与中止。
+- **旁路**：`kernel-core.model-progress` 与 `inbox.user-interaction-stream` 两个地址只给正在进行的模型调用的实时预览用。它们不在三个序列里，没有 `eventId` 与 `seq`，发送方不等待结果、失败就丢、积压超过 64 条就丢弃，对业务没有任何影响。
 - 序列之间的先后由同一个发送器保证：例如 `SessionOpened` 一定在该 Session 第一个运行的 `RunStart` 之前到达。
 
 ## 4. 不变量与测试

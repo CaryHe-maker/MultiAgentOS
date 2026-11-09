@@ -22,6 +22,8 @@ export const ModelToolSpecSchema = closed(
     description: text(4000),
     parameters: Type.Record(Type.String(), Type.Unknown()),
     purpose: Type.Enum(['UNIT', 'CONTROL']),
+    /** The tool is the answer to the user (the reply): the console says so while the model writes it. */
+    answer: Type.Optional(Type.Boolean()),
   },
   'context.ModelToolSpec.v1',
 );

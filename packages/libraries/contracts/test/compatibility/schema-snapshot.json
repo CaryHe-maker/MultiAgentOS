@@ -2422,6 +2422,9 @@
                 "additionalProperties": false,
                 "$id": "catalog.ContractRef.v1"
               },
+              "answer": {
+                "type": "boolean"
+              },
               "riskClass": {
                 "anyOf": [
                   {
@@ -2894,6 +2897,9 @@
           },
           "additionalProperties": false,
           "$id": "catalog.ContractRef.v1"
+        },
+        "answer": {
+          "type": "boolean"
         },
         "riskClass": {
           "anyOf": [
@@ -5976,6 +5982,9 @@
                                 "UNIT",
                                 "CONTROL"
                               ]
+                            },
+                            "answer": {
+                              "type": "boolean"
                             }
                           },
                           "additionalProperties": false,
@@ -6449,6 +6458,9 @@
             "UNIT",
             "CONTROL"
           ]
+        },
+        "answer": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -9150,8 +9162,7 @@
           "enum": [
             "AUTO",
             "OVERFLOW",
-            "USER",
-            "IDLE"
+            "USER"
           ]
         },
         "summaryRef": {
@@ -13013,7 +13024,8 @@
                       "type": "object",
                       "required": [
                         "command",
-                        "outcome"
+                        "outcome",
+                        "turnCount"
                       ],
                       "properties": {
                         "command": {
@@ -13027,6 +13039,40 @@
                         "lastTurnId": {
                           "type": "string",
                           "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "turnCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "titleRef": {
+                          "type": "object",
+                          "required": [
+                            "artifactId",
+                            "sha256",
+                            "size",
+                            "mediaType"
+                          ],
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "pattern": "^art_[a-f0-9]{64}$"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false,
+                          "$id": "platform.common.ArtifactRef.v1"
                         }
                       },
                       "additionalProperties": false
@@ -14266,12 +14312,21 @@
             "request": {
               "type": "object",
               "required": [
-                "requestId"
+                "requestId",
+                "source"
               ],
               "properties": {
                 "requestId": {
                   "type": "string",
                   "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "source": {
+                  "enum": [
+                    "EXIT_COMMAND",
+                    "INTERRUPT_TWICE",
+                    "RUN_FINISHED",
+                    "EXIT_CODE"
+                  ]
                 }
               },
               "additionalProperties": false,
@@ -16835,8 +16890,7 @@
                   "enum": [
                     "AUTO",
                     "OVERFLOW",
-                    "USER",
-                    "IDLE"
+                    "USER"
                   ]
                 },
                 "summaryRef": {
@@ -17028,6 +17082,228 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.MessagePublished.v1"
+    },
+    "kernel.control.ModelStream.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind",
+            "delta"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "REASONING"
+            },
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ANSWER"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "TOOL"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind",
+            "used",
+            "limit"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "CONTEXT"
+            },
+            "used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "agentRunId",
+            "callId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "callId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "END"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "kernel.control.ModelStream.v1"
     },
     "kernel.control.OpenSessionRequest.v1": {
       "type": "object",
@@ -19730,12 +20006,21 @@
     "kernel.control.ShutdownRequest.v1": {
       "type": "object",
       "required": [
-        "requestId"
+        "requestId",
+        "source"
       ],
       "properties": {
         "requestId": {
           "type": "string",
           "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "source": {
+          "enum": [
+            "EXIT_COMMAND",
+            "INTERRUPT_TWICE",
+            "RUN_FINISHED",
+            "EXIT_CODE"
+          ]
         }
       },
       "additionalProperties": false,
@@ -20480,6 +20765,9 @@
                   "UNIT",
                   "CONTROL"
                 ]
+              },
+              "answer": {
+                "type": "boolean"
               }
             },
             "additionalProperties": false,
@@ -25007,6 +25295,9 @@
                           "UNIT",
                           "CONTROL"
                         ]
+                      },
+                      "answer": {
+                        "type": "boolean"
                       }
                     },
                     "additionalProperties": false,
@@ -26062,6 +26353,9 @@
                                         "UNIT",
                                         "CONTROL"
                                       ]
+                                    },
+                                    "answer": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "additionalProperties": false,
@@ -29437,6 +29731,9 @@
                                 "UNIT",
                                 "CONTROL"
                               ]
+                            },
+                            "answer": {
+                              "type": "boolean"
                             }
                           },
                           "additionalProperties": false,
@@ -29884,6 +30181,160 @@
       },
       "additionalProperties": false,
       "$id": "kernel.execution.ModelExecutorInput.v1"
+    },
+    "kernel.execution.ModelProgress.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind",
+            "delta"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "REASONING"
+            },
+            "delta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ANSWER"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "TOOL"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "workflowRunId",
+            "executionId",
+            "at",
+            "kind"
+          ],
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "executionId": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "const": "END"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "kernel.execution.ModelProgress.v1"
     },
     "kernel.execution.OrientExecutorInput.v1": {
       "type": "object",
@@ -33012,7 +33463,8 @@
               "type": "object",
               "required": [
                 "command",
-                "outcome"
+                "outcome",
+                "turnCount"
               ],
               "properties": {
                 "command": {
@@ -33026,6 +33478,40 @@
                 "lastTurnId": {
                   "type": "string",
                   "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "turnCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "titleRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
                 }
               },
               "additionalProperties": false
@@ -40386,6 +40872,29 @@
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
             },
+            "usage": {
+              "type": "object",
+              "required": [
+                "inputTokens",
+                "outputTokens"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inputCacheHitTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "executor.TokenUsage.v1"
+            },
             "changedFiles": {
               "type": "array",
               "items": {
@@ -42158,6 +42667,29 @@
                       },
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "required": [
+                        "inputTokens",
+                        "outputTokens"
+                      ],
+                      "properties": {
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "inputCacheHitTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "executor.TokenUsage.v1"
                     },
                     "changedFiles": {
                       "type": "array",
@@ -45686,9 +46218,7 @@
           "type": "object",
           "required": [
             "triggerRatio",
-            "idleTriggerRatio",
-            "idleEnabled",
-            "keepTokens",
+            "keepRatio",
             "keepHumanBytes",
             "pruneMinBytes",
             "pruneHeadBytes",
@@ -45704,17 +46234,10 @@
               "exclusiveMinimum": 0,
               "maximum": 1
             },
-            "idleTriggerRatio": {
+            "keepRatio": {
               "type": "number",
               "exclusiveMinimum": 0,
               "maximum": 1
-            },
-            "idleEnabled": {
-              "type": "boolean"
-            },
-            "keepTokens": {
-              "type": "integer",
-              "minimum": 1
             },
             "keepHumanBytes": {
               "type": "integer",
@@ -46576,9 +47099,7 @@
               "type": "object",
               "required": [
                 "triggerRatio",
-                "idleTriggerRatio",
-                "idleEnabled",
-                "keepTokens",
+                "keepRatio",
                 "keepHumanBytes",
                 "pruneMinBytes",
                 "pruneHeadBytes",
@@ -46594,17 +47115,10 @@
                   "exclusiveMinimum": 0,
                   "maximum": 1
                 },
-                "idleTriggerRatio": {
+                "keepRatio": {
                   "type": "number",
                   "exclusiveMinimum": 0,
                   "maximum": 1
-                },
-                "idleEnabled": {
-                  "type": "boolean"
-                },
-                "keepTokens": {
-                  "type": "integer",
-                  "minimum": 1
                 },
                 "keepHumanBytes": {
                   "type": "integer",

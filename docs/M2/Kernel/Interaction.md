@@ -224,7 +224,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 - **`read_output`**：Workflow 填入的 `fullRef` 在派发前由 Execution 检查归属与过期（Execution 第 5a 节）；过期时以 `REJECTED(ARTIFACT_EXPIRED)` 交付，不派发。
 - **压缩检查点**：受理 `context-assemble` 之后、派发之前，Core 按 [Core](Core.md) 第 6a 节检查是否需要压缩；需要时这次尝试保持在途但不派发，
   直到压缩结束（修剪或摘要生效后以 `REJECTED(CONTEXT_COMPACTED)` 交付，否则照常派发）。修剪与摘要请求是 Kernel 内部的尝试，不对应任何 `submitUnit`，不产生 UnitReport。
-  空闲压缩进行中开启的新 Turn，main 的第一次 `context-assemble` 同样挂起到压缩结束。
+  `/compact` 进行中开启的新 Turn，main 的第一次 `context-assemble` 同样挂起到压缩结束。
 - **技术重试的等待**：按 Execution 第 4a 节计算 `notBefore`；等待期间 Core 发出 `RETRYING` 的 ActivityEvent。
 
 ## 8. 关闭与故障关闭

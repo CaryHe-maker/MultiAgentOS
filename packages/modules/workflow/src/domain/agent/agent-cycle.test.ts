@@ -102,7 +102,13 @@ function report(
   state: AgentState,
   requestId: string,
   result:
-    | { ok: unknown; ref?: ArtifactRef; reasoningRef?: ArtifactRef; fullRef?: ArtifactRef }
+    | {
+        ok: unknown;
+        ref?: ArtifactRef;
+        reasoningRef?: ArtifactRef;
+        fullRef?: ArtifactRef;
+        usage?: { inputTokens: number; outputTokens: number; inputCacheHitTokens?: number };
+      }
     | { reject: string }
     | { fail: string },
   budget: BudgetView = NORMAL,
@@ -125,6 +131,7 @@ function report(
       ...(result.ref === undefined ? {} : { outputRef: result.ref }),
       ...(result.reasoningRef === undefined ? {} : { reasoningRef: result.reasoningRef }),
       ...(result.fullRef === undefined ? {} : { fullRef: result.fullRef }),
+      ...(result.usage === undefined ? {} : { usage: result.usage }),
     } as UnitReport;
   return 'reject' in result
     ? ({ ...common, status: 'REJECTED', reasonCode: result.reject } as UnitReport)
@@ -218,6 +225,20 @@ describe('ending', () => {
       expect(types(done)).toEqual(['UNIT_COMPLETED', 'MODEL_TURN']);
       expect(done.submissions).toEqual([]);
     }
+  });
+
+  it('puts what the provider counted for the model call on its MODEL_TURN record', () => {
+    const usage = { inputTokens: 1200, outputTokens: 80, inputCacheHitTokens: 900 };
+    const done = replied(atModel(), [call('reply', { text: 'hi' })], {
+      ...modelOutput([call('reply', { text: 'hi' })]),
+      usage,
+    });
+    expect(done.records.find((record) => record.type === 'MODEL_TURN')).toMatchObject({ usage });
+    // Without a count there is no field, not a made-up zero.
+    const without = replied(atModel(), [call('reply', { text: 'hi' })]);
+    expect(without.records.find((record) => record.type === 'MODEL_TURN')).not.toHaveProperty(
+      'usage',
+    );
   });
 
   it('keeps the text of an ending out of the log', () => {

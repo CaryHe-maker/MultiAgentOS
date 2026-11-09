@@ -97,7 +97,13 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
         event.commandId,
         event.command === 'FORK'
           ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromTurnCount: 0 }
-          : { command: event.command, outcome: 'READY' },
+          : event.command === 'OPEN'
+            ? {
+                command: 'OPEN',
+                outcome: 'READY',
+                turnCount: sessions.get(sessionId)?.turnCount ?? 0,
+              }
+            : { command: 'CREATE', outcome: 'READY' },
       );
     },
   };

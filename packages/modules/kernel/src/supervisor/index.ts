@@ -16,7 +16,7 @@ import type {
   SupervisorShutdownRequest,
 } from '@multiagentos/contracts';
 import { newId } from '@multiagentos/contracts';
-import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
+import { createExecutionFactSink, createModelProgressSink, SCHEMA_IDS } from '@multiagentos/fabric';
 import type { KernelConfig } from '@multiagentos/contracts';
 
 import { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
@@ -85,7 +85,13 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     sessionId: fact.sessionId,
     workflowRunId: fact.workflowRunId,
   }));
+  // Streams model calls to whoever watches; best effort, never awaited (Phase1Console 4).
+  const progress = createModelProgressSink(
+    deps.fabric,
+    (message) => correlations.get(message.workflowRunId) ?? newId('cor'),
+  );
   const runner = new ExecutionRunner({
+    progress,
     executors: deps.executors,
     credentials: deps.credentials,
     subprocess,

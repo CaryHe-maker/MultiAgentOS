@@ -2,10 +2,12 @@ import {
   DENY_SANDBOX,
   type ExecutionRequest,
   type ExecutorEnvironment,
+  type ModelProgress,
   type ProviderCredentials,
   type SandboxRunner,
   type SubprocessRunner,
 } from '@multiagentos/contracts';
+import { modelProgressOf } from './model-progress.js';
 import { createSandboxedGit } from './sandbox/sandboxed-git.js';
 
 /** A capability that refuses without touching a credential or starting a process. */
@@ -29,6 +31,8 @@ export interface ExecutorEnvironmentDeps {
   readonly subprocess: SubprocessRunner;
   readonly sandbox: SandboxRunner;
   readonly now: () => Date;
+  /** Where the thinking of a streaming model call goes; absent means the call is not streamed. */
+  readonly progress?: (progress: ModelProgress) => void;
 }
 
 /**
@@ -59,6 +63,9 @@ export function createExecutorEnvironment(
       request.executionKind === 'WEB_FETCH'
         ? deps.credentials
         : DENY_CREDENTIALS,
+    ...(request.executionKind === 'MODEL' && deps.progress !== undefined
+      ? { progress: modelProgressOf(request, deps.progress, deps.now) }
+      : {}),
     now: deps.now,
   };
 }

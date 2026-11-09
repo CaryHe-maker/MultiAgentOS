@@ -82,11 +82,11 @@ export const KernelConfigSchema = closed(
     compaction: closed({
       /** Compact at a checkpoint when the estimate passes this share of `perCallInputLimit`. */
       triggerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
-      /** Compact ahead of time, while the run awaits input, past this share (`idleEnabled`). */
-      idleTriggerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
-      idleEnabled: Type.Boolean(),
-      /** The newest part of a projection that stays as it is, counted from a whole model turn. */
-      keepTokens: count(1),
+      /**
+       * The newest part of a projection that stays as it is, counted from a whole model turn, as a
+       * share of `perCallInputLimit`; it must be less than `triggerRatio`.
+       */
+      keepRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
       /** User messages kept as they are, at most this many bytes together (M2Design 9.6, tiers). */
       keepHumanBytes: count(0),
       /** A tool result is cut only when its preview is longer than this. */

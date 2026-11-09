@@ -9,6 +9,8 @@ import type {
   InteractionInboxEvent,
   InteractionSessionEvent,
   InteractionSystemEvent,
+  ModelProgress,
+  ModelStream,
   SupervisorShutdownRequest,
   WorkflowGatewayPort,
   WorkflowInboxEvent,
@@ -61,6 +63,8 @@ export const SCHEMA_IDS = {
   cancelExecution: 'kernel.execution.CancelExecutionRequest.v1',
   supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
   executionFact: 'kernel.execution.ExecutionFact.v1',
+  modelProgress: 'kernel.execution.ModelProgress.v1',
+  modelStream: 'kernel.control.ModelStream.v1',
   workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
   workflowSessionEvent: 'kernel.session.WorkflowSessionEvent.v1',
   workflowSystemEvent: 'kernel.session.WorkflowSystemEvent.v1',
@@ -302,4 +306,86 @@ export function createExecutionFactSink(
     report: (fact) =>
       fabric.send('kernel-core.execution-facts', SCHEMA_IDS.executionFact, fact, contextOf(fact)),
   };
+}
+
+/**
+ * The side channel of a running model call (docs/M2/Phase1Console.md 4): what the person watching
+ * may see before the call is over. It is not an event of the ordered sequences: no `eventId`, no
+ * `seq`, nothing is awaited and nothing is retried. A message that cannot be delivered, or that
+ * finds the receiver busy, is dropped, so watching can never slow or change the work.
+ */
+const SIDE_CHANNEL_BACKLOG = 64;
+
+/** Sends without waiting and without ever failing; drops what exceeds the backlog. */
+function lossy<T>(send: (message: T) => Promise<void>): (message: T) => void {
+  let pending = 0;
+  return (message) => {
+    if (pending >= SIDE_CHANNEL_BACKLOG) return;
+    pending += 1;
+    void send(message)
+      .catch(() => undefined)
+      .finally(() => {
+        pending -= 1;
+      });
+  };
+}
+
+const progressContext = (progress: ModelProgress, correlationId: string): BoundaryContext => ({
+  correlationId,
+  tenantId: 'local',
+  projectId: 'local',
+  sessionId: progress.sessionId,
+  workflowRunId: progress.workflowRunId,
+});
+
+/** For the Supervisor: tells the Kernel core how a model call is going. */
+export function createModelProgressSink(
+  fabric: FabricPort,
+  correlationOf: (progress: ModelProgress) => string,
+): (progress: ModelProgress) => void {
+  return lossy((progress) =>
+    fabric.send(
+      'kernel-core.model-progress',
+      SCHEMA_IDS.modelProgress,
+      progress,
+      progressContext(progress, correlationOf(progress)),
+    ),
+  );
+}
+
+/** For the Kernel core: receives what the Supervisor tells of a model call. */
+export function serveModelProgress(
+  fabric: FabricPort,
+  handle: (progress: ModelProgress) => void,
+): void {
+  fabric.subscribe<ModelProgress>('kernel-core.model-progress', (envelope) => {
+    if (envelope.producer !== 'supervisor') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
+}
+
+/** For the Kernel core: passes it on to UserInteraction. */
+export function createModelStreamSender(
+  fabric: FabricPort,
+  correlationOf: (stream: ModelStream) => string,
+): (stream: ModelStream) => void {
+  return lossy((stream) =>
+    fabric.send('inbox.user-interaction-stream', SCHEMA_IDS.modelStream, stream, {
+      correlationId: correlationOf(stream),
+      tenantId: 'local',
+      projectId: 'local',
+      sessionId: stream.sessionId,
+      workflowRunId: stream.workflowRunId,
+    }),
+  );
+}
+
+/** For UserInteraction: receives the thinking of the model calls of the Session in view. */
+export function serveModelStream(fabric: FabricPort, handle: (stream: ModelStream) => void): void {
+  fabric.subscribe<ModelStream>('inbox.user-interaction-stream', (envelope) => {
+    if (envelope.producer !== 'kernel-core') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
 }

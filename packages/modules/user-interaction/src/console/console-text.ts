@@ -22,13 +22,32 @@ const UNREUSABLE_TEXT: Readonly<Record<string, string>> = {
   UNISOLATED: '沙盒不可用，命令未隔离',
 };
 
-/** What the user is shown before a command runs: exactly the command, where, and what it may do. */
+/** A command longer than this is shown by its first lines; `v` shows all of it. */
+const COMMAND_PREVIEW_LINES = 3;
+const COMMAND_PREVIEW_CHARS = 240;
+
+/** The command as the question shows it: all of it when short, else the head and a count. */
+export function commandPreview(command: string): { readonly text: string; readonly cut: boolean } {
+  const clean = terminalText(command);
+  const lines = clean.split('\n');
+  if (lines.length <= COMMAND_PREVIEW_LINES && clean.length <= COMMAND_PREVIEW_CHARS)
+    return { text: clean, cut: false };
+  const head = lines.slice(0, COMMAND_PREVIEW_LINES).join('\n');
+  const shown = head.length > COMMAND_PREVIEW_CHARS ? head.slice(0, COMMAND_PREVIEW_CHARS) : head;
+  return {
+    text: `${shown}\n…（共 ${String(lines.length)} 行、${String(clean.length)} 个字符，输入 v 查看全文）`,
+    cut: true,
+  };
+}
+
+/** What the user is shown before a command runs: the command, where, and what it may do. */
 function commandQuestionText(q: CommandQuestion): string {
+  const preview = commandPreview(q.command);
   const lines = [
     q.matched !== undefined || q.network || q.unisolated
       ? '⚠ 高风险命令，请确认：'
       : '允许 Agent 运行这条命令吗？',
-    '  ' + q.command,
+    '  ' + preview.text.split('\n').join('\n  '),
     '  工作目录：' + (q.workdir === '' ? '仓库根目录' : q.workdir),
     '  可写范围：' + q.writableRoots.map((root) => (root === '.' ? '整个仓库' : root)).join('、'),
     '  网络：' + (q.network ? '共享主机网络（命令可以联网）' : '无'),
@@ -41,6 +60,7 @@ function commandQuestionText(q: CommandQuestion): string {
     ...(q.options.includes('PREFIX')
       ? ['3 / p  本次运行内，这些命令前缀都允许：' + q.prefixes.join('、')]
       : []),
+    ...(preview.cut ? ['v      查看完整命令'] : []),
     'n      拒绝',
   ];
   const why = q.unreusable.map((reason) => UNREUSABLE_TEXT[reason] ?? reason);
@@ -101,7 +121,7 @@ const RUN_STATE: Readonly<Record<string, string>> = {
 
 /** The words of the console; the logic never builds user text itself. */
 export const ConsoleText = Object.freeze({
-  welcome: '新对话。输入问题后按 Enter 开始；/help 查看指令。',
+  welcome: '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
   noSessions: '本仓库还没有对话。',
   sessionLine: (index: number, title: string, turns: number) =>
@@ -140,12 +160,15 @@ export const ConsoleText = Object.freeze({
     SESSION_CLOSED: '已取消回退，没有修改任何文件。',
     FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
   },
-  compacted: (turns: number, pruned: number) =>
-    turns > 0
-      ? `已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）。`
-      : `已修剪 ${String(pruned)} 个较大的工具结果。`,
+  /** One step line in the history, like a tool call: it happened here, and that is all it says. */
+  compacted: (turns: number, pruned: number, summarised: boolean) =>
+    !summarised
+      ? `✓ 已修剪 ${String(pruned)} 个较大的工具结果`
+      : turns > 0
+        ? `✓ 已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）`
+        : '✓ 已压缩较早的对话',
   compactionFailed: {
-    NOTHING_TO_COMPACT: '没有可压缩的内容。',
+    NOTHING_TO_COMPACT: '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',
     BUDGET_INSUFFICIENT: '额度不够，没有压缩。',
     SUMMARY_FAILED: '摘要没有生成，没有压缩。',
     NOT_RECORDED: '压缩没能记录，没有压缩。',
@@ -187,6 +210,8 @@ export const ConsoleText = Object.freeze({
   truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
+  /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
+  compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',
@@ -200,12 +225,35 @@ export const ConsoleText = Object.freeze({
     '/compact          压缩较早的对话，腾出上下文空间',
     '/diff [N]         查看倒数第 N 轮改动了什么',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
+    '/think [N]        列出思考内容；带编号则显示第 N 段思考的全文',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',
     '/steer [@任务] <说明>     运行中插话（Alt+Enter 发送输入框里的内容），不暂停',
     'Ctrl+C 暂停，暂停后再按一次中止；退出用 /exit。',
     '/exit             退出',
     'Enter 发送，\\ 加 Enter 换行，Esc 清空，↑/↓ 浏览历史；运行中发送的消息会排队。',
+    'Ctrl+O 折叠或展开正在显示的思考；折叠过的思考是一行，用 /think N 查看全文；思考只保存在这个进程的内存里。',
   ].join('\n'),
+  thinkingNone: '还没有思考内容（只有开启思考的模型调用才有）。',
+  thinkingMissing: (number: number, first: number | undefined, last: number | undefined) =>
+    first === undefined || last === undefined
+      ? `没有第 ${String(number)} 段思考：这个进程里还没有思考内容。`
+      : `没有第 ${String(number)} 段思考；现有第 ${String(first)}–${String(last)} 段（编号每次启动从 1 开始，更早的已丢弃）。`,
+  thinkingBlockLine: (number: number, label: string, seconds: string) =>
+    `  第 ${String(number)} 段：${label} 思考 ${seconds}`,
+  /** The label of an activity line that no AgentRun stands behind. */
+  system: '系统',
+  thinkingList: '思考内容（/think <N> 查看全文）：',
+  /** The phase of an agent that writes its answer for the user: the text comes whole, when published. */
+  answeringPhase: '正在输出回答',
+  /** The phase of an agent that writes the call of a tool, and the file it names once that is known. */
+  generating: (tool: string, target?: string) =>
+    target === undefined ? `正在生成 ${tool}` : `正在生成 ${tool} ${target}`,
+  /** The one line a block that is no longer in view leaves in the transcript. */
+  thinkingFolded: (number: number, label: string, seconds: string) =>
+    `✻ ${label} 思考 ${seconds}（/think ${String(number)} 展开）`,
+  thinkingHeader: (label: string, seconds: string, state: 'OPEN' | 'DONE' | 'ABORTED') =>
+    `✻ ${label} 思考 ${seconds}${state === 'ABORTED' ? '（已中止）' : ''}`,
+  thinkingCut: '（内容太长，后面的没有保留）',
   timelineEmpty: '本次运行还没有 AgentRun。',
   timelineLine: (
     indent: string,
@@ -249,7 +297,7 @@ export const ConsoleText = Object.freeze({
     WAITING_SUBTASKS: '等待子任务',
     AWAITING_ANSWER: '等待你的回答',
     PAUSED: '已暂停',
-    COMPACTING: '压缩上下文',
+    COMPACTING: '正在压缩上下文',
     WRAPPING_UP: '收尾',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,

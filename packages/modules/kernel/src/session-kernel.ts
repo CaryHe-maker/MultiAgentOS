@@ -39,7 +39,9 @@ import {
   SCHEMA_IDS,
   WORKFLOW_SYSCALLS,
   createInteractionEventSender,
+  createModelStreamSender,
   createSupervisorPort,
+  serveModelProgress,
   createWorkflowEventSender,
 } from '@multiagentos/fabric';
 import {
@@ -100,6 +102,8 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** The Agent a compaction is made as, by reference; none means main (`compactionAgentFrom`). */
+  readonly compactionAgent: RunWorkDeps['compactionAgent'];
   /**
    * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without
    * it nothing is compacted, and a context that outgrows its window ends as it does without compaction.
@@ -206,6 +210,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const toWorkflow = createWorkflowEventSender(fabric, correlationOf);
   const toInteraction = createInteractionEventSender(fabric, correlationOf);
   const outbox = new KernelOutbox({ toWorkflow, toInteraction }, fault, now);
+  // The thinking of model calls on its way to the console (docs/M2/Phase1Console.md 4): beside the
+  // ordered events, never logged, and only for calls this Kernel started.
+  const streamToInteraction = createModelStreamSender(fabric, correlationOf);
+  const watchedCalls = new Map<
+    string,
+    { readonly sessionId: string; readonly agentRunId: string }
+  >();
   const refs = new SessionRefs(
     persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'session-refs' }),
     repositoryRoot,
@@ -297,11 +308,27 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       config: executionConfig,
       artifacts,
       dispatch: (request) => supervisor.execute(request),
+      modelStarted: (call) =>
+        void watchedCalls.set(call.executionId, { sessionId, agentRunId: call.agentRunId }),
       cancelRun: (request) => supervisor.cancelRun(request),
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
       afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
       compactionDue: (info) => holder.work?.compactionDue(info) ?? false,
+      // How full the conversation's context is, told to the console beside the ordered events.
+      contextLevel: (level) => {
+        if (holder.work?.isMain(level.agentRunId) !== true) return;
+        streamToInteraction({
+          sessionId,
+          workflowRunId: host.workflowRunId,
+          agentRunId: level.agentRunId,
+          callId: level.executionId,
+          at: now().toISOString(),
+          kind: 'CONTEXT',
+          used: level.used,
+          limit: level.limit,
+        });
+      },
       modelAnswered: (info) => {
         holder.work?.modelAnswered(info);
       },
@@ -393,6 +420,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       repositoryRoot,
       repositoryExclusions: config.repositoryExclusions,
       pinAgent: deps.pinAgent,
+      compactionAgent: deps.compactionAgent,
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
       inputIsValid,
       preset: deps.preset,
@@ -538,6 +566,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               audit({ type: 'ARTIFACT_NOT_INHERITED', artifactId: ref.artifactId });
           },
           storeUserInput: (input) => artifacts.storeUserInput(input),
+          titleOf: async (ref) => {
+            try {
+              return Buffer.from(await deps.artifacts.get(ref))
+                .toString('utf8')
+                .slice(0, 80);
+            } catch {
+              return undefined;
+            }
+          },
           openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
           writeRunSummary: async (summary) => {
             try {
@@ -581,6 +618,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const memoryEvents = persistence.appendLog<object>('kernel-core', {
     scope: 'SYSTEM',
     file: 'memory-events',
+  });
+  // Who asked the system to stop, for whoever looks into why a conversation ended: the Session
+  // log and Workflow know only that the run closed with SHUTDOWN, as before.
+  const shutdownRequests = persistence.appendLog<object>('kernel-core', {
+    scope: 'SYSTEM',
+    file: 'shutdown-requests',
   });
   let started = false;
   // The sampler's only way out is this one message to Core (Kernel/Monitor 4a).
@@ -638,6 +681,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         if (envelope.producer !== 'gateway')
           throw new Error('Kernel core request has an invalid producer');
         const forward = envelope.payload;
+        if (forward.requestType === 'shutdown')
+          await shutdownRequests
+            .append({
+              at: now().toISOString(),
+              type: 'SHUTDOWN_REQUESTED',
+              source: forward.request.source,
+              requestId: forward.request.requestId,
+            })
+            .catch(fault);
         const response = await core.handle(
           forward,
           'sessionId' in forward ? forward.sessionId : undefined,
@@ -648,10 +700,35 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         }
         return response;
       });
+      serveModelProgress(fabric, (progress) => {
+        const call = watchedCalls.get(progress.executionId);
+        if (call === undefined || call.sessionId !== progress.sessionId) return;
+        const stream = {
+          sessionId: progress.sessionId,
+          workflowRunId: progress.workflowRunId,
+          agentRunId: call.agentRunId,
+          callId: progress.executionId,
+          at: progress.at,
+        };
+        if (progress.kind === 'END') {
+          watchedCalls.delete(progress.executionId);
+          streamToInteraction({ ...stream, kind: 'END' });
+        } else if (progress.kind === 'ANSWER') streamToInteraction({ ...stream, kind: 'ANSWER' });
+        else if (progress.kind === 'TOOL')
+          streamToInteraction({
+            ...stream,
+            kind: 'TOOL',
+            name: progress.name,
+            ...(progress.target === undefined ? {} : { target: progress.target }),
+          });
+        else streamToInteraction({ ...stream, kind: 'REASONING', delta: progress.delta });
+      });
       fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', async (envelope) => {
         if (envelope.producer !== 'supervisor')
           throw new Error('Kernel core execution fact has an invalid producer');
         const fact = envelope.payload;
+        // The side channel is lossy: its END may never come, but the call's fact always does.
+        watchedCalls.delete(fact.executionId);
         const actor = manager.actor(fact.sessionId);
         const execution = executions.get(fact.workflowRunId);
         // A fact of a Session that already closed has nothing left to settle.

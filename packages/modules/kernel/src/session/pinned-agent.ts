@@ -7,6 +7,7 @@ import {
   type PortResult,
   type ProtectedCapability,
   type ProtocolRegistry,
+  requestedCapabilitiesOf,
   type RegisterAgentRunRequest,
   type ThinkingEffort,
   type ToolDefinition,
@@ -51,6 +52,7 @@ export function pinnedAgentOf(
     description: tool.modelDescription,
     parameters: registry.jsonSchemaOf(tool.parametersContract),
     purpose: tool.purpose,
+    ...(tool.answer === undefined ? {} : { answer: tool.answer }),
   });
   const toolOf = (ref: { readonly id: string; readonly version: string }) =>
     tools.find((tool) => tool.id === ref.id && tool.version === ref.version);
@@ -134,6 +136,49 @@ export interface AgentCatalog {
     ref: { readonly id: string; readonly version: string },
     context: BoundaryContext,
   ): PortResult<PinnedDefinitionSet>;
+}
+
+/** The catalog as compaction reads it: an Agent by its reference, and the newest of an id. */
+export interface CompactionCatalog extends AgentCatalog {
+  latest(kind: 'AGENT', id: string): { readonly id: string; readonly version: string } | undefined;
+}
+
+/**
+ * The Agent a compaction of a context is made as: what the Agent is, from the catalog, with what a
+ * start asks for under the preset (one function, shared with Workflow's registration). It is the one
+ * way every compaction finds its Agent, whatever its target: a reference names it (the Agent an
+ * AgentRun was registered as), and no reference means main, the Agent of the Session's Turn-chat.
+ * Nothing of an AgentRun is read: not whether there is one, nor how it ended.
+ */
+export function compactionAgentFrom(
+  catalog: CompactionCatalog,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+  options: { readonly preset: 'standard' | 'readonly'; readonly commands: boolean },
+): (ref?: { readonly id: string; readonly version: string }) => PinnedAgent | undefined {
+  const made = new Map<string, PinnedAgent | undefined>();
+  return (ref) => {
+    const named = ref ?? catalog.latest('AGENT', 'main');
+    if (named === undefined) return undefined;
+    const key = `${named.id}@${named.version}`;
+    if (made.has(key)) return made.get(key);
+    const set = catalog.pinAgent(
+      { id: named.id, version: named.version },
+      { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' },
+    );
+    let agent: PinnedAgent | undefined;
+    if (set.ok) {
+      const { agent: definition } = set.value;
+      const pinned = pinnedAgentOf(
+        set.value,
+        definition.thinking.defaultEffort,
+        registry,
+        requestedCapabilitiesOf(definition.capabilities, options.preset, options.commands),
+      );
+      agent = pinned === 'FORBIDDEN' ? undefined : pinned;
+    }
+    made.set(key, agent);
+    return agent;
+  };
 }
 
 /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Runs test files again and again while the machine is busy, to find the tests that only pass
- * when nothing else is going on (docs/M2/M2FrozenTests.md 8): a wait that was too short, a log
+ * when nothing else is going on (docs/M2/M2FrozenTests.md 9): a wait that was too short, a log
  * that was read a moment before it was written, a name that happened to look like something else.
  *
  *   node scripts/repeat-under-load.mjs [--times 5] [--load 4] <test file or directory> ...

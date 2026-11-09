@@ -8,7 +8,7 @@
 - **已实现**：代码在 `feat/M2`，有确定性测试（假模型、假 provider、假时钟），在 Ubuntu 24.04（WSL）与 GitHub Actions 的质量门中通过。
 - **真实模型已验证**：另在真实模型（`deepseek-flash`）上跑过，当时的数字与结论记录在 [History/M2/Evaluation](../History/M2/Evaluation/)；原始记录与脚本已随评测体系的重建删除（[Evaluation](Evaluation.md)）。这些数据来自单个模型与少量运行，不是统计结论。
 - **缺口**：设计里要求、尚未做到的部分。第 5 节汇总。
-- 质量门：约 120 个测试文件、约 1970 个用例；Windows 本机有若干与符号链接、ripgrep、进程退出码相关的用例失败，在 Ubuntu 上全部通过，所以以 Ubuntu 为准。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
+- 质量门：约 130 个测试文件、约 2090 个用例，在 Ubuntu 24.04（含 WSL2）上全部通过。**Windows 原生不是支持平台**（[M2Decisions](M2Decisions.md) 2a）：那里还有几个与符号链接、第二个实例的检测和进程退出码相关的用例失败，不算缺陷（缺口 17 是真实模型测试时顺手修的，不代表适配 Windows）。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
 
 ## 2. 能力现状
 
@@ -21,8 +21,9 @@
 | 并行：按 AgentRun 分队列、写入占用、额度逐级委派、`run_subagents`、结果契约 | 已实现；机制已验证 | `subagents-exit`、Kernel 层测试；要求派生时 24/24 正确 | P3（完工时间接近关键路径）没有量；B4 没有端到端用例；D（派生指标）不达标：不提示时 33 次只派生 2 次 |
 | 人类在环：暂停、继续、`/steer`、中止、`ask_user` | 已实现；真实模型已验证 | `human-in-loop-exit`、`pause-steer-ask.test.ts`；5 个场景 15/15 | H13 与"`ask_user` 的同意不产生授权"只有 Kernel 层测试；`ask_user` 没有次数上限 |
 | Web：`web_search`、`web_fetch`、地址检查、重定向与 DNS 重绑定 | 已实现；真实模型已验证 | `web-exit`；3 个场景 3/3（含注入页面与私网地址） | Brave 适配器只用假实现测过；`readonly` 预设不含网页；DeepSeek 抓取的计费与搜索词留存没有证据；Workflow 在同一 AgentRun 内记住被拒的工具 |
-| 上下文压缩：自动、溢出、`/compact`、空闲，修剪与摘要，撤销时使摘要失效 | 已实现；真实模型已验证 | `compaction-exit`（L1–L4、L7–L13）；长对话六个事实 8/8，摘要请求缓存命中 66% | 早先只修剪的压缩切掉的结果，之后的摘要仍读到修剪后的内容；压缩后上下文没有硬上限（最新一段不受压缩影响）；"额度不足"只有单元测试 |
-| 终端交互：控制台、`/help`、`/status`、`/timeline`、`/output`、`/undo`、`/diff`、`/compact` | 已实现 | `console` 的单元与验收测试 | `/thinking`、图视图等非安全功能未做 |
+| 上下文压缩：自动、溢出、`/compact`，修剪与摘要，撤销时使摘要失效 | 已实现；真实模型已验证 | `compaction-exit`（L1–L4、L7–L21：刚新建就压缩、打开旧对话后压缩与再压缩、重开后压缩与 Fork、反复压缩、打开时已超阈值、压缩中来消息、被拒、被 Fork 取消）；真实模型：长对话六个事实 8/8，新建即压缩、打开旧对话后压缩、反复压缩、压缩后重开均通过，摘要请求缓存命中约 99.8% | 早先只修剪的压缩切掉的结果，之后的摘要仍读到修剪后的内容；压缩后上下文没有硬上限（最新一段不受压缩影响）；"额度不足"只有单元测试 |
+| 终端交互：控制台、`/help`、`/status`、`/timeline`、`/output`、`/undo`、`/diff`、`/compact` | 已实现 | `console` 的单元与验收测试 | 图视图等非安全功能未做 |
+| 日志查看器 `mas log`、思考的流式显示（回复不流式）、状态行与上下文占比、带光标的输入框、字符宽度的启动测量 | 已实现 | `log.test.ts`、`thinking-stream`、`ink-*.test.ts`、`input-box-ink*.test.ts`、`terminal-width.test.ts`（[Phase1Console](Phase1Console.md)） | 授权与工作区、并行优化未做；白底终端的配色未定 |
 | 使用者模板、条件边、有界循环、`all_done`、`mas run`、`/run`、`research` 模板 | **未做** | 仅内置 `chat`、`analyze`；`analyze` 用到条件边 | 整块工作，见 [M2ReleasePlan](M2ReleasePlan.md) phase 2 |
 | 并行的 main 节点（P4、P5 的并行节点部分） | **未做** | 没有模板就没有并行 main | 随模板一起做 |
 | Agent 与 Prompt 定义（main、explorer、worker、planner、code-viewer、`compaction-system`） | 草稿 `v0.1.0`；main 已验证 | AgentToolPool 第 3 节 | 其余未经评测定稿；没有固定任务集可比较版本 |
@@ -71,7 +72,7 @@
 
 **安全与健壮性**
 5. 沙盒没有 CPU 与内存总量限制；内存压力的 DANGER 退出只有确定性测试，没有在真实内存压力下验证。
-6. 压缩之后的上下文没有硬上限：最新一段（至少 20000 token）不受压缩影响，极大的工具结果会使压缩帮不上忙，只能收尾。
+6. 压缩之后的上下文没有硬上限：最新一段（`keepRatio` 0.15，约占单次输入上限的 15%）不受压缩影响，极大的工具结果会使压缩帮不上忙，只能收尾。
 7. 早先只修剪的压缩切掉的结果，之后的摘要读到的仍是修剪后的内容，要靠 `toolCallId` 与 `read_output` 读回。
 8. 网页：Brave 适配器没有对真实服务测过；`readonly` 预设不含网页；Workflow 在同一 AgentRun 内记住被拒的工具。
 9. 提示注入只试过少数几种写法，且模型这几次识破了；防线不依赖模型的判断，但没有系统的对抗用例集。
@@ -83,6 +84,10 @@
 
 13. 代码里以 `agent.id === 'main'` 识别"顶层的对话 Agent"的地方有五处（压缩目标 `MAIN`、子目录 `AGENTS.md` 的范围、`read_output` 的范围、启动检查）。设计假定只有一个顶层的对话 Agent；预置工作流里有多个顶层 AgentRun 时，要把"顶层"改成不依赖名字的概念（phase 2 的设计项）。
 14. 协议注册表里有一批只登记、从不使用的"暂不支持"引用族（检查点、恢复、人工审阅、集成、日志位置、保留令牌、消费者位移，SharedContracts 3.9 为长期架构预留）。它们不进入任何产品路径，是否在 M2 发布前删除由负责人决定。
+15. **日志里的 `MODEL_TURN.usage` 曾经从未被写入（已修，2026-11-08）。** 记录格式一直有这个字段，压缩的"实测词元数"（`measured`）和评测的词元、成本、缓存命中都从它读取，但 Kernel 给 Workflow 的 `UnitReport` 不带用量，Workflow 写 `MODEL_TURN` 时也没有填；所以压缩一直用估算而不是实测，`metricsOf` 对真实运行得到的词元为 0、成本为空（评测体系自己的测试用手写记录，没有发现）。现在 `UnitReport` 带可选的 `usage`，Workflow 写进 `MODEL_TURN.usage`，有测试：Workflow 的记录带用量、一次脚本对话的日志里每次模型调用都有用量、评测从真实日志读到词元。旧的日志没有这个字段，读取方仍然按"没有"处理。
+16. `mas run --repo` 与 `--readonly` 曾被程序级选项吞掉（已修：`enablePositionalOptions`，有回归测试）。
+18. **Windows 原生不支持（已决定，不是缺口）。** 沙盒是 bubblewrap，只有 Linux 有；Windows 原生探测为 `NO_BWRAP`，按设计拒绝运行命令，不降级。M2 只支持 Linux 与 WSL2，写入 [M2Decisions](M2Decisions.md) 2a 与 README；不做原生沙盒，也不做"不运行命令"的原生模式。
+17. **Windows 上 `search_repository` 的 SYMBOL 与 TEXT 搜索一直返回"没有匹配"**：`rg` 在 Windows 上输出 `.\src\a.ts`，而结果按 `./` 去掉前缀，路径对不上文件集，所有匹配被丢弃（真实模型运行时发现；目标平台 Ubuntu 不受影响）。已修（`search-backends.ts`），原有的"rg 与扫描一致"用例在 Windows 上也通过了。
 
 ## 6. 静态审核记录
 
@@ -100,7 +105,7 @@
 5. 代码注释中 4 处指向不存在章节的文档引用；M2 的 AgentToolPool 文档缺少模型价目一节（只在归档的 M1 文档里），补上第 5a 节。
 6. 测试夹具：脚本化 provider 的响应格式与请求路由各写了两份，合并为 `test/support/scripted-model.ts`；五处"列出 Session 后等 100 毫秒再 `/resume`"改为等到列表真的显示出来。
 
-仍然开着的，记在上面的缺口 13、14。
+仍然开着的，记在上面的缺口 13、14；15、16、17 已修复，18 已决定不适配。
 
 ## 7. 本文怎么用
 

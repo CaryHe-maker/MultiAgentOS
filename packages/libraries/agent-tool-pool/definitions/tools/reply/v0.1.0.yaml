@@ -12,6 +12,7 @@ parametersContract:
   kind: contract
   id: workflow.ReplyArgs
   version: v1
+answer: true
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true

@@ -18,6 +18,7 @@ import {
   type ChatOptions,
   type ScriptedChat,
   agentOfRequest,
+  listSessions,
   until,
 } from './chat-driver.js';
 
@@ -50,21 +51,27 @@ async function chatOn(
   options: {
     files?: Record<string, string>;
     compaction?: Record<string, unknown>;
+    /** Another process on the place an earlier one left: the same data and the same repository. */
+    place?: { dataDir: string; repository: string };
   } & Partial<ChatOptions> = {},
 ): Promise<{ chat: Chat; dataDir: string; repository: string }> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'mas-compaction-data-'));
-  const repository = await mkdtemp(join(tmpdir(), 'mas-compaction-repo-'));
-  directories.push(dataDir, repository);
-  for (const [name, content] of Object.entries(
-    options.files ?? {
-      'a.txt': 'alpha\n'.repeat(60),
-      'b.txt': 'beta\n'.repeat(60),
-      'c.txt': 'gamma\n',
-    },
-  ))
-    await writeFile(join(repository, name), content);
+  const dataDir = options.place?.dataDir ?? (await mkdtemp(join(tmpdir(), 'mas-compaction-data-')));
+  const repository =
+    options.place?.repository ?? (await mkdtemp(join(tmpdir(), 'mas-compaction-repo-')));
+  if (options.place === undefined) {
+    directories.push(dataDir, repository);
+    for (const [name, content] of Object.entries(
+      options.files ?? {
+        'a.txt': 'alpha\n'.repeat(60),
+        'b.txt': 'beta\n'.repeat(60),
+        'c.txt': 'gamma\n',
+      },
+    ))
+      await writeFile(join(repository, name), content);
+  }
   const { compaction, ...rest } = options;
   delete (rest as { files?: unknown }).files;
+  delete (rest as { place?: unknown }).place;
   const chat = await openChat({
     dataDir,
     repository,
@@ -77,8 +84,7 @@ async function chatOn(
           ...config.kernel.compaction,
           // Anything old is worth compacting; a context of a few rounds has something old.
           triggerRatio: 0.0001,
-          idleEnabled: false,
-          keepTokens: 30,
+          keepRatio: 0.00004,
           keepHumanBytes: 200,
           pruneMinBytes: 100,
           pruneHeadBytes: 40,
@@ -211,6 +217,26 @@ describe('L4: a summary that does not come', () => {
         'the notice of the failure',
       );
       expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(false);
+
+      // Why it did not come is on the audit for whoever looks: the stage and the code of each try,
+      // never what was written.
+      // The audit is written beside the work; the failure entry comes after both problems.
+      for (let wait = 0; wait < 400; wait += 1) {
+        if ((await auditOf(dataDir)).includes('COMPACTION_FAILED')) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const problems = (await auditOf(dataDir))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((entry) => entry['type'] === 'COMPACTION_SUMMARY_PROBLEM');
+      expect(
+        problems.map((entry) => [entry['stage'], entry['reasonCode'], entry['strict']]),
+      ).toEqual([
+        ['MODEL', 'COMPACTION_SUMMARY_INVALID', false],
+        ['MODEL', 'COMPACTION_SUMMARY_INVALID', true],
+      ]);
+      expect(JSON.stringify(problems)).not.toContain('I will not summarise');
 
       await chat.say('are you there?');
       expect(chat.printed('REPLY')).toEqual(['a read', 'still here']);
@@ -386,9 +412,261 @@ describe('L10: a summary request that is too big', () => {
   );
 });
 
-describe('L11: compacting while the run waits for the user', () => {
+describe('L11: /compact in a Session that was just opened', () => {
   it(
-    'starts by itself, and a message that comes meanwhile waits for it',
+    'compacts right away, as it does in the middle of a conversation, with no AgentRun of this process',
+    async () => {
+      // A conversation with history in it; nothing compacts by itself.
+      const earlier = scriptedAgents({
+        main: [read('a.txt'), read('b.txt'), reply('both read')],
+        summary: [],
+      });
+      const first = await chatOn(earlier, { compaction: { triggerRatio: 0.99 } });
+      await first.chat.say('read the two files');
+      await awaitingInput(first.chat);
+      await first.chat.close();
+      open.splice(open.indexOf(first.chat), 1);
+
+      // A new process opens it and, before anything is said, asks for a compaction.
+      const later = scriptedAgents({ main: [reply('and now')], summary: [text(SUMMARY)] });
+      const { chat, dataDir } = await chatOn(later, {
+        place: { dataDir: first.dataDir, repository: first.repository },
+        compaction: { triggerRatio: 0.99 },
+      });
+      await listSessions(chat);
+      await chat.console.submit('/resume 1');
+      await until(
+        () => chat.printed('NOTICE').some((text) => text.includes('已打开')),
+        'the Session to be open',
+      );
+      await awaitingInput(chat);
+      await chat.console.submit('/compact');
+      await until(
+        () => chat.printed('STEP').some((text) => text.includes('已压缩较早的对话')),
+        'the compaction',
+      );
+      // Nothing was said to the model before it: the one request so far is the summary request.
+      expect(later.requests).toHaveLength(1);
+      expect(everything(later.requests[0])).toContain('Use exactly');
+      expect((await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTED')).toBe(true);
+
+      await chat.say('go on');
+      expect(chat.printed('REPLY')).toContain('and now');
+      expect(everything(later.requests.at(-1))).toContain('Goal and requirements');
+    },
+    TIMEOUT,
+  );
+});
+
+/**
+ * Opens the Session an earlier process left, in a new process on the same place, and waits until
+ * it waits for input: the state a user is in right after choosing a conversation to go on with.
+ */
+async function reopen(
+  place: { dataDir: string; repository: string },
+  provider: ScriptedChat,
+  compaction: Record<string, unknown> = { triggerRatio: 0.99 },
+) {
+  const opened = await chatOn(provider, { place, compaction });
+  const { chat } = opened;
+  await listSessions(chat);
+  await chat.console.submit('/resume 1');
+  await until(() => chat.printed('NOTICE').some((text) => text.includes('已打开')), 'the Session');
+  await awaitingInput(chat);
+  return opened;
+}
+
+const summaries = (provider: ScriptedChat) =>
+  provider.requests.filter((r) => textOf(r.messages.at(-1)).includes('Use exactly these sections'));
+const mains = (provider: ScriptedChat) =>
+  provider.requests.filter(
+    (r) => !textOf(r.messages.at(-1)).includes('Use exactly these sections'),
+  );
+const compactedRecords = async (dataDir: string) =>
+  (await logOf(dataDir)).filter((r) => r.type === 'CONTEXT_COMPACTED');
+const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+describe('L14: before there is a Session, and at the first request of a new one', () => {
+  it(
+    'refuses /compact where there is nothing to compact, and asks nothing of the model at the first request',
+    async () => {
+      // A threshold every context passes: what is there to compact at the very first request?
+      const provider = scriptedAgents({ main: [reply('hello')], summary: [] });
+      const { chat } = await chatOn(provider);
+      await chat.console.submit('/compact');
+      expect(chat.printed('NOTICE').at(-1)).toBe('当前不能使用这条指令。');
+      expect(provider.requests).toHaveLength(0);
+
+      await chat.say('hi');
+      expect(chat.printed('REPLY')).toEqual(['hello']);
+      expect(summaries(provider)).toHaveLength(0);
+      expect(mains(provider)).toHaveLength(1);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L15: /compact where the context is too short to be worth it', () => {
+  it(
+    'says so, asks nothing of the model, changes nothing, and the work goes on',
+    async () => {
+      const provider = scriptedAgents({ main: [reply('hello'), reply('still here')], summary: [] });
+      // The newest 15% of the limit stays as it is: a few words are all of it.
+      const { chat, dataDir } = await chatOn(provider, {
+        compaction: { triggerRatio: 0.99, keepRatio: 0.15 },
+      });
+      await chat.say('hi');
+      await awaitingInput(chat);
+      await chat.console.submit('/compact');
+      await until(
+        () =>
+          chat.printed('NOTICE').at(-1) === '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',
+        'the notice that it is too short',
+      );
+      expect(summaries(provider)).toHaveLength(0);
+      expect(await compactedRecords(dataDir)).toHaveLength(0);
+      // The line that said the system was compacting is gone.
+      expect(chat.lives.at(-1)?.activity.some((line) => line.label === '系统')).toBe(false);
+
+      await chat.say('are you there?');
+      expect(chat.printed('REPLY')).toEqual(['hello', 'still here']);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L16: compacting again and again', () => {
+  it(
+    'has the second summary take the first one in, and a compaction with nothing new says so',
+    async () => {
+      const provider = scriptedAgents({
+        main: [read('a.txt'), reply('first'), read('b.txt'), reply('second'), reply('third')],
+        summary: [text(SUMMARY), text(SUMMARY), text(SUMMARY)],
+      });
+      const { chat, dataDir } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
+      const compact = async (count: number) => {
+        await awaitingInput(chat);
+        await chat.console.submit('/compact');
+        await until(
+          () =>
+            chat.printed('STEP').filter((text) => text.includes('已压缩较早的对话')).length >=
+            count,
+          `compaction number ${String(count)}`,
+        );
+      };
+      await chat.say('read a.txt');
+      await compact(1);
+      await chat.say('read b.txt');
+      await compact(2);
+      expect(await compactedRecords(dataDir)).toHaveLength(2);
+
+      // Nothing new since: the summary alone is not worth another.
+      await awaitingInput(chat);
+      await chat.console.submit('/compact');
+      await until(
+        () =>
+          chat.printed('NOTICE').at(-1) === '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',
+        'the notice that there is nothing new to compact',
+      );
+      expect(await compactedRecords(dataDir)).toHaveLength(2);
+
+      await chat.say('and now?');
+      const last = everything(mains(provider).at(-1));
+      // One summary, the newest: it took the first one in.
+      expect(occurrences(last, 'Goal and requirements')).toBe(1);
+      expect(chat.printed('REPLY')).toEqual(['first', 'second', 'third']);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L17: going on from a Session that was compacted', () => {
+  it(
+    'starts from the summary after it is opened again, compacts once more, and a fork has it too',
+    async () => {
+      const first = await chatOn(
+        scriptedAgents({
+          main: [read('a.txt'), reply('first')],
+          summary: [text(SUMMARY)],
+        }),
+        { compaction: { triggerRatio: 0.99 } },
+      );
+      await first.chat.say('read a.txt');
+      await awaitingInput(first.chat);
+      await first.chat.console.submit('/compact');
+      await until(
+        () => first.chat.printed('STEP').some((text) => text.includes('已压缩较早的对话')),
+        'the compaction',
+      );
+      await first.chat.close();
+      open.splice(open.indexOf(first.chat), 1);
+
+      const later = scriptedAgents({
+        main: [read('b.txt'), reply('second'), reply('in the fork')],
+        summary: [text(SUMMARY)],
+      });
+      const { chat, dataDir } = await reopen(first, later);
+      await chat.say('read b.txt');
+      // The summary of the earlier process is what the model starts from.
+      expect(everything(mains(later)[0])).toContain('Goal and requirements');
+
+      // And it compacts again, in this process, with no AgentRun made for it.
+      await awaitingInput(chat);
+      await chat.console.submit('/compact');
+      await until(
+        () => chat.printed('STEP').filter((text) => text.includes('已压缩较早的对话')).length >= 1,
+        'the second compaction',
+      );
+      expect(await compactedRecords(dataDir)).toHaveLength(2);
+
+      // A fork carries the history as it stands: the summary, not what it replaced.
+      await awaitingInput(chat);
+      await chat.console.submit('/fork');
+      await chat.say('in the fork');
+      const forked = everything(mains(later).at(-1));
+      expect(forked).toContain('Goal and requirements');
+      expect(occurrences(forked, 'Goal and requirements')).toBe(1);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L18: a Session opened already over the threshold', () => {
+  it(
+    'is compacted by the first request, before the model is asked, and the answer comes from the summary',
+    async () => {
+      const first = await chatOn(
+        scriptedAgents({ main: [read('a.txt'), read('b.txt'), reply('both read')], summary: [] }),
+        { compaction: { triggerRatio: 0.99 } },
+      );
+      await first.chat.say('read the two files');
+      await awaitingInput(first.chat);
+      await first.chat.close();
+      open.splice(open.indexOf(first.chat), 1);
+
+      // Opened again with a threshold the context is far over. Nothing compacts by itself while
+      // the user only looks.
+      const later = scriptedAgents({ main: [reply('after')], summary: [text(SUMMARY)] });
+      const { chat, dataDir } = await reopen(first, later, {});
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(later.requests).toHaveLength(0);
+      expect(chat.lives.at(-1)?.status).toContain('等待输入');
+
+      await chat.say('go on');
+      // The summary is asked for first; the model that answers has it.
+      expect(summaries(later)).toHaveLength(1);
+      expect(later.requests.indexOf(summaries(later)[0] as never)).toBe(0);
+      expect(everything(mains(later)[0])).toContain('Goal and requirements');
+      expect(chat.printed('REPLY')).toContain('after');
+      expect(await compactedRecords(dataDir)).toHaveLength(1);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L19: a message that comes while /compact is working', () => {
+  it(
+    'waits for the compaction, and is answered from the summary',
     async () => {
       let release: () => void = () => undefined;
       const held = new Promise<void>((resolve) => {
@@ -398,24 +676,103 @@ describe('L11: compacting while the run waits for the user', () => {
         main: [read('a.txt'), reply('a read'), reply('and the next')],
         summary: [{ wait: held, then: text(SUMMARY) }],
       });
-      const { chat, dataDir } = await chatOn(provider, {
-        compaction: { triggerRatio: 0.99, idleEnabled: true, idleTriggerRatio: 0.0001 },
-      });
+      const { chat, dataDir } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
       await chat.say('read a.txt');
-      await until(
-        () => provider.requests.some((r) => textOf(r.messages.at(-1)).includes('Use exactly')),
-        'the summary request of the idle compaction',
-      );
       await awaitingInput(chat);
+      await chat.console.submit('/compact');
+      await until(() => summaries(provider).length === 1, 'the summary request');
+      // The line says the system is at work, with a time.
+      expect(chat.lives.at(-1)?.activity.some((line) => line.label === '系统')).toBe(true);
+
       await chat.console.submit('go on');
-      // The message is not handed to the model while the summary is out.
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(chat.printed('REPLY')).toEqual(['a read']);
       release();
       await until(() => chat.printed('REPLY').length === 2, 'the reply after the compaction');
       const types = (await logOf(dataDir)).map((r) => r.type);
       expect(types.indexOf('CONTEXT_COMPACTED')).toBeLessThan(types.lastIndexOf('MODEL_TURN'));
-      expect(everything(provider.requests.at(-1))).toContain('Goal and requirements');
+      expect(everything(mains(provider).at(-1))).toContain('Goal and requirements');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L20: /compact when it cannot be done now', () => {
+  it(
+    'is refused while a run is going and while a compaction is going, and nothing is started',
+    async () => {
+      let releaseMain: () => void = () => undefined;
+      const heldMain = new Promise<void>((resolve) => {
+        releaseMain = resolve;
+      });
+      let releaseSummary: () => void = () => undefined;
+      const heldSummary = new Promise<void>((resolve) => {
+        releaseSummary = resolve;
+      });
+      const provider = scriptedAgents({
+        main: [read('a.txt'), { wait: heldMain, then: reply('slow') }, reply('done')],
+        summary: [{ wait: heldSummary, then: text(SUMMARY) }],
+      });
+      const { chat } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
+      const refused = '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。';
+
+      // While the run is going.
+      await chat.console.submit('a slow one');
+      await until(() => mains(provider).length === 2, 'the run to be under way');
+      await chat.console.submit('/compact');
+      expect(chat.printed('NOTICE').at(-1)).toBe(refused);
+      expect(summaries(provider)).toHaveLength(0);
+      releaseMain();
+      await until(() => chat.printed('REPLY').length === 1, 'the slow reply');
+      await awaitingInput(chat);
+
+      // While a compaction is going.
+      await chat.console.submit('/compact');
+      await until(() => summaries(provider).length === 1, 'the summary request');
+      await chat.console.submit('/compact');
+      expect(chat.printed('NOTICE').at(-1)).toBe(refused);
+      expect(summaries(provider)).toHaveLength(1);
+      releaseSummary();
+      await until(
+        () => chat.printed('STEP').some((text) => text.includes('已压缩较早的对话')),
+        'the compaction',
+      );
+      await chat.say('and now?');
+      expect(chat.printed('REPLY')).toEqual(['slow', 'done']);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('L21: a compaction that is left behind', () => {
+  it(
+    'is cancelled by /fork: nothing is written to the Session it was for, and the fork goes on',
+    async () => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const provider = scriptedAgents({
+        main: [read('a.txt'), reply('a read'), reply('in the fork')],
+        summary: [{ wait: held, then: text(SUMMARY) }],
+      });
+      const { chat, dataDir } = await chatOn(provider, { compaction: { triggerRatio: 0.99 } });
+      await chat.say('read a.txt');
+      await awaitingInput(chat);
+      const original = await sessionDirectory(dataDir);
+      await chat.console.submit('/compact');
+      await until(() => summaries(provider).length === 1, 'the summary request');
+
+      await chat.console.submit('/fork');
+      release();
+      await chat.say('in the fork');
+      expect(chat.printed('REPLY')).toContain('in the fork');
+      // Nothing of the summary reached the Session it was made for.
+      const log = await readFile(join(original, 'workflow', 'log.v1.jsonl'), 'utf8');
+      expect(log).not.toContain('CONTEXT_COMPACTED');
+      const audit = await readFile(join(original, 'kernel-core', 'audit.jsonl'), 'utf8');
+      expect(audit).toContain('COMPACTION_FAILED');
+      expect(audit).not.toContain('COMPACTION_ENDED');
     },
     TIMEOUT,
   );

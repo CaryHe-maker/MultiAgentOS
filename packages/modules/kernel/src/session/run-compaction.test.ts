@@ -25,7 +25,8 @@ const USAGE = { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80 };
 const MAIN = { kind: 'MAIN' } as const;
 const CONFIG = {
   ...DEFAULT_KERNEL_CONFIG.compaction,
-  keepTokens: 1_000,
+  // Of the limit most of these use (100,000): 1,000 tokens.
+  keepRatio: 0.01,
   keepHumanBytes: 1_000,
   pruneMinBytes: 2_000,
   summaryMaxTokens: 500,
@@ -353,18 +354,6 @@ describe('the process of a compaction (Kernel/Core 6a)', () => {
       }),
     ).toEqual({ kind: 'CANCELLED' });
     expect(aborted.log).toEqual(['source']);
-  });
-
-  it('does not tell the user that an idle compaction failed', async () => {
-    const entries = big();
-    const p = ports({ entries, summaries: [{ kind: 'FAILED', usage: USAGE }], limit: 100_000 });
-    await new CompactionProcess(p.implementation).run({
-      trigger: 'IDLE',
-      target: MAIN,
-      currentTokens: 99_999,
-    });
-    expect(p.notified).toEqual([]);
-    expect(p.audits.at(-1)?.type).toBe('COMPACTION_FAILED');
   });
 
   it('does nothing when the run no longer asks for the material', async () => {

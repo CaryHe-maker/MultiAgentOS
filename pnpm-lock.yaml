@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  string-width@8.3.0: 4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a
+
 importers:
 
   .:
@@ -56,6 +59,12 @@ importers:
       react:
         specifier: 19.3.1
         version: 19.3.1
+      string-width:
+        specifier: 8.3.0
+        version: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
+      wrap-ansi:
+        specifier: 10.0.2
+        version: 10.0.2
     devDependencies:
       '@types/react':
         specifier: 19.3.0
@@ -1993,7 +2002,7 @@ snapshots:
   cli-truncate@6.2.0:
     dependencies:
       slice-ansi: 10.0.0
-      string-width: 8.3.0
+      string-width: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
 
   code-excerpt@4.0.0:
     dependencies:
@@ -2212,7 +2221,7 @@ snapshots:
       react-reconciler: 0.34.0(react@19.3.1)
       signal-exit: 3.0.7
       stack-utils: 2.0.6
-      string-width: 8.3.0
+      string-width: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
       terminal-size: 4.0.1
       type-fest: 5.10.0
       widest-line: 6.0.0
@@ -2434,7 +2443,7 @@ snapshots:
   slice-ansi@10.0.0:
     dependencies:
       ansi-styles: 7.0.0
-      string-width: 8.3.0
+      string-width: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
 
   source-map-js@1.2.1: {}
 
@@ -2446,7 +2455,7 @@ snapshots:
 
   std-env@4.2.0: {}
 
-  string-width@8.3.0:
+  string-width@8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a):
     dependencies:
       get-east-asian-width: 1.7.0
       strip-ansi: 7.2.0
@@ -2565,14 +2574,14 @@ snapshots:
 
   widest-line@6.0.0:
     dependencies:
-      string-width: 8.3.0
+      string-width: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
 
   word-wrap@1.2.5: {}
 
   wrap-ansi@10.0.2:
     dependencies:
       ansi-styles: 6.2.3
-      string-width: 8.3.0
+      string-width: 8.3.0(patch_hash=4ee9eb7e435da214a53fc626c1d10cf624e6af5e7ae9e8bc9f1f9c68180ed57a)
 
   yaml@2.9.1: {}
 

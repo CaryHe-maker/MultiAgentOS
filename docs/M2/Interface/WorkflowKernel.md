@@ -166,7 +166,7 @@ interface ReportSessionCommandRequest {
   sessionId: string;                // 命令所针对的 Session
   commandId: string;                // 前缀 scm，来自事件
   result:
-    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string }
+    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string; turnCount: number; titleRef?: ArtifactRef }
     | { command: 'CREATE'; outcome: 'READY' }
     | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[]; fromTurnCount: number }   // 复制的日志中出现的全部产物引用；原 Session 的 Turn 数，用于 SessionOpened.fork
     | { command: 'CLOSE' | 'DELETE'; outcome: 'DONE' }
@@ -286,6 +286,7 @@ interface UnitReport {
   outputRef?: ArtifactRef;           // OK 时按 Unit 的产物类型必填；工具 Unit 为预览（M2Design 第 8.2 节），长期保留
   fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不进入投影，只作为 read_output 的输入（M2Design 第 8.2 节）
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
+  usage?: TokenUsage;                // 只用于 model-call：provider 数出的输入、输出与缓存命中；Workflow 写进 `MODEL_TURN.usage`
   quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
   changedFiles?: string[];           // 写入工具改动的文件

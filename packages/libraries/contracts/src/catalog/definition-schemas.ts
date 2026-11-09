@@ -146,6 +146,33 @@ export function capabilitiesUnderPreset(
   return capabilities.filter((c) => preset === 'standard' || SAFE_CAPABILITIES.has(c));
 }
 
+/**
+ * Commands are offered when they can run isolated, or when the user chose to be asked about
+ * running them without isolation (M2Design 6.2).
+ */
+export function commandsOffered(
+  sandboxAvailable: boolean,
+  unavailablePolicy: 'deny' | 'ask-unisolated',
+): boolean {
+  return sandboxAvailable || unavailablePolicy === 'ask-unisolated';
+}
+
+/**
+ * What an Agent asks for when it is started, whoever starts it: its capabilities under the start
+ * preset, without the command ones where commands cannot run here. The tools the model is offered
+ * come from this and from nothing else, so the one function serves the registration of an AgentRun
+ * and every request that must begin as that AgentRun's requests do (the compaction of its context).
+ */
+export function requestedCapabilitiesOf(
+  capabilities: readonly ProtectedCapability[],
+  preset: 'standard' | 'readonly',
+  commands: boolean,
+): readonly ProtectedCapability[] {
+  return capabilitiesUnderPreset(capabilities, preset).filter(
+    (capability) => commands || (capability !== 'command.exec' && capability !== 'command.network'),
+  );
+}
+
 export const AgentDefinitionSchema = Type.Object(
   {
     ...header('AGENT'),
@@ -283,6 +310,8 @@ export const ToolDefinitionSchema = Type.Object(
     modelDescription: TextSchema(4_000),
     /** For a UNIT tool, the inputContract of its Unit, or the part of it the model writes. */
     parametersContract: ContractRefSchema,
+    /** The tool is the answer to the user, such as the reply: the console says so while the model writes it. */
+    answer: Type.Optional(Type.Boolean()),
     riskClass: Type.Union([
       Type.Literal('READ_ONLY'),
       Type.Literal('LOW'),

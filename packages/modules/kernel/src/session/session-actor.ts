@@ -60,6 +60,8 @@ export interface SessionDuties {
     WorkspaceSnapshots,
     'turnStarted' | 'turnEnded' | 'planUndo' | 'applyUndo' | 'diffTurn' | 'divergedFiles'
   >;
+  /** The name of a Session, read from the artifact its list entry refers to. */
+  titleOf?(ref: ArtifactRef): Promise<string | undefined>;
   /** A fork takes over what the copied log refers to. */
   inheritArtifacts?(fromSessionId: string, refs: readonly ArtifactRef[]): Promise<void>;
   /** Keeps the text of a diff; the answer only refers to it. */
@@ -256,7 +258,7 @@ export class SessionActor {
   compactContext(run: Run): Decision {
     if (run.control.phase !== 'AWAITING_INPUT')
       return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
-    return run.work.startMainCompaction('USER')
+    return run.work.startMainCompaction()
       ? { accepted: true, control: run.control }
       : { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
   }
@@ -550,10 +552,15 @@ export class SessionActor {
           return;
         }
         const diverged = (await duties.snapshots?.divergedFiles()) ?? [];
+        const title =
+          result.command === 'OPEN' && result.titleRef !== undefined
+            ? await duties.titleOf?.(result.titleRef)
+            : undefined;
         outbox.sessionToInteraction(sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
-          turnCount: 0,
+          turnCount: result.command === 'OPEN' ? result.turnCount : 0,
+          ...(title === undefined ? {} : { title }),
           ...(diverged.length === 0 ? {} : { divergedFiles: [...diverged] }),
         });
         const run = this.#startRun({ mode: 'CHAT' }, false);
@@ -799,8 +806,6 @@ export class SessionActor {
       humanRequestId,
       kind: 'prompt',
     });
-    // Ahead of the next message: a long context is compacted while the user is away.
-    run.work.startMainCompaction('IDLE');
     return decision;
   }
 

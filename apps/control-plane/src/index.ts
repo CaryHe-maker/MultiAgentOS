@@ -6,7 +6,14 @@
  */
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { CLI_MESSAGES, createTerminal, parseCli, runCommand } from '@multiagentos/cli';
+import {
+  CLI_MESSAGES,
+  createTerminal,
+  parseCli,
+  runCommand,
+  settleAmbiguousWidth,
+  type Terminal,
+} from '@multiagentos/cli';
 import { createSubprocessRunner } from '@multiagentos/kernel';
 import { FileInstanceLock } from '@multiagentos/persistence';
 import dotenv from 'dotenv';
@@ -15,6 +22,7 @@ import { createDeferredFaultReporter } from './bootstrap/deferred-fault-reporter
 import { installProcessGuards } from './bootstrap/process-guards.js';
 import { EXIT_CODE_SYSTEM_FAULT } from './bootstrap/system-control.js';
 import { loadSystemConfig } from './config/system-config.js';
+import { runLogCommand } from './log-command.js';
 
 export { composeSystem, type ComposeOptions, type System } from './bootstrap/compose-system.js';
 export { installProcessGuards } from './bootstrap/process-guards.js';
@@ -51,13 +59,49 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (!parsed.ok) return parsed.exitCode;
   const { command } = parsed;
 
+  if (command.kind === 'LOG') {
+    // Reads a log: no module, no lock, no model.
+    try {
+      dotenv.config({ quiet: true });
+      const { dataDir } = await loadSystemConfig(process.env);
+      return await runLogCommand(command, {
+        dataDir,
+        cwd: process.cwd(),
+        write,
+        writeError: (text) => void process.stderr.write(text),
+      });
+    } catch {
+      process.stderr.write('配置有误，无法找到数据目录。\n');
+      return EXIT_CODE_SYSTEM_FAULT;
+    }
+  }
+
+  // Before anything is drawn: how wide the terminal draws the quotes, dashes and ellipses of Chinese
+  // text is measured once (invisibly, or taken from MAS_AMBIGUOUS_WIDTH), and every measure of the
+  // process follows it.
+  await settleAmbiguousWidth(process.stdin, process.stdout, process.env);
   const subprocess = createSubprocessRunner();
   const faults = createDeferredFaultReporter();
   const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });
   let releaseLock: () => Promise<void> = () => Promise.resolve();
+  let releaseTerminal: () => void = () => undefined;
   try {
     let system: System;
-    const terminal = createTerminal();
+    // A fault ends the run before the command does: the terminal is let go of here as well, or
+    // the process would stay behind with a screen that nothing answers.
+    const detachers: (() => void)[] = [];
+    const attached = createTerminal();
+    const terminal: Terminal = {
+      view: attached.view,
+      attach: (input) => {
+        const detach = attached.attach(input);
+        detachers.push(detach);
+        return detach;
+      },
+    };
+    releaseTerminal = () => {
+      for (const detach of detachers.splice(0)) detach();
+    };
     try {
       dotenv.config({ quiet: true });
       const config = await loadSystemConfig(process.env);
@@ -112,6 +156,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       return EXIT_CODE_SYSTEM_FAULT;
     }
   } finally {
+    releaseTerminal();
     removeGuards();
     try {
       subprocess.killAll();

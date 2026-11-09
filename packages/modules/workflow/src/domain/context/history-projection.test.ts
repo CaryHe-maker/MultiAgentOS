@@ -1,7 +1,7 @@
 import { newId, type ArtifactRef, type SessionLogRecord } from '@multiagentos/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { projectHistory } from './history-projection.js';
+import { projectHistory, divergedNote } from './history-projection.js';
 
 const projectMainHistory = (records: readonly SessionLogRecord[]) =>
   projectHistory(records, { kind: 'MAIN' });
@@ -409,5 +409,23 @@ describe('compaction in a projection (M2Design 9.6)', () => {
     const shorter = projectMainHistory(records);
     const longer = projectMainHistory(more);
     expect(longer.slice(0, shorter.length)).toEqual(shorter);
+  });
+});
+
+describe('divergedNote', () => {
+  it('names the files that changed, as many as fit in a note, and counts the rest', () => {
+    const few = divergedNote(['a.ts', 'b.ts']);
+    expect(few).toContain('a.ts, b.ts');
+    expect(few).not.toContain('more');
+
+    const many = Array.from({ length: 300 }, (_, index) => `src/module-${String(index)}/file.ts`);
+    const note = divergedNote(many);
+    // A note is at most 2000 characters in the history; more is not a valid history at all.
+    expect(note.length).toBeLessThanOrEqual(2000);
+    expect(note).toContain('src/module-0/file.ts');
+    expect(note).toMatch(/\(and \d+ more; use git status to see them all\)/u);
+
+    const long = divergedNote(['x'.repeat(5000)]);
+    expect(long.length).toBeLessThanOrEqual(2000);
   });
 });

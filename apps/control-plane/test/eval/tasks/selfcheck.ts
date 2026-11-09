@@ -137,8 +137,7 @@ const longDialog: TaskSpec = {
         compaction: {
           ...config.kernel.compaction,
           triggerRatio: 0.0001,
-          idleEnabled: false,
-          keepTokens: 30,
+          keepRatio: 0.00004,
           keepHumanBytes: 400,
           pruneMinBytes: 100,
           pruneHeadBytes: 40,

@@ -12,16 +12,25 @@ const SESSION = 'ses_01J00000000000000000000001';
 const RUN = 'wfr_01J00000000000000000000001';
 
 function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number } } = {}) {
-  const calls: { name: string; request: Record<string, unknown> }[] = [];
+  const calls: {
+    name: string;
+    request: Record<string, unknown>;
+    context?: Record<string, unknown>;
+  }[] = [];
   const artifacts = options.artifacts ?? new Map<string, string>();
   const ack = { outcome: 'ACCEPTED' } as const;
   const record =
     (name: string, result: unknown = ack) =>
-    (request: unknown) => {
-      calls.push({ name, request: request as Record<string, unknown> });
+    (request: unknown, context?: unknown) => {
+      calls.push({
+        name,
+        request: request as Record<string, unknown>,
+        ...(context === undefined ? {} : { context: context as Record<string, unknown> }),
+      });
       return Promise.resolve(result);
     };
   const accepted = { outcome: 'ACCEPTED', sessionId: SESSION };
+  let compactResult: unknown = ack;
   const gateway = {
     startSession: record('startSession', accepted),
     openSession: record('openSession', accepted),
@@ -30,6 +39,8 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     deleteSession: record('deleteSession'),
     answerAuthorization: record('answerAuthorization'),
     answerHuman: record('answerHuman'),
+    compactContext: (request: unknown, context?: unknown) =>
+      record('compactContext', compactResult)(request, context),
     pauseRun: record('pauseRun'),
     resumeRun: record('resumeRun'),
     interruptRun: record('interruptRun'),
@@ -76,6 +87,9 @@ function setup(options: { artifacts?: Map<string, string>; clock?: { ms: number 
     printed,
     restored,
     live: () => live,
+    setCompactResult: (result: unknown) => {
+      compactResult = result;
+    },
     event,
     named: (name: string) => calls.filter((call) => call.name === name),
   };
@@ -334,6 +348,30 @@ describe('Console', () => {
     await expect(exit).resolves.toBe(3);
   });
 
+  it('welcomes by name, and lists the Sessions as a quiet list of their own below the notice', async () => {
+    const t = setup();
+    await t.console.start();
+    expect(t.printed[0]).toMatchObject({ kind: 'NOTICE' });
+    expect(t.printed[0]?.text).toBe(
+      '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
+    );
+    await t.console.handleSystemEvent({
+      event: {
+        type: 'SessionList',
+        sessions: [
+          { sessionId: 'ses_1', title: 'one', turnCount: 8 },
+          { sessionId: 'ses_2', turnCount: 22 },
+        ],
+      },
+    } as never);
+    const [header, list] = t.printed.slice(-2);
+    expect(header).toMatchObject({ kind: 'NOTICE' });
+    expect(header?.text).toBe('本仓库最近的对话（/resume <编号> 打开）：');
+    expect(list).toMatchObject({ kind: 'LIST' });
+    expect(list?.text.split('\n')).toHaveLength(2);
+    expect(list?.text).toContain('1. one（8 轮）');
+  });
+
   it('resumes a listed Session by its number and exits on a second Ctrl+C in time', async () => {
     const clock = { ms: 0 };
     const t = setup({ clock });
@@ -355,7 +393,17 @@ describe('Console', () => {
     clock.ms = 4000;
     await t.console.interrupt();
     expect(t.named('shutdown')).toHaveLength(1);
+    expect(t.named('shutdown')[0]?.request).toMatchObject({ source: 'INTERRUPT_TWICE' });
     await exited;
+  });
+
+  it('says who asks for the system to stop: /exit, and the code of an exit from outside', async () => {
+    const t = setup();
+    await t.console.submit('/exit');
+    expect(t.named('shutdown')[0]?.request).toMatchObject({ source: 'EXIT_COMMAND' });
+    t.console.exitWith(75);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(t.named('shutdown')[1]?.request).toMatchObject({ source: 'EXIT_CODE' });
   });
 });
 
@@ -574,5 +622,502 @@ describe('pause, continue, steer and questions (Module/UserInteraction 5.4)', ()
     expect(t2.printed.at(-1)?.kind).toBe('ERROR');
     expect((t2.printed.at(-1) as { text: string }).text).toContain('已中止');
     expect(t.printed).toEqual([]);
+  });
+});
+
+describe('a long command in a question (Phase1Console 2.1, UI-4)', () => {
+  const askFor = (command: string) =>
+    ({
+      type: 'AuthorizationRequest',
+      questionId: 'qst_cmd',
+      capability: 'command.exec',
+      command,
+      workdir: '',
+      writableRoots: ['.'],
+      network: false,
+      unisolated: false,
+      options: ['ONCE', 'COMMAND', 'DENY'],
+      prefixes: [],
+      unreusable: [],
+    }) as unknown as KernelToInteractionEvent;
+
+  it('shows a short command as it is', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(askFor('ls -la src'));
+    const asked = t.live()?.pending;
+    expect(asked?.text).toContain('  ls -la src');
+    expect(asked?.text).not.toContain('输入 v');
+    expect(asked).not.toHaveProperty('detail');
+  });
+
+  it('shows the head of a long command, says how much was left out, and `v` prints all of it', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    const body = Array.from({ length: 40 }, (_, index) => `line ${String(index)} of the file`);
+    const command = `cat > notes.md <<'EOF'\n${body.join('\n')}\nEOF`;
+    await t.event(askFor(command));
+    const asked = t.live()?.pending;
+    expect(asked?.text).toContain("cat > notes.md <<'EOF'");
+    expect(asked?.text).toContain('line 1 of the file');
+    expect(asked?.text).not.toContain('line 30 of the file');
+    expect(asked?.text).toContain('共 42 行');
+    expect(asked?.text).toContain('v      查看完整命令');
+
+    // Looking is not answering: the question stays, and nothing was sent to the Kernel.
+    await t.console.submit('v');
+    expect(t.printed.at(-1)).toMatchObject({ kind: 'NOTICE' });
+    expect(t.printed.at(-1)?.text).toContain('line 30 of the file');
+    expect(t.printed.at(-1)?.text).toContain('\nEOF');
+    expect(t.live()?.pending).toMatchObject({ questionId: 'qst_cmd' });
+    expect(t.named('answerAuthorization')).toHaveLength(0);
+
+    await t.console.submit('1');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      answer: { scope: 'ONCE' },
+    });
+  });
+
+  it('writes escape sequences in a command as text, so they cannot draw on the screen', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(askFor('echo \u001b[2Jgone'));
+    expect(t.live()?.pending?.text).not.toContain('\u001b');
+    expect(t.live()?.pending?.text).toContain('\\u001b');
+  });
+});
+
+describe('thinking streamed beside the run (Phase1Console 4)', () => {
+  const stream = (kind: 'REASONING' | 'END', callId: string, delta = '') =>
+    ({
+      sessionId: SESSION,
+      workflowRunId: RUN,
+      agentRunId: 'arn_1',
+      callId,
+      at: new Date(0).toISOString(),
+      kind,
+      ...(kind === 'REASONING' ? { delta } : {}),
+    }) as Parameters<Console['handleModelStream']>[0];
+
+  const running = (turnId: string) =>
+    ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
+
+  /** One model call that thinks, as it comes. */
+  const thought = (t: ReturnType<typeof setup>, callId: string, words: string) => {
+    t.console.handleModelStream(stream('REASONING', callId, words));
+    t.console.handleModelStream(stream('END', callId));
+  };
+
+  it('passes the thinking as it arrives, numbered, under the AgentRun that is thinking', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({
+      type: 'ActivityEvent',
+      agentRunId: 'arn_1',
+      label: 'planner',
+      phase: 'THINKING',
+      at: new Date(0).toISOString(),
+    });
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'First, '));
+    expect(t.live()?.thinking).toMatchObject([
+      { id: 'exe_1', number: 1, label: 'planner', state: 'OPEN', text: 'First, ' },
+    ]);
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'then more.'));
+    t.console.handleModelStream(stream('END', 'exe_1'));
+    expect(t.live()?.thinking).toMatchObject([{ state: 'DONE', text: 'First, then more.' }]);
+  });
+
+  it('numbers every call, also several in one Turn, in the order they began', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    thought(t, 'exe_1', 'one');
+    thought(t, 'exe_2', 'two');
+    thought(t, 'exe_3', 'three');
+    expect(t.live()?.thinking?.map((block) => [block.number, block.text])).toEqual([
+      [1, 'one'],
+      [2, 'two'],
+      [3, 'three'],
+    ]);
+  });
+
+  it('ignores what is not for the Session in view, and writes control characters as text', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream({
+      ...stream('REASONING', 'exe_x', 'other'),
+      sessionId: 'ses_01J00000000000000000000002',
+    });
+    expect(t.live()?.thinking).toEqual([]);
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'ok\u001b[2J'));
+    expect(t.live()?.thinking?.[0]?.text).toBe('ok\\u001b[2J');
+  });
+
+  it('closes a block that never got its end when the run waits for the user', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'cut off'));
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    expect(t.live()?.thinking?.[0]?.state).toBe('DONE');
+  });
+
+  it('closes it as aborted when the run is interrupted', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('REASONING', 'exe_1', 'cut off'));
+    await t.event({ type: 'RunStateChanged', state: 'INTERRUPTING' });
+    expect(t.live()?.thinking?.[0]?.state).toBe('ABORTED');
+  });
+
+  it('lists the blocks with /think and prints the whole of one with /think <n>', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    thought(t, 'exe_1', 'the whole first thought');
+    thought(t, 'exe_2', 'the second');
+    await t.console.submit('/think');
+    expect(t.printed.at(-1)?.text).toContain('第 1 段：main 思考');
+    expect(t.printed.at(-1)?.text).toContain('第 2 段：main 思考');
+    await t.console.submit('/think 1');
+    expect(t.printed.at(-1)).toMatchObject({ kind: 'THINKING' });
+    expect(t.printed.at(-1)?.text).toContain('the whole first thought');
+    await t.console.submit('/think 7');
+    expect(t.printed.at(-1)?.text).toContain('没有第 7 段思考');
+  });
+
+  it('says there is nothing to show before any thinking arrived', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.console.submit('/think');
+    expect(t.printed.at(-1)?.text).toContain('还没有思考内容');
+  });
+
+  it('keeps no more blocks than it is allowed to, and the numbers go on', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running('trn_1'));
+    for (let index = 1; index <= 103; index += 1)
+      thought(t, `exe_${String(index)}`, `thought ${String(index)}`);
+    const numbers = t.live()?.thinking?.map((block) => block.number) ?? [];
+    expect(numbers).toHaveLength(100);
+    expect(numbers[0]).toBe(4);
+    expect(numbers.at(-1)).toBe(103);
+    await t.console.submit('/think 1');
+    expect(t.printed.at(-1)?.text).toContain('没有第 1 段思考');
+  });
+});
+
+describe('after the Session is closed', () => {
+  it('starts the next message in a new Session, naming no run of the closed one', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    await t.console.handleSessionEvent({
+      eventId: 'evt_x',
+      sessionId: SESSION,
+      seq: 1,
+      occurredAt: new Date(0).toISOString(),
+      event: { type: 'SessionClosed', reason: 'SHUTDOWN' },
+    } as unknown as Parameters<Console['handleSessionEvent']>[0]);
+    await t.console.submit('again');
+    const starts = t.calls.filter((call) => call.name === 'startSession');
+    expect(starts).toHaveLength(2);
+    expect(starts.at(-1)?.context).toBeDefined();
+    expect(starts.at(-1)?.context).not.toHaveProperty('workflowRunId');
+  });
+});
+
+describe('a compaction the user asks for', () => {
+  it('is told why it cannot be done now, not that a request conflicted', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    t.setCompactResult({ outcome: 'REJECTED', reasonCode: 'REQUEST_CONFLICT' });
+    await t.console.submit('/compact');
+    expect(t.printed.at(-1)?.text).toContain('暂时无法压缩');
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  const running = () =>
+    ({ type: 'RunStateChanged', state: 'AWAITING_INPUT' }) as KernelToInteractionEvent;
+
+  it('shows the system at work, with the time, from the moment it is asked until it is done', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    expect(t.live()?.activity).toMatchObject([{ label: '系统', phase: '正在压缩上下文' }]);
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'USER',
+      compactedTurns: 2,
+      prunedResults: 0,
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  it('takes the line away when the run changes state without a result, as after a cancelled compaction', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    expect(t.live()?.activity).toHaveLength(1);
+    await t.event({ type: 'RunStateChanged', state: 'RUNNING' });
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  it('says the context is too short, in plain words, when there is nothing worth compacting', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    await t.event({
+      type: 'CompactionFailed',
+      trigger: 'USER',
+      reason: 'NOTHING_TO_COMPACT',
+    } as unknown as KernelToInteractionEvent);
+    expect(t.printed.at(-1)?.text).toBe('无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩');
+    expect(t.live()?.activity).toEqual([]);
+  });
+
+  it('stops saying so when it did not happen, and says why', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(running());
+    await t.console.submit('/compact');
+    await t.event({
+      type: 'CompactionFailed',
+      trigger: 'USER',
+      reason: 'SUMMARY_FAILED',
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.activity).toEqual([]);
+    expect(t.printed.at(-1)?.text).toBe('摘要没有生成，没有压缩。');
+  });
+});
+
+describe('a compaction in the history', () => {
+  it('is one step line like a tool call, not a notice', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'AUTO',
+      compactedTurns: 0,
+      prunedResults: 1,
+    } as unknown as KernelToInteractionEvent);
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'AUTO',
+      summaryRef: testArtifactRef('summary'),
+      compactedTurns: 3,
+      prunedResults: 2,
+    } as unknown as KernelToInteractionEvent);
+    // A summary that took in entries without a Turn of their own is a compaction all the same.
+    await t.event({
+      type: 'ContextCompacted',
+      trigger: 'USER',
+      summaryRef: testArtifactRef('summary'),
+      compactedTurns: 0,
+      prunedResults: 0,
+    } as unknown as KernelToInteractionEvent);
+    const steps = t.printed.filter((entry) => entry.kind === 'STEP').map((entry) => entry.text);
+    expect(steps).toEqual([
+      '✓ 已修剪 1 个较大的工具结果',
+      '✓ 已压缩较早的对话（3 个 Turn，修剪 2 个工具结果）',
+      '✓ 已压缩较早的对话',
+    ]);
+    expect(t.printed.some((entry) => entry.kind === 'NOTICE' && entry.text.includes('修剪'))).toBe(
+      false,
+    );
+  });
+});
+
+describe('an answer being written for the user (Phase1Console 4)', () => {
+  const stream = (
+    callId: string,
+    kind: 'REASONING' | 'ANSWER' | 'END',
+    at = 0,
+    agentRunId = 'arn_1',
+  ) =>
+    ({
+      sessionId: SESSION,
+      workflowRunId: RUN,
+      agentRunId,
+      callId,
+      at: new Date(at).toISOString(),
+      kind,
+      ...(kind === 'REASONING' ? { delta: 'thinking' } : {}),
+    }) as Parameters<Console['handleModelStream']>[0];
+  const running = (turnId: string) =>
+    ({ type: 'RunStateChanged', state: 'RUNNING', turnId }) as KernelToInteractionEvent;
+  const thinkingPhase = {
+    type: 'ActivityEvent',
+    agentRunId: 'arn_1',
+    label: 'planner',
+    phase: 'THINKING',
+    at: new Date(0).toISOString(),
+  } as unknown as KernelToInteractionEvent;
+
+  it('turns the line of the agent that writes it into one that says so, with its own time', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
+    t.console.handleModelStream(stream('exe_1', 'ANSWER', 1000));
+    // One line for the agent, not a second one beside it: one clock, not two.
+    expect(t.live()?.activity).toMatchObject([
+      {
+        label: 'planner',
+        phase: '正在输出回答',
+        since: new Date(1000).toISOString(),
+      },
+    ]);
+    // The thinking is over when the answer begins: its clock stops there too.
+    expect(t.live()?.thinking?.[0]).toMatchObject({
+      state: 'DONE',
+      endedAt: new Date(1000).toISOString(),
+    });
+  });
+
+  it('keeps saying so until the message itself is published', async () => {
+    const artifacts = new Map<string, string>();
+    const u = setup({ artifacts });
+    await u.console.submit('hi');
+    await u.event(thinkingPhase);
+    await u.event(running('trn_1'));
+    u.console.handleModelStream(stream('exe_1', 'ANSWER'));
+    u.console.handleModelStream(stream('exe_1', 'END'));
+    expect(u.live()?.activity[0]?.phase).toBe('正在输出回答');
+    const ref = testArtifactRef('Hello!');
+    artifacts.set(ref.artifactId, 'Hello!');
+    await u.event({
+      type: 'MessagePublished',
+      kind: 'REPLY',
+      agentLabel: 'main',
+      messageRef: ref,
+    } as unknown as KernelToInteractionEvent);
+    expect(u.live()?.activity[0]?.phase).toBe('思考中');
+    expect(u.printed.some((entry) => entry.kind === 'REPLY')).toBe(true);
+  });
+
+  it('lets the next call of an agent replace the line of the one before', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'ANSWER', 1000));
+    t.console.handleModelStream(stream('exe_1', 'END'));
+    t.console.handleModelStream(stream('exe_2', 'ANSWER', 5000));
+    expect(t.live()?.activity).toMatchObject([{ since: new Date(5000).toISOString() }]);
+  });
+
+  it('says which tool and which file an agent is writing a call for, with its own time', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
+    t.console.handleModelStream({
+      ...stream('exe_1', 'REASONING', 2000),
+      kind: 'TOOL',
+      name: 'write_file',
+    });
+    expect(t.live()?.activity).toMatchObject([
+      { phase: '正在生成 write_file', since: new Date(2000).toISOString() },
+    ]);
+    expect(t.live()?.thinking?.[0]).toMatchObject({ state: 'DONE' });
+    // The file is known later; the clock goes on from where it began.
+    t.console.handleModelStream({
+      ...stream('exe_1', 'REASONING', 3000),
+      kind: 'TOOL',
+      name: 'write_file',
+      target: 'docs/a.docx',
+    });
+    expect(t.live()?.activity).toMatchObject([
+      { phase: '正在生成 write_file docs/a.docx', since: new Date(2000).toISOString() },
+    ]);
+    // Once the call is written, the line is the tool's own again.
+    t.console.handleModelStream(stream('exe_1', 'END', 4000));
+    expect(t.live()?.activity[0]?.phase).toBe('思考中');
+  });
+
+  it('does not say it of an agent that only thinks', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'REASONING', 100));
+    expect(t.live()?.activity[0]?.phase).toBe('思考中');
+  });
+
+  it('is gone when the run waits for the user', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(thinkingPhase);
+    await t.event(running('trn_1'));
+    t.console.handleModelStream(stream('exe_1', 'ANSWER'));
+    await t.event({ type: 'RunStateChanged', state: 'AWAITING_INPUT' });
+    expect(t.live()?.activity).toEqual([]);
+  });
+});
+
+describe('how full the context is', () => {
+  const level = (used: number, limit = 1000, sessionId = SESSION) =>
+    ({
+      sessionId,
+      workflowRunId: RUN,
+      agentRunId: 'arn_1',
+      callId: 'exe_1',
+      at: new Date(0).toISOString(),
+      kind: 'CONTEXT',
+      used,
+      limit,
+    }) as Parameters<Console['handleModelStream']>[0];
+  const awaitingInput = {
+    type: 'RunStateChanged',
+    state: 'AWAITING_INPUT',
+  } as KernelToInteractionEvent;
+
+  it('is not there before the first assembly, then is the share of the limit in whole percent', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(awaitingInput);
+    expect(t.live()?.context).toBeUndefined();
+    t.console.handleModelStream(level(304));
+    expect(t.live()?.context).toBe(30);
+    t.console.handleModelStream(level(5000));
+    expect(t.live()?.context).toBe(100);
+  });
+
+  it('is not shown for another Session', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    t.console.handleModelStream(level(300, 1000, 'ses_other'));
+    expect(t.live()?.context).toBeUndefined();
+  });
+
+  it('goes when a compaction begins, whoever began it, and comes back with the next assembly', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(awaitingInput);
+    t.console.handleModelStream(level(300));
+    await t.console.submit('/compact');
+    expect(t.live()?.context).toBeUndefined();
+    t.console.handleModelStream(level(100));
+    expect(t.live()?.context).toBe(10);
+    // The run's own compaction, before a call.
+    await t.event({
+      type: 'ActivityEvent',
+      agentRunId: 'arn_1',
+      label: 'main',
+      phase: 'COMPACTING',
+      at: new Date(0).toISOString(),
+    } as unknown as KernelToInteractionEvent);
+    expect(t.live()?.context).toBeUndefined();
   });
 });
