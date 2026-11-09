@@ -13,6 +13,7 @@ export {
 } from './commands/parse-cli.js';
 export { createTerminal, runCommand, type Terminal } from './commands/run-console.js';
 export { CLI_MESSAGES } from './presentation/cli-messages.js';
+export { settleAmbiguousWidth, type AmbiguousWidth } from './presentation/terminal-width.js';
 export { buildTimeline, type ReadText, type SessionTimeline } from './log/timeline.js';
 export {
   renderSessionList,

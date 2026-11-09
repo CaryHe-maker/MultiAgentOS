@@ -1,7 +1,8 @@
 import type { ThinkingView, TranscriptRecord } from '@multiagentos/user-interaction';
 import { describe, expect, it } from 'vitest';
 import type { TailItem } from './console-store.js';
-import { safeCharWidth } from './text-input.js';
+import stringWidth from 'string-width';
+import { setAmbiguousWidth } from './terminal-width.js';
 import { blockLines, planTail, recordLines, recordRows, wrapLines } from './thinking-layout.js';
 
 const lines = (count: number, prefix = 'line'): string =>
@@ -240,17 +241,16 @@ describe('planTail', () => {
     expect(recordLines({ kind: 'USER', text: 'hi' }, 40)).toEqual(['> hi']);
   });
 
-  it('counts dashes, quotes and symbols as wide, so a terminal that draws them wide never wraps a line', () => {
-    const cut = recordLines({ kind: 'NOTICE', text: '—'.repeat(20) }, 30);
-    expect(cut.length).toBe(2);
-    for (const line of cut)
-      expect(
-        [...line].reduce((sum, ch) => sum + safeCharWidth(ch.codePointAt(0) ?? 0), 0),
-      ).toBeLessThanOrEqual(28);
-    expect(safeCharWidth(0x2014)).toBe(2);
-    expect(safeCharWidth(0x201c)).toBe(2);
-    expect(safeCharWidth(0x2713)).toBe(2);
-    expect(safeCharWidth(0x41)).toBe(1);
-    expect(safeCharWidth(0x4f60)).toBe(2);
+  it('cuts by the ruler of the terminal in use: a wide terminal gets shorter lines', () => {
+    const dashes = { kind: 'NOTICE', text: '—'.repeat(20) } as const;
+    expect(recordLines(dashes, 30)).toHaveLength(1);
+    setAmbiguousWidth('wide');
+    try {
+      const cut = recordLines(dashes, 30);
+      expect(cut).toHaveLength(2);
+      for (const line of cut) expect(stringWidth(line)).toBeLessThanOrEqual(28);
+    } finally {
+      setAmbiguousWidth('narrow');
+    }
   });
 });

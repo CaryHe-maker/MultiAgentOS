@@ -137,58 +137,6 @@ export function deleteWordBefore(state: InputState): InputState {
   return { value: state.value.slice(0, from) + state.value.slice(state.cursor), cursor: from };
 }
 
-/** Columns a character takes in a terminal: 0 for combining marks, 2 for wide ones, else 1. */
-export function charWidth(codePoint: number): number {
-  if (
-    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
-    (codePoint >= 0x200b && codePoint <= 0x200f) ||
-    (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
-  )
-    return 0;
-  if (
-    (codePoint >= 0x1100 && codePoint <= 0x115f) ||
-    (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
-    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
-    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-    (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
-    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
-    (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
-    (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
-    (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
-    (codePoint >= 0x20000 && codePoint <= 0x3fffd)
-  )
-    return 2;
-  return 1;
-}
-
-/**
- * Columns a character takes if the terminal is generous: the characters whose width depends on the
- * font and the locale (dashes and quotes, arrows, boxes, the symbols of dingbats) count as two.
- * The part of the screen that is drawn in place is cut to lines that fit by this measure, so that
- * a terminal that draws them wide still never wraps a line: a wrapped line takes a row more than
- * Ink counted, Ink then erases one row too few on the next frame, and a copy of the old frame
- * stays behind.
- */
-export function safeCharWidth(codePoint: number): number {
-  const width = charWidth(codePoint);
-  if (width !== 1) return width;
-  if (
-    codePoint === 0x00a1 ||
-    codePoint === 0x00a4 ||
-    (codePoint >= 0x00a7 && codePoint <= 0x00ae) ||
-    (codePoint >= 0x00b0 && codePoint <= 0x00bf) ||
-    codePoint === 0x00d7 ||
-    codePoint === 0x00f7 ||
-    (codePoint >= 0x2010 && codePoint <= 0x2027) ||
-    (codePoint >= 0x2030 && codePoint <= 0x205e) ||
-    (codePoint >= 0x2100 && codePoint <= 0x23ff) ||
-    (codePoint >= 0x2460 && codePoint <= 0x27bf) ||
-    (codePoint >= 0xe000 && codePoint <= 0xf8ff)
-  )
-    return 2;
-  return 1;
-}
-
 /**
  * Columns left unused at the right edge of the box, as for everything else drawn in place: a
  * terminal that draws a symbol wider than `string-width` counts it still has room for it.

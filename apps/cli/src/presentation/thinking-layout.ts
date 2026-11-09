@@ -12,7 +12,7 @@ import {
   type TranscriptRecord,
 } from '@multiagentos/user-interaction';
 import type { TailItem } from './console-store.js';
-import { safeCharWidth } from './text-input.js';
+import stringWidth from 'string-width';
 
 export interface ThinkingLine {
   readonly text: string;
@@ -20,7 +20,7 @@ export interface ThinkingLine {
 }
 
 /**
- * Text cut into pieces that fit `width` columns by the generous measure (`safeCharWidth`), line
+ * Text cut into pieces that fit `width` columns by the measure of the terminal in use (`string-width`, the ruler Ink lays out with), line
  * breaks kept. A line that has to be cut inside a word of letters is cut before the word when the
  * word fits on a line of its own.
  */
@@ -33,7 +33,7 @@ export function wrapLines(text: string, width: number): string[] {
     let space = -1;
     let usedBeforeSpace = 0;
     for (const character of line) {
-      const columns = safeCharWidth(character.codePointAt(0) ?? 0);
+      const columns = stringWidth(character);
       if (used + columns > width && current.length > 0) {
         if (space > 0 && character !== ' ') {
           lines.push(current.slice(0, space).trimEnd());

@@ -11,6 +11,7 @@ import {
   createTerminal,
   parseCli,
   runCommand,
+  settleAmbiguousWidth,
   type Terminal,
 } from '@multiagentos/cli';
 import { createSubprocessRunner } from '@multiagentos/kernel';
@@ -75,6 +76,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
   }
 
+  // Before anything is drawn: how wide the terminal draws the quotes, dashes and ellipses of Chinese
+  // text is measured once (invisibly, or taken from MAS_AMBIGUOUS_WIDTH), and every measure of the
+  // process follows it.
+  await settleAmbiguousWidth(process.stdin, process.stdout, process.env);
   const subprocess = createSubprocessRunner();
   const faults = createDeferredFaultReporter();
   const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });

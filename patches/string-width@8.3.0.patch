@@ -1,0 +1,16 @@
+diff --git a/index.js b/index.js
+index dd2a7cd83783dd1bc209832f99a3299fc7dc2174..813da2a9650d331e640180f0e345e5042a5414cd 100644
+--- a/index.js
++++ b/index.js
+@@ -148,8 +148,10 @@ export default function stringWidth(input, options = {}) {
+ 		return 0;
+ 	}
+ 
++	// MultiAgentOS: what the terminal in use draws is measured once at start and kept here, so that
++	// every caller in the process (Ink, wrap-ansi, our own code) measures with the same ruler.
+ 	const {
+-		ambiguousIsNarrow = true,
++		ambiguousIsNarrow = globalThis[Symbol.for('multiagentos.ambiguousIsNarrow')] ?? true,
+ 		countAnsiEscapeCodes = false,
+ 	} = options;
+ 
