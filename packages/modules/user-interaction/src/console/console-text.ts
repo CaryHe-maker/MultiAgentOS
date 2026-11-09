@@ -210,6 +210,11 @@ export const ConsoleText = Object.freeze({
   truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
+  /** Only when a message is over the limit: it is not sent, and nothing typed is lost. */
+  inputTooLarge: (bytes: number, limit: number): string =>
+    `消息太长（${(bytes / 1024).toFixed(0)} KB），超过 ${(limit / 1024).toFixed(0)} KB 的上限，没有发出。请缩短后再发。`,
+  /** The last line of an activity area that does not fit the screen. */
+  moreActivities: (count: number): string => `… 另有 ${String(count)} 项活动`,
   /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
   compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,

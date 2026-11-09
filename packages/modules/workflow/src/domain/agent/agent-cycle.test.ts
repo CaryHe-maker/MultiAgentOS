@@ -261,6 +261,43 @@ describe('ending', () => {
     expect(unitId(next)).toEqual(['context-assemble']);
   });
 
+  it('tells the model that text outside a tool call was not shown, and what to call instead', () => {
+    const none = replied(atModel(), []);
+    const note = none.records.find((r) => r.type === 'FEEDBACK');
+    const message = note?.type === 'FEEDBACK' ? note.message : '';
+    expect(message).toContain('nothing in it was shown to anyone');
+    expect(message).toContain('send the same answer again inside a call of reply');
+    expect(message).toContain('to keep working, call a tool');
+  });
+
+  it('names the end tools of the Agent that wrote no tool call', () => {
+    const none = replied(
+      atModel({
+        endTools: [
+          {
+            toolName: 'finish_subagent',
+            parameters: {},
+            allowedInFinal: true,
+            action: 'FINISH_SUBAGENT',
+          } as never,
+        ],
+      }),
+      [],
+    );
+    const note = none.records.find((r) => r.type === 'FEEDBACK');
+    expect(note?.type === 'FEEDBACK' ? note.message : '').toContain(
+      'inside a call of finish_subagent',
+    );
+  });
+
+  it('tells the model which tools it can call, or how to finish, when the tool does not exist', () => {
+    const done = replied(atModel(), [call('no_such_tool', {})]);
+    const note = done.records.find((r) => r.type === 'FEEDBACK');
+    const message = note?.type === 'FEEDBACK' ? note.message : '';
+    expect(message).toContain('no such tool is available to you');
+    expect(message).toContain('Call one of the tools you have, or finish with a call of reply');
+  });
+
   it('asks again when the reply has no action, and says when it was cut off', () => {
     const none = replied(atModel(), []);
     expect(none.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({ code: 'NO_ACTION' });

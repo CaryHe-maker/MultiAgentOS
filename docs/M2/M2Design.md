@@ -396,7 +396,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 
 | 控制工具 | 谁可用 | 效果 |
 |---|---|---|
-| `reply` | main | 以文字结果完成本节点，结束该 AgentRun。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
+| `reply` | main | 以文字结果完成本节点，结束该 AgentRun。**只有 `reply` 的文字会发布**：一条没有任何工具调用的消息里的文字不发布也不使用（`FEEDBACK(NO_ACTION)`），所以反馈明说"这条消息里的文字没有展示给任何人"，并点出本 Agent 的结束工具（main 是 `reply`），要它把同样的答案放进 `reply` 重发，或者继续调用工具；调用了不存在的工具（`UNKNOWN_TOOL`）时同样告诉它能调用自己有的工具，或用结束工具收尾。Agent 的系统提示词开头也写明同一条规则（main、explorer、worker、code-viewer；planner 本来就有）。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
 | `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方的节点在这次调用回来之前处于 `WAITING`（第 3.1 节），所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
 | `finish_subagent` | explorer、worker | 以结构化结果结束本 AgentRun（第 3.7 节） |
 | `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上派发一个 `HUMAN(ask / confirm / review)` 节点（调用方到它一条 `DELEGATE` 边，它回到调用方一条 `RESUME` 边，调用方在答复回来之前处于 `WAITING`）：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |

@@ -241,7 +241,8 @@ const CORE_REFUSALS: ReadonlySet<string> = new Set([
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
-  NO_ACTION: 'Your reply contained no tool call. Call a tool to continue, or finish.',
+  NO_ACTION:
+    'Your message contained no tool call, so nothing in it was shown to anyone or used: text outside a tool call is discarded.',
   OUTPUT_TRUNCATED: 'Your reply was cut off before a complete tool call. Send a shorter one.',
   CONTROL_MIXED: 'A finishing call must be the only tool call in a reply. Send it on its own.',
   CONTROL_NOT_ALLOWED: 'That control tool is not available at this point.',
@@ -257,6 +258,20 @@ const FEEDBACK = {
 /** Word for word the tool result of the refusal itself (M2Design 5.3). */
 const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
 type FeedbackCode = keyof typeof FEEDBACK;
+
+/**
+ * What the model is told to do next, where it did not call anything it can use: the Agent's own
+ * end tools are named, since only a call of one of them reaches the reader (the user reads
+ * `reply`, nothing else), and writing an answer as plain text delivers nothing.
+ */
+function nextStep(state: AgentState, code: FeedbackCode): string {
+  if (code !== 'NO_ACTION' && code !== 'UNKNOWN_TOOL') return '';
+  const ends = state.definitions.endTools.map((tool) => tool.toolName).join(' or ');
+  const finish = ends.length === 0 ? 'the finishing tool' : ends;
+  return code === 'NO_ACTION'
+    ? ` If that was your answer, send the same answer again inside a call of ${finish}; to keep working, call a tool.`
+    : ` Call one of the tools you have, or finish with a call of ${finish}.`;
+}
 
 const withdrawnOf = (state: AgentState): readonly string[] =>
   state.spawnWithdrawn && state.definitions.spawnTool !== undefined
@@ -295,7 +310,10 @@ function feedback(
     agentRunId: state.agentRunId,
     code,
     message:
-      message ?? (code === 'TOOL_REJECTED' || code === 'TODOS_UPDATED' ? '' : FEEDBACK[code]),
+      message ??
+      (code === 'TOOL_REJECTED' || code === 'TODOS_UPDATED'
+        ? ''
+        : `${FEEDBACK[code]}${nextStep(state, code)}`),
     ...(toolCallId === undefined ? {} : { toolCallId }),
   };
 }

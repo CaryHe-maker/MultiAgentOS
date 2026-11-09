@@ -19,6 +19,7 @@ import {
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
+import { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './input-limit.js';
 import type {
   ActivityLine,
   ConsoleView,
@@ -476,6 +477,10 @@ export class Console {
   async submit(line: string): Promise<void> {
     const input = line.trim();
     if (input.length === 0) return;
+    if (exceedsInputLimit(input)) {
+      this.#notice(text.inputTooLarge(inputBytes(input), MAX_INPUT_BYTES));
+      return;
+    }
     this.#hint = undefined;
     const pending = this.#pending[0];
     if (pending !== undefined) {
@@ -590,6 +595,10 @@ export class Console {
     const sessionId = this.#sessionId;
     const workflowRunId = this.#workflowRunId;
     const { name, text: note } = addressed(raw);
+    if (exceedsInputLimit(note)) {
+      this.#notice(text.inputTooLarge(inputBytes(note), MAX_INPUT_BYTES));
+      return;
+    }
     if (
       this.#runState !== 'RUNNING' ||
       sessionId === undefined ||

@@ -8,17 +8,55 @@ const NEWLINE = '\n';
  * Pure functions, so the box can be tested without a terminal: `value` is the text, `cursor` an
  * index into it that always stands between two characters (never inside a surrogate pair), and
  * every function returns the next state.
+ *
+ * A long paste is not put into `value`: one placeholder character stands for it (a private-use
+ * character, `PASTE_BASE` plus its index) and `pastes` keeps the text. The placeholder is one
+ * character, so moving over it and deleting it are one step; the box draws it as
+ * `[paste 14 lines]`; `expand` gives the real text back for sending.
  */
 
 export interface InputState {
   readonly value: string;
   readonly cursor: number;
+  /** The text behind each placeholder in `value`, by index. */
+  readonly pastes?: readonly string[];
 }
 
 export const EMPTY_INPUT: InputState = { value: '', cursor: 0 };
 
 /** The box holding `value`, with the cursor at its end (a message taken back, a history entry). */
 export const inputOf = (value: string): InputState => ({ value, cursor: value.length });
+
+/** A paste of more than this many characters becomes a placeholder. */
+export const PASTE_FOLD_CHARS = 15;
+/** The first placeholder character; the box holds at most `PASTE_LIMIT` of them. */
+const PASTE_BASE = 0xe000;
+const PASTE_LIMIT = 256;
+const MARKS = new RegExp(
+  `[${String.fromCharCode(PASTE_BASE)}-${String.fromCharCode(PASTE_BASE + PASTE_LIMIT - 1)}]`,
+  'gu',
+);
+
+/** Typed or pasted text can never hold a placeholder character of its own. */
+const cleanText = (text: string): string => text.replace(/\r\n?/gu, NEWLINE).replace(MARKS, '');
+
+/** What a placeholder says: how much was pasted. */
+export function pasteLabel(text: string): string {
+  const lines = text.split(NEWLINE).length;
+  return lines > 1 ? `[paste ${String(lines)} lines]` : `[paste ${String(text.length)} chars]`;
+}
+
+const pasteOf = (state: InputState, mark: string): string =>
+  state.pastes?.[mark.charCodeAt(0) - PASTE_BASE] ?? '';
+
+/** The text as the box draws it: placeholders written out as their labels. */
+const shown = (state: InputState, text: string): string =>
+  text.replace(MARKS, (mark) => pasteLabel(pasteOf(state, mark)));
+
+/** The text as it is sent: placeholders replaced by what was pasted. */
+export function expand(state: InputState): string {
+  return state.value.replace(MARKS, (mark) => pasteOf(state, mark));
+}
 
 const isLowSurrogate = (code: number): boolean => code >= 0xdc00 && code <= 0xdfff;
 const isHighSurrogate = (code: number): boolean => code >= 0xd800 && code <= 0xdbff;
@@ -37,12 +75,26 @@ function after(value: string, index: number): number {
     : index + 1;
 }
 
-/** Text typed or pasted at the cursor; line ends become line feeds. */
+/** Text typed at the cursor; line ends become line feeds. */
 export function insert(state: InputState, text: string): InputState {
-  const clean = text.replace(/\r\n?/gu, '\n');
+  const clean = cleanText(text);
   return {
+    ...state,
     value: state.value.slice(0, state.cursor) + clean + state.value.slice(state.cursor),
     cursor: state.cursor + clean.length,
+  };
+}
+
+/** Text pasted at the cursor: a long one becomes one placeholder, a short one is typed text. */
+export function insertPaste(state: InputState, text: string): InputState {
+  const clean = cleanText(text);
+  const pastes = state.pastes ?? [];
+  if (clean.length <= PASTE_FOLD_CHARS || pastes.length >= PASTE_LIMIT) return insert(state, clean);
+  const mark = String.fromCharCode(PASTE_BASE + pastes.length);
+  return {
+    value: state.value.slice(0, state.cursor) + mark + state.value.slice(state.cursor),
+    cursor: state.cursor + 1,
+    pastes: [...pastes, clean],
   };
 }
 
@@ -50,6 +102,7 @@ export function backspace(state: InputState): InputState {
   if (state.cursor === 0) return state;
   const from = before(state.value, state.cursor);
   return {
+    ...state,
     value: state.value.slice(0, from) + state.value.slice(state.cursor),
     cursor: from,
   };
@@ -59,6 +112,7 @@ export function deleteForward(state: InputState): InputState {
   if (state.cursor >= state.value.length) return state;
   const to = after(state.value, state.cursor);
   return {
+    ...state,
     value: state.value.slice(0, state.cursor) + state.value.slice(to),
     cursor: state.cursor,
   };
@@ -115,6 +169,7 @@ export function moveVertical(state: InputState, direction: -1 | 1): InputState |
 export function deleteToLineStart(state: InputState): InputState {
   const { start } = lineBounds(state);
   return {
+    ...state,
     value: state.value.slice(0, start) + state.value.slice(state.cursor),
     cursor: start,
   };
@@ -124,6 +179,7 @@ export function deleteToLineStart(state: InputState): InputState {
 export function deleteToLineEnd(state: InputState): InputState {
   const { end } = lineBounds(state);
   return {
+    ...state,
     value: state.value.slice(0, state.cursor) + state.value.slice(end),
     cursor: state.cursor,
   };
@@ -134,7 +190,11 @@ export function deleteWordBefore(state: InputState): InputState {
   let from = state.cursor;
   while (from > 0 && /\s/u.test(state.value[from - 1] ?? '')) from -= 1;
   while (from > 0 && !/\s/u.test(state.value[from - 1] ?? '')) from -= 1;
-  return { value: state.value.slice(0, from) + state.value.slice(state.cursor), cursor: from };
+  return {
+    ...state,
+    value: state.value.slice(0, from) + state.value.slice(state.cursor),
+    cursor: from,
+  };
 }
 
 /**
@@ -158,7 +218,7 @@ export function wrapLikeInk(text: string, width: number): string[] {
 }
 
 /** What the box draws for one line of its text: the lead, and the text with the cursor in it. */
-export interface BoxLine {
+interface BoxLine {
   readonly lead: string;
   /** The text before the cursor, the character under it (a space at the end) and the rest. */
   readonly before: string;
@@ -169,7 +229,7 @@ export interface BoxLine {
 }
 
 /** The lines of the box as they are drawn; the cursor line carries the cell the cursor stands on. */
-export function boxLines(state: InputState, prefix: string, continuation: string): BoxLine[] {
+function boxLines(state: InputState, prefix: string, continuation: string): BoxLine[] {
   const lines: BoxLine[] = [];
   let start = 0;
   for (const [index, line] of state.value.split(NEWLINE).entries()) {
@@ -180,61 +240,153 @@ export function boxLines(state: InputState, prefix: string, continuation: string
       const real = [...line.slice(column)][0];
       lines.push({
         lead,
-        before: line.slice(0, column),
-        under: real ?? ' ',
-        after: real === undefined ? '' : line.slice(column + real.length),
+        before: shown(state, line.slice(0, column)),
+        under: real === undefined ? ' ' : shown(state, real),
+        after: real === undefined ? '' : shown(state, line.slice(column + real.length)),
         here,
       });
-    } else lines.push({ lead, before: line, under: '', after: '', here });
+    } else lines.push({ lead, before: shown(state, line), under: '', after: '', here });
     start += line.length + 1;
   }
   return lines;
 }
 
-/** The width of the text beside the lead: what is left of the box after it, as Ink lays it out. */
-const textWidth = (lead: string, columns: number): number =>
-  columns - BOX_MARGIN - stringWidth(lead);
+/** One screen row of the box: the lead, and the text with the cursor character in it, if it is here. */
+export interface BoxRow {
+  readonly lead: string;
+  readonly before: string;
+  readonly under: string;
+  readonly after: string;
+  readonly here: boolean;
+}
 
-const textOf = (line: BoxLine): string => `${line.before}${line.under}${line.after}`;
-
-/** Rows the whole box takes: the rows each line is cut into, and a line is at least one row. */
-export function boxRows(
-  state: InputState,
-  prefix: string,
-  continuation: string,
-  columns: number,
-): number {
-  return boxLines(state, prefix, continuation).reduce(
-    (sum, line) => sum + wrapLikeInk(textOf(line), textWidth(line.lead, columns)).length,
-    0,
-  );
+export interface BoxLayout {
+  readonly rows: readonly BoxRow[];
+  /** Where the cell under the cursor is, counted from the top-left of the box. */
+  readonly cursorRow: number;
+  readonly cursorColumn: number;
 }
 
 /**
- * Where the terminal cursor belongs, counted from the top-left of the box: the row, and the column
- * of the first cell of the character under the cursor. The text before the cursor is cut the way
- * Ink cuts the whole line (cutting is sequential, so a prefix is cut like the beginning of the
- * whole); if the character under the cursor does not fit on that row it starts the next one.
+ * The box cut into the rows it is drawn as, and where the terminal cursor belongs: each line of
+ * the text is cut as Ink cuts it (`wrapLikeInk`) in the width that is left beside its lead, and the
+ * rest of a long line goes on under the text, not under the lead. The cursor is in the row that
+ * holds the first cell of the character under it; one that does not fit the end of a row starts
+ * the next.
  */
-export function cursorCell(
+export function layoutBox(
   state: InputState,
   prefix: string,
   continuation: string,
   columns: number,
-): { readonly row: number; readonly column: number } {
-  let row = 0;
+): BoxLayout {
+  const rows: BoxRow[] = [];
+  let cursorRow = 0;
+  let cursorColumn = 0;
   for (const line of boxLines(state, prefix, continuation)) {
-    const width = textWidth(line.lead, columns);
-    if (!line.here) {
-      row += wrapLikeInk(line.before, width).length;
-      continue;
+    const leadWidth = stringWidth(line.lead);
+    const text = `${line.before}${line.under}${line.after}`;
+    const blank = ' '.repeat(leadWidth);
+    let offset = 0;
+    for (const [index, piece] of wrapLikeInk(text, columns - BOX_MARGIN - leadWidth).entries()) {
+      const lead = index === 0 ? line.lead : blank;
+      const start = offset;
+      offset += piece.length;
+      const at = line.before.length;
+      if (!line.here || at < start || at >= offset) {
+        rows.push({ lead, before: piece, under: '', after: '', here: false });
+        continue;
+      }
+      const stop = Math.min(offset, at + line.under.length) - start;
+      rows.push({
+        lead,
+        before: piece.slice(0, at - start),
+        under: piece.slice(at - start, stop),
+        after: piece.slice(stop),
+        here: true,
+      });
+      cursorRow = rows.length - 1;
+      cursorColumn = leadWidth + stringWidth(piece.slice(0, at - start));
     }
-    const before = wrapLikeInk(line.before, width);
-    const through = wrapLikeInk(`${line.before}${line.under}`, width);
-    const last = before.at(-1) ?? '';
-    return through.length > before.length
-      ? { row: row + before.length, column: stringWidth(line.lead) }
-      : { row: row + before.length - 1, column: stringWidth(line.lead) + stringWidth(last) };
   }
-  return { row, column: 0 };
+  return { rows, cursorRow, cursorColumn };
+}
+
+/** The box shows at most this many rows, and never fewer than the least, whatever the terminal. */
+export const BOX_MAX_ROWS = 10;
+export const BOX_MIN_ROWS = 2;
+
+/** The rows the box may take on a terminal of `terminalRows` rows. */
+export const boxHeight = (terminalRows: number): number =>
+  Math.max(BOX_MIN_ROWS, Math.min(BOX_MAX_ROWS, terminalRows - 8));
+
+/** Which rows of a box too tall for its height are drawn, and which side has more. */
+export interface BoxWindow {
+  /** Index of the first drawn row of the box. */
+  readonly top: number;
+  /** How many rows of the box are drawn (the markers are not counted). */
+  readonly count: number;
+  readonly hiddenAbove: boolean;
+  readonly hiddenBelow: boolean;
+}
+
+/**
+ * The window onto a box of `total` rows that is at most `height` rows tall, markers included: a
+ * side that has more rows hidden has a `…` row in place of one row of text. The window stays where
+ * it was (`top`) while the cursor is in it, and moves only as far as it must to show the cursor;
+ * at least one row of text is always drawn.
+ */
+export function windowOf(total: number, cursorRow: number, top: number, height: number): BoxWindow {
+  if (total <= height) return { top: 0, count: total, hiddenAbove: false, hiddenBelow: false };
+  const shape = (first: number): BoxWindow => {
+    const hiddenAbove = first > 0;
+    const room = height - (hiddenAbove ? 1 : 0);
+    const hiddenBelow = first + room < total && room - 1 >= 1;
+    return { top: first, count: hiddenBelow ? room - 1 : room, hiddenAbove, hiddenBelow };
+  };
+  let first = Math.min(Math.max(0, top), total - 1);
+  if (cursorRow < first) first = cursorRow;
+  while (cursorRow >= first + shape(first).count) first += 1;
+  // No empty room at the end: show more of the rows above instead.
+  while (first > 0 && first + shape(first).count > total) first -= 1;
+  return shape(first);
+}
+
+/** What is drawn of the box: the rows of the window, the markers, and where the cursor stands. */
+export interface BoxView {
+  readonly rows: readonly BoxRow[];
+  readonly above: boolean;
+  readonly below: boolean;
+  /** The index of the first drawn row of the whole box: the next view starts from it. */
+  readonly top: number;
+  /** Screen rows the box takes: the rows and the markers. */
+  readonly shown: number;
+  /** The cursor, counted from the top-left of what is drawn (a marker above counts as a row). */
+  readonly cursorRow: number;
+  readonly cursorColumn: number;
+}
+
+/** The box cut into rows (`layoutBox`) and into the window of at most `height` rows (`windowOf`). */
+export function viewBox(
+  state: InputState,
+  prefix: string,
+  continuation: string,
+  columns: number,
+  height: number,
+  top: number,
+): BoxView {
+  const layout = layoutBox(state, prefix, continuation, columns);
+  const window = windowOf(layout.rows.length, layout.cursorRow, top, height);
+  const rows = layout.rows.slice(window.top, window.top + window.count);
+  const above = window.hiddenAbove;
+  const below = window.hiddenBelow;
+  return {
+    rows,
+    above,
+    below,
+    top: window.top,
+    shown: rows.length + (above ? 1 : 0) + (below ? 1 : 0),
+    cursorRow: layout.cursorRow - window.top + (above ? 1 : 0),
+    cursorColumn: layout.cursorColumn,
+  };
 }

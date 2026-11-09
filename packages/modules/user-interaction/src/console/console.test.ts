@@ -1121,3 +1121,29 @@ describe('how full the context is', () => {
     expect(t.live()?.context).toBeUndefined();
   });
 });
+
+describe('the size of a message', () => {
+  it('is sent up to 100 KB, with nothing said about it', async () => {
+    const t = setup();
+    await t.console.submit('a'.repeat(100 * 1024));
+    expect(t.named('startSession')).toHaveLength(1);
+    expect(t.printed.some((record) => record.text.includes('太长'))).toBe(false);
+  });
+
+  it('is not sent beyond 100 KB, and the console says why, counting bytes and not characters', async () => {
+    const t = setup();
+    // 40,000 characters of three bytes each are 120,000 bytes.
+    await t.console.submit('你'.repeat(40_000));
+    expect(t.named('startSession')).toHaveLength(0);
+    expect(t.printed.at(-1)?.text).toContain('消息太长（117 KB），超过 100 KB 的上限，没有发出');
+  });
+
+  it('is not sent as a note beyond 100 KB either', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'RUNNING' });
+    await t.console.steer('b'.repeat(100 * 1024 + 1));
+    expect(t.named('steerRun')).toHaveLength(0);
+    expect(t.printed.at(-1)?.text).toContain('太长');
+  });
+});
