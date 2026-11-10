@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { MemorySessionPersistence } from '../test-support/memory-session-persistence.js';
 import { SessionLogStore, SessionStoreFailure } from './session-log-store.js';
+import { lastWorkspaceOf } from '../domain/workspace/workspace-binding.js';
 import { settleOpenCalls, settleStaleRecords } from './settle-stale.js';
 
 const root = '/repository';
@@ -56,7 +57,7 @@ describe('creating and appending', () => {
     expect(started.seq).toBe(2);
     const lines = persistence.linesOf(logKey(sessionId));
     expect(lines.every((line) => validate(SessionLogRecordSchema, line).ok)).toBe(true);
-    expect(await store.list(root)).toMatchObject([{ sessionId, turnCount: 0, status: 'ACTIVE' }]);
+    expect(await store.list()).toMatchObject([{ sessionId, turnCount: 0, status: 'ACTIVE' }]);
   });
 
   it('leaves seq unchanged when a write fails', async () => {
@@ -303,7 +304,7 @@ describe('settling what was open', () => {
 });
 
 describe('Session list', () => {
-  it('keeps the last line per Session, newest first, for this repository only', async () => {
+  it('keeps the last line per Session, newest first, with the folder each was last worked on in', async () => {
     let clock = 0;
     const persistence = new MemorySessionPersistence();
     const store = new SessionLogStore(persistence, () => new Date(1_000_000 + (clock += 1000)));
@@ -317,9 +318,12 @@ describe('Session list', () => {
     await store.open(first, digest);
     await store.recordTurnClosed();
     await store.close();
-    expect((await store.list(root)).map((entry) => [entry.sessionId, entry.turnCount])).toEqual([
-      [first, 1],
-      [second, 0],
+    expect(
+      (await store.list()).map((entry) => [entry.sessionId, entry.turnCount, entry.repositoryRoot]),
+    ).toEqual([
+      [first, 1, root],
+      [other, 0, '/elsewhere'],
+      [second, 0, root],
     ]);
   });
 
@@ -332,11 +336,84 @@ describe('Session list', () => {
     const titleRef = { artifactId: `art_${sha256}`, sha256, size: 1, mediaType: 'text/plain' };
     await store.setTitle(titleRef);
     await store.setTitle({ ...titleRef, size: 2 });
-    expect((await store.list(root))[0]?.titleRef?.size).toBe(1);
+    expect((await store.list())[0]?.titleRef?.size).toBe(1);
     await store.close();
     await store.remove(sessionId);
-    expect(await store.list(root)).toEqual([]);
+    expect(await store.list()).toEqual([]);
     expect(persistence.directories.has(sessionId)).toBe(false);
+  });
+});
+
+describe('binding to a folder (M2Design 2.3)', () => {
+  const kinds = (records: readonly { type: string }[]) => records.map((record) => record.type);
+
+  it('records the change, shows the new folder in the list, and is the last binding after a reopen', async () => {
+    const persistence = new MemorySessionPersistence();
+    const store = new SessionLogStore(persistence);
+    const sessionId = newId('ses');
+    await store.create(createInput(sessionId));
+    await store.close();
+    await store.open(sessionId, digest);
+    const bound = await store.bindWorkspace({ repositoryRoot: '/b', previousRoot: root });
+    expect(bound).toMatchObject({
+      type: 'WORKSPACE_BOUND',
+      repositoryRoot: '/b',
+      previousRoot: root,
+    });
+    expect((await store.list()).map((entry) => entry.repositoryRoot)).toEqual(['/b']);
+    await store.close();
+    const reopened = await store.open(sessionId, digest);
+    expect(kinds(reopened.records)).toContain('WORKSPACE_BOUND');
+    expect(lastWorkspaceOf(reopened.records)).toBe('/b');
+  });
+
+  it('can be repeated, back and forth, and the log stays valid and numbered', async () => {
+    const persistence = new MemorySessionPersistence();
+    const store = new SessionLogStore(persistence);
+    const sessionId = newId('ses');
+    await store.create(createInput(sessionId));
+    await store.close();
+    let current = root;
+    for (const next of ['/b', root, '/b', '/c', root]) {
+      await store.open(sessionId, digest);
+      await store.bindWorkspace({ repositoryRoot: next, previousRoot: current });
+      current = next;
+      await store.close();
+    }
+    const reopened = await store.open(sessionId, digest);
+    const bindings = reopened.records.filter((record) => record.type === 'WORKSPACE_BOUND');
+    expect(
+      bindings.map((record) => record.type === 'WORKSPACE_BOUND' && record.repositoryRoot),
+    ).toEqual(['/b', root, '/b', '/c', root]);
+    expect(reopened.records.map((record) => record.seq)).toEqual(
+      reopened.records.map((_, index) => index + 1),
+    );
+    expect(lastWorkspaceOf(reopened.records)).toBe(root);
+    expect((await store.list())[0]?.repositoryRoot).toBe(root);
+  });
+
+  it('is refused with no Session open', async () => {
+    const store = new SessionLogStore(new MemorySessionPersistence());
+    await expect(store.bindWorkspace({ repositoryRoot: '/b', previousRoot: root })).rejects.toThrow(
+      'no Session is open',
+    );
+  });
+
+  it('keeps the Sessions of every folder in one list, each with its own', async () => {
+    const store = new SessionLogStore(new MemorySessionPersistence());
+    const [first, second] = [newId('ses'), newId('ses')];
+    await store.create(createInput(first));
+    await store.close();
+    await store.create({ ...createInput(second), repositoryRoot: '/b' });
+    await store.close();
+    await store.open(first, digest);
+    await store.bindWorkspace({ repositoryRoot: '/c', previousRoot: root });
+    await store.close();
+    expect(
+      Object.fromEntries(
+        (await store.list()).map((entry) => [entry.sessionId, entry.repositoryRoot]),
+      ),
+    ).toEqual({ [first]: '/c', [second]: '/b' });
   });
 });
 

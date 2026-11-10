@@ -137,7 +137,9 @@ export class WorkspaceSnapshots {
   async load(): Promise<void> {
     await this.#deps.index.repairTail();
     for await (const line of this.#deps.index.readAll()) {
-      if (line.kind === 'TURN_STARTED')
+      // The Session was opened in another folder: what came before has no way back from here.
+      if (line.kind === 'EPOCH') this.#turns.length = 0;
+      else if (line.kind === 'TURN_STARTED')
         this.#turns.push({
           turnId: line.turnId,
           ...(line.startSnapshot === undefined ? {} : { startSnapshot: line.startSnapshot }),
@@ -155,6 +157,20 @@ export class WorkspaceSnapshots {
         for (const turn of this.#turns)
           if (line.revertedTurnIds.includes(turn.turnId)) turn.reverted = true;
     }
+  }
+
+  /**
+   * The Session is opened in another folder (M2Design 2.3). The Turns so far were taken of the
+   * old one: they stay in the index and the repository, and none of them can be undone or diffed
+   * from now on. The first snapshot of the new folder starts a chain of its own.
+   */
+  async startEpoch(): Promise<void> {
+    await this.#deps.index.append({
+      kind: 'EPOCH',
+      repositoryRoot: this.#deps.repositoryRoot,
+      at: this.#deps.now().toISOString(),
+    });
+    this.#turns.length = 0;
   }
 
   async #git(

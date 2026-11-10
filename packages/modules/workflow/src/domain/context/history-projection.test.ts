@@ -228,10 +228,15 @@ describe('project instructions', () => {
     ]);
   });
 
-  it('repeats the same content once, and shows changed content again', () => {
-    expect(
-      instructions([loaded(run, '1', true), loaded(secondRun, '1', true), loaded(secondRun, '2')]),
-    ).toHaveLength(2);
+  it('shows the same content once, and what changed takes the place of what it replaces', () => {
+    expect(instructions([loaded(run, '1', true), loaded(secondRun, '1', true)])).toHaveLength(1);
+    const changed = instructions([
+      loaded(run, '1', true),
+      loaded(secondRun, '1', true),
+      loaded(secondRun, '2'),
+    ]);
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({ ref: ref('2') });
   });
 });
 

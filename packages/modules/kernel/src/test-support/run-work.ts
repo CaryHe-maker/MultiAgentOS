@@ -93,6 +93,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     repositoryExclusions: [],
     pinAgent: () => Promise.resolve({ ok: true, agent: testPinnedAgent() }),
     compactionAgent: () => testPinnedAgent(),
+    retainArtifacts: () => Promise.resolve(true),
     storeQuestionContent: () => Promise.resolve(testArtifactRef()),
     inputIsValid: () => true,
     preset: 'standard',

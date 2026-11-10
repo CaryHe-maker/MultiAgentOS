@@ -25,7 +25,7 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 | `registerAgentRun`、`submitUnit`、`endAgentRun`、`closeRun`、`requestHuman`、`readProjectFile` | `workflow` | `sessionId`、`workflowRunId` |
 | `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） |
 | `updateActivity` | `workflow` | `sessionId`、`workflowRunId` |
-| `reserveDelegation`、`releaseDelegation` | `workflow` | `sessionId`、`workflowRunId` |
+| `reserveDelegation`、`releaseDelegation`、`retainArtifacts` | `workflow` | `sessionId`、`workflowRunId` |
 | `startSession`、`startRun` | `user-interaction` | 无 |
 | `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 |
 | `answerAuthorization`、`answerHuman` | `user-interaction` | `sessionId`、`workflowRunId` |

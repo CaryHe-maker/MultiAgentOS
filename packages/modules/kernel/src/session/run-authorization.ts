@@ -300,6 +300,41 @@ export class RunAuthorization {
     };
   }
 
+  /** `external.read`: once for each external folder, for the run (Kernel/Core 5h). */
+  askExternalRead(root: string, path: string, waiter: string, agentRunId: string): AccessCheck {
+    const key = resourceKey('external.read', root);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'external.read', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'external.read',
+        root,
+        path,
+        provider: this.#deps.provider,
+      },
+    };
+  }
+
+  /** The external folders the user allowed in this run, for finding which one covers a path. */
+  externalRoots(): readonly string[] {
+    return this.#entries.flatMap((entry) =>
+      entry.capability === 'external.read' &&
+      entry.scope === 'RUN' &&
+      entry.effect === 'ALLOW' &&
+      'resourceKey' in entry
+        ? [entry.resourceKey]
+        : [],
+    );
+  }
+
   /**
    * A command (Kernel/Core 5b). A line that must be asked every time (critical, unreusable) is
    * never merged; any other is one question per (work directory, line) for all who wait on it.

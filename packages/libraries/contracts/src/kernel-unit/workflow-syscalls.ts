@@ -90,6 +90,16 @@ export const ReleaseDelegationRequestSchema = closed(
 );
 export type ReleaseDelegationRequest = Static<typeof ReleaseDelegationRequestSchema>;
 
+/**
+ * Keeps results that a handover carries for as long as the Session lives, so that what was handed
+ * over can still be read after the days an output is otherwise kept (Kernel/Core 5g).
+ */
+export const RetainArtifactsRequestSchema = closed(
+  { ...inRun, refs: Type.Array(ArtifactRefSchema, { minItems: 1, maxItems: 21 }) },
+  'kernel.unit.RetainArtifactsRequest.v1',
+);
+export type RetainArtifactsRequest = Static<typeof RetainArtifactsRequestSchema>;
+
 /** The material of a compaction: the projection of the target as it is now (Interface/WorkflowKernel 2.4). */
 export const ReportCompactionSourceRequestSchema = closed(
   {

@@ -6,11 +6,12 @@ description: Control tool that ends a worker with what it changed and checked.
 purpose: CONTROL
 modelName: finish_subagent
 modelDescription: >-
-  Return your result to the agent that started you, and stop; call it alone. The whole call must stay under 8000 characters: what is longer is cut, so put the answer first and keep it short. summary says what
-  you did. changedFiles lists every file you changed. status is done, partial or blocked.
-  validation lists the commands you ran to check your work, each with its exit code and the
-  toolCallId of the result that holds its output. blockers says what stopped you, including any path you needed outside
-  your writeScope. When the task had acceptance criteria, acceptance answers each by its index
+  Return your result to the agent that started you, and stop; call it alone. summary says what you
+  did, in at most 2000 characters, and comes first: it is what the reader always sees. report is
+  the detail, in full, without a length limit. changedFiles lists every file you changed. status
+  is done, partial or blocked. validation lists the commands you ran to check your work, each
+  with its exit code. blockers says what stopped you, including any path you needed outside your
+  writeScope. When the task had acceptance criteria, acceptance answers each by its index
   (starting at 0) with met, not_met or unknown.
 parametersContract:
   kind: contract

@@ -35,6 +35,8 @@ type Schema = Parameters<typeof validate>[0];
 export interface AgentUnit {
   readonly ref: PinnedDefinitionRef;
   readonly failurePolicy: Readonly<Partial<Record<string, FailureHandling>>>;
+  /** The Unit reads outside the workspace (`external.read`): its failures are the user's to judge. */
+  readonly external?: true;
 }
 export interface AgentTool {
   readonly modelName: string;
@@ -175,6 +177,11 @@ export type AgentEnding =
   | {
       readonly kind: 'DEGRADED';
       readonly reason: WrapUpReason | 'BUDGET_EXHAUSTED' | 'FINAL_CALL_INVALID';
+      /**
+       * The finishing call of the last round, which was refused for its form: what it said is kept,
+       * and the caller reads it as written with the reason it was refused.
+       */
+      readonly unfinished?: { readonly source: ControlSource; readonly why: string };
     }
   | { readonly kind: 'FAILED'; readonly code: ReasonCode }
   /** `run_subagents` was called validly in form; the runner validates the tasks. */
@@ -401,8 +408,38 @@ function degrade(
   state: AgentState,
   reason: Extract<AgentEnding, { kind: 'DEGRADED' }>['reason'],
   records: readonly NewLogRecord[],
+  unfinished?: { readonly source: ControlSource; readonly why: string },
 ): AgentTransition {
-  return ended(state, { kind: 'DEGRADED', reason }, records);
+  return ended(
+    state,
+    { kind: 'DEGRADED', reason, ...(unfinished === undefined ? {} : { unfinished }) },
+    records,
+  );
+}
+
+/**
+ * The finishing call of a last round that was refused, so that what it said is not lost: it is in
+ * the model output the round's MODEL_TURN record points at.
+ */
+function unfinishedOf(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+  records: readonly NewLogRecord[],
+  why: string,
+): { readonly source: ControlSource; readonly why: string } | undefined {
+  const call = calls.find((each) =>
+    state.definitions.endTools.some((tool) => tool.toolName === each.toolName),
+  );
+  const turn = [...records].reverse().find((record) => record.type === 'MODEL_TURN');
+  if (call === undefined || turn?.type !== 'MODEL_TURN') return undefined;
+  return {
+    source: {
+      modelTurnRequestId: turn.requestId,
+      modelOutputRef: turn.outputRef,
+      toolCallId: call.toolCallId,
+    },
+    why,
+  };
 }
 
 function nextRound(
@@ -626,7 +663,13 @@ function invalidReply(
     calls.length === 0
       ? [feedback(state, code)]
       : calls.map((call) => feedback(state, code, call.toolCallId, detail));
-  if (state.final) return degrade(state, 'FINAL_CALL_INVALID', [...records, ...notes]);
+  if (state.final)
+    return degrade(
+      state,
+      'FINAL_CALL_INVALID',
+      [...records, ...notes],
+      unfinishedOf(state, calls, records, detail ?? code),
+    );
   const regenerations = state.regenerations + 1;
   const next =
     regenerations >= config.regenerationLimit
@@ -1003,16 +1046,19 @@ function handleTool(
   const records: NewLogRecord[] = [completion(state, report)];
   const ok = report.status === 'OK';
   const declined = report.status === 'REJECTED' && report.reasonCode === 'USER_DECLINED';
+  // A failed read outside the workspace is not counted either: two of them in a row pause the run
+  // for the user, who decides whether the Agent was right to try (Kernel/Core 5h).
+  const external = !ok && pending.unit.external === true;
   // A refusal is the user's decision, not a mistake of the model.
   const consecutiveErrors = ok
     ? 0
-    : declined
+    : declined || external
       ? state.consecutiveErrors
       : state.consecutiveErrors + 1;
   let next: AgentState = {
     ...state,
     consecutiveErrors,
-    roundHadOk: state.roundHadOk || ok,
+    roundHadOk: state.roundHadOk || ok || external,
     // After a write nothing read before it may be answered with "the result is above".
     succeeded: !ok
       ? state.succeeded

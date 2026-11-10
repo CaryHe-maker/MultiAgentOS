@@ -4,9 +4,16 @@
  */
 import type { TaskSpec } from '../spec.js';
 import { DELIVERY_TASKS } from './delivery.js';
+import { EXTERNAL_TASKS } from './external.js';
+import { SUBAGENT_TASKS } from './subagents.js';
 import { SELFCHECK_TASKS } from './selfcheck.js';
 
-export const ALL_TASKS: readonly TaskSpec[] = [...SELFCHECK_TASKS, ...DELIVERY_TASKS];
+export const ALL_TASKS: readonly TaskSpec[] = [
+  ...SELFCHECK_TASKS,
+  ...DELIVERY_TASKS,
+  ...SUBAGENT_TASKS,
+  ...EXTERNAL_TASKS,
+];
 
 /** `selfcheck.answer`, or a tag as `tag:safety`, or `all`. */
 export function select(tasks: readonly TaskSpec[], wanted: readonly string[]): TaskSpec[] {

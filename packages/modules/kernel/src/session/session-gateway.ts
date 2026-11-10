@@ -19,6 +19,7 @@ import {
   ReadProjectFileRequestSchema,
   RegisterAgentRunRequestSchema,
   ReleaseDelegationRequestSchema,
+  RetainArtifactsRequestSchema,
   ReserveDelegationRequestSchema,
   ReportSessionCommandRequestSchema,
   ReportSessionListRequestSchema,
@@ -75,6 +76,11 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   releaseDelegation: {
     caller: 'workflow',
     schema: ReleaseDelegationRequestSchema,
+    needs: 'RUN',
+  },
+  retainArtifacts: {
+    caller: 'workflow',
+    schema: RetainArtifactsRequestSchema,
     needs: 'RUN',
   },
   reportCompactionSource: {
@@ -261,6 +267,7 @@ export class SessionGateway {
     registerAgentRun: this.#port('workflow', 'registerAgentRun'),
     reserveDelegation: this.#port('workflow', 'reserveDelegation'),
     releaseDelegation: this.#port('workflow', 'releaseDelegation'),
+    retainArtifacts: this.#port('workflow', 'retainArtifacts'),
     reportCompactionSource: this.#port('workflow', 'reportCompactionSource'),
     ackCompaction: this.#port('workflow', 'ackCompaction'),
     submitUnit: this.#port('workflow', 'submitUnit'),

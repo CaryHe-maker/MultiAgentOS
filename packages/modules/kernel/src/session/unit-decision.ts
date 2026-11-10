@@ -140,6 +140,11 @@ export interface UnitDemand {
   readonly command?: CommandDemand;
   /** What a `web.fetch` asks for, and the sites the user has forbidden beforehand. */
   readonly web?: { readonly url: string; readonly deniedDomains: readonly string[] };
+  /**
+   * What the system made of the absolute path of an external read: the folder an answer allows, or
+   * none when the path cannot be read (Core 5h). Core decides on that alone.
+   */
+  readonly external?: { readonly root: string | undefined };
 }
 
 export type UnitDecision =
@@ -160,6 +165,7 @@ export type UnitDecision =
         | 'COMMAND_DENIED'
         | 'ADDRESS_FORBIDDEN'
         | 'DOMAIN_DENIED'
+        | 'EXTERNAL_PATH_UNAVAILABLE'
         | 'SANDBOX_UNAVAILABLE'
         | 'ADMISSION_CHECK_FAILED';
     }
@@ -218,6 +224,31 @@ const granted = (
         ? entry.resourceKey === resourceKey || entry.resourceKey === ANY_HOST
         : writeRootCovers(entry.resourceKey, resourceKey)),
   );
+
+/** An entry for a folder covers it and everything below, as a path of the file system does. */
+const externalCovers = (entryRoot: string, root: string): boolean =>
+  root === entryRoot || root.startsWith(entryRoot.endsWith('/') ? entryRoot : `${entryRoot}/`);
+
+/** Kernel/Core 5h: one question for each external folder; nothing is asked for what cannot be read. */
+function decideExternal(demand: UnitDemand, entries: readonly AuthorizationEntry[]): UnitDecision {
+  const { external } = demand;
+  if (external === undefined) return { kind: 'REFUSE', reasonCode: 'ADMISSION_CHECK_FAILED' };
+  const { root } = external;
+  if (root === undefined) return { kind: 'REFUSE', reasonCode: 'EXTERNAL_PATH_UNAVAILABLE' };
+  const decided = answered(entries, demand, 'external.read');
+  if (decided === 'DENY') return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
+  const covered = entries.some(
+    (entry) =>
+      entry.capability === 'external.read' &&
+      entry.scope === 'RUN' &&
+      entry.effect === 'ALLOW' &&
+      'resourceKey' in entry &&
+      externalCovers(entry.resourceKey, root),
+  );
+  if (decided === 'ALLOW' || covered)
+    return { kind: 'ALLOW', capability: 'external.read', resourceKey: root };
+  return { kind: 'ASK', capability: 'external.read', resourceKey: root, critical: false };
+}
 
 /** The user refused this very host in this AgentRun: other hosts are not affected. */
 const hostRefused = (
@@ -361,6 +392,8 @@ function decide(
   // ②
   if (!ceiling.capabilities.has(capability))
     return { kind: 'REFUSE', reasonCode: 'CAPABILITY_NOT_GRANTED' };
+
+  if (capability === 'external.read') return decideExternal(demand, entries);
 
   // ③ The resource key of a write is the write root it falls under.
   let resourceKey: string = REPOSITORY_ROOT_PATH;

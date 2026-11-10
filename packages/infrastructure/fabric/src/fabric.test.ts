@@ -134,7 +134,7 @@ describe('InProcessFabric', () => {
         eventId: 'evt_123456',
         seq: 1,
         occurredAt: '2026-10-21T00:00:00.000Z',
-        event: { type: 'SessionListQuery', queryId: 'slq_123456', repositoryRoot: '/repo' },
+        event: { type: 'SessionListQuery', queryId: 'slq_123456' },
       },
       context,
     );

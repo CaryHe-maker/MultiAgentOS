@@ -139,6 +139,15 @@ export type AttemptAudit =
       readonly command: string;
       readonly workdir: string;
     }
+  /** A read outside the workspace was let through: what was asked, and the folder that allowed it. */
+  | {
+      readonly type: 'EXTERNAL_READ';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly executionKind: string;
+      readonly path: string;
+      readonly root: string;
+    }
   | {
       readonly type: 'SETTLEMENT_ANOMALY';
       readonly unitAttemptId: string;
@@ -439,6 +448,7 @@ export class RunAttempts {
             | 'COMMAND_DENIED'
             | 'ADDRESS_FORBIDDEN'
             | 'DOMAIN_DENIED'
+            | 'EXTERNAL_PATH_UNAVAILABLE'
             | 'SANDBOX_UNAVAILABLE'
             | 'WRITE_SCOPE_DELEGATED'
             | 'ADMISSION_CHECK_FAILED';

@@ -51,6 +51,7 @@ interface LogRecordBase {
 | 类型 | 字段（除公共字段外） |
 |---|---|
 | `SESSION_STARTED` | `formatVersion: 1`、`repositoryRoot`、`definitionsDigest`、`definitionVersions`（Agent、Unit、Tool、Model、Prompt 与模板的 `id@version` 列表） |
+| `WORKSPACE_BOUND` | `repositoryRoot`（现在工作的文件夹）、`previousRoot`；Session 级记录。Session 在别的文件夹里被打开时由 Workflow 追加，早于这次打开开启的运行；此后和文件夹绑定的东西从这里重新开始：读后才能改的基准、项目指令、快照与撤销的范围；对话与产物照旧（M2Design 第 2.3 节）。当前文件夹是最后一条 `WORKSPACE_BOUND`，没有则是 `SESSION_STARTED.repositoryRoot` |
 | `WORKFLOW_RUN_STARTED` | `mode`、`templateRef?`（与 `RunStart` 相同：`ORCHESTRATION` 时必填）、`preset`、`initialInput` |
 | `WORKFLOW_RUN_ENDED` | `closeReason`（含 `PROCESS_EXITED`、`FORKED`） |
 | `TURN_STARTED` | `promptNodeId`、`template?` |
@@ -74,6 +75,7 @@ interface LogRecordBase {
 | `REQUEST_CONTEXT` | `agentRunId`、`modelRef`、`thinking`、`toolsDigest`、`runtimeContext`（工作目录、沙盒状态、当前日期）；变化时追加，投影在该位置加入一条运行时上下文条目（M2Design 第 9.2 节） |
 | `CONTEXT_ASSEMBLED` | `requestId`、`projectionDigest`、`tokenCount`、`tokenBudget`、`headDigest`（ContextPack 的 system 段、工具定义与模型参数的摘要，压缩的估算用它判断实测值是否可用）、`elidedEntries?`（只在收尾调用的保险去掉条目时出现，为被去掉条目的 `seq`） |
 | `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`（待办的正文在模型调用的输出产物中）、`counts: { total, pending, inProgress, done, cancelled }` |
+| `REFERENCES_REGISTERED` | `referenceId`（`ref_N`，N 为本 Session 已登记的交接数加一，只从日志推出）、`from: { agentRunId, label }`、`to`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`items: { toolCallId, tool, ref }[]`（最多 21 项；`ref` 指向完整输出，没被截断时是预览）；一个 AgentRun 交给另一个 AgentRun 的材料，`read_output` 读取 `ref_N/toolCallId` 的唯一依据，只追加不改（M2Design 第 3.7 节 0a） |
 | `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） |
 | `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`keptSeqs`（范围内原样保留的条目的 `seq`：`PINNED` 条目与 Kernel 选出的用户消息，M2Design 第 9.6 节）、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` |
 | `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'`；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 |
@@ -128,7 +130,7 @@ interface GraphEdgeRecord {
 ```ts
 interface SessionIndexLine {
   sessionId: string;
-  repositoryRoot: string;      // 来自 Kernel 的 Session 命令，只用于按仓库筛选
+  repositoryRoot: string;      // 现在工作的文件夹：新建时来自 Kernel 的 Session 命令，换文件夹打开后由 WORKSPACE_BOUND 更新；`/sessions` 用它分组
   createdAt: string;
   lastActiveAt: string;
   turnCount: number;
@@ -177,14 +179,16 @@ interface ArtifactOwnerLine {
   mediaType: string;
   sha256: string;
   size: number;
-  retention: 'SESSION' | 'EXPIRING';  // M2Design 第 10.1 节
+  retention: 'SESSION' | 'EXPIRING' | 'ONCE';  // M2Design 第 10.1 节；ONCE：只给一次使用做的，用完即释放
   source: 'PRODUCED' | 'INHERITED';   // INHERITED：Fork 时从原 Session 继承
   fullOutput?: true;                  // 某次工具调用的完整输出：截断时另存的完整输出，或修剪时为未截断的预览补登的一行；output-read 只接受带此标记的引用
   retainedSince: string;              // 保留期的起点：PRODUCED 为写入时间，INHERITED 沿用原 Session 的登记
+  releasedAt?: string;                // 只有 ONCE：使用它的那次尝试结束时追加的一行带上，此后读取一律按过期处理（Kernel/Execution 第 6d 节）
   at: string;
 }
 ```
 
+- `ONCE` 的正文同样在满 `expiringRetentionDays` 后过期（兜底）；使用它的那次尝试结束时 Execution 追加一行带 `releasedAt` 的登记，此后读取立即返回 `ARTIFACT_EXPIRED`，下一次回收删除正文。`SESSION` 与 `EXPIRING` 的登记从不被释放。
 - `EXPIRING` 的正文在 `retainedSince` 之后满 `expiringRetentionDays`（缺省 7 天）即可回收，此后读取一律返回 `ARTIFACT_EXPIRED`，不论正文是否已被删除；`SESSION` 的正文只在没有任何 ACTIVE 的 Session 拥有时回收。
 - 只有 Session 引用为 ACTIVE 的 Session 的归属文件参与回收的标记（[Infrastructure/ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节）。
 
@@ -197,8 +201,11 @@ type SnapshotIndexLine =
   | { kind: 'TURN_STARTED'; turnId: string; turnSeq: number; viewId: 'main'; startSnapshot?: string; at: string }
   | { kind: 'TURN_ENDED'; turnId: string; endSnapshot?: string;
       changedFiles: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[]; at: string }
+  | { kind: 'EPOCH'; repositoryRoot: string; at: string }
   | { kind: 'REVERTED'; revertedTurnIds: string[]; forced: boolean; backupSnapshot?: string; at: string };
 ```
+
+`EPOCH` 在 Session 于另一个文件夹里被打开时追加（M2Design 第 2.3 节）：它之前的 Turn 拍的是旧文件夹，此后不能回退也不能比较改动，读取索引时丢弃；这些行留在文件里，快照对象留在影子仓库中，没有任何东西再读它们。重复追加无害（打开中途崩溃后再来一次）。
 
 没有 `TURN_ENDED` 的 Turn 是进程退出或停机留下的（M2Design 第 4.6 节）。
 

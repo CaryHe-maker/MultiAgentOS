@@ -53,6 +53,7 @@ import type {
   DelegationReserved,
   RegisterAgentRunRequest,
   ReleaseDelegationRequest,
+  RetainArtifactsRequest,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
   ReserveDelegationRequest,
@@ -424,6 +425,11 @@ export interface WorkflowGatewayPort {
   ): Promise<DelegationReserved | SyscallRejected>;
   releaseDelegation(
     request: ReleaseDelegationRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Keeps the results of a handover for the whole Session (Kernel/Core 5g). */
+  retainArtifacts(
+    request: RetainArtifactsRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** The material of a compaction, as Kernel asked for it with `CompactionSourceQuery`. */

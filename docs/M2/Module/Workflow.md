@@ -57,7 +57,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 命令 | 处理 | 回复 |
 |---|---|---|
 | `CREATE` | 创建 Session 目录与日志；追加 `SESSION_STARTED`；在 Session 列表追加一行；取得 Session 锁 | `READY` |
-| `OPEN` | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId`、`turnCount` 与（有名称时的）`titleRef`，取自 Session 列表索引，Kernel 据此在 `SessionOpened` 里写出名称与轮数（打开已有 Session 时和列表一致） |
+| `OPEN`（命令带本进程的仓库根） | 取得 Session 锁；`repairTail`，截断时追加 `LOG_TAIL_REPAIRED`；逐行读取并校验，`seq` 不连续时失败；比较 `definitionsDigest`；结算遗留记录（第 5.2 节）；把日志里最后一次记录的文件夹（最后一条 `WORKSPACE_BOUND`，没有则 `SESSION_STARTED`）和命令带来的仓库根比较，不同就追加 `WORKSPACE_BOUND { repositoryRoot, previousRoot }` 并把会话列表的这一行改成新的文件夹（`FORK` 之后同样比较）；重建投影；记下最后一个未答复的人类请求（如有），在随后的运行中重新发起 | `READY`，带 `lastTurnId`、`turnCount` 与（有名称时的）`titleRef`，取自 Session 列表索引，Kernel 据此在 `SessionOpened` 里写出名称与轮数（打开已有 Session 时和列表一致） |
 | `CLOSE` | 释放 Session 锁；清空内存投影 | `DONE` |
 | `DELETE`（系统级事件 `SessionDelete`，Session 未打开） | 删除 Session 目录中 `workflow` 命名空间的文件；Session 列表追加 `status: DELETED` | `DONE` |
 | `FORK` | 从当前 Session 分出 | — |
@@ -76,7 +76,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 
 每次 Session 的状态、标题、Turn 数、最后活动时间变化时，向 `session-index.jsonl` 追加一行（Interface/Persistence 第 3 节）：
 新建时、收到第一条 `HumanAnswered` 时（`titleRef`）、收到 `TurnClosed` 时（Turn 数、最后活动时间）、删除时。
-收到系统级事件 `SessionListQuery` 时，按 `repositoryRoot` 筛选、按最后活动时间倒序，以 `reportSessionList` 回复；不需要打开任何 Session。
+收到系统级事件 `SessionListQuery` 时，列出会话索引里的全部 Session（不按文件夹筛选；`/sessions` 由控制台按文件夹分组，其他文件夹的要确认才能打开，M2Design 第 2.3 节），以 `reportSessionList` 回复；不需要打开任何 Session。
 
 ## 6. TaskGraph
 
@@ -119,6 +119,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 1. **登记**：AGENT 节点就绪时 `registerAgentRun`（带 `nodeId`、`effort`、`display.label`）；`effort` 取 Agent 定义的 `defaultEffort`。
 2. **启动 Unit**：main 没有启动 Unit，运行开启时不碰仓库；`analyze` 的 code-viewer 提交 `repository-orient`（M2Design 第 3.9 节）。
    **项目指令**：本运行第一个读取仓库的工具成功后，在下一次组装之前以 `readProjectFile` 读取 `AGENTS.md`，追加 `PROJECT_FILE_LOADED`；条目排在这一轮的工具结果之后，工具结果与它的调用不被隔开。
+   一个文件在投影里只有一个位置：同一路径再次加载且内容不同时，新的取代旧的；遇到 `WORKSPACE_BOUND` 时所有项目指令条目（根目录和子目录的）与已加载的记录一并清掉，投影里追加一条给模型的说明（旧文件夹的文件、路径和项目指令可能不再适用，新文件夹的项目指令会重新读取，此前的改动不能回退），新运行在新文件夹里按上面的办法重新读取。读后才能改的基准与待加载的子目录指令同样只算 `WORKSPACE_BOUND` 之后的。
 3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；`finish` 与 `handoff-to-code-viewer` 只在 `analyze` 中出现；`update_todos` 见第 9 条。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；
    为 EXHAUSTED 时不再发起模型调用，按 M1 的规则结束该 AgentRun（main 为降级回复，见第 9.1 节）。
@@ -126,7 +127,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
    额度与上限只限制工具 Unit，收尾所需的 `context-assemble`、`model-call` 与发布 Unit 不受影响。
 5. **业务熔断**（M2Design 第 3.4 节）：重复意图在第 3 次时于工具结果中附加警告、第 5 次时不再提交并进入收尾（`REPEATED_INTENT`）；
    连续 5 个工具 Unit 以 REJECTED 或 FAILED 结束时进入收尾（`CONSECUTIVE_ERRORS`）。命令的非零退出码不算出错。
-   授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果为 `the user rejected tool "<工具名>"`；它不结束 Turn，也不结束 AgentRun，不计入连续出错（M2Design 第 5.3 节）。
+   授权被拒（`REJECTED(USER_DECLINED)`）与其他工具拒绝一样作为工具结果交给模型，结果为 `the user rejected tool "<工具名>"`；它不结束 Turn，也不结束 AgentRun，不计入连续出错（M2Design 第 5.3 节）。读工作区之外的文件失败（Unit 声明了 `external.read`）也一样不计入连续出错，并且那一轮不算"无进展"：连续两次失败由 Kernel 暂停运行交给用户判断（Kernel/Core 第 5h 节），Workflow 若在这之前先收尾，用户给出正确路径继续时 Agent 就只剩一次收尾调用。
    被拒绝的工具在该 AgentRun 之后的轮次不再提交，以 `FEEDBACK(TOOL_REJECTED)` 和同样的文字回答。这也是固定规则，不经过 Unit 的 `failurePolicy`。
 5a. **轮次上限**：`maxRounds` 含最后一轮。第 `maxRounds - 1` 轮结束后，第 `maxRounds` 轮就是 final-call（`wrapUpReason = ROUND_LIMIT`），与 token 额度触顶走同一条路径，模型不会得到比上限更多的调用（`maxRounds = 1` 时仍给一轮工作轮，再收尾）。
    最后一轮之前 5 个工作轮起，STATUS 追加一行预警，写明还剩几个工作轮、第几轮起只能汇报；预警在 STATUS 中，不改变缓存前缀。
@@ -135,6 +136,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 7. M1 的 `DUPLICATE_CALL` 检查保留；它与重复意图不同：前者拒绝同一 AgentRun 内已成功执行过的相同调用，后者计数最近 20 个 UnitIntent。
    M1 中"先前结果已被裁剪时不算重复"的例外改为：先前结果已被压缩的摘要取代，或在本次收尾调用的保险中被去掉时，不算重复。
 8. **`read_output` 的编号翻译**（M2Design 第 8.2 节）：提交前按参数中的 `toolCallId`，在发起调用的 AgentRun 的范围内查找那次工具调用的 `UNIT_COMPLETED`：
+   - **别的 AgentRun 交来的东西**：编号形如 `ref_N/toolCallId` 时只查登记表（`REFERENCES_REGISTERED`，M2Design 第 3.7 节 0a），不走下面按调用查找的规则：编号存在、读取者就是 `to`、`items` 里有这个 `toolCallId`，取该项的 `ref` 作为 `fullRef`（没被截断的也能读）；其余一律按"没有这个编号的调用"反馈，不说明原因；
    - 范围按日志计算，不按当前投影：main 为本 Session 主线上 main 的全部工具调用（跨 WorkflowRun，包括已被压缩取代的、Fork 时继承的）；
      模板中的 AGENT 节点与 SubAgent 为该 AgentRun 自己步骤中的工具调用；
    - 被 `/undo` 回退的 Turn（`WORKSPACE_REVERTED` 中列出的）中的工具调用不在范围内，按"没有这个编号的调用"反馈（M2Design 第 8.2 节）；

@@ -20,7 +20,9 @@ import {
   type ReactElement,
 } from 'react';
 import { ConsoleStore } from './console-store.js';
-import { CLEAR_SCREEN, clearOnResize } from './resize.js';
+import { FrameTracker } from './frame-tracker.js';
+import { answerResize } from './resize.js';
+import { traced } from './ui-trace.js';
 import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
   EMPTY_INPUT,
@@ -101,13 +103,7 @@ function seconds(from: string, now: number): number {
  * that waits for the user shows no seconds at all: nothing is taking long, and a counter there
  * only reads as being hurried (docs/M2/Phase1Console.md 2.1, UI-3).
  */
-function Activity({
-  line,
-  now,
-}: {
-  readonly line: ActivityLine;
-  readonly now: number;
-}): ReactElement {
+function activityText(line: ActivityLine, now: number): string {
   const phase =
     line.retry !== undefined
       ? [
@@ -116,11 +112,17 @@ function Activity({
       : line.waitsForUser === true
         ? [line.phase, line.tool]
         : [line.phase, line.tool, `${String(seconds(line.since, now))}s`];
-  return h(
-    Text,
-    { color: 'gray', wrap: 'truncate-end' },
-    `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`,
-  );
+  return `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`;
+}
+
+function Activity({
+  line,
+  now,
+}: {
+  readonly line: ActivityLine;
+  readonly now: number;
+}): ReactElement {
+  return h(Text, { color: 'gray', wrap: 'truncate-end' }, activityText(line, now));
 }
 
 function useClock(running: boolean): number {
@@ -171,9 +173,11 @@ function elide(lines: readonly string[], cap: number): string[] {
 function ConsoleApp({
   store,
   input,
+  tracker,
 }: {
   readonly store: ConsoleStore;
   readonly input: ConsoleInput;
+  readonly tracker?: FrameTracker | undefined;
 }): ReactElement {
   const {
     static: written,
@@ -364,7 +368,29 @@ function ConsoleApp({
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line: after the rows above the box, in the row and column of the text.
-  setCursorPosition({ x: view.cursorColumn, y: plan.rows + below + view.cursorRow });
+  const cursorAt = { x: view.cursorColumn, y: plan.rows + below + view.cursorRow };
+  setCursorPosition(cursorAt);
+  // The lines of this frame, as text, in the order they are drawn: what the tracker needs to erase
+  // the frame exactly, whatever width the window has by then (frame-tracker.ts).
+  tracker?.report({
+    columns,
+    cursor: cursorAt,
+    lines: [
+      ...plan.items.flatMap((item) =>
+        item.kind === 'RECORD' ? item.lines.map(row) : item.lines.map((line) => row(line.text)),
+      ),
+      ...activityShown.map((line) => activityText(line, now)),
+      ...(activityMore > 0 ? [ConsoleText.moreActivities(activityMore)] : []),
+      ...questionLines.map(row),
+      ...(live.queued.length > 0 ? [ConsoleText.queued(live.queued.length)] : []),
+      status.length > 0 ? `------ ${status}${share} ------` : ' ',
+      ...(view.above ? [`${CONTINUATION}…`] : []),
+      ...view.rows.map(
+        (each) => `${each.lead}${each.before}${each.here ? each.under : ''}${each.after}`,
+      ),
+      ...(view.below ? [`${CONTINUATION}…`] : []),
+    ],
+  });
 
   return h(
     Box,
@@ -437,8 +463,12 @@ function ConsoleApp({
   );
 }
 
-export function consoleApp(store: ConsoleStore, input: ConsoleInput): ReactElement {
-  return h(ConsoleApp, { store, input });
+export function consoleApp(
+  store: ConsoleStore,
+  input: ConsoleInput,
+  tracker?: FrameTracker,
+): ReactElement {
+  return h(ConsoleApp, { store, input, tracker });
 }
 
 export interface InkConsole {
@@ -455,8 +485,12 @@ export function createInkConsole(
   return {
     store,
     mount: (input) => {
+      // `MAS_UI_TRACE=<file>` records what the screen is told, for a frame left behind (ui-trace.ts).
+      traced(stdout, process.env['MAS_UI_TRACE']);
       const known = new Set(stdout.listeners('resize') as ((...args: unknown[]) => void)[]);
-      const instance = render(consoleApp(store, input), {
+      const tracker = new FrameTracker();
+      const detach = tracker.attach(stdout);
+      const instance = render(consoleApp(store, input, tracker), {
         stdin,
         stdout,
         exitOnCtrlC: false,
@@ -466,14 +500,15 @@ export function createInkConsole(
         interactive: Boolean(stdout.isTTY),
       });
       if (stdout.isTTY) {
-        // A resize is answered once, when it is over, with a clean screen (see `resize.ts`).
-        const stop = clearOnResize(stdout, known, () => {
-          stdout.write(CLEAR_SCREEN);
-          instance.clear();
+        // A resize is answered at once: the frame is erased as it is now, at the new width, and
+        // drawn again; the conversation above it is not touched (see `frame-tracker.ts`).
+        const stop = answerResize(stdout, known, () => {
+          tracker.erase(stdout.columns > 0 ? stdout.columns : 80, () => instance.clear());
           store.repaint();
         });
         void instance.waitUntilExit().then(stop, stop);
       }
+      void instance.waitUntilExit().then(detach, detach);
       return instance;
     },
   };

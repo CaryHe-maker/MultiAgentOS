@@ -307,15 +307,37 @@ export class SessionLogStore {
     await this.#updateIndex(sessionId, (line) => ({ ...line, status: 'DELETED' }));
   }
 
-  /** Newest first; needs no open Session. */
-  async list(repositoryRoot: string): Promise<SessionListEntry[]> {
+  /**
+   * The Session is worked on in another folder from now on: the record says so, and the list
+   * shows the folder it was last worked on in (M2Design 2.3).
+   */
+  async bindWorkspace(input: {
+    readonly repositoryRoot: string;
+    readonly previousRoot: string;
+  }): Promise<SessionLogRecord> {
+    if (this.#sessionId === undefined) throw new Error('no Session is open');
+    const bound = await this.append({
+      type: 'WORKSPACE_BOUND',
+      repositoryRoot: input.repositoryRoot,
+      previousRoot: input.previousRoot,
+    });
+    await this.#updateIndex(this.#sessionId, (line) => ({
+      ...line,
+      repositoryRoot: input.repositoryRoot,
+    }));
+    return bound;
+  }
+
+  /** Every Session that exists, newest first, each with the folder it was last worked on in; needs no open Session. */
+  async list(): Promise<SessionListEntry[]> {
     const lines = [...(await this.#latest()).values()];
     return lines
-      .filter((line) => line.repositoryRoot === repositoryRoot && line.status === 'ACTIVE')
+      .filter((line) => line.status === 'ACTIVE')
       .sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt))
       .slice(0, 1000)
       .map((line) => ({
         sessionId: line.sessionId,
+        repositoryRoot: line.repositoryRoot,
         createdAt: line.createdAt,
         lastActiveAt: line.lastActiveAt,
         turnCount: line.turnCount,

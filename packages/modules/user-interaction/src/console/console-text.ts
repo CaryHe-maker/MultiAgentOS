@@ -123,7 +123,12 @@ const RUN_STATE: Readonly<Record<string, string>> = {
 export const ConsoleText = Object.freeze({
   welcome: '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
-  noSessions: '本仓库还没有对话。',
+  noSessions: '还没有对话。',
+  otherFolderSessions: '其他文件夹的对话（打开时会改在当前文件夹里继续，要先确认）：',
+  otherFolderSessionLine: (index: number, title: string, turns: number, folder: string) =>
+    `  ${String(index)}. ${title}（${String(turns)} 轮，原来在 ${folder}）`,
+  confirmOtherFolder: (folder: string, index: number) =>
+    `这个对话原来在 ${folder}。在这里打开它：\n  · 原来文件夹的撤销记录和快照不再可用，从现在起重新建立；\n  · 它的项目指令（AGENTS.md）以这个文件夹的为准，会重新读取并重新问你是否信任；\n  · 模型会被告知文件夹换了，对话里以前提到的文件可能不存在或已不同。\n确认请再输入一次 /resume ${String(index)}。`,
   sessionLine: (index: number, title: string, turns: number) =>
     `  ${String(index)}. ${title}（${String(turns)} 轮）`,
   untitled: '（无标题）',
@@ -147,6 +152,22 @@ export const ConsoleText = Object.freeze({
     `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}
 [y 本次运行内只允许这个网站 / a 本次运行内允许所有公开网站 / n 拒绝]`,
+  externalRead: (root: string, path: string, provider: string) =>
+    `【只读访问外部文件】允许 Agent 读取外部仓库 ${root} 吗？（它要读：${path}）读取的内容会发送至 ${provider}；排除规则和受保护路径内的文件不会读取。本次运行内不再询问。[y/n]`,
+  externalPaused: (
+    attempts: readonly {
+      readonly path: string;
+      readonly reason: 'UNAVAILABLE' | 'DECLINED' | 'FAILED';
+    }[],
+  ) =>
+    `⚠ Agent 连续两次读取工作区外的文件都没有成功，已暂停。它试过：\n${attempts
+      .map(
+        (attempt) =>
+          `  · ${attempt.path}（${{ UNAVAILABLE: '路径不存在或不允许读取', DECLINED: '被你拒绝', FAILED: '读取失败' }[attempt.reason]}）`,
+      )
+      .join(
+        '\n',
+      )}\n路径对的话，用 /continue <正确的绝对路径> 继续；它不该读这里，Ctrl+C 中止，或 /undo 回退这一轮。`,
   writeRoot: (root: string) =>
     `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
   command: (q: CommandQuestion) => commandQuestionText(q),

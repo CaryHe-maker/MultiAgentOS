@@ -72,7 +72,9 @@ export const ArtifactOwnerLineSchema = closed(
     mediaType: text(128),
     sha256: Sha256Schema,
     size: count(),
-    retention: Type.Enum(['SESSION', 'EXPIRING']),
+    retention: Type.Enum(['SESSION', 'EXPIRING', 'ONCE']),
+    /** Set when the one it was made for is done with it; from then on it reads as expired. */
+    releasedAt: Type.Optional(TimestampSchema),
     source: Type.Enum(['PRODUCED', 'INHERITED']),
     fullOutput: Type.Optional(Type.Literal(true)),
     retainedSince: TimestampSchema,
@@ -103,6 +105,15 @@ export const SnapshotIndexLineSchema = Type.Union(
       turnId: IdSchemas.turnId,
       endSnapshot: Type.Optional(text(64)),
       changedFiles: Type.Array(snapshotChange),
+      at: TimestampSchema,
+    }),
+    /**
+     * The Session was opened in another folder: the Turns before this line have no way back, since
+     * their snapshots are of another folder. The lines stay, and nothing reads them any more.
+     */
+    closed({
+      kind: Type.Literal('EPOCH'),
+      repositoryRoot: text(4096),
       at: TimestampSchema,
     }),
     closed({

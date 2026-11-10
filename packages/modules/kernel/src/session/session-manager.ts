@@ -26,7 +26,16 @@ export interface SessionManagerDeps {
   /** Builds a Session's actor; `onClosed` fires once when it is finished. */
   readonly openActor: (
     sessionId: string,
-    session: { readonly onClosed: () => void; readonly discard: () => Promise<void> },
+    session: {
+      readonly onClosed: () => void;
+      readonly discard: () => Promise<void>;
+      /**
+       * The Session was last worked on in another folder and the user agreed to open it here: its
+       * snapshots begin again first, then `rebind` makes this folder the Session's (M2Design 2.3).
+       */
+      readonly workspaceChanged: boolean;
+      readonly rebind: () => Promise<void>;
+    },
   ) => Promise<SessionActor>;
   /** Removes what Kernel wrote for a deleted Session; a failure is reported, not raised. */
   readonly removeSessionFiles: (sessionId: string) => Promise<void>;
@@ -116,7 +125,11 @@ export class SessionManager {
     if (this.#open === open) this.#open = undefined;
   }
 
-  async #begin(sessionId: string, start: Parameters<SessionActor['start']>[0]): Promise<void> {
+  async #begin(
+    sessionId: string,
+    start: Parameters<SessionActor['start']>[0],
+    workspaceChanged = false,
+  ): Promise<void> {
     let closed: () => void = () => undefined;
     const finished = new Promise<void>((resolve) => {
       closed = resolve;
@@ -132,6 +145,8 @@ export class SessionManager {
           await this.#deps.refs.markDeleted(sessionId);
           await this.#deps.removeSessionFiles(sessionId);
         },
+        workspaceChanged,
+        rebind: () => this.#deps.refs.rebind(sessionId),
       }),
       closed: finished,
     };
@@ -184,9 +199,15 @@ export class SessionManager {
         return (await open.continueIfClosed())
           ? { requestId, outcome: 'ACCEPTED', sessionId }
           : refused(requestId, 'SESSION_IN_USE');
-      if (!this.#deps.refs.isOpenable(sessionId)) return refused(requestId, 'SESSION_NOT_FOUND');
+      const { refs } = this.#deps;
+      if (!refs.isOpenable(sessionId)) return refused(requestId, 'SESSION_NOT_FOUND');
+      // Another folder's Session is opened here only when the user said so: Kernel decides it,
+      // whatever the client showed (M2Design 2.3).
+      const elsewhere = !refs.isHere(sessionId);
+      if (elsewhere && request.confirmWorkspaceChange !== true)
+        return refused(requestId, 'WORKSPACE_CHANGE_NOT_CONFIRMED');
       await this.#closeOpen('SWITCHED');
-      await this.#begin(sessionId, { kind: 'OPEN', requestId });
+      await this.#begin(sessionId, { kind: 'OPEN', requestId }, elsewhere);
       return { requestId, outcome: 'ACCEPTED', sessionId };
     });
   }
@@ -199,14 +220,18 @@ export class SessionManager {
         this.#queries.set(queryId, resolve);
       });
       const { outbox, refs, repositoryRoot, titleOf } = this.#deps;
-      outbox.systemToWorkflow({ type: 'SessionListQuery', queryId, repositoryRoot });
+      outbox.systemToWorkflow({ type: 'SessionListQuery', queryId });
       outbox.flush();
       const entries: SessionList['sessions'][number][] = [];
       for (const entry of refs.filterList(await sessions)) {
         const title = await titleOf(entry);
         const { sessionId, createdAt, lastActiveAt, turnCount, fork } = entry;
+        // Kernel's own reference says where the Session was last worked on.
+        const root = refs.rootOf(sessionId) ?? entry.repositoryRoot;
         entries.push({
           sessionId,
+          repositoryRoot: root,
+          here: root === repositoryRoot,
           createdAt,
           lastActiveAt,
           turnCount,

@@ -16,6 +16,8 @@ export interface TaskOutcome {
   readonly notes: readonly string[];
   readonly outputRef?: ArtifactRef;
   readonly toolCallId?: string;
+  /** The handover that carries its result and what it listed (Workflow, handover.ts). */
+  readonly referenceId?: string;
 }
 
 const NOTE_LIMIT = 300;
@@ -34,6 +36,7 @@ export function resultOf(outcome: TaskOutcome): Record<string, unknown> {
     status: outcome.status,
     notes: [...notesOf(outcome.notes)],
     ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+    ...(outcome.referenceId === undefined ? {} : { referenceId: outcome.referenceId }),
   };
 }
 
@@ -74,10 +77,12 @@ export function outcomeOf(
     notes,
     ...(ended.resultRef === undefined ? {} : { outputRef: ended.resultRef }),
     ...(typeof toolCallId === 'string' ? { toolCallId } : {}),
+    ...(typeof result['referenceId'] === 'string' ? { referenceId: result['referenceId'] } : {}),
   };
 }
 
 interface FinishArguments {
+  readonly references?: readonly string[];
   readonly changedFiles?: readonly string[];
   readonly status?: WorkerResult['status'];
   readonly acceptance?: readonly {

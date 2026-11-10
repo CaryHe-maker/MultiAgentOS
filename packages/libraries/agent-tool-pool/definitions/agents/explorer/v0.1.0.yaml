@@ -2,7 +2,7 @@ schemaVersion: v1
 kind: AGENT
 id: explorer
 version: v0.1.0
-description: A SubAgent that reads the repository and reports findings with evidence.
+description: A SubAgent that reads the repository and reports what it found.
 role: read-only investigator
 modelRef:
   id: deepseek-flash

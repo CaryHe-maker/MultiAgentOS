@@ -116,6 +116,64 @@ describe('ownership', () => {
     expect(artifacts.owns(ref)).toBe(true);
   });
 
+  it('keeps what a handover carries for the whole Session, as the full output it was', async () => {
+    const { artifacts, lines, advance } = setup();
+    const full = await artifacts.put('full', 'text/plain', 'EXPIRING', { fullOutput: true });
+    expect(await artifacts.retain([full])).toBe(true);
+    advance(30 * DAY_MS);
+    expect(await artifacts.read(full)).toEqual({ ok: true, text: 'full' });
+    expect(artifacts.isFullOutput(full)).toBe(true);
+    // Kept once: asking again changes nothing.
+    const written = lines.length;
+    expect(await artifacts.retain([full])).toBe(true);
+    expect(lines).toHaveLength(written);
+  });
+
+  it('keeps nothing when one of them is not of this Session or has expired', async () => {
+    const mine = setup();
+    const other = setup();
+    const ours = await mine.artifacts.put('a', 'text/plain', 'EXPIRING');
+    const theirs = await other.artifacts.put('b', 'text/plain', 'SESSION');
+    expect(await mine.artifacts.retain([ours, theirs])).toBe(false);
+    mine.advance(8 * DAY_MS);
+    expect(await mine.artifacts.retain([ours])).toBe(false);
+    expect(mine.artifacts.owns(ours)).toBe(false);
+  });
+
+  it('releases what was registered ONCE: it reads as expired at once, and only that', async () => {
+    const { artifacts, lines, open } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    const session = await artifacts.put('keep', 'text/plain', 'SESSION');
+    const expiring = await artifacts.put('full', 'text/plain', 'EXPIRING', { fullOutput: true });
+    expect(await artifacts.release([once, session, expiring])).toBe(once.size);
+    expect(await artifacts.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+    expect(await artifacts.read(session)).toEqual({ ok: true, text: 'keep' });
+    expect(await artifacts.read(expiring)).toEqual({ ok: true, text: 'full' });
+    // Once: releasing again writes nothing and counts nothing.
+    const written = lines.length;
+    expect(await artifacts.release([once])).toBe(0);
+    expect(lines).toHaveLength(written);
+    // A Session opened again still finds it released.
+    const reopened = open();
+    await reopened.load();
+    expect(await reopened.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+  });
+
+  it('keeps a ONCE artifact for the Session when a handover carries it, and never releases it', async () => {
+    const { artifacts } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    expect(await artifacts.retain([once])).toBe(true);
+    expect(await artifacts.release([once])).toBe(0);
+    expect(await artifacts.read(once)).toEqual({ ok: true, text: 'pack' });
+  });
+
+  it('expires a ONCE artifact that was never released, like an EXPIRING one', async () => {
+    const { artifacts, advance } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    advance(7 * DAY_MS);
+    expect(await artifacts.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+  });
+
   it('stores a user input once per inputId', async () => {
     const { artifacts, lines } = setup();
     const input = { inputId: newId('inp'), text: 'hello' };

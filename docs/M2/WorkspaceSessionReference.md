@@ -9,10 +9,11 @@
 |---|---|
 | workspace 怎么定 | 启动命令的 `--repo <path>`，缺省为当前目录；`apps/control-plane/src/index.ts` 解析成 realpath，作为进程级 `repositoryRoot` 交给组合根 |
 | 模式 | `--readonly` → `readonly` 预设（不装配 `workspace`：无写文件、无撤销）；否则 `standard`（装配文件、git、快照目录、影子文件） |
-| Session 与仓库 | Session 是"一个仓库上的持续工作档案"（[M2Design](M2Design.md) 第 2 节）；`SESSION_STARTED` 记录 `repositoryRoot`；Kernel 的 Session 引用为 `sessionId → { repositoryRoot, status }`；Session 列表按 `repositoryRoot` 筛选（[Interface/Persistence](Interface/Persistence.md)） |
-| 运行中能否切换 | 不能：一个进程一个仓库。因此模型不需要被告知"目录变了" |
+| Session 与文件夹 | Session 是一个会话档案，任一时刻在一个文件夹里工作（[M2Design](M2Design.md) 第 2.3 节）；Kernel 的 Session 引用记着它最后一次工作的文件夹（`sessionId → { repositoryRoot, status }`，换文件夹追加新的一行），日志里是 `SESSION_STARTED` 与之后的 `WORKSPACE_BOUND` |
+| 运行中能否切换 | 不能：一个进程一个文件夹，一次 WorkflowRun 内不换。换文件夹只发生在打开 Session 的时刻，也就是新的 WorkflowRun 开始之前 |
 | 已知限制 | 不同 `dataDir` 指向同一仓库时，工作区与快照没有保护（M2Design 限制清单） |
-| 尚未核实 | 拿仓库 A 的 `sessionId` 在仓库 B 的进程里直接 OPEN，是否被明确拒绝（列表筛选能挡住正常操作，但没看到显式拒绝的代码） |
+| 在另一个文件夹里打开 | 允许，要用户确认：`openSession` 带 `confirmWorkspaceChange`，Kernel 强制，没有则 `WORKSPACE_CHANGE_NOT_CONFIRMED`；列表把本文件夹的 Session 排在前，其他文件夹的在后并写明各自的文件夹，控制台说明后果后要求再输入一次 `/resume`。换文件夹后快照另起一段、读后才能改的基准清空、旧项目指令清掉、记一条 `WORKSPACE_BOUND` 并通知模型；`mas log <sessionId>` 本来就只读数据目录，不需要仓库 |
+| 工作区目录没了 | Session 不受影响（日志、产物、快照都在数据目录里）：不能再用 `--repo` 指向它，在别的文件夹里启动，列表里它在“其他文件夹”下，确认后照常打开；在原路径重建一个目录则被当作本文件夹，打开时改动检测会把原来的文件报告为已在外部改动。运行中目录被删：工具失败、Turn 照常结束、没有快照的 Turn 不能回退（有测试：`workspace-switch-exit.test.ts`） |
 
 ## 2. OpenCode
 
@@ -90,10 +91,10 @@
 4. **权限与沙箱随目录**：授权、沙箱根、信任记录（`(repositoryRoot, path, sha256)`）、快照与撤销都以 `repositoryRoot` 为键，换目录后哪些沿用、哪些失效。
 5. **正在运行的东西**：已启动的命令和进程不随目录变（两个项目一致）。
 6. **目录不可用**：退回原始目录，还是报错。
-7. **跨仓库 OPEN 的显式拒绝**：现状中尚未核实，无论是否支持换目录都应先确认。
+7. **跨文件夹打开**：M2 的做法见第 1 节：允许，由 Kernel 要求用户确认，换文件夹后和文件夹绑定的东西从头开始。
 8. **只读预设**：`readonly` 下换目录是否允许。
 
 ## 6. 未覆盖
 
-- Claude Code 的实现（源码不在参考目录中）。
+- Claude Code 的实现（源码不在参考目录中）。下面是公开资料与用户报告，不是源码：Session 以 JSONL 存在 `~/.claude/projects/` 下按启动目录路径命名的子目录里，每条记录带当时的 `cwd`；`--resume`、`--continue` 只查找当前目录（及其 git worktree）的 Session，在别的目录按 id 恢复常报找不到，原目录被移走或删除后同样找不到，社区的办法是在原路径重建一个空目录、改子目录名，或按文件路径恢复。官方文档对代理的查找提到先找 Session 的原目录（需已信任），再找当前目录。以上以所装版本为准，我没有逐版本核对。
 - OpenCode 的 `session_move` 在服务端对权限、快照的具体处理，以及 DeepSeek Harness 在压缩时对目录信息的处理，本文没有读到对应代码。

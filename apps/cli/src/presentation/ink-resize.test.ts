@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createInkConsole } from './ink-console.js';
-import { CLEAR_SCREEN, RESIZE_SETTLE_MS } from './resize.js';
 import { connect, mounted, tick } from '../test-support/terminal-emulator.js';
 import { setAmbiguousWidth } from './terminal-width.js';
 
@@ -9,7 +8,9 @@ afterEach(() => {
   setAmbiguousWidth('narrow');
 });
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, RESIZE_SETTLE_MS + 120));
+/** Erasing the whole screen, which a resize no longer does. */
+const CLEAR_SCREEN = `${String.fromCharCode(27)}[2J${String.fromCharCode(27)}[H`;
+const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
 
 function mount() {
   const { terminal, stdin, stdout } = connect(60, 20, false);
@@ -35,47 +36,52 @@ function mount() {
 }
 
 describe('resizing the window', () => {
-  it('draws nothing while the size is changing, and the screen is cleared once when it is over', async () => {
+  it('erases only the part drawn in place, at every size, and never the whole screen', async () => {
     const t = mount();
     await tick();
     t.ink.store.print({ kind: 'USER', text: '问题' });
     t.ink.store.update({ status: '等待输入', activity: [], waiting: 0, queued: [] });
     await tick();
-    const before = t.written.length;
-    // A drag: many sizes, each a little narrower than the one before.
     for (let columns = 58; columns >= 40; columns -= 2) {
       t.resize(columns);
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    expect(t.written.length).toBe(before);
+    await tick();
     expect(t.clears()).toBe(0);
-    await settle();
-    expect(t.clears()).toBe(1);
+    const text = t.terminal.everything();
+    // The conversation is where it was, once; the status line and the box are there once.
+    expect(text.split('问题').length - 1).toBe(1);
+    expect(text.split('------ 等待输入 ------').length - 1).toBe(1);
+    expect(text.split(String.fromCharCode(10)).filter((line) => line.startsWith('›'))).toHaveLength(
+      1,
+    );
   });
 
-  it('draws the part in place again after the clear, with what was typed', async () => {
+  it('draws the part in place again with what was typed, below the conversation', async () => {
     const t = mount();
+    await tick();
+    t.ink.store.print({ kind: 'USER', text: '问题' });
     await tick();
     t.stdin.write('abc');
     await tick();
     t.resize(40);
-    await settle();
     await tick();
     const { row, rows } = t.terminal.cursor();
     expect(rows[row]).toBe('› abc');
-    // At the top of the screen: it was erased and drawn from there, not left where it was.
-    expect(row).toBeLessThanOrEqual(2);
+    expect(rows.some((each) => each.includes('问题'))).toBe(true);
+    // The box is below the conversation, not above it: nothing was erased on the way up.
+    expect(rows.findIndex((each) => each.includes('问题'))).toBeLessThan(row);
   });
 
-  it('answers a second drag the same way', async () => {
+  it('answers every size the same way, however fast they come', async () => {
     const t = mount();
     await tick();
-    t.resize(50);
-    await settle();
-    t.resize(44);
-    t.resize(38);
-    await settle();
-    expect(t.clears()).toBe(2);
+    t.ink.store.print({ kind: 'USER', text: '问题' });
+    await tick();
+    for (const columns of [50, 44, 38, 60, 60, 30, 59]) t.resize(columns);
+    await tick();
+    expect(t.clears()).toBe(0);
+    expect(t.terminal.everything().split('问题').length - 1).toBe(1);
   });
 
   it('has only its own handler on the stream, and none after the console is gone', async () => {

@@ -1,7 +1,8 @@
 import { settleOpenCalls } from './settle-stale.js';
+import { lastWorkspaceOf } from '../domain/workspace/workspace-binding.js';
+import { checkedItems, nextReferenceId, partyOf } from '../domain/handover/handover.js';
 import {
   REPOSITORY_KINDS,
-  SUBAGENT_RESULT_CHARS,
   WRITE_KINDS,
   REASON_CODE_CATEGORY,
   newId,
@@ -281,7 +282,11 @@ export class SessionRunner {
           fromSessionId: event.fromSessionId,
           repositoryRoot: event.repositoryRoot,
         });
-        this.#adopt(sessionId, event.repositoryRoot, forked.records);
+        this.#adopt(
+          sessionId,
+          event.repositoryRoot,
+          await this.#bound(event.repositoryRoot, forked.records),
+        );
         await reply({
           command: 'FORK',
           outcome: 'READY',
@@ -290,7 +295,8 @@ export class SessionRunner {
         });
       } else {
         const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
-        this.#adopt(sessionId, event.repositoryRoot, opened.records);
+        const records = await this.#bound(event.repositoryRoot, opened.records);
+        this.#adopt(sessionId, event.repositoryRoot, records);
         const lastTurn = [...opened.records].reverse().find((r) => r.type === 'TURN_STARTED');
         await reply({
           command: 'OPEN',
@@ -306,6 +312,21 @@ export class SessionRunner {
       if (!(error instanceof SessionStoreFailure)) throw error;
       await fail({ code: error.code });
     }
+  }
+
+  /**
+   * The Session is bound to the folder this process works in. When the log says another folder
+   * was the last, that is recorded now, before anything uses the Session (M2Design 2.3): Kernel
+   * has already confirmed it with the user and began the snapshots again. The same comparison
+   * on every open makes this safe to repeat after a crash between the two.
+   */
+  async #bound(
+    repositoryRoot: string,
+    records: readonly SessionLogRecord[],
+  ): Promise<readonly SessionLogRecord[]> {
+    const previousRoot = lastWorkspaceOf(records);
+    if (previousRoot === undefined || previousRoot === repositoryRoot) return records;
+    return [...records, await this.#deps.store.bindWorkspace({ repositoryRoot, previousRoot })];
   }
 
   #adopt(sessionId: string, repositoryRoot: string, records: readonly SessionLogRecord[]): void {
@@ -340,7 +361,7 @@ export class SessionRunner {
         {
           requestId: newId('req'),
           queryId: event.queryId,
-          sessions: await this.#deps.store.list(event.repositoryRoot),
+          sessions: await this.#deps.store.list(),
         },
         { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' },
       );
@@ -1243,7 +1264,12 @@ export class SessionRunner {
   ): Promise<void> {
     const found = this.#agents.get(report.agentRunId);
     if (found === undefined) return;
-    if (report.status === 'OK' && READS_REPOSITORY.has(report.executionKind))
+    // A read outside the workspace is not a read of the workspace: it must not lead to the
+    // workspace's project instructions being read, and to a question about it (Kernel/Core 5h).
+    const external = found.state.definitions.tools.some(
+      (tool) => tool.unit.external === true && tool.unit.ref.id === report.unitRef.id,
+    );
+    if (report.status === 'OK' && READS_REPOSITORY.has(report.executionKind) && !external)
       this.#readRepository = true;
     let active = found;
     if (report.status === 'OK') {
@@ -1483,15 +1509,6 @@ export class SessionRunner {
         'RESULT_INCOMPLETE',
         `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
       );
-    // With no round left to say it shorter, what was written is kept: it is cut where it is read.
-    if (canonicalJson(args).length > SUBAGENT_RESULT_CHARS && !active.state.final)
-      return this.#sendBack(
-        workflowRunId,
-        active,
-        toolCallId,
-        'RESULT_TOO_LONG',
-        `Not accepted: the result is longer than ${String(SUBAGENT_RESULT_CHARS)} characters, and what is longer is cut. Say it shorter: keep the findings that matter and leave out the rest.`,
-      );
     const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
     if (canRun && active.unchecked && !active.completionAsked) {
       this.#agents.set(active.state.agentRunId, { ...active, completionAsked: true });
@@ -1503,17 +1520,82 @@ export class SessionRunner {
         'Not accepted yet: you changed files but have not run a command that checks them since. Run the tests, the build or the linter, then finish again.',
       );
     }
-    const outcome = finishedOutcome(args, task.criteria, active.changed);
+    const finished = finishedOutcome(args, task.criteria, active.changed);
+    // Its result and the tool results it listed are handed over: those that pass, the others are
+    // only told of.
+    const handed = await this.#hand(
+      workflowRunId,
+      active,
+      { toolCallId, ref: ending.source.modelOutputRef },
+      args.references ?? [],
+    );
+    const outcome = { ...finished, notes: [...finished.notes, ...handed.notes] };
     await this.#endAgentRun(workflowRunId, active, 'ENDED');
     await this.#endNode(
       workflowRunId,
       active.state.turnId,
       active.nodeId,
       outcome.status === 'BLOCKED' ? 'FAILED' : 'SUCCEEDED',
-      resultOf({ ...outcome, toolCallId }),
+      resultOf({
+        ...outcome,
+        toolCallId,
+        ...(handed.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
+      }),
       ending.source.modelOutputRef,
     );
     return this.#advance(workflowRunId);
+  }
+
+  /**
+   * What a SubAgent hands to the AgentRun that started it (M2Design 3.7): its result, and the tool
+   * results it listed that were checked. The Kernel keeps them for the Session first; when it
+   * cannot, nothing is handed over and the result goes on without a reference.
+   */
+  async #hand(
+    workflowRunId: string,
+    active: ActiveAgent,
+    result: { readonly toolCallId: string; readonly ref: ArtifactRef },
+    listed: readonly string[],
+  ): Promise<{ readonly referenceId?: string; readonly notes: readonly string[] }> {
+    const { agentRunId, sessionId, turnId } = active.state;
+    const checked = checkedItems(this.#records, agentRunId, listed);
+    const items = [
+      { toolCallId: result.toolCallId, tool: 'finish_subagent', ref: result.ref },
+      ...checked.items,
+    ];
+    const registered = this.#records.find(
+      (record) => record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
+    );
+    const parent =
+      registered?.type === 'AGENT_RUN_REGISTERED' ? registered.parentAgentRunId : undefined;
+    const receiver = parent === undefined ? undefined : this.#agents.get(parent);
+    if (receiver === undefined) return { notes: checked.notes };
+    const kept = await this.#deps.gateway.retainArtifacts(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        refs: items.map((item) => item.ref),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (kept.outcome !== 'ACCEPTED')
+      return {
+        notes: [...checked.notes, 'system: its results could not be kept, so none are handed over'],
+      };
+    const referenceId = nextReferenceId(this.#records);
+    await this.#append([
+      {
+        type: 'REFERENCES_REGISTERED',
+        workflowRunId,
+        turnId,
+        referenceId,
+        from: { agentRunId, label: active.task?.name ?? active.agentId },
+        to: partyOf(receiver.scope),
+        items,
+      },
+    ]);
+    return { referenceId, notes: checked.notes };
   }
 
   /** A SubAgent that stops without a result: whatever it has left is the caller's to read. */
@@ -1522,6 +1604,7 @@ export class SessionRunner {
     active: ActiveAgent,
     kind: AgentEnding['kind'],
     outcome: TaskOutcome,
+    resultRef?: ArtifactRef,
   ): Promise<void> {
     await this.#endAgentRun(workflowRunId, active, kind);
     await this.#endNode(
@@ -1531,6 +1614,7 @@ export class SessionRunner {
       // A task that was cut short with the run is INTERRUPTED, whatever it had to report.
       this.#interrupted ? 'INTERRUPTED' : outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
       resultOf(outcome),
+      resultRef,
     );
   }
 
@@ -1579,14 +1663,45 @@ export class SessionRunner {
     );
   }
 
-  async #onDegraded(workflowRunId: string, active: ActiveAgent, reason: string): Promise<void> {
+  async #onDegraded(
+    workflowRunId: string,
+    active: ActiveAgent,
+    reason: string,
+    unfinished?: Extract<AgentEnding, { kind: 'DEGRADED' }>['unfinished'],
+  ): Promise<void> {
     if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
     const { onDegraded } = active.state.definitions;
     if (onDegraded === 'RETURN_PARTIAL') {
-      await this.#endTask(workflowRunId, active, 'DEGRADED', {
-        status: 'PARTIAL',
-        notes: [`stopped early: ${reason}`],
-      });
+      // What the last round wrote is not thrown away for its form: the caller gets it as written,
+      // marked as not following the form, and judges it itself.
+      const handed =
+        unfinished === undefined
+          ? undefined
+          : await this.#hand(
+              workflowRunId,
+              active,
+              { toolCallId: unfinished.source.toolCallId, ref: unfinished.source.modelOutputRef },
+              [],
+            );
+      await this.#endTask(
+        workflowRunId,
+        active,
+        'DEGRADED',
+        {
+          status: 'PARTIAL',
+          notes: [
+            `stopped early: ${reason}`,
+            ...(unfinished === undefined
+              ? []
+              : [
+                  `its last result does not follow the required form (${unfinished.why}); it is shown as written`,
+                ]),
+          ],
+          ...(unfinished === undefined ? {} : { toolCallId: unfinished.source.toolCallId }),
+          ...(handed?.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
+        },
+        unfinished?.source.modelOutputRef,
+      );
       return this.#advance(workflowRunId);
     }
     if (onDegraded === 'PUBLISH_NOTICE') {
@@ -1619,7 +1734,7 @@ export class SessionRunner {
       case 'ASK':
         return this.#onAsk(workflowRunId, active, ending);
       case 'DEGRADED':
-        return this.#onDegraded(workflowRunId, active, ending.reason);
+        return this.#onDegraded(workflowRunId, active, ending.reason, ending.unfinished);
       case 'CLOSED': {
         const plan = active.nodeEnding ?? { status: 'SUCCEEDED', runOutput: false };
         await this.#endAgentRun(workflowRunId, active, ending.kind);

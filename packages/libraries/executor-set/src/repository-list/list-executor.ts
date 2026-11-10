@@ -1,7 +1,16 @@
-import { MEDIA_TYPES, type Executor, type RepositoryListInput } from '@multiagentos/contracts';
+import {
+  MEDIA_TYPES,
+  normalizeRequestPath,
+  type Executor,
+  type RepositoryListInput,
+} from '@multiagentos/contracts';
 import { completed, guarded, rejected, violation } from '../outcome/outcomes.js';
 import { buildFileSet, type FileDigestCache } from '../repository-access/file-set.js';
-import { resolveRepositoryScope } from '../repository-access/repository-scope.js';
+import {
+  isWithinScope,
+  resolveRepositoryScope,
+  shownPath,
+} from '../repository-access/repository-scope.js';
 import { previewLimitsOf } from '../retention/retention.js';
 import { renderListing } from './listing.js';
 
@@ -13,6 +22,13 @@ export function createListExecutor(cache: FileDigestCache): Executor<'REPOSITORY
       guarded(async () => {
         const scope = await resolveRepositoryScope(environment.scope);
         if (scope === undefined) return violation('SCOPE_MISSING');
+        // An external call stays below the path it was allowed for.
+        const base = normalizeRequestPath(input.path ?? '.');
+        if (
+          scope.external !== undefined &&
+          (base === undefined || !isWithinScope(scope, base === '.' ? '' : base))
+        )
+          return rejected('NOT_FOUND');
         const built = await buildFileSet(scope, { signal: environment.signal, cache });
         if (!built.ok) return rejected('LIMIT_EXCEEDED');
         const listing = renderListing(
@@ -21,9 +37,19 @@ export function createListExecutor(cache: FileDigestCache): Executor<'REPOSITORY
           previewLimitsOf(environment),
         );
         if (listing === undefined) return rejected('NOT_FOUND');
+        // An external listing says where it is, in full, since its paths are read from there.
+        const output =
+          scope.external === undefined
+            ? listing.output
+            : {
+                ...listing.output,
+                path: shownPath(scope, listing.output.path === '.' ? '' : listing.output.path),
+              };
+        const preview =
+          scope.external === undefined ? listing.preview : `${output.path}/\n${listing.preview}`;
         return completed({
-          output: listing.output,
-          artifact: { mediaType: MEDIA_TYPES.fileText, text: listing.preview },
+          output,
+          artifact: { mediaType: MEDIA_TYPES.fileText, text: preview },
           ...(listing.full === undefined ? {} : { fullOutput: { text: listing.full } }),
         });
       }),

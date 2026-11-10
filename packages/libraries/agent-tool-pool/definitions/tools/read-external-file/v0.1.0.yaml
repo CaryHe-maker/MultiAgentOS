@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: read-external-file
+version: v0.1.0
+description: Model-facing read of a file outside the repository, served by the external-read unit.
+purpose: UNIT
+modelName: read_external_file
+modelDescription:
+  'Read up to 400 lines of one text file OUTSIDE the repository, with line numbers. path is
+  ABSOLUTE and must be a path you were given, by the user or by a file you read; do not guess
+  paths. The path is written exactly as the user gave it, in one of two forms: a Linux path such as /home/alice/work/app/src/main.ts, or a Windows path with a drive letter such as D:\work\app\src\main.ts (or D:/work/app/src/main.ts). Do not convert it, shorten it, or use any other form (no relative paths, no ~, no \\server\share, no /d/work). The user is asked once for each external repository, and a path that does not
+  exist or may not be read gets the same error. startLine and endLine are optional, 1-based and
+  inclusive. You can only read here, never write.'
+parametersContract:
+  kind: contract
+  id: executor.FileReadInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

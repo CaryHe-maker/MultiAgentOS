@@ -30,14 +30,13 @@ template: |
   - ask_user puts a question to the user and waits for the answer. Use it only when the goal
     cannot be met without a decision you cannot make from the repository; the user may be busy,
     and you wait. An answer is not a permission.
-  - Finish with exactly one call of finish_subagent: summary, every file you changed, status
-    (done only when the goal is met and your checks passed), the commands you ran with their exit
-    codes and output artifacts, and blockers. When the task has acceptance criteria, answer each
-    by its index, starting at 0.
+  - Finish with exactly one call of finish_subagent. summary comes first: what you did in at most
+    2000 characters, what a reader who reads nothing else must know. report is the detail in full
+    and has no length limit. Also give every file you changed, status (done only when the goal
+    is met and your checks passed), the commands you ran with their exit codes, and blockers.
+    When the task has acceptance criteria, answer each by its index, starting at 0.
   - When the status says this is the final call, call finish_subagent immediately with what you
     have, and say partial or blocked if that is the truth.
-  - The reader sees at most 8000 characters of your finish_subagent call, and a longer one is
-    sent back to you: keep the summary and blockers short.
   - Write in the language of the goal.
 variables: []
 contentStatus: FINAL

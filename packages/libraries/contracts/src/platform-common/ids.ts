@@ -42,3 +42,27 @@ export const IdSchemas = {
 
 /** Returned by the model provider and used as is. */
 export const ToolCallIdSchema = Type.String({ minLength: 1, maxLength: 128 });
+
+/**
+ * `ref_` and the number of a handover in its Session, from 1. Workflow mints it when it registers
+ * the handover, from the log alone (the registrations before it, plus one), so a Session never
+ * repeats one and the same log gives the same numbers (M2Design 3.7).
+ */
+export const ReferenceIdSchema = Type.String({ pattern: '^ref_[1-9][0-9]*$', maxLength: 32 });
+
+const REFERENCE_NAME = /^(ref_[1-9][0-9]*)\/(.+)$/u;
+
+/** How a reference is written to the one it was handed to, and read back: `ref_N/toolCallId`. */
+export const referenceName = (referenceId: string, toolCallId: string): string =>
+  `${referenceId}/${toolCallId}`;
+
+/** The two parts of a reference; undefined when the text is not one. */
+export function parseReferenceName(
+  name: string,
+): { readonly referenceId: string; readonly toolCallId: string } | undefined {
+  const parts = REFERENCE_NAME.exec(name);
+  const [, referenceId, toolCallId] = parts ?? [];
+  return referenceId === undefined || toolCallId === undefined
+    ? undefined
+    : { referenceId, toolCallId };
+}

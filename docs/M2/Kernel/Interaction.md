@@ -158,12 +158,14 @@ Session actor：
 ### 6.2 打开 Session（`openSession`）
 
 ```text
-Session 管理检查引用存在、ACTIVE、仓库与本进程一致，否则 SESSION_NOT_FOUND
+Session 管理检查引用存在、ACTIVE，否则 SESSION_NOT_FOUND
+  → 引用中的文件夹不是本进程的：没有 confirmWorkspaceChange 则 WORKSPACE_CHANGE_NOT_CONFIRMED，什么都不做
   → 若有打开的 Session，先按第 6.4 节关闭；建立 Session actor，投递 SESSION_OPEN
+  → 换文件夹时（已确认）：快照另起一段（索引追加 EPOCH，此前的 Turn 不再可回退），然后把引用改为本进程的文件夹
 Session actor：
   → 读入本 Session 的产物归属索引
   → 发出 SessionCommand(OPEN)，等待回复
-       READY  → 向 UserInteraction 发出 SessionOpened；比较工作区并发出 WorkspaceDiverged
+       READY  → 向 UserInteraction 发出 SessionOpened；比较工作区并发出 WorkspaceDiverged（换文件夹后快照另起一段，没有可比较的，不发）
                 开启运行（RunStart(initialInput: false)）；由 Workflow 请求开放输入，或重新发起上一个进程中未答复的人类请求
        FAILED → 发出 SessionFailed（该 Session 序列的最后一个事件），关闭 actor（引用保持 ACTIVE）
 ```

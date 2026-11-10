@@ -7,6 +7,7 @@ import {
   DEFINITION_KINDS,
   DEFINITION_SCHEMAS,
   COMMAND_KINDS,
+  EXTERNAL_READ_KINDS,
   REPOSITORY_KINDS,
   WRITE_KINDS,
   agentMinShare,
@@ -169,6 +170,7 @@ const FIXED_CODES = [
 ];
 const EFFORTS = ['none', 'low', 'high', 'max'] as const;
 const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
+const EXTERNAL_KINDS: ReadonlySet<string> = new Set(EXTERNAL_READ_KINDS);
 const WRITES_WORKSPACE: ReadonlySet<string> = new Set(WRITE_KINDS);
 const RUNS_COMMANDS: ReadonlySet<string> = new Set(COMMAND_KINDS);
 const contractOf = (ref: { readonly id: string; readonly version: string }) =>
@@ -403,14 +405,21 @@ function checkRules(
             'UNIT_INVALID',
             `${body.executionKind} must use ${expected.join(' and ')}`,
           );
-        const declaresRead = body.protectedCapabilities.includes('repo.read');
+        const declaresRepoRead = body.protectedCapabilities.includes('repo.read');
+        const declaresExternal = body.protectedCapabilities.includes('external.read');
         // Kernel decides on the declaration alone, so it must agree with the kind (Kernel/Core 5).
+        // Three kinds also read outside the workspace, with `external.read` in place of `repo.read`.
+        const declaresRead = declaresRepoRead || declaresExternal;
         if (READS_REPOSITORY.has(body.executionKind) !== declaresRead)
           report(
             origin,
             'UNIT_INVALID',
             `${body.executionKind} ${declaresRead ? 'must not' : 'must'} declare repo.read`,
           );
+        if (declaresRepoRead && declaresExternal)
+          report(origin, 'UNIT_INVALID', 'a unit declares repo.read or external.read, not both');
+        if (declaresExternal && !EXTERNAL_KINDS.has(body.executionKind))
+          report(origin, 'UNIT_INVALID', `${body.executionKind} cannot declare external.read`);
         const declaresWrite = body.protectedCapabilities.includes('workspace.write');
         if (WRITES_WORKSPACE.has(body.executionKind) !== declaresWrite)
           report(

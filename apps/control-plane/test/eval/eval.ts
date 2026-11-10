@@ -100,6 +100,9 @@ async function run(): Promise<number> {
         model,
         ...(apiKey === undefined ? {} : { apiKey }),
         ...(budget === undefined ? {} : { budget }),
+        ...(process.env['MAO_EVAL_STEP_TIMEOUT_MS'] === undefined
+          ? {}
+          : { stepTimeoutMs: Number(process.env['MAO_EVAL_STEP_TIMEOUT_MS']) }),
       }).catch((error: unknown): RunRecord => ({
         schema: 1,
         taskId: task.id,

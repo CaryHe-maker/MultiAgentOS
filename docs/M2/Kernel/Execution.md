@@ -15,7 +15,7 @@ Execution 负责 UnitAttempt、执行队列、产物与内建 Unit；还负责�
 | 正文只有执行产物、报告与运行摘要 | 增加用户输入的正文（`storeUserInput`）与发布的消息（`message-publish`） | M2Design 第 4.2、8.1 节 |
 | 只有内建 Unit `report-publish` | 增加 `message-publish` | M2Design 第 8.1 节 |
 | 不读取项目文件 | `readProjectFile`：按白名单读取 `AGENTS.md` 与模板文件，正文存为产物 | M2Design 第 7.5 节 |
-| 产物没有保留类别 | 登记 `SESSION` 或 `EXPIRING`：工具结果的预览长期保留，完整输出与 ContextPack 7 天过期 | M2Design 第 8.2、10.1 节 |
+| 产物没有保留类别 | 登记 `SESSION`、`EXPIRING` 或 `ONCE`：工具结果的预览长期保留，完整输出 7 天过期，ContextPack 只给一次模型调用用，调用结束即释放（7 天兜底） | M2Design 第 8.2、10.1 节 |
 | 启动时不回收产物 | 启动时与每小时回收：只按 ACTIVE 的 Session 的登记与保留期标记，其余在本次回收开始之前写入的正文删除 | [ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节 |
 | 预览上限就是 `maxOutputBytes` | 预览上限为 `previewMaxBytes`、`previewMaxLines`，并且不超过 `maxOutputBytes` | M2Design 第 8.2 节 |
 | 技术重试只按指数退避等待 | 以指数退避与 `Retry-After` 中较大者等待，超过 `retryAfterMaxMs` 不再重试；等待期间发出"重试中"的活动 | M2Design 第 7.4 节 |
@@ -34,7 +34,8 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
   | 产物 | 类别 |
   |---|---|
   | 工具 Unit 的预览（`outputRef`）、模型输出、思考内容、用户输入、回复与运行结果、报告、运行摘要、`AGENTS.md` 与模板文件、压缩的摘要 | `SESSION` |
-  | 工具 Unit 截断时的完整输出（`fullRef`）、ContextPack | `EXPIRING` |
+  | 工具 Unit 截断时的完整输出（`fullRef`） | `EXPIRING` |
+  | 上下文组装产出的 ContextPack | `ONCE` |
 
 - 预览上限随 `ExecutionLimits` 交给 Executor：`min(previewMaxBytes, maxOutputBytes)` 字节与 `previewMaxLines` 行（M2Design 第 8.2 节）。
 - 工具 Unit 的结果检查：Executor 交回预览与（截断时的）完整输出；预览超过上述上限、或完整输出超过 `maxFullOutputBytes` 时以 `REJECTED(LIMIT_EXCEEDED)` 结束，不写入；
@@ -160,7 +161,7 @@ Core 在结果检查后向 UserInteraction 发出 MessagePublished(messageRef = 
 回收在 Kernel 核心启动时、开放服务之前进行一次，之后每隔 `artifactRetention.sweepIntervalMinutes`（缺省 60）进行一次：
 
 1. 读取 Session 引用（`session-refs.jsonl`），只取 ACTIVE 的 Session；
-2. 逐个读取它们的 `artifact-owners.jsonl`：`SESSION` 的登记一律标记保留；`EXPIRING` 的登记在 `retainedSince` 之后未满 `expiringRetentionDays` 时标记保留；
+2. 逐个读取它们的 `artifact-owners.jsonl`：`SESSION` 的登记一律标记保留；已释放的（带 `releasedAt`）一律不标记；`EXPIRING` 与 `ONCE` 的登记在 `retainedSince` 之后未满 `expiringRetentionDays` 时标记保留；
 3. 以标记集合调用 `ArtifactStorePort.sweep`（[ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节），删除其余在本次回收开始之前写入的正文。
 
 DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败只写诊断，不阻止启动，也不影响下一次定期回收。
@@ -187,6 +188,7 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 - 影子仓库关闭 gc（`gc.auto=0`）；快照只被快照索引引用，随 Session 目录删除。
 - 快照失败时 Turn 照常进行，但在索引中记为没有快照：这个 Turn 不能回退，`/undo` 说明原因。写入与回退依赖 git，启动探测见 M2Design 第 4.6 节。
 - 拍摄读文件内容，只在静止点进行，读取结束后不持有任何状态。
+- **换文件夹（`EPOCH`）**：Session 在另一个文件夹里被打开并经用户确认后（M2Design 第 2.3 节），Execution 在索引追加 `EPOCH { repositoryRoot }`，内存里此前的 Turn 清空。此后：回退只面对新文件夹的 Turn，旧文件夹的 Turn 不在其内；打开时的改动检测没有可比较的快照，不报告；新文件夹的第一次拍摄没有上一个快照，不继承旧文件夹的树。快照库和索引的旧内容原样留着（作废而不删除）。追加 `EPOCH` 先于把 Session 引用改为本进程的文件夹，所以两者之间崩溃后下次打开会再追加一次，结果相同。
 
 ## 6c. 回退
 
@@ -219,6 +221,17 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
   不属于任何 Workflow 提交的 Unit，不产生 UnitReport；用量按 Core 指定的账本结算（Monitor 第 3.4 节）；
 - 结果：摘要文本存为 `SESSION` 类产物，连同所用的方式与去掉的条目数（`summaryInput`）交回 Core；`COMPACTION_SUMMARY_INVALID` 时由 Core 决定重试一次，`CONTEXT_OVERFLOW` 时由 Core 按 `summaryFallbackTargets` 给出下一个目标。
 
+## 6d. 随用随放：尝试结束时释放
+
+有些产物只是两个步骤之间的交接物，读过一次就不再有用。它们登记为 `ONCE`（M2Design 第 10.1 节），使用它的那次尝试结束时由 Execution 释放。目前只有一种：上下文组装产出的 ContextPack，由紧接着的那次模型调用读取（`model-call` 输入中的 `contextPackRef`）。
+
+- **时机**：尝试**最终**结束时，也就是 Execution 不再重试、把结果交给 Core 的那一刻：成功、不可重试的失败、拒绝、取消、中止，以及 Core 已替它结束的情形。技术性重试期间（第 4 节）重试要再读同一份 ContextPack，所以不释放；一次失败后若 Execution 决定重试，也不释放。只有执行编号与尝试当前登记的执行相同的事实才算结束它，与 Core 对结果检查的判断一致。
+- **释放什么**：只释放登记为 `ONCE` 的引用，且 `sha256` 一致。`SESSION`（例如被交接带走、已改为随 Session 保留的）与 `EXPIRING` 的登记不动。已经释放的不重复写。
+- **怎么释放**：追加一行带 `releasedAt` 的登记（Interface/Persistence 第 4.3 节），内存中的归属索引同步；此后读取立即返回 `ARTIFACT_EXPIRED`，与过期的表现一致。正文由下一次回收删除（第 6 节第 2 步不为已释放的登记标记保留）。
+- **回收的触发**：Execution 累计已释放的字节数，达到 20 MiB 时请求一次回收，使空间随用随还，又不必每次调用都扫描全部 Session；其余靠定期回收。
+- **尽力而为**：释放失败只忽略，登记仍是 `ONCE`，按 `expiringRetentionDays` 过期兜底。组装完成后没有跟着模型调用的 ContextPack（例如运行被中断在两步之间）同样靠这个兜底。
+- **不影响重建**：日志里的 `CONTEXT_ASSEMBLED` 只存摘要（`projectionDigest`、`headDigest`、`tokenCount`），不引用 ContextPack 的正文；上下文由日志与 `SESSION` 正文重建，下一次组装产生新的 ContextPack。
+
 ## 7. 配置
 
 | 配置 | 读取者 | 缺省 |
@@ -242,6 +255,7 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 | 29：只有 ACTIVE 的 Session 的登记能让正文免于回收 | 单元测试：`EXPIRING` 满 7 天后被回收（启动时与定期回收各一例，以假时钟驱动），读取得到 `ARTIFACT_EXPIRED`；到期而尚未回收的正文读取同样得到 `ARTIFACT_EXPIRED`；回收开始后再次写入的正文不被删除；`SESSION` 的正文在 ACTIVE 的 Session 拥有期间不被回收；DELETED 的 Session 残留的归属文件不影响回收；同一正文在两个 Session 中、以不同类别登记时取最长的保留 |
 | 7：重建只需要长期保留的正文 | 集成测试：删除全部 `EXPIRING` 正文后，重放日志得到相同的 `context-assemble` 输入（包括 `read_output` 的结果与修剪后的结果） |
 | 预览上限 | 单元测试：预览不超过 `previewMaxBytes` 与 `previewMaxLines` |
+| 6d：ContextPack 随用随放 | 单元测试：技术重试期间仍可读，尝试最终失败、放弃过长的 Retry-After 后立即返回 `ARTIFACT_EXPIRED`；登记为 `SESSION` 的不释放；已释放的重开 Session 后仍是已释放；`ONCE` 满 7 天同样过期 |
 | 技术重试的等待 | 单元测试（假时钟）：`retryAfterMs` 大于指数退避时按它等待；超过 `retryAfterMaxMs` 时不再重试；等待期间有 `RETRYING` 活动，中止时交付 `INTERRUPTED(ABORTED)` |
 | 30：`read_output` 只读到本 Session、未过期的完整输出 | 单元测试：另一 Session 的 `fullRef` 得到 `INVALID_ARTIFACT_REF`；不带 `fullOutput` 标记的引用得到 `INVALID_INPUT`；到期得到 `ARTIFACT_EXPIRED` 且不派发；修剪时补登的预览可以读取且不过期；`context-assemble` 输入中的 `fullRef` 被拒绝 |
 | 压缩的估算是日志的纯函数 | 单元测试：`headDigest` 相同且其后没有修剪与摘要时使用实测值，否则按字节估算；同一组条目得到相同的估算 |

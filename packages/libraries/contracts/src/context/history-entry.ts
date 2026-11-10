@@ -2,7 +2,7 @@ import { Type, type Static } from 'typebox';
 import { BudgetViewSchema } from '../kernel-unit/budget-state.js';
 import { MeasuredUsageSchema } from './compaction.js';
 import { ArtifactRefSchema, artifactRefOf } from '../platform-common/common-schemas.js';
-import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
+import { IdSchemas, ReferenceIdSchema, ToolCallIdSchema } from '../platform-common/ids.js';
 import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { Sha256Schema, closed, count, text } from '../platform-common/schema-helpers.js';
@@ -95,6 +95,11 @@ export const ContextHistoryEntrySchema = Type.Union(
       notes: Type.Array(text(300), { maxItems: 10 }),
       outputRef: Type.Optional(artifactRefOf(MEDIA_TYPES.modelOutput)),
       toolCallId: Type.Optional(ToolCallIdSchema),
+      /** What the task handed over, read by `read_output` as `referenceId/toolCallId`. */
+      referenceId: Type.Optional(ReferenceIdSchema),
+      references: Type.Optional(
+        Type.Array(closed({ toolCallId: ToolCallIdSchema, tool: text(128) }), { maxItems: 20 }),
+      ),
     }),
     /** What the user answered to `ask_user`: the result of that call, the text in an artifact. */
     closed({

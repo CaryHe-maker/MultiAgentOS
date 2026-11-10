@@ -57,6 +57,9 @@ export const REPOSITORY_KINDS = [
   'GIT_INSPECT',
 ] as const;
 
+/** The kinds whose Unit may declare `external.read` instead of `repo.read`. */
+export const EXTERNAL_READ_KINDS = ['FILE_READ', 'REPOSITORY_LIST', 'REPOSITORY_SEARCH'] as const;
+
 /** The kinds whose Unit declares `workspace.write`. */
 export const WRITE_KINDS = ['FILE_WRITE', 'FILE_EDIT'] as const;
 

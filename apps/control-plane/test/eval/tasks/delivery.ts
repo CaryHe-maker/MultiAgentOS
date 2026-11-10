@@ -11,7 +11,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Check, Observation, TaskSpec } from '../spec.js';
 
-const FILES: Readonly<Record<string, string>> = {
+export const FILES: Readonly<Record<string, string>> = {
   'docs/scheduler.md': [
     '# Scheduler',
     'Jobs are taken from the queue in order of priority, then of age.',

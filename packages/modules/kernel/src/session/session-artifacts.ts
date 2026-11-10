@@ -22,8 +22,12 @@ export interface SessionArtifactsDeps {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_INPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
 
-/** A SESSION registration never expires; an EXPIRING one does, whether or not its body is gone. */
+/**
+ * A SESSION registration never expires; an EXPIRING or ONCE one does, whether or not its body is
+ * gone, and a released one has. A released artifact reads as expired at once (Kernel/Execution 6d).
+ */
 export function isExpired(line: ArtifactOwnerLine, retentionDays: number, now: Date): boolean {
+  if (line.releasedAt !== undefined) return true;
   if (line.retention === 'SESSION') return false;
   return now.getTime() >= new Date(line.retainedSince).getTime() + retentionDays * DAY_MS;
 }
@@ -129,6 +133,48 @@ export class SessionArtifacts {
 
   isFullOutput(ref: ArtifactRef): boolean {
     return this.#owners.get(ref.artifactId)?.fullOutput === true;
+  }
+
+  /**
+   * Keeps what a handover carries for as long as the Session lives: an output that would be
+   * reclaimed after its days is registered again as SESSION, keeping its full-output mark. False,
+   * and nothing changed, when one of them is not this Session's or has expired already.
+   */
+  async retain(refs: readonly ArtifactRef[]): Promise<boolean> {
+    if (!refs.every((ref) => this.owns(ref))) return false;
+    for (const ref of refs) {
+      const known = this.#owners.get(ref.artifactId);
+      if (known === undefined || known.retention === 'SESSION') continue;
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = { ...known, retention: 'SESSION', retainedSince: at, at };
+      await this.#deps.owners.append(line);
+      this.#owners.set(ref.artifactId, line);
+    }
+    return true;
+  }
+
+  /**
+   * Releases what was registered ONCE, made for one consumer that is done with it: the
+   * registration says so, it reads as expired from now on, and the next sweep reclaims the body.
+   * Anything kept for longer (SESSION, or EXPIRING) is left as it is. Returns the bytes released.
+   */
+  async release(refs: readonly ArtifactRef[]): Promise<number> {
+    let bytes = 0;
+    for (const ref of refs) {
+      const known = this.#owners.get(ref.artifactId);
+      if (
+        known?.retention !== 'ONCE' ||
+        known.releasedAt !== undefined ||
+        known.sha256 !== ref.sha256
+      )
+        continue;
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = { ...known, releasedAt: at, at };
+      await this.#deps.owners.append(line);
+      this.#owners.set(ref.artifactId, line);
+      bytes += known.size;
+    }
+    return bytes;
   }
 
   /** A body missing from the store counts as expired, whatever the registration says. */

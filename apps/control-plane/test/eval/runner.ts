@@ -56,20 +56,23 @@ async function drive(
   chat: Chat,
   steps: readonly ChatStep[],
   timeoutMs: number,
+  /** `{OTHER}` in what the user types is a folder next to the repository, outside it. */
+  other: string,
 ): Promise<string | undefined> {
+  const typed = (text: string) => text.replaceAll('{OTHER}', other);
   const awaiting = () => chat.lives.at(-1)?.status.includes('等待输入') === true;
   try {
     for (const step of steps) {
       if ('say' in step) {
         const before = chat.printed('REPLY').length;
-        await chat.console.submit(step.say);
+        await chat.console.submit(typed(step.say));
         await until(
           () => chat.printed('REPLY').length > before,
           `a reply to "${step.say}"`,
           timeoutMs,
         );
       } else if ('submit' in step) {
-        await chat.console.submit(step.submit);
+        await chat.console.submit(typed(step.submit));
       } else if ('awaitInput' in step) {
         await until(awaiting, 'the run to wait for input', timeoutMs);
       } else {
@@ -127,6 +130,7 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
       chat,
       spec.steps,
       env.stepTimeoutMs ?? (scripted === undefined ? 300_000 : 15_000),
+      `${repository}-other`,
     );
     const log = await readLog(dataDir);
     const opened = chat;
@@ -179,6 +183,7 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
     await chat?.close().catch(() => undefined);
     await rm(dataDir, { recursive: true, force: true });
     await rm(repository, { recursive: true, force: true });
+    await rm(`${repository}-other`, { recursive: true, force: true });
   }
 }
 

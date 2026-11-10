@@ -347,6 +347,7 @@
               "command.network",
               "web.search",
               "web.fetch",
+              "external.read",
               "agent.spawn"
             ]
           },
@@ -1342,6 +1343,7 @@
                   "command.network",
                   "web.search",
                   "web.fetch",
+                  "external.read",
                   "agent.spawn"
                 ]
               },
@@ -1899,6 +1901,7 @@
                     "command.network",
                     "web.search",
                     "web.fetch",
+                    "external.read",
                     "agent.spawn"
                   ]
                 },
@@ -2081,6 +2084,14 @@
                     ]
                   },
                   "DOMAIN_DENIED": {
+                    "enum": [
+                      "RETURN_TO_MODEL",
+                      "FINAL_CALL",
+                      "DEGRADED_REPORT",
+                      "FATAL"
+                    ]
+                  },
+                  "EXTERNAL_PATH_UNAVAILABLE": {
                     "enum": [
                       "RETURN_TO_MODEL",
                       "FINAL_CALL",
@@ -3033,6 +3044,7 @@
               "command.network",
               "web.search",
               "web.fetch",
+              "external.read",
               "agent.spawn"
             ]
           },
@@ -3215,6 +3227,14 @@
               ]
             },
             "DOMAIN_DENIED": {
+              "enum": [
+                "RETURN_TO_MODEL",
+                "FINAL_CALL",
+                "DEGRADED_REPORT",
+                "FATAL"
+              ]
+            },
+            "EXTERNAL_PATH_UNAVAILABLE": {
               "enum": [
                 "RETURN_TO_MODEL",
                 "FINAL_CALL",
@@ -3946,6 +3966,7 @@
                       "ARTIFACT_EXPIRED",
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
+                      "WORKSPACE_CHANGE_NOT_CONFIRMED",
                       "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
@@ -3974,6 +3995,7 @@
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
+                      "EXTERNAL_PATH_UNAVAILABLE",
                       "SECRET_IN_REQUEST",
                       "UNSUPPORTED_CONTENT",
                       "PAGE_UNAVAILABLE",
@@ -4390,6 +4412,35 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "referenceId": {
+                    "type": "string",
+                    "pattern": "^ref_[1-9][0-9]*$",
+                    "maxLength": 32
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "toolCallId",
+                        "tool"
+                      ],
+                      "properties": {
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "tool": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20
                   }
                 },
                 "additionalProperties": false
@@ -5032,6 +5083,7 @@
                 "ARTIFACT_EXPIRED",
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
+                "WORKSPACE_CHANGE_NOT_CONFIRMED",
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
@@ -5060,6 +5112,7 @@
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",
+                "EXTERNAL_PATH_UNAVAILABLE",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
                 "PAGE_UNAVAILABLE",
@@ -5476,6 +5529,35 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128
+            },
+            "referenceId": {
+              "type": "string",
+              "pattern": "^ref_[1-9][0-9]*$",
+              "maxLength": 32
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "toolCallId",
+                  "tool"
+                ],
+                "properties": {
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 20
             }
           },
           "additionalProperties": false
@@ -6655,6 +6737,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 50
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
         }
       },
       "additionalProperties": false,
@@ -8953,6 +9040,47 @@
             "type",
             "questionId",
             "capability",
+            "root",
+            "path",
+            "provider"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "external.read"
+            },
+            "root": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
             "path",
             "contentRef",
             "critical"
@@ -9251,6 +9379,48 @@
       "additionalProperties": false,
       "$id": "kernel.control.DiffTurnsRequest.v1"
     },
+    "kernel.control.ExternalReadPaused.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "attempts"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "ExternalReadPaused"
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "reason": {
+                "enum": [
+                  "UNAVAILABLE",
+                  "DECLINED",
+                  "FAILED"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.ExternalReadPaused.v1"
+    },
     "kernel.control.GatewayForward.v1": {
       "anyOf": [
         {
@@ -9370,6 +9540,7 @@
                       "command.network",
                       "web.search",
                       "web.fetch",
+                      "external.read",
                       "agent.spawn"
                     ]
                   },
@@ -9558,6 +9729,85 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.ReleaseDelegationRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "retainArtifacts"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "refs"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  },
+                  "minItems": 1,
+                  "maxItems": 21
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.RetainArtifactsRequest.v1"
             }
           },
           "additionalProperties": false
@@ -9919,6 +10169,7 @@
                               "ARTIFACT_EXPIRED",
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
+                              "WORKSPACE_CHANGE_NOT_CONFIRMED",
                               "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
@@ -9947,6 +10198,7 @@
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
+                              "EXTERNAL_PATH_UNAVAILABLE",
                               "SECRET_IN_REQUEST",
                               "UNSUPPORTED_CONTENT",
                               "PAGE_UNAVAILABLE",
@@ -10363,6 +10615,35 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          },
+                          "referenceId": {
+                            "type": "string",
+                            "pattern": "^ref_[1-9][0-9]*$",
+                            "maxLength": 32
+                          },
+                          "references": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "toolCallId",
+                                "tool"
+                              ],
+                              "properties": {
+                                "toolCallId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "tool": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "maxItems": 20
                           }
                         },
                         "additionalProperties": false
@@ -10773,6 +11054,11 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 50
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
                         }
                       },
                       "additionalProperties": false,
@@ -11155,6 +11441,7 @@
                                       "ARTIFACT_EXPIRED",
                                       "SESSION_NOT_FOUND",
                                       "SESSION_IN_USE",
+                                      "WORKSPACE_CHANGE_NOT_CONFIRMED",
                                       "TEMPLATE_UNSUPPORTED",
                                       "HUMAN_REQUEST_NOT_PENDING",
                                       "CONTEXT_OVERFLOW",
@@ -11183,6 +11470,7 @@
                                       "DELEGATION_NOT_FOUND",
                                       "ADDRESS_FORBIDDEN",
                                       "DOMAIN_DENIED",
+                                      "EXTERNAL_PATH_UNAVAILABLE",
                                       "SECRET_IN_REQUEST",
                                       "UNSUPPORTED_CONTENT",
                                       "PAGE_UNAVAILABLE",
@@ -11599,6 +11887,35 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 128
+                                  },
+                                  "referenceId": {
+                                    "type": "string",
+                                    "pattern": "^ref_[1-9][0-9]*$",
+                                    "maxLength": 32
+                                  },
+                                  "references": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "required": [
+                                        "toolCallId",
+                                        "tool"
+                                      ],
+                                      "properties": {
+                                        "toolCallId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128
+                                        },
+                                        "tool": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 20
                                   }
                                 },
                                 "additionalProperties": false
@@ -12592,6 +12909,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -12620,6 +12938,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -13267,6 +13586,7 @@
                     "type": "object",
                     "required": [
                       "sessionId",
+                      "repositoryRoot",
                       "createdAt",
                       "lastActiveAt",
                       "turnCount",
@@ -13276,6 +13596,11 @@
                       "sessionId": {
                         "type": "string",
                         "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "repositoryRoot": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
                       },
                       "createdAt": {
                         "type": "string",
@@ -13574,6 +13899,9 @@
                 "sessionId": {
                   "type": "string",
                   "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "confirmWorkspaceChange": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false,
@@ -14876,6 +15204,47 @@
                     "type",
                     "questionId",
                     "capability",
+                    "root",
+                    "path",
+                    "provider"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "external.read"
+                    },
+                    "root": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
                     "path",
                     "contentRef",
                     "critical"
@@ -16061,6 +16430,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -16089,6 +16459,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -16325,6 +16696,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -16353,6 +16725,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -16969,6 +17342,48 @@
               },
               "additionalProperties": false,
               "$id": "kernel.control.CompactionFailed.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "attempts"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ExternalReadPaused"
+                },
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "reason"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "reason": {
+                        "enum": [
+                          "UNAVAILABLE",
+                          "DECLINED",
+                          "FAILED"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 8
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.ExternalReadPaused.v1"
             }
           ]
         }
@@ -17323,6 +17738,9 @@
         "sessionId": {
           "type": "string",
           "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "confirmWorkspaceChange": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -17518,6 +17936,7 @@
             "ARTIFACT_EXPIRED",
             "SESSION_NOT_FOUND",
             "SESSION_IN_USE",
+            "WORKSPACE_CHANGE_NOT_CONFIRMED",
             "TEMPLATE_UNSUPPORTED",
             "HUMAN_REQUEST_NOT_PENDING",
             "CONTEXT_OVERFLOW",
@@ -17546,6 +17965,7 @@
             "DELEGATION_NOT_FOUND",
             "ADDRESS_FORBIDDEN",
             "DOMAIN_DENIED",
+            "EXTERNAL_PATH_UNAVAILABLE",
             "SECRET_IN_REQUEST",
             "UNSUPPORTED_CONTENT",
             "PAGE_UNAVAILABLE",
@@ -18107,6 +18527,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -18135,6 +18556,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -18371,6 +18793,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -18399,6 +18822,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -19541,6 +19965,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -19569,6 +19994,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -20316,6 +20742,7 @@
                 "PROJECT_FILE_FORBIDDEN",
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
+                "WORKSPACE_CHANGE_NOT_CONFIRMED",
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "ARTIFACT_EXPIRED",
@@ -21167,6 +21594,7 @@
                       "ARTIFACT_EXPIRED",
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
+                      "WORKSPACE_CHANGE_NOT_CONFIRMED",
                       "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
@@ -21195,6 +21623,7 @@
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
+                      "EXTERNAL_PATH_UNAVAILABLE",
                       "SECRET_IN_REQUEST",
                       "UNSUPPORTED_CONTENT",
                       "PAGE_UNAVAILABLE",
@@ -24725,6 +25154,19 @@
                     "minLength": 1,
                     "maxLength": 512
                   }
+                },
+                "external": {
+                  "type": "object",
+                  "required": [
+                    "below"
+                  ],
+                  "properties": {
+                    "below": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -24851,6 +25293,11 @@
                 "tokenBudget": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
                 }
               },
               "additionalProperties": false,
@@ -24880,6 +25327,19 @@
                     "minLength": 1,
                     "maxLength": 512
                   }
+                },
+                "external": {
+                  "type": "object",
+                  "required": [
+                    "below"
+                  ],
+                  "properties": {
+                    "below": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -25017,6 +25477,19 @@
                     "minLength": 1,
                     "maxLength": 512
                   }
+                },
+                "external": {
+                  "type": "object",
+                  "required": [
+                    "below"
+                  ],
+                  "properties": {
+                    "below": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -25155,6 +25628,19 @@
                     "minLength": 1,
                     "maxLength": 512
                   }
+                },
+                "external": {
+                  "type": "object",
+                  "required": [
+                    "below"
+                  ],
+                  "properties": {
+                    "below": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -25697,6 +26183,7 @@
                               "ARTIFACT_EXPIRED",
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
+                              "WORKSPACE_CHANGE_NOT_CONFIRMED",
                               "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
@@ -25725,6 +26212,7 @@
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
+                              "EXTERNAL_PATH_UNAVAILABLE",
                               "SECRET_IN_REQUEST",
                               "UNSUPPORTED_CONTENT",
                               "PAGE_UNAVAILABLE",
@@ -27698,6 +28186,19 @@
                     "minLength": 1,
                     "maxLength": 512
                   }
+                },
+                "external": {
+                  "type": "object",
+                  "required": [
+                    "below"
+                  ],
+                  "properties": {
+                    "below": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false
@@ -29285,6 +29786,19 @@
                 "minLength": 1,
                 "maxLength": 512
               }
+            },
+            "external": {
+              "type": "object",
+              "required": [
+                "below"
+              ],
+              "properties": {
+                "below": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -30465,6 +30979,11 @@
         "tokenBudget": {
           "type": "integer",
           "minimum": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
         }
       },
       "additionalProperties": false,
@@ -30665,6 +31184,8 @@
                     "type": "object",
                     "required": [
                       "sessionId",
+                      "repositoryRoot",
+                      "here",
                       "createdAt",
                       "lastActiveAt",
                       "turnCount"
@@ -30673,6 +31194,14 @@
                       "sessionId": {
                         "type": "string",
                         "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "repositoryRoot": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "here": {
+                        "type": "boolean"
                       },
                       "title": {
                         "type": "string",
@@ -30902,8 +31431,7 @@
               "type": "object",
               "required": [
                 "type",
-                "queryId",
-                "repositoryRoot"
+                "queryId"
               ],
               "properties": {
                 "type": {
@@ -30913,11 +31441,6 @@
                 "queryId": {
                   "type": "string",
                   "pattern": "^slq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "repositoryRoot": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
                 }
               },
               "additionalProperties": false
@@ -31189,6 +31712,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -31217,6 +31741,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -32330,6 +32855,7 @@
               "command.network",
               "web.search",
               "web.fetch",
+              "external.read",
               "agent.spawn"
             ]
           },
@@ -32730,6 +33256,7 @@
                       "ARTIFACT_EXPIRED",
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
+                      "WORKSPACE_CHANGE_NOT_CONFIRMED",
                       "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
@@ -32758,6 +33285,7 @@
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
+                      "EXTERNAL_PATH_UNAVAILABLE",
                       "SECRET_IN_REQUEST",
                       "UNSUPPORTED_CONTENT",
                       "PAGE_UNAVAILABLE",
@@ -33174,6 +33702,35 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "referenceId": {
+                    "type": "string",
+                    "pattern": "^ref_[1-9][0-9]*$",
+                    "maxLength": 32
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "toolCallId",
+                        "tool"
+                      ],
+                      "properties": {
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "tool": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20
                   }
                 },
                 "additionalProperties": false
@@ -33689,6 +34246,7 @@
             "type": "object",
             "required": [
               "sessionId",
+              "repositoryRoot",
               "createdAt",
               "lastActiveAt",
               "turnCount",
@@ -33698,6 +34256,11 @@
               "sessionId": {
                 "type": "string",
                 "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "repositoryRoot": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
               },
               "createdAt": {
                 "type": "string",
@@ -34037,6 +34600,66 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.ReserveDelegationRequest.v1"
+    },
+    "kernel.unit.RetainArtifactsRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "refs"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "artifactId",
+              "sha256",
+              "size",
+              "mediaType"
+            ],
+            "properties": {
+              "artifactId": {
+                "type": "string",
+                "pattern": "^art_[a-f0-9]{64}$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mediaType": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "additionalProperties": false,
+            "$id": "platform.common.ArtifactRef.v1"
+          },
+          "minItems": 1,
+          "maxItems": 21
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.RetainArtifactsRequest.v1"
     },
     "kernel.unit.RunClosed.v1": {
       "anyOf": [
@@ -34556,6 +35179,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -34584,6 +35208,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -34820,6 +35445,7 @@
                     "ARTIFACT_EXPIRED",
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
+                    "WORKSPACE_CHANGE_NOT_CONFIRMED",
                     "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
@@ -34848,6 +35474,7 @@
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
+                    "EXTERNAL_PATH_UNAVAILABLE",
                     "SECRET_IN_REQUEST",
                     "UNSUPPORTED_CONTENT",
                     "PAGE_UNAVAILABLE",
@@ -35573,6 +36200,11 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 50
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
                 }
               },
               "additionalProperties": false,
@@ -35955,6 +36587,7 @@
                               "ARTIFACT_EXPIRED",
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
+                              "WORKSPACE_CHANGE_NOT_CONFIRMED",
                               "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
@@ -35983,6 +36616,7 @@
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
+                              "EXTERNAL_PATH_UNAVAILABLE",
                               "SECRET_IN_REQUEST",
                               "UNSUPPORTED_CONTENT",
                               "PAGE_UNAVAILABLE",
@@ -36399,6 +37033,35 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          },
+                          "referenceId": {
+                            "type": "string",
+                            "pattern": "^ref_[1-9][0-9]*$",
+                            "maxLength": 32
+                          },
+                          "references": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "toolCallId",
+                                "tool"
+                              ],
+                              "properties": {
+                                "toolCallId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "tool": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "maxItems": 20
                           }
                         },
                         "additionalProperties": false
@@ -37499,6 +38162,11 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 50
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
             }
           },
           "additionalProperties": false,
@@ -37881,6 +38549,7 @@
                           "ARTIFACT_EXPIRED",
                           "SESSION_NOT_FOUND",
                           "SESSION_IN_USE",
+                          "WORKSPACE_CHANGE_NOT_CONFIRMED",
                           "TEMPLATE_UNSUPPORTED",
                           "HUMAN_REQUEST_NOT_PENDING",
                           "CONTEXT_OVERFLOW",
@@ -37909,6 +38578,7 @@
                           "DELEGATION_NOT_FOUND",
                           "ADDRESS_FORBIDDEN",
                           "DOMAIN_DENIED",
+                          "EXTERNAL_PATH_UNAVAILABLE",
                           "SECRET_IN_REQUEST",
                           "UNSUPPORTED_CONTENT",
                           "PAGE_UNAVAILABLE",
@@ -38325,6 +38995,35 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 128
+                      },
+                      "referenceId": {
+                        "type": "string",
+                        "pattern": "^ref_[1-9][0-9]*$",
+                        "maxLength": 32
+                      },
+                      "references": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "toolCallId",
+                            "tool"
+                          ],
+                          "properties": {
+                            "toolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "tool": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "maxItems": 20
                       }
                     },
                     "additionalProperties": false
@@ -41050,6 +41749,7 @@
                 "PROTECTED_PATH_CREATED",
                 "WRITE_SCOPE_DELEGATED",
                 "DOMAIN_DENIED",
+                "EXTERNAL_PATH_UNAVAILABLE",
                 "CONTEXT_COMPACTED",
                 "OUT_OF_SCOPE",
                 "NOT_FOUND",
@@ -42846,6 +43546,7 @@
                         "PROTECTED_PATH_CREATED",
                         "WRITE_SCOPE_DELEGATED",
                         "DOMAIN_DENIED",
+                        "EXTERNAL_PATH_UNAVAILABLE",
                         "CONTEXT_COMPACTED",
                         "OUT_OF_SCOPE",
                         "NOT_FOUND",
@@ -44186,6 +44887,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -44214,6 +44916,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -44450,6 +45153,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -44478,6 +45182,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -45901,6 +46606,7 @@
         "ARTIFACT_EXPIRED",
         "SESSION_NOT_FOUND",
         "SESSION_IN_USE",
+        "WORKSPACE_CHANGE_NOT_CONFIRMED",
         "TEMPLATE_UNSUPPORTED",
         "HUMAN_REQUEST_NOT_PENDING",
         "CONTEXT_OVERFLOW",
@@ -45929,6 +46635,7 @@
         "DELEGATION_NOT_FOUND",
         "ADDRESS_FORBIDDEN",
         "DOMAIN_DENIED",
+        "EXTERNAL_PATH_UNAVAILABLE",
         "SECRET_IN_REQUEST",
         "UNSUPPORTED_CONTENT",
         "PAGE_UNAVAILABLE",
@@ -47926,8 +48633,13 @@
         "retention": {
           "enum": [
             "SESSION",
-            "EXPIRING"
+            "EXPIRING",
+            "ONCE"
           ]
+        },
+        "releasedAt": {
+          "type": "string",
+          "format": "date-time"
         },
         "source": {
           "enum": [
@@ -48197,6 +48909,41 @@
                 }
               },
               "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "type",
+            "repositoryRoot",
+            "previousRoot"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "type": {
+              "type": "string",
+              "const": "WORKSPACE_BOUND"
+            },
+            "repositoryRoot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "previousRoot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
             }
           },
           "additionalProperties": false
@@ -49649,6 +50396,7 @@
                 "ARTIFACT_EXPIRED",
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
+                "WORKSPACE_CHANGE_NOT_CONFIRMED",
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
@@ -49677,6 +50425,7 @@
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",
+                "EXTERNAL_PATH_UNAVAILABLE",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
                 "PAGE_UNAVAILABLE",
@@ -50075,6 +50824,7 @@
                 "ARTIFACT_EXPIRED",
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
+                "WORKSPACE_CHANGE_NOT_CONFIRMED",
                 "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
@@ -50103,6 +50853,7 @@
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",
+                "EXTERNAL_PATH_UNAVAILABLE",
                 "SECRET_IN_REQUEST",
                 "UNSUPPORTED_CONTENT",
                 "PAGE_UNAVAILABLE",
@@ -50770,6 +51521,157 @@
             "steerInputId": {
               "type": "string",
               "pattern": "^inp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "referenceId",
+            "from",
+            "to",
+            "items"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "REFERENCES_REGISTERED"
+            },
+            "referenceId": {
+              "type": "string",
+              "pattern": "^ref_[1-9][0-9]*$",
+              "maxLength": 32
+            },
+            "from": {
+              "type": "object",
+              "required": [
+                "agentRunId",
+                "label"
+              ],
+              "properties": {
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "MAIN"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "agentRunId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "AGENT_RUN"
+                    },
+                    "agentRunId": {
+                      "type": "string",
+                      "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "toolCallId",
+                  "tool",
+                  "ref"
+                ],
+                "properties": {
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "ref": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "platform.common.ArtifactRef.v1"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 21
             }
           },
           "additionalProperties": false
@@ -51501,6 +52403,30 @@
           "type": "object",
           "required": [
             "kind",
+            "repositoryRoot",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "EPOCH"
+            },
+            "repositoryRoot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
             "revertedTurnIds",
             "forced",
             "at"
@@ -52124,6 +53050,7 @@
                             "ARTIFACT_EXPIRED",
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
+                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
                             "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
@@ -52152,6 +53079,7 @@
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
+                            "EXTERNAL_PATH_UNAVAILABLE",
                             "SECRET_IN_REQUEST",
                             "UNSUPPORTED_CONTENT",
                             "PAGE_UNAVAILABLE",
@@ -52387,76 +53315,22 @@
     "workflow.ExplorerResult.v1": {
       "type": "object",
       "required": [
-        "summary",
-        "findings"
+        "summary"
       ],
       "properties": {
         "summary": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
+          "minLength": 1
         },
-        "findings": {
+        "report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "claim",
-              "evidence"
-            ],
-            "properties": {
-              "claim": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1000
-              },
-              "evidence": {
-                "type": "array",
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "artifactId",
-                        "sha256",
-                        "size",
-                        "mediaType"
-                      ],
-                      "properties": {
-                        "artifactId": {
-                          "type": "string",
-                          "pattern": "^art_[a-f0-9]{64}$"
-                        },
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[a-f0-9]{64}$"
-                        },
-                        "size": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "mediaType": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 128
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "platform.common.ArtifactRef.v1"
-                    },
-                    {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 500
-                    }
-                  ]
-                },
-                "maxItems": 10
-              }
-            },
-            "additionalProperties": false
-          },
-          "maxItems": 30
+            "type": "string"
+          }
         },
         "openQuestions": {
           "type": "array",
@@ -52486,49 +53360,6 @@
                   "not_met",
                   "unknown"
                 ]
-              },
-              "evidence": {
-                "type": "array",
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "artifactId",
-                        "sha256",
-                        "size",
-                        "mediaType"
-                      ],
-                      "properties": {
-                        "artifactId": {
-                          "type": "string",
-                          "pattern": "^art_[a-f0-9]{64}$"
-                        },
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[a-f0-9]{64}$"
-                        },
-                        "size": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "mediaType": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 128
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "platform.common.ArtifactRef.v1"
-                    },
-                    {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 500
-                    }
-                  ]
-                },
-                "maxItems": 10
               }
             },
             "additionalProperties": false
@@ -52759,8 +53590,17 @@
       "properties": {
         "summary": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
+          "minLength": 1
+        },
+        "report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "changedFiles": {
           "type": "array",
@@ -52784,8 +53624,7 @@
             "type": "object",
             "required": [
               "command",
-              "exitCode",
-              "outputRef"
+              "exitCode"
             ],
             "properties": {
               "command": {
@@ -52795,45 +53634,6 @@
               },
               "exitCode": {
                 "type": "integer"
-              },
-              "outputRef": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "required": [
-                      "artifactId",
-                      "sha256",
-                      "size",
-                      "mediaType"
-                    ],
-                    "properties": {
-                      "artifactId": {
-                        "type": "string",
-                        "pattern": "^art_[a-f0-9]{64}$"
-                      },
-                      "sha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "size": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "mediaType": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128
-                      }
-                    },
-                    "additionalProperties": false,
-                    "$id": "platform.common.ArtifactRef.v1"
-                  },
-                  {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500
-                  }
-                ]
               }
             },
             "additionalProperties": false
@@ -52868,49 +53668,6 @@
                   "not_met",
                   "unknown"
                 ]
-              },
-              "evidence": {
-                "type": "array",
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "artifactId",
-                        "sha256",
-                        "size",
-                        "mediaType"
-                      ],
-                      "properties": {
-                        "artifactId": {
-                          "type": "string",
-                          "pattern": "^art_[a-f0-9]{64}$"
-                        },
-                        "sha256": {
-                          "type": "string",
-                          "pattern": "^[a-f0-9]{64}$"
-                        },
-                        "size": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "mediaType": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 128
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "platform.common.ArtifactRef.v1"
-                    },
-                    {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 500
-                    }
-                  ]
-                },
-                "maxItems": 10
               }
             },
             "additionalProperties": false

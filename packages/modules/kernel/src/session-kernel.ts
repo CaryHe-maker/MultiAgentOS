@@ -86,6 +86,9 @@ import { ArtifactSweep } from './session/artifact-sweep.js';
 import { SessionRefs, TrustRecords, WebSearchTrust } from './session/session-refs.js';
 
 /** What the user is told when memory runs short (Kernel/Monitor 4a). */
+/** Released artifacts are swept when this many bytes of them are waiting (Kernel/Execution 6d). */
+const RELEASED_SWEEP_BYTES = 20 * 1024 * 1024;
+
 export interface MemoryNotice {
   readonly source: MemorySource;
   readonly level: MemoryLevel;
@@ -317,6 +320,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       cancelRun: (request) => supervisor.cancelRun(request),
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
+      released: (bytes) => {
+        // Released bodies are reclaimed by the sweep: it runs when enough of them are waiting.
+        releasedBytes += bytes;
+        if (releasedBytes < RELEASED_SWEEP_BYTES) return;
+        releasedBytes = 0;
+        void sweep.run();
+      },
       afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
       compactionDue: (info) => holder.work?.compactionDue(info) ?? false,
       // How full the conversation's context is, told to the console beside the ordered events.
@@ -430,6 +440,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       inputIsValid,
       preset: deps.preset,
       web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },
+      external: {
+        homeDir: homedir(),
+        ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
+      },
       ...(deps.commands === undefined
         ? {}
         : {
@@ -448,6 +462,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
       webSearchTrusted: () => webTrust.isTrusted(repositoryRoot),
       trustWebSearch: () => webTrust.record(repositoryRoot),
+      retainArtifacts: (refs) => artifacts.retain(refs),
       storeQuestionContent: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
@@ -489,6 +504,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       deps.diagnostic?.(`artifact sweep failed: ${String(error)}\n`);
     },
   });
+
+  let releasedBytes = 0;
 
   const removeSessionFiles = async (sessionId: string): Promise<void> => {
     await persistence.sessionDirectory('kernel-core', sessionId).remove();
@@ -546,6 +563,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               now,
             });
       await snapshots?.load();
+      // Another folder's Session: its snapshots begin again before the folder is made its own, so a
+      // crash in between is repeated on the next open and never leaves old snapshots under it.
+      if (session.workspaceChanged) {
+        await snapshots?.startEpoch();
+        await session.rebind();
+      }
       const auditLog = persistence.appendLog<object>('kernel-core', {
         scope: 'SESSION',
         sessionId,

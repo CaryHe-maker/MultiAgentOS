@@ -191,6 +191,10 @@ export class Console {
   readonly #timeline: TimelineEntry[] = [];
   #timelineRun: string | undefined;
   readonly #listed: string[] = [];
+  /** The folder of each listed Session that is not of this one's: the user is asked before one is opened. */
+  readonly #elsewhere = new Map<string, string>();
+  /** The Session whose opening in this folder was asked about and awaits the second `/resume`. */
+  #confirming: string | undefined;
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
@@ -942,15 +946,29 @@ export class Console {
         break;
       case '/resume': {
         const sessionId = listed(argument);
-        if (sessionId === undefined) this.#notice(text.notNow);
-        else {
-          this.#putBack();
-          const opened = await this.#deps.gateway.openSession(
-            { requestId: newId('req'), sessionId },
-            this.#context(),
-          );
-          if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        if (sessionId === undefined) {
+          this.#notice(text.notNow);
+          break;
         }
+        // A Session of another folder is opened here only after the user was told what it means.
+        const folder = this.#elsewhere.get(sessionId);
+        if (folder !== undefined && this.#confirming !== sessionId) {
+          this.#confirming = sessionId;
+          this.#notice(text.confirmOtherFolder(folder, this.#listed.indexOf(sessionId) + 1));
+          break;
+        }
+        this.#confirming = undefined;
+        this.#putBack();
+        const opened = await this.#deps.gateway.openSession(
+          {
+            requestId: newId('req'),
+            sessionId,
+            ...(folder === undefined ? {} : { confirmWorkspaceChange: true }),
+          },
+          this.#context(),
+        );
+        if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        else this.#notice(describeReason(opened.reasonCode));
         break;
       }
       case '/delete': {
@@ -1062,27 +1080,50 @@ export class Console {
     if (event.type === 'SessionDeleted')
       this.#notice(text.sessionDeleted(event.outcome === 'DELETED'));
     else {
+      // This folder's Sessions first, then the others, numbered on through both.
+      const here = event.sessions.filter((session) => session.here).slice(0, 10);
+      const others = event.sessions.filter((session) => !session.here).slice(0, 10);
       this.#listed.splice(
         0,
         this.#listed.length,
-        ...event.sessions.map((session) => session.sessionId),
+        ...[...here, ...others].map((session) => session.sessionId),
       );
-      if (event.sessions.length === 0) this.#notice(text.noSessions);
+      this.#elsewhere.clear();
+      this.#confirming = undefined;
+      for (const session of others) this.#elsewhere.set(session.sessionId, session.repositoryRoot);
+      if (here.length + others.length === 0) this.#notice(text.noSessions);
       else {
-        this.#notice(text.recentSessions);
-        this.#deps.view.print({
-          kind: 'LIST',
-          text: event.sessions
-            .slice(0, 10)
-            .map((session, index) =>
-              text.sessionLine(
-                index + 1,
-                terminalText(session.title ?? text.untitled),
-                session.turnCount,
-              ),
-            )
-            .join('\n'),
-        });
+        if (here.length > 0) {
+          this.#notice(text.recentSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: here
+              .map((session, index) =>
+                text.sessionLine(
+                  index + 1,
+                  terminalText(session.title ?? text.untitled),
+                  session.turnCount,
+                ),
+              )
+              .join('\n'),
+          });
+        }
+        if (others.length > 0) {
+          this.#notice(text.otherFolderSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: others
+              .map((session, index) =>
+                text.otherFolderSessionLine(
+                  here.length + index + 1,
+                  terminalText(session.title ?? text.untitled),
+                  session.turnCount,
+                  terminalText(session.repositoryRoot),
+                ),
+              )
+              .join('\n'),
+          });
+        }
       }
     }
     this.#refresh();
@@ -1225,6 +1266,17 @@ export class Console {
         this.#activity.delete(COMPACTION_LINE);
         this.#notice(text.compactionFailed[event.reason]);
         break;
+      case 'ExternalReadPaused':
+        this.#deps.view.print({
+          kind: 'ERROR',
+          text: text.externalPaused(
+            event.attempts.map((attempt) => ({
+              path: terminalText(attempt.path),
+              reason: attempt.reason,
+            })),
+          ),
+        });
+        break;
       case 'WorkspaceReverted':
         this.#notice(text.undone(event.revertedTurnIds.length));
         break;
@@ -1330,6 +1382,12 @@ export class Console {
       return text.webSearch(event.queries.map(terminalText), terminalText(event.provider));
     if (event.capability === 'web.fetch')
       return text.webFetch(terminalText(event.host), terminalText(event.url));
+    if (event.capability === 'external.read')
+      return text.externalRead(
+        terminalText(event.root),
+        terminalText(event.path),
+        terminalText(event.provider),
+      );
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),

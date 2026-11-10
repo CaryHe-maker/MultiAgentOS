@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import {
   InteractionInboxEventSchema,
   MEDIA_TYPES,
@@ -18,7 +21,7 @@ import {
   testFileReadOutput,
   testUnitDefinition,
 } from '@multiagentos/contracts/test-support';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run-work.js';
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
@@ -1590,6 +1593,19 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
       ),
     ).toBe('DELEGATION_NOT_FOUND');
   });
+
+  it('accepts the references of a handover to keep, and answers a repeat as the same request (Core 5g)', async () => {
+    const kernel = await open();
+    const request = {
+      ...kernel.inRun,
+      requestId: newId('req'),
+      refs: [testArtifactRef('a'), testArtifactRef('b')],
+    };
+    const first = await kernel.actor.call(() => kernel.run().work.retainArtifacts(request));
+    const again = await kernel.actor.call(() => kernel.run().work.retainArtifacts(request));
+    expect(first).toEqual({ requestId: request.requestId, outcome: 'ACCEPTED' });
+    expect(again).toEqual(first);
+  });
 });
 
 describe('run control of Kernel/Core 5e', () => {
@@ -1889,5 +1905,246 @@ describe('run control of Kernel/Core 5e', () => {
         (entry) => entry.event.type === 'HumanResolved' && entry.event.resolution === 'CANCELLED',
       ),
     ).toBe(true);
+  });
+});
+
+describe('reading outside the workspace (Kernel/Core 5h)', () => {
+  const external = { protectedCapabilities: ['external.read'] } as const;
+  const readUnit = testUnitDefinition('FILE_READ', { ...external, id: 'external-read' });
+  const listUnit = testUnitDefinition('REPOSITORY_LIST', { ...external, id: 'external-list' });
+  const searchUnit = testUnitDefinition('REPOSITORY_SEARCH', {
+    ...external,
+    id: 'external-search',
+  });
+  const caps = ['repo.read', 'external.read'] as const;
+  const agent = testPinnedAgent({
+    units: [fileRead, readUnit, listUnit, searchUnit, publish],
+    capabilities: [...caps],
+  });
+  type Kernel = Awaited<ReturnType<typeof setup>>;
+
+  let base = '';
+  let home = '';
+  const folders = async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'ext-run-')));
+    home = join(base, 'home');
+    await mkdir(home, { recursive: true });
+    for (const [path, text] of Object.entries({
+      'proj/.git/HEAD': 'ref',
+      'proj/src/a.ts': 'x',
+      'proj/docs/d.md': 'y',
+      'other/b.ts': 'z',
+    })) {
+      await mkdir(dirname(join(base, path)), { recursive: true });
+      await writeFile(join(base, path), text);
+    }
+  };
+  afterEach(async () => {
+    if (base !== '') await rm(base, { recursive: true, force: true });
+    base = '';
+  });
+  const open = async () => {
+    await folders();
+    const kernel = await setup(agent, { runWork: { external: { homeDir: home } } });
+    await kernel.register(undefined, [...caps]);
+    return kernel;
+  };
+  const externalQuestions = (kernel: Kernel) =>
+    kernel.questions().filter((q) => q.capability === 'external.read');
+  const failAttempt = async (kernel: Kernel, index: number) => {
+    const attempt = kernel.execution.started[index];
+    if (attempt === undefined) throw new Error('no attempt');
+    await kernel.actor.call(() => {
+      kernel.run().work.attempts.registerExecution(attempt.unitAttemptId, `exe_fail${index}`);
+      kernel.run().work.attempts.submitResultCheck({
+        unitAttemptId: attempt.unitAttemptId,
+        executionId: `exe_fail${index}`,
+        outcome: 'REJECTED',
+        reasonCode: 'NOT_FOUND',
+      } as never);
+    });
+    await kernel.settled();
+  };
+  const paused = (kernel: Kernel) =>
+    kernel.toInteraction.flatMap((entry) =>
+      entry.event.type === 'ExternalReadPaused' ? [entry.event] : [],
+    );
+
+  it('asks once for each external repository, whichever of the three tools comes next', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'proj', 'src', 'a.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toMatchObject([
+      { root: join(base, 'proj'), path: join(base, 'proj', 'src', 'a.ts'), provider: 'deepseek' },
+    ]);
+    expect(kernel.execution.started).toEqual([]);
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    // The executor gets the folder that was allowed and the path below it, nothing absolute.
+    expect(kernel.execution.started[0]?.spec).toMatchObject({
+      scope: {
+        kind: 'REPOSITORY',
+        repositoryRoot: join(base, 'proj'),
+        external: { below: 'src/a.ts' },
+      },
+      input: { path: 'src/a.ts' },
+    });
+    await kernel.submit(listUnit, { path: join(base, 'proj', 'docs') });
+    await kernel.submit(searchUnit, { query: 'alpha', path: join(base, 'proj') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started[1]?.spec).toMatchObject({
+      scope: { external: { below: 'docs' } },
+      input: { path: 'docs' },
+    });
+    // The whole repository is asked about as itself: no path in the input.
+    expect(kernel.execution.started[2]?.spec.input).toEqual({ query: 'alpha' });
+    expect(kernel.execution.started[2]?.spec.scope).toMatchObject({ external: { below: '' } });
+    // Another repository asks again.
+    await kernel.submit(readUnit, { path: join(base, 'other', 'b.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(2);
+  });
+
+  it('is not the workspace: its own reads keep their scope and nothing external shows in it', async () => {
+    const kernel = await open();
+    await kernel.submit(fileRead, { path: 'a.ts' });
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.execution.started[0]?.spec.scope).toEqual({
+      kind: 'REPOSITORY',
+      repositoryRoot: '/repository',
+      exclusions: expect.any(Array) as unknown,
+    });
+  });
+
+  it('answers a path that cannot be read without asking anyone, and says nothing of why', async () => {
+    const kernel = await open();
+    for (const path of [
+      join(base, 'missing'),
+      'relative/path.ts',
+      '/etc/passwd',
+      '/',
+      home,
+      join(home, '.ssh', 'id_rsa'),
+    ])
+      await kernel.submit(readUnit, { path });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toEqual([]);
+    expect(kernel.execution.started).toEqual([]);
+    expect(
+      kernel.reports().map((report) => ('reasonCode' in report ? report.reasonCode : '')),
+    ).toEqual(Array.from({ length: 6 }, () => 'EXTERNAL_PATH_UNAVAILABLE'));
+  });
+
+  it('is refused to an Agent that does not have the capability', async () => {
+    await folders();
+    const kernel = await setup(agent, { runWork: { external: { homeDir: home } } });
+    await kernel.register(undefined, ['repo.read']);
+    await kernel.submit(readUnit, { path: join(base, 'proj', 'src', 'a.ts') });
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'CAPABILITY_NOT_GRANTED' },
+    ]);
+  });
+
+  it('pauses the run after two failures in a row, and tells the user what was tried', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toMatchObject([
+      {
+        attempts: [
+          { path: join(base, 'missing-1'), reason: 'UNAVAILABLE' },
+          { path: join(base, 'missing-2'), reason: 'UNAVAILABLE' },
+        ],
+      },
+    ]);
+    expect(kernel.run().control.phase).toBe('PAUSING');
+  });
+
+  it('counts what the executor refuses too, and a success in between starts the count over', async () => {
+    const kernel = await open();
+    const file = join(base, 'proj', 'src', 'a.ts');
+    await kernel.submit(readUnit, { path: file });
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    await failAttempt(kernel, 0);
+    expect(paused(kernel)).toEqual([]);
+    // A success: the one failure is forgiven.
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await kernel.finish(1);
+    await kernel.settled();
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await failAttempt(kernel, 2);
+    expect(paused(kernel)).toEqual([]);
+    // Two in a row: the failure of the executor and a path that does not exist.
+    await kernel.submit(readUnit, { path: join(base, 'missing') });
+    await kernel.settled();
+    expect(paused(kernel)).toMatchObject([
+      { attempts: [{ reason: 'FAILED' }, { reason: 'UNAVAILABLE' }] },
+    ]);
+  });
+
+  it('starts the count from zero once the run is continued', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+    kernel.execution.onDrained?.();
+    await kernel.settled();
+    expect(kernel.run().control.phase).toBe('PAUSED');
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    // One failure is not two: the earlier two were counted and spent.
+    await kernel.submit(readUnit, { path: join(base, 'missing-3') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+    expect(kernel.run().control.phase).toBe('RUNNING');
+    await kernel.submit(readUnit, { path: join(base, 'missing-4') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(2);
+  });
+
+  it('also starts the count over when the user paused the run, not the system', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.settled();
+    await kernel.actor.call(() => kernel.actor.pauseRun(kernel.run()));
+    kernel.execution.onDrained?.();
+    await kernel.settled();
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    // One failure before the pause and one after are not two in a row.
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+    await kernel.submit(readUnit, { path: join(base, 'missing-3') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+  });
+
+  it('counts a refusal by the user, and does not ask again for what the AgentRun was refused', async () => {
+    const kernel = await open();
+    const file = join(base, 'proj', 'src', 'a.ts');
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await kernel.answer('DENY');
+    await kernel.settled();
+    await kernel.submit(readUnit, { path: join(base, 'other', 'b.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(1);
+    expect(
+      kernel.reports().map((report) => ('reasonCode' in report ? report.reasonCode : '')),
+    ).toEqual(['USER_DECLINED', 'USER_DECLINED']);
+    expect(paused(kernel)).toMatchObject([
+      { attempts: [{ reason: 'DECLINED' }, { reason: 'DECLINED' }] },
+    ]);
   });
 });

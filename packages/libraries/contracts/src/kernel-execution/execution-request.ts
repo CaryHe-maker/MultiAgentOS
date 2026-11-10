@@ -23,6 +23,12 @@ const RepositoryScopeSchema = closed({
   /** The realpath of the repository root. */
   repositoryRoot: text(4096),
   exclusions: Type.Array(ExclusionRuleSchema),
+  /**
+   * Present for `external.read`: the root is a folder outside the workspace that the user allowed,
+   * and this call stays below `below` (relative to it, '' for all of it). Paths are shown in full
+   * and project instructions are not looked for (ExecutorSet 5e).
+   */
+  external: Type.Optional(closed({ below: Type.String({ maxLength: 1024 }) })),
 });
 /** Derived by Core from the ceiling of the AgentRun: what a write may touch (ExecutorSet 5b). */
 const WorkspaceScopeSchema = closed({
@@ -72,6 +78,8 @@ export const SearchExecutorInputSchema = closed(
     mode: Type.Enum(SEARCH_MODES),
     maxItems: Type.Integer({ minimum: 1, maximum: 50 }),
     tokenBudget: count(1),
+    /** Only files below this directory, relative to the root. */
+    path: Type.Optional(text(1024)),
   },
   'kernel.execution.SearchExecutorInput.v1',
 );

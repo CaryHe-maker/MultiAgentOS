@@ -391,6 +391,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       });
     },
     releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
+    retainArtifacts: (request) => Promise.resolve(ack(request.requestId)),
     // The fake never starts a compaction; a test that needs one replaces these.
     reportCompactionSource: (request) =>
       Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),
@@ -514,13 +515,17 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
           requestId: listRequest,
           sessions: request.sessions
             .filter((entry) => entry.status === 'ACTIVE')
-            .map(({ sessionId, createdAt, lastActiveAt, turnCount, fork }) => ({
-              sessionId,
-              createdAt,
-              lastActiveAt,
-              turnCount,
-              ...(fork === undefined ? {} : { fork }),
-            })),
+            .map(
+              ({ sessionId, repositoryRoot: root, createdAt, lastActiveAt, turnCount, fork }) => ({
+                sessionId,
+                repositoryRoot: root,
+                here: root === repositoryRoot,
+                createdAt,
+                lastActiveAt,
+                turnCount,
+                ...(fork === undefined ? {} : { fork }),
+              }),
+            ),
         }),
       );
       return Promise.resolve(ack(request.requestId));
@@ -588,7 +593,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     listSessions: (request) => {
       const queryId = newId('slq');
       queries.set(queryId, request.requestId);
-      later(() => systemToWorkflow({ type: 'SessionListQuery', queryId, repositoryRoot }));
+      later(() => systemToWorkflow({ type: 'SessionListQuery', queryId }));
       return Promise.resolve(ack(request.requestId));
     },
     deleteSession: (request) => {

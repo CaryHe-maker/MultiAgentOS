@@ -47,10 +47,24 @@ export class SessionRefs {
     return this.#write(sessionId, 'DELETED');
   }
 
-  /** Exists, is not deleted and belongs to this process's repository (Interface 2.2). */
+  /** Exists and is not deleted: a Session of another folder is opened too, once the user agrees. */
   isOpenable(sessionId: string): boolean {
-    const ref = this.#refs.get(sessionId);
-    return ref?.status === 'ACTIVE' && ref.repositoryRoot === this.#repositoryRoot;
+    return this.#refs.get(sessionId)?.status === 'ACTIVE';
+  }
+
+  /** The folder the Session was last worked on in; undefined for a Session Kernel does not know. */
+  rootOf(sessionId: string): string | undefined {
+    return this.#refs.get(sessionId)?.repositoryRoot;
+  }
+
+  /** Whether the Session was last worked on in the folder of this process (M2Design 2.3). */
+  isHere(sessionId: string): boolean {
+    return this.rootOf(sessionId) === this.#repositoryRoot;
+  }
+
+  /** The Session is worked on in the folder of this process from now on. */
+  rebind(sessionId: string): Promise<void> {
+    return this.#write(sessionId, 'ACTIVE');
   }
 
   /** Workflow's list, without what Kernel does not know as an openable Session. */

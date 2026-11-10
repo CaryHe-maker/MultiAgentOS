@@ -91,6 +91,18 @@ export const AuthorizationRequestSchema = Type.Union(
       url: text(2048),
       host: text(253),
     }),
+    /**
+     * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
+     * what an answer allows; `path` is what was asked for.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('external.read'),
+      root: text(4096),
+      path: text(4096),
+      /** Who receives what is read. */
+      provider: text(64),
+    }),
     /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
     closed({
       ...question,
@@ -301,6 +313,25 @@ export const CompactionFailedSchema = closed(
 );
 export type CompactionFailed = Static<typeof CompactionFailedSchema>;
 
+/**
+ * Two calls in a row to read outside the workspace failed, and the run is paused (Kernel/Core 5h).
+ * The paths are what the Agent tried; the user continues with the right one, or stops the run.
+ */
+export const ExternalReadPausedSchema = closed(
+  {
+    type: Type.Literal('ExternalReadPaused'),
+    attempts: Type.Array(
+      closed({
+        path: text(4096),
+        reason: Type.Enum(['UNAVAILABLE', 'DECLINED', 'FAILED']),
+      }),
+      { minItems: 1, maxItems: 8 },
+    ),
+  },
+  'kernel.control.ExternalReadPaused.v1',
+);
+export type ExternalReadPaused = Static<typeof ExternalReadPausedSchema>;
+
 export const KernelToInteractionEventSchema = Type.Union([
   AuthorizationRequestSchema,
   AuthorizationResolvedSchema,
@@ -315,6 +346,7 @@ export const KernelToInteractionEventSchema = Type.Union([
   WorkspaceRevertedSchema,
   ContextCompactedSchema,
   CompactionFailedSchema,
+  ExternalReadPausedSchema,
 ]);
 export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 

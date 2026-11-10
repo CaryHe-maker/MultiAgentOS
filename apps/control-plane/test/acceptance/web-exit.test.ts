@@ -172,7 +172,7 @@ const sessionDirectory = async (dataDir: string) => {
 };
 const auditOf = async (dataDir: string) =>
   readFile(join(await sessionDirectory(dataDir), 'kernel-core', 'audit.jsonl'), 'utf8');
-const finish = (summary: string) => tool('finish_subagent', { summary, findings: [] });
+const finish = (summary: string) => tool('finish_subagent', { summary });
 const webQuestions = (chat: Chat) => chat.questions.filter((text) => /联网|网站/u.test(text));
 
 describe('W1: search, read and answer with the source', () => {

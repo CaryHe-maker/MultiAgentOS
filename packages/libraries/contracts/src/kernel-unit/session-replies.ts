@@ -53,6 +53,7 @@ export type ReportSessionCommandRequest = Static<typeof ReportSessionCommandRequ
 
 export const SessionListEntrySchema = closed({
   sessionId: IdSchemas.sessionId,
+  repositoryRoot: text(4096),
   createdAt: TimestampSchema,
   lastActiveAt: TimestampSchema,
   turnCount: count(),
