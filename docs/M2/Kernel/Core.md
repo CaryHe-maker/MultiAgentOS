@@ -259,8 +259,8 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 | 能力 | 级别 | 资源键 | 询问 |
 |---|---|---|---|
-| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次，`ALLOW` 与 `DENY`；询问写明查询会发给哪个提供方 |
-| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目只覆盖这个主机 | 每个新主机第一次访问时询问一次，`ALLOW` 与 `DENY`；询问写明主机名与完整地址 |
+| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次；回答 `ALLOW`（本次运行）、`FOLDER`（这个文件夹以后都允许，见下）或 `DENY`；询问写明查询会发给哪个提供方 |
+| `web.fetch` | 不确定 | 主机名（小写，国际化域名转为 ASCII）；条目覆盖这个主机，`ANY_HOST` 的条目（资源键 `*`）覆盖所有公开主机 | 每个新主机第一次访问时询问一次；回答 `ALLOW`（只这个主机，本次运行）、`ANY_HOST`（本次运行内所有公开网站）或 `DENY`；询问写明主机名与完整地址 |
 
 **第 ① 步**（在能力上限检查之后、查找条目之前）：
 - `web.fetch` 的地址里有字面量的 IP 或 `localhost`、`*.localhost`、`*.local`、`*.internal`、单标签名，落在 ExecutorSet 第 5d 节的禁止范围内：`REJECTED(ADDRESS_FORBIDDEN)`，**不询问**；协议不是 `http(s)`、带用户信息或无法解析的同样拒绝（判断用 contracts 里与 Executor 相同的 `checkUrlLiteral`）；
@@ -268,12 +268,57 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 要点：
 - 询问的合并与拒绝的绑定与其他能力相同（第 5a.4 节）：并行的 explorer 访问同一个新主机时合并为一个询问；用户拒绝后，Core 的拒绝条目绑定这个 AgentRun 与这个主机（条目的 `hostKey`），同一主机不再询问，其他主机照常询问；`ask_user` 里的同意不产生授权（第 5.5 节）。Workflow 另外按工具名记住被拒绝的工具（所有工具相同，Workflow 第 7 节），所以同一个 AgentRun 之后的 `web_fetch`（含其他主机）不经 Core，直接得到"用户拒绝了这个工具"的结果；下一个 AgentRun 可以重新询问。
-- 并行访问不同主机时询问可能偏多，评估"本运行内全部域名均允许"选项留在限制清单（M2Design 第 14 节第 5 项），目前不做。
+- **"本次运行内所有公开网站"（`ANY_HOST`，只对 `web.fetch`）**：回答之后，条目 `resourceKey: '*'` 覆盖这个运行内所有公开主机，同时正在等待的其他主机的询问一并以 GRANTED 结束（`settleCovered`，只结束被条目覆盖的 `web.fetch` 询问）。它**不取消**第 ① 步：私网、回环、链路本地、云元数据地址仍然 `ADDRESS_FORBIDDEN`，`deniedDomains` 仍然 `DOMAIN_DENIED`，用户之前拒绝过的主机仍然 `USER_DECLINED`。它只管本次运行，不跨运行、不写盘。放宽之后，网址能带走多少数据由 Executor 一侧限制：网址最长 800 个字符，查询值里长度不少于 32、只含令牌字符、不是十六进制（提交哈希）、熵不小于 4.3 比特/字符的值（base64、密钥的样子）整个调用以 `SECRET_IN_REQUEST` 拒绝（`carriesData`，与密钥扫描同一条路径，不说明匹配了什么）；一个 AgentRun 能发多少次抓取仍由它的 `maxToolUnits` 限制。
+- **"这个文件夹以后都允许"（`FOLDER`，只对 `web.search`）**：回答之后本次运行照常得到条目，并且 Session 管理把这个仓库根目录记进系统级的 `kernel-core/trusted-web-search.jsonl`（Interface/Persistence 第 4.6 节）；之后在这个文件夹里开始的运行一开始就带着这个条目，不再询问。它是授权"只管本次运行、恢复的会话不复用授权"的一个明确例外，范围只有 `web.search` 这一项能力：不含 `web.fetch`，不含命令。撤销：删除该文件里这个仓库的行（或整个文件）。
+- **与命令联网隔离**：`command.network` 是另一项能力，极危险级，每次单独询问，只有 main 的能力白名单里有；`web.search`、`web.fetch` 的任何条目（包括 `ANY_HOST` 与 `FOLDER`）都不进入命令的判定，命令的判定也不读它们。`web-authorization.test.ts` 固定这一点：全部网页条目都在时，`network: true` 的命令仍是 `ASK`（critical）；Agent 的上限里没有 `command.network` 时仍是 `CAPABILITY_NOT_GRANTED`。
 - 能力上限：main 与 explorer 的定义声明两项能力；worker 不声明（它改文件、跑命令，不联网）。一个 AgentRun 的上限里没有它们时是 `CAPABILITY_NOT_GRANTED`。两项能力把数据发出本机，不属于安全能力：`readonly` 预设下它们被去掉（`capabilitiesUnderPreset`）。资源键里的主机只按原样比较（`a.example` 的授权不覆盖 `b.a.example`），不像写入根那样按路径包含。
 - 配置 `KernelConfig.web`：`deniedDomains: string[]`（缺省空）、`maxContentBytes`（缺省 2097152）、`search: { provider: string, baseUrl }`（缺省 `deepseek`）、`fetch: { remote: { provider: string, baseUrl } | null }`（缺省 `deepseek`；本地抓取总是先用，`remote` 只在它做不到时才用，`null` 表示不用）。`provider` 是 ExecutorSet 第 5d 节注册表里的名字，也是密钥的名字（`<NAME>_API_KEY`），密钥不在配置里；名字不存在在系统启动时报错。询问里写明的"搜索词发给谁"就是这个名字。
-- 审计：授权的询问与回答、拒绝都写审计（已有机制）；`WEB_SEARCH`、`WEB_FETCH` 行由 Execution 写（`kernel-core/audit.jsonl`，内容见 ExecutorSet 第 5d 节）。询问事件 `AuthorizationRequest` 带 `capability: 'web.search'`（`queries`、`provider`）或 `'web.fetch'`（`url`、`host`），回答是 `ALLOW` 或 `DENY`。
+- 审计：授权的询问与回答、拒绝都写审计（已有机制）；`WEB_SEARCH`、`WEB_FETCH` 行由 Execution 写（`kernel-core/audit.jsonl`，内容见 ExecutorSet 第 5d 节）。询问事件 `AuthorizationRequest` 带 `capability: 'web.search'`（`queries`、`provider`）或 `'web.fetch'`（`url`、`host`），回答是 `ALLOW`、`DENY`，`web.fetch` 还可以是 `ANY_HOST`，`web.search` 还可以是 `FOLDER`；一个问题不提供别的问题的回答（`offers`）。
 - 界面：询问的文字、活动区的 `web_search`、`web_fetch` 行与折叠行（UserInteraction 第 6 节增补）。
-- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、拒绝绑定主机、readonly）、`run-work.test.ts`（询问流程、范围为 `NONE`）、`web-exit`（W1–W3、A 组网页部分）。
+- 测试：`unit-decision.test.ts`（两项能力的资源键、第 ① 步的两种拒绝、拒绝绑定主机、readonly）、`web-authorization.test.ts`（`ANY_HOST`、`FOLDER`、与命令联网隔离）、`run-work.test.ts`（询问流程、范围为 `NONE`、`ANY_HOST` 结束同时在等的其他询问、`FOLDER` 被记下）、`web-exit`（W1–W3、A 组网页部分）。
+
+## 5g. 交接带的产物：`retainArtifacts`
+
+设计以 M2Design 第 3.7 节 0a 为准。Workflow 登记一次交接（`REFERENCES_REGISTERED`）之前调用 `retainArtifacts`，请 Kernel 把交接带的产物改为随 Session 保留。
+
+- **为什么需要**：工具结果的预览随 Session 保留，完整输出只保留 `expiringRetentionDays`（缺省 7 天）。交接给别的 AgentRun 的完整输出要和登记表一样长久，否则登记还在、内容已经没有。
+- **做什么**：对 `refs` 中每一项，若它是本 Session 的、没有过期、且不是 `SESSION`，就追加一行 `SESSION` 的登记（保留 `fullOutput` 标记，`retainedSince` 取现在）；已经是 `SESSION` 的不动。
+- **全有或全无**：有一项不属于本 Session 或已过期时，什么都不改，以 `INVALID_ARTIFACT_REF` 拒绝（`issuer: CORE`），Workflow 因此不登记这次交接。
+- **幂等**：同一个 `requestId` 重复请求得到同一个应答（与其他 syscall 相同，第 2 节）；再次保留已经保留的产物不写新行。
+- **只处理引用**：Kernel 不看产物的内容，也不判断谁能读；谁能读由 Workflow 的登记表决定。
+
+## 5h. 读取工作区之外的文件：`external.read`
+
+设计以 M2Design 第 5.2、8.1 节为准。能力表（第 5a.2 节）增加一行，判定顺序（第 5a.3 节）不变。三个外部读取工具（`list_external_files`、`read_external_file`、`search_external_repository`）是三个 Unit（`external-list`、`external-read`、`external-search`），分别沿用 `REPOSITORY_LIST`、`FILE_READ`、`REPOSITORY_SEARCH` 的 Executor，声明 `external.read` 代替 `repo.read`（目录清单会检查：这三种 Unit 之外不能声明它，也不能同时声明两者）。
+
+| 能力 | 级别 | 资源键 | 询问 |
+|---|---|---|---|
+| `external.read` | 危险 | 授权目录的真实路径（绝对）；条目覆盖这个目录和它下面的全部路径，按路径包含比较（`/x/proj` 不覆盖 `/x/project`） | 每个 WorkflowRun 内，每个外部仓库第一次读取时询问一次；回答 `ALLOW`（本次运行）或 `DENY`；询问写明授权的目录、被请求的路径和内容发给谁 |
+
+**路径的处理**（`session/external-read.ts`，在判定之前做，判定本身仍是纯函数，只看到"授权目录"或"读不了"）：
+1. 路径必须是绝对路径（`C:\x` 形式在 WSL 下转成 `/mnt/c/x`）；不含空字符，长度不超过 1024；相对路径、不存在的路径一律是"读不了"。
+2. 取 `realpath`：符号链接按它指向的真实位置判断，链接本身的名字不起作用；目标必须是文件或目录。
+3. 工作区内的路径是"读不了"（那是 `read_file` 的事，系统不为同一处内容开第二条授权路径）。
+4. 拒绝名单（`isDeniedRoot`，对真实路径检查，范围包括它下面的一切）：系统根目录和只有一段的路径（`/`、`/opt`、`/tmp`……）；`/proc`、`/sys`、`/dev`、`/etc`、`/root`、`/boot`、`/run`、`/var`、`/bin`、`/sbin`、`/lib*`、`/snap`；`/home/<用户>` 与 `/Users/<用户>` 本身（别人的主目录）；当前用户的 `$HOME` 本身以及它下面以点号开头的一切（`~/.ssh`、`~/.config`、`~/.claude`……）；`/mnt/<盘符>` 本身、`/mnt` 下不是盘符的挂载（`/mnt/wsl`）、Windows 盘上的系统目录（`Windows`、`Program Files*`、`ProgramData`……）、`Users` 与 `Users/<用户>` 本身及用户目录里的点号目录和 `AppData`；系统数据目录（`dataDir`）及其下一切。"根目录"在这里指文件系统的根 `/`，也包括任何只有一段的路径：它们太大，不是一个项目。
+5. 找授权目录：已经有条目覆盖这个路径时，取最深的那个条目的目录（所以一次回答覆盖仓库里之后的任何文件，不因文件所在的子目录变化而再问）；否则目录路径本身就是授权目录；文件路径取它所在的 git 仓库的根（向上找 `.git`，找到的目录不能落在拒绝名单里），找不到就取文件所在的目录。授权目录落在拒绝名单里、或在工作区里，也是"读不了"。
+6. 授权目录之外，另有这些排除规则：默认排除规则、会话自己的规则，加上凭据的位置（`**/.ssh/**`、`**/.aws/**`、`**/.gnupg/**`、`**/.kube/**`、`**/.docker/**`、`.npmrc`、`.netrc`、`.pgpass`、`*.p12`、`*.pfx`、`*.jks`、`*.keystore`）；数据目录若在授权目录之下，也加成一条排除规则（规则写不出来就不授权）。
+
+**"读不了"与"没有授权"是两回事**：所有"读不了"的情形（不存在、不是绝对路径、在工作区里、命中拒绝名单、授权目录非法）都返回同一个 `REJECTED(EXTERNAL_PATH_UNAVAILABLE)`，**不询问**，也不说明是哪一种，避免模型借错误信息探测机器的目录结构（系统本身也从不提供工作区之外的路径）。读到的文件被排除规则挡住时，Executor 返回 `OUT_OF_SCOPE`，同样不说明原因。
+
+**授权与范围**：
+- 拒绝绑定这个 AgentRun 与这项能力（和 `workspace.write` 相同），同一个 AgentRun 之后的外部读取直接得到 `USER_DECLINED`；Workflow 另外按工具名记住被拒绝的工具，三个工具各自记。条目只在本次运行里，不跨运行、不写盘；没有"以后都允许"。
+- 询问合并：同一个授权目录的并行询问合并为一个。
+- 请求的范围：`REPOSITORY`，`repositoryRoot` 是授权目录，`exclusions` 如上，另带 `external: { below }`（`below` 是请求的路径相对授权目录的路径，空串表示整个目录）。Kernel 把 Unit 的输入改写成相对授权目录的路径（`read`、`list` 的 `path`；`search` 的 `path`，整个目录时省略）；Executor 只看到相对路径。Executor 另外自己检查调用没有越过 `below`（ExecutorSet 第 5e 节）。
+- 命令与沙盒不变：命令仍只在工作区里运行，不能读外部目录，也不能借 `external.read` 写任何东西。
+- 审计：每次放行写一行 `EXTERNAL_READ`（请求、AgentRun、种类、被请求的路径、授权目录）；询问与回答、拒绝走已有的审计。
+
+**连续两次失败就暂停**：每个 WorkflowRun 里，Kernel 记录外部读取的失败：`EXTERNAL_PATH_UNAVAILABLE`、用户拒绝（`USER_DECLINED`）、Executor 拒绝或失败（含 `OUT_OF_SCOPE`、`NOT_FOUND`、`INVALID_RANGE`）；成功的一次读取把计数清零，被暂停或中止打断的不计。连续两次失败时：
+1. 向 UserInteraction 发 `ExternalReadPaused { attempts }`（两次的路径与原因：`UNAVAILABLE`、`DECLINED`、`FAILED`），控制台用红字显示 Agent 想读哪里；
+2. 暂停这个运行（第 5e 节的机制，和用户按 Ctrl+C 暂停一样）；
+3. 计数立即清零，`resumeRun` 时再清零一次；所以继续之后重新计数，不会连着触发。
+用户的选择：`/continue <正确的路径>`（说明作为插话交给 Agent）、Ctrl+C 中止、`/undo` 回退这一轮。Workflow 对这类失败**不计入**连续出错与"无进展"（Workflow 第 7 节），否则它会在暂停之前就让 Agent 收尾，用户继续时 Agent 只剩一次收尾调用。
+
+- 测试：`external-read.test.ts`（拒绝名单、授权目录的各种形状、符号链接、数据目录、判定与询问）、`run-work.test.ts`（询问一次、范围与输入的改写、无法读取不询问、暂停与重新计数、用户拒绝的计数）、`external-read-exit`（X1–X3：三个工具、秘密文件、链接、系统路径、工作区、拒绝、暂停与继续）。
 
 ## 6. Turn 与人类请求
 

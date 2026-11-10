@@ -38,6 +38,7 @@ interface WorkflowGatewayPort {
   updateActivity(request: UpdateActivityRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.5 节
   reserveDelegation(request: ReserveDelegationRequest, context: BoundaryContext): Promise<DelegationReserved | SyscallRejected>;
   releaseDelegation(request: ReleaseDelegationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  retainArtifacts(request: RetainArtifactsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.2 节
   // reportCompactionSource、ackCompaction（第 2.4 节）
 }
 ```
@@ -79,6 +80,10 @@ interface DelegationReserved {            // outcome: 'ACCEPTED'
 }
 // 额度不足：SyscallRejected { issuer: 'CORE', reasonCode: 'BUDGET_INSUFFICIENT', delegable: number }
 interface ReleaseDelegationRequest { requestId: string; sessionId: string; workflowRunId: string; delegationId: string }
+
+// 交接登记之前，请 Kernel 把它带的引用改为随 Session 保留（M2Design 第 3.7 节 0a；Kernel/Core 第 5g 节）
+interface RetainArtifactsRequest { requestId: string; sessionId: string; workflowRunId: string; refs: ArtifactRef[] /* 1..21 */ }
+// 有一个引用不属于本 Session 或已过期：SyscallRejected { issuer: 'CORE', reasonCode: 'INVALID_ARTIFACT_REF' }，全部不变
 
 type ThinkingEffort = 'none' | 'low' | 'high' | 'max';
 
@@ -381,8 +386,7 @@ type KernelToWorkflowSystemEvent = SessionListQuery | SessionDelete;
 
 interface SessionListQuery {
   type: 'SessionListQuery';
-  queryId: string;
-  repositoryRoot: string;            // 只列出这个仓库的 Session（M2Design 第 2.3 节 Session 第 0 条）
+  queryId: string;                  // 回复列出所有 Session，每个带最后工作的文件夹（Kernel 再按自己的引用标出是不是本进程的）
 }
 
 interface SessionDelete {

@@ -1,5 +1,9 @@
 import {
-  SUBAGENT_RESULT_CHARS,
+  parseReferenceName,
+  referenceName,
+  subagentAsWrittenText,
+  subagentFullText,
+  subagentShownText,
   AssembleContextPackSchema,
   ContextAssembleInputSchema,
   CommandInputSchema,
@@ -12,6 +16,7 @@ import {
   FileWriteInputSchema,
   OutputReadInputSchema,
   ModelCallInputSchema,
+  MEDIA_TYPES,
   ModelRawOutputSchema,
   OrientContextPackSchema,
   RepositoryListInputSchema,
@@ -45,6 +50,7 @@ import {
   type RepositoryOrientInput,
   type RepositorySearchInput,
   type ResolvedHistoryEntry,
+  type SubagentReport,
   type TokenCalibration,
 } from '@multiagentos/contracts';
 import type { AttemptSpec } from './run-attempts.js';
@@ -135,6 +141,8 @@ export interface RequestBuilderDeps {
 type Schema = Parameters<typeof validate>[0];
 
 const OBJECTIVE_MAX = 4000;
+/** What of the user's answer to `ask_user` the model is shown; the rest is cut. */
+const ANSWER_SHOWN_CHARS = 8000;
 /** The estimate may be low by this much; a reservation must still hold (Kernel/Monitor 3.2). */
 const RESERVED_INPUT_SHARE = 1.05;
 
@@ -152,6 +160,15 @@ function inputOf<T>(schema: Schema, value: unknown): T {
   const input = validate<T>(schema, value);
   if (!input.ok) throw new RequestBuildError('INVALID_INPUT');
   return input.value;
+}
+
+/** The summary and report a `finish_subagent` call carries; undefined when it carries none. */
+function reportOf(call: ModelRawOutput['toolCalls'][number]): SubagentReport | undefined {
+  const parsed = parsedCall(call).arguments;
+  if (parsed === null || typeof parsed !== 'object') return undefined;
+  const { summary, report } = parsed as { summary?: unknown; report?: unknown };
+  if (typeof summary !== 'string') return undefined;
+  return typeof report === 'string' ? { summary, report } : { summary };
 }
 
 function parsedCall(call: ModelRawOutput['toolCalls'][number]): ModelToolCall {
@@ -245,11 +262,11 @@ export class AttemptRequestBuilder {
         // compaction cut and kept to be read.
         if (!this.#deps.artifacts.isFullOutput(fullRef) && !this.#deps.artifacts.owns(fullRef))
           throw new RequestBuildError('INVALID_ARTIFACT_REF');
+        // The result of a SubAgent is read by the id of its finishing call, from the model output
+        // that holds the call: the summary, then the report.
+        const content = await this.#readable(fullRef, window.toolCallId);
         return {
-          request: made(
-            { ...window, content: await this.#text(fullRef) },
-            this.#toolLimits('OUTPUT_READ', identity),
-          ),
+          request: made({ ...window, content }, this.#toolLimits('OUTPUT_READ', identity)),
         };
       }
       case 'COMMAND': {
@@ -400,6 +417,17 @@ export class AttemptRequestBuilder {
     return this.#json<ModelRawOutput>(ref, ModelRawOutputSchema);
   }
 
+  /** The text `read_output` pages through: the artifact, or the result a model output holds. */
+  async #readable(ref: ArtifactRef, toolCallId: string): Promise<string> {
+    if (ref.mediaType !== MEDIA_TYPES.modelOutput) return this.#text(ref);
+    // The call is named as it was handed over, `ref_N/toolCallId`, or by its own id.
+    const callId = parseReferenceName(toolCallId)?.toolCallId ?? toolCallId;
+    const call = (await this.#rawOutput(ref)).toolCalls.find((each) => each.toolCallId === callId);
+    if (call === undefined) throw new RequestBuildError('INVALID_ARTIFACT_REF');
+    const report = reportOf(call);
+    return report === undefined ? call.argumentsText : subagentFullText(report);
+  }
+
   /** The entries of a projection with their texts, for a request Kernel makes itself. */
   async resolveHistory(entries: readonly ContextHistoryEntry[]): Promise<ResolvedHistoryEntry[]> {
     const resolved: ResolvedHistoryEntry[] = [];
@@ -466,10 +494,10 @@ export class AttemptRequestBuilder {
         // The result of the ask_user call: what the user said, cut like any long result.
         const said = await this.#text(entry.contentRef);
         const shown =
-          said.length <= SUBAGENT_RESULT_CHARS
+          said.length <= ANSWER_SHOWN_CHARS
             ? said
-            : `${said.slice(0, SUBAGENT_RESULT_CHARS)}
-[cut: the answer is ${String(said.length)} characters, only the first ${String(SUBAGENT_RESULT_CHARS)} are shown]`;
+            : `${said.slice(0, ANSWER_SHOWN_CHARS)}
+[cut: the answer is ${String(said.length)} characters, only the first ${String(ANSWER_SHOWN_CHARS)} are shown]`;
         return {
           ...base,
           kind: 'FEEDBACK',
@@ -505,13 +533,31 @@ ${shown}`,
           const raw = await this.#rawOutput(entry.outputRef);
           const call = raw.toolCalls.find((each) => each.toolCallId === entry.toolCallId);
           if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
+          const report = reportOf(call);
+          // What is cut is read by the reference the result was handed over as.
+          const name =
+            entry.referenceId === undefined
+              ? call.toolCallId
+              : referenceName(entry.referenceId, call.toolCallId);
+          // A result that does not follow the form is shown as it was written.
           lines.push(
-            call.argumentsText.length <= SUBAGENT_RESULT_CHARS
-              ? call.argumentsText
-              : `${call.argumentsText.slice(0, SUBAGENT_RESULT_CHARS)}
-[cut: the result is ${String(call.argumentsText.length)} characters, only the first ${String(SUBAGENT_RESULT_CHARS)} are shown]`,
+            report === undefined
+              ? subagentAsWrittenText(call.argumentsText, name)
+              : subagentShownText(report, name),
           );
         }
+        // What the task handed over is not shown: it is read when wanted, by its reference.
+        const { referenceId } = entry;
+        const handed = (entry.references ?? []).filter(
+          (each) => each.toolCallId !== entry.toolCallId,
+        );
+        if (referenceId !== undefined && handed.length > 0)
+          lines.push(
+            'Tool results of this task that you may read with read_output (not shown here):',
+            ...handed.map(
+              (each) => `- ${referenceName(referenceId, each.toolCallId)} (${each.tool})`,
+            ),
+          );
         return { ...base, kind: 'NOTE', text: lines.join('\n') };
       }
       case 'HANDOFF': {

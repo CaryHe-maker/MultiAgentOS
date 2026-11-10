@@ -64,6 +64,13 @@ export function instructionsToLoad(
         wanted.delete(record.path);
         break;
       }
+      case 'WORKSPACE_BOUND':
+        // Another folder: nothing was loaded from it yet, and what was wanted is the old one's.
+        loadedThisRun.clear();
+        loadedEver.clear();
+        skipped.clear();
+        wanted.clear();
+        break;
       case 'WORKSPACE_REVERTED':
         for (const loaded of [loadedThisRun, loadedEver])
           for (const [path, turn] of loaded)

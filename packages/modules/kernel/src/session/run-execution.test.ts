@@ -134,6 +134,7 @@ function setup(
   const ended: string[] = [];
   const faults: AttemptFault[] = [];
   const retries: RetryingActivity[] = [];
+  const releasedBytes: number[] = [];
   const cancelled: number[] = [];
   const cancelledExecutions: { executionId: string; reason: string }[] = [];
   const timers: { delayMs: number; due: () => void; cancelled: boolean }[] = [];
@@ -169,6 +170,7 @@ function setup(
           },
         }),
     retrying: (activity) => retries.push(activity),
+    released: (bytes) => releasedBytes.push(bytes),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
       void work();
@@ -186,6 +188,7 @@ function setup(
     limits: {
       maxAttempts: options.maxConcurrentAttempts ?? 6,
       maxExec: 1,
+      maxWeb: 10,
       serial: options.serialExecution === true,
     },
   });
@@ -280,6 +283,7 @@ function setup(
     ended,
     faults,
     retries,
+    releasedBytes,
     cancelled,
     cancelledExecutions,
     timers,
@@ -520,9 +524,10 @@ describe('technical retries', () => {
     const contextPackRef = await run.artifacts.put(
       canonicalJson(contextPack()),
       MEDIA_TYPES.contextPack,
-      'EXPIRING',
+      'ONCE',
     );
     await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope });
+    return contextPackRef;
   }
 
   it('waits for the longer of the back-off and Retry-After, and says so', async () => {
@@ -535,6 +540,41 @@ describe('technical retries', () => {
 
     await run.execution.handleFact(run.factFor(run.last(), failure()));
     expect(run.last().notBefore).toBe('2026-11-02T00:00:00.200Z');
+  });
+
+  it('keeps the context pack while it retries, and releases it when the attempt is over (Execution 6d)', async () => {
+    const run = setup();
+    const pack = await atModel(run);
+    await run.execution.handleFact(run.factFor(run.last(), failure()));
+    expect(run.dispatched).toHaveLength(2);
+    // A retry reads the same pack again: it is still there, and nothing was released.
+    expect(await run.artifacts.read(pack)).toMatchObject({ ok: true });
+    expect(run.releasedBytes).toEqual([]);
+
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryable: false })));
+    expect(run.reports[0]).toMatchObject({ status: 'FAILED' });
+    expect(await run.artifacts.read(pack)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+    expect(run.releasedBytes).toEqual([pack.size]);
+  });
+
+  it('releases the context pack of an attempt that gave up on a long Retry-After', async () => {
+    const run = setup();
+    const pack = await atModel(run);
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryAfterMs: 5001 })));
+    expect(await run.artifacts.read(pack)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+  });
+
+  it('does not release what is kept for the Session, only what was registered ONCE', async () => {
+    const run = setup();
+    const pack = await run.artifacts.put(
+      canonicalJson(contextPack()),
+      MEDIA_TYPES.contextPack,
+      'SESSION',
+    );
+    await run.submit('MODEL', { contextPackRef: pack, final: false }, { ...modelScope });
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryable: false })));
+    expect(await run.artifacts.read(pack)).toMatchObject({ ok: true });
+    expect(run.releasedBytes).toEqual([]);
   });
 
   it('gives up when Retry-After is too long, with the original reason', async () => {

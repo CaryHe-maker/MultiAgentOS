@@ -19,6 +19,7 @@ import {
 import { describeReason } from '../domain/interaction-messages.js';
 import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
+import { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './input-limit.js';
 import type {
   ActivityLine,
   ConsoleView,
@@ -108,13 +109,24 @@ function commandChoice(
   return undefined;
 }
 
+/** The wider answer a question about the web takes, when the user gave it. */
+function widerChoice(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  input: string,
+): 'ANY_HOST' | 'FOLDER' | undefined {
+  const answer = input.trim().toLowerCase();
+  if (item.wider === 'ANY_HOST' && /^(a|all|所有|全部)$/u.test(answer)) return 'ANY_HOST';
+  if (item.wider === 'FOLDER' && /^(f|folder|文件夹)$/u.test(answer)) return 'FOLDER';
+  return undefined;
+}
+
 function scopeOf(
   item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
   yes: boolean,
   input = '',
-): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' {
+): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER' {
   if (!yes) return 'DENY';
-  return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
+  return widerChoice(item, input) ?? commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
 }
 
 /** One AgentRun of the current run, for `/timeline`. */
@@ -179,6 +191,10 @@ export class Console {
   readonly #timeline: TimelineEntry[] = [];
   #timelineRun: string | undefined;
   readonly #listed: string[] = [];
+  /** The folder of each listed Session that is not of this one's: the user is asked before one is opened. */
+  readonly #elsewhere = new Map<string, string>();
+  /** The Session whose opening in this folder was asked about and awaits the second `/resume`. */
+  #confirming: string | undefined;
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
@@ -476,6 +492,10 @@ export class Console {
   async submit(line: string): Promise<void> {
     const input = line.trim();
     if (input.length === 0) return;
+    if (exceedsInputLimit(input)) {
+      this.#notice(text.inputTooLarge(inputBytes(input), MAX_INPUT_BYTES));
+      return;
+    }
     this.#hint = undefined;
     const pending = this.#pending[0];
     if (pending !== undefined) {
@@ -590,6 +610,10 @@ export class Console {
     const sessionId = this.#sessionId;
     const workflowRunId = this.#workflowRunId;
     const { name, text: note } = addressed(raw);
+    if (exceedsInputLimit(note)) {
+      this.#notice(text.inputTooLarge(inputBytes(note), MAX_INPUT_BYTES));
+      return;
+    }
     if (
       this.#runState !== 'RUNNING' ||
       sessionId === undefined ||
@@ -813,7 +837,10 @@ export class Console {
       return;
     }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
-    const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
+    const wider = item.kind === 'AUTHORIZATION' ? widerChoice(item, input) : undefined;
+    const yes =
+      wider !== undefined ||
+      (choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input));
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
     if (!yes && !no) {
       // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
@@ -919,15 +946,29 @@ export class Console {
         break;
       case '/resume': {
         const sessionId = listed(argument);
-        if (sessionId === undefined) this.#notice(text.notNow);
-        else {
-          this.#putBack();
-          const opened = await this.#deps.gateway.openSession(
-            { requestId: newId('req'), sessionId },
-            this.#context(),
-          );
-          if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        if (sessionId === undefined) {
+          this.#notice(text.notNow);
+          break;
         }
+        // A Session of another folder is opened here only after the user was told what it means.
+        const folder = this.#elsewhere.get(sessionId);
+        if (folder !== undefined && this.#confirming !== sessionId) {
+          this.#confirming = sessionId;
+          this.#notice(text.confirmOtherFolder(folder, this.#listed.indexOf(sessionId) + 1));
+          break;
+        }
+        this.#confirming = undefined;
+        this.#putBack();
+        const opened = await this.#deps.gateway.openSession(
+          {
+            requestId: newId('req'),
+            sessionId,
+            ...(folder === undefined ? {} : { confirmWorkspaceChange: true }),
+          },
+          this.#context(),
+        );
+        if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        else this.#notice(describeReason(opened.reasonCode));
         break;
       }
       case '/delete': {
@@ -1039,27 +1080,50 @@ export class Console {
     if (event.type === 'SessionDeleted')
       this.#notice(text.sessionDeleted(event.outcome === 'DELETED'));
     else {
+      // This folder's Sessions first, then the others, numbered on through both.
+      const here = event.sessions.filter((session) => session.here).slice(0, 10);
+      const others = event.sessions.filter((session) => !session.here).slice(0, 10);
       this.#listed.splice(
         0,
         this.#listed.length,
-        ...event.sessions.map((session) => session.sessionId),
+        ...[...here, ...others].map((session) => session.sessionId),
       );
-      if (event.sessions.length === 0) this.#notice(text.noSessions);
+      this.#elsewhere.clear();
+      this.#confirming = undefined;
+      for (const session of others) this.#elsewhere.set(session.sessionId, session.repositoryRoot);
+      if (here.length + others.length === 0) this.#notice(text.noSessions);
       else {
-        this.#notice(text.recentSessions);
-        this.#deps.view.print({
-          kind: 'LIST',
-          text: event.sessions
-            .slice(0, 10)
-            .map((session, index) =>
-              text.sessionLine(
-                index + 1,
-                terminalText(session.title ?? text.untitled),
-                session.turnCount,
-              ),
-            )
-            .join('\n'),
-        });
+        if (here.length > 0) {
+          this.#notice(text.recentSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: here
+              .map((session, index) =>
+                text.sessionLine(
+                  index + 1,
+                  terminalText(session.title ?? text.untitled),
+                  session.turnCount,
+                ),
+              )
+              .join('\n'),
+          });
+        }
+        if (others.length > 0) {
+          this.#notice(text.otherFolderSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: others
+              .map((session, index) =>
+                text.otherFolderSessionLine(
+                  here.length + index + 1,
+                  terminalText(session.title ?? text.untitled),
+                  session.turnCount,
+                  terminalText(session.repositoryRoot),
+                ),
+              )
+              .join('\n'),
+          });
+        }
       }
     }
     this.#refresh();
@@ -1160,6 +1224,11 @@ export class Console {
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
           ...(event.capability === 'command.exec' ? { options: event.options } : {}),
+          ...(event.capability === 'web.fetch'
+            ? { wider: 'ANY_HOST' as const }
+            : event.capability === 'web.search'
+              ? { wider: 'FOLDER' as const }
+              : {}),
           // A long command is shown by its head; the whole of it is one key away.
           ...(event.capability === 'command.exec' && commandPreview(event.command).cut
             ? { detail: terminalText(event.command) }
@@ -1196,6 +1265,17 @@ export class Console {
       case 'CompactionFailed':
         this.#activity.delete(COMPACTION_LINE);
         this.#notice(text.compactionFailed[event.reason]);
+        break;
+      case 'ExternalReadPaused':
+        this.#deps.view.print({
+          kind: 'ERROR',
+          text: text.externalPaused(
+            event.attempts.map((attempt) => ({
+              path: terminalText(attempt.path),
+              reason: attempt.reason,
+            })),
+          ),
+        });
         break;
       case 'WorkspaceReverted':
         this.#notice(text.undone(event.revertedTurnIds.length));
@@ -1302,6 +1382,12 @@ export class Console {
       return text.webSearch(event.queries.map(terminalText), terminalText(event.provider));
     if (event.capability === 'web.fetch')
       return text.webFetch(terminalText(event.host), terminalText(event.url));
+    if (event.capability === 'external.read')
+      return text.externalRead(
+        terminalText(event.root),
+        terminalText(event.path),
+        terminalText(event.provider),
+      );
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),

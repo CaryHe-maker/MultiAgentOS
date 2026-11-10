@@ -203,6 +203,7 @@ describe('the command question', () => {
       repositoryRoot: '/repo',
       provider: 'deepseek',
       repositoryExclusions: [],
+      webSearchTrusted: false,
       now: () => new Date(0),
     });
   const shown = (text: string, over: Partial<CommandAnalysis> = {}) => ({

@@ -1,6 +1,16 @@
 import type { ActivityLine, Console, TranscriptRecord } from '@multiagentos/user-interaction';
-import { ConsoleText } from '@multiagentos/user-interaction';
-import { Box, Static, Text, render, useCursor, useInput, useStdout, type Instance } from 'ink';
+import { ConsoleText, exceedsInputLimit } from '@multiagentos/user-interaction';
+import {
+  Box,
+  Static,
+  Text,
+  render,
+  useCursor,
+  useInput,
+  usePaste,
+  useStdout,
+  type Instance,
+} from 'ink';
 import {
   createElement as h,
   useEffect,
@@ -9,27 +19,30 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from 'react';
-import stringWidth from 'string-width';
 import { ConsoleStore } from './console-store.js';
+import { FrameTracker } from './frame-tracker.js';
+import { answerResize } from './resize.js';
+import { traced } from './ui-trace.js';
 import { MARGIN, TAIL_SHARE, planTail, prefixOf, wrapLines } from './thinking-layout.js';
 import {
-  BOX_MARGIN,
   EMPTY_INPUT,
   backspace,
-  boxLines,
-  boxRows,
-  cursorCell,
+  boxHeight,
   deleteForward,
   deleteToLineEnd,
   deleteToLineStart,
   deleteWordBefore,
+  expand,
   inputOf,
   insert,
+  insertPaste,
   left,
   lineEnd,
   lineStart,
   moveVertical,
   right,
+  viewBox,
+  type BoxView,
   type InputState,
 } from './text-input.js';
 
@@ -90,13 +103,7 @@ function seconds(from: string, now: number): number {
  * that waits for the user shows no seconds at all: nothing is taking long, and a counter there
  * only reads as being hurried (docs/M2/Phase1Console.md 2.1, UI-3).
  */
-function Activity({
-  line,
-  now,
-}: {
-  readonly line: ActivityLine;
-  readonly now: number;
-}): ReactElement {
+function activityText(line: ActivityLine, now: number): string {
   const phase =
     line.retry !== undefined
       ? [
@@ -105,11 +112,17 @@ function Activity({
       : line.waitsForUser === true
         ? [line.phase, line.tool]
         : [line.phase, line.tool, `${String(seconds(line.since, now))}s`];
-  return h(
-    Text,
-    { color: 'gray', wrap: 'truncate-end' },
-    `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`,
-  );
+  return `${line.branch ?? ''}· ${line.label} ${phase.filter(Boolean).join(' ')}`;
+}
+
+function Activity({
+  line,
+  now,
+}: {
+  readonly line: ActivityLine;
+  readonly now: number;
+}): ReactElement {
+  return h(Text, { color: 'gray', wrap: 'truncate-end' }, activityText(line, now));
 }
 
 function useClock(running: boolean): number {
@@ -123,52 +136,48 @@ function useClock(running: boolean): number {
 }
 
 /**
- * The box drawn with a block where the cursor is. Each line of the text is a row of two boxes: the
- * lead (the prompt, or the indent) at its own width, and the text beside it, cut by Ink itself
- * (`wrap="hard"`) in the width that is left. A line that is longer goes on under its text, not
- * under the lead. The cursor is placed with the same cut and measure (`cursorCell`).
+ * The box drawn with a block where the cursor is: every row is one `Text` of its own, cut by
+ * `layoutBox` exactly as Ink would cut the line (so nothing is cut again), and a side that has
+ * more rows hidden has a `…` row (`viewBox`). The cursor is placed from the same rows.
  */
-export function InputBox({
-  state,
-  columns,
-}: {
-  readonly state: InputState;
-  readonly columns: number;
-}): ReactElement {
+export function InputBox({ view }: { readonly view: BoxView }): ReactElement {
+  const marker = (key: string): ReactElement =>
+    h(Text, { key, color: 'gray', dimColor: true, wrap: 'truncate-end' }, `${CONTINUATION}…`);
   return h(
     Box,
     { flexDirection: 'column' },
-    ...boxLines(state, PROMPT, CONTINUATION).map((line, index) =>
+    view.above ? marker('above') : null,
+    ...view.rows.map((each, index) =>
       h(
-        Box,
-        { key: index, width: Math.max(1, columns - BOX_MARGIN) },
-        h(
-          Box,
-          { width: stringWidth(line.lead), flexShrink: 0 },
-          h(Text, { color: USER_COLOR, wrap: 'truncate-end' }, line.lead),
-        ),
-        h(
-          Box,
-          { flexGrow: 1 },
-          h(
-            Text,
-            { color: USER_COLOR, wrap: 'hard' },
-            line.before,
-            line.here ? h(Text, { inverse: true }, line.under) : '',
-            line.after,
-          ),
-        ),
+        Text,
+        { key: index, color: USER_COLOR, wrap: 'truncate-end' },
+        each.lead,
+        each.before,
+        each.here ? h(Text, { inverse: true }, each.under) : '',
+        each.after,
       ),
     ),
+    view.below ? marker('below') : null,
   );
+}
+
+/** `lines` cut to `cap` rows: the first and the last ones stay, a `…` stands for the middle. */
+function elide(lines: readonly string[], cap: number): string[] {
+  if (lines.length <= cap) return [...lines];
+  if (cap <= 1) return lines.slice(-1);
+  const head = Math.ceil((cap - 1) / 2);
+  const tail = Math.floor((cap - 1) / 2);
+  return [...lines.slice(0, head), '…', ...lines.slice(lines.length - tail)];
 }
 
 function ConsoleApp({
   store,
   input,
+  tracker,
 }: {
   readonly store: ConsoleStore;
   readonly input: ConsoleInput;
+  readonly tracker?: FrameTracker | undefined;
 }): ReactElement {
   const {
     static: written,
@@ -191,14 +200,26 @@ function ConsoleApp({
     setBoxState(next);
   };
   const [folded, setFolded] = useState(false);
-  const history = useRef<string[]>([]);
+  const history = useRef<InputState[]>([]);
   const browsing = useRef<number | undefined>(undefined);
+  /** What came back from the console as text is put in the box as the history entry it was. */
+  const recall = (text: string): InputState => {
+    const entry = [...history.current].reverse().find((each) => expand(each) === text);
+    return entry === undefined ? inputOf(text) : { ...entry, cursor: entry.value.length };
+  };
+  // The first row of the box that is drawn, kept while the cursor is in the window.
+  const viewTop = useRef(0);
   const open = tail.some((item) => item.kind === 'BLOCK' && item.block.state === 'OPEN');
   const now = useClock(live.activity.length > 0 || open);
 
   useEffect(() => {
-    if (restored.messages.length > 0) setBox(inputOf(restored.messages.join('\n')));
+    if (restored.messages.length > 0) setBox(recall(restored.messages.join('\n')));
   }, [restored]);
+
+  // A paste arrives whole (bracketed paste): a long one is one placeholder in the box.
+  usePaste((text) => {
+    setBox(insertPaste(boxRef.current, text));
+  });
 
   useInput((key, keys) => {
     const current = boxRef.current;
@@ -213,10 +234,13 @@ function ConsoleApp({
     }
     // Alt+Enter sends the box as a note to the run that goes on, instead of queueing it (5.4).
     if (keys.return && keys.meta) {
-      if (current.value.trim().length > 0) history.current.push(current.value);
+      const text = expand(current);
+      // Too long to send: the console says so, and what was typed stays where it is.
+      if (exceedsInputLimit(text)) return void input.steer(text);
+      if (text.trim().length > 0) history.current.push(current);
       browsing.current = undefined;
       setBox(EMPTY_INPUT);
-      void input.steer(current.value);
+      void input.steer(text);
       return;
     }
     if (keys.return) {
@@ -225,10 +249,12 @@ function ConsoleApp({
         setBox(insert(backspace(current), '\n'));
         return;
       }
-      if (current.value.trim().length > 0) history.current.push(current.value);
+      const text = expand(current);
+      if (exceedsInputLimit(text)) return void input.submit(text);
+      if (text.trim().length > 0) history.current.push(current);
       browsing.current = undefined;
       setBox(EMPTY_INPUT);
-      void input.submit(current.value);
+      void input.submit(text);
       return;
     }
     if (keys.escape) {
@@ -246,20 +272,21 @@ function ConsoleApp({
       }
       if (keys.upArrow) {
         if (current.value.length === 0 && live.queued.length > 0) {
-          setBox(inputOf(input.withdrawLast() ?? ''));
+          setBox(recall(input.withdrawLast() ?? ''));
           return;
         }
         const index = (browsing.current ?? history.current.length) - 1;
         const entry = history.current[index];
         if (entry === undefined) return;
         browsing.current = index;
-        setBox(inputOf(entry));
+        setBox({ ...entry, cursor: entry.value.length });
         return;
       }
       if (browsing.current === undefined) return;
       const index = browsing.current + 1;
       browsing.current = index < history.current.length ? index : undefined;
-      setBox(inputOf(history.current[index] ?? ''));
+      const next = history.current[index];
+      setBox(next === undefined ? EMPTY_INPUT : { ...next, cursor: next.value.length });
       return;
     }
     if (keys.leftArrow) return void setBox(left(current));
@@ -277,7 +304,9 @@ function ConsoleApp({
       return;
     }
     if (keys.meta || keys.tab) return;
-    setBox(insert(current, key));
+    setBox(
+      key.length > 1 && /[\r\n]/u.test(key) ? insertPaste(current, key) : insert(current, key),
+    );
   });
 
   const { pending } = live;
@@ -294,13 +323,34 @@ function ConsoleApp({
     .join(' · ');
 
   // Every line of the part drawn in place is one row (cut to the screen, or truncated), so the
-  // rows can be counted: what is below the tail, and, for the cursor, what is above the box.
-  const questionLines =
+  // rows can be counted. The frame must always be shorter than the terminal: a frame as tall as
+  // the screen cannot be erased, and every redraw leaves a copy of it behind. So the box has a
+  // height of its own (`boxHeight`), and what is drawn under the tail shares what is left.
+  const view = viewBox(box, PROMPT, CONTINUATION, columns, boxHeight(rows), viewTop.current);
+  viewTop.current = view.top;
+  const wholeQuestion =
     pendingText === undefined
       ? []
       : pendingText.split('\n').flatMap((line) => wrapLines(line, Math.max(10, columns - MARGIN)));
-  const below = live.activity.length + questionLines.length + (live.queued.length > 0 ? 1 : 0) + 1;
-  const others = below + boxRows(box, PROMPT, CONTINUATION, columns);
+  const fixedRows = view.shown + 1 + (live.queued.length > 0 ? 1 : 0);
+  const spare = Math.max(2, rows - 2 - fixedRows);
+  const questionLines = elide(
+    wholeQuestion,
+    Math.max(1, Math.min(wholeQuestion.length, spare - (live.activity.length > 0 ? 1 : 0))),
+  );
+  const activityRoom = Math.max(0, spare - questionLines.length);
+  const activityShown =
+    live.activity.length <= activityRoom
+      ? live.activity
+      : live.activity.slice(0, Math.max(0, activityRoom - 1));
+  const activityMore = live.activity.length - activityShown.length;
+  const below =
+    activityShown.length +
+    (activityMore > 0 ? 1 : 0) +
+    questionLines.length +
+    (live.queued.length > 0 ? 1 : 0) +
+    1;
+  const others = below + view.shown;
   const room = Math.max(1, rows - others - 3);
   // What is drawn in place keeps to 90% of that: the rest is slack against a miscount.
   const limit = Math.max(1, Math.floor(room * TAIL_SHARE));
@@ -318,8 +368,29 @@ function ConsoleApp({
 
   // The terminal cursor goes where the text is typed, so the input method opens its window there
   // and not below the status line: after the rows above the box, in the row and column of the text.
-  const cell = cursorCell(box, PROMPT, CONTINUATION, columns);
-  setCursorPosition({ x: cell.column, y: plan.rows + below + cell.row });
+  const cursorAt = { x: view.cursorColumn, y: plan.rows + below + view.cursorRow };
+  setCursorPosition(cursorAt);
+  // The lines of this frame, as text, in the order they are drawn: what the tracker needs to erase
+  // the frame exactly, whatever width the window has by then (frame-tracker.ts).
+  tracker?.report({
+    columns,
+    cursor: cursorAt,
+    lines: [
+      ...plan.items.flatMap((item) =>
+        item.kind === 'RECORD' ? item.lines.map(row) : item.lines.map((line) => row(line.text)),
+      ),
+      ...activityShown.map((line) => activityText(line, now)),
+      ...(activityMore > 0 ? [ConsoleText.moreActivities(activityMore)] : []),
+      ...questionLines.map(row),
+      ...(live.queued.length > 0 ? [ConsoleText.queued(live.queued.length)] : []),
+      status.length > 0 ? `------ ${status}${share} ------` : ' ',
+      ...(view.above ? [`${CONTINUATION}…`] : []),
+      ...view.rows.map(
+        (each) => `${each.lead}${each.before}${each.here ? each.under : ''}${each.after}`,
+      ),
+      ...(view.below ? [`${CONTINUATION}…`] : []),
+    ],
+  });
 
   return h(
     Box,
@@ -364,7 +435,14 @@ function ConsoleApp({
               ),
             ),
       ),
-      ...live.activity.map((line) => h(Activity, { key: line.agentRunId, line, now })),
+      ...activityShown.map((line) => h(Activity, { key: line.agentRunId, line, now })),
+      activityMore > 0
+        ? h(
+            Text,
+            { key: 'more', color: 'gray', wrap: 'truncate-end' },
+            ConsoleText.moreActivities(activityMore),
+          )
+        : null,
       ...questionLines.map((line, index) =>
         h(Text, { key: `q${String(index)}`, color: SYSTEM_COLOR, wrap: 'truncate-end' }, row(line)),
       ),
@@ -381,12 +459,16 @@ function ConsoleApp({
         status.length > 0 ? `------ ${status}${share} ------` : ' ',
       ),
     ),
-    h(InputBox, { state: box, columns }),
+    h(InputBox, { view }),
   );
 }
 
-export function consoleApp(store: ConsoleStore, input: ConsoleInput): ReactElement {
-  return h(ConsoleApp, { store, input });
+export function consoleApp(
+  store: ConsoleStore,
+  input: ConsoleInput,
+  tracker?: FrameTracker,
+): ReactElement {
+  return h(ConsoleApp, { store, input, tracker });
 }
 
 export interface InkConsole {
@@ -402,8 +484,13 @@ export function createInkConsole(
   const store = new ConsoleStore();
   return {
     store,
-    mount: (input) =>
-      render(consoleApp(store, input), {
+    mount: (input) => {
+      // `MAS_UI_TRACE=<file>` records what the screen is told, for a frame left behind (ui-trace.ts).
+      traced(stdout, process.env['MAS_UI_TRACE']);
+      const known = new Set(stdout.listeners('resize') as ((...args: unknown[]) => void)[]);
+      const tracker = new FrameTracker();
+      const detach = tracker.attach(stdout);
+      const instance = render(consoleApp(store, input, tracker), {
         stdin,
         stdout,
         exitOnCtrlC: false,
@@ -411,6 +498,18 @@ export function createInkConsole(
         // A terminal is a terminal: Ink would otherwise draw only the last frame when the CI
         // variable is set, which leaves a person who has it set in their shell with a dead screen.
         interactive: Boolean(stdout.isTTY),
-      }),
+      });
+      if (stdout.isTTY) {
+        // A resize is answered at once: the frame is erased as it is now, at the new width, and
+        // drawn again; the conversation above it is not touched (see `frame-tracker.ts`).
+        const stop = answerResize(stdout, known, () => {
+          tracker.erase(stdout.columns > 0 ? stdout.columns : 80, () => instance.clear());
+          store.repaint();
+        });
+        void instance.waitUntilExit().then(stop, stop);
+      }
+      void instance.waitUntilExit().then(detach, detach);
+      return instance;
+    },
   };
 }

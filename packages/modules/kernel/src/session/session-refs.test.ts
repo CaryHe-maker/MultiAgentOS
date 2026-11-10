@@ -31,6 +31,7 @@ const now = () => new Date('2026-10-31T00:00:00.000Z');
 const root = '/repository';
 const entry = (sessionId: string): SessionListEntry => ({
   sessionId,
+  repositoryRoot: root,
   createdAt: '2026-10-31T00:00:00.000Z',
   lastActiveAt: '2026-10-31T00:00:00.000Z',
   turnCount: 0,
@@ -38,7 +39,7 @@ const entry = (sessionId: string): SessionListEntry => ({
 });
 
 describe('SessionRefs', () => {
-  it('opens only an active Session of this repository', async () => {
+  it('opens any active Session, and knows which folder it was last worked on in', async () => {
     const refs = new SessionRefs(memoryLog<SessionRefLine>(), root, now);
     const here = newId('ses');
     await refs.add(here);
@@ -48,7 +49,32 @@ describe('SessionRefs', () => {
     expect(refs.isOpenable(here)).toBe(false);
   });
 
-  it('takes the last line on load and ignores other repositories', async () => {
+  it('says where a Session was last worked on, and rebinding makes this folder its own', async () => {
+    const elsewhere = newId('ses');
+    const log = memoryLog([
+      {
+        sessionId: elsewhere,
+        repositoryRoot: '/other',
+        status: 'ACTIVE' as const,
+        at: now().toISOString(),
+      },
+    ]);
+    const refs = new SessionRefs(log, root, now);
+    await refs.load();
+    expect(refs.isOpenable(elsewhere)).toBe(true);
+    expect(refs.rootOf(elsewhere)).toBe('/other');
+    expect(refs.isHere(elsewhere)).toBe(false);
+    await refs.rebind(elsewhere);
+    expect(refs.rootOf(elsewhere)).toBe(root);
+    expect(refs.isHere(elsewhere)).toBe(true);
+    // The new line is the last: after a restart it still is.
+    const again = new SessionRefs(log, root, now);
+    await again.load();
+    expect(again.isHere(elsewhere)).toBe(true);
+    expect(refs.rootOf(newId('ses'))).toBeUndefined();
+  });
+
+  it('takes the last line on load and keeps the Sessions of other folders in the list', async () => {
     const [kept, gone, elsewhere] = [newId('ses'), newId('ses'), newId('ses')];
     const at = now().toISOString();
     const log = memoryLog([
@@ -59,7 +85,10 @@ describe('SessionRefs', () => {
     ]);
     const refs = new SessionRefs(log, root, now);
     await refs.load();
-    expect(refs.filterList([entry(kept), entry(gone), entry(elsewhere)])).toEqual([entry(kept)]);
+    expect(refs.filterList([entry(kept), entry(gone), entry(elsewhere)])).toEqual([
+      entry(kept),
+      entry(elsewhere),
+    ]);
     expect(refs.activeSessionIds()).toEqual([kept, elsewhere]);
   });
 });

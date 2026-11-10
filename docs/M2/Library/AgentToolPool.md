@@ -26,7 +26,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 | kind | id | 说明 |
 |---|---|---|
-| AGENT | `main` | Turn-chat 的主 Agent：列目录、检索、读文件；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
+| AGENT | `main` | Turn-chat 的主 Agent：列目录、检索、读文件、只读 git、写与编辑、命令、网页检索与读取、读工作区之外的文件（`external.read`）、派生 SubAgent；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
 | AGENT | `planner`、`code-viewer` | `analyze` 的两个节点，由 M1 改写：结束工具 `finish-analysis`（`PUBLISH_REPORT`），planner 另有 `handoff-to-code-viewer`（`HANDOFF`，收尾调用中不可用）；code-viewer 的启动 Unit 是 `repository-orient`；思考关闭（`allowedEfforts = [none]`，M1 原样） |
 | UNIT | `repository-orient`、`repository-search`、`file-read`、`context-assemble`、`model-call`、`report-publish` | M1 实例的 `v1` 版本：契约改为 major 1 的版本，`failurePolicy` 去掉 `USER_DECLINED` |
 | UNIT | `repository-list` | `executionKind = REPOSITORY_LIST`，受保护能力 `repo.read`，工具 `list-files` |
@@ -34,6 +34,12 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `read-file`、`search-repository`、`finish-analysis`、`handoff-to-code-viewer` | M1 内容的 `v1` 版本 |
 | TOOL | `list-files` | `purpose = UNIT`，参数为 `executor.RepositoryListInput` |
 | TOOL | `reply` | `purpose = CONTROL`，参数为 `workflow.ReplyArgs`（`{ text }`，1..20000 个字符）；`answer: true`：这个工具就是给使用者的答案，模型一开始写它，控制台就显示"正在输出回答" |
+| UNIT | `run-command`、`git-inspect` | `executionKind` 分别为 `COMMAND`（受保护能力 `command.exec`）、`GIT_INSPECT`（`repo.read`） |
+| TOOL | `run-command`、`git-inspect` | `purpose = UNIT`，参数为 `executor.RunCommandArgs`、`executor.GitInspectInput` |
+| UNIT | `web-search`、`web-fetch` | `executionKind` 分别为 `WEB_SEARCH`（`web.search`）、`WEB_FETCH`（`web.fetch`） |
+| TOOL | `web-search`、`web-fetch` | `purpose = UNIT`，参数为 `executor.WebSearchInput`、`executor.WebFetchInput` |
+| UNIT | `external-list`、`external-read`、`external-search` | 读工作区之外的文件（Kernel/Core 第 5h 节）：沿用 `REPOSITORY_LIST`、`FILE_READ`、`REPOSITORY_SEARCH` 的 Executor，受保护能力 `external.read`（代替 `repo.read`，只有这三种 `executionKind` 可以声明它，也不能与 `repo.read` 同时声明）；只有 main 带它们 |
+| TOOL | `list-external-files`、`read-external-file`、`search-external-repository` | `purpose = UNIT`，模型看到的名字是 `list_external_files`、`read_external_file`、`search_external_repository`；参数与 `list-files`、`read-file`、`search-repository` 相同（`executor.RepositoryListInput`、`executor.FileReadInput`、`context.RepositorySearchInput`），`path` 必须是绝对路径，描述里写明两种写法（Linux 路径与带盘符的 Windows 路径）和"不要猜路径" |
 | PROMPT | `main-system` | main 的系统提示词（`FINAL`，见下） |
 | PROMPT | `planner-system`、`code-viewer-system` | M1 内容的 `v1` 版本 |
 | UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |

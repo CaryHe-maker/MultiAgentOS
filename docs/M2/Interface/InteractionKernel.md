@@ -60,6 +60,7 @@ interface StartSessionRequest {      // 草稿中提交第一条提示词时发�
 interface OpenSessionRequest {
   requestId: string;
   sessionId: string;
+  confirmWorkspaceChange?: boolean;  // 用户同意在本进程的文件夹里打开最后在别的文件夹工作过的 Session（M2Design 第 2.3 节）
 }
 
 interface StartRunRequest {          // mas run <模板> "<目标>"，总是新建 Session
@@ -91,7 +92,8 @@ interface DeleteSessionRequest {
 
 - `startSession`、`openSession`、`startRun` 受理时，Kernel 依次收敛当前运行、关闭当前 Session，再打开或新建目标 Session；
   结果以 Session 级事件 `SessionOpened` 或 `SessionFailed` 告知。
-- `openSession` 只接受引用存在、未删除、且仓库与本进程一致的 Session，否则以 `SESSION_NOT_FOUND` 拒绝，不说明是哪一种情况。
+- `openSession` 只接受引用存在、未删除的 Session，否则以 `SESSION_NOT_FOUND` 拒绝，不说明是哪一种情况。
+- Session 最后在别的文件夹工作过时，必须带 `confirmWorkspaceChange: true`，否则以 `WORKSPACE_CHANGE_NOT_CONFIRMED` 拒绝：确认由 Kernel 判定，不依赖客户端是否弹过确认。确认后 Kernel 让快照另起一段、把引用改为本进程的文件夹，再打开；Workflow 在日志里追加 `WORKSPACE_BOUND`。
 - **对当前 Session 的 `openSession`** 用于运行结束后在同一 Session 中继续（M2Design 第 2.3 节 WorkflowRun 第 1 条，例如因额度结束后用户确认继续）：
   当前运行已经 CLOSED 时，Kernel 不关闭 Session、不再下达 Session 命令，直接开启新的运行（`RunStart(initialInput: false)`），
   不再发出 `SessionOpened`，结果以新运行的 `RunStateChanged` 告知；当前运行尚未 CLOSED 时以 `SESSION_IN_USE` 拒绝。
@@ -197,7 +199,7 @@ type KernelToInteractionEvent =
   | AuthorizationRequest | AuthorizationResolved
   | HumanRequest | HumanResolved
   | MessagePublished | RunStateChanged | ActivityEvent | RunFinished;
-  // ContextCompacted、CompactionFailed（第 3.4 节）
+  // ContextCompacted、CompactionFailed（第 3.4 节）、ExternalReadPaused（Kernel/Core 5h）
 
 type AuthorizationRequest =
   | {
@@ -216,7 +218,16 @@ type AuthorizationRequest =
       type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
       path: string; contentRef: ArtifactRef; critical: true;
     };
+  | {  // 读工作区之外的目录，危险级，回答 ALLOW 或 DENY；root 是回答所授权的目录，path 是被请求的路径
+      type: 'AuthorizationRequest'; questionId: string; capability: 'external.read';
+      root: string; path: string; provider: string;
+    };
   // command.exec、command.network、web.search、web.fetch
+
+interface ExternalReadPaused {       // 连续两次读取外部文件失败，运行已暂停（Kernel/Core 5h）；控制台用红字显示
+  type: 'ExternalReadPaused';
+  attempts: { path: string; reason: 'UNAVAILABLE' | 'DECLINED' | 'FAILED' }[];
+}
 
 interface UndoConfirmationRequested {  // 有外部修改时；不是授权询问
   type: 'UndoConfirmationRequested';
@@ -342,12 +353,14 @@ interface SessionList {
   requestId: string;                 // 对应的 listSessions
   sessions: {
     sessionId: string;
+    repositoryRoot: string;          // 最后一次工作的文件夹（Kernel 的引用为准）
+    here: boolean;                   // 是不是本进程的文件夹；不是的，打开时要用户确认
     title?: string;                  // ≤80
     createdAt: string;
     lastActiveAt: string;
     turnCount: number;
     fork?: { fromSessionId: string; fromTurnCount: number };
-  }[];                               // 只含本仓库、未删除的 Session，按最后活动时间倒序
+  }[];                               // 所有未删除的 Session（各个文件夹的），按最后活动时间倒序
 }
 
 interface SessionDeleted {
@@ -392,7 +405,8 @@ interface CompactionFailed {
 
 | 原因码 | 出现位置 | 含义 |
 |---|---|---|
-| `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在、已删除，或仓库与本进程不一致 |
+| `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在或已删除 |
+| `WORKSPACE_CHANGE_NOT_CONFIRMED` | `SyscallRejected`（`openSession`） | Session 最后在别的文件夹工作过，请求没有带 `confirmWorkspaceChange: true` |
 | `SESSION_IN_USE` | `SyscallRejected`（`deleteSession`、对当前 Session 的 `openSession`） | 不能删除当前打开的 Session；当前 Session 的运行尚未结束时不能在其中开启新的运行 |
 | `TEMPLATE_UNSUPPORTED` | `SyscallRejected`（`startRun`） | 目前只接受 `analyze` |
 | `QUESTION_NOT_PENDING` | `SyscallRejected`（`answerAuthorization`） | 沿用 M1 |

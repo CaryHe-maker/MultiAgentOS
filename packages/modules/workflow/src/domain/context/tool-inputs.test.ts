@@ -199,6 +199,46 @@ describe('toolInputOf', () => {
       });
     });
 
+    it('reads what another AgentRun handed over by ref_N/toolCallId, from the registry, for the one it was handed to', () => {
+      const result = testArtifactRef('result');
+      const fetched = testArtifactRef('fetched');
+      const registered = line({
+        type: 'REFERENCES_REGISTERED',
+        referenceId: 'ref_1',
+        from: { agentRunId: newId('agr'), label: 'look' },
+        to: { kind: 'MAIN' },
+        items: [
+          { toolCallId: 'call_final', tool: 'finish_subagent', ref: result },
+          { toolCallId: 'call_9', tool: 'web_fetch', ref: fetched },
+        ],
+      });
+      const whole = [...log, registered];
+      for (const [name, ref] of [
+        ['ref_1/call_final', result],
+        ['ref_1/call_9', fetched],
+      ] as const)
+        expect(toolInputOf('OUTPUT_READ', { toolCallId: name }, whole, main)).toEqual({
+          ok: true,
+          input: { toolCallId: name, fullRef: ref },
+          workflowFields: { fullRef: ref },
+        });
+      // Not registered, not an item, or another reader: there is no such call.
+      const other = {
+        kind: 'NODE',
+        workflowRunId: base.workflowRunId,
+        agentRunId: newId('agr'),
+      } as const;
+      for (const [name, scope] of [
+        ['ref_1/call_8', main],
+        ['ref_2/call_9', main],
+        ['call_9', main],
+        ['ref_1/call_9', other],
+      ] as const)
+        expect(toolInputOf('OUTPUT_READ', { toolCallId: name }, whole, scope)).toMatchObject({
+          ok: false,
+        });
+    });
+
     it('does not reach a reverted Turn, and takes the latest of a repeated id', () => {
       const reverted = line({ type: 'WORKSPACE_REVERTED', revertedTurnIds: [base.turnId] });
       expect(

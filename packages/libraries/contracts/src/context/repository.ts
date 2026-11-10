@@ -32,6 +32,8 @@ export const RepositorySearchInputSchema = closed(
     query: text(500),
     mode: Type.Optional(Type.Enum(SEARCH_MODES)),
     maxItems: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+    /** Only below this directory: relative to the repository root, or absolute for external reads. */
+    path: Type.Optional(text(1024)),
   },
   'context.RepositorySearchInput.v1',
 );

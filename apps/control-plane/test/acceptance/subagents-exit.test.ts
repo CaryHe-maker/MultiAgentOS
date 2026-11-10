@@ -73,7 +73,7 @@ const seen = (provider: ScriptedChat): string =>
 const toolNames = (request: ScriptedChat['requests'][number] | undefined): string[] =>
   (request?.tools ?? []).map((each) => each.function.name).sort();
 const finish = (summary: string, extra: Record<string, unknown> = {}) =>
-  tool('finish_subagent', { summary, findings: [], ...extra });
+  tool('finish_subagent', { summary, ...extra });
 const finishWorker = (summary: string, changedFiles: string[], extra: object = {}) =>
   tool('finish_subagent', {
     summary,
@@ -369,7 +369,6 @@ real('what a command changed (M2Design 7.1)', () => {
     'is found by scanning the write scope, and marked against what the worker reports',
     async () => {
       const place = await roots({ 'out/old.txt': 'old\n' });
-      const sha = 'a'.repeat(64);
       const provider = scriptedAgents(
         {
           main: [
@@ -381,18 +380,7 @@ real('what a command changed (M2Design 7.1)', () => {
           make: [
             tool('run_command', { command: 'echo made > out/made.txt && rm out/old.txt' }),
             finishWorker('ran a command', [], {
-              validation: [
-                {
-                  command: 'echo',
-                  exitCode: 0,
-                  outputRef: {
-                    artifactId: `art_${sha}`,
-                    sha256: sha,
-                    size: 1,
-                    mediaType: 'text/plain',
-                  },
-                },
-              ],
+              validation: [{ command: 'echo', exitCode: 0 }],
             }),
           ],
         },
@@ -413,21 +401,9 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
     async () => {
       const place = await roots({ 'a/x.txt': 'x\n', 'b/y.txt': 'y\n' });
       const together = barrier(2);
-      const sha = 'a'.repeat(64);
       const finishing = (summary: string) =>
         finishWorker(summary, [], {
-          validation: [
-            {
-              command: 'touch made.txt',
-              exitCode: 0,
-              outputRef: {
-                artifactId: `art_${sha}`,
-                sha256: sha,
-                size: 1,
-                mediaType: 'text/plain',
-              },
-            },
-          ],
+          validation: [{ command: 'touch made.txt', exitCode: 0 }],
         });
       const provider = scriptedAgents(
         {

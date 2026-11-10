@@ -35,6 +35,7 @@ const EXPECTED = {
     'RegisterAgentRunRequest',
     'ReserveDelegationRequest',
     'ReleaseDelegationRequest',
+    'RetainArtifactsRequest',
     'ReportCompactionSourceRequest',
     'AckCompactionRequest',
     'CompactionSourceQuery',
@@ -148,6 +149,7 @@ const EXPECTED = {
     'SteerRunRequest',
     'CompactContextRequest',
     'CompactionFailed',
+    'ExternalReadPaused',
     'ContextCompacted',
     'ArtifactContent',
     'AuthorizationRequest',
@@ -210,6 +212,7 @@ const EXPECTED = {
     'SessionLogRecord',
     'SessionRefLine',
     'TrustedInstructionLine',
+    'TrustedWebSearchLine',
   ],
   'platform.artifact': ['RetentionTokenRef'],
   'kernel.session': [

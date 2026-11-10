@@ -32,7 +32,6 @@ export type WorkflowSessionEvent = Static<typeof WorkflowSessionEventSchema>;
 export const SessionListQuerySchema = closed({
   type: Type.Literal('SessionListQuery'),
   queryId: IdSchemas.queryId,
-  repositoryRoot: text(4096),
 });
 export type SessionListQuery = Static<typeof SessionListQuerySchema>;
 

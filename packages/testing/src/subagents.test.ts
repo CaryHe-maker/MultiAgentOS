@@ -133,7 +133,7 @@ const model = (...calls: Call[]) => ({
   outputRef: modelRef,
 });
 
-const explorerResult = { summary: 'found it', findings: [] };
+const explorerResult = { summary: 'found it' };
 const workerResult = (extra: object = {}) => ({
   summary: 'changed',
   changedFiles: ['src/a.ts'],
@@ -468,7 +468,7 @@ describe('run_subagents', () => {
 });
 
 describe('the length of a result', () => {
-  it('sends back a result that is longer than the caller reads, once it is short enough accepts it', async () => {
+  it('is never a reason to refuse it: a long summary and a very long report are both accepted', async () => {
     const { kernel, runner } = setup({
       main: [
         model({
@@ -480,24 +480,118 @@ describe('the length of a result', () => {
       explorer: [
         model({
           toolName: 'finish_subagent',
-          args: {
-            summary: 'x'.repeat(3900),
-            findings: [
-              { claim: 'y'.repeat(900), evidence: [] },
-              { claim: 'z'.repeat(900), evidence: [] },
-              { claim: 'w'.repeat(900), evidence: [] },
-              { claim: 'v'.repeat(900), evidence: [] },
-              { claim: 'u'.repeat(900), evidence: [] },
-            ],
-          },
+          args: { summary: 'x'.repeat(5000), report: 'line of the report\n'.repeat(20_000) },
         }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+  });
+
+  it('needs no evidence and no findings: a summary alone is a result', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [model({ toolName: 'finish_subagent', args: { summary: 'found it' } })],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+  });
+});
+
+describe('the tool results a task lists', () => {
+  it('are never a reason to fail it: what does not pass is told in one note', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({
+          toolName: 'finish_subagent',
+          args: { summary: 'found it', references: ['call_404', 'not even an id'] },
+        }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toHaveLength(1);
+    expect(joined?.[0]?.notes[0]).toContain('not handed over');
+    expect(joined?.[0]?.notes[0]).toContain('call_404');
+    // What is handed over is its result, registered for the AgentRun that started it.
+    const [handover] = ofType(records, 'REFERENCES_REGISTERED');
+    expect(handover).toMatchObject({
+      referenceId: 'ref_1',
+      from: { label: 'look' },
+      to: { kind: 'MAIN' },
+    });
+    expect(handover?.items.map((item) => item.tool)).toEqual(['finish_subagent']);
+  });
+
+  it('are numbered once in the Session: a second call of run_subagents continues the numbers', async () => {
+    const call = (name: string) =>
+      model({
+        toolName: 'run_subagents',
+        args: { tasks: [{ name, agent: 'explorer', goal: 'x' }] },
+      });
+    const { kernel, runner } = setup({
+      main: [call('first'), call('second'), model({ toolName: 'reply', args: { text: 'ok' } })],
+      explorer: [
+        model({ toolName: 'finish_subagent', args: explorerResult }),
         model({ toolName: 'finish_subagent', args: explorerResult }),
       ],
     });
     await begin(kernel);
     const { records } = runner;
-    expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_TOO_LONG');
-    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+    expect(ofType(records, 'REFERENCES_REGISTERED').map((each) => each.referenceId)).toEqual([
+      'ref_1',
+      'ref_2',
+    ]);
+  });
+});
+
+describe('a last result that does not follow the form', () => {
+  it('is not lost: the caller gets what was written, marked as not following the form', async () => {
+    const bad = model({ toolName: 'finish_subagent', args: { report: 'everything I found' } });
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: Array.from({ length: 12 }, () => bad),
+    });
+    await begin(kernel);
+    const { records } = runner;
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('PARTIAL');
+    expect(joined?.[0]?.notes.join(' ')).toContain('does not follow the required form');
+    const ended = ofType(records, 'NODE_ENDED').find(
+      (record) => record.result?.['action'] === 'FINISH_SUBAGENT',
+    );
+    expect(ended?.resultRef).toBeDefined();
+    expect(ended?.result?.['toolCallId']).toEqual(expect.any(String));
+    // What was written is handed over like any result, and can be read by its reference.
+    const [handover] = ofType(records, 'REFERENCES_REGISTERED');
+    expect(handover?.referenceId).toBe('ref_1');
+    expect(ended?.result?.['referenceId']).toBe('ref_1');
   });
 });
 

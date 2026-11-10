@@ -8,7 +8,7 @@
 - **已实现**：代码在 `feat/M2`，有确定性测试（假模型、假 provider、假时钟），在 Ubuntu 24.04（WSL）与 GitHub Actions 的质量门中通过。
 - **真实模型已验证**：另在真实模型（`deepseek-flash`）上跑过，当时的数字与结论记录在 [History/M2/Evaluation](../History/M2/Evaluation/)；原始记录与脚本已随评测体系的重建删除（[Evaluation](Evaluation.md)）。这些数据来自单个模型与少量运行，不是统计结论。
 - **缺口**：设计里要求、尚未做到的部分。第 5 节汇总。
-- 质量门：约 130 个测试文件、约 2090 个用例，在 Ubuntu 24.04（含 WSL2）上全部通过。**Windows 原生不是支持平台**（[M2Decisions](M2Decisions.md) 2a）：那里还有几个与符号链接、第二个实例的检测和进程退出码相关的用例失败，不算缺陷（缺口 17 是真实模型测试时顺手修的，不代表适配 Windows）。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
+- 质量门：约 150 个测试文件、约 2410 个用例，在 Ubuntu 24.04（含 WSL2）上全部通过。**Windows 原生不是支持平台**（[M2Decisions](M2Decisions.md) 2a）：那里还有几个与符号链接、第二个实例的检测和进程退出码相关的用例失败，不算缺陷（缺口 17 是真实模型测试时顺手修的，不代表适配 Windows）。冻结的系统测试另有 phase 发布检查（[M2FrozenTests](M2FrozenTests.md)）。
 
 ## 2. 能力现状
 
@@ -19,6 +19,9 @@
 | 写入与回退：`write_file`、`edit_file`、`/undo`、`/diff`、快照、子目录 `AGENTS.md` | 已实现；真实模型已验证 | `write-undo-exit`；写入任务 39/40，main 写入 6/6 | 真实仓库任务大多在写入前被上下文上限叫停，已由放宽上限与压缩缓解，没有重测 |
 | 命令与沙盒：bwrap、`run_command`、`git_inspect`、命令拆分与 ARITY、敏感文件遮蔽、停机 | 已实现；真实模型已验证 | `command-sandbox-exit`；C1–C4 自动挂载后 12/12；C5 确定性用例 | 沙盒没有 CPU 与内存总量限制（无 cgroup 权限时做不到，只有超时兜底）；内存压力的 DANGER 退出只有确定性测试，没有在真实内存压力下验证 |
 | 并行：按 AgentRun 分队列、写入占用、额度逐级委派、`run_subagents`、结果契约 | 已实现；机制已验证 | `subagents-exit`、Kernel 层测试；要求派生时 24/24 正确 | P3（完工时间接近关键路径）没有量；B4 没有端到端用例；D（派生指标）不达标：不提示时 33 次只派生 2 次 |
+| SubAgent 的结果交接：`summary` 与 `report` 两段、引用登记表（`REFERENCES_REGISTERED`、`ref_N/toolCallId`）、`retainArtifacts`、上下文包随模型调用结束释放（`ONCE`） | 已实现；真实模型已验证（`subagents.report` 1/1） | `subagents-exit`、`subagents.test.ts`、`handover` 的单元测试 | 前驱任务的结果交给后继任务（`dependsOn`）未做 |
+| 在别的文件夹里打开 Session：确认、`WORKSPACE_BOUND`、按文件夹的纪元、快照与项目指令随文件夹重置 | 已实现 | `workspace-switch-exit`（13 个场景）、`workspace-binding.test.ts`、`workspace-snapshots.test.ts` | 信任文件夹的提示（WS-1）、切换时的压缩未做 |
+| 读工作区之外的文件：`external.read`、三个外部读取工具、授权目录、拒绝名单、连续两次失败暂停 | 已实现；真实模型已验证（`external.read`、`external.trap`、`external.windows`，各自小样本） | `external-read-exit`（X1–X3）、`external-read.test.ts`、`external-scope.test.ts` | 连续两次失败暂停没有在真实模型上触发过 |
 | 人类在环：暂停、继续、`/steer`、中止、`ask_user` | 已实现；真实模型已验证 | `human-in-loop-exit`、`pause-steer-ask.test.ts`；5 个场景 15/15 | H13 与"`ask_user` 的同意不产生授权"只有 Kernel 层测试；`ask_user` 没有次数上限 |
 | Web：`web_search`、`web_fetch`、地址检查、重定向与 DNS 重绑定 | 已实现；真实模型已验证 | `web-exit`；3 个场景 3/3（含注入页面与私网地址） | Brave 适配器只用假实现测过；`readonly` 预设不含网页；DeepSeek 抓取的计费与搜索词留存没有证据；Workflow 在同一 AgentRun 内记住被拒的工具 |
 | 上下文压缩：自动、溢出、`/compact`，修剪与摘要，撤销时使摘要失效 | 已实现；真实模型已验证 | `compaction-exit`（L1–L4、L7–L21：刚新建就压缩、打开旧对话后压缩与再压缩、重开后压缩与 Fork、反复压缩、打开时已超阈值、压缩中来消息、被拒、被 Fork 取消）；真实模型：长对话六个事实 8/8，新建即压缩、打开旧对话后压缩、反复压缩、压缩后重开均通过，摘要请求缓存命中约 99.8% | 早先只修剪的压缩切掉的结果，之后的摘要仍读到修剪后的内容；压缩后上下文没有硬上限（最新一段不受压缩影响）；"额度不足"只有单元测试 |

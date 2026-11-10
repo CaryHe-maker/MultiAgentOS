@@ -78,3 +78,24 @@ describe('outcomeOf', () => {
     expect(outcomeOf([ended({ status: 'FAILED' })], 'wfr_a', 'nod_a')?.status).toBe('FAILED');
   });
 });
+
+describe('the handover of a result', () => {
+  it('is written with the result and read back from the log', () => {
+    const result = resultOf({
+      status: 'DONE',
+      notes: [],
+      toolCallId: 'call_1',
+      referenceId: 'ref_3',
+    });
+    const outcome = outcomeOf([ended({ status: 'SUCCEEDED', result })], 'wfr_a', 'nod_a');
+    expect(outcome?.referenceId).toBe('ref_3');
+    expect(outcome?.toolCallId).toBe('call_1');
+  });
+
+  it('is absent when the task handed nothing over', () => {
+    const result = resultOf({ status: 'PARTIAL', notes: ['stopped early'] });
+    expect(
+      outcomeOf([ended({ status: 'SUCCEEDED', result })], 'wfr_a', 'nod_a')?.referenceId,
+    ).toBeUndefined();
+  });
+});

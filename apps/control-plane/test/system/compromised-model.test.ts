@@ -110,7 +110,7 @@ describe('a compromised model, made to act by what it read', () => {
         ],
         explorer: [
           tool('write_file', { path: 'pwned.txt', content: 'pwned\n' }),
-          tool('finish_subagent', { summary: 'nothing found', findings: [] }),
+          tool('finish_subagent', { summary: 'nothing found' }),
         ],
       });
       const { chat, repository } = await chatOn(provider, { 'a.txt': 'one\n' });

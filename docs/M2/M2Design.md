@@ -134,8 +134,14 @@ Turn-chat 是 Orchestration 的子集：`chat` 模板只用到 AGENT 与 HUMAN �
 
 **Session**
 
-0. **进程绑定一个仓库**：启动时的工作目录（或 `--repo` 参数）决定本进程的仓库，取其 realpath 作为仓库根目录，进程运行期间不变。
-   每个 Session 属于创建它时的仓库；`/sessions` 与 `/resume` 只列出、只打开本仓库的 Session。Kernel 打开 Session 时检查引用中的仓库根目录与本进程的一致，不一致时拒绝。
+0. **进程在一个文件夹里工作，Session 跟着当前文件夹走**：启动时的工作目录（或 `--repo` 参数）决定本进程的文件夹，取其 realpath 作为仓库根目录，进程运行期间不变。
+   一个 Session 在任一时刻在一个文件夹里工作，Kernel 的 Session 引用里记着它最后一次工作的文件夹。`/sessions` 列出所有 Session：本文件夹的在前，其他文件夹的在后并写明各自的文件夹。
+   - **本文件夹的 Session** 直接打开。
+   - **其他文件夹的 Session** 要用户确认才能在这里打开：确认由 Kernel 强制（`openSession` 带 `confirmWorkspaceChange`，没有就以 `WORKSPACE_CHANGE_NOT_CONFIRMED` 拒绝），不只靠界面；控制台先说明后果，用户再输入一次 `/resume` 才算确认。
+   - **换文件夹之后**，这个 Session 像在新文件夹里新开了一样，只带着对话和产物：快照与撤销从头开始，旧文件夹的 Turn 不能再回退（旧记录留在索引里，不再被读取）；读后才能改的基准清空；旧文件夹的 `AGENTS.md` 从上下文里去掉，进入新运行后在第一个读仓库的工具成功之后重新读取并重新询问信任；仓库概览随新运行重新生成；授权本来就按 WorkflowRun，不沿用。模型会收到一条说明：文件夹换了，以前提到的文件和路径可能不存在或已不同。
+   - **顺序**：Kernel 先让快照另起一段，再把 Session 引用改为本文件夹，然后发 `SessionOpen`；Workflow 打开日志后把最后一次记录的文件夹和本进程的比较，不同就追加 `WORKSPACE_BOUND`（日志是依据，每次打开都做同样的比较，所以中间崩溃后下次打开会补上，重复无害）。
+   - **原文件夹没了**：Session 不受影响（日志、产物、快照都在数据目录里），在别的文件夹里确认后照常打开；在原路径重新建一个目录则被当作本文件夹，打开时的改动检测会把原来的文件报告为已在外部改动。
+   - 一个进程同一时刻只在一个文件夹里工作，一次 WorkflowRun 内不换文件夹：换文件夹只发生在打开 Session 的时刻，也就是一次新的 WorkflowRun 开始之前。
 1. **打开已有 Session**（`/resume`、启动时选择）：UserInteraction 把选择交给 Kernel，由 Kernel 向 Workflow 发出 `SessionOpen` 事件。
    Workflow 收到后取得 Session 锁、校验并修复日志、重建投影（第 10.3 节）。
 2. **新建与 Fork 都延迟到第一条提示词提交时才创建**：
@@ -396,7 +402,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 
 | 控制工具 | 谁可用 | 效果 |
 |---|---|---|
-| `reply` | main | 以文字结果完成本节点，结束该 AgentRun。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
+| `reply` | main | 以文字结果完成本节点，结束该 AgentRun。**只有 `reply` 的文字会发布**：一条没有任何工具调用的消息里的文字不发布也不使用（`FEEDBACK(NO_ACTION)`），所以反馈明说"这条消息里的文字没有展示给任何人"，并点出本 Agent 的结束工具（main 是 `reply`），要它把同样的答案放进 `reply` 重发，或者继续调用工具；调用了不存在的工具（`UNKNOWN_TOOL`）时同样告诉它能调用自己有的工具，或用结束工具收尾。Agent 的系统提示词开头也写明同一条规则（main、explorer、worker、code-viewer；planner 本来就有）。是否把结果发布给用户（内建 Unit `message-publish`）、之后追加什么节点，由模板决定：`chat` 模板发布回复并追加下一个 `HUMAN(prompt)`；其他模板只发布 `output: true` 节点的结果 |
 | `run_subagents` | 能力上限中含 `agent.spawn` 的 AgentRun（M2 中只有顶层的 main） | 扩展 TaskGraph（第 3.6 节）；调用方的节点在这次调用回来之前处于 `WAITING`（第 3.1 节），所有子任务结束后，它收到汇合结果作为这次调用的工具结果 |
 | `finish_subagent` | explorer、worker | 以结构化结果结束本 AgentRun（第 3.7 节） |
 | `ask_user` | main、worker（explorer 不可用） | 在 TaskGraph 上派发一个 `HUMAN(ask / confirm / review)` 节点（调用方到它一条 `DELEGATE` 边，它回到调用方一条 `RESUME` 边，调用方在答复回来之前处于 `WAITING`）：向用户提问、请用户确认，或向用户展示一个产物并请求审阅；答复作为这次调用的工具结果 |
@@ -444,7 +450,7 @@ run_subagents({
 | worker 有 `writeScope`，explorer 没有 | `WRITE_SCOPE_REQUIRED`、`WRITE_SCOPE_FORBIDDEN` |
 | `writeScope` 规范化后在调用方的可写范围之内；已存在的前缀做 realpath 后仍在仓库内，且根目录不是符号链接 | `WRITE_SCOPE_OUTSIDE` |
 | 任意两个可能同时运行的任务（彼此之间没有依赖路径）`writeScope` 不相交 | `WRITE_SCOPE_OVERLAP`（建议加依赖或拆分范围） |
-| `effort` 在 Agent 允许的范围内 | `EFFORT_NOT_ALLOWED` |
+| `effort`：不在 Agent 允许的范围内时**不拒绝**，改为 Agent 允许的最近的一个（两个一样近取较低的：explorer 要 `high` 得到 `low`），任务照常启动；工具说明列出每个 Agent 允许的值。effort 是工作方式不是权限，不值得为它让一批正确的任务都不启动 | （无） |
 | `inputs` 中的产物都是调用方自己读得到的（它的步骤产生的、用户给它的、交给它的项目文件） | `INPUT_NOT_READABLE` |
 | 累计任务数 ≤ `maxTasks`（缺省 12）；`run_subagents` 调用次数 ≤ `maxSpawnCalls`（缺省 4）。都按 Turn 计（Orchestration 运行整体是一个 Turn） | `SPAWN_LIMIT` |
 | 各任务的 `budget.tokens` 之和 ≤ 调用方当前可委派的额度（由 Kernel 的 `reserveDelegation` 判定，第 7.3 节） | `BUDGET_INSUFFICIENT`（写明可委派的余额与各任务的份额） |
@@ -468,16 +474,28 @@ run_subagents({
 
 ```ts
 // explorer
-{ summary: string; findings: { claim: string; evidence: ArtifactRef[] }[];
-  openQuestions?: string[]; acceptance?: AcceptanceAnswer[] }
+{ summary: string; report?: string; references?: string[]; openQuestions?: string[];
+  acceptance?: AcceptanceAnswer[] }
 // worker
-{ summary: string; changedFiles: string[]; status: 'done' | 'partial' | 'blocked';
-  validation: { command: string; exitCode: number; outputRef: ArtifactRef }[];
+{ summary: string; report?: string; references?: string[]; changedFiles: string[]; status: 'done' | 'partial' | 'blocked';
+  validation: { command: string; exitCode: number }[];
   blockers?: string[]; acceptance?: AcceptanceAnswer[] }
-type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown'; evidence?: ArtifactRef[] }
+type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown' }
 ```
 
-0. **结果长度**：父 AgentRun 读到的每个子任务结果最多 8000 字符（`SUBAGENT_RESULT_CHARS`）。提示词与工具说明都告知了这个限制；超过时 Workflow 以 `RESULT_TOO_LONG` 退回一次让 SubAgent 重写，Kernel 组装上下文时仍会截断并注明；完整内容留在子任务的模型输出中。
+0. **摘要与原文**：结果是一段短的 `summary`（提示词要求不超过 2000 个字符）和一份不限长度的 `report`（原文，证据直接写在文字里：`path:首行-末行`、网页地址、工具结果的 toolCallId）。两者都不在 Schema 里设长度上限，**长度从不是拒收的理由**：模型写出的内容整份留在日志里（子任务的模型输出）。
+   - 父 AgentRun 读到的是：`summary`，以及在 `report` 不超过 1000 行且不超过 60000 个字符时紧跟着的 `report` 原文（`SUBAGENT_SUMMARY_CHARS`、`SUBAGENT_REPORT_LINES`、`SUBAGENT_REPORT_CHARS`）；
+   - `report` 超过任一限制时，只给 `summary`，并注明篇幅和这份结果的引用 `ref_N/toolCallId`（见 0a），父 AgentRun 用 `read_output` 按这个引用分页读完整内容（`summary` 在前，`report` 在后）；
+   - `summary` 超过 2000 个字符时在读它的地方截断并注明，不退回。
+0a. **交接与引用**（AgentRun 之间传递材料的统一路径）：一个 AgentRun 把结果交给另一个 AgentRun 是一次“交接”。Workflow 为每次交接在会话日志里登记一条 `REFERENCES_REGISTERED`（Interface/Persistence 第 2.2 节），它是 `read_output` 读取别的 AgentRun 交来的东西的唯一依据。SubAgent 把结果交给派生它的 AgentRun 是第一种用法；Orchestration 中 AgentRun 之间传递材料以后走同一条路径，不为它另设特例。
+   - **编号**：`ref_N`，N 为本 Session 已登记的交接数加一，只从日志推出（`nextReferenceId`）：同一 Session 内不重复，同一份日志得到同样的编号，重开、分叉后继续编号。
+   - **登记内容**：`referenceId`、`from`（交出的 AgentRun 和标签，任务的标签是任务名）、`to`（接收方：`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`，与读取者的投影范围一一对应）、`items`（每项含 `toolCallId`、工具名、`ref`：它指向的完整输出的 Artifact 引用，没被截断时是预览）。写入后不再改。
+   - **子任务的交接**：每个任务结束时登记一次，接收方是派生它的 AgentRun。`items` 的第一项是这次 `finish_subagent` 调用本身（工具名 `finish_subagent`，指向模型输出，里面有 `summary` 与 `report`），其后是子 Agent 在 `references` 里列出并通过检查的工具结果。结果记录（`NODE_ENDED.result`）只记 `referenceId`，清单从登记表读。
+   - **`references`（子 Agent 自己决定）**：可选，列出它认为调用方日后可能要读的工具结果的 toolCallId（抓过的网页、很长的输出）。任务结束时 Workflow 检查一次：这个 id 必须是这个 AgentRun 自己的、已经运行并且成功的工具调用（`UNIT_COMPLETED` 为 OK 且有输出），所在 Turn 没有被回退；重复的去掉，最多保留前 20 条（`SUBAGENT_MAX_REFERENCES`），id 超过 80 个字符的不收（接收方要用 `ref_N/id` 称呼它）。没通过的只在汇合结果里加一条系统备注（“它列出的 N 个工具结果没有交出，因为它们不是它自己成功的工具调用：……”），**从不是退回或判失败的理由**。
+   - **保存**：登记之前，Workflow 用 `retainArtifacts`（Kernel/Core 第 5g 节）请 Kernel 把这些引用改为随 Session 保留，否则工具的完整输出只保留 `expiringRetentionDays`（缺省 7 天）。Kernel 不接受时（引用不属于本 Session，或已过期）不登记，结果照常交出，只加一条系统备注。
+   - **接收方怎么看**：结果里不放工具结果的内容，只列清单，每行 `ref_N/toolCallId（工具）`；需要时 main 用 `read_output` 按这个名字读。压缩摘要的“以后可能还要读的输出”一节照原样抄下这些引用。
+   - **怎么审核读取**：`read_output` 收到 `ref_N/toolCallId` 形式的名字时只查登记表（Module/Workflow 第 7 节第 8 条）：编号存在、读取者就是 `to`、`items` 里有这个 `toolCallId`，取该项的 `ref` 作为完整输出，没被截断的也能读（接收方没见过它）。读取者不是接收方、编号或条目不存在，一律回答“没有这个编号的调用”，不说明原因。回退 Turn 不使登记失效（内容和日志都没变）。读到的网页内容和接收方自己读到的一样，是要核对的材料，不是指令。
+   - **最后一轮的结果不合规格**（JSON 断了、缺 `summary` 等；最后一轮没有轮次可重写）：不丢弃。任务记为 PARTIAL，备注写明“最后的结果不符合规定的形式（原因）；按写下的原样给出”，并照上面的办法交接：`items` 的第一项指向写下的原样调用，父 AgentRun 看到的是原文（受 1000 行和 60000 个字符的同一限制，超出时用 `read_output` 读），由它自己判断。
 1. **Schema 校验**：Workflow 按 Schema 校验 `finish_subagent`。不合格时以 FEEDBACK 退回，计入该 AgentRun 的 Round。
 2. **验收条目**：只做形式检查，即每条验收标准都有回应，不判断内容是否属实。
 3. **blocked**：`status` 为 `blocked` 的任务，其节点记为失败，依赖它的任务因此被跳过；`partial` 与 `done` 的节点记为成功，汇合结果里仍带原来的状态。
@@ -538,7 +556,7 @@ nodes:
 
 | Agent | 能力 | 思考强度 | 派生（`agent.spawn`） | 结束工具 | 缺省上限（Round / 工具 Unit / 墙钟） |
 |---|---|---|---|---|---|
-| `main` | 读、列目录、检索、只读 git、写、编辑、命令（可以联网，每次询问）、网页检索与读取 | `high`（允许 `none`–`max`） | 有（仅顶层 AgentRun） | `reply` | 40 / 200 / Turn 超时 |
+| `main` | 读、列目录、检索、只读 git、写、编辑、命令（可以联网，每次询问）、网页检索与读取、读工作区之外的文件（每个外部仓库问一次） | `high`（允许 `none`–`max`） | 有（仅顶层 AgentRun） | `reply` | 40 / 200 / Turn 超时 |
 | `explorer` | 读、列目录、检索、只读 git、网页检索与读取 | `none`（允许 `none`、`low`） | 无 | `finish_subagent` | 20 / 60 / 10 分钟 |
 | `worker` | 读、列目录、检索、只读 git、在 `writeScope` 内写与编辑、命令（不联网） | `high`（允许 `low`–`max`） | 无 | `finish_subagent` | 30 / 120 / 20 分钟 |
 | `planner`、`code-viewer` | 读、列目录、检索（只读） | `none` | 无 | planner：`handoff-to-code-viewer` 或 `finish`；code-viewer：`finish` | 定义中给出 |
@@ -775,11 +793,12 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 |---|---|---|---|
 | `repo.read` | 安全 | 仓库根目录 | WorkflowRun 开始时询问一次（M1 机制）；之后该 WorkflowRun 下能力上限中有它的 AgentRun 都可用 |
 | `workspace.write` | 不确定 | 发起写入的 AgentRun 的可写根目录；已批准的条目覆盖其下全部路径 | 没有覆盖的条目时询问一次。main 的可写根目录是仓库根目录，批准后也覆盖全部 SubAgent 的 `writeScope`，所以每个 WorkflowRun 通常只问一次；main 尚未写过时，worker 第一次写入按它自己的 `writeScope` 询问 |
-| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次 |
-| `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问 |
+| `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次；可以回答"这个文件夹以后都允许"，之后在这个文件夹里不再询问（只此一项，见 Kernel/Core 5f） |
+| `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；可以回答"本次运行内所有公开网站"，之后本运行内不再询问任何公开域名（不跨运行）；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问，也不受"所有公开网站"影响 |
+| `external.read` | 危险 | 外部仓库的根目录（绝对路径；见 Kernel/Core 5h 的授权范围规则） | 每个 WorkflowRun 内，每个外部仓库第一次读取时询问一次，一个回答覆盖三个外部读取工具（`list_external_files`、`read_external_file`、`search_external_repository`）和这个目录下的全部子目录；询问标注【只读访问外部文件】，写明授权的目录、内容会发给模型提供方、排除规则仍然生效；不设白名单，不跨运行；只有 main 的能力白名单中有它，`readonly` 预设下去掉。系统不提供任何工作区之外的路径，路径必须由用户或已读的文件给出；根目录与系统目录、`$HOME` 本身及其点号文件、系统数据目录一律拒绝，拒绝与"不存在"返回同一个错误 |
 | `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问；只读名单上的命令行例外（见下文"只读名单"） |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
-| `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力 |
+| `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力。**与 `web.search`、`web.fetch` 完全隔离**：网页的任何授权（包括"所有公开网站"和"这个文件夹"）都不影响命令联网的判定 |
 | `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
 | `project.instructions` | 不确定 | `AGENTS.md` 的相对路径与内容的 SHA | 不是 Agent 的能力，由 `readProjectFile` 读到未被信任的 `AGENTS.md` 时询问，决定它以项目指令还是仓库材料出现（第 9.5 节）；不产生任何执行权限 |
 | `agent.spawn` | 内部 | 无 | 不询问，也没有授权条目，只看能力上限。来自 Agent 定义的能力白名单；Kernel 只把它放进顶层 AgentRun（没有父 AgentRun 的）的能力上限，因此 SubAgent 不能再派生。`registerAgentRun` 带 `parentAgentRunId` 时，Kernel 检查父 AgentRun 的能力上限中有它，否则以 `CAPABILITY_NOT_GRANTED` 拒绝 |
@@ -789,7 +808,7 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 **级别的依据是后果能否撤销、影响到哪里**：
 - 安全级没有副作用；
 - 不确定级的副作用可以回退（文件写入），或者只泄露有限的信息（查询词、访问的域名）；
-- 危险级的副作用不能完全撤销，但只作用于沙盒内的仓库（命令不联网，读不到 `$HOME` 与敏感文件，第 6.1 节）；
+- 危险级的副作用不能完全撤销，但只作用于沙盒内的仓库（命令不联网，读不到 `$HOME` 与敏感文件，第 6.1 节）；或者没有副作用，却把工作区之外的内容交给模型提供方（`external.read`，只读，读到的内容无法收回）；
 - 极危险级的副作用作用于仓库之外，且无法撤销（联网的命令；沙盒不可用时的推送、发布）；或者会改变以后每次运行的指令（`AGENTS.md`）。
 
 **安全边界是网络隔离，不是命令名单**：沙盒中的命令缺省不联网，`.git/` 只读，因此推送、发布、修改远端配置在沙盒中本来就无法成功；
@@ -980,7 +999,8 @@ M2 保持 Kernel 业务无关、拓扑无关：Kernel 只依据 ID、能力、�
   - MODEL：模型调用。
 - 同一 AgentRun 的队列中，相邻的 READ 并行执行；WRITE 与 EXEC 是屏障，要等它前面的全部 Unit 结束才执行，它结束之后后面的 Unit 才开始。
 - 不同 AgentRun 的队列并行执行，受三项全局约束：
-  - `kernel.maxConcurrentAttempts`（缺省 6）；
+  - `kernel.maxConcurrentAttempts`（缺省 6，不数网页）；
+  - `kernel.maxConcurrentWeb`（缺省 10，网页的搜索与抓取自己的池，超出的排队）；
   - `kernel.maxConcurrentExec`（缺省 1）；
   - Scheduler 按 `kernel.providerCapacity`（缺省 3）分配模型调用机会。
 - `kernel.serialExecution`（缺省 `false`）是总开关，开启时所有 Unit 都视为屏障，全局并发为 1。用于排查竞态，CI 中开与关各跑一遍。
@@ -1113,6 +1133,7 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 | `registerAgentRun` | 新增 `parentAgentRunId?`、`delegationId?`、`nodeId`、`workspaceViewId`（M2 恒为 `main`）、`requestedCapabilities`、`writeRoots?`、`budget?`、`effort`、`display { label }`；允许多个同时 ACTIVE；可写根目录按写入占用规则检查（第 6.4 节），冲突时返回 `WRITE_SCOPE_CONFLICT`；自动归入开启中的 Turn，没有时返回 `NO_OPEN_TURN` |
 | `reserveDelegation` | 新增：`run_subagents` 校验通过后，为全部任务划出委派保留（全有或全无）；返回 `delegationId`，或 `BUDGET_INSUFFICIENT` 与可委派余额 |
 | `releaseDelegation` | 新增：任务被跳过或不再登记时返还其份额 |
+| `retainArtifacts` | 新增：一次交接登记之前，请 Kernel 把它带的引用改为随 Session 保留（第 3.7 节 0a；Kernel/Core 第 5g 节） |
 | `submitUnit` | 新增 `unitRunId`、`display { toolName, argsSummary（≤80 字）}` |
 | （说明） | `display` 只用于界面：Kernel 原样放进 ActivityEvent，不据此做任何判断 |
 | `requestHuman` | 新增：发起人类请求。`prompt`（开放输入）只能在没有 ACTIVE AgentRun 与在途 UnitAttempt 时发起，并结束当前 Turn（第 2.3 节）；其他种类是局部询问 |
@@ -1222,6 +1243,9 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 | `run_command` | `run-command` | EXEC | `command.exec`（`network: true` 时加 `command.network`） | 参数为 `command`、`workdir?`（相对仓库根目录）、`timeoutMs?`、`network?`；缺省不联网；每次在全新的 shell 中执行，不保留 `cd` 与变量；非零退出码是正常结果；预览保留输出的头尾，超出时全文另存（第 8.2 节）；结果带 `sandboxDenials`、`backend`、`changedFiles` |
 | `web_search` | `web-search` | READ | `web.search` | `queries: string[]`（1–5 个，每个 ≤128 字符）并行查询，结果按 URL 去重、按相关度排序、至多 20 条；`count?`（1–20）；`timeRange?: { after?, before? }`；每条结果包含标题、URL、日期、摘要，URL 先经地址检查（详见 ExecutorSet 第 5d 节） |
 | `web_fetch` | `web-fetch` | READ | `web.fetch` | `url`（≤2048）；只允许 http 与 https；Core 在询问前拒绝字面量的内网地址，Executor 解析后所有结果都必须是公网地址，本地抓取连接到检查过的地址，重定向逐跳检查、换主机即拒绝；大小上限；结果是带来源与"不可信"标记的封装，正文为 Markdown；预览为开头一段，超出时全文另存（第 8.2 节） |
+| `list_external_files` | `external-list` | READ | `external.read` | 列出工作区之外的一个目录，参数同 `list_files`，但 `path` 必须是绝对路径。与 `list_files` 共用同一个 Executor（`REPOSITORY_LIST`），Kernel 在询问之后把"绝对路径"改写成"授权目录 + 相对路径"，并给请求一个带 `external` 标记的范围（ExecutorSet 第 5e 节）；输出的路径带完整前缀 |
+| `read_external_file` | `external-read` | READ | `external.read` | 读工作区之外的一个文件，参数同 `read_file`，`path` 必须是绝对路径。共用 `FILE_READ` Executor；输出里的路径是完整路径，不返回该目录的 `AGENTS.md`（别的项目的指令不是这个项目的指令） |
+| `search_external_repository` | `external-search` | READ | `external.read` | 检索工作区之外的一个目录或文件，参数同 `search_repository`，`path` 必须是绝对路径。共用 `REPOSITORY_SEARCH` Executor，命中的路径是完整路径 |
 | `read_output` | `output-read` | READ | `repo.read` | 分段读取此前某次工具调用被截断的完整输出，或在压缩中被修剪的工具结果（第 8.2、9.6 节）。参数为 `toolCallId`（那次调用的编号）、`offset?`（起始行，从 1 开始）、`limit?`（行数，缺省并且至多 2000）、`pattern?`（只返回含有这段文字的行，按字面匹配）；结果带行号，同样受预览上限约束，不再产生完整输出。模型只给出编号，不接触 ArtifactRef 或存储地址 |
 
 内建 Unit：`context-assemble`、`model-call`（MODEL）、`report-publish`（M1）、`message-publish`（新增，由 Execution 直接发布 `reply` 与运行结果）。
@@ -1511,7 +1535,8 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 | 类别 | 正文 | 何时可以回收 |
 |---|---|---|
 | `SESSION`（长期保留） | 重建上下文所需的一切：工具结果的预览、修剪后的工具结果、模型输出（含工具调用参数）、思考内容、用户输入、回复、报告、运行摘要、压缩的摘要、`AGENTS.md` 与模板文件 | 没有任何 ACTIVE 的 Session 拥有它 |
-| `EXPIRING`（7 天） | 不是重建所需的：工具结果的完整版本（第 8.2 节）、ContextPack（可由日志重新计算，`projectionDigest` 可以验证） | 登记满 `expiringRetentionDays`（缺省 7 天），或没有任何 ACTIVE 的 Session 拥有它 |
+| `ONCE`（用完即放，7 天兜底） | 只给一次使用做的交接物：ContextPack（上下文组装做出来，紧接着的一次模型调用读取；可由日志重新计算，`projectionDigest` 可以验证） | 使用它的那次尝试最终结束时释放（Kernel/Execution 第 6d 节）；没有等到使用的，满 `expiringRetentionDays` |
+| `EXPIRING`（7 天） | 不是重建所需的：工具结果的完整版本（第 8.2 节） | 登记满 `expiringRetentionDays`（缺省 7 天），或没有任何 ACTIVE 的 Session 拥有它 |
 
 - 同一份内容被多个 Session、或以不同类别登记时，取最长的保留：只要还有一处 `SESSION` 登记属于 ACTIVE 的 Session，就不回收。
 - 读取已回收的正文时返回 `ARTIFACT_EXPIRED`，与"不存在或不属于本 Session"的 `INVALID_ARTIFACT_REF` 区分；归属文件中的登记行仍在，因此缺失的原因可以解释。
@@ -1612,7 +1637,7 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 
 **Kernel 只保存引用**：Kernel.Core 在 `<dataDir>/kernel-core/session-refs.jsonl` 中只记录 `sessionId`、状态与仓库根目录的 realpath。
 仓库根目录是 Kernel 履行自己职责所需的事实（`repo.read` 的询问、工作区快照、沙盒的可写路径），由 Kernel 在创建 Session 时依据本进程的仓库写入，不依赖 Workflow 提供。
-引用用来校验 `openSession`（包括仓库是否与本进程一致）、定位自己命名空间中该 Session 的审计、快照与产物归属，以及删除时清理这些数据；不保存标题、Fork 关系等列表内容。
+引用用来校验 `openSession`（是否存在、未删除；最后一次工作的文件夹是不是本进程的，决定要不要用户确认）、定位自己命名空间中该 Session 的审计、快照与产物归属，以及删除时清理这些数据；不保存标题、Fork 关系等列表内容。换文件夹时追加一行新的引用（最后一行为准）。
 索引损坏或缺失时，Workflow 可以由各 Session 的日志重建 Session 列表，Kernel 可以由各 Session 目录重建引用。
 
 **UserInteraction 不保存任何 Session 信息**：`/sessions` 经 Gateway 向 Kernel 发出 `listSessions`，Kernel 的 Session 管理以系统级事件（第 2.6 节）向 Workflow 查询列表，只保留引用存在、且仓库与本进程一致的 Session，再交给 UserInteraction；界面只展示这次的结果。
@@ -1737,7 +1762,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问待答复期间不放行、也不自动拒绝；拒绝后 Agent 收到工具结果并继续，Turn 没有结束，同一 AgentRun 内同类操作不再询问，被拒绝的工具不再提交，下一个 Turn 可以重新询问；未开始任务时不询问 `repo.read`；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问仍待答复；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任；子目录的 `AGENTS.md`：第一次 `read_file` 触及时询问与加载、追加在末尾而不改变此前的请求前缀、同一 WorkflowRun 内不重复加载、超过数量上限、SubAgent 不继承；命令的拆分：引号中的 `&&`、子 shell、heredoc、变量作命令名、语法错误的命令 | 全部符合第 5 节；命令按语法树拆分，解析失败与不是字面量的命令名只提供单次允许，名单匹配不因解析失败而遗漏 |
 | W | W1 检索加读取后作答并注明来源；W2 网页中的提示注入；W3 访问私网地址、DNS 重绑定、重定向到内网 | W2：注入内容没有被执行。W3：全部以 `ADDRESS_FORBIDDEN` 拒绝 |
 | O | 同一问题分别用 Turn-chat 与 `research` 模板运行；使用者模板的校验错误 | 两种方式都完成，比较完成率、耗时与 token；校验错误指明规则与节点 |
-| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出与 ContextPack 满 7 天后（启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、读取被 `/undo` 回退的 Turn 中的编号、过期后读取、读取已被压缩取代或被修剪的调用；L9 修剪：修剪后已低于阈值、修剪后仍需摘要、额度不足时只修剪；L10 摘要请求本身超出窗口或被 provider 拒绝；L11 空闲时的预先压缩，以及进行中收到新消息与 `/undo`；L12 SubAgent 的压缩与额度不足时的收尾；L13 压缩的估算使用最近一次模型调用的实测值 | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；上限内的旧用户消息逐字出现在压缩后的投影里（`keptSeqs`），超过上限的最旧消息与 `ask_user` 的答复在摘要中；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变；被回退 Turn 中的编号按"没有这个编号"反馈；L9：`TOOL_RESULTS_PRUNED` 先于摘要生效，修剪后的结果带 `toolCallId` 并可经 `read_output` 读回原文，`PINNED` 与保留区没有被修剪，只修剪时不调用模型；L10：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数；L11：用户的下一条消息等压缩生效后才组装，`/undo` 取消压缩且没有写回；L12：SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用；L13：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同 |
+| L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出满 7 天后、ContextPack 在模型调用结束时释放（兜底 7 天；启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、读取被 `/undo` 回退的 Turn 中的编号、过期后读取、读取已被压缩取代或被修剪的调用；L9 修剪：修剪后已低于阈值、修剪后仍需摘要、额度不足时只修剪；L10 摘要请求本身超出窗口或被 provider 拒绝；L11 空闲时的预先压缩，以及进行中收到新消息与 `/undo`；L12 SubAgent 的压缩与额度不足时的收尾；L13 压缩的估算使用最近一次模型调用的实测值 | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；上限内的旧用户消息逐字出现在压缩后的投影里（`keptSeqs`），超过上限的最旧消息与 `ask_user` 的答复在摘要中；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变；被回退 Turn 中的编号按"没有这个编号"反馈；L9：`TOOL_RESULTS_PRUNED` 先于摘要生效，修剪后的结果带 `toolCallId` 并可经 `read_output` 读回原文，`PINNED` 与保留区没有被修剪，只修剪时不调用模型；L10：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数；L11：用户的下一条消息等压缩生效后才组装，`/undo` 取消压缩且没有写回；L12：SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用；L13：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同 |
 | S | S1 运行中杀掉进程后重开 Session；S2 日志尾部损坏；S3 `/new` 或 `/fork` 后放弃草稿；S4 Fork 后分别在两个 Session 中继续，再切换回原 Session；S5 同一 `dataDir` 启动第二个实例；S6 实例锁的持有进程已退出后启动；S7 provider 限流并给出 `Retry-After` | S1、S2：对话可以继续；遗留的 Unit 被标为 INTERRUPTED，没有重放；授权被重新询问。S3：不产生任何新的 Session 文件。S4：两个日志互不影响，原日志逐字节不变；切换回原 Session 时文件没有被改动，main 的上下文中注明了在另一个 Session 中被修改的文件，编辑这些文件前要求重新读取。S5：第二个实例报错退出，说明持锁进程。S6：过期的锁被抢占，正常启动。S7：重试等待不短于 `Retry-After`，活动区显示"重试中"与倒计时；超过 `retryAfterMaxMs` 时不再等待 |
 
 **发布阻断项**：
@@ -1814,7 +1839,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 2 | `ask`、`confirm`、`review` 询问 10 分钟超时后自动继续，与"无人值守是非目标"有冲突 | 询问不超时；全部工作都在等用户时 Turn 超时暂停计时；授权询问同样不超时（v1.13） | **已决定**（v1.9，v1.13 修订），见第 4.2、5.3、7.4 节 |
 | 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2ReleasePlan 第 6 节 |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
-| 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | 评估是否为 `web.fetch` 增加"本运行内全部域名均允许"选项，并衡量它对信息外泄的影响 | Core 文档、限制清单 |
+| 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | **已做**：`web.fetch` 的询问可以回答"本次运行内所有公开网站"（`ANY_HOST`），私网与禁止的域名仍然拒绝；网址长度与像编码数据的查询值由 Executor 拒绝；`web.search` 可以按文件夹记住（Kernel/Core 5f） | 已实现 |
 | 6 | 长期保存的命令授权：授权条目只在内存中、每个 WorkflowRun 重新询问，同一条命令（如 `npm test`）每次启动都要再批准（OpenCode 把"总是允许"写入数据库，跨会话有效） | M2 暂不考虑；M2 实现之后以实验设计评估询问次数与风险，再决定是否允许用户在 dataDir 的用户配置中预先签发放行规则（不能放在仓库内） | M2 发布后 |
 | 7 | 长时间运行的命令：每条命令在新的 shell 中执行、至多 10 分钟，无法启动开发服务器后再测试（OpenCode 有持久终端与后台 shell，DeepSeek Harness 有 `jobs`） | M2 暂不实现，写入限制清单；M2 实现之后再评估后台任务的设计 | M2 发布后 |
 

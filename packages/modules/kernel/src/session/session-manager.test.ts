@@ -21,6 +21,8 @@ function setup(options: { removeFails?: boolean } = {}) {
   const timers: { delayMs: number; due: () => void }[] = [];
   let answering = true;
   const lines: SessionRefLine[] = [];
+  /** Each Session an actor was opened for, and whether it came from another folder. */
+  const opened: { sessionId: string; workspaceChanged: boolean }[] = [];
   const log: AppendLogPort<SessionRefLine> = {
     append: (line) => {
       lines.push(line);
@@ -71,8 +73,11 @@ function setup(options: { removeFails?: boolean } = {}) {
     repositoryRoot: '/repository',
     refs,
     outbox,
-    openActor: (sessionId, { onClosed, discard }) =>
-      Promise.resolve(
+    openActor: async (sessionId, { onClosed, discard, workspaceChanged, rebind }) => {
+      opened.push({ sessionId, workspaceChanged });
+      // As the composition does: the folder becomes the Session's once its snapshots began again.
+      if (workspaceChanged) await rebind();
+      return Promise.resolve(
         new SessionActor({
           sessionId,
           repositoryRoot: '/repository',
@@ -89,7 +94,8 @@ function setup(options: { removeFails?: boolean } = {}) {
             throw error;
           },
         }),
-      ),
+      );
+    },
     removeSessionFiles: (sessionId) => {
       removed.push(sessionId);
       return options.removeFails === true ? Promise.reject(new Error('disk')) : Promise.resolve();
@@ -127,6 +133,8 @@ function setup(options: { removeFails?: boolean } = {}) {
     toWorkflow,
     toInteraction,
     removed,
+    lines,
+    opened,
     start,
     wait,
     silence: () => {
@@ -190,6 +198,128 @@ describe('at most one open Session', () => {
   });
 });
 
+describe('a Session of another folder (M2Design 2.3)', () => {
+  const elsewhere = async (setupResult: ReturnType<typeof setup>, root = '/other') => {
+    const sessionId = newId('ses');
+    setupResult.lines.push({
+      sessionId,
+      repositoryRoot: root,
+      status: 'ACTIVE',
+      at: new Date(0).toISOString(),
+    });
+    await setupResult.refs.load();
+    return sessionId;
+  };
+
+  it('is refused until the user agreed, and nothing is opened or rebound', async () => {
+    const t = setup();
+    const sessionId = await elsewhere(t);
+    expect(await t.manager.openSession({ requestId: newId('req'), sessionId })).toMatchObject({
+      outcome: 'REJECTED',
+      reasonCode: 'WORKSPACE_CHANGE_NOT_CONFIRMED',
+    });
+    expect(
+      await t.manager.openSession({
+        requestId: newId('req'),
+        sessionId,
+        confirmWorkspaceChange: false,
+      }),
+    ).toMatchObject({ reasonCode: 'WORKSPACE_CHANGE_NOT_CONFIRMED' });
+    expect(t.opened).toEqual([]);
+    expect(t.refs.rootOf(sessionId)).toBe('/other');
+  });
+
+  it('is opened once the user agreed: its snapshots begin again and this folder becomes its own', async () => {
+    const t = setup();
+    const sessionId = await elsewhere(t);
+    expect(
+      await t.manager.openSession({
+        requestId: newId('req'),
+        sessionId,
+        confirmWorkspaceChange: true,
+      }),
+    ).toMatchObject({ outcome: 'ACCEPTED', sessionId });
+    expect(t.opened).toEqual([{ sessionId, workspaceChanged: true }]);
+    expect(t.refs.rootOf(sessionId)).toBe('/repository');
+    expect(t.refs.isHere(sessionId)).toBe(true);
+  });
+
+  it('needs no agreement the second time, and a Session of this folder never does', async () => {
+    const t = setup();
+    const sessionId = await elsewhere(t);
+    await t.manager.openSession({
+      requestId: newId('req'),
+      sessionId,
+      confirmWorkspaceChange: true,
+    });
+    await t.wait();
+    const mine = newId('ses');
+    await t.start(mine);
+    await t.wait();
+    expect(await t.manager.openSession({ requestId: newId('req'), sessionId })).toMatchObject({
+      outcome: 'ACCEPTED',
+    });
+    expect(t.opened.map((each) => each.workspaceChanged)).toEqual([true, false, false]);
+  });
+
+  it('is opened again and again from either folder, each time after agreement, and each time rebound', async () => {
+    const t = setup();
+    const sessionId = await elsewhere(t, '/a');
+    for (const root of ['/repository', '/b', '/repository', '/a']) {
+      // Another Session is open in between, as when the user came back from elsewhere.
+      await t.start();
+      await t.wait();
+      // The folder of this process is /repository; another folder is simulated by moving the ref.
+      t.lines.push({
+        sessionId,
+        repositoryRoot: root,
+        status: 'ACTIVE',
+        at: new Date(0).toISOString(),
+      });
+      await t.refs.load();
+      const wanted = root !== '/repository';
+      const result = await t.manager.openSession({
+        requestId: newId('req'),
+        sessionId,
+        ...(wanted ? { confirmWorkspaceChange: true } : {}),
+      });
+      expect(result).toMatchObject({ outcome: 'ACCEPTED' });
+      expect(t.opened.at(-1)?.workspaceChanged).toBe(wanted);
+      expect(t.refs.isHere(sessionId)).toBe(true);
+      await t.wait();
+    }
+  });
+
+  it('is deleted or unknown: still not found, whatever is said', async () => {
+    const t = setup();
+    const sessionId = await elsewhere(t);
+    await t.refs.markDeleted(sessionId);
+    expect(
+      await t.manager.openSession({
+        requestId: newId('req'),
+        sessionId,
+        confirmWorkspaceChange: true,
+      }),
+    ).toMatchObject({ reasonCode: 'SESSION_NOT_FOUND' });
+  });
+
+  it('closes the open Session first, as any switch does', async () => {
+    const t = setup();
+    const open = newId('ses');
+    await t.start(open);
+    await t.wait();
+    const sessionId = await elsewhere(t);
+    await t.manager.openSession({
+      requestId: newId('req'),
+      sessionId,
+      confirmWorkspaceChange: true,
+    });
+    await t.wait();
+    expect(t.manager.actor(open)).toBeUndefined();
+    expect(t.manager.actor(sessionId)).toBeDefined();
+  });
+});
+
 describe('ARTIFACT_SWEEP_TICK', () => {
   it('starts a sweep each interval in turn with Session requests', async () => {
     const { manager, sweeps, timers, wait } = setup();
@@ -219,6 +349,7 @@ describe('ARTIFACT_SWEEP_TICK', () => {
 describe('listing', () => {
   const entry = (sessionId: string): SessionListEntry => ({
     sessionId,
+    repositoryRoot: '/repository',
     createdAt: '2026-11-02T00:00:00.000Z',
     lastActiveAt: '2026-11-02T00:00:00.000Z',
     turnCount: 1,
@@ -248,6 +379,39 @@ describe('listing', () => {
     if (list?.type !== 'SessionList') throw new Error('no list');
     expect(list.sessions.map((session) => session.sessionId)).toEqual([known]);
     expect(list.sessions[0]?.title).toHaveLength(80);
+  });
+
+  it('lists the Sessions of every folder, each with its folder and whether it is this one', async () => {
+    const { manager, refs, lines, toWorkflow, toInteraction, outbox } = setup();
+    const here = newId('ses');
+    const there = newId('ses');
+    await refs.add(here);
+    lines.push({
+      sessionId: there,
+      repositoryRoot: '/other',
+      status: 'ACTIVE',
+      at: new Date(0).toISOString(),
+    });
+    await refs.load();
+    const listing = manager.listSessions({ requestId: newId('req') });
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    await outbox.drained();
+    const query = toWorkflow.at(-1)?.event;
+    if (query?.type !== 'SessionListQuery') throw new Error('no query');
+    manager.reportSessionList({
+      requestId: newId('req'),
+      queryId: query.queryId,
+      sessions: [entry(here), { ...entry(there), repositoryRoot: '/stale' }],
+    });
+    await listing;
+    await outbox.drained();
+    const list = toInteraction.at(-1)?.event;
+    if (list?.type !== 'SessionList') throw new Error('no list');
+    // Kernel's own reference says where a Session was last worked on, not Workflow's index.
+    expect(list.sessions.map((s) => [s.sessionId, s.repositoryRoot, s.here])).toEqual([
+      [here, '/repository', true],
+      [there, '/other', false],
+    ]);
   });
 
   it('refuses a reply nobody asked for', () => {

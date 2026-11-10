@@ -38,6 +38,11 @@ export type PendingItem =
   | {
       readonly kind: 'AUTHORIZATION';
       readonly once: boolean;
+      /**
+       * The wider answer of a question about the web: `a` allows every public website for this run
+       * (the fetch), `f` allows the search for this folder from now on (the search).
+       */
+      readonly wider?: 'ANY_HOST' | 'FOLDER';
       /** A command is answered with one of these (Kernel/Core 5b); otherwise y or n. */
       readonly options?: readonly ('ONCE' | 'COMMAND' | 'PREFIX' | 'DENY')[];
       readonly questionId: string;

@@ -6,7 +6,7 @@ description: Model-facing paged read of a full tool output, served by the output
 purpose: UNIT
 modelName: read_output
 modelDescription: >-
-  Read the full output of an earlier tool call whose result was cut, by its toolCallId. offset is
+  Read the full output of an earlier tool call whose result was cut, or the whole result of a subagent task whose report was too long to show, by its toolCallId; what a subagent task handed over is named ref_N/toolCallId, exactly as it was listed to you. offset is
   the first line (from 1), limit the number of lines (at most 2000); with pattern, only lines
   containing that literal text are returned.
 parametersContract:

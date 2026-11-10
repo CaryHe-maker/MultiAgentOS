@@ -2,6 +2,7 @@ import { posix } from 'node:path';
 import {
   MEDIA_TYPES,
   estimateItemTokens,
+  normalizeRequestPath,
   type Executor,
   type ExecutorEnvironment,
   type SearchExecutorInput,
@@ -16,7 +17,9 @@ import {
   type RepositoryFile,
 } from '../repository-access/file-set.js';
 import {
+  isWithinScope,
   resolveRepositoryScope,
+  shownPath,
   type RepositoryScope,
 } from '../repository-access/repository-scope.js';
 import { previewLimitsOf, retainItems } from '../retention/retention.js';
@@ -103,7 +106,22 @@ async function search(
     cache: options.cache,
   });
   if (!built.ok) return rejected('LIMIT_EXCEEDED');
-  const set = built.set;
+  // Only below `path`; an external call also stays below the path it was allowed for.
+  const asked = input.path === undefined ? '' : normalizeRequestPath(input.path);
+  if (asked === undefined) return rejected('OUT_OF_SCOPE');
+  const within = asked === '.' ? '' : asked;
+  if (!isWithinScope(scope, within)) return rejected('OUT_OF_SCOPE');
+  const below = scope.external?.below ?? '';
+  const prefix = within.length >= below.length ? within : below;
+  const set: FileSet =
+    prefix === ''
+      ? built.set
+      : {
+          ...built.set,
+          files: built.set.files.filter(
+            (file) => file.path === prefix || file.path.startsWith(`${prefix}/`),
+          ),
+        };
 
   let incomplete = false;
   const documents = new Map<string, TextDocument | undefined>();
@@ -150,7 +168,7 @@ async function search(
   let overBudget = 0;
   for (const { candidate, endLine, document } of hits) {
     const { file, kind, startLine, score } = candidate;
-    const content = `${file.path}:${startLine}-${endLine} [${kind}, score ${score}]\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}`;
+    const content = `${shownPath(scope, file.path)}:${startLine}-${endLine} [${kind}, score ${score}]\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}`;
     const tokens = estimateItemTokens({ role: 'user', content });
     if (used + tokens > input.tokenBudget) {
       overBudget += 1;
@@ -158,7 +176,13 @@ async function search(
     }
     used += tokens;
     kept.push(content);
-    keptHits.push({ path: file.path, startLine, endLine, score, matchKind: kind });
+    keptHits.push({
+      path: shownPath(scope, file.path),
+      startLine,
+      endLine,
+      score,
+      matchKind: kind,
+    });
   }
   const truncated = incomplete || skipped > 0 || overBudget > 0;
   const output = { snapshotId: set.snapshotId, hits: keptHits, truncated };

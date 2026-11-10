@@ -359,8 +359,8 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_1', title: 'one', turnCount: 8 },
-          { sessionId: 'ses_2', turnCount: 22 },
+          { sessionId: 'ses_1', title: 'one', turnCount: 8, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_2', turnCount: 22, here: true, repositoryRoot: '/repo' },
         ],
       },
     } as never);
@@ -378,11 +378,14 @@ describe('Console', () => {
     await t.console.handleSystemEvent({
       event: {
         type: 'SessionList',
-        sessions: [{ sessionId: 'ses_2', title: 'a', turnCount: 2 }],
+        sessions: [
+          { sessionId: 'ses_2', title: 'a', turnCount: 2, here: true, repositoryRoot: '/repo' },
+        ],
       },
     } as never);
     await t.console.submit('/resume 1');
     expect(t.named('openSession')[0]?.request).toMatchObject({ sessionId: 'ses_2' });
+    expect(t.named('openSession')[0]?.request).not.toHaveProperty('confirmWorkspaceChange');
 
     const exited = t.console.exited();
     await t.console.interrupt();
@@ -395,6 +398,70 @@ describe('Console', () => {
     expect(t.named('shutdown')).toHaveLength(1);
     expect(t.named('shutdown')[0]?.request).toMatchObject({ source: 'INTERRUPT_TWICE' });
     await exited;
+  });
+
+  describe('Sessions of another folder', () => {
+    const list = {
+      event: {
+        type: 'SessionList',
+        sessions: [
+          { sessionId: 'ses_h', title: 'here', turnCount: 3, here: true, repositoryRoot: '/repo' },
+          {
+            sessionId: 'ses_o',
+            title: 'there',
+            turnCount: 5,
+            here: false,
+            repositoryRoot: '/other',
+          },
+        ],
+      },
+    } as never;
+
+    it('lists this folder first and the others after, numbered on, with the folder they were in', async () => {
+      const t = setup();
+      await t.console.handleSystemEvent(list);
+      const lists = t.printed.filter((each) => each.kind === 'LIST').map((each) => each.text);
+      expect(lists).toEqual(['  1. here（3 轮）', '  2. there（5 轮，原来在 /other）']);
+      const headers = t.printed.filter((each) => each.kind === 'NOTICE').map((each) => each.text);
+      expect(headers.at(-1)).toContain('其他文件夹的对话');
+    });
+
+    it('says what opening it here means, and opens it only when asked a second time', async () => {
+      const t = setup();
+      await t.console.handleSystemEvent(list);
+      await t.console.submit('/resume 2');
+      expect(t.named('openSession')).toHaveLength(0);
+      const said = t.printed.at(-1)?.text ?? '';
+      expect(said).toContain('/other');
+      expect(said).toContain('快照');
+      expect(said).toContain('AGENTS.md');
+      expect(said).toContain('/resume 2');
+      await t.console.submit('/resume 2');
+      expect(t.named('openSession')[0]?.request).toMatchObject({
+        sessionId: 'ses_o',
+        confirmWorkspaceChange: true,
+      });
+    });
+
+    it('asks again after another command in between, and after a new list', async () => {
+      const t = setup();
+      await t.console.handleSystemEvent(list);
+      await t.console.submit('/resume 2');
+      await t.console.handleSystemEvent(list);
+      await t.console.submit('/resume 2');
+      expect(t.named('openSession')).toHaveLength(0);
+      await t.console.submit('/resume 2');
+      expect(t.named('openSession')).toHaveLength(1);
+    });
+
+    it('opens a Session of this folder at once, with no confirmation in the request', async () => {
+      const t = setup();
+      await t.console.handleSystemEvent(list);
+      await t.console.submit('/resume 1');
+      expect(t.named('openSession')[0]?.request).toEqual(
+        expect.not.objectContaining({ confirmWorkspaceChange: true }),
+      );
+    });
   });
 
   it('says who asks for the system to stop: /exit, and the code of an exit from outside', async () => {
@@ -1119,5 +1186,98 @@ describe('how full the context is', () => {
       at: new Date(0).toISOString(),
     } as unknown as KernelToInteractionEvent);
     expect(t.live()?.context).toBeUndefined();
+  });
+});
+
+describe('the size of a message', () => {
+  it('is sent up to 100 KB, with nothing said about it', async () => {
+    const t = setup();
+    await t.console.submit('a'.repeat(100 * 1024));
+    expect(t.named('startSession')).toHaveLength(1);
+    expect(t.printed.some((record) => record.text.includes('太长'))).toBe(false);
+  });
+
+  it('is not sent beyond 100 KB, and the console says why, counting bytes and not characters', async () => {
+    const t = setup();
+    // 40,000 characters of three bytes each are 120,000 bytes.
+    await t.console.submit('你'.repeat(40_000));
+    expect(t.named('startSession')).toHaveLength(0);
+    expect(t.printed.at(-1)?.text).toContain('消息太长（117 KB），超过 100 KB 的上限，没有发出');
+  });
+
+  it('is not sent as a note beyond 100 KB either', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event({ type: 'RunStateChanged', state: 'RUNNING' });
+    await t.console.steer('b'.repeat(100 * 1024 + 1));
+    expect(t.named('steerRun')).toHaveLength(0);
+    expect(t.printed.at(-1)?.text).toContain('太长');
+  });
+});
+
+describe('the questions about the web', () => {
+  const fetchRequest = {
+    type: 'AuthorizationRequest',
+    questionId: 'qst_f',
+    capability: 'web.fetch',
+    url: 'https://a.example/page',
+    host: 'a.example',
+  } as unknown as KernelToInteractionEvent;
+  const searchRequest = {
+    type: 'AuthorizationRequest',
+    questionId: 'qst_s',
+    capability: 'web.search',
+    queries: ['q'],
+    provider: 'deepseek',
+  } as unknown as KernelToInteractionEvent;
+
+  it('says what each answer allows', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    const text = (t.live()?.pending as { text: string } | undefined)?.text ?? '';
+    expect(text).toContain('y 本次运行内只允许这个网站');
+    expect(text).toContain('a 本次运行内允许所有公开网站');
+    await t.console.submit('n');
+    await t.event(searchRequest);
+    const search = (t.live()?.pending as { text: string } | undefined)?.text ?? '';
+    expect(search).toContain('f 这个文件夹以后都允许');
+  });
+
+  it('answers a for every public site on a fetch, and f for the folder on a search', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    await t.console.submit('a');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      questionId: 'qst_f',
+      answer: { scope: 'ANY_HOST' },
+    });
+    await t.event(searchRequest);
+    await t.console.submit('f');
+    expect(t.named('answerAuthorization')[1]?.request).toMatchObject({
+      questionId: 'qst_s',
+      answer: { scope: 'FOLDER' },
+    });
+  });
+
+  it('answers y with the narrow answer, and takes no wider answer on a question that has none', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    await t.event(fetchRequest);
+    // f is for the search: the fetch does not take it, and the question stays.
+    await t.console.submit('f');
+    expect(t.named('answerAuthorization')).toHaveLength(0);
+    await t.console.submit('y');
+    expect(t.named('answerAuthorization')[0]?.request).toMatchObject({
+      answer: { scope: 'ALLOW' },
+    });
+    await t.event(searchRequest);
+    await t.console.submit('a');
+    expect(t.named('answerAuthorization')).toHaveLength(1);
+    await t.console.submit('y');
+    expect(t.named('answerAuthorization')[1]?.request).toMatchObject({
+      answer: { scope: 'ALLOW' },
+    });
   });
 });

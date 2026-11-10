@@ -11,6 +11,8 @@ import {
   type UnitInput,
 } from '@multiagentos/contracts';
 import type { ToolInput } from '../agent/agent-cycle.js';
+import { parseReferenceName } from '@multiagentos/contracts';
+import { resolveReference } from '../handover/handover.js';
 import type { ProjectionScope } from './history-projection.js';
 
 /** What the log last says about a file: read or written at a digest, or read as missing. */
@@ -42,7 +44,8 @@ export function fileBaselines(records: readonly SessionLogRecord[]): Map<string,
       if (known !== undefined) baselines.set(known.path, { kind: 'SHA', sha256: known.sha256 });
       else if (record.reasonCode === 'NOT_FOUND' && path !== undefined)
         baselines.set(path, { kind: 'ABSENT' });
-    } else if (record.type === 'WORKSPACE_REVERTED') baselines.clear();
+    } else if (record.type === 'WORKSPACE_REVERTED' || record.type === 'WORKSPACE_BOUND')
+      baselines.clear();
     else if (record.type === 'WORKSPACE_DIVERGED')
       for (const file of record.files) baselines.delete(file);
   }
@@ -55,6 +58,12 @@ function fullOutputOf(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
 ): { readonly fullRef?: ArtifactRef } | undefined {
+  // A reference `ref_N/toolCallId` is what another AgentRun handed over: only the registry says
+  // what it is, and to whom (handover.ts). It is read whole, cut or not.
+  if (parseReferenceName(toolCallId) !== undefined) {
+    const ref = resolveReference(toolCallId, records, scope);
+    return ref === undefined ? undefined : { fullRef: ref };
+  }
   const reverted = new Set<string>();
   const callers = new Set<string>();
   const main = new Set<string>();

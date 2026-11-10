@@ -63,6 +63,10 @@ export function entryBytes(entry: ContextHistoryEntry): number {
       return (
         sizeOf(entry.outputRef) +
         entry.notes.reduce((total, line) => total + textSize(line), 0) +
+        (entry.references ?? []).reduce(
+          (total, each) => total + textSize(each.toolCallId) + textSize(each.tool),
+          0,
+        ) +
         ENTRY_OVERHEAD_BYTES
       );
   }

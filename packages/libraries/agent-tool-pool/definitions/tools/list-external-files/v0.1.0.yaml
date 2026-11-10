@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: list-external-files
+version: v0.1.0
+description: Model-facing listing of a folder outside the repository, served by the external-list unit.
+purpose: UNIT
+modelName: list_external_files
+modelDescription:
+  'List the files of a folder OUTSIDE the repository as a tree with file counts per directory.
+  path is ABSOLUTE and must be a path you were given, by the user or by a file you read; do not
+  guess paths. The path is written exactly as the user gave it, in one of two forms: a Linux path such as /home/alice/work/app/src/main.ts, or a Windows path with a drive letter such as D:\work\app\src\main.ts (or D:/work/app/src/main.ts). Do not convert it, shorten it, or use any other form (no relative paths, no ~, no \\server\share, no /d/work). The user is asked once for each external repository, and a path that
+  does not exist or may not be read gets the same error. depth is 1 to 3 (default 2); glob filters
+  the paths below path. Files shown are listed from path.'
+parametersContract:
+  kind: contract
+  id: executor.RepositoryListInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

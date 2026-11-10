@@ -9,6 +9,7 @@ import { Console, type ConsoleDeps } from './console/console.js';
 
 export { Console, RUN_EXIT_CODES, type ConsoleDeps } from './console/console.js';
 export { ConsoleText, terminalText } from './console/console-text.js';
+export { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './console/input-limit.js';
 export type {
   ActivityLine,
   ConsoleView,

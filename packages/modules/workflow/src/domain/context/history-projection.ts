@@ -6,6 +6,7 @@ import {
   type SessionLogRecord,
 } from '@multiagentos/contracts';
 import { answerOf, callResultsOf } from '../spawn/spawn-graph.js';
+import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
@@ -312,6 +313,20 @@ export function projectHistory(
         });
         break;
       }
+      case 'WORKSPACE_BOUND': {
+        // The folder changed (M2Design 2.3): the project instructions loaded so far were the old
+        // folder's, and they are read again from the new one.
+        for (let i = entries.length - 1; i >= 0; i -= 1)
+          if (entries[i]?.kind === 'PROJECT_INSTRUCTIONS') entries.splice(i, 1);
+        instructions.clear();
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: workspaceChangedNote(record.previousRoot, record.repositoryRoot),
+        });
+        break;
+      }
       case 'WORKSPACE_DIVERGED':
         entries.push({
           seq: record.seq,
@@ -350,6 +365,14 @@ export function projectHistory(
           break;
         }
         if (instructions.has(`${record.path}\0${record.sha256}`)) break;
+        // A file has one place: what it says now takes the place of what it said before.
+        for (let i = entries.length - 1; i >= 0; i -= 1) {
+          const earlier = entries[i];
+          if (earlier?.kind === 'PROJECT_INSTRUCTIONS' && earlier.path === record.path)
+            entries.splice(i, 1);
+        }
+        for (const key of [...instructions])
+          if (key.startsWith(`${record.path}\0`)) instructions.delete(key);
         instructions.add(`${record.path}\0${record.sha256}`);
         entries.push({
           seq: record.seq,
@@ -428,6 +451,8 @@ export function projectHistory(
             notes: [...result.notes],
             ...(result.outputRef === undefined ? {} : { outputRef: result.outputRef }),
             ...(result.toolCallId === undefined ? {} : { toolCallId: result.toolCallId }),
+            ...(result.referenceId === undefined ? {} : { referenceId: result.referenceId }),
+            ...(result.references === undefined ? {} : { references: [...result.references] }),
           });
         break;
       }

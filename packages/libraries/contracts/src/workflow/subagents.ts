@@ -6,10 +6,29 @@ import { closed, count, text } from '../platform-common/schema-helpers.js';
  * The control tools of SubAgents (M2Design 3.6, 3.7): `run_subagents` asks for tasks, and
  * `finish_subagent` returns the result of one.
  */
-/** What of a SubAgent's result its caller reads: longer is cut, and a longer one is sent back. */
-export const SUBAGENT_RESULT_CHARS = 8000;
+/**
+ * What of a SubAgent's result its caller reads (M2Design 3.7). The result is a short `summary`
+ * and then the `report` in full. Both are kept whole in the log. The caller gets the summary and
+ * the report when the two together fit these limits, otherwise the summary and the id by which
+ * the rest is read; a result is never refused for its length.
+ */
+export const SUBAGENT_SUMMARY_CHARS = 2000;
+export const SUBAGENT_REPORT_LINES = 1000;
+export const SUBAGENT_REPORT_CHARS = 60_000;
+/** The most tool results of one task that are passed on; the rest of what it lists is left out. */
+export const SUBAGENT_MAX_REFERENCES = 20;
 
 const NameSchema = Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' });
+
+/**
+ * The ids of its own tool calls whose results the SubAgent thinks its caller should be able to
+ * read. Optional, and never a reason to refuse the result: the system checks each one and passes
+ * on those that were successful calls of the SubAgent itself.
+ */
+const referencesField = () => Type.Optional(Type.Array(Type.String()));
+
+/** Text without a length limit: what a model writes is kept, and cut only where it is read. */
+const longText = () => Type.String({ minLength: 1 });
 
 export const SubagentTaskSchema = closed({
   name: NameSchema,
@@ -35,18 +54,15 @@ export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
 export const AcceptanceAnswerSchema = closed({
   index: count(0),
   verdict: Type.Enum(['met', 'not_met', 'unknown']),
-  evidence: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
 });
 export type AcceptanceAnswer = Static<typeof AcceptanceAnswerSchema>;
 
 /** Parameters of `finish_subagent` of an explorer. */
 export const ExplorerResultSchema = closed(
   {
-    summary: text(4000),
-    findings: Type.Array(
-      closed({ claim: text(1000), evidence: Type.Array(ArtifactRefSchema, { maxItems: 10 }) }),
-      { maxItems: 30 },
-    ),
+    summary: longText(),
+    report: Type.Optional(longText()),
+    references: referencesField(),
     openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
     acceptance: Type.Optional(Type.Array(AcceptanceAnswerSchema, { maxItems: 10 })),
   },
@@ -57,16 +73,57 @@ export type ExplorerResult = Static<typeof ExplorerResultSchema>;
 /** Parameters of `finish_subagent` of a worker. */
 export const WorkerResultSchema = closed(
   {
-    summary: text(4000),
+    summary: longText(),
+    report: Type.Optional(longText()),
+    references: referencesField(),
     changedFiles: Type.Array(text(500), { maxItems: 200 }),
     status: Type.Enum(['done', 'partial', 'blocked']),
-    validation: Type.Array(
-      closed({ command: text(1000), exitCode: Type.Integer(), outputRef: ArtifactRefSchema }),
-      { maxItems: 20 },
-    ),
+    validation: Type.Array(closed({ command: text(1000), exitCode: Type.Integer() }), {
+      maxItems: 20,
+    }),
     blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
     acceptance: Type.Optional(Type.Array(AcceptanceAnswerSchema, { maxItems: 10 })),
   },
   'workflow.WorkerResult.v1',
 );
 export type WorkerResult = Static<typeof WorkerResultSchema>;
+
+/** The part of the result of `finish_subagent` that the caller reads, whichever kind of Agent wrote it. */
+export interface SubagentReport {
+  readonly summary: string;
+  readonly report?: string;
+}
+
+/** The whole result as text: the summary, then the report. What `read_output` reads back. */
+export function subagentFullText(result: SubagentReport): string {
+  return result.report === undefined ? result.summary : `${result.summary}\n\n${result.report}`;
+}
+
+/**
+ * What the caller is shown (M2Design 3.7): the summary, and the report after it when the report
+ * fits the limits; otherwise the summary and the id by which the report is read in pages. A
+ * summary longer than asked is cut here and not refused.
+ */
+export function subagentShownText(result: SubagentReport, toolCallId: string): string {
+  const { summary, report } = result;
+  const head =
+    summary.length <= SUBAGENT_SUMMARY_CHARS
+      ? summary
+      : `${summary.slice(0, SUBAGENT_SUMMARY_CHARS)}\n[summary cut: it is ${String(summary.length)} characters, only the first ${String(SUBAGENT_SUMMARY_CHARS)} are shown; read all of it with read_output, toolCallId ${toolCallId}]`;
+  if (report === undefined) return head;
+  const lines = report.split('\n').length;
+  if (lines <= SUBAGENT_REPORT_LINES && report.length <= SUBAGENT_REPORT_CHARS)
+    return `${head}\n\n${report}`;
+  return `${head}\n\n[the report is ${String(lines)} lines and ${String(report.length)} characters, too long to show here; read all of it with read_output, toolCallId ${toolCallId}]`;
+}
+
+/**
+ * A finishing call that does not follow the form (it was the last round, so it could not be
+ * written again) is shown as it was written, within the same limits; the caller is told by the
+ * notes of the result that it does not follow the form, and judges it itself.
+ */
+export function subagentAsWrittenText(written: string, toolCallId: string): string {
+  const lines = written.split('\n').length;
+  if (lines <= SUBAGENT_REPORT_LINES && written.length <= SUBAGENT_REPORT_CHARS) return written;
+  return `${written.slice(0, SUBAGENT_SUMMARY_CHARS)}\n[the text is ${String(lines)} lines and ${String(written.length)} characters, too long to show here; read all of it with read_output, toolCallId ${toolCallId}]`;
+}

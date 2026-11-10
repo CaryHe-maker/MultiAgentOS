@@ -144,6 +144,8 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.releaseDelegation(forward.request)),
         );
+      case 'retainArtifacts':
+        return this.#inRun(forward.request, (work) => work.retainArtifacts(forward.request));
       case 'reportCompactionSource':
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.reportCompactionSource(forward.request)),

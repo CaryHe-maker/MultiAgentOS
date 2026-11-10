@@ -130,6 +130,11 @@ export const PROTECTED_CAPABILITIES = [
   /** The two web tools (M2Design 5.2, 8.1); asked per WorkflowRun and per host. */
   'web.search',
   'web.fetch',
+  /**
+   * Reading outside the workspace, by absolute path (M2Design 5.2): dangerous, asked once for each
+   * external repository and per WorkflowRun, and only the main Agent has it.
+   */
+  'external.read',
   /** Only a top-level AgentRun has it: a SubAgent cannot spawn (M2Design 5.2, 5.4). */
   'agent.spawn',
 ] as const;

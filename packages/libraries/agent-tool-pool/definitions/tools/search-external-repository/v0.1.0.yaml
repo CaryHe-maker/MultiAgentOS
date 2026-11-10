@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: search-external-repository
+version: v0.1.0
+description: Model-facing search of a folder outside the repository, served by the external-search unit.
+purpose: UNIT
+modelName: search_external_repository
+modelDescription: 'Search a folder OUTSIDE the repository. path is ABSOLUTE, a folder or file
+  you were given by the user or by a file you read; do not guess paths. The path is written exactly as the user gave it, in one of two forms: a Linux path such as /home/alice/work/app/src/main.ts, or a Windows path with a drive letter such as D:\work\app\src\main.ts (or D:/work/app/src/main.ts). Do not convert it, shorten it, or use any other form (no relative paths, no ~, no \\server\share, no /d/work). The user is asked once for
+  each external repository, and a path that does not exist or may not be read gets the same error.
+  Hits show full paths. mode SYMBOL finds declarations of an identifier, TEXT a fixed string, PATH
+  file paths; AUTO (default) combines PATH and TEXT. maxItems defaults to 20.'
+parametersContract:
+  kind: contract
+  id: context.RepositorySearchInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

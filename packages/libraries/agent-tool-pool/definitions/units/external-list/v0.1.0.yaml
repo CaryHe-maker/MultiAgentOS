@@ -1,0 +1,27 @@
+schemaVersion: v1
+kind: UNIT
+id: external-list
+version: v0.1.0
+description: List a folder outside the repository, through the same file set as the repository tools.
+executionKind: REPOSITORY_LIST
+protectedCapabilities:
+  - external.read
+inputContract:
+  kind: contract
+  id: executor.RepositoryListInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.RepositoryListOutput
+  version: v1
+toolRefs:
+  - id: list-external-files
+    version: v0.1.0
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  EXTERNAL_PATH_UNAVAILABLE: RETURN_TO_MODEL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  NOT_FOUND: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

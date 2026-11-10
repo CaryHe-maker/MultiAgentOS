@@ -51,13 +51,30 @@ export const TrustedInstructionLineSchema = closed(
 );
 export type TrustedInstructionLine = Static<typeof TrustedInstructionLineSchema>;
 
+/**
+ * A folder the user allowed the web search for, from now on (docs/M2/Kernel/Core.md 5f). It
+ * grants nothing but the question that is not asked again; the fetch and the commands are not part
+ * of it, and nothing here is a path or a query.
+ */
+export const TrustedWebSearchLineSchema = closed(
+  {
+    repositoryRoot: text(4096),
+    source: Type.Enum(['USER_CONFIRMED']),
+    at: TimestampSchema,
+  },
+  'platform.persistence.TrustedWebSearchLine.v1',
+);
+export type TrustedWebSearchLine = Static<typeof TrustedWebSearchLineSchema>;
+
 export const ArtifactOwnerLineSchema = closed(
   {
     artifactId: IdSchemas.artifactId,
     mediaType: text(128),
     sha256: Sha256Schema,
     size: count(),
-    retention: Type.Enum(['SESSION', 'EXPIRING']),
+    retention: Type.Enum(['SESSION', 'EXPIRING', 'ONCE']),
+    /** Set when the one it was made for is done with it; from then on it reads as expired. */
+    releasedAt: Type.Optional(TimestampSchema),
     source: Type.Enum(['PRODUCED', 'INHERITED']),
     fullOutput: Type.Optional(Type.Literal(true)),
     retainedSince: TimestampSchema,
@@ -88,6 +105,15 @@ export const SnapshotIndexLineSchema = Type.Union(
       turnId: IdSchemas.turnId,
       endSnapshot: Type.Optional(text(64)),
       changedFiles: Type.Array(snapshotChange),
+      at: TimestampSchema,
+    }),
+    /**
+     * The Session was opened in another folder: the Turns before this line have no way back, since
+     * their snapshots are of another folder. The lines stay, and nothing reads them any more.
+     */
+    closed({
+      kind: Type.Literal('EPOCH'),
+      repositoryRoot: text(4096),
       at: TimestampSchema,
     }),
     closed({

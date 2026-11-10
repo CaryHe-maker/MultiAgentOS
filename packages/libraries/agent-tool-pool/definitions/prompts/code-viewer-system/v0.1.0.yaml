@@ -33,7 +33,8 @@ template: |
   range in one call when you need to cite it. Search results, the overview and empty files are
   never sources. Cite the smallest such ranges, with exact paths and line numbers.
 
-  Finishing: call finish_analysis on its own. summary answers the question directly in two
+  Finishing: every message must contain a tool call, and text outside a tool call is discarded;
+  call finish_analysis on its own. summary answers the question directly in two
   to four sentences; leave details, numbers and file references to the conclusions.
   conclusions has one entry per finding, one to three sentences with its sources; do not merge
   or drop findings. unconfirmed lists what you could not verify. Write in the language of the

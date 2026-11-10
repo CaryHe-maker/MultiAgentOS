@@ -4,6 +4,7 @@ import type {
   SessionLogRecord,
   SubagentTask,
 } from '@multiagentos/contracts';
+import { registeredOf } from '../handover/handover.js';
 import { outcomeOf, type TaskOutcome } from './task-results.js';
 import type { TaskScope } from '../context/history-projection.js';
 import type { ProjectedGraph } from '../graph/session-graph.js';
@@ -43,6 +44,24 @@ export interface CallResult {
   readonly notes: readonly string[];
   readonly outputRef?: ArtifactRef;
   readonly toolCallId?: string;
+  /** The handover that carries the result and what the task listed, and what is in it. */
+  readonly referenceId?: string;
+  readonly references?: readonly { readonly toolCallId: string; readonly tool: string }[];
+}
+
+/** What a task handed over, as an entry shows it: the reference id and the items of the handover. */
+export function handoverFieldsOf(
+  records: readonly SessionLogRecord[],
+  outcome: TaskOutcome,
+): { referenceId?: string; references?: { toolCallId: string; tool: string }[] } {
+  const handover =
+    outcome.referenceId === undefined ? undefined : registeredOf(records, outcome.referenceId);
+  return handover === undefined
+    ? {}
+    : {
+        referenceId: handover.referenceId,
+        references: handover.items.map(({ toolCallId, tool }) => ({ toolCallId, tool })),
+      };
 }
 
 /**
@@ -116,6 +135,7 @@ export function callResultsOf(
           notes: outcome.notes,
           ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
           ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...handoverFieldsOf(records, outcome),
         },
       ];
     });
@@ -149,6 +169,7 @@ export function taskScopeOf(
           notes: [...outcome.notes],
           ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
           ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...handoverFieldsOf(records, outcome),
         },
       ];
     });

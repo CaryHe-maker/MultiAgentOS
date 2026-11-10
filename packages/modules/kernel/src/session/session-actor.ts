@@ -675,6 +675,18 @@ export class SessionActor {
       enqueue: (work) => {
         this.#inbox.enqueue({ kind: 'CALL', work: () => Promise.resolve(work()) }, 'control');
       },
+      requestPause: () => {
+        this.#inbox.enqueue(
+          {
+            kind: 'CALL',
+            work: () => {
+              if (run.control.phase === 'RUNNING') this.pauseRun(run);
+              return Promise.resolve();
+            },
+          },
+          'control',
+        );
+      },
     };
     const run: Run = {
       workflowRunId,

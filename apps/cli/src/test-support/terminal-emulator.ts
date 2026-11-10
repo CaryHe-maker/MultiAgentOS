@@ -104,9 +104,19 @@ export class Terminal {
             this.#screen[this.#row] = [];
             break;
           case 'J':
+            if (escape.parameters === '2') {
+              for (let row = 0; row < this.rows; row += 1) this.#screen[row] = [];
+              break;
+            }
             this.#screen[this.#row] = (this.#screen[this.#row] ?? []).slice(0, this.#column);
             for (let row = this.#row + 1; row < this.rows; row += 1) this.#screen[row] = [];
             break;
+          case 'H': {
+            const [row = '1', column = '1'] = escape.parameters.split(';');
+            this.#row = Math.min(this.rows - 1, Math.max(0, (Number(row) || 1) - 1));
+            this.#column = Math.max(0, (Number(column) || 1) - 1);
+            break;
+          }
           default:
             break;
         }

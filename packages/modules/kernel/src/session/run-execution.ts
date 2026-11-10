@@ -48,6 +48,8 @@ export interface RunExecutionDeps {
   /** Cancels one execution; its fact comes back saying why (M2Design 7.6). */
   readonly cancelExecution: (request: CancelExecutionRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
+  /** Bytes of artifacts that an attempt released as it ended (Kernel/Execution 6d). */
+  readonly released?: (bytes: number) => void;
   /** A write landed; awaited, so that whatever follows from it precedes the report. */
   readonly written: (path: string, sha256: string) => Promise<void>;
   /** Undefined when the file does not exist. */
@@ -158,6 +160,9 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   switch (spec.unit.executionKind) {
     case 'MODEL':
       return 'MODEL';
+    case 'WEB_SEARCH':
+    case 'WEB_FETCH':
+      return 'WEB';
     case 'FILE_WRITE':
     case 'FILE_EDIT':
     case 'MESSAGE_PUBLISH':
@@ -282,8 +287,29 @@ export class RunExecution {
     }
   }
 
+  /**
+   * The attempt is over, with no retry to come: what was made for it alone to read is released
+   * (Kernel/Execution 6d). A model call reads its context pack, which an assembly registered ONCE;
+   * the Session's own artifacts are not touched. Best effort: what is missed expires in days.
+   */
+  async #over(attempt: Attempt): Promise<void> {
+    const { unit, input } = attempt.spec;
+    if (unit.executionKind !== 'MODEL') return;
+    const { contextPackRef } = input as { readonly contextPackRef?: ArtifactRef };
+    if (contextPackRef === undefined) return;
+    try {
+      const bytes = await this.#deps.artifacts.release([contextPackRef]);
+      if (bytes > 0) this.#deps.released?.(bytes);
+    } catch {
+      // The registration stays ONCE and expires with the others.
+    }
+  }
+
   async #finish(attempt: Attempt, check: Omit<ResultCheck, 'unitAttemptId'>): Promise<void> {
     attempt.attempts.submitResultCheck({ unitAttemptId: attempt.unitAttemptId, ...check });
+    // Only the fact of the execution the attempt stands at ends it, as Core judges the same.
+    if (check.executionId === undefined || check.executionId === attempt.executionId)
+      await this.#over(attempt);
     this.#queues.release(attempt);
     this.#checkDrained();
     await this.#pump();
@@ -291,6 +317,7 @@ export class RunExecution {
 
   /** The attempt is over without a result of its own: Core ended it, with a report or the run. */
   async #dropped(attempt: Attempt): Promise<void> {
+    await this.#over(attempt);
     this.#queues.release(attempt);
     this.#checkDrained();
     await this.#pump();
@@ -690,7 +717,8 @@ export class RunExecution {
     }
     let refs: { outputRef: ArtifactRef; fullRef?: ArtifactRef; reasoningRef?: ArtifactRef };
     try {
-      const retention = fact.executionKind === 'CONTEXT_ASSEMBLE' ? 'EXPIRING' : 'SESSION';
+      // What an assembly makes is read by one model call and is released when that attempt is over.
+      const retention = fact.executionKind === 'CONTEXT_ASSEMBLE' ? 'ONCE' : 'SESSION';
       const outputRef = await artifacts.put(
         result.artifact.text,
         result.artifact.mediaType,
@@ -809,12 +837,15 @@ export class RunExecution {
    * cancelled, and when the Supervisor never confirms, the fallback judges it unconfirmed.
    */
   cancel(runEpoch: number): void {
-    for (const attempt of this.#queues.drainQueued())
+    for (const attempt of this.#queues.drainQueued()) {
       attempt.attempts.abandon(attempt.unitAttemptId);
+      void this.#over(attempt);
+    }
     // One that waits for a call slot, or is being built, was never sent: nothing to stop.
     for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
       if (attempt.executionId !== undefined) continue;
       attempt.attempts.abandon(attempt.unitAttemptId);
+      void this.#over(attempt);
       this.#queues.release(attempt);
     }
     const sent = this.#queues.running().filter((attempt) => attempt.executionId !== undefined);
@@ -902,8 +933,10 @@ export class RunExecution {
     this.#onDrained = undefined;
     for (const stop of this.#drainTimers) stop();
     this.#drainTimers.clear();
-    for (const attempt of this.#queues.drainQueued())
+    for (const attempt of this.#queues.drainQueued()) {
       attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+      void this.#over(attempt);
+    }
     const sent: Attempt[] = [];
     for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
       if (attempt.executionId !== undefined) {
@@ -914,6 +947,7 @@ export class RunExecution {
       if (attempt.state === 'WAITING') {
         // Parked, never sent: it ends here. One still being built ends when the build returns.
         attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        void this.#over(attempt);
         this.#queues.release(attempt);
       } else attempt.cancelReason = 'ABORTED';
     }

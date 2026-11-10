@@ -86,6 +86,7 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
         const at = new Date().toISOString();
         sessions.set(sessionId, {
           sessionId,
+          repositoryRoot: event.repositoryRoot,
           createdAt: at,
           lastActiveAt: at,
           turnCount: 0,

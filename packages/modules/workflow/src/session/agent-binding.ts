@@ -14,6 +14,7 @@ import type { AgentBinding } from './session-runner.js';
 const unitOf = (unit: UnitDefinition): AgentUnit => ({
   ref: { kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest },
   failurePolicy: unit.failurePolicy,
+  ...(unit.protectedCapabilities.includes('external.read') ? { external: true as const } : {}),
 });
 
 /**

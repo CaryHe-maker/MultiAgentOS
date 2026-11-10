@@ -38,6 +38,12 @@ unitRefs:
     version: v0.1.0
   - id: web-fetch
     version: v0.1.0
+  - id: external-list
+    version: v0.1.0
+  - id: external-read
+    version: v0.1.0
+  - id: external-search
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -72,6 +78,7 @@ capabilities:
   - command.network
   - web.search
   - web.fetch
+  - external.read
   - agent.spawn
 limits:
   maxRounds: 80

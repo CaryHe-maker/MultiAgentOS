@@ -5,13 +5,16 @@
  *  - Within an AgentRun the attempts start in the order they were made. Neighbouring READs run
  *    together; WRITE, EXEC and MODEL are barriers: one starts only when everything before it has
  *    ended, and nothing after it starts before it has ended.
- *  - Between AgentRuns the queues run side by side, under three global limits: attempts executing
- *    at once, EXEC executing at once, and, with `serial`, one attempt at all.
+ *  - Between AgentRuns the queues run side by side, under global limits: attempts executing at
+ *    once, EXEC executing at once, WEB (the search and the fetch of the web) executing at once in
+ *    a pool of its own, and, with `serial`, one attempt at all. A WEB attempt waits for the
+ *    network, not for a machine: it takes no place of the attempts, so a slow site cannot hold a
+ *    model call back, and it is no barrier either.
  *  - FCFS: when several can start, the oldest attempt (the lowest `seq`) goes first.
  *  - Only an attempt that is executing counts against the limits. One that is queued, one that
  *    waits for a call slot and one that waits for an answer to a question do not (M2Design 7.1).
  */
-export type ConcurrencyClass = 'READ' | 'WRITE' | 'EXEC' | 'MODEL';
+export type ConcurrencyClass = 'READ' | 'WRITE' | 'EXEC' | 'MODEL' | 'WEB';
 
 export type QueueState = 'QUEUED' | 'RUNNING' | 'WAITING';
 
@@ -26,6 +29,8 @@ export interface QueueEntry {
 export interface QueueLimits {
   readonly maxAttempts: number;
   readonly maxExec: number;
+  /** Web attempts executing at once; they are not counted in `maxAttempts`. */
+  readonly maxWeb: number;
   /** Every attempt is a barrier and only one runs at a time: for finding races. */
   readonly serial: boolean;
 }
@@ -105,25 +110,31 @@ export class AttemptQueues<E extends QueueEntry> {
     return [...this.#queues.values()].flat();
   }
 
-  #counts(): { running: number; exec: number } {
+  #counts(): { running: number; exec: number; web: number } {
     let running = 0;
     let exec = 0;
+    let web = 0;
     for (const entry of this.#all())
       if (entry.state === 'RUNNING') {
-        running += 1;
+        if (entry.cls === 'WEB') web += 1;
+        else running += 1;
         if (entry.cls === 'EXEC') exec += 1;
       }
-    return { running, exec };
+    return { running, exec, web };
   }
 
   #fits(entry: E, limits: QueueLimits): boolean {
-    const { running, exec } = this.#counts();
-    if (running >= (limits.serial ? 1 : limits.maxAttempts)) return false;
+    const { running, exec, web } = this.#counts();
+    // One attempt at all: the web counts as well.
+    if (limits.serial) return running + web < 1;
+    if (entry.cls === 'WEB') return web < limits.maxWeb;
+    if (running >= limits.maxAttempts) return false;
     return !(entry.cls === 'EXEC' && exec >= limits.maxExec);
   }
 
+  /** Reads and the web go side by side; everything else is a barrier. */
   #isBarrier(entry: E, limits: QueueLimits): boolean {
-    return limits.serial || entry.cls !== 'READ';
+    return limits.serial || (entry.cls !== 'READ' && entry.cls !== 'WEB');
   }
 
   #oldestEligible(limits: QueueLimits): E | undefined {

@@ -57,6 +57,9 @@ export const SessionListSchema = closed({
   sessions: Type.Array(
     closed({
       sessionId: IdSchemas.sessionId,
+      /** The folder the Session was last worked on in, and whether that is this process's. */
+      repositoryRoot: text(4096),
+      here: Type.Boolean(),
       title: Type.Optional(text(80)),
       createdAt: TimestampSchema,
       lastActiveAt: TimestampSchema,

@@ -177,7 +177,7 @@ const reassemble = (from: AgentTransition, budget: BudgetView = NORMAL) =>
   receive(from, report(from.state, only(from), assembledOutput, budget));
 
 function expectDegraded(from: AgentTransition, reason: string): void {
-  expect(from.ending).toEqual({ kind: 'DEGRADED', reason });
+  expect(from.ending).toMatchObject({ kind: 'DEGRADED', reason });
 }
 
 describe('startup', () => {
@@ -259,6 +259,43 @@ describe('ending', () => {
     const next = replied(atModel(), calls);
     expect(types(next).filter((t) => t === 'FEEDBACK')).toHaveLength(feedbackCount);
     expect(unitId(next)).toEqual(['context-assemble']);
+  });
+
+  it('tells the model that text outside a tool call was not shown, and what to call instead', () => {
+    const none = replied(atModel(), []);
+    const note = none.records.find((r) => r.type === 'FEEDBACK');
+    const message = note?.type === 'FEEDBACK' ? note.message : '';
+    expect(message).toContain('nothing in it was shown to anyone');
+    expect(message).toContain('send the same answer again inside a call of reply');
+    expect(message).toContain('to keep working, call a tool');
+  });
+
+  it('names the end tools of the Agent that wrote no tool call', () => {
+    const none = replied(
+      atModel({
+        endTools: [
+          {
+            toolName: 'finish_subagent',
+            parameters: {},
+            allowedInFinal: true,
+            action: 'FINISH_SUBAGENT',
+          } as never,
+        ],
+      }),
+      [],
+    );
+    const note = none.records.find((r) => r.type === 'FEEDBACK');
+    expect(note?.type === 'FEEDBACK' ? note.message : '').toContain(
+      'inside a call of finish_subagent',
+    );
+  });
+
+  it('tells the model which tools it can call, or how to finish, when the tool does not exist', () => {
+    const done = replied(atModel(), [call('no_such_tool', {})]);
+    const note = done.records.find((r) => r.type === 'FEEDBACK');
+    const message = note?.type === 'FEEDBACK' ? note.message : '';
+    expect(message).toContain('no such tool is available to you');
+    expect(message).toContain('Call one of the tools you have, or finish with a call of reply');
   });
 
   it('asks again when the reply has no action, and says when it was cut off', () => {
@@ -553,6 +590,40 @@ describe('wrap-up', () => {
     expect(current.state).toMatchObject({ final: true, wrapUpReason: 'NO_PROGRESS' });
   });
 
+  it('does not count a failed read outside the workspace against the model, since the user judges it', () => {
+    const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
+    const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 2 };
+    const external: AgentUnit = {
+      ...unit('external-list', { EXTERNAL_PATH_UNAVAILABLE: 'RETURN_TO_MODEL' }),
+      external: true,
+    };
+    const withExternal = {
+      ...roomy,
+      tools: [
+        ...definitions.tools,
+        {
+          modelName: 'list_external_files',
+          executionKind: 'REPOSITORY_LIST' as const,
+          unit: external,
+          parameters: RepositoryListInputSchema,
+        },
+      ],
+    };
+    let current = atModel(withExternal);
+    for (const path of ['/x/a', '/x/b', '/x/c']) {
+      current = replied(current, [call('list_external_files', { path })]);
+      current = receive(
+        current,
+        report(current.state, only(current), { reject: 'EXTERNAL_PATH_UNAVAILABLE' }),
+        strict,
+      );
+      // Neither the errors in a row nor the rounds without progress wrap the run up.
+      expect(current.state.wrapUpReason).toBeUndefined();
+      expect(current.state.consecutiveErrors).toBe(0);
+      current = reassemble(current);
+    }
+  });
+
   it('wraps up after consecutive errors', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
     const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 99 };
@@ -635,6 +706,27 @@ describe('the final call', () => {
       low,
     );
     expectDegraded(replied(final, [call('handoff', { text: 'brief' })]), 'FINAL_CALL_INVALID');
+  });
+
+  it('keeps the finishing call it refused, so that what it said is not lost', () => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const final = reassemble(
+      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
+      low,
+    );
+    const refused = replied(final, [call('handoff', { text: 'brief' })]);
+    expect(refused.ending).toMatchObject({
+      kind: 'DEGRADED',
+      reason: 'FINAL_CALL_INVALID',
+      unfinished: {
+        source: { toolCallId: expect.any(String) as string },
+        why: expect.any(String) as string,
+      },
+    });
+    // A last round that called no finishing tool has nothing of the kind to keep.
+    const other = replied(final, [call('list_files', { path: 'z' })]);
+    expect(other.ending).toEqual({ kind: 'DEGRADED', reason: 'FINAL_CALL_INVALID' });
   });
 });
 

@@ -8,7 +8,8 @@ modelName: search_repository
 modelDescription:
   Search the repository. mode SYMBOL finds declarations of an identifier, TEXT a fixed
   string (case-insensitive when written in lower case), PATH file paths; AUTO (default) combines PATH
-  and TEXT. maxItems defaults to 20.
+  and TEXT. maxItems defaults to 20. path (optional) limits the search to the files below one
+  directory, relative to the repository root.
 parametersContract:
   kind: contract
   id: context.RepositorySearchInput

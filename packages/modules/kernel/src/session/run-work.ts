@@ -10,6 +10,7 @@ import {
   type WebSearchInput,
   type DelegationReserved,
   type ReleaseDelegationRequest,
+  type RetainArtifactsRequest,
   type ReserveDelegationRequest,
   type SandboxProfile,
 } from '@multiagentos/contracts';
@@ -24,6 +25,7 @@ import type {
   CompactionTarget,
   ContextCompacted,
   CoreRejectedCode,
+  ExternalReadPaused,
   EndAgentRunRequest,
   ExecutionScope,
   InterruptReason,
@@ -43,6 +45,8 @@ import type {
   UnknownEffect,
   UpdateActivityRequest,
 } from '@multiagentos/contracts';
+import { homedir } from 'node:os';
+import { resolveExternal, type ExternalResolution, type ExternalSupport } from './external-read.js';
 import { RequestLedger } from './request-ledger.js';
 import type { Compacting } from './run-compactor.js';
 import type { CompactionConfig } from './run-compaction.js';
@@ -100,13 +104,16 @@ export interface RunHost {
       | AuthorizationResolved
       | ActivityOutput
       | ContextCompacted
-      | CompactionFailed,
+      | CompactionFailed
+      | ExternalReadPaused,
   ): void;
   /** An event of the run to Workflow other than a report (the compaction's). */
   toWorkflowEvent(event: KernelToWorkflowEvent): void;
   fault(fault: AttemptFault): void;
   /** Runs `work` as a control message of the actor; timers only do this. */
   enqueue(work: () => void | Promise<void>): void;
+  /** The system pauses the run (Kernel/Core 5h); nothing happens when it is not running. */
+  requestPause(): void;
 }
 
 /** What running commands needs from outside Core (Kernel/Core 5b); absent, no command runs. */
@@ -136,6 +143,8 @@ export interface RunWorkDeps {
   readonly command?: CommandSupport;
   /** The sites the user forbade, and who receives a search (`KernelConfig.web`, Core 5f). */
   readonly web?: { readonly deniedDomains: readonly string[]; readonly searchProvider: string };
+  /** What the checks of an external read need to know of the machine (Core 5h). */
+  readonly external?: ExternalSupport;
   readonly host: RunHost;
   readonly ledgers: RunLedgers;
   readonly scheduler: SchedulerDuties;
@@ -160,6 +169,11 @@ export interface RunWorkDeps {
   readonly readProjectFile: (path: string, scope: ExecutionScope) => Promise<ProjectFileRead>;
   readonly isTrusted: (path: string, sha256: string) => boolean;
   readonly trust: (path: string, sha256: string) => Promise<void>;
+  /** The user allowed the web search for this folder from now on (Kernel/Core 5f). */
+  readonly webSearchTrusted: () => boolean;
+  readonly trustWebSearch: () => Promise<void>;
+  /** Keeps these for the whole Session; false when one of them is not the Session's (Core 5g). */
+  readonly retainArtifacts: (refs: readonly ArtifactRef[]) => Promise<boolean>;
   /** Keeps what a critical question shows; the question then only refers to it. */
   readonly storeQuestionContent: (text: string) => Promise<ArtifactRef>;
   /** Execution takes the attempt over and registers it through `attempts`. */
@@ -247,6 +261,16 @@ function shownContent(input: SubmitUnitRequest['input']): string {
 const pathOf = (input: SubmitUnitRequest['input']): string | undefined =>
   'path' in input && typeof input.path === 'string' ? input.path : undefined;
 
+/** The input an executor gets for an external read: the path is the one below the allowed folder. */
+function externalInput(
+  input: SubmitUnitRequest['input'],
+  external: Extract<ExternalResolution, { readonly ok: true }>,
+): SubmitUnitRequest['input'] {
+  const rest: Record<string, unknown> = { ...input };
+  delete rest['path'];
+  return external.path === '' ? rest : { ...rest, path: external.path };
+}
+
 /**
  * The Unit path of one run (Kernel/Interaction 7): request records, AgentRuns, admission, quotas,
  * authorization and attempts. Every method runs inside one message of the Session actor.
@@ -273,6 +297,10 @@ export class RunWork {
   #memoryWarning = false;
   /** Ends the Kernel's wait for Workflow to close an interrupted run (Kernel/Core 5e). */
   #cancelBackstop: (() => void) | undefined;
+  /** The path each external read of this run asked for, until its report is counted. */
+  readonly #externalAsks = new Map<string, string>();
+  /** The failed external reads since the last success or pause: two pause the run (Core 5h). */
+  #externalFailures: ExternalReadPaused['attempts'][number][] = [];
   #turns = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
@@ -286,6 +314,7 @@ export class RunWork {
       repositoryRoot: deps.repositoryRoot,
       provider: deps.provider,
       repositoryExclusions: deps.repositoryExclusions,
+      webSearchTrusted: deps.webSearchTrusted(),
       now: deps.now,
     });
     const activity = new RunActivity({ emit: (event) => host.toInteraction(event), now: deps.now });
@@ -384,7 +413,36 @@ export class RunWork {
     this.#deps.ledgers.openTurnLedger(turnId);
   }
 
+  /** Kernel/Core 5h: two failures in a row of reading outside the workspace pause the run. */
+  #externalOutcome(report: UnitReport): void {
+    const path = this.#externalAsks.get(report.requestId);
+    if (path === undefined) return;
+    this.#externalAsks.delete(report.requestId);
+    if (report.status === 'INTERRUPTED') return;
+    if (report.status === 'OK') {
+      this.#externalFailures = [];
+      return;
+    }
+    const code = 'reasonCode' in report ? report.reasonCode : undefined;
+    this.#externalFailures.push({
+      path,
+      reason:
+        code === 'EXTERNAL_PATH_UNAVAILABLE'
+          ? 'UNAVAILABLE'
+          : code === 'USER_DECLINED'
+            ? 'DECLINED'
+            : 'FAILED',
+    });
+    if (this.#externalFailures.length < 2) return;
+    // What the Agent tried goes to the user, and the counting starts over for what comes after.
+    const attempts = this.#externalFailures.slice(-8);
+    this.#externalFailures = [];
+    this.#host.toInteraction({ type: 'ExternalReadPaused', attempts });
+    this.#host.requestPause();
+  }
+
   #counted(report: UnitReport): void {
+    this.#externalOutcome(report);
     if (report.status === 'OK') this.#units.ok += 1;
     else if (report.status === 'REJECTED') this.#units.rejected += 1;
     else this.#units.failed += 1;
@@ -694,6 +752,16 @@ export class RunWork {
     return this.#accept(requestId, request);
   }
 
+  /** What a handover carries is kept for the Session, so it can be read later (Core 5g). */
+  async retainArtifacts(request: RetainArtifactsRequest): Promise<Response> {
+    const { requestId, refs } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    if (!(await this.#deps.retainArtifacts(refs)))
+      return this.#refuse(requestId, request, 'INVALID_ARTIFACT_REF');
+    return this.#accept(requestId, request);
+  }
+
   async submitUnit(request: SubmitUnitRequest): Promise<Response> {
     const { requestId } = request;
     const replay = this.#replay(requestId, request);
@@ -750,8 +818,13 @@ export class RunWork {
   async #decide(waiting: WaitingUnit): Promise<void> {
     const { request, unit, record } = waiting;
     let readOnly = false;
+    let external: ExternalResolution | undefined;
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
+      if (capability === 'external.read') {
+        this.#externalAsks.set(request.requestId, path ?? '');
+        external = await this.#resolveExternal(path);
+      }
       const command = capability === 'command.exec' ? this.#commandDemand(request) : undefined;
       const web = capability === 'web.fetch' ? this.#webDemand(request) : undefined;
       if (capability === 'command.exec' && command === undefined) {
@@ -766,6 +839,9 @@ export class RunWork {
           ...(path === undefined ? {} : { path }),
           ...(command === undefined ? {} : { command }),
           ...(web === undefined ? {} : { web }),
+          ...(external === undefined
+            ? {}
+            : { external: { root: external.ok ? external.root : undefined } }),
         },
         record.ceiling,
       );
@@ -779,7 +855,16 @@ export class RunWork {
         return;
       }
     }
-    await this.#startAttempt(request, unit, record, readOnly);
+    await this.#startAttempt(request, unit, record, readOnly, external?.ok ? external : undefined);
+  }
+
+  #resolveExternal(path: string | undefined): Promise<ExternalResolution> {
+    if (path === undefined) return Promise.resolve({ ok: false });
+    return resolveExternal(path, {
+      support: this.#deps.external ?? { homeDir: homedir() },
+      repositoryRoot: this.#deps.repositoryRoot,
+      granted: this.#authorization.externalRoots(),
+    });
   }
 
   async #ask(waiting: WaitingUnit, decision: Extract<UnitDecision, { kind: 'ASK' }>) {
@@ -802,6 +887,13 @@ export class RunWork {
       );
     else if (decision.capability === 'repo.read')
       check = this.#authorization.requireRepoRead(requestId, agentRunId);
+    else if (decision.capability === 'external.read')
+      check = this.#authorization.askExternalRead(
+        decision.resourceKey,
+        pathOf(input) ?? decision.resourceKey,
+        requestId,
+        agentRunId,
+      );
     else if (decision.critical) {
       const path = pathOf(input);
       if (path === undefined) throw new Error('A critical write has no path');
@@ -923,6 +1015,16 @@ export class RunWork {
     };
   }
 
+  /** The folder the user allowed, read under the defaults and the credential rules (Core 5h). */
+  #externalScope(external: Extract<ExternalResolution, { readonly ok: true }>): ExecutionScope {
+    return {
+      kind: 'REPOSITORY',
+      repositoryRoot: external.root,
+      exclusions: [...new Set([...this.#authorization.exclusions, ...external.exclusions])],
+      external: { below: external.path },
+    };
+  }
+
   #scopeOf(unit: UnitDefinition, record: AgentRunRecord): ExecutionScope {
     if (unit.executionKind === 'MODEL') return record.agent.modelScope;
     if (unit.protectedCapabilities.includes('workspace.write'))
@@ -947,15 +1049,18 @@ export class RunWork {
     unit: UnitDefinition,
     record: AgentRunRecord,
     readOnly = false,
+    external?: Extract<ExternalResolution, { readonly ok: true }>,
   ): Promise<void> {
     const { turnId } = this.#host.control();
     if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
     let scope: ExecutionScope;
     try {
       scope =
-        unit.executionKind === 'COMMAND'
-          ? await this.#commandScope(request, record, readOnly)
-          : this.#scopeOf(unit, record);
+        external !== undefined
+          ? this.#externalScope(external)
+          : unit.executionKind === 'COMMAND'
+            ? await this.#commandScope(request, record, readOnly)
+            : this.#scopeOf(unit, record);
     } catch (error) {
       // E.g. the repository is too large to scan for secrets: the command does not run unmasked.
       if (unit.executionKind !== 'COMMAND') throw error;
@@ -970,13 +1075,22 @@ export class RunWork {
         command: (request.input as CommandInput).command,
         workdir: (request.input as CommandInput).workdir,
       });
+    if (external !== undefined)
+      this.#deps.audit({
+        type: 'EXTERNAL_READ',
+        requestId: request.requestId,
+        agentRunId: request.agentRunId,
+        executionKind: unit.executionKind,
+        path: pathOf(request.input) ?? '',
+        root: external.root,
+      });
     await this.#attempts.start({
       requestId: request.requestId,
       agentRunId: request.agentRunId,
       unitRunId: request.unitRunId,
       turnId,
       unit,
-      input: request.input,
+      input: external === undefined ? request.input : externalInput(request.input, external),
       scope,
       runEpoch: this.#host.runEpoch(),
       agent: record.agent,
@@ -1159,7 +1273,13 @@ export class RunWork {
     const settled = this.#authorization.answer(request.questionId, request.answer.scope);
     if (settled === undefined) return this.#refuse(requestId, request, 'QUESTION_NOT_PENDING');
     this.#host.toInteraction(settled.resolved);
+    // "This folder from now on" is kept by Session management; the run has it too, for now.
+    if (request.answer.scope === 'FOLDER') await this.#deps.trustWebSearch();
     await this.#release(settled);
+    for (const covered of this.#authorization.settleCovered()) {
+      this.#host.toInteraction(covered.resolved);
+      await this.#release(covered);
+    }
     return this.#accept(requestId, request);
   }
 
@@ -1336,6 +1456,8 @@ export class RunWork {
   }
 
   async resume(): Promise<void> {
+    // The Agent starts again with a clean count (Kernel/Core 5h).
+    this.#externalFailures = [];
     await this.#deps.resumeExecutions();
     this.reconcile();
   }

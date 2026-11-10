@@ -19,7 +19,7 @@ import {
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
-import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
+import { IdSchemas, ReferenceIdSchema, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import {
   Sha256Schema,
@@ -112,6 +112,16 @@ const record = <T extends string, C extends TProperties, P extends TProperties>(
   fields: P,
 ) => closed({ ...common, type: Type.Literal(type), ...fields });
 
+/** Who gives or takes a handover: the main Agent of a chat, or one AgentRun. */
+export const HandoverPartySchema = Type.Union([
+  closed({ kind: Type.Literal('MAIN') }),
+  closed({ kind: Type.Literal('AGENT_RUN'), agentRunId: IdSchemas.agentRunId }),
+]);
+export type HandoverParty = Static<typeof HandoverPartySchema>;
+
+/** The most results one handover carries: the result of the task and what it listed. */
+export const MAX_HANDOVER_ITEMS = 21;
+
 const InputSourceSchema = Type.Union([
   closed({
     kind: Type.Literal('TOOL_CALL'),
@@ -140,6 +150,15 @@ export const SessionLogRecordSchema = Type.Union(
           reason: Type.Optional(Type.Enum(['NO_BWRAP', 'USERNS_DENIED', 'PROFILE_FAILED'])),
         }),
       ),
+    }),
+    /**
+     * The Session is now worked on in another folder (M2Design 2.3). Everything of the Session that
+     * belongs to a folder starts again from here: file baselines, project instructions, the
+     * snapshots and what can be undone. What is kept is the conversation and its artifacts.
+     */
+    record('WORKSPACE_BOUND', base, {
+      repositoryRoot: text(4096),
+      previousRoot: text(4096),
     }),
     record('WORKFLOW_RUN_STARTED', inRun, {
       mode: Type.Enum(['CHAT', 'ORCHESTRATION']),
@@ -329,6 +348,20 @@ export const SessionLogRecordSchema = Type.Union(
      * Results cut to head and tail for room (M2Design 9.6). The projection shows the cut result
      * from here on; the full output stays readable through `read_output`.
      */
+    /**
+     * Results one AgentRun hands to another, by what Workflow checked: the registry that
+     * `read_output` reads the reference `referenceId/toolCallId` from (M2Design 3.7). Written
+     * once, never changed; `to` is the only one who may read the items.
+     */
+    record('REFERENCES_REGISTERED', inTurn, {
+      referenceId: ReferenceIdSchema,
+      from: closed({ agentRunId: IdSchemas.agentRunId, label: text(64) }),
+      to: HandoverPartySchema,
+      items: Type.Array(
+        closed({ toolCallId: ToolCallIdSchema, tool: text(128), ref: ArtifactRefSchema }),
+        { minItems: 1, maxItems: MAX_HANDOVER_ITEMS },
+      ),
+    }),
     record('TOOL_RESULTS_PRUNED', inRun, {
       compactionId: IdSchemas.compactionId,
       target: CompactionTargetSchema,

@@ -16,4 +16,4 @@ answer: true
 riskClass: READ_ONLY
 sideEffect: NONE
 isIdempotent: true
-contentStatus: PLACEHOLDER
+contentStatus: FINAL

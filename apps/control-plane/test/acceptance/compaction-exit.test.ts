@@ -793,7 +793,7 @@ describe('L12: a SubAgent compacts its own context', () => {
           read('a.txt'),
           read('b.txt'),
           read('c.txt'),
-          tool('finish_subagent', { summary: 'read all three', findings: [] }),
+          tool('finish_subagent', { summary: 'read all three' }),
         ],
         summary: Array.from({ length: 8 }, () => text(SUMMARY)),
       });

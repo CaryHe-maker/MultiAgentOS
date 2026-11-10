@@ -123,7 +123,12 @@ const RUN_STATE: Readonly<Record<string, string>> = {
 export const ConsoleText = Object.freeze({
   welcome: '欢迎使用 MultiAgentOS，输入问题后按 Enter 开始；/help 查看指令。',
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
-  noSessions: '本仓库还没有对话。',
+  noSessions: '还没有对话。',
+  otherFolderSessions: '其他文件夹的对话（打开时会改在当前文件夹里继续，要先确认）：',
+  otherFolderSessionLine: (index: number, title: string, turns: number, folder: string) =>
+    `  ${String(index)}. ${title}（${String(turns)} 轮，原来在 ${folder}）`,
+  confirmOtherFolder: (folder: string, index: number) =>
+    `这个对话原来在 ${folder}。在这里打开它：\n  · 原来文件夹的撤销记录和快照不再可用，从现在起重新建立；\n  · 它的项目指令（AGENTS.md）以这个文件夹的为准，会重新读取并重新问你是否信任；\n  · 模型会被告知文件夹换了，对话里以前提到的文件可能不存在或已不同。\n确认请再输入一次 /resume ${String(index)}。`,
   sessionLine: (index: number, title: string, turns: number) =>
     `  ${String(index)}. ${title}（${String(turns)} 轮）`,
   untitled: '（无标题）',
@@ -140,13 +145,29 @@ export const ConsoleText = Object.freeze({
   instructions: (path: string, truncated: boolean, text: string) =>
     `是否信任这份 ${path}？信任后它作为项目指令交给 Agent；不信任则只作为仓库材料。${truncated ? '（只展示开头）' : ''}\n${text}\n[y/n]`,
   webSearch: (queries: readonly string[], provider: string) =>
-    `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}，本次运行内不再询问。
+    `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}。
 搜索词：${queries.join(' | ')}
-[y/n]`,
+[y 本次运行内允许 / f 这个文件夹以后都允许 / n 拒绝]`,
   webFetch: (host: string, url: string) =>
-    `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent，本次运行内对这个网站不再询问。
+    `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}
-[y/n]`,
+[y 本次运行内只允许这个网站 / a 本次运行内允许所有公开网站 / n 拒绝]`,
+  externalRead: (root: string, path: string, provider: string) =>
+    `【只读访问外部文件】允许 Agent 读取外部仓库 ${root} 吗？（它要读：${path}）读取的内容会发送至 ${provider}；排除规则和受保护路径内的文件不会读取。本次运行内不再询问。[y/n]`,
+  externalPaused: (
+    attempts: readonly {
+      readonly path: string;
+      readonly reason: 'UNAVAILABLE' | 'DECLINED' | 'FAILED';
+    }[],
+  ) =>
+    `⚠ Agent 连续两次读取工作区外的文件都没有成功，已暂停。它试过：\n${attempts
+      .map(
+        (attempt) =>
+          `  · ${attempt.path}（${{ UNAVAILABLE: '路径不存在或不允许读取', DECLINED: '被你拒绝', FAILED: '读取失败' }[attempt.reason]}）`,
+      )
+      .join(
+        '\n',
+      )}\n路径对的话，用 /continue <正确的绝对路径> 继续；它不该读这里，Ctrl+C 中止，或 /undo 回退这一轮。`,
   writeRoot: (root: string) =>
     `允许 Agent 修改 ${root === '.' ? '仓库中' : `${root} 下`}的文件吗？本次运行内不再询问；.git、密钥等受保护的路径始终不能写入。[y/n]`,
   command: (q: CommandQuestion) => commandQuestionText(q),
@@ -210,6 +231,11 @@ export const ConsoleText = Object.freeze({
   truncated: (index: number) => `输出已截断（/output ${String(index)} 查看完整输出）`,
   fullOutputExpired: '完整输出已在 7 天后删除。',
   notNow: '当前不能使用这条指令。',
+  /** Only when a message is over the limit: it is not sent, and nothing typed is lost. */
+  inputTooLarge: (bytes: number, limit: number): string =>
+    `消息太长（${(bytes / 1024).toFixed(0)} KB），超过 ${(limit / 1024).toFixed(0)} KB 的上限，没有发出。请缩短后再发。`,
+  /** The last line of an activity area that does not fit the screen. */
+  moreActivities: (count: number): string => `… 另有 ${String(count)} 项活动`,
   /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
   compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
