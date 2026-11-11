@@ -53,6 +53,7 @@
 
 | 决定 | 日期 |
 |---|---|
+| 路线：phase 1 把 Turn-chat 优化到基线 2（目标：效果不明显差于 DeepSeek Harness），phase 2 实现 Orchestration 并优化到它的基线 2，phase 3 整体优化、把预置工作流做成供 Turn-chat 调用的子图，然后发布；任务集先设计（代码功能、并行功能；成功率、token、耗时），再录基线 1，再优化 | 2026-11-11 | M2ReleasePlan 第 3a 节、M2Design v1.35 |
 | 工作分支按 [M2ReleasePlan](M2ReleasePlan.md) 第 4 节命名，每个 phase 的分支从 `feature/M2/prompt-agent` 创建、完成后 PR 回它；全部 phase 完成后 `feature/M2/prompt-agent` 一次性 PR 合入 `feat/M2`；合入前在 Ubuntu 24.04（WSL）跑完整质量门 | 2026-11-07 |
 | 系统底线用冻结的通过式测试（假模型，含被攻陷的假模型），每个 phase 发布时重跑；模型与提示词的表现用统一的评测体系，度量全部取自会话日志，不为每种测试集另建评测 | 2026-11-07 |
 | 需要负责人判断的设计问题，当场提出选项，不先行实现 | 2026-10 |

@@ -141,6 +141,17 @@ interface TimelineEntry {
 /** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
 const COMPACTION_LINE = 'compaction';
 
+const COMMANDS: ReadonlySet<string> = new Set([
+  '/help', '/exit', '/timeline', '/think', '/continue', '/steer', '/status', '/sessions', '/fork',
+  '/new', '/resume', '/delete', '/undo', '/compact', '/diff', '/output',
+]);
+
+/** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */
+function isCommandLine(input: string): boolean {
+  const [first = ''] = input.split(/\s+/u);
+  return COMMANDS.has(first) || (input.trim() === first && !first.slice(1).includes('/'));
+}
+
 /** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
   T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
@@ -502,7 +513,9 @@ export class Console {
       await this.#answer(pending, input);
       return;
     }
-    if (input.startsWith('/')) {
+    // A line that starts with a path ("/app/main.ts is broken", "/app has three scripts") is a
+    // message; only a known command, or a lone unknown word (a typo to point out), is a command.
+    if (input.startsWith('/') && isCommandLine(input)) {
       await this.#command(input);
       return;
     }

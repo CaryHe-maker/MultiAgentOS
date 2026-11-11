@@ -972,7 +972,13 @@ export class SessionRunner {
       objectiveRef: this.#objectiveRef(workflowRunId),
       // What a transition has not appended yet still counts: it may be the write this one follows.
       toolInput: (kind, args, notYetInLog = []) =>
-        toolInputOf(kind, args, [...this.#records, ...(notYetInLog as SessionLogRecord[])], scope),
+        toolInputOf(
+          kind,
+          args,
+          [...this.#records, ...(notYetInLog as SessionLogRecord[])],
+          scope,
+          this.#repositoryRoot,
+        ),
       assembleInput: (status, final, withdrawnTools) => {
         return {
           final,

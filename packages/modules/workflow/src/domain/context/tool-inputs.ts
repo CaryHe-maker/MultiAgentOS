@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import {
   COMMAND_DEFAULT_TIMEOUT_MS,
   normalizeRequestPath,
@@ -106,13 +107,48 @@ const BAD_WORKDIR =
 const NO_SUCH_CALL = 'Not executed: there is no tool call with this id.';
 const NOT_CUT = 'Not executed: the output of that call was not cut; its result above is all of it.';
 
+const PATH_ARGUMENTS: Partial<Record<ExecutionKind, readonly string[]>> = {
+  FILE_READ: ['path'],
+  FILE_WRITE: ['path'],
+  FILE_EDIT: ['path'],
+  REPOSITORY_LIST: ['path'],
+  REPOSITORY_SEARCH: ['path'],
+  COMMAND: ['workdir'],
+};
+
+/**
+ * A model is often told a file by its full path (`/app/src/a.ts` when the repository is `/app`);
+ * the file tools take paths relative to the repository root. A full path that lies under the root
+ * is made relative here, once, for every tool, so a task that names files in full needs no detour.
+ * A path outside the root is left as it is, and the tool refuses it as before.
+ */
+export function relativeToRoot(kind: ExecutionKind, args: unknown, root: string): unknown {
+  const names = PATH_ARGUMENTS[kind];
+  if (names === undefined || root === '' || typeof args !== 'object' || args === null) return args;
+  const base = root.replace(/\/+$/u, '');
+  const rewritten: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+  let changed = false;
+  for (const name of names) {
+    const value = rewritten[name];
+    if (typeof value !== 'string' || !value.startsWith('/')) continue;
+    const full = posix.normalize(value).replace(/\/+$/u, '');
+    if (full === base) rewritten[name] = '.';
+    else if (full.startsWith(`${base}/`)) rewritten[name] = full.slice(base.length + 1);
+    else continue;
+    changed = true;
+  }
+  return changed ? rewritten : args;
+}
+
 /** Module/Workflow 7, items 8 and 10: what the model cannot give, it is not asked for. */
 export function toolInputOf(
   kind: ExecutionKind,
-  args: unknown,
+  given: unknown,
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
+  repositoryRoot = '',
 ): ToolInput {
+  const args = relativeToRoot(kind, given, repositoryRoot);
   const unchanged = { ok: true, input: args as UnitInput } as const;
   switch (kind) {
     case 'FILE_READ': {

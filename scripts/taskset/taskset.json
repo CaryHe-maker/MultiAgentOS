@@ -1,0 +1,117 @@
+{
+ "salt": "mao-phase1-taskset-v1",
+ "tiers": {
+  "dev": {
+   "coding": [
+    "tb2/modernize-scientific-stack",
+    "tb2/git-leak-recovery",
+    "tb2/chess-best-move",
+    "tb2/fix-code-vulnerability",
+    "tb2/merge-diff-arc-agi-task",
+    "tb2/git-multibranch",
+    "tb2/multi-source-data-merger",
+    "tb2/gcode-to-text",
+    "tb2/adaptive-rejection-sampler",
+    "tb2/cancel-async-tasks",
+    "tb2/openssl-selfsigned-cert",
+    "tb2/nginx-request-logging",
+    "tb2/raman-fitting",
+    "tb2/polyglot-rust-c",
+    "tb2/sanitize-git-repo",
+    "tb2/polyglot-c-py",
+    "tb2/pypi-server",
+    "tb2/prove-plus-comm",
+    "tb2/headless-terminal",
+    "tb2/fix-git",
+    "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+    "sbp/instance_tutao__tutanota-de49d486feef842101506adf040a0f00ded59519-v10a26bfb45a064b93f4fc044a0254925037b88f1",
+    "sbp/instance_element-hq__element-web-dae13ac8522fc6d41e64d1ac6e3174486fdcce0c-vnan"
+   ],
+   "parallel": [
+    "parallel/dev/conflict-trap-s1-n4",
+    "parallel/dev/conflict-trap-s2-n8",
+    "parallel/dev/dependency-chain-s1-n3",
+    "parallel/dev/dependency-chain-s2-n7",
+    "parallel/dev/failure-recovery-s1-n6",
+    "parallel/dev/failure-recovery-s2-n10",
+    "parallel/dev/research-then-implement-s1-n6",
+    "parallel/dev/research-then-implement-s2-n14",
+    "parallel/dev/small-trap-s1-n1",
+    "parallel/dev/wide-read-s1-n6",
+    "parallel/dev/wide-read-s2-n14",
+    "parallel/dev/wide-write-s1-n2",
+    "parallel/dev/wide-write-s2-n10"
+   ],
+   "reserve": [
+    "sbp/instance_ansible__ansible-5c225dc0f5bfa677addeac100a8018df3f3a9db1-v173091e2e36d38c978002990795f66cfc0af30ad",
+    "sbp/instance_NodeBB__NodeBB-0c81642997ea1d827dbd02c311db9d4976112cd4-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+    "sbp/instance_element-hq__element-web-404c412bcb694f04ba0c4d5479541203d701bca0-vnan"
+   ],
+   "counts": {
+    "coding": 23,
+    "parallel": 13
+   },
+   "sha256": "0c59a7edc8e90d7e3079abc3db2c136da1d6b89f82fc009a986e9f6e2273eb5c"
+  },
+  "final": {
+   "coding": [
+    "tb2/query-optimize",
+    "tb2/tune-mjcf",
+    "tb2/cobol-modernization",
+    "tb2/vulnerable-secret",
+    "tb2/sqlite-db-truncate",
+    "tb2/configure-git-webserver",
+    "tb2/regex-log",
+    "tb2/sparql-university",
+    "tb2/db-wal-recovery",
+    "tb2/write-compressor",
+    "tb2/password-recovery",
+    "tb2/overfull-hbox",
+    "tb2/sqlite-with-gcov",
+    "tb2/log-summary-date-ranges",
+    "sbp/instance_internetarchive__openlibrary-dbbd9d539c6d4fd45d5be9662aa19b6d664b5137-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+    "sbp/instance_navidrome__navidrome-dfa453cc4ab772928686838dc73d0130740f054e",
+    "sbp/instance_future-architect__vuls-7e91f5ef7e5712b1a3d7d5066ad6607e9debc21c",
+    "sbp/instance_qutebrowser__qutebrowser-36ade4bba504eb96f05d32ceab9972df7eb17bcc-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+    "sbp/instance_gravitational__teleport-007235446f85b1cbaef92664c3b3867517250f21",
+    "sbp/instance_internetarchive__openlibrary-b4f7c185ae5f1824ac7f3a18e8adf6a4b468459c-v08d8e8889ec945ab821fb156c04c7d2e2810debb"
+   ],
+   "parallel": [
+    "parallel/final/conflict-trap-s101-n5",
+    "parallel/final/conflict-trap-s102-n7",
+    "parallel/final/dependency-chain-s101-n4",
+    "parallel/final/failure-recovery-s101-n12",
+    "parallel/final/research-then-implement-s101-n8",
+    "parallel/final/research-then-implement-s102-n12",
+    "parallel/final/small-trap-s101-n1",
+    "parallel/final/wide-read-s101-n8",
+    "parallel/final/wide-write-s101-n4",
+    "parallel/final/wide-write-s102-n16"
+   ],
+   "reserve": [
+    "tb2/extract-elf",
+    "tb2/kv-store-grpc",
+    "sbp/instance_navidrome__navidrome-09ae41a2da66264c60ef307882362d2e2d8d8b89",
+    "sbp/instance_future-architect__vuls-4b680b996061044e93ef5977a081661665d3360a",
+    "sbp/instance_qutebrowser__qutebrowser-c580ebf0801e5a3ecabc54f327498bb753c6d5f2-v2ef375ac784985212b1805e1d0431dc8f1b3c171"
+   ],
+   "counts": {
+    "coding": 20,
+    "parallel": 10
+   },
+   "sha256": "b1d181a5f0cff90f61785c1bfa50a0e81c5f40344293234c498d631a9a9f08ac"
+  }
+ },
+ "oracleBad": [
+  "tb2/build-pmars",
+  "tb2/build-cython-ext",
+  "tb2/install-windows-3.11",
+  "tb2/make-doom-for-mips",
+  "tb2/mcmc-sampling-stan",
+  "tb2/qemu-alpine-ssh",
+  "tb2/torch-pipeline-parallelism",
+  "tb2/torch-tensor-parallelism",
+  "sbp/instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192",
+  "tb2/qemu-startup"
+ ]
+}

@@ -117,6 +117,25 @@ describe('Console', () => {
     expect(t.live()?.queued).toEqual([]);
   });
 
+  it('takes a line that starts with a path for a message, and one that starts with a command for a command', async () => {
+    const t = setup();
+    await t.console.submit('/app/registry.py 里有一张表，请加两个处理函数');
+    expect(t.named('startSession')).toHaveLength(1);
+    expect(t.named('startSession')[0]?.request).toMatchObject({
+      prompt: { text: '/app/registry.py 里有一张表，请加两个处理函数' },
+    });
+
+    const sentence = setup();
+    await sentence.console.submit('/app has 3 scripts, run them in order');
+    expect(sentence.named('startSession')[0]?.request).toMatchObject({
+      prompt: { text: '/app has 3 scripts, run them in order' },
+    });
+
+    const other = setup();
+    await other.console.submit('/nonsense');
+    expect(other.named('startSession')).toHaveLength(0);
+  });
+
   it('answers an open HumanRequest with the next line', async () => {
     const t = setup();
     await t.console.submit('hi');

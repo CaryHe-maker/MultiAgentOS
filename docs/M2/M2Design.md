@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.34 定稿（2026-11-07）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.35 定稿（2026-11-11）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项（交付计划见 [M2ReleasePlan](M2ReleasePlan.md)）。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -1697,6 +1697,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | AWAITING_INPUT | 普通消息 | 开启新的 Turn |
 | AWAITING_INPUT | Ctrl+C | 清空输入；2 秒内连按两次则退出 |
 | 任意 | Enter 发送；`\` 加 Enter 换行；Esc 清空输入；↑/↓ 浏览历史输入 | — |
+| 任意 | 以 `/` 开头的行，只有第一个词是已有的指令，或整行只有一个没有的词（提示拼错了），才是指令；其余（`/app/main.ts 里有……`、`/app 里有三个脚本……`）是消息 | 用户用路径开头说话，不应被当成没有的指令而一个字也到不了模型 |
 
 | 指令 | 作用 |
 |---|---|
@@ -1857,6 +1858,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | 15 | 只在等用户时退出的 Orchestration 跨进程续跑 | MAF checkpoint 中的待答复请求、LangGraph 从 checkpoint 恢复 | 与第 1.3 节非目标"跨进程续跑"冲突，需先决定是否放开；打开时的修复（`PROCESS_EXITED`）与"Orchestration 整体一个 Turn"不阻止以后续跑，届时需重新定义续跑后的 Turn 与回退范围 | Turn-chat 完成后，可能为 M3 |
 | 16 | 从历史 Turn 分叉 | LangGraph 的 `get_state_history`、`update_state` | 与第 1.3 节非目标冲突；日志 `seq` 连续与按 Turn 的快照使它在技术上可行 | M3 候选 |
 | 17 | 模板组合：以一个模板作为另一个模板的节点 | MAF 的 `WorkflowExecutor`（子工作流） | `TemplateNode.kind` 以后可能增加取值 | M3 候选 |
+| 19 | 把预置工作流作为子图供 Turn-chat 的 main 直接调用（Orchestration 的功能放进 Turn-chat） | 方向相反于第 17 条：第 17 条是模板里嵌模板，这条是对话里调模板；机制在 phase 3 的文档门设计，沿用第 3.8 节"模板不携带权限"与"整个 Orchestration 运行是一个 Turn"的约束 | phase 3（M2ReleasePlan RP3-ORCH-1） |
 | 18 | 模板为单个询问显式设置超时与缺省答复 | — | `HUMAN` 模板节点以后可能增加 `timeout` 与缺省答复；缺省仍不超时（第 4.2 节） | Turn-chat 完成后 |
 
 ### 14.3 参考
@@ -1926,3 +1928,4 @@ M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2Release
 | v1.32 | 2026-11-07 | 第 9.6 节：`keptSeqs` 含范围内的 `PINNED`；`minReplacedTokens`（取代的内容太少不摘要）；修剪是 Kernel 自己的执行种类 `CONTEXT_PRUNE`；检查点在组装之后；控制台 `/compact` 与压缩的提示 |
 | v1.33（编辑性） | 2026-11-07 | 交付计划改写：第 15 节改为指向 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3），旧计划 M2Plan、决定记录与实测归档到 History/M2；各节中的旧阶段标记（"阶段 N"、`S<阶段>-…`）改为现在时的描述；设计内容不变 |
 | v1.34 | 2026-11-07 | 第 13 节 R 组：不再要求与 M1 验收结果一致，F1–F5 作为评测体系中的普通任务运行并记录（Cary 2026-11-07 决定；评测体系见 M2ReleasePlan 第 5.1 节） |
+| v1.35 | 2026-11-11 | 路线调整（Cary 2026-11-11 决定，见 M2ReleasePlan 第 3a 节）：Turn-chat 与 Orchestration 各自优化到"基线 2"，phase 3 整体优化并发布；第 14.2 节增加第 19 条：预置工作流作为子图供 Turn-chat 调用，放在 phase 3，机制届时设计 |
