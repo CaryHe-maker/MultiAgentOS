@@ -24,7 +24,8 @@ const DSH_DIR = `${home}/dshlab`;
 const MAO_DIR = process.env.MAO_DIR ?? `${home}/mao2`;
 const USAGE_DIR = `${home}/bench/usage`;
 
-const sh = (args, opts = {}) => spawnSync('docker', args, { encoding: 'utf8', maxBuffer: 1 << 28, ...opts });
+const sh = (args, opts = {}) =>
+  spawnSync('docker', args, { encoding: 'utf8', maxBuffer: 1 << 28, ...opts });
 
 // ---- the key, never shown ----------------------------------------------------------------------
 let key = (process.env.DEEPSEEK_API_KEY ?? '').trim();
@@ -32,7 +33,10 @@ if (key === '' && process.env.MAO_ENV_FILE && existsSync(process.env.MAO_ENV_FIL
   const line = readFileSync(process.env.MAO_ENV_FILE, 'utf8')
     .split('\n')
     .find((l) => l.startsWith('DEEPSEEK_API_KEY='));
-  key = (line ?? '').slice('DEEPSEEK_API_KEY='.length).trim().replace(/^["']|["']$/g, '');
+  key = (line ?? '')
+    .slice('DEEPSEEK_API_KEY='.length)
+    .trim()
+    .replace(/^["']|["']$/g, '');
 }
 if (key === '') throw new Error('no DEEPSEEK_API_KEY');
 const childEnv = { ...process.env, DEEPSEEK_API_KEY: key };
@@ -46,11 +50,15 @@ const mem = get(/memory_mb = (\d+)/, '2048');
 const verifierTimeout = Number(get(/\[verifier\][^[]*?timeout_sec = ([\d.]+)/s, '900'));
 let image = get(/docker_image = "([^"]+)"/, undefined);
 if (!image) {
-  image = `tr-build-${taskName.toLowerCase().replace(/[^a-z0-9_.-]/g, '-').slice(0, 50)}`;
+  image = `tr-build-${taskName
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, '-')
+    .slice(0, 50)}`;
   const b = sh(['build', '-q', '-t', image, join(taskDir, 'environment')]);
   if (b.status !== 0) throw new Error('build failed: ' + (b.stderr ?? '').slice(-300));
 }
-const workdir = sh(['image', 'inspect', '-f', '{{.Config.WorkingDir}}', image]).stdout.trim() || '/app';
+const workdir =
+  sh(['image', 'inspect', '-f', '{{.Config.WorkingDir}}', image]).stdout.trim() || '/app';
 const instruction = readFileSync(join(taskDir, 'instruction.md'), 'utf8');
 
 // ---- the shared proxy ---------------------------------------------------------------------------
@@ -59,12 +67,27 @@ sh(['network', 'inspect', 'benchnet']).status === 0 || sh(['network', 'create', 
 if (!sh(['ps', '-q', '-f', 'name=^benchproxy$']).stdout.trim()) {
   sh(['rm', '-f', 'benchproxy']);
   const r = sh([
-    'run', '-d', '--name', 'benchproxy', '--network', 'benchnet',
-    '-v', `${NODE_DIR}:/opt/node:ro`, '-v', `${hereDir}:/lab:ro`, '-v', `${USAGE_DIR}:/usage`,
-    'python:3.12-slim', '/opt/node/bin/node', '/lab/usage-proxy.mjs', '8099', '/usage',
+    'run',
+    '-d',
+    '--name',
+    'benchproxy',
+    '--network',
+    'benchnet',
+    '-v',
+    `${NODE_DIR}:/opt/node:ro`,
+    '-v',
+    `${hereDir}:/lab:ro`,
+    '-v',
+    `${USAGE_DIR}:/usage`,
+    'python:3.12-slim',
+    '/opt/node/bin/node',
+    '/lab/usage-proxy.mjs',
+    '8099',
+    '/usage',
   ]);
   // Several runs may start at once; the one that lost the race finds the proxy already there.
-  if (r.status !== 0 && !/already in use/.test(r.stderr)) throw new Error('proxy failed: ' + r.stderr.slice(-300));
+  if (r.status !== 0 && !/already in use/.test(r.stderr))
+    throw new Error('proxy failed: ' + r.stderr.slice(-300));
 }
 
 // ---- the run ------------------------------------------------------------------------------------
@@ -74,8 +97,18 @@ const mounts = ['-v', `${NODE_DIR}:/opt/node:ro`];
 if (system === 'dsh') mounts.push('-v', `${DSH_DIR}:/opt/dsh:ro`);
 if (system === 'mas') mounts.push('-v', `${MAO_DIR}:/mao2:ro`);
 const started = sh([
-  'run', '-d', '--name', cname, '--network', 'benchnet', `--cpus=${cpus}`, `--memory=${mem}m`,
-  ...mounts, image, 'sleep', 'infinity',
+  'run',
+  '-d',
+  '--name',
+  cname,
+  '--network',
+  'benchnet',
+  `--cpus=${cpus}`,
+  `--memory=${mem}m`,
+  ...mounts,
+  image,
+  'sleep',
+  'infinity',
 ]);
 if (started.status !== 0) throw new Error('start failed: ' + started.stderr.slice(-300));
 const runDir = join(outDir, runId);
@@ -86,7 +119,10 @@ try {
   // mas makes a session read-only when git is missing (undo works on git), so both systems get the
   // same prepared container: git installed where the image lacks it (Debian and Ubuntu images).
   const git = sh([
-    'exec', cname, 'bash', '-c',
+    'exec',
+    cname,
+    'bash',
+    '-c',
     'command -v git >/dev/null || { apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git >/dev/null 2>&1; }; command -v git >/dev/null && echo yes || echo no',
   ]);
   result.git = (git.stdout ?? '').trim();
@@ -97,23 +133,52 @@ try {
   if (system === 'dsh') {
     agent = sh(
       [
-        'exec', '-w', workdir, '-e', 'DEEPSEEK_API_KEY', '-e', 'DSH_HOME=/tmp/dshhome',
-        '-e', `DEEPSEEK_BASE_URL=http://benchproxy:8099/r/${runId}`, cname,
-        '/opt/node/bin/node', '/opt/dsh/node_modules/.bin/dsh', '--profile', 'headless', instruction,
+        'exec',
+        '-w',
+        workdir,
+        '-e',
+        'DEEPSEEK_API_KEY',
+        '-e',
+        'DSH_HOME=/tmp/dshhome',
+        '-e',
+        `DEEPSEEK_BASE_URL=http://benchproxy:8099/r/${runId}`,
+        cname,
+        '/opt/node/bin/node',
+        '/opt/dsh/node_modules/.bin/dsh',
+        '--profile',
+        'headless',
+        instruction,
       ],
       { env: childEnv, timeout: cap * 1000 },
     );
   } else {
     agent = sh(
       [
-        'exec', '-w', '/mao2', '-e', 'DEEPSEEK_API_KEY',
+        'exec',
+        '-w',
+        '/mao2',
+        '-e',
+        'DEEPSEEK_API_KEY',
         // MAS_* variables are experiment overrides read by bench.ts (and written into its record).
-        ...Object.keys(process.env).filter((n) => n.startsWith('MAS_')).flatMap((n) => ['-e', n]),
+        ...Object.keys(process.env)
+          .filter((n) => n.startsWith('MAS_'))
+          .flatMap((n) => ['-e', n]),
         cname,
-        '/opt/node/bin/node', '/mao2/node_modules/tsx/dist/cli.mjs',
+        '/opt/node/bin/node',
+        '/mao2/node_modules/tsx/dist/cli.mjs',
         '/mao2/apps/control-plane/test/eval/bench.ts',
-        '--repo', workdir, '--instruction-file', '/instr/instruction.md', '--out', '/out/mas-record.jsonl',
-        '--task', taskName, '--timeout-sec', String(cap), '--log-dir', '/out',
+        '--repo',
+        workdir,
+        '--instruction-file',
+        '/instr/instruction.md',
+        '--out',
+        '/out/mas-record.jsonl',
+        '--task',
+        taskName,
+        '--timeout-sec',
+        String(cap),
+        '--log-dir',
+        '/out',
       ],
       { env: childEnv, timeout: (cap + 120) * 1000 },
     );

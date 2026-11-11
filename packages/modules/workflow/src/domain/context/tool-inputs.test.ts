@@ -271,16 +271,20 @@ describe('toolInputOf', () => {
 
 describe('relativeToRoot', () => {
   it('makes a full path under the repository root relative, for every path argument', () => {
-    expect(relativeToRoot('FILE_READ', { path: '/app/src/a.ts' }, '/app')).toEqual({ path: 'src/a.ts' });
+    expect(relativeToRoot('FILE_READ', { path: '/app/src/a.ts' }, '/app')).toEqual({
+      path: 'src/a.ts',
+    });
     expect(relativeToRoot('FILE_WRITE', { path: '/app/out.txt', content: 'x' }, '/app/')).toEqual({
       path: 'out.txt',
       content: 'x',
     });
     expect(relativeToRoot('REPOSITORY_LIST', { path: '/app' }, '/app')).toEqual({ path: '.' });
-    expect(relativeToRoot('COMMAND', { command: 'ls', workdir: '/app/sub//x/..' }, '/app')).toEqual({
-      command: 'ls',
-      workdir: 'sub',
-    });
+    expect(relativeToRoot('COMMAND', { command: 'ls', workdir: '/app/sub//x/..' }, '/app')).toEqual(
+      {
+        command: 'ls',
+        workdir: 'sub',
+      },
+    );
   });
 
   it('leaves what is not under the root, relative paths and other tools as they are', () => {
@@ -296,6 +300,10 @@ describe('relativeToRoot', () => {
 
   it('is what toolInputOf hands on', () => {
     const input = toolInputOf('FILE_READ', { path: '/app/a.ts' }, [], { kind: 'MAIN' }, '/app');
-    expect(input).toMatchObject({ ok: true, input: { path: 'a.ts' }, workflowFields: { path: 'a.ts' } });
+    expect(input).toMatchObject({
+      ok: true,
+      input: { path: 'a.ts' },
+      workflowFields: { path: 'a.ts' },
+    });
   });
 });

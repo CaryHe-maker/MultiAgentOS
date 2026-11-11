@@ -142,8 +142,22 @@ interface TimelineEntry {
 const COMPACTION_LINE = 'compaction';
 
 const COMMANDS: ReadonlySet<string> = new Set([
-  '/help', '/exit', '/timeline', '/think', '/continue', '/steer', '/status', '/sessions', '/fork',
-  '/new', '/resume', '/delete', '/undo', '/compact', '/diff', '/output',
+  '/help',
+  '/exit',
+  '/timeline',
+  '/think',
+  '/continue',
+  '/steer',
+  '/status',
+  '/sessions',
+  '/fork',
+  '/new',
+  '/resume',
+  '/delete',
+  '/undo',
+  '/compact',
+  '/diff',
+  '/output',
 ]);
 
 /** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */

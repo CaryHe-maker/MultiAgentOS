@@ -62,7 +62,11 @@ function profileOf(request: ChatRequest, index: number): string {
     tools?: unknown;
   };
   const size = (value: unknown): number =>
-    typeof value === 'string' ? value.length : value === undefined ? 0 : JSON.stringify(value).length;
+    typeof value === 'string'
+      ? value.length
+      : value === undefined
+        ? 0
+        : JSON.stringify(value).length;
   const names = new Map<string, string>();
   const byRole: Record<string, number> = {};
   let reasoning = 0;
@@ -72,11 +76,15 @@ function profileOf(request: ChatRequest, index: number): string {
     reasoning += size(message.reasoning_content);
     for (const call of message.tool_calls ?? []) names.set(call.id, call.function?.name ?? '?');
     if (message.role === 'tool')
-      results.push({ tool: names.get(message.tool_call_id ?? '') ?? '?', chars: size(message.content) });
+      results.push({
+        tool: names.get(message.tool_call_id ?? '') ?? '?',
+        chars: size(message.content),
+      });
   }
   results.sort((a, b) => b.chars - a.chars);
   const toolByName: Record<string, number> = {};
-  for (const result of results) toolByName[result.tool] = (toolByName[result.tool] ?? 0) + result.chars;
+  for (const result of results)
+    toolByName[result.tool] = (toolByName[result.tool] ?? 0) + result.chars;
   return JSON.stringify({
     toolByName,
     i: index,
@@ -193,7 +201,9 @@ async function main(): Promise<void> {
   }
   const [sessionId] = await readdir(join(dataDir, 'sessions')).catch(() => [] as string[]);
   const logFile =
-    sessionId === undefined ? undefined : join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl');
+    sessionId === undefined
+      ? undefined
+      : join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl');
   const log = (await readFile(logFile ?? '', 'utf8').catch(() => ''))
     .split('\n')
     .filter(Boolean)
@@ -225,7 +235,10 @@ async function main(): Promise<void> {
   const logDir = arg('--log-dir');
   if (logDir !== undefined) {
     await mkdir(logDir, { recursive: true });
-    await writeFile(join(logDir, 'request-profile.jsonl'), requests.map(profileOf).join('\n') + '\n');
+    await writeFile(
+      join(logDir, 'request-profile.jsonl'),
+      requests.map(profileOf).join('\n') + '\n',
+    );
   }
   if (logDir !== undefined && logFile !== undefined) {
     await copyFile(logFile, join(logDir, 'session-log.jsonl')).catch(() => undefined);

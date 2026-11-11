@@ -27,7 +27,10 @@ const fmt = (r) =>
     : `${r.reward === 1 ? 'pass' : r.reward === 0 ? 'FAIL' : 'n/a'} ${r.agentSeconds}s ${((prompt(r) ?? 0) / 1000).toFixed(0)}k/${((r.usage?.output ?? 0) / 1000).toFixed(1)}k r${r.usage?.requests ?? '?'} c${prompt(r) ? Math.round((100 * hit(r)) / prompt(r)) : 0}%`;
 console.log('| task | mas | dsh |');
 console.log('|---|---|---|');
-for (const t of tasks) console.log(`| ${t.replace(/^instance_/, '').slice(0, 44)} | ${fmt(by('mas', t))} | ${fmt(by('dsh', t))} |`);
+for (const t of tasks)
+  console.log(
+    `| ${t.replace(/^instance_/, '').slice(0, 44)} | ${fmt(by('mas', t))} | ${fmt(by('dsh', t))} |`,
+  );
 const total = (system) => {
   const rs = tasks.map((t) => by(system, t)).filter(Boolean);
   const passes = rs.filter((r) => r.reward === 1).length;
