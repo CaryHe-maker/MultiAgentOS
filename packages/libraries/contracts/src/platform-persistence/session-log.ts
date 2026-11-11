@@ -44,6 +44,35 @@ export const SpawnNodeSchema = closed({
 });
 export type SpawnNode = Static<typeof SpawnNodeSchema>;
 
+/**
+ * The task (MissionTree node) an AGENT node is a segment of (Orchestration 3.2): written when the
+ * node is made, with the parent task, so the tree is read from the graph and never inferred. The
+ * root task of a graph has no `parentId`.
+ */
+export const NodeMissionSchema = closed({
+  id: IdSchemas.missionScopeId,
+  parentId: Type.Optional(IdSchemas.missionScopeId),
+});
+export type NodeMission = Static<typeof NodeMissionSchema>;
+
+/** What wakes a task that slept (Orchestration 4.2); several are alternatives. */
+export const WakeConditionSchema = Type.Union([
+  closed({
+    kind: Type.Literal('children'),
+    mode: Type.Enum(['all', 'any']),
+    names: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 12 })),
+  }),
+  closed({
+    kind: Type.Literal('jobs'),
+    mode: Type.Enum(['all', 'any']),
+    jobIds: Type.Optional(Type.Array(text(32), { minItems: 1, maxItems: 8 })),
+  }),
+  closed({ kind: Type.Literal('message') }),
+  closed({ kind: Type.Literal('timer'), seconds: count(1) }),
+  closed({ kind: Type.Literal('human'), nodeId: IdSchemas.nodeId }),
+]);
+export type WakeCondition = Static<typeof WakeConditionSchema>;
+
 /** Node and edge of a GraphRevision as the log stores them (M2Design 3.1, 3.2). */
 export const GraphNodeRecordSchema = closed({
   nodeId: IdSchemas.nodeId,
@@ -57,6 +86,8 @@ export const GraphNodeRecordSchema = closed({
   goal: Type.Optional(text(4000)),
   inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
+  /** Of an AGENT node: the task it is a segment of. */
+  mission: Type.Optional(NodeMissionSchema),
   spawn: Type.Optional(SpawnNodeSchema),
   /** A HUMAN node that asks the user something for the AgentRun that called `ask_user`. */
   ask: Type.Optional(
@@ -85,10 +116,11 @@ export const GraphEdgeRecordSchema = closed({
   from: IdSchemas.nodeId,
   to: IdSchemas.nodeId,
   /**
-   * `DELEGATE`: from a caller that waits to a node it dispatched. `RESUME`: back from that node to
-   * the caller, which it wakes (M2Design 3.1). Both carry `call`.
+   * `DELEGATE`: from a caller to a node it dispatched. `RESUME`: back from a question to the caller
+   * that waits for it (M2Design 3.1). Both carry `call`. `CONTINUES`: from a segment that slept to
+   * the segment that took over when its task woke (Orchestration 3.2); no readiness follows it.
    */
-  kind: Type.Enum(['DEPENDS', 'CONDITIONAL', 'DELEGATE', 'RESUME']),
+  kind: Type.Enum(['DEPENDS', 'CONDITIONAL', 'DELEGATE', 'RESUME', 'CONTINUES']),
   call: Type.Optional(EdgeCallSchema),
   when: Type.Optional(
     closed({
@@ -186,7 +218,7 @@ export const SessionLogRecordSchema = Type.Union(
     }),
     record('GRAPH_EXTENDED', inTurn, {
       revision: count(1),
-      source: Type.Enum(['TEMPLATE', 'CHAT_GROWTH', 'LOOP', 'SPAWN', 'STEER', 'ASK']),
+      source: Type.Enum(['TEMPLATE', 'CHAT_GROWTH', 'LOOP', 'SPAWN', 'STEER', 'ASK', 'WAKE']),
       nodes: Type.Array(GraphNodeRecordSchema),
       edges: Type.Array(GraphEdgeRecordSchema),
     }),
@@ -198,7 +230,8 @@ export const SessionLogRecordSchema = Type.Union(
     record('NODE_RESUMED', inTurn, { nodeId: IdSchemas.nodeId, call: EdgeCallSchema }),
     record('NODE_ENDED', inTurn, {
       nodeId: IdSchemas.nodeId,
-      status: Type.Enum(['SUCCEEDED', 'FAILED', 'SKIPPED', 'INTERRUPTED']),
+      /** `YIELDED`: the segment went to wait before its work was done; its task goes on. */
+      status: Type.Enum(['SUCCEEDED', 'FAILED', 'SKIPPED', 'INTERRUPTED', 'YIELDED']),
       skipReason: Type.Optional(Type.Enum(['DEPENDENCY_FAILED', 'NOT_TAKEN'])),
       resultRef: Type.Optional(ArtifactRefSchema),
       /** The structured result conditions read, such as a planner's `action`. */
@@ -233,6 +266,63 @@ export const SessionLogRecordSchema = Type.Union(
       effort: ThinkingEffortSchema,
       /** Of a SubAgent: the AgentRun that started it. */
       parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+      /** The task this AgentRun is a segment of (Orchestration 3.4). */
+      missionId: Type.Optional(IdSchemas.missionScopeId),
+    }),
+    /**
+     * A segment went to wait before its work was done (Orchestration 4): it ends, its task sleeps
+     * until one of `until` holds or `timeoutSeconds` pass. The note to the next segment is in the
+     * model output, at `source`.
+     */
+    record('SEGMENT_YIELDED', inTurn, {
+      nodeId: IdSchemas.nodeId,
+      missionId: IdSchemas.missionScopeId,
+      agentRunId: IdSchemas.agentRunId,
+      until: Type.Array(WakeConditionSchema, { minItems: 1, maxItems: 8 }),
+      timeoutSeconds: count(1),
+      source: Type.Optional(
+        closed({ modelTurnRequestId: IdSchemas.requestId, toolCallId: ToolCallIdSchema }),
+      ),
+    }),
+    /** A task that slept is woken, by the events at these log positions (Orchestration 4.3). */
+    record('MISSION_WOKEN', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      causes: Type.Array(
+        closed({
+          kind: Type.Enum([
+            'CHILDREN',
+            'JOB',
+            'MESSAGE',
+            'TIMER',
+            'TIMEOUT',
+            'HUMAN',
+            'STALLED',
+            'ROLLED_BACK',
+            'RESUMED',
+          ]),
+          seq: Type.Optional(count(1)),
+        }),
+        { minItems: 1, maxItems: 64 },
+      ),
+    }),
+    /** The one record that says a task has ended (Orchestration 3.2). */
+    record('MISSION_ENDED', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      status: Type.Enum(['SUCCEEDED', 'FAILED', 'INTERRUPTED']),
+    }),
+    /**
+     * A message from one task to others along the tree (Orchestration 5): the text is in the model
+     * output of the sender, at `source`; it is material, never an instruction or a permission.
+     */
+    record('MISSION_MESSAGE', inTurn, {
+      from: IdSchemas.missionScopeId,
+      fromLabel: text(64),
+      to: Type.Array(IdSchemas.missionScopeId, { minItems: 1, maxItems: 12 }),
+      source: closed({
+        modelTurnRequestId: IdSchemas.requestId,
+        outputRef: ArtifactRefSchema,
+        toolCallId: ToolCallIdSchema,
+      }),
     }),
     record('AGENT_RUN_ENDED', inTurn, {
       agentRunId: IdSchemas.agentRunId,

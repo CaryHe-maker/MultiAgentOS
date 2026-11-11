@@ -155,10 +155,12 @@ describe('a call in the log', () => {
   });
 
   it('builds the revision of a call with DELEGATE and RESUME edges in the written order', () => {
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [
-      spec('one'),
-      spec('two', ['one']),
-    ]);
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one'), spec('two', ['one'])],
+    );
     expect(revision.nodes.map((n) => n.name)).toEqual(['one', 'two']);
     const kinds = revision.edges.map((e) => e.kind);
     expect(kinds.filter((k) => k === 'DEPENDS')).toHaveLength(1);
@@ -174,7 +176,12 @@ describe('a call in the log', () => {
 
   it('projects WAITING from the edges and the records, and RUNNING after NODE_RESUMED', () => {
     seq = 0;
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [spec('one')]);
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one')],
+    );
     const mainNode = {
       nodeId: 'nod_main',
       path: 'wfr_a/1/main#1',
@@ -207,7 +214,12 @@ describe('a call in the log', () => {
 
   it('does not take a task, or a main that dispatched, for the next step of a chat', () => {
     seq = 0;
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [spec('one')]);
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one')],
+    );
     const mainNode = {
       nodeId: 'nod_main',
       path: 'wfr_a/1/main#1',

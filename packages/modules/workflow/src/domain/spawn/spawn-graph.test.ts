@@ -16,10 +16,12 @@ const spec = (name: string, dependsOn: string[] = []) => ({
   spawn: { writeScope: [], acceptance: ['say so'], inputs: [], tokens: 1000 },
 });
 
-const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [
-  spec('one'),
-  spec('two', ['one']),
-]);
+const revision = spawnRevision(
+  'wfr_a',
+  2,
+  { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+  [spec('one'), spec('two', ['one'])],
+);
 const extended = () =>
   record({
     type: 'GRAPH_EXTENDED',

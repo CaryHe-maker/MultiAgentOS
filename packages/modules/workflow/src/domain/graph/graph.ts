@@ -19,7 +19,12 @@ export type NodeStatus =
   | 'SUCCEEDED'
   | 'FAILED'
   | 'SKIPPED'
-  | 'INTERRUPTED';
+  | 'INTERRUPTED'
+  /**
+   * The segment went to wait before its work was done (Orchestration 3.3): ended for the node,
+   * not for its task. An edge from it reads the segment that took over (`CONTINUES`).
+   */
+  | 'YIELDED';
 
 /** Ended for good: nothing more happens to the node. */
 export const isTerminal = (status: NodeStatus): boolean =>
@@ -35,6 +40,8 @@ export interface GraphNode {
   readonly iteration: number;
   /** The loop whose body holds this node; absent outside loops. */
   readonly loopId?: string;
+  /** Of an AGENT node: the task it is a segment of (Orchestration 3.2). */
+  readonly missionId?: string;
 }
 
 export interface EdgeCondition {
@@ -59,13 +66,20 @@ export interface EdgeCall {
 export interface GraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'DEPENDS' | 'CONDITIONAL' | 'DELEGATE' | 'RESUME';
+  readonly kind: 'DEPENDS' | 'CONDITIONAL' | 'DELEGATE' | 'RESUME' | 'CONTINUES';
   readonly when?: EdgeCondition;
   readonly call?: EdgeCall;
 }
 
 /** The edges that lead somewhere: they are followed for ancestors, loops and cycles. */
 export const isForward = (edge: GraphEdge): boolean => edge.kind !== 'RESUME';
+
+/**
+ * The edges readiness reads. `CONTINUES` only says which segment took over a task: the segment it
+ * leads to is ready the moment it is added (Orchestration 4.3).
+ */
+const decidesReadiness = (edge: GraphEdge): boolean =>
+  edge.kind !== 'RESUME' && edge.kind !== 'CONTINUES';
 
 /** A back edge from `source` to its ancestor `target`; never part of readiness (M2Design 3.2). */
 export interface LoopEdge {
@@ -138,12 +152,40 @@ function effectiveSource(graph: Graph, edge: GraphEdge): GraphNode | undefined {
     .reduce((last, node) => (node.iteration > last.iteration ? node : last), source);
 }
 
+/**
+ * The segment that stands for `node` now: a segment that slept is read through the segments that
+ * took over its task, the last of them (Orchestration 3.3). Undefined while its task still sleeps.
+ */
+export function takenOver(graph: Graph, node: GraphNode, view: NodeView): GraphNode | undefined {
+  let current: GraphNode | undefined = node;
+  const seen = new Set<string>();
+  while (current !== undefined && statusOf(view, current.nodeId).status === 'YIELDED') {
+    if (seen.has(current.nodeId)) return undefined;
+    seen.add(current.nodeId);
+    const from: string = current.nodeId;
+    const next = graph.edges.find((edge) => edge.kind === 'CONTINUES' && edge.from === from);
+    current =
+      next === undefined
+        ? undefined
+        : graph.nodes.find((candidate) => candidate.nodeId === next.to);
+  }
+  return current;
+}
+
 export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeState {
-  const source = effectiveSource(graph, edge);
+  const effective = effectiveSource(graph, edge);
+  // A DELEGATE edge reads its caller as it is: the segment that dispatched, not its successor.
+  const source =
+    effective === undefined || edge.kind === 'DELEGATE'
+      ? effective
+      : takenOver(graph, effective, view);
   if (source === undefined) return 'WAITING';
   const record = statusOf(view, source.nodeId);
   if (edge.kind === 'DELEGATE') {
-    // Taken while the caller runs: it dispatched this node. A caller that ended leaves nobody to serve.
+    // Taken while the caller runs: it dispatched this node. A caller that went to sleep still
+    // stands behind it (its task goes on, Orchestration 4.1); one that ended for good leaves nobody
+    // to serve.
+    if (record.status === 'YIELDED') return 'TAKEN';
     if (isTerminal(record.status)) return 'FAILED';
     return record.status === 'RUNNING' || record.status === 'WAITING' ? 'TAKEN' : 'WAITING';
   }
@@ -151,6 +193,7 @@ export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeSt
     case 'PENDING':
     case 'RUNNING':
     case 'WAITING':
+    case 'YIELDED':
       return 'WAITING';
     case 'SUCCEEDED':
       return edge.when === undefined || conditionHolds(edge.when, record.result)
@@ -166,7 +209,7 @@ export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeSt
 
 function incomingStates(graph: Graph, node: GraphNode, view: NodeView): EdgeState[] {
   return graph.edges
-    .filter((edge) => edge.to === node.nodeId && isForward(edge))
+    .filter((edge) => edge.to === node.nodeId && decidesReadiness(edge))
     .map((edge) => edgeState(graph, edge, view));
 }
 

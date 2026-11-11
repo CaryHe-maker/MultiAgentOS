@@ -24,6 +24,7 @@ import {
   type SkippedNode,
   type Wake,
 } from './graph.js';
+import { childMissionId, templateMissionId } from './mission-tree.js';
 
 /**
  * The TaskGraph as the session log records it (M2Design 3.2, 3.8): building revisions for `chat`
@@ -44,6 +45,7 @@ interface NodeSpec {
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
   readonly ask?: GraphNodeRecord['ask'];
+  readonly mission?: GraphNodeRecord['mission'];
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
@@ -61,6 +63,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
     ...(spec.ask === undefined ? {} : { ask: spec.ask }),
+    ...(spec.mission === undefined ? {} : { mission: spec.mission }),
   };
 }
 
@@ -70,10 +73,22 @@ const depends = (from: GraphNodeRecord, to: GraphNodeRecord): GraphEdgeRecord =>
   kind: 'DEPENDS',
 });
 
-/** `HUMAN(prompt) -> main`, the first revision of a Turn-chat run. */
-export function initialChatRevision(workflowRunId: string, mainRef: DefinitionRef): GraphRevision {
+/**
+ * `HUMAN(prompt) -> main`, the first revision of a Turn-chat run. Every main is a step of the one
+ * root task of the chat (Orchestration 3.5), whose id the Session gives.
+ */
+export function initialChatRevision(
+  workflowRunId: string,
+  mainRef: DefinitionRef,
+  rootMission: string,
+): GraphRevision {
   const prompt = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
-  const main = nodeOf(workflowRunId, 1, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  const main = nodeOf(workflowRunId, 1, {
+    name: 'main',
+    kind: 'AGENT',
+    agentRef: mainRef,
+    mission: { id: rootMission },
+  });
   return { nodes: [prompt, main], edges: [depends(prompt, main)] };
 }
 
@@ -86,13 +101,19 @@ export function chatGrowthRevision(
   revision: number,
   endedMainNodeId: string,
   mainRef: DefinitionRef,
+  rootMission: string,
 ): GraphRevision {
   const prompt = nodeOf(workflowRunId, revision, {
     name: 'prompt',
     kind: 'HUMAN',
     trigger: 'all_done',
   });
-  const main = nodeOf(workflowRunId, revision, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  const main = nodeOf(workflowRunId, revision, {
+    name: 'main',
+    kind: 'AGENT',
+    agentRef: mainRef,
+    mission: { id: rootMission },
+  });
   return {
     nodes: [prompt, main],
     edges: [{ from: endedMainNodeId, to: prompt.nodeId, kind: 'DEPENDS' }, depends(prompt, main)],
@@ -108,10 +129,11 @@ export interface SpawnTaskSpec {
   readonly spawn: NonNullable<GraphNodeRecord['spawn']>;
 }
 
-/** The AgentRun that dispatches the tasks of a call, and waits for them. */
+/** The segment that dispatches the tasks of a call, and the task it is a segment of. */
 export interface Caller {
   readonly nodeId: string;
   readonly call: EdgeCall;
+  readonly missionId: string;
 }
 
 /**
@@ -132,6 +154,10 @@ export function spawnRevision(
       agentRef: task.agentRef,
       goal: task.goal,
       spawn: task.spawn,
+      mission: {
+        id: childMissionId(caller.missionId, caller.call.toolCallId, task.name),
+        parentId: caller.missionId,
+      },
     }),
   );
   const byName = new Map(nodes.map((node) => [node.name, node]));
@@ -184,9 +210,12 @@ export function steerRevision(workflowRunId: string, revision: number): GraphRev
 export function compileTemplate(
   workflowRunId: string,
   template: TemplateDefinition,
+  rootMission: string,
 ): { readonly revision: GraphRevision; readonly errors: readonly GraphValidationError[] } {
   const root = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
   const byName = new Map<string, GraphNodeRecord>();
+  // The first AGENT node is the owner's first step; every other one is a task below it.
+  const owner = template.nodes.find((node) => node.kind === 'AGENT')?.name;
   for (const node of template.nodes) {
     byName.set(
       node.name,
@@ -195,6 +224,10 @@ export function compileTemplate(
             name: node.name,
             kind: 'AGENT',
             agentRef: node.agent,
+            mission:
+              node.name === owner
+                ? { id: rootMission }
+                : { id: templateMissionId(rootMission, node.name, 1), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
             ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
             ...(node.output === undefined ? {} : { output: node.output }),
@@ -249,6 +282,7 @@ const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
   trigger: node.trigger,
   iteration: node.iteration,
   ...(node.loopId === undefined ? {} : { loopId: node.loopId }),
+  ...(node.mission === undefined ? {} : { missionId: node.mission.id }),
 });
 
 /** The rules of an extension; the same function checks every extension (Module/Workflow 6.1). */

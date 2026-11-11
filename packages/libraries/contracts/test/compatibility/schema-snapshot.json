@@ -49236,7 +49236,8 @@
                 "LOOP",
                 "SPAWN",
                 "STEER",
-                "ASK"
+                "ASK",
+                "WAKE"
               ]
             },
             "nodes": {
@@ -49318,6 +49319,23 @@
                   },
                   "output": {
                     "type": "boolean"
+                  },
+                  "mission": {
+                    "type": "object",
+                    "required": [
+                      "id"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "parentId": {
+                        "type": "string",
+                        "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "spawn": {
                     "type": "object",
@@ -49527,7 +49545,8 @@
                       "DEPENDS",
                       "CONDITIONAL",
                       "DELEGATE",
-                      "RESUME"
+                      "RESUME",
+                      "CONTINUES"
                     ]
                   },
                   "call": {
@@ -49731,7 +49750,8 @@
                 "SUCCEEDED",
                 "FAILED",
                 "SKIPPED",
-                "INTERRUPTED"
+                "INTERRUPTED",
+                "YIELDED"
               ]
             },
             "skipReason": {
@@ -50108,6 +50128,418 @@
             "parentAgentRunId": {
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "nodeId",
+            "missionId",
+            "agentRunId",
+            "until",
+            "timeoutSeconds"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "SEGMENT_YIELDED"
+            },
+            "nodeId": {
+              "type": "string",
+              "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "agentRunId": {
+              "type": "string",
+              "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "until": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "mode"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "children"
+                      },
+                      "mode": {
+                        "enum": [
+                          "all",
+                          "any"
+                        ]
+                      },
+                      "names": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "minItems": 1,
+                        "maxItems": 12
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "mode"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "jobs"
+                      },
+                      "mode": {
+                        "enum": [
+                          "all",
+                          "any"
+                        ]
+                      },
+                      "jobIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        "minItems": 1,
+                        "maxItems": 8
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "message"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "seconds"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "timer"
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "nodeId"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "human"
+                      },
+                      "nodeId": {
+                        "type": "string",
+                        "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "modelTurnRequestId",
+                "toolCallId"
+              ],
+              "properties": {
+                "modelTurnRequestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
+            "causes"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "MISSION_WOKEN"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "causes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "CHILDREN",
+                      "JOB",
+                      "MESSAGE",
+                      "TIMER",
+                      "TIMEOUT",
+                      "HUMAN",
+                      "STALLED",
+                      "ROLLED_BACK",
+                      "RESUMED"
+                    ]
+                  },
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 64
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
+            "status"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "MISSION_ENDED"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "status": {
+              "enum": [
+                "SUCCEEDED",
+                "FAILED",
+                "INTERRUPTED"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "from",
+            "fromLabel",
+            "to",
+            "source"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "MISSION_MESSAGE"
+            },
+            "from": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "fromLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "minItems": 1,
+              "maxItems": 12
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "modelTurnRequestId",
+                "outputRef",
+                "toolCallId"
+              ],
+              "properties": {
+                "modelTurnRequestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "outputRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

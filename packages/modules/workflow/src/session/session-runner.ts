@@ -74,6 +74,7 @@ import {
   type SpawnError,
   type SpawnPlan,
 } from '../domain/spawn/validate-spawn.js';
+import { rootMissionId } from '../domain/graph/mission-tree.js';
 import {
   advanceGraph,
   chatGrowthPoint,
@@ -129,6 +130,8 @@ export interface SessionRunnerDeps {
 }
 
 const MAIN = 'main';
+/** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
+const CHAT_TEMPLATE = 'chat';
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
@@ -569,10 +572,20 @@ export class SessionRunner {
     workflowRunId: string,
     event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
   ): GraphRevision {
-    if (event.mode === 'CHAT') return initialChatRevision(workflowRunId, this.#mainRef());
+    const sessionId = this.#sessionIdOrThrow();
+    if (event.mode === 'CHAT')
+      return initialChatRevision(
+        workflowRunId,
+        this.#mainRef(),
+        rootMissionId(sessionId, CHAT_TEMPLATE),
+      );
     const template = this.#deps.templates.get(event.templateRef.id);
     if (template === undefined) throw new Error(`unknown template ${event.templateRef.id}`);
-    const compiled = compileTemplate(workflowRunId, template);
+    const compiled = compileTemplate(
+      workflowRunId,
+      template,
+      rootMissionId(sessionId, template.id),
+    );
     if (compiled.errors.length > 0) throw new Error('a built-in template does not compile');
     return compiled.revision;
   }
@@ -871,7 +884,13 @@ export class SessionRunner {
           workflowRunId,
           revision,
           'CHAT_GROWTH',
-          chatGrowthRevision(workflowRunId, revision, growth, this.#mainRef()),
+          chatGrowthRevision(
+            workflowRunId,
+            revision,
+            growth,
+            this.#mainRef(),
+            rootMissionId(this.#sessionIdOrThrow(), CHAT_TEMPLATE),
+          ),
         );
       }
     }
@@ -1897,11 +1916,14 @@ export class SessionRunner {
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
-    const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const projected = projectGraph(this.#records, workflowRunId);
+    const revisionNumber = projected.lastRevision + 1;
+    const missionId = projected.nodes.get(active.nodeId)?.mission?.id;
+    if (missionId === undefined) throw new Error('a caller of run_subagents belongs to no task');
     const revision = spawnRevision(
       workflowRunId,
       revisionNumber,
-      { nodeId: active.nodeId, call },
+      { nodeId: active.nodeId, call, missionId },
       tasks.map((task) => ({
         name: task.name,
         agentRef: this.#refOf(task.agent),

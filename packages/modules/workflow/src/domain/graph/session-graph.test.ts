@@ -14,6 +14,7 @@ import {
 
 const run = newId('wfr');
 const main = { id: 'main', version: 'v1.0.0' };
+const ROOT = 'msc_rootmission';
 const at = '2026-10-31T00:00:00.000Z';
 const rules = { builtInAgents: new Set(['main', 'planner', 'code-viewer']), allowConditions: true };
 
@@ -65,12 +66,12 @@ const analyze: TemplateDefinition = {
 };
 
 describe('chat', () => {
-  const first = initialChatRevision(run, main);
+  const first = initialChatRevision(run, main, ROOT);
   const [firstPrompt, firstMain] = first.nodes;
   if (firstPrompt === undefined || firstMain === undefined) throw new Error('no nodes');
 
   it('derives the same IDs on replay and valid paths', () => {
-    expect(initialChatRevision(run, main)).toEqual(first);
+    expect(initialChatRevision(run, main, ROOT)).toEqual(first);
     expect(firstPrompt.path).toBe(`${run}/1/prompt#1`);
     expect(validateRevision({ nodes: [], edges: [] }, first, rules)).toEqual([]);
   });
@@ -95,7 +96,7 @@ describe('chat', () => {
         run,
       );
       expect(chatGrowthPoint(before)).toBe(firstMain.nodeId);
-      const growth = chatGrowthRevision(run, 2, firstMain.nodeId, main);
+      const growth = chatGrowthRevision(run, 2, firstMain.nodeId, main, ROOT);
       expect(validateRevision(before.graph, growth, rules)).toEqual([]);
       const after = projectGraph(
         logOf([
@@ -135,7 +136,7 @@ describe('chat', () => {
 });
 
 describe('analyze', () => {
-  const { revision, errors } = compileTemplate(run, analyze);
+  const { revision, errors } = compileTemplate(run, analyze, ROOT);
   const [prompt, plan, view] = revision.nodes;
   if (prompt === undefined || plan === undefined || view === undefined) throw new Error('no nodes');
 
@@ -209,7 +210,7 @@ describe('analyze', () => {
         },
       ],
     };
-    expect(compileTemplate(run, broken).errors).toEqual([
+    expect(compileTemplate(run, broken, ROOT).errors).toEqual([
       { code: 'UNKNOWN_DEPENDENCY', node: 'view' },
     ]);
   });
@@ -222,13 +223,13 @@ describe('replay', () => {
         fc.array(fc.constantFrom('SUCCEEDED', 'FAILED', 'INTERRUPTED'), { maxLength: 6 }),
         (outcomes) => {
           const entries: Spread<SessionLogRecord>[] = [];
-          let current = initialChatRevision(run, main);
+          let current = initialChatRevision(run, main, ROOT);
           entries.push(extended(1, current));
           outcomes.forEach((status, index) => {
             const [prompt, agent] = current.nodes;
             if (prompt === undefined || agent === undefined) throw new Error('no nodes');
             entries.push(ended(prompt.nodeId, 'SUCCEEDED'), ended(agent.nodeId, status));
-            current = chatGrowthRevision(run, index + 2, agent.nodeId, main);
+            current = chatGrowthRevision(run, index + 2, agent.nodeId, main, ROOT);
             entries.push(extended(index + 2, current));
           });
           const log = logOf(entries);
