@@ -26,6 +26,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、phase 发布检查 |
 | [Phase1TaskSet](Phase1TaskSet.md) | phase 1 的任务集设计：测什么、三层划分、对照 harness、筛选流程、调研进展 |
 | [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
+| [Orchestration](Orchestration.md) | phase 2 编排架构草案：MissionTree、后台命令、休眠与唤醒、跨任务消息、checkpoint 取代 Turn；待评审，评审后由 M2Design 新版本吸收 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |
 | [M2Security](M2Security.md) | 威胁模型、沙盒与授权的分层防护、C5 拦截矩阵 |
 | `Interface/` | 字段级接口，按通讯边界拆分；发布版只有 major 1 一套 Schema |
@@ -62,6 +63,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2Design](M2Design.md) | v1.35 定稿 |
 | [M2ReleasePlan](M2ReleasePlan.md)、[M2Baseline](M2Baseline.md)、[M2Decisions](M2Decisions.md)、[M2FrozenTests](M2FrozenTests.md)、[Evaluation](Evaluation.md) | 新（phase 0），待评审 |
 | [M2TechStack](M2TechStack.md) | 实测已填 |
+| [Orchestration](Orchestration.md) | 草稿（phase 2 文档门），待评审 |
 | [M2Security](M2Security.md) | 已实现部分已评审；phase 1–3 的对抗用例与审计后更新 |
 | [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md)、[KernelSupervisor](Interface/KernelSupervisor.md) | 已实现 |
 | Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；Workflow 的使用者模板与预置工作流部分为设计（phase 2） |
