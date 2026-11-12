@@ -3990,6 +3990,9 @@
                       "NOT_A_GIT_REPOSITORY",
                       "MEMORY_PRESSURE",
                       "WRITE_SCOPE_CONFLICT",
+                      "MISSION_BUSY",
+                      "MISSION_CLOSED",
+                      "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
                       "DELEGATION_NOT_FOUND",
@@ -5107,6 +5110,9 @@
                 "NOT_A_GIT_REPOSITORY",
                 "MEMORY_PRESSURE",
                 "WRITE_SCOPE_CONFLICT",
+                "MISSION_BUSY",
+                "MISSION_CLOSED",
+                "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
                 "DELEGATION_NOT_FOUND",
@@ -9566,6 +9572,23 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 64
+                },
+                "mission": {
+                  "type": "object",
+                  "required": [
+                    "missionId"
+                  ],
+                  "properties": {
+                    "missionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "parentMissionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false,
@@ -10193,6 +10216,9 @@
                               "NOT_A_GIT_REPOSITORY",
                               "MEMORY_PRESSURE",
                               "WRITE_SCOPE_CONFLICT",
+                              "MISSION_BUSY",
+                              "MISSION_CLOSED",
+                              "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
                               "DELEGATION_NOT_FOUND",
@@ -11465,6 +11491,9 @@
                                       "NOT_A_GIT_REPOSITORY",
                                       "MEMORY_PRESSURE",
                                       "WRITE_SCOPE_CONFLICT",
+                                      "MISSION_BUSY",
+                                      "MISSION_CLOSED",
+                                      "MISSION_NOT_FOUND",
                                       "WRITE_SCOPE_DELEGATED",
                                       "BUDGET_INSUFFICIENT",
                                       "DELEGATION_NOT_FOUND",
@@ -12734,6 +12763,9 @@
                 "agentRunId": {
                   "type": "string",
                   "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "missionContinues": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false,
@@ -12933,6 +12965,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",
@@ -16454,6 +16489,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",
@@ -16720,6 +16758,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",
@@ -17960,6 +18001,9 @@
             "NOT_A_GIT_REPOSITORY",
             "MEMORY_PRESSURE",
             "WRITE_SCOPE_CONFLICT",
+            "MISSION_BUSY",
+            "MISSION_CLOSED",
+            "MISSION_NOT_FOUND",
             "WRITE_SCOPE_DELEGATED",
             "BUDGET_INSUFFICIENT",
             "DELEGATION_NOT_FOUND",
@@ -18551,6 +18595,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -18817,6 +18864,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -19989,6 +20039,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -20753,6 +20806,9 @@
                 "UNDO_UNKNOWN",
                 "MEMORY_PRESSURE",
                 "WRITE_SCOPE_CONFLICT",
+                "MISSION_BUSY",
+                "MISSION_CLOSED",
+                "MISSION_NOT_FOUND",
                 "DELEGATION_NOT_FOUND",
                 "COMPACTION_UNKNOWN"
               ]
@@ -21618,6 +21674,9 @@
                       "NOT_A_GIT_REPOSITORY",
                       "MEMORY_PRESSURE",
                       "WRITE_SCOPE_CONFLICT",
+                      "MISSION_BUSY",
+                      "MISSION_CLOSED",
+                      "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
                       "DELEGATION_NOT_FOUND",
@@ -26207,6 +26266,9 @@
                               "NOT_A_GIT_REPOSITORY",
                               "MEMORY_PRESSURE",
                               "WRITE_SCOPE_CONFLICT",
+                              "MISSION_BUSY",
+                              "MISSION_CLOSED",
+                              "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
                               "DELEGATION_NOT_FOUND",
@@ -31736,6 +31798,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -32073,6 +32138,9 @@
         "agentRunId": {
           "type": "string",
           "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "missionContinues": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -32881,6 +32949,23 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "mission": {
+          "type": "object",
+          "required": [
+            "missionId"
+          ],
+          "properties": {
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "parentMissionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
@@ -33280,6 +33365,9 @@
                       "NOT_A_GIT_REPOSITORY",
                       "MEMORY_PRESSURE",
                       "WRITE_SCOPE_CONFLICT",
+                      "MISSION_BUSY",
+                      "MISSION_CLOSED",
+                      "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
                       "DELEGATION_NOT_FOUND",
@@ -35203,6 +35291,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -35469,6 +35560,9 @@
                     "NOT_A_GIT_REPOSITORY",
                     "MEMORY_PRESSURE",
                     "WRITE_SCOPE_CONFLICT",
+                    "MISSION_BUSY",
+                    "MISSION_CLOSED",
+                    "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
                     "DELEGATION_NOT_FOUND",
@@ -36611,6 +36705,9 @@
                               "NOT_A_GIT_REPOSITORY",
                               "MEMORY_PRESSURE",
                               "WRITE_SCOPE_CONFLICT",
+                              "MISSION_BUSY",
+                              "MISSION_CLOSED",
+                              "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
                               "DELEGATION_NOT_FOUND",
@@ -38573,6 +38670,9 @@
                           "NOT_A_GIT_REPOSITORY",
                           "MEMORY_PRESSURE",
                           "WRITE_SCOPE_CONFLICT",
+                          "MISSION_BUSY",
+                          "MISSION_CLOSED",
+                          "MISSION_NOT_FOUND",
                           "WRITE_SCOPE_DELEGATED",
                           "BUDGET_INSUFFICIENT",
                           "DELEGATION_NOT_FOUND",
@@ -44911,6 +45011,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",
@@ -45177,6 +45280,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",
@@ -46630,6 +46736,9 @@
         "NOT_A_GIT_REPOSITORY",
         "MEMORY_PRESSURE",
         "WRITE_SCOPE_CONFLICT",
+        "MISSION_BUSY",
+        "MISSION_CLOSED",
+        "MISSION_NOT_FOUND",
         "WRITE_SCOPE_DELEGATED",
         "BUDGET_INSUFFICIENT",
         "DELEGATION_NOT_FOUND",
@@ -50852,6 +50961,9 @@
                 "NOT_A_GIT_REPOSITORY",
                 "MEMORY_PRESSURE",
                 "WRITE_SCOPE_CONFLICT",
+                "MISSION_BUSY",
+                "MISSION_CLOSED",
+                "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
                 "DELEGATION_NOT_FOUND",
@@ -51280,6 +51392,9 @@
                 "NOT_A_GIT_REPOSITORY",
                 "MEMORY_PRESSURE",
                 "WRITE_SCOPE_CONFLICT",
+                "MISSION_BUSY",
+                "MISSION_CLOSED",
+                "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
                 "DELEGATION_NOT_FOUND",
@@ -53506,6 +53621,9 @@
                             "NOT_A_GIT_REPOSITORY",
                             "MEMORY_PRESSURE",
                             "WRITE_SCOPE_CONFLICT",
+                            "MISSION_BUSY",
+                            "MISSION_CLOSED",
+                            "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
                             "DELEGATION_NOT_FOUND",

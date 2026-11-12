@@ -197,3 +197,61 @@ describe('delegation to SubAgents', () => {
     expect(ledgers.usage().limit - ledgers.usage().used).toBe(mainShare * 40 - 200);
   });
 });
+
+describe('the ledger of a task that sleeps (Orchestration 8.3)', () => {
+  it('keeps the share of a task across its segments and gives back the rest when it ends', () => {
+    const ledgers = open();
+    const before = ledgers.delegable('agr_main');
+    delegate(ledgers, ['a']);
+    ledgers.registerAgentRun({
+      agentRunId: 'agr_a1',
+      delegationId: 'dlg_1',
+      taskName: 'a',
+      agent: child,
+      ledgerKey: 'msc_a00000',
+    });
+    spendOn(ledgers, 'agr_a1', 10);
+    // The first segment goes to sleep: nothing goes back to the parent yet.
+    ledgers.endAgentRun('agr_a1', true);
+    expect(ledgers.delegable('agr_main')).toBe(before - childShare);
+    // The next segment spends from the same share.
+    ledgers.attachAgentRun('agr_a2', 'msc_a00000');
+    spendOn(ledgers, 'agr_a2', 15);
+    expect(ledgers.budgetView('agr_a2').agentRun).toBe('NORMAL');
+    // The task ends: what it did not use goes back; what both segments used stays spent.
+    ledgers.endAgentRun('agr_a2');
+    expect(ledgers.delegable('agr_main')).toBe(before - 25);
+  });
+
+  it('pays the loan of a task that slept back to its parent task, not to the Turn', () => {
+    const ledgers = open();
+    delegate(ledgers, ['lead']);
+    ledgers.registerAgentRun({
+      agentRunId: 'agr_lead1',
+      delegationId: 'dlg_1',
+      taskName: 'lead',
+      agent: child,
+      ledgerKey: 'msc_lead00',
+    });
+    const leadBefore = ledgers.delegable('agr_lead1');
+    expect(
+      ledgers.reserveDelegation({
+        delegationId: 'dlg_2',
+        parentAgentRunId: 'agr_lead1',
+        shares: [{ name: 'w', tokens: minShare(child) }],
+      }),
+    ).toEqual({ ok: true });
+    // The lead's segment sleeps; its worker registers and ends after it.
+    ledgers.endAgentRun('agr_lead1', true);
+    ledgers.registerAgentRun({
+      agentRunId: 'agr_w',
+      delegationId: 'dlg_2',
+      taskName: 'w',
+      agent: child,
+      ledgerKey: 'msc_w00000',
+    });
+    ledgers.endAgentRun('agr_w');
+    ledgers.attachAgentRun('agr_lead2', 'msc_lead00');
+    expect(ledgers.delegable('agr_lead2')).toBe(leadBefore);
+  });
+});

@@ -1093,6 +1093,16 @@ export class SessionRunner {
         requestedCapabilities: [...binding.requestedCapabilities],
         writeRoots: [...place.writeRoots],
         ...place.link,
+        ...(node.mission === undefined
+          ? {}
+          : {
+              mission: {
+                missionId: node.mission.id,
+                ...(node.mission.parentId === undefined
+                  ? {}
+                  : { parentMissionId: node.mission.parentId }),
+              },
+            }),
       },
       contextOf(sessionId, workflowRunId),
     );

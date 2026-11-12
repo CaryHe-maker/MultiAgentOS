@@ -79,9 +79,12 @@ interface TurnLedger {
   readonly below: Usage;
 }
 
-/** The ledger of an AgentRun that was funded by a delegation (M2Design 7.3). */
+/**
+ * The ledger of a task that was funded by a delegation (M2Design 7.3): every segment of the task
+ * spends from it, so sleeping does not raise what the task may spend (Orchestration 8.3).
+ */
 interface AgentLedger {
-  readonly agentRunId: string;
+  readonly key: string;
   readonly parent: string | undefined;
   readonly agent: AgentBudget;
   readonly share: number;
@@ -113,8 +116,13 @@ export class RunLedgers {
   readonly #budget: RunBudget;
   readonly #main: AgentBudget;
   readonly #toolUnits = new Map<string, number>();
-  /** AgentRuns below main, by id; main (and any AgentRun without a parent) uses the Turn's ledger. */
+  /**
+   * Funded tasks below main, by ledger key (the task, or the AgentRun when it is a task of its
+   * own); main (and any AgentRun without a share) uses the Turn's ledger.
+   */
   readonly #agents = new Map<string, AgentLedger>();
+  /** The ledger key each AgentRun spends from. */
+  readonly #keyOf = new Map<string, string>();
   readonly #delegations = new Map<string, Delegation>();
   readonly #owners = new Map<string, Monitor>();
   readonly #overTime = new Set<string>();
@@ -148,8 +156,9 @@ export class RunLedgers {
   closeTurnLedger(turnId: string): TurnUsage {
     const turn = this.#openTurn();
     if (turn.turnId !== turnId) throw new MonitorInvariantError('Another Turn ledger is open');
-    // An AgentRun still open ends with the Turn: what it did not settle is unknown.
-    for (const id of [...this.#agents.keys()]) this.endAgentRun(id);
+    // A task still open ends with the Turn: what it did not settle is unknown.
+    for (const key of [...this.#agents.keys()]) this.#closeLedger(key);
+    this.#keyOf.clear();
     this.#delegations.clear();
     const total = noUsage();
     addUsage(total, turn.ledger.finalize());
@@ -238,7 +247,18 @@ export class RunLedgers {
   #ledgerOf(agentRunId: string | undefined): Monitor {
     const turn = this.#openTurn();
     if (agentRunId === undefined) return turn.ledger;
-    return this.#agents.get(agentRunId)?.ledger ?? turn.ledger;
+    return this.#agents.get(this.#keyOf.get(agentRunId) ?? agentRunId)?.ledger ?? turn.ledger;
+  }
+
+  /** The ledger key a parent's loans are owed to: its task's, or none for the Turn's. */
+  #parentKey(agentRunId: string): string | undefined {
+    const key = this.#keyOf.get(agentRunId) ?? agentRunId;
+    return this.#agents.has(key) ? key : undefined;
+  }
+
+  #ledgerOfKey(key: string | undefined): Monitor {
+    const turn = this.#openTurn();
+    return key === undefined ? turn.ledger : (this.#agents.get(key)?.ledger ?? turn.ledger);
   }
 
   /**
@@ -261,7 +281,7 @@ export class RunLedgers {
     parent.lend(total);
     this.#delegations.set(request.delegationId, {
       delegationId: request.delegationId,
-      parent: this.#agents.has(request.parentAgentRunId) ? request.parentAgentRunId : undefined,
+      parent: this.#parentKey(request.parentAgentRunId),
       shares: new Map(request.shares.map((share) => [share.name, share.tokens])),
       claimed: new Set(),
       released: false,
@@ -274,12 +294,16 @@ export class RunLedgers {
     return this.#ledgerOf(parentAgentRunId).delegable();
   }
 
-  /** A task registers: its share becomes its own ledger (M2Design 7.3, rule 3). */
+  /**
+   * A task registers its first segment: its share becomes its own ledger (M2Design 7.3, rule 3),
+   * kept under `ledgerKey` (the task) for its later segments; without one, under the AgentRun.
+   */
   registerAgentRun(request: {
     readonly agentRunId: string;
     readonly delegationId: string;
     readonly taskName: string;
     readonly agent: AgentBudget;
+    readonly ledgerKey?: string;
   }): { readonly state: BudgetState } {
     const delegation = this.#delegations.get(request.delegationId);
     const share = delegation?.shares.get(request.taskName);
@@ -287,12 +311,14 @@ export class RunLedgers {
       throw new MonitorInvariantError('No such share in the delegation');
     if (delegation.claimed.has(request.taskName))
       throw new MonitorInvariantError('The share is already claimed');
-    if (this.#agents.has(request.agentRunId))
+    const key = request.ledgerKey ?? request.agentRunId;
+    if (this.#agents.has(key) || this.#keyOf.has(request.agentRunId))
       throw new MonitorInvariantError('The AgentRun has a ledger');
     delegation.claimed.add(request.taskName);
     const ledger = new Monitor({ ...request.agent, tokenLimit: share }, { allowShortLimit: true });
-    this.#agents.set(request.agentRunId, {
-      agentRunId: request.agentRunId,
+    this.#keyOf.set(request.agentRunId, key);
+    this.#agents.set(key, {
+      key,
       parent: delegation.parent,
       agent: request.agent,
       share,
@@ -312,20 +338,35 @@ export class RunLedgers {
     let returned = 0;
     for (const [name, tokens] of delegation.shares)
       if (!delegation.claimed.has(name)) returned += tokens;
-    if (returned > 0) this.#ledgerOf(delegation.parent).settleLoan(returned, 0);
+    if (returned > 0) this.#ledgerOfKey(delegation.parent).settleLoan(returned, 0);
     return returned;
   }
 
+  /** A later segment of a funded task spends from the task's ledger (Orchestration 8.3). */
+  attachAgentRun(agentRunId: string, ledgerKey: string): void {
+    if (this.#agents.has(ledgerKey)) this.#keyOf.set(agentRunId, ledgerKey);
+  }
+
   /**
-   * An AgentRun below main ends: the unused part of its share goes back at once; what it used, and
-   * what it could not settle, stays spent (M2Design 7.3, rule 4). Safe to repeat.
+   * An AgentRun below main ends. When its task goes on (`continues`, it went to sleep) the task's
+   * ledger stays as it is; otherwise the task has ended: the unused part of its share goes back at
+   * once, and what it used, and what it could not settle, stays spent (M2Design 7.3, rule 4). Safe
+   * to repeat.
    */
-  endAgentRun(agentRunId: string): void {
-    const agent = this.#agents.get(agentRunId);
+  endAgentRun(agentRunId: string, continues = false): void {
+    const key = this.#keyOf.get(agentRunId) ?? agentRunId;
+    this.#keyOf.delete(agentRunId);
+    if (!continues) this.#closeLedger(key);
+  }
+
+  #closeLedger(key: string): void {
+    const agent = this.#agents.get(key);
     if (agent === undefined) return;
-    this.#agents.delete(agentRunId);
+    this.#agents.delete(key);
+    for (const [agentRunId, each] of [...this.#keyOf])
+      if (each === key) this.#keyOf.delete(agentRunId);
     const summary = agent.ledger.finalize();
-    this.#ledgerOf(agent.parent).settleLoan(agent.share, summary.used + summary.unknown);
+    this.#ledgerOfKey(agent.parent).settleLoan(agent.share, summary.used + summary.unknown);
     if (this.#turn !== undefined) addUsage(this.#turn.below, summary);
   }
 
@@ -349,7 +390,10 @@ export class RunLedgers {
    */
   budgetView(agentRunId?: string): BudgetView {
     const turn = this.#turnState();
-    const own = agentRunId === undefined ? undefined : this.#agents.get(agentRunId);
+    const own =
+      agentRunId === undefined
+        ? undefined
+        : this.#agents.get(this.#keyOf.get(agentRunId) ?? agentRunId);
     const state = own === undefined ? turn : stateOf(own.ledger, own.share, own.agent);
     return { agentRun: state, turn, run: this.#runState() };
   }

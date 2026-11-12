@@ -36,6 +36,18 @@ export const RegisterAgentRunRequestSchema = closed(
     parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
     delegationId: Type.Optional(IdSchemas.delegationId),
     taskName: Type.Optional(text(64)),
+    /**
+     * The task this AgentRun is a segment of, and its parent task (Orchestration 8.1). The first
+     * segment of a task opens its MissionScope; a later one registers into it. A segment of a task
+     * that is not the root names its parent; the first segment of a spawned task also names the
+     * delegation and task it was funded by. Without it, the AgentRun is a task of its own.
+     */
+    mission: Type.Optional(
+      closed({
+        missionId: IdSchemas.missionScopeId,
+        parentMissionId: Type.Optional(IdSchemas.missionScopeId),
+      }),
+    ),
   },
   'kernel.unit.RegisterAgentRunRequest.v1',
 );
@@ -148,7 +160,15 @@ export const SubmitUnitRequestSchema = Type.Refine(
 export type SubmitUnitRequest = Static<typeof SubmitUnitRequestSchema>;
 
 export const EndAgentRunRequestSchema = closed(
-  { ...inRun, agentRunId: IdSchemas.agentRunId },
+  {
+    ...inRun,
+    agentRunId: IdSchemas.agentRunId,
+    /**
+     * The segment went to wait and its task goes on (Orchestration 4.1): the MissionScope stays open,
+     * with its ledger and write roots. Absent or false, the task ends with this AgentRun.
+     */
+    missionContinues: Type.Optional(Type.Boolean()),
+  },
   'kernel.unit.EndAgentRunRequest.v1',
 );
 export type EndAgentRunRequest = Static<typeof EndAgentRunRequestSchema>;

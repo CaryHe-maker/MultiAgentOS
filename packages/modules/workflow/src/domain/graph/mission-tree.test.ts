@@ -56,9 +56,7 @@ describe('a segment that slept (Orchestration 3.3)', () => {
   });
 
   it('is read through the segment that took over, however many times it slept', () => {
-    expect(edgeState(graph, edge('a1', 'b'), view({ a1: { status: 'YIELDED' } }))).toBe(
-      'WAITING',
-    );
+    expect(edgeState(graph, edge('a1', 'b'), view({ a1: { status: 'YIELDED' } }))).toBe('WAITING');
     const done = view({ a1: { status: 'YIELDED' }, a2: { status: 'SUCCEEDED' } });
     expect(edgeState(graph, edge('a1', 'b'), done)).toBe('TAKEN');
     expect(readyNodes(graph, done).map((each) => each.name)).toEqual(['b']);
@@ -84,10 +82,7 @@ describe('a segment that slept (Orchestration 3.3)', () => {
   it('follows a chain of segments to the last, and stops on a loop of edges', () => {
     const chain: Graph = {
       nodes: [node('s1'), node('s2'), node('s3')],
-      edges: [
-        edge('s1', 's2', { kind: 'CONTINUES' }),
-        edge('s2', 's3', { kind: 'CONTINUES' }),
-      ],
+      edges: [edge('s1', 's2', { kind: 'CONTINUES' }), edge('s2', 's3', { kind: 'CONTINUES' })],
     };
     const states = view({ s1: { status: 'YIELDED' }, s2: { status: 'YIELDED' } });
     expect(takenOver(chain, node('s1'), states)?.name).toBe('s3');
@@ -174,9 +169,9 @@ describe('the MissionTree read from the graph (Orchestration 3.1, 3.2)', () => {
     expect(api.mission).toEqual({ id: childMissionId(root, 'call_1', 'api'), parentId: root });
     const missions = projectMissions([extended(1, first), extended(2, spawned)]);
     expect(childrenOf(missions, root).map((each) => each.name)).toEqual(['api', 'ui']);
-    expect(siblingsOf(missions, childMissionId(root, 'call_1', 'api')).map((m) => m.name)).toEqual(
-      ['ui'],
-    );
+    expect(siblingsOf(missions, childMissionId(root, 'call_1', 'api')).map((m) => m.name)).toEqual([
+      'ui',
+    ]);
     expect(missions.get(childMissionId(root, 'call_1', 'ui'))?.depth).toBe(1);
     expect(missions.get(childMissionId(root, 'call_1', 'ui'))?.agentId).toBe('worker');
     // Same names in another call are other tasks.

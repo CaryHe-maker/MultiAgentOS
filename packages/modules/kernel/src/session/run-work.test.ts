@@ -1594,6 +1594,268 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ).toBe('DELEGATION_NOT_FOUND');
   });
 
+  describe('MissionScopes (Orchestration 8.1, 8.2)', () => {
+    const leadAgent = testPinnedAgent({
+      id: 'lead',
+      capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      units: [fileRead, fileWrite, publish],
+      budget: childBudget,
+    });
+    agents['lead'] = leadAgent;
+    const segment = (
+      kernel: Kernel,
+      over: {
+        id: string;
+        agent: string;
+        missionId: string;
+        parentMissionId?: string;
+        delegationId?: string;
+        taskName?: string;
+        roots?: string[];
+        capabilities?: RegisterAgentRunRequest['requestedCapabilities'];
+      },
+    ) =>
+      kernel.actor.call(() =>
+        kernel.run().work.registerAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId: over.id,
+          nodeId: pathDerivedId('nod', over.id),
+          agentRef: ref(over.agent),
+          effort: 'high',
+          workspaceViewId: 'main',
+          requestedCapabilities:
+            over.capabilities ??
+            (over.agent === 'explorer' ? ['repo.read'] : ['repo.read', 'workspace.write']),
+          writeRoots: over.roots ?? [],
+          display: { label: over.id },
+          ...(over.delegationId === undefined
+            ? {}
+            : { delegationId: over.delegationId, taskName: over.taskName ?? '' }),
+          mission: {
+            missionId: over.missionId,
+            ...(over.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: over.parentMissionId }),
+          },
+        }),
+      );
+    const end = (kernel: Kernel, agentRunId: string, missionContinues = false) =>
+      kernel.actor.call(() =>
+        kernel.run().work.endAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId,
+          ...(missionContinues ? { missionContinues } : {}),
+        }),
+      );
+    // The root registered by `open` is a task of its own: its id is the AgentRun's.
+    const rootOf = (kernel: Kernel) => kernel.agentRunId;
+    const mission = () => pathDerivedId('msc', newId('ses'));
+
+    it('registers the later segments of a task that slept, one at a time, until it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = {
+        agent: 'worker',
+        missionId: task,
+        parentMissionId: rootOf(kernel),
+        roots: ['src/a'],
+      };
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: first, delegationId: dlg, taskName: 'a' })),
+      ).toBe('ACCEPTED');
+      // A second segment while the first runs is refused.
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_BUSY');
+      await end(kernel, first, true);
+      const second = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: second }))).toBe('ACCEPTED');
+      // It may not claim a share again, nor name another parent.
+      expect(
+        reasonOf(
+          await segment(kernel, { ...base, id: newId('agr'), delegationId: dlg, taskName: 'a' }),
+        ),
+      ).toBe('MISSION_BUSY');
+      await end(kernel, second, true);
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), parentMissionId: mission() })),
+      ).toBe('INVALID_INPUT');
+      const third = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: third }))).toBe('ACCEPTED');
+      await end(kernel, third);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_CLOSED');
+    });
+
+    it('lets a later segment only narrow what the first one could do', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = { agent: 'worker', missionId: task, parentMissionId: rootOf(kernel) };
+      await segment(kernel, {
+        ...base,
+        id: first,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src/a'],
+      });
+      await end(kernel, first, true);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src'] }))).toBe(
+        'CAPABILITY_NOT_SUBSET',
+      );
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src/a/inner'] })),
+      ).toBe('ACCEPTED');
+    });
+
+    it('keeps the write roots of a sleeping task held, and frees them when it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [
+          { name: 'a', agent: 'worker', roots: ['src'] },
+          { name: 'b', agent: 'worker', roots: ['src/b'] },
+        ]),
+      );
+      const parent = rootOf(kernel);
+      const taskA = mission();
+      const a = newId('agr');
+      await segment(kernel, {
+        id: a,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src'],
+      });
+      await end(kernel, a, true);
+      const b = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'b',
+        roots: ['src/b'],
+      };
+      // `a` sleeps, yet its roots are still its own.
+      expect(reasonOf(await segment(kernel, b))).toBe('WRITE_SCOPE_CONFLICT');
+      // `a` wakes and ends for good: its roots are free.
+      const wake = newId('agr');
+      await segment(kernel, {
+        id: wake,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        roots: ['src'],
+      });
+      await end(kernel, wake);
+      expect(reasonOf(await segment(kernel, { ...b, id: newId('agr') }))).toBe('ACCEPTED');
+    });
+
+    it('starts a task whose caller already went to sleep, but not one whose parent task ended', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      await segment(kernel, {
+        id: lead,
+        agent: 'lead',
+        missionId: leadMission,
+        parentMissionId: rootOf(kernel),
+        delegationId: dlg,
+        taskName: 'lead',
+        roots: ['src'],
+        capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      });
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'w', agent: 'worker', roots: ['src/w'] }], lead),
+      );
+      // The lead's segment goes to sleep before its worker starts.
+      await end(kernel, lead, true);
+      const worker = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'w',
+        roots: ['src/w'],
+      };
+      expect(reasonOf(await segment(kernel, worker))).toBe('ACCEPTED');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...worker,
+            id: newId('agr'),
+            missionId: mission(),
+            parentMissionId: mission(),
+          }),
+        ),
+      ).toBe('MISSION_NOT_FOUND');
+    });
+
+    it('lets a task below the root spawn, and none at the deepest level (Orchestration 3.6)', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            id: lead,
+            agent: 'lead',
+            missionId: leadMission,
+            parentMissionId: rootOf(kernel),
+            delegationId: dlg,
+            taskName: 'lead',
+            roots: ['src'],
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'deep', agent: 'lead', roots: ['src/deep'] }], lead),
+      );
+      const deep = {
+        id: newId('agr'),
+        agent: 'lead',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'deep',
+        roots: ['src/deep'],
+      };
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('CAPABILITY_NOT_SUBSET');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            id: newId('agr'),
+            capabilities: ['repo.read', 'workspace.write'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+    });
+  });
+
   it('accepts the references of a handover to keep, and answers a repeat as the same request (Core 5g)', async () => {
     const kernel = await open();
     const request = {

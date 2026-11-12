@@ -77,6 +77,12 @@ export const REASON_CODE_CATEGORY = {
   NOT_A_GIT_REPOSITORY: 'EXECUTION',
   MEMORY_PRESSURE: 'RESOURCE',
   WRITE_SCOPE_CONFLICT: 'CONFLICT',
+  /** The task already has an AgentRun that runs (Orchestration 3.4). */
+  MISSION_BUSY: 'CONFLICT',
+  /** The task has ended: no segment of it registers any more. */
+  MISSION_CLOSED: 'CONFLICT',
+  /** A segment names a parent task the run does not have, or one that has ended. */
+  MISSION_NOT_FOUND: 'VALIDATION',
   WRITE_SCOPE_DELEGATED: 'CONFLICT',
   BUDGET_INSUFFICIENT: 'RESOURCE',
   DELEGATION_NOT_FOUND: 'VALIDATION',
@@ -143,6 +149,9 @@ export const CORE_REJECTED_CODES = [
   'UNDO_UNKNOWN',
   'MEMORY_PRESSURE',
   'WRITE_SCOPE_CONFLICT',
+  'MISSION_BUSY',
+  'MISSION_CLOSED',
+  'MISSION_NOT_FOUND',
   'DELEGATION_NOT_FOUND',
   'COMPACTION_UNKNOWN',
 ] as const satisfies readonly ReasonCode[];
