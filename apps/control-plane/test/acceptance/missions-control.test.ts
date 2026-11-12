@@ -554,3 +554,165 @@ real('stopping and interrupting cancel the work in flight (Orchestration 5.1, 5.
     TIMEOUT,
   );
 });
+
+describe('requests, replies and attachments between tasks (Orchestration 5.3, D25)', () => {
+  /** A call made when it is answered, from what the provider has received by then. */
+  const later = (make: () => { name: string; arguments: unknown }) => ({
+    get calls() {
+      return [make()];
+    },
+  });
+  const requestIdIn = (provider: ScriptedChat): string =>
+    /Request (\S+) from task/u.exec(seen(provider))?.[1] ?? 'none';
+  const ownCallId = (provider: ScriptedChat, task: string, tool: string): string => {
+    for (const request of provider.requests) {
+      if (!request.messages.some((message) => textOf(message).includes(`Your task (${task},`)))
+        continue;
+      for (const message of request.messages)
+        for (const call of message.tool_calls ?? [])
+          if (call.function.name === tool && call.id !== undefined) return call.id;
+    }
+    return 'none';
+  };
+
+  it(
+    'asks a sibling, gets its reply, and the reply names the request',
+    async () => {
+      const place = await roots();
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'asker', agent: 'explorer', goal: 'ask the other' },
+              { name: 'answerer', agent: 'explorer', goal: 'answer the other' },
+            ),
+            sleepFor(children()),
+            reply('they talked'),
+          ],
+        },
+        {
+          asker: [
+            tool('send_message', {
+              to: 'answerer',
+              kind: 'request',
+              summary: 'Which port does the API use?',
+              text: 'I need the port to write the client.',
+            }),
+            sleepFor({ kind: 'message' }),
+            finish('got the port'),
+          ],
+          answerer: [
+            sleepFor({ kind: 'message' }),
+            later(() => ({
+              name: 'send_message',
+              arguments: {
+                to: 'asker',
+                kind: 'reply',
+                replyTo: requestIdIn(provider),
+                summary: 'Port 8080',
+                text: 'The API listens on 8080.',
+              },
+            })),
+            finish('answered'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('let them talk');
+      expect(chat.printed('REPLY')).toContain('they talked');
+      expect(seenBy(provider, 'answerer')).toContain('Summary: Which port does the API use?');
+      const asker = seenBy(provider, 'asker');
+      expect(asker).toContain('Reply from task answerer to your request');
+      expect(asker).toContain('The API listens on 8080.');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'tells the task that asked when the other ends without answering, and wakes it',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'asker', agent: 'explorer', goal: 'ask the other' },
+              { name: 'silent', agent: 'explorer', goal: 'do not answer' },
+            ),
+            sleepFor(children()),
+            reply('handled the silence'),
+          ],
+        },
+        {
+          asker: [
+            tool('send_message', { to: 'silent', kind: 'request', text: 'Are you there?' }),
+            sleepFor({ kind: 'message' }),
+            finish('no answer came'),
+          ],
+          silent: [sleepFor({ kind: 'message' }), finish('ignored it')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('ask');
+      expect(chat.printed('REPLY')).toContain('handled the silence');
+      expect(seenBy(provider, 'asker')).toContain(
+        'Task silent ended without answering your request',
+      );
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'hands a tool result over with a message, readable by its receiver',
+    async () => {
+      const place = await roots({ 'notes.md': 'the secret number is 42\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'reader', agent: 'explorer', goal: 'read the notes' }),
+            sleepFor(children()),
+            later(() => ({
+              name: 'read_output',
+              arguments: {
+                toolCallId:
+                  /read_output\): (ref_\d+\/\S+) \(read_file\)/u.exec(seen(provider))?.[1] ??
+                  'none',
+              },
+            })),
+            reply('got it'),
+          ],
+        },
+        {
+          reader: [
+            tool('read_file', { path: 'notes.md' }),
+            later(() => ({
+              name: 'send_message',
+              arguments: {
+                to: 'parent',
+                summary: 'The notes, attached',
+                text: 'Here is what I read.',
+                references: [ownCallId(provider, 'reader', 'read_file')],
+              },
+            })),
+            finish('sent'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('read');
+      expect(chat.printed('REPLY')).toContain('got it');
+      expect(seen(provider)).toMatch(
+        /Attached tool results \(read with read_output\): ref_\d+\/\S+ \(read_file\)/u,
+      );
+      // The receiver (main, whose requests carry no task of their own) read what was attached.
+      const mainSaw = provider.requests
+        .filter(
+          (request) => !request.messages.some((message) => textOf(message).includes('Your task (')),
+        )
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      expect(mainSaw).toContain('the secret number is 42');
+    },
+    TIMEOUT,
+  );
+});

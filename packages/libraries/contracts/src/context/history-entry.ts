@@ -133,6 +133,13 @@ export const ContextHistoryEntrySchema = Type.Union(
       from: text(64),
       /** It interrupted the receiver: shown so that it is dealt with first (D20). */
       interrupt: Type.Optional(Type.Boolean()),
+      messageKind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
+      replyTo: Type.Optional(ToolCallIdSchema),
+      /** The tool results it carries, read with read_output as `ref_N/<toolCallId>`. */
+      referenceId: Type.Optional(ReferenceIdSchema),
+      references: Type.Optional(
+        Type.Array(closed({ toolCallId: ToolCallIdSchema, tool: text(64) }), { maxItems: 9 }),
+      ),
       outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
       toolCallId: ToolCallIdSchema,
     }),

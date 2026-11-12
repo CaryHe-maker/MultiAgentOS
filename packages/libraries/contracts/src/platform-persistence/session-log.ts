@@ -341,6 +341,11 @@ export const SessionLogRecordSchema = Type.Union(
       to: Type.Array(IdSchemas.missionScopeId, { minItems: 1, maxItems: 12 }),
       /** From a parent to its child: the child ends its round and starts again (D20). */
       interrupt: Type.Optional(Type.Boolean()),
+      /** inform when left out; a request expects a reply, which names it in `replyTo` (D25). */
+      kind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
+      replyTo: Type.Optional(ToolCallIdSchema),
+      /** The handover of the tool results it carries, when it carries any. */
+      referenceId: Type.Optional(ReferenceIdSchema),
       source: closed({
         modelTurnRequestId: IdSchemas.requestId,
         outputRef: ArtifactRefSchema,
@@ -358,6 +363,15 @@ export const SessionLogRecordSchema = Type.Union(
       requestId: IdSchemas.requestId,
       command: text(200),
       promoted: Type.Boolean(),
+    }),
+    /**
+     * A task ended without answering a request sent to it (D25): the task that asked is told, and
+     * woken if it sleeps, instead of waiting for an answer that will not come.
+     */
+    record('MESSAGE_UNANSWERED', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      requestToolCallId: ToolCallIdSchema,
+      fromLabel: text(64),
     }),
     /**
      * The root task wrote the plan of the work (Orchestration 5.3, D24): its text is in the model

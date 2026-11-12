@@ -14,6 +14,8 @@ import {
   projectMissions,
   rootMissionId,
   siblingsOf,
+  treeView,
+  type MissionView,
 } from './mission-tree.js';
 import {
   chatGrowthRevision,
@@ -312,5 +314,60 @@ describe('the owner of a template (Orchestration 3.5)', () => {
     const { revision, errors } = compileTemplate(run, template, missionRoot);
     expect(errors).toEqual([]);
     expect(agentOf(revision, 'deliver').mission).toEqual({ id: missionRoot });
+  });
+});
+
+describe('what a task sees of the tree (Orchestration 3.7, D26)', () => {
+  const view = (
+    missionId: string,
+    name: string,
+    depth: number,
+    parentId?: string,
+  ): MissionView => ({
+    missionId,
+    name,
+    depth,
+    agentId: depth === 0 ? 'main' : 'lead',
+    ...(parentId === undefined ? {} : { parentId, role: `role of ${name}` }),
+    nodeIds: [`nod_${name}`],
+    segments: [`nod_${name}`],
+  });
+  const missions = new Map(
+    [
+      view('m_root', 'root', 0),
+      view('m_front', 'front', 1, 'm_root'),
+      view('m_back', 'back', 1, 'm_root'),
+      view('m_ui', 'ui', 2, 'm_front'),
+      view('m_api', 'api', 2, 'm_back'),
+      view('m_css', 'css', 3, 'm_ui'),
+    ].map((each) => [each.missionId, each]),
+  );
+  const shown = (own: string) => treeView(missions, own, () => 'running');
+
+  it('shows a task its parent, its siblings and its own subtasks, and nothing else', () => {
+    const text = shown('m_ui');
+    expect(text).toContain('- front (lead) — role of front — running (your parent)');
+    expect(text).toContain('- ui (lead) — role of ui — running   <- you');
+    expect(text).toContain('- css (lead) — role of css — running');
+    // Not the root above the parent, not a cousin, not the subtasks of a sibling.
+    expect(text).not.toContain('- root');
+    expect(text).not.toContain('- api');
+    expect(text).not.toContain('- back');
+  });
+
+  it('shows a middle task its subtasks but not theirs, and names the root as its parent', () => {
+    const text = shown('m_front');
+    expect(text).toContain('(your parent; the root: the goal of the user)');
+    expect(text).toContain('- back (lead)');
+    expect(text).toContain('- ui (lead)');
+    expect(text).not.toContain('- css');
+    expect(text).not.toContain('- api');
+  });
+
+  it('shows the root itself and its own subtasks only', () => {
+    const text = shown('m_root');
+    expect(text).toContain('- root (main) — running   <- you');
+    expect(text).toContain('- front (lead)');
+    expect(text).not.toContain('- ui');
   });
 });

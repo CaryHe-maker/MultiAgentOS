@@ -163,6 +163,8 @@ const MAX_MESSAGES_PER_SEGMENT = 10;
 const MAX_CONSECUTIVE_WAKES = 3;
 /** Times a task is woken because nothing could move, before it is ended. */
 const MAX_STALLED_WAKES = 3;
+/** Requests a task may have unanswered at once (D25). */
+const MAX_OPEN_REQUESTS = 3;
 /** What one `job_output` reads at most: it must fit the answer of the call. */
 const JOB_READ_BYTES = 12_000;
 /** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
@@ -2659,6 +2661,79 @@ export class SessionRunner {
     return this.#advance(workflowRunId);
   }
 
+  /** Requests a task sent that are neither answered nor left without an answer (D25). */
+  #openRequests(missionId: string): readonly string[] {
+    const sent: string[] = [];
+    const closed = new Set<string>();
+    for (const record of this.#records) {
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.from === missionId &&
+        record.kind === 'request'
+      )
+        sent.push(record.source.toolCallId);
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.kind === 'reply' &&
+        record.replyTo !== undefined
+      )
+        closed.add(record.replyTo);
+      if (record.type === 'MESSAGE_UNANSWERED') closed.add(record.requestToolCallId);
+    }
+    return sent.filter((id) => !closed.has(id));
+  }
+
+  /**
+   * Tool results of the sender's own, handed over to one task with a message (D25): kept for the
+   * Session and registered for that task, which reads them with read_output.
+   */
+  async #handToMission(
+    workflowRunId: string,
+    active: ActiveAgent,
+    missionId: string,
+    listed: readonly string[],
+  ): Promise<
+    | { readonly kind: 'HANDED'; readonly referenceId: string; readonly notes: readonly string[] }
+    | { readonly kind: 'REFUSED'; readonly text: string }
+  > {
+    const { agentRunId, sessionId, turnId } = active.state;
+    const checked = checkedItems(this.#records, agentRunId, listed);
+    if (checked.items.length === 0)
+      return {
+        kind: 'REFUSED',
+        text: `Not sent: none of the references is a successful tool call of yours (${checked.notes.join(' ')}).`,
+      };
+    const kept = await this.#deps.gateway.retainArtifacts(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        refs: checked.items.map((item) => item.ref),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (kept.outcome !== 'ACCEPTED')
+      return { kind: 'REFUSED', text: 'Not sent: the tool results could not be kept.' };
+    const referenceId = nextReferenceId(this.#records);
+    await this.#append([
+      {
+        type: 'REFERENCES_REGISTERED',
+        workflowRunId,
+        turnId,
+        referenceId,
+        from: { agentRunId, label: active.task?.name ?? active.agentId },
+        // The root of a chat reads as main, as it reads the results of its subtasks.
+        to:
+          this.#mode === 'CHAT' &&
+          projectMissions(this.#records).get(missionId)?.parentId === undefined
+            ? { kind: 'MAIN' }
+            : { kind: 'MISSION', missionId },
+        items: [...checked.items],
+      },
+    ]);
+    return { kind: 'HANDED', referenceId, notes: checked.notes };
+  }
+
   /**
    * `send_message` (Orchestration 5): routed along the tree by name, recorded once, and answered at
    * once. Who gets it reads it at its next assembly, or is woken by it.
@@ -2694,8 +2769,38 @@ export class SessionRunner {
     const me = missions.get(active.missionId);
     if (me === undefined) return answer(true, 'Not sent: this task is not in the task tree.');
     const open = (each: MissionView) => each.ended === undefined;
+    const kind = args.kind ?? 'inform';
     let targets: readonly MissionView[];
-    if (args.to === 'parent') {
+    // A reply answers a request sent to this task, and goes back to the task that asked (D25).
+    const request =
+      kind === 'reply'
+        ? this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'MISSION_MESSAGE' }> =>
+              record.type === 'MISSION_MESSAGE' &&
+              record.kind === 'request' &&
+              record.source.toolCallId === args.replyTo &&
+              record.to.includes(me.missionId),
+          )
+        : undefined;
+    if (kind === 'reply' && request === undefined)
+      return answer(
+        true,
+        `Not sent: replyTo must be the id of a request sent to you${args.replyTo === undefined ? '' : `; ${args.replyTo} is not one`}. Send it as inform instead.`,
+      );
+    if (kind === 'request' && this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS)
+      return answer(
+        true,
+        `Not sent: ${String(MAX_OPEN_REQUESTS)} of your requests are still unanswered. Wait for their replies (sleep until message) or send this as inform.`,
+      );
+    if (request !== undefined) {
+      const asker = missions.get(request.from);
+      if (asker === undefined || !open(asker))
+        return answer(
+          true,
+          'Not sent: the task that asked has already ended; it reads nothing more.',
+        );
+      targets = [asker];
+    } else if (args.to === 'parent') {
       const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
       if (parent === undefined) return answer(true, 'Not sent: this task has no parent task.');
       targets = [parent];
@@ -2723,7 +2828,24 @@ export class SessionRunner {
         true,
         'Not sent: interrupt is only for your own subtasks. Send it without interrupt; it reaches them as information.',
       );
-    this.#agents.set(active.state.agentRunId, { ...active, messages: active.messages + 1 });
+    if (args.references !== undefined && targets.length !== 1)
+      return answer(
+        true,
+        'Not sent: tool results can be attached for one task only. Name one task in to, or send it without references.',
+      );
+    // Attached tool results are handed over to the one receiver, as a result is (D25).
+    const handed =
+      args.references === undefined
+        ? undefined
+        : await this.#handToMission(
+            workflowRunId,
+            active,
+            targets[0]?.missionId ?? '',
+            args.references,
+          );
+    if (handed?.kind === 'REFUSED') return answer(true, handed.text);
+    const sending = this.#agents.get(active.state.agentRunId) ?? active;
+    this.#agents.set(active.state.agentRunId, { ...sending, messages: sending.messages + 1 });
     await this.#append([
       {
         type: 'MISSION_MESSAGE',
@@ -2733,6 +2855,9 @@ export class SessionRunner {
         fromLabel: me.name,
         to: targets.map((each) => each.missionId),
         ...(interrupt ? { interrupt: true } : {}),
+        ...(kind === 'inform' ? {} : { kind }),
+        ...(request === undefined ? {} : { replyTo: request.source.toolCallId }),
+        ...(handed?.kind === 'HANDED' ? { referenceId: handed.referenceId } : {}),
         source: {
           modelTurnRequestId: ending.source.modelTurnRequestId,
           outputRef: ending.source.modelOutputRef,
@@ -2754,7 +2879,7 @@ export class SessionRunner {
               current.state,
               'SENT',
               toolCallId,
-              `${interrupt ? 'Interrupted' : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.`,
+              `${interrupt ? 'Interrupted' : kind === 'request' ? `Request ${toolCallId} sent to` : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.${kind === 'request' ? ' Its reply comes as a message; sleep until message to wait for it.' : ''}${handed?.kind === 'HANDED' && handed.notes.length > 0 ? ` ${handed.notes.join(' ')}` : ''}`,
             ),
           ],
         },
@@ -2973,6 +3098,38 @@ export class SessionRunner {
       });
     }
     await this.#append(ended);
+    // A task that ended leaves its unanswered requests unanswered for good (D25): the tasks that
+    // asked are told, and woken if they sleep on messages.
+    const endedIds = new Set(
+      ended.flatMap((record) => (record.type === 'MISSION_ENDED' ? [record.missionId] : [])),
+    );
+    if (endedIds.size > 0) {
+      const replied = new Set(
+        this.#records.flatMap((record) =>
+          record.type === 'MISSION_MESSAGE' &&
+          record.kind === 'reply' &&
+          record.replyTo !== undefined
+            ? [record.replyTo]
+            : [],
+        ),
+      );
+      const unanswered: NewLogRecord[] = [];
+      for (const record of this.#records) {
+        if (record.type !== 'MISSION_MESSAGE' || record.kind !== 'request') continue;
+        if (replied.has(record.source.toolCallId)) continue;
+        const gone = record.to.filter((id) => endedIds.has(id));
+        for (const id of gone)
+          unanswered.push({
+            type: 'MESSAGE_UNANSWERED',
+            workflowRunId,
+            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+            missionId: record.from,
+            requestToolCallId: record.source.toolCallId,
+            fromLabel: missions.get(id)?.name ?? 'a task',
+          });
+      }
+      await this.#append(unanswered);
+    }
     await this.#stopJobsOf(
       workflowRunId,
       ended.flatMap((record) => (record.type === 'MISSION_ENDED' ? [record.missionId] : [])),
@@ -3054,6 +3211,12 @@ export class SessionRunner {
       if (
         record.type === 'MISSION_MESSAGE' &&
         record.to.includes(mission.missionId) &&
+        record.seq > lastSeen
+      )
+        messages.push(record.seq);
+      if (
+        record.type === 'MESSAGE_UNANSWERED' &&
+        record.missionId === mission.missionId &&
         record.seq > lastSeen
       )
         messages.push(record.seq);

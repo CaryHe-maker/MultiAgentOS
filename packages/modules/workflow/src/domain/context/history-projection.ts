@@ -6,6 +6,7 @@ import {
   type SessionLogRecord,
 } from '@multiagentos/contracts';
 import { answerOf, callResultsOf, handoverFieldsOf } from '../spawn/spawn-graph.js';
+import { registeredOf } from '../handover/handover.js';
 import { outcomeOf } from '../spawn/task-results.js';
 import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
 import { jobEndedNotice, jobOfRequest } from '../graph/mission-jobs.js';
@@ -370,8 +371,23 @@ export function projectHistory(
           kind: 'MESSAGE',
           from: record.fromLabel,
           ...(record.interrupt === true ? { interrupt: true } : {}),
+          ...(record.kind === undefined ? {} : { messageKind: record.kind }),
+          ...(record.replyTo === undefined ? {} : { replyTo: record.replyTo }),
+          ...(record.referenceId === undefined
+            ? {}
+            : messageReferences(records, record.referenceId)),
           outputRef: record.source.outputRef,
           toolCallId: record.source.toolCallId,
+        });
+        break;
+      case 'MESSAGE_UNANSWERED':
+        if (record.missionId !== ownMission) break;
+        notes.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `Task ${record.fromLabel} ended without answering your request ${record.requestToolCallId}; no reply will come.`,
         });
         break;
       case 'PLAN_REGISTERED':
@@ -748,4 +764,18 @@ function latestPlan(
   for (const record of records)
     if (record.type === 'PLAN_REGISTERED' && record.workflowRunId === workflowRunId) found = record;
   return found;
+}
+
+/** The handover a message carries, as its entry shows it (D25). */
+function messageReferences(
+  records: readonly SessionLogRecord[],
+  referenceId: string,
+): { referenceId?: string; references?: { toolCallId: string; tool: string }[] } {
+  const handover = registeredOf(records, referenceId);
+  return handover === undefined
+    ? {}
+    : {
+        referenceId: handover.referenceId,
+        references: handover.items.map(({ toolCallId, tool }) => ({ toolCallId, tool })),
+      };
 }

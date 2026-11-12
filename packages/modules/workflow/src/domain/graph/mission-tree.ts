@@ -139,9 +139,10 @@ export function missionOfNode(
 const MAX_TREE_LINES = 30;
 
 /**
- * The part of the tree a task sees (Orchestration 3.7, D18): its ancestors down from the root, its
- * siblings, and everything below it, one line each with the role and the state. `stateOf` tells
- * the state of a task from the log; the text is material, never an instruction.
+ * The part of the tree a task sees (Orchestration 3.7, D26): its parent, its siblings and its own
+ * subtasks, one line each with the role and the state. Tasks above the parent, the subtasks of its
+ * siblings and those below its own subtasks are not shown: the plan of the work tells the whole.
+ * `stateOf` tells the state of a task from the log; the text is material, never an instruction.
  */
 export function treeView(
   missions: ReadonlyMap<string, MissionView>,
@@ -150,11 +151,6 @@ export function treeView(
 ): string {
   const me = missions.get(own);
   if (me === undefined) return 'This task is not in the task tree.';
-  const chain: MissionView[] = [];
-  for (let at: MissionView | undefined = me; at !== undefined;) {
-    chain.unshift(at);
-    at = at.parentId === undefined ? undefined : missions.get(at.parentId);
-  }
   const lines: string[] = [];
   let hidden = 0;
   const line = (mission: MissionView, depth: number, note = '') => {
@@ -167,22 +163,21 @@ export function treeView(
       `${'  '.repeat(depth)}- ${mission.name} (${mission.agentId})${role} — ${stateOf(mission)}${note}`,
     );
   };
-  const below = (mission: MissionView, depth: number) => {
-    for (const child of childrenOf(missions, mission.missionId)) {
-      line(child, depth);
-      below(child, depth + 1);
-    }
-  };
-  chain.forEach((mission, depth) => {
-    if (mission.missionId === own) return;
-    line(mission, depth, depth === 0 ? ' (the root: the goal of the user)' : '');
-  });
-  const parentDepth = chain.length - 1;
   const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+  if (parent !== undefined)
+    line(
+      parent,
+      0,
+      parent.parentId === undefined
+        ? ' (your parent; the root: the goal of the user)'
+        : ' (your parent)',
+    );
+  const depth = parent === undefined ? 0 : 1;
   const level = parent === undefined ? [me] : childrenOf(missions, parent.missionId);
   for (const mission of level) {
-    line(mission, parentDepth, mission.missionId === own ? '   <- you' : '');
-    if (mission.missionId === own) below(mission, parentDepth + 1);
+    line(mission, depth, mission.missionId === own ? '   <- you' : '');
+    if (mission.missionId === own)
+      for (const child of childrenOf(missions, own)) line(child, depth + 1);
   }
   const tail = hidden > 0 ? `\n(${String(hidden)} more not shown)` : '';
   return `The work you are part of (task — role — state):\n${lines.join('\n')}${tail}`;

@@ -80,7 +80,21 @@ export type JobListArgs = Static<typeof JobListArgsSchema>;
 export const SendMessageArgsSchema = closed(
   {
     to: text(64),
+    /**
+     * inform (default) tells; request asks for something and expects a reply; reply answers a
+     * request (`replyTo`), and goes to the task that asked whatever `to` says (D25).
+     */
+    kind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
+    /** What the receiver reads first: one or two lines. */
+    summary: Type.Optional(text(300)),
     text: text(4000),
+    /**
+     * Tool calls of the sender's own, handed over with the message: the receiver reads them with
+     * read_output (`ref_N/<toolCallId>`). Only to one task.
+     */
+    references: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 8 })),
+    /** The id of the request this answers (shown with the request). */
+    replyTo: Type.Optional(text(64)),
     /**
      * Interrupts the receiver (Orchestration 5.2, D20, D21): only to a child of the sender. The
      * receiver ends its round, and a new segment starts with the message at the end of its context.

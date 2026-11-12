@@ -5078,6 +5078,47 @@
                   "interrupt": {
                     "type": "boolean"
                   },
+                  "messageKind": {
+                    "enum": [
+                      "inform",
+                      "request",
+                      "reply"
+                    ]
+                  },
+                  "replyTo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "referenceId": {
+                    "type": "string",
+                    "pattern": "^ref_[1-9][0-9]*$",
+                    "maxLength": 32
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "toolCallId",
+                        "tool"
+                      ],
+                      "properties": {
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "tool": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 9
+                  },
                   "outputRef": {
                     "type": "object",
                     "required": [
@@ -6339,6 +6380,47 @@
             },
             "interrupt": {
               "type": "boolean"
+            },
+            "messageKind": {
+              "enum": [
+                "inform",
+                "request",
+                "reply"
+              ]
+            },
+            "replyTo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "referenceId": {
+              "type": "string",
+              "pattern": "^ref_[1-9][0-9]*$",
+              "maxLength": 32
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "toolCallId",
+                  "tool"
+                ],
+                "properties": {
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 9
             },
             "outputRef": {
               "type": "object",
@@ -11790,6 +11872,47 @@
                           "interrupt": {
                             "type": "boolean"
                           },
+                          "messageKind": {
+                            "enum": [
+                              "inform",
+                              "request",
+                              "reply"
+                            ]
+                          },
+                          "replyTo": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "referenceId": {
+                            "type": "string",
+                            "pattern": "^ref_[1-9][0-9]*$",
+                            "maxLength": 32
+                          },
+                          "references": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "toolCallId",
+                                "tool"
+                              ],
+                              "properties": {
+                                "toolCallId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "tool": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "maxItems": 9
+                          },
                           "outputRef": {
                             "type": "object",
                             "required": [
@@ -13206,6 +13329,47 @@
                                   },
                                   "interrupt": {
                                     "type": "boolean"
+                                  },
+                                  "messageKind": {
+                                    "enum": [
+                                      "inform",
+                                      "request",
+                                      "reply"
+                                    ]
+                                  },
+                                  "replyTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "referenceId": {
+                                    "type": "string",
+                                    "pattern": "^ref_[1-9][0-9]*$",
+                                    "maxLength": 32
+                                  },
+                                  "references": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "required": [
+                                        "toolCallId",
+                                        "tool"
+                                      ],
+                                      "properties": {
+                                        "toolCallId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128
+                                        },
+                                        "tool": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 64
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 9
                                   },
                                   "outputRef": {
                                     "type": "object",
@@ -35761,6 +35925,47 @@
                   "interrupt": {
                     "type": "boolean"
                   },
+                  "messageKind": {
+                    "enum": [
+                      "inform",
+                      "request",
+                      "reply"
+                    ]
+                  },
+                  "replyTo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "referenceId": {
+                    "type": "string",
+                    "pattern": "^ref_[1-9][0-9]*$",
+                    "maxLength": 32
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "toolCallId",
+                        "tool"
+                      ],
+                      "properties": {
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "tool": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "maxItems": 9
+                  },
                   "outputRef": {
                     "type": "object",
                     "required": [
@@ -39284,6 +39489,47 @@
                           "interrupt": {
                             "type": "boolean"
                           },
+                          "messageKind": {
+                            "enum": [
+                              "inform",
+                              "request",
+                              "reply"
+                            ]
+                          },
+                          "replyTo": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "referenceId": {
+                            "type": "string",
+                            "pattern": "^ref_[1-9][0-9]*$",
+                            "maxLength": 32
+                          },
+                          "references": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "toolCallId",
+                                "tool"
+                              ],
+                              "properties": {
+                                "toolCallId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128
+                                },
+                                "tool": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "maxItems": 9
+                          },
                           "outputRef": {
                             "type": "object",
                             "required": [
@@ -41396,6 +41642,47 @@
                       },
                       "interrupt": {
                         "type": "boolean"
+                      },
+                      "messageKind": {
+                        "enum": [
+                          "inform",
+                          "request",
+                          "reply"
+                        ]
+                      },
+                      "replyTo": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "referenceId": {
+                        "type": "string",
+                        "pattern": "^ref_[1-9][0-9]*$",
+                        "maxLength": 32
+                      },
+                      "references": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "toolCallId",
+                            "tool"
+                          ],
+                          "properties": {
+                            "toolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "tool": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "maxItems": 9
                       },
                       "outputRef": {
                         "type": "object",
@@ -53093,6 +53380,23 @@
             "interrupt": {
               "type": "boolean"
             },
+            "kind": {
+              "enum": [
+                "inform",
+                "request",
+                "reply"
+              ]
+            },
+            "replyTo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "referenceId": {
+              "type": "string",
+              "pattern": "^ref_[1-9][0-9]*$",
+              "maxLength": 32
+            },
             "source": {
               "type": "object",
               "required": [
@@ -53205,6 +53509,55 @@
             },
             "promoted": {
               "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
+            "requestToolCallId",
+            "fromLabel"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "MESSAGE_UNANSWERED"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "requestToolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "fromLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
             }
           },
           "additionalProperties": false
@@ -56996,10 +57349,37 @@
           "minLength": 1,
           "maxLength": 64
         },
+        "kind": {
+          "enum": [
+            "inform",
+            "request",
+            "reply"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
         "text": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "replyTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         },
         "interrupt": {
           "type": "boolean"
