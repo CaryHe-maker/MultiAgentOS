@@ -116,6 +116,19 @@ export const SnapshotIndexLineSchema = Type.Union(
       repositoryRoot: text(4096),
       at: TimestampSchema,
     }),
+    /**
+     * A checkpoint inside a Turn (Orchestration 7.1): a snapshot taken while mutating work was
+     * held, at a point of the run that is worth coming back to. A Turn's own start is one as well.
+     */
+    closed({
+      kind: Type.Literal('CHECKPOINT'),
+      checkpointId: IdSchemas.checkpointId,
+      turnId: IdSchemas.turnId,
+      ckpKind: Type.Enum(['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+      label: text(200),
+      snapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
     closed({
       kind: Type.Literal('REVERTED'),
       revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),

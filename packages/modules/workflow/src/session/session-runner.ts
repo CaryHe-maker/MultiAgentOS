@@ -475,6 +475,19 @@ export class SessionRunner {
       case 'JobEnded':
         await this.#onJobEnded(workflowRunId, event);
         break;
+      case 'CheckpointTaken':
+        await this.#append([
+          {
+            type: 'CHECKPOINT_TAKEN',
+            workflowRunId,
+            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+            checkpointId: event.checkpointId,
+            outcome: event.outcome,
+            ...(event.snapshot === undefined ? {} : { snapshot: event.snapshot }),
+            heldUnits: event.heldUnits,
+          },
+        ]);
+        break;
       case 'WakeDue':
         // Recorded first, so a wake by time is read from the log like any other (4.2).
         await this.#append([
@@ -734,12 +747,49 @@ export class SessionRunner {
    * The user answered a question of `ask_user`: the node it stands for is done, and the graph then
    * wakes the AgentRun that asked, which reads the answer as the result of its call (M2Design 3.3).
    */
+  /**
+   * Asks for a checkpoint (Orchestration 7.2, 7.3): the request is the cut; the Kernel answers
+   * with `CheckpointTaken` once its snapshot is taken, or given up.
+   */
+  async #requestCheckpoint(
+    workflowRunId: string,
+    kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE',
+    label: string,
+  ): Promise<void> {
+    const checkpointId = newId('ckp');
+    const shown = label.length <= 200 ? label : `${label.slice(0, 199)}…`;
+    await this.#append([
+      {
+        type: 'CHECKPOINT_REQUESTED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        checkpointId,
+        kind,
+        label: shown,
+      },
+    ]);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.takeCheckpoint(
+      { requestId: newId('req'), sessionId, workflowRunId, checkpointId, kind, label: shown },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`takeCheckpoint refused: ${response.reasonCode}`);
+  }
+
   async #onAnswer(
     workflowRunId: string,
     event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }> & {
       readonly kind: 'ask' | 'confirm' | 'review';
     },
   ): Promise<void> {
+    // What the user answered changes the course of the work (Orchestration 7.2).
+    if (this.#mode === 'ORCHESTRATION')
+      await this.#requestCheckpoint(
+        workflowRunId,
+        'HUMAN_ANSWER',
+        `after the answer to a question`,
+      );
     const requested = this.#records.find(
       (record) =>
         record.type === 'HUMAN_REQUESTED' &&
@@ -2177,6 +2227,14 @@ export class SessionRunner {
           },
         },
       ]);
+    // The root splitting the work is a point worth coming back to (Orchestration 7.2): the cut is
+    // taken before the tasks start, and their writes wait behind its barrier until the snapshot.
+    if (isRoot && this.#mode === 'ORCHESTRATION')
+      await this.#requestCheckpoint(
+        workflowRunId,
+        'ROOT_SPAWN',
+        `before starting ${checked.plan.tasks.map((task) => task.name).join(', ')}`,
+      );
     await this.#expandGraph(workflowRunId, active, toolCallId, checked.plan.tasks, lent.reserved);
   }
 

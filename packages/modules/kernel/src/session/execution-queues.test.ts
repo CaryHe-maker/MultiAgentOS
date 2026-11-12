@@ -201,3 +201,27 @@ describe('the web, which has a pool of its own', () => {
     expect(queues.startable({ ...limits, serial: true })).toEqual([read]);
   });
 });
+
+describe('the barrier of a checkpoint (Orchestration 7.3)', () => {
+  const mutatingAllowed = (held: boolean) => (each: QueueEntry) =>
+    !held || (each.cls !== 'WRITE' && each.cls !== 'EXEC');
+
+  it('keeps writes and commands queued while held, and lets reads of every AgentRun go on', () => {
+    const queues = new AttemptQueues();
+    const [write, readAfter, otherRead, otherExec] = [
+      entry('a', 'WRITE'),
+      entry('a', 'READ'),
+      entry('b', 'READ'),
+      entry('c', 'EXEC'),
+    ] as const;
+    for (const each of [write, readAfter, otherRead, otherExec]) queues.add(each);
+    // The write is held, and what stands behind it in its queue waits with it.
+    expect(queues.startable(limits, mutatingAllowed(true))).toEqual([otherRead]);
+    expect(queues.waitingQueued().map((each) => each.seq)).toEqual(
+      [write, readAfter, otherExec].map((each) => each.seq),
+    );
+    // Released, the held work starts in the order it was made: the write, and the command of
+    // another AgentRun beside it.
+    expect(queues.startable(limits, mutatingAllowed(false))).toEqual([write, otherExec]);
+  });
+});

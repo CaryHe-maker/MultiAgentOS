@@ -57,6 +57,7 @@ import type {
   ScheduleWakeRequest,
   ControlJobRequest,
   HaltAgentRunRequest,
+  TakeCheckpointRequest,
   JobControlContent,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
@@ -477,6 +478,11 @@ export interface WorkflowGatewayPort {
   /** Wakes a sleeping task after some seconds, within the run (Orchestration 8.5). */
   scheduleWake(
     request: ScheduleWakeRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Asks for a checkpoint; `CheckpointTaken` answers it (Orchestration 7.3). */
+  takeCheckpoint(
+    request: TakeCheckpointRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Cancels the queued and running work of one AgentRun (Orchestration 5.1, 5.2). */

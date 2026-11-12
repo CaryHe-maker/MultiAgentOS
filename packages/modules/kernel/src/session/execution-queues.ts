@@ -45,11 +45,14 @@ export class AttemptQueues<E extends QueueEntry> {
     this.#queues.set(entry.agentRunId, queue);
   }
 
-  /** Marks what may start now as RUNNING and returns it, oldest first. */
-  startable(limits: QueueLimits): E[] {
+  /**
+   * Marks what may start now as RUNNING and returns it, oldest first. An entry `allowed` refuses
+   * stays queued and blocks what stands behind it, like a barrier that has not started.
+   */
+  startable(limits: QueueLimits, allowed: (entry: E) => boolean = () => true): E[] {
     const started: E[] = [];
     for (;;) {
-      const next = this.#oldestEligible(limits);
+      const next = this.#oldestEligible(limits, allowed);
       if (next === undefined) return started;
       next.state = 'RUNNING';
       started.push(next);
@@ -91,6 +94,13 @@ export class AttemptQueues<E extends QueueEntry> {
     }
     for (const [owner, queue] of this.#queues) if (queue.length === 0) this.#queues.delete(owner);
     return queued;
+  }
+
+  /** What waits to start, oldest first. */
+  waitingQueued(): E[] {
+    return this.#all()
+      .filter((entry) => entry.state === 'QUEUED')
+      .sort((a, b) => a.seq - b.seq);
   }
 
   running(): E[] {
@@ -139,7 +149,7 @@ export class AttemptQueues<E extends QueueEntry> {
     return limits.serial || (entry.cls !== 'READ' && entry.cls !== 'WEB');
   }
 
-  #oldestEligible(limits: QueueLimits): E | undefined {
+  #oldestEligible(limits: QueueLimits, allowed: (entry: E) => boolean): E | undefined {
     let best: E | undefined;
     for (const queue of this.#queues.values()) {
       for (let index = 0; index < queue.length; index += 1) {
@@ -150,6 +160,7 @@ export class AttemptQueues<E extends QueueEntry> {
           if (this.#isBarrier(entry, limits)) break;
           continue;
         }
+        if (!allowed(entry)) break;
         const before = queue.slice(0, index);
         const free = this.#isBarrier(entry, limits)
           ? before.length === 0

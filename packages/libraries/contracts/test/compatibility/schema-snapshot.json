@@ -10856,6 +10856,68 @@
             },
             "requestType": {
               "type": "string",
+              "const": "takeCheckpoint"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "checkpointId",
+                "kind",
+                "label"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "kind": {
+                  "enum": [
+                    "ROOT_SPAWN",
+                    "HUMAN_ANSWER",
+                    "TEMPLATE"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.TakeCheckpointRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "reportCompactionSource"
             },
             "request": {
@@ -33265,6 +33327,45 @@
       "additionalProperties": false,
       "$id": "kernel.unit.BudgetView.v1"
     },
+    "kernel.unit.CheckpointTaken.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "checkpointId",
+        "outcome",
+        "heldUnits"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "CheckpointTaken"
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "enum": [
+            "TAKEN",
+            "SKIPPED"
+          ]
+        },
+        "snapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "heldUnits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.CheckpointTaken.v1"
+    },
     "kernel.unit.CloseRunRequest.v1": {
       "anyOf": [
         {
@@ -40258,6 +40359,49 @@
       "additionalProperties": false,
       "$id": "kernel.unit.SubmitUnitRequest.v1"
     },
+    "kernel.unit.TakeCheckpointRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "checkpointId",
+        "kind",
+        "label"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "kind": {
+          "enum": [
+            "ROOT_SPAWN",
+            "HUMAN_ANSWER",
+            "TEMPLATE"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.TakeCheckpointRequest.v1"
+    },
     "kernel.unit.ToolResultsPruned.v1": {
       "type": "object",
       "required": [
@@ -45138,6 +45282,45 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.JobEnded.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "checkpointId",
+                "outcome",
+                "heldUnits"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "CheckpointTaken"
+                },
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "outcome": {
+                  "enum": [
+                    "TAKEN",
+                    "SKIPPED"
+                  ]
+                },
+                "snapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "heldUnits": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.CheckpointTaken.v1"
             },
             {
               "anyOf": [
@@ -53520,6 +53703,114 @@
             "at",
             "workflowRunId",
             "type",
+            "checkpointId",
+            "kind",
+            "label"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "CHECKPOINT_REQUESTED"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "kind": {
+              "enum": [
+                "ROOT_SPAWN",
+                "HUMAN_ANSWER",
+                "TEMPLATE"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "checkpointId",
+            "outcome",
+            "heldUnits"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "CHECKPOINT_TAKEN"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "outcome": {
+              "enum": [
+                "TAKEN",
+                "SKIPPED"
+              ]
+            },
+            "snapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "heldUnits": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
             "missionId",
             "requestToolCallId",
             "fromLabel"
@@ -56149,6 +56440,53 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 4096
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "checkpointId",
+            "turnId",
+            "ckpKind",
+            "label",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "CHECKPOINT"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "ckpKind": {
+              "enum": [
+                "ROOT_SPAWN",
+                "HUMAN_ANSWER",
+                "TEMPLATE"
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "snapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
             },
             "at": {
               "type": "string",

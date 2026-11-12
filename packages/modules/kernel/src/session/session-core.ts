@@ -173,6 +173,10 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) => work.retainArtifacts(forward.request));
       case 'controlJob':
         return this.#controlJob(forward.request);
+      case 'takeCheckpoint':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.takeCheckpoint(forward.request)),
+        );
       case 'haltAgentRun':
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.haltAgentRun(forward.request)),

@@ -179,6 +179,9 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   }
 }
 
+/** What a checkpoint holds: what may change the workspace (Orchestration 7.3). */
+const mutating = (cls: ConcurrencyClass): boolean => cls === 'WRITE' || cls === 'EXEC';
+
 /** What a Unit attempt completes with; CONTEXT_PRUNE is Kernel's own and answers the compaction. */
 type Completed = Exclude<
   Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
@@ -214,6 +217,8 @@ export class RunExecution {
   #cancelFallback: (() => void) | undefined;
   /** While paused or pausing nothing new starts (Kernel/Execution 4e). */
   #held = false;
+  /** Set while a checkpoint holds mutating work (Orchestration 7.3). */
+  #mutatingHeld: (() => void) | undefined;
   #onDrained: (() => void) | undefined;
   readonly #drainTimers = new Set<() => void>();
 
@@ -279,7 +284,12 @@ export class RunExecution {
     try {
       do {
         this.#again = false;
-        const started = this.#held ? [] : this.#queues.startable(this.#deps.limits);
+        const started = this.#held
+          ? []
+          : this.#queues.startable(
+              this.#deps.limits,
+              (attempt) => this.#mutatingHeld === undefined || !mutating(attempt.cls),
+            );
         await Promise.all(started.map((attempt) => this.#run(attempt)));
       } while (this.#again);
     } finally {
@@ -880,7 +890,43 @@ export class RunExecution {
   }
 
   /** The pause is complete once nothing is executing; Core then moves from PAUSING to PAUSED. */
+  /**
+   * The barrier of a checkpoint (Orchestration 7.3): new writes and foreground commands stay
+   * queued; `clear` is called once none is executing any more. Reads, the web and model calls go
+   * on. A command that runs in the background has detached and is not waited for.
+   */
+  holdMutating(clear: () => void): void {
+    this.#mutatingHeld = clear;
+    this.#checkMutatingClear();
+  }
+
+  /** The mutating attempts that wait behind the barrier now: what the snapshot did not see run. */
+  heldMutating(): string[] {
+    return this.#queues
+      .waitingQueued()
+      .filter((attempt) => mutating(attempt.cls))
+      .map((attempt) => attempt.spec.requestId);
+  }
+
+  releaseMutating(): void {
+    this.#mutatingHeld = undefined;
+    void this.#pump();
+  }
+
+  #checkMutatingClear(): void {
+    const clear = this.#mutatingHeld;
+    if (clear === undefined) return;
+    const busy = [...this.#queues.running(), ...this.#queues.waiting()].some((attempt) =>
+      mutating(attempt.cls),
+    );
+    if (busy) return;
+    // Called once; the barrier stays until it is released.
+    this.#mutatingHeld = () => undefined;
+    clear();
+  }
+
   #checkDrained(): void {
+    this.#checkMutatingClear();
     if (this.#onDrained === undefined || this.#queues.running().length > 0) return;
     const notify = this.#onDrained;
     this.#onDrained = undefined;

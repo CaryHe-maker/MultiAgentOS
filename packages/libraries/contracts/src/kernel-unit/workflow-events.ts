@@ -263,6 +263,22 @@ export const WakeDueSchema = closed(
 );
 export type WakeDue = Static<typeof WakeDueSchema>;
 
+/**
+ * A checkpoint was taken, or given up (Orchestration 7.3): `heldUnits` are the attempts that were
+ * held and had not run when the snapshot was taken.
+ */
+export const CheckpointTakenSchema = closed(
+  {
+    type: Type.Literal('CheckpointTaken'),
+    checkpointId: IdSchemas.checkpointId,
+    outcome: Type.Enum(['TAKEN', 'SKIPPED']),
+    snapshot: Type.Optional(text(64)),
+    heldUnits: Type.Array(IdSchemas.requestId),
+  },
+  'kernel.unit.CheckpointTaken.v1',
+);
+export type CheckpointTaken = Static<typeof CheckpointTakenSchema>;
+
 /** A background command has ended (Orchestration 6.4); Workflow knows whose job it was. */
 export const JobEndedSchema = closed(
   {
@@ -281,6 +297,7 @@ export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   WakeDueSchema,
   JobEndedSchema,
+  CheckpointTakenSchema,
   UnitReportSchema,
   HumanAnsweredSchema,
   TurnClosedSchema,

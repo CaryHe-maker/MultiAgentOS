@@ -171,6 +171,30 @@ describe('without a change of folder', () => {
   });
 });
 
+describe('checkpoints inside a Turn (Orchestration 7.1)', () => {
+  it('records a snapshot of the moment, and leaves the Turn undoable after a restart', async () => {
+    const w = world();
+    w.moveTo({ 'a.txt': 'one' });
+    const snapshots = w.open('/a');
+    await snapshots.turnStarted('trn_1');
+    w.set('a.txt', 'two');
+    const snapshot = await snapshots.checkpoint('ckp_1', 'trn_1', 'ROOT_SPAWN', 'before the split');
+    expect(typeof snapshot).toBe('string');
+    w.set('a.txt', 'three');
+    await snapshots.turnEnded('trn_1');
+    expect(w.lines.find((line) => line.kind === 'CHECKPOINT')).toMatchObject({
+      checkpointId: 'ckp_1',
+      turnId: 'trn_1',
+      ckpKind: 'ROOT_SPAWN',
+      snapshot,
+    });
+    const restarted = w.open('/a');
+    await restarted.load();
+    expect(await undoAll(restarted)).toEqual(['trn_1']);
+    expect(w.text('a.txt')).toBe('one');
+  });
+});
+
 describe('a Session opened in another folder', () => {
   it('has nothing to undo from the folder before, and its files are left alone', async () => {
     const w = world();

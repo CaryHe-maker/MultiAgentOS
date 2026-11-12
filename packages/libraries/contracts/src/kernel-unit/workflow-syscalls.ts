@@ -141,6 +141,25 @@ export const ControlJobRequestSchema = closed(
 );
 export type ControlJobRequest = Static<typeof ControlJobRequestSchema>;
 
+/** What makes a checkpoint (Orchestration 7.2); a Turn's start is one of its own. */
+export const CHECKPOINT_KINDS = ['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE'] as const;
+
+/**
+ * Asks for a checkpoint (Orchestration 7.3): the Kernel holds new writes and foreground commands,
+ * waits for those in flight, takes a snapshot, and answers `CheckpointTaken`. Reads, the web and
+ * model calls go on meanwhile; background commands are not waited for.
+ */
+export const TakeCheckpointRequestSchema = closed(
+  {
+    ...inRun,
+    checkpointId: IdSchemas.checkpointId,
+    kind: Type.Enum(CHECKPOINT_KINDS),
+    label: text(200),
+  },
+  'kernel.unit.TakeCheckpointRequest.v1',
+);
+export type TakeCheckpointRequest = Static<typeof TakeCheckpointRequestSchema>;
+
 /**
  * Cancels what one AgentRun has queued or running (Orchestration 5.1, 5.2): its task was stopped
  * or interrupted by its parent. Each Unit answers INTERRUPTED(ABORTED); the run goes on.

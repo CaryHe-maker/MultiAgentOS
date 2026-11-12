@@ -365,6 +365,21 @@ export const SessionLogRecordSchema = Type.Union(
       promoted: Type.Boolean(),
     }),
     /**
+     * A checkpoint was asked for (Orchestration 7.2, 7.3). This record is the cut: nothing could
+     * change the workspace between it and the snapshot, since mutating work was held meanwhile.
+     */
+    record('CHECKPOINT_REQUESTED', inTurn, {
+      checkpointId: IdSchemas.checkpointId,
+      kind: Type.Enum(['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+      label: text(200),
+    }),
+    record('CHECKPOINT_TAKEN', inTurn, {
+      checkpointId: IdSchemas.checkpointId,
+      outcome: Type.Enum(['TAKEN', 'SKIPPED']),
+      snapshot: Type.Optional(text(64)),
+      heldUnits: Type.Array(IdSchemas.requestId),
+    }),
+    /**
      * A task ended without answering a request sent to it (D25): the task that asked is told, and
      * woken if it sleeps, instead of waiting for an answer that will not come.
      */

@@ -4,7 +4,7 @@
  * comes back and delivers, with no conversation in between. The whole product runs from the CLI
  * down to the Executors; only the provider is scripted, per Agent and per task.
  */
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parseCli, runCommand } from '@multiagentos/cli';
@@ -31,6 +31,20 @@ interface Ran {
   readonly exitCode: number;
   readonly output: string;
   readonly repository: string;
+  readonly dataDir: string;
+}
+
+/** The records of the one Session a run left. */
+async function sessionLog(dataDir: string): Promise<Record<string, unknown>[]> {
+  const [id] = await readdir(join(dataDir, 'sessions'));
+  const text = await readFile(
+    join(dataDir, 'sessions', id ?? '', 'workflow', 'log.v1.jsonl'),
+    'utf8',
+  );
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 /** `mas run` with the arguments given, in a fresh repository, as the CLI starts it. */
@@ -69,7 +83,7 @@ async function masRun(
     const exitCode = await system.run((console) =>
       runCommand(command, console, terminal, template),
     );
-    return { exitCode, output: terminal.written.join(''), repository };
+    return { exitCode, output: terminal.written.join(''), repository, dataDir };
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -137,6 +151,36 @@ describe('mas run "<goal>": a long task of the template mission (Orchestration 1
         .join('\n');
       expect(look).toContain('The plan of this work, written by the root task');
       expect(look).toContain('PLAN-7: deliver a summary');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'takes a checkpoint when the root splits the work, before its tasks start (Orchestration 7.2)',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'look', agent: 'explorer', goal: 'look at the code' }),
+            sleepForChildren(),
+            tool('reply', { text: 'delivered after a checkpoint' }),
+          ],
+        },
+        { look: [tool('finish_subagent', { summary: 'looked' })] },
+      );
+      const ran = await masRun(['summarise the code'], provider);
+      expect(ran.output).toContain('delivered after a checkpoint');
+      const log = await sessionLog(ran.dataDir);
+      const requested = log.findIndex((record) => record['type'] === 'CHECKPOINT_REQUESTED');
+      const taken = log.find((record) => record['type'] === 'CHECKPOINT_TAKEN');
+      const started = log.findIndex(
+        (record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN',
+      );
+      expect(requested).toBeGreaterThanOrEqual(0);
+      // The cut comes before the tasks exist.
+      expect(requested).toBeLessThan(started);
+      expect(taken).toMatchObject({ outcome: 'TAKEN' });
+      expect(typeof taken?.['snapshot']).toBe('string');
     },
     TIMEOUT,
   );

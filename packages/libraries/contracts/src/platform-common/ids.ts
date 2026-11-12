@@ -38,6 +38,8 @@ export const IdSchemas = {
   queryId: Id('slq'),
   /** One compaction of a projection (M2Design 9.6). */
   compactionId: Id('cmp'),
+  /** A consistent cut of a run: a log position and a snapshot of the workspace (Orchestration 7). */
+  checkpointId: Id('ckp'),
 } as const;
 
 /** Returned by the model provider and used as is. */

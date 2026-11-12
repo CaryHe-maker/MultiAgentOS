@@ -40,6 +40,8 @@ const EXPECTED = {
     'WakeDue',
     'ControlJobRequest',
     'HaltAgentRunRequest',
+    'TakeCheckpointRequest',
+    'CheckpointTaken',
     'JobControlContent',
     'JobEnded',
     'ReportCompactionSourceRequest',

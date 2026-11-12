@@ -153,6 +153,9 @@ export class WorkspaceSnapshots {
         turn.ended = true;
         turn.changedFiles = line.changedFiles;
         if (line.endSnapshot !== undefined) turn.endSnapshot = line.endSnapshot;
+      } else if (line.kind === 'CHECKPOINT') {
+        // A checkpoint inside a Turn changes nothing of the Turn's own way back.
+        continue;
       } else
         for (const turn of this.#turns)
           if (line.revertedTurnIds.includes(turn.turnId)) turn.reverted = true;
@@ -279,6 +282,31 @@ export class WorkspaceSnapshots {
       if (tree !== undefined) return tree;
     }
     return undefined;
+  }
+
+  /**
+   * A checkpoint inside the open Turn (Orchestration 7.1): a snapshot taken while the run holds its
+   * mutating work. A failed capture is only a checkpoint with no way back; the run goes on.
+   */
+  async checkpoint(
+    checkpointId: string,
+    turnId: string,
+    kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE',
+    label: string,
+  ): Promise<string | undefined> {
+    const snapshot = await this.#capture().catch(() => undefined);
+    if (snapshot === undefined)
+      this.#deps.diagnostic?.(`Checkpoint ${checkpointId}: no snapshot.\n`);
+    await this.#deps.index.append({
+      kind: 'CHECKPOINT',
+      checkpointId,
+      turnId,
+      ckpKind: kind,
+      label,
+      ...(snapshot === undefined ? {} : { snapshot }),
+      at: this.#deps.now().toISOString(),
+    });
+    return snapshot;
   }
 
   /** A failed capture leaves the Turn running, and not undoable (Kernel/Execution 6b). */

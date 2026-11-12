@@ -308,6 +308,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     host: RunHost,
     artifacts: SessionArtifacts,
     audit: (entry: object) => void,
+    snapshots?: WorkspaceSnapshots,
   ): RunWork => {
     const holder: { work?: RunWork } = {};
     const execution = new RunExecution({
@@ -476,6 +477,20 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       abortAgentRunExecutions: (agentRunId) => {
         execution.abortAgentRun(agentRunId);
       },
+      // Checkpoints (Orchestration 7.3): the barrier is the run's, the snapshot the Session's.
+      ...(snapshots === undefined
+        ? {}
+        : {
+            checkpoint: (checkpointId, turnId, kind, label) =>
+              snapshots.checkpoint(checkpointId, turnId, kind, label),
+            holdMutating: (clear) => {
+              execution.holdMutating(clear);
+            },
+            releaseMutating: () => {
+              execution.releaseMutating();
+            },
+            heldMutating: () => execution.heldMutating(),
+          }),
       abortExecutions: () => {
         execution.abort();
       },
@@ -609,7 +624,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               return undefined;
             }
           },
-          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
+          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit, snapshots),
           writeRunSummary: async (summary) => {
             try {
               const checked = assertValid(RunSummarySchema, summary);

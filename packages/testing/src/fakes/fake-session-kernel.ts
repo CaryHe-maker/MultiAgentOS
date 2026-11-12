@@ -394,6 +394,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     retainArtifacts: (request) => Promise.resolve(ack(request.requestId)),
     scheduleWake: (request) => Promise.resolve(ack(request.requestId)),
     haltAgentRun: (request) => Promise.resolve(ack(request.requestId)),
+    takeCheckpoint: (request) => Promise.resolve(ack(request.requestId)),
     controlJob: (request) =>
       Promise.resolve({
         requestId: request.requestId,

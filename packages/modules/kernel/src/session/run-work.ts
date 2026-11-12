@@ -9,6 +9,7 @@ import {
   type CommandInput,
   type JobEndedFact,
   type HaltAgentRunRequest,
+  type TakeCheckpointRequest,
   type WebFetchInput,
   type WebSearchInput,
   type DelegationReserved,
@@ -189,6 +190,19 @@ export interface RunWorkDeps {
   readonly resumeExecutions: () => Promise<void>;
   /** An interrupt cancels everything that exists now; each attempt answers INTERRUPTED(ABORTED). */
   readonly abortExecutions: () => void;
+  /** A checkpoint's snapshot, in the open Turn (Orchestration 7.1); absent: none can be taken. */
+  readonly checkpoint?: (
+    checkpointId: string,
+    turnId: string,
+    kind: TakeCheckpointRequest['kind'],
+    label: string,
+  ) => Promise<string | undefined>;
+  /** The barrier of a checkpoint: hold writes and foreground commands (Orchestration 7.3). */
+  readonly holdMutating?: (clear: () => void) => void;
+  readonly releaseMutating?: () => void;
+  readonly heldMutating?: () => string[];
+  /** The longest a checkpoint waits for work in flight before it is given up. */
+  readonly checkpointBarrierMs?: number;
   /** The same for the attempts of one AgentRun, whose task was stopped or interrupted. */
   readonly abortAgentRunExecutions?: (agentRunId: string) => void;
   readonly executionsClosed: () => void;
@@ -317,6 +331,10 @@ export class RunWork {
   readonly #host: RunHost;
   readonly #requests = new RequestLedger();
   readonly #agentRuns = new Map<string, AgentRunRecord>();
+  /** The Turn now open: a checkpoint belongs to it (Orchestration 7.1). */
+  #openTurnId: string | undefined;
+  /** One checkpoint at a time; another asked for meanwhile is skipped. */
+  #checkpointing = false;
   /** The tasks of this run, by id (Orchestration 8.1). */
   readonly #missions = new Map<string, MissionRecord>();
   readonly #delegations = new RunDelegations();
@@ -449,6 +467,7 @@ export class RunWork {
 
   openTurn(turnId: string): void {
     this.#turns += 1;
+    this.#openTurnId = turnId;
     this.#deps.ledgers.openTurnLedger(turnId);
   }
 
@@ -921,6 +940,74 @@ export class RunWork {
         if (phase === 'CONVERGING' || phase === 'CLOSED' || epoch !== this.#host.runEpoch()) return;
         this.#host.toWorkflowEvent({ type: 'WakeDue', missionId, timerId });
       });
+    });
+    return this.#accept(requestId, request);
+  }
+
+  /**
+   * A checkpoint (Orchestration 7.3): mutating work is held, the snapshot is taken once none is in
+   * flight, and the barrier is lifted. Workflow hears `CheckpointTaken`, or `SKIPPED` when there
+   * is no way to take one now (no snapshots, another in progress, or the wait ran too long).
+   */
+  takeCheckpoint(request: TakeCheckpointRequest): Response {
+    const { requestId, checkpointId, kind, label } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    const admitted = admitWork(this.#host.control());
+    if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
+    const skip = () =>
+      this.#host.toWorkflowEvent({
+        type: 'CheckpointTaken',
+        checkpointId,
+        outcome: 'SKIPPED',
+        heldUnits: [],
+      });
+    const { checkpoint, holdMutating, releaseMutating, heldMutating } = this.#deps;
+    const turnId = this.#openTurnId;
+    if (
+      checkpoint === undefined ||
+      holdMutating === undefined ||
+      releaseMutating === undefined ||
+      heldMutating === undefined ||
+      turnId === undefined ||
+      this.#checkpointing
+    ) {
+      skip();
+      return this.#accept(requestId, request);
+    }
+    this.#checkpointing = true;
+    const epoch = this.#host.runEpoch();
+    let done = false;
+    const finish = (taken: boolean) => {
+      if (done) return;
+      done = true;
+      this.#host.enqueue(async () => {
+        try {
+          if (!taken || epoch !== this.#host.runEpoch()) {
+            skip();
+            return;
+          }
+          const held = heldMutating();
+          const snapshot = await checkpoint(checkpointId, turnId, kind, label);
+          this.#host.toWorkflowEvent({
+            type: 'CheckpointTaken',
+            checkpointId,
+            outcome: snapshot === undefined ? 'SKIPPED' : 'TAKEN',
+            ...(snapshot === undefined ? {} : { snapshot }),
+            heldUnits: held,
+          });
+        } finally {
+          this.#checkpointing = false;
+          releaseMutating();
+        }
+      });
+    };
+    const stopWaiting = this.#deps.schedule(this.#deps.checkpointBarrierMs ?? 600_000, () => {
+      finish(false);
+    });
+    holdMutating(() => {
+      stopWaiting();
+      finish(true);
     });
     return this.#accept(requestId, request);
   }
