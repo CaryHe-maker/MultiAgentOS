@@ -31,8 +31,30 @@ interface Entry {
 
 export type FileChange = 'ADDED' | 'MODIFIED' | 'DELETED';
 
+interface InnerCheckpoint {
+  readonly checkpointId: string;
+  readonly kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE';
+  readonly label: string;
+  readonly snapshot?: string;
+  readonly at: string;
+}
+
+/** One line of the list of checkpoints (Orchestration 7.4). */
+export interface CheckpointPoint {
+  readonly seq: number;
+  readonly kind: 'TURN' | InnerCheckpoint['kind'];
+  readonly label: string;
+  readonly turnId: string;
+  readonly turnSeq: number;
+  readonly at: string;
+  readonly changedFiles?: number;
+}
+
 interface Turn {
   readonly turnId: string;
+  readonly at?: string;
+  /** The checkpoints inside it, in the order they were taken. */
+  readonly checkpoints: InnerCheckpoint[];
   readonly startSnapshot?: string;
   endSnapshot?: string;
   ended: boolean;
@@ -142,6 +164,8 @@ export class WorkspaceSnapshots {
       else if (line.kind === 'TURN_STARTED')
         this.#turns.push({
           turnId: line.turnId,
+          at: line.at,
+          checkpoints: [],
           ...(line.startSnapshot === undefined ? {} : { startSnapshot: line.startSnapshot }),
           ended: false,
           changedFiles: [],
@@ -155,7 +179,15 @@ export class WorkspaceSnapshots {
         if (line.endSnapshot !== undefined) turn.endSnapshot = line.endSnapshot;
       } else if (line.kind === 'CHECKPOINT') {
         // A checkpoint inside a Turn changes nothing of the Turn's own way back.
-        continue;
+        this.#turns
+          .find((each) => each.turnId === line.turnId)
+          ?.checkpoints.push({
+            checkpointId: line.checkpointId,
+            kind: line.ckpKind,
+            label: line.label,
+            ...(line.snapshot === undefined ? {} : { snapshot: line.snapshot }),
+            at: line.at,
+          });
       } else
         for (const turn of this.#turns)
           if (line.revertedTurnIds.includes(turn.turnId)) turn.reverted = true;
@@ -297,6 +329,7 @@ export class WorkspaceSnapshots {
     const snapshot = await this.#capture().catch(() => undefined);
     if (snapshot === undefined)
       this.#deps.diagnostic?.(`Checkpoint ${checkpointId}: no snapshot.\n`);
+    const at = this.#deps.now().toISOString();
     await this.#deps.index.append({
       kind: 'CHECKPOINT',
       checkpointId,
@@ -304,9 +337,106 @@ export class WorkspaceSnapshots {
       ckpKind: kind,
       label,
       ...(snapshot === undefined ? {} : { snapshot }),
-      at: this.#deps.now().toISOString(),
+      at,
     });
+    this.#turns
+      .find((each) => each.turnId === turnId)
+      ?.checkpoints.push({
+        checkpointId,
+        kind,
+        label,
+        ...(snapshot === undefined ? {} : { snapshot }),
+        at,
+      });
     return snapshot;
+  }
+
+  /**
+   * Every point a stretch starts at, oldest first (Orchestration 7.4): each Turn not reverted, and
+   * the checkpoints inside it. A stretch ends where the next point of its Turn begins, or where
+   * the Turn ended; its size is known when both ends have a snapshot.
+   */
+  #points(): {
+    readonly point: Omit<CheckpointPoint, 'seq' | 'changedFiles'>;
+    readonly from?: string;
+    readonly to?: string;
+  }[] {
+    const found: {
+      point: Omit<CheckpointPoint, 'seq' | 'changedFiles'>;
+      from?: string;
+      to?: string;
+    }[] = [];
+    this.#turns.forEach((turn, index) => {
+      if (turn.reverted) return;
+      const starts = [
+        {
+          kind: 'TURN' as const,
+          label: `turn ${String(index + 1)}`,
+          at: turn.at ?? '',
+          ...(turn.startSnapshot === undefined ? {} : { snapshot: turn.startSnapshot }),
+        },
+        ...turn.checkpoints,
+      ];
+      starts.forEach((start, at) => {
+        const next = starts[at + 1];
+        const to = next === undefined ? turn.endSnapshot : next.snapshot;
+        found.push({
+          point: {
+            kind: start.kind,
+            label: start.label,
+            turnId: turn.turnId,
+            turnSeq: index + 1,
+            at: start.at,
+          },
+          ...(start.snapshot === undefined ? {} : { from: start.snapshot }),
+          ...(to === undefined ? {} : { to }),
+        });
+      });
+    });
+    return found;
+  }
+
+  async listCheckpoints(): Promise<readonly CheckpointPoint[]> {
+    const points = this.#points();
+    const listed: CheckpointPoint[] = [];
+    for (const [index, { point, from, to }] of points.entries()) {
+      let changedFiles: number | undefined;
+      if (from !== undefined && to !== undefined)
+        try {
+          changedFiles = changesBetween(await this.#entries(from), await this.#entries(to)).length;
+        } catch (error) {
+          if (!(error instanceof SnapshotFailed)) throw error;
+        }
+      listed.push({
+        seq: index + 1,
+        ...point,
+        ...(changedFiles === undefined ? {} : { changedFiles }),
+      });
+    }
+    return listed;
+  }
+
+  /** What the stretch of the `seq`-th point changed; undefined without both of its snapshots. */
+  async diffCheckpoint(seq: number): Promise<TurnDiffResult | undefined> {
+    const found = this.#points()[seq - 1];
+    if (found?.from === undefined || found.to === undefined) return undefined;
+    try {
+      const files = changesBetween(await this.#entries(found.from), await this.#entries(found.to));
+      const diff = await this.#git([
+        'diff-tree',
+        '-p',
+        '-r',
+        '--no-renames',
+        '--no-color',
+        '--no-ext-diff',
+        found.from,
+        found.to,
+      ]);
+      return { turnId: found.point.turnId, files, diff };
+    } catch (error) {
+      if (error instanceof SnapshotFailed) return undefined;
+      throw error;
+    }
   }
 
   /** A failed capture leaves the Turn running, and not undoable (Kernel/Execution 6b). */
@@ -316,6 +446,8 @@ export class WorkspaceSnapshots {
       this.#deps.diagnostic?.(`Turn ${turnId}: no snapshot, so it cannot be undone.\n`);
     const turn: Turn = {
       turnId,
+      at: this.#deps.now().toISOString(),
+      checkpoints: [],
       ...(startSnapshot === undefined ? {} : { startSnapshot }),
       ended: false,
       changedFiles: [],

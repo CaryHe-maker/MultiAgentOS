@@ -1108,13 +1108,23 @@ export class SessionRunner {
           projectGraph(this.#records, workflowRunId).nodes.has(nodeId),
         ),
     );
+    // A root whose last segment failed did not deliver, whatever the run ends as (a budget run
+    // still ends as BUDGET).
+    const projected = projectGraph(this.#records, workflowRunId);
+    const lastFailed = (mission: MissionView) => {
+      const last = mission.nodeIds.at(-1);
+      return last !== undefined && projected.view.get(last)?.status === 'FAILED';
+    };
     await this.#append(
       roots.map((mission) => ({
         type: 'MISSION_ENDED' as const,
         workflowRunId,
         ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: mission.missionId,
-        status: this.#runFailure === undefined ? ('SUCCEEDED' as const) : ('FAILED' as const),
+        status:
+          this.#runFailure === undefined && !lastFailed(mission)
+            ? ('SUCCEEDED' as const)
+            : ('FAILED' as const),
       })),
     );
     if (this.#runFailure !== undefined) await this.#closeFailed(workflowRunId, this.#runFailure);

@@ -330,6 +330,33 @@ describe('A: nested AGENTS.md', () => {
   );
 });
 
+describe('checkpoints (Orchestration 7.4, 7.5)', () => {
+  it(
+    'lists the start of every Turn with what changed after it, and shows the stretch of one',
+    async () => {
+      const place = await roots();
+      const { chat, provider } = await afterOneWrite(place);
+      provider.add(tool('write_file', { path: 'b.txt', content: 'bee\n' }), reply('added b'));
+      await chat.say('add b');
+      await turnEnded(chat);
+      await chat.console.submit('/checkpoints');
+      await until(
+        () => chat.printed('NOTICE').some((n) => n.includes('#2  第 2 轮开始')),
+        'the list of checkpoints',
+      );
+      const list = chat.printed('NOTICE').find((n) => n.includes('#1  第 1 轮开始')) ?? '';
+      expect(list).toContain('#1  第 1 轮开始（之后改动 1 个文件）');
+      expect(list).toContain('#2  第 2 轮开始（之后改动 1 个文件）');
+      await chat.console.submit('/diff #2');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('+bee')), 'the diff of #2');
+      expect(chat.printed('NOTICE').some((n) => n.includes('+bee') && n.includes('a.txt'))).toBe(
+        false,
+      );
+    },
+    TIMEOUT,
+  );
+});
+
 describe('H5: undo and diff', () => {
   it(
     'goes back without asking, one Turn at a time, and all at once',

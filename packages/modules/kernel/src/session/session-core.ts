@@ -1,5 +1,6 @@
 import type {
   ArtifactContent,
+  CheckpointList,
   DelegationReserved,
   GatewayForward,
   JobControlContent,
@@ -22,6 +23,7 @@ export type CoreResponse =
   | ArtifactContent
   | ProjectFileContent
   | JobControlContent
+  | CheckpointList
   | DelegationReserved;
 
 export interface SessionCoreDeps {
@@ -278,10 +280,20 @@ export class SessionCore {
         );
       }
       case 'diffTurns': {
-        const { requestId, sessionId, n } = forward.request;
+        const { requestId, sessionId, n, checkpoint } = forward.request;
         const actor = manager.actor(sessionId);
         if (actor === undefined) return Promise.resolve(refused(requestId, 'SESSION_NOT_FOUND'));
-        return actor.call(() => actor.diffTurn(requestId, n ?? 1));
+        return actor.call(() =>
+          checkpoint === undefined
+            ? actor.diffTurn(requestId, n ?? 1)
+            : actor.diffCheckpoint(requestId, checkpoint),
+        );
+      }
+      case 'listCheckpoints': {
+        const { requestId, sessionId } = forward.request;
+        const actor = manager.actor(sessionId);
+        if (actor === undefined) return Promise.resolve(refused(requestId, 'SESSION_NOT_FOUND'));
+        return actor.call(() => actor.listCheckpoints(requestId));
       }
     }
   }

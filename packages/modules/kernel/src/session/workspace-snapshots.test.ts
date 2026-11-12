@@ -195,6 +195,32 @@ describe('checkpoints inside a Turn (Orchestration 7.1)', () => {
   });
 });
 
+describe('the list of checkpoints (Orchestration 7.4)', () => {
+  it('numbers the start of each Turn and the checkpoints inside it, with what each stretch changed', async () => {
+    const w = world();
+    w.moveTo({ 'a.txt': 'one' });
+    const snapshots = w.open('/a');
+    await snapshots.turnStarted('trn_1');
+    w.set('a.txt', 'two');
+    await snapshots.checkpoint('ckp_1', 'trn_1', 'ROOT_SPAWN', 'before starting ui, api');
+    w.set('b.txt', 'bee');
+    w.set('c.txt', 'sea');
+    await snapshots.turnEnded('trn_1');
+    expect(await snapshots.listCheckpoints()).toEqual([
+      expect.objectContaining({ seq: 1, kind: 'TURN', turnSeq: 1, changedFiles: 1 }),
+      expect.objectContaining({
+        seq: 2,
+        kind: 'ROOT_SPAWN',
+        label: 'before starting ui, api',
+        changedFiles: 2,
+      }),
+    ]);
+    // A reverted Turn and its checkpoints leave the list.
+    await undoAll(snapshots);
+    expect(await snapshots.listCheckpoints()).toEqual([]);
+  });
+});
+
 describe('a Session opened in another folder', () => {
   it('has nothing to undo from the folder before, and its files are left alone', async () => {
     const w = world();

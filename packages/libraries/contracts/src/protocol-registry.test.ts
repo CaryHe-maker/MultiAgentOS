@@ -188,6 +188,8 @@ const EXPECTED = {
     'SessionProjection',
     'ShutdownRequest',
     'StartRunRequest',
+    'ListCheckpointsRequest',
+    'CheckpointList',
     'StartSessionRequest',
     'SyscallAck',
     'SyscallRejected',

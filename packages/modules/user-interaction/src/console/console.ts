@@ -157,6 +157,7 @@ const COMMANDS: ReadonlySet<string> = new Set([
   '/undo',
   '/compact',
   '/diff',
+  '/checkpoints',
   '/output',
 ]);
 
@@ -1062,7 +1063,13 @@ export class Console {
         break;
       }
       case '/diff':
-        await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        // `#N` is the N-th line of /checkpoints; a bare number counts Turns back from the last.
+        if (argument?.startsWith('#') === true)
+          await this.#showCheckpointDiff(Number(argument.slice(1)));
+        else await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        break;
+      case '/checkpoints':
+        await this.#showCheckpoints();
         break;
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
@@ -1084,6 +1091,52 @@ export class Console {
     }
     const diff = await this.#deps.gateway.diffTurns(
       { requestId: newId('req'), sessionId, n },
+      this.#context(),
+    );
+    if (diff.outcome === 'REJECTED') {
+      this.#notice(text.noDiff);
+      return;
+    }
+    const body = await this.#read(diff.diffRef);
+    this.#notice(diff.files.length === 0 ? text.noDiff : terminalText(body ?? ''));
+  }
+
+  /** The checkpoints of the Session, numbered for `/diff #N` (Orchestration 7.4). */
+  async #showCheckpoints(): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const listed = await this.#deps.gateway.listCheckpoints(
+      { requestId: newId('req'), sessionId },
+      this.#context(),
+    );
+    if (listed.outcome === 'REJECTED' || listed.items.length === 0) {
+      this.#notice(text.noCheckpoints);
+      return;
+    }
+    this.#notice(
+      listed.items
+        .map((item) =>
+          text.checkpointLine(
+            item.seq,
+            item.kind === 'TURN' ? text.turnCheckpoint(item.turnSeq) : terminalText(item.label),
+            item.changedFiles,
+          ),
+        )
+        .join('\n'),
+    );
+  }
+
+  async #showCheckpointDiff(seq: number): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined || !Number.isSafeInteger(seq) || seq < 1) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const diff = await this.#deps.gateway.diffTurns(
+      { requestId: newId('req'), sessionId, checkpoint: seq },
       this.#context(),
     );
     if (diff.outcome === 'REJECTED') {

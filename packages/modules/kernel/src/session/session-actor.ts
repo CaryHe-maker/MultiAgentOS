@@ -13,6 +13,7 @@ import {
   type RunSummary,
   type SyscallRejected,
   type TurnDiff,
+  type CheckpointList,
   type UndoCancelled,
   type UserInput,
   type WorkspaceReverted,
@@ -58,7 +59,14 @@ export interface SessionDuties {
   /** Absent when writes are off (`readonly`, or no git): nothing is captured or undone. */
   readonly snapshots?: Pick<
     WorkspaceSnapshots,
-    'turnStarted' | 'turnEnded' | 'planUndo' | 'applyUndo' | 'diffTurn' | 'divergedFiles'
+    | 'turnStarted'
+    | 'turnEnded'
+    | 'planUndo'
+    | 'applyUndo'
+    | 'diffTurn'
+    | 'divergedFiles'
+    | 'listCheckpoints'
+    | 'diffCheckpoint'
   >;
   /** The name of a Session, read from the artifact its list entry refers to. */
   titleOf?(ref: ArtifactRef): Promise<string | undefined>;
@@ -945,6 +953,27 @@ export class SessionActor {
         undoId: newId('und'),
         reason: 'FILE_CHANGED',
       });
+  }
+
+  /** The checkpoints of the Session (Orchestration 7.4); any time, looking changes nothing. */
+  async listCheckpoints(requestId: string): Promise<CheckpointList> {
+    const items = (await this.#deps.duties.snapshots?.listCheckpoints()) ?? [];
+    return { requestId, outcome: 'ACCEPTED', items: items.map((item) => ({ ...item })) };
+  }
+
+  /** What one checkpoint's stretch changed (Orchestration 7.5). */
+  async diffCheckpoint(requestId: string, seq: number): Promise<TurnDiff | SyscallRejected> {
+    const { duties } = this.#deps;
+    const found = await duties.snapshots?.diffCheckpoint(seq);
+    if (found === undefined || duties.storeDiff === undefined)
+      return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'NOTHING_TO_UNDO' };
+    return {
+      requestId,
+      outcome: 'ACCEPTED',
+      turnId: found.turnId,
+      files: found.files.map((file) => ({ ...file })),
+      diffRef: await duties.storeDiff(found.diff),
+    };
   }
 
   /** Any time: looking changes nothing (M2Design 4.6). */

@@ -921,6 +921,7 @@ M2Decisions 中需要改写的决定：第 1 节"结束方式由定义声明的�
 | 后台命令（第 6 节） | 已实现 | `run_command` 的 `runInBackground`；前台超时转后台（`promoteOnTimeout` 缺省开）；`job_output`、`job_list`、`job_kill`；结束通知按下一次组装送达；`sleep` 的 `jobs` 条件唤醒，受连续唤醒上限约束；任务结束、运行收敛时停止；每个运行至多 4 个；最长 1 小时。实现方式与差别见第 6.5 节 |
 | 模型可见的任务工具 | 已修正 | 之前 `sleep`、`send_message`、`view_tasks`、`stop_subagents` 没有进入给模型的工具列表（脚本化测试不看工具列表，没有暴露）；现在与作业工具一起列出，并有用例断言 |
 | checkpoint：运行中途的切面（第 7.1–7.3 节，C1） | 已实现（2026-11-13） | 编排模式下根任务派生、用户答复 `ask_user` 时，Workflow 记 `CHECKPOINT_REQUESTED`（切面），系统调用 `takeCheckpoint`；Kernel 只扣住写入与前台命令（读、网页、模型调用照常，后台命令不等），在途的都结束后拍快照、写索引行 `CHECKPOINT`，放行，回报 `CheckpointTaken`（含被扣住未执行的单元）；等待超过 `checkpointBarrierMs`（缺省 600 秒）放弃（`SKIPPED`）。**与 D8 的差别**：Turn 没有被整个去掉，保留为"两次用户输入之间"的区间，checkpoint 是它之下更细的切面；Turn-chat 的 checkpoint 就是 Turn 的开始，`/undo` 不变。整体去掉 Turn 涉及日志、投影、回退、计时几十处，风险大于收益，待评审确认 |
-| checkpoint：列表与差异（C2）、运行中途回溯（C3）、从 checkpoint 续跑（C4） | 未实现 | |
+| checkpoint：列表与差异（C2） | 已实现（2026-11-13） | `/checkpoints` 列出本对话未被回退的 checkpoint（每轮的开始与运行中途的切面），各带之后改动的文件数；`/diff #N` 显示第 N 个 checkpoint 的区间（到下一个 checkpoint 或这一轮结束）的改动；`/diff [N]` 按轮的用法不变。系统调用 `listCheckpoints`，`diffTurns` 增加 `checkpoint` |
+| checkpoint：运行中途回溯（C3）、从 checkpoint 续跑（C4） | 未实现 | |
 | 模板 owner 与 `mission` 模板（第 3.5、10.1 节） | 已实现 | `owner`、`role: owner`、`OWNER_NOT_LINEAR`；`mas run "<目标>"` 缺省用 `mission`；模板步骤的 `goal` 作为它的任务给出，同时保留用户的目标；Orchestration 的活动时限缺省 4 小时。与第 4.1 节的差别：模板根任务的步骤目前也以 `reply` 收尾（输出步骤的回复就是运行结果），`complete_step` 还没有作为单独的工具（第 14 节第 6 条） |
 | 唤醒根任务处理后台命令结果（第 4.4 节） | 未实现 | Turn-chat 中根任务 `reply` 之后结束的后台命令，通知积累到用户的下一条消息；不会自己开始新的一段（第 14 节第 8 条） |

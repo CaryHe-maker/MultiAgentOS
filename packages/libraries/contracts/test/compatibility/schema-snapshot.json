@@ -10011,6 +10011,76 @@
       "additionalProperties": false,
       "$id": "kernel.control.AuthorizationResolved.v1"
     },
+    "kernel.control.CheckpointList.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "outcome",
+        "items"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "const": "ACCEPTED"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "seq",
+              "kind",
+              "label",
+              "turnId",
+              "turnSeq",
+              "at"
+            ],
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "kind": {
+                "enum": [
+                  "TURN",
+                  "ROOT_SPAWN",
+                  "HUMAN_ANSWER",
+                  "TEMPLATE"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "turnId": {
+                "type": "string",
+                "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              },
+              "turnSeq": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "changedFiles": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.CheckpointList.v1"
+    },
     "kernel.control.CloseReason.v1": {
       "enum": [
         "COMPLETED",
@@ -10213,6 +10283,10 @@
           "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
         },
         "n": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkpoint": {
           "type": "integer",
           "minimum": 1
         }
@@ -16093,10 +16167,52 @@
                 "n": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "checkpoint": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               },
               "additionalProperties": false,
               "$id": "kernel.control.DiffTurnsRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "listCheckpoints"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.ListCheckpointsRequest.v1"
             }
           },
           "additionalProperties": false
@@ -18896,6 +19012,25 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.InterruptRunRequest.v1"
+    },
+    "kernel.control.ListCheckpointsRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.ListCheckpointsRequest.v1"
     },
     "kernel.control.ListSessionsRequest.v1": {
       "type": "object",

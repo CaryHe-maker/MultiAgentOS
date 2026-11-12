@@ -29,6 +29,8 @@ import type {
   CompactContextRequest,
   ConfirmUndoRequest,
   DiffTurnsRequest,
+  ListCheckpointsRequest,
+  CheckpointList,
   ReadArtifactRequest,
   TurnDiff,
   UndoTurnsRequest,
@@ -611,6 +613,11 @@ export interface InteractionGatewayPort {
     request: DiffTurnsRequest,
     context: BoundaryContext,
   ): Promise<TurnDiff | SyscallRejected>;
+  /** The checkpoints of the Session (Orchestration 7.4); looking changes nothing. */
+  listCheckpoints(
+    request: ListCheckpointsRequest,
+    context: BoundaryContext,
+  ): Promise<CheckpointList | SyscallRejected>;
   shutdown(
     request: ShutdownRequest,
     context: BoundaryContext,

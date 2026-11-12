@@ -12,6 +12,7 @@ import {
   ConfirmUndoRequestSchema,
   DeleteSessionRequestSchema,
   DiffTurnsRequestSchema,
+  ListCheckpointsRequestSchema,
   EndAgentRunRequestSchema,
   ListSessionsRequestSchema,
   OpenSessionRequestSchema,
@@ -145,6 +146,11 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   undoTurns: { caller: 'user-interaction', schema: UndoTurnsRequestSchema, needs: 'RUN' },
   confirmUndo: { caller: 'user-interaction', schema: ConfirmUndoRequestSchema, needs: 'RUN' },
   diffTurns: { caller: 'user-interaction', schema: DiffTurnsRequestSchema, needs: 'SESSION' },
+  listCheckpoints: {
+    caller: 'user-interaction',
+    schema: ListCheckpointsRequestSchema,
+    needs: 'SESSION',
+  },
   endAgentRun: { caller: 'workflow', schema: EndAgentRunRequestSchema, needs: 'RUN' },
   closeRun: { caller: 'workflow', schema: CloseRunRequestSchema, needs: 'RUN' },
   reportSessionCommand: {
@@ -326,6 +332,7 @@ export class SessionGateway {
     undoTurns: this.#port('user-interaction', 'undoTurns'),
     confirmUndo: this.#port('user-interaction', 'confirmUndo'),
     diffTurns: this.#port('user-interaction', 'diffTurns'),
+    listCheckpoints: this.#port('user-interaction', 'listCheckpoints'),
     shutdown: this.#port('user-interaction', 'shutdown'),
   };
 }

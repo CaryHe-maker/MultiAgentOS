@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
-import { closed, count, text } from '../platform-common/schema-helpers.js';
+import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { UserInputSchema } from './session-requests.js';
 
@@ -120,12 +120,45 @@ export const DiffTurnsRequestSchema = closed(
     requestId: IdSchemas.requestId,
     sessionId: IdSchemas.sessionId,
     n: Type.Optional(count(1)),
+    /** The checkpoint of `listCheckpoints` whose stretch to show, instead of a Turn (Orchestration 7.5). */
+    checkpoint: Type.Optional(count(1)),
   },
   'kernel.control.DiffTurnsRequest.v1',
 );
 export type DiffTurnsRequest = Static<typeof DiffTurnsRequestSchema>;
 
 export const FILE_CHANGES = ['ADDED', 'MODIFIED', 'DELETED'] as const;
+
+/** The checkpoints of the Session that are not reverted, oldest first (Orchestration 7.4). */
+export const ListCheckpointsRequestSchema = closed(
+  { requestId: IdSchemas.requestId, sessionId: IdSchemas.sessionId },
+  'kernel.control.ListCheckpointsRequest.v1',
+);
+export type ListCheckpointsRequest = Static<typeof ListCheckpointsRequestSchema>;
+
+/**
+ * One line of `/checkpoints`: a Turn's start (`TURN`, numbered `turnSeq`) or a checkpoint inside
+ * it; `changedFiles` is how many files its stretch changed, when that is known.
+ */
+export const CheckpointListSchema = closed(
+  {
+    requestId: IdSchemas.requestId,
+    outcome: Type.Literal('ACCEPTED'),
+    items: Type.Array(
+      closed({
+        seq: count(1),
+        kind: Type.Enum(['TURN', 'ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+        label: text(200),
+        turnId: IdSchemas.turnId,
+        turnSeq: count(1),
+        at: TimestampSchema,
+        changedFiles: Type.Optional(count()),
+      }),
+    ),
+  },
+  'kernel.control.CheckpointList.v1',
+);
+export type CheckpointList = Static<typeof CheckpointListSchema>;
 
 /** `diffRef` is a unified diff; excluded files are not in it. */
 export const TurnDiffSchema = closed(
