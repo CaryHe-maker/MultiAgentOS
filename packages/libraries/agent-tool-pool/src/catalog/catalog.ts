@@ -71,7 +71,9 @@ function referencesOf(body: Body): readonly Reference[] {
           kind: 'TOOL' as const,
           ref: end.toolRef,
         })),
-        ...(['todos', 'spawn', 'askUser', 'sleep', 'message'] as const).flatMap((action) => {
+        ...(
+          ['todos', 'spawn', 'askUser', 'sleep', 'message', 'viewTasks', 'stop'] as const
+        ).flatMap((action) => {
           const declared = body.actions[action];
           return declared === undefined
             ? []
@@ -559,6 +561,8 @@ function checkAgent(
       body.actions.askUser,
       body.actions.sleep,
       body.actions.message,
+      body.actions.viewTasks,
+      body.actions.stop,
     ].flatMap((action) => (action === undefined ? [] : (get('TOOL', action.toolRef) ?? []))),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
@@ -612,6 +616,8 @@ function checkAgent(
   const controls = [
     ['sleep', 'workflow.SleepArgs.v1'],
     ['message', 'workflow.SendMessageArgs.v1'],
+    ['viewTasks', 'workflow.ViewTasksArgs.v1'],
+    ['stop', 'workflow.StopSubagentsArgs.v1'],
   ] as const;
   for (const [action, contract] of controls) {
     const declared = body.actions[action];
@@ -826,6 +832,8 @@ export class DefinitionCatalog {
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
       ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
       ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),
+      ...(agent.actions.viewTasks === undefined ? [] : [agent.actions.viewTasks.toolRef]),
+      ...(agent.actions.stop === undefined ? [] : [agent.actions.stop.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

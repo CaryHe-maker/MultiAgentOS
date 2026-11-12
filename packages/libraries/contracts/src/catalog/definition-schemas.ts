@@ -228,6 +228,14 @@ export const AgentDefinitionSchema = Type.Object(
         message: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The `view_tasks` tool: the task tree as it is now (Orchestration 3.7). */
+        viewTasks: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `stop_subagents` tool of an Agent that spawns (Orchestration 5.1). */
+        stop: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
       },
       { additionalProperties: false },
     ),

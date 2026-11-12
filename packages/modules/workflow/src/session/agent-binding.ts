@@ -131,6 +131,26 @@ export function agentBindingOf(
             ),
           },
         }),
+    ...(agent.actions.viewTasks === undefined
+      ? {}
+      : {
+          viewTasksTool: {
+            toolName: toolOf(agent.actions.viewTasks.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.viewTasks.toolRef).parametersContract,
+            ),
+          },
+        }),
+    ...(agent.actions.stop === undefined || !requestedCapabilities.includes('agent.spawn')
+      ? {}
+      : {
+          stopTool: {
+            toolName: toolOf(agent.actions.stop.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.stop.toolRef).parametersContract,
+            ),
+          },
+        }),
     ...(agent.actions.todos === undefined
       ? {}
       : {

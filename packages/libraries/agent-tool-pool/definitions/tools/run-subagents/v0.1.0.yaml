@@ -20,9 +20,11 @@ modelDescription: >-
   longer report, and the tool results the task handed over, are read with read_output by the
   reference ref_N/toolCallId shown with the result. A worker or lead must have writeScope: the
   repository paths it may change, which must lie within what you may write and must not overlap
-  the scope of another task that can run at the same time. An explorer has no writeScope. Until
-  your tasks have all ended you may not write files or run commands; you may read, send messages
-  and sleep. Tasks talk to each other with send_message. Call it on its own.
+  the scope of another task that can run at the same time. An explorer has no writeScope. The
+  scope you give a task is lent to it: until it ends only it writes there, you write elsewhere,
+  and your commands see it read-only. commands false lends the scope without commands. role is
+  one line of what the task is responsible for (frontend, backend storage), which every task of
+  the work sees. Tasks talk to each other with send_message. Call it on its own.
 parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs

@@ -35,6 +35,10 @@ import {
  */
 export const SpawnNodeSchema = closed({
   writeScope: Type.Array(text(500), { maxItems: 10 }),
+  /** What the task is responsible for, in one line (Orchestration 3.7). */
+  role: Type.Optional(text(80)),
+  /** False when the caller lent the scope without commands (D17). */
+  commands: Type.Optional(Type.Boolean()),
   acceptance: Type.Array(text(300), { maxItems: 10 }),
   inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
   effort: Type.Optional(ThinkingEffortSchema),
@@ -303,6 +307,7 @@ export const SessionLogRecordSchema = Type.Union(
             'STALLED',
             'ROLLED_BACK',
             'RESUMED',
+            'INTERRUPTED',
           ]),
           seq: Type.Optional(count(1)),
         }),
@@ -327,6 +332,8 @@ export const SessionLogRecordSchema = Type.Union(
       from: IdSchemas.missionScopeId,
       fromLabel: text(64),
       to: Type.Array(IdSchemas.missionScopeId, { minItems: 1, maxItems: 12 }),
+      /** From a parent to its child: the child ends its round and starts again (D20). */
+      interrupt: Type.Optional(Type.Boolean()),
       source: closed({
         modelTurnRequestId: IdSchemas.requestId,
         outputRef: ArtifactRefSchema,
@@ -379,7 +386,7 @@ export const SessionLogRecordSchema = Type.Union(
     record('FEEDBACK', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       code: text(64),
-      message: text(1000),
+      message: text(4000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
     record('PROJECT_FILE_LOADED', inRun, {

@@ -52,6 +52,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，可被派生，也能派生自己的子任务（受任务深度限制，最深一层的 lead 不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 1,200,000，40 轮、160 个工具 Unit、60 分钟 |
 | PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
 | TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |
+| TOOL | `view-tasks` | `purpose = CONTROL`，参数为 `workflow.ViewTasksArgs`；main、lead、worker、explorer 的 `actions.viewTasks`：此刻的任务树（Orchestration 第 3.7 节） |
+| TOOL | `stop-subagents` | `purpose = CONTROL`，参数为 `workflow.StopSubagentsArgs`；只有能派生的 main 与 lead 带（`actions.stop`）：停止自己的子任务（第 5.1 节） |
 | TOOL | `send-message` | `purpose = CONTROL`，参数为 `workflow.SendMessageArgs`；由同样四个 Agent 的 `actions.message` 引用：沿任务树发消息（Orchestration 第 5 节）；只能单独出现 |
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |

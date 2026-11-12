@@ -19,6 +19,7 @@ import {
   DEFAULT_SLEEP_SECONDS,
   type SendMessageArgs,
   type SleepArgs,
+  type StopSubagentsArgs,
   type WakeCondition,
   type RunSubagentsArgs,
   type KernelToWorkflowEvent,
@@ -81,9 +82,11 @@ import {
 } from '../domain/spawn/validate-spawn.js';
 import {
   childrenOf,
+  missionStateOf,
   projectMissions,
   rootMissionId,
   siblingsOf,
+  treeView,
   type MissionView,
 } from '../domain/graph/mission-tree.js';
 import {
@@ -215,6 +218,11 @@ interface ActiveAgent {
   readonly missionId: string;
   /** Messages this segment has sent. */
   readonly messages: number;
+  /**
+   * The segment ends after the round it is in (Orchestration 5.1, 5.2): stopped by its parent, so
+   * its task ends, or interrupted, so a new segment of it starts at once.
+   */
+  readonly stopAfterRound?: { readonly kind: 'STOP' | 'INTERRUPT'; readonly reason: string };
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
@@ -225,6 +233,15 @@ interface ActiveAgent {
   /** Files changed after the last successful command: a worker should check its work. */
   readonly unchecked: boolean;
   readonly completionAsked: boolean;
+}
+
+/** What a stopped task had changed, so its parent knows what it leaves behind. */
+function changedNote(changed: readonly string[]): string[] {
+  if (changed.length === 0) return [];
+  const shown = changed.slice(0, 10).join(', ');
+  return [
+    `it changed: ${shown}${changed.length > 10 ? ` and ${String(changed.length - 10)} more` : ''}`,
+  ];
 }
 
 export class SessionRunner {
@@ -660,18 +677,33 @@ export class SessionRunner {
     return binding;
   }
 
-  /** The binding of an Agent for a task at `depth`: at the deepest level it does not spawn. */
-  #bindingAt(agentId: string, depth: number): AgentBinding {
-    const binding = this.#binding(agentId);
-    if (depth < MAX_MISSION_DEPTH || binding.definitions.spawnTool === undefined) return binding;
-    const definitions: AgentDefinitions = { ...binding.definitions };
-    delete (definitions as { spawnTool?: unknown }).spawnTool;
+  /**
+   * The binding of an Agent for a task at `depth`: at the deepest level it does not spawn
+   * (Orchestration 3.6), and lent a scope without commands it runs none (D17).
+   */
+  #bindingAt(agentId: string, depth: number, commands = true): AgentBinding {
+    let binding = this.#binding(agentId);
+    if (depth >= MAX_MISSION_DEPTH && binding.definitions.spawnTool !== undefined) {
+      const definitions: AgentDefinitions = { ...binding.definitions };
+      delete (definitions as { spawnTool?: unknown }).spawnTool;
+      binding = {
+        ...binding,
+        requestedCapabilities: binding.requestedCapabilities.filter(
+          (capability) => capability !== 'agent.spawn',
+        ),
+        definitions,
+      };
+    }
+    if (commands) return binding;
     return {
       ...binding,
       requestedCapabilities: binding.requestedCapabilities.filter(
-        (capability) => capability !== 'agent.spawn',
+        (capability) => capability !== 'command.exec' && capability !== 'command.network',
       ),
-      definitions,
+      definitions: {
+        ...binding.definitions,
+        tools: binding.definitions.tools.filter((tool) => tool.executionKind !== 'COMMAND'),
+      },
     };
   }
 
@@ -1144,9 +1176,9 @@ export class SessionRunner {
     const missionId = node.mission?.id ?? agentRunId;
     // Below the deepest level a task does not spawn (Orchestration 3.6).
     const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
-    const binding = this.#bindingAt(agentId, depth);
     // A later segment of a spawned task works within what its first segment was given.
     const taskNode = this.#taskNodeOf(workflowRunId, node);
+    const binding = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
     const place = placementOf(
       taskNode ?? node,
       {
@@ -1313,6 +1345,30 @@ export class SessionRunner {
     }
     if (transition.state.orientPackRef !== undefined)
       this.#orientPackRef = transition.state.orientPackRef;
+    // A segment told to stop or interrupted ends where its next round would begin (5.1, 5.2).
+    const halted = this.#agents.get(agentRunId);
+    // A segment that would go to sleep instead is halted just the same: stopped, it does not sleep
+    // on; interrupted, it starts again at once with the interrupt.
+    if (
+      halted?.stopAfterRound !== undefined &&
+      (transition.ending?.kind === 'SLEEP' ||
+        (transition.ending === undefined &&
+          transition.submissions.some((each) => each.unitRef.id === 'context-assemble')))
+    ) {
+      // The sleep it asked for is answered, so its history stays whole.
+      if (transition.ending?.kind === 'SLEEP')
+        await this.#append([
+          answerRecord(
+            transition.state,
+            'NOT_ASLEEP',
+            transition.ending.source.toolCallId,
+            halted.stopAfterRound.kind === 'STOP'
+              ? 'Not asleep: your parent stopped this task.'
+              : 'Not asleep: your parent interrupted you; its message follows.',
+          ),
+        ]);
+      return this.#halt(workflowRunId, halted, halted.stopAfterRound);
+    }
     const sessionId = this.#sessionIdOrThrow();
     if (transition.submissions.length > 0) this.#assertNotWaiting(workflowRunId, current);
     for (const planned of transition.submissions) {
@@ -1938,6 +1994,17 @@ export class SessionRunner {
         return this.#onSleep(workflowRunId, active, ending);
       case 'MESSAGE':
         return this.#onMessage(workflowRunId, active, ending);
+      case 'VIEW_TASKS':
+        return this.#answerControl(
+          workflowRunId,
+          active,
+          ending.source.toolCallId,
+          false,
+          'TASKS',
+          treeView(projectMissions(this.#records), active.missionId, missionStateOf(this.#records)),
+        );
+      case 'STOP':
+        return this.#onStop(workflowRunId, active, ending);
       case 'DEGRADED':
         return this.#onDegraded(workflowRunId, active, ending.reason, ending.unfinished);
       case 'CLOSED': {
@@ -2128,7 +2195,7 @@ export class SessionRunner {
               current.state,
               'STARTED',
               toolCallId,
-              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children (mode all). Until they have all ended you may not write files or run commands.`,
+              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children (mode all). Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.`,
             ),
           ],
         },
@@ -2352,6 +2419,13 @@ export class SessionRunner {
     }
     if (targets.length === 0)
       return answer(true, 'Not sent: there is no running task to send it to.');
+    // An interrupt goes down the tree only: to a child of the sender (D21).
+    const interrupt = args.interrupt === true;
+    if (interrupt && targets.some((each) => each.parentId !== me.missionId))
+      return answer(
+        true,
+        'Not sent: interrupt is only for your own subtasks. Send it without interrupt; it reaches them as information.',
+      );
     this.#agents.set(active.state.agentRunId, { ...active, messages: active.messages + 1 });
     await this.#append([
       {
@@ -2361,6 +2435,7 @@ export class SessionRunner {
         from: me.missionId,
         fromLabel: me.name,
         to: targets.map((each) => each.missionId),
+        ...(interrupt ? { interrupt: true } : {}),
         source: {
           modelTurnRequestId: ending.source.modelTurnRequestId,
           outputRef: ending.source.modelOutputRef,
@@ -2382,7 +2457,7 @@ export class SessionRunner {
               current.state,
               'SENT',
               toolCallId,
-              `Sent to ${targets.map((each) => each.name).join(', ')}.`,
+              `${interrupt ? 'Interrupted' : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.`,
             ),
           ],
         },
@@ -2390,6 +2465,169 @@ export class SessionRunner {
         this.#deps.config,
       ),
     );
+    if (interrupt)
+      for (const target of targets) await this.#interruptMission(workflowRunId, target);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * An interrupt reaches a task (D20): one that works ends its round and starts again at once;
+   * one that sleeps is woken now, whatever it waited for and however often it was woken.
+   */
+  async #interruptMission(workflowRunId: string, mission: MissionView): Promise<void> {
+    const running = [...this.#agents.values()].find((each) => each.missionId === mission.missionId);
+    if (running !== undefined) {
+      this.#agents.set(running.state.agentRunId, {
+        ...running,
+        stopAfterRound: { kind: 'INTERRUPT', reason: 'interrupted by its parent' },
+      });
+      return;
+    }
+    const sleeping = this.#sleeping(workflowRunId).find(
+      (each) => each.mission.missionId === mission.missionId,
+    );
+    if (sleeping !== undefined)
+      await this.#continueMission(workflowRunId, sleeping.node, [{ kind: 'INTERRUPTED' }]);
+  }
+
+  /** Answers a control call that is not a Unit, and the segment goes on. */
+  async #answerControl(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    refused: boolean,
+    code: string,
+    text: string,
+  ): Promise<void> {
+    const shown = text.length <= 4000 ? text : `${text.slice(0, 3999)}…`;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        active.state,
+        toolCallId,
+        {
+          refused,
+          spawn: false,
+          records: [answerRecord(active.state, code, toolCallId, shown)],
+        },
+        this.#context(workflowRunId, active.scope),
+        this.#deps.config,
+      ),
+    );
+  }
+
+  /**
+   * `stop_subagents` (Orchestration 5.1, D19): children of the caller stop with their subtree. A
+   * task that works stops after the round it is in; one that sleeps or has not started, at once.
+   */
+  async #onStop(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'STOP' }>,
+  ): Promise<void> {
+    const args = ending.arguments as StopSubagentsArgs;
+    const missions = projectMissions(this.#records);
+    const open = childrenOf(missions, active.missionId).filter((each) => each.ended === undefined);
+    const all = args.names.includes('all');
+    const targets = all ? open : open.filter((each) => args.names.includes(each.name));
+    const unknown = all
+      ? []
+      : args.names.filter((name) => !targets.some((each) => each.name === name));
+    if (unknown.length > 0 || targets.length === 0)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        ending.source.toolCallId,
+        true,
+        'NOT_STOPPED',
+        `Nothing stopped: ${unknown.length > 0 ? `no running subtask of yours is named ${unknown.join(', ')}` : 'none of your subtasks is running'}.`,
+      );
+    const reason = args.reason;
+    for (const target of targets) await this.#stopMission(workflowRunId, target, reason, missions);
+    await this.#answerControl(
+      workflowRunId,
+      this.#agents.get(active.state.agentRunId) ?? active,
+      ending.source.toolCallId,
+      false,
+      'STOPPING',
+      `Stopping ${targets.map((each) => each.name).join(', ')} with what they started. One that is working stops after its current step; you get each result as stopped.`,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /** A task and everything below it come to an end (Orchestration 5.1). */
+  async #stopMission(
+    workflowRunId: string,
+    mission: MissionView,
+    reason: string,
+    missions: ReadonlyMap<string, MissionView>,
+  ): Promise<void> {
+    for (const child of childrenOf(missions, mission.missionId))
+      if (child.ended === undefined)
+        await this.#stopMission(workflowRunId, child, reason, missions);
+    const note = `stopped by its parent: ${reason}`;
+    const running = [...this.#agents.values()].find((each) => each.missionId === mission.missionId);
+    if (running !== undefined) {
+      this.#agents.set(running.state.agentRunId, {
+        ...running,
+        stopAfterRound: { kind: 'STOP', reason: note },
+      });
+      return;
+    }
+    const sleeping = this.#sleeping(workflowRunId).find(
+      (each) => each.mission.missionId === mission.missionId,
+    );
+    if (sleeping !== undefined) {
+      await this.#closeSleeping(workflowRunId, sleeping.node, 'INTERRUPTED', note);
+      return;
+    }
+    // Not started yet: its nodes end without running.
+    const projected = projectGraph(this.#records, workflowRunId);
+    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
+    await this.#append(
+      mission.nodeIds
+        .filter(
+          (nodeId) =>
+            projected.view.get(nodeId)?.status === 'PENDING' || !projected.view.has(nodeId),
+        )
+        .filter((nodeId) => projected.nodes.has(nodeId))
+        .map((nodeId) => ({
+          type: 'NODE_ENDED' as const,
+          workflowRunId,
+          ...turn,
+          nodeId,
+          status: 'INTERRUPTED' as const,
+          result: resultOf({ status: 'FAILED', notes: [note] }),
+        })),
+    );
+  }
+
+  /**
+   * The round of a segment told to stop has ended (5.1, 5.2): stopped, its task ends with what it
+   * did; interrupted, a new segment of its task starts at once and reads why at the end.
+   */
+  async #halt(
+    workflowRunId: string,
+    active: ActiveAgent,
+    halt: NonNullable<ActiveAgent['stopAfterRound']>,
+  ): Promise<void> {
+    const { turnId } = active.state;
+    if (halt.kind === 'STOP') {
+      await this.#endAgentRun(workflowRunId, active, 'FAILED');
+      await this.#endNode(
+        workflowRunId,
+        turnId,
+        active.nodeId,
+        'INTERRUPTED',
+        resultOf({ status: 'FAILED', notes: [halt.reason, ...changedNote(active.changed)] }),
+      );
+      return this.#advance(workflowRunId);
+    }
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
+    await this.#endNode(workflowRunId, turnId, active.nodeId, 'YIELDED');
+    const node = projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId);
+    if (node !== undefined)
+      await this.#continueMission(workflowRunId, node, [{ kind: 'INTERRUPTED' }]);
     return this.#advance(workflowRunId);
   }
 
@@ -2513,11 +2751,11 @@ export class SessionRunner {
         const anyNew = ends.some((seq) => seq !== undefined && after(seq));
         if (condition.mode === 'all' ? allEnded : anyNew || allEnded)
           causes.push({ kind: 'CHILDREN', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
-      } else if (condition.kind === 'message' && messages.length > 0) {
-        if (!this.#wakeLimitReached(mission.missionId))
-          causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
       }
     }
+    // A message wakes a sleeping task whatever it waited for, within the limit (D20).
+    if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
+      causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
     return causes;
   }
 
@@ -2654,6 +2892,7 @@ export class SessionRunner {
     workflowRunId: string,
     yielded: GraphNodeRecord,
     status: 'FAILED' | 'INTERRUPTED',
+    note?: string,
   ): Promise<void> {
     const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
     const content = continuationRevision(workflowRunId, revision, yielded);
@@ -2675,9 +2914,10 @@ export class SessionRunner {
               result: resultOf({
                 status: 'FAILED',
                 notes: [
-                  status === 'INTERRUPTED'
-                    ? 'stopped: the run was interrupted while it slept'
-                    : 'stopped: it slept with nothing left that could wake it',
+                  note ??
+                    (status === 'INTERRUPTED'
+                      ? 'stopped: the run was interrupted while it slept'
+                      : 'stopped: it slept with nothing left that could wake it'),
                 ],
               }),
             }),

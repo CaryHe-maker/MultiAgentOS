@@ -957,16 +957,16 @@ export class RunWork {
     const interrupted = this.#interruptRefusal();
     if (interrupted !== undefined && unit.executionKind !== 'MESSAGE_PUBLISH')
       return this.#refuse(requestId, request, interrupted);
-    // The roots of a parent are its children's while they run; it is waiting and writes nothing
-    // (M2Design 6.4). This only guards the case where it submits all the same.
-    if (
-      this.#delegations.isDelegated(record.mission) &&
-      (unit.executionKind === 'FILE_WRITE' ||
-        unit.executionKind === 'FILE_EDIT' ||
-        unit.executionKind === 'COMMAND')
-    ) {
-      this.#refuseUnit(request, unit, { reasonCode: 'WRITE_SCOPE_DELEGATED' });
-      return response;
+    // What a task has lent is its borrower's to write until it comes back (Orchestration 8.2, D17):
+    // a write there is refused; a command runs with those roots read-only (`#commandScope`).
+    if (unit.executionKind === 'FILE_WRITE' || unit.executionKind === 'FILE_EDIT') {
+      const lent = this.#delegations.delegatedRoots(record.mission);
+      const path = pathOf(request.input);
+      const normalized = path === undefined ? undefined : normalizeRequestPath(path);
+      if (lent.length > 0 && (normalized === undefined || writeRootsWithin([normalized], lent))) {
+        this.#refuseUnit(request, unit, { reasonCode: 'WRITE_SCOPE_DELEGATED' });
+        return response;
+      }
     }
     if (admission.countsAsTool && this.#underWarning()) {
       this.#refuseUnit(request, unit, { reasonCode: 'QUOTA_EXHAUSTED', quota: 'MEMORY' });
@@ -1179,9 +1179,21 @@ export class RunWork {
         homeReadOnly: [...support.homeReadOnly],
         homeMaskedFiles: [...support.homeMaskedFiles],
         ...(support.dataDir === undefined ? {} : { dataDir: support.dataDir }),
-        ...(await support.scan()),
+        ...(await this.#withLentRoots(record, support.scan())),
       },
     };
+  }
+
+  /** The roots the task has lent come back read-only for its commands (Orchestration 8.2). */
+  async #withLentRoots(
+    record: AgentRunRecord,
+    scanned: Promise<Pick<SandboxProfile, 'maskedFiles' | 'maskedDirs' | 'protectedExisting'>>,
+  ): Promise<Pick<SandboxProfile, 'maskedFiles' | 'maskedDirs' | 'protectedExisting'>> {
+    const scan = await scanned;
+    const lent = this.#delegations.delegatedRoots(record.mission);
+    return lent.length === 0
+      ? scan
+      : { ...scan, protectedExisting: [...new Set([...scan.protectedExisting, ...lent])].sort() };
   }
 
   /** The folder the user allowed, read under the defaults and the credential rules (Core 5h). */

@@ -51,7 +51,29 @@ export const SendMessageArgsSchema = closed(
   {
     to: text(64),
     text: text(4000),
+    /**
+     * Interrupts the receiver (Orchestration 5.2, D20, D21): only to a child of the sender. The
+     * receiver ends its round, and a new segment starts with the message at the end of its context.
+     */
+    interrupt: Type.Optional(Type.Boolean()),
   },
   'workflow.SendMessageArgs.v1',
 );
 export type SendMessageArgs = Static<typeof SendMessageArgsSchema>;
+
+/** Parameters of `view_tasks` (Orchestration 3.7): none; the result is the tree as it is now. */
+export const ViewTasksArgsSchema = closed({}, 'workflow.ViewTasksArgs.v1');
+export type ViewTasksArgs = Static<typeof ViewTasksArgsSchema>;
+
+/**
+ * Parameters of `stop_subagents` (Orchestration 5.1, D19): children of the caller by task name, or
+ * `all` for every child that has not ended. They stop with their whole subtree.
+ */
+export const StopSubagentsArgsSchema = closed(
+  {
+    names: Type.Array(text(64), { minItems: 1, maxItems: 12 }),
+    reason: text(500),
+  },
+  'workflow.StopSubagentsArgs.v1',
+);
+export type StopSubagentsArgs = Static<typeof StopSubagentsArgsSchema>;

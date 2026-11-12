@@ -1526,6 +1526,33 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ).toBe('ACCEPTED');
   });
 
+  it('lets the parent write what it has not lent while its children hold their roots (D17)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+    );
+    await registerChild(kernel, {
+      id: newId('agr'),
+      agent: 'worker',
+      delegationId: dlg,
+      taskName: 'a',
+      roots: ['src/a'],
+    });
+    // Inside what it lent: refused without asking.
+    await kernel.submit(fileWrite, { path: 'src/a/x.ts', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports().at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'WRITE_SCOPE_DELEGATED',
+    });
+    // Outside it: the write goes on to the usual question.
+    const before = kernel.reports().length;
+    await kernel.submit(fileWrite, { path: 'docs/notes.md', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports()).toHaveLength(before);
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+  });
+
   it('refuses the parent a write while its children hold the roots, and lets it write again after (P6)', async () => {
     const kernel = await open();
     const dlg = delegationIdOf(

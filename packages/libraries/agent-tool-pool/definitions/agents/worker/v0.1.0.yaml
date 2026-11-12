@@ -54,6 +54,10 @@ actions:
     toolRef:
       id: send-message
       version: v0.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v0.1.0
   todos:
     toolRef:
       id: update-todos

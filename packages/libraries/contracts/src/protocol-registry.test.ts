@@ -115,6 +115,8 @@ const EXPECTED = {
     'AskUserArgs',
     'SleepArgs',
     'SendMessageArgs',
+    'ViewTasksArgs',
+    'StopSubagentsArgs',
     'ExplorerResult',
     'WorkerResult',
   ],

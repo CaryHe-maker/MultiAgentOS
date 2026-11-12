@@ -1,0 +1,22 @@
+schemaVersion: v1
+kind: TOOL
+id: stop-subagents
+version: v0.1.0
+description: Control tool that stops subtasks the caller started.
+purpose: CONTROL
+modelName: stop_subagents
+modelDescription: >-
+  Stop subtasks you started, with everything they started in turn: names are their task names,
+  or all for every one that has not ended. Use it when a task goes the wrong way, is no longer
+  needed, or is stuck. A task that is working stops after the step it is in; one that sleeps or
+  has not started stops at once. You get each one's result as stopped, with what it changed. To
+  redirect a task instead of stopping it, send it a message, with interrupt when it must change
+  course at once. Call it on its own.
+parametersContract:
+  kind: contract
+  id: workflow.StopSubagentsArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

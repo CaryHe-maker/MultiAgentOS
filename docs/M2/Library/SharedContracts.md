@@ -79,7 +79,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | Schema ID | 文件 | 定义 |
 |---|---|---|
 | `workflow.ReplyArgs.v1` | `workflow/reply.ts` | `{ text }`，1..20000 个字符 |
-| `workflow.SleepArgs.v1`、`SendMessageArgs.v1` | `workflow/mission-tools.ts` | `sleep` 与 `send_message` 的参数（[Orchestration](../Orchestration.md) 第 4、5 节） |
+| `workflow.SleepArgs.v1`、`SendMessageArgs.v1`、`ViewTasksArgs.v1`、`StopSubagentsArgs.v1` | `workflow/mission-tools.ts` | `sleep`、`send_message`（含 `interrupt`）、`view_tasks`、`stop_subagents` 的参数（[Orchestration](../Orchestration.md) 第 3.7、4、5 节） |
 | `catalog.AgentDefinition.v1`、`ModelDefinition.v1`、`UnitDefinition.v1`、`TemplateDefinition.v1` | `catalog/definition-schemas.ts` | Interface/Definitions |
 | `catalog.PinnedDefinitionRef.v1` | `catalog/definition-schemas.ts` | `kind` 增加 `'TEMPLATE'` |
 

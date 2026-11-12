@@ -15,6 +15,8 @@ export interface MissionView {
   readonly name: string;
   /** The Agent the task runs (the one of its first node). */
   readonly agentId: string;
+  /** What it is responsible for, as its caller wrote it (Orchestration 3.7); none for a root. */
+  readonly role?: string;
   /** Every node of the task, in the order the log added them. */
   readonly nodeIds: readonly string[];
   /** The nodes that started, in the order they started: its segments. */
@@ -39,6 +41,7 @@ interface Building {
   readonly parentId?: string;
   readonly name: string;
   readonly agentId: string;
+  readonly role?: string;
   readonly nodeIds: string[];
   readonly segments: string[];
   ended?: MissionView['ended'];
@@ -66,6 +69,7 @@ export function projectMissions(
           ...(mission.parentId === undefined ? {} : { parentId: mission.parentId }),
           name: node.name,
           agentId: node.agentRef?.id ?? 'unknown',
+          ...(node.spawn?.role === undefined ? {} : { role: node.spawn.role }),
           nodeIds: [node.nodeId],
           segments: [],
         });
@@ -93,6 +97,7 @@ export function projectMissions(
         depth: depthOf(each.missionId),
         name: each.name,
         agentId: each.agentId,
+        ...(each.role === undefined ? {} : { role: each.role }),
         nodeIds: [...each.nodeIds],
         segments: [...each.segments],
         ...(each.ended === undefined ? {} : { ended: each.ended }),
@@ -128,4 +133,75 @@ export function missionOfNode(
     if (record.type === 'GRAPH_EXTENDED')
       for (const node of record.nodes) if (node.nodeId === nodeId) return node.mission?.id;
   return undefined;
+}
+
+/** Lines of the tree a task is shown, at most this many (Orchestration 3.7). */
+const MAX_TREE_LINES = 30;
+
+/**
+ * The part of the tree a task sees (Orchestration 3.7, D18): its ancestors down from the root, its
+ * siblings, and everything below it, one line each with the role and the state. `stateOf` tells
+ * the state of a task from the log; the text is material, never an instruction.
+ */
+export function treeView(
+  missions: ReadonlyMap<string, MissionView>,
+  own: string,
+  stateOf: (mission: MissionView) => string,
+): string {
+  const me = missions.get(own);
+  if (me === undefined) return 'This task is not in the task tree.';
+  const chain: MissionView[] = [];
+  for (let at: MissionView | undefined = me; at !== undefined;) {
+    chain.unshift(at);
+    at = at.parentId === undefined ? undefined : missions.get(at.parentId);
+  }
+  const lines: string[] = [];
+  let hidden = 0;
+  const line = (mission: MissionView, depth: number, note = '') => {
+    if (lines.length >= MAX_TREE_LINES) {
+      hidden += 1;
+      return;
+    }
+    const role = mission.role === undefined ? '' : ` — ${mission.role}`;
+    lines.push(
+      `${'  '.repeat(depth)}- ${mission.name} (${mission.agentId})${role} — ${stateOf(mission)}${note}`,
+    );
+  };
+  const below = (mission: MissionView, depth: number) => {
+    for (const child of childrenOf(missions, mission.missionId)) {
+      line(child, depth);
+      below(child, depth + 1);
+    }
+  };
+  chain.forEach((mission, depth) => {
+    if (mission.missionId === own) return;
+    line(mission, depth, depth === 0 ? ' (the root: the goal of the user)' : '');
+  });
+  const parentDepth = chain.length - 1;
+  const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+  const level = parent === undefined ? [me] : childrenOf(missions, parent.missionId);
+  for (const mission of level) {
+    line(mission, parentDepth, mission.missionId === own ? '   <- you' : '');
+    if (mission.missionId === own) below(mission, parentDepth + 1);
+  }
+  const tail = hidden > 0 ? `\n(${String(hidden)} more not shown)` : '';
+  return `The work you are part of (task — role — state):\n${lines.join('\n')}${tail}`;
+}
+
+/**
+ * How the tree shows a task's state, from the log: not started, running, asleep, or ended with its
+ * status. A pure function of the records it is given.
+ */
+export function missionStateOf(
+  records: readonly SessionLogRecord[],
+): (mission: MissionView) => string {
+  const nodeEnd = new Map<string, string>();
+  for (const record of records)
+    if (record.type === 'NODE_ENDED') nodeEnd.set(record.nodeId, record.status);
+  return (mission) => {
+    if (mission.ended !== undefined) return `ended (${mission.ended.toLowerCase()})`;
+    const last = mission.segments.at(-1);
+    if (last === undefined) return 'not started';
+    return nodeEnd.get(last) === 'YIELDED' ? 'asleep' : 'running';
+  };
 }

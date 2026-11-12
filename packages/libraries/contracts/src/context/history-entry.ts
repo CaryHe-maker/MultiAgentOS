@@ -60,7 +60,7 @@ export const ContextHistoryEntrySchema = Type.Union(
     closed({
       ...entry,
       kind: Type.Literal('FEEDBACK'),
-      text: text(1000),
+      text: text(4000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
     /** `AGENTS.md`, appended when the run first reads the repository (M2Design 9.5). */
@@ -129,6 +129,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       ...entry,
       kind: Type.Literal('MESSAGE'),
       from: text(64),
+      /** It interrupted the receiver: shown so that it is dealt with first (D20). */
+      interrupt: Type.Optional(Type.Boolean()),
       outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
       toolCallId: ToolCallIdSchema,
     }),

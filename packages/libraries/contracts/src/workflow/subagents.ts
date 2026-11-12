@@ -34,8 +34,12 @@ export const SubagentTaskSchema = closed({
   name: NameSchema,
   agent: Type.Enum(['explorer', 'worker', 'lead']),
   goal: text(4000),
+  /** One line on what this task is responsible for, which the tree shows (Orchestration 3.7). */
+  role: Type.Optional(text(80)),
   dependsOn: Type.Optional(Type.Array(NameSchema, { maxItems: 11 })),
   writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+  /** The write permission lent with the scope includes commands unless this is false (D17). */
+  commands: Type.Optional(Type.Boolean()),
   inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
   acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
   effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),

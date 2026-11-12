@@ -378,6 +378,64 @@
                 }
               },
               "additionalProperties": false
+            },
+            "viewTasks": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "stop": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -1405,6 +1463,64 @@
                   "additionalProperties": false
                 },
                 "message": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "viewTasks": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "stop": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -4292,7 +4408,7 @@
                   "text": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 1000
+                    "maxLength": 4000
                   },
                   "toolCallId": {
                     "type": "string",
@@ -4779,6 +4895,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 64
+                  },
+                  "interrupt": {
+                    "type": "boolean"
                   },
                   "outputRef": {
                     "type": "object",
@@ -5482,7 +5601,7 @@
             "text": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 1000
+              "maxLength": 4000
             },
             "toolCallId": {
               "type": "string",
@@ -5969,6 +6088,9 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64
+            },
+            "interrupt": {
+              "type": "boolean"
             },
             "outputRef": {
               "type": "object",
@@ -10718,7 +10840,7 @@
                           "text": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 1000
+                            "maxLength": 4000
                           },
                           "toolCallId": {
                             "type": "string",
@@ -11205,6 +11327,9 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64
+                          },
+                          "interrupt": {
+                            "type": "boolean"
                           },
                           "outputRef": {
                             "type": "object",
@@ -12063,7 +12188,7 @@
                                   "text": {
                                     "type": "string",
                                     "minLength": 1,
-                                    "maxLength": 1000
+                                    "maxLength": 4000
                                   },
                                   "toolCallId": {
                                     "type": "string",
@@ -12550,6 +12675,9 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 64
+                                  },
+                                  "interrupt": {
+                                    "type": "boolean"
                                   },
                                   "outputRef": {
                                     "type": "object",
@@ -34007,7 +34135,7 @@
                   "text": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 1000
+                    "maxLength": 4000
                   },
                   "toolCallId": {
                     "type": "string",
@@ -34494,6 +34622,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 64
+                  },
+                  "interrupt": {
+                    "type": "boolean"
                   },
                   "outputRef": {
                     "type": "object",
@@ -37458,7 +37589,7 @@
                           "text": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 1000
+                            "maxLength": 4000
                           },
                           "toolCallId": {
                             "type": "string",
@@ -37945,6 +38076,9 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 64
+                          },
+                          "interrupt": {
+                            "type": "boolean"
                           },
                           "outputRef": {
                             "type": "object",
@@ -39493,7 +39627,7 @@
                       "text": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 1000
+                        "maxLength": 4000
                       },
                       "toolCallId": {
                         "type": "string",
@@ -39980,6 +40114,9 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 64
+                      },
+                      "interrupt": {
+                        "type": "boolean"
                       },
                       "outputRef": {
                         "type": "object",
@@ -50254,6 +50391,14 @@
                         },
                         "maxItems": 10
                       },
+                      "role": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "commands": {
+                        "type": "boolean"
+                      },
                       "acceptance": {
                         "type": "array",
                         "items": {
@@ -51278,7 +51423,8 @@
                       "HUMAN",
                       "STALLED",
                       "ROLLED_BACK",
-                      "RESUMED"
+                      "RESUMED",
+                      "INTERRUPTED"
                     ]
                   },
                   "seq": {
@@ -51432,6 +51578,9 @@
               },
               "minItems": 1,
               "maxItems": 12
+            },
+            "interrupt": {
+              "type": "boolean"
             },
             "source": {
               "type": "object",
@@ -52290,7 +52439,7 @@
             "message": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 1000
+              "maxLength": 4000
             },
             "toolCallId": {
               "type": "string",
@@ -54853,6 +55002,11 @@
                 "minLength": 1,
                 "maxLength": 4000
               },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
               "dependsOn": {
                 "type": "array",
                 "items": {
@@ -54869,6 +55023,9 @@
                   "maxLength": 500
                 },
                 "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
               },
               "inputs": {
                 "type": "array",
@@ -54960,6 +55117,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
+        },
+        "interrupt": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -55086,6 +55246,32 @@
       "additionalProperties": false,
       "$id": "workflow.SleepArgs.v1"
     },
+    "workflow.StopSubagentsArgs.v1": {
+      "type": "object",
+      "required": [
+        "names",
+        "reason"
+      ],
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.StopSubagentsArgs.v1"
+    },
     "workflow.UpdateTodosArgs.v1": {
       "type": "object",
       "required": [
@@ -55122,6 +55308,12 @@
       },
       "additionalProperties": false,
       "$id": "workflow.UpdateTodosArgs.v1"
+    },
+    "workflow.ViewTasksArgs.v1": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "$id": "workflow.ViewTasksArgs.v1"
     },
     "workflow.WorkerResult.v1": {
       "type": "object",

@@ -66,6 +66,10 @@ export interface AgentDefinitions {
   readonly sleepTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `send_message`: answered by the runner at once, after it routed the message (Orchestration 5). */
   readonly messageTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `view_tasks`: answered by the runner with the tree as it is now (Orchestration 3.7). */
+  readonly viewTasksTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `stop_subagents`: answered by the runner once it stopped them (Orchestration 5.1). */
+  readonly stopTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
@@ -196,6 +200,10 @@ export type AgentEnding =
   | { readonly kind: 'SLEEP'; readonly arguments: unknown; readonly source: ControlSource }
   /** `send_message` was called validly in form; the runner routes it and answers the call. */
   | { readonly kind: 'MESSAGE'; readonly arguments: unknown; readonly source: ControlSource }
+  /** `view_tasks`: the runner answers with the tree. */
+  | { readonly kind: 'VIEW_TASKS'; readonly arguments: unknown; readonly source: ControlSource }
+  /** `stop_subagents`: the runner stops them and answers. */
+  | { readonly kind: 'STOP'; readonly arguments: unknown; readonly source: ControlSource }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -252,6 +260,8 @@ const CORE_REFUSALS: ReadonlySet<string> = new Set([
   'CAPABILITY_NOT_GRANTED',
   'ADMISSION_CHECK_FAILED',
   'ARTIFACT_EXPIRED',
+  // A write into what the task lent to a subtask (Orchestration 8.2): it writes elsewhere.
+  'WRITE_SCOPE_DELEGATED',
 ]);
 
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
@@ -848,6 +858,22 @@ function soleControlOf(
         allowedInFinal: false,
         ending: (source) => ({ kind: 'MESSAGE', arguments: call.arguments, source }),
       };
+    const view = state.definitions.viewTasksTool;
+    if (view !== undefined && call.toolName === view.toolName)
+      return {
+        call,
+        parameters: view.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'VIEW_TASKS', arguments: call.arguments, source }),
+      };
+    const stop = state.definitions.stopTool;
+    if (stop !== undefined && call.toolName === stop.toolName)
+      return {
+        call,
+        parameters: stop.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'STOP', arguments: call.arguments, source }),
+      };
   }
   return undefined;
 }
@@ -889,7 +915,11 @@ function actOn(
     });
     const transition = ended(state, ending, records);
     // A delegated call is pending until the graph answers it; any other control call ends the run.
-    return ending.kind === 'SPAWN' || ending.kind === 'ASK' || ending.kind === 'MESSAGE'
+    return ending.kind === 'SPAWN' ||
+      ending.kind === 'ASK' ||
+      ending.kind === 'MESSAGE' ||
+      ending.kind === 'VIEW_TASKS' ||
+      ending.kind === 'STOP'
       ? {
           ...transition,
           state: {

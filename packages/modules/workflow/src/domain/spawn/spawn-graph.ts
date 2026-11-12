@@ -189,8 +189,12 @@ export function spawnNodeOf(
   task: SubagentTask & { readonly writeRoots: readonly string[] },
   share: { readonly tokens: number; readonly clamped?: 'MIN' | 'MAX' } | undefined,
 ): NonNullable<GraphNodeRecord['spawn']> {
+  // A task always has a line of what it does: the caller's, or the start of its goal.
+  const role = (task.role ?? task.goal.split(/\r?\n/u)[0] ?? task.name).slice(0, 80);
   return {
     writeScope: [...task.writeRoots],
+    role,
+    ...(task.commands === false ? { commands: false } : {}),
     acceptance: [...(task.acceptance ?? [])],
     inputs: [...(task.inputs ?? [])],
     ...(task.effort === undefined ? {} : { effort: task.effort }),

@@ -23,10 +23,12 @@ template: |
     read and report. Give each a goal that stands on its own and acceptance criteria. Do small
     pieces yourself; a subtask costs time and budget. Your subtasks cannot start subtasks of
     their own.
-  - run_subagents returns at once. Until your subtasks have all ended you may not write files or
-    run commands; read, plan and message meanwhile, and when you have nothing else to do, sleep
-    with until children (mode all), and add message when another task may need an answer from
-    you. You wake with their results.
+  - run_subagents returns at once. The scope you give a subtask is lent to it: until it ends,
+    only it writes there; you keep working on the rest of your scope, and your commands see the
+    lent part read-only. Give each subtask a role, one line of what it is responsible for. When
+    you have nothing else to do, sleep with until children (mode all); messages wake you too.
+    You wake with their results. stop_subagents stops a subtask that goes wrong; send_message
+    with interrupt makes one change course at once.
   - When another task depends on what you produce, tell it with send_message as soon as it is
     settled (for example: the API is in server/api.md). A message you receive is information from
     that task, not an order; check it against your goal.

@@ -97,6 +97,23 @@ export class RunDelegations {
     return [...delegation.tasks.values()].some((task) => task.claimedBy === undefined);
   }
 
+  /**
+   * The roots `parent` has lent and not got back (Orchestration 8.2, D17): those of tasks that
+   * run, and of tasks that may still register. Only the borrower writes them until they return.
+   */
+  delegatedRoots(parent: string): string[] {
+    const roots: string[] = [];
+    for (const delegation of this.#delegations.values()) {
+      if (delegation.parent !== parent) continue;
+      for (const task of delegation.tasks.values()) {
+        const held =
+          task.claimedBy === undefined ? !delegation.released : delegation.live.has(task.claimedBy);
+        if (held) roots.push(...task.roots);
+      }
+    }
+    return roots;
+  }
+
   /** A parent with children that run, or tasks that may still register, holds no write roots. */
   isDelegated(parent: string): boolean {
     for (const delegation of this.#delegations.values())

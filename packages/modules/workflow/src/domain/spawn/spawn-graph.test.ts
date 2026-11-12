@@ -86,11 +86,35 @@ describe('what the tasks of a call look like in the log', () => {
     } as never;
     expect(spawnNodeOf(task, { tokens: 500, clamped: 'MIN' })).toEqual({
       writeScope: ['api'],
+      // No role given: the start of the goal stands for it (Orchestration 3.7).
+      role: 'g',
       acceptance: [],
       inputs: [],
       effort: 'low',
       tokens: 500,
       clamped: 'MIN',
     });
+  });
+
+  it('keeps the role and a scope lent without commands (D17, D18)', () => {
+    const task = {
+      name: 'ui',
+      goal: 'build the pages\nwith tests',
+      role: 'responsible for the frontend',
+      agent: 'worker',
+      writeRoots: ['web'],
+      commands: false,
+    } as never;
+    expect(spawnNodeOf(task, { tokens: 500 })).toMatchObject({
+      role: 'responsible for the frontend',
+      commands: false,
+    });
+    const unnamed = {
+      name: 'x',
+      goal: 'first line\nsecond',
+      agent: 'worker',
+      writeRoots: [],
+    } as never;
+    expect(spawnNodeOf(unnamed, { tokens: 1 })).toMatchObject({ role: 'first line' });
   });
 });

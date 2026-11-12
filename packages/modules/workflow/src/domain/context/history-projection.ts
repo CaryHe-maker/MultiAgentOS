@@ -7,6 +7,7 @@ import {
 } from '@multiagentos/contracts';
 import { answerOf, callResultsOf, handoverFieldsOf } from '../spawn/spawn-graph.js';
 import { outcomeOf } from '../spawn/task-results.js';
+import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
 /**
@@ -81,6 +82,7 @@ function wokenNote(causes: readonly string[]): string {
       'nothing else could move: every task was waiting, so you are woken to decide what to do',
     ROLLED_BACK: 'the work was rolled back to a checkpoint',
     RESUMED: 'the work was resumed after the process stopped',
+    INTERRUPTED: 'your parent interrupted you (its message is just above): deal with it first',
   };
   const reasons = [...new Set(causes)].map((cause) => said[cause] ?? cause.toLowerCase());
   return `You were woken: ${reasons.join('; ')}. This is a new segment of the same task: your earlier work is above. Continue from your note and what came in.`;
@@ -94,6 +96,11 @@ export interface ProjectionOptions {
    */
   readonly material?: boolean;
 }
+
+/** The longest NOTE the contract takes. */
+const NOTE_MAX = 2000;
+const clip = (text: string, max: number): string =>
+  text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
 /** A NOTE is at most 2000 characters; a workspace can differ in hundreds of files. */
 const DIVERGED_NOTE_MAX = 1600;
@@ -150,6 +157,9 @@ export function projectHistory(
   >();
   const nodeMission = new Map<string, string>();
   let taskShown = false;
+  let treeShown = false;
+  /** Siblings already told of, so a sibling is announced once (Orchestration 3.7). */
+  const announced = new Set<string>();
   /** The order tasks were written in, for results delivered together (M2Design 3.6). */
   const writtenOrder = new Map<string, number>();
   const resultOrder = new Map<ContextHistoryEntry, number>();
@@ -203,6 +213,25 @@ export function projectHistory(
             for (const dependency of scope.task.dependencies)
               entries.push({ ...dependency, seq: record.seq, ...turnOf(record.turnId) });
           }
+          // After its task, a task below the root is shown where it stands in the tree, once, as
+          // the log was then
+          // (Orchestration 3.7); changes come as notices after it.
+          const ownParent =
+            ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+          if (ownParent !== undefined && !treeShown) {
+            treeShown = true;
+            const before = records.slice(0, records.indexOf(record) + 1);
+            entries.push({
+              seq: record.seq,
+              ...turnOf(record.turnId),
+              category: 'PINNED',
+              kind: 'NOTE',
+              text: clip(
+                treeView(projectMissions(before), ownMission ?? '', missionStateOf(before)),
+                NOTE_MAX,
+              ),
+            });
+          }
           if (scope.handoff !== undefined)
             entries.push({
               seq: record.seq,
@@ -222,6 +251,29 @@ export function projectHistory(
       case 'GRAPH_EXTENDED':
         for (const node of record.nodes) {
           if (node.mission === undefined || node.kind !== 'AGENT') continue;
+          // A new sibling, once this task knows where it stands, is told of when it is added.
+          const ownParent =
+            ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+          if (
+            treeShown &&
+            ownParent !== undefined &&
+            node.mission.parentId === ownParent &&
+            node.mission.id !== ownMission &&
+            !missionInfo.has(node.mission.id) &&
+            !announced.has(node.mission.id)
+          ) {
+            announced.add(node.mission.id);
+            notes.push({
+              seq: record.seq,
+              ...turnOf(record.turnId),
+              category: 'NORMAL',
+              kind: 'NOTE',
+              text: clip(
+                `A sibling task was started: ${node.name} (${node.agentRef?.id ?? 'unknown'})${node.spawn?.role === undefined ? '' : ` — ${node.spawn.role}`}.`,
+                NOTE_MAX,
+              ),
+            });
+          }
           nodeMission.set(node.nodeId, node.mission.id);
           if (!writtenOrder.has(node.mission.id))
             writtenOrder.set(node.mission.id, writtenOrder.size);
@@ -243,6 +295,23 @@ export function projectHistory(
         // A child of this task has ended: its result waits for the next assembly of the task,
         // whichever segment that is (Orchestration 4.3).
         const info = missionInfo.get(record.missionId);
+        const ownParent =
+          ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+        if (
+          treeShown &&
+          ownParent !== undefined &&
+          info?.parentId === ownParent &&
+          record.missionId !== ownMission
+        ) {
+          notes.push({
+            seq: record.seq,
+            ...turnOf(record.turnId),
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: `A sibling task has ended: ${info.name} (${record.status.toLowerCase()}).`,
+          });
+          break;
+        }
         if (ownMission === undefined || info?.parentId !== ownMission) break;
         const outcome =
           info.last === undefined ? undefined : outcomeOf(records, record.workflowRunId, info.last);
@@ -274,6 +343,7 @@ export function projectHistory(
           category: 'NORMAL',
           kind: 'MESSAGE',
           from: record.fromLabel,
+          ...(record.interrupt === true ? { interrupt: true } : {}),
           outputRef: record.source.outputRef,
           toolCallId: record.source.toolCallId,
         });
