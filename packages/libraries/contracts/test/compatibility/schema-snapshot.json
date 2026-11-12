@@ -10081,6 +10081,45 @@
       "additionalProperties": false,
       "$id": "kernel.control.CheckpointList.v1"
     },
+    "kernel.control.CheckpointRolledBack.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "checkpointId",
+        "label",
+        "files"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "CheckpointRolledBack"
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "backupSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.CheckpointRolledBack.v1"
+    },
     "kernel.control.CloseReason.v1": {
       "enum": [
         "COMPLETED",
@@ -16231,6 +16270,54 @@
             },
             "requestType": {
               "type": "string",
+              "const": "rewindCheckpoint"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "checkpoint"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "checkpoint": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.RewindCheckpointRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
               "const": "shutdown"
             },
             "request": {
@@ -18852,6 +18939,45 @@
               "type": "object",
               "required": [
                 "type",
+                "checkpointId",
+                "label",
+                "files"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "CheckpointRolledBack"
+                },
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "backupSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.CheckpointRolledBack.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
                 "trigger",
                 "compactedTurns",
                 "prunedResults"
@@ -19492,6 +19618,35 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.ResumeRunRequest.v1"
+    },
+    "kernel.control.RewindCheckpointRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "checkpoint"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "checkpoint": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.RewindCheckpointRequest.v1"
     },
     "kernel.control.RunFailure.v1": {
       "type": "object",
@@ -48755,6 +48910,45 @@
               "type": "object",
               "required": [
                 "type",
+                "checkpointId",
+                "label",
+                "files"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "CheckpointRolledBack"
+                },
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "backupSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.CheckpointRolledBack.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
                 "files"
               ],
               "properties": {
@@ -53878,6 +54072,77 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            },
+            "triggerToolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "checkpointId",
+            "label",
+            "cutSeq",
+            "fromSeq",
+            "cancelledMissionIds",
+            "files"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "ROLLED_BACK"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "cutSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "fromSeq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cancelledMissionIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              }
+            },
+            "files": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false
@@ -56619,6 +56884,34 @@
               "maxLength": 200
             },
             "snapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "checkpointId",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ROLLED_BACK_TO"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "backupSnapshot": {
               "type": "string",
               "minLength": 1,
               "maxLength": 64

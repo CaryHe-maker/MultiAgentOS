@@ -107,6 +107,16 @@ export const UndoTurnsRequestSchema = closed(
 );
 export type UndoTurnsRequest = Static<typeof UndoTurnsRequestSchema>;
 
+/**
+ * Goes back to a checkpoint inside the run (Orchestration 7.5): only while the run is paused. The
+ * files return to the checkpoint's snapshot, and the work after its cut is taken back.
+ */
+export const RewindCheckpointRequestSchema = closed(
+  { ...inRun, checkpoint: count(1) },
+  'kernel.control.RewindCheckpointRequest.v1',
+);
+export type RewindCheckpointRequest = Static<typeof RewindCheckpointRequestSchema>;
+
 /** The answer to UndoConfirmationRequested, which is not an authorization question. */
 export const ConfirmUndoRequestSchema = closed(
   { ...inRun, undoId: IdSchemas.undoId, decision: Type.Enum(['FORCE', 'CANCEL']) },

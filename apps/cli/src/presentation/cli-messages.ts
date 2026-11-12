@@ -28,7 +28,19 @@ export const CLI_MESSAGES = Object.freeze({
   template: '内置模板（mission、analyze）；只给目标时用 mission',
   goal: '运行的目标',
   invalidArguments: '命令参数不符合要求，请检查命令格式。',
-  unknownTemplate: (id: string) => `没有这个模板：${id}。`,
+  unknownTemplate: (id: string) =>
+    `没有这个模板：${id}。内置模板以外，可以把模板放在仓库的 .multiagentos/workflows/${id}.yaml。`,
+  invalidTemplate: (
+    id: string,
+    issues: readonly { readonly rule: string; readonly node?: string; readonly message: string }[],
+  ) =>
+    [
+      `模板 ${id} 无效，没有开始运行：`,
+      ...issues.map(
+        (issue) =>
+          `  - 规则 ${issue.rule}${issue.node === undefined ? '' : `，节点 ${issue.node}`}：${issue.message}`,
+      ),
+    ].join('\n'),
   errors: {
     'commander.unknownCommand': '无法识别该命令。',
     'commander.unknownOption': '无法识别该选项，请检查命令格式。',

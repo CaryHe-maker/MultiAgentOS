@@ -221,6 +221,35 @@ describe('the list of checkpoints (Orchestration 7.4)', () => {
   });
 });
 
+describe('going back to a checkpoint (Orchestration 7.5)', () => {
+  it('puts back what changed since, drops the checkpoints after it, and stays so after a restart', async () => {
+    const w = world();
+    w.moveTo({ 'a.txt': 'one' });
+    const snapshots = w.open('/a');
+    await snapshots.turnStarted('trn_1');
+    w.set('a.txt', 'two');
+    await snapshots.checkpoint('ckp_1', 'trn_1', 'ROOT_SPAWN', 'before the split');
+    w.set('b.txt', 'bee');
+    await snapshots.checkpoint('ckp_2', 'trn_1', 'HUMAN_ANSWER', 'after an answer');
+    w.set('a.txt', 'three');
+    // The start of the Turn is no checkpoint to go back to in the middle of a run.
+    expect(await snapshots.rewindTo(1)).toBeUndefined();
+    const done = await snapshots.rewindTo(2);
+    expect(done).toMatchObject({ checkpointId: 'ckp_1', label: 'before the split' });
+    expect([...(done?.files ?? [])].sort()).toEqual(['a.txt', 'b.txt']);
+    expect(w.text('a.txt')).toBe('two');
+    expect(w.text('b.txt')).toBeUndefined();
+    const listed = (await snapshots.listCheckpoints()).map((point) => point.label);
+    expect(listed).toEqual(['turn 1', 'before the split']);
+    const restarted = w.open('/a');
+    await restarted.load();
+    expect((await restarted.listCheckpoints()).map((point) => point.label)).toEqual([
+      'turn 1',
+      'before the split',
+    ]);
+  });
+});
+
 describe('a Session opened in another folder', () => {
   it('has nothing to undo from the folder before, and its files are left alone', async () => {
     const w = world();

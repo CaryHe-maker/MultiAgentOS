@@ -158,6 +158,7 @@ const COMMANDS: ReadonlySet<string> = new Set([
   '/compact',
   '/diff',
   '/checkpoints',
+  '/rewind',
   '/output',
 ]);
 
@@ -1071,6 +1072,30 @@ export class Console {
       case '/checkpoints':
         await this.#showCheckpoints();
         break;
+      case '/rewind': {
+        // Back to the N-th line of /checkpoints, while the run is paused (Orchestration 7.5).
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        const seq = Number(argument?.replace(/^#/u, ''));
+        if (
+          sessionId === undefined ||
+          workflowRunId === undefined ||
+          !Number.isSafeInteger(seq) ||
+          seq < 1
+        ) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const rewound = await this.#deps.gateway.rewindCheckpoint(
+          { requestId: newId('req'), sessionId, workflowRunId, checkpoint: seq },
+          this.#context(),
+        );
+        if (rewound.outcome === 'REJECTED')
+          this.#notice(
+            rewound.reasonCode === 'UNDO_NOT_AVAILABLE' ? text.rewindNeedsPause : text.noRewind,
+          );
+        break;
+      }
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
         if (ref === undefined) this.#notice(text.notNow);
@@ -1359,6 +1384,9 @@ export class Console {
         break;
       case 'WorkspaceReverted':
         this.#notice(text.undone(event.revertedTurnIds.length));
+        break;
+      case 'CheckpointRolledBack':
+        this.#notice(text.rewound(terminalText(event.label), event.files.length));
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(

@@ -289,6 +289,14 @@ export class SessionCore {
             : actor.diffCheckpoint(requestId, checkpoint),
         );
       }
+      case 'rewindCheckpoint': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () =>
+            actor.rewindCheckpoint(run, request.checkpoint),
+          ),
+        );
+      }
       case 'listCheckpoints': {
         const { requestId, sessionId } = forward.request;
         const actor = manager.actor(sessionId);

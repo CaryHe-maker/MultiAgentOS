@@ -129,6 +129,13 @@ export const SnapshotIndexLineSchema = Type.Union(
       snapshot: Type.Optional(text(64)),
       at: TimestampSchema,
     }),
+    /** The workspace went back to a checkpoint of the open Turn; later checkpoints are gone. */
+    closed({
+      kind: Type.Literal('ROLLED_BACK_TO'),
+      checkpointId: IdSchemas.checkpointId,
+      backupSnapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
     closed({
       kind: Type.Literal('REVERTED'),
       revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),

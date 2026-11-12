@@ -177,6 +177,12 @@ export class WorkspaceSnapshots {
         turn.ended = true;
         turn.changedFiles = line.changedFiles;
         if (line.endSnapshot !== undefined) turn.endSnapshot = line.endSnapshot;
+      } else if (line.kind === 'ROLLED_BACK_TO') {
+        // The checkpoints after the one gone back to are gone with what they saw.
+        for (const turn of this.#turns) {
+          const at = turn.checkpoints.findIndex((each) => each.checkpointId === line.checkpointId);
+          if (at >= 0) turn.checkpoints.splice(at + 1);
+        }
       } else if (line.kind === 'CHECKPOINT') {
         // A checkpoint inside a Turn changes nothing of the Turn's own way back.
         this.#turns
@@ -358,11 +364,13 @@ export class WorkspaceSnapshots {
    */
   #points(): {
     readonly point: Omit<CheckpointPoint, 'seq' | 'changedFiles'>;
+    readonly checkpointId?: string;
     readonly from?: string;
     readonly to?: string;
   }[] {
     const found: {
       point: Omit<CheckpointPoint, 'seq' | 'changedFiles'>;
+      checkpointId?: string;
       from?: string;
       to?: string;
     }[] = [];
@@ -388,12 +396,59 @@ export class WorkspaceSnapshots {
             turnSeq: index + 1,
             at: start.at,
           },
+          ...('checkpointId' in start ? { checkpointId: start.checkpointId } : {}),
           ...(start.snapshot === undefined ? {} : { from: start.snapshot }),
           ...(to === undefined ? {} : { to }),
         });
       });
     });
     return found;
+  }
+
+  /**
+   * Goes back to a checkpoint of the open Turn (Orchestration 7.5): every file that changed since
+   * its snapshot is put back. What the workspace held before is kept as a backup snapshot, so a
+   * change made outside is never lost. Undefined when the point is no checkpoint of the open Turn,
+   * or has no snapshot.
+   */
+  async rewindTo(seq: number): Promise<
+    | {
+        readonly checkpointId: string;
+        readonly label: string;
+        readonly files: readonly string[];
+        readonly backupSnapshot: string;
+      }
+    | undefined
+  > {
+    const found = this.#points()[seq - 1];
+    const open = [...this.#turns].reverse().find((turn) => !turn.reverted);
+    if (found === undefined || found.point.kind === 'TURN' || found.from === undefined)
+      return undefined;
+    if (open === undefined || found.point.turnId !== open.turnId || open.ended) return undefined;
+    const checkpoint = open.checkpoints.find((each) => each.checkpointId === found.checkpointId);
+    if (checkpoint === undefined) return undefined;
+    try {
+      const backupSnapshot = await this.#capture();
+      const target = await this.#entries(found.from);
+      const changes = changesBetween(target, await this.#entries(backupSnapshot));
+      for (const change of changes) await this.#restoreEntry(change.path, target.get(change.path));
+      await this.#deps.index.append({
+        kind: 'ROLLED_BACK_TO',
+        checkpointId: checkpoint.checkpointId,
+        backupSnapshot,
+        at: this.#deps.now().toISOString(),
+      });
+      open.checkpoints.splice(open.checkpoints.indexOf(checkpoint) + 1);
+      return {
+        checkpointId: checkpoint.checkpointId,
+        label: checkpoint.label,
+        files: changes.map((change) => change.path),
+        backupSnapshot,
+      };
+    } catch (error) {
+      if (error instanceof SnapshotFailed) return undefined;
+      throw error;
+    }
   }
 
   async listCheckpoints(): Promise<readonly CheckpointPoint[]> {

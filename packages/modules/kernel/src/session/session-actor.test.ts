@@ -214,6 +214,7 @@ describe('undo', () => {
     divergedFiles: () => Promise.resolve([]),
     listCheckpoints: () => Promise.resolve([]),
     diffCheckpoint: () => Promise.resolve(undefined),
+    rewindTo: () => Promise.resolve(undefined),
     ...overrides,
   });
   const awaiting = async (kernel: ReturnType<typeof setup>) => {

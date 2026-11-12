@@ -189,8 +189,32 @@ export function projectHistory(
 
   const turnOf = (turnId: string | undefined) => (turnId === undefined ? {} : { turnId });
 
+  // What a rewind took back (Orchestration 7.5): from the call that made the checkpoint up to the
+  // rewind, nothing is shown; the tasks it cancelled hand nothing over afterwards.
+  const rewinds = records.flatMap((record) =>
+    record.type === 'ROLLED_BACK' ? [{ from: record.fromSeq, to: record.seq }] : [],
+  );
+  const takenBack = new Set(
+    records.flatMap((record) => (record.type === 'ROLLED_BACK' ? record.cancelledMissionIds : [])),
+  );
   for (const record of records) {
+    if (rewinds.some((rewind) => record.seq >= rewind.from && record.seq < rewind.to)) continue;
+    if (
+      (record.type === 'MISSION_ENDED' && takenBack.has(record.missionId)) ||
+      (record.type === 'MISSION_MESSAGE' && takenBack.has(record.from))
+    )
+      continue;
     switch (record.type) {
+      case 'ROLLED_BACK':
+        if (ownMission === undefined || missionInfo.get(ownMission)?.parentId !== undefined) break;
+        entries.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `The work went back to the checkpoint "${record.label}": what came after it is taken back. ${String(record.files)} file(s) are as they were then, and the subtasks started after it are cancelled. Decide again how to go on.`,
+        });
+        break;
       case 'TURN_STARTED':
         currentTurn = record.turnId;
         break;

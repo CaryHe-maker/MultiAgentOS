@@ -197,6 +197,10 @@ export const ConsoleText = Object.freeze({
   undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
   noDiff: '没有可以显示的改动。',
   noCheckpoints: '还没有 checkpoint。',
+  rewindNeedsPause: '回到 checkpoint 只能在运行暂停时进行：先按 Ctrl+C 暂停。',
+  noRewind: '没有这个可以回到的 checkpoint（只能回到本次运行中途的切面，用 /checkpoints 查看）。',
+  rewound: (label: string, files: number): string =>
+    `已回到 checkpoint「${label}」：还原了 ${String(files)} 个文件，之后的工作已撤回，被覆盖的内容存在兜底快照里。用 /continue 继续。`,
   turnCheckpoint: (turnSeq: number): string => `第 ${String(turnSeq)} 轮开始`,
   checkpointLine: (seq: number, label: string, changedFiles: number | undefined): string =>
     `#${String(seq)}  ${label}${changedFiles === undefined ? '' : `（之后改动 ${String(changedFiles)} 个文件）`}`,
@@ -255,6 +259,7 @@ export const ConsoleText = Object.freeze({
     '/compact          压缩较早的对话，腾出上下文空间',
     '/diff [N]         查看倒数第 N 轮改动了什么；/diff #N 查看第 N 个 checkpoint 之后的改动',
     '/checkpoints      列出本对话的 checkpoint（每轮的开始与运行中途的切面）',
+    '/rewind #N        暂停时回到第 N 个 checkpoint（运行中途的切面）',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
     '/think [N]        列出思考内容；带编号则显示第 N 段思考的全文',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',

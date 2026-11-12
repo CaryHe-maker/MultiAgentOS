@@ -6,7 +6,10 @@ import {
   CompactionUsageSchema,
   PrunedItemSchema,
 } from '../context/compaction.js';
-import { WorkspaceRevertedSchema } from '../kernel-control/interaction-events.js';
+import {
+  CheckpointRolledBackSchema,
+  WorkspaceRevertedSchema,
+} from '../kernel-control/interaction-events.js';
 import { LOCAL_QUESTION_KINDS } from '../kernel-control/human-request.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { runEnd } from '../kernel-control/run-outcome.js';
@@ -303,6 +306,7 @@ export const KernelToWorkflowEventSchema = Type.Union([
   TurnClosedSchema,
   RunClosedSchema,
   WorkspaceRevertedSchema,
+  CheckpointRolledBackSchema,
   WorkspaceDivergedSchema,
   RunInterruptedSchema,
   RunPausedSchema,

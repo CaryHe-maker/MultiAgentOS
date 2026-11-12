@@ -567,6 +567,8 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     compactContext: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     confirmUndo: (request) => Promise.resolve(rejected(request.requestId, 'UNDO_UNKNOWN')),
     diffTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    rewindCheckpoint: (request) =>
+      Promise.resolve(rejected(request.requestId, 'UNDO_NOT_AVAILABLE')),
     listCheckpoints: (request) =>
       Promise.resolve({ requestId: request.requestId, outcome: 'ACCEPTED' as const, items: [] }),
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),

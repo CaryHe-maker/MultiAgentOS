@@ -30,6 +30,7 @@ import type {
   ConfirmUndoRequest,
   DiffTurnsRequest,
   ListCheckpointsRequest,
+  RewindCheckpointRequest,
   CheckpointList,
   ReadArtifactRequest,
   TurnDiff,
@@ -613,6 +614,11 @@ export interface InteractionGatewayPort {
     request: DiffTurnsRequest,
     context: BoundaryContext,
   ): Promise<TurnDiff | SyscallRejected>;
+  /** Goes back to a checkpoint of the paused run (Orchestration 7.5). */
+  rewindCheckpoint(
+    request: RewindCheckpointRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   /** The checkpoints of the Session (Orchestration 7.4); looking changes nothing. */
   listCheckpoints(
     request: ListCheckpointsRequest,

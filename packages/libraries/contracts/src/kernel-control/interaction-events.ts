@@ -196,6 +196,22 @@ export const WorkspaceRevertedSchema = closed(
 );
 export type WorkspaceReverted = Static<typeof WorkspaceRevertedSchema>;
 
+/**
+ * The workspace is back at a checkpoint (Orchestration 7.5): `files` were put back, and what they
+ * held before is in `backupSnapshot`.
+ */
+export const CheckpointRolledBackSchema = closed(
+  {
+    type: Type.Literal('CheckpointRolledBack'),
+    checkpointId: IdSchemas.checkpointId,
+    label: text(200),
+    files: Type.Array(text(4096)),
+    backupSnapshot: Type.Optional(text(64)),
+  },
+  'kernel.control.CheckpointRolledBack.v1',
+);
+export type CheckpointRolledBack = Static<typeof CheckpointRolledBackSchema>;
+
 export const MessagePublishedSchema = closed(
   {
     type: Type.Literal('MessagePublished'),
@@ -344,6 +360,7 @@ export const KernelToInteractionEventSchema = Type.Union([
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,
   WorkspaceRevertedSchema,
+  CheckpointRolledBackSchema,
   ContextCompactedSchema,
   CompactionFailedSchema,
   ExternalReadPausedSchema,

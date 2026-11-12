@@ -372,6 +372,21 @@ export const SessionLogRecordSchema = Type.Union(
       checkpointId: IdSchemas.checkpointId,
       kind: Type.Enum(['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
       label: text(200),
+      /** The call that made it (the root's `run_subagents`): a rewind takes it back as well. */
+      triggerToolCallId: Type.Optional(ToolCallIdSchema),
+    }),
+    /**
+     * The run went back to a checkpoint (Orchestration 7.5): the workspace is at its snapshot, the
+     * tasks started after its cut are taken back (`cancelledMissionIds`), and from the call that
+     * triggered it on, the history is replaced by a note.
+     */
+    record('ROLLED_BACK', inTurn, {
+      checkpointId: IdSchemas.checkpointId,
+      label: text(200),
+      cutSeq: count(1),
+      fromSeq: count(1),
+      cancelledMissionIds: Type.Array(IdSchemas.missionScopeId),
+      files: count(),
     }),
     record('CHECKPOINT_TAKEN', inTurn, {
       checkpointId: IdSchemas.checkpointId,

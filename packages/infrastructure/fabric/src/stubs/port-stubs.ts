@@ -55,6 +55,7 @@ export const SCHEMA_IDS = {
   confirmUndo: 'kernel.control.ConfirmUndoRequest.v1',
   diffTurns: 'kernel.control.DiffTurnsRequest.v1',
   listCheckpoints: 'kernel.control.ListCheckpointsRequest.v1',
+  rewindCheckpoint: 'kernel.control.RewindCheckpointRequest.v1',
   updateActivity: 'kernel.unit.UpdateActivityRequest.v1',
   answerHuman: 'kernel.control.AnswerHumanRequest.v1',
   pauseRun: 'kernel.control.PauseRunRequest.v1',
@@ -123,6 +124,7 @@ export const INTERACTION_SYSCALLS = [
   'confirmUndo',
   'diffTurns',
   'listCheckpoints',
+  'rewindCheckpoint',
   'shutdown',
 ] as const satisfies readonly (keyof InteractionGatewayPort)[];
 

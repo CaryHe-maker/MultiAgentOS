@@ -189,6 +189,8 @@ const EXPECTED = {
     'ShutdownRequest',
     'StartRunRequest',
     'ListCheckpointsRequest',
+    'RewindCheckpointRequest',
+    'CheckpointRolledBack',
     'CheckpointList',
     'StartSessionRequest',
     'SyscallAck',

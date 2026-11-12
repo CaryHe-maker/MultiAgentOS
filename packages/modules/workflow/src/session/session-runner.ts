@@ -475,6 +475,9 @@ export class SessionRunner {
       case 'JobEnded':
         await this.#onJobEnded(workflowRunId, event);
         break;
+      case 'CheckpointRolledBack':
+        await this.#onRolledBack(workflowRunId, event);
+        break;
       case 'CheckpointTaken':
         await this.#append([
           {
@@ -755,6 +758,7 @@ export class SessionRunner {
     workflowRunId: string,
     kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE',
     label: string,
+    triggerToolCallId?: string,
   ): Promise<void> {
     const checkpointId = newId('ckp');
     const shown = label.length <= 200 ? label : `${label.slice(0, 199)}…`;
@@ -766,6 +770,7 @@ export class SessionRunner {
         checkpointId,
         kind,
         label: shown,
+        ...(triggerToolCallId === undefined ? {} : { triggerToolCallId }),
       },
     ]);
     const sessionId = this.#sessionIdOrThrow();
@@ -775,6 +780,109 @@ export class SessionRunner {
     );
     if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
       throw new Error(`takeCheckpoint refused: ${response.reasonCode}`);
+  }
+
+  /**
+   * The workspace went back to a checkpoint (Orchestration 7.5). The work after its cut is taken
+   * back: every task below the root that is still open ends as taken back, and the root starts a
+   * new segment that reads, in place of what came after, that it is back before its split. The
+   * history from the call that made the checkpoint on is replaced by a note. The run stays paused
+   * until the user continues; the budget spent is not returned.
+   */
+  async #onRolledBack(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
+  ): Promise<void> {
+    const requested = this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'CHECKPOINT_REQUESTED' }> =>
+        record.type === 'CHECKPOINT_REQUESTED' && record.checkpointId === event.checkpointId,
+    );
+    if (requested === undefined) return;
+    const trigger =
+      requested.triggerToolCallId === undefined
+        ? undefined
+        : this.#records.find(
+            (record) =>
+              record.type === 'MODEL_TURN' &&
+              record.toolCalls.some((call) => call.toolCallId === requested.triggerToolCallId),
+          );
+    const fromSeq = trigger?.seq ?? requested.seq;
+    const missions = projectMissions(this.#records);
+    const projected = projectGraph(this.#records, workflowRunId);
+    const inRun = (mission: MissionView) =>
+      mission.nodeIds.some((nodeId) => projected.nodes.has(nodeId));
+    const open = [...missions.values()].filter(
+      (mission) => mission.ended === undefined && inRun(mission),
+    );
+    const cancelled = open.filter((mission) => mission.parentId !== undefined);
+    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
+    await this.#append([
+      {
+        type: 'ROLLED_BACK',
+        workflowRunId,
+        ...turn,
+        checkpointId: event.checkpointId,
+        label: event.label,
+        cutSeq: requested.seq,
+        fromSeq,
+        cancelledMissionIds: cancelled.map((mission) => mission.missionId),
+        files: event.files.length,
+      },
+    ]);
+    const note = `taken back: the run went back to the checkpoint "${event.label}"`;
+    // Every segment at work ends; the root's continues below, the others end with their task.
+    for (const active of [...this.#agents.values()]) {
+      const root = missions.get(active.missionId)?.parentId === undefined;
+      if (root) {
+        await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
+        await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
+      } else {
+        await this.#endAgentRun(workflowRunId, active, 'FAILED');
+        await this.#endNode(
+          workflowRunId,
+          active.state.turnId,
+          active.nodeId,
+          'INTERRUPTED',
+          resultOf({ status: 'FAILED', notes: [note] }),
+        );
+      }
+    }
+    // Tasks that sleep, or have not started, end as well.
+    for (const mission of cancelled) {
+      const now = projectGraph(this.#records, workflowRunId);
+      const last = mission.nodeIds.at(-1);
+      const node = last === undefined ? undefined : now.nodes.get(last);
+      const status = last === undefined ? undefined : now.view.get(last)?.status;
+      if (node === undefined) continue;
+      if (status === 'YIELDED') await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED', note);
+      else if (status === undefined || !isTerminal(status))
+        await this.#append([
+          {
+            type: 'NODE_ENDED',
+            workflowRunId,
+            ...turn,
+            nodeId: node.nodeId,
+            status: 'INTERRUPTED',
+            result: resultOf({ status: 'FAILED', notes: [note] }),
+          },
+        ]);
+    }
+    await this.#stopJobsOf(
+      workflowRunId,
+      cancelled.map((mission) => mission.missionId),
+    );
+    await this.#settleMissions(workflowRunId);
+    await this.#releaseFinishedDelegations(workflowRunId);
+    // The root reads, in its new segment, that it is back before its split (4.3, cause ROLLED_BACK).
+    const root = open.find((mission) => mission.parentId === undefined);
+    const rootNode = root?.nodeIds.at(-1);
+    const yielded =
+      rootNode === undefined
+        ? undefined
+        : projectGraph(this.#records, workflowRunId).nodes.get(rootNode);
+    if (yielded !== undefined)
+      await this.#continueMission(workflowRunId, yielded, [{ kind: 'ROLLED_BACK' }]);
+    await this.#advance(workflowRunId);
   }
 
   async #onAnswer(
@@ -2244,6 +2352,7 @@ export class SessionRunner {
         workflowRunId,
         'ROOT_SPAWN',
         `before starting ${checked.plan.tasks.map((task) => task.name).join(', ')}`,
+        toolCallId,
       );
     await this.#expandGraph(workflowRunId, active, toolCallId, checked.plan.tasks, lent.reserved);
   }

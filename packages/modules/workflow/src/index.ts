@@ -24,6 +24,7 @@ export type {
   EndTool,
 } from './domain/agent/agent-cycle.js';
 export { projectHistory } from './domain/context/history-projection.js';
+export { compileTemplate } from './domain/graph/session-graph.js';
 export { callResultsOf } from './domain/spawn/spawn-graph.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { settleStaleRecords } from './session/settle-stale.js';

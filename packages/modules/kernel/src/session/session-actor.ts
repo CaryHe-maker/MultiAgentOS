@@ -67,6 +67,7 @@ export interface SessionDuties {
     | 'divergedFiles'
     | 'listCheckpoints'
     | 'diffCheckpoint'
+    | 'rewindTo'
   >;
   /** The name of a Session, read from the artifact its list entry refers to. */
   titleOf?(ref: ArtifactRef): Promise<string | undefined>;
@@ -953,6 +954,29 @@ export class SessionActor {
         undoId: newId('und'),
         reason: 'FILE_CHANGED',
       });
+  }
+
+  /**
+   * Goes back to a checkpoint of the run (Orchestration 7.5). Only while it is paused: nothing is
+   * executing then, so nothing writes while the files are put back. Workflow takes the work after
+   * the cut back; the run stays paused until the user continues.
+   */
+  async rewindCheckpoint(run: Run, seq: number): Promise<UndoDecision> {
+    const { snapshots } = this.#deps.duties;
+    if (snapshots === undefined || run.control.phase !== 'PAUSED')
+      return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+    const done = await snapshots.rewindTo(seq);
+    if (done === undefined) return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
+    const event = {
+      type: 'CheckpointRolledBack' as const,
+      checkpointId: done.checkpointId,
+      label: done.label,
+      files: [...done.files],
+      backupSnapshot: done.backupSnapshot,
+    };
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
+    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, event);
+    return { accepted: true };
   }
 
   /** The checkpoints of the Session (Orchestration 7.4); any time, looking changes nothing. */

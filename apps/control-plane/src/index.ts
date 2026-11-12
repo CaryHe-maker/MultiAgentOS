@@ -132,10 +132,19 @@ export async function main(argv: readonly string[]): Promise<number> {
       return EXIT_CODE_SYSTEM_FAULT;
     }
 
-    const template = command.kind === 'RUN' ? system.templateRef(command.template) : undefined;
+    let template = command.kind === 'RUN' ? system.templateRef(command.template) : undefined;
     if (command.kind === 'RUN' && template === undefined) {
-      write(`${CLI_MESSAGES.unknownTemplate(command.template)}\n`);
-      return 64;
+      // Not built in: a template of the repository, checked before anything starts (M2Design 3.8).
+      const found = await system.repositoryTemplate(command.template);
+      if (found === undefined) {
+        write(`${CLI_MESSAGES.unknownTemplate(command.template)}\n`);
+        return 64;
+      }
+      if (!found.ok) {
+        write(`${CLI_MESSAGES.invalidTemplate(command.template, found.issues)}\n`);
+        return 64;
+      }
+      template = found.ref;
     }
 
     // The composition-time reporter buffers faults until the real panic entry exists.
