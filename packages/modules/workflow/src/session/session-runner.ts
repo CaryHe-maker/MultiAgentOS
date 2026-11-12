@@ -2124,8 +2124,27 @@ export class SessionRunner {
           this.#deps.config,
         ),
       );
+    // The root task writes the plan of the work before its first subtasks (D24). Refused here, it
+    // does not count as a wrong call of run_subagents: nothing was wrong with the tasks.
+    const args = ending.arguments as RunSubagentsArgs;
+    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
+    const planned = this.#records.some(
+      (record) =>
+        record.type === 'PLAN_REGISTERED' &&
+        record.workflowRunId === workflowRunId &&
+        record.missionId === active.missionId,
+    );
+    if (isRoot && this.#mode === 'ORCHESTRATION' && !planned && args.plan === undefined)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'PLAN_REQUIRED',
+        'Not started: write the plan of the work first, in plan of this same call: what is delivered and how it is checked, the approach, how the work is split and who owns which part and which shared file or interface, and the constraints every task must keep. Every task you start sees it, so the goals of the tasks need not repeat it.',
+      );
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
-    const checked = validateSpawn(ending.arguments as RunSubagentsArgs, {
+    const checked = validateSpawn(args, {
       rules: this.#deps.config,
       agents: this.#spawnable,
       callerRoots: this.#callerRoots(workflowRunId, active),
@@ -2142,6 +2161,20 @@ export class SessionRunner {
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
     if (lent.kind === 'REFUSED') return refuse(lent.text);
+    if (isRoot && args.plan !== undefined)
+      await this.#append([
+        {
+          type: 'PLAN_REGISTERED',
+          workflowRunId,
+          ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+          missionId: active.missionId,
+          source: {
+            modelTurnRequestId: ending.source.modelTurnRequestId,
+            outputRef: ending.source.modelOutputRef,
+            toolCallId,
+          },
+        },
+      ]);
     await this.#expandGraph(workflowRunId, active, toolCallId, checked.plan.tasks, lent.reserved);
   }
 

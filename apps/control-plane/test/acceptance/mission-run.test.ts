@@ -79,7 +79,9 @@ const seen = (provider: ScriptedChat): string =>
   provider.requests
     .flatMap((request) => request.messages.map((message) => textOf(message)))
     .join('\n');
-const spawn = (...tasks: Record<string, unknown>[]) => tool('run_subagents', { tasks });
+// The root of a long task writes the plan with its first subtasks (Orchestration 5.3, D24).
+const spawn = (...tasks: Record<string, unknown>[]) =>
+  tool('run_subagents', { tasks, plan: 'Deliver the goal; each task owns its scope.' });
 const sleepForChildren = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
 const finishWork = (summary: string, changedFiles: string[]) =>
   tool('finish_subagent', { summary, changedFiles, status: 'done', validation: [] });
@@ -101,6 +103,40 @@ describe('mas run "<goal>": a long task of the template mission (Orchestration 1
       // The goal reached main with the template's own guidance.
       expect(seen(provider)).toContain('write a plan');
       expect(seen(provider)).toContain('You own this goal from start to delivery');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'asks the root for the plan before its first subtasks, and shows the plan to every task',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              tasks: [{ name: 'look', agent: 'explorer', goal: 'look at the code' }],
+            }),
+            tool('run_subagents', {
+              tasks: [{ name: 'look', agent: 'explorer', goal: 'look at the code' }],
+              plan: 'PLAN-7: deliver a summary; look owns the reading.',
+            }),
+            sleepForChildren(),
+            tool('reply', { text: 'delivered with a plan' }),
+          ],
+        },
+        { look: [tool('finish_subagent', { summary: 'looked' })] },
+      );
+      const ran = await masRun(['summarise the code'], provider);
+      expect(ran.output).toContain('delivered with a plan');
+      expect(seen(provider)).toContain('Not started: write the plan of the work first');
+      const look = provider.requests
+        .filter((request) =>
+          request.messages.some((message) => textOf(message).includes('Your task (look,')),
+        )
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      expect(look).toContain('The plan of this work, written by the root task');
+      expect(look).toContain('PLAN-7: deliver a summary');
     },
     TIMEOUT,
   );

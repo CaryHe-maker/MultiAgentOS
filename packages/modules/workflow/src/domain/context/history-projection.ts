@@ -163,6 +163,9 @@ export function projectHistory(
   const nodeMission = new Map<string, string>();
   let taskShown = false;
   let treeShown = false;
+  let planShown = false;
+  const ownParentOf = (): string | undefined =>
+    ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
   /** Siblings already told of, so a sibling is announced once (Orchestration 3.7). */
   const announced = new Set<string>();
   /** The order tasks were written in, for results delivered together (M2Design 3.6). */
@@ -217,6 +220,24 @@ export function projectHistory(
             });
             for (const dependency of scope.task.dependencies)
               entries.push({ ...dependency, seq: record.seq, ...turnOf(record.turnId) });
+          }
+          // A task below the root reads the plan of the work right after its task (D24); a later
+          // plan comes to it as a notice.
+          if (ownParentOf() !== undefined && !planShown) {
+            planShown = true;
+            const plan = latestPlan(
+              records.slice(0, records.indexOf(record) + 1),
+              record.workflowRunId,
+            );
+            if (plan !== undefined)
+              entries.push({
+                seq: record.seq,
+                ...turnOf(record.turnId),
+                category: 'PINNED',
+                kind: 'PLAN',
+                outputRef: plan.source.outputRef,
+                toolCallId: plan.source.toolCallId,
+              });
           }
           // After its task, a task below the root is shown where it stands in the tree, once, as
           // the log was then
@@ -349,6 +370,18 @@ export function projectHistory(
           kind: 'MESSAGE',
           from: record.fromLabel,
           ...(record.interrupt === true ? { interrupt: true } : {}),
+          outputRef: record.source.outputRef,
+          toolCallId: record.source.toolCallId,
+        });
+        break;
+      case 'PLAN_REGISTERED':
+        // A plan written after the task began reaches it at its next assembly.
+        if (!planShown || ownParentOf() === undefined) break;
+        notes.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'PLAN',
           outputRef: record.source.outputRef,
           toolCallId: record.source.toolCallId,
         });
@@ -704,4 +737,15 @@ export function projectHistory(
       : entry,
   );
   return applyCompactions(shown, compaction);
+}
+
+/** The plan of the work as it stood: the last one the run registered (Orchestration 5.3). */
+function latestPlan(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+): Extract<SessionLogRecord, { type: 'PLAN_REGISTERED' }> | undefined {
+  let found: Extract<SessionLogRecord, { type: 'PLAN_REGISTERED' }> | undefined;
+  for (const record of records)
+    if (record.type === 'PLAN_REGISTERED' && record.workflowRunId === workflowRunId) found = record;
+  return found;
 }

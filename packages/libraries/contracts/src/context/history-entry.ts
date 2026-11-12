@@ -136,6 +136,13 @@ export const ContextHistoryEntrySchema = Type.Union(
       outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
       toolCallId: ToolCallIdSchema,
     }),
+    /** The plan of the work written by the root task (Orchestration 5.3), by its call. */
+    closed({
+      ...entry,
+      kind: Type.Literal('PLAN'),
+      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+      toolCallId: ToolCallIdSchema,
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],

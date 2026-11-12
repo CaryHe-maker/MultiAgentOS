@@ -359,6 +359,18 @@ export const SessionLogRecordSchema = Type.Union(
       command: text(200),
       promoted: Type.Boolean(),
     }),
+    /**
+     * The root task wrote the plan of the work (Orchestration 5.3, D24): its text is in the model
+     * output at `source`, an argument of `run_subagents`. Every task below the root sees it.
+     */
+    record('PLAN_REGISTERED', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      source: closed({
+        modelTurnRequestId: IdSchemas.requestId,
+        outputRef: ArtifactRefSchema,
+        toolCallId: ToolCallIdSchema,
+      }),
+    }),
     /** What a read of `job_output` reached: the next one goes on from there (Orchestration 6.2). */
     record('JOB_READ', inTurn, {
       missionId: IdSchemas.missionScopeId,

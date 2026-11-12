@@ -19,8 +19,10 @@ nodes:
     role: owner
     output: true
     goal: 'You own this goal from start to delivery; nobody will answer you between steps. Clarify
-      it only if it cannot be done without the user (ask_user). Write the plan, the parts and
-      what each part must deliver into a file first; then start leads for large parts, workers
+      it only if it cannot be done without the user (ask_user). Write the plan of the work in
+      plan of your first run_subagents (every task sees it): what is delivered and how it is
+      checked, the approach, the parts, who owns which part and which shared file or interface,
+      and the constraints; then start leads for large parts, workers
       for scoped changes and explorers for research, with writeScopes that do not overlap and
       acceptance criteria for each; sleep while they work; check what comes back against the
       goal, start fixes where it falls short, and reply with the delivered result and how it was

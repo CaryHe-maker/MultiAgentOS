@@ -5120,6 +5120,70 @@
                   "seq",
                   "category",
                   "kind",
+                  "outputRef",
+                  "toolCallId"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "PLAN"
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -6275,6 +6339,70 @@
             },
             "interrupt": {
               "type": "boolean"
+            },
+            "outputRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "const": "application/vnd.multiagentos.model-output+json"
+                }
+              },
+              "additionalProperties": false
+            },
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "outputRef",
+            "toolCallId"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "PLAN"
             },
             "outputRef": {
               "type": "object",
@@ -11704,6 +11832,70 @@
                           "seq",
                           "category",
                           "kind",
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "PLAN"
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
                           "text"
                         ],
                         "properties": {
@@ -13014,6 +13206,70 @@
                                   },
                                   "interrupt": {
                                     "type": "boolean"
+                                  },
+                                  "outputRef": {
+                                    "type": "object",
+                                    "required": [
+                                      "artifactId",
+                                      "sha256",
+                                      "size",
+                                      "mediaType"
+                                    ],
+                                    "properties": {
+                                      "artifactId": {
+                                        "type": "string",
+                                        "pattern": "^art_[a-f0-9]{64}$"
+                                      },
+                                      "sha256": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      },
+                                      "size": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "const": "application/vnd.multiagentos.model-output+json"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "toolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
+                                  "outputRef",
+                                  "toolCallId"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "PLAN"
                                   },
                                   "outputRef": {
                                     "type": "object",
@@ -35547,6 +35803,70 @@
                   "seq",
                   "category",
                   "kind",
+                  "outputRef",
+                  "toolCallId"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "PLAN"
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -39006,6 +39326,70 @@
                           "seq",
                           "category",
                           "kind",
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "PLAN"
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
                           "text"
                         ],
                         "properties": {
@@ -41012,6 +41396,70 @@
                       },
                       "interrupt": {
                         "type": "boolean"
+                      },
+                      "outputRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "const": "application/vnd.multiagentos.model-output+json"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "outputRef",
+                      "toolCallId"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "PLAN"
                       },
                       "outputRef": {
                         "type": "object",
@@ -52769,6 +53217,94 @@
             "workflowRunId",
             "type",
             "missionId",
+            "source"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "PLAN_REGISTERED"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "modelTurnRequestId",
+                "outputRef",
+                "toolCallId"
+              ],
+              "properties": {
+                "modelTurnRequestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "outputRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
             "jobId",
             "nextOffset"
           ],
@@ -56438,6 +56974,11 @@
           },
           "minItems": 1,
           "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
         }
       },
       "additionalProperties": false,

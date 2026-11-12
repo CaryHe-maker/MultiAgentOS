@@ -50,7 +50,15 @@ export type SubagentTask = Static<typeof SubagentTaskSchema>;
 
 /** Parameters of `run_subagents`. The number of tasks is limited by configuration, not here. */
 export const RunSubagentsArgsSchema = closed(
-  { tasks: Type.Array(SubagentTaskSchema, { minItems: 1, maxItems: 12 }) },
+  {
+    tasks: Type.Array(SubagentTaskSchema, { minItems: 1, maxItems: 12 }),
+    /**
+     * The plan of the work (Orchestration 5.3, D24): what is delivered, the approach, how it is
+     * split, who owns which part and which interface, the constraints. The root task writes it
+     * before its first subtasks; every task below sees it. A later one replaces it.
+     */
+    plan: Type.Optional(text(8000)),
+  },
   'workflow.RunSubagentsArgs.v1',
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
