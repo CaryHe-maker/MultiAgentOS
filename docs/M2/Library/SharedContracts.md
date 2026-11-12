@@ -42,6 +42,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 |---|---|---|
 | `kernel.unit.RegisterAgentRunRequest.v1`、`SubmitUnitRequest.v1`、`EndAgentRunRequest.v1`、`CloseRunRequest.v1` | `kernel-unit/workflow-syscalls.ts` | WorkflowKernel 第 2.2 节 |
 | `kernel.unit.RequestHumanRequest.v1`、`ReadProjectFileRequest.v1`、`ProjectFileContent.v1` | `kernel-unit/workflow-syscalls.ts` | 同上 |
+| `kernel.unit.ScheduleWakeRequest.v1`、`WakeDue.v1` | `kernel-unit/workflow-syscalls.ts`、`workflow-events.ts` | 休眠任务的定时唤醒（[Orchestration](../Orchestration.md) 第 8.5 节） |
 | `kernel.unit.ReportSessionCommandRequest.v1`、`ReportSessionListRequest.v1` | `kernel-unit/session-replies.ts` | WorkflowKernel 第 2.3 节 |
 | `kernel.unit.WorkflowInboxEvent.v1`（含 `RunStart`、`UnitReport`、`HumanAnswered`、`TurnClosed`、`RunClosed`） | `kernel-unit/workflow-events.ts` | WorkflowKernel 第 3.1 节 |
 | `kernel.unit.BudgetView.v1`、`kernel.unit.TurnUsage.v1` | `kernel-unit/budget-state.ts` | 同上 |
@@ -78,6 +79,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | Schema ID | 文件 | 定义 |
 |---|---|---|
 | `workflow.ReplyArgs.v1` | `workflow/reply.ts` | `{ text }`，1..20000 个字符 |
+| `workflow.SleepArgs.v1`、`SendMessageArgs.v1` | `workflow/mission-tools.ts` | `sleep` 与 `send_message` 的参数（[Orchestration](../Orchestration.md) 第 4、5 节） |
 | `catalog.AgentDefinition.v1`、`ModelDefinition.v1`、`UnitDefinition.v1`、`TemplateDefinition.v1` | `catalog/definition-schemas.ts` | Interface/Definitions |
 | `catalog.PinnedDefinitionRef.v1` | `catalog/definition-schemas.ts` | `kind` 增加 `'TEMPLATE'` |
 

@@ -2,20 +2,27 @@ schemaVersion: v1
 kind: TOOL
 id: run-subagents
 version: v0.1.0
-description: Control tool that starts SubAgent tasks and returns their joined results.
+description: Control tool that starts SubAgent tasks that run while the caller goes on.
 purpose: CONTROL
 modelName: run_subagents
 modelDescription: >-
-  Start up to 8 subtasks that run in parallel, and get all their results back when every one has
-  finished. Each task has a unique name, an agent (explorer reads and reports, worker changes
-  files), a goal that stands on its own (the agent does not see your conversation), and optional
-  dependsOn (names of other tasks of this call; a task starts after them and receives their
-  results), acceptance (what its result must show), inputs (artifacts you hand over), effort and
-  budget (a token share). An explorer thinks at none or low, a worker at low, high or max; an
-  effort the agent does not allow is set to the nearest one it does, and the task still runs. Each result you get back is the summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a longer report, and the tool results the task handed over, are read with read_output by the reference ref_N/toolCallId shown with the result. A worker must have writeScope: the repository paths it may change, which must lie
-  within what you may write and must not overlap the scope of a worker that can run at the same
-  time. An explorer has no writeScope. While the tasks run you cannot write or run commands.
-  Call it on its own.
+  Start up to 8 subtasks that run in parallel. The call returns at once; the tasks run while you
+  go on, and their results come to you as they finish. To wait for them, call sleep with until
+  children (mode all for every one). You cannot finish (reply or finish) while a task you started
+  still runs. Each task has a unique name, an agent (explorer reads and reports, worker changes
+  files, lead runs a part of the work and may start its own subtasks), a goal that stands on its
+  own (the agent does not see your conversation), and optional dependsOn (names of other tasks of
+  this call; a task starts after them and receives their results), acceptance (what its result
+  must show), inputs (artifacts you hand over), effort and budget (a token share). An explorer
+  thinks at none or low, a worker or lead at low, high or max; an effort the agent does not allow
+  is set to the nearest one it does, and the task still runs. Each result you get back is the
+  summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a
+  longer report, and the tool results the task handed over, are read with read_output by the
+  reference ref_N/toolCallId shown with the result. A worker or lead must have writeScope: the
+  repository paths it may change, which must lie within what you may write and must not overlap
+  the scope of another task that can run at the same time. An explorer has no writeScope. Until
+  your tasks have all ended you may not write files or run commands; you may read, send messages
+  and sleep. Tasks talk to each other with send_message. Call it on its own.
 parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs

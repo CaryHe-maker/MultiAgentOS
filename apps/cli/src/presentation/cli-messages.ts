@@ -3,7 +3,7 @@ export const CLI_MESSAGES = Object.freeze({
   help: [
     '用法：',
     '  mas [--repo <路径>] [--readonly]                     交互式对话',
-    '  mas run [--repo <路径>] [--readonly] <模板> "<目标>"  以模板运行一次（目前只有 analyze）',
+    '  mas run [--repo <路径>] [--readonly] [<模板>] "<目标>"  作为长任务完成一个目标（缺省模板 mission；另有 analyze）',
     '  mas log [<对话>] [--repo <路径>] [--turn <n>] [--full] [--json] [--list]',
     '                                                       查看一个对话的时间线（只读）',
     '',
@@ -25,7 +25,7 @@ export const CLI_MESSAGES = Object.freeze({
   logList: '列出本仓库的对话',
   repository: '本进程的仓库，缺省为当前工作目录',
   readonly: '只读预设',
-  template: '内置模板，例如 analyze',
+  template: '内置模板（mission、analyze）；只给目标时用 mission',
   goal: '运行的目标',
   invalidArguments: '命令参数不符合要求，请检查命令格式。',
   unknownTemplate: (id: string) => `没有这个模板：${id}。`,

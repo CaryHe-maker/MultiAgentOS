@@ -92,7 +92,7 @@ Turn-chat：  prompt₁ → main·1 → prompt₂ → main·2 → prompt₃ → 
 
 | 新增 | 含义 |
 |---|---|
-| `GraphNodeRecord.mission` | AGENT 节点所属的任务：`{ id, parentId? }`，`id` 前缀 `mis`，根任务没有 `parentId`；HUMAN 节点没有。父任务在节点创建时写下（派生时是调用方的任务，模板编译时是根任务），不靠推断 |
+| `GraphNodeRecord.mission` | AGENT 节点所属的任务：`{ id, parentId? }`，`id` 前缀 `msc`（契约中预留的 `missionScopeId`），根任务没有 `parentId`；HUMAN 节点没有。父任务在节点创建时写下（派生时是调用方的任务，模板编译时是根任务），不靠推断 |
 | `CONTINUES` 边 | 从休眠的一段到唤醒时追加的下一段。不参与就绪判定（下一段在追加时就绪）；它让"读这一段的边"能找到接手的那一段（第 3.3 节） |
 | `MISSION_ENDED` 记录 | `missionId`、`status`（`SUCCEEDED`、`FAILED`、`INTERRUPTED`）：任务结束的唯一依据 |
 
@@ -519,9 +519,10 @@ interface MissionScope {
 ### 8.2 写入占用按任务
 
 - 运行中的任务（OPEN 的 MissionScope）写入占用两两不相交，**休眠的任务也算**：否则兄弟任务可以趁它休眠写进它的范围；
-- 父任务派生之后可以继续工作（D14），但它的写入占用要减去委派给子任务的部分：父任务对子任务范围的 WRITE 以
-  `WRITE_SCOPE_DELEGATED` 拒绝；它的命令在沙盒中把子任务的范围挂为只读；
-- 子任务结束时它的范围回到父任务。
+- 父任务派生之后可以继续工作（D14）：读、检索、网页、发消息、休眠；但在它派生的子任务全部结束（委派交还）之前，
+  它的写入与命令一律以 `WRITE_SCOPE_DELEGATED` 拒绝。这比"只拒绝子任务范围内的写入、命令把子任务范围挂为只读"简单，
+  也不需要改沙盒的挂载；按评测证据再决定是否放宽（第 14 节第 5 条）；
+- 子任务全部结束时 Workflow 交还委派（`releaseDelegation`），父任务恢复写入。
 
 ### 8.3 额度
 
@@ -782,3 +783,20 @@ M2Decisions 中需要改写的决定：第 1 节"结束方式由定义声明的�
 | 2 | 模板子任务（非派生）能否再派生 | 能，按同样的深度规则；模板中的 `lead` 节点就是这种用法 |
 | 3 | 等局部询问的任务被消息积累的通知，在答复唤醒时是否一起给出 | 一起给出，按日志顺序排在答复之后 |
 | 4 | `maxConsecutiveWakes`、`maxMessagesPerSegment`、`maxBackgroundJobs` 的缺省值 | 先用本文的值，phase 2 评测后校准 |
+| 5 | 父任务在子任务运行时能否写入自己范围内、子任务范围之外的文件 | 现在不能（第 8.2 节）；按评测看是否值得放宽 |
+| 6 | 模板根任务的步骤是否要单独的结束工具 `complete_step`（D16 按角色决定结束工具） | 目前用 `reply`：在长任务里每一步的回复同时是给用户看的进展，效果与 `complete_step` 相同；是否改名在评审时定 |
+
+## 15. 实现进度
+
+| 部分 | 状态 | 说明 |
+|---|---|---|
+| MissionTree 的图模型（第 3 节） | 已实现 | 节点带 `mission`；`YIELDED`、`CONTINUES`、`MISSION_ENDED`；`projectMissions` 等纯函数；属性测试 |
+| Kernel 的 MissionScope（第 8.1–8.3 节） | 已实现 | 登记、`MISSION_BUSY`、`MISSION_CLOSED`、按任务的写入占用与账本、按深度收窄派生 |
+| 派生不阻塞、休眠与唤醒、消息、停滞检测（第 4、5、9.3 节） | 已实现 | 唤醒条件 `children`、`message`；连续唤醒上限；结果按书写顺序交付；任务的投影跨段 |
+| 嵌套派生与 `lead`（第 3.6、9.4 节） | 已实现 | 缺省三层 |
+| 定时唤醒与 `timeoutSeconds`（第 4.2、8.5 节） | 已实现 | `scheduleWake` 与 `WakeDue`，日志记录 `MISSION_TIMER_DUE`；任务自己设的定时未到时不算停滞，缺省超时不阻止停滞检测 |
+| `ask_user` 改为休眠 | 未实现 | 仍是挂起在调用上等答复（原有的 `DELEGATE`、`RESUME`） |
+| 后台命令（第 6 节） | 未实现 | |
+| checkpoint 取代 Turn（第 7 节） | 未实现 | |
+| 模板 owner 与 `mission` 模板（第 3.5、10.1 节） | 已实现 | `owner`、`role: owner`、`OWNER_NOT_LINEAR`；`mas run "<目标>"` 缺省用 `mission`；模板步骤的 `goal` 作为它的任务给出，同时保留用户的目标；Orchestration 的活动时限缺省 4 小时。与第 4.1 节的差别：模板根任务的步骤目前也以 `reply` 收尾（输出步骤的回复就是运行结果），`complete_step` 还没有作为单独的工具（第 14 节第 6 条） |
+| 唤醒根任务处理后台命令结果（第 4.4 节） | 未实现 | 依赖后台命令 |

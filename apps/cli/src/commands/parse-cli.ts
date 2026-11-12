@@ -1,6 +1,9 @@
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { CLI_MESSAGES, parserErrorMessage } from '../presentation/cli-messages.js';
 
+/** The template `mas run` uses when only a goal is given. */
+const DEFAULT_TEMPLATE = 'mission';
+
 /** What the process was asked to do (Module/UserInteraction 4). */
 export type MasCommand =
   | {
@@ -85,8 +88,10 @@ export async function parseCli(
     .option('--repo <path>', CLI_MESSAGES.repository)
     .option('--readonly', CLI_MESSAGES.readonly, false)
     .argument('<template>', CLI_MESSAGES.template)
-    .argument('<goal>', CLI_MESSAGES.goal)
-    .action((template: string, goal: string, options: CommonOptions) => {
+    .argument('[goal]', CLI_MESSAGES.goal)
+    .action((first: string, second: string | undefined, options: CommonOptions) => {
+      // `mas run "<goal>"` is a long task of the built-in template mission (Orchestration 10.1).
+      const [template, goal] = second === undefined ? [DEFAULT_TEMPLATE, first] : [first, second];
       command = { kind: 'RUN', template, goal, readonly: options.readonly, ...repoOf(options) };
     });
   program

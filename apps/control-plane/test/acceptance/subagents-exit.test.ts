@@ -22,6 +22,9 @@ import {
   type ScriptedChat,
 } from './chat-driver.js';
 
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
+
 const TIMEOUT = 90_000;
 const bwrapWorks = (await probeSandbox(tmpdir())).available;
 const real = bwrapWorks ? describe : describe.skip;
@@ -100,6 +103,7 @@ describe('P2: two workers with separate scopes', () => {
               { name: 'fix-api', agent: 'worker', goal: 'write api/new.txt', writeScope: ['api'] },
               { name: 'fix-ui', agent: 'worker', goal: 'write ui/new.txt', writeScope: ['ui'] },
             ),
+            waitForTasks(),
             reply('both done'),
           ],
         },
@@ -153,6 +157,7 @@ describe('P2: two workers with separate scopes', () => {
               { name: 'fix-api', agent: 'worker', goal: 'change the api', writeScope: ['api'] },
               { name: 'fix-ui', agent: 'worker', goal: 'change the ui', writeScope: ['ui'] },
             ),
+            waitForTasks(),
             reply('done'),
           ],
         },
@@ -194,6 +199,7 @@ describe('the tools of each Agent', () => {
             { name: 'look', agent: 'explorer', goal: 'find auth' },
             { name: 'change', agent: 'worker', goal: 'edit', writeScope: ['src'] },
           ),
+          waitForTasks(),
           reply('ok'),
         ],
         explorer: [finish('found auth in src/auth.ts')],
@@ -257,6 +263,7 @@ describe('dependencies and results', () => {
               },
               { name: 'survey', agent: 'explorer', goal: 'find the auth code' },
             ),
+            waitForTasks(),
             reply('done'),
           ],
           explorer: [finish('auth lives in src/auth.ts, nothing else')],
@@ -344,7 +351,11 @@ describe('what the user sees', () => {
     async () => {
       const place = await roots({ 'src/auth.ts': 'x\n' });
       const provider = scriptedAgents({
-        main: [spawn({ name: 'survey', agent: 'explorer', goal: 'look' }), reply('done')],
+        main: [
+          spawn({ name: 'survey', agent: 'explorer', goal: 'look' }),
+          waitForTasks(),
+          reply('done'),
+        ],
         explorer: [finish('looked')],
       });
       const chat = await chatOn(place, provider);
@@ -353,7 +364,8 @@ describe('what the user sees', () => {
         live.activity.filter((line) => line.label.startsWith('explorer survey')),
       );
       expect(branches.length).toBeGreaterThan(0);
-      expect(branches.every((line) => line.branch?.endsWith('└─ ') === true)).toBe(true);
+      // Under the caller while the caller runs; once it sleeps, its task stands on its own line.
+      expect(branches.some((line) => line.branch?.endsWith('└─ ') === true)).toBe(true);
       await doneReplies(chat, 1);
       await chat.console.submit('/timeline');
       const timeline = chat.printed('NOTICE').at(-1) ?? '';
@@ -373,6 +385,7 @@ real('what a command changed (M2Design 7.1)', () => {
         {
           main: [
             spawn({ name: 'make', agent: 'worker', goal: 'make a file', writeScope: ['out'] }),
+            waitForTasks(),
             reply('done'),
           ],
         },
@@ -412,6 +425,7 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
               { name: 'left', agent: 'worker', goal: 'say hi', writeScope: ['a'] },
               { name: 'right', agent: 'worker', goal: 'say hi', writeScope: ['b'] },
             ),
+            waitForTasks(),
             reply('done'),
           ],
         },

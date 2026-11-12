@@ -1,0 +1,85 @@
+schemaVersion: v1
+kind: AGENT
+id: lead
+version: v0.1.0
+description: A SubAgent that runs one part of the work, splits it among its own subtasks and checks the result.
+role: part lead
+modelRef:
+  id: deepseek-flash
+  version: v0.1.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - low
+    - high
+    - max
+promptRef:
+  id: lead-system
+  version: v0.1.0
+unitRefs:
+  - id: repository-list
+    version: v0.1.0
+  - id: repository-search
+    version: v0.1.0
+  - id: file-read
+    version: v0.1.0
+  - id: file-write
+    version: v0.1.0
+  - id: file-edit
+    version: v0.1.0
+  - id: output-read
+    version: v0.1.0
+  - id: run-command
+    version: v0.1.0
+  - id: git-inspect
+    version: v0.1.0
+  - id: context-assemble
+    version: v0.1.0
+  - id: model-call
+    version: v0.1.0
+startUnitRefs: []
+actions:
+  end:
+    - toolRef:
+        id: finish-worker
+        version: v0.1.0
+      then: FINISH_SUBAGENT
+      allowedInFinal: true
+  onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
+  todos:
+    toolRef:
+      id: update-todos
+      version: v0.1.0
+  askUser:
+    toolRef:
+      id: ask-user
+      version: v0.1.0
+  spawn:
+    toolRef:
+      id: run-subagents
+      version: v0.1.0
+spawnable:
+  defaultShare: 1200000
+capabilities:
+  - repo.read
+  - workspace.write
+  - command.exec
+  - agent.spawn
+limits:
+  maxRounds: 40
+  maxToolCallsPerRound: 8
+  maxToolUnits: 160
+  maxWallClockMs: 3600000
+budget:
+  perCallInputLimit: 100000
+  maxOutputTokens: 32000
+  finalInputBudget: 100000
+  finalMaxOutputTokens: 32000

@@ -8,7 +8,8 @@ describe('control-plane entry', () => {
     const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       await expect(main(['analyse'])).resolves.toBe(64);
-      await expect(main(['run', 'analyze'])).resolves.toBe(64);
+      // A goal alone is a run of the template mission; nothing at all is a usage error.
+      await expect(main(['run'])).resolves.toBe(64);
       await expect(main(['--unknown'])).resolves.toBe(64);
     } finally {
       write.mockRestore();

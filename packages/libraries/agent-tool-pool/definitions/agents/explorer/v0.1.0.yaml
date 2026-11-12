@@ -43,6 +43,14 @@ actions:
       then: FINISH_SUBAGENT
       allowedInFinal: true
   onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
 spawnable:
   defaultShare: 300000
 capabilities:

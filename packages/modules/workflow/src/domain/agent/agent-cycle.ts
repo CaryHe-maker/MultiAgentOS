@@ -62,6 +62,10 @@ export interface AgentDefinitions {
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `ask_user`: the same shape, answered by the user through a HUMAN node (M2Design 3.4). */
   readonly askTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `sleep`: ends the segment; the runner checks what it waits for (Orchestration 4.1). */
+  readonly sleepTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `send_message`: answered by the runner at once, after it routed the message (Orchestration 5). */
+  readonly messageTool?: { readonly toolName: string; readonly parameters: Schema };
 }
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
@@ -188,6 +192,10 @@ export type AgentEnding =
   | { readonly kind: 'SPAWN'; readonly arguments: unknown; readonly source: ControlSource }
   /** `ask_user` was called validly in form; the runner checks what it points at. */
   | { readonly kind: 'ASK'; readonly arguments: unknown; readonly source: ControlSource }
+  /** `sleep` was called validly in form; the runner checks it can be woken, then ends the segment. */
+  | { readonly kind: 'SLEEP'; readonly arguments: unknown; readonly source: ControlSource }
+  /** `send_message` was called validly in form; the runner routes it and answers the call. */
+  | { readonly kind: 'MESSAGE'; readonly arguments: unknown; readonly source: ControlSource }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -824,6 +832,22 @@ function soleControlOf(
         allowedInFinal: false,
         ending: (source) => ({ kind: 'ASK', arguments: call.arguments, source }),
       };
+    const sleep = state.definitions.sleepTool;
+    if (sleep !== undefined && call.toolName === sleep.toolName)
+      return {
+        call,
+        parameters: sleep.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'SLEEP', arguments: call.arguments, source }),
+      };
+    const message = state.definitions.messageTool;
+    if (message !== undefined && call.toolName === message.toolName)
+      return {
+        call,
+        parameters: message.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'MESSAGE', arguments: call.arguments, source }),
+      };
   }
   return undefined;
 }
@@ -865,7 +889,7 @@ function actOn(
     });
     const transition = ended(state, ending, records);
     // A delegated call is pending until the graph answers it; any other control call ends the run.
-    return ending.kind === 'SPAWN' || ending.kind === 'ASK'
+    return ending.kind === 'SPAWN' || ending.kind === 'ASK' || ending.kind === 'MESSAGE'
       ? {
           ...transition,
           state: {

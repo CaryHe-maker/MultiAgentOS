@@ -54,6 +54,7 @@ import type {
   RegisterAgentRunRequest,
   ReleaseDelegationRequest,
   RetainArtifactsRequest,
+  ScheduleWakeRequest,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
   ReserveDelegationRequest,
@@ -425,6 +426,11 @@ export interface WorkflowGatewayPort {
   ): Promise<DelegationReserved | SyscallRejected>;
   releaseDelegation(
     request: ReleaseDelegationRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Wakes a sleeping task after some seconds, within the run (Orchestration 8.5). */
+  scheduleWake(
+    request: ScheduleWakeRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Keeps the results of a handover for the whole Session (Kernel/Core 5g). */

@@ -320,6 +320,64 @@
                 }
               },
               "additionalProperties": false
+            },
+            "sleep": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "message": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -1289,6 +1347,64 @@
                   "additionalProperties": false
                 },
                 "spawn": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "sleep": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "message": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -2670,6 +2786,35 @@
             "REPOSITORY"
           ]
         },
+        "owner": {
+          "type": "object",
+          "required": [
+            "agent"
+          ],
+          "properties": {
+            "agent": {
+              "type": "object",
+              "required": [
+                "id",
+                "version"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "catalog.DefinitionRef.v1"
+            }
+          },
+          "additionalProperties": false
+        },
         "nodes": {
           "type": "array",
           "items": {
@@ -2787,6 +2932,10 @@
                   },
                   "output": {
                     "type": "boolean"
+                  },
+                  "role": {
+                    "type": "string",
+                    "const": "owner"
                   }
                 },
                 "additionalProperties": false
@@ -4603,6 +4752,76 @@
                   "seq",
                   "category",
                   "kind",
+                  "from",
+                  "outputRef",
+                  "toolCallId"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "MESSAGE"
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -5713,6 +5932,76 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "from",
+            "outputRef",
+            "toolCallId"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "MESSAGE"
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "outputRef": {
+              "type": "object",
+              "required": [
+                "artifactId",
+                "sha256",
+                "size",
+                "mediaType"
+              ],
+              "properties": {
+                "artifactId": {
+                  "type": "string",
+                  "pattern": "^art_[a-f0-9]{64}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mediaType": {
+                  "type": "string",
+                  "const": "application/vnd.multiagentos.model-output+json"
+                }
+              },
+              "additionalProperties": false
+            },
+            "toolCallId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           },
           "additionalProperties": false
@@ -9849,6 +10138,66 @@
             },
             "requestType": {
               "type": "string",
+              "const": "scheduleWake"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "missionId",
+                "timerId",
+                "seconds"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "missionId": {
+                  "type": "string",
+                  "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "timerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3600
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ScheduleWakeRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "reportCompactionSource"
             },
             "request": {
@@ -10819,6 +11168,76 @@
                             },
                             "additionalProperties": false,
                             "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "from",
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "MESSAGE"
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
                           }
                         },
                         "additionalProperties": false
@@ -12094,6 +12513,76 @@
                                     },
                                     "additionalProperties": false,
                                     "$id": "platform.common.ArtifactRef.v1"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
+                                  "from",
+                                  "outputRef",
+                                  "toolCallId"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "turnId": {
+                                    "type": "string",
+                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "MESSAGE"
+                                  },
+                                  "from": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "outputRef": {
+                                    "type": "object",
+                                    "required": [
+                                      "artifactId",
+                                      "sha256",
+                                      "size",
+                                      "mediaType"
+                                    ],
+                                    "properties": {
+                                      "artifactId": {
+                                        "type": "string",
+                                        "pattern": "^art_[a-f0-9]{64}$"
+                                      },
+                                      "sha256": {
+                                        "type": "string",
+                                        "pattern": "^[a-f0-9]{64}$"
+                                      },
+                                      "size": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "const": "application/vnd.multiagentos.model-output+json"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "toolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
                                   }
                                 },
                                 "additionalProperties": false
@@ -33978,6 +34467,76 @@
                   "seq",
                   "category",
                   "kind",
+                  "from",
+                  "outputRef",
+                  "toolCallId"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "MESSAGE"
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "outputRef": {
+                    "type": "object",
+                    "required": [
+                      "artifactId",
+                      "sha256",
+                      "size",
+                      "mediaType"
+                    ],
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "pattern": "^art_[a-f0-9]{64}$"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "const": "application/vnd.multiagentos.model-output+json"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "toolCallId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
                   "text"
                 ],
                 "properties": {
@@ -36161,6 +36720,47 @@
       ],
       "$id": "kernel.unit.RunStart.v1"
     },
+    "kernel.unit.ScheduleWakeRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "missionId",
+        "timerId",
+        "seconds"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "missionId": {
+          "type": "string",
+          "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "timerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ScheduleWakeRequest.v1"
+    },
     "kernel.unit.SubmitUnitRequest.v1": {
       "type": "object",
       "required": [
@@ -37308,6 +37908,76 @@
                             },
                             "additionalProperties": false,
                             "$id": "platform.common.ArtifactRef.v1"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "from",
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "turnId": {
+                            "type": "string",
+                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "MESSAGE"
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
                           }
                         },
                         "additionalProperties": false
@@ -39273,6 +39943,76 @@
                         },
                         "additionalProperties": false,
                         "$id": "platform.common.ArtifactRef.v1"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "from",
+                      "outputRef",
+                      "toolCallId"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "turnId": {
+                        "type": "string",
+                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "MESSAGE"
+                      },
+                      "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "outputRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "const": "application/vnd.multiagentos.model-output+json"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
                       }
                     },
                     "additionalProperties": false
@@ -42346,6 +43086,31 @@
       "additionalProperties": false,
       "$id": "kernel.unit.UpdateActivityRequest.v1"
     },
+    "kernel.unit.WakeDue.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "missionId",
+        "timerId"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "WakeDue"
+        },
+        "missionId": {
+          "type": "string",
+          "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "timerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.WakeDue.v1"
+    },
     "kernel.unit.WorkflowInboxEvent.v1": {
       "type": "object",
       "required": [
@@ -42462,6 +43227,31 @@
                 }
               ],
               "$id": "kernel.unit.RunStart.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "missionId",
+                "timerId"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "WakeDue"
+                },
+                "missionId": {
+                  "type": "string",
+                  "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "timerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.WakeDue.v1"
             },
             {
               "anyOf": [
@@ -50512,6 +51302,49 @@
             "workflowRunId",
             "type",
             "missionId",
+            "timerId"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "MISSION_TIMER_DUE"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "timerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
             "status"
           ],
           "properties": {
@@ -52158,6 +52991,24 @@
                     "agentRunId": {
                       "type": "string",
                       "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "missionId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "MISSION"
+                    },
+                    "missionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     }
                   },
                   "additionalProperties": false
@@ -53993,7 +54844,8 @@
               "agent": {
                 "enum": [
                   "explorer",
-                  "worker"
+                  "worker",
+                  "lead"
                 ]
               },
               "goal": {
@@ -54091,6 +54943,148 @@
       },
       "additionalProperties": false,
       "$id": "workflow.RunSubagentsArgs.v1"
+    },
+    "workflow.SendMessageArgs.v1": {
+      "type": "object",
+      "required": [
+        "to",
+        "text"
+      ],
+      "properties": {
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.SendMessageArgs.v1"
+    },
+    "workflow.SleepArgs.v1": {
+      "type": "object",
+      "required": [
+        "until"
+      ],
+      "properties": {
+        "until": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "mode"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "children"
+                  },
+                  "mode": {
+                    "enum": [
+                      "all",
+                      "any"
+                    ]
+                  },
+                  "names": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "minItems": 1,
+                    "maxItems": 12
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "mode"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "jobs"
+                  },
+                  "mode": {
+                    "enum": [
+                      "all",
+                      "any"
+                    ]
+                  },
+                  "jobIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "minItems": 1,
+                    "maxItems": 8
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "message"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "seconds"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "timer"
+                  },
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.SleepArgs.v1"
     },
     "workflow.UpdateTodosArgs.v1": {
       "type": "object",

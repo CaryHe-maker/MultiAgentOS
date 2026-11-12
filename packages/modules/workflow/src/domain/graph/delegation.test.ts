@@ -9,7 +9,7 @@ import {
   withWaiting,
 } from './graph.js';
 import type { Graph, GraphEdge, GraphNode, NodeRecord, NodeView } from './graph.js';
-import { chatGrowthPoint, projectGraph, spawnRevision } from './session-graph.js';
+import { advanceGraph, chatGrowthPoint, projectGraph, spawnRevision } from './session-graph.js';
 
 const call = { toolCallId: 'call_1', delegationId: 'dlg_1' };
 const node = (name: string, extra: Partial<GraphNode> = {}): GraphNode => ({
@@ -154,7 +154,7 @@ describe('a call in the log', () => {
     spawn: { writeScope: [], acceptance: [], inputs: [], tokens: 1000 },
   });
 
-  it('builds the revision of a call with DELEGATE and RESUME edges in the written order', () => {
+  it('builds the revision of a call with DELEGATE edges only, in the written order (D14)', () => {
     const revision = spawnRevision(
       'wfr_a',
       2,
@@ -165,16 +165,18 @@ describe('a call in the log', () => {
     const kinds = revision.edges.map((e) => e.kind);
     expect(kinds.filter((k) => k === 'DEPENDS')).toHaveLength(1);
     expect(kinds.filter((k) => k === 'DELEGATE')).toHaveLength(2);
-    expect(revision.edges.filter((e) => e.kind === 'RESUME').map((e) => e.to)).toEqual([
-      'nod_main',
-      'nod_main',
-    ]);
+    // The caller does not wait on an edge: no RESUME, so its node never becomes WAITING.
+    expect(kinds).not.toContain('RESUME');
     expect(
       revision.edges.every((e) => e.kind === 'DEPENDS' || e.call?.toolCallId === 'call_1'),
     ).toBe(true);
+    expect(revision.nodes.map((n) => n.mission?.parentId)).toEqual([
+      'msc_rootmission',
+      'msc_rootmission',
+    ]);
   });
 
-  it('projects WAITING from the edges and the records, and RUNNING after NODE_RESUMED', () => {
+  it('keeps the caller RUNNING after it dispatched: it goes on while its tasks run', () => {
     seq = 0;
     const revision = spawnRevision(
       'wfr_a',
@@ -207,9 +209,13 @@ describe('a call in the log', () => {
         edges: revision.edges,
       }),
     ];
-    expect(projectGraph(log, 'wfr_a').view.get('nod_main')?.status).toBe('WAITING');
-    const resumed = [...log, record({ type: 'NODE_RESUMED', nodeId: 'nod_main', call })];
-    expect(projectGraph(resumed, 'wfr_a').view.get('nod_main')?.status).toBe('RUNNING');
+    const projected = projectGraph(log, 'wfr_a');
+    expect(projected.view.get('nod_main')?.status).toBe('RUNNING');
+    // The task is ready while its caller runs.
+    const [one] = revision.nodes;
+    expect(advanceGraph(projected.graph, projected.view).ready.map((n) => n.nodeId)).toEqual([
+      one?.nodeId,
+    ]);
   });
 
   it('does not take a task, or a main that dispatched, for the next step of a chat', () => {

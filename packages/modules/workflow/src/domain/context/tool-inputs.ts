@@ -73,6 +73,13 @@ function fullOutputOf(
       for (const turnId of record.revertedTurnIds) reverted.add(turnId);
     if (record.type === 'AGENT_RUN_REGISTERED' && record.agentRef.id === 'main')
       main.add(record.agentRunId);
+    // Every segment of a task reads what an earlier segment of it ran (Orchestration 3.4).
+    if (
+      record.type === 'AGENT_RUN_REGISTERED' &&
+      scope.missionId !== undefined &&
+      record.missionId === scope.missionId
+    )
+      callers.add(record.agentRunId);
   }
   if (scope.kind === 'MAIN') for (const agentRunId of main) callers.add(agentRunId);
   else callers.add(scope.agentRunId);

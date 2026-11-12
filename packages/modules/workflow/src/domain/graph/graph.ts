@@ -324,7 +324,9 @@ export type GraphValidationCode =
   | 'UNKNOWN_AGENT'
   | 'CONDITION_NOT_ALLOWED'
   | 'UNSUPPORTED_NODE_KIND'
-  | 'INVALID_LOOP';
+  | 'INVALID_LOOP'
+  /** Two steps of a template's root task could run at once (Orchestration 3.5). */
+  | 'OWNER_NOT_LINEAR';
 
 export interface GraphValidationError {
   readonly code: GraphValidationCode;

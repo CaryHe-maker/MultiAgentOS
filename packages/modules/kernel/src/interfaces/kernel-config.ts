@@ -18,7 +18,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   cancelGraceMs: 5_000,
   pauseDrainMs: 5_000,
   turnTimeoutSeconds: 1_800,
-  orchestrationTimeoutSeconds: 3_600,
+  orchestrationTimeoutSeconds: 14_400,
   maxPauseSeconds: 1_800,
   convergenceMarginMs: 1_000,
   technicalRetryLimit: 3,

@@ -70,5 +70,6 @@ export * from './platform-persistence/session-log.js';
 export * from './workflow/reply.js';
 export * from './workflow/subagents.js';
 export * from './workflow/ask-user.js';
+export * from './workflow/mission-tools.js';
 export * from './ports.js';
 export * from './protocol-registry.js';

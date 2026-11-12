@@ -244,3 +244,73 @@ describe('the MissionTree read from the graph (Orchestration 3.1, 3.2)', () => {
     );
   });
 });
+
+describe('the owner of a template (Orchestration 3.5)', () => {
+  const main = { id: 'main', version: 'v1.0.0' };
+  const explorer = { id: 'explorer', version: 'v1.0.0' };
+  const base = {
+    schemaVersion: 'v1',
+    kind: 'TEMPLATE',
+    version: 'v1.0.0',
+    description: 'owner steps',
+    origin: 'BUILTIN',
+    digest: 'a'.repeat(64),
+    owner: { agent: main },
+  } as const;
+  const root = rootMissionId(session, 'research');
+
+  it('makes the owner steps the root task and every other AGENT node a task below it', () => {
+    const template = {
+      ...base,
+      id: 'research',
+      nodes: [
+        { name: 'plan', kind: 'AGENT', agent: main, role: 'owner' },
+        { name: 'verify', kind: 'AGENT', agent: explorer, dependsOn: ['plan'] },
+        {
+          name: 'report',
+          kind: 'AGENT',
+          agent: main,
+          role: 'owner',
+          dependsOn: ['verify'],
+          output: true,
+        },
+      ],
+    } as unknown as TemplateDefinition;
+    const { revision, errors } = compileTemplate(run, template, root);
+    expect(errors).toEqual([]);
+    expect(agentOf(revision, 'plan').mission).toEqual({ id: root });
+    expect(agentOf(revision, 'report').mission).toEqual({ id: root });
+    expect(agentOf(revision, 'verify').mission?.parentId).toBe(root);
+    const missions = projectMissions([extended(1, revision)]);
+    expect(missions.get(root)?.nodeIds).toEqual([
+      agentOf(revision, 'plan').nodeId,
+      agentOf(revision, 'report').nodeId,
+    ]);
+  });
+
+  it('refuses owner steps that could run at once', () => {
+    const template = {
+      ...base,
+      id: 'research',
+      nodes: [
+        { name: 'one', kind: 'AGENT', agent: main, role: 'owner' },
+        { name: 'two', kind: 'AGENT', agent: main, role: 'owner', output: true },
+      ],
+    } as unknown as TemplateDefinition;
+    expect(compileTemplate(run, template, root).errors).toEqual([
+      { code: 'OWNER_NOT_LINEAR', node: 'two' },
+    ]);
+  });
+
+  it('makes the one step of mission the root, which a goal alone runs', () => {
+    const template = {
+      ...base,
+      id: 'mission',
+      nodes: [{ name: 'deliver', kind: 'AGENT', agent: main, role: 'owner', output: true }],
+    } as unknown as TemplateDefinition;
+    const missionRoot = rootMissionId(session, 'mission');
+    const { revision, errors } = compileTemplate(run, template, missionRoot);
+    expect(errors).toEqual([]);
+    expect(agentOf(revision, 'deliver').mission).toEqual({ id: missionRoot });
+  });
+});

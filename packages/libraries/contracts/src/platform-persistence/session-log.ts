@@ -144,10 +144,14 @@ const record = <T extends string, C extends TProperties, P extends TProperties>(
   fields: P,
 ) => closed({ ...common, type: Type.Literal(type), ...fields });
 
-/** Who gives or takes a handover: the main Agent of a chat, or one AgentRun. */
+/**
+ * Who gives or takes a handover: the main Agent of a chat, one AgentRun, or a task, whichever of
+ * its segments reads it (Orchestration 3.4).
+ */
 export const HandoverPartySchema = Type.Union([
   closed({ kind: Type.Literal('MAIN') }),
   closed({ kind: Type.Literal('AGENT_RUN'), agentRunId: IdSchemas.agentRunId }),
+  closed({ kind: Type.Literal('MISSION'), missionId: IdSchemas.missionScopeId }),
 ]);
 export type HandoverParty = Static<typeof HandoverPartySchema>;
 
@@ -304,6 +308,11 @@ export const SessionLogRecordSchema = Type.Union(
         }),
         { minItems: 1, maxItems: 64 },
       ),
+    }),
+    /** A timer of a sleeping task is due (Orchestration 4.2): what a wake by time reads. */
+    record('MISSION_TIMER_DUE', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      timerId: text(160),
     }),
     /** The one record that says a task has ended (Orchestration 3.2). */
     record('MISSION_ENDED', inTurn, {

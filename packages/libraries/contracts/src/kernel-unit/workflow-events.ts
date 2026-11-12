@@ -251,8 +251,20 @@ export const ContextCompactedForWorkflowSchema = closed(
 );
 export type ContextCompactedForWorkflow = Static<typeof ContextCompactedForWorkflowSchema>;
 
+/** A timer of `scheduleWake` is due (Orchestration 8.5). */
+export const WakeDueSchema = closed(
+  {
+    type: Type.Literal('WakeDue'),
+    missionId: IdSchemas.missionScopeId,
+    timerId: text(160),
+  },
+  'kernel.unit.WakeDue.v1',
+);
+export type WakeDue = Static<typeof WakeDueSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
+  WakeDueSchema,
   UnitReportSchema,
   HumanAnsweredSchema,
   TurnClosedSchema,

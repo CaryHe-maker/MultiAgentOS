@@ -42,15 +42,9 @@ describe('what the tasks of a call look like in the log', () => {
     expect(callOf(projected, 'nod_main')).toBeUndefined();
   });
 
-  it('reports every task of a call in the written order, a task without an outcome as failed', () => {
+  it('answers no call with joined results: a spawn has no RESUME edges any more (D14)', () => {
     const records = [extended()];
-    expect(
-      callResultsOf(records, 'wfr_a', 'nod_main', 'call_1').map((r) => [r.name, r.status]),
-    ).toEqual([
-      ['one', 'FAILED'],
-      ['two', 'FAILED'],
-    ]);
-    expect(callResultsOf(records, 'wfr_a', 'nod_main', 'call_other')).toEqual([]);
+    expect(callResultsOf(records, 'wfr_a', 'nod_main', 'call_1')).toEqual([]);
   });
 
   it('gives a task what it must do and only the results of the tasks it depends on', () => {

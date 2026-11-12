@@ -220,6 +220,14 @@ export const AgentDefinitionSchema = Type.Object(
         spawn: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
+        sleep: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `send_message` tool: a message to tasks along the tree (Orchestration 5). */
+        message: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -495,6 +503,8 @@ export const TemplateNodeSchema = Type.Union([
       dependsOn: Type.Optional(Type.Array(TemplateDependencySchema)),
       inputFrom: Type.Optional(Type.Literal('HANDOFF')),
       output: Type.Optional(Type.Boolean()),
+      /** A step of the template's root task, its one responsible owner (Orchestration 3.5). */
+      role: Type.Optional(Type.Literal('owner')),
     },
     { additionalProperties: false },
   ),
@@ -509,6 +519,14 @@ export const TemplateDefinitionSchema = Type.Object(
   {
     ...header('TEMPLATE'),
     origin: Type.Enum(['BUILTIN', 'REPOSITORY']),
+    /**
+     * The one responsible owner of the graph (Orchestration 3.5): the Agent of every node marked
+     * `role: owner`, which are the steps of the root task; every other AGENT node is a task below
+     * it. A template without one has its first AGENT node as the root.
+     */
+    owner: Type.Optional(
+      Type.Object({ agent: DefinitionRefSchema }, { additionalProperties: false }),
+    ),
     nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
   },
   { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },

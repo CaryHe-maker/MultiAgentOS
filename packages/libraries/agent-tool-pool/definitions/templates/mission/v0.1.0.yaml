@@ -1,0 +1,27 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: mission
+version: v0.1.0
+description:
+  'Deliver a goal as a long task: main owns it, plans it, splits it among leads, workers and
+  explorers as it sees fit, checks the result and delivers it, without a conversation.'
+origin: BUILTIN
+owner:
+  agent:
+    id: main
+    version: v0.1.0
+nodes:
+  - name: deliver
+    kind: AGENT
+    agent:
+      id: main
+      version: v0.1.0
+    role: owner
+    output: true
+    goal: 'You own this goal from start to delivery; nobody will answer you between steps. Clarify
+      it only if it cannot be done without the user (ask_user). Write the plan, the parts and
+      what each part must deliver into a file first; then start leads for large parts, workers
+      for scoped changes and explorers for research, with writeScopes that do not overlap and
+      acceptance criteria for each; sleep while they work; check what comes back against the
+      goal, start fixes where it falls short, and reply with the delivered result and how it was
+      checked.'

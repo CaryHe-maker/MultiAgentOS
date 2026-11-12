@@ -73,6 +73,8 @@ describe('the repository catalog', () => {
       'run_subagents',
       'search_external_repository',
       'search_repository',
+      'send_message',
+      'sleep',
       'update_todos',
       'web_fetch',
       'web_search',

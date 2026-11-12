@@ -12,6 +12,7 @@ import {
   type DelegationReserved,
   type ReleaseDelegationRequest,
   type RetainArtifactsRequest,
+  type ScheduleWakeRequest,
   type ReserveDelegationRequest,
   type SandboxProfile,
 } from '@multiagentos/contracts';
@@ -894,6 +895,29 @@ export class RunWork {
       return this.#refuse(requestId, request, 'DELEGATION_NOT_FOUND');
     this.#deps.ledgers.releaseDelegation(delegationId);
     this.#delegations.release(delegationId);
+    return this.#accept(requestId, request);
+  }
+
+  /**
+   * A timer that wakes a sleeping task (Orchestration 8.5): when it is due, and the run still
+   * works, Workflow hears `WakeDue`. It ends with the run; Workflow decides whether it still
+   * matters, so a timer is never cancelled.
+   */
+  scheduleWake(request: ScheduleWakeRequest): Response {
+    const { requestId } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    const admitted = admitWork(this.#host.control());
+    if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
+    const { missionId, timerId } = request;
+    const epoch = this.#host.runEpoch();
+    this.#deps.schedule(request.seconds * 1000, () => {
+      this.#host.enqueue(() => {
+        const { phase } = this.#host.control();
+        if (phase === 'CONVERGING' || phase === 'CLOSED' || epoch !== this.#host.runEpoch()) return;
+        this.#host.toWorkflowEvent({ type: 'WakeDue', missionId, timerId });
+      });
+    });
     return this.#accept(requestId, request);
   }
 

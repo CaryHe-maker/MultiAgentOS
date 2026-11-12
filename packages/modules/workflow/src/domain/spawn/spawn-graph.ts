@@ -210,3 +210,20 @@ export function spawnedIn(
   );
   return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
 }
+
+/**
+ * What a task has dispatched so far: the limits of `run_subagents` count it per task, so a lead
+ * below the root has limits of its own (Orchestration 9.3).
+ */
+export function spawnedBy(
+  records: readonly SessionLogRecord[],
+  missionId: string,
+): { readonly tasks: number; readonly calls: number } {
+  const spawns = records.filter(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.source === 'SPAWN' &&
+      record.nodes.some((node) => node.mission?.parentId === missionId),
+  );
+  return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
+}

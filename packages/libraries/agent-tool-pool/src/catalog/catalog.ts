@@ -71,7 +71,7 @@ function referencesOf(body: Body): readonly Reference[] {
           kind: 'TOOL' as const,
           ref: end.toolRef,
         })),
-        ...(['todos', 'spawn', 'askUser'] as const).flatMap((action) => {
+        ...(['todos', 'spawn', 'askUser', 'sleep', 'message'] as const).flatMap((action) => {
           const declared = body.actions[action];
           return declared === undefined
             ? []
@@ -553,9 +553,13 @@ function checkAgent(
   const names = new Map<string, string>();
   const tools = [
     ...units.flatMap((unit) => unit.toolRefs.flatMap((ref) => get('TOOL', ref) ?? [])),
-    ...[body.actions.todos, body.actions.spawn, body.actions.askUser].flatMap((action) =>
-      action === undefined ? [] : (get('TOOL', action.toolRef) ?? []),
-    ),
+    ...[
+      body.actions.todos,
+      body.actions.spawn,
+      body.actions.askUser,
+      body.actions.sleep,
+      body.actions.message,
+    ].flatMap((action) => (action === undefined ? [] : (get('TOOL', action.toolRef) ?? []))),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
   for (const tool of tools) {
@@ -605,6 +609,20 @@ function checkAgent(
     )
       report(origin, 'AGENT_INVALID', 'the ask_user tool must be CONTROL with AskUserArgs');
   }
+  const controls = [
+    ['sleep', 'workflow.SleepArgs.v1'],
+    ['message', 'workflow.SendMessageArgs.v1'],
+  ] as const;
+  for (const [action, contract] of controls) {
+    const declared = body.actions[action];
+    if (declared === undefined) continue;
+    const tool = get('TOOL', declared.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' || contractOf(tool.parametersContract) !== contract)
+    )
+      report(origin, 'AGENT_INVALID', `the ${action} tool must be CONTROL with ${contract}`);
+  }
   checkSpawn(origin, body, get, report);
   for (const unit of units)
     for (const capability of unit.protectedCapabilities)
@@ -641,7 +659,6 @@ function checkSpawn(
   if (finishes !== (body.spawnable !== undefined))
     report(origin, 'AGENT_INVALID', 'spawnable and the FINISH_SUBAGENT end go together');
   if (body.spawnable === undefined) return;
-  if (spawns) report(origin, 'AGENT_INVALID', 'a SubAgent cannot spawn');
   if (body.actions.end.some((end) => end.then !== 'FINISH_SUBAGENT'))
     report(origin, 'AGENT_INVALID', 'a spawnable Agent ends only with FINISH_SUBAGENT');
   if (body.actions.onDegraded !== 'RETURN_PARTIAL')
@@ -664,6 +681,24 @@ function checkTemplate(
   const nodes = new Map(body.nodes.map((node) => [node.name, node]));
   if (nodes.size !== body.nodes.length)
     report(origin, 'TEMPLATE_INVALID', 'node names must be unique');
+  // The owner of a template is one Agent, whose steps are the nodes marked owner; its last step
+  // is the output (Orchestration 3.5).
+  const { owner } = body;
+  const steps = body.nodes.filter((node) => node.kind === 'AGENT' && node.role === 'owner');
+  if (owner === undefined && steps.length > 0)
+    report(origin, 'TEMPLATE_INVALID', 'role owner needs the template to name its owner');
+  if (owner !== undefined) {
+    if (steps.length === 0) report(origin, 'TEMPLATE_INVALID', 'an owner needs at least one step');
+    for (const step of steps)
+      if (
+        step.kind === 'AGENT' &&
+        (step.agent.id !== owner.agent.id || step.agent.version !== owner.agent.version)
+      )
+        report(origin, 'TEMPLATE_INVALID', `${step.name} is a step of the owner, not of its Agent`);
+    const outputs = body.nodes.filter((node) => node.kind === 'AGENT' && node.output === true);
+    if (outputs.length !== 1 || outputs[0]?.kind !== 'AGENT' || outputs[0].role !== 'owner')
+      report(origin, 'TEMPLATE_INVALID', 'exactly one output, and it is a step of the owner');
+  }
   const edges = new Map<
     string,
     readonly { readonly node: string; readonly conditional: boolean }[]
@@ -789,6 +824,8 @@ export class DefinitionCatalog {
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
+      ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
+      ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

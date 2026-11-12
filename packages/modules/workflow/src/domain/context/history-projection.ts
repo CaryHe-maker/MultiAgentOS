@@ -5,7 +5,8 @@ import {
   type ContextHistoryEntry,
   type SessionLogRecord,
 } from '@multiagentos/contracts';
-import { answerOf, callResultsOf } from '../spawn/spawn-graph.js';
+import { answerOf, callResultsOf, handoverFieldsOf } from '../spawn/spawn-graph.js';
+import { outcomeOf } from '../spawn/task-results.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
 /**
@@ -27,14 +28,24 @@ export interface TaskScope {
   readonly writeScope: readonly string[];
   readonly inputs: readonly ArtifactRef[];
   readonly dependencies: readonly Extract<ContextHistoryEntry, { kind: 'SUBAGENT_RESULT' }>[];
+  /**
+   * A step of a template (Orchestration 3.5) works from what the user asked as well as from its
+   * step; a spawned task works from its task alone.
+   */
+  readonly withPrompt?: boolean;
 }
 
+/**
+ * Whose view a projection is. With `missionId`, it is the view of a task: every segment of it, and
+ * what was sent to it (Orchestration 3.4, 9.5); main of a chat is the root task of the Session.
+ */
 export type ProjectionScope =
-  | { readonly kind: 'MAIN' }
+  | { readonly kind: 'MAIN'; readonly missionId?: string }
   | {
       readonly kind: 'NODE';
       readonly workflowRunId: string;
       readonly agentRunId: string;
+      readonly missionId?: string;
       readonly handoff?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
       readonly task?: TaskScope;
     };
@@ -55,6 +66,24 @@ function interruptedNote(
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
   const { workingDirectory, sandbox, currentDate } = context.runtimeContext;
   return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}`;
+}
+
+/** What a task reads first when it wakes: why, and that it goes on where it stopped. */
+function wokenNote(causes: readonly string[]): string {
+  const said: Record<string, string> = {
+    CHILDREN: 'subtasks you started have ended (their results are just above)',
+    JOB: 'a background command of yours has ended',
+    MESSAGE: 'a message came for you (just above)',
+    TIMER: 'the time you set has passed',
+    TIMEOUT: 'you slept as long as you allowed yourself',
+    HUMAN: 'the user answered',
+    STALLED:
+      'nothing else could move: every task was waiting, so you are woken to decide what to do',
+    ROLLED_BACK: 'the work was rolled back to a checkpoint',
+    RESUMED: 'the work was resumed after the process stopped',
+  };
+  const reasons = [...new Set(causes)].map((cause) => said[cause] ?? cause.toLowerCase());
+  return `You were woken: ${reasons.join('; ')}. This is a new segment of the same task: your earlier work is above. Continue from your note and what came in.`;
 }
 
 export interface ProjectionOptions {
@@ -110,7 +139,31 @@ export function projectHistory(
   const isTarget = (target: { kind: 'MAIN' } | { kind: 'AGENT_RUN'; agentRunId: string }) =>
     scope.kind === 'MAIN'
       ? target.kind === 'MAIN'
-      : target.kind === 'AGENT_RUN' && target.agentRunId === scope.agentRunId;
+      : target.kind === 'AGENT_RUN' &&
+        (target.agentRunId === scope.agentRunId || mainRuns.has(target.agentRunId));
+  /** The task whose view this is, when it is one (Orchestration 3.4). */
+  const ownMission = scope.missionId;
+  /** What the view knows of every task: to tell a child's result and its last segment. */
+  const missionInfo = new Map<
+    string,
+    { readonly parentId?: string; readonly name: string; readonly agent: string; last?: string }
+  >();
+  const nodeMission = new Map<string, string>();
+  let taskShown = false;
+  /** The order tasks were written in, for results delivered together (M2Design 3.6). */
+  const writtenOrder = new Map<string, number>();
+  const resultOrder = new Map<ContextHistoryEntry, number>();
+  /**
+   * What waited for the next assembly joins the history: results in the order their tasks were
+   * written, so the context does not depend on which ended first, then the rest in log order.
+   */
+  const flush = () => {
+    const results = notes
+      .filter((entry) => entry.kind === 'SUBAGENT_RESULT')
+      .sort((a, b) => (resultOrder.get(a) ?? 0) - (resultOrder.get(b) ?? 0));
+    entries.push(...results, ...notes.filter((entry) => entry.kind !== 'SUBAGENT_RESULT'));
+    notes.length = 0;
+  };
   let modelId = 'unknown';
   let currentTurn: string | undefined;
   let lastNote: string | undefined;
@@ -125,9 +178,16 @@ export function projectHistory(
       case 'AGENT_RUN_REGISTERED':
         runOfNode.set(record.nodeId, record.agentRunId);
         if (scope.kind === 'NODE') {
-          if (record.agentRunId !== scope.agentRunId) break;
+          // A task's view is every segment of it; without one, the AgentRun's own.
+          const member =
+            ownMission !== undefined
+              ? record.missionId === ownMission || record.agentRunId === scope.agentRunId
+              : record.agentRunId === scope.agentRunId;
+          if (!member) break;
           mainRuns.add(record.agentRunId);
-          if (scope.task !== undefined) {
+          // The task is told once, at its first segment; a later one finds it above.
+          if (scope.task !== undefined && !taskShown) {
+            taskShown = true;
             entries.push({
               seq: record.seq,
               ...turnOf(record.turnId),
@@ -151,9 +211,82 @@ export function projectHistory(
               kind: 'HANDOFF',
               ...scope.handoff,
             });
-        } else if (record.agentRef.id === MAIN_AGENT_ID) {
+        } else if (
+          ownMission !== undefined && record.missionId !== undefined
+            ? record.missionId === ownMission
+            : record.agentRef.id === MAIN_AGENT_ID
+        ) {
           mainRuns.add(record.agentRunId);
         }
+        break;
+      case 'GRAPH_EXTENDED':
+        for (const node of record.nodes) {
+          if (node.mission === undefined || node.kind !== 'AGENT') continue;
+          nodeMission.set(node.nodeId, node.mission.id);
+          if (!writtenOrder.has(node.mission.id))
+            writtenOrder.set(node.mission.id, writtenOrder.size);
+          if (!missionInfo.has(node.mission.id))
+            missionInfo.set(node.mission.id, {
+              ...(node.mission.parentId === undefined ? {} : { parentId: node.mission.parentId }),
+              name: node.name,
+              agent: node.agentRef?.id ?? 'unknown',
+            });
+        }
+        break;
+      case 'NODE_STARTED': {
+        const missionId = nodeMission.get(record.nodeId);
+        const info = missionId === undefined ? undefined : missionInfo.get(missionId);
+        if (info !== undefined) info.last = record.nodeId;
+        break;
+      }
+      case 'MISSION_ENDED': {
+        // A child of this task has ended: its result waits for the next assembly of the task,
+        // whichever segment that is (Orchestration 4.3).
+        const info = missionInfo.get(record.missionId);
+        if (ownMission === undefined || info?.parentId !== ownMission) break;
+        const outcome =
+          info.last === undefined ? undefined : outcomeOf(records, record.workflowRunId, info.last);
+        const status =
+          outcome?.status ??
+          (record.status === 'SUCCEEDED' ? ('DONE' as const) : ('FAILED' as const));
+        const result: ContextHistoryEntry = {
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'SUBAGENT_RESULT',
+          name: info.name,
+          agent: info.agent,
+          status,
+          notes: [...(outcome?.notes ?? [])],
+          ...(outcome?.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
+          ...(outcome?.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...(outcome === undefined ? {} : handoverFieldsOf(records, outcome)),
+        };
+        resultOrder.set(result, writtenOrder.get(record.missionId) ?? 0);
+        notes.push(result);
+        break;
+      }
+      case 'MISSION_MESSAGE':
+        if (ownMission === undefined || !record.to.includes(ownMission)) break;
+        notes.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'MESSAGE',
+          from: record.fromLabel,
+          outputRef: record.source.outputRef,
+          toolCallId: record.source.toolCallId,
+        });
+        break;
+      case 'MISSION_WOKEN':
+        if (record.missionId !== ownMission) break;
+        notes.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: wokenNote(record.causes.map((cause) => cause.kind)),
+        });
         break;
       case 'HUMAN_ANSWERED':
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
@@ -161,7 +294,7 @@ export function projectHistory(
           // A note is for one AgentRun, or for the next Turn of main when its target had ended.
           const mine =
             scope.kind === 'NODE'
-              ? record.attachedAgentRunId === scope.agentRunId
+              ? record.attachedAgentRunId !== undefined && mainRuns.has(record.attachedAgentRunId)
               : record.attachedAgentRunId === undefined || mainRuns.has(record.attachedAgentRunId);
           if (!mine) break;
           const note: ContextHistoryEntry = {
@@ -179,7 +312,8 @@ export function projectHistory(
         }
         if (record.kind !== 'prompt') break;
         // A SubAgent works from its task, not from what the user said.
-        if (scope.kind === 'NODE' && scope.task !== undefined) break;
+        if (scope.kind === 'NODE' && scope.task !== undefined && scope.task.withPrompt !== true)
+          break;
         entries.push({
           seq: record.seq,
           ...turnOf(record.turnId),
@@ -205,8 +339,7 @@ export function projectHistory(
       case 'UNIT_SUBMITTED':
         // The assembly of a round takes the notes that arrived since the last one.
         if (mainRuns.has(record.agentRunId) && record.unitRef.id === 'context-assemble') {
-          entries.push(...notes);
-          notes.length = 0;
+          flush();
           assemblyOwner.set(record.requestId, record.agentRunId);
         }
         if (mainRuns.has(record.agentRunId) && record.inputSource.kind === 'TOOL_CALL') {
@@ -469,7 +602,7 @@ export function projectHistory(
     }
   }
   // A note that came after the last assembly is the last thing in the history.
-  entries.push(...notes);
+  flush();
   const shown = entries.map((entry) =>
     entry.kind === 'HUMAN' &&
     (scope.kind === 'NODE' || (entry.turnId !== undefined && entry.turnId === currentTurn))

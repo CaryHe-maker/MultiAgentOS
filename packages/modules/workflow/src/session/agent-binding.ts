@@ -111,6 +111,26 @@ export function agentBindingOf(
             ),
           },
         }),
+    ...(agent.actions.sleep === undefined
+      ? {}
+      : {
+          sleepTool: {
+            toolName: toolOf(agent.actions.sleep.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.sleep.toolRef).parametersContract,
+            ),
+          },
+        }),
+    ...(agent.actions.message === undefined
+      ? {}
+      : {
+          messageTool: {
+            toolName: toolOf(agent.actions.message.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.message.toolRef).parametersContract,
+            ),
+          },
+        }),
     ...(agent.actions.todos === undefined
       ? {}
       : {

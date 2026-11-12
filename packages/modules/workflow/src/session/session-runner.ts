@@ -1,6 +1,6 @@
 import { settleOpenCalls } from './settle-stale.js';
 import { lastWorkspaceOf } from '../domain/workspace/workspace-binding.js';
-import { checkedItems, nextReferenceId, partyOf } from '../domain/handover/handover.js';
+import { checkedItems, nextReferenceId } from '../domain/handover/handover.js';
 import {
   REPOSITORY_KINDS,
   WRITE_KINDS,
@@ -14,7 +14,12 @@ import {
   type DefinitionRef,
   type DelegationReserved,
   type GraphNodeRecord,
+  type HandoverParty,
   type InterruptReason,
+  DEFAULT_SLEEP_SECONDS,
+  type SendMessageArgs,
+  type SleepArgs,
+  type WakeCondition,
   type RunSubagentsArgs,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
@@ -61,7 +66,7 @@ import { projectHistory, type ProjectionScope } from '../domain/context/history-
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
-import { callOf, spawnedIn, spawnNodeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
+import { callOf, spawnedBy, spawnNodeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
 import {
   finishedOutcome,
   resultOf,
@@ -74,7 +79,13 @@ import {
   type SpawnError,
   type SpawnPlan,
 } from '../domain/spawn/validate-spawn.js';
-import { rootMissionId } from '../domain/graph/mission-tree.js';
+import {
+  childrenOf,
+  projectMissions,
+  rootMissionId,
+  siblingsOf,
+  type MissionView,
+} from '../domain/graph/mission-tree.js';
 import {
   advanceGraph,
   chatGrowthPoint,
@@ -83,6 +94,7 @@ import {
   initialChatRevision,
   projectGraph,
   askRevision,
+  continuationRevision,
   spawnRevision,
   steerRevision,
   type GraphRevision,
@@ -132,6 +144,14 @@ export interface SessionRunnerDeps {
 const MAIN = 'main';
 /** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
 const CHAT_TEMPLATE = 'chat';
+/** Messages one segment may send (Orchestration 5). */
+const MAX_MESSAGES_PER_SEGMENT = 10;
+/** Wakes by messages, timers and jobs between two words of the user (Orchestration 4.4). */
+const MAX_CONSECUTIVE_WAKES = 3;
+/** Times a task is woken because nothing could move, before it is ended. */
+const MAX_STALLED_WAKES = 3;
+/** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
+const MAX_MISSION_DEPTH = 2;
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
@@ -191,6 +211,10 @@ const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
 interface ActiveAgent {
   readonly state: AgentState;
   readonly nodeId: string;
+  /** The task this AgentRun is a segment of (Orchestration 3.4). */
+  readonly missionId: string;
+  /** Messages this segment has sent. */
+  readonly messages: number;
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
@@ -228,6 +252,8 @@ export class SessionRunner {
   #advancing = false;
   #advanceAgain = false;
   #runFailure: string | undefined;
+  /** Delegations given back once all their tasks ended (Orchestration 8.2). */
+  readonly #released = new Set<string>();
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
@@ -355,6 +381,7 @@ export class SessionRunner {
     this.#overBudget = false;
     this.#interrupted = false;
     this.#runFailure = undefined;
+    this.#released.clear();
   }
 
   async handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
@@ -413,6 +440,19 @@ export class SessionRunner {
         break;
       case 'UnitReport':
         await this.#onUnitReport(workflowRunId, event);
+        break;
+      case 'WakeDue':
+        // Recorded first, so a wake by time is read from the log like any other (4.2).
+        await this.#append([
+          {
+            type: 'MISSION_TIMER_DUE',
+            workflowRunId,
+            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+            missionId: event.missionId,
+            timerId: event.timerId,
+          },
+        ]);
+        await this.#advance(workflowRunId);
         break;
       case 'TurnClosed':
         await this.#append([
@@ -553,7 +593,7 @@ export class SessionRunner {
   async #extend(
     workflowRunId: string,
     revision: number,
-    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN' | 'STEER' | 'ASK',
+    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN' | 'STEER' | 'ASK' | 'WAKE',
     content: GraphRevision,
   ): Promise<void> {
     await this.#append([
@@ -618,6 +658,21 @@ export class SessionRunner {
     const binding = this.#deps.agents.get(agentId);
     if (binding === undefined) throw new Error(`unknown Agent ${agentId}`);
     return binding;
+  }
+
+  /** The binding of an Agent for a task at `depth`: at the deepest level it does not spawn. */
+  #bindingAt(agentId: string, depth: number): AgentBinding {
+    const binding = this.#binding(agentId);
+    if (depth < MAX_MISSION_DEPTH || binding.definitions.spawnTool === undefined) return binding;
+    const definitions: AgentDefinitions = { ...binding.definitions };
+    delete (definitions as { spawnTool?: unknown }).spawnTool;
+    return {
+      ...binding,
+      requestedCapabilities: binding.requestedCapabilities.filter(
+        (capability) => capability !== 'agent.spawn',
+      ),
+      definitions,
+    };
   }
 
   /** The AgentRun that dispatched a node (a task or a question), from the `DELEGATE` edge to it. */
@@ -875,6 +930,8 @@ export class SessionRunner {
   }
 
   async #advanceOnce(workflowRunId: string): Promise<void> {
+    await this.#settleMissions(workflowRunId);
+    await this.#releaseFinishedDelegations(workflowRunId);
     if (this.#mode === 'CHAT') {
       const projected = projectGraph(this.#records, workflowRunId);
       const growth = chatGrowthPoint(projected);
@@ -925,12 +982,34 @@ export class SessionRunner {
     }
     await this.#wake(workflowRunId, woken);
     if (this.#advanceAgain) return;
+    if (await this.#wakeMissions(workflowRunId)) {
+      this.#advanceAgain = true;
+      return;
+    }
     if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agents.size === 0)
       await this.#closeFinishedRun(workflowRunId);
   }
 
   /** A template run ends when its graph has nothing left to start. */
   async #closeFinishedRun(workflowRunId: string): Promise<void> {
+    // The root task ends with the run it is the owner of (Orchestration 3.3).
+    const roots = [...projectMissions(this.#records).values()].filter(
+      (mission) =>
+        mission.parentId === undefined &&
+        mission.ended === undefined &&
+        mission.nodeIds.some((nodeId) =>
+          projectGraph(this.#records, workflowRunId).nodes.has(nodeId),
+        ),
+    );
+    await this.#append(
+      roots.map((mission) => ({
+        type: 'MISSION_ENDED' as const,
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        missionId: mission.missionId,
+        status: this.#runFailure === undefined ? ('SUCCEEDED' as const) : ('FAILED' as const),
+      })),
+    );
     if (this.#runFailure !== undefined) await this.#closeFailed(workflowRunId, this.#runFailure);
     else
       await this.#close(workflowRunId, this.#overBudget ? 'BUDGET' : 'COMPLETED', this.#runResult);
@@ -1028,13 +1107,28 @@ export class SessionRunner {
   #dispatchOf(
     graph: ProjectedGraph,
     node: GraphNodeRecord,
-  ): { parentAgentRunId: string; delegationId: string } | undefined {
+  ): { parentAgentRunId?: string; delegationId: string } | undefined {
     if (node.spawn === undefined) return undefined;
     const call = callOf(graph, node.nodeId);
-    const caller = [...this.#agents.values()].find((each) => each.nodeId === call?.callerNodeId);
-    if (call?.delegationId === undefined || caller === undefined)
-      throw new Error(`the task ${node.name} was not dispatched by a running AgentRun`);
-    return { parentAgentRunId: caller.state.agentRunId, delegationId: call.delegationId };
+    if (call?.delegationId === undefined)
+      throw new Error(`the task ${node.name} was not dispatched by run_subagents`);
+    // The caller may have gone to sleep since: its task, not its AgentRun, stands behind the task.
+    const caller = [...this.#agents.values()].find((each) => each.nodeId === call.callerNodeId);
+    return {
+      ...(caller === undefined ? {} : { parentAgentRunId: caller.state.agentRunId }),
+      delegationId: call.delegationId,
+    };
+  }
+
+  /** The node a task was started by: itself, or the first segment of its task. */
+  #taskNodeOf(workflowRunId: string, node: GraphNodeRecord): GraphNodeRecord | undefined {
+    if (node.spawn !== undefined) return node;
+    const missionId = node.mission?.id;
+    if (missionId === undefined) return undefined;
+    const first = projectMissions(this.#records).get(missionId)?.nodeIds[0];
+    const found =
+      first === undefined ? undefined : projectGraph(this.#records, workflowRunId).nodes.get(first);
+    return found?.spawn === undefined ? undefined : found;
   }
 
   async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
@@ -1046,17 +1140,27 @@ export class SessionRunner {
     const agentId = node.agentRef.id;
     const { spawn } = node;
     const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
-    const binding = this.#binding(agentId);
     const graph = projectGraph(this.#records, workflowRunId);
+    const missionId = node.mission?.id ?? agentRunId;
+    // Below the deepest level a task does not spawn (Orchestration 3.6).
+    const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
+    const binding = this.#bindingAt(agentId, depth);
+    // A later segment of a spawned task works within what its first segment was given.
+    const taskNode = this.#taskNodeOf(workflowRunId, node);
     const place = placementOf(
-      node,
+      taskNode ?? node,
       {
         label: binding.definitions.label,
         effort: binding.effort,
         writeRoots: binding.writeRoots,
       },
-      this.#dispatchOf(graph, node),
+      spawn === undefined
+        ? taskNode === undefined
+          ? undefined
+          : { delegationId: '' }
+        : this.#dispatchOf(graph, node),
     );
+    const link = spawn === undefined ? undefined : place.link;
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -1066,7 +1170,10 @@ export class SessionRunner {
         nodeId,
         agentRef: binding.ref,
         effort: place.effort,
-        ...(place.link === undefined ? {} : { parentAgentRunId: place.link.parentAgentRunId }),
+        ...(link?.parentAgentRunId === undefined
+          ? {}
+          : { parentAgentRunId: link.parentAgentRunId }),
+        missionId,
       },
       {
         type: 'REQUEST_CONTEXT',
@@ -1092,7 +1199,7 @@ export class SessionRunner {
         display: { label: place.label },
         requestedCapabilities: [...binding.requestedCapabilities],
         writeRoots: [...place.writeRoots],
-        ...place.link,
+        ...(link === undefined ? {} : { delegationId: link.delegationId, taskName: link.taskName }),
         ...(node.mission === undefined
           ? {}
           : {
@@ -1107,7 +1214,7 @@ export class SessionRunner {
       contextOf(sessionId, workflowRunId),
     );
     if (registered.outcome === 'REJECTED') {
-      if (place.link !== undefined) {
+      if (taskNode !== undefined) {
         // The caller is told why this task did not start; tasks that wait for it are skipped.
         await this.#endNode(
           workflowRunId,
@@ -1131,16 +1238,29 @@ export class SessionRunner {
     }
     const handoff = node.inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
     const task =
-      spawn === undefined
-        ? undefined
-        : taskScopeOf(this.#records, workflowRunId, graph, node, spawn);
+      taskNode?.spawn !== undefined
+        ? taskScopeOf(this.#records, workflowRunId, graph, taskNode, taskNode.spawn)
+        : node.goal !== undefined && this.#mode === 'ORCHESTRATION'
+          ? {
+              // A template step is told what its step is, and keeps the user's goal (3.5).
+              name: node.name,
+              agent: agentId,
+              goal: node.goal,
+              acceptance: [],
+              writeScope: [],
+              inputs: [],
+              dependencies: [],
+              withPrompt: true,
+            }
+          : undefined;
     const scope: ProjectionScope =
-      this.#mode === 'CHAT' && spawn === undefined
-        ? { kind: 'MAIN' }
+      this.#mode === 'CHAT' && taskNode === undefined && node.mission?.parentId === undefined
+        ? { kind: 'MAIN', ...(node.mission === undefined ? {} : { missionId }) }
         : {
             kind: 'NODE',
             workflowRunId,
             agentRunId,
+            ...(node.mission === undefined ? {} : { missionId }),
             ...(handoff === undefined ? {} : { handoff }),
             ...(task === undefined ? {} : { task }),
           };
@@ -1158,12 +1278,16 @@ export class SessionRunner {
     this.#agents.set(agentRunId, {
       state: transition.state,
       nodeId,
+      missionId,
+      messages: 0,
       scope,
       agentId,
       changed: [],
       unchecked: false,
       completionAsked: false,
-      ...(spawn === undefined ? {} : { task: { name: node.name, criteria: spawn.acceptance } }),
+      ...(taskNode?.spawn === undefined
+        ? {}
+        : { task: { name: taskNode.name, criteria: taskNode.spawn.acceptance } }),
     });
     await this.#apply(workflowRunId, transition);
   }
@@ -1341,7 +1465,7 @@ export class SessionRunner {
     workflowRunId: string,
     turnId: string,
     nodeId: string,
-    status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED',
+    status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED' | 'YIELDED',
     result?: Record<string, unknown>,
     resultRef?: ArtifactRef,
   ): Promise<void> {
@@ -1358,11 +1482,20 @@ export class SessionRunner {
     ]);
   }
 
+  /**
+   * The AgentRun ends. Its task goes on (`continues`) when it went to sleep, and always for a root
+   * task, whose next step is another segment; a task below ends with its last segment (8.1).
+   */
   async #endAgentRun(
     workflowRunId: string,
     active: ActiveAgent,
-    outcome: AgentEnding['kind'],
+    outcome: AgentEnding['kind'] | 'YIELDED',
+    sleeping = false,
   ): Promise<void> {
+    const isRoot =
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.mission?.parentId ===
+      undefined;
+    const continues = sleeping || isRoot;
     const { agentRunId, turnId, wrapUpReason, round, definitions } = active.state;
     this.#agents.delete(agentRunId);
     this.#rounds.push({
@@ -1383,7 +1516,13 @@ export class SessionRunner {
     ]);
     const sessionId = this.#sessionIdOrThrow();
     await this.#deps.gateway.endAgentRun(
-      { requestId: newId('req'), sessionId, workflowRunId, agentRunId },
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        agentRunId,
+        ...(continues ? { missionContinues: true } : {}),
+      },
       contextOf(sessionId, workflowRunId),
     );
   }
@@ -1460,6 +1599,16 @@ export class SessionRunner {
   ): Promise<void> {
     const { label } = active.state.definitions;
     const { wrapUpReason } = active.state;
+    // A task that started subtasks ends only after they ended (D4, Orchestration 9.3).
+    const running = this.#runningChildren(active.missionId);
+    if (running.length > 0 && !active.state.final)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        ending.source.toolCallId,
+        'SUBTASKS_RUNNING',
+        `Not yet: subtasks you started are still running (${running.map((each) => each.name).join(', ')}). Call sleep with until children (mode all) and finish when they have ended.`,
+      );
     switch (action) {
       case 'PUBLISH_REPLY':
         return this.#closeWith(
@@ -1475,7 +1624,13 @@ export class SessionRunner {
             ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
           },
           ending.source,
-          { status: 'SUCCEEDED', runOutput: false },
+          // In a template, the reply of the output step is the result of the run (3.5, 10.1).
+          {
+            status: 'SUCCEEDED',
+            runOutput:
+              this.#mode === 'ORCHESTRATION' &&
+              projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.output === true,
+          },
         );
       case 'PUBLISH_REPORT':
         return this.#closeWith(
@@ -1598,13 +1753,15 @@ export class SessionRunner {
       { toolCallId: result.toolCallId, tool: 'finish_subagent', ref: result.ref },
       ...checked.items,
     ];
-    const registered = this.#records.find(
-      (record) => record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
-    );
-    const parent =
-      registered?.type === 'AGENT_RUN_REGISTERED' ? registered.parentAgentRunId : undefined;
-    const receiver = parent === undefined ? undefined : this.#agents.get(parent);
-    if (receiver === undefined) return { notes: checked.notes };
+    // The receiver is the parent task, whichever of its segments reads it, asleep or not (3.4).
+    const missions = projectMissions(this.#records);
+    const parentId = missions.get(active.missionId)?.parentId;
+    const parent = parentId === undefined ? undefined : missions.get(parentId);
+    if (parent === undefined) return { notes: checked.notes };
+    const receiver: HandoverParty =
+      this.#mode === 'CHAT' && parent.parentId === undefined
+        ? { kind: 'MAIN' }
+        : { kind: 'MISSION', missionId: parent.missionId };
     const kept = await this.#deps.gateway.retainArtifacts(
       {
         requestId: newId('req'),
@@ -1626,7 +1783,7 @@ export class SessionRunner {
         turnId,
         referenceId,
         from: { agentRunId, label: active.task?.name ?? active.agentId },
-        to: partyOf(receiver.scope),
+        to: receiver,
         items,
       },
     ]);
@@ -1663,9 +1820,18 @@ export class SessionRunner {
     this.#interrupted = true;
     this.#interruptReason = reason;
     const all = [...this.#agents.values()];
-    if (all.length === 0) return this.#finishInterrupted(workflowRunId);
+    if (all.length === 0) {
+      for (const { node } of this.#sleeping(workflowRunId))
+        await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED');
+      await this.#settleMissions(workflowRunId);
+      return this.#finishInterrupted(workflowRunId);
+    }
     for (const nodeId of questionsOf(this.#records, workflowRunId))
       await this.#endQuestion(workflowRunId, nodeId);
+    // A task asleep ends with the run: nothing will wake it now.
+    for (const { node } of this.#sleeping(workflowRunId))
+      await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED');
+    await this.#settleMissions(workflowRunId);
     for (const active of all.filter((each) => each.task !== undefined))
       await this.#endTask(workflowRunId, active, 'FAILED', {
         status: 'FAILED',
@@ -1768,6 +1934,10 @@ export class SessionRunner {
         return this.#onSpawn(workflowRunId, active, ending);
       case 'ASK':
         return this.#onAsk(workflowRunId, active, ending);
+      case 'SLEEP':
+        return this.#onSleep(workflowRunId, active, ending);
+      case 'MESSAGE':
+        return this.#onMessage(workflowRunId, active, ending);
       case 'DEGRADED':
         return this.#onDegraded(workflowRunId, active, ending.reason, ending.unfinished);
       case 'CLOSED': {
@@ -1859,8 +2029,8 @@ export class SessionRunner {
     const checked = validateSpawn(ending.arguments as RunSubagentsArgs, {
       rules: this.#deps.config,
       agents: this.#spawnable,
-      callerRoots: this.#binding(active.agentId).writeRoots,
-      spawned: spawnedIn(this.#records, this.#turnId),
+      callerRoots: this.#callerRoots(workflowRunId, active),
+      spawned: spawnedBy(this.#records, active.missionId),
       readable: (artifactId) => readable.has(artifactId),
     });
     if (!checked.ok) {
@@ -1943,8 +2113,38 @@ export class SessionRunner {
       })),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
-    // The caller is WAITING from here on: the edges hold a call that has not come back.
+    // The call comes back at once (D14): the tasks run while the caller goes on or sleeps.
+    const current = this.#agents.get(active.state.agentRunId) ?? active;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        current.state,
+        toolCallId,
+        {
+          refused: false,
+          spawn: true,
+          records: [
+            answerRecord(
+              current.state,
+              'STARTED',
+              toolCallId,
+              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children (mode all). Until they have all ended you may not write files or run commands.`,
+            ),
+          ],
+        },
+        this.#context(workflowRunId, current.scope),
+        this.#deps.config,
+      ),
+    );
     await this.#advance(workflowRunId);
+  }
+
+  /** Where the caller may write: a task its own scope, the root what its Agent may (3.6). */
+  #callerRoots(workflowRunId: string, active: ActiveAgent): readonly string[] {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const node = projected.nodes.get(active.nodeId);
+    const taskNode = node === undefined ? undefined : this.#taskNodeOf(workflowRunId, node);
+    return taskNode?.spawn?.writeScope ?? this.#binding(active.agentId).writeRoots;
   }
 
   /**
@@ -1985,5 +2185,503 @@ export class SessionRunner {
         ),
       );
     }
+  }
+
+  // ---- tasks: sleep, wake, messages (Orchestration 4, 5) ------------------------------------
+
+  /** The tasks this task started with `run_subagents` that have not ended yet. */
+  #runningChildren(missionId: string): readonly MissionView[] {
+    const missions = projectMissions(this.#records);
+    const spawned = this.#spawnedNodes();
+    return childrenOf(missions, missionId).filter(
+      (child) => child.ended === undefined && child.nodeIds.some((id) => spawned.has(id)),
+    );
+  }
+
+  /** Nodes that `run_subagents` added: the first segments of spawned tasks. */
+  #spawnedNodes(): ReadonlySet<string> {
+    const found = new Set<string>();
+    for (const record of this.#records)
+      if (record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN')
+        for (const node of record.nodes) found.add(node.nodeId);
+    return found;
+  }
+
+  /**
+   * `sleep` (Orchestration 4.1, 4.2): the segment ends and its task waits for what it named. A
+   * sleep that nothing could ever end is not taken; the call is answered and the segment goes on.
+   */
+  async #onSleep(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'SLEEP' }>,
+  ): Promise<void> {
+    const args = ending.arguments as SleepArgs;
+    const { toolCallId } = ending.source;
+    const running = this.#runningChildren(active.missionId);
+    const problems: string[] = [];
+    for (const condition of args.until) {
+      if (condition.kind === 'children') {
+        const unknown = (condition.names ?? []).filter(
+          (name) => !running.some((child) => child.name === name),
+        );
+        if (running.length === 0)
+          problems.push('none of the subtasks you started is still running');
+        else if (unknown.length > 0)
+          problems.push(`no running subtask of yours is named ${unknown.join(', ')}`);
+      } else if (condition.kind === 'jobs') {
+        problems.push('you have no background commands that are still running');
+      }
+    }
+    const usable = args.until.some(
+      (condition) =>
+        condition.kind === 'message' ||
+        condition.kind === 'timer' ||
+        (condition.kind === 'children' && running.length > 0),
+    );
+    if (!usable || problems.length === args.until.length)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        toolCallId,
+        'SLEEP_REFUSED',
+        `Not asleep: nothing you named could wake you (${problems.join('; ')}). Go on working, or finish.`,
+      );
+    const timeoutSeconds = args.timeoutSeconds ?? DEFAULT_SLEEP_SECONDS;
+    const named = args.until.map((condition) => condition.kind).join(', ');
+    await this.#append([
+      answerRecord(
+        active.state,
+        'ASLEEP',
+        toolCallId,
+        `Asleep until: ${named} (at most ${String(timeoutSeconds)} seconds).`,
+      ),
+      {
+        type: 'SEGMENT_YIELDED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        nodeId: active.nodeId,
+        missionId: active.missionId,
+        agentRunId: active.state.agentRunId,
+        until: args.until.map((condition): WakeCondition => ({ ...condition })),
+        timeoutSeconds,
+        source: { modelTurnRequestId: ending.source.modelTurnRequestId, toolCallId },
+      },
+    ]);
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
+    await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
+    // Time is the Kernel's: it is asked for the timer it named and for the most it may sleep.
+    const timers = args.until.flatMap((condition) =>
+      condition.kind === 'timer' ? [condition.seconds] : [],
+    );
+    const sessionId = this.#sessionIdOrThrow();
+    const schedule = async (suffix: string, seconds: number) => {
+      const response = await this.#deps.gateway.scheduleWake(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          missionId: active.missionId,
+          timerId: `${active.nodeId}:${suffix}`,
+          seconds,
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+        throw new Error(`scheduleWake refused: ${response.reasonCode}`);
+    };
+    if (timers.length > 0) await schedule('timer', Math.min(...timers));
+    await schedule('timeout', timeoutSeconds);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * `send_message` (Orchestration 5): routed along the tree by name, recorded once, and answered at
+   * once. Who gets it reads it at its next assembly, or is woken by it.
+   */
+  async #onMessage(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'MESSAGE' }>,
+  ): Promise<void> {
+    const args = ending.arguments as SendMessageArgs;
+    const { toolCallId } = ending.source;
+    const answer = (refused: boolean, text: string) =>
+      this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          active.state,
+          toolCallId,
+          {
+            refused,
+            spawn: false,
+            records: [answerRecord(active.state, refused ? 'NOT_SENT' : 'SENT', toolCallId, text)],
+          },
+          this.#context(workflowRunId, active.scope),
+          this.#deps.config,
+        ),
+      );
+    if (active.messages >= MAX_MESSAGES_PER_SEGMENT)
+      return answer(
+        true,
+        `Not sent: at most ${String(MAX_MESSAGES_PER_SEGMENT)} messages in one segment. Write what is long into a file instead.`,
+      );
+    const missions = projectMissions(this.#records);
+    const me = missions.get(active.missionId);
+    if (me === undefined) return answer(true, 'Not sent: this task is not in the task tree.');
+    const open = (each: MissionView) => each.ended === undefined;
+    let targets: readonly MissionView[];
+    if (args.to === 'parent') {
+      const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+      if (parent === undefined) return answer(true, 'Not sent: this task has no parent task.');
+      targets = [parent];
+    } else if (args.to === 'children') targets = childrenOf(missions, me.missionId).filter(open);
+    else if (args.to === 'siblings') targets = siblingsOf(missions, me.missionId).filter(open);
+    else {
+      const named = [...childrenOf(missions, me.missionId), ...siblingsOf(missions, me.missionId)]
+        .filter((each) => each.name === args.to)
+        .at(-1);
+      if (named === undefined)
+        return answer(
+          true,
+          `Not sent: no child or sibling task is named ${args.to}. to is parent, children, siblings or the name of one of them.`,
+        );
+      if (!open(named))
+        return answer(true, `Not sent: task ${args.to} has already ended; it reads nothing more.`);
+      targets = [named];
+    }
+    if (targets.length === 0)
+      return answer(true, 'Not sent: there is no running task to send it to.');
+    this.#agents.set(active.state.agentRunId, { ...active, messages: active.messages + 1 });
+    await this.#append([
+      {
+        type: 'MISSION_MESSAGE',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        from: me.missionId,
+        fromLabel: me.name,
+        to: targets.map((each) => each.missionId),
+        source: {
+          modelTurnRequestId: ending.source.modelTurnRequestId,
+          outputRef: ending.source.modelOutputRef,
+          toolCallId,
+        },
+      },
+    ]);
+    const current = this.#agents.get(active.state.agentRunId) ?? active;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        current.state,
+        toolCallId,
+        {
+          refused: false,
+          spawn: false,
+          records: [
+            answerRecord(
+              current.state,
+              'SENT',
+              toolCallId,
+              `Sent to ${targets.map((each) => each.name).join(', ')}.`,
+            ),
+          ],
+        },
+        this.#context(workflowRunId, current.scope),
+        this.#deps.config,
+      ),
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * A task whose last segment has ended for good has ended: its `MISSION_ENDED` is written, once
+   * (Orchestration 3.2). A root task ends only by its own end or with the run, never here.
+   */
+  async #settleMissions(workflowRunId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const ended: NewLogRecord[] = [];
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined || mission.parentId === undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      if (last === undefined || !projected.nodes.has(last)) continue;
+      const status = projected.view.get(last)?.status;
+      if (status === undefined || !isTerminal(status) || status === 'YIELDED') continue;
+      ended.push({
+        type: 'MISSION_ENDED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        missionId: mission.missionId,
+        status:
+          status === 'SUCCEEDED'
+            ? 'SUCCEEDED'
+            : status === 'INTERRUPTED'
+              ? 'INTERRUPTED'
+              : 'FAILED',
+      });
+    }
+    await this.#append(ended);
+  }
+
+  /**
+   * A delegation whose tasks have all ended is given back: the shares never claimed return to the
+   * caller, and its task may write in their scopes again (M2Design 7.3, Orchestration 8.2).
+   */
+  async #releaseFinishedDelegations(workflowRunId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const byDelegation = new Map<string, string[]>();
+    for (const edge of projected.graph.edges)
+      if (edge.kind === 'DELEGATE' && edge.call?.delegationId !== undefined)
+        byDelegation.set(edge.call.delegationId, [
+          ...(byDelegation.get(edge.call.delegationId) ?? []),
+          edge.to,
+        ]);
+    const sessionId = this.#sessionIdOrThrow();
+    for (const [delegationId, nodeIds] of byDelegation) {
+      if (this.#released.has(delegationId)) continue;
+      const done = nodeIds.every((nodeId) => {
+        const missionId = projected.nodes.get(nodeId)?.mission?.id;
+        return missionId !== undefined && missions.get(missionId)?.ended !== undefined;
+      });
+      if (!done) continue;
+      this.#released.add(delegationId);
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
+  }
+
+  /**
+   * What wakes each sleeping task now (Orchestration 4.2, 4.4): the events since it went to sleep
+   * that it named, within the limit of wakes without the user. Pure in the log.
+   */
+  #wakeCauses(
+    mission: MissionView,
+    yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>,
+    missions: ReadonlyMap<string, MissionView>,
+  ): Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'] {
+    const after = (seq: number) => seq > yielded.seq;
+    // A message counts when the task has not seen it: after the last context it was given, even
+    // if it came just before it went to sleep.
+    let lastSeen = 0;
+    for (const record of this.#records)
+      if (
+        record.type === 'UNIT_SUBMITTED' &&
+        record.agentRunId === yielded.agentRunId &&
+        record.unitRef.id === 'context-assemble'
+      )
+        lastSeen = record.seq;
+    const causes: Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'][number][] = [];
+    const spawned = this.#spawnedNodes();
+    const children = childrenOf(missions, mission.missionId).filter((child) =>
+      child.nodeIds.some((id) => spawned.has(id)),
+    );
+    const endedAt = new Map<string, number>();
+    const messages: number[] = [];
+    for (const record of this.#records) {
+      if (
+        record.type === 'MISSION_TIMER_DUE' &&
+        record.missionId === mission.missionId &&
+        after(record.seq)
+      ) {
+        if (record.timerId === `${yielded.nodeId}:timeout`)
+          causes.push({ kind: 'TIMEOUT', seq: record.seq });
+        else if (
+          record.timerId === `${yielded.nodeId}:timer` &&
+          !this.#wakeLimitReached(mission.missionId)
+        )
+          causes.push({ kind: 'TIMER', seq: record.seq });
+      }
+      if (record.type === 'MISSION_ENDED') endedAt.set(record.missionId, record.seq);
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.to.includes(mission.missionId) &&
+        record.seq > lastSeen
+      )
+        messages.push(record.seq);
+    }
+    for (const condition of yielded.until) {
+      if (condition.kind === 'children') {
+        const watched = children.filter(
+          (child) => condition.names === undefined || condition.names.includes(child.name),
+        );
+        if (watched.length === 0) continue;
+        const ends = watched.map((child) => endedAt.get(child.missionId));
+        const allEnded = ends.every((seq) => seq !== undefined);
+        const anyNew = ends.some((seq) => seq !== undefined && after(seq));
+        if (condition.mode === 'all' ? allEnded : anyNew || allEnded)
+          causes.push({ kind: 'CHILDREN', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
+      } else if (condition.kind === 'message' && messages.length > 0) {
+        if (!this.#wakeLimitReached(mission.missionId))
+          causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
+      }
+    }
+    return causes;
+  }
+
+  /** Wakes by messages, timers and jobs since the last word of the user (Orchestration 4.4). */
+  #wakeLimitReached(missionId: string): boolean {
+    let count = 0;
+    for (const record of this.#records) {
+      if (record.type === 'HUMAN_ANSWERED') count = 0;
+      if (
+        record.type === 'MISSION_WOKEN' &&
+        record.missionId === missionId &&
+        record.causes.some(
+          (cause) => cause.kind === 'MESSAGE' || cause.kind === 'TIMER' || cause.kind === 'JOB',
+        )
+      )
+        count += 1;
+    }
+    return count >= MAX_CONSECUTIVE_WAKES;
+  }
+
+  /** The tasks that sleep now: their last segment yielded and nobody took over yet. */
+  #sleeping(workflowRunId: string): readonly {
+    readonly mission: MissionView;
+    readonly node: GraphNodeRecord;
+    readonly yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>;
+  }[] {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const found: {
+      mission: MissionView;
+      node: GraphNodeRecord;
+      yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>;
+    }[] = [];
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      const node = last === undefined ? undefined : projected.nodes.get(last);
+      if (node === undefined || projected.view.get(node.nodeId)?.status !== 'YIELDED') continue;
+      const yielded = [...this.#records]
+        .reverse()
+        .find(
+          (record): record is Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }> =>
+            record.type === 'SEGMENT_YIELDED' && record.nodeId === node.nodeId,
+        );
+      if (yielded !== undefined) found.push({ mission, node, yielded });
+    }
+    return found;
+  }
+
+  /**
+   * Wakes every sleeping task whose wait is over: the reason is written, then the segment that
+   * takes over, which is ready at once (Orchestration 4.3). When nothing can move any more, the
+   * highest sleeping task is woken to decide what to do (4.4).
+   */
+  async #wakeMissions(workflowRunId: string): Promise<boolean> {
+    if (this.#interrupted) return false;
+    const missions = projectMissions(this.#records);
+    let woke = false;
+    for (const { mission, node, yielded } of this.#sleeping(workflowRunId)) {
+      const causes = this.#wakeCauses(mission, yielded, missions);
+      if (causes.length === 0) continue;
+      await this.#continueMission(workflowRunId, node, causes);
+      woke = true;
+    }
+    if (woke) return true;
+    const sleeping = this.#sleeping(workflowRunId);
+    if (sleeping.length === 0 || this.#agents.size > 0 || this.#waitingForHuman(workflowRunId))
+      return false;
+    // A timer it set itself will move the work; the timeout every sleep has does not count.
+    const due = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'MISSION_TIMER_DUE' ? [record.timerId] : [],
+      ),
+    );
+    if (
+      sleeping.some(
+        ({ node, yielded }) =>
+          yielded.until.some((condition) => condition.kind === 'timer') &&
+          !due.has(`${node.nodeId}:timer`),
+      )
+    )
+      return false;
+    const highest = [...sleeping].sort((a, b) => a.mission.depth - b.mission.depth)[0];
+    if (highest === undefined) return false;
+    const stalls = this.#records.filter(
+      (record) =>
+        record.type === 'MISSION_WOKEN' &&
+        record.missionId === highest.mission.missionId &&
+        record.causes.some((cause) => cause.kind === 'STALLED'),
+    ).length;
+    if (stalls >= MAX_STALLED_WAKES) {
+      // Woken again and again with nothing to wait for: it ends, so whoever waits for it can go on.
+      await this.#closeSleeping(workflowRunId, highest.node, 'FAILED');
+      return true;
+    }
+    await this.#continueMission(workflowRunId, highest.node, [{ kind: 'STALLED' }]);
+    return true;
+  }
+
+  /** A question or an open input that waits for the user: the run is not stuck while it waits. */
+  #waitingForHuman(workflowRunId: string): boolean {
+    const projected = projectGraph(this.#records, workflowRunId);
+    return [...projected.nodes.values()].some(
+      (node) => node.kind === 'HUMAN' && projected.view.get(node.nodeId)?.status === 'RUNNING',
+    );
+  }
+
+  /** The segment that takes over a sleeping task, with why it woke. */
+  async #continueMission(
+    workflowRunId: string,
+    yielded: GraphNodeRecord,
+    causes: Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'],
+  ): Promise<void> {
+    const missionId = yielded.mission?.id;
+    if (missionId === undefined) throw new Error('a segment that slept belongs to no task');
+    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
+    await this.#append([
+      { type: 'MISSION_WOKEN', workflowRunId, ...turn, missionId, causes: [...causes] },
+    ]);
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    await this.#extend(
+      workflowRunId,
+      revision,
+      'WAKE',
+      continuationRevision(workflowRunId, revision, yielded),
+    );
+  }
+
+  /**
+   * A sleeping task that cannot go on (the run is interrupted, or it stalled): a segment takes over
+   * and ends at once, with no AgentRun, so the task and whatever waits for it come to an end.
+   */
+  async #closeSleeping(
+    workflowRunId: string,
+    yielded: GraphNodeRecord,
+    status: 'FAILED' | 'INTERRUPTED',
+  ): Promise<void> {
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const content = continuationRevision(workflowRunId, revision, yielded);
+    await this.#extend(workflowRunId, revision, 'WAKE', content);
+    const node = content.nodes[0];
+    if (node === undefined) throw new Error('a continuation makes one node');
+    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
+    await this.#append([
+      { type: 'NODE_STARTED', workflowRunId, ...turn, nodeId: node.nodeId, path: node.path },
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        ...turn,
+        nodeId: node.nodeId,
+        status,
+        ...(yielded.mission?.parentId === undefined
+          ? {}
+          : {
+              result: resultOf({
+                status: 'FAILED',
+                notes: [
+                  status === 'INTERRUPTED'
+                    ? 'stopped: the run was interrupted while it slept'
+                    : 'stopped: it slept with nothing left that could wake it',
+                ],
+              }),
+            }),
+      },
+    ]);
   }
 }

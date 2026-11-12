@@ -249,7 +249,7 @@ export type RoutedTurn =
  */
 export function scriptedAgents(
   scripts: Readonly<
-    Partial<Record<'main' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
+    Partial<Record<'main' | 'lead' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
   >,
   /** Worker scripts by task, for a case where two workers say different things. */
   tasks: Readonly<Record<string, readonly RoutedTurn[]>> = {},

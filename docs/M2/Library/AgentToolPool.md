@@ -46,9 +46,13 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
 | AGENT | `explorer`、`worker` | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 300,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 600,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（explorer 228,000，worker 396,000） |
-| TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个 |
+| TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或 `lead` |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
 | PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
+| AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，可被派生，也能派生自己的子任务（受任务深度限制，最深一层的 lead 不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 1,200,000，40 轮、160 个工具 Unit、60 分钟 |
+| PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
+| TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |
+| TOOL | `send-message` | `purpose = CONTROL`，参数为 `workflow.SendMessageArgs`；由同样四个 Agent 的 `actions.message` 引用：沿任务树发消息（Orchestration 第 5 节）；只能单独出现 |
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
 

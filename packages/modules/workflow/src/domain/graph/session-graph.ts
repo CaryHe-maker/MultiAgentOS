@@ -168,11 +168,36 @@ export function spawnRevision(
       return from === undefined || to === undefined ? [] : [depends(from, to)];
     }),
   );
-  const calls = nodes.flatMap((node): GraphEdgeRecord[] => [
-    { from: caller.nodeId, to: node.nodeId, kind: 'DELEGATE', call: caller.call },
-    { from: node.nodeId, to: caller.nodeId, kind: 'RESUME', call: caller.call },
-  ]);
+  // The caller does not wait on an edge: it goes on, or sleeps until its tasks end (D14).
+  const calls = nodes.map((node): GraphEdgeRecord => ({
+    from: caller.nodeId,
+    to: node.nodeId,
+    kind: 'DELEGATE',
+    call: caller.call,
+  }));
   return { nodes, edges: [...dependencies, ...calls] };
+}
+
+/**
+ * The segment that takes over a task that slept (Orchestration 4.3): the same task, Agent and
+ * goal, joined to the segment it follows by a `CONTINUES` edge. It is ready the moment it is added.
+ */
+export function continuationRevision(
+  workflowRunId: string,
+  revision: number,
+  yielded: GraphNodeRecord,
+): GraphRevision {
+  const node = nodeOf(workflowRunId, revision, {
+    name: yielded.name,
+    kind: 'AGENT',
+    ...(yielded.agentRef === undefined ? {} : { agentRef: yielded.agentRef }),
+    ...(yielded.goal === undefined ? {} : { goal: yielded.goal }),
+    ...(yielded.mission === undefined ? {} : { mission: yielded.mission }),
+  });
+  return {
+    nodes: [node],
+    edges: [{ from: yielded.nodeId, to: node.nodeId, kind: 'CONTINUES' }],
+  };
 }
 
 /**
@@ -214,8 +239,7 @@ export function compileTemplate(
 ): { readonly revision: GraphRevision; readonly errors: readonly GraphValidationError[] } {
   const root = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
   const byName = new Map<string, GraphNodeRecord>();
-  // The first AGENT node is the owner's first step; every other one is a task below it.
-  const owner = template.nodes.find((node) => node.kind === 'AGENT')?.name;
+  const owners = ownerSteps(template);
   for (const node of template.nodes) {
     byName.set(
       node.name,
@@ -224,10 +248,9 @@ export function compileTemplate(
             name: node.name,
             kind: 'AGENT',
             agentRef: node.agent,
-            mission:
-              node.name === owner
-                ? { id: rootMission }
-                : { id: templateMissionId(rootMission, node.name, 1), parentId: rootMission },
+            mission: owners.has(node.name)
+              ? { id: rootMission }
+              : { id: templateMissionId(rootMission, node.name, 1), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
             ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
             ...(node.output === undefined ? {} : { output: node.output }),
@@ -264,7 +287,56 @@ export function compileTemplate(
       }
     }
   }
+  errors.push(...ownerOrderErrors(template, owners));
   return { revision: { nodes: [root, ...byName.values()], edges }, errors };
+}
+
+/**
+ * The steps of a template's root task (Orchestration 3.5): the nodes marked `role: owner` when the
+ * template names its owner; otherwise its first AGENT node alone. Every other AGENT node is a task
+ * below the root.
+ */
+export function ownerSteps(template: TemplateDefinition): ReadonlySet<string> {
+  const agents = template.nodes.filter((node) => node.kind === 'AGENT');
+  if (template.owner === undefined) return new Set(agents.slice(0, 1).map((node) => node.name));
+  return new Set(
+    agents.filter((node) => node.kind === 'AGENT' && node.role === 'owner').map((n) => n.name),
+  );
+}
+
+/**
+ * The steps of the root task must follow one another: any two of them are joined by a path of
+ * dependencies, so the root never has two segments that could run at once (Orchestration 3.5).
+ */
+function ownerOrderErrors(
+  template: TemplateDefinition,
+  owners: ReadonlySet<string>,
+): GraphValidationError[] {
+  const before = new Map<string, readonly string[]>();
+  for (const node of template.nodes)
+    if (node.kind === 'AGENT')
+      before.set(
+        node.name,
+        (node.dependsOn ?? []).map((each) => (typeof each === 'string' ? each : each.node)),
+      );
+  const ancestors = (name: string): Set<string> => {
+    const seen = new Set<string>();
+    const stack = [...(before.get(name) ?? [])];
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      stack.push(...(before.get(next) ?? []));
+    }
+    return seen;
+  };
+  const steps = [...owners];
+  const errors: GraphValidationError[] = [];
+  if (template.owner !== undefined && steps.length === 0) errors.push({ code: 'OWNER_NOT_LINEAR' });
+  for (const [index, left] of steps.entries())
+    for (const right of steps.slice(index + 1))
+      if (!ancestors(left).has(right) && !ancestors(right).has(left))
+        errors.push({ code: 'OWNER_NOT_LINEAR', node: right });
+  return errors;
 }
 
 const toGraphEdge = ({ from, to, kind, when, call }: GraphEdgeRecord): GraphEdge => ({
@@ -372,6 +444,10 @@ export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
   return graph.nodes.find(
     (node) =>
       isTerminal(view.get(node.nodeId)?.status ?? 'PENDING') &&
+      // A main that went to sleep is not done: the segment that takes over it is.
+      view.get(node.nodeId)?.status !== 'YIELDED' &&
+      // Only a step of the root task grows a chat; a segment of a task below never does.
+      nodes.get(node.nodeId)?.mission?.parentId === undefined &&
       nodes.get(node.nodeId)?.kind === 'AGENT' &&
       // Nothing follows it by dependency: a call that leads on to tasks is no next step.
       !graph.edges.some(

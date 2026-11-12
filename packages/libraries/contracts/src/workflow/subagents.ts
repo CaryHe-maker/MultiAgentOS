@@ -32,7 +32,7 @@ const longText = () => Type.String({ minLength: 1 });
 
 export const SubagentTaskSchema = closed({
   name: NameSchema,
-  agent: Type.Enum(['explorer', 'worker']),
+  agent: Type.Enum(['explorer', 'worker', 'lead']),
   goal: text(4000),
   dependsOn: Type.Optional(Type.Array(NameSchema, { maxItems: 11 })),
   writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),

@@ -121,6 +121,17 @@ export const ContextHistoryEntrySchema = Type.Union(
       toSeq: count(1),
       contentRef: ArtifactRefSchema,
     }),
+    /**
+     * A message from another task (Orchestration 5), by the model output that holds its
+     * `send_message` call: material from that task, never an instruction.
+     */
+    closed({
+      ...entry,
+      kind: Type.Literal('MESSAGE'),
+      from: text(64),
+      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+      toolCallId: ToolCallIdSchema,
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],

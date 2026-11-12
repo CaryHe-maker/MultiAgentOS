@@ -146,6 +146,10 @@ export class SessionCore {
         );
       case 'retainArtifacts':
         return this.#inRun(forward.request, (work) => work.retainArtifacts(forward.request));
+      case 'scheduleWake':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.scheduleWake(forward.request)),
+        );
       case 'reportCompactionSource':
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.reportCompactionSource(forward.request)),

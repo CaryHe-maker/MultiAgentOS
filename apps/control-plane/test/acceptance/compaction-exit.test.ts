@@ -22,6 +22,9 @@ import {
   until,
 } from './chat-driver.js';
 
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
+
 const TIMEOUT = 60_000;
 const directories: string[] = [];
 const open: Chat[] = [];
@@ -787,6 +790,7 @@ describe('L12: a SubAgent compacts its own context', () => {
           tool('run_subagents', {
             tasks: [{ name: 'look', agent: 'explorer', goal: 'read the three files' }],
           }),
+          waitForTasks(),
           reply('the explorer is done'),
         ],
         explorer: [
