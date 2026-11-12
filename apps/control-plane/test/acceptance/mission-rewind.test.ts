@@ -154,6 +154,16 @@ real('going back to a checkpoint in the middle of a long task (Orchestration 7.5
       while (!(await exists(notes)) && Date.now() - started < 30_000)
         await new Promise((resolve) => setTimeout(resolve, 50));
       expect(await exists(notes)).toBe(true);
+      // And for the root to be asleep: a pause during its sleep call would cancel a request whose
+      // scripted answer is already spent (under load the worker's write can come first).
+      const asleep = Date.now();
+      while (
+        !(await sessionLog(run.dataDir).catch(() => [])).some(
+          (record) => record['type'] === 'SEGMENT_YIELDED',
+        ) &&
+        Date.now() - asleep < 30_000
+      )
+        await new Promise((resolve) => setTimeout(resolve, 50));
       await run.console.interrupt();
       await until(() => run.lives.at(-1)?.status === '已暂停', 'the run to be paused', 30_000);
       await run.console.submit('/checkpoints');

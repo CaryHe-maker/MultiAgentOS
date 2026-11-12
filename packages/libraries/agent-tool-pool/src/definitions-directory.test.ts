@@ -111,4 +111,32 @@ describe('shipped definitions', () => {
       ],
     });
   });
+  it('give main and lead the handbook of ways to split work (Phase2Plan 2)', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const promptOf = (id: string) => {
+      const prompt = catalog.latest('PROMPT', id);
+      if (prompt === undefined) throw new Error(`${id} is missing`);
+      return prompt.template;
+    };
+    const ways = [
+      'Fan out and join',
+      'Explore, then build',
+      'Interface first',
+      'Write by section, review as one',
+      'Long steps in the background',
+      'Correct course',
+      'Alone',
+    ];
+    for (const way of ways) {
+      expect(promptOf('main-system')).toContain(`- ${way}:`);
+      expect(promptOf('lead-system')).toContain(`- ${way}:`);
+    }
+    // A lead's subtasks cannot start subtasks: the way of nested leads is main's alone.
+    expect(promptOf('main-system')).toContain('- Leads for large parts:');
+    expect(promptOf('lead-system')).not.toContain('- Leads for large parts:');
+    const mission = catalog.latest('TEMPLATE', 'mission');
+    expect(JSON.stringify(mission?.nodes)).toContain('ways to split work');
+  });
 });

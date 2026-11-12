@@ -279,7 +279,9 @@ export function scriptedAgents(
       const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
       // A call the Kernel cancels (a pause, an abort) stops waiting, like a real request would.
+      // Like a real fetch, a signal that is already aborted rejects at once.
       const cancelled = new Promise<never>((_, reject) => {
+        if (init?.signal?.aborted === true) reject(new DOMException('aborted', 'AbortError'));
         init?.signal?.addEventListener('abort', () => {
           reject(new DOMException('aborted', 'AbortError'));
         });

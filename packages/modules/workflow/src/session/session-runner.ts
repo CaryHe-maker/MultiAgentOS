@@ -837,6 +837,8 @@ export class SessionRunner {
         await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
         await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
       } else {
+        // Its work in flight or queued (a model call, a command) is cancelled, as on a stop (5.1).
+        await this.#haltAgentRun(workflowRunId, active.state.agentRunId);
         await this.#endAgentRun(workflowRunId, active, 'FAILED');
         await this.#endNode(
           workflowRunId,
