@@ -68,6 +68,11 @@ export const WakeConditionSchema = Type.Union([
     names: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 12 })),
   }),
   closed({
+    kind: Type.Literal('siblings'),
+    mode: Type.Enum(['all', 'any']),
+    names: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 12 })),
+  }),
+  closed({
     kind: Type.Literal('jobs'),
     mode: Type.Enum(['all', 'any']),
     jobIds: Type.Optional(Type.Array(text(32), { minItems: 1, maxItems: 8 })),
@@ -300,6 +305,7 @@ export const SessionLogRecordSchema = Type.Union(
         closed({
           kind: Type.Enum([
             'CHILDREN',
+            'SIBLINGS',
             'JOB',
             'MESSAGE',
             'TIMER',

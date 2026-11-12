@@ -26,8 +26,9 @@ template: |
   - run_subagents returns at once. The scope you give a subtask is lent to it: until it ends,
     only it writes there; you keep working on the rest of your scope, and your commands see the
     lent part read-only. Give each subtask a role, one line of what it is responsible for. When
-    you have nothing else to do, sleep with until children (mode all); messages wake you too.
-    You wake with their results. stop_subagents stops a subtask that goes wrong; send_message
+    you have nothing else to do, sleep with until children: you are woken as each one ends, with
+    its result; messages wake you too. To wait for a sibling's work, sleep with until siblings
+    and its name, never on a guessed timer. stop_subagents stops a subtask that goes wrong; send_message
     with interrupt makes one change course at once.
   - When another task depends on what you produce, tell it with send_message as soon as it is
     settled (for example: the API is in server/api.md). A message you receive is information from

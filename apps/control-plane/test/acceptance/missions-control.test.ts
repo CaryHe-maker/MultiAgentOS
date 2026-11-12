@@ -341,3 +341,136 @@ real('the write permission lent with a task (Orchestration 8.2, D17)', () => {
     TIMEOUT,
   );
 });
+
+describe('waking as each subtask ends, and waiting for siblings (Orchestration 4.2, D28)', () => {
+  it(
+    'wakes the parent as each child ends by default, while the others still run',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'quick', agent: 'explorer', goal: 'answer at once' },
+              { name: 'slow', agent: 'explorer', goal: 'answer after a while' },
+            ),
+            sleepFor({ kind: 'children' }),
+            // Woken by quick alone: slow still runs, so this sleep is taken.
+            sleepFor({ kind: 'children' }),
+            reply('both are in'),
+          ],
+        },
+        {
+          quick: [finish('quick result')],
+          slow: [{ wait: delay(2500), then: finish('slow result') }],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('ask both');
+      expect(chat.printed('REPLY')).toContain('both are in');
+      const all = seen(provider);
+      expect(all).toContain('Asleep until: children (any)');
+      expect(all).not.toContain('Not asleep');
+      expect(all).toContain('quick result');
+      expect(all).toContain('slow result');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'wakes a task that waits for a sibling when the sibling has ended',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'code', agent: 'explorer', goal: 'look at the code' },
+              { name: 'docs', agent: 'explorer', goal: 'describe the code once it is looked at' },
+            ),
+            sleepFor(children()),
+            reply('code and docs done'),
+          ],
+        },
+        {
+          code: [{ wait: delay(1500), then: finish('the code has two modules') }],
+          docs: [sleepFor({ kind: 'siblings', names: ['code'] }), finish('docs written')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('look and describe');
+      expect(chat.printed('REPLY')).toContain('code and docs done');
+      const docs = seenBy(provider, 'docs');
+      expect(docs).toContain('Asleep until: siblings (all)');
+      expect(docs).toContain('the sibling tasks you waited for have ended');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'hints at siblings when a task guesses with a timer while its siblings work',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'code', agent: 'explorer', goal: 'look at the code' },
+              { name: 'docs', agent: 'explorer', goal: 'wait, then describe' },
+            ),
+            sleepFor(children()),
+            reply('done'),
+          ],
+        },
+        {
+          code: [{ wait: delay(1500), then: finish('looked') }],
+          docs: [sleepFor({ kind: 'timer', seconds: 1 }), finish('described')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(seenBy(provider, 'docs')).toContain(
+        'sleep with until siblings (names) instead of a timer',
+      );
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'wakes a parent that waits for all of them as soon as one fails',
+    async () => {
+      const place = await roots();
+      const broken = {
+        response: () =>
+          new Response(JSON.stringify({ error: { message: 'bad request' } }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+      };
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'broken', agent: 'explorer', goal: 'fail' },
+              { name: 'slow', agent: 'explorer', goal: 'answer after a while' },
+            ),
+            sleepFor(children()),
+            // Woken by the failure: slow still runs, so this sleep is taken.
+            sleepFor(children()),
+            reply('handled the failure'),
+          ],
+        },
+        {
+          broken: [broken, broken, broken, broken],
+          slow: [{ wait: delay(3000), then: finish('slow result') }],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('handled the failure');
+      expect(seen(provider)).not.toContain('Not asleep');
+    },
+    TIMEOUT,
+  );
+});

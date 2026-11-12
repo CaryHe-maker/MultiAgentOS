@@ -8,7 +8,8 @@ modelName: run_subagents
 modelDescription: >-
   Start up to 8 subtasks that run in parallel. The call returns at once; the tasks run while you
   go on, and their results come to you as they finish. To wait for them, call sleep with until
-  children (mode all for every one). You cannot finish (reply or finish) while a task you started
+  children: you are woken as each one ends, so you can use its result while the others work. A
+  task that must wait for another belongs in dependsOn rather than started at once. You cannot finish (reply or finish) while a task you started
   still runs. Each task has a unique name, an agent (explorer reads and reports, worker changes
   files, lead runs a part of the work and may start its own subtasks), a goal that stands on its
   own (the agent does not see your conversation), and optional dependsOn (names of other tasks of

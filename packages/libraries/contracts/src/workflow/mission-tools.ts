@@ -3,21 +3,29 @@ import { closed, text } from '../platform-common/schema-helpers.js';
 
 /** The longest a task may sleep before it is woken anyway (Orchestration 4.2). */
 export const MAX_SLEEP_SECONDS = 3600;
-export const DEFAULT_SLEEP_SECONDS = 1800;
+/** A backstop, not the way to wait: events wake a task long before (Orchestration 4.2). */
+export const DEFAULT_SLEEP_SECONDS = 600;
 
 /**
  * What the model may wait for with `sleep` (Orchestration 4.2). The answer of a question is not
  * among them: `ask_user` waits for it by itself.
  */
 export const SleepConditionSchema = Type.Union([
+  /** Default `any`: woken as each subtask ends, to use its result at once (D28). */
   closed({
     kind: Type.Literal('children'),
-    mode: Type.Enum(['all', 'any']),
+    mode: Type.Optional(Type.Enum(['all', 'any'])),
+    names: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 12 })),
+  }),
+  /** Sibling tasks: default `all` of the named ones (or of all siblings), woken when they end (D28). */
+  closed({
+    kind: Type.Literal('siblings'),
+    mode: Type.Optional(Type.Enum(['all', 'any'])),
     names: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 12 })),
   }),
   closed({
     kind: Type.Literal('jobs'),
-    mode: Type.Enum(['all', 'any']),
+    mode: Type.Optional(Type.Enum(['all', 'any'])),
     jobIds: Type.Optional(Type.Array(text(32), { minItems: 1, maxItems: 8 })),
   }),
   closed({ kind: Type.Literal('message') }),

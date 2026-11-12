@@ -74,6 +74,7 @@ function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT
 function wokenNote(causes: readonly string[]): string {
   const said: Record<string, string> = {
     CHILDREN: 'subtasks you started have ended (their results are just above)',
+    SIBLINGS: 'the sibling tasks you waited for have ended (see the notices above)',
     JOB: 'a background command of yours has ended',
     MESSAGE: 'a message came for you (just above)',
     TIMER: 'the time you set has passed',

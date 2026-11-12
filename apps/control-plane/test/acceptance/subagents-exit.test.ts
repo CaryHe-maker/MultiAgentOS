@@ -158,6 +158,9 @@ describe('P2: two workers with separate scopes', () => {
               { name: 'fix-ui', agent: 'worker', goal: 'change the ui', writeScope: ['ui'] },
             ),
             waitForTasks(),
+            // A blocked task wakes its parent at once (D28); the other may still run, so wait again
+            // (refused, and answered, when it has already ended).
+            waitForTasks(),
             reply('done'),
           ],
         },

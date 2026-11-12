@@ -52224,6 +52224,36 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "siblings"
+                      },
+                      "mode": {
+                        "enum": [
+                          "all",
+                          "any"
+                        ]
+                      },
+                      "names": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "minItems": 1,
+                        "maxItems": 12
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "mode"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "jobs"
                       },
                       "mode": {
@@ -52371,6 +52401,7 @@
                   "kind": {
                     "enum": [
                       "CHILDREN",
+                      "SIBLINGS",
                       "JOB",
                       "MESSAGE",
                       "TIMER",
@@ -56372,8 +56403,7 @@
               {
                 "type": "object",
                 "required": [
-                  "kind",
-                  "mode"
+                  "kind"
                 ],
                 "properties": {
                   "kind": {
@@ -56402,8 +56432,36 @@
               {
                 "type": "object",
                 "required": [
-                  "kind",
-                  "mode"
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "siblings"
+                  },
+                  "mode": {
+                    "enum": [
+                      "all",
+                      "any"
+                    ]
+                  },
+                  "names": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "minItems": 1,
+                    "maxItems": 12
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
                 ],
                 "properties": {
                   "kind": {

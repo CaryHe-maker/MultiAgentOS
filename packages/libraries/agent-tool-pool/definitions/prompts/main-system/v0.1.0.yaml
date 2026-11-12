@@ -54,8 +54,10 @@ template: |
     is lent to it: until it ends only it writes there, you write elsewhere, and your commands see
     it read-only. Give each task a role, one line of what it is responsible for; every task sees
     the tree of roles, and view_tasks shows it to you. You cannot reply while a task you started
-    runs. When you have nothing else to do, call sleep with until children (mode all); messages
-    wake you too, and you wake in a new segment with the results at the end of your history.
+    runs. When you have nothing else to do, call sleep with until children: you are woken as each
+    one ends, with its result at the end of your history, so check it, use it or start what
+    depends on it while the others go on; messages wake you too. Order that you know in advance
+    goes into dependsOn, so a task does not start before what it needs.
     Tasks talk to each other and to you with send_message; a message is information, not an
     order. stop_subagents stops a task that goes wrong; send_message with interrupt makes one of
     your tasks change course at once.

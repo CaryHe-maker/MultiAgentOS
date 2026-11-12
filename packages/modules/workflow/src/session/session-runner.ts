@@ -1687,7 +1687,7 @@ export class SessionRunner {
         active,
         ending.source.toolCallId,
         'SUBTASKS_RUNNING',
-        `Not yet: subtasks you started are still running (${running.map((each) => each.name).join(', ')}). Call sleep with until children (mode all) and finish when they have ended.`,
+        `Not yet: subtasks you started are still running (${running.map((each) => each.name).join(', ')}). Call sleep with until children: you are woken as each one ends; finish when all have ended.`,
       );
     switch (action) {
       case 'PUBLISH_REPLY':
@@ -2225,7 +2225,7 @@ export class SessionRunner {
               current.state,
               'STARTED',
               toolCallId,
-              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children (mode all). Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.`,
+              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children: you are woken as each one ends, with its result, so you can use it, check it or start what depends on it; the others go on meanwhile. Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.`,
             ),
           ],
         },
@@ -2292,6 +2292,15 @@ export class SessionRunner {
     const spawned = this.#spawnedNodes();
     return childrenOf(missions, missionId).filter(
       (child) => child.ended === undefined && child.nodeIds.some((id) => spawned.has(id)),
+    );
+  }
+
+  /** The siblings of a task that have not ended: what `until siblings` can wait for (D28). */
+  #runningSiblings(missionId: string): readonly MissionView[] {
+    const missions = projectMissions(this.#records);
+    const spawned = this.#spawnedNodes();
+    return siblingsOf(missions, missionId).filter(
+      (sibling) => sibling.ended === undefined && sibling.nodeIds.some((id) => spawned.has(id)),
     );
   }
 
@@ -2502,8 +2511,18 @@ export class SessionRunner {
     const { toolCallId } = ending.source;
     const running = this.#runningChildren(active.missionId);
     const jobs = jobsOfMission(this.#records, active.missionId).filter((job) => job.running);
+    const siblings = this.#runningSiblings(active.missionId);
     const problems: string[] = [];
     for (const condition of args.until) {
+      if (condition.kind === 'siblings') {
+        const unknown = (condition.names ?? []).filter(
+          (name) => !siblings.some((sibling) => sibling.name === name),
+        );
+        if (siblings.length === 0) problems.push('none of your sibling tasks is still running');
+        else if (unknown.length > 0)
+          problems.push(`no running sibling task is named ${unknown.join(', ')}`);
+        continue;
+      }
       if (condition.kind === 'children') {
         const unknown = (condition.names ?? []).filter(
           (name) => !running.some((child) => child.name === name),
@@ -2527,6 +2546,7 @@ export class SessionRunner {
         condition.kind === 'message' ||
         condition.kind === 'timer' ||
         (condition.kind === 'children' && running.length > 0) ||
+        (condition.kind === 'siblings' && siblings.length > 0) ||
         (condition.kind === 'jobs' && jobs.length > 0),
     );
     if (!usable || problems.length === args.until.length)
@@ -2538,13 +2558,32 @@ export class SessionRunner {
         `Not asleep: nothing you named could wake you (${problems.join('; ')}). Go on working, or finish.`,
       );
     const timeoutSeconds = args.timeoutSeconds ?? DEFAULT_SLEEP_SECONDS;
-    const named = args.until.map((condition) => condition.kind).join(', ');
+    // What it waits for, with the defaults written down (D28): each child as it ends, all of the
+    // named siblings, any job.
+    const until = args.until.map((condition): WakeCondition => {
+      if (condition.kind === 'children' || condition.kind === 'jobs')
+        return { ...condition, mode: condition.mode ?? 'any' };
+      if (condition.kind === 'siblings') return { ...condition, mode: condition.mode ?? 'all' };
+      return { ...condition };
+    });
+    const named = until
+      .map((condition) =>
+        'mode' in condition ? `${condition.kind} (${condition.mode})` : condition.kind,
+      )
+      .join(', ');
+    // A timer guessed while siblings still work is the wrong way to wait for them.
+    const guessing =
+      siblings.length > 0 &&
+      until.every((condition) => condition.kind === 'timer' || condition.kind === 'message');
+    const hint = guessing
+      ? ` If you are waiting for a sibling task to finish, sleep with until siblings (names) instead of a timer: you are woken when it has ended.`
+      : '';
     await this.#append([
       answerRecord(
         active.state,
         'ASLEEP',
         toolCallId,
-        `Asleep until: ${named} (at most ${String(timeoutSeconds)} seconds).`,
+        `Asleep until: ${named} (at most ${String(timeoutSeconds)} seconds).${hint}`,
       ),
       {
         type: 'SEGMENT_YIELDED',
@@ -2553,7 +2592,7 @@ export class SessionRunner {
         nodeId: active.nodeId,
         missionId: active.missionId,
         agentRunId: active.state.agentRunId,
-        until: args.until.map((condition): WakeCondition => ({ ...condition })),
+        until,
         timeoutSeconds,
         source: { modelTurnRequestId: ending.source.modelTurnRequestId, toolCallId },
       },
@@ -2967,6 +3006,11 @@ export class SessionRunner {
       )
         messages.push(record.seq);
     }
+    const endedWith = new Map(
+      this.#records.flatMap((record) =>
+        record.type === 'MISSION_ENDED' ? [[record.missionId, record.status] as const] : [],
+      ),
+    );
     for (const condition of yielded.until) {
       if (condition.kind === 'children') {
         const watched = children.filter(
@@ -2979,6 +3023,31 @@ export class SessionRunner {
         if (condition.mode === 'all' ? allEnded : anyNew || allEnded)
           causes.push({ kind: 'CHILDREN', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
       }
+      if (condition.kind === 'siblings') {
+        const watched = siblingsOf(missions, mission.missionId).filter(
+          (sibling) =>
+            sibling.nodeIds.some((id) => spawned.has(id)) &&
+            (condition.names === undefined || condition.names.includes(sibling.name)),
+        );
+        if (watched.length === 0) continue;
+        const ends = watched.map((sibling) => endedAt.get(sibling.missionId));
+        const allEnded = ends.every((seq) => seq !== undefined);
+        const anyNew = ends.some((seq) => seq !== undefined && after(seq));
+        if (condition.mode === 'all' ? allEnded : anyNew)
+          causes.push({ kind: 'SIBLINGS', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
+      }
+    }
+    // A subtask that failed or was stopped wakes its parent whatever it waits for (D28): the parent
+    // has to decide what to do about it now, not after the others.
+    if (!causes.some((cause) => cause.kind === 'CHILDREN')) {
+      const failed = children
+        .map((child) => ({ child, seq: endedAt.get(child.missionId) }))
+        .filter(
+          ({ child, seq }) =>
+            seq !== undefined && after(seq) && endedWith.get(child.missionId) !== 'SUCCEEDED',
+        );
+      if (failed.length > 0)
+        causes.push({ kind: 'CHILDREN', seq: Math.max(...failed.map(({ seq }) => seq ?? 0)) });
     }
     // A job wakes when it was named, and the limit allows it (Orchestration 6.4).
     const jobs = jobsOfMission(this.#records, mission.missionId);
