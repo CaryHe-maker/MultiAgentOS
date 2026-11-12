@@ -93,7 +93,10 @@ export default tseslint.config(
   })),
   {
     // The exit matrix and the killed process of S1 must spawn a real child; product code may not.
+    // The judges of the evaluation run an acceptance command the model never saw.
     files: [
+      'apps/control-plane/test/eval/tasks/orchestration.ts',
+      'apps/control-plane/test/eval/tasks/orchestration-hard.ts',
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/chat-exit.test.ts',
       'apps/control-plane/test/system/kill-anywhere.test.ts',

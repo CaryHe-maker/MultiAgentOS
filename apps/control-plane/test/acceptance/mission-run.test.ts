@@ -104,6 +104,50 @@ describe('mas run "<goal>": a long task of the template mission (Orchestration 1
     },
     TIMEOUT,
   );
+
+  it(
+    'does not end the run while a subtask sleeps on its timer: main is woken and delivers',
+    async () => {
+      // Seen on the real model: the docs task waits for its siblings with a timer; the others end,
+      // nothing is ready and no AgentRun works, yet the run must wait for the timer, not close.
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'code', agent: 'explorer', goal: 'look at the code' },
+              { name: 'docs', agent: 'explorer', goal: 'wait a little, then look at the docs' },
+            ),
+            sleepForChildren(),
+            tool('reply', { text: 'delivered after both ended' }),
+          ],
+        },
+        {
+          code: [tool('finish_subagent', { summary: 'the code is fine' })],
+          docs: [
+            tool('sleep', { until: [{ kind: 'timer', seconds: 2 }] }),
+            tool('finish_subagent', { summary: 'the docs are fine' }),
+          ],
+        },
+      );
+      const ran = await masRun(['look at code and docs'], provider);
+      expect(ran.output).toContain('delivered after both ended');
+      expect(ran.exitCode).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'exits non-zero when main can no longer reach the model and so never delivers',
+    async () => {
+      // After its first call every request fails, as when the provider is down.
+      const provider = scriptedAgents({
+        main: [tool('write_file', { path: 'PLAN.md', content: '# plan\n' })],
+      });
+      const ran = await masRun(['write a plan'], provider);
+      expect(ran.exitCode).not.toBe(0);
+    },
+    TIMEOUT,
+  );
 });
 
 real('a project as a long task: parts in parallel, a lead with its own worker', () => {

@@ -7,12 +7,16 @@ import { DELIVERY_TASKS } from './delivery.js';
 import { EXTERNAL_TASKS } from './external.js';
 import { SUBAGENT_TASKS } from './subagents.js';
 import { SELFCHECK_TASKS } from './selfcheck.js';
+import { ORCHESTRATION_TASKS } from './orchestration.js';
+import { ORCHESTRATION_HARD_TASKS } from './orchestration-hard.js';
 
 export const ALL_TASKS: readonly TaskSpec[] = [
   ...SELFCHECK_TASKS,
   ...DELIVERY_TASKS,
   ...SUBAGENT_TASKS,
   ...EXTERNAL_TASKS,
+  ...ORCHESTRATION_TASKS,
+  ...ORCHESTRATION_HARD_TASKS,
 ];
 
 /** `selfcheck.answer`, or a tag as `tag:safety`, or `all`. */

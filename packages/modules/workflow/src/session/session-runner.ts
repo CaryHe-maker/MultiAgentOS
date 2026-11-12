@@ -1033,7 +1033,15 @@ export class SessionRunner {
       this.#advanceAgain = true;
       return;
     }
-    if (this.#mode === 'ORCHESTRATION' && ready.length === 0 && this.#agents.size === 0)
+    // A task that sleeps still has work ahead: it waits for a timer, a job or a message that will
+    // come. When none can come, the stall handling above wakes or closes it; the run never ends
+    // as finished around it, and never ends its root before the root has delivered.
+    if (
+      this.#mode === 'ORCHESTRATION' &&
+      ready.length === 0 &&
+      this.#agents.size === 0 &&
+      this.#sleeping(workflowRunId).length === 0
+    )
       await this.#closeFinishedRun(workflowRunId);
   }
 
@@ -1978,6 +1986,10 @@ export class SessionRunner {
       return this.#advance(workflowRunId);
     }
     if (onDegraded === 'PUBLISH_NOTICE') {
+      // A step of a template that gave up has not delivered: `mas run` must not say it did. A run
+      // cut by its budget still ends as BUDGET.
+      if (this.#mode !== 'CHAT' && active.task === undefined && !OVER_BUDGET.includes(reason))
+        this.#runFailure ??= reason;
       const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
       await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
         status: 'FAILED',

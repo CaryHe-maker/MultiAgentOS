@@ -25,7 +25,9 @@ export type ChatStep =
   /** Waits until the run asks for the next input. */
   | { readonly awaitInput: true }
   /** Waits until `until` holds, looking at what the console printed. */
-  | { readonly waitFor: (look: Look) => boolean; readonly what: string };
+  | { readonly waitFor: (look: Look) => boolean; readonly what: string }
+  /** Mission mode only: `mas run "<goal>"` with a template, waited for until the run ends. */
+  | { readonly run: string; readonly template?: string };
 
 /** What a step may look at without reaching into the product. */
 export interface Look {
@@ -49,12 +51,15 @@ export interface Observation {
   readonly log: readonly Readonly<Record<string, unknown>>[];
   /** Set when the steps did not finish (a timeout, a request over budget). */
   readonly error?: string;
+  /** Mission mode: the exit code of `mas run`. */
+  readonly exitCode?: number;
 }
 
 export interface TaskSpec {
   /** Unique, stable: records of different versions are compared by it. */
   readonly id: string;
-  readonly mode: 'chat';
+  /** `chat`: the interactive console; `mission`: `mas run` with a template, no conversation. */
+  readonly mode: 'chat' | 'mission';
   /** Free labels for reports: `chat`, `write`, `safety`, ... */
   readonly tags: readonly string[];
   readonly description: string;
