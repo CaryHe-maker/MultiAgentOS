@@ -79,14 +79,19 @@ export function registerAgentRun(control: RunControl, agentRunId: string): Decis
 }
 
 /** Accepted without effect once the run is closing, as the table says. */
-export function endAgentRun(control: RunControl, agentRunId: string): Decision {
+export function endAgentRun(
+  control: RunControl,
+  agentRunId: string,
+  keepsQuestions = false,
+): Decision {
   if (isClosing(control)) return { accepted: true, control };
   const activeAgentRuns = new Set(control.activeAgentRuns);
   activeAgentRuns.delete(agentRunId);
-  // A question of an AgentRun that ended has no one to answer to.
-  const questions = new Map(
-    [...control.questions].filter(([, asker]) => asker.agentRunId !== agentRunId),
-  );
+  // A question of an AgentRun that ended has no one to answer to, unless its task sleeps until the
+  // answer (ask_user as a sleep): then the answer wakes the next segment.
+  const questions = keepsQuestions
+    ? control.questions
+    : new Map([...control.questions].filter(([, asker]) => asker.agentRunId !== agentRunId));
   return { accepted: true, control: { ...control, activeAgentRuns, questions } };
 }
 

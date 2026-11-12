@@ -475,7 +475,41 @@ export function projectHistory(
           else notes.push(note);
           break;
         }
-        if (record.kind !== 'prompt') break;
+        if (record.kind !== 'prompt') {
+          // The answer to a question that slept (Orchestration 4.1): the call was answered when
+          // the segment ended, so the answer comes to the next segment as what the user said.
+          const resume = records
+            .filter(
+              (each): each is Extract<SessionLogRecord, { type: 'GRAPH_EXTENDED' }> =>
+                each.type === 'GRAPH_EXTENDED' && each.workflowRunId === record.workflowRunId,
+            )
+            .flatMap((each) => each.edges)
+            .find((edge) => edge.kind === 'RESUME' && edge.from === record.nodeId);
+          const toolCallId = resume?.call?.toolCallId;
+          if (
+            resume !== undefined &&
+            toolCallId !== undefined &&
+            answered.has(toolCallId) &&
+            mainRuns.has(runOfNode.get(resume.to) ?? '')
+          )
+            notes.push(
+              {
+                seq: record.seq,
+                ...turnOf(record.turnId),
+                category: 'NORMAL',
+                kind: 'NOTE',
+                text: 'The user answered the question you asked with ask_user; the answer follows.',
+              },
+              {
+                seq: record.seq,
+                ...turnOf(record.turnId),
+                category: 'NORMAL',
+                kind: 'HUMAN',
+                contentRef: record.contentRef,
+              },
+            );
+          break;
+        }
         // A SubAgent works from its task, not from what the user said.
         if (scope.kind === 'NODE' && scope.task !== undefined && scope.task.withPrompt !== true)
           break;

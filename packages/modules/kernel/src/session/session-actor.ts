@@ -662,7 +662,8 @@ export class SessionActor {
       closeReason: () => run.closing?.closeReason,
       runEpoch: () => run.runEpoch,
       registerAgentRun: (agentRunId) => this.registerAgentRun(run, agentRunId),
-      endAgentRun: (agentRunId) => this.endAgentRun(run, agentRunId),
+      endAgentRun: (agentRunId, keepsQuestions) =>
+        this.endAgentRun(run, agentRunId, keepsQuestions),
       attemptStarted: (unitAttemptId) => {
         this.attemptStarted(run, unitAttemptId);
       },
@@ -786,8 +787,8 @@ export class SessionActor {
     return this.#apply(run, registerAgentRun(run.control, agentRunId));
   }
 
-  endAgentRun(run: Run, agentRunId: string): Decision {
-    return this.#apply(run, endAgentRun(run.control, agentRunId));
+  endAgentRun(run: Run, agentRunId: string, keepsQuestions = false): Decision {
+    return this.#apply(run, endAgentRun(run.control, agentRunId, keepsQuestions));
   }
 
   attemptStarted(run: Run, unitAttemptId: string): void {

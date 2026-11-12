@@ -242,6 +242,12 @@ export const EndAgentRunRequestSchema = closed(
      * with its ledger and write roots. Absent or false, the task ends with this AgentRun.
      */
     missionContinues: Type.Optional(Type.Boolean()),
+    /**
+     * The segment went to wait for the answer to its own question (`ask_user` as a sleep,
+     * Orchestration 4.1): the question stays open after the AgentRun ends, and its answer wakes the
+     * task. Absent, the questions of the AgentRun end with it.
+     */
+    keepsQuestions: Type.Optional(Type.Boolean()),
   },
   'kernel.unit.EndAgentRunRequest.v1',
 );

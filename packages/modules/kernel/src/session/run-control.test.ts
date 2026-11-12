@@ -260,6 +260,14 @@ describe('run control of Kernel/Core 5e', () => {
     expect(accepted(endAgentRun(asked, 'agr_1')).questions.size).toBe(0);
   });
 
+  it('keeps the question of an AgentRun whose task sleeps until the answer (ask_user as a sleep)', () => {
+    const asked = accepted(requestLocalQuestion(active(), 'hrq_q', question('agr_1')));
+    const slept = accepted(endAgentRun(asked, 'agr_1', true));
+    expect(slept.activeAgentRuns.has('agr_1')).toBe(false);
+    expect(slept.questions.has('hrq_q')).toBe(true);
+    expect(accepted(answerLocalQuestion(slept, 'hrq_q')).questions.size).toBe(0);
+  });
+
   it('asks no open input while a local question is out, since the AgentRun is still active', () => {
     const asked = accepted(requestLocalQuestion(active(), 'hrq_q', question('agr_1')));
     expect(refused(requestOpenInput(asked, 'hrq_1'))).toBe('AGENT_RUN_ACTIVE');

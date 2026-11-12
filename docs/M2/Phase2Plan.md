@@ -125,7 +125,7 @@ DeepSeek Harness 团队在 2026-10-31 发布了 Super-agent 的设计文章与�
 
 | 任务 | 内容 |
 |---|---|
-| RP2-OR-1 | Orchestration 的机制（[Orchestration](Orchestration.md) 第 15 节）：已完成任务树、休眠与唤醒、消息、嵌套派生、写权限包、停止与中断、后台命令；剩 checkpoint 取代 Turn、`ask_user` 改为休眠、Kernel 单独中断一个 AgentRun（评测已证明必要，提前） |
+| RP2-OR-1 | Orchestration 的机制（[Orchestration](Orchestration.md) 第 15 节）：已完成任务树、休眠与唤醒、消息、嵌套派生、写权限包、停止与中断、后台命令；剩 checkpoint 取代 Turn（C1–C3 已做，HUMAN_ANSWER 回溯与崩溃续跑未做）；`ask_user` 改为休眠（2026-11-13，编排模式）与 Kernel 单独中断一个 AgentRun 已完成 |
 | RP2-CM-1 | 上下文与通信（Orchestration 第 5.3 节，D23–D27）：计划书（第一次派生前必须写，公开给所有任务）；通信工具升级（`inform`、`request`、`reply`，摘要与附件，未答复请求的兜底）；可见范围裁剪为父任务、兄弟、直接子任务；计划书放法与 `fresh`/`fork` 两项对照实验 |
 | RP2-PT-1 | 范式手册：写入 main、lead 的提示词与 `mission` 的目标说明；每条范式带一个任务集里的例子。**进度（2026-11-13）**：八条范式已写入 main 与 lead 的提示词（lead 的子任务不能再派生，所以没有"多层负责人"一条），`mission` 的目标说明指向它，每条带一个例子；有测试保证手册在提示词里。未做：改动前后在任务集上的评测（需要预算）、手册强度可配置 |
 | RP2-ST-1 | 严格模式：模板引擎保留；`analyze` 保持；至少一个固定流程模板作为严格模式的样例（候选：`task`：plan → 人类确认 → 并行 worker → verify）。**进度（2026-11-13）**：仓库模板 `.multiagentos/workflows/<id>.yaml` 已可运行，开始前检查并写明规则与节点；样例模板 `task` 未做 |

@@ -99,7 +99,7 @@ export interface RunHost {
   closeReason(): CloseReason | undefined;
   runEpoch(): number;
   registerAgentRun(agentRunId: string): Decision;
-  endAgentRun(agentRunId: string): Decision;
+  endAgentRun(agentRunId: string, keepsQuestions?: boolean): Decision;
   attemptStarted(unitAttemptId: string): void;
   attemptEnded(unitAttemptId: string): void;
   toWorkflow(report: UnitReport): void;
@@ -821,7 +821,7 @@ export class RunWork {
     // its share goes back to its parent at once (M2Design 7.3, rule 4).
     this.#deps.ledgers.endAgentRun(agentRunId, continues);
     if (!continues) this.#delegations.childEnded(record.mission);
-    const ended = this.#host.endAgentRun(agentRunId);
+    const ended = this.#host.endAgentRun(agentRunId, continues && request.keepsQuestions === true);
     if (!ended.accepted) return this.#refuse(requestId, request, ended.reasonCode);
     return this.#accept(requestId, request);
   }

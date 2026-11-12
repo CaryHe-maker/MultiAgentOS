@@ -14320,6 +14320,9 @@
                 },
                 "missionContinues": {
                   "type": "boolean"
+                },
+                "keepsQuestions": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false,
@@ -34218,6 +34221,9 @@
           "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
         },
         "missionContinues": {
+          "type": "boolean"
+        },
+        "keepsQuestions": {
           "type": "boolean"
         }
       },

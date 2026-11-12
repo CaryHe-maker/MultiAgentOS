@@ -917,7 +917,7 @@ M2Decisions 中需要改写的决定：第 1 节"结束方式由定义声明的�
 | mission 的模板步骤放弃时 `mas run` 的退出码 | 已修正（2026-11-12） | main 无法再调用模型而降级时，运行记为失败（退出码 1），因额度结束的仍为 `BUDGET` |
 | 逐个唤醒、`siblings` 条件、失败必唤醒（D28） | 已实现（2026-11-12） | 端到端用例：逐个唤醒、等兄弟、定时器的提示、失败唤醒等全部的父任务 |
 | 停止与中断立即取消在途工作 | 已实现（2026-11-12） | 系统调用 `haltAgentRun`：Kernel 取消该 AgentRun 排队与在途的命令和模型调用（正在进行的写入照常完成，避免写出半个文件），各自答复 INTERRUPTED(ABORTED)；Workflow 在被取消的工作都答复后立即停止或接上新的一段。端到端用例：停止、中断一个正在运行 60 秒命令的任务，约 2 秒生效 |
-| `ask_user` 改为休眠 | 未实现 | 仍是挂起在调用上等答复（原有的 `DELEGATE`、`RESUME`） |
+| `ask_user` 改为休眠 | 已实现（2026-11-13），编排模式 | 编排模式下问题发出后，提问的任务以 `SEGMENT_YIELDED { until: human }` 结束这一段（调用当即得到"问题已交给用户"的结果），Kernel 的 `endAgentRun` 带 `keepsQuestions`，问题在 AgentRun 结束后仍然有效；只有答复唤醒它（`MISSION_WOKEN` 原因 `HUMAN`），消息、后台命令、子任务结束只积累到那一段；下一段在末尾读到"用户答复了你的问题"与答复内容；不设定时，等多久都行；等答复时不算停滞。**与第 4.1 节的差别**：Turn-chat 仍是挂起在调用上等答复（答复是该调用的结果），只有编排模式改为休眠；`HUMAN` 节点与 `DELEGATE`、`RESUME` 边照旧建立，提问的段结束后 `RESUME` 不再生效；正在等答复的任务被停止或回溯时，问题不会从界面上收回（没有收回局部问题的系统调用），之后的答复只记入日志 |
 | 后台命令（第 6 节） | 已实现 | `run_command` 的 `runInBackground`；前台超时转后台（`promoteOnTimeout` 缺省开）；`job_output`、`job_list`、`job_kill`；结束通知按下一次组装送达；`sleep` 的 `jobs` 条件唤醒，受连续唤醒上限约束；任务结束、运行收敛时停止；每个运行至多 4 个；最长 1 小时。实现方式与差别见第 6.5 节 |
 | 模型可见的任务工具 | 已修正 | 之前 `sleep`、`send_message`、`view_tasks`、`stop_subagents` 没有进入给模型的工具列表（脚本化测试不看工具列表，没有暴露）；现在与作业工具一起列出，并有用例断言 |
 | checkpoint：运行中途的切面（第 7.1–7.3 节，C1） | 已实现（2026-11-13） | 编排模式下根任务派生、用户答复 `ask_user` 时，Workflow 记 `CHECKPOINT_REQUESTED`（切面），系统调用 `takeCheckpoint`；Kernel 只扣住写入与前台命令（读、网页、模型调用照常，后台命令不等），在途的都结束后拍快照、写索引行 `CHECKPOINT`，放行，回报 `CheckpointTaken`（含被扣住未执行的单元）；等待超过 `checkpointBarrierMs`（缺省 600 秒）放弃（`SKIPPED`）。**与 D8 的差别**：Turn 没有被整个去掉，保留为"两次用户输入之间"的区间，checkpoint 是它之下更细的切面；Turn-chat 的 checkpoint 就是 Turn 的开始，`/undo` 不变。整体去掉 Turn 涉及日志、投影、回退、计时几十处，风险大于收益，待评审确认 |

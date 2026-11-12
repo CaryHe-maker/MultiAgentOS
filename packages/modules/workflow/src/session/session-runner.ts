@@ -163,6 +163,8 @@ const MAX_MESSAGES_PER_SEGMENT = 10;
 const MAX_CONSECUTIVE_WAKES = 3;
 /** Times a task is woken because nothing could move, before it is ended. */
 const MAX_STALLED_WAKES = 3;
+/** What a sleep until an answer records as its most; no timer is set for it (Orchestration 4.2). */
+const ASK_SLEEP_SECONDS = 86_400;
 /** Requests a task may have unanswered at once (D25). */
 const MAX_OPEN_REQUESTS = 3;
 /** What one `job_output` reads at most: it must fit the answer of the call. */
@@ -968,22 +970,62 @@ export class SessionRunner {
       return;
     }
     const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
-    await this.#extend(
+    const revision = askRevision(
       workflowRunId,
       revisionNumber,
-      'ASK',
-      askRevision(
-        workflowRunId,
-        revisionNumber,
-        { nodeId: active.nodeId, toolCallId },
-        {
-          kind: args.kind,
-          question: args.question,
-          ...(args.fields === undefined ? {} : { fields: args.fields }),
-          ...(args.reviewArtifact === undefined ? {} : { reviewRef: args.reviewArtifact }),
-        },
-      ),
+      { nodeId: active.nodeId, toolCallId },
+      {
+        kind: args.kind,
+        question: args.question,
+        ...(args.fields === undefined ? {} : { fields: args.fields }),
+        ...(args.reviewArtifact === undefined ? {} : { reviewRef: args.reviewArtifact }),
+      },
     );
+    await this.#extend(workflowRunId, revisionNumber, 'ASK', revision);
+    // The question goes out while the AgentRun that asks it is still there to be named.
+    await this.#advance(workflowRunId);
+    const human = revision.nodes[0];
+    if (
+      this.#mode === 'ORCHESTRATION' &&
+      human !== undefined &&
+      this.#agents.has(active.state.agentRunId)
+    )
+      await this.#sleepUntilAnswered(workflowRunId, active, toolCallId, human.nodeId, ending);
+  }
+
+  /**
+   * `ask_user` in a long task is a sleep (Orchestration 4.1, 4.2): the segment ends, the question
+   * stays with the user, and only its answer wakes the task, which reads it in its next segment.
+   * No timer is set: the task waits as long as the user takes.
+   */
+  async #sleepUntilAnswered(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    humanNodeId: string,
+    ending: Extract<AgentEnding, { kind: 'ASK' }>,
+  ): Promise<void> {
+    await this.#append([
+      answerRecord(
+        active.state,
+        'ASLEEP',
+        toolCallId,
+        'Your question is with the user. This segment ends here: you are woken with the answer, and nothing else wakes you before it.',
+      ),
+      {
+        type: 'SEGMENT_YIELDED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        nodeId: active.nodeId,
+        missionId: active.missionId,
+        agentRunId: active.state.agentRunId,
+        until: [{ kind: 'human', nodeId: humanNodeId }],
+        timeoutSeconds: ASK_SLEEP_SECONDS,
+        source: { modelTurnRequestId: ending.source.modelTurnRequestId, toolCallId },
+      },
+    ]);
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true, true);
+    await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
     await this.#advance(workflowRunId);
   }
 
@@ -1745,6 +1787,8 @@ export class SessionRunner {
     active: ActiveAgent,
     outcome: AgentEnding['kind'] | 'YIELDED',
     sleeping = false,
+    /** It sleeps until the answer to its own question, which stays open (ask_user as a sleep). */
+    keepsQuestions = false,
   ): Promise<void> {
     const isRoot =
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.mission?.parentId ===
@@ -1776,6 +1820,7 @@ export class SessionRunner {
         workflowRunId,
         agentRunId,
         ...(continues ? { missionContinues: true } : {}),
+        ...(keepsQuestions ? { keepsQuestions: true } : {}),
       },
       contextOf(sessionId, workflowRunId),
     );
@@ -3355,6 +3400,16 @@ export class SessionRunner {
     missions: ReadonlyMap<string, MissionView>,
   ): Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'] {
     const after = (seq: number) => seq > yielded.seq;
+    // A task that waits for the user's answer is woken by it alone (4.4): what else comes in is
+    // kept for that segment, so the same question is not asked twice.
+    const asked = yielded.until.find((condition) => condition.kind === 'human');
+    if (asked !== undefined) {
+      const answered = this.#records.find(
+        (record) =>
+          record.type === 'NODE_ENDED' && record.nodeId === asked.nodeId && after(record.seq),
+      );
+      return answered === undefined ? [] : [{ kind: 'HUMAN', seq: answered.seq }];
+    }
     // A message counts when the task has not seen it: after the last context it was given, even
     // if it came just before it went to sleep.
     let lastSeen = 0;
