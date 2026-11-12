@@ -13,6 +13,7 @@ import { runEnd } from '../kernel-control/run-outcome.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { ExecutionKindSchema } from '../platform-common/execution-kind.js';
 import { IdSchemas } from '../platform-common/ids.js';
+import { JobExitSchema } from '../kernel-execution/supervisor-requests.js';
 import {
   UNIT_FAILED_CODES,
   UNIT_REJECTED_CODES,
@@ -262,9 +263,24 @@ export const WakeDueSchema = closed(
 );
 export type WakeDue = Static<typeof WakeDueSchema>;
 
+/** A background command has ended (Orchestration 6.4); Workflow knows whose job it was. */
+export const JobEndedSchema = closed(
+  {
+    type: Type.Literal('JobEnded'),
+    jobKey: IdSchemas.executionId,
+    exit: JobExitSchema,
+    durationMs: Type.Integer({ minimum: 0 }),
+    totalBytes: Type.Integer({ minimum: 0 }),
+    tail: Type.String(),
+  },
+  'kernel.unit.JobEnded.v1',
+);
+export type JobEnded = Static<typeof JobEndedSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
   WakeDueSchema,
+  JobEndedSchema,
   UnitReportSchema,
   HumanAnsweredSchema,
   TurnClosedSchema,

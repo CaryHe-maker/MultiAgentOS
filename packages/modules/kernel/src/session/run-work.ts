@@ -7,6 +7,7 @@ import {
   writeRootsOverlap,
   writeRootsWithin,
   type CommandInput,
+  type JobEndedFact,
   type WebFetchInput,
   type WebSearchInput,
   type DelegationReserved,
@@ -919,6 +920,14 @@ export class RunWork {
       });
     });
     return this.#accept(requestId, request);
+  }
+
+  /** A background command ended (Orchestration 6.4): Workflow hears it while the run works. */
+  jobEnded(fact: JobEndedFact): void {
+    const { phase } = this.#host.control();
+    if (phase === 'CONVERGING' || phase === 'CLOSED') return;
+    const { jobKey, exit, durationMs, totalBytes, tail } = fact;
+    this.#host.toWorkflowEvent({ type: 'JobEnded', jobKey, exit, durationMs, totalBytes, tail });
   }
 
   /** What a handover carries is kept for the Session, so it can be read later (Core 5g). */

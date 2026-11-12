@@ -282,9 +282,17 @@ export class AttemptRequestBuilder {
       }
       case 'COMMAND': {
         // Where it runs and whether it is online were decided into the scope; the Executor gets the rest.
-        const { command, timeoutMs } = inputOf<CommandInput>(CommandInputSchema, input);
+        const { command, timeoutMs, background, promoteOnTimeout } = inputOf<CommandInput>(
+          CommandInputSchema,
+          input,
+        );
+        // Whether it runs on as a job (Orchestration 6.1) is the Executor's to ask of the sandbox.
+        const detach = {
+          ...(background === true ? { background } : {}),
+          ...(promoteOnTimeout === true ? { promoteOnTimeout } : {}),
+        };
         return {
-          request: made({ command, timeoutMs }, this.#toolLimits('COMMAND', identity)),
+          request: made({ command, timeoutMs, ...detach }, this.#toolLimits('COMMAND', identity)),
         };
       }
       case 'GIT_INSPECT':
@@ -486,7 +494,7 @@ export class AttemptRequestBuilder {
         };
       }
       case 'TOOL_RESULT': {
-        const { toolCallId, toolName, outputRef, reasonCode, status } = entry;
+        const { toolCallId, toolName, outputRef, reasonCode, status, jobId } = entry;
         const result = {
           ...base,
           kind: 'TOOL_RESULT' as const,
@@ -499,7 +507,9 @@ export class AttemptRequestBuilder {
         // A full output reaches the model through read_output only (M2Design 8.2).
         if (this.#deps.artifacts.isFullOutput(outputRef))
           throw new RequestBuildError('INVALID_INPUT');
-        return { ...result, text: await this.#text(outputRef) };
+        const text = await this.#text(outputRef);
+        // A command that runs on is named in its task, so its job tools can find it (Orchestration 6.1).
+        return { ...result, text: jobId === undefined ? text : `${jobId}: ${text}` };
       }
       case 'HUMAN_ANSWER': {
         // The result of the ask_user call: what the user said, cut like any long result.

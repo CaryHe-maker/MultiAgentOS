@@ -70,7 +70,14 @@ export interface AgentDefinitions {
   readonly viewTasksTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `stop_subagents`: answered by the runner once it stopped them (Orchestration 5.1). */
   readonly stopTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `job_output`, `job_list`, `job_kill`: answered by the runner (Orchestration 6.2). */
+  readonly jobTools?: readonly {
+    readonly action: JobAction;
+    readonly toolName: string;
+    readonly parameters: Schema;
+  }[];
 }
+export type JobAction = 'OUTPUT' | 'LIST' | 'KILL';
 /** What follows an end tool; only the runner reads it, never this machine. */
 export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
 export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';
@@ -204,6 +211,13 @@ export type AgentEnding =
   | { readonly kind: 'VIEW_TASKS'; readonly arguments: unknown; readonly source: ControlSource }
   /** `stop_subagents`: the runner stops them and answers. */
   | { readonly kind: 'STOP'; readonly arguments: unknown; readonly source: ControlSource }
+  /** A job tool: the runner reads, lists or stops the task's background commands. */
+  | {
+      readonly kind: 'JOB';
+      readonly action: JobAction;
+      readonly arguments: unknown;
+      readonly source: ControlSource;
+    }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
@@ -874,6 +888,19 @@ function soleControlOf(
         allowedInFinal: false,
         ending: (source) => ({ kind: 'STOP', arguments: call.arguments, source }),
       };
+    const job = state.definitions.jobTools?.find((each) => each.toolName === call.toolName);
+    if (job !== undefined)
+      return {
+        call,
+        parameters: job.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({
+          kind: 'JOB',
+          action: job.action,
+          arguments: call.arguments,
+          source,
+        }),
+      };
   }
   return undefined;
 }
@@ -919,7 +946,8 @@ function actOn(
       ending.kind === 'ASK' ||
       ending.kind === 'MESSAGE' ||
       ending.kind === 'VIEW_TASKS' ||
-      ending.kind === 'STOP'
+      ending.kind === 'STOP' ||
+      ending.kind === 'JOB'
       ? {
           ...transition,
           state: {

@@ -58,6 +58,18 @@ actions:
     toolRef:
       id: view-tasks
       version: v0.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v0.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v0.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v0.1.0
   todos:
     toolRef:
       id: update-todos

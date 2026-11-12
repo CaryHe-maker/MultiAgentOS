@@ -2,6 +2,9 @@ import type {
   ArtifactContent,
   DelegationReserved,
   GatewayForward,
+  JobControlContent,
+  JobControlRequest,
+  JobControlResult,
   ProjectFileContent,
   SessionAccepted,
   SyscallAck,
@@ -18,11 +21,14 @@ export type CoreResponse =
   | SessionAccepted
   | ArtifactContent
   | ProjectFileContent
+  | JobControlContent
   | DelegationReserved;
 
 export interface SessionCoreDeps {
   readonly manager: SessionManager;
   readonly artifactsOf: (sessionId: string) => SessionArtifacts | undefined;
+  /** Reads or stops a background command at the Supervisor (Orchestration 6.2). */
+  readonly controlJob?: (request: JobControlRequest) => Promise<JobControlResult>;
 }
 
 type Forward<T extends GatewayForward['requestType']> = Extract<
@@ -105,6 +111,25 @@ export class SessionCore {
     return { requestId, outcome: 'ACCEPTED', ref, text: content.text };
   }
 
+  /** Passed to the Supervisor outside the actor, once the run is known (Orchestration 6.2). */
+  async #controlJob(request: Forward<'controlJob'>): Promise<CoreResponse> {
+    const known = await this.#inRun(request, () => ({ known: true as const }));
+    if ('outcome' in known) return known;
+    const { requestId, workflowRunId, jobKey, action, offset, maxBytes } = request;
+    const control = this.#deps.controlJob;
+    const result: JobControlResult =
+      control === undefined
+        ? { found: false }
+        : await control({
+            workflowRunId,
+            jobKey,
+            action,
+            ...(offset === undefined ? {} : { offset }),
+            ...(maxBytes === undefined ? {} : { maxBytes }),
+          });
+    return { requestId, outcome: 'ACCEPTED', result };
+  }
+
   async #readProjectFile(request: Forward<'readProjectFile'>): Promise<CoreResponse> {
     const reading = await this.#inRun(request, (work) => work.readProjectFile(request));
     // Awaited here, outside the actor: the answer to its question has to get in.
@@ -146,6 +171,8 @@ export class SessionCore {
         );
       case 'retainArtifacts':
         return this.#inRun(forward.request, (work) => work.retainArtifacts(forward.request));
+      case 'controlJob':
+        return this.#controlJob(forward.request);
       case 'scheduleWake':
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.scheduleWake(forward.request)),

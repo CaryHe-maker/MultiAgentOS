@@ -436,6 +436,93 @@
                 }
               },
               "additionalProperties": false
+            },
+            "jobOutput": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "jobList": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
+            },
+            "jobKill": {
+              "type": "object",
+              "required": [
+                "toolRef"
+              ],
+              "properties": {
+                "toolRef": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "catalog.DefinitionRef.v1"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -1521,6 +1608,93 @@
                   "additionalProperties": false
                 },
                 "stop": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "jobOutput": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "jobList": {
+                  "type": "object",
+                  "required": [
+                    "toolRef"
+                  ],
+                  "properties": {
+                    "toolRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "jobKill": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -4273,6 +4447,11 @@
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
                   "prunedAt": {
                     "type": "integer",
                     "minimum": 1
@@ -4408,7 +4587,7 @@
                   "text": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 4000
+                    "maxLength": 16000
                   },
                   "toolCallId": {
                     "type": "string",
@@ -5466,6 +5645,11 @@
               ],
               "$id": "platform.common.ReasonCode.v1"
             },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
             "prunedAt": {
               "type": "integer",
               "minimum": 1
@@ -5601,7 +5785,7 @@
             "text": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 4000
+              "maxLength": 16000
             },
             "toolCallId": {
               "type": "string",
@@ -7250,6 +7434,12 @@
         },
         "network": {
           "type": "boolean"
+        },
+        "background": {
+          "type": "boolean"
+        },
+        "promoteOnTimeout": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -7343,6 +7533,24 @@
           },
           "additionalProperties": false,
           "$id": "executor.RetentionNotice.v1"
+        },
+        "job": {
+          "type": "object",
+          "required": [
+            "jobKey",
+            "promoted"
+          ],
+          "properties": {
+            "jobKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "promoted": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
@@ -8378,6 +8586,12 @@
           "maximum": 600000
         },
         "network": {
+          "type": "boolean"
+        },
+        "runInBackground": {
+          "type": "boolean"
+        },
+        "promoteOnTimeout": {
           "type": "boolean"
         }
       },
@@ -10320,6 +10534,70 @@
             },
             "requestType": {
               "type": "string",
+              "const": "controlJob"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "jobKey",
+                "action"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "jobKey": {
+                  "type": "string",
+                  "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "action": {
+                  "enum": [
+                    "READ",
+                    "STOP"
+                  ]
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "maxBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 32768
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.ControlJobRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "reportCompactionSource"
             },
             "request": {
@@ -10705,6 +10983,11 @@
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
+                          "jobId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                          },
                           "prunedAt": {
                             "type": "integer",
                             "minimum": 1
@@ -10840,7 +11123,7 @@
                           "text": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 4000
+                            "maxLength": 16000
                           },
                           "toolCallId": {
                             "type": "string",
@@ -12053,6 +12336,11 @@
                                     ],
                                     "$id": "platform.common.ReasonCode.v1"
                                   },
+                                  "jobId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 32
+                                  },
                                   "prunedAt": {
                                     "type": "integer",
                                     "minimum": 1
@@ -12188,7 +12476,7 @@
                                   "text": {
                                     "type": "string",
                                     "minLength": 1,
-                                    "maxLength": 4000
+                                    "maxLength": 16000
                                   },
                                   "toolCallId": {
                                     "type": "string",
@@ -13210,6 +13498,12 @@
                           "maximum": 600000
                         },
                         "network": {
+                          "type": "boolean"
+                        },
+                        "background": {
+                          "type": "boolean"
+                        },
+                        "promoteOnTimeout": {
                           "type": "boolean"
                         }
                       },
@@ -22612,6 +22906,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 600000
+        },
+        "background": {
+          "type": "boolean"
+        },
+        "promoteOnTimeout": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -23699,6 +23999,24 @@
                       },
                       "additionalProperties": false,
                       "$id": "executor.RetentionNotice.v1"
+                    },
+                    "job": {
+                      "type": "object",
+                      "required": [
+                        "jobKey",
+                        "promoted"
+                      ],
+                      "properties": {
+                        "jobKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "promoted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false,
@@ -28599,6 +28917,12 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 600000
+                },
+                "background": {
+                  "type": "boolean"
+                },
+                "promoteOnTimeout": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false,
@@ -29772,6 +30096,24 @@
                   },
                   "additionalProperties": false,
                   "$id": "executor.RetentionNotice.v1"
+                },
+                "job": {
+                  "type": "object",
+                  "required": [
+                    "jobKey",
+                    "promoted"
+                  ],
+                  "properties": {
+                    "jobKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "promoted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false,
@@ -30741,6 +31083,221 @@
         }
       ],
       "$id": "kernel.execution.ExecutionScope.v1"
+    },
+    "kernel.execution.JobControlRequest.v1": {
+      "type": "object",
+      "required": [
+        "workflowRunId",
+        "jobKey",
+        "action"
+      ],
+      "properties": {
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "jobKey": {
+          "type": "string",
+          "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "action": {
+          "enum": [
+            "READ",
+            "STOP"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.JobControlRequest.v1"
+    },
+    "kernel.execution.JobControlResult.v1": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "found"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "found",
+            "text",
+            "offset",
+            "nextOffset",
+            "skipped",
+            "totalBytes"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean",
+              "const": true
+            },
+            "text": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nextOffset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "skipped": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "totalBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exit": {
+              "type": "object",
+              "required": [
+                "exitCode",
+                "signal",
+                "stopped",
+                "timedOut",
+                "unconfirmed"
+              ],
+              "properties": {
+                "exitCode": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "signal": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stopped": {
+                  "type": "boolean"
+                },
+                "timedOut": {
+                  "type": "boolean"
+                },
+                "unconfirmed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "$id": "kernel.execution.JobControlResult.v1"
+    },
+    "kernel.execution.JobEndedFact.v1": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "workflowRunId",
+        "jobKey",
+        "exit",
+        "durationMs",
+        "totalBytes",
+        "tail"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "jobKey": {
+          "type": "string",
+          "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "exit": {
+          "type": "object",
+          "required": [
+            "exitCode",
+            "signal",
+            "stopped",
+            "timedOut",
+            "unconfirmed"
+          ],
+          "properties": {
+            "exitCode": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stopped": {
+              "type": "boolean"
+            },
+            "timedOut": {
+              "type": "boolean"
+            },
+            "unconfirmed": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tail": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.execution.JobEndedFact.v1"
     },
     "kernel.execution.ModelExecutorInput.v1": {
       "type": "object",
@@ -32678,6 +33235,51 @@
       "additionalProperties": false,
       "$id": "kernel.unit.ContextCompacted.v1"
     },
+    "kernel.unit.ControlJobRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "jobKey",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "jobKey": {
+          "type": "string",
+          "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "action": {
+          "enum": [
+            "READ",
+            "STOP"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.ControlJobRequest.v1"
+    },
     "kernel.unit.DelegationReserved.v1": {
       "type": "object",
       "required": [
@@ -33098,6 +33700,201 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.HumanCancelled.v1"
+    },
+    "kernel.unit.JobControlContent.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "outcome",
+        "result"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "const": "ACCEPTED"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "found"
+              ],
+              "properties": {
+                "found": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "found",
+                "text",
+                "offset",
+                "nextOffset",
+                "skipped",
+                "totalBytes"
+              ],
+              "properties": {
+                "found": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "text": {
+                  "type": "string"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "nextOffset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "skipped": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "exit": {
+                  "type": "object",
+                  "required": [
+                    "exitCode",
+                    "signal",
+                    "stopped",
+                    "timedOut",
+                    "unconfirmed"
+                  ],
+                  "properties": {
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signal": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stopped": {
+                      "type": "boolean"
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "$id": "kernel.execution.JobControlResult.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.JobControlContent.v1"
+    },
+    "kernel.unit.JobEnded.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "jobKey",
+        "exit",
+        "durationMs",
+        "totalBytes",
+        "tail"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "JobEnded"
+        },
+        "jobKey": {
+          "type": "string",
+          "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "exit": {
+          "type": "object",
+          "required": [
+            "exitCode",
+            "signal",
+            "stopped",
+            "timedOut",
+            "unconfirmed"
+          ],
+          "properties": {
+            "exitCode": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stopped": {
+              "type": "boolean"
+            },
+            "timedOut": {
+              "type": "boolean"
+            },
+            "unconfirmed": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tail": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.JobEnded.v1"
     },
     "kernel.unit.MessagePublishInput.v1": {
       "anyOf": [
@@ -34000,6 +34797,11 @@
                     ],
                     "$id": "platform.common.ReasonCode.v1"
                   },
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
                   "prunedAt": {
                     "type": "integer",
                     "minimum": 1
@@ -34135,7 +34937,7 @@
                   "text": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 4000
+                    "maxLength": 16000
                   },
                   "toolCallId": {
                     "type": "string",
@@ -37454,6 +38256,11 @@
                             ],
                             "$id": "platform.common.ReasonCode.v1"
                           },
+                          "jobId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                          },
                           "prunedAt": {
                             "type": "integer",
                             "minimum": 1
@@ -37589,7 +38396,7 @@
                           "text": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 4000
+                            "maxLength": 16000
                           },
                           "toolCallId": {
                             "type": "string",
@@ -38612,6 +39419,12 @@
                 },
                 "network": {
                   "type": "boolean"
+                },
+                "background": {
+                  "type": "boolean"
+                },
+                "promoteOnTimeout": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false,
@@ -39492,6 +40305,11 @@
                         ],
                         "$id": "platform.common.ReasonCode.v1"
                       },
+                      "jobId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                      },
                       "prunedAt": {
                         "type": "integer",
                         "minimum": 1
@@ -39627,7 +40445,7 @@
                       "text": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 4000
+                        "maxLength": 16000
                       },
                       "toolCallId": {
                         "type": "string",
@@ -40650,6 +41468,12 @@
             },
             "network": {
               "type": "boolean"
+            },
+            "background": {
+              "type": "boolean"
+            },
+            "promoteOnTimeout": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false,
@@ -41412,6 +42236,24 @@
               },
               "additionalProperties": false,
               "$id": "executor.RetentionNotice.v1"
+            },
+            "job": {
+              "type": "object",
+              "required": [
+                "jobKey",
+                "promoted"
+              ],
+              "properties": {
+                "jobKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "promoted": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false,
@@ -42331,6 +43173,24 @@
                       },
                       "additionalProperties": false,
                       "$id": "executor.RetentionNotice.v1"
+                    },
+                    "job": {
+                      "type": "object",
+                      "required": [
+                        "jobKey",
+                        "promoted"
+                      ],
+                      "properties": {
+                        "jobKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "promoted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false,
@@ -43391,6 +44251,83 @@
               "$id": "kernel.unit.WakeDue.v1"
             },
             {
+              "type": "object",
+              "required": [
+                "type",
+                "jobKey",
+                "exit",
+                "durationMs",
+                "totalBytes",
+                "tail"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "JobEnded"
+                },
+                "jobKey": {
+                  "type": "string",
+                  "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "exit": {
+                  "type": "object",
+                  "required": [
+                    "exitCode",
+                    "signal",
+                    "stopped",
+                    "timedOut",
+                    "unconfirmed"
+                  ],
+                  "properties": {
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signal": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stopped": {
+                      "type": "boolean"
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tail": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.JobEnded.v1"
+            },
+            {
               "anyOf": [
                 {
                   "type": "object",
@@ -44178,6 +45115,24 @@
                               },
                               "additionalProperties": false,
                               "$id": "executor.RetentionNotice.v1"
+                            },
+                            "job": {
+                              "type": "object",
+                              "required": [
+                                "jobKey",
+                                "promoted"
+                              ],
+                              "properties": {
+                                "jobKey": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "promoted": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "additionalProperties": false,
@@ -51642,6 +52597,241 @@
             "at",
             "workflowRunId",
             "type",
+            "missionId",
+            "jobId",
+            "jobKey",
+            "requestId",
+            "command",
+            "promoted"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "JOB_STARTED"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "jobKey": {
+              "type": "string",
+              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "promoted": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
+            "jobId",
+            "nextOffset"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "JOB_READ"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "nextOffset": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "missionId",
+            "jobId",
+            "exit",
+            "durationMs",
+            "totalBytes",
+            "readUpTo",
+            "tail"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "turnId": {
+              "type": "string",
+              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "JOB_ENDED"
+            },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "exit": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "exitCode",
+                    "signal",
+                    "stopped",
+                    "timedOut",
+                    "unconfirmed"
+                  ],
+                  "properties": {
+                    "exitCode": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signal": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stopped": {
+                      "type": "boolean"
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "lost"
+                  ],
+                  "properties": {
+                    "lost": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "totalBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "readUpTo": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tail": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
             "agentRunId",
             "outcome"
           ],
@@ -52439,7 +53629,7 @@
             "message": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 4000
+              "maxLength": 16000
             },
             "toolCallId": {
               "type": "string",
@@ -54954,6 +56144,50 @@
       },
       "additionalProperties": false,
       "$id": "workflow.HandoffBrief.v1"
+    },
+    "workflow.JobKillArgs.v1": {
+      "type": "object",
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.JobKillArgs.v1"
+    },
+    "workflow.JobListArgs.v1": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "$id": "workflow.JobListArgs.v1"
+    },
+    "workflow.JobOutputArgs.v1": {
+      "type": "object",
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "fromStart": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.JobOutputArgs.v1"
     },
     "workflow.ReplyArgs.v1": {
       "type": "object",

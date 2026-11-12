@@ -19,6 +19,8 @@ import {
   DEFAULT_SLEEP_SECONDS,
   type SendMessageArgs,
   type SleepArgs,
+  type JobKillArgs,
+  type JobOutputArgs,
   type StopSubagentsArgs,
   type WakeCondition,
   type RunSubagentsArgs,
@@ -62,6 +64,14 @@ import {
 } from '../domain/agent/analysis-report.js';
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
+import {
+  exitText,
+  jobListText,
+  jobsOf,
+  jobsOfMission,
+  nextJobId,
+  runningJobs,
+} from '../domain/graph/mission-jobs.js';
 import { revokedCompactions } from '../domain/context/compaction-revocation.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
@@ -153,6 +163,8 @@ const MAX_MESSAGES_PER_SEGMENT = 10;
 const MAX_CONSECUTIVE_WAKES = 3;
 /** Times a task is woken because nothing could move, before it is ended. */
 const MAX_STALLED_WAKES = 3;
+/** What one `job_output` reads at most: it must fit the answer of the call. */
+const JOB_READ_BYTES = 12_000;
 /** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
 const MAX_MISSION_DEPTH = 2;
 
@@ -457,6 +469,9 @@ export class SessionRunner {
         break;
       case 'UnitReport':
         await this.#onUnitReport(workflowRunId, event);
+        break;
+      case 'JobEnded':
+        await this.#onJobEnded(workflowRunId, event);
         break;
       case 'WakeDue':
         // Recorded first, so a wake by time is read from the log like any other (4.2).
@@ -1500,6 +1515,7 @@ export class SessionRunner {
       };
       this.#agents.set(report.agentRunId, active);
     }
+    await this.#noteJobStarted(workflowRunId, active, report);
     const transition = receiveAgentReport(
       active.state,
       report,
@@ -2005,6 +2021,8 @@ export class SessionRunner {
         );
       case 'STOP':
         return this.#onStop(workflowRunId, active, ending);
+      case 'JOB':
+        return this.#onJobTool(workflowRunId, active, ending);
       case 'DEGRADED':
         return this.#onDegraded(workflowRunId, active, ending.reason, ending.unfinished);
       case 'CLOSED': {
@@ -2278,6 +2296,191 @@ export class SessionRunner {
    * `sleep` (Orchestration 4.1, 4.2): the segment ends and its task waits for what it named. A
    * sleep that nothing could ever end is not taken; the call is answered and the segment goes on.
    */
+  /**
+   * A command that runs on as a job (Orchestration 6.1): it is named in its task, before its result
+   * is shown, so the result can say which job it is.
+   */
+  async #noteJobStarted(
+    workflowRunId: string,
+    active: ActiveAgent,
+    report: Extract<KernelToWorkflowEvent, { type: 'UnitReport' }>,
+  ): Promise<void> {
+    if (report.status !== 'OK' || report.executionKind !== 'COMMAND') return;
+    const job = (report.output as { readonly job?: { jobKey: string; promoted: boolean } }).job;
+    if (job === undefined) return;
+    const submitted = this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'UNIT_SUBMITTED' }> =>
+        record.type === 'UNIT_SUBMITTED' && record.requestId === report.requestId,
+    );
+    const fields =
+      submitted?.inputSource.kind === 'TOOL_CALL'
+        ? submitted.inputSource.workflowFields
+        : undefined;
+    const command = typeof fields?.command === 'string' ? fields.command : 'a command';
+    await this.#append([
+      {
+        type: 'JOB_STARTED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        missionId: active.missionId,
+        jobId: nextJobId(this.#records, active.missionId),
+        jobKey: job.jobKey,
+        requestId: report.requestId,
+        command: command.length <= 200 ? command : `${command.slice(0, 199)}…`,
+        promoted: job.promoted,
+      },
+    ]);
+  }
+
+  /** `job_output`, `job_list`, `job_kill` (Orchestration 6.2): only the task's own jobs. */
+  async #onJobTool(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'JOB' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const jobs = jobsOfMission(this.#records, active.missionId);
+    if (ending.action === 'LIST')
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        false,
+        'JOBS',
+        jobListText(jobs),
+      );
+    const args = ending.arguments as JobOutputArgs | JobKillArgs;
+    const job = jobs.find((each) => each.jobId === args.jobId);
+    if (job === undefined)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'JOB_NOT_FOUND',
+        `You have no background command ${args.jobId}. ${jobListText(jobs)}`,
+      );
+    const sessionId = this.#sessionIdOrThrow();
+    const fromStart = ending.action === 'OUTPUT' && (args as JobOutputArgs).fromStart === true;
+    const response = await this.#deps.gateway.controlJob(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId: job.workflowRunId,
+        jobKey: job.jobKey,
+        action: ending.action === 'KILL' ? 'STOP' : 'READ',
+        ...(ending.action === 'OUTPUT'
+          ? { offset: fromStart ? 0 : job.readOffset, maxBytes: JOB_READ_BYTES }
+          : {}),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    const result = response.outcome === 'ACCEPTED' ? response.result : { found: false as const };
+    if (!result.found) {
+      const state = job.ended === undefined ? 'stopped with its run' : exitText(job.ended);
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        ending.action !== 'KILL',
+        'JOB_GONE',
+        `${job.jobId} is no longer kept: ${state}.`,
+      );
+    }
+    if (ending.action === 'KILL') {
+      const how =
+        result.exit === undefined
+          ? 'stopping it; you are told when it has ended.'
+          : `it had already ended [${job.ended === undefined ? 'ended' : exitText(job.ended)}].`;
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        false,
+        'JOB_KILLED',
+        `${job.jobId}: ${how}`,
+      );
+    }
+    await this.#append([
+      {
+        type: 'JOB_READ',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        missionId: active.missionId,
+        jobId: job.jobId,
+        nextOffset: result.nextOffset,
+      },
+    ]);
+    const state =
+      result.exit === undefined
+        ? 'running'
+        : job.ended === undefined
+          ? 'ended'
+          : exitText(job.ended);
+    const skipped =
+      result.skipped > 0 ? `[${String(result.skipped)} older bytes are no longer kept]\n` : '';
+    const more =
+      result.nextOffset < result.totalBytes
+        ? `\n[${String(result.totalBytes - result.nextOffset)} more bytes: call job_output again]`
+        : '';
+    const body = result.text === '' ? '(nothing new)' : result.text;
+    return this.#answerControl(
+      workflowRunId,
+      active,
+      toolCallId,
+      false,
+      'JOB_OUTPUT',
+      `${skipped}${body}${more}\n[${job.jobId} status: ${state}]`,
+    );
+  }
+
+  /**
+   * A job has ended (Orchestration 6.4): recorded for its task, which reads it at its next
+   * assembly, or is woken by it.
+   */
+  async #onJobEnded(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'JobEnded' }>,
+  ): Promise<void> {
+    const job = jobsOf(this.#records).find((each) => each.jobKey === event.jobKey);
+    if (job === undefined || job.ended !== undefined) return;
+    await this.#append([
+      {
+        type: 'JOB_ENDED',
+        workflowRunId,
+        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
+        missionId: job.missionId,
+        jobId: job.jobId,
+        exit: event.exit,
+        durationMs: event.durationMs,
+        totalBytes: event.totalBytes,
+        readUpTo: job.readOffset,
+        tail: event.tail.length <= 8192 ? event.tail : event.tail.slice(-8192),
+      },
+    ]);
+    await this.#advance(workflowRunId);
+  }
+
+  /** A task that ended stops its jobs (Orchestration 6.3); their end is recorded when it comes. */
+  async #stopJobsOf(workflowRunId: string, missionIds: readonly string[]): Promise<void> {
+    const jobs = runningJobs(this.#records, workflowRunId).filter((job) =>
+      missionIds.includes(job.missionId),
+    );
+    if (jobs.length === 0) return;
+    const sessionId = this.#sessionIdOrThrow();
+    for (const job of jobs)
+      await this.#deps.gateway.controlJob(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          jobKey: job.jobKey,
+          action: 'STOP',
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+  }
+
   async #onSleep(
     workflowRunId: string,
     active: ActiveAgent,
@@ -2286,6 +2489,7 @@ export class SessionRunner {
     const args = ending.arguments as SleepArgs;
     const { toolCallId } = ending.source;
     const running = this.#runningChildren(active.missionId);
+    const jobs = jobsOfMission(this.#records, active.missionId).filter((job) => job.running);
     const problems: string[] = [];
     for (const condition of args.until) {
       if (condition.kind === 'children') {
@@ -2297,14 +2501,21 @@ export class SessionRunner {
         else if (unknown.length > 0)
           problems.push(`no running subtask of yours is named ${unknown.join(', ')}`);
       } else if (condition.kind === 'jobs') {
-        problems.push('you have no background commands that are still running');
+        const unknown = (condition.jobIds ?? []).filter(
+          (jobId) => !jobs.some((job) => job.jobId === jobId),
+        );
+        if (jobs.length === 0)
+          problems.push('you have no background commands that are still running');
+        else if (unknown.length > 0)
+          problems.push(`no running background command of yours is ${unknown.join(', ')}`);
       }
     }
     const usable = args.until.some(
       (condition) =>
         condition.kind === 'message' ||
         condition.kind === 'timer' ||
-        (condition.kind === 'children' && running.length > 0),
+        (condition.kind === 'children' && running.length > 0) ||
+        (condition.kind === 'jobs' && jobs.length > 0),
     );
     if (!usable || problems.length === args.until.length)
       return this.#sendBack(
@@ -2659,6 +2870,10 @@ export class SessionRunner {
       });
     }
     await this.#append(ended);
+    await this.#stopJobsOf(
+      workflowRunId,
+      ended.flatMap((record) => (record.type === 'MISSION_ENDED' ? [record.missionId] : [])),
+    );
   }
 
   /**
@@ -2753,6 +2968,20 @@ export class SessionRunner {
           causes.push({ kind: 'CHILDREN', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
       }
     }
+    // A job wakes when it was named, and the limit allows it (Orchestration 6.4).
+    const jobs = jobsOfMission(this.#records, mission.missionId);
+    for (const condition of yielded.until) {
+      if (condition.kind !== 'jobs') continue;
+      const watched = jobs.filter(
+        (job) => condition.jobIds === undefined || condition.jobIds.includes(job.jobId),
+      );
+      const ends = watched.map((job) => job.ended?.seq);
+      if (watched.length === 0 || this.#wakeLimitReached(mission.missionId)) continue;
+      const anyNew = ends.some((seq) => seq !== undefined && after(seq));
+      const allEnded = ends.every((seq) => seq !== undefined);
+      if (condition.mode === 'all' ? allEnded && anyNew : anyNew)
+        causes.push({ kind: 'JOB', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
+    }
     // A message wakes a sleeping task whatever it waited for, within the limit (D20).
     if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
       causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
@@ -2838,6 +3067,8 @@ export class SessionRunner {
       )
     )
       return false;
+    // A background command that still runs will move the work too (Orchestration 6.4).
+    if (runningJobs(this.#records, workflowRunId).length > 0) return false;
     const highest = [...sleeping].sort((a, b) => a.mission.depth - b.mission.depth)[0];
     if (highest === undefined) return false;
     const stalls = this.#records.filter(

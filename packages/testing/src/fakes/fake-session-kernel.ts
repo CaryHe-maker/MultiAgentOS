@@ -393,6 +393,12 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
     retainArtifacts: (request) => Promise.resolve(ack(request.requestId)),
     scheduleWake: (request) => Promise.resolve(ack(request.requestId)),
+    controlJob: (request) =>
+      Promise.resolve({
+        requestId: request.requestId,
+        outcome: 'ACCEPTED' as const,
+        result: { found: false as const },
+      }),
     // The fake never starts a compaction; a test that needs one replaces these.
     reportCompactionSource: (request) =>
       Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),

@@ -236,6 +236,16 @@ export const AgentDefinitionSchema = Type.Object(
         stop: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The job tools of an Agent that runs commands (Orchestration 6.2). */
+        jobOutput: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        jobList: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        jobKill: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
       },
       { additionalProperties: false },
     ),

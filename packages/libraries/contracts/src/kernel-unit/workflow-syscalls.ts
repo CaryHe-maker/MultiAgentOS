@@ -9,6 +9,10 @@ import { pathDerivedId } from '../platform-common/new-id.js';
 import { Sha256Schema, closed, count, text } from '../platform-common/schema-helpers.js';
 import { ContextHistoryEntrySchema } from '../context/history-entry.js';
 import { UnitInputSchema } from './unit-io.js';
+import {
+  JOB_READ_MAX_BYTES,
+  JobControlResultSchema,
+} from '../kernel-execution/supervisor-requests.js';
 
 const inRun = {
   requestId: IdSchemas.requestId,
@@ -120,6 +124,32 @@ export const ScheduleWakeRequestSchema = closed(
   'kernel.unit.ScheduleWakeRequest.v1',
 );
 export type ScheduleWakeRequest = Static<typeof ScheduleWakeRequestSchema>;
+
+/**
+ * Reads or stops a background command of a task (Orchestration 6.2). Workflow keeps which task a
+ * job belongs to and where its last read ended; the Kernel only passes it to the Supervisor.
+ */
+export const ControlJobRequestSchema = closed(
+  {
+    ...inRun,
+    jobKey: IdSchemas.executionId,
+    action: Type.Enum(['READ', 'STOP']),
+    offset: Type.Optional(Type.Integer({ minimum: 0 })),
+    maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: JOB_READ_MAX_BYTES })),
+  },
+  'kernel.unit.ControlJobRequest.v1',
+);
+export type ControlJobRequest = Static<typeof ControlJobRequestSchema>;
+
+export const JobControlContentSchema = closed(
+  {
+    requestId: IdSchemas.requestId,
+    outcome: Type.Literal('ACCEPTED'),
+    result: JobControlResultSchema,
+  },
+  'kernel.unit.JobControlContent.v1',
+);
+export type JobControlContent = Static<typeof JobControlContentSchema>;
 
 export const RetainArtifactsRequestSchema = closed(
   { ...inRun, refs: Type.Array(ArtifactRefSchema, { minItems: 1, maxItems: 21 }) },

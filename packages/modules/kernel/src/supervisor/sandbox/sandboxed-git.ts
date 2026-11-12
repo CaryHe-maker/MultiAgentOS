@@ -70,6 +70,9 @@ export function createSandboxedGit(
         if (result.reason === 'SANDBOX_UNAVAILABLE') return plain.run(command, args, options);
         return { exitCode: null, signal: null, stdout: '', truncated: false };
       }
+      // git is never asked to detach.
+      if (result.kind === 'DETACHED')
+        return { exitCode: null, signal: null, stdout: result.output, truncated: false };
       return {
         exitCode: result.exitCode,
         signal: result.signal,

@@ -18,6 +18,7 @@ import {
 } from '../kernel-control/human-request.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
 import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
+import { JobExitSchema } from '../kernel-execution/supervisor-requests.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas, ReferenceIdSchema, ToolCallIdSchema } from '../platform-common/ids.js';
 import { ReasonCodeSchema } from '../platform-common/reason-code.js';
@@ -340,6 +341,35 @@ export const SessionLogRecordSchema = Type.Union(
         toolCallId: ToolCallIdSchema,
       }),
     }),
+    /**
+     * A command of a task runs on as a job (Orchestration 6.1): `jobId` is its name in the task,
+     * `jobKey` the execution it detached from, `requestId` the Unit whose result said so.
+     */
+    record('JOB_STARTED', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      jobId: text(32),
+      jobKey: IdSchemas.executionId,
+      requestId: IdSchemas.requestId,
+      command: text(200),
+      promoted: Type.Boolean(),
+    }),
+    /** What a read of `job_output` reached: the next one goes on from there (Orchestration 6.2). */
+    record('JOB_READ', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      jobId: text(32),
+      nextOffset: count(),
+    }),
+    /** A job has ended (Orchestration 6.4); `tail` is the end of what it printed. */
+    record('JOB_ENDED', inTurn, {
+      missionId: IdSchemas.missionScopeId,
+      jobId: text(32),
+      exit: Type.Union([JobExitSchema, closed({ lost: Type.Literal(true) })]),
+      durationMs: count(),
+      totalBytes: count(),
+      /** Where it was read up to when it ended: what the notice calls unread. */
+      readUpTo: count(),
+      tail: Type.String({ maxLength: 8192 }),
+    }),
     record('AGENT_RUN_ENDED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       outcome: text(64),
@@ -386,7 +416,7 @@ export const SessionLogRecordSchema = Type.Union(
     record('FEEDBACK', inTurn, {
       agentRunId: IdSchemas.agentRunId,
       code: text(64),
-      message: text(4000),
+      message: text(16000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
     record('PROJECT_FILE_LOADED', inRun, {

@@ -40,6 +40,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeSchema),
+      /** A command that runs on as a job: its name in the task (Orchestration 6.1). */
+      jobId: Type.Optional(text(32)),
       /**
        * `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6); this is the
        * `seq` of the record that cut it, which the estimate needs to know what a measurement predates.
@@ -60,7 +62,7 @@ export const ContextHistoryEntrySchema = Type.Union(
     closed({
       ...entry,
       kind: Type.Literal('FEEDBACK'),
-      text: text(4000),
+      text: text(16000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
     /** `AGENTS.md`, appended when the run first reads the repository (M2Design 9.5). */

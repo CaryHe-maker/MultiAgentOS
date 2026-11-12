@@ -20,6 +20,7 @@ import {
   type BoundaryContext,
   type CloseReason,
   type ExecutionFact,
+  type JobEndedFact,
   type FabricPort,
   type GatewayForward,
   type HealthStatus,
@@ -643,6 +644,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const core = new SessionCore({
     manager,
     artifactsOf: (sessionId) => sessionArtifacts.get(sessionId),
+    controlJob: (request) => supervisor.controlJob(request),
   });
 
   const memoryEvents = persistence.appendLog<object>('kernel-core', {
@@ -765,6 +767,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         // A fact of a Session that already closed has nothing left to settle.
         if (actor === undefined || execution === undefined) return;
         await actor.call(() => execution.handleFact(fact));
+      });
+      // A background command ended (Orchestration 6.4): the run's Workflow decides whose it was.
+      fabric.subscribe<JobEndedFact>('kernel-core.job-facts', async (envelope) => {
+        if (envelope.producer !== 'supervisor')
+          throw new Error('Kernel core job fact has an invalid producer');
+        const fact = envelope.payload;
+        const actor = manager.actor(fact.sessionId);
+        if (actor === undefined) return;
+        await actor.call(() => actor.run(fact.workflowRunId)?.work.jobEnded(fact));
       });
       started = true;
     },

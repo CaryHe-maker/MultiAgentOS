@@ -8,6 +8,7 @@ import {
 import { answerOf, callResultsOf, handoverFieldsOf } from '../spawn/spawn-graph.js';
 import { outcomeOf } from '../spawn/task-results.js';
 import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
+import { jobEndedNotice, jobOfRequest } from '../graph/mission-jobs.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
 /**
@@ -136,6 +137,9 @@ export function projectHistory(
   const entries: ContextHistoryEntry[] = [];
   /** Notes of the user that wait for the next assembly of the AgentRun they are for. */
   const notes: ContextHistoryEntry[] = [];
+  /** The job a command's result started, by its request (Orchestration 6.1). */
+  const jobs = jobOfRequest(records);
+  const jobCommands = new Map<string, string>();
   /** Calls that already have their answer: a second one would break the history. */
   const answered = new Set<string>();
   const instructions = new Set<string>();
@@ -348,6 +352,23 @@ export function projectHistory(
           toolCallId: record.source.toolCallId,
         });
         break;
+      case 'JOB_STARTED':
+        if (record.missionId === ownMission) jobCommands.set(record.jobId, record.command);
+        break;
+      case 'JOB_ENDED':
+        // A job's end reaches its task at the next assembly (Orchestration 6.4).
+        if (record.missionId !== ownMission) break;
+        notes.push({
+          seq: record.seq,
+          ...turnOf(record.turnId),
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: clip(
+            jobEndedNotice(record, jobCommands.get(record.jobId) ?? 'a command'),
+            NOTE_MAX,
+          ),
+        });
+        break;
       case 'MISSION_WOKEN':
         if (record.missionId !== ownMission) break;
         notes.push({
@@ -461,6 +482,7 @@ export function projectHistory(
       case 'UNIT_COMPLETED': {
         const owner = unitOwners.get(record.requestId);
         if (owner === undefined) break;
+        const jobId = jobs.get(record.requestId);
         entries.push({
           seq: record.seq,
           ...turnOf(owner.turnId),
@@ -469,6 +491,7 @@ export function projectHistory(
           toolCallId: owner.toolCallId,
           toolName: toolNames.get(owner.toolCallId) ?? 'unknown',
           status: record.status,
+          ...(jobId === undefined ? {} : { jobId }),
           ...(record.outputRef === undefined ? {} : { outputRef: record.outputRef }),
           ...(record.reasonCode === undefined ? {} : { reasonCode: record.reasonCode }),
           ...(options.material === true

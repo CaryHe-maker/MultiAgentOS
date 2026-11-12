@@ -72,7 +72,18 @@ function referencesOf(body: Body): readonly Reference[] {
           ref: end.toolRef,
         })),
         ...(
-          ['todos', 'spawn', 'askUser', 'sleep', 'message', 'viewTasks', 'stop'] as const
+          [
+            'todos',
+            'spawn',
+            'askUser',
+            'sleep',
+            'message',
+            'viewTasks',
+            'stop',
+            'jobOutput',
+            'jobList',
+            'jobKill',
+          ] as const
         ).flatMap((action) => {
           const declared = body.actions[action];
           return declared === undefined
@@ -563,6 +574,9 @@ function checkAgent(
       body.actions.message,
       body.actions.viewTasks,
       body.actions.stop,
+      body.actions.jobOutput,
+      body.actions.jobList,
+      body.actions.jobKill,
     ].flatMap((action) => (action === undefined ? [] : (get('TOOL', action.toolRef) ?? []))),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
@@ -618,6 +632,9 @@ function checkAgent(
     ['message', 'workflow.SendMessageArgs.v1'],
     ['viewTasks', 'workflow.ViewTasksArgs.v1'],
     ['stop', 'workflow.StopSubagentsArgs.v1'],
+    ['jobOutput', 'workflow.JobOutputArgs.v1'],
+    ['jobList', 'workflow.JobListArgs.v1'],
+    ['jobKill', 'workflow.JobKillArgs.v1'],
   ] as const;
   for (const [action, contract] of controls) {
     const declared = body.actions[action];
@@ -834,6 +851,9 @@ export class DefinitionCatalog {
       ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),
       ...(agent.actions.viewTasks === undefined ? [] : [agent.actions.viewTasks.toolRef]),
       ...(agent.actions.stop === undefined ? [] : [agent.actions.stop.toolRef]),
+      ...(agent.actions.jobOutput === undefined ? [] : [agent.actions.jobOutput.toolRef]),
+      ...(agent.actions.jobList === undefined ? [] : [agent.actions.jobList.toolRef]),
+      ...(agent.actions.jobKill === undefined ? [] : [agent.actions.jobKill.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

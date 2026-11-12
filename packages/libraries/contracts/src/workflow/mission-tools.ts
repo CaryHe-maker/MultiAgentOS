@@ -42,6 +42,28 @@ export const SleepArgsSchema = closed(
 );
 export type SleepArgs = Static<typeof SleepArgsSchema>;
 
+/** Parameters of `job_output` (Orchestration 6.2): what a job printed since the last read. */
+export const JobOutputArgsSchema = closed(
+  {
+    jobId: text(32),
+    /** Read from the start of what is still kept instead of from the last read. */
+    fromStart: Type.Optional(Type.Boolean()),
+  },
+  'workflow.JobOutputArgs.v1',
+);
+export type JobOutputArgs = Static<typeof JobOutputArgsSchema>;
+
+/** Parameters of `job_kill` (Orchestration 6.2). */
+export const JobKillArgsSchema = closed(
+  { jobId: text(32), reason: Type.Optional(text(400)) },
+  'workflow.JobKillArgs.v1',
+);
+export type JobKillArgs = Static<typeof JobKillArgsSchema>;
+
+/** `job_list` takes nothing. */
+export const JobListArgsSchema = closed({}, 'workflow.JobListArgs.v1');
+export type JobListArgs = Static<typeof JobListArgsSchema>;
+
 /**
  * Parameters of `send_message` (Orchestration 5): to the parent, all children, all siblings, or a
  * child or sibling by its task name. The text is material for the receiver, never an instruction

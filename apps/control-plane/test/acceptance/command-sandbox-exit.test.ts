@@ -293,7 +293,7 @@ real('C: running a command, in the sandbox', () => {
     async () => {
       const place = await roots();
       const provider = scriptedChat(
-        run('echo before; sleep 30', { timeoutMs: 500 }),
+        run('echo before; sleep 30', { timeoutMs: 500, promoteOnTimeout: false }),
         run('false'),
         reply('done'),
       );
@@ -617,7 +617,7 @@ real('H6: a command that will not stop', () => {
       const marker = join(place.repository, 'alive');
       const stubborn = `trap '' TERM; (trap '' TERM; while true; do date +%s%N > alive; sleep 0.1; done) & wait`;
       const provider = scriptedChat(
-        run(stubborn, { timeoutMs: 700 }),
+        run(stubborn, { timeoutMs: 700, promoteOnTimeout: false }),
         run('echo after'),
         reply('done'),
       );

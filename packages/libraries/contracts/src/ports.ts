@@ -55,6 +55,8 @@ import type {
   ReleaseDelegationRequest,
   RetainArtifactsRequest,
   ScheduleWakeRequest,
+  ControlJobRequest,
+  JobControlContent,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
   ReserveDelegationRequest,
@@ -78,6 +80,8 @@ import type {
 import type {
   CancelExecutionRequest,
   CancelRunExecutionsRequest,
+  JobControlRequest,
+  JobControlResult,
   SupervisorShutdownRequest,
 } from './kernel-execution/supervisor-requests.js';
 import type { KernelToWorkflowEvent } from './kernel-unit/workflow-events.js';
@@ -109,6 +113,8 @@ export interface SupervisorPort {
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
   /** Cancels one execution; its fact says why (PAUSED or ABORTED). */
   cancelExecution(request: CancelExecutionRequest): Promise<void>;
+  /** Reads or stops a background command (Orchestration 6.2). */
+  controlJob(request: JobControlRequest): Promise<JobControlResult>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
@@ -205,7 +211,39 @@ export type SandboxRunResult =
       readonly denials: number;
       readonly backend: SandboxBackend;
     }
+  /**
+   * The command runs on as a job (Orchestration 6.1): it was asked to detach, at once or at its
+   * timeout. `output` is what it printed until then. The runner hands `process` over; the
+   * Supervisor's job table keeps it and fills in `jobKey` before the Executor sees the result.
+   */
+  | {
+      readonly kind: 'DETACHED';
+      readonly output: string;
+      readonly backend: SandboxBackend;
+      readonly promoted: boolean;
+      readonly process?: DetachedProcess;
+      readonly jobKey?: string;
+    }
   | { readonly kind: 'REFUSED'; readonly reason: SandboxRefusal };
+
+/** How a detached command ended. */
+export interface DetachedExit {
+  readonly exitCode: number | null;
+  readonly signal: string | null;
+  /** Stopped on request (`job_kill`, the end of its task or of the run) or at its longest time. */
+  readonly stopped: boolean;
+  /** It was asked to stop and did not confirm it: a fault, like STOP_UNCONFIRMED. */
+  readonly unconfirmed: boolean;
+}
+
+/** A command that runs on after its execution ended; only the Supervisor's job table holds one. */
+export interface DetachedProcess {
+  /** Everything it prints from now on; set once, right after the hand-over. */
+  onOutput(listener: (chunk: Buffer) => void): void;
+  onExit(listener: (exit: DetachedExit) => void): void;
+  /** SIGTERM, then SIGKILL; the exit says whether it was confirmed. Safe to repeat. */
+  stop(): void;
+}
 
 /**
  * Runs one command in the sandbox of its scope. Only the Executor of COMMAND gets a working one.
@@ -219,6 +257,11 @@ export interface SandboxRunner {
     readonly timeoutMs: number;
     readonly maxOutputBytes: number;
     readonly signal: AbortSignal;
+    /**
+     * Detach instead of waiting (Orchestration 6.1): 0 right after it starts; at `timeoutMs` when
+     * `promoteOnTimeout`, instead of stopping it. Only a runner that has a job table honours it.
+     */
+    readonly detach?: { readonly immediately: boolean; readonly promoteOnTimeout: boolean };
   }): Promise<SandboxRunResult>;
 }
 
@@ -332,6 +375,8 @@ export const FABRIC_ADDRESSES = [
   'gateway.admission',
   'gateway.session',
   'kernel-core.execution-facts',
+  // The end of background commands (Orchestration 6.4).
+  'kernel-core.job-facts',
   // The side channel of streaming model calls (docs/M2/Phase1Console.md 4): lossy by design.
   'kernel-core.model-progress',
   'inbox.user-interaction-stream',
@@ -433,6 +478,11 @@ export interface WorkflowGatewayPort {
     request: ScheduleWakeRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
+  /** Reads or stops a background command of a task (Orchestration 6.2). */
+  controlJob(
+    request: ControlJobRequest,
+    context: BoundaryContext,
+  ): Promise<JobControlContent | SyscallRejected>;
   /** Keeps the results of a handover for the whole Session (Kernel/Core 5g). */
   retainArtifacts(
     request: RetainArtifactsRequest,

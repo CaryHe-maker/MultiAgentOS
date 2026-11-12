@@ -1,3 +1,4 @@
+import { MAX_BACKGROUND_JOBS, runningJobs } from '../graph/mission-jobs.js';
 import { posix } from 'node:path';
 import {
   COMMAND_DEFAULT_TIMEOUT_MS,
@@ -185,11 +186,26 @@ export function toolInputOf(
       const run = args as RunCommandArgs;
       const workdir = run.workdir === undefined ? '' : normalizeRequestPath(run.workdir);
       if (workdir === undefined) return { ok: false, message: BAD_WORKDIR };
+      // A job belongs to a task, and a run has room for a few (Orchestration 6.1).
+      const room =
+        scope.missionId !== undefined && runningJobs(records).length < MAX_BACKGROUND_JOBS;
+      if (run.runInBackground === true && !room)
+        return {
+          ok: false,
+          message:
+            scope.missionId === undefined
+              ? 'A background command needs a task to belong to; run it in the foreground.'
+              : `${String(MAX_BACKGROUND_JOBS)} background commands already run; wait for one (sleep with jobs) or stop one with job_kill.`,
+        };
       const input = {
         command: run.command,
         workdir: workdir === '.' ? '' : workdir,
         timeoutMs: run.timeoutMs ?? COMMAND_DEFAULT_TIMEOUT_MS,
         network: run.network ?? false,
+        ...(run.runInBackground === true ? { background: true } : {}),
+        ...((run.promoteOnTimeout ?? true) && room && run.runInBackground !== true
+          ? { promoteOnTimeout: true }
+          : {}),
       };
       return { ok: true, input, workflowFields: input };
     }

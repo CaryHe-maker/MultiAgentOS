@@ -14,6 +14,8 @@ import { dirname, join, posix } from 'node:path';
 import {
   StopUnconfirmedError,
   approvalDigestOf,
+  type DetachedExit,
+  type DetachedProcess,
   buildSandboxEnvironment,
   countSandboxDenials,
   type SandboxRefusal,
@@ -261,8 +263,19 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       let settled = false;
       const timers: NodeJS.Timeout[] = [];
 
+      // Once detached, what it prints goes to the job table instead (Orchestration 6.1).
+      let detached:
+        { output?: (chunk: Buffer) => void; exit?: (exit: DetachedExit) => void } | undefined;
+      let pendingExit: DetachedExit | undefined;
+      /** What it printed between the hand-over and the listener. */
+      const early: Buffer[] = [];
       const capture = (chunk: Buffer) => {
         started = true;
+        if (detached !== undefined) {
+          if (detached.output === undefined) early.push(chunk);
+          else detached.output(chunk);
+          return;
+        }
         const room = options.maxOutputBytes - size;
         if (chunk.byteLength > room) {
           truncated = true;
@@ -299,6 +312,45 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         live.delete(child);
         finish();
       };
+      const ended = (exit: DetachedExit) => {
+        if (detached === undefined) return;
+        for (const timer of timers) clearTimeout(timer);
+        gitConfig?.remove();
+        live.delete(child);
+        if (detached.exit === undefined) pendingExit = exit;
+        else detached.exit(exit);
+      };
+      /**
+       * Hands the running command over (Orchestration 6.1): the execution ends with what it
+       * printed so far, and the process runs on, no longer tied to the execution's signal.
+       */
+      const detach = (promoted: boolean) => {
+        if (settled || exited || detached !== undefined) return;
+        settled = true;
+        for (const timer of timers.splice(0)) clearTimeout(timer);
+        signal.removeEventListener('abort', stop);
+        detached = {};
+        const handle: DetachedProcess = {
+          onOutput: (listener) => {
+            if (detached === undefined) return;
+            detached.output = listener;
+            for (const chunk of early.splice(0)) listener(chunk);
+          },
+          onExit: (listener) => {
+            if (detached === undefined) return;
+            detached.exit = listener;
+            if (pendingExit !== undefined) listener(pendingExit);
+          },
+          stop: () => stop(),
+        };
+        resolve({
+          kind: 'DETACHED',
+          output: output(),
+          backend: scope.backend,
+          promoted,
+          process: handle,
+        });
+      };
       const output = () => Buffer.concat(chunks).toString('utf8');
 
       /** SIGTERM to the command's own group, SIGKILL to the outer group, then wait for the exit. */
@@ -315,6 +367,10 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
             timers.push(
               setTimeout(() => {
                 if (exited) return;
+                if (detached !== undefined) {
+                  ended({ exitCode: null, signal: null, stopped: true, unconfirmed: true });
+                  return;
+                }
                 settle(() => reject(new StopUnconfirmedError(child.pid)));
               }, deps.killGraceMs),
             );
@@ -325,6 +381,10 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       signal.addEventListener('abort', stop, { once: true });
       timers.push(
         setTimeout(() => {
+          if (options.detach?.promoteOnTimeout === true) {
+            detach(true);
+            return;
+          }
           timedOut = true;
           stop();
         }, options.timeoutMs),
@@ -332,10 +392,18 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
 
       child.on('error', () => {
         exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode: null, signal: null, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
         settle(() => resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' }));
       });
       child.on('close', (exitCode, exitSignal) => {
         exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode, signal: exitSignal, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
         settle(() => {
           const text = output();
           // bwrap itself failing to set up its namespaces says so before the command prints.
@@ -361,6 +429,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
           });
         });
       });
+      if (options.detach?.immediately === true) detach(false);
     });
 
   return {

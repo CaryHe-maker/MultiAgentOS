@@ -335,6 +335,8 @@ real('the write permission lent with a task (Orchestration 8.2, D17)', () => {
       const tools = toolsOf(provider, 'writer');
       expect(tools).toContain('write_file');
       expect(tools).not.toContain('run_command');
+      // Nor the tools of background commands (Orchestration 6.2).
+      expect(tools).not.toContain('job_output');
     },
     TIMEOUT,
   );

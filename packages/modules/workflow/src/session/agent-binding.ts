@@ -151,6 +151,30 @@ export function agentBindingOf(
             ),
           },
         }),
+    // Job tools only where commands run (Orchestration 6.2).
+    ...(requestedCapabilities.includes('command.exec')
+      ? {
+          jobTools: (
+            [
+              ['OUTPUT', agent.actions.jobOutput],
+              ['LIST', agent.actions.jobList],
+              ['KILL', agent.actions.jobKill],
+            ] as const
+          ).flatMap(([action, declared]) =>
+            declared === undefined
+              ? []
+              : [
+                  {
+                    action,
+                    toolName: toolOf(declared.toolRef).modelName,
+                    parameters: registry.resolveContract(
+                      toolOf(declared.toolRef).parametersContract,
+                    ),
+                  },
+                ],
+          ),
+        }
+      : {}),
     ...(agent.actions.todos === undefined
       ? {}
       : {
