@@ -8,6 +8,7 @@ import {
   writeRootsWithin,
   type CommandInput,
   type JobEndedFact,
+  type HaltAgentRunRequest,
   type WebFetchInput,
   type WebSearchInput,
   type DelegationReserved,
@@ -188,6 +189,8 @@ export interface RunWorkDeps {
   readonly resumeExecutions: () => Promise<void>;
   /** An interrupt cancels everything that exists now; each attempt answers INTERRUPTED(ABORTED). */
   readonly abortExecutions: () => void;
+  /** The same for the attempts of one AgentRun, whose task was stopped or interrupted. */
+  readonly abortAgentRunExecutions?: (agentRunId: string) => void;
   readonly executionsClosed: () => void;
   /** Offers the call slots given back to the attempts that wait for one (M2Design 7.2). */
   readonly drainCapacityWaiters?: () => Promise<void>;
@@ -919,6 +922,21 @@ export class RunWork {
         this.#host.toWorkflowEvent({ type: 'WakeDue', missionId, timerId });
       });
     });
+    return this.#accept(requestId, request);
+  }
+
+  /**
+   * A task was stopped or interrupted by its parent (Orchestration 5.1, 5.2): what its AgentRun has
+   * queued or running is cancelled now, so it does not finish a long command or model call first.
+   * The run goes on; every cancelled Unit answers INTERRUPTED(ABORTED).
+   */
+  haltAgentRun(request: HaltAgentRunRequest): Response {
+    const { requestId, agentRunId } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    if (!this.#agentRuns.has(agentRunId))
+      return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
+    this.#deps.abortAgentRunExecutions?.(agentRunId);
     return this.#accept(requestId, request);
   }
 

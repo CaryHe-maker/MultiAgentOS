@@ -78,16 +78,18 @@ export class AttemptQueues<E extends QueueEntry> {
   }
 
   /** What has not started, removed: the run is converging. */
-  drainQueued(): E[] {
+  /** Takes out what waits to run: of every AgentRun, or of one. */
+  drainQueued(agentRunId?: string): E[] {
     const queued: E[] = [];
-    for (const queue of this.#queues.values())
+    for (const [owner, queue] of this.#queues) {
+      if (agentRunId !== undefined && owner !== agentRunId) continue;
       for (const entry of [...queue])
         if (entry.state === 'QUEUED') {
           queued.push(entry);
           queue.splice(queue.indexOf(entry), 1);
         }
-    for (const [agentRunId, queue] of this.#queues)
-      if (queue.length === 0) this.#queues.delete(agentRunId);
+    }
+    for (const [owner, queue] of this.#queues) if (queue.length === 0) this.#queues.delete(owner);
     return queued;
   }
 

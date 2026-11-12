@@ -141,6 +141,16 @@ export const ControlJobRequestSchema = closed(
 );
 export type ControlJobRequest = Static<typeof ControlJobRequestSchema>;
 
+/**
+ * Cancels what one AgentRun has queued or running (Orchestration 5.1, 5.2): its task was stopped
+ * or interrupted by its parent. Each Unit answers INTERRUPTED(ABORTED); the run goes on.
+ */
+export const HaltAgentRunRequestSchema = closed(
+  { ...inRun, agentRunId: IdSchemas.agentRunId },
+  'kernel.unit.HaltAgentRunRequest.v1',
+);
+export type HaltAgentRunRequest = Static<typeof HaltAgentRunRequestSchema>;
+
 export const JobControlContentSchema = closed(
   {
     requestId: IdSchemas.requestId,

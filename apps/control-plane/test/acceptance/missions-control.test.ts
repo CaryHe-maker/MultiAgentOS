@@ -474,3 +474,83 @@ describe('waking as each subtask ends, and waiting for siblings (Orchestration 4
     TIMEOUT,
   );
 });
+
+real('stopping and interrupting cancel the work in flight (Orchestration 5.1, 5.2)', () => {
+  it(
+    'stops a task in the middle of a long command at once, and the parent goes on',
+    async () => {
+      const place = await roots({ 'scan/.keep': '' });
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'scan', agent: 'worker', goal: 'scan slowly', writeScope: ['scan'] }),
+            {
+              wait: delay(1500),
+              then: tool('stop_subagents', { names: ['scan'], reason: 'enough' }),
+            },
+            sleepFor(children()),
+            reply('stopped the scan'),
+          ],
+        },
+        {
+          scan: [
+            tool('run_command', {
+              command: 'sleep 60; echo done > scan/result.txt',
+              timeoutMs: 120_000,
+              promoteOnTimeout: false,
+            }),
+            finish('should not be reached'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      const started = Date.now();
+      await chat.say('scan, then stop it');
+      expect(chat.printed('REPLY')).toContain('stopped the scan');
+      expect(Date.now() - started).toBeLessThan(30_000);
+      expect(await exists(join(place.repository, 'scan/result.txt'))).toBe(false);
+      expect(seen(provider)).toContain('stopped by its parent: enough');
+      expect(seen(provider)).not.toContain('should not be reached');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'interrupts a task in the middle of a long command at once: it starts again with the message',
+    async () => {
+      const place = await roots({ 'scan/.keep': '' });
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'scan', agent: 'worker', goal: 'scan slowly', writeScope: ['scan'] }),
+            {
+              wait: delay(1500),
+              then: tool('send_message', { to: 'scan', text: 'Report now', interrupt: true }),
+            },
+            sleepFor(children()),
+            reply('it reported'),
+          ],
+        },
+        {
+          scan: [
+            tool('run_command', {
+              command: 'sleep 60',
+              timeoutMs: 120_000,
+              promoteOnTimeout: false,
+            }),
+            finish('reported at once'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      const started = Date.now();
+      await chat.say('scan, then hurry it');
+      expect(chat.printed('REPLY')).toContain('it reported');
+      expect(Date.now() - started).toBeLessThan(30_000);
+      const scan = seenBy(provider, 'scan');
+      expect(scan).toContain('⚠ INTERRUPT from your parent task main');
+      expect(scan).toContain('this call was stopped before it finished');
+    },
+    TIMEOUT,
+  );
+});

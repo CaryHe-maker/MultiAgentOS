@@ -22,6 +22,7 @@ import {
   RetainArtifactsRequestSchema,
   ScheduleWakeRequestSchema,
   ControlJobRequestSchema,
+  HaltAgentRunRequestSchema,
   ReserveDelegationRequestSchema,
   ReportSessionCommandRequestSchema,
   ReportSessionListRequestSchema,
@@ -93,6 +94,11 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   controlJob: {
     caller: 'workflow',
     schema: ControlJobRequestSchema,
+    needs: 'RUN',
+  },
+  haltAgentRun: {
+    caller: 'workflow',
+    schema: HaltAgentRunRequestSchema,
     needs: 'RUN',
   },
   reportCompactionSource: {
@@ -282,6 +288,7 @@ export class SessionGateway {
     retainArtifacts: this.#port('workflow', 'retainArtifacts'),
     scheduleWake: this.#port('workflow', 'scheduleWake'),
     controlJob: this.#port('workflow', 'controlJob'),
+    haltAgentRun: this.#port('workflow', 'haltAgentRun'),
     reportCompactionSource: this.#port('workflow', 'reportCompactionSource'),
     ackCompaction: this.#port('workflow', 'ackCompaction'),
     submitUnit: this.#port('workflow', 'submitUnit'),

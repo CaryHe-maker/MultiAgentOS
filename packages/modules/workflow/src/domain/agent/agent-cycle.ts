@@ -1370,7 +1370,7 @@ function handleInterrupted(
           call.toolCallId,
           paused
             ? 'Interrupted by a pause: the command may not have finished. Run it again if you still need it.'
-            : 'Interrupted: the run was stopped before this call finished.',
+            : 'Interrupted: this call was stopped before it finished (the run was stopped, or this task was stopped or interrupted).',
         ),
       );
     }

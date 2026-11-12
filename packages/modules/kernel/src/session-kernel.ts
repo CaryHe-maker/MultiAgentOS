@@ -473,6 +473,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         execution.pause(drained);
       },
       resumeExecutions: () => execution.resume(),
+      abortAgentRunExecutions: (agentRunId) => {
+        execution.abortAgentRun(agentRunId);
+      },
       abortExecutions: () => {
         execution.abort();
       },

@@ -848,6 +848,24 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
     expect(run.faults).toEqual([]);
   });
 
+  it('cancels the attempts of one AgentRun only, its queued ones too (Orchestration 5.1)', async () => {
+    const run = setup();
+    const contextPackRef = await modelPack(run);
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, 1);
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', { path: 'b.ts' }, repository, 2);
+    expect(run.dispatched).toHaveLength(2);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // The model call of AgentRun 1 is cancelled, its queued read answers at once, and the read of
+    // AgentRun 2 goes on untouched.
+    expect(run.cancelledExecutions).toEqual([
+      { executionId: run.dispatched[0]?.executionId, reason: 'ABORTED' },
+    ]);
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED']);
+    await run.execution.handleFact(run.factFor(run.dispatched[1] as never, run.fileResult()));
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED', 'OK']);
+  });
+
   it('judges a run that does not stop unconfirmed after the grace', async () => {
     const run = setup();
     await run.submit('FILE_READ', fileInput);

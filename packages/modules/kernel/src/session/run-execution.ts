@@ -970,6 +970,51 @@ export class RunExecution {
     void this.#pump();
   }
 
+  /**
+   * Cancels the attempts of one AgentRun (Orchestration 5.1, 5.2): queued ones answer at once, sent
+   * ones get the stop of M2Design 4.7 and answer INTERRUPTED(ABORTED) when their fact comes. The
+   * rest of the run is untouched.
+   */
+  abortAgentRun(agentRunId: string): void {
+    for (const attempt of this.#queues.drainQueued(agentRunId)) {
+      attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+      void this.#over(attempt);
+    }
+    const sent: Attempt[] = [];
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.spec.agentRunId !== agentRunId) continue;
+      // A write always finishes: cancelling it could leave half a file (as a pause does).
+      if (attempt.cls === 'WRITE' && attempt.executionId !== undefined) continue;
+      if (attempt.executionId !== undefined) {
+        sent.push(attempt);
+        this.#cancelSent(attempt, 'ABORTED');
+        continue;
+      }
+      if (attempt.state === 'WAITING') {
+        attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        void this.#over(attempt);
+        this.#queues.release(attempt);
+      } else attempt.cancelReason = 'ABORTED';
+    }
+    if (sent.length > 0) {
+      const { config, enqueue, schedule } = this.#deps;
+      schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
+        enqueue(() => {
+          for (const attempt of sent) {
+            if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+              continue;
+            this.#noteStop(attempt, attempt.executionId);
+            void this.#finish(attempt, {
+              executionId: attempt.executionId,
+              outcome: 'STOP_UNCONFIRMED',
+            });
+          }
+        });
+      });
+    }
+    void this.#pump();
+  }
+
   /** Nothing is in flight any more. */
   closed(): void {
     this.#cancelFallback?.();

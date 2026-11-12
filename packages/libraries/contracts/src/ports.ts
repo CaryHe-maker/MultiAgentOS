@@ -56,6 +56,7 @@ import type {
   RetainArtifactsRequest,
   ScheduleWakeRequest,
   ControlJobRequest,
+  HaltAgentRunRequest,
   JobControlContent,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
@@ -476,6 +477,11 @@ export interface WorkflowGatewayPort {
   /** Wakes a sleeping task after some seconds, within the run (Orchestration 8.5). */
   scheduleWake(
     request: ScheduleWakeRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Cancels the queued and running work of one AgentRun (Orchestration 5.1, 5.2). */
+  haltAgentRun(
+    request: HaltAgentRunRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Reads or stops a background command of a task (Orchestration 6.2). */

@@ -393,6 +393,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
     retainArtifacts: (request) => Promise.resolve(ack(request.requestId)),
     scheduleWake: (request) => Promise.resolve(ack(request.requestId)),
+    haltAgentRun: (request) => Promise.resolve(ack(request.requestId)),
     controlJob: (request) =>
       Promise.resolve({
         requestId: request.requestId,

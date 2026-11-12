@@ -10598,6 +10598,54 @@
             },
             "requestType": {
               "type": "string",
+              "const": "haltAgentRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "agentRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.HaltAgentRunRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "reportCompactionSource"
             },
             "request": {
@@ -33364,6 +33412,35 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.EndAgentRunRequest.v1"
+    },
+    "kernel.unit.HaltAgentRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "agentRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "agentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.HaltAgentRunRequest.v1"
     },
     "kernel.unit.HumanAnswered.v1": {
       "anyOf": [

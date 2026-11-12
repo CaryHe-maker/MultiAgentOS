@@ -1376,7 +1376,9 @@ export class SessionRunner {
       halted?.stopAfterRound !== undefined &&
       (transition.ending?.kind === 'SLEEP' ||
         (transition.ending === undefined &&
-          transition.submissions.some((each) => each.unitRef.id === 'context-assemble')))
+          (transition.submissions.some((each) => each.unitRef.id === 'context-assemble') ||
+            // Its cancelled work has all answered and nothing else is left to wait for.
+            (transition.submissions.length === 0 && transition.state.pending.size === 0))))
     ) {
       // The sleep it asked for is answered, so its history stays whole.
       if (transition.ending?.kind === 'SLEEP')
@@ -2743,6 +2745,7 @@ export class SessionRunner {
         ...running,
         stopAfterRound: { kind: 'INTERRUPT', reason: 'interrupted by its parent' },
       });
+      await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
       return;
     }
     const sleeping = this.#sleeping(workflowRunId).find(
@@ -2834,6 +2837,7 @@ export class SessionRunner {
         ...running,
         stopAfterRound: { kind: 'STOP', reason: note },
       });
+      await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
       return;
     }
     const sleeping = this.#sleeping(workflowRunId).find(
@@ -2862,6 +2866,21 @@ export class SessionRunner {
           result: resultOf({ status: 'FAILED', notes: [note] }),
         })),
     );
+  }
+
+  /**
+   * What a stopped or interrupted segment has in flight is cancelled now (5.1, 5.2): a command or
+   * a model call does not run to its end first. Each cancelled Unit answers INTERRUPTED(ABORTED);
+   * when none is left, the segment is halted.
+   */
+  async #haltAgentRun(workflowRunId: string, agentRunId: string): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.haltAgentRun(
+      { requestId: newId('req'), sessionId, workflowRunId, agentRunId },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`haltAgentRun refused: ${response.reasonCode}`);
   }
 
   /**
