@@ -147,6 +147,9 @@ try {
         '/opt/dsh/node_modules/.bin/dsh',
         '--profile',
         'headless',
+        // the container is the sandbox, and mas runs unisolated in it: give dsh the same freedom
+        '--permission-mode',
+        'danger-full-access',
         instruction,
       ],
       { env: childEnv, timeout: cap * 1000 },

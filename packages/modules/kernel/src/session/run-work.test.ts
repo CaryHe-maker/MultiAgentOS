@@ -2091,6 +2091,14 @@ describe('reading outside the workspace (Kernel/Core 5h)', () => {
     ]);
   });
 
+  it('does not pause for a relative path, which names a file of the repository and no guess at the machine', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: 'TASK.md' });
+    await kernel.submit(readUnit, { path: 'notes' });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+  });
+
   it('starts the count from zero once the run is continued', async () => {
     const kernel = await open();
     await kernel.submit(readUnit, { path: join(base, 'missing-1') });
