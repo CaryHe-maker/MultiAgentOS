@@ -6,7 +6,7 @@ description: Control tool that lists the background commands of the task.
 purpose: CONTROL
 modelName: job_list
 modelDescription: >-
-  List your background commands: each with its id, the command and its state. Call it on its own.
+  List your background commands: each with its id, the command and its state.
 parametersContract:
   kind: contract
   id: workflow.JobListArgs

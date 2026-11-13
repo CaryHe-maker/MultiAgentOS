@@ -241,6 +241,12 @@ export interface AgentTransition {
   readonly records: readonly NewLogRecord[];
   readonly submissions: readonly SubmitUnitRequest[];
   readonly ending?: AgentEnding;
+  /**
+   * Control calls that came with other tool calls and do not end the round (`send_message`,
+   * `view_tasks`, the job tools): the runner answers each, and the round goes on when they and the
+   * Units of the round have all come back.
+   */
+  readonly controls?: readonly AgentEnding[];
   /** The todo progress for the interface, once the records are durable (WorkflowKernel 2.5). */
   readonly activity?: UpdateActivityRequest['todos'];
 }
@@ -263,6 +269,11 @@ export interface AgentContext {
     args: unknown,
     notYetInLog?: readonly NewLogRecord[],
   ) => ToolInput;
+  /**
+   * Why this reply is refused because requests read before are still not answered in it
+   * (Orchestration 5.3); `answered` are the ids its `send_message` replies name.
+   */
+  readonly owedReplies?: (agentRunId: string, answered: ReadonlySet<string>) => string | undefined;
 }
 
 export type ToolInput =
@@ -292,10 +303,13 @@ const FEEDBACK = {
   NO_ACTION:
     'Your message contained no tool call, so nothing in it was shown to anyone or used: text outside a tool call is discarded.',
   OUTPUT_TRUNCATED: 'Your reply was cut off before a complete tool call. Send a shorter one.',
-  CONTROL_MIXED: 'A finishing call must be the only tool call in a reply. Send it on its own.',
+  CONTROL_MIXED:
+    'Not executed: a call that must be alone (finishing, starting tasks, waiting) came with other calls; none of them ran.',
   CONTROL_NOT_ALLOWED: 'That control tool is not available at this point.',
   CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
+  REPLY_OWED:
+    'Not executed: a request you read before is still not answered; answer it with send_message kind reply.',
   INVALID_ARGUMENTS: 'Not executed: the arguments do not match the tool parameters.',
   TOOL_INPUT_REFUSED: 'Not executed.',
   TOO_MANY_TOOL_CALLS: 'Not executed: this reply has more tool calls than allowed.',
@@ -836,6 +850,8 @@ interface SoleControl {
   readonly parameters: Schema;
   readonly allowedInFinal: boolean;
   readonly ending: (source: ControlSource) => AgentEnding;
+  /** Answered at once without ending the round: it may come with other tool calls. */
+  readonly inline?: boolean;
 }
 
 function soleControlOf(
@@ -895,6 +911,7 @@ function soleControlOf(
         parameters: message.parameters,
         allowedInFinal: false,
         ending: (source) => ({ kind: 'MESSAGE', arguments: call.arguments, source }),
+        inline: true,
       };
     const view = state.definitions.viewTasksTool;
     if (view !== undefined && call.toolName === view.toolName)
@@ -903,6 +920,7 @@ function soleControlOf(
         parameters: view.parameters,
         allowedInFinal: false,
         ending: (source) => ({ kind: 'VIEW_TASKS', arguments: call.arguments, source }),
+        inline: true,
       };
     const stop = state.definitions.stopTool;
     if (stop !== undefined && call.toolName === stop.toolName)
@@ -924,9 +942,38 @@ function soleControlOf(
           arguments: call.arguments,
           source,
         }),
+        inline: true,
       };
   }
   return undefined;
+}
+
+/** The refusal for requests still not answered, unless this reply answers them (or is the last). */
+function repliesOwed(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+): string | undefined {
+  const message = state.definitions.messageTool;
+  if (state.final || message === undefined || context.owedReplies === undefined) return undefined;
+  const answered = new Set(
+    calls.flatMap((call) => {
+      if (call.toolName !== message.toolName) return [];
+      const args = call.arguments as { readonly kind?: unknown; readonly replyTo?: unknown } | null;
+      return args?.kind === 'reply' && typeof args.replyTo === 'string' ? [args.replyTo] : [];
+    }),
+  );
+  return context.owedReplies(state.agentRunId, answered);
+}
+
+/**
+ * A call that must be alone came with others: it is named, and so is what happened to the
+ * others, because a model that thinks a part of its reply ran goes on as if it had (a message
+ * thought sent was never sent again).
+ */
+function mixedText(sole: ModelToolCall, calls: readonly ModelToolCall[]): string {
+  const others = calls.filter((each) => each !== sole).map((each) => each.toolName);
+  return `Not executed: ${sole.toolName} must be the only tool call in its reply, and this reply also had ${others.join(', ')}. None of the ${String(calls.length)} calls of this reply ran, ${sole.toolName} included: send ${sole.toolName} on its own, then the others again.`;
 }
 
 /** Why a sole control call is not taken, if it is not: with the reason the model can act on. */
@@ -935,7 +982,7 @@ function soleRefusal(
   calls: readonly ModelToolCall[],
   { call, parameters, allowedInFinal }: SoleControl,
 ): { readonly code: FeedbackCode; readonly detail?: string } | undefined {
-  if (calls.length > 1) return { code: 'CONTROL_MIXED' };
+  if (calls.length > 1) return { code: 'CONTROL_MIXED', detail: mixedText(call, calls) };
   if (state.final && !allowedInFinal) return { code: 'CONTROL_NOT_ALLOWED' };
   const checked = call.arguments === null ? undefined : validate(parameters, call.arguments);
   if (checked !== undefined && checked.ok) return undefined;
@@ -953,7 +1000,16 @@ function actOn(
   config: AgentConfig,
   records: NewLogRecord[],
 ): AgentTransition {
-  const sole = soleControlOf(state, calls);
+  // A request read in an earlier round and still not answered: the reply is refused as a whole.
+  const owed = repliesOwed(state, calls, context);
+  if (owed !== undefined)
+    return invalidReply(state, 'REPLY_OWED', calls, context, config, records, owed);
+  // A call that ends the round, starts tasks or waits must be alone; one that is answered at once
+  // (a message, the task tree, a job) may come with ordinary tool calls (Orchestration 5.3).
+  const controls = calls.flatMap((call) => soleControlOf(state, [call]) ?? []);
+  const sole =
+    controls.find((control) => control.inline !== true) ??
+    (calls.length === 1 ? controls[0] : undefined);
   if (sole !== undefined) {
     const refusal = soleRefusal(state, calls, sole);
     if (refusal !== undefined)
@@ -993,7 +1049,36 @@ function actOn(
   const seen = new Set<string>();
   const writtenPaths = new Set<string>();
   let accepted = 0;
+  const inline = new Set(controls.map((control) => control.call.toolCallId));
+  const answered: AgentEnding[] = [];
+  for (const control of controls) {
+    const checked =
+      control.call.arguments === null
+        ? undefined
+        : validate(control.parameters, control.call.arguments);
+    if (checked === undefined || !checked.ok) {
+      records.push(
+        feedback(
+          state,
+          'CONTROL_ARGUMENTS_INVALID',
+          control.call.toolCallId,
+          invalidArgumentsText(NOT_TAKEN, checked, control.call.arguments === null),
+        ),
+      );
+      continue;
+    }
+    if (report.outputRef === undefined) throw new Error('A model report has no output reference');
+    pending.set(control.call.toolCallId, { role: 'DELEGATED' });
+    answered.push(
+      control.ending({
+        modelTurnRequestId: report.requestId,
+        modelOutputRef: report.outputRef,
+        toolCallId: control.call.toolCallId,
+      }),
+    );
+  }
   for (const call of calls) {
+    if (inline.has(call.toolCallId)) continue;
     const tool = state.definitions.tools.find((candidate) => candidate.modelName === call.toolName);
     if (tool === undefined) {
       records.push(feedback(state, 'UNKNOWN_TOOL', call.toolCallId));
@@ -1050,6 +1135,8 @@ function actOn(
     submissions.push(started.pending[2]);
   }
   next = { ...next, pending };
+  // The control calls are answered by the runner; the round waits for them like for its Units.
+  if (answered.length > 0) return { state: next, records, submissions, controls: answered };
   if (submissions.length === 0) {
     const released = releaseDeferred(next, context, records);
     if (released.submissions.length > 0) return { ...released, records };
@@ -1522,13 +1609,28 @@ export function answerDelegatedCall(
       : 0;
   const pending = new Map(state.pending);
   pending.delete(toolCallId);
-  const next: AgentState = {
+  let next: AgentState = {
     ...state,
     pending,
     invalidSpawns,
     spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
-    roundHadOk: !outcome.refused,
+    roundHadOk: state.roundHadOk || !outcome.refused,
   };
+  // Other calls of the round (its Units, other control calls) are not all back yet.
+  if (next.pending.size > 0 || next.held.length > 0)
+    return { state: next, records: outcome.records, submissions: [] };
+  if (next.deferred.length > 0) {
+    const records = [...outcome.records];
+    const released = releaseDeferred(next, context, records);
+    if (released.submissions.length > 0)
+      return { state: released.state, records, submissions: released.submissions };
+    next = released.state;
+    if (next.fatal !== undefined) return ended(next, { kind: 'FAILED', code: next.fatal }, records);
+    return afterTools(next, context, config, records, !outcome.refused);
+  }
+  // A Unit of the round failed fatally while this call was still out: the batch is finished now.
+  if (next.fatal !== undefined)
+    return ended(next, { kind: 'FAILED', code: next.fatal }, outcome.records);
   // A refused call has its own limit (two take the tool away); it does not also end the AgentRun.
   return afterTools(next, context, config, outcome.records, !outcome.refused);
 }

@@ -622,7 +622,7 @@ describe('requests, replies and attachments between tasks (Orchestration 5.3, D2
       expect(chat.printed('REPLY')).toContain('they talked');
       expect(seenBy(provider, 'answerer')).toContain('Summary: Which port does the API use?');
       const asker = seenBy(provider, 'asker');
-      expect(asker).toContain('Reply from task answerer to your request');
+      expect(asker).toContain('Reply from task answerer to your message');
       expect(asker).toContain('The API listens on 8080.');
     },
     TIMEOUT,
@@ -712,6 +712,251 @@ describe('requests, replies and attachments between tasks (Orchestration 5.3, D2
         .flatMap((request) => request.messages.map((message) => textOf(message)))
         .join('\n');
       expect(mainSaw).toContain('the secret number is 42');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a message or a look at the tree with other tool calls (Orchestration 5.3)', () => {
+  /** What main read: its requests carry no task of their own. */
+  const mainSaw = (provider: ScriptedChat): string =>
+    provider.requests
+      .filter(
+        (request) => !request.messages.some((message) => textOf(message).includes('Your task (')),
+      )
+      .flatMap((request) => request.messages.map((message) => textOf(message)))
+      .join('\n');
+
+  it(
+    'runs a message and a read in one reply, and goes on when both are back',
+    async () => {
+      const place = await roots({ 'notes.md': 'the port is 8080\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'reader', agent: 'explorer', goal: 'read the notes and tell me' }),
+            // The message wakes main; it sleeps again until the reader has finished.
+            sleepFor(children()),
+            sleepFor(children()),
+            reply('heard from it'),
+          ],
+        },
+        {
+          reader: [
+            {
+              calls: [
+                { name: 'read_file', arguments: { path: 'notes.md' } },
+                {
+                  name: 'send_message',
+                  arguments: { to: 'parent', text: 'Reading the notes now.' },
+                },
+                { name: 'view_tasks', arguments: {} },
+              ],
+            },
+            finish('the port is 8080'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('heard from it');
+      const reader = seenBy(provider, 'reader');
+      // All three calls ran in the same round: the file, the message and the tree.
+      expect(reader).toContain('the port is 8080');
+      expect(reader).toContain('Sent to main.');
+      expect(reader).toMatch(/reader \(explorer/u);
+      expect(reader).not.toContain('Not executed');
+      expect(mainSaw(provider)).toContain('Reading the notes now.');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'sends two messages of one reply, each to its task',
+    async () => {
+      const place = await roots();
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'teller', agent: 'explorer', goal: 'tell the others' },
+              { name: 'left', agent: 'explorer', goal: 'listen' },
+              { name: 'right', agent: 'explorer', goal: 'listen' },
+            ),
+            sleepFor(children()),
+            reply('all told'),
+          ],
+        },
+        {
+          teller: [
+            {
+              calls: [
+                { name: 'send_message', arguments: { to: 'left', text: 'Left: use port 8080.' } },
+                { name: 'send_message', arguments: { to: 'right', text: 'Right: use port 9090.' } },
+              ],
+            },
+            finish('told both'),
+          ],
+          left: [sleepFor({ kind: 'message' }), finish('heard')],
+          right: [sleepFor({ kind: 'message' }), finish('heard')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('all told');
+      expect(seenBy(provider, 'left')).toContain('Left: use port 8080.');
+      expect(seenBy(provider, 'right')).toContain('Right: use port 9090.');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'still refuses a call that must be alone, naming it and saying that nothing ran',
+    async () => {
+      const place = await roots({ 'notes.md': 'notes\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'mixer', agent: 'explorer', goal: 'read, then finish' }),
+            sleepFor(children()),
+            reply('done'),
+          ],
+        },
+        {
+          mixer: [
+            {
+              calls: [
+                { name: 'read_file', arguments: { path: 'notes.md' } },
+                { name: 'finish_subagent', arguments: { summary: 'too early' } },
+              ],
+            },
+            finish('finished on its own'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      const mixer = seenBy(provider, 'mixer');
+      expect(mixer).toContain(
+        'Not executed: finish_subagent must be the only tool call in its reply, and this reply also had read_file.',
+      );
+      expect(mixer).toContain('None of the 2 calls of this reply ran, finish_subagent included');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a request is answered, an inform need not be (Orchestration 5.3)', () => {
+  const requestIdIn = (provider: ScriptedChat): string =>
+    /Request (\S+) from task/u.exec(seen(provider))?.[1] ?? 'none';
+
+  it(
+    'reminds a task that left a request unanswered, then refuses its reply until it answers',
+    async () => {
+      const place = await roots({ 'a.md': 'alpha\n', 'b.md': 'beta\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'teller', agent: 'explorer', goal: 'tell the other' },
+              { name: 'listener', agent: 'explorer', goal: 'listen' },
+            ),
+            sleepFor(children()),
+            reply('they talked'),
+          ],
+        },
+        {
+          teller: [
+            tool('send_message', {
+              to: 'listener',
+              kind: 'request',
+              text: 'The API is on port 8080: confirm.',
+            }),
+            sleepFor({ kind: 'message' }),
+            finish('told it'),
+          ],
+          listener: [
+            sleepFor({ kind: 'message' }),
+            // The first round that reads it does not answer: the next one is reminded.
+            tool('read_file', { path: 'a.md' }),
+            // Reminded, and still no answer: nothing of this reply runs.
+            tool('read_file', { path: 'b.md' }),
+            {
+              get calls() {
+                return [
+                  {
+                    name: 'send_message',
+                    arguments: {
+                      to: 'teller',
+                      kind: 'reply',
+                      replyTo: requestIdIn(provider),
+                      text: 'Got it.',
+                    },
+                  },
+                ];
+              },
+            },
+            finish('heard'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('they talked');
+      const listener = seenBy(provider, 'listener');
+      expect(listener).toContain('answer it in this reply with send_message kind reply');
+      expect(listener).toContain('alpha');
+      expect(listener).toContain('You have not answered this request');
+      expect(listener).toContain('Not executed: you still have not answered');
+      expect(listener).not.toContain('beta');
+      expect(seenBy(provider, 'teller')).toContain('Got it.');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'lets an inform go unanswered: nothing is reminded or refused',
+    async () => {
+      const place = await roots({ 'a.md': 'alpha\n', 'b.md': 'beta\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'reporter', agent: 'explorer', goal: 'report progress' },
+              { name: 'worker', agent: 'explorer', goal: 'work on' },
+            ),
+            sleepFor(children()),
+            reply('heard the progress'),
+          ],
+        },
+        {
+          // The reporter sleeps until the worker has read it, so the inform stays owed if it were.
+          reporter: [
+            tool('send_message', { to: 'worker', text: 'Half done.' }),
+            sleepFor({ kind: 'message' }),
+            finish('done'),
+          ],
+          // Three rounds read the inform without answering it, and every call of them runs.
+          worker: [
+            sleepFor({ kind: 'message' }),
+            tool('read_file', { path: 'a.md' }),
+            tool('read_file', { path: 'b.md' }),
+            tool('send_message', { to: 'reporter', text: 'Finished too.' }),
+            finish('worked'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('heard the progress');
+      const worker = seenBy(provider, 'worker');
+      expect(worker).toContain('Half done.');
+      expect(worker).toContain('no answer is needed');
+      expect(worker).toContain('alpha');
+      expect(worker).toContain('beta');
+      expect(worker).not.toContain('You have not answered');
+      expect(worker).not.toContain('Not executed: you still have not answered');
     },
     TIMEOUT,
   );

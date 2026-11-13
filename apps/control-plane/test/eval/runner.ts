@@ -255,6 +255,10 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
       await cp(join(dataDir, 'sessions'), join(into, 'sessions'), { recursive: true }).catch(
         () => undefined,
       );
+      // What the log points to: model outputs (messages, plans, tool arguments) and tool results.
+      await cp(join(dataDir, 'artifacts'), join(into, 'artifacts'), { recursive: true }).catch(
+        () => undefined,
+      );
       await cp(repository, join(into, 'repository'), { recursive: true }).catch(() => undefined);
     }
     await rm(dataDir, { recursive: true, force: true });

@@ -10,6 +10,7 @@ import { registeredOf } from '../handover/handover.js';
 import { outcomeOf } from '../spawn/task-results.js';
 import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
 import { jobEndedNotice, jobOfRequest } from '../graph/mission-jobs.js';
+import { owedReplies, replyReminder } from '../graph/mission-replies.js';
 import { rolledBackRanges } from './rolled-back.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
@@ -795,6 +796,16 @@ export function projectHistory(
   }
   // A note that came after the last assembly is the last thing in the history.
   flush();
+  // Requests an earlier round read and did not answer: the reminder comes last (Orchestration 5.3).
+  const reminder =
+    ownMission === undefined ? undefined : replyReminder(owedReplies(records, ownMission));
+  if (reminder !== undefined)
+    entries.push({
+      seq: records.at(-1)?.seq ?? 0,
+      category: 'NORMAL',
+      kind: 'NOTE',
+      text: reminder,
+    });
   const shown = entries.map((entry) =>
     entry.kind === 'HUMAN' &&
     (scope.kind === 'NODE' || (currentInput !== undefined && entry.seq >= currentInput))

@@ -74,6 +74,7 @@ import {
   nextJobId,
   runningJobs,
 } from '../domain/graph/mission-jobs.js';
+import { owedReplies, replyRefusal } from '../domain/graph/mission-replies.js';
 import { revokedCompactions } from '../domain/context/compaction-revocation.js';
 import { playbookRefusal, playbookUnfinished } from '../domain/spawn/playbook.js';
 import { interruptedRunOf } from './interrupted-run.js';
@@ -1558,6 +1559,10 @@ export class SessionRunner {
           scope,
           this.#repositoryRoot,
         ),
+      owedReplies: (agentRunId, answered) =>
+        scope.missionId === undefined
+          ? undefined
+          : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
       assembleInput: (status, final, withdrawnTools) => {
         return {
           final,
@@ -1830,6 +1835,9 @@ export class SessionRunner {
     }
     if (transition.ending !== undefined)
       await this.#onEnding(workflowRunId, agentRunId, transition.ending);
+    // Control calls that came with the round's Units: each is answered, one after another.
+    for (const control of transition.controls ?? [])
+      await this.#onEnding(workflowRunId, agentRunId, control);
   }
 
   /**
@@ -3356,7 +3364,9 @@ export class SessionRunner {
           this.#deps.config,
         ),
       );
-    if (active.messages >= MAX_MESSAGES_PER_SEGMENT)
+    const kind = args.kind ?? 'inform';
+    // A reply is owed (Orchestration 5.3), so it never runs into the limit of a segment.
+    if (kind !== 'reply' && active.messages >= MAX_MESSAGES_PER_SEGMENT)
       return answer(
         true,
         `Not sent: at most ${String(MAX_MESSAGES_PER_SEGMENT)} messages in one segment. Write what is long into a file instead.`,
@@ -3365,15 +3375,15 @@ export class SessionRunner {
     const me = missions.get(active.missionId);
     if (me === undefined) return answer(true, 'Not sent: this task is not in the task tree.');
     const open = (each: MissionView) => each.ended === undefined;
-    const kind = args.kind ?? 'inform';
     let targets: readonly MissionView[];
-    // A reply answers a request sent to this task, and goes back to the task that asked (D25).
+    // A reply answers a message sent to this task, a request or an inform, and goes back to the
+    // task that sent it (D25, Orchestration 5.3).
     const request =
       kind === 'reply'
         ? this.#records.find(
             (record): record is Extract<SessionLogRecord, { type: 'MISSION_MESSAGE' }> =>
               record.type === 'MISSION_MESSAGE' &&
-              record.kind === 'request' &&
+              record.kind !== 'reply' &&
               record.source.toolCallId === args.replyTo &&
               record.to.includes(me.missionId),
           )
@@ -3381,7 +3391,7 @@ export class SessionRunner {
     if (kind === 'reply' && request === undefined)
       return answer(
         true,
-        `Not sent: replyTo must be the id of a request sent to you${args.replyTo === undefined ? '' : `; ${args.replyTo} is not one`}. Send it as inform instead.`,
+        `Not sent: replyTo must be the id of a message sent to you${args.replyTo === undefined ? '' : `; ${args.replyTo} is not one`}. Send it as inform instead.`,
       );
     if (kind === 'request' && this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS)
       return answer(

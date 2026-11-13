@@ -7,7 +7,7 @@ purpose: CONTROL
 modelName: job_kill
 modelDescription: >-
   Stop one of your background commands by its id (SIGTERM, then SIGKILL). You are told when it
-  has ended, with what it printed last. Call it on its own.
+  has ended, with what it printed last.
 parametersContract:
   kind: contract
   id: workflow.JobKillArgs

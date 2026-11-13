@@ -395,7 +395,7 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 
 1. 一轮的工具 Unit 一次全部提交，由 Kernel 按并发类别执行（第 7.1 节）。下一轮的 context-assemble 在本轮全部工具 Unit 得到结果后才提交；
    等待授权询问的 Unit 仍算"未结束"。
-2. 模型返回中，控制工具与普通工具不得混用（M1 的 `CONTROL_MIXED` 规则保留）。
+2. 模型返回中，结束、派生、询问、休眠、停止子任务这类控制工具必须单独出现（M1 的 `CONTROL_MIXED` 规则保留）；当场答复的控制工具（`send_message`、`view_tasks`、作业工具）可以与普通工具同在一次返回中，本轮等它们与工具 Unit 都有了答复才往下走（[Orchestration](Orchestration.md) 第 5.3 节）。被拒时答复点名必须单独的那个调用，并说明这次返回的调用都没有执行。
 3. M1 的 Validation、`failurePolicy`、无进展检测、重新生成上限照常适用，作用于每个 AgentRun。
 4. 收到 `INTERRUPTED` 的 UnitReport 时按第 4.4 节处理，不计 Round。
 5. **业务熔断**（Workflow 计数与判断，Kernel 不解释）：

@@ -9,7 +9,7 @@ modelDescription: >-
   Read what one of your background commands (job_1, job_2, ...) printed since you last read it,
   up to 32 KB at a time, with its state at the end (running, exited(n), stopped). fromStart reads
   again from the oldest output still kept. It does not wait: to wait for a command to end, call
-  sleep with jobs. Call it on its own.
+  sleep with jobs.
 parametersContract:
   kind: contract
   id: workflow.JobOutputArgs

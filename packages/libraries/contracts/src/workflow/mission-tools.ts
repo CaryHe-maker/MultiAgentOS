@@ -81,8 +81,9 @@ export const SendMessageArgsSchema = closed(
   {
     to: text(64),
     /**
-     * inform (default) tells; request asks for something and expects a reply; reply answers a
-     * request (`replyTo`), and goes to the task that asked whatever `to` says (D25).
+     * inform (default) tells and needs no answer; request asks for something, or tells what must be
+     * confirmed, and has to be answered (Orchestration 5.3); reply answers a message sent to this
+     * task (`replyTo`), and goes to its sender whatever `to` says (D25).
      */
     kind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
     /** What the receiver reads first: one or two lines. */
@@ -93,7 +94,7 @@ export const SendMessageArgsSchema = closed(
      * read_output (`ref_N/<toolCallId>`). Only to one task.
      */
     references: Type.Optional(Type.Array(text(64), { minItems: 1, maxItems: 8 })),
-    /** The id of the request this answers (shown with the request). */
+    /** The id of the message this answers (shown with the message). */
     replyTo: Type.Optional(text(64)),
     /**
      * Interrupts the receiver (Orchestration 5.2, D20, D21): only to a child of the sender. The
