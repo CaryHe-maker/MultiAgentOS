@@ -249,6 +249,11 @@ export const ACTIVITY_PHASES = [
   /** Its context is being compacted: nothing of this AgentRun runs until it is done. */
   'COMPACTING',
   'WRAPPING_UP',
+  /**
+   * The segment ended and its task sleeps until something wakes it (Orchestration 4): the task is
+   * still there, and the activity area keeps its line until the task ends.
+   */
+  'SLEEPING',
   'ENDED',
 ] as const;
 const activity = {
@@ -256,6 +261,12 @@ const activity = {
   agentRunId: IdSchemas.agentRunId,
   /** Of a SubAgent: the AgentRun that started it, so the interface can draw the tree. */
   parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+  /**
+   * The task the AgentRun is a segment of, and its parent task (Orchestration 3.2): the activity
+   * area draws the tree of tasks, which stays whole while a task sleeps between segments.
+   */
+  missionId: Type.Optional(IdSchemas.missionScopeId),
+  parentMissionId: Type.Optional(IdSchemas.missionScopeId),
   label: text(80),
   unit: Type.Optional(
     closed({

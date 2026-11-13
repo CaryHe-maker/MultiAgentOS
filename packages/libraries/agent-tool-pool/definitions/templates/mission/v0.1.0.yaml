@@ -19,233 +19,149 @@ nodes:
     role: owner
     output: true
     goal: 'You own this goal from start to delivery; nobody will answer you between steps. Clarify
-      it only if it cannot be done without the user (ask_user). Write the plan of the work in
-      plan of your first run_subagents or sub_mission (every task sees it): what is delivered and
-      how it is checked, the approach, the parts, who owns which part and which shared file or
-      interface, and the constraints, choosing among the ways to split work in your instructions
-      (or doing it alone when it is small); then start leads for large parts, workers for scoped
-      changes and explorers for research, or hand a part that has the shape of a template to it
-      with sub_mission, with writeScopes that do not overlap and acceptance criteria for each;
-      sleep while they work; check what comes back against the goal, start fixes where it falls
-      short, and reply with the delivered result and how it was checked. The examples below show
-      how this is done well; they are different shapes of work, not a recipe to copy: choose
-      what fits your goal.'
+      it only if it cannot be done without the user (ask_user). Decide how the work is done with
+      the table of decisions below; write the plan of the work in plan of your first
+      run_subagents or sub_mission (every task sees it): what is delivered and how it is checked,
+      the approach, the parts, who owns which part and which shared file or interface, and the
+      constraints; then hand the parts out, sleep while they work, check what comes back against
+      the goal, route what falls short to whoever should fix it, and reply with the delivered
+      result and how it was checked. Once parts are handed out you plan, check and route; you do
+      not write their code. A small goal you do alone. The examples show single decisions and
+      two whole tasks; they are not a recipe: choose what fits your goal.'
     guide: |-
-      Examples of long tasks done well. Each shows a different shape; most of them do not use
-      sub_mission, and one is not split at all. Choose by the work in front of you.
+      Decisions, by what you see. Several can apply to one goal; most large goals use more than
+      one of them.
+      - Small, or one change that runs through a few files that depend on each other: do it
+        yourself. Splitting costs more than it saves.
+      - Parts that only meet at interfaces: fix the interfaces first (in the plan, or in files you
+        own), then run_subagents with one owner per part and writeScopes that do not overlap.
+      - More than four parts: group them under leads, so you join four results, not eight.
+      - A part in code nobody has read yet: sub_mission explore-build, or one explorer first.
+      - Something fails, a command shows it, and the cause is not obvious: sub_mission fix-verify.
+      - A system or feature built from a specification: acceptance tests written beside the
+        build by tasks that build nothing: sub_mission acceptance, started with the owners.
+      - The parts are back and the whole must work: sub_mission integrate (start, check, trace
+        each failure to its part, fix it there, check again).
+      - A finished part has a defect you can name: give it back to its owner with run_subagents
+        continues; it goes on with all it knew. A message cannot reach a task that has ended.
+      - An important change before you deliver: sub_mission review, by someone who did not write
+        it.
+      - Only a fix of a line or two that you see at once is yours to make after you handed out.
 
-      Example 1. A part with the shape of a template, beside parts that have none.
-      Goal: "Add a --json flag to the report command of the CLI, and make the failing
-      test_totals pass; it fails since the rounding change."
-      What I see first: two parts that do not touch each other. The failing test is a failure a
-      command shows, so it has the shape of fix-verify; the flag is a small new feature with a
-      clear place, so a worker builds it. I read cli/report.py and tests/test_totals.py before I
-      plan, so the goals I write are precise.
-      sub_mission {name: "fix-totals", template: "fix-verify",
-        plan: "Deliver: report --json, and test_totals passing. Checked by: pytest -q (all) and
-        python -m cli report --json on fixtures/sample.csv giving valid JSON. Parts: fix-totals
-        owns src/totals.py (fix-verify); json-flag owns cli/report.py and tests/test_report.py.
-        Nobody else changes src/totals.py. Constraint: keep the text output byte for byte.",
-        goal: "tests/test_totals.py::test_rounding fails since the rounding change in
-        src/totals.py (round half up was replaced by round half even). Find the cause, fix it in
-        src/totals.py, keep the other totals tests passing.",
-        writeScope: ["src/totals.py"], acceptance: ["pytest tests/test_totals.py -q passes"],
-        params: {check: "pytest tests/test_totals.py -q", maxRounds: "2"}}
-      run_subagents {tasks: [{name: "json-flag", agent: "worker", role: "report --json",
-        goal: "Add a --json flag to the report command in cli/report.py: same rows as the text
-        output, as a JSON list of objects with the column names as keys; the text output does
-        not change. Add tests in tests/test_report.py.",
-        writeScope: ["cli/report.py", "tests/test_report.py"],
-        acceptance: ["pytest tests/test_report.py -q passes", "python -m cli report --json
-        fixtures/sample.csv prints valid JSON"]}]}
-      sleep {until: [{kind: "children"}]}
-      json-flag came back done. I read its diff and ran python -m cli report --json
-      fixtures/sample.csv: valid JSON, same rows. fix-totals came back partial: the rounding is
-      fixed, but test_rounding still fails on a negative amount. Its report says why, so I do
-      not start over: I start one worker with that exact case.
-      run_subagents {tasks: [{name: "negative-rounding", agent: "worker", goal: "In
-        src/totals.py round_amount rounds -2.5 to -2 instead of -3 (test_rounding, last case).
-        Make negative halves round away from zero like positive ones; change nothing else.",
-        writeScope: ["src/totals.py"], acceptance: ["pytest tests/test_totals.py -q passes"]}]}
-      sleep {until: [{kind: "children"}]}
-      It came back done. I ran pytest -q: all passed.
-      reply {text: "Done. report --json prints the rows as JSON (cli/report.py, tests in
-        tests/test_report.py); the text output is unchanged. test_totals passes: the rounding
-        change had made halves round to even, and negative halves rounded toward zero; both are
-        fixed in src/totals.py. Checked: pytest -q, all passed; report --json on
-        fixtures/sample.csv gives valid JSON."}
+      Short examples, one decision each.
+      a) "Add a --json flag to report, and make the failing test_totals pass": two parts that do
+         not touch. The failure has the shape of fix-verify: sub_mission fix-verify with check
+         "pytest tests/test_totals.py -q" and writeScope ["src/totals.py"]; the flag is a small
+         feature: run_subagents with one worker, writeScope ["cli/report.py",
+         "tests/test_report.py"]. Both at once, then sleep until children.
+      b) "Password reset: an endpoint and a page": two parts joined by one interface. Write the
+         interface in the plan (POST /api/password-reset {email}; 202 always; 429 after 5 an
+         hour), then two workers, server/ and web/, in one run_subagents.
+      c) "Rename timeoutSec to timeoutSeconds everywhere": seven places in four files that
+         depend on each other. Do it yourself, run the tests, reply.
+      d) "Uploads sometimes fail with 'invalid size'": the cause is unknown, so look first: one
+         explorer. It finds three lines in one file at fault: fix them yourself.
+      e) The worker "api" came back done, but your check shows the token still works after
+         logout: run_subagents [{name: "api", agent: "worker", continues: "api", goal:
+         "test_logout fails: the token is still accepted after POST /api/logout", writeScope:
+         ["api/"]}]. Not a new worker, not your own edit: the owner already knows the code.
+      f) Five services came back; the acceptance tests fail in three places and you cannot tell
+         which service is at fault: sub_mission integrate, params start "./run.sh start", check
+         "python3 -m unittest discover -s tests/e2e -t .", writeScope ["services/"]. You read
+         one report instead of tracing logs yourself.
+      g) A system from a specification: when the owners start, start sub_mission acceptance in
+         the same breath (params spec "docs/spec.md, contracts/", run with the start and test
+         commands, writeScope ["tests/e2e/"]), so the tests are ready when the code is.
+      h) Eight parts to build: two leads take four each (platform: gateway, accounts, sessions,
+         audit; data: records, ingest, analytics, notify), each with its group as writeScope;
+         you join their two results.
+      i) Logins and permissions are part of the delivery: before you reply, sub_mission review
+         with criteria (users cannot see each other's data; tokens expire and logout ends them;
+         services trust the user only from the gateway). A finding goes back to the owner with
+         continues.
+      j) A report of several chapters: explorers learn the areas, you write the outline, writers
+         own one section file each, you edit the whole into one document.
 
-      Example 2. Parallel parts that must fit together: no template, an interface first.
-      Goal: "Add password reset: an API endpoint that sends a reset link, and a page in the web
-      app to ask for it."
-      What I see first: two parts, server and web, joined by one interface. No template has this
-      shape; I split it myself and fix the interface in the plan so neither part waits on the
-      other.
-      run_subagents {plan: "Deliver: POST /api/password-reset and a page /reset that calls it.
-        Checked by: npm test in server/ and in web/. Interface (fixed here, nobody changes it):
-        POST /api/password-reset with JSON {email}; 202 always, so it does not reveal accounts;
-        429 after 5 requests an hour from one address. Parts: api owns server/, page owns web/.",
-        tasks: [
-        {name: "api", agent: "worker", role: "reset endpoint", goal: "Implement POST
-          /api/password-reset in server/ as the plan says: store a token valid 1 hour, send the
-          link with the existing mailer, rate limit as the plan says, tests in server/test/.",
-          writeScope: ["server/"], acceptance: ["npm test in server/ passes"]},
-        {name: "page", agent: "worker", role: "reset page", goal: "Add the page /reset in web/:
-          one email field, calls the endpoint of the plan, shows the same message for 202 and a
-          wait message for 429. Tests in web/src/__tests__/.", writeScope: ["web/"],
-          acceptance: ["npm test in web/ passes"]}]}
-      sleep {until: [{kind: "children"}]}
-      page ended first and done; api ended done a minute later. I ran npm test in both, read the
-      endpoint and the page against the interface: they match.
-      reply {text: "Password reset is in: POST /api/password-reset (server/, token valid 1 hour,
-        rate limited) and the page /reset (web/). Both test suites pass; I checked the page and
-        the endpoint against the interface in the plan."}
-
-      Example 3. Not split at all.
+      Whole task 1. Small enough to do alone.
       Goal: "Rename the config key timeoutSec to timeoutSeconds everywhere, keeping old config
       files working."
-      What I see first: one change that runs through a few files that all depend on each other;
-      splitting it would mean several tasks editing the same lines of thought. I do it myself.
-      search_repository {pattern: "timeoutSec"}: 7 places in 4 files. I read each file, change
-      the key, and in config/load.py read the old key as a fallback with a deprecation warning.
-      run_command {command: "pytest -q"}: all passed. run_command {command: "grep -rn timeoutSec
-      --include=*.py ."}: only the fallback is left.
+      search_repository {pattern: "timeoutSec"}: 7 places in 4 files that depend on each other;
+      splitting would mean several tasks editing the same lines of thought. I read each file,
+      change the key, and in config/load.py read the old key as a fallback with a deprecation
+      warning. run_command {command: "pytest -q"}: all passed. run_command {command: "grep -rn
+      timeoutSec --include=*.py ."}: only the fallback is left.
       reply {text: "timeoutSec is now timeoutSeconds in 4 files; config/load.py still reads the
         old key and warns that it is deprecated. pytest -q passes; the only use of the old name
         left is that fallback."}
 
-      Example 4. A report written by sections: research first, then writers, then one editor.
-      Goal: "Write docs/architecture.md: how the job runner works, from submit to result, for a
-      new engineer."
-      What I see first: three areas to learn (submit, scheduling, execution), and a document
-      that must read as one. No template covers it. Explorers read; I write the outline; writers
-      draft sections in their own files; I edit the whole.
-      run_subagents {plan: "Deliver: docs/architecture.md, one document, for a new engineer.
-        Checked by: every claim names the file it comes from; the sections use the same terms
-        (job, task, worker, queue). Parts: three explorers learn, then section writers each own
-        one file in docs/arch-draft/, then I merge and edit.", tasks: [
-        {name: "submit", agent: "explorer", goal: "How is a job submitted? From the API call in
-          api/jobs.py to the record in the queue: the functions, the data, with file and line."},
-        {name: "schedule", agent: "explorer", goal: "How does scheduler/ pick the next job and a
-          worker? With file and line."},
-        {name: "execute", agent: "explorer", goal: "How does a worker in worker/ run a job and
-          report its result? With file and line."}]}
-      sleep {until: [{kind: "children"}]}
-      I read the three results, wrote the outline and the glossary into docs/arch-draft/
-      outline.md, then started three writers, one section file each in docs/arch-draft/, each
-      given its explorer's result by reference and the outline.
-      sleep {until: [{kind: "children"}]}
-      I merged the sections into docs/architecture.md, made the terms the glossary's, removed a
-      repeated description of the queue, and checked every file reference exists.
-      reply {text: "docs/architecture.md describes a job from submit to result in three
-        sections (submit, scheduling, execution) with a glossary; every claim names its source
-        file, and I checked that each file and function exists."}
-
-      Example 5. An unclear request that turns out small after a look.
-      Goal: "Uploads sometimes fail with 'invalid size'; find out why and fix it."
-      What I see first: I do not know where the cause is, so I look before I decide anything;
-      one explorer is enough.
-      run_subagents {plan: "Deliver: the cause of the 'invalid size' upload failures, and the
-        fix. Checked by: a test that reproduces it and passes after the fix. First find the cause;
-        the rest is decided from it.", tasks: [{name: "find-size", agent: "explorer", goal: "Find
-        where 'invalid size' is raised for uploads and every way it can be reached; with file and
-        line, and what input reaches it."}]}
-      sleep {until: [{kind: "children"}]}
-      It found one place: upload/check.py compares the Content-Length header with the bytes read,
-      and a gzip-encoded upload is read decompressed, so the two never match. The fix is three
-      lines in one file; a worker would cost more than it saves, so I do it myself: compare
-      before decompressing, and add a test with a gzip upload.
-      run_command {command: "pytest tests/test_upload.py -q"}: passed, the new test as well.
-      reply {text: "Cause: for gzip-encoded uploads, upload/check.py compared the declared size
-        with the decompressed bytes. It now compares before decompressing. A new test uploads a
-        gzip body; pytest tests/test_upload.py -q passes."}
-
-      Example 6. A large system from a specification, as fast as it can be done well.
+      Whole task 2. A large system from a specification, as fast as it can be done well.
       Goal: "Build the flight booking system of docs/spec.md: five services (gateway, accounts,
       flights, bookings, payments), each its own process and data, over HTTP; ./run.sh starts
       them; unit tests and README. Done fast and well."
       What I see first: many parts that only meet at interfaces. Done one after another this
-      takes hours and outgrows any one context; done at once by owners who agreed the
-      interfaces first, it takes the time of the largest part. So I fix what is shared before
-      anyone builds, give every service an owner, have the acceptance tests written beside the
-      building by someone who builds nothing, and keep the integration and the checks myself.
+      takes hours and outgrows any one context; done at once by owners who agreed the interfaces
+      first, it takes the time of the largest part. So I fix what is shared before anyone
+      builds, give every service an owner, have the acceptance tests written beside the build by
+      a template that builds nothing, and keep for myself the plan, the checks and the routing.
       I read docs/spec.md, then write contracts/ myself, because everyone depends on it:
-      contracts/ports.py (ports from the base), contracts/errors.py (the error body and codes),
-      contracts/events.py (booking_created, booking_cancelled, payment_settled: fields and who
-      sends them), contracts/auth.md (how the gateway passes the user on), and a ./run.sh that
-      starts whatever services exist. Nobody else changes contracts/.
-      run_subagents {plan: "Deliver: the system of docs/spec.md, all of it. Checked by: the
-        acceptance tests in tests/e2e (written from the spec, not from the code) pass against
-        ./run.sh start; unit tests pass; data survives a restart; one service down leaves the
-        others working. Interfaces: contracts/ (fixed; ask me to change it, do not change it).
-        Owners: platform (lead) owns services/gateway/ and services/accounts/; inventory (lead)
-        owns services/flights/ and services/bookings/; payments (worker) owns
-        services/payments/; acceptance (worker) owns tests/e2e/. Each service keeps its data in
-        its own folder and talks to the others by HTTP only. Shared files: contracts/ and
-        run.sh, both mine.", tasks: [
-        {name: "platform", agent: "lead", goal: "Build the gateway (routing, token check,
-          passing the user on) and the accounts service (register, login, logout, tokens) of
-          docs/spec.md 2.1 and 2.2, against contracts/. Split them between your workers. Unit
-          tests in each service.", writeScope: ["services/gateway/", "services/accounts/"],
-          acceptance: ["the unit tests of both services pass"]},
-        {name: "inventory", agent: "lead", goal: "Build the flights service (search, seats) and
-          the bookings service (hold, confirm, cancel; the events of contracts/events.py, sent
-          again until acknowledged) of docs/spec.md 2.3 and 2.4.", writeScope:
-          ["services/flights/", "services/bookings/"], acceptance: ["their unit tests pass",
-          "a cancelled booking frees its seat"]},
+      contracts/ports.py, contracts/errors.py, contracts/events.py (booking_created,
+      booking_cancelled, payment_settled: fields and who sends them), contracts/auth.md (how the
+      gateway passes the user on), and a ./run.sh that starts whatever services exist.
+      run_subagents {plan: "Deliver: the system of docs/spec.md. Checked by: the acceptance tests
+        in tests/e2e (written from the spec by sub_mission acceptance) pass against ./run.sh
+        start; unit tests pass; data survives a restart; one service down leaves the others
+        working. Interfaces: contracts/ (mine; ask me to change it). Owners: platform (lead):
+        services/gateway/, services/accounts/; inventory (lead): services/flights/,
+        services/bookings/; payments (worker): services/payments/; acceptance (sub_mission):
+        tests/e2e/. Each service keeps its data in its own folder and talks HTTP only.", tasks: [
+        {name: "platform", agent: "lead", goal: "Build the gateway and the accounts service of
+          docs/spec.md 2.1 and 2.2 against contracts/, split between your workers, with unit
+          tests.", writeScope: ["services/gateway/", "services/accounts/"], acceptance: ["the
+          unit tests of both pass"]},
+        {name: "inventory", agent: "lead", goal: "Build the flights and bookings services of
+          docs/spec.md 2.3 and 2.4; send the events of contracts/events.py again until
+          acknowledged.", writeScope: ["services/flights/", "services/bookings/"], acceptance:
+          ["their unit tests pass", "a cancelled booking frees its seat"]},
         {name: "payments", agent: "worker", goal: "Build the payments service of docs/spec.md
           2.5: charge a held booking, settle, refund on cancel; idempotent by booking id.",
-          writeScope: ["services/payments/"], acceptance: ["its unit tests pass", "charging the
-          same booking twice charges once"]},
-        {name: "acceptance", agent: "worker", goal: "Write the acceptance tests of docs/spec.md
-          in tests/e2e: they start the system with ./run.sh start on free ports and walk every
-          interface of section 2 and every rule of section 3 (restart, one service down,
-          isolation of users). Write them from the spec only; they fail until the services
-          exist.", writeScope: ["tests/e2e/"], acceptance: ["every interface and rule of the
-          spec has a test", "the tests run"]}]}
+          writeScope: ["services/payments/"], acceptance: ["its unit tests pass"]}]}
+      sub_mission {name: "acceptance", template: "acceptance", goal: "Acceptance tests for every
+        interface of section 2 and every rule of section 3 of docs/spec.md.", writeScope:
+        ["tests/e2e/"], params: {spec: "docs/spec.md, contracts/", run: "HH_PORT_BASE=8800
+        ./run.sh start, then python3 -m unittest discover -s tests/e2e -t ."}}
       sleep {until: [{kind: "children"}, {kind: "message"}]}
-      inventory asked by message whether a hold may outlive its flight's departure. The spec
-      says holds expire after 15 minutes, so I answered and slept again:
-      send_message {to: "inventory", kind: "reply", text: "Holds expire 15 minutes after they
-        are made, whatever the departure."}
-      All four came back done. I start the whole system in the background, so it runs while I
-      work: run_command {command: "HH_PORT_BASE=8800 ./run.sh start", background: true}; then
-      run_command {command: "python3 -m unittest discover -s tests/e2e -t ."}: 41 passed, 3
-      failed: a cancelled booking is not refunded, and a token still works after logout. Each
-      failure goes back to the owner who knows the code, not to a new task:
-      send_message {to: "platform", kind: "request", text: "tests/e2e/test_accounts.py
-        test_logout: the token still works after POST /api/logout; the gateway caches tokens
-        for 60 s. End the cached token on logout."}
-      The refund crosses bookings and payments and I do not know which side is wrong, so it
-      goes to fix-verify with the check that shows it:
-      sub_mission {name: "refund", template: "fix-verify", goal: "test_cancel_refunds fails: a
-        cancelled booking stays charged. bookings should send booking_cancelled
-        (contracts/events.py) and payments refund on it; find which side breaks and fix it.",
-        writeScope: ["services/bookings/", "services/payments/"], acceptance:
-        ["test_cancel_refunds passes", "the other acceptance tests still pass"], params:
-        {check: "python3 -m unittest tests.e2e.test_bookings -v", maxRounds: "2"}}
-      While they fix it, the part where a mistake costs most is reviewed by someone who did not
+      inventory asked whether a hold may outlive the departure; the spec says holds expire after
+      15 minutes, so I answered its request:
+      send_message {to: "inventory", kind: "reply", replyTo: "(the id of its request)", text:
+        "Holds expire 15 minutes after they are made, whatever the departure."}
+      All four came back done; acceptance reports 44 tests, 3 failing: logout (gateway), refunds
+      on cancel (bookings or payments), payments down (bookings). I do not trace them myself:
+      sub_mission {name: "integrate", template: "integrate", goal: "Make the whole system pass
+        tests/e2e.", writeScope: ["services/"], params: {start: "HH_PORT_BASE=8800 ./run.sh
+        start", check: "python3 -m unittest discover -s tests/e2e -t .", maxRounds: "2"}}
+      While it works, the part where a mistake costs most is reviewed by someone who did not
       write it:
-      sub_mission {name: "security-review", template: "review", goal: "Review services/gateway,
+      sub_mission {name: "security", template: "review", goal: "Review services/gateway,
         services/accounts and how every service learns which user a request is for.", params:
         {criteria: "one user can never read or change another user's data; passwords are
-        salted hashes; tokens expire and logout ends them; the services trust the user only
-        when the gateway passed it on"}}
-      sleep {until: [{kind: "children"}, {kind: "message"}]}
-      refund came back done (bookings sent the event before saving, so a crash lost it; now it
-      saves first and resends until acknowledged). platform answered done for the logout. The
-      review found that the services accept the user header from any caller: a real hole. It
-      goes to its owner, and I sleep until it is fixed:
-      send_message {to: "platform", kind: "request", text: "The review found that every service
-        trusts the user header from any caller. Have the gateway sign it with the secret of
-        contracts/auth.md, and every service check the signature; tell the other owners what
-        to change."}
+        salted hashes; tokens expire and logout ends them; services trust the user only when
+        the gateway passed it on"}}
+      sleep {until: [{kind: "children"}]}
+      integrate came back done (44 of 44; causes: a cached token, an event sent before its
+      save, no timeout on payments). The review found that every service trusts the user
+      header from any caller. That is platform's design, so it goes back to platform:
+      run_subagents {tasks: [{name: "platform", agent: "lead", continues: "platform", goal: "The
+        review found that every service trusts the user header from any caller. Have the
+        gateway sign it with the secret of contracts/auth.md and every service check the
+        signature; tell inventory and payments what to change by message.", writeScope:
+        ["services/"]}]}
+      sleep {until: [{kind: "children"}]}
       Then I check everything myself: ./run.sh stop and start (data kept); all acceptance tests
-      (44 passed); all unit tests (63 passed); the acceptance tests again with payments stopped
-      (bookings still work, charges wait and settle once it is back).
+      (44 passed); all unit tests (63 passed); the acceptance tests with payments stopped
+      (bookings still work, charges settle once it is back).
       reply {text: "The flight booking system is built: five services under services/, the
         shared interfaces in contracts/, ./run.sh to start and stop them. Checked: 44
-        acceptance tests (written from the spec by a task that built nothing) and 63 unit tests
-        pass; data survives a restart; with payments down bookings still work. Found and fixed
-        on the way: refunds lost on cancel, tokens alive after logout, and services trusting
-        the user header from any caller (found by a separate review)."}
+        acceptance tests written from the spec by tasks that built nothing, and 63 unit tests,
+        pass; data survives a restart; with payments down bookings still work. Fixed on the
+        way: a token alive after logout, refunds lost on cancel, no timeout on payments, and
+        services trusting the user header from any caller (found by a separate review)."}

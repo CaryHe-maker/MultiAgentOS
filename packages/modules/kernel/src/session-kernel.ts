@@ -453,6 +453,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               analyze: deps.commands.analyze,
               sandbox: deps.commands.sandbox,
               unavailablePolicy: config.sandbox.unavailable,
+              approval: config.command.approval,
               ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
               homeReadOnly: toolchains(),
               homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),

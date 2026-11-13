@@ -1,4 +1,6 @@
 import {
+  messageFullText,
+  messageShownText,
   parseReferenceName,
   referenceName,
   subagentAsWrittenText,
@@ -465,6 +467,13 @@ export class AttemptRequestBuilder {
     const callId = parseReferenceName(toolCallId)?.toolCallId ?? toolCallId;
     const call = (await this.#rawOutput(ref)).toolCalls.find((each) => each.toolCallId === callId);
     if (call === undefined) throw new RequestBuildError('INVALID_ARTIFACT_REF');
+    // A message is read by its id (Orchestration 5.3): its summary, then its text. It has a summary
+    // too, so it is told from a report before the report is looked for.
+    if (call.toolName === 'send_message') {
+      const summary = messageSummaryOf(call.argumentsText);
+      const text = messageTextOf(call.argumentsText);
+      return messageFullText(summary === undefined ? { text } : { summary, text });
+    }
     const report = reportOf(call);
     return report === undefined ? call.argumentsText : subagentFullText(report);
   }
@@ -609,7 +618,8 @@ ${shown}`,
         const raw = await this.#rawOutput(entry.outputRef);
         const call = raw.toolCalls.find((candidate) => candidate.toolCallId === entry.toolCallId);
         if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
-        const body = messageTextOf(call.argumentsText);
+        // A long text is shown by its beginning; the rest is read by the message's id.
+        const body = messageShownText(messageTextOf(call.argumentsText), entry.toolCallId);
         const summary = messageSummaryOf(call.argumentsText);
         // What kind of message it is, and how to answer it (D25): a request is answered in the
         // round that reads it; an inform may be answered (Orchestration 5.3).

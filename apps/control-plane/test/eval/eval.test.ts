@@ -3,11 +3,15 @@
  * judged as they should be, a task that must fail is recorded as failed, the figures come out of
  * the log, and a regression is found by the rules.
  */
+import { existsSync } from 'node:fs';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { reply, scriptedChat } from '../acceptance/chat-driver.js';
 import { maxOverlap, metricsOf } from './metrics.js';
 import { DEFAULT_RULES, compare, summarize } from './report.js';
-import { runTask } from './runner.js';
+import { judgeRun, runTask } from './runner.js';
 import type { RunRecord, TaskSpec } from './spec.js';
 import { ALL_TASKS, select } from './tasks/index.js';
 
@@ -325,5 +329,84 @@ describe('reports and regressions', () => {
         'task is not in the new records',
       ]),
     );
+  });
+});
+
+describe('a run a person starts and watches, judged afterwards (prepare, judge)', () => {
+  const watched: TaskSpec = {
+    id: 'control.watched',
+    mode: 'mission',
+    tags: ['control'],
+    description: 'A mission judged from its repository, its log and what main replied.',
+    fixture: (repository) => writeFile(join(repository, 'README.md'), '# watched\n'),
+    steps: [{ run: 'say hello' }],
+    scripted: () => scriptedChat(reply('hello')),
+    judge: (observation) => [
+      { name: 'exited 0', angle: 'OUTCOME', ok: observation.exitCode === 0 },
+      {
+        name: 'one reply',
+        angle: 'BEHAVIOR',
+        ok: observation.printed('REPLY').length === 1,
+        detail: String(observation.printed('REPLY').length),
+      },
+      {
+        name: 'the repository is there',
+        angle: 'OUTCOME',
+        ok: existsSync(join(observation.repository, 'README.md')),
+      },
+    ],
+  };
+
+  it(
+    'records what the evaluation records of the same Session, and leaves the repository as it was',
+    async () => {
+      const archive = await mkdtemp(join(tmpdir(), 'mas-eval-archive-'));
+      const before = process.env['EVAL_ARCHIVE'];
+      process.env['EVAL_ARCHIVE'] = archive;
+      try {
+        const evaluated = await runTask(watched, 1, ENV);
+        const [folder] = await readdir(archive);
+        if (folder === undefined) throw new Error('nothing was kept');
+        // The kept run stands for a run of mas run: its data directory and its repository.
+        const kept = join(archive, folder);
+        const judged = await judgeRun(
+          watched,
+          1,
+          ENV,
+          { dataDir: kept, repository: join(kept, 'repository') },
+          0,
+        );
+        expect(judged.ok).toBe(true);
+        expect(judged.checks).toEqual(evaluated.checks);
+        expect(judged.metrics).toEqual(evaluated.metrics);
+        expect(judged.provider).toBe('real');
+        expect(judged.elapsedMs).toBeGreaterThanOrEqual(0);
+        const failed = await judgeRun(
+          watched,
+          2,
+          ENV,
+          { dataDir: kept, repository: join(kept, 'repository') },
+          1,
+        );
+        expect(failed.ok).toBe(false);
+        expect(failed.checks.find((each) => each.name === 'exited 0')?.ok).toBe(false);
+      } finally {
+        if (before === undefined) delete process.env['EVAL_ARCHIVE'];
+        else process.env['EVAL_ARCHIVE'] = before;
+        await rm(archive, { recursive: true, force: true });
+      }
+    },
+    TIMEOUT,
+  );
+
+  it('refuses a data directory that is not one run of its own', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'mas-eval-empty-'));
+    try {
+      await expect(
+        judgeRun(watched, 1, ENV, { dataDir: empty, repository: empty }, 0),
+      ).rejects.toThrow(/holds 0 Sessions/u);
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
   });
 });

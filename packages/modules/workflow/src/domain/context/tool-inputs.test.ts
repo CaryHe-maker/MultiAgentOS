@@ -283,6 +283,35 @@ describe('toolInputOf', () => {
         ok: false,
       });
     });
+
+    it('reads a message by its id, for a task it was sent to and no other (Orchestration 5.3)', () => {
+      const outputRef = testArtifactRef();
+      const sent = [
+        line({
+          type: 'MISSION_MESSAGE',
+          from: 'msn_api',
+          fromLabel: 'api',
+          to: ['msn_ui', 'msn_db'],
+          source: { modelTurnRequestId: newId('req'), outputRef, toolCallId: 'call_msg' },
+        }),
+      ];
+      const task = (missionId: string) =>
+        ({
+          kind: 'NODE',
+          workflowRunId: base.workflowRunId,
+          agentRunId: newId('agr'),
+          missionId,
+        }) as const;
+      for (const reader of ['msn_ui', 'msn_db'])
+        expect(toolInputOf('OUTPUT_READ', { toolCallId: 'call_msg' }, sent, task(reader))).toEqual({
+          ok: true,
+          input: { toolCallId: 'call_msg', fullRef: outputRef },
+          workflowFields: { fullRef: outputRef },
+        });
+      expect(
+        toolInputOf('OUTPUT_READ', { toolCallId: 'call_msg' }, sent, task('msn_other')),
+      ).toMatchObject({ ok: false, message: expect.stringContaining('no tool call') as string });
+    });
   });
 });
 

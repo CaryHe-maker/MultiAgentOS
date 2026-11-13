@@ -21,6 +21,12 @@ export interface ActivityLine {
   readonly label: string;
   /** The AgentRun that started this one, when it is a SubAgent. */
   readonly parentAgentRunId?: string;
+  /**
+   * The task this line is a segment of, and its parent task: the tree is drawn by tasks, so it
+   * stays whole while a task sleeps between segments (Orchestration 3.2).
+   */
+  readonly missionId?: string;
+  readonly parentMissionId?: string;
   /** The tree branch in front of the label (`├─ `), empty for a line without a parent. */
   readonly branch?: string;
   readonly phase: string;

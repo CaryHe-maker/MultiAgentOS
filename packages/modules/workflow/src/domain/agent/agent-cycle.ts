@@ -24,6 +24,7 @@ import type {
   WrapUpReason,
 } from '@multiagentos/contracts';
 import type { NewLogRecord } from '../../session/session-log-store.js';
+import { argsSummaryOf } from './tool-display.js';
 
 /**
  * One AgentRun as a pure state machine, the same for every Agent (Module/Workflow 7): every step returns the log
@@ -159,6 +160,12 @@ export interface AgentState {
   readonly consecutiveErrors: number;
   readonly noProgress: number;
   readonly regenerations: number;
+  /**
+   * Replies refused because a request read before was not answered (Orchestration 5.3). Counted
+   * apart from `regenerations`: a refusal of this kind does not take the AgentRun to its wrap-up;
+   * only the round limit bounds it.
+   */
+  readonly replyRefusals: number;
   /** How many times in a row the model was refused for the size of the context (Core 6a). */
   readonly overflows: number;
   readonly roundHadOk: boolean;
@@ -573,6 +580,7 @@ export function startAgent(
     consecutiveErrors: 0,
     noProgress: 0,
     regenerations: 0,
+    replyRefusals: 0,
     overflows: 0,
     roundHadOk: false,
     roundErrored: false,
@@ -770,6 +778,10 @@ function handleModel(
       records,
     );
   }
+  // A request read in an earlier round and still not answered: the reply is refused as a whole,
+  // todos included, before anything of it is taken (Orchestration 5.3).
+  const owed = repliesOwed(state, calls, context);
+  if (owed !== undefined) return refuseOwed(state, calls, context, records, owed);
   // The one control tool that goes with anything else, and it is handled first (M2Design 3.5).
   const todoTool = state.final ? undefined : state.definitions.todoTool;
   const isTodo = (call: ModelToolCall) => call.toolName === todoTool?.toolName;
@@ -948,6 +960,23 @@ function soleControlOf(
   return undefined;
 }
 
+/**
+ * A reply refused for a request it does not answer: every call gets its answer, and the next round
+ * begins. It is counted on its own (`replyRefusals`), not as a regeneration.
+ */
+function refuseOwed(
+  state: AgentState,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+  records: readonly NewLogRecord[],
+  text: string,
+): AgentTransition {
+  const replyRefusals = state.replyRefusals + 1;
+  const detail = `${text} (refused ${String(replyRefusals)} time${replyRefusals === 1 ? '' : 's'} so far)`;
+  const notes = calls.map((call) => feedback(state, 'REPLY_OWED', call.toolCallId, detail));
+  return nextRound({ ...state, replyRefusals }, context, [...records, ...notes]);
+}
+
 /** The refusal for requests still not answered, unless this reply answers them (or is the last). */
 function repliesOwed(
   state: AgentState,
@@ -1000,10 +1029,6 @@ function actOn(
   config: AgentConfig,
   records: NewLogRecord[],
 ): AgentTransition {
-  // A request read in an earlier round and still not answered: the reply is refused as a whole.
-  const owed = repliesOwed(state, calls, context);
-  if (owed !== undefined)
-    return invalidReply(state, 'REPLY_OWED', calls, context, config, records, owed);
   // A call that ends the round, starts tasks or waits must be alone; one that is answered at once
   // (a message, the task tree, a job) may come with ordinary tool calls (Orchestration 5.3).
   const controls = calls.flatMap((call) => soleControlOf(state, [call]) ?? []);
@@ -1169,9 +1194,10 @@ function startTool(
     records.push(feedback(state, 'TOOL_INPUT_REFUSED', call.toolCallId, completed.message));
     return { state };
   }
+  // The interface shows what the call does on its line; nothing of it goes into the log.
   const made = submission(state, tool.unit, completed.input, {
     toolName: tool.modelName,
-    argsSummary: '',
+    argsSummary: argsSummaryOf(call.arguments),
   });
   records.push({
     ...(made.record as Extract<NewLogRecord, { type: 'UNIT_SUBMITTED' }>),

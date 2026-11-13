@@ -122,6 +122,18 @@ pnpm run eval compare records/before.jsonl records/after.jsonl --fail-on-regress
 
 已经记录过的运行（同一任务、同一次、同一版本）会被跳过，所以中断后可以重新运行。运行是顺序的：真实模型的评测占内存与请求额度，不并行。
 
+**看着它跑**（2026-11-14）：`run` 在进程里驱动产品，没有界面。mission 任务也可以由人用 `mas run` 带界面运行，事后按同样的评分记下：
+
+```bash
+# 准备与评测时相同的仓库和一个只给这次运行用的数据目录，并打印运行与评分的命令
+pnpm run eval prepare --tasks study.healthhub --repo ~/hh --data ~/hh-data
+# 按打印出的命令运行：MULTIAGENTOS_CONFIG 指向数据目录，结束后退出码写进 ~/hh-data.exit
+# 评分：同一个评分函数（在仓库的副本上做，隐藏测试不留在仓库里），指标取自会话日志，追加与 run 相同的记录
+EVAL_ARCHIVE=~/eval-records/study3-archive pnpm run eval judge --tasks study.healthhub --repo ~/hh --data ~/hh-data --exit "$(cat ~/hh-data.exit)" --out ~/eval-records/study3.jsonl
+```
+
+两种方式的差别只有两处：授权询问由人回答，而不是一律同意；记录里 `provider` 为 `real`，请求预算不由评测控制（`mas` 自己的额度照常）。`judge` 要求数据目录里只有这一次运行的会话。
+
 ## 9. 规矩
 
 - 真实模型评测带 `--yes` 与请求预算，密钥不写入记录。

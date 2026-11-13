@@ -17,6 +17,9 @@ import {
   type HandoverParty,
   type InterruptReason,
   DEFAULT_SLEEP_SECONDS,
+  MESSAGE_SHOWN_CHARS,
+  MESSAGE_SHOWN_LINES,
+  messageIsLong,
   type SendMessageArgs,
   type SleepArgs,
   type JobKillArgs,
@@ -58,6 +61,7 @@ import {
   type ControlSource,
   type EndAction,
 } from '../domain/agent/agent-cycle.js';
+import { controlLineOf } from '../domain/agent/tool-display.js';
 import {
   analysisFacts,
   degradedReportBody,
@@ -1568,7 +1572,7 @@ export class SessionRunner {
           final,
           ...(withdrawnTools.length === 0 ? {} : { withdrawnTools: [...withdrawnTools] }),
           ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
-          history: [...projectHistory(this.#records, scope)],
+          history: [...projectHistory(this.#records, scope, { final })],
           status,
         };
       },
@@ -1833,11 +1837,36 @@ export class SessionRunner {
       if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
         throw new Error(`submitUnit refused: ${response.reasonCode}`);
     }
+    // A control call runs no Unit: the interface is told of it, while the AgentRun still runs.
+    for (const control of [
+      ...(transition.ending === undefined ? [] : [transition.ending]),
+      ...(transition.controls ?? []),
+    ])
+      await this.#showControl(workflowRunId, agentRunId, control);
     if (transition.ending !== undefined)
       await this.#onEnding(workflowRunId, agentRunId, transition.ending);
     // Control calls that came with the round's Units: each is answered, one after another.
     for (const control of transition.controls ?? [])
       await this.#onEnding(workflowRunId, agentRunId, control);
+  }
+
+  /** Only for the interface: a line for a control call (send_message, sleep, run_subagents, ...). */
+  async #showControl(
+    workflowRunId: string,
+    agentRunId: string,
+    ending: AgentEnding,
+  ): Promise<void> {
+    const active = this.#agents.get(agentRunId);
+    const step = active === undefined ? undefined : controlLineOf(active.state.definitions, ending);
+    if (step === undefined) return;
+    const sessionId = this.#sessionIdOrThrow();
+    // What the interface misses is no reason to stop the work: a refusal is left as it is.
+    await this.#deps.gateway
+      .updateActivity(
+        { requestId: newId('req'), sessionId, workflowRunId, agentRunId, step },
+        contextOf(sessionId, workflowRunId),
+      )
+      .catch(() => undefined);
   }
 
   /**
@@ -1886,7 +1915,10 @@ export class SessionRunner {
     await this.#loadNestedInstructions(workflowRunId, active.state.agentRunId, active.scope);
     return {
       ...request,
-      input: { ...request.input, history: [...projectHistory(this.#records, active.scope)] },
+      input: {
+        ...request.input,
+        history: [...projectHistory(this.#records, active.scope, { final: active.state.final })],
+      },
     };
   }
 
@@ -2616,6 +2648,27 @@ export class SessionRunner {
         withdraw,
       );
     }
+    // A task taken up again (`continues`) is an ended task of this caller's, in this run, run by
+    // the same Agent: its history must be one this Agent can go on from (Orchestration 5.3).
+    const continued = new Map<string, string>();
+    const missions = projectMissions(this.#records);
+    const inRun = projectGraph(this.#records, workflowRunId).nodes;
+    for (const task of checked.plan.tasks) {
+      if (task.continues === undefined) continue;
+      const before = childrenOf(missions, active.missionId)
+        .filter((each) => each.name === task.continues)
+        .at(-1);
+      const inThisRun = [...inRun.values()].some((node) => node.mission?.id === before?.missionId);
+      if (before === undefined || before.ended === undefined || !inThisRun)
+        return refuse(
+          `CONTINUES (${task.name}): continues names a task you started in this run that has ended; ${task.continues} is not one. Nothing was started.`,
+        );
+      if (before.agentId !== task.agent)
+        return refuse(
+          `CONTINUES (${task.name}): ${task.continues} ran as ${before.agentId}, and goes on as one; set agent to ${before.agentId}. Nothing was started.`,
+        );
+      continued.set(task.name, before.missionId);
+    }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
     if (lent.kind === 'REFUSED') return refuse(lent.text);
@@ -2648,6 +2701,7 @@ export class SessionRunner {
       checked.plan.tasks,
       lent.reserved,
       submission,
+      continued,
     );
   }
 
@@ -2776,6 +2830,8 @@ export class SessionRunner {
     tasks: SpawnPlan['tasks'],
     reserved: DelegationReserved,
     submission?: NonNullable<SpawnNode['submission']>,
+    /** The ended task each continuing task takes up, by task name. */
+    continued: ReadonlyMap<string, string> = new Map(),
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -2795,6 +2851,9 @@ export class SessionRunner {
         spawn: {
           ...spawnNodeOf(task, shares.get(task.name)),
           ...(submission === undefined ? {} : { submission }),
+          ...(continued.get(task.name) === undefined
+            ? {}
+            : { continues: { missionId: continued.get(task.name) ?? '' } }),
         },
       })),
     );
@@ -3365,11 +3424,17 @@ export class SessionRunner {
         ),
       );
     const kind = args.kind ?? 'inform';
+    // A long text is not shown whole: the receiver reads its summary first (Orchestration 5.3).
+    if (messageIsLong(args.text) && (args.summary === undefined || args.summary.trim() === ''))
+      return answer(
+        true,
+        `Not sent: a text longer than ${String(MESSAGE_SHOWN_CHARS)} characters or ${String(MESSAGE_SHOWN_LINES)} lines needs a summary. The receiver is shown the summary and the beginning, and reads all of it with read_output.`,
+      );
     // A reply is owed (Orchestration 5.3), so it never runs into the limit of a segment.
     if (kind !== 'reply' && active.messages >= MAX_MESSAGES_PER_SEGMENT)
       return answer(
         true,
-        `Not sent: at most ${String(MAX_MESSAGES_PER_SEGMENT)} messages in one segment. Write what is long into a file instead.`,
+        `Not sent: at most ${String(MAX_MESSAGES_PER_SEGMENT)} messages in one segment. Put what you still have to say into fewer messages: a message may be long.`,
       );
     const missions = projectMissions(this.#records);
     const me = missions.get(active.missionId);
@@ -3422,7 +3487,10 @@ export class SessionRunner {
           `Not sent: no child or sibling task is named ${args.to}. to is parent, children, siblings or the name of one of them.`,
         );
       if (!open(named))
-        return answer(true, `Not sent: task ${args.to} has already ended; it reads nothing more.`);
+        return answer(
+          true,
+          `Not sent: task ${args.to} has already ended; it reads nothing more.${named.parentId === me.missionId ? ` To give it more work with all it knows, start it again: run_subagents with a task that has continues: "${args.to}" and the same agent.` : ''}`,
+        );
       targets = [named];
     }
     if (targets.length === 0)

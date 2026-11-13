@@ -39,6 +39,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     deniedCommands: [],
     criticalCommands: [],
     readOnlyCommands: [...DEFAULT_READ_ONLY_COMMANDS],
+    approval: 'auto' as const,
   }),
   web: Object.freeze({
     deniedDomains: [],
@@ -61,10 +62,10 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     summaryReasoningEffort: 'none' as const,
   }),
   killGraceMs: 2_000,
-  maxConcurrentExec: 1,
-  maxConcurrentAttempts: 6,
+  maxConcurrentExec: 4,
+  maxConcurrentAttempts: 12,
   maxConcurrentWeb: 10,
-  providerCapacity: 3,
+  providerCapacity: 8,
   serialExecution: false,
   memory: Object.freeze({ sampleIntervalMs: 1_000, warningRatio: 0.75, dangerRatio: 0.9 }),
   budget: Object.freeze({

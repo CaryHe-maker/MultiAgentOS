@@ -804,7 +804,7 @@ Lease = Core 为一个 UnitAttempt 签发的执行许可：能力在上限之内
 | `web.search` | 不确定 | 无（整个能力） | 每个 WorkflowRun 第一次使用时询问一次；可以回答"这个文件夹以后都允许"，之后在这个文件夹里不再询问（只此一项，见 Kernel/Core 5f） |
 | `web.fetch` | 不确定 | 域名 | 每个新域名第一次访问时询问一次；可以回答"本次运行内所有公开网站"，之后本运行内不再询问任何公开域名（不跨运行）；私网、回环、链路本地、云元数据地址直接拒绝（`ADDRESS_FORBIDDEN`），不提供询问，也不受"所有公开网站"影响 |
 | `external.read` | 危险 | 外部仓库的根目录（绝对路径；见 Kernel/Core 5h 的授权范围规则） | 每个 WorkflowRun 内，每个外部仓库第一次读取时询问一次，一个回答覆盖三个外部读取工具（`list_external_files`、`read_external_file`、`search_external_repository`）和这个目录下的全部子目录；询问标注【只读访问外部文件】，写明授权的目录、内容会发给模型提供方、排除规则仍然生效；不设白名单，不跨运行；只有 main 的能力白名单中有它，`readonly` 预设下去掉。系统不提供任何工作区之外的路径，路径必须由用户或已读的文件给出；根目录与系统目录、`$HOME` 本身及其点号文件、系统数据目录一律拒绝，拒绝与"不存在"返回同一个错误 |
-| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | 默认每次询问；只读名单上的命令行例外（见下文"只读名单"） |
+| `command.exec` | 危险 | 规范化后的命令（按语法树拆成子命令，并带上工作目录，见下文"命令的拆分"） | `approval: auto`（缺省）时沙盒内、不联网、可靠解析的命令在本运行同意过读写后不再询问（见下文"自动审核"）；`ask` 时每次询问；只读名单上的命令行例外（见下文"只读名单"） |
 | `command.exec`：任一子命令命中 `kernel.criticalCommands` | 危险（沙盒可用时）；极危险（`ask-unisolated`，第 6.2 节） | 本次命令 | 每次询问，不提供两个"均允许"选项，以警示样式显示。缺省列表：`git push`、`git remote`、`npm publish`、`pnpm publish`、`yarn publish`、`cargo publish`、`docker push`、`gh`；列表可追加，不可删除缺省项。名单只是界面分类，不是安全边界（见下文） |
 | `command.network` | 极危险 | 本次命令 | `run_command` 的参数 `network: true` 时需要，与 `command.exec` 一起判定，每次单独询问；只有 main 的能力白名单中有这项能力。**与 `web.search`、`web.fetch` 完全隔离**：网页的任何授权（包括"所有公开网站"和"这个文件夹"）都不影响命令联网的判定 |
 | `workspace.write`：目标为任一目录中的 `AGENTS.md`（根目录与子目录，排除规则命中的目录除外） | 极危险 | 本次写入 | 每次修改单独询问；只能经 `write_file`、`edit_file`，命令无法写入（第 6.1 节） |
@@ -848,6 +848,13 @@ Architecture 中"危险行为每次都必须单独征得用户同意"在 M2 中�
 - 不适用的情况：沙盒不可用、`network: true`；用户拒绝过本 AgentRun 的 `repo.read` 时，同一命令行按普通命令询问；用户拒绝过的这一条命令仍然被拒。
 - 每一次这样的放行写入审计（`COMMAND_READ_ONLY`：请求、AgentRun、命令、工作目录）。
 - 没有用 Executor 重新实现 `ls`、`cat`：输出格式、退出码、错误信息与管道组合都要逐字复现，且永远补不完；真实运行并让沙盒来保证只读，输出就是真实的。
+
+**自动审核**（`kernel.command.approval`，缺省 `auto`，2026-11-14，参考 Claude Code 的 auto 模式；写 `ask` 恢复逐条询问）：
+安全边界是沙盒与不联网，不是命令名单。沙盒可用、不联网、没有命中 `deniedCommands` 与 `criticalCommands`、能可靠解析（`unreusable` 为空）的命令，
+后果只在仓库里：读到的与 `read_file` 相同，写只能写本 AgentRun 的可写根目录，与 `write_file` 相同。所以它要的也是同样两个答复：
+本运行的 `repo.read` 与覆盖可写根目录的 `workspace.write`，都有了就**不再单独询问**，直接运行；缺哪个先问哪个（每个运行各一次）。
+联网、高危名单、沙盒不可用、解析不可靠的命令照常每次询问；用户拒绝过的命令仍被拒绝。每次自动放行写入审计（`COMMAND_AUTO_APPROVED`：请求、AgentRun、命令、工作目录）。
+判定顺序中它位于第 ④ 步之后、第 ⑤ 步之前（`decideCommand` 的 ④c）。
 
 **极危险级的询问选项**：只有单次允许与拒绝。不提供任何"均允许"，批准不继承、不复用，每个 UnitAttempt 单独询问；询问界面以警示样式显示。
 
@@ -971,7 +978,7 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 | 风险 | 机制 |
 |---|---|
 | 两个 AgentRun 写同一文件 | 派生与模板编译时校验 `writeScope` 不相交（第 3.6、3.8 节）；登记时由 Kernel 按下文的写入占用规则强制检查；准入时检查写入路径；沙盒只挂载各自的范围 |
-| 命令之间互相干扰（端口、构建目录、锁文件） | 同一 WorkflowRun 内同一时刻至多一个 EXEC（`kernel.maxConcurrentExec = 1`） |
+| 命令之间互相干扰（端口、构建目录、锁文件） | 每条命令有自己的网络命名空间（`--unshare-net`），端口不相撞；可写根目录相交的命令不同时运行，不相交的至多 `kernel.maxConcurrentExec`（缺省 4）条同时运行，沙盒不可用时一次一条（2026-11-14 由全局一次一条改为按写入范围） |
 | 同一 AgentRun 对同一文件的并发编辑 | WRITE 是屏障（第 7.1 节）；Executor 内再按规范化路径加锁；`FILE_CHANGED` 的 SHA 校验 |
 | 读取之后文件被并行任务或命令改动 | 校验 `edit_file` 时，Workflow 查找该路径在当前上下文中最近一次仍然可见的读取结果：找不到就以 FEEDBACK 要求先读取，不提交；找到就把它的 SHA 作为 `baseSha` 填入 UnitIntent（由 Workflow 填写，模型不能提供）。Executor 只比较磁盘内容的 SHA 与 `baseSha`，不一致返回 `FILE_CHANGED` |
 | 新建文件时被并行任务抢先创建 | Workflow 为新建填入 `expectAbsent: true`；写入时文件已存在则返回 `FILE_CHANGED`，不覆盖 |
@@ -1007,13 +1014,13 @@ M2 保持 Kernel 业务无关、拓扑无关：Kernel 只依据 ID、能力、�
   - MODEL：模型调用。
 - 同一 AgentRun 的队列中，相邻的 READ 并行执行；WRITE 与 EXEC 是屏障，要等它前面的全部 Unit 结束才执行，它结束之后后面的 Unit 才开始。
 - 不同 AgentRun 的队列并行执行，受三项全局约束：
-  - `kernel.maxConcurrentAttempts`（缺省 6，不数网页）；
+  - `kernel.maxConcurrentAttempts`（缺省 12，不数网页；2026-11-14 由 6 改为 12，模型调用也算在内，否则提高 `providerCapacity` 不起作用）；
   - `kernel.maxConcurrentWeb`（缺省 10，网页的搜索与抓取自己的池，超出的排队）；
-  - `kernel.maxConcurrentExec`（缺省 1）；
-  - Scheduler 按 `kernel.providerCapacity`（缺省 3）分配模型调用机会。
+  - `kernel.maxConcurrentExec`（缺省 4；2026-11-14 由 1 改为 4）：同时运行的命令，且它们的可写根目录两两不相交；不知道可写根的命令（沙盒不可用）独占；
+  - Scheduler 按 `kernel.providerCapacity`（缺省 8；2026-11-14 由 3 改为 8：healthhub 的 9 个 Agent 大多在等调用机会，在途的模型调用只占一个流式连接）分配模型调用机会。
 - `kernel.serialExecution`（缺省 `false`）是总开关，开启时所有 Unit 都视为屏障，全局并发为 1。用于排查竞态，CI 中开与关各跑一遍。
 - **改动检测**：Execution 在每次 WRITE 与 EXEC 前后扫描该 AgentRun 的可写范围，复用 M1 按 `(dev, ino, size, mtime, ctime)` 建立的摘要缓存，只重新计算变化过的文件，
-  把新增、修改、删除的文件列表放进 UnitReport。并行任务的可写范围不相交，EXEC 又是全局串行，所以改动能准确归到发起者。被排除的目录（如 `node_modules`）只报告变化的文件数量。
+  把新增、修改、删除的文件列表放进 UnitReport。并行任务的可写范围不相交，同时运行的命令的可写根也两两不相交，每次扫描只扫发起者自己的可写范围，所以改动能准确归到发起者。被排除的目录（如 `node_modules`）只报告变化的文件数量。
 - 并发计数与 EXEC 互斥在授权通过、UnitAttempt 真正派发时才占用；等待授权、排队、因暂停而保留的尝试都不占用。
 - 被取消的 UnitAttempt 要等 Supervisor 确认停止后才释放并发计数与 EXEC 互斥。
 
@@ -1732,7 +1739,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 6. 每个已登记的 AgentRun 都能完成收尾：它的收尾额度在登记时已经预留，且至多一次 final-call。
 7. 节点状态、就绪集合、模型上下文都是会话日志的纯函数（压缩的结果也在日志中）；重放任意前缀，得到与运行时相同的结果；重建只需要长期保留类别的正文。
 8. 日志只追加；撤销、中断、修复都以追加记录表达。
-9. 处于运行状态的 AgentRun，写入占用两两不相交；父 AgentRun 的占用在派生期间转为委派，此时它的 WRITE 与 EXEC 一律被拒绝；同一 WorkflowRun 内同一时刻至多一个 EXEC。
+9. 处于运行状态的 AgentRun，写入占用两两不相交；父 AgentRun 的占用在派生期间转为委派，此时它的 WRITE 与 EXEC 一律被拒绝；同时运行的 EXEC 可写根两两不相交，至多 `kernel.maxConcurrentExec` 条；沙盒不可用时同一时刻至多一个 EXEC。
 10. 被打断的 EXEC 不会被自动重跑；已完成的 Unit 在继续时不会重做。
 11. 授权与检查出错时一律拒绝；授权询问一直等到用户回答，沉默既不视为同意，也不视为拒绝。
 12. 凭据不进入子进程环境、模型上下文与普通日志。

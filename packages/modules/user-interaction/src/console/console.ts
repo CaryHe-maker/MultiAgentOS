@@ -171,20 +171,28 @@ function isCommandLine(input: string): boolean {
 
 /** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
-  T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
+  T extends {
+    readonly agentRunId: string;
+    readonly parentAgentRunId?: string | undefined;
+    readonly missionId?: string | undefined;
+    readonly parentMissionId?: string | undefined;
+  },
 >(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
-  const known = new Set(items.map((item) => item.agentRunId));
+  // A line is a task when it says which one, else its AgentRun; its parent likewise.
+  const idOf = (item: T) => item.missionId ?? item.agentRunId;
+  const parentOf = (item: T) =>
+    item.missionId !== undefined ? item.parentMissionId : item.parentAgentRunId;
+  const known = new Set(items.map(idOf));
   const ordered: { item: T; depth: number; branch: string }[] = [];
   const visit = (parent: string | undefined, depth: number, indent: string): void => {
-    const siblings = items.filter((item) =>
-      parent === undefined
-        ? item.parentAgentRunId === undefined || !known.has(item.parentAgentRunId)
-        : item.parentAgentRunId === parent,
-    );
+    const siblings = items.filter((item) => {
+      const above = parentOf(item);
+      return parent === undefined ? above === undefined || !known.has(above) : above === parent;
+    });
     for (const [index, item] of siblings.entries()) {
       const last = index === siblings.length - 1;
       ordered.push({ item, depth, branch: depth === 0 ? '' : `${indent}${last ? '└─ ' : '├─ '}` });
-      visit(item.agentRunId, depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+      visit(idOf(item), depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
     }
   };
   visit(undefined, 0, '');
@@ -1442,12 +1450,23 @@ export class Console {
             label: terminalText(event.label),
             from: event.at,
           });
-        if (event.phase === 'ENDED' && entry !== undefined) entry.to = event.at;
+        // A segment ends when its task sleeps, as when it ends.
+        if ((event.phase === 'ENDED' || event.phase === 'SLEEPING') && entry !== undefined)
+          entry.to = event.at;
+        // A task woken again: its new segment takes the place of the line it slept on.
+        if (event.missionId !== undefined)
+          for (const [agentRunId, line] of this.#activity)
+            if (line.missionId === event.missionId && agentRunId !== event.agentRunId)
+              this.#activity.delete(agentRunId);
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
           ...(event.parentAgentRunId === undefined
             ? {}
             : { parentAgentRunId: event.parentAgentRunId }),
+          ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+          ...(event.parentMissionId === undefined
+            ? {}
+            : { parentMissionId: event.parentMissionId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           // Waiting for the user is not work that is taking long: no seconds are counted for it.

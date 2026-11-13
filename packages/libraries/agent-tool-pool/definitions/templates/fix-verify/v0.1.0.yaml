@@ -42,7 +42,7 @@ playbook:
         Finish with the cause, the change, the output of the last check and, when it still fails,
         what was tried and what you think is left.
   example: |-
-    Brief (from the root of a flight booking system): goal "test_cancel_refunds fails: a
+    Example 1. Brief (from the root of a flight booking system): goal "test_cancel_refunds fails: a
     cancelled booking stays charged. bookings should send booking_cancelled
     (contracts/events.py) and payments refund on it; find which side breaks and fix it";
     check "python3 -m unittest tests.e2e.test_bookings -v"; maxRounds 2; writeScope
@@ -63,3 +63,24 @@ playbook:
     report: finish_subagent status done; summary "bookings wrote booking_cancelled before the
     cancel was saved and the publisher skipped it; both are now saved in one transaction,
     cancel first; tests.e2e.test_bookings: 9 passed"; changed services/bookings/cancel.py.
+
+    Example 2. Brief: goal "parse_date returns the wrong day for dates before 1970 since the
+    switch to the new time library"; check "pytest tests/test_dates.py -q"; maxRounds 2;
+    writeScope ["src/dates.py", "tests/test_dates.py"].
+    reproduce: the check fails in test_before_epoch: 1969-12-31 comes back as 1970-01-01. In
+    src/dates.py parse_date divides a negative number of seconds with // and then takes the
+    remainder of the absolute value, so negative days round toward zero.
+    fix (round 1): one worker "epoch-floor" with the cause and "keep the output for every date
+    after 1970 as it is". Check: passed.
+    report: finish_subagent status done: negative timestamps were rounded toward zero; fixed
+    in src/dates.py; tests/test_dates.py passes.
+
+    Example 3. Brief: goal "the build of the web app fails since the upgrade of the bundler";
+    check "npm run build"; maxRounds 3; writeScope ["web/"].
+    reproduce: the build stops at "Cannot use import statement outside a module" in
+    web/scripts/icons.js, which the new bundler loads as CommonJS.
+    fix (round 1): a worker renames it to icons.mjs and updates the import; the build now
+    stops at a missing export in web/src/theme.ts. Round 2: a worker exports the theme as the
+    error asks, with what round 1 learned; the build passes.
+    report: finish_subagent status done with both causes, both changes and the last build
+    output.

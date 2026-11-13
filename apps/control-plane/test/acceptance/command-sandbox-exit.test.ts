@@ -104,12 +104,26 @@ const kernel =
   (over: Partial<SystemConfig['kernel']>) =>
   (config: SystemConfig): SystemConfig => ({ ...config, kernel: { ...config.kernel, ...over } });
 
+/** These cases are about the questions: commands are asked about one by one (M2Design 5.2). */
+const approving = (config: SystemConfig, approval: 'ask' | 'auto'): SystemConfig => ({
+  ...config,
+  kernel: { ...config.kernel, command: { ...config.kernel.command, approval } },
+});
+
 async function chatOn(
   place: Place,
   provider: ScriptedChat,
   options: Partial<ChatOptions> = {},
+  approval: 'ask' | 'auto' = 'ask',
 ): Promise<Chat> {
-  const chat = await openChat({ ...place, provider, ...options });
+  const own = options.configure ?? ((each: SystemConfig) => each);
+  const chat = await openChat({
+    ...place,
+    provider,
+    ...options,
+    // Set last: a case that gives its own command lists keeps the approval it is about.
+    configure: (config) => approving(own(config), approval),
+  });
   open.push(chat);
   traces.push({ chat, provider });
   return chat;
@@ -181,6 +195,29 @@ async function sayAndSettle(chat: Chat, text: string, ms = 600): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 
 real('C: running a command, in the sandbox', () => {
+  it(
+    'runs a safe command without a question of its own once the run may write (approval auto)',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run('echo one > one.txt'),
+        run('echo two > two.txt && cat one.txt two.txt'),
+        reply('done'),
+      );
+      const chat = await chatOn(place, provider, {}, 'auto');
+      await chat.say('run them');
+      // The two questions of a run at most (reading, writing), and none about either command.
+      expect(chat.questions.length).toBeLessThanOrEqual(2);
+      for (const question of chat.questions) {
+        expect(question).not.toContain('echo one');
+        expect(question).not.toContain('cat one.txt');
+      }
+      expect(lastResult(provider)).toContain('two');
+      expect(await readFile(join(place.repository, 'two.txt'), 'utf8')).toBe('two\n');
+    },
+    TIMEOUT,
+  );
+
   it(
     'runs after one question that shows the command, and the output reaches the model',
     async () => {

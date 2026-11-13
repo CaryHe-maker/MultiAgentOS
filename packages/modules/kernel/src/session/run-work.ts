@@ -130,6 +130,8 @@ export interface CommandSupport {
   /** What the probe at the start of the Session found. */
   readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
   readonly unavailablePolicy: 'deny' | 'ask-unisolated';
+  /** `kernel.command.approval`: whether a safe command runs without a question (M2Design 5.2). */
+  readonly approval?: 'ask' | 'auto';
   readonly homeReadOnly: readonly string[];
   readonly homeMaskedFiles: readonly string[];
   /** Hidden from commands when it lies outside the home directory (M2Design 6.1). */
@@ -818,7 +820,18 @@ export class RunWork {
     // The activity tree hangs a segment below the segment of its parent task that runs now.
     const shownParent =
       mission.parent === undefined ? undefined : this.#missions.get(mission.parent)?.active;
-    this.#activity.registered(agentRunId, request.display.label, shownParent);
+    // Only a real task is told: without one, the AgentRun stands for its own task (Core 5a).
+    this.#activity.registered(
+      agentRunId,
+      request.display.label,
+      shownParent,
+      request.mission === undefined
+        ? undefined
+        : {
+            missionId,
+            ...(mission.parent === undefined ? {} : { parentMissionId: mission.parent }),
+          },
+    );
     this.#clocks.register(agentRunId, pinned.agent.maxWallClockMs);
     return this.#accept(requestId, request);
   }
@@ -835,9 +848,11 @@ export class RunWork {
     record.state = 'ENDED';
     record.endedAt = this.#deps.now().toISOString();
     this.#clocks.end(agentRunId);
-    this.#activity.ended(agentRunId);
     const mission = this.#missions.get(record.mission);
     const continues = request.missionContinues === true;
+    // A task that sleeps keeps its line in the activity area; one that ends loses it.
+    if (continues) this.#activity.sleeping(agentRunId);
+    else this.#activity.ended(agentRunId);
     if (mission !== undefined) {
       mission.active = undefined;
       if (!continues) mission.closed = true;
@@ -1102,6 +1117,7 @@ export class RunWork {
     if (mission === undefined || mission.closed) return this.#accept(requestId, request);
     if (mission.active !== undefined) return this.#refuse(requestId, request, 'MISSION_BUSY');
     mission.closed = true;
+    this.#activity.missionClosed(missionId);
     if (mission.funded) this.#deps.ledgers.closeTask(missionId);
     this.#delegations.childEnded(missionId);
     return this.#accept(requestId, request);
@@ -1181,6 +1197,7 @@ export class RunWork {
   async #decide(waiting: WaitingUnit): Promise<void> {
     const { request, unit, record } = waiting;
     let readOnly = false;
+    let auto = false;
     let external: ExternalResolution | undefined;
     for (const capability of unit.protectedCapabilities) {
       const path = pathOf(request.input);
@@ -1209,6 +1226,7 @@ export class RunWork {
         record.ceiling,
       );
       if (decision.kind === 'ALLOW' && decision.readOnly === true) readOnly = true;
+      if (decision.kind === 'ALLOW' && decision.auto === true) auto = true;
       if (decision.kind === 'REFUSE') {
         this.#refuseUnit(request, unit, { reasonCode: decision.reasonCode });
         return;
@@ -1218,6 +1236,15 @@ export class RunWork {
         return;
       }
     }
+    // Every command that ran without a question is in the audit, with what it was.
+    if (auto && 'command' in request.input)
+      this.#deps.audit({
+        type: 'COMMAND_AUTO_APPROVED',
+        requestId: request.requestId,
+        agentRunId: request.agentRunId,
+        command: request.input.command,
+        workdir: request.input.workdir,
+      });
     await this.#startAttempt(request, unit, record, readOnly, external?.ok ? external : undefined);
   }
 
@@ -1296,6 +1323,7 @@ export class RunWork {
       sandbox: support.sandbox(),
       unavailablePolicy: support.unavailablePolicy,
       repoReadGranted: this.#authorization.lease !== undefined,
+      ...(support.approval === undefined ? {} : { approval: support.approval }),
     };
   }
 
@@ -1769,12 +1797,13 @@ export class RunWork {
 
   /** Only for the interface: goes into the AgentRun's next ActivityEvents as it came. */
   updateActivity(request: UpdateActivityRequest): Response {
-    const { requestId, agentRunId, todos } = request;
+    const { requestId, agentRunId, todos, step } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
     if (this.#agentRuns.get(agentRunId)?.state !== 'ACTIVE')
       return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
-    this.#activity.todos(agentRunId, todos);
+    if (todos !== undefined) this.#activity.todos(agentRunId, todos);
+    if (step !== undefined) this.#activity.step(agentRunId, step);
     return this.#accept(requestId, request);
   }
 

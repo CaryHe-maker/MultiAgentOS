@@ -73,6 +73,16 @@ export const JobListArgsSchema = closed({}, 'workflow.JobListArgs.v1');
 export type JobListArgs = Static<typeof JobListArgsSchema>;
 
 /**
+ * A message is shown whole in the receiver's context up to this size (Orchestration 5.3). A longer
+ * one needs a summary: the receiver is shown the summary and the beginning, and reads all of it
+ * with read_output by the message's id, as it reads a long report of a subtask.
+ */
+export const MESSAGE_SHOWN_CHARS = 8000;
+export const MESSAGE_SHOWN_LINES = 200;
+/** How much of a long message is shown before the note that says how to read all of it. */
+export const MESSAGE_HEAD_CHARS = 2000;
+
+/**
  * Parameters of `send_message` (Orchestration 5): to the parent, all children, all siblings, or a
  * child or sibling by its task name. The text is material for the receiver, never an instruction
  * it has to follow, and it carries no permission.
@@ -86,9 +96,10 @@ export const SendMessageArgsSchema = closed(
      * task (`replyTo`), and goes to its sender whatever `to` says (D25).
      */
     kind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
-    /** What the receiver reads first: one or two lines. */
+    /** What the receiver reads first: one or two lines. Needed for a long text. */
     summary: Type.Optional(text(300)),
-    text: text(4000),
+    /** No hard limit: a long text is read in pages by the receiver (MESSAGE_SHOWN_CHARS). */
+    text: Type.String({ minLength: 1 }),
     /**
      * Tool calls of the sender's own, handed over with the message: the receiver reads them with
      * read_output (`ref_N/<toolCallId>`). Only to one task.
@@ -122,3 +133,28 @@ export const StopSubagentsArgsSchema = closed(
   'workflow.StopSubagentsArgs.v1',
 );
 export type StopSubagentsArgs = Static<typeof StopSubagentsArgsSchema>;
+
+/** Whether a message is too long to be shown whole, and so needs a summary. */
+export function messageIsLong(text: string): boolean {
+  return text.length > MESSAGE_SHOWN_CHARS || text.split('\n').length > MESSAGE_SHOWN_LINES;
+}
+
+/**
+ * What the receiver is shown of the text of a message: all of it when it fits, otherwise its
+ * beginning and how to read the rest (the summary is shown apart, before it).
+ */
+export function messageShownText(text: string, toolCallId: string): string {
+  if (!messageIsLong(text)) return text;
+  const lines = text.split('\n').length;
+  return `${text.slice(0, MESSAGE_HEAD_CHARS)}\n[the message is ${String(lines)} lines and ${String(text.length)} characters, too long to show here; read all of it with read_output, toolCallId ${toolCallId}]`;
+}
+
+/** The whole message as `read_output` pages through it: the summary, then the text. */
+export function messageFullText(message: {
+  readonly summary?: string;
+  readonly text: string;
+}): string {
+  return message.summary === undefined || message.summary.trim() === ''
+    ? message.text
+    : `${message.summary}\n\n${message.text}`;
+}

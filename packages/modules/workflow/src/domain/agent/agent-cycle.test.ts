@@ -1,6 +1,8 @@
 import {
   ReplyArgsSchema,
   RepositoryListInputSchema,
+  SendMessageArgsSchema,
+  UpdateTodosArgsSchema,
   newId,
   validate,
   SubmitUnitRequestSchema,
@@ -950,5 +952,68 @@ describe('a pause or an abort cancels what is in flight (M2Design 4.4, 4.5)', ()
       records: [],
       submissions: [],
     });
+  });
+});
+
+describe('a request read before and not answered (Orchestration 5.3)', () => {
+  const owing: AgentContext = {
+    ...context,
+    owedReplies: (_agentRunId, answered) =>
+      answered.has('call_req') ? undefined : 'Not executed: you still have not answered call_req.',
+  };
+  const withTools = {
+    limits: { maxRounds: 20, maxToolCallsPerRound: 4 },
+    messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+    todoTool: { toolName: 'update_todos', parameters: UpdateTodosArgsSchema },
+  };
+  const answer = (from: AgentTransition, calls: readonly ModelToolCall[], ctx = owing) =>
+    receiveAgentReport(from.state, report(from.state, only(from), modelOutput(calls)), ctx, config);
+  const again = (from: AgentTransition) =>
+    receiveAgentReport(from.state, report(from.state, only(from), assembledOutput), owing, config);
+
+  it('refuses every call of the reply, and counts it apart from the regenerations', () => {
+    let current = atModel(withTools);
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      current = answer(current, [call('list_files', { path: 'a' }, `read_${String(attempt)}`)]);
+      const refusal = current.records.find(
+        (record) => record.type === 'FEEDBACK' && record.code === 'REPLY_OWED',
+      );
+      expect(refusal).toMatchObject({ toolCallId: `read_${String(attempt)}` });
+      expect(refusal?.type === 'FEEDBACK' ? refusal.message : '').toContain(
+        `refused ${String(attempt)} time`,
+      );
+      expect(unitId(current)).toEqual(['context-assemble']);
+      current = again(current);
+    }
+    expect(current.state).toMatchObject({ replyRefusals: 4, regenerations: 0 });
+    expect(current.state.wrapUpReason).toBeUndefined();
+  });
+
+  it('refuses a round of only todos as well', () => {
+    const todos = answer(atModel(withTools), [
+      call('update_todos', { todos: [{ content: 'read', status: 'in_progress' }] }, 'todo_1'),
+    ]);
+    expect(types(todos)).not.toContain('TODOS_UPDATED');
+    expect(todos.records).toContainEqual(
+      expect.objectContaining({ code: 'REPLY_OWED', toolCallId: 'todo_1' }),
+    );
+  });
+
+  it('takes a reply that answers it, with the other calls of the reply', () => {
+    const answered = answer(atModel(withTools), [
+      call('send_message', { to: 'api', kind: 'reply', replyTo: 'call_req', text: 'Got it.' }, 'm'),
+      call('list_files', { path: 'a' }, 'read'),
+    ]);
+    expect(answered.controls).toMatchObject([{ kind: 'MESSAGE', source: { toolCallId: 'm' } }]);
+    expect(unitId(answered)).toEqual(['repository-list']);
+    expect(answered.state.replyRefusals).toBe(0);
+  });
+
+  it('does not refuse the last call, which must be alone', () => {
+    const short = { ...withTools, limits: { maxRounds: 2, maxToolCallsPerRound: 4 } };
+    const refused = answer(atModel(short), [call('list_files', { path: 'a' }, 'read')]);
+    expect(refused.state.final).toBe(true);
+    const last = answer(again(refused), [call('reply', { text: 'done' }, 'end')]);
+    expect(last.ending).toMatchObject({ kind: 'ENDED', source: { toolCallId: 'end' } });
   });
 });

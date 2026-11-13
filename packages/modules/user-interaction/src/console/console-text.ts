@@ -340,6 +340,7 @@ export const ConsoleText = Object.freeze({
     PAUSED: '已暂停',
     COMPACTING: '正在压缩上下文',
     WRAPPING_UP: '收尾',
+    SLEEPING: '休眠中',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,
   runState: RUN_STATE,

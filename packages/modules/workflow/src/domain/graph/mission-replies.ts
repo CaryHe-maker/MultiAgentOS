@@ -104,12 +104,31 @@ export function owedReplies(
   return owed;
 }
 
-/** The note at the end of the context of a round that reads unanswered requests a second time. */
+/** Requests named in one note at most: a NOTE takes 2000 characters, an id and a name 64 each. */
+const LISTED = 8;
+
+/** What may go with the answers, and what may not: a call that must be alone waits a reply. */
+const WITH_OTHERS =
+  'The answers can go with ordinary tool calls; a call that must be alone (finishing, sleeping, starting tasks, asking the user, stopping tasks) goes in your next reply, after the answers.';
+
+/** The requests named, the first few of them when there are many. */
+function listOf(owed: readonly OwedReply[]): string {
+  const named = owed
+    .slice(0, LISTED)
+    .map((each) => `${each.toolCallId} (from ${each.fromLabel})`)
+    .join(', ');
+  const rest = owed.length - LISTED;
+  return rest > 0 ? `${named} and ${String(rest)} more` : named;
+}
+
+/**
+ * The note at the end of the context of a round that reads unanswered requests a second time. Not
+ * in a last round: its call must be alone, and it is not refused for what it leaves unanswered.
+ */
 export function replyReminder(owed: readonly OwedReply[]): string | undefined {
   const late = owed.filter((each) => each.seen >= REPLY_REMINDER_AT);
   if (late.length === 0) return undefined;
-  const list = late.map((each) => `${each.toolCallId} (from ${each.fromLabel})`).join(', ');
-  return `⚠ You have not answered ${late.length === 1 ? 'this request' : 'these requests'}: ${list}. Answer each in this reply with send_message kind reply and replyTo its id (a short acknowledgement is enough; it can go with your other calls). A reply without these answers is refused and none of its calls run.`;
+  return `⚠ You have not answered ${late.length === 1 ? 'this request' : 'these requests'}: ${listOf(late)}. Answer each in this reply with send_message kind reply and replyTo its id (a short acknowledgement is enough). ${WITH_OTHERS} A reply without these answers is refused and none of its calls run.`;
 }
 
 /** Why a reply is refused: requests read before and still not answered in it. */
@@ -121,6 +140,5 @@ export function replyRefusal(
     (each) => each.seen >= REPLY_REFUSAL_AT && !answered.has(each.toolCallId),
   );
   if (overdue.length === 0) return undefined;
-  const list = overdue.map((each) => `${each.toolCallId} (from ${each.fromLabel})`).join(', ');
-  return `Not executed: you still have not answered ${list}. None of the calls of this reply ran. Send send_message kind reply with replyTo ${overdue.length === 1 ? 'its id' : 'each id'} (a short acknowledgement is enough), together with the calls you still need.`;
+  return `Not executed: you still have not answered ${listOf(overdue)}. None of the calls of this reply ran. Send send_message kind reply with replyTo ${overdue.length === 1 ? 'its id' : 'each id'} (a short acknowledgement is enough). ${WITH_OTHERS}`;
 }

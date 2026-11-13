@@ -45,7 +45,7 @@ playbook:
         Read what changed, run the checks of the whole part yourself, and fix small things; then
         finish with what was found, the approach, what was built and how it was checked.
   example: |-
-    Brief (from the root of a flight booking system): goal "add seat selection: a booking holds
+    Example 1. Brief (from the root of a flight booking system): goal "add seat selection: a booking holds
     a chosen seat, the seat map shows which seats are free"; questions "how does flights store
     seats and their state today? how does bookings hold and release a seat, and in which
     events? what does the gateway route under /api/flights?"; writeScope ["services/flights/",
@@ -66,3 +66,27 @@ playbook:
     verify: I read both changes against SEATS.md, ran the unit tests of flights and bookings
     and the acceptance tests (all passed), and fixed one route name myself; finish_subagent
     status done with what was found, the interface, what was built and the checks.
+
+    Example 2. Brief: goal "add a --since flag to the export command"; questions "where does
+    export read its rows? is there already a date filter anywhere?"; writeScope ["cli/",
+    "tests/"].
+    explore: one explorer is enough for two small questions. It found that export reads rows
+    through store.rows() and that the report command already filters with
+    store.rows(since=...).
+    decide: reuse store.rows(since=...); no interface file is needed for one builder.
+    build: one worker "export-since" with that approach and the check "pytest tests/test_cli.py
+    -q". verify: I ran the tests and the command by hand; finish with the reuse found and the
+    change.
+
+    Example 3. Brief: goal "let the mobile app work offline: reads from a local cache, writes
+    queued until the network is back"; questions "how does the app fetch data today? where is
+    state kept? how are writes sent?"; writeScope ["app/src/"].
+    explore: three explorers, one per question, so their reading does not overlap. They found
+    one fetch wrapper (app/src/net/api.ts), state in a store per screen, and writes sent from
+    the screens directly.
+    decide: all reads and writes go through api.ts; it reads from a local cache first and
+    queues writes; wrote app/src/net/OFFLINE.md with the cache keys and the queue format.
+    build: two workers, "cache" (api.ts reads, the cache) and "queue" (writes, the queue,
+    moving the screens' writes to api.ts), with OFFLINE.md as their interface.
+    verify: ran the tests and the offline scenario of OFFLINE.md; finish with the design and
+    what was checked.

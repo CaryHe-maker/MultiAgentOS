@@ -40,6 +40,14 @@ export interface TaskScope {
   readonly withPrompt?: boolean;
   /** The playbook of a subMission's root, in words (Orchestration 3.9). */
   readonly playbook?: string;
+  /**
+   * The ended tasks this one takes up again (`continues`, Orchestration 5.3): their segments are
+   * its history, under the header of the earliest; its own goal answers their finishing call.
+   */
+  readonly continued?: {
+    readonly missions: readonly string[];
+    readonly first: Omit<TaskScope, 'continued'>;
+  };
 }
 
 /**
@@ -103,6 +111,11 @@ export interface ProjectionOptions {
    * never sees them, and an ordinary projection must stay as it is for the digest.
    */
   readonly material?: boolean;
+  /**
+   * The context is for a last round (M2Design 7.3): it is not reminded of unanswered requests,
+   * since its call must be alone and is not refused for them (Orchestration 5.3).
+   */
+  readonly final?: boolean;
 }
 
 /** The longest NOTE the contract takes. */
@@ -131,12 +144,26 @@ export function divergedNote(files: readonly string[]): string {
   return `${head}${named.join(', ')}${rest > 0 ? ` (and ${String(rest)} more; use git status to see them all)` : ''}`;
 }
 
+/** What a task taken up again is asked now, as the answer to the call it finished with. */
+function continuedText(task: TaskScope): string {
+  const lines = [
+    `Your result went to your caller, and it started you again on this task, with all your work above. What you are asked now: ${task.goal}`,
+  ];
+  if (task.acceptance.length > 0)
+    lines.push('Acceptance:', ...task.acceptance.map((each, index) => `${String(index)}. ${each}`));
+  if (task.writeScope.length > 0) lines.push(`You may write: ${task.writeScope.join(', ')}`);
+  lines.push('Finish again with your finishing call when it is done.');
+  return lines.join('\n');
+}
+
 export function projectHistory(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
   options: ProjectionOptions = {},
 ): readonly ContextHistoryEntry[] {
   const mainRuns = new Set<string>();
+  /** The AgentRuns of the ended tasks a continued task takes up. */
+  const pastRuns = new Set<string>();
   /** The AgentRun that runs a node: what a node-level record is read for. */
   const runOfNode = new Map<string, string>();
   const unitOwners = new Map<string, { toolCallId: string }>();
@@ -161,6 +188,12 @@ export function projectHistory(
         (target.agentRunId === scope.agentRunId || mainRuns.has(target.agentRunId));
   /** The task whose view this is, when it is one (Orchestration 3.4). */
   const ownMission = scope.missionId;
+  /** The ended tasks it takes up again (`continues`): their segments are its history too. */
+  const continued = scope.kind === 'NODE' ? scope.task?.continued : undefined;
+  const pastMissions = new Set(continued?.missions ?? []);
+  /** The calls of the last turn of those tasks: their finishing call is answered by the new goal. */
+  let pastCalls: readonly string[] = [];
+  let continuedNoted = false;
   /** What the view knows of every task: to tell a child's result and its last segment. */
   const missionInfo = new Map<
     string,
@@ -170,8 +203,14 @@ export function projectHistory(
   let taskShown = false;
   let treeShown = false;
   let planShown = false;
+  // A continued task has the parent of the task it takes up: before it exists, that one's.
   const ownParentOf = (): string | undefined =>
-    ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+    ownMission === undefined
+      ? undefined
+      : (
+          missionInfo.get(ownMission) ??
+          [...pastMissions].map((id) => missionInfo.get(id)).find((info) => info !== undefined)
+        )?.parentId;
   /** Siblings already told of, so a sibling is announced once (Orchestration 3.7). */
   const announced = new Set<string>();
   /** The order tasks were written in, for results delivered together (M2Design 3.6). */
@@ -242,29 +281,54 @@ export function projectHistory(
         runOfNode.set(record.nodeId, record.agentRunId);
         if (scope.kind === 'NODE') {
           // A task's view is every segment of it; without one, the AgentRun's own.
+          const past = record.missionId !== undefined && pastMissions.has(record.missionId);
           const member =
             ownMission !== undefined
-              ? record.missionId === ownMission || record.agentRunId === scope.agentRunId
+              ? record.missionId === ownMission || past || record.agentRunId === scope.agentRunId
               : record.agentRunId === scope.agentRunId;
           if (!member) break;
           mainRuns.add(record.agentRunId);
-          // The task is told once, at its first segment; a later one finds it above.
-          if (scope.task !== undefined && !taskShown) {
+          if (past) pastRuns.add(record.agentRunId);
+          // The task is told once, at its first segment; a later one finds it above. A continued
+          // task begins with the header of the task it takes up, as that task's context did.
+          const header = continued?.first ?? scope.task;
+          if (header !== undefined && !taskShown) {
             taskShown = true;
             entries.push({
               seq: record.seq,
               category: 'PINNED',
               kind: 'TASK',
-              name: scope.task.name,
-              agent: scope.task.agent,
-              goal: scope.task.goal,
-              acceptance: [...scope.task.acceptance],
-              writeScope: [...scope.task.writeScope],
-              inputs: [...scope.task.inputs],
-              ...(scope.task.playbook === undefined ? {} : { playbook: scope.task.playbook }),
+              name: header.name,
+              agent: header.agent,
+              goal: header.goal,
+              acceptance: [...header.acceptance],
+              writeScope: [...header.writeScope],
+              inputs: [...header.inputs],
+              ...(header.playbook === undefined ? {} : { playbook: header.playbook }),
             });
-            for (const dependency of scope.task.dependencies)
+            for (const dependency of header.dependencies)
               entries.push({ ...dependency, seq: record.seq });
+          }
+          // Its first own segment: the finishing call of the task it takes up is answered with
+          // what it is asked now, so the history stays whole and the new goal comes last.
+          if (
+            continued !== undefined &&
+            scope.task !== undefined &&
+            !continuedNoted &&
+            record.missionId === ownMission
+          ) {
+            continuedNoted = true;
+            const open = pastCalls.filter((id) => !answered.has(id));
+            open.forEach((toolCallId, index) => {
+              answered.add(toolCallId);
+              entries.push({
+                seq: record.seq,
+                category: 'NORMAL',
+                kind: 'FEEDBACK',
+                toolCallId,
+                text: index === 0 ? continuedText(scope.task as TaskScope) : 'Delivered.',
+              });
+            });
           }
           // A task below the root reads the plan of the work right after its task (D24); a later
           // plan comes to it as a notice.
@@ -286,8 +350,7 @@ export function projectHistory(
           // After its task, a task below the root is shown where it stands in the tree, once, as
           // the log was then
           // (Orchestration 3.7); changes come as notices after it.
-          const ownParent =
-            ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+          const ownParent = ownParentOf();
           if (ownParent !== undefined && !treeShown) {
             treeShown = true;
             const before = records.slice(0, records.indexOf(record) + 1);
@@ -296,7 +359,12 @@ export function projectHistory(
               category: 'PINNED',
               kind: 'NOTE',
               text: clip(
-                treeView(projectMissions(before), ownMission ?? '', missionStateOf(before)),
+                // As the task of this segment saw it: for a continued task, the one it takes up.
+                treeView(
+                  projectMissions(before),
+                  record.missionId ?? ownMission ?? '',
+                  missionStateOf(before),
+                ),
                 NOTE_MAX,
               ),
             });
@@ -320,8 +388,7 @@ export function projectHistory(
         for (const node of record.nodes) {
           if (node.mission === undefined || node.kind !== 'AGENT') continue;
           // A new sibling, once this task knows where it stands, is told of when it is added.
-          const ownParent =
-            ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+          const ownParent = ownParentOf();
           if (
             treeShown &&
             ownParent !== undefined &&
@@ -401,7 +468,11 @@ export function projectHistory(
         break;
       }
       case 'MISSION_MESSAGE':
-        if (ownMission === undefined || !record.to.includes(ownMission)) break;
+        if (
+          ownMission === undefined ||
+          !record.to.some((each) => each === ownMission || pastMissions.has(each))
+        )
+          break;
         notes.push({
           seq: record.seq,
           category: 'NORMAL',
@@ -575,6 +646,8 @@ export function projectHistory(
       case 'MODEL_TURN': {
         if (!mainRuns.has(record.agentRunId)) break;
         for (const call of record.toolCalls) toolNames.set(call.toolCallId, call.toolName);
+        if (pastRuns.has(record.agentRunId))
+          pastCalls = record.toolCalls.map((call) => call.toolCallId);
         const head = lastHead.get(record.agentRunId);
         entries.push({
           seq: record.seq,
@@ -797,8 +870,11 @@ export function projectHistory(
   // A note that came after the last assembly is the last thing in the history.
   flush();
   // Requests an earlier round read and did not answer: the reminder comes last (Orchestration 5.3).
+  // A compaction does not keep it, and a last round is not reminded.
   const reminder =
-    ownMission === undefined ? undefined : replyReminder(owedReplies(records, ownMission));
+    ownMission === undefined || options.material === true || options.final === true
+      ? undefined
+      : replyReminder(owedReplies(records, ownMission));
   if (reminder !== undefined)
     entries.push({
       seq: records.at(-1)?.seq ?? 0,

@@ -8,17 +8,24 @@ modelName: sub_mission
 modelDescription: >-
   Hand one part of the work to a pre-orchestrated template, like a firm hands a part to a
   contractor. It starts one subtask, the root of the template: a lead that follows the template's
-  playbook (its phases of subtasks, which the system checks) and hands back one report, as any
-  subtask does. Use it when a part of the work has the shape of a template, so you need not
-  coordinate the steps yourself; use run_subagents for anything else. Give it a name, the
+  playbook and hands back one report. What it gives you that a plain subtask does not: the
+  playbook is checked by the system, so the method is followed (reproduce before fixing, write
+  tests from the spec and never from the code, review by someone who did not write it); the root
+  works with the examples and context of that speciality, not yours; its rounds of fixing and
+  checking happen inside it, so they cost your context nothing and you read one report. Use it
+  when a part has the shape of a template; use run_subagents for parts that are just to be built.
+  The templates and when they fit: fix-verify (something fails, a command shows it, and the cause
+  is not obvious; params check, maxRounds), explore-build (a part to build in code nobody has read
+  yet; params questions), review (an important change checked against criteria by someone who did
+  not write it; params criteria), acceptance (tests of a whole system or feature written from its
+  specification by tasks that build nothing, run against it, failures traced to their parts;
+  params spec, run), integrate (start the whole system, run its checks, trace each failure to its
+  part, fix it there and check again; params start, check, maxRounds). Give it a name, the
   template, a goal that stands on its own (it does not see your conversation; it sees the plan),
   acceptance criteria with a check where you can, a writeScope (lent to the whole part, as with
-  run_subagents), and the params the template asks for. The templates are: fix-verify (find the
-  cause of a failure, fix it, and run a check until it passes; params check, maxRounds),
-  explore-build (explore first, then decide and build; params questions), review (an independent
-  read-only review of changes; params criteria). It returns at once; sleep with until children
-  to wait for its report, and send_message, stop_subagents work on it as on any subtask. Call it
-  on its own.
+  run_subagents), and the params the template asks for. It returns at once; sleep with until
+  children to wait for its report, and send_message, stop_subagents work on it as on any subtask.
+  Call it on its own.
 parametersContract:
   kind: contract
   id: workflow.SubMissionArgs

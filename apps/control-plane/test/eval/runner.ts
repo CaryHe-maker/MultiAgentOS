@@ -248,22 +248,99 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
     });
   } finally {
     await chat?.close().catch(() => undefined);
-    // Kept for the person who reads a failure: the Session (its log) and the repository as left.
-    const archive = process.env['EVAL_ARCHIVE'];
-    if (archive !== undefined && archive !== '') {
-      const into = join(archive, `${spec.id}-r${String(run)}-${String(started)}`);
-      await cp(join(dataDir, 'sessions'), join(into, 'sessions'), { recursive: true }).catch(
-        () => undefined,
-      );
-      // What the log points to: model outputs (messages, plans, tool arguments) and tool results.
-      await cp(join(dataDir, 'artifacts'), join(into, 'artifacts'), { recursive: true }).catch(
-        () => undefined,
-      );
-      await cp(repository, join(into, 'repository'), { recursive: true }).catch(() => undefined);
-    }
+    await archiveRun(spec.id, run, started, { dataDir, repository });
     await rm(dataDir, { recursive: true, force: true });
     await rm(repository, { recursive: true, force: true });
     await rm(`${repository}-other`, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Kept for the person who reads a run (`EVAL_ARCHIVE`): the Session (its log), what the log points
+ * to, and the repository as left. study-report.ts reads the shape of the run from it.
+ */
+export async function archiveRun(
+  taskId: string,
+  run: number,
+  started: number,
+  places: { readonly dataDir: string; readonly repository: string },
+): Promise<string | undefined> {
+  const archive = process.env['EVAL_ARCHIVE'];
+  if (archive === undefined || archive === '') return undefined;
+  const into = join(archive, `${taskId}-r${String(run)}-${String(started)}`);
+  await cp(join(places.dataDir, 'sessions'), join(into, 'sessions'), { recursive: true }).catch(
+    () => undefined,
+  );
+  // What the log points to: model outputs (messages, plans, tool arguments) and tool results.
+  await cp(join(places.dataDir, 'artifacts'), join(into, 'artifacts'), { recursive: true }).catch(
+    () => undefined,
+  );
+  await cp(places.repository, join(into, 'repository'), { recursive: true }).catch(() => undefined);
+  return into;
+}
+
+/** The replies main delivered, by the publishing Units that succeeded: what a console printed. */
+function publishedReplies(log: readonly Record<string, unknown>[]): readonly string[] {
+  const publishing = new Set(
+    log
+      .filter(
+        (record) =>
+          record['type'] === 'UNIT_SUBMITTED' &&
+          (record['unitRef'] as { readonly id?: string } | undefined)?.id === 'message-publish',
+      )
+      .map((record) => String(record['requestId'])),
+  );
+  return log
+    .filter(
+      (record) =>
+        record['type'] === 'UNIT_COMPLETED' &&
+        record['status'] === 'OK' &&
+        publishing.has(String(record['requestId'])),
+    )
+    .map((record) => `(reply ${String(record['requestId'])})`);
+}
+
+/**
+ * Judges a run that a person started with `mas run` and watched (`eval.ts prepare`, then
+ * `eval.ts judge`): the same judge and measures as a run of the evaluation, from the data directory
+ * of that run and its repository. The repository is judged on a copy, since a judge may copy its
+ * hidden tests into what it judges; the run's own time comes from its log.
+ */
+export async function judgeRun(
+  spec: TaskSpec,
+  run: number,
+  env: RunnerEnv,
+  places: { readonly dataDir: string; readonly repository: string },
+  exitCode: number,
+): Promise<RunRecord> {
+  const sessions = await readdir(join(places.dataDir, 'sessions')).catch(() => [] as string[]);
+  if (sessions.length !== 1)
+    throw new Error(
+      `${places.dataDir} holds ${String(sessions.length)} Sessions; give the run a data directory of its own`,
+    );
+  const log = await readLog(places.dataDir);
+  if (log.length === 0) throw new Error(`the Session in ${places.dataDir} has no log`);
+  const times = log.map((record) => Date.parse(String(record['at']))).filter(Number.isFinite);
+  const started = times[0] ?? Date.now();
+  const ended = times.at(-1) ?? started;
+  const copy = await mkdtemp(join(tmpdir(), 'mas-judge-repo-'));
+  try {
+    await cp(places.repository, copy, { recursive: true });
+    const replies = publishedReplies(log);
+    const questions = log
+      .filter((record) => record['type'] === 'AUTHORIZATION_REQUESTED')
+      .map(() => 'authorization');
+    const watched: ScriptedChat = { requests: [], add: () => undefined, fetch: realFetch };
+    const record = await recordOf(spec, run, env, started, false, watched, {
+      repository: copy,
+      dataDir: places.dataDir,
+      printed: (kind) => (kind === 'REPLY' ? replies : []),
+      questions,
+      exitCode,
+    });
+    return { ...record, elapsedMs: ended - started };
+  } finally {
+    await rm(copy, { recursive: true, force: true });
   }
 }
 

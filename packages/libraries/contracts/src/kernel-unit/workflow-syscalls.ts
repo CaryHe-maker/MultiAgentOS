@@ -386,11 +386,18 @@ export const UpdateActivityRequestSchema = closed(
   {
     ...inRun,
     agentRunId: IdSchemas.agentRunId,
-    todos: closed({
-      total: Type.Integer({ minimum: 0, maximum: 30 }),
-      completed: Type.Integer({ minimum: 0, maximum: 30 }),
-      current: Type.Optional(text(80)),
-    }),
+    todos: Type.Optional(
+      closed({
+        total: Type.Integer({ minimum: 0, maximum: 30 }),
+        completed: Type.Integer({ minimum: 0, maximum: 30 }),
+        current: Type.Optional(text(80)),
+      }),
+    ),
+    /**
+     * A control call the AgentRun made (send_message, sleep, run_subagents, ...): it runs no Unit,
+     * so the interface shows it as a line of its own, like a finished tool.
+     */
+    step: Type.Optional(closed({ toolName: text(64), argsSummary: text(80, 0) })),
   },
   'kernel.unit.UpdateActivityRequest.v1',
 );

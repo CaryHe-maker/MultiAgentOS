@@ -347,6 +347,49 @@ describe('Console', () => {
     });
   });
 
+  it('keeps every live task in the tree by its task, a sleeping one too, until it ends', async () => {
+    const t = setup({ clock: { ms: 60_000 } });
+    await t.console.submit('hi');
+    const at = (ms: number) => new Date(ms).toISOString();
+    const activity = (
+      agentRunId: string,
+      label: string,
+      phase: 'THINKING' | 'SLEEPING' | 'ENDED',
+      ms: number,
+      missionId: string,
+      parentMissionId?: string,
+    ) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId,
+        missionId,
+        ...(parentMissionId === undefined ? {} : { parentMissionId }),
+        label,
+        phase,
+        at: at(ms),
+      });
+    const tree = () => t.live()?.activity.map((line) => [line.branch, line.label, line.phase]);
+    await activity('arn_main1', 'main', 'THINKING', 0, 'msc_root');
+    await activity('arn_lead1', 'lead api', 'THINKING', 1000, 'msc_api', 'msc_root');
+    await activity('arn_w1', 'worker store', 'THINKING', 2000, 'msc_store', 'msc_api');
+    // main sleeps: its line stays, and the tree below it stays whole.
+    await activity('arn_main1', 'main', 'SLEEPING', 3000, 'msc_root');
+    // The lead sleeps too, while its worker works.
+    await activity('arn_lead1', 'lead api', 'SLEEPING', 4000, 'msc_api', 'msc_root');
+    expect(tree()).toEqual([
+      ['', 'main', '休眠中'],
+      ['  └─ ', 'lead api', '休眠中'],
+      ['     └─ ', 'worker store', '思考中'],
+    ]);
+    // The worker ends; the lead wakes in a new segment, on the same line of the tree.
+    await activity('arn_w1', 'worker store', 'ENDED', 5000, 'msc_store', 'msc_api');
+    await activity('arn_lead2', 'lead api', 'THINKING', 5500, 'msc_api', 'msc_root');
+    expect(tree()).toEqual([
+      ['', 'main', '休眠中'],
+      ['  └─ ', 'lead api', '思考中'],
+    ]);
+  });
+
   it('gives queued messages back when the run ends and offers to continue after BUDGET', async () => {
     const t = setup();
     await t.console.submit('hi');

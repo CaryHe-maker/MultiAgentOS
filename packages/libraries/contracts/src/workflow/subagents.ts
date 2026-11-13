@@ -45,6 +45,12 @@ export const SubagentTaskSchema = closed({
   effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
   /** Only the token share is the caller's to ask for; the other limits are the Agent's own. */
   budget: Type.Optional(closed({ tokens: count(1) })),
+  /**
+   * The name of a task of the caller's that has ended (Orchestration 5.3, 2026-11-14): this task
+   * takes it up again with all of its history, as the same Agent, and reads the goal as what it is
+   * asked now. Work goes back to the task that knows the code, at the price of a cached prefix.
+   */
+  continues: Type.Optional(NameSchema),
 });
 export type SubagentTask = Static<typeof SubagentTaskSchema>;
 

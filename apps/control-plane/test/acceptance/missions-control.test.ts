@@ -767,6 +767,13 @@ describe('a message or a look at the tree with other tool calls (Orchestration 5
       expect(reader).toMatch(/reader \(explorer/u);
       expect(reader).not.toContain('Not executed');
       expect(mainSaw(provider)).toContain('Reading the notes now.');
+      // The interface names what each call does, and shows the control calls as lines too.
+      const steps = chat.printed('STEP').join('\n');
+      expect(steps).toContain('read_file notes.md');
+      expect(steps).toContain('send_message to parent: Reading the notes now.');
+      expect(steps).toContain('run_subagents 1 task: reader');
+      expect(steps).toContain('sleep until children');
+      expect(steps).toContain('view_tasks');
     },
     TIMEOUT,
   );
@@ -960,4 +967,206 @@ describe('a request is answered, an inform need not be (Orchestration 5.3)', () 
     },
     TIMEOUT,
   );
+});
+
+describe('a long message is read like a long report (Orchestration 5.3)', () => {
+  const lines = Array.from({ length: 300 }, (_, index) => `line ${String(index + 1)} of the API`);
+  const long = ['BEGIN OF THE API', ...lines, 'END-OF-MESSAGE'].join('\n');
+  const messageIdIn = (provider: ScriptedChat): string =>
+    /Message from task teller \((\S+)\)/u.exec(seen(provider))?.[1] ?? 'none';
+
+  it(
+    'shows the summary and the beginning, and the receiver reads all of it by the message id',
+    async () => {
+      const place = await roots();
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'teller', agent: 'explorer', goal: 'tell the other' },
+              { name: 'listener', agent: 'explorer', goal: 'listen' },
+            ),
+            sleepFor(children()),
+            reply('they talked'),
+          ],
+        },
+        {
+          // The teller ends at once: what it sent can still be read.
+          teller: [
+            tool('send_message', { to: 'listener', summary: 'The API, in full', text: long }),
+            finish('told it'),
+          ],
+          listener: [
+            sleepFor({ kind: 'message' }),
+            {
+              get calls() {
+                return [
+                  {
+                    name: 'read_output',
+                    arguments: { toolCallId: messageIdIn(provider), pattern: 'END-OF-MESSAGE' },
+                  },
+                ];
+              },
+            },
+            finish('read it'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('they talked');
+      const listener = seenBy(provider, 'listener');
+      expect(listener).toContain('Summary: The API, in full');
+      expect(listener).toContain('BEGIN OF THE API');
+      expect(listener).toContain('too long to show here; read all of it with read_output');
+      expect(listener).toContain('END-OF-MESSAGE');
+      // Before the read, only the beginning was there.
+      const shown = provider.requests
+        .filter((request) =>
+          request.messages.some((message) => textOf(message).includes('Your task (listener,')),
+        )
+        .map((request) => request.messages.map((message) => textOf(message)).join('\n'))
+        .find((text) => text.includes('too long to show here'));
+      expect(shown).not.toContain('END-OF-MESSAGE');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'refuses a long text without a summary',
+    async () => {
+      const place = await roots();
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'teller', agent: 'explorer', goal: 'tell the other' },
+              { name: 'listener', agent: 'explorer', goal: 'listen' },
+            ),
+            sleepFor(children()),
+            reply('done'),
+          ],
+        },
+        {
+          teller: [tool('send_message', { to: 'listener', text: long }), finish('tried')],
+          listener: [finish('nothing came')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(seenBy(provider, 'teller')).toContain('Not sent: a text longer than 8000 characters');
+      expect(seenBy(provider, 'listener')).not.toContain('BEGIN OF THE API');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('a task that ended is taken up again with all it knows (continues, Orchestration 5.3)', () => {
+  const done = (summary: string, file: string) =>
+    tool('finish_subagent', {
+      summary,
+      changedFiles: [file],
+      status: 'done',
+      validation: [{ command: `cat ${file}`, exitCode: 0 }],
+    });
+  /** The requests of one task, each as the text of its messages in order. */
+  const requestsOf = (provider: ScriptedChat, task: string): string[][] =>
+    provider.requests
+      .filter((request) =>
+        request.messages.some((message) => textOf(message).includes(`Your task (${task},`)),
+      )
+      .map((request) => request.messages.map((message) => textOf(message)));
+
+  it(
+    'goes on from the history of the task it takes up, and asks with that task’s prefix',
+    async () => {
+      const place = await roots({ 'api/old.txt': 'old\n' });
+      const provider: ScriptedChat = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'api', agent: 'worker', goal: 'write api/v1.txt', writeScope: ['api'] }),
+            sleepFor(children()),
+            spawn({
+              name: 'api',
+              agent: 'worker',
+              continues: 'api',
+              goal: 'The check found a missing line: add api/v2.txt as well.',
+              writeScope: ['api'],
+              acceptance: ['api/v2.txt exists'],
+            }),
+            sleepFor(children()),
+            reply('api is done twice'),
+          ],
+        },
+        {
+          api: [
+            tool('write_file', { path: 'api/v1.txt', content: 'one\n' }),
+            done('wrote api/v1.txt', 'api/v1.txt'),
+            tool('write_file', { path: 'api/v2.txt', content: 'two\n' }),
+            done('wrote api/v2.txt', 'api/v2.txt'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('api is done twice');
+      expect(await readFile(join(place.repository, 'api/v2.txt'), 'utf8')).toBe('two\n');
+      const asked = requestsOf(provider, 'api');
+      // Found by what they say, not by where they are: how many requests the first task made
+      // depends on its questions, which differ with the sandbox.
+      const continuing = (request: string[]) =>
+        request.join('\n').includes('Your result went to your caller');
+      const at = asked.findIndex(continuing);
+      expect(at).toBeGreaterThan(0);
+      const firstLast = asked[at - 1] ?? [];
+      const again = asked[at] ?? [];
+      // It begins as the first task did: same header, same history, then what it is asked now.
+      // The last message of a request is its status line, written anew for every request.
+      expect(again.slice(0, firstLast.length - 1)).toEqual(firstLast.slice(0, -1));
+      const told = again.join('\n');
+      expect(told).toContain('write api/v1.txt');
+      expect(told).toContain(
+        'Your result went to your caller, and it started you again on this task',
+      );
+      expect(told).toContain('add api/v2.txt as well');
+      expect(told).toContain('api/v2.txt exists');
+    },
+    TIMEOUT,
+  );
+
+  // One refusal each: two in a row take run_subagents away, as they should.
+  for (const [what, task, said] of [
+    [
+      'as another Agent',
+      { name: 'again', agent: 'worker', continues: 'look', goal: 'go on', writeScope: ['x'] },
+      'CONTINUES (again): look ran as explorer, and goes on as one; set agent to explorer',
+    ],
+    [
+      'of a task that is not an ended one of its caller',
+      { name: 'again', agent: 'explorer', continues: 'nobody', goal: 'go on' },
+      'CONTINUES (again): continues names a task you started in this run that has ended; nobody is not one',
+    ],
+  ] as const)
+    it(
+      `refuses continues ${what}, and starts nothing`,
+      async () => {
+        const place = await roots();
+        const provider: ScriptedChat = scriptedAgents({
+          main: [
+            spawn({ name: 'look', agent: 'explorer', goal: 'look around' }),
+            sleepFor(children()),
+            spawn(task),
+            reply('refused'),
+          ],
+          explorer: [finish('looked')],
+        });
+        const chat = await chatOn(place, provider);
+        await chat.say('go');
+        expect(chat.printed('REPLY')).toContain('refused');
+        expect(seen(provider)).toContain(said);
+        expect(seenBy(provider, 'again')).toBe('');
+      },
+      TIMEOUT,
+    );
 });

@@ -54,12 +54,24 @@ async function roots(files: Readonly<Record<string, string>> = {}): Promise<Plac
   return { dataDir, repository };
 }
 
+/** Some cases count the questions about commands: commands are asked one by one here. */
+const asking = (config: SystemConfig): SystemConfig => ({
+  ...config,
+  kernel: { ...config.kernel, command: { ...config.kernel.command, approval: 'ask' } },
+});
+
 async function chatOn(
   place: Place,
   provider: ScriptedChat,
   options: Partial<ChatOptions> = {},
 ): Promise<Chat> {
-  const chat = await openChat({ ...place, provider, ...options });
+  const own = options.configure ?? ((each: SystemConfig) => each);
+  const chat = await openChat({
+    ...place,
+    provider,
+    ...options,
+    configure: (config) => asking(own(config)),
+  });
   open.push(chat);
   return chat;
 }

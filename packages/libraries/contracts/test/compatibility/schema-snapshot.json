@@ -9121,6 +9121,14 @@
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "parentMissionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
             "label": {
               "type": "string",
               "minLength": 1,
@@ -9265,6 +9273,14 @@
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
+            "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "parentMissionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
             "label": {
               "type": "string",
               "minLength": 1,
@@ -9374,6 +9390,7 @@
                 "PAUSED",
                 "COMPACTING",
                 "WRAPPING_UP",
+                "SLEEPING",
                 "ENDED"
               ]
             }
@@ -15106,8 +15123,7 @@
                 "requestId",
                 "sessionId",
                 "workflowRunId",
-                "agentRunId",
-                "todos"
+                "agentRunId"
               ],
               "properties": {
                 "requestId": {
@@ -15146,6 +15162,26 @@
                     "current": {
                       "type": "string",
                       "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "step": {
+                  "type": "object",
+                  "required": [
+                    "toolName",
+                    "argsSummary"
+                  ],
+                  "properties": {
+                    "toolName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "argsSummary": {
+                      "type": "string",
+                      "minLength": 0,
                       "maxLength": 80
                     }
                   },
@@ -17690,6 +17726,14 @@
                       "type": "string",
                       "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
+                    "missionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "parentMissionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
                     "label": {
                       "type": "string",
                       "minLength": 1,
@@ -17834,6 +17878,14 @@
                       "type": "string",
                       "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
+                    "missionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "parentMissionId": {
+                      "type": "string",
+                      "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
                     "label": {
                       "type": "string",
                       "minLength": 1,
@@ -17943,6 +17995,7 @@
                         "PAUSED",
                         "COMPACTING",
                         "WRAPPING_UP",
+                        "SLEEPING",
                         "ENDED"
                       ]
                     }
@@ -45484,8 +45537,7 @@
         "requestId",
         "sessionId",
         "workflowRunId",
-        "agentRunId",
-        "todos"
+        "agentRunId"
       ],
       "properties": {
         "requestId": {
@@ -45524,6 +45576,26 @@
             "current": {
               "type": "string",
               "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "additionalProperties": false
+        },
+        "step": {
+          "type": "object",
+          "required": [
+            "toolName",
+            "argsSummary"
+          ],
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "argsSummary": {
+              "type": "string",
+              "minLength": 0,
               "maxLength": 80
             }
           },
@@ -50394,7 +50466,8 @@
           "required": [
             "deniedCommands",
             "criticalCommands",
-            "readOnlyCommands"
+            "readOnlyCommands",
+            "approval"
           ],
           "properties": {
             "deniedCommands": {
@@ -50420,6 +50493,12 @@
                 "minLength": 1,
                 "maxLength": 100
               }
+            },
+            "approval": {
+              "enum": [
+                "ask",
+                "auto"
+              ]
             }
           },
           "additionalProperties": false
@@ -51280,7 +51359,8 @@
               "required": [
                 "deniedCommands",
                 "criticalCommands",
-                "readOnlyCommands"
+                "readOnlyCommands",
+                "approval"
               ],
               "properties": {
                 "deniedCommands": {
@@ -51306,6 +51386,12 @@
                     "minLength": 1,
                     "maxLength": 100
                   }
+                },
+                "approval": {
+                  "enum": [
+                    "ask",
+                    "auto"
+                  ]
                 }
               },
               "additionalProperties": false
@@ -53154,6 +53240,19 @@
                           "MIN",
                           "MAX"
                         ]
+                      },
+                      "continues": {
+                        "type": "object",
+                        "required": [
+                          "missionId"
+                        ],
+                        "properties": {
+                          "missionId": {
+                            "type": "string",
+                            "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          }
+                        },
+                        "additionalProperties": false
                       },
                       "submission": {
                         "type": "object",
@@ -58743,6 +58842,10 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
               }
             },
             "additionalProperties": false
@@ -58785,8 +58888,7 @@
         },
         "text": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
+          "minLength": 1
         },
         "references": {
           "type": "array",

@@ -6,7 +6,8 @@
  *    together; WRITE, EXEC and MODEL are barriers: one starts only when everything before it has
  *    ended, and nothing after it starts before it has ended.
  *  - Between AgentRuns the queues run side by side, under global limits: attempts executing at
- *    once, EXEC executing at once, WEB (the search and the fetch of the web) executing at once in
+ *    once, EXEC executing at once (2026-11-14: several, as long as the roots they may write do not
+ *    meet; a command whose roots are not known runs alone), WEB (the web) executing at once in
  *    a pool of its own, and, with `serial`, one attempt at all. A WEB attempt waits for the
  *    network, not for a machine: it takes no place of the attempts, so a slow site cannot hold a
  *    model call back, and it is no barrier either.
@@ -24,7 +25,26 @@ export interface QueueEntry {
   readonly agentRunId: string;
   readonly cls: ConcurrencyClass;
   state: QueueState;
+  /**
+   * For an EXEC: the roots its sandbox may write. Commands whose roots do not meet run side by
+   * side; one without known roots (no sandbox) runs alone, as every command did before.
+   */
+  readonly roots?: readonly string[];
 }
+
+/** One root lies in the other, or they are the same: two commands could change the same file. */
+const meet = (a: readonly string[], b: readonly string[]): boolean =>
+  a.some((left) =>
+    b.some((right) => {
+      const x = normalRoot(left);
+      const y = normalRoot(right);
+      return x === y || y.startsWith(`${x}/`) || x.startsWith(`${y}/`);
+    }),
+  );
+
+/** A root with forward slashes and no slash at its end. */
+const normalRoot = (root: string): string =>
+  root.split(String.fromCharCode(92)).join('/').replace(/\/+$/u, '');
 
 export interface QueueLimits {
   readonly maxAttempts: number;
@@ -141,7 +161,18 @@ export class AttemptQueues<E extends QueueEntry> {
     if (limits.serial) return running + web < 1;
     if (entry.cls === 'WEB') return web < limits.maxWeb;
     if (running >= limits.maxAttempts) return false;
-    return !(entry.cls === 'EXEC' && exec >= limits.maxExec);
+    if (entry.cls !== 'EXEC') return true;
+    if (exec >= limits.maxExec) return false;
+    if (exec === 0) return true;
+    // Commands run side by side only where they cannot write the same files.
+    const mine = entry.roots;
+    if (mine === undefined) return false;
+    return this.#all().every(
+      (other) =>
+        other.state !== 'RUNNING' ||
+        other.cls !== 'EXEC' ||
+        (other.roots !== undefined && !meet(other.roots, mine)),
+    );
   }
 
   /** Reads and the web go side by side; everything else is a barrier. */

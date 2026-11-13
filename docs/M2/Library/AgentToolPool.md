@@ -53,11 +53,12 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
 | TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |
 | TOOL | `view-tasks` | `purpose = CONTROL`，参数为 `workflow.ViewTasksArgs`；main、lead、worker、explorer 的 `actions.viewTasks`：此刻的任务树（Orchestration 第 3.7 节） |
-| TOOL | `job-output`、`job-list`、`job-kill` | `purpose = CONTROL`，参数为 `workflow.JobOutputArgs`、`JobListArgs`、`JobKillArgs`；main、lead、worker 的 `actions.jobOutput`、`jobList`、`jobKill`，只在能跑命令时提供：读取、列出、停止任务的后台命令（Orchestration 第 6 节）；只能单独出现 |
+| TOOL | `job-output`、`job-list`、`job-kill` | `purpose = CONTROL`，参数为 `workflow.JobOutputArgs`、`JobListArgs`、`JobKillArgs`；main、lead、worker 的 `actions.jobOutput`、`jobList`、`jobKill`，只在能跑命令时提供：读取、列出、停止任务的后台命令（Orchestration 第 6 节）；当场答复，可以与普通工具同在一次返回中（Orchestration 第 5.3 节） |
 | TOOL | `stop-subagents` | `purpose = CONTROL`，参数为 `workflow.StopSubagentsArgs`；只有能派生的 main 与 lead 带（`actions.stop`）：停止自己的子任务（第 5.1 节） |
-| TOOL | `send-message` | `purpose = CONTROL`，参数为 `workflow.SendMessageArgs`；由同样四个 Agent 的 `actions.message` 引用：沿任务树发消息（Orchestration 第 5 节）；只能单独出现 |
+| TOOL | `send-message` | `purpose = CONTROL`，参数为 `workflow.SendMessageArgs`；由同样四个 Agent 的 `actions.message` 引用：沿任务树发消息（Orchestration 第 5 节）；当场答复，可以与普通工具同在一次返回中，长正文按消息编号用 `read_output` 读全文（第 5.3 节） |
 | MODEL | `deepseek-flash` | 增加 `ThinkingFeature`；取值来自实测 |
 | TEMPLATE | `analyze` | Interface/Definitions 第 4 节 |
+| TEMPLATE | `acceptance`、`integrate` | 预编排模板（Orchestration 第 3.9 节，2026-11-14）：`acceptance` 由不参与开发的任务只依据规格写验收测试并对系统运行，失败按负责部分归类；`integrate` 启动整个系统、跑整体检查、把失败追到所在部分、在那里修复后整体复查。每个模板带多个例子 |
 
 - **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后给 main 增加工具时，只增加对应工具的用法。
 - 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：提示词与工具还要按评测迭代（M2ReleasePlan），现在封存只会多出中间版本。

@@ -1,0 +1,94 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: acceptance
+version: v0.1.0
+description: 'Pre-orchestrated: acceptance tests written from the specification by tasks that build
+  nothing, and run against the system.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: write acceptance tests from the specification alone, by tasks that build nothing, and run
+    them against the system
+  params:
+    - name: spec
+      description: where the specification and the fixed interfaces are (paths, one per line)
+      required: true
+    - name: run
+      description:
+        how the tests start the system and run, for example "./run.sh start" then "python3 -m
+        unittest discover -s tests/e2e"
+      required: true
+  phases:
+    - name: map
+      instructions: >-
+        Read the specification and the interfaces yourself, never the implementation. List every
+        interface, rule and failure case the specification states, each with its section, and
+        split the list into 1 to 3 parts that do not overlap. Write the list to a file in your
+        scope, so every writer works from the same list and nothing is tested twice or missed.
+    - name: write
+      tasks:
+        agent: worker
+        min: 1
+        max: 3
+      instructions: >-
+        Start 1 to 3 workers, each with one part of the list and its own file or folder of your
+        scope. Each goal says: write the tests from the specification and the interfaces only,
+        never from the code under test; one test per interface or rule, named after it; start
+        the system as the run param says, on free ports, and stop it after; a test that fails
+        because a feature is missing is a right test. Sleep until they have all ended.
+    - name: run
+      instructions: >-
+        Run all the tests yourself as the run param says. For every failure, name the rule it
+        checks and the part of the system it points to, from the error and the logs, not from a
+        guess, so your caller can send it to the owner of that part.
+    - name: report
+      instructions: >-
+        Finish with how many tests there are and which rules they cover, which pass, and each
+        failure with its rule, the part it points to and the output that shows it. You change
+        nothing outside your tests.
+  example: |-
+    Example 1. Brief (from the root of a flight booking system): goal "acceptance tests for
+    docs/spec.md"; spec "docs/spec.md, contracts/"; run "HH_PORT_BASE=8800 ./run.sh start, then
+    python3 -m unittest discover -s tests/e2e -t ."; writeScope ["tests/e2e/"].
+    map: I read docs/spec.md and contracts/: 18 interfaces (section 2) and 7 rules (section 3:
+    restart keeps data, one service down leaves the others working, users are isolated, ...).
+    Wrote tests/e2e/CASES.md with the 25 items in three parts: accounts and gateway; flights and
+    bookings; the rules of section 3.
+    write: three workers, "e2e-accounts" (tests/e2e/test_accounts.py), "e2e-bookings"
+    (tests/e2e/test_bookings.py), "e2e-rules" (tests/e2e/test_rules.py), each with its part of
+    CASES.md and the run param. Slept until all ended.
+    run: 44 tests, 41 pass. test_logout fails (token still accepted after logout: gateway),
+    test_cancel_refunds fails (charge stays settled: bookings or payments, the payments log has
+    no booking_cancelled), test_payments_down fails (bookings hangs 30 s: bookings' HTTP client
+    has no timeout).
+    report: finish_subagent status done with the 44 tests, the rules they cover, and the three
+    failures with the part each points to and its output.
+
+    Example 2. Brief: goal "acceptance tests for the CSV import of docs/import.md before we
+    rewrite the parser"; spec "docs/import.md"; run "python3 -m pytest tests/acceptance -q";
+    writeScope ["tests/acceptance/"].
+    map: the spec states 9 behaviours (quoted fields, a BOM, empty lines, a column missing, ...)
+    and 3 errors with their messages. One part is enough: wrote tests/acceptance/CASES.md.
+    write: one worker "import-cases" writes tests/acceptance/test_import.py, one test per case,
+    with small CSV files made inside each test. Slept until it ended.
+    run: 12 tests, 11 pass; the BOM case fails (the first column is read as "﻿id"). This is
+    the behaviour the rewrite must keep, so the failure is the finding, not a broken test.
+    report: finish_subagent status done with the 12 tests and the BOM failure, pointing at the
+    reader in src/importer/read.py.
+
+    Example 3. Brief: goal "check the public API of the new client library against the
+    reference document"; spec "docs/api.md"; run "npm test --workspace=acceptance";
+    writeScope ["acceptance/"].
+    map: 31 functions with their errors; two parts, sync and async.
+    write: two workers, one per part, each told to import only the public entry point, never a
+    file under src/internal. Slept until both ended.
+    run: 58 tests, all pass, but six functions of the reference have no test: the writers found
+    them missing from the package. I checked the exports myself: they are not exported.
+    report: finish_subagent status done: 58 tests pass; six documented functions are not
+    exported, listed by name, which the caller decides about.

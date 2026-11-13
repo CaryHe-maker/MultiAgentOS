@@ -41,9 +41,11 @@ describe('shipped definitions', () => {
       'PROMPT:main-system@v0.1.0',
       'PROMPT:planner-system@v0.1.0',
       'PROMPT:worker-system@v0.1.0',
+      'TEMPLATE:acceptance@v0.1.0',
       'TEMPLATE:analyze@v0.1.0',
       'TEMPLATE:explore-build@v0.1.0',
       'TEMPLATE:fix-verify@v0.1.0',
+      'TEMPLATE:integrate@v0.1.0',
       'TEMPLATE:mission@v0.1.0',
       'TEMPLATE:review@v0.1.0',
       'TOOL:ask-user@v0.1.0',
@@ -141,26 +143,34 @@ describe('shipped definitions', () => {
     expect(promptOf('main-system')).toContain('- Leads for large parts:');
     expect(promptOf('lead-system')).not.toContain('- Leads for large parts:');
     const mission = catalog.latest('TEMPLATE', 'mission');
-    expect(JSON.stringify(mission?.nodes)).toContain('ways to split work');
-    // The root of a long task reads worked examples of different shapes, most without
-    // sub_mission and one not split at all (D32).
+    expect(JSON.stringify(mission?.nodes)).toContain('table of decisions');
+    // The root of a long task decides by a table, reads short examples of single decisions and
+    // two whole tasks (2026-11-14): one done alone, one large system run by plan, check and route.
     const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
     const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
-    expect(text.match(/^Example \d\./gmu)).toHaveLength(6);
-    expect(text).toContain('Example 3. Not split at all.');
-    // One example uses sub_mission once; the large system uses it for a fix and a review.
+    expect(text).toContain('Decisions, by what you see.');
+    expect(text.match(/^[a-j]\) /gmu)).toHaveLength(10);
+    expect(text).toContain('Whole task 1. Small enough to do alone.');
+    expect(text).toContain('Whole task 2. A large system from a specification');
+    expect(text).not.toContain('most of them do not use');
+    // The large system hands acceptance, integration and review to their templates, and gives a
+    // defect back to its owner with continues; it never messages a task that has ended.
     expect(text.split('sub_mission {').length - 1).toBe(3);
-    // The large system: interfaces first, owners, acceptance written by a task that builds
-    // nothing, integration on a background run, failures back to their owners.
-    expect(text).toContain('Example 6. A large system from a specification');
-    for (const step of ['contracts/', 'name: "acceptance"', 'background: true', 'send_message {'])
+    for (const step of [
+      'contracts/',
+      'template: "acceptance"',
+      'template: "integrate"',
+      'template: "review"',
+      'continues: "platform"',
+    ])
       expect(text).toContain(step);
-    // The examples of the pre-orchestrated templates are one system's standard ways of work.
-    for (const id of ['fix-verify', 'explore-build', 'review']) {
+    // Every pre-orchestrated template carries several examples of its speciality, the first from
+    // the same flight booking system.
+    for (const id of ['fix-verify', 'explore-build', 'review', 'acceptance', 'integrate']) {
       const template = catalog.latest('TEMPLATE', id);
-      expect(template?.kind === 'TEMPLATE' ? template.playbook?.example : '').toContain(
-        'flight booking system',
-      );
+      const example = template?.kind === 'TEMPLATE' ? (template.playbook?.example ?? '') : '';
+      expect(example).toContain('flight booking system');
+      expect(example.match(/^Example \d\./gmu)?.length).toBeGreaterThanOrEqual(3);
     }
   });
 });

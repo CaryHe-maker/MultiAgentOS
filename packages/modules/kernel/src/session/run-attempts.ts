@@ -138,6 +138,14 @@ export type AttemptAudit =
       readonly command: string;
       readonly workdir: string;
     }
+  /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
+  | {
+      readonly type: 'COMMAND_AUTO_APPROVED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly command: string;
+      readonly workdir: string;
+    }
   /** A read outside the workspace was let through: what was asked, and the folder that allowed it. */
   | {
       readonly type: 'EXTERNAL_READ';

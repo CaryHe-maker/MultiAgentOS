@@ -50,6 +50,8 @@ export const SpawnNodeSchema = closed({
   /** The share of budget reserved for it, after the Kernel clamped the request. */
   tokens: count(1),
   clamped: Type.Optional(Type.Enum(['MIN', 'MAX'])),
+  /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
+  continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
    * The root of a subMission (Orchestration 3.9): the template it follows, with its playbook as it
    * was when the work was handed over, and the parameters given; the log alone says what it must do.

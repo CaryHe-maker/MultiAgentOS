@@ -32,7 +32,7 @@ playbook:
         Check the findings you doubt by reading the code yourself, drop the ones that do not hold,
         and finish with the findings by importance. You change no file.
   example: |-
-    Brief (from the root of a flight booking system): goal "review services/gateway,
+    Example 1. Brief (from the root of a flight booking system): goal "review services/gateway,
     services/accounts and how every service learns which user a request is for"; criteria
     "one user can never read or change another user's data; passwords are salted hashes;
     tokens expire and logout ends them; the services trust the user only when the gateway
@@ -47,3 +47,20 @@ playbook:
     report: I read bookings/http.py line 14 and the gateway: nothing signs or checks the
     header, so the finding holds; the cached token holds too. finish_subagent status done with
     the two findings, the trust of X-User first because it lets anyone act as anyone.
+
+    Example 2. Brief: goal "review the new rate limiter in api/limit/ before it ships";
+    criteria "limits hold under concurrent requests; a client cannot reset its limit by
+    changing a header; the limiter never blocks a request on a slow store".
+    review: one explorer that did not write it reads api/limit/ against the three criteria.
+    It found that the counter is read and written in two steps (api/limit/store.py line 41,
+    sure), so two requests at once both pass.
+    report: I read line 41 and the store: there is no atomic increment; the finding holds.
+    finish_subagent status done with the race first, with file and line.
+
+    Example 3. Brief: goal "review the migration scripts of this release"; criteria "every
+    migration can be rolled back; none locks a large table for long; data is never lost".
+    review: two explorers: one reads the up and down scripts for rollback and data loss, one
+    looks for statements that lock tables (ALTER on large tables, missing CONCURRENTLY).
+    report: three findings; I dropped one after reading it (the table is small), kept two:
+    0042 drops a column its down script cannot restore, and 0043 builds an index without
+    CONCURRENTLY on the orders table.

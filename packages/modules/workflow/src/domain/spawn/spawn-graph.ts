@@ -150,6 +150,7 @@ export function taskScopeOf(
   node: GraphNodeRecord,
   spawn: NonNullable<GraphNodeRecord['spawn']>,
 ): TaskScope {
+  const continued = continuedOf(records, workflowRunId, graph, spawn);
   const dependencies = graph.graph.edges
     .filter((edge) => edge.to === node.nodeId && edge.kind === 'DEPENDS')
     .flatMap((edge) => {
@@ -183,6 +184,7 @@ export function taskScopeOf(
     inputs: spawn.inputs,
     dependencies,
     ...(spawn.submission === undefined ? {} : { playbook: renderPlaybook(spawn.submission) }),
+    ...(continued === undefined ? {} : { continued }),
   };
 }
 
@@ -203,6 +205,35 @@ export function spawnNodeOf(
     tokens: share?.tokens ?? 1,
     ...(share?.clamped === undefined ? {} : { clamped: share.clamped }),
   };
+}
+
+/**
+ * The tasks a continued task takes up (`continues`), the latest first, and the task scope of the
+ * earliest, whose header its history begins with: so the prefix of its context is the one the
+ * earlier task sent, and the provider's cache still has it.
+ */
+function continuedOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['continued'] {
+  const missions: string[] = [];
+  let first: GraphNodeRecord | undefined;
+  let next = spawn.continues?.missionId;
+  while (next !== undefined && !missions.includes(next)) {
+    const missionId = next;
+    const node = [...graph.nodes.values()].find(
+      (each) => each.mission?.id === missionId && each.spawn !== undefined,
+    );
+    if (node?.spawn === undefined) break;
+    missions.push(missionId);
+    first = node;
+    next = node.spawn.continues?.missionId;
+  }
+  if (first?.spawn === undefined) return undefined;
+  // The earliest task continues nothing, so its scope has no `continued` of its own.
+  return { missions, first: taskScopeOf(records, workflowRunId, graph, first, first.spawn) };
 }
 
 /**

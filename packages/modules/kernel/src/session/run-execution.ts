@@ -244,6 +244,10 @@ export class RunExecution {
       agentRunId: spec.agentRunId,
       cls: concurrencyClassOf(spec),
       state: 'QUEUED',
+      // What a command may write decides which others it may run beside (M2Design 7.1).
+      ...(spec.scope.kind === 'SANDBOX' && spec.scope.backend === 'BWRAP'
+        ? { roots: [...spec.scope.profile.writableRoots] }
+        : {}),
     };
     this.#byId.set(unitAttemptId, attempt);
     this.#queues.add(attempt);

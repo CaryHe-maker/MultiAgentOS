@@ -225,3 +225,58 @@ describe('the barrier of a checkpoint (Orchestration 7.3)', () => {
     expect(queues.startable(limits, mutatingAllowed(false))).toEqual([write, otherExec]);
   });
 });
+
+describe('commands side by side, by what they may write (M2Design 7.1, 2026-11-14)', () => {
+  const four: QueueLimits = { ...limits, maxExec: 4 };
+  const exec = (agentRunId: string, roots?: readonly string[]): QueueEntry => ({
+    ...entry(agentRunId, 'EXEC'),
+    ...(roots === undefined ? {} : { roots }),
+  });
+
+  it('runs commands whose roots do not meet together, up to the limit', () => {
+    const queues = new AttemptQueues();
+    const commands = [
+      exec('a', ['/repo/services/api']),
+      exec('b', ['/repo/services/web']),
+      exec('c', ['/repo/docs']),
+      exec('d', ['/repo/tests']),
+      exec('e', ['/repo/tools']),
+    ];
+    for (const each of commands) queues.add(each);
+    expect(ids(queues.startable(four))).toEqual(ids(commands.slice(0, 4)));
+    queues.release(commands[0] as QueueEntry);
+    expect(ids(queues.startable(four))).toEqual(ids(commands.slice(4)));
+  });
+
+  it('holds a command back while another may write the same files, nested roots included', () => {
+    const queues = new AttemptQueues();
+    const outer = exec('a', ['/repo/services']);
+    const inner = exec('b', ['/repo/services/api/']);
+    const apart = exec('c', ['/repo/services-old']);
+    for (const each of [outer, inner, apart]) queues.add(each);
+    expect(queues.startable(four)).toEqual([outer, apart]);
+    queues.release(outer);
+    expect(queues.startable(four)).toEqual([inner]);
+  });
+
+  it('runs a command whose roots are not known alone, as every command ran before', () => {
+    const queues = new AttemptQueues();
+    const unknown = exec('a');
+    const known = exec('b', ['/repo/b']);
+    for (const each of [unknown, known]) queues.add(each);
+    expect(queues.startable(four)).toEqual([unknown]);
+    queues.release(unknown);
+    const later = exec('c');
+    queues.add(later);
+    expect(queues.startable(four)).toEqual([known]);
+    queues.release(known);
+    expect(queues.startable(four)).toEqual([later]);
+  });
+
+  it('keeps one command at a time when the limit is one', () => {
+    const queues = new AttemptQueues();
+    const commands = [exec('a', ['/repo/a']), exec('b', ['/repo/b'])];
+    for (const each of commands) queues.add(each);
+    expect(queues.startable(limits)).toEqual([commands[0]]);
+  });
+});

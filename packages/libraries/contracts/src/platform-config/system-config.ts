@@ -61,6 +61,13 @@ export const KernelConfigSchema = closed(
        * stand for their read-only subcommands.
        */
       readOnlyCommands: Type.Array(text(100)),
+      /**
+       * How a command that no list names is let through (M2Design 5.2, 2026-11-14): `auto` runs it
+       * without a question when it is in the sandbox, without the network, and parses reliably,
+       * once the run may write and read the repository; `ask` asks for each as before. A command
+       * with the network, of the critical list, or that cannot be parsed reliably is always asked.
+       */
+      approval: Type.Enum(['ask', 'auto']),
     }),
     /** The web tools (Kernel/Core 5f, ExecutorSet 5d); the key is the model provider's, not here. */
     web: closed({

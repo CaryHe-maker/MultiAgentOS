@@ -1,0 +1,92 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: integrate
+version: v0.1.0
+description:
+  'Pre-orchestrated: start the whole system, run its checks, trace each failure to its part,
+  fix it there, and check the whole again.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary:
+    start the whole system, run its checks, trace each failure to the part it comes from, fix it
+    there, and check the whole again until it passes
+  params:
+    - name: start
+      description: the command that starts the whole system, for example "./run.sh start"
+      required: true
+    - name: check
+      description: the command that checks the whole, usually the acceptance tests
+      required: true
+    - name: maxRounds
+      description: how many fix rounds at most (1 to 3); 2 when absent
+      required: false
+  phases:
+    - name: run
+      instructions: >-
+        Start the system in the background with the start param (runInBackground) and wait
+        until it answers, then run the check. Read every failure and the log lines of the
+        services it touches, and trace it to the part (the folder) it comes from. Group the
+        failures by part. Do not start a worker before you know where each failure belongs.
+    - name: fix
+      tasks:
+        agent: worker
+        min: 1
+        max: 4
+      repeat: 3
+      instructions: >-
+        Start one worker for each part that has failures, with that part as its writeScope
+        (inside yours). Its goal names each failure (the test, the output, the log line), the
+        cause you traced, what must not change (the shared interfaces), and its acceptance: these
+        tests pass and the part's own unit tests still pass. Sleep until they have all ended;
+        start the system again and run the whole check. While rounds and failures are left, the
+        next round starts from what this one learned; never repeat a fix that did not work.
+    - name: report
+      instructions: >-
+        Finish with the output of the last whole check, each failure that was fixed with its
+        cause and part, and what is left with the cause you think it has.
+  example: |-
+    Example 1. Brief (from the root of a flight booking system): goal "make the whole system
+    pass its acceptance tests"; start "HH_PORT_BASE=8800 ./run.sh start"; check "python3 -m
+    unittest discover -s tests/e2e -t ."; maxRounds 2; writeScope ["services/"].
+    run: started the system in the background and waited for GET /health on the gateway. The
+    check: 41 of 44 pass. test_logout: the gateway log shows the token served from its cache
+    after logout (services/gateway/). test_cancel_refunds: bookings logs "cancelled" but the
+    payments log never shows booking_cancelled (services/bookings/, the outbox).
+    test_payments_down: bookings waits 30 s on payments (services/bookings/, no timeout).
+    fix (round 1): two workers: "gateway-fix" writeScope ["services/gateway/"] (end the cached
+    token on logout; test_logout passes; gateway unit tests pass) and "bookings-fix" writeScope
+    ["services/bookings/"] (save the cancel and the outbox row in one transaction; a 2 s
+    timeout on calls to payments; test_cancel_refunds and test_payments_down pass). Slept until
+    both ended; restarted the system; the check: 44 of 44 pass.
+    report: finish_subagent status done with the last check (44 passed) and the three causes
+    with their parts.
+
+    Example 2. Brief: goal "the web app and the API must work together: the e2e suite fails
+    after the API moved to /v2"; start "docker compose up -d"; check "npm run e2e"; writeScope
+    ["web/", "api/"].
+    run: 12 of 30 fail, all with 404 on /api/v1/...: the web client still calls v1 (web/src/
+    api.ts). One cause, one part.
+    fix (round 1): one worker "web-v2" writeScope ["web/"]: move every call in web/src/api.ts
+    to /v2, keep the names of the functions. Slept until it ended; the check: 29 of 30 pass;
+    test_upload fails with 413: the API's body limit is lower in v2 (api/server.ts).
+    fix (round 2): one worker "api-limit" writeScope ["api/"]: the v2 body limit back to 10 MB
+    as in v1. The check: 30 of 30 pass.
+    report: finish_subagent status done: the client called v1, and v2 had a lower body limit.
+
+    Example 3. Brief: goal "the nightly pipeline must run end to end again"; start
+    "make services"; check "make pipeline-test"; maxRounds 1; writeScope ["pipeline/"].
+    run: the check fails at the second stage: the loader writes dates as text, the aggregator
+    expects timestamps (pipeline/load/ writes, pipeline/aggregate/ reads; the interface in
+    pipeline/SCHEMA.md says timestamps). The part is the loader.
+    fix (round 1): one worker "load-dates" writeScope ["pipeline/load/"] to write timestamps as
+    SCHEMA.md says. The check still fails, now at the third stage, on an empty partition the
+    aggregator never handled. No round is left.
+    report: finish_subagent status partial: the loader is fixed; the aggregator fails on an
+    empty partition (pipeline/aggregate/run.py), which needs its own fix.

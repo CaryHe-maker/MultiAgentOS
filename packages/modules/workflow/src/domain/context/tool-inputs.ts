@@ -71,8 +71,19 @@ function fullOutputOf(
     const ref = resolveReference(toolCallId, records, scope);
     return ref === undefined ? undefined : { fullRef: ref };
   }
-  const reverted = new Set<string>();
   const rolledBack = rolledBackRanges(records);
+  // A message sent to this task is read by its id (Orchestration 5.3): the record of the message
+  // names who may read it, and its text is in the model output of the sender.
+  const message = records.find(
+    (record) =>
+      record.type === 'MISSION_MESSAGE' &&
+      record.source.toolCallId === toolCallId &&
+      scope.missionId !== undefined &&
+      record.to.includes(scope.missionId) &&
+      !isRolledBack(record.seq, rolledBack),
+  );
+  if (message?.type === 'MISSION_MESSAGE') return { fullRef: message.source.outputRef };
+  const reverted = new Set<string>();
   const callers = new Set<string>();
   const main = new Set<string>();
   for (const record of records) {

@@ -1,6 +1,7 @@
 import type { SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { owedReplies, replyRefusal, replyReminder } from './mission-replies.js';
+import { projectHistory } from '../context/history-projection.js';
 
 const at = '2026-11-13T00:00:00.000Z';
 let seq = 0;
@@ -37,7 +38,9 @@ const round = (agentRunId: string, turn = true): SessionLogRecord[] => {
       inputSource: { kind: 'WORKFLOW' },
     }),
     record({ type: 'CONTEXT_ASSEMBLED', requestId }),
-    ...(turn ? [record({ type: 'MODEL_TURN', requestId: `${requestId}_m`, agentRunId })] : []),
+    ...(turn
+      ? [record({ type: 'MODEL_TURN', requestId: `${requestId}_m`, agentRunId, toolCalls: [] })]
+      : []),
   ];
 };
 
@@ -62,7 +65,9 @@ describe('owedReplies', () => {
   it('does not count a round whose context was made before the message came', () => {
     const log = [registered('agr_b', 'msn_b'), ...round('agr_b', false)];
     log.push(message('call_1', 'msn_a', 'msn_b', { kind: 'request' }));
-    log.push(record({ type: 'MODEL_TURN', requestId: 'req_x', agentRunId: 'agr_b' }));
+    log.push(
+      record({ type: 'MODEL_TURN', requestId: 'req_x', agentRunId: 'agr_b', toolCalls: [] }),
+    );
     expect(owedReplies(log, 'msn_b', { agentRunId: 'agr_b' })).toEqual([
       { toolCallId: 'call_1', fromLabel: 'msn_a', seen: 0 },
     ]);
@@ -100,5 +105,45 @@ describe('the reminder and the refusal', () => {
       'Not executed: you still have not answered call_1 (from api)',
     );
     expect(replyRefusal(owed(2), new Set(['call_1']))).toBeUndefined();
+  });
+
+  it('says that a call that must be alone waits for the next reply', () => {
+    expect(replyReminder(owed(1))).toContain('goes in your next reply, after the answers');
+    expect(replyRefusal(owed(2), new Set())).toContain(
+      'goes in your next reply, after the answers',
+    );
+  });
+
+  it('names a few requests and counts the rest, so the note stays within its limit', () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      toolCallId: `call_${'x'.repeat(50)}_${String(index)}`,
+      fromLabel: 'y'.repeat(64),
+      seen: 2,
+    }));
+    const reminder = replyReminder(many) ?? '';
+    expect(reminder).toContain('and 22 more');
+    expect(reminder.length).toBeLessThanOrEqual(2000);
+    expect(replyRefusal(many, new Set())).toContain('and 22 more');
+  });
+});
+
+describe('the reminder in the history', () => {
+  const log = () => [
+    registered('agr_p', 'msn_p'),
+    message('call_req', 'msn_a', 'msn_p', { kind: 'request' }),
+    ...round('agr_p'),
+  ];
+  const notes = (options: { final?: boolean; material?: boolean } = {}) =>
+    projectHistory(log(), { kind: 'MAIN', missionId: 'msn_p' }, options).flatMap((entry) =>
+      entry.kind === 'NOTE' ? [entry.text] : [],
+    );
+
+  it('comes last in a working round', () => {
+    expect(notes().at(-1)).toContain('You have not answered this request: call_req');
+  });
+
+  it('is left out of a last round and of a compaction', () => {
+    expect(notes({ final: true }).join(' ')).not.toContain('You have not answered');
+    expect(notes({ material: true }).join(' ')).not.toContain('You have not answered');
   });
 });
