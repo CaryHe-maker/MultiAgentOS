@@ -220,6 +220,10 @@ export const AgentDefinitionSchema = Type.Object(
         spawn: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
+        /** The `sub_mission` tool: a part of the work handed to a pre-orchestrated template (3.9). */
+        subMission: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
         /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
         sleep: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
@@ -511,6 +515,59 @@ const TemplateDependencySchema = Type.Union([
   Type.Object({ node: NodeNameSchema, when: EdgeConditionSchema }, { additionalProperties: false }),
 ]);
 
+/**
+ * The playbook of a pre-orchestrated template (Orchestration 3.9, D31): what the root of a
+ * subMission follows. Phases come in order; a phase with `tasks` is one `run_subagents` call of the
+ * root, of tasks of that Agent and in that number, which the system checks; `repeat` lets it come
+ * again (a bounded loop); `optional` lets it be passed over. `example` is a worked plan the root
+ * reads first (D32).
+ */
+export const PlaybookPhaseSchema = Type.Object(
+  {
+    name: NodeNameSchema,
+    /** What the root does at this phase: how it writes the goals, what it decides. */
+    instructions: TextSchema(2_000),
+    tasks: Type.Optional(
+      Type.Object(
+        {
+          agent: Type.Enum(['explorer', 'worker']),
+          min: Type.Integer({ minimum: 1, maximum: 8 }),
+          max: Type.Integer({ minimum: 1, maximum: 8 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    /** How many times in all the phase may run (a bounded loop); 1 when absent. */
+    repeat: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+    optional: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+export type PlaybookPhase = Static<typeof PlaybookPhaseSchema>;
+
+export const PlaybookSchema = Type.Object(
+  {
+    /** One line for the caller: what the template is for and when to use it. */
+    summary: TextSchema(400),
+    params: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ pattern: '^[a-z][a-zA-Z0-9]{0,39}$' }),
+          description: TextSchema(400),
+          required: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 8 },
+    ),
+    phases: Type.Array(PlaybookPhaseSchema, { minItems: 1, maxItems: 8 }),
+    /** A worked plan: a brief, what the root writes at each phase, and the report (D32). */
+    example: TextSchema(6_000),
+  },
+  { additionalProperties: false },
+);
+export type Playbook = Static<typeof PlaybookSchema>;
+
 export const TemplateNodeSchema = Type.Union([
   Type.Object(
     {
@@ -546,6 +603,11 @@ export const TemplateDefinitionSchema = Type.Object(
       Type.Object({ agent: DefinitionRefSchema }, { additionalProperties: false }),
     ),
     nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
+    /**
+     * A pre-orchestrated template (Orchestration 3.9): what the root of a subMission started with
+     * it follows. Such a template runs through `sub_mission`; its one node is that root.
+     */
+    playbook: Type.Optional(PlaybookSchema),
   },
   { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
 );

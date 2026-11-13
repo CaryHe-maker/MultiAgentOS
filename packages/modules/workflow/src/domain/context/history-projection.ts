@@ -37,6 +37,8 @@ export interface TaskScope {
    * step; a spawned task works from its task alone.
    */
   readonly withPrompt?: boolean;
+  /** The playbook of a subMission's root, in words (Orchestration 3.9). */
+  readonly playbook?: string;
 }
 
 /**
@@ -258,6 +260,7 @@ export function projectHistory(
               acceptance: [...scope.task.acceptance],
               writeScope: [...scope.task.writeScope],
               inputs: [...scope.task.inputs],
+              ...(scope.task.playbook === undefined ? {} : { playbook: scope.task.playbook }),
             });
             for (const dependency of scope.task.dependencies)
               entries.push({ ...dependency, seq: record.seq });

@@ -1,0 +1,60 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: explore-build
+version: v0.1.0
+description: 'Pre-orchestrated: explore first, then decide the approach and build it.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: explore what is unclear first, then decide the approach and build it
+  params:
+    - name: questions
+      description: what must be found out before building (one per line)
+      required: true
+  phases:
+    - name: explore
+      tasks:
+        agent: explorer
+        min: 1
+        max: 3
+      instructions: >-
+        Split the questions among 1 to 3 explorers, one area each, so their reading does not
+        overlap. Each goal asks for facts with the files and lines they come from, not opinions.
+        Sleep until they have all ended.
+    - name: decide
+      instructions: >-
+        From what they found, decide the approach yourself and write it down in a file in your
+        scope when others must follow it (interfaces, names). If a question is still open, say
+        so in the goals of the builders rather than guessing.
+    - name: build
+      tasks:
+        agent: worker
+        min: 1
+        max: 4
+      instructions: >-
+        Start 1 to 4 workers with writeScopes that do not overlap, each with the part of the
+        approach it builds and acceptance criteria with a check. Sleep until they have all ended.
+    - name: verify
+      instructions: >-
+        Read what changed, run the checks of the whole part yourself, and fix small things; then
+        finish with what was found, the approach, what was built and how it was checked.
+  example: |-
+    Brief: goal "add CSV export to the report page"; questions "how are reports built and
+    rendered today? is there a download endpoint pattern to follow?"; writeScope ["server/",
+    "web/"].
+    explore: run_subagents with two explorers: "server-look" (how server/reports builds a report,
+    which routes exist, how a file download is served elsewhere) and "web-look" (how the report
+    page fetches and renders a report). Slept until both ended: reports are built by
+    build_report(); downloads follow server/routes/files.py with send_file.
+    decide: export as GET /reports/<id>.csv built from build_report(); wrote the route and the
+    column order to server/EXPORT.md.
+    build: two workers, "api" writeScope ["server/"] (the route, from server/EXPORT.md, tests in
+    server/tests) and "button" writeScope ["web/"] (a download button that calls the route).
+    verify: ran pytest server/tests -q (all passed) and the web build; finish_subagent status
+    done with the route, the button and the checks.

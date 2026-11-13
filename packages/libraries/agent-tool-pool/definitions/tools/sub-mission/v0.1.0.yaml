@@ -1,0 +1,29 @@
+schemaVersion: v1
+kind: TOOL
+id: sub-mission
+version: v0.1.0
+description: Control tool that hands one part of the work to a pre-orchestrated template.
+purpose: CONTROL
+modelName: sub_mission
+modelDescription: >-
+  Hand one part of the work to a pre-orchestrated template, like a firm hands a part to a
+  contractor. It starts one subtask, the root of the template: a lead that follows the template's
+  playbook (its phases of subtasks, which the system checks) and hands back one report, as any
+  subtask does. Use it when a part of the work has the shape of a template, so you need not
+  coordinate the steps yourself; use run_subagents for anything else. Give it a name, the
+  template, a goal that stands on its own (it does not see your conversation; it sees the plan),
+  acceptance criteria with a check where you can, a writeScope (lent to the whole part, as with
+  run_subagents), and the params the template asks for. The templates are: fix-verify (find the
+  cause of a failure, fix it, and run a check until it passes; params check, maxRounds),
+  explore-build (explore first, then decide and build; params questions), review (an independent
+  read-only review of changes; params criteria). It returns at once; sleep with until children
+  to wait for its report, and send_message, stop_subagents work on it as on any subtask. Call it
+  on its own.
+parametersContract:
+  kind: contract
+  id: workflow.SubMissionArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

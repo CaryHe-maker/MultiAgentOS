@@ -63,6 +63,31 @@ export const RunSubagentsArgsSchema = closed(
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
 
+/**
+ * Parameters of `sub_mission` (Orchestration 3.9, D31): one part of the work handed to a
+ * pre-orchestrated template. Its root, an Agent, follows the template's playbook and hands back a
+ * report like any subtask. `params` are the ones the template declares.
+ */
+export const SubMissionArgsSchema = closed(
+  {
+    name: NameSchema,
+    template: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,63}$' }),
+    goal: text(4000),
+    role: Type.Optional(text(80)),
+    writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+    commands: Type.Optional(Type.Boolean()),
+    inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
+    acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
+    params: Type.Optional(Type.Record(Type.String({ maxLength: 40 }), text(2000))),
+    effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
+    budget: Type.Optional(closed({ tokens: count(1) })),
+    /** The plan of the work, as with run_subagents: the root task writes it before its first. */
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.SubMissionArgs.v1',
+);
+export type SubMissionArgs = Static<typeof SubMissionArgsSchema>;
+
 export const AcceptanceAnswerSchema = closed({
   index: count(0),
   verdict: Type.Enum(['met', 'not_met', 'unknown']),

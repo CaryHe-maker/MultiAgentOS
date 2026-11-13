@@ -79,6 +79,7 @@ describe('the repository catalog', () => {
       'send_message',
       'sleep',
       'stop_subagents',
+      'sub_mission',
       'update_todos',
       'view_tasks',
       'web_fetch',

@@ -563,6 +563,7 @@ ${shown}`,
                 ...entry.acceptance.map((each, index) => `${String(index)}. ${each}`),
               ]),
         ];
+        if (entry.playbook !== undefined) lines.push(entry.playbook);
         for (const ref of entry.inputs)
           lines.push(`Material handed over to you:\n${await this.#text(ref)}`);
         return { ...base, kind: 'HUMAN', text: lines.join('\n') };

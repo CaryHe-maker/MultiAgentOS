@@ -6,7 +6,11 @@ import {
   PrunedItemSchema,
 } from '../context/compaction.js';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
-import { DefinitionRefSchema, PinnedDefinitionRefSchema } from '../catalog/definition-schemas.js';
+import {
+  DefinitionRefSchema,
+  PinnedDefinitionRefSchema,
+  PlaybookSchema,
+} from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import {
@@ -46,6 +50,17 @@ export const SpawnNodeSchema = closed({
   /** The share of budget reserved for it, after the Kernel clamped the request. */
   tokens: count(1),
   clamped: Type.Optional(Type.Enum(['MIN', 'MAX'])),
+  /**
+   * The root of a subMission (Orchestration 3.9): the template it follows, with its playbook as it
+   * was when the work was handed over, and the parameters given; the log alone says what it must do.
+   */
+  submission: Type.Optional(
+    closed({
+      template: DefinitionRefSchema,
+      playbook: PlaybookSchema,
+      params: Type.Record(Type.String({ maxLength: 40 }), text(2000)),
+    }),
+  ),
 });
 export type SpawnNode = Static<typeof SpawnNodeSchema>;
 

@@ -82,6 +82,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       acceptance: Type.Array(text(300), { maxItems: 10 }),
       writeScope: Type.Array(text(500), { maxItems: 10 }),
       inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
+      /** The playbook of the template the task follows, in words (Orchestration 3.9). */
+      playbook: Type.Optional(Type.String({ maxLength: 40_000 })),
     }),
     /**
      * The result of a task, by the model output that holds its `finish_subagent` call: PINNED in

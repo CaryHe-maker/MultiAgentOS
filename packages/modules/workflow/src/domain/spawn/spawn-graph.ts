@@ -4,6 +4,7 @@ import type {
   SessionLogRecord,
   SubagentTask,
 } from '@multiagentos/contracts';
+import { renderPlaybook } from './playbook.js';
 import { registeredOf } from '../handover/handover.js';
 import { outcomeOf, type TaskOutcome } from './task-results.js';
 import type { TaskScope } from '../context/history-projection.js';
@@ -181,6 +182,7 @@ export function taskScopeOf(
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
+    ...(spawn.submission === undefined ? {} : { playbook: renderPlaybook(spawn.submission) }),
   };
 }
 

@@ -60,6 +60,8 @@ export interface AgentDefinitions {
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** `sub_mission`: a part of the work handed to a pre-orchestrated template (Orchestration 3.9). */
+  readonly subMissionTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `ask_user`: the same shape, answered by the user through a HUMAN node (M2Design 3.4). */
   readonly askTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `sleep`: ends the segment; the runner checks what it waits for (Orchestration 4.1). */
@@ -201,7 +203,13 @@ export type AgentEnding =
     }
   | { readonly kind: 'FAILED'; readonly code: ReasonCode }
   /** `run_subagents` was called validly in form; the runner validates the tasks. */
-  | { readonly kind: 'SPAWN'; readonly arguments: unknown; readonly source: ControlSource }
+  | {
+      readonly kind: 'SPAWN';
+      readonly arguments: unknown;
+      readonly source: ControlSource;
+      /** A `sub_mission` call: one task, the root of a pre-orchestrated template (3.9). */
+      readonly submission?: true;
+    }
   /** `ask_user` was called validly in form; the runner checks what it points at. */
   | { readonly kind: 'ASK'; readonly arguments: unknown; readonly source: ControlSource }
   /** `sleep` was called validly in form; the runner checks it can be woken, then ends the segment. */
@@ -850,6 +858,19 @@ function soleControlOf(
         parameters: spawn.parameters,
         allowedInFinal: false,
         ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
+      };
+    const subMission = state.spawnWithdrawn ? undefined : state.definitions.subMissionTool;
+    if (subMission !== undefined && call.toolName === subMission.toolName)
+      return {
+        call,
+        parameters: subMission.parameters,
+        allowedInFinal: false,
+        ending: (source) => ({
+          kind: 'SPAWN',
+          arguments: call.arguments,
+          source,
+          submission: true,
+        }),
       };
     const ask = state.definitions.askTool;
     if (ask !== undefined && call.toolName === ask.toolName)

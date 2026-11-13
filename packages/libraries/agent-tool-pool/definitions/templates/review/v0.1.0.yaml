@@ -1,0 +1,42 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: review
+version: v0.1.0
+description: 'Pre-orchestrated: an independent, read-only review of changes against criteria.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: an independent read-only review of changes against criteria
+  params:
+    - name: criteria
+      description: what the review checks (one per line), for example correctness, tests, style
+      required: true
+  phases:
+    - name: review
+      tasks:
+        agent: explorer
+        min: 1
+        max: 2
+      instructions: >-
+        Start 1 or 2 explorers that did not write the changes. Each goal names the files or the
+        change to review and the criteria, and asks for each finding with its file, line, why it
+        is wrong and how sure the reviewer is. Sleep until they have ended.
+    - name: report
+      instructions: >-
+        Check the findings you doubt by reading the code yourself, drop the ones that do not hold,
+        and finish with the findings by importance. You change no file.
+  example: |-
+    Brief: goal "review the CSV export added in server/routes/reports.py and web/ReportPage.tsx";
+    criteria "correctness of the CSV (escaping, column order); tests cover it; no change outside
+    the export"; no writeScope.
+    review: one explorer "reviewer" reads the two files and server/EXPORT.md against the
+    criteria. It found: commas in titles are not quoted (reports.py line 41, sure); no test for
+    an empty report (likely).
+    report: I read line 41: the row is joined with "," by hand, so the finding holds. finish_subagent
+    status done with the two findings, the first first.

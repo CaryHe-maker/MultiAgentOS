@@ -24,6 +24,8 @@ import {
   type StopSubagentsArgs,
   type WakeCondition,
   type RunSubagentsArgs,
+  type SpawnNode,
+  type SubMissionArgs,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
   type ProtectedCapability,
@@ -73,6 +75,7 @@ import {
   runningJobs,
 } from '../domain/graph/mission-jobs.js';
 import { revokedCompactions } from '../domain/context/compaction-revocation.js';
+import { playbookRefusal, playbookUnfinished } from '../domain/spawn/playbook.js';
 import { interruptedRunOf } from './interrupted-run.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
@@ -2190,6 +2193,24 @@ export class SessionRunner {
     if (task === undefined) throw new Error('only a SubAgent finishes with a result');
     const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
     const { toolCallId } = ending.source;
+    // The root of a subMission is done only once its playbook has run (Orchestration 3.9).
+    const ownTask = this.#taskNodeOf(
+      workflowRunId,
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
+        ({} as GraphNodeRecord),
+    );
+    const followed = ownTask?.spawn?.submission;
+    if (followed !== undefined && (args as { readonly status?: string }).status === 'done') {
+      const left = playbookUnfinished(this.#records, active.missionId, followed);
+      if (left.length > 0)
+        return this.#sendBack(
+          workflowRunId,
+          active,
+          toolCallId,
+          'PLAYBOOK_UNFINISHED',
+          `Not accepted as done: these phases of your playbook have not run: ${left.join(', ')}. Go on with them, or finish with status partial or blocked and say why.`,
+        );
+    }
     const missing = unansweredCriteria(args, task.criteria.length);
     if (missing.length > 0)
       return this.#sendBack(
@@ -2519,8 +2540,10 @@ export class SessionRunner {
     workflowRunId: string,
     active: ActiveAgent,
     ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
+    submission?: NonNullable<SpawnNode['submission']>,
   ): Promise<void> {
     const { toolCallId } = ending.source;
+    if (ending.submission === true) return this.#onSubMission(workflowRunId, active, ending);
     const refuse = (text: string, withdraw = false): Promise<void> =>
       this.#apply(
         workflowRunId,
@@ -2556,6 +2579,19 @@ export class SessionRunner {
         'PLAN_REQUIRED',
         'Not started: write the plan of the work first, in plan of this same call: what is delivered and how it is checked, the approach, how the work is split and who owns which part and which shared file or interface, and the constraints every task must keep. Every task you start sees it, so the goals of the tasks need not repeat it.',
       );
+    // The root of a subMission follows its playbook (Orchestration 3.9): a call that does not
+    // is sent back, without counting as a wrong call of run_subagents.
+    const ownTask = this.#taskNodeOf(
+      workflowRunId,
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
+        ({} as GraphNodeRecord),
+    );
+    const followed = ownTask?.spawn?.submission;
+    if (followed !== undefined) {
+      const off = playbookRefusal(this.#records, active.missionId, followed, args.tasks);
+      if (off !== undefined)
+        return this.#answerControl(workflowRunId, active, toolCallId, true, 'PLAYBOOK', off);
+    }
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const checked = validateSpawn(args, {
       rules: this.#deps.config,
@@ -2596,7 +2632,91 @@ export class SessionRunner {
         `before starting ${checked.plan.tasks.map((task) => task.name).join(', ')}`,
         toolCallId,
       );
-    await this.#expandGraph(workflowRunId, active, toolCallId, checked.plan.tasks, lent.reserved);
+    await this.#expandGraph(
+      workflowRunId,
+      active,
+      toolCallId,
+      checked.plan.tasks,
+      lent.reserved,
+      submission,
+    );
+  }
+
+  /**
+   * `sub_mission` (Orchestration 3.9, D31): one task, the root of a pre-orchestrated template, a
+   * `lead` that follows the template's playbook. The template must exist and be one, and its
+   * parameters must be the ones it declares. Only a root task hands work over like this: the
+   * template's root and its tasks take the two levels below it.
+   */
+  async #onSubMission(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const args = ending.arguments as SubMissionArgs;
+    const back = (text: string) =>
+      this.#answerControl(workflowRunId, active, toolCallId, true, 'SUB_MISSION_REFUSED', text);
+    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
+    if (!isRoot)
+      return back(
+        'Not started: only the root task hands a part of the work to a template; use run_subagents.',
+      );
+    const template = this.#deps.templates.get(args.template);
+    const playbook = template?.playbook;
+    if (template === undefined || playbook === undefined) {
+      const known = [...this.#deps.templates.values()]
+        .filter((each) => each.playbook !== undefined)
+        .map((each) => `${each.id} (${each.playbook?.summary ?? ''})`);
+      return back(
+        `Not started: there is no pre-orchestrated template ${args.template}. Known: ${known.join('; ') || 'none'}.`,
+      );
+    }
+    const given = args.params ?? {};
+    const declared = new Set(playbook.params.map((param) => param.name));
+    const unknown = Object.keys(given).filter((name) => !declared.has(name));
+    const missing = playbook.params
+      .filter((param) => param.required && given[param.name] === undefined)
+      .map((param) => `${param.name} (${param.description})`);
+    if (unknown.length > 0 || missing.length > 0)
+      return back(
+        `Not started: ${[
+          ...(missing.length === 0 ? [] : [`missing params: ${missing.join('; ')}`]),
+          ...(unknown.length === 0
+            ? []
+            : [`params ${args.template} does not take: ${unknown.join(', ')}`]),
+        ].join('; ')}.`,
+      );
+    const task: RunSubagentsArgs['tasks'][number] = {
+      name: args.name,
+      agent: 'lead',
+      goal: args.goal,
+      role: args.role ?? `${args.template}: ${playbook.summary}`.slice(0, 80),
+      ...(args.writeScope === undefined ? {} : { writeScope: args.writeScope }),
+      ...(args.commands === undefined ? {} : { commands: args.commands }),
+      ...(args.inputs === undefined ? {} : { inputs: args.inputs }),
+      ...(args.acceptance === undefined ? {} : { acceptance: args.acceptance }),
+      ...(args.effort === undefined ? {} : { effort: args.effort }),
+      ...(args.budget === undefined ? {} : { budget: args.budget }),
+    };
+    await this.#onSpawn(
+      workflowRunId,
+      active,
+      {
+        kind: 'SPAWN',
+        arguments: {
+          tasks: [task],
+          ...(args.plan === undefined ? {} : { plan: args.plan }),
+        } satisfies RunSubagentsArgs,
+        source: ending.source,
+      },
+      {
+        template: { id: template.id, version: template.version },
+        // A copy of it as it is now: the log keeps what the root was given.
+        playbook: structuredClone(playbook) as NonNullable<SpawnNode['submission']>['playbook'],
+        params: { ...given },
+      },
+    );
   }
 
   /** Asks the Kernel to lend the shares of all the tasks, or none (M2Design 7.3, rule 2). */
@@ -2646,6 +2766,7 @@ export class SessionRunner {
     toolCallId: string,
     tasks: SpawnPlan['tasks'],
     reserved: DelegationReserved,
+    submission?: NonNullable<SpawnNode['submission']>,
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -2662,7 +2783,10 @@ export class SessionRunner {
         agentRef: this.#refOf(task.agent),
         goal: task.goal,
         dependsOn: task.dependsOn ?? [],
-        spawn: spawnNodeOf(task, shares.get(task.name)),
+        spawn: {
+          ...spawnNodeOf(task, shares.get(task.name)),
+          ...(submission === undefined ? {} : { submission }),
+        },
       })),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);

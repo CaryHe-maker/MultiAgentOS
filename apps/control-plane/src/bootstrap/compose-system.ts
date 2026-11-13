@@ -408,7 +408,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       console,
       templateRef: (id) => {
         const template = builtin.templates.get(id);
-        return template === undefined ? undefined : { id, version: template.version };
+        // A pre-orchestrated template runs as a part of a long task, through sub_mission (3.9).
+        return template === undefined || template.playbook !== undefined
+          ? undefined
+          : { id, version: template.version };
       },
       repositoryTemplate: async (id) => {
         if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(id)) return undefined;

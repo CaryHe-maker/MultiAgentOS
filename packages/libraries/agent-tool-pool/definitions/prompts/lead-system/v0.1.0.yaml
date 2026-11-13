@@ -30,6 +30,12 @@ template: |
     its result; messages wake you too. To wait for a sibling's work, sleep with until siblings
     and its name, never on a guessed timer. stop_subagents stops a subtask that goes wrong; send_message
     with interrupt makes one change course at once.
+  - When your task comes with a playbook (a pre-orchestrated template you were handed), follow
+    it: its phases are the run_subagents calls you make, in order, and the system refuses a call
+    that does not fit. Read its example first. Within each phase you decide the goals, scopes
+    and acceptance of the tasks from your brief and what the earlier phases returned. You finish
+    as done only after its phases have run; when it cannot get the work done, finish as partial
+    or blocked and say why.
   - Ways to split work. Pick the one that fits, combine them, or do the work alone; the system
     keeps the rules (scopes, budget, depth), the choice is yours.
     - Fan out and join: parts that are independent with clear interfaces. Scopes that do not
@@ -47,6 +53,10 @@ template: |
       let a slow command move to the background), then sleep until the job; never poll.
     - Correct course: a task goes the wrong way. send_message with interrupt to change its
       direction, or stop_subagents and start it again with a better goal.
+    - Fix and verify: something fails and a command shows it. Find the cause, fix, run the
+      check, and fix again until it passes, a few rounds at most.
+    - Review apart from the doer: an important change is checked by someone who did not write
+      it, against stated criteria, before you deliver.
     - Alone: small tasks and tightly coupled logic. Do not split when splitting costs more than
       it saves.
   - When another task depends on what you produce, tell it with send_message as soon as it is

@@ -569,6 +569,7 @@ function checkAgent(
     ...[
       body.actions.todos,
       body.actions.spawn,
+      body.actions.subMission,
       body.actions.askUser,
       body.actions.sleep,
       body.actions.message,
@@ -677,6 +678,17 @@ function checkSpawn(
         contractOf(tool.parametersContract) !== 'workflow.RunSubagentsArgs.v1')
     )
       report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
+  }
+  if (body.actions.subMission !== undefined) {
+    if (body.actions.spawn === undefined)
+      report(origin, 'AGENT_INVALID', 'actions.subMission needs actions.spawn');
+    const tool = get('TOOL', body.actions.subMission.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' ||
+        contractOf(tool.parametersContract) !== 'workflow.SubMissionArgs.v1')
+    )
+      report(origin, 'AGENT_INVALID', 'the subMission tool must be CONTROL with SubMissionArgs');
   }
   const finishes = body.actions.end.some((end) => end.then === 'FINISH_SUBAGENT');
   if (finishes !== (body.spawnable !== undefined))
@@ -846,6 +858,7 @@ export class DefinitionCatalog {
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
+      ...(agent.actions.subMission === undefined ? [] : [agent.actions.subMission.toolRef]),
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
       ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
       ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),

@@ -1,0 +1,56 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: fix-verify
+version: v0.1.0
+description: 'Pre-orchestrated: find the cause of a failure, fix it, and check until it passes.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: find the cause of a failure, fix it, and run a check until it passes
+  params:
+    - name: check
+      description: the command that shows the failure now and must pass when it is fixed
+      required: true
+    - name: maxRounds
+      description: how many fix rounds at most (1 to 3); 3 when absent
+      required: false
+  phases:
+    - name: reproduce
+      instructions: >-
+        Run the check yourself first and read what fails; read the code it points to. Do not
+        start a worker before you know what the failure is.
+    - name: fix
+      tasks:
+        agent: worker
+        min: 1
+        max: 1
+      repeat: 3
+      instructions: >-
+        Start one worker with your writeScope (or the part of it the fix needs). Its goal names
+        the failure (the failing test, the error and where), the cause you found or suspect, what
+        must not change, and its acceptance: the check passes. Sleep until it ends, then run the
+        check yourself. If it still fails and rounds are left, start the next fix with what this
+        round learned (what was tried, the new output); never repeat a fix that did not work.
+    - name: report
+      instructions: >-
+        Finish with the cause, the change, the output of the last check and, when it still fails,
+        what was tried and what you think is left.
+  example: |-
+    Brief: goal "test_late_fee fails after the change to the grace period"; check
+    "pytest tests/test_fees.py -q"; maxRounds 2; writeScope ["src/fees.py", "tests/"].
+    reproduce: I ran the check: 1 failed, test_late_fee expects 0.0 at day 3 and got 1.5. In
+    src/fees.py late_fee counts days from the due date, but the grace period of 3 days is now
+    inclusive, so day 3 must still be free.
+    fix (round 1): run_subagents with one worker "fixer", writeScope ["src/fees.py"], goal
+    "late_fee in src/fees.py charges on day 3 although the grace period (3 days) now includes
+    day 3; test_late_fee expects 0.0 at day 3. Change the comparison so days within the grace
+    period are free; do not change the rate or the tests.", acceptance ["pytest
+    tests/test_fees.py -q passes"]. Slept until it ended. Check: 12 passed.
+    report: finish_subagent status done; summary "late_fee counted day 3 as late; the grace
+    comparison is now inclusive; pytest tests/test_fees.py -q: 12 passed"; changed src/fees.py.
