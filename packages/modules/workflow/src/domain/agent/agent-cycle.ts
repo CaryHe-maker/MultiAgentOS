@@ -160,6 +160,8 @@ export interface AgentState {
   /** How many times in a row the model was refused for the size of the context (Core 6a). */
   readonly overflows: number;
   readonly roundHadOk: boolean;
+  /** A call of this round failed and was counted: the other calls of a batch do not count again. */
+  readonly roundErrored: boolean;
   /** Rounds in a row that only kept the todo list: the first is not judged by progress. */
   readonly todoOnlyRounds: number;
   /**
@@ -492,6 +494,7 @@ function nextRound(
     final,
     finalUsed: state.finalUsed || final,
     roundHadOk: false,
+    roundErrored: false,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
   const status: ContextAssembleInput['status'] = {
@@ -550,6 +553,7 @@ export function startAgent(
     regenerations: 0,
     overflows: 0,
     roundHadOk: false,
+    roundErrored: false,
     todoOnlyRounds: 0,
   };
   const { orient } = input.definitions;
@@ -1130,15 +1134,18 @@ function handleTool(
   // A failed read outside the workspace is not counted either: two of them in a row pause the run
   // for the user, who decides whether the Agent was right to try (Kernel/Core 5h).
   const external = !ok && pending.unit.external === true;
-  // A refusal is the user's decision, not a mistake of the model.
+  // A refusal is the user's decision, not a mistake of the model. The failures of one batch are one
+  // mistake: ten writes sent together and refused together do not wrap the run up.
+  const counted = !ok && !declined && !external && !state.roundErrored;
   const consecutiveErrors = ok
     ? 0
-    : declined || external
-      ? state.consecutiveErrors
-      : state.consecutiveErrors + 1;
+    : counted
+      ? state.consecutiveErrors + 1
+      : state.consecutiveErrors;
   let next: AgentState = {
     ...state,
     consecutiveErrors,
+    roundErrored: state.roundErrored || counted,
     roundHadOk: state.roundHadOk || ok || external,
     // After a write nothing read before it may be answered with "the result is above".
     succeeded: !ok
@@ -1462,7 +1469,7 @@ export function resumeAfterRefusal(
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
-  return afterTools({ ...state, roundHadOk: false }, context, config, records);
+  return afterTools({ ...state, roundHadOk: false, roundErrored: false }, context, config, records);
 }
 
 /**

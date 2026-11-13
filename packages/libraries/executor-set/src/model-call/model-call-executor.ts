@@ -31,6 +31,8 @@ export interface ModelCallExecutorOptions {
   /**
    * How many of the latest assistant steps replay their thinking; the thinking of earlier steps is
    * sent empty (the API takes that, and the earlier steps' calls and results stay). Absent: all.
+   * A sliding window changes the text of messages already sent, so it breaks the provider's prompt
+   * cache from the first changed message on (docs/M2/experiments.md, E13).
    */
   readonly replayKeep?: number;
 }

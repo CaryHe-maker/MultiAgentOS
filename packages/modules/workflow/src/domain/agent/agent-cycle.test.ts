@@ -639,6 +639,22 @@ describe('wrap-up', () => {
     expect(current.state).toMatchObject({ final: true, wrapUpReason: 'CONSECUTIVE_ERRORS' });
   });
 
+  it('counts the failures of one batch of calls once', () => {
+    const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 3 } };
+    const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 99 };
+    const calls = ['a', 'b', 'c'].map((path) => call('list_files', { path }, `call_${path}`));
+    let current = replied(atModel(roomy), calls);
+    for (const submission of current.submissions) {
+      current = receive(
+        current,
+        report(current.state, submission.requestId, { reject: 'NOT_FOUND' }),
+        strict,
+      );
+    }
+    expect(current.state.wrapUpReason).toBeUndefined();
+    expect(current.state.consecutiveErrors).toBe(1);
+  });
+
   it('stops a repeated intent at the limit', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
     const strict = {

@@ -471,6 +471,15 @@ export class RunWork {
     this.#deps.ledgers.openInputLedger(checkpointId);
   }
 
+  #insideRepository(path: string): boolean {
+    const root = this.#deps.repositoryRoot.replace(/[\\/]+$/u, '');
+    const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path);
+    return (
+      path !== '' &&
+      (!absolute || path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`))
+    );
+  }
+
   /** Kernel/Core 5h: two failures in a row of reading outside the workspace pause the run. */
   #externalOutcome(report: UnitReport): void {
     const path = this.#externalAsks.get(report.requestId);
@@ -481,6 +490,9 @@ export class RunWork {
       this.#externalFailures = [];
       return;
     }
+    // A path that is relative or lies inside the repository is no guess at the machine: the
+    // tool's refusal already says to use read_file, and the run is not stopped for the user.
+    if (this.#insideRepository(path)) return;
     const code = 'reasonCode' in report ? report.reasonCode : undefined;
     this.#externalFailures.push({
       path,
