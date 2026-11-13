@@ -179,6 +179,28 @@ describe('projectMainHistory', () => {
     expect(notes).toHaveLength(2);
   });
 
+  it('says when the folder is no git repository, and that git_inspect is not offered', () => {
+    const noGit = stamped([
+      ...conversation,
+      {
+        ...context('2026-11-01'),
+        runtimeContext: {
+          workingDirectory: '/repo',
+          sandbox: 'none',
+          currentDate: '2026-11-01',
+          git: false,
+        },
+      },
+    ]);
+    const said = projectMainHistory(noGit).flatMap((entry) =>
+      entry.kind === 'NOTE' ? [entry.text] : [],
+    );
+    expect(said.at(-1)).toContain(
+      'Git: this folder is not a git repository, so git history cannot be read (git_inspect is not offered).',
+    );
+    expect(said.join(' ').match(/Git: /gu)).toHaveLength(1);
+  });
+
   it('leaves out other agents and failed attempts', () => {
     expect(JSON.stringify(entries)).not.toContain('other');
   });

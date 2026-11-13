@@ -1299,7 +1299,16 @@ export class RunWork {
         requestId,
         agentRunId,
       );
-    if (check.requested !== undefined) this.#host.toInteraction(check.requested);
+    if (check.requested !== undefined) {
+      this.#host.toInteraction(check.requested);
+      // Every question is in the audit, so a run says how often it stopped for the user.
+      this.#deps.audit({
+        type: 'AUTHORIZATION_ASKED',
+        requestId,
+        agentRunId,
+        capability: decision.capability,
+      });
+    }
     this.#waiting.set(requestId, waiting);
     this.#activity.awaitingAuthorization(agentRunId);
   }

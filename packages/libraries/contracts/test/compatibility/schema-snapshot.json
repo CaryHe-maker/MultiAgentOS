@@ -56480,6 +56480,9 @@
                 "currentDate": {
                   "type": "string",
                   "format": "date"
+                },
+                "git": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false

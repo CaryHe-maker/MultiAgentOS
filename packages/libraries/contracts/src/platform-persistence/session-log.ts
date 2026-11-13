@@ -598,6 +598,8 @@ export const SessionLogRecordSchema = Type.Union(
         workingDirectory: text(4096),
         sandbox: text(64),
         currentDate: Type.String({ format: 'date' }),
+        /** False when the folder is in no git work tree: git_inspect is not offered then. */
+        git: Type.Optional(Type.Boolean()),
       }),
     }),
     record('CONTEXT_ASSEMBLED', inTurn, {

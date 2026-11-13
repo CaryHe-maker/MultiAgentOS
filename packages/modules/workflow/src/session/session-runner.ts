@@ -156,7 +156,12 @@ export interface SessionRunnerDeps {
   readonly definitionsDigest: string;
   readonly definitionVersions: readonly string[];
   readonly config: AgentConfig;
-  readonly runtime: () => { readonly sandbox: string; readonly currentDate: string };
+  readonly runtime: () => {
+    readonly sandbox: string;
+    readonly currentDate: string;
+    /** False when the repository is in no git work tree. */
+    readonly git?: boolean;
+  };
   /** What the probe found, for `SESSION_STARTED`. */
   readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
   readonly now?: () => Date;
@@ -1568,15 +1573,34 @@ export class SessionRunner {
           ? undefined
           : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
       assembleInput: (status, final, withdrawnTools) => {
+        // In a folder that is no git repository, git history cannot be read: the tool is not
+        // offered, rather than refused on every call (each worker tried it once before).
+        const withdrawn = [
+          ...withdrawnTools,
+          ...(this.#deps.runtime().git === false ? this.#gitTools() : []),
+        ];
         return {
           final,
-          ...(withdrawnTools.length === 0 ? {} : { withdrawnTools: [...withdrawnTools] }),
+          ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
           ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
           history: [...projectHistory(this.#records, scope, { final })],
           status,
         };
       },
     };
+  }
+
+  /** The tools that read git history, by the name the models know them by. */
+  #gitTools(): readonly string[] {
+    return [
+      ...new Set(
+        [...this.#deps.agents.values()].flatMap((binding) =>
+          binding.definitions.tools
+            .filter((tool) => tool.executionKind === 'GIT_INSPECT')
+            .map((tool) => tool.modelName),
+        ),
+      ),
+    ];
   }
 
   /** The handoff a node takes as input: the latest one of this run. */

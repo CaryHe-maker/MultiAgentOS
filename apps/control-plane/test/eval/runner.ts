@@ -279,6 +279,20 @@ export async function archiveRun(
   return into;
 }
 
+/** The Kernel's audit of the one Session in a data directory (questions, commands let through). */
+async function kernelAudit(dataDir: string): Promise<Record<string, unknown>[]> {
+  const [id] = await readdir(join(dataDir, 'sessions')).catch(() => [] as string[]);
+  if (id === undefined) return [];
+  const text = await readFile(
+    join(dataDir, 'sessions', id, 'kernel-core', 'audit.jsonl'),
+    'utf8',
+  ).catch(() => '');
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 /** The replies main delivered, by the publishing Units that succeeded: what a console printed. */
 function publishedReplies(log: readonly Record<string, unknown>[]): readonly string[] {
   const publishing = new Set(
@@ -327,9 +341,10 @@ export async function judgeRun(
   try {
     await cp(places.repository, copy, { recursive: true });
     const replies = publishedReplies(log);
-    const questions = log
-      .filter((record) => record['type'] === 'AUTHORIZATION_REQUESTED')
-      .map(() => 'authorization');
+    // The questions to the user are in the Kernel's audit, not in Workflow's log.
+    const questions = (await kernelAudit(places.dataDir))
+      .filter((entry) => entry['type'] === 'AUTHORIZATION_ASKED')
+      .map((entry) => String(entry['capability']));
     const watched: ScriptedChat = { requests: [], add: () => undefined, fetch: realFetch };
     const record = await recordOf(spec, run, env, started, false, watched, {
       repository: copy,

@@ -66,6 +66,11 @@ export interface WorkflowDeps {
     readonly reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED';
   };
   readonly now?: () => Date;
+  /**
+   * Whether the repository lies in a git work tree, as the composition root found it: when it does
+   * not, git_inspect is not offered, since every call of it could only fail.
+   */
+  readonly git?: boolean;
 }
 
 /** The composition root serves the runner's three handlers at `inbox.workflow`. */
@@ -95,6 +100,7 @@ export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
     runtime: () => ({
       sandbox: SANDBOX_TEXT[deps.sandbox?.state ?? 'UNAVAILABLE'],
       currentDate: now().toISOString().slice(0, 10),
+      ...(deps.git === undefined ? {} : { git: deps.git }),
     }),
     now,
   });

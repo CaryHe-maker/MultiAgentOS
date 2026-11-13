@@ -138,6 +138,13 @@ export type AttemptAudit =
       readonly command: string;
       readonly workdir: string;
     }
+  /** The user was asked to allow a capability for a Unit (M2Design 5.2): what was asked, for whom. */
+  | {
+      readonly type: 'AUTHORIZATION_ASKED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly capability: string;
+    }
   /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
   | {
       readonly type: 'COMMAND_AUTO_APPROVED';

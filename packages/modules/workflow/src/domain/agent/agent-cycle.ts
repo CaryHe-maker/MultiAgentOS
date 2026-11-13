@@ -25,6 +25,7 @@ import type {
 } from '@multiagentos/contracts';
 import type { NewLogRecord } from '../../session/session-log-store.js';
 import { argsSummaryOf } from './tool-display.js';
+import { unknownParameterHint } from './argument-hints.js';
 
 /**
  * One AgentRun as a pure state machine, the same for every Agent (Module/Workflow 7): every step returns the log
@@ -171,6 +172,11 @@ export interface AgentState {
   readonly roundHadOk: boolean;
   /** A call of this round failed and was counted: the other calls of a batch do not count again. */
   readonly roundErrored: boolean;
+  /**
+   * The round had more than one call to wait for (Units and control calls answered at once): it is
+   * judged by progress whichever comes back last (Orchestration 5.3).
+   */
+  readonly roundMixed?: boolean;
   /** Rounds in a row that only kept the todo list: the first is not judged by progress. */
   readonly todoOnlyRounds: number;
   /**
@@ -311,7 +317,7 @@ const FEEDBACK = {
     'Your message contained no tool call, so nothing in it was shown to anyone or used: text outside a tool call is discarded.',
   OUTPUT_TRUNCATED: 'Your reply was cut off before a complete tool call. Send a shorter one.',
   CONTROL_MIXED:
-    'Not executed: a call that must be alone (finishing, starting tasks, waiting) came with other calls; none of them ran.',
+    'Not executed: a call that must be alone (finishing, starting tasks, asking the user, sleeping, stopping tasks) came with other calls; none of them ran.',
   CONTROL_NOT_ALLOWED: 'That control tool is not available at this point.',
   CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
@@ -355,11 +361,17 @@ function invalidArgumentsText(
   lead: string,
   checked: ReturnType<typeof validate> | undefined,
   notJson: boolean,
+  /** The tool's parameters and what the call gave: to name a parameter it does not have. */
+  call?: { readonly parameters: Schema; readonly args: unknown },
 ): string {
   if (notJson) return `${lead}: they are not valid JSON.`;
   if (checked === undefined || checked.ok) return `${lead}.`;
   const text = `${lead}: ${checked.issues.slice(0, 3).join('; ')}`;
-  return text.length <= 600 ? text : `${text.slice(0, 599)}…`;
+  const said = text.length <= 600 ? text : `${text.slice(0, 599)}…`;
+  const hint = call === undefined ? undefined : unknownParameterHint(call.parameters, call.args);
+  return hint === undefined
+    ? said
+    : `${said}. ${hint.length <= 600 ? hint : `${hint.slice(0, 599)}…`}`;
 }
 
 const NOT_EXECUTED = 'Not executed: the arguments do not match the tool parameters';
@@ -524,6 +536,7 @@ function nextRound(
     finalUsed: state.finalUsed || final,
     roundHadOk: false,
     roundErrored: false,
+    roundMixed: false,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
   const status: ContextAssembleInput['status'] = {
@@ -584,6 +597,7 @@ export function startAgent(
     overflows: 0,
     roundHadOk: false,
     roundErrored: false,
+    roundMixed: false,
     todoOnlyRounds: 0,
   };
   const { orient } = input.definitions;
@@ -797,7 +811,10 @@ function handleModel(
             state,
             'INVALID_ARGUMENTS',
             call.toolCallId,
-            invalidArgumentsText(NOT_EXECUTED, args, call.arguments === null),
+            invalidArgumentsText(NOT_EXECUTED, args, call.arguments === null, {
+              parameters: todoTool.parameters,
+              args: call.arguments,
+            }),
           ),
         );
         refusedTodos = true;
@@ -1002,7 +1019,7 @@ function repliesOwed(
  */
 function mixedText(sole: ModelToolCall, calls: readonly ModelToolCall[]): string {
   const others = calls.filter((each) => each !== sole).map((each) => each.toolName);
-  return `Not executed: ${sole.toolName} must be the only tool call in its reply, and this reply also had ${others.join(', ')}. None of the ${String(calls.length)} calls of this reply ran, ${sole.toolName} included: send ${sole.toolName} on its own, then the others again.`;
+  return `Not executed: ${sole.toolName} must be the only tool call in its reply, and this reply also had ${others.join(', ')}. None of the ${String(calls.length)} calls of this reply ran, ${sole.toolName} included. Send the other calls first, in a reply of their own, and ${sole.toolName} alone in the reply after: a finishing or waiting call ends what you can do in this round.`;
 }
 
 /** Why a sole control call is not taken, if it is not: with the reason the model can act on. */
@@ -1017,7 +1034,10 @@ function soleRefusal(
   if (checked !== undefined && checked.ok) return undefined;
   return {
     code: 'CONTROL_ARGUMENTS_INVALID',
-    detail: invalidArgumentsText(NOT_TAKEN, checked, call.arguments === null),
+    detail: invalidArgumentsText(NOT_TAKEN, checked, call.arguments === null, {
+      parameters,
+      args: call.arguments,
+    }),
   };
 }
 
@@ -1087,7 +1107,10 @@ function actOn(
           state,
           'CONTROL_ARGUMENTS_INVALID',
           control.call.toolCallId,
-          invalidArgumentsText(NOT_TAKEN, checked, control.call.arguments === null),
+          invalidArgumentsText(NOT_TAKEN, checked, control.call.arguments === null, {
+            parameters: control.parameters,
+            args: control.call.arguments,
+          }),
         ),
       );
       continue;
@@ -1125,7 +1148,10 @@ function actOn(
           state,
           'INVALID_ARGUMENTS',
           call.toolCallId,
-          invalidArgumentsText(NOT_EXECUTED, checked, call.arguments === null),
+          invalidArgumentsText(NOT_EXECUTED, checked, call.arguments === null, {
+            parameters: tool.parameters,
+            args: call.arguments,
+          }),
         ),
       );
       continue;
@@ -1161,7 +1187,13 @@ function actOn(
   }
   next = { ...next, pending };
   // The control calls are answered by the runner; the round waits for them like for its Units.
-  if (answered.length > 0) return { state: next, records, submissions, controls: answered };
+  if (answered.length > 0)
+    return {
+      state: { ...next, roundMixed: submissions.length + answered.length > 1 },
+      records,
+      submissions,
+      controls: answered,
+    };
   if (submissions.length === 0) {
     const released = releaseDeferred(next, context, records);
     if (released.submissions.length > 0) return { ...released, records };
@@ -1652,11 +1684,18 @@ export function answerDelegatedCall(
       return { state: released.state, records, submissions: released.submissions };
     next = released.state;
     if (next.fatal !== undefined) return ended(next, { kind: 'FAILED', code: next.fatal }, records);
-    return afterTools(next, context, config, records, !outcome.refused);
+    return afterTools(next, context, config, records, !outcome.refused || next.roundMixed === true);
   }
   // A Unit of the round failed fatally while this call was still out: the batch is finished now.
   if (next.fatal !== undefined)
     return ended(next, { kind: 'FAILED', code: next.fatal }, outcome.records);
   // A refused call has its own limit (two take the tool away); it does not also end the AgentRun.
-  return afterTools(next, context, config, outcome.records, !outcome.refused);
+  // A round of several calls is judged as any round is, whichever of its calls came back last.
+  return afterTools(
+    next,
+    context,
+    config,
+    outcome.records,
+    !outcome.refused || next.roundMixed === true,
+  );
 }

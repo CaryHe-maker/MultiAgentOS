@@ -80,8 +80,12 @@ function interruptedNote(
 }
 
 function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
-  const { workingDirectory, sandbox, currentDate } = context.runtimeContext;
-  return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}`;
+  const { workingDirectory, sandbox, currentDate, git } = context.runtimeContext;
+  const noGit =
+    git === false
+      ? '\nGit: this folder is not a git repository, so git history cannot be read (git_inspect is not offered).'
+      : '';
+  return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}${noGit}`;
 }
 
 /** What a task reads first when it wakes: why, and that it goes on where it stopped. */

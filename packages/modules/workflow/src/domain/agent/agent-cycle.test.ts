@@ -13,6 +13,7 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
+  answerDelegatedCall,
   closeAgent,
   receiveAgentReport,
   resumeAfterPause,
@@ -1015,5 +1016,41 @@ describe('a request read before and not answered (Orchestration 5.3)', () => {
     expect(refused.state.final).toBe(true);
     const last = answer(again(refused), [call('reply', { text: 'done' }, 'end')]);
     expect(last.ending).toMatchObject({ kind: 'ENDED', source: { toolCallId: 'end' } });
+  });
+});
+
+describe('a round of several calls is judged whichever comes back last (Orchestration 5.3)', () => {
+  const withMessage = {
+    limits: { maxRounds: 20, maxToolCallsPerRound: 4 },
+    messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+  };
+  const refusedLast = (failRead: boolean) => {
+    const round = replied(atModel(withMessage), [
+      call('list_files', { path: 'a' }, 'read'),
+      call('send_message', { to: 'api', text: 'hello' }, 'msg'),
+    ]);
+    const [read] = round.submissions;
+    if (read === undefined) throw new Error('a read expected');
+    const back = receive(
+      round,
+      report(round.state, read.requestId, failRead ? { reject: 'NOT_FOUND' } : { ok: {} }),
+    );
+    expect(back.submissions).toEqual([]);
+    // The runner refuses the message after the read has come back.
+    return answerDelegatedCall(
+      back.state,
+      'msg',
+      { refused: true, spawn: false, records: [] },
+      context,
+      config,
+    );
+  };
+
+  it('counts a round whose read failed and whose message was refused as no progress', () => {
+    expect(refusedLast(true).state.noProgress).toBe(1);
+  });
+
+  it('counts a round with a read that worked as progress, though its message was refused', () => {
+    expect(refusedLast(false).state.noProgress).toBe(0);
   });
 });
