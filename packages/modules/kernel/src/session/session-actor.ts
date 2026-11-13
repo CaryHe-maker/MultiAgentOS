@@ -22,6 +22,7 @@ import {
   answerOpenInput,
   attemptEnded,
   answerLocalQuestion,
+  withdrawLocalQuestion,
   attemptStarted,
   beginConvergence,
   beginInterrupt,
@@ -399,6 +400,21 @@ export class SessionActor {
     };
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
     return decision;
+  }
+
+  /**
+   * A local question nobody waits for any more (Orchestration 5.1, 7.5) is taken back, and the user
+   * is told it is gone. Accepted when it is no longer pending.
+   */
+  withdrawQuestion(run: Run, humanRequestId: string): Decision {
+    if (!run.control.questions.has(humanRequestId)) return { accepted: true, control: run.control };
+    run.control = withdrawLocalQuestion(run.control, humanRequestId);
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'HumanResolved',
+      humanRequestId,
+      resolution: 'CANCELLED',
+    });
+    return { accepted: true, control: run.control };
   }
 
   /** The answer to a local question: delivered, in a paused run too, where Execution holds the rest. */

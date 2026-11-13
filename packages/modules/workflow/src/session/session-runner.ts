@@ -1028,9 +1028,7 @@ export class SessionRunner {
         (edge) => edge.kind === 'DELEGATE' && edge.to === node.nodeId,
       );
       if (call?.call === undefined) continue;
-      await this.#append([
-        { type: 'NODE_ENDED', workflowRunId, nodeId: node.nodeId, status: 'INTERRUPTED' },
-      ]);
+      await this.#withdrawQuestion(workflowRunId, node.nodeId);
       const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
       const again = askRevision(
         workflowRunId,
@@ -3881,6 +3879,7 @@ export class SessionRunner {
   }
 
   async #closeMission(workflowRunId: string, missionId: string): Promise<void> {
+    await this.#withdrawQuestionsOf(workflowRunId, missionId);
     const sessionId = this.#sessionIdOrThrow();
     const response = await this.#deps.gateway.closeMission(
       { requestId: newId('req'), sessionId, workflowRunId, missionId },
@@ -3888,6 +3887,41 @@ export class SessionRunner {
     );
     if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
       throw new Error(`closeMission refused: ${response.reasonCode}`);
+  }
+
+  /**
+   * The questions a task asked that are still open end with it (Orchestration 5.1): their nodes end
+   * as interrupted and the Kernel takes them back from the user.
+   */
+  async #withdrawQuestionsOf(workflowRunId: string, missionId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    for (const node of projected.nodes.values()) {
+      if (node.kind !== 'HUMAN' || node.ask === undefined) continue;
+      const status = projected.view.get(node.nodeId)?.status;
+      if (status === undefined || isTerminal(status)) continue;
+      const caller = projected.graph.edges.find(
+        (edge) => edge.kind === 'DELEGATE' && edge.to === node.nodeId,
+      )?.from;
+      if (caller === undefined || projected.nodes.get(caller)?.mission?.id !== missionId) continue;
+      await this.#withdrawQuestion(workflowRunId, node.nodeId);
+    }
+  }
+
+  /** One open question ends as interrupted and is taken back from the user. */
+  async #withdrawQuestion(workflowRunId: string, nodeId: string): Promise<void> {
+    await this.#append([{ type: 'NODE_ENDED', workflowRunId, nodeId, status: 'INTERRUPTED' }]);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.withdrawQuestion(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId: asHumanRequestId(nodeId),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`withdrawQuestion refused: ${response.reasonCode}`);
   }
 
   async #restoreMission(workflowRunId: string, missionId: string, tokens?: number): Promise<void> {

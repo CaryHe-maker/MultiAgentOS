@@ -398,6 +398,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     haltAgentRun: (request) => Promise.resolve(ack(request.requestId)),
     restoreMission: (request) => Promise.resolve(ack(request.requestId)),
     closeMission: (request) => Promise.resolve(ack(request.requestId)),
+    withdrawQuestion: (request) => Promise.resolve(ack(request.requestId)),
     takeCheckpoint: (request) => Promise.resolve(ack(request.requestId)),
     controlJob: (request) =>
       Promise.resolve({

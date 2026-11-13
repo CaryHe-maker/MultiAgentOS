@@ -63,6 +63,7 @@ import type {
   HaltAgentRunRequest,
   RestoreMissionRequest,
   CloseMissionRequest,
+  WithdrawQuestionRequest,
   TakeCheckpointRequest,
   JobControlContent,
   ReportCompactionSourceRequest,
@@ -504,6 +505,11 @@ export interface WorkflowGatewayPort {
   /** Closes a sleeping task that will not wake (Orchestration 5.1, 7.5). */
   closeMission(
     request: CloseMissionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Takes back a local question nobody waits for any more (Orchestration 5.1, 7.5). */
+  withdrawQuestion(
+    request: WithdrawQuestionRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Reads or stops a background command of a task (Orchestration 6.2). */

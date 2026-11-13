@@ -249,6 +249,14 @@ export function requestLocalQuestion(
   };
 }
 
+/** A local question nobody waits for any more is taken back; one not pending is left alone. */
+export function withdrawLocalQuestion(control: RunControl, humanRequestId: string): RunControl {
+  if (!control.questions.has(humanRequestId)) return control;
+  const questions = new Map(control.questions);
+  questions.delete(humanRequestId);
+  return { ...control, questions };
+}
+
 /** The answer to a local question, in a run that is paused too: it is delivered, and held there. */
 export function answerLocalQuestion(control: RunControl, humanRequestId: string): Decision {
   if (!isLive(control) || !control.questions.has(humanRequestId))

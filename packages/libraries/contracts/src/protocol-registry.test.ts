@@ -42,6 +42,7 @@ const EXPECTED = {
     'HaltAgentRunRequest',
     'RestoreMissionRequest',
     'CloseMissionRequest',
+    'WithdrawQuestionRequest',
     'TakeCheckpointRequest',
     'CheckpointTaken',
     'JobControlContent',

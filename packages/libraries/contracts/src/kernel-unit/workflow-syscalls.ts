@@ -197,6 +197,17 @@ export const CloseMissionRequestSchema = closed(
 );
 export type CloseMissionRequest = Static<typeof CloseMissionRequestSchema>;
 
+/**
+ * Takes back a local question nobody will wait for any more (Orchestration 5.1, 7.5): the task that
+ * asked was stopped, or a rewind asks it again. The user is told it is gone. One already answered
+ * or gone is left as it is.
+ */
+export const WithdrawQuestionRequestSchema = closed(
+  { ...inRun, humanRequestId: IdSchemas.humanRequestId },
+  'kernel.unit.WithdrawQuestionRequest.v1',
+);
+export type WithdrawQuestionRequest = Static<typeof WithdrawQuestionRequestSchema>;
+
 export const JobControlContentSchema = closed(
   {
     requestId: IdSchemas.requestId,

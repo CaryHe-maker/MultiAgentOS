@@ -259,4 +259,38 @@ real('ask_user in a long task is a sleep (Orchestration 4.1)', () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'takes the question back from the user when the task that asked is stopped',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              plan: 'One worker names the release; it asks the user.',
+              tasks: [
+                { name: 'namer', agent: 'worker', goal: 'name the release', writeScope: ['out'] },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'timer', seconds: 1 }] }),
+            tool('stop_subagents', { names: ['namer'], reason: 'no name needed after all' }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'delivered without a name' }),
+          ],
+        },
+        { namer: [tool('ask_user', { kind: 'ask', question: 'which name for the release?' })] },
+      );
+      const run = await missionOn('name the release', provider);
+      await until(
+        () => run.lives.at(-1)?.pending?.kind === 'QUESTION',
+        'the question of the worker',
+        30_000,
+      );
+      const code = await run.done;
+      expect(code).toBe(0);
+      expect(run.notices.join('\n')).toContain('delivered without a name');
+      expect(run.notices.join('\n')).toContain('问题已取消');
+    },
+    TIMEOUT,
+  );
 });
