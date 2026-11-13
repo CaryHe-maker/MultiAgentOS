@@ -85,17 +85,13 @@ describe('the tools a task is offered (Orchestration 4, 5, 6.2)', () => {
       const chat = await chatOn(place, provider);
       await chat.say('hi');
       const tools = toolsOfMain(provider);
-      for (const name of [
-        'sleep',
-        'send_message',
-        'view_tasks',
-        'stop_subagents',
-        'job_output',
-        'job_list',
-        'job_kill',
-        'run_command',
-      ])
+      for (const name of ['sleep', 'send_message', 'view_tasks', 'stop_subagents', 'sub_mission'])
         expect(tools).toContain(name);
+      // The job tools go with commands (Orchestration 6.2): offered where commands can run
+      // isolated, and not offered at all where the sandbox is not available.
+      for (const name of ['job_output', 'job_list', 'job_kill', 'run_command'])
+        if (bwrapWorks) expect(tools).toContain(name);
+        else expect(tools).not.toContain(name);
     },
     TIMEOUT,
   );

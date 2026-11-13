@@ -20,11 +20,142 @@ nodes:
     output: true
     goal: 'You own this goal from start to delivery; nobody will answer you between steps. Clarify
       it only if it cannot be done without the user (ask_user). Write the plan of the work in
-      plan of your first run_subagents (every task sees it): what is delivered and how it is
-      checked, the approach, the parts, who owns which part and which shared file or interface,
-      and the constraints, choosing among the ways to split work in your instructions (or doing
-      it alone when it is small); then start leads for large parts, workers
-      for scoped changes and explorers for research, with writeScopes that do not overlap and
-      acceptance criteria for each; sleep while they work; check what comes back against the
-      goal, start fixes where it falls short, and reply with the delivered result and how it was
-      checked.'
+      plan of your first run_subagents or sub_mission (every task sees it): what is delivered and
+      how it is checked, the approach, the parts, who owns which part and which shared file or
+      interface, and the constraints, choosing among the ways to split work in your instructions
+      (or doing it alone when it is small); then start leads for large parts, workers for scoped
+      changes and explorers for research, or hand a part that has the shape of a template to it
+      with sub_mission, with writeScopes that do not overlap and acceptance criteria for each;
+      sleep while they work; check what comes back against the goal, start fixes where it falls
+      short, and reply with the delivered result and how it was checked. The examples below show
+      how this is done well; they are different shapes of work, not a recipe to copy: choose
+      what fits your goal.'
+    guide: |-
+      Examples of long tasks done well. Each shows a different shape; most of them do not use
+      sub_mission, and one is not split at all. Choose by the work in front of you.
+
+      Example 1. A part with the shape of a template, beside parts that have none.
+      Goal: "Add a --json flag to the report command of the CLI, and make the failing
+      test_totals pass; it fails since the rounding change."
+      What I see first: two parts that do not touch each other. The failing test is a failure a
+      command shows, so it has the shape of fix-verify; the flag is a small new feature with a
+      clear place, so a worker builds it. I read cli/report.py and tests/test_totals.py before I
+      plan, so the goals I write are precise.
+      sub_mission {name: "fix-totals", template: "fix-verify",
+        plan: "Deliver: report --json, and test_totals passing. Checked by: pytest -q (all) and
+        python -m cli report --json on fixtures/sample.csv giving valid JSON. Parts: fix-totals
+        owns src/totals.py (fix-verify); json-flag owns cli/report.py and tests/test_report.py.
+        Nobody else changes src/totals.py. Constraint: keep the text output byte for byte.",
+        goal: "tests/test_totals.py::test_rounding fails since the rounding change in
+        src/totals.py (round half up was replaced by round half even). Find the cause, fix it in
+        src/totals.py, keep the other totals tests passing.",
+        writeScope: ["src/totals.py"], acceptance: ["pytest tests/test_totals.py -q passes"],
+        params: {check: "pytest tests/test_totals.py -q", maxRounds: "2"}}
+      run_subagents {tasks: [{name: "json-flag", agent: "worker", role: "report --json",
+        goal: "Add a --json flag to the report command in cli/report.py: same rows as the text
+        output, as a JSON list of objects with the column names as keys; the text output does
+        not change. Add tests in tests/test_report.py.",
+        writeScope: ["cli/report.py", "tests/test_report.py"],
+        acceptance: ["pytest tests/test_report.py -q passes", "python -m cli report --json
+        fixtures/sample.csv prints valid JSON"]}]}
+      sleep {until: [{kind: "children"}]}
+      json-flag came back done. I read its diff and ran python -m cli report --json
+      fixtures/sample.csv: valid JSON, same rows. fix-totals came back partial: the rounding is
+      fixed, but test_rounding still fails on a negative amount. Its report says why, so I do
+      not start over: I start one worker with that exact case.
+      run_subagents {tasks: [{name: "negative-rounding", agent: "worker", goal: "In
+        src/totals.py round_amount rounds -2.5 to -2 instead of -3 (test_rounding, last case).
+        Make negative halves round away from zero like positive ones; change nothing else.",
+        writeScope: ["src/totals.py"], acceptance: ["pytest tests/test_totals.py -q passes"]}]}
+      sleep {until: [{kind: "children"}]}
+      It came back done. I ran pytest -q: all passed.
+      reply {text: "Done. report --json prints the rows as JSON (cli/report.py, tests in
+        tests/test_report.py); the text output is unchanged. test_totals passes: the rounding
+        change had made halves round to even, and negative halves rounded toward zero; both are
+        fixed in src/totals.py. Checked: pytest -q, all passed; report --json on
+        fixtures/sample.csv gives valid JSON."}
+
+      Example 2. Parallel parts that must fit together: no template, an interface first.
+      Goal: "Add password reset: an API endpoint that sends a reset link, and a page in the web
+      app to ask for it."
+      What I see first: two parts, server and web, joined by one interface. No template has this
+      shape; I split it myself and fix the interface in the plan so neither part waits on the
+      other.
+      run_subagents {plan: "Deliver: POST /api/password-reset and a page /reset that calls it.
+        Checked by: npm test in server/ and in web/. Interface (fixed here, nobody changes it):
+        POST /api/password-reset with JSON {email}; 202 always, so it does not reveal accounts;
+        429 after 5 requests an hour from one address. Parts: api owns server/, page owns web/.",
+        tasks: [
+        {name: "api", agent: "worker", role: "reset endpoint", goal: "Implement POST
+          /api/password-reset in server/ as the plan says: store a token valid 1 hour, send the
+          link with the existing mailer, rate limit as the plan says, tests in server/test/.",
+          writeScope: ["server/"], acceptance: ["npm test in server/ passes"]},
+        {name: "page", agent: "worker", role: "reset page", goal: "Add the page /reset in web/:
+          one email field, calls the endpoint of the plan, shows the same message for 202 and a
+          wait message for 429. Tests in web/src/__tests__/.", writeScope: ["web/"],
+          acceptance: ["npm test in web/ passes"]}]}
+      sleep {until: [{kind: "children"}]}
+      page ended first and done; api ended done a minute later. I ran npm test in both, read the
+      endpoint and the page against the interface: they match.
+      reply {text: "Password reset is in: POST /api/password-reset (server/, token valid 1 hour,
+        rate limited) and the page /reset (web/). Both test suites pass; I checked the page and
+        the endpoint against the interface in the plan."}
+
+      Example 3. Not split at all.
+      Goal: "Rename the config key timeoutSec to timeoutSeconds everywhere, keeping old config
+      files working."
+      What I see first: one change that runs through a few files that all depend on each other;
+      splitting it would mean several tasks editing the same lines of thought. I do it myself.
+      search_repository {pattern: "timeoutSec"}: 7 places in 4 files. I read each file, change
+      the key, and in config/load.py read the old key as a fallback with a deprecation warning.
+      run_command {command: "pytest -q"}: all passed. run_command {command: "grep -rn timeoutSec
+      --include=*.py ."}: only the fallback is left.
+      reply {text: "timeoutSec is now timeoutSeconds in 4 files; config/load.py still reads the
+        old key and warns that it is deprecated. pytest -q passes; the only use of the old name
+        left is that fallback."}
+
+      Example 4. A report written by sections: research first, then writers, then one editor.
+      Goal: "Write docs/architecture.md: how the job runner works, from submit to result, for a
+      new engineer."
+      What I see first: three areas to learn (submit, scheduling, execution), and a document
+      that must read as one. No template covers it. Explorers read; I write the outline; writers
+      draft sections in their own files; I edit the whole.
+      run_subagents {plan: "Deliver: docs/architecture.md, one document, for a new engineer.
+        Checked by: every claim names the file it comes from; the sections use the same terms
+        (job, task, worker, queue). Parts: three explorers learn, then section writers each own
+        one file in docs/arch-draft/, then I merge and edit.", tasks: [
+        {name: "submit", agent: "explorer", goal: "How is a job submitted? From the API call in
+          api/jobs.py to the record in the queue: the functions, the data, with file and line."},
+        {name: "schedule", agent: "explorer", goal: "How does scheduler/ pick the next job and a
+          worker? With file and line."},
+        {name: "execute", agent: "explorer", goal: "How does a worker in worker/ run a job and
+          report its result? With file and line."}]}
+      sleep {until: [{kind: "children"}]}
+      I read the three results, wrote the outline and the glossary into docs/arch-draft/
+      outline.md, then started three writers, one section file each in docs/arch-draft/, each
+      given its explorer's result by reference and the outline.
+      sleep {until: [{kind: "children"}]}
+      I merged the sections into docs/architecture.md, made the terms the glossary's, removed a
+      repeated description of the queue, and checked every file reference exists.
+      reply {text: "docs/architecture.md describes a job from submit to result in three
+        sections (submit, scheduling, execution) with a glossary; every claim names its source
+        file, and I checked that each file and function exists."}
+
+      Example 5. An unclear request that turns out small after a look.
+      Goal: "Uploads sometimes fail with 'invalid size'; find out why and fix it."
+      What I see first: I do not know where the cause is, so I look before I decide anything;
+      one explorer is enough.
+      run_subagents {plan: "Deliver: the cause of the 'invalid size' upload failures, and the
+        fix. Checked by: a test that reproduces it and passes after the fix. First find the cause;
+        the rest is decided from it.", tasks: [{name: "find-size", agent: "explorer", goal: "Find
+        where 'invalid size' is raised for uploads and every way it can be reached; with file and
+        line, and what input reaches it."}]}
+      sleep {until: [{kind: "children"}]}
+      It found one place: upload/check.py compares the Content-Length header with the bytes read,
+      and a gzip-encoded upload is read decompressed, so the two never match. The fix is three
+      lines in one file; a worker would cost more than it saves, so I do it myself: compare
+      before decompressing, and add a test with a gzip upload.
+      run_command {command: "pytest tests/test_upload.py -q"}: passed, the new test as well.
+      reply {text: "Cause: for gzip-encoded uploads, upload/check.py compared the declared size
+        with the decompressed bytes. It now compares before decompressing. A new test uploads a
+        gzip body; pytest tests/test_upload.py -q passes."}

@@ -42,6 +42,7 @@ interface NodeSpec {
   readonly trigger?: GraphNodeRecord['trigger'];
   readonly agentRef?: DefinitionRef;
   readonly goal?: string;
+  readonly guide?: string;
   readonly inputFrom?: 'HANDOFF';
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
@@ -60,6 +61,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     iteration: 1,
     ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
+    ...(spec.guide === undefined ? {} : { guide: spec.guide }),
     ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
@@ -253,6 +255,7 @@ export function compileTemplate(
               ? { id: rootMission }
               : { id: templateMissionId(rootMission, node.name, 1), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
+            ...(node.guide === undefined ? {} : { guide: node.guide }),
             ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
             ...(node.output === undefined ? {} : { output: node.output }),
           })

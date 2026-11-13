@@ -580,6 +580,11 @@ export const TemplateNodeSchema = Type.Union([
       output: Type.Optional(Type.Boolean()),
       /** A step of the template's root task, its one responsible owner (Orchestration 3.5). */
       role: Type.Optional(Type.Literal('owner')),
+      /**
+       * What the Agent of this step reads with its goal (D32): worked examples of how to use the
+       * system well, written as the behaviour wanted.
+       */
+      guide: Type.Optional(TextSchema(30_000)),
     },
     { additionalProperties: false },
   ),

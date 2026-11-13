@@ -1729,6 +1729,7 @@ export class SessionRunner {
               inputs: [],
               dependencies: [],
               withPrompt: true,
+              ...(node.guide === undefined ? {} : { playbook: node.guide }),
             }
           : undefined;
     const scope: ProjectionScope =

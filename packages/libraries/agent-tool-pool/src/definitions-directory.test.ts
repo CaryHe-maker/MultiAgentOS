@@ -142,5 +142,12 @@ describe('shipped definitions', () => {
     expect(promptOf('lead-system')).not.toContain('- Leads for large parts:');
     const mission = catalog.latest('TEMPLATE', 'mission');
     expect(JSON.stringify(mission?.nodes)).toContain('ways to split work');
+    // The root of a long task reads worked examples of different shapes, most without
+    // sub_mission and one not split at all (D32).
+    const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
+    const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
+    expect(text.match(/^Example \d\./gmu)).toHaveLength(5);
+    expect(text).toContain('Example 3. Not split at all.');
+    expect(text.split('sub_mission {').length - 1).toBe(1);
   });
 });

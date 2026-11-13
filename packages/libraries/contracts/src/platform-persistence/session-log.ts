@@ -114,6 +114,8 @@ export const GraphNodeRecordSchema = closed({
   loopId: Type.Optional(text(64)),
   agentRef: Type.Optional(DefinitionRefSchema),
   goal: Type.Optional(text(4000)),
+  /** What the step's Agent reads with its goal: the template's worked examples (D32). */
+  guide: Type.Optional(Type.String({ maxLength: 30_000 })),
   inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
   /** Of an AGENT node: the task it is a segment of. */

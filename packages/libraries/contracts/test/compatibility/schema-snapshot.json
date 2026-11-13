@@ -3284,6 +3284,11 @@
                   "role": {
                     "type": "string",
                     "const": "owner"
+                  },
+                  "guide": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
                   }
                 },
                 "additionalProperties": false
@@ -53034,6 +53039,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "guide": {
+                    "type": "string",
+                    "maxLength": 30000
                   },
                   "inputFrom": {
                     "type": "string",
