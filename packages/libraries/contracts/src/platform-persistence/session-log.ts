@@ -80,6 +80,11 @@ export const WakeConditionSchema = Type.Union([
   closed({ kind: Type.Literal('message') }),
   closed({ kind: Type.Literal('timer'), seconds: count(1) }),
   closed({ kind: Type.Literal('human'), nodeId: IdSchemas.nodeId }),
+  /**
+   * Written by Workflow alone, after a rewind (Orchestration 7.5): the task is paused as it was at
+   * the cut, and only its parent's message wakes it; its parent may also stop it.
+   */
+  closed({ kind: Type.Literal('parent') }),
 ]);
 export type WakeCondition = Static<typeof WakeConditionSchema>;
 
@@ -279,6 +284,8 @@ export const SessionLogRecordSchema = Type.Union(
       question: Type.Optional(text(MAX_QUESTION_CHARS)),
       fields: Type.Optional(Type.Array(HumanFieldSchema, { maxItems: MAX_QUESTION_FIELDS })),
       reviewRef: Type.Optional(ArtifactRefSchema),
+      /** Asked again after a rewind to before its answer (Orchestration 7.5). */
+      askedAgain: Type.Optional(Type.Boolean()),
     }),
     record('HUMAN_ANSWERED', inTurn, {
       nodeId: IdSchemas.nodeId,

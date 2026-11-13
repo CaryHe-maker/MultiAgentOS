@@ -366,14 +366,15 @@ export class SessionActor {
     const { nodeId } = request;
     const decision = this.#apply(
       run,
-      requestLocalQuestion(run.control, request.humanRequestId, {
-        agentRunId: request.attachedAgentRunId,
-        nodeId,
-        kind: request.kind,
-      }),
+      requestLocalQuestion(
+        run.control,
+        request.humanRequestId,
+        { agentRunId: request.attachedAgentRunId, nodeId, kind: request.kind },
+        request.askedAgain === true,
+      ),
     );
     if (!decision.accepted) return decision;
-    run.work.showAwaitingAnswer(request.attachedAgentRunId);
+    if (request.askedAgain !== true) run.work.showAwaitingAnswer(request.attachedAgentRunId);
     const event: HumanRequest = {
       type: 'HumanRequest',
       humanRequestId: request.humanRequestId,

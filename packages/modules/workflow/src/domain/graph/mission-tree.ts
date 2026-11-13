@@ -5,6 +5,7 @@
  * function here is a pure function of the records, so a replay finds the same tree.
  */
 import { pathDerivedId, type NodeMission, type SessionLogRecord } from '@multiagentos/contracts';
+import { isRolledBack, rewoundRanges } from '../context/rolled-back.js';
 
 export interface MissionView {
   readonly missionId: string;
@@ -53,7 +54,10 @@ export function projectMissions(
 ): ReadonlyMap<string, MissionView> {
   const building = new Map<string, Building>();
   const missionOfNode = new Map<string, string>();
+  // The tasks as they were at the cut of every rewind (Orchestration 7.5).
+  const rewound = rewoundRanges(records);
   for (const record of records) {
+    if (isRolledBack(record.seq, rewound)) continue;
     if (record.type === 'GRAPH_EXTENDED') {
       for (const node of record.nodes) {
         const mission: NodeMission | undefined = node.mission;

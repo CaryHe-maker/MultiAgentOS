@@ -199,6 +199,36 @@ describe('delegation to SubAgents', () => {
 });
 
 describe('the ledger of a task that sleeps (Orchestration 8.3)', () => {
+  it('closes the ledger of a sleeping task, and funds it again when a rewind opens it (7.5)', () => {
+    const ledgers = open();
+    const before = ledgers.delegable('agr_main');
+    delegate(ledgers, ['a']);
+    ledgers.registerAgentRun({
+      agentRunId: 'agr_a1',
+      delegationId: 'dlg_1',
+      taskName: 'a',
+      agent: child,
+      ledgerKey: 'msc_a00000',
+    });
+    spendOn(ledgers, 'agr_a1', 10);
+    ledgers.endAgentRun('agr_a1', true);
+    // Stopped while it sleeps: what it did not use goes back at once.
+    ledgers.closeTask('msc_a00000');
+    expect(ledgers.delegable('agr_main')).toBe(before - 10);
+    // A rewind opens it again: its share comes from the parent again, what it spent stays spent.
+    ledgers.restoreTask({
+      key: 'msc_a00000',
+      parentKey: undefined,
+      tokens: childShare,
+      agent: child,
+    });
+    expect(ledgers.delegable('agr_main')).toBe(before - 10 - childShare);
+    ledgers.attachAgentRun('agr_a2', 'msc_a00000');
+    expect(ledgers.budgetView('agr_a2').agentRun).toBe('NORMAL');
+    ledgers.endAgentRun('agr_a2');
+    expect(ledgers.delegable('agr_main')).toBe(before - 10);
+  });
+
   it('keeps the share of a task across its segments and gives back the rest when it ends', () => {
     const ledgers = open();
     const before = ledgers.delegable('agr_main');

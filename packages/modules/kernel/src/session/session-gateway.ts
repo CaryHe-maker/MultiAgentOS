@@ -25,6 +25,8 @@ import {
   ScheduleWakeRequestSchema,
   ControlJobRequestSchema,
   HaltAgentRunRequestSchema,
+  RestoreMissionRequestSchema,
+  CloseMissionRequestSchema,
   TakeCheckpointRequestSchema,
   ReserveDelegationRequestSchema,
   ReportSessionCommandRequestSchema,
@@ -102,6 +104,16 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   haltAgentRun: {
     caller: 'workflow',
     schema: HaltAgentRunRequestSchema,
+    needs: 'RUN',
+  },
+  restoreMission: {
+    caller: 'workflow',
+    schema: RestoreMissionRequestSchema,
+    needs: 'RUN',
+  },
+  closeMission: {
+    caller: 'workflow',
+    schema: CloseMissionRequestSchema,
     needs: 'RUN',
   },
   takeCheckpoint: {
@@ -307,6 +319,8 @@ export class SessionGateway {
     scheduleWake: this.#port('workflow', 'scheduleWake'),
     controlJob: this.#port('workflow', 'controlJob'),
     haltAgentRun: this.#port('workflow', 'haltAgentRun'),
+    restoreMission: this.#port('workflow', 'restoreMission'),
+    closeMission: this.#port('workflow', 'closeMission'),
     takeCheckpoint: this.#port('workflow', 'takeCheckpoint'),
     reportCompactionSource: this.#port('workflow', 'reportCompactionSource'),
     ackCompaction: this.#port('workflow', 'ackCompaction'),

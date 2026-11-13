@@ -9,6 +9,8 @@ import {
   type CommandInput,
   type JobEndedFact,
   type HaltAgentRunRequest,
+  type RestoreMissionRequest,
+  type CloseMissionRequest,
   type TakeCheckpointRequest,
   type WebFetchInput,
   type WebSearchInput,
@@ -1037,6 +1039,61 @@ export class RunWork {
     if (!this.#agentRuns.has(agentRunId))
       return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
     this.#deps.abortAgentRunExecutions?.(agentRunId);
+    return this.#accept(requestId, request);
+  }
+
+  /**
+   * A task that ended after the cut a rewind went back to is open again (Orchestration 7.5): asleep,
+   * no segment running, its write roots held and lent again, its share funded again from its parent.
+   * A task still open is left as it is.
+   */
+  restoreMission(request: RestoreMissionRequest): Response {
+    const { requestId, missionId } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    const admitted = admitWork(this.#host.control());
+    if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
+    const mission = this.#missions.get(missionId);
+    if (mission === undefined) return this.#refuse(requestId, request, 'MISSION_NOT_FOUND');
+    if (!mission.closed) return this.#accept(requestId, request);
+    if (mission.parent !== undefined && this.#missions.get(mission.parent)?.closed !== false)
+      return this.#refuse(requestId, request, 'MISSION_NOT_FOUND');
+    if (this.#writeConflict(missionId, mission.parent, mission.roots))
+      return this.#refuse(requestId, request, 'WRITE_SCOPE_CONFLICT');
+    if (mission.funded && request.tokens !== undefined) {
+      const parentKey =
+        mission.parent === undefined || this.#missions.get(mission.parent)?.funded !== true
+          ? undefined
+          : mission.parent;
+      const segment = [...this.#agentRuns.values()].find((each) => each.mission === missionId);
+      if (segment === undefined) return this.#refuse(requestId, request, 'MISSION_NOT_FOUND');
+      this.#deps.ledgers.restoreTask({
+        key: missionId,
+        parentKey,
+        tokens: request.tokens,
+        agent: segment.agent.budget,
+      });
+    }
+    mission.closed = false;
+    this.#delegations.reopen(missionId);
+    return this.#accept(requestId, request);
+  }
+
+  /**
+   * A sleeping task that will not wake is closed (Orchestration 5.1, 7.5): its roots are given back,
+   * the unused part of its share returns to its parent. One with a segment running is not: that
+   * segment ends it, as it always does.
+   */
+  closeMission(request: CloseMissionRequest): Response {
+    const { requestId, missionId } = request;
+    const replay = this.#replay(requestId, request);
+    if (replay !== undefined) return replay;
+    const mission = this.#missions.get(missionId);
+    if (mission === undefined || mission.closed) return this.#accept(requestId, request);
+    if (mission.active !== undefined) return this.#refuse(requestId, request, 'MISSION_BUSY');
+    mission.closed = true;
+    if (mission.funded) this.#deps.ledgers.closeTask(missionId);
+    this.#delegations.childEnded(missionId);
     return this.#accept(requestId, request);
   }
 

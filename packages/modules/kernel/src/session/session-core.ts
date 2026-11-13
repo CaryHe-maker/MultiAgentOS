@@ -183,6 +183,14 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.haltAgentRun(forward.request)),
         );
+      case 'restoreMission':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.restoreMission(forward.request)),
+        );
+      case 'closeMission':
+        return this.#inRun(forward.request, (work) =>
+          Promise.resolve(work.closeMission(forward.request)),
+        );
       case 'scheduleWake':
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.scheduleWake(forward.request)),

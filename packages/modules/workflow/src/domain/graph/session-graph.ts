@@ -25,6 +25,7 @@ import {
   type Wake,
 } from './graph.js';
 import { childMissionId, templateMissionId } from './mission-tree.js';
+import { isRolledBack, rewoundRanges } from '../context/rolled-back.js';
 
 /**
  * The TaskGraph as the session log records it (M2Design 3.2, 3.8): building revisions for `chat`
@@ -392,8 +393,15 @@ export function projectGraph(
   const edges: GraphEdgeRecord[] = [];
   const view = new Map<string, NodeRecord>();
   let lastRevision = 0;
+  // What a rewind took back did not happen: the graph is the one at the cut (Orchestration 7.5).
+  const rewound = rewoundRanges(records);
   for (const record of records) {
     if (!('workflowRunId' in record) || record.workflowRunId !== workflowRunId) continue;
+    if (isRolledBack(record.seq, rewound)) {
+      // Revisions are numbered on: a later one must not reuse a number taken back.
+      if (record.type === 'GRAPH_EXTENDED') lastRevision = record.revision;
+      continue;
+    }
     if (record.type === 'GRAPH_EXTENDED') {
       lastRevision = record.revision;
       for (const node of record.nodes) nodes.set(node.nodeId, node);

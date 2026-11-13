@@ -81,6 +81,12 @@ export class RunDelegations {
     if (id !== undefined) this.#delegations.get(id)?.live.delete(agentRunId);
   }
 
+  /** A task that ended is open again after a rewind: its roots are lent again (Orchestration 7.5). */
+  reopen(agentRunId: string): void {
+    const id = this.#delegationOf.get(agentRunId);
+    if (id !== undefined) this.#delegations.get(id)?.live.add(agentRunId);
+  }
+
   /** The tasks that never registered are given up; true when this was the first time. */
   release(id: string): boolean {
     const delegation = this.#delegations.get(id);

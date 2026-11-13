@@ -168,4 +168,95 @@ real('ask_user in a long task is a sleep (Orchestration 4.1)', () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'asks the question again after a rewind to before its answer, and goes on with the new one',
+    async () => {
+      /** A wait that starts when the provider serves the turn. */
+      const delay = (ms: number): Promise<void> =>
+        ({ then: (resolve: () => void) => setTimeout(resolve, ms) }) as unknown as Promise<void>;
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              plan: 'One worker names the release; it asks the user.',
+              tasks: [
+                { name: 'namer', agent: 'worker', goal: 'name the release', writeScope: ['out'] },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            // After the rewind the root reads that the question is asked again, and waits on.
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'named after the second answer' }),
+          ],
+        },
+        {
+          namer: [
+            tool('ask_user', { kind: 'ask', question: 'which name for the release?' }),
+            // Woken by the first answer: still at work when the run is paused.
+            { wait: delay(60_000), then: tool('finish_subagent', { summary: 'never reached' }) },
+            // Woken by the answer to the question asked again.
+            tool('finish_subagent', { summary: 'named it', status: 'done' }),
+          ],
+        },
+      );
+      const run = await missionOn('name the release', provider);
+      const asked = () =>
+        run.lives.at(-1)?.pending?.kind === 'QUESTION' &&
+        (run.lives.at(-1)?.pending?.text ?? '').includes('which name for the release?');
+      await until(asked, 'the question', 30_000);
+      const sleepsOnAnswer = async () =>
+        (await sessionLog(run.dataDir)).some(
+          (record) =>
+            record['type'] === 'SEGMENT_YIELDED' &&
+            JSON.stringify(record['until']).includes('"human"'),
+        );
+      const started = Date.now();
+      while (!(await sleepsOnAnswer()) && Date.now() - started < 30_000)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      await run.console.submit('Aurora');
+      // The worker is woken by the answer and at work again: then the run is paused.
+      // Its second request is out (the scripted turn that waits is spent), then the run is paused.
+      const working = () =>
+        provider.requests.filter((request) =>
+          request.messages.some((message) => textOf(message).includes('Your task (namer,')),
+        ).length >= 2;
+      await until(working, 'the worker at work again', 30_000);
+      await run.console.interrupt();
+      await until(() => run.lives.at(-1)?.status === '已暂停', 'the run to be paused', 30_000);
+      await run.console.submit('/checkpoints');
+      await until(
+        () => run.notices.some((line) => line.includes('after the answer to a question')),
+        'the list of checkpoints',
+        30_000,
+      );
+      const listed =
+        run.notices.find((line) => line.includes('after the answer to a question')) ?? '';
+      const seq = /#(\d+)\s+after the answer to a question/u.exec(listed)?.[1] ?? '0';
+      await run.console.submit(`/rewind #${seq}`);
+      await until(
+        () => run.notices.some((line) => line.includes('已回到 checkpoint')),
+        'the rewind',
+        30_000,
+      );
+      await run.console.submit('/continue');
+      // The same question comes again; the new answer is the one the worker goes on with.
+      await until(asked, 'the question asked again', 30_000);
+      await run.console.submit('Borealis');
+      const code = await run.done;
+      expect(code).toBe(0);
+      expect(run.notices.join('\n')).toContain('named after the second answer');
+      const log = await sessionLog(run.dataDir);
+      expect(
+        log.some((record) => record['type'] === 'HUMAN_REQUESTED' && record['askedAgain'] === true),
+      ).toBe(true);
+      const last = provider.requests.find((request) =>
+        request.messages.some((message) => textOf(message).includes('Borealis')),
+      );
+      const said = last?.messages.map((message) => textOf(message)).join('\n') ?? '';
+      expect(said).toContain('The user answered the question you asked with ask_user');
+      expect(said).not.toContain('Aurora');
+    },
+    TIMEOUT,
+  );
 });

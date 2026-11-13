@@ -170,6 +170,33 @@ export const HaltAgentRunRequestSchema = closed(
 );
 export type HaltAgentRunRequest = Static<typeof HaltAgentRunRequestSchema>;
 
+/**
+ * Opens again a task that ended after the cut a rewind went back to (Orchestration 7.5): it is as it
+ * was then, open and asleep, with no segment running. A funded task gets its share again from its
+ * parent, as much of it as the parent can still lend; its write roots are held again.
+ */
+export const RestoreMissionRequestSchema = closed(
+  {
+    ...inRun,
+    missionId: IdSchemas.missionScopeId,
+    /** The share it had; absent for a task that spends from its parent's ledger. */
+    tokens: Type.Optional(count(1)),
+  },
+  'kernel.unit.RestoreMissionRequest.v1',
+);
+export type RestoreMissionRequest = Static<typeof RestoreMissionRequestSchema>;
+
+/**
+ * Closes a task that sleeps and will not wake (Orchestration 5.1, 7.5): it was stopped, or a rewind
+ * took it back. Its write roots are given back and the unused part of its share returns to its
+ * parent, as when its last segment ends. A task already closed is left as it is.
+ */
+export const CloseMissionRequestSchema = closed(
+  { ...inRun, missionId: IdSchemas.missionScopeId },
+  'kernel.unit.CloseMissionRequest.v1',
+);
+export type CloseMissionRequest = Static<typeof CloseMissionRequestSchema>;
+
 export const JobControlContentSchema = closed(
   {
     requestId: IdSchemas.requestId,
@@ -279,6 +306,11 @@ export const RequestHumanRequestSchema = Type.Union(
       ...requestHuman,
       kind: Type.Enum(LOCAL_QUESTION_KINDS),
       ...localQuestionProperties,
+      /**
+       * Asked again after a rewind to before its answer (Orchestration 7.5): the AgentRun that asked
+       * has ended, and its task sleeps until the answer.
+       */
+      askedAgain: Type.Optional(Type.Boolean()),
     }),
   ],
   { $id: 'kernel.unit.RequestHumanRequest.v1' },

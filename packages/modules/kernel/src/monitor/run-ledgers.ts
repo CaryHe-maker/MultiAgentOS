@@ -343,6 +343,31 @@ export class RunLedgers {
     return returned;
   }
 
+  /**
+   * A funded task that ended is open again after a rewind (Orchestration 7.5): it gets its share
+   * again from its parent's ledger, or as much as the parent can still lend; what it spent before
+   * stays spent. Its next segment attaches to it as usual.
+   */
+  restoreTask(request: {
+    readonly key: string;
+    readonly parentKey: string | undefined;
+    readonly tokens: number;
+    /** The budget of the task's Agent; its limits judge the share, as at the first segment. */
+    readonly agent: AgentBudget;
+  }): void {
+    if (this.#agents.has(request.key)) return;
+    const parent = this.#ledgerOfKey(request.parentKey);
+    const share = Math.max(0, Math.min(request.tokens, parent.delegable()));
+    parent.lend(share);
+    this.#agents.set(request.key, {
+      key: request.key,
+      parent: request.parentKey,
+      agent: request.agent,
+      share,
+      ledger: new Monitor({ ...request.agent, tokenLimit: share }, { allowShortLimit: true }),
+    });
+  }
+
   /** A later segment of a funded task spends from the task's ledger (Orchestration 8.3). */
   attachAgentRun(agentRunId: string, ledgerKey: string): void {
     if (this.#agents.has(ledgerKey)) this.#keyOf.set(agentRunId, ledgerKey);
@@ -358,6 +383,11 @@ export class RunLedgers {
     const key = this.#keyOf.get(agentRunId) ?? agentRunId;
     this.#keyOf.delete(agentRunId);
     if (!continues) this.#closeLedger(key);
+  }
+
+  /** A task that slept is closed: its ledger ends as when its last segment ends (M2Design 7.3). */
+  closeTask(key: string): void {
+    this.#closeLedger(key);
   }
 
   #closeLedger(key: string): void {

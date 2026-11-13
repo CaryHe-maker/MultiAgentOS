@@ -814,48 +814,65 @@ export class SessionRunner {
   }
 
   /**
-   * The workspace went back to a checkpoint (Orchestration 7.5). The work after its cut is taken
-   * back: every task below the root that is still open ends as taken back, and the root starts a
-   * new segment that reads, in place of what came after, that it is back before its split. The
-   * history from the call that made the checkpoint on is replaced by a note. The run stays paused
-   * until the user continues; the budget spent is not returned.
+   * `/rewind #N` (Orchestration 7.5): the files are back at the checkpoint, and so is the work. The
+   * graph and the tasks are read as they were at the cut, what came after it did not happen. The
+   * tasks started after the cut are gone: their segments end, their background commands stop, their
+   * shares go back. Every task below the root that was there at the cut is paused as it was: it
+   * sleeps until its parent sends it a message (or stops it); a call it had not got the result of is
+   * answered as not done. A question open at the cut is asked again. The root starts a new segment
+   * that reads where the work is back to and which tasks wait for it; it sleeps on again instead when
+   * its own question is asked again. The run stays paused until the user continues; the budget
+   * spent is not returned.
    */
   async #onRolledBack(
     workflowRunId: string,
     event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
   ): Promise<void> {
     if (event.undo === true) return this.#onUndone(workflowRunId, event);
+    // Where the cut is: a checkpoint inside the run, or the input the work started from.
     const requested = this.#records.find(
       (record): record is Extract<SessionLogRecord, { type: 'CHECKPOINT_REQUESTED' }> =>
         record.type === 'CHECKPOINT_REQUESTED' && record.checkpointId === event.checkpointId,
     );
-    if (requested === undefined) return;
+    const input =
+      requested !== undefined
+        ? undefined
+        : this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
+              record.type === 'HUMAN_ANSWERED' &&
+              record.kind === 'prompt' &&
+              record.checkpointId === event.checkpointId,
+          );
+    const cutSeq = requested?.seq ?? input?.seq;
+    if (cutSeq === undefined) return;
     const trigger =
-      requested.triggerToolCallId === undefined
+      requested?.triggerToolCallId === undefined
         ? undefined
         : this.#records.find(
             (record) =>
               record.type === 'MODEL_TURN' &&
               record.toolCalls.some((call) => call.toolCallId === requested.triggerToolCallId),
           );
-    const fromSeq = trigger?.seq ?? requested.seq;
-    const missions = projectMissions(this.#records);
-    const projected = projectGraph(this.#records, workflowRunId);
-    const inRun = (mission: MissionView) =>
-      mission.nodeIds.some((nodeId) => projected.nodes.has(nodeId));
-    const open = [...missions.values()].filter(
-      (mission) => mission.ended === undefined && inRun(mission),
+    // An input stays: what is taken back is the work after it.
+    const fromSeq = trigger?.seq ?? (input === undefined ? cutSeq : cutSeq + 1);
+    const before = projectMissions(this.#records);
+    const atCut = projectMissions(this.#records.filter((record) => record.seq < fromSeq));
+    const inRun = (graphNodes: ReadonlyMap<string, GraphNodeRecord>, mission: MissionView) =>
+      mission.nodeIds.some((nodeId) => graphNodes.has(nodeId));
+    const nowGraph = projectGraph(this.#records, workflowRunId);
+    const gone = [...before.values()].filter(
+      (mission) => inRun(nowGraph.nodes, mission) && !atCut.has(mission.missionId),
     );
-    const cancelled = open.filter((mission) => mission.parentId !== undefined);
+    const goneIds = new Set(gone.map((mission) => mission.missionId));
     await this.#append([
       {
         type: 'ROLLED_BACK',
         workflowRunId,
         checkpointId: event.checkpointId,
         label: event.label,
-        cutSeq: requested.seq,
+        cutSeq,
         fromSeq,
-        cancelledMissionIds: cancelled.map((mission) => mission.missionId),
+        cancelledMissionIds: [...goneIds],
         files: event.files.length,
         ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
       },
@@ -866,60 +883,136 @@ export class SessionRunner {
       await this.#append(
         revokedCompactions(this.#records, workflowRunId, { from: fromSeq, to: rolled.seq }),
       );
-    const note = `taken back: the run went back to the checkpoint "${event.label}"`;
-    // Every segment at work ends; the root's continues below, the others end with their task.
+    // Every segment at work stops now. One of a task that was there at the cut goes to sleep (its
+    // task goes on); one of a task started after it ends with its task.
     for (const active of [...this.#agents.values()]) {
-      const root = missions.get(active.missionId)?.parentId === undefined;
-      if (root) {
-        await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
-        await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
-      } else {
-        // Its work in flight or queued (a model call, a command) is cancelled, as on a stop (5.1).
-        await this.#haltAgentRun(workflowRunId, active.state.agentRunId);
-        await this.#endAgentRun(workflowRunId, active, 'FAILED');
-        await this.#endNode(
-          workflowRunId,
-          active.nodeId,
-          'INTERRUPTED',
-          resultOf({ status: 'FAILED', notes: [note] }),
-        );
-      }
+      const root = before.get(active.missionId)?.parentId === undefined;
+      if (!root) await this.#haltAgentRun(workflowRunId, active.state.agentRunId);
+      await this.#endAgentRun(
+        workflowRunId,
+        active,
+        goneIds.has(active.missionId) ? 'FAILED' : 'YIELDED',
+        !goneIds.has(active.missionId),
+      );
     }
-    // Tasks that sleep, or have not started, end as well.
-    for (const mission of cancelled) {
-      const now = projectGraph(this.#records, workflowRunId);
-      const last = mission.nodeIds.at(-1);
-      const node = last === undefined ? undefined : now.nodes.get(last);
-      const status = last === undefined ? undefined : now.view.get(last)?.status;
-      if (node === undefined) continue;
-      if (status === 'YIELDED') await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED', note);
-      else if (status === undefined || !isTerminal(status))
-        await this.#append([
-          {
-            type: 'NODE_ENDED',
-            workflowRunId,
-            nodeId: node.nodeId,
-            status: 'INTERRUPTED',
-            result: resultOf({ status: 'FAILED', notes: [note] }),
-          },
-        ]);
-    }
-    await this.#stopJobsOf(
-      workflowRunId,
-      cancelled.map((mission) => mission.missionId),
+    // The tasks started after the cut: whatever of them still sleeps is closed, and the shares of
+    // the calls that started them go back.
+    for (const mission of gone) await this.#closeMission(workflowRunId, mission.missionId);
+    const lateDelegations = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'GRAPH_EXTENDED' && record.seq >= fromSeq && record.seq < (rolled?.seq ?? 0)
+          ? record.edges.flatMap((edge) =>
+              edge.kind === 'DELEGATE' && edge.call?.delegationId !== undefined
+                ? [edge.call.delegationId]
+                : [],
+            )
+          : [],
+      ),
     );
-    await this.#settleMissions(workflowRunId);
-    await this.#releaseFinishedDelegations(workflowRunId);
-    // The root reads, in its new segment, that it is back before its split (4.3, cause ROLLED_BACK).
-    const root = open.find((mission) => mission.parentId === undefined);
-    const rootNode = root?.nodeIds.at(-1);
-    const yielded =
-      rootNode === undefined
-        ? undefined
-        : projectGraph(this.#records, workflowRunId).nodes.get(rootNode);
-    if (yielded !== undefined)
-      await this.#continueMission(workflowRunId, yielded, [{ kind: 'ROLLED_BACK' }]);
+    const sessionId = this.#sessionIdOrThrow();
+    for (const delegationId of lateDelegations) {
+      if (this.#released.has(delegationId)) continue;
+      this.#released.add(delegationId);
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
+    // A background command does not go back: every one still running is stopped.
+    await this.#stopJobsOf(workflowRunId, [...before.keys()]);
+    // A task that ended after the cut is open again in the Kernel, with its share and roots.
+    const cutGraph = projectGraph(this.#records, workflowRunId);
+    for (const mission of atCut.values()) {
+      if (mission.parentId === undefined || mission.ended !== undefined) continue;
+      if (!inRun(cutGraph.nodes, mission)) continue;
+      if (before.get(mission.missionId)?.ended === undefined) continue;
+      const first = cutGraph.nodes.get(mission.nodeIds[0] ?? '');
+      await this.#restoreMission(workflowRunId, mission.missionId, first?.spawn?.tokens);
+    }
+    await this.#pauseAtCut(workflowRunId, fromSeq);
     await this.#advance(workflowRunId);
+  }
+
+  /**
+   * Puts every task as it was at the cut (Orchestration 7.5, step 6): its segment that ran then
+   * ends as asleep, a call it had not got the result of is answered as not done; a question open
+   * then is asked again and its task sleeps until the answer; every other task below the root is
+   * paused until its parent lets it go on; the root starts a new segment that reads it.
+   */
+  async #pauseAtCut(workflowRunId: string, fromSeq: number): Promise<void> {
+    const graph = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const before = this.#records.filter((record) => record.seq < fromSeq);
+    const runOf = new Map(
+      before.flatMap((record) =>
+        record.type === 'AGENT_RUN_REGISTERED' ? [[record.nodeId, record.agentRunId] as const] : [],
+      ),
+    );
+    // Questions open at the cut are asked again.
+    const askedAgain = new Map<string, string>();
+    for (const node of graph.nodes.values()) {
+      if (node.kind !== 'HUMAN' || node.ask === undefined) continue;
+      const status = graph.view.get(node.nodeId)?.status;
+      if (status === undefined || isTerminal(status)) continue;
+      const call = graph.graph.edges.find(
+        (edge) => edge.kind === 'DELEGATE' && edge.to === node.nodeId,
+      );
+      if (call?.call === undefined) continue;
+      await this.#append([
+        { type: 'NODE_ENDED', workflowRunId, nodeId: node.nodeId, status: 'INTERRUPTED' },
+      ]);
+      const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+      const again = askRevision(
+        workflowRunId,
+        revision,
+        { nodeId: call.from, toolCallId: call.call.toolCallId },
+        node.ask,
+      );
+      await this.#extend(workflowRunId, revision, 'ASK', again);
+      const asked = again.nodes[0];
+      if (asked !== undefined) askedAgain.set(call.from, asked.nodeId);
+    }
+    let rootNode: GraphNodeRecord | undefined;
+    let rootSleeps = false;
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      const node = last === undefined ? undefined : graph.nodes.get(last);
+      if (node === undefined) continue;
+      const status = graph.view.get(node.nodeId)?.status;
+      if (status === undefined || (isTerminal(status) && status !== 'YIELDED')) continue;
+      const agentRunId = runOf.get(node.nodeId);
+      if (agentRunId === undefined) continue;
+      if (status !== 'YIELDED') {
+        // It ran at the cut: what it asked for and did not get comes back as not done.
+        await this.#append(unansweredAtCut(before, agentRunId, workflowRunId));
+        await this.#endNode(workflowRunId, node.nodeId, 'YIELDED');
+      }
+      const question = askedAgain.get(node.nodeId);
+      const root = mission.parentId === undefined;
+      if (root && question === undefined) {
+        rootNode = node;
+        continue;
+      }
+      if (root) rootSleeps = true;
+      await this.#append([
+        {
+          type: 'SEGMENT_YIELDED',
+          workflowRunId,
+          nodeId: node.nodeId,
+          missionId: mission.missionId,
+          agentRunId,
+          until:
+            question === undefined ? [{ kind: 'parent' }] : [{ kind: 'human', nodeId: question }],
+          timeoutSeconds: ASK_SLEEP_SECONDS,
+        },
+      ]);
+    }
+    if (rootNode !== undefined && !rootSleeps) {
+      const refreshed = projectGraph(this.#records, workflowRunId).nodes.get(rootNode.nodeId);
+      if (refreshed !== undefined)
+        await this.#continueMission(workflowRunId, refreshed, [{ kind: 'ROLLED_BACK' }]);
+    }
   }
 
   async #onAnswer(
@@ -1318,14 +1411,21 @@ export class SessionRunner {
       ask === undefined
         ? undefined
         : this.#askerOf(projectGraph(this.#records, workflowRunId), nodeId);
-    if (ask !== undefined && asker === undefined)
+    // Asked again after a rewind (7.5): the AgentRun that asked first has ended, its task sleeps on it.
+    const firstAsker =
+      ask === undefined || asker !== undefined
+        ? undefined
+        : this.#firstAskerOf(workflowRunId, nodeId);
+    if (ask !== undefined && asker === undefined && firstAsker === undefined)
       throw new Error('a question has no AgentRun that asked it');
+    const attachedAgentRunId = asker?.state.agentRunId ?? firstAsker;
     const question =
-      ask === undefined || asker === undefined
+      ask === undefined || attachedAgentRunId === undefined
         ? ({ kind: 'prompt' } as const)
         : {
             kind: ask.kind,
-            attachedAgentRunId: asker.state.agentRunId,
+            attachedAgentRunId,
+            ...(asker === undefined ? { askedAgain: true } : {}),
             question: ask.question,
             ...(ask.fields === undefined ? {} : { fields: ask.fields }),
             ...(ask.reviewRef === undefined ? {} : { reviewRef: ask.reviewRef }),
@@ -1347,6 +1447,18 @@ export class SessionRunner {
     );
     if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
       throw new Error(`requestHuman refused: ${response.reasonCode}`);
+  }
+
+  /** The AgentRun of the segment whose call a question answers (its DELEGATE edge), if any. */
+  #firstAskerOf(workflowRunId: string, nodeId: string): string | undefined {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const caller = projected.graph.edges.find(
+      (edge) => edge.kind === 'DELEGATE' && edge.to === nodeId,
+    )?.from;
+    const registered = this.#records.find(
+      (record) => record.type === 'AGENT_RUN_REGISTERED' && record.nodeId === caller,
+    );
+    return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.agentRunId : undefined;
   }
 
   #objectiveRef(workflowRunId: string): HumanContentRef {
@@ -3396,6 +3508,25 @@ export class SessionRunner {
     missions: ReadonlyMap<string, MissionView>,
   ): Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'] {
     const after = (seq: number) => seq > yielded.seq;
+    // A task paused by a rewind (7.5) goes on when its parent sends it a message, and on nothing
+    // else: what else comes in is kept for that segment.
+    if (yielded.until.some((condition) => condition.kind === 'parent')) {
+      const word = this.#records.find(
+        (record) =>
+          record.type === 'MISSION_MESSAGE' &&
+          after(record.seq) &&
+          record.to.includes(mission.missionId) &&
+          record.from === mission.parentId,
+      );
+      if (word === undefined) return [];
+      return [
+        {
+          kind:
+            word.type === 'MISSION_MESSAGE' && word.interrupt === true ? 'INTERRUPTED' : 'MESSAGE',
+          seq: word.seq,
+        },
+      ];
+    }
     // A task that waits for the user's answer is woken by it alone (4.4): what else comes in is
     // kept for that segment, so the same question is not asked twice.
     const asked = yielded.until.find((condition) => condition.kind === 'human');
@@ -3675,5 +3806,71 @@ export class SessionRunner {
             }),
       },
     ]);
+    // Its task will not wake: the Kernel gives back its roots and what is left of its share.
+    if (yielded.mission !== undefined) await this.#closeMission(workflowRunId, yielded.mission.id);
   }
+
+  async #closeMission(workflowRunId: string, missionId: string): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.closeMission(
+      { requestId: newId('req'), sessionId, workflowRunId, missionId },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`closeMission refused: ${response.reasonCode}`);
+  }
+
+  async #restoreMission(workflowRunId: string, missionId: string, tokens?: number): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.restoreMission(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        missionId,
+        ...(tokens === undefined ? {} : { tokens }),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`restoreMission refused: ${response.reasonCode}`);
+  }
+}
+
+/**
+ * The calls an AgentRun made before a cut and had not got the result of then (Orchestration 7.5):
+ * each is answered as not done, so the history it goes on from holds no call without a result.
+ */
+function unansweredAtCut(
+  before: readonly SessionLogRecord[],
+  agentRunId: string,
+  workflowRunId: string,
+): NewLogRecord[] {
+  const calls: string[] = [];
+  const answered = new Set<string>();
+  const submitted = new Map<string, string>();
+  for (const record of before) {
+    if (record.type === 'MODEL_TURN' && record.agentRunId === agentRunId)
+      for (const call of record.toolCalls) calls.push(call.toolCallId);
+    if (record.type === 'FEEDBACK' && record.toolCallId !== undefined)
+      answered.add(record.toolCallId);
+    if (record.type === 'NODE_RESUMED') answered.add(record.call.toolCallId);
+    if (record.type === 'UNIT_SUBMITTED' && record.inputSource.kind === 'TOOL_CALL')
+      submitted.set(record.requestId, record.inputSource.toolCallId);
+    if (record.type === 'UNIT_COMPLETED' || record.type === 'UNIT_INTERRUPTED') {
+      const toolCallId = submitted.get(record.requestId);
+      if (toolCallId !== undefined) answered.add(toolCallId);
+    }
+  }
+  return calls
+    .filter((toolCallId) => !answered.has(toolCallId))
+    .map((toolCallId) => ({
+      type: 'FEEDBACK' as const,
+      workflowRunId,
+      agentRunId,
+      code: 'INTERRUPTED',
+      message:
+        'Not done: the work went back to a checkpoint before this call finished. Do it again if it is still needed.',
+      toolCallId,
+    }));
 }

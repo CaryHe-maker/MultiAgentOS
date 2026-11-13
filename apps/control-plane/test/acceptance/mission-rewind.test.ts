@@ -200,4 +200,102 @@ real('going back to a checkpoint in the middle of a long task (Orchestration 7.5
     },
     TIMEOUT,
   );
+
+  it(
+    'pauses a subtask that was there at the cut, and the root lets it go on by a message',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              plan: 'alpha writes the notes; beta writes the index.',
+              tasks: [
+                { name: 'alpha', agent: 'worker', goal: 'write the notes', writeScope: ['out'] },
+              ],
+            }),
+            tool('run_subagents', {
+              tasks: [
+                { name: 'beta', agent: 'worker', goal: 'write the index', writeScope: ['idx'] },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            // The new segment after the rewind: alpha is paused, beta is gone.
+            tool('send_message', { to: 'alpha', text: 'Go on from where you were.' }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'alpha went on after the rewind' }),
+          ],
+        },
+        {
+          // At work when beta starts, and still when the run is paused.
+          alpha: [
+            { wait: delay(60_000), then: tool('finish_subagent', { summary: 'never reached' }) },
+            tool('finish_subagent', { summary: 'notes written after the rewind', status: 'done' }),
+          ],
+          beta: [
+            { wait: delay(60_000), then: tool('finish_subagent', { summary: 'never reached' }) },
+          ],
+        },
+      );
+      const run = await missionOn('write the notes and the index', provider, {
+        'out/.keep': '',
+        'idx/.keep': '',
+      });
+      // Wait until the root sleeps on both, then pause.
+      const asleep = Date.now();
+      const rootAsleep = async () =>
+        (await sessionLog(run.dataDir).catch(() => [])).filter(
+          (record) => record['type'] === 'AGENT_RUN_REGISTERED',
+        ).length >= 3 &&
+        (await sessionLog(run.dataDir).catch(() => [])).some(
+          (record) => record['type'] === 'SEGMENT_YIELDED',
+        );
+      while (!(await rootAsleep()) && Date.now() - asleep < 30_000)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      await run.console.interrupt();
+      await until(() => run.lives.at(-1)?.status === '已暂停', 'the run to be paused', 30_000);
+      await run.console.submit('/checkpoints');
+      await until(
+        () => run.notices.some((line) => line.includes('before starting beta')),
+        'the list of checkpoints',
+        30_000,
+      );
+      const listed = run.notices.find((line) => line.includes('before starting beta')) ?? '';
+      const seq = /#(\d+)\s+before starting beta/u.exec(listed)?.[1] ?? '0';
+      await run.console.submit(`/rewind #${seq}`);
+      await until(
+        () =>
+          run.notices.some((line) => line.includes('已回到 checkpoint「before starting beta」')),
+        'the rewind',
+        30_000,
+      );
+      await run.console.submit('/continue');
+      const code = await run.done;
+      expect(code).toBe(0);
+      expect(run.notices.join('\n')).toContain('alpha went on after the rewind');
+      const log = await sessionLog(run.dataDir);
+      const rolled = log.find((record) => record['type'] === 'ROLLED_BACK');
+      expect((rolled?.['cancelledMissionIds'] as string[]).length).toBe(1);
+      // alpha slept on its parent's word, and the message woke it.
+      expect(
+        log.some(
+          (record) =>
+            record['type'] === 'SEGMENT_YIELDED' &&
+            JSON.stringify(record['until']).includes('"parent"'),
+        ),
+      ).toBe(true);
+      const alphaAfter = provider.requests.find((request) =>
+        request.messages.some((message) => textOf(message).includes('Go on from where you were.')),
+      );
+      const said = alphaAfter?.messages.map((message) => textOf(message)).join('\n') ?? '';
+      expect(said).toContain('You were paused there until your parent let you go on');
+      // The root read that alpha waits for it, and nothing of beta's result.
+      const rootAfter = provider.requests.find((request) =>
+        request.messages.some((message) =>
+          textOf(message).includes('Every subtask that was there then is paused'),
+        ),
+      );
+      expect(rootAfter).toBeDefined();
+    },
+    TIMEOUT,
+  );
 });

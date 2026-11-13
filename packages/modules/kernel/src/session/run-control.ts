@@ -236,9 +236,12 @@ export function requestLocalQuestion(
   control: RunControl,
   humanRequestId: string,
   asked: LocalQuestion,
+  /** Asked again after a rewind: the AgentRun that asked has ended, its task sleeps on it. */
+  askedAgain = false,
 ): Decision {
   if (!isLive(control)) return refuse(isClosing(control) ? 'RUN_BLOCKED' : 'NO_OPEN_INPUT');
-  if (!control.activeAgentRuns.has(asked.agentRunId)) return refuse('AGENT_RUN_NOT_FOUND');
+  if (!askedAgain && !control.activeAgentRuns.has(asked.agentRunId))
+    return refuse('AGENT_RUN_NOT_FOUND');
   if (control.questions.has(humanRequestId)) return refuse('REQUEST_CONFLICT');
   return {
     accepted: true,

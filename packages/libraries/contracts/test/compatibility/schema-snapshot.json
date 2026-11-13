@@ -10945,6 +10945,106 @@
             },
             "requestType": {
               "type": "string",
+              "const": "restoreMission"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "missionId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "missionId": {
+                  "type": "string",
+                  "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "tokens": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.RestoreMissionRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "closeMission"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "missionId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "missionId": {
+                  "type": "string",
+                  "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.CloseMissionRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "takeCheckpoint"
             },
             "request": {
@@ -14633,6 +14733,9 @@
                       },
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
+                    },
+                    "askedAgain": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": false
@@ -33339,6 +33442,35 @@
       "additionalProperties": false,
       "$id": "kernel.unit.CheckpointTaken.v1"
     },
+    "kernel.unit.CloseMissionRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "missionId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "missionId": {
+          "type": "string",
+          "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.CloseMissionRequest.v1"
+    },
     "kernel.unit.CloseRunRequest.v1": {
       "anyOf": [
         {
@@ -36820,6 +36952,9 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
+            },
+            "askedAgain": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false
@@ -36918,6 +37053,39 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.ReserveDelegationRequest.v1"
+    },
+    "kernel.unit.RestoreMissionRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "missionId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "missionId": {
+          "type": "string",
+          "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.RestoreMissionRequest.v1"
     },
     "kernel.unit.RetainArtifactsRequest.v1": {
       "type": "object",
@@ -52845,6 +53013,9 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
+            },
+            "askedAgain": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false
@@ -53238,6 +53409,19 @@
                       "nodeId": {
                         "type": "string",
                         "pattern": "^nod_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "kind"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "parent"
                       }
                     },
                     "additionalProperties": false

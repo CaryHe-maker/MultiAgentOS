@@ -220,12 +220,15 @@ export function projectHistory(
           });
           break;
         }
-        if (ownMission === undefined || missionInfo.get(ownMission)?.parentId !== undefined) break;
+        if (ownMission === undefined) break;
         entries.push({
           seq: record.seq,
           category: 'NORMAL',
           kind: 'NOTE',
-          text: `The work went back to the checkpoint "${record.label}": what came after it is taken back. ${String(record.files)} file(s) are as they were then, and the subtasks started after it are cancelled. Decide again how to go on.`,
+          text:
+            missionInfo.get(ownMission)?.parentId === undefined
+              ? `The work went back to the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. The subtasks started after it are gone. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
+              : `The work went back to the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. You were paused there until your parent let you go on (its message is below): continue from where you were.`,
         });
         break;
       case 'AGENT_RUN_REGISTERED':

@@ -60,6 +60,8 @@ import type {
   ScheduleWakeRequest,
   ControlJobRequest,
   HaltAgentRunRequest,
+  RestoreMissionRequest,
+  CloseMissionRequest,
   TakeCheckpointRequest,
   JobControlContent,
   ReportCompactionSourceRequest,
@@ -491,6 +493,16 @@ export interface WorkflowGatewayPort {
   /** Cancels the queued and running work of one AgentRun (Orchestration 5.1, 5.2). */
   haltAgentRun(
     request: HaltAgentRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Opens again a task that ended after a rewind's cut (Orchestration 7.5). */
+  restoreMission(
+    request: RestoreMissionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Closes a sleeping task that will not wake (Orchestration 5.1, 7.5). */
+  closeMission(
+    request: CloseMissionRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Reads or stops a background command of a task (Orchestration 6.2). */
