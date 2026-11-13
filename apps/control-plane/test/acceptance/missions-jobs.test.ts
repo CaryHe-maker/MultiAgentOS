@@ -1,8 +1,8 @@
 /**
  * Background commands of a task (Orchestration 6, D5, D9), end to end with the real product, the
  * real sandbox and a provider scripted per Agent and per task: a command started in the
- * background, one moved there at its timeout, reading and stopping one, waking on its end, and a
- * task that ends stopping its jobs.
+ * background, one moved there at its timeout, reading and stopping one, waking on its end, the job
+ * of a task that delivered going to the task above, and a chat's main woken while it waits.
  */
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -186,7 +186,7 @@ real('background commands (Orchestration 6)', () => {
   );
 
   it(
-    'stops the jobs of a task when the task ends',
+    'hands the job of a task that delivered to the task above, which is woken by its end',
     async () => {
       const place = await roots({ 'out/.keep': '' });
       const provider = scriptedAgents(
@@ -203,7 +203,9 @@ real('background commands (Orchestration 6)', () => {
               ],
             }),
             sleepFor({ kind: 'children', mode: 'all' }),
-            { wait: delay(3500), then: reply('the child is done') },
+            // Woken by the child's end; it sleeps on a long timer, and the job's end wakes it.
+            sleepFor({ kind: 'timer', seconds: 120 }),
+            reply('the writer of the child is done'),
           ],
         },
         {
@@ -220,8 +222,86 @@ real('background commands (Orchestration 6)', () => {
       );
       const chat = await chatOn(place, provider);
       await chat.say('delegate');
-      expect(chat.printed('REPLY')).toContain('the child is done');
+      expect(chat.printed('REPLY')).toContain('the writer of the child is done');
+      expect(await exists(join(place.repository, 'out/late.txt'))).toBe(true);
+      const all = seen(provider);
+      expect(all).toContain('It was started by the subtask starter, which has ended.');
+      expect(all).toContain('a background command of yours has ended');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'stops the jobs of a task that was stopped',
+    async () => {
+      const place = await roots({ 'out/.keep': '' });
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'starter',
+                  agent: 'worker',
+                  goal: 'start a slow writer',
+                  writeScope: ['out'],
+                },
+              ],
+            }),
+            sleepFor({ kind: 'timer', seconds: 1 }),
+            tool('stop_subagents', { names: ['starter'], reason: 'not needed' }),
+            sleepFor({ kind: 'children', mode: 'all' }),
+            { wait: delay(3000), then: reply('stopped the child') },
+          ],
+        },
+        {
+          starter: [
+            run('sleep 2; echo x > out/late.txt', { runInBackground: true }),
+            sleepFor(jobs()),
+            tool('finish_subagent', { summary: 'never reached' }),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('delegate');
+      expect(chat.printed('REPLY')).toContain('stopped the child');
       expect(await exists(join(place.repository, 'out/late.txt'))).toBe(false);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "wakes a chat's main that waits for the user when its background command ends (4.4)",
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            run('sleep 1; echo built-ok', { runInBackground: true }),
+            reply('the build runs in the background'),
+            // A segment of its own, with no message of the user before it.
+            reply('the build finished: built-ok'),
+          ],
+        },
+        {},
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('build in the background');
+      expect(chat.printed('REPLY')).toEqual(['the build runs in the background']);
+      const deadline = Date.now() + 30_000;
+      while (chat.printed('REPLY').length < 2 && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(chat.printed('REPLY')).toEqual([
+        'the build runs in the background',
+        'the build finished: built-ok',
+      ]);
+      expect(chat.printed('NOTICE').join('\n')).toContain('后台命令结束，main 继续');
+      const last = provider.requests
+        .at(-1)
+        ?.messages.map((message) => textOf(message))
+        .join('\n');
+      expect(last).toContain('a background command of yours has ended');
+      expect(last).toContain('built-ok');
     },
     TIMEOUT,
   );

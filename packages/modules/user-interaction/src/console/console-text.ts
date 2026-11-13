@@ -226,6 +226,7 @@ export const ConsoleText = Object.freeze({
   ambiguousTask: (name: string) => `@${name} 对应不止一个任务，请写得更具体。`,
   aborting: '正在中止；已完成的结果和文件改动都保留。',
   questionCancelled: '问题已取消。',
+  followUp: '后台命令结束，main 继续（后台任务结束后的跟进；输入框里的内容保留）。',
   question: {
     from: (agent: string) => `${agent} 想问你：`,
     review: '请审阅下面的内容：',

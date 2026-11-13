@@ -403,6 +403,45 @@ export class SessionActor {
   }
 
   /**
+   * A chat's main is woken by a background command while it waits for the user (Orchestration 4.4,
+   * D12): the open input is taken back (the user's draft stays in the input box) and the work of
+   * the run goes on without an input of the user, named by a checkpoint taken first, so an undo
+   * takes this work back as it takes back the work of an input.
+   */
+  async withdrawOpenInput(
+    run: Run,
+    humanRequestId: string,
+    checkpointId: string,
+  ): Promise<Decision> {
+    if (run.control.phase !== 'AWAITING_INPUT' || run.control.humanRequestId !== humanRequestId)
+      return { accepted: false, reasonCode: 'HUMAN_REQUEST_NOT_PENDING' };
+    this.#cancelUndo(run, 'NEW_INPUT');
+    await this.#deps.duties.snapshots?.checkpoint(
+      checkpointId,
+      'INPUT',
+      'after a background command ended',
+    );
+    const opened = answerOpenInput(run.control, humanRequestId, checkpointId);
+    if (!opened.accepted) return opened;
+    run.control = opened.control;
+    run.work.openInput(checkpointId);
+    const { inputMs } = this.#timeouts();
+    run.inputClock.register('input', inputMs);
+    const { outbox } = this.#deps;
+    outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'HumanResolved',
+      humanRequestId,
+      resolution: 'WITHDRAWN',
+    });
+    outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'RunStateChanged',
+      state: 'RUNNING',
+      checkpointId,
+    });
+    return { accepted: true, control: run.control };
+  }
+
+  /**
    * A local question nobody waits for any more (Orchestration 5.1, 7.5) is taken back, and the user
    * is told it is gone. Accepted when it is no longer pending.
    */

@@ -11093,6 +11093,59 @@
             },
             "requestType": {
               "type": "string",
+              "const": "withdrawOpenInput"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId",
+                "humanRequestId",
+                "checkpointId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "humanRequestId": {
+                  "type": "string",
+                  "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.WithdrawOpenInputRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "requestType": {
+              "type": "string",
               "const": "takeCheckpoint"
             },
             "request": {
@@ -16628,7 +16681,8 @@
         "resolution": {
           "enum": [
             "ANSWERED",
-            "CANCELLED"
+            "CANCELLED",
+            "WITHDRAWN"
           ]
         }
       },
@@ -17292,7 +17346,8 @@
                 "resolution": {
                   "enum": [
                     "ANSWERED",
-                    "CANCELLED"
+                    "CANCELLED",
+                    "WITHDRAWN"
                   ]
                 }
               },
@@ -45303,6 +45358,40 @@
       "additionalProperties": false,
       "$id": "kernel.unit.WakeDue.v1"
     },
+    "kernel.unit.WithdrawOpenInputRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId",
+        "humanRequestId",
+        "checkpointId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "humanRequestId": {
+          "type": "string",
+          "pattern": "^hrq_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.WithdrawOpenInputRequest.v1"
+    },
     "kernel.unit.WithdrawQuestionRequest.v1": {
       "type": "object",
       "required": [
@@ -53857,6 +53946,10 @@
               "type": "string",
               "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
             "causes": {
               "type": "array",
               "items": {
@@ -54591,6 +54684,10 @@
               "const": "JOB_ENDED"
             },
             "missionId": {
+              "type": "string",
+              "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "toMissionId": {
               "type": "string",
               "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },

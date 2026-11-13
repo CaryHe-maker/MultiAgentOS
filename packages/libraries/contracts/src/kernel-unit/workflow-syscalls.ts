@@ -208,6 +208,18 @@ export const WithdrawQuestionRequestSchema = closed(
 );
 export type WithdrawQuestionRequest = Static<typeof WithdrawQuestionRequestSchema>;
 
+/**
+ * A chat's main waits for the user, and a background command of the work has ended (Orchestration
+ * 4.4, D12): the open input is taken back, and work without an input of the user opens, named by
+ * `checkpointId`, which is taken first. Refused when the run no longer waits on this request (the
+ * user has just answered): the notice then comes with that answer.
+ */
+export const WithdrawOpenInputRequestSchema = closed(
+  { ...inRun, humanRequestId: IdSchemas.humanRequestId, checkpointId: IdSchemas.checkpointId },
+  'kernel.unit.WithdrawOpenInputRequest.v1',
+);
+export type WithdrawOpenInputRequest = Static<typeof WithdrawOpenInputRequestSchema>;
+
 export const JobControlContentSchema = closed(
   {
     requestId: IdSchemas.requestId,

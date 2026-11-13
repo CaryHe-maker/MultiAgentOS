@@ -399,6 +399,8 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     restoreMission: (request) => Promise.resolve(ack(request.requestId)),
     closeMission: (request) => Promise.resolve(ack(request.requestId)),
     withdrawQuestion: (request) => Promise.resolve(ack(request.requestId)),
+    withdrawOpenInput: (request) =>
+      Promise.resolve(rejected(request.requestId, 'HUMAN_REQUEST_NOT_PENDING')),
     takeCheckpoint: (request) => Promise.resolve(ack(request.requestId)),
     controlJob: (request) =>
       Promise.resolve({

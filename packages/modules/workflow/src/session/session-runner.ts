@@ -807,13 +807,19 @@ export class SessionRunner {
     event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
   ): Promise<void> {
     const suffix = event.checkpointId.slice(event.checkpointId.indexOf('_') + 1);
-    const input = this.#records.find(
-      (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
-        record.type === 'HUMAN_ANSWERED' &&
-        record.kind === 'prompt' &&
-        (record.checkpointId === event.checkpointId ||
-          (record.checkpointId === undefined && record.turnId === `trn_${suffix}`)),
+    // Work without an input of the user (a follow-up after a background command) is undone the same.
+    const followUp = this.#records.find(
+      (record) => record.type === 'MISSION_WOKEN' && record.checkpointId === event.checkpointId,
     );
+    const input =
+      followUp ??
+      this.#records.find(
+        (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
+          record.type === 'HUMAN_ANSWERED' &&
+          record.kind === 'prompt' &&
+          (record.checkpointId === event.checkpointId ||
+            (record.checkpointId === undefined && record.turnId === `trn_${suffix}`)),
+      );
     if (input === undefined) return;
     await this.#append([
       {
@@ -2912,11 +2918,22 @@ export class SessionRunner {
   ): Promise<void> {
     const job = jobsOf(this.#records).find((each) => each.jobKey === event.jobKey);
     if (job === undefined || job.ended !== undefined) return;
+    // The task that started it is told; when it has ended, the nearest task above that has not
+    // (Orchestration 6.4), up to the root.
+    const missions = projectMissions(this.#records);
+    let toMissionId = job.missionId;
+    for (
+      let at = missions.get(toMissionId);
+      at?.ended !== undefined && at.parentId !== undefined;
+      at = missions.get(at.parentId)
+    )
+      toMissionId = at.parentId;
     await this.#append([
       {
         type: 'JOB_ENDED',
         workflowRunId,
         missionId: job.missionId,
+        ...(toMissionId === job.missionId ? {} : { toMissionId }),
         jobId: job.jobId,
         exit: event.exit,
         durationMs: event.durationMs,
@@ -2925,7 +2942,54 @@ export class SessionRunner {
         tail: event.tail.length <= 8192 ? event.tail : event.tail.slice(-8192),
       },
     ]);
+    await this.#followUpInChat(workflowRunId, toMissionId);
     await this.#advance(workflowRunId);
+  }
+
+  /**
+   * A chat's main that waits for the user is woken when a background command of the work ends
+   * (Orchestration 4.4, D12), within the limit of wakes without the user: the open input is taken
+   * back, and main goes on in a segment of its own that reads the notice. When the user has just
+   * answered, the Kernel refuses, and the notice comes with that answer.
+   */
+  async #followUpInChat(workflowRunId: string, missionId: string): Promise<void> {
+    if (this.#mode !== 'CHAT' || this.#agents.size > 0) return;
+    if (this.#wakeLimitReached(missionId)) return;
+    const projected = projectGraph(this.#records, workflowRunId);
+    const root = projectMissions(this.#records).get(missionId);
+    if (root === undefined || root.parentId !== undefined) return;
+    const prompt = [...projected.nodes.values()].find(
+      (node) =>
+        node.kind === 'HUMAN' &&
+        node.ask === undefined &&
+        projected.view.get(node.nodeId)?.status === 'RUNNING',
+    );
+    if (prompt === undefined) return;
+    const checkpointId = newId('ckp');
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.withdrawOpenInput(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId: asHumanRequestId(prompt.nodeId),
+        checkpointId,
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED') return;
+    const ended = this.#records.at(-1);
+    this.#inputCheckpointId = checkpointId;
+    await this.#append([
+      {
+        type: 'MISSION_WOKEN',
+        workflowRunId,
+        missionId,
+        checkpointId,
+        causes: [{ kind: 'JOB', ...(ended === undefined ? {} : { seq: ended.seq }) }],
+      },
+      { type: 'NODE_ENDED', workflowRunId, nodeId: prompt.nodeId, status: 'SUCCEEDED' },
+    ]);
   }
 
   /** A task that ended stops its jobs (Orchestration 6.3); their end is recorded when it comes. */
@@ -3530,9 +3594,13 @@ export class SessionRunner {
       }
       await this.#append(unanswered);
     }
+    // A task that delivered leaves its background commands running: their end goes to the task
+    // above (Orchestration 6.4). One that was stopped or failed stops them.
     await this.#stopJobsOf(
       workflowRunId,
-      ended.flatMap((record) => (record.type === 'MISSION_ENDED' ? [record.missionId] : [])),
+      ended.flatMap((record) =>
+        record.type === 'MISSION_ENDED' && record.status !== 'SUCCEEDED' ? [record.missionId] : [],
+      ),
     );
   }
 
@@ -3693,20 +3761,30 @@ export class SessionRunner {
       if (failed.length > 0)
         causes.push({ kind: 'CHILDREN', seq: Math.max(...failed.map(({ seq }) => seq ?? 0)) });
     }
-    // A job wakes when it was named, and the limit allows it (Orchestration 6.4).
+    // A background command it is told of wakes a sleeping task (Orchestration 6.4): its own, or
+    // one of a task below that ended before it. Only `jobs (all)` over named jobs waits for all of
+    // them; the limit of wakes without the user holds.
     const jobs = jobsOfMission(this.#records, mission.missionId);
-    for (const condition of yielded.until) {
-      if (condition.kind !== 'jobs') continue;
-      const watched = jobs.filter(
-        (job) => condition.jobIds === undefined || condition.jobIds.includes(job.jobId),
-      );
-      const ends = watched.map((job) => job.ended?.seq);
-      if (watched.length === 0 || this.#wakeLimitReached(mission.missionId)) continue;
-      const anyNew = ends.some((seq) => seq !== undefined && after(seq));
-      const allEnded = ends.every((seq) => seq !== undefined);
-      if (condition.mode === 'all' ? allEnded && anyNew : anyNew)
-        causes.push({ kind: 'JOB', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
-    }
+    const allOf = yielded.until.find(
+      (condition) => condition.kind === 'jobs' && condition.mode === 'all',
+    );
+    const waitsForAll =
+      allOf?.kind === 'jobs'
+        ? jobs.filter((job) => allOf.jobIds === undefined || allOf.jobIds.includes(job.jobId))
+        : [];
+    const allDone = waitsForAll.every((job) => job.ended !== undefined);
+    const told = this.#records.filter(
+      (record): record is Extract<SessionLogRecord, { type: 'JOB_ENDED' }> =>
+        record.type === 'JOB_ENDED' &&
+        after(record.seq) &&
+        (record.toMissionId ?? record.missionId) === mission.missionId &&
+        (allDone ||
+          !waitsForAll.some(
+            (job) => job.jobId === record.jobId && job.missionId === record.missionId,
+          )),
+    );
+    if (told.length > 0 && !this.#wakeLimitReached(mission.missionId))
+      causes.push({ kind: 'JOB', seq: Math.max(...told.map((record) => record.seq)) });
     // A message wakes a sleeping task whatever it waited for, within the limit (D20).
     if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
       causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });

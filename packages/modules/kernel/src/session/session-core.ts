@@ -187,6 +187,14 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.restoreMission(forward.request)),
         );
+      case 'withdrawOpenInput': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () =>
+            actor.withdrawOpenInput(run, request.humanRequestId, request.checkpointId),
+          ),
+        );
+      }
       case 'withdrawQuestion': {
         const { request } = forward;
         return this.#inRun(request, (work, actor, run) =>

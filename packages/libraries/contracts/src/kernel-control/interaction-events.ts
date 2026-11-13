@@ -149,7 +149,8 @@ export const HumanResolvedSchema = closed(
   {
     type: Type.Literal('HumanResolved'),
     humanRequestId: IdSchemas.humanRequestId,
-    resolution: Type.Enum(['ANSWERED', 'CANCELLED']),
+    /** `WITHDRAWN`: open input taken back because the work goes on without the user (4.4). */
+    resolution: Type.Enum(['ANSWERED', 'CANCELLED', 'WITHDRAWN']),
   },
   'kernel.control.HumanResolved.v1',
 );

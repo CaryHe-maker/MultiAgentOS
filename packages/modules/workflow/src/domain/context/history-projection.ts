@@ -436,19 +436,25 @@ export function projectHistory(
       case 'JOB_STARTED':
         if (record.missionId === ownMission) jobCommands.set(record.jobId, record.command);
         break;
-      case 'JOB_ENDED':
-        // A job's end reaches its task at the next assembly (Orchestration 6.4).
-        if (record.missionId !== ownMission) break;
+      case 'JOB_ENDED': {
+        // A job's end reaches the task told of it at the next assembly (Orchestration 6.4): the
+        // one that started it, or the nearest above it when that one had ended.
+        if ((record.toMissionId ?? record.missionId) !== ownMission) break;
+        const handed =
+          record.toMissionId === undefined || record.toMissionId === record.missionId
+            ? ''
+            : `It was started by the subtask ${missionInfo.get(record.missionId)?.name ?? 'that ended'}, which has ended. `;
         notes.push({
           seq: record.seq,
           category: 'NORMAL',
           kind: 'NOTE',
           text: clip(
-            jobEndedNotice(record, jobCommands.get(record.jobId) ?? 'a command'),
+            `${handed}${jobEndedNotice(record, jobCommands.get(record.jobId) ?? 'a command')}`,
             NOTE_MAX,
           ),
         });
         break;
+      }
       case 'MISSION_WOKEN':
         if (record.missionId !== ownMission) break;
         notes.push({

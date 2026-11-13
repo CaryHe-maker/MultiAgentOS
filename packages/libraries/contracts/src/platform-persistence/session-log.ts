@@ -335,6 +335,11 @@ export const SessionLogRecordSchema = Type.Union(
     /** A task that slept is woken, by the events at these log positions (Orchestration 4.3). */
     record('MISSION_WOKEN', inTurn, {
       missionId: IdSchemas.missionScopeId,
+      /**
+       * A chat's main woken while it waited for the user (Orchestration 4.4): the checkpoint this
+       * work without an input of the user opened, which an undo goes back to.
+       */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
       causes: Type.Array(
         closed({
           kind: Type.Enum([
@@ -465,6 +470,11 @@ export const SessionLogRecordSchema = Type.Union(
     /** A job has ended (Orchestration 6.4); `tail` is the end of what it printed. */
     record('JOB_ENDED', inTurn, {
       missionId: IdSchemas.missionScopeId,
+      /**
+       * The task told of it (Orchestration 6.4): the one that started it, or, when that one has
+       * ended, its nearest task above that has not; absent, the one that started it.
+       */
+      toMissionId: Type.Optional(IdSchemas.missionScopeId),
       jobId: text(32),
       exit: Type.Union([JobExitSchema, closed({ lost: Type.Literal(true) })]),
       durationMs: count(),

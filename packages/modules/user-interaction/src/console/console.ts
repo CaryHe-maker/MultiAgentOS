@@ -1332,6 +1332,7 @@ export class Console {
         break;
       }
       case 'HumanResolved': {
+        if (event.resolution === 'WITHDRAWN') this.#notice(text.followUp);
         if (this.#openRequest === event.humanRequestId) this.#openRequest = undefined;
         const index = this.#pending.findIndex(
           (item) => item.kind === 'QUESTION' && item.humanRequestId === event.humanRequestId,

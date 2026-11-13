@@ -82,6 +82,10 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
         if (record.kind === 'prompt' && record.checkpointId !== undefined)
           openInputs.set(record.checkpointId, record.workflowRunId);
         break;
+      case 'MISSION_WOKEN':
+        if (record.checkpointId !== undefined)
+          openInputs.set(record.checkpointId, record.workflowRunId);
+        break;
       case 'INPUT_SETTLED':
         openInputs.delete(record.checkpointId);
         break;

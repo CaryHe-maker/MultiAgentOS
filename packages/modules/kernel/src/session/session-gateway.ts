@@ -28,6 +28,7 @@ import {
   RestoreMissionRequestSchema,
   CloseMissionRequestSchema,
   WithdrawQuestionRequestSchema,
+  WithdrawOpenInputRequestSchema,
   TakeCheckpointRequestSchema,
   ReserveDelegationRequestSchema,
   ReportSessionCommandRequestSchema,
@@ -121,6 +122,11 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
   withdrawQuestion: {
     caller: 'workflow',
     schema: WithdrawQuestionRequestSchema,
+    needs: 'RUN',
+  },
+  withdrawOpenInput: {
+    caller: 'workflow',
+    schema: WithdrawOpenInputRequestSchema,
     needs: 'RUN',
   },
   takeCheckpoint: {
@@ -330,6 +336,7 @@ export class SessionGateway {
     restoreMission: this.#port('workflow', 'restoreMission'),
     closeMission: this.#port('workflow', 'closeMission'),
     withdrawQuestion: this.#port('workflow', 'withdrawQuestion'),
+    withdrawOpenInput: this.#port('workflow', 'withdrawOpenInput'),
     takeCheckpoint: this.#port('workflow', 'takeCheckpoint'),
     reportCompactionSource: this.#port('workflow', 'reportCompactionSource'),
     ackCompaction: this.#port('workflow', 'ackCompaction'),

@@ -64,6 +64,7 @@ import type {
   RestoreMissionRequest,
   CloseMissionRequest,
   WithdrawQuestionRequest,
+  WithdrawOpenInputRequest,
   TakeCheckpointRequest,
   JobControlContent,
   ReportCompactionSourceRequest,
@@ -510,6 +511,11 @@ export interface WorkflowGatewayPort {
   /** Takes back a local question nobody waits for any more (Orchestration 5.1, 7.5). */
   withdrawQuestion(
     request: WithdrawQuestionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** A chat's main is woken by a background command while it waited for the user (4.4). */
+  withdrawOpenInput(
+    request: WithdrawOpenInputRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   /** Reads or stops a background command of a task (Orchestration 6.2). */
