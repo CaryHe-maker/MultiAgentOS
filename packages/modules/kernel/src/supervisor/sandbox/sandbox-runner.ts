@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -134,6 +135,25 @@ const isDirectory = (path: string): boolean => {
   }
 };
 
+/** True when the path is there, a dangling link included. */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A write root that does not exist yet: its nearest existing parent is a real directory inside. */
+function missingInside(root: string, relative: string): boolean {
+  let parent = posix.dirname(relative);
+  while (parent !== '.' && parent !== '/' && !present(posix.join(root, parent)))
+    parent = posix.dirname(parent);
+  const absolute = parent === '.' ? root : posix.join(root, parent);
+  return insideRepository(root, parent) === absolute && isDirectory(absolute);
+}
+
 /** Why a workdir or write root cannot be used: it must be a real directory inside the repository. */
 function insideRepository(root: string, relative: string): string | undefined {
   const absolute = relative === '' || relative === '.' ? root : posix.join(root, relative);
@@ -166,6 +186,12 @@ function checkBeforeStart(scope: SandboxScope, command: string): SandboxRefusal 
   if (workdir === undefined || !isDirectory(workdir)) return 'WORKDIR_INVALID';
   for (const writable of profile.writableRoots) {
     const absolute = writable === '.' ? root : posix.join(root, writable);
+    // A write root the task has not created yet is not bound (a command cannot write it, the
+    // write tools can); the nearest part of it that exists must be a real directory inside.
+    if (!present(absolute)) {
+      if (!missingInside(root, writable)) return 'WORKDIR_INVALID';
+      continue;
+    }
     // A write root that is a link would let the bind land somewhere else.
     if (insideRepository(root, writable) !== absolute) return 'WORKDIR_INVALID';
   }

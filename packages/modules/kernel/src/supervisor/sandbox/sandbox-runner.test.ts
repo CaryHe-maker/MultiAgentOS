@@ -210,6 +210,24 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
     expect(result).toEqual({ kind: 'REFUSED', reason: 'WORKDIR_INVALID' });
   });
 
+  it('runs a command when a write root does not exist yet, and still refuses one that leaves', async () => {
+    const ran = await runner().run({
+      ...scopeFor('echo ran', { writableRoots: ['docs/new-report.md'] }),
+      timeoutMs: 5_000,
+      maxOutputBytes: 1000,
+      signal: new AbortController().signal,
+    });
+    expect(ran.kind).toBe('RAN');
+    spawnSync('ln', ['-s', outside, join(repo, 'away')]);
+    const refused = await runner().run({
+      ...scopeFor('echo no', { writableRoots: ['away/new.md'] }),
+      timeoutMs: 5_000,
+      maxOutputBytes: 1000,
+      signal: new AbortController().signal,
+    });
+    expect(refused).toEqual({ kind: 'REFUSED', reason: 'WORKDIR_INVALID' });
+  });
+
   it('ends a command at its timeout and reports it with what it printed', async () => {
     const result = await exec('echo before; sleep 30', {}, 400);
     expect(result.timedOut).toBe(true);
