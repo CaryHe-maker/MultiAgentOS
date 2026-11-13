@@ -32,11 +32,18 @@ playbook:
         Check the findings you doubt by reading the code yourself, drop the ones that do not hold,
         and finish with the findings by importance. You change no file.
   example: |-
-    Brief: goal "review the CSV export added in server/routes/reports.py and web/ReportPage.tsx";
-    criteria "correctness of the CSV (escaping, column order); tests cover it; no change outside
-    the export"; no writeScope.
-    review: one explorer "reviewer" reads the two files and server/EXPORT.md against the
-    criteria. It found: commas in titles are not quoted (reports.py line 41, sure); no test for
-    an empty report (likely).
-    report: I read line 41: the row is joined with "," by hand, so the finding holds. finish_subagent
-    status done with the two findings, the first first.
+    Brief (from the root of a flight booking system): goal "review services/gateway,
+    services/accounts and how every service learns which user a request is for"; criteria
+    "one user can never read or change another user's data; passwords are salted hashes;
+    tokens expire and logout ends them; the services trust the user only when the gateway
+    passed it on"; no writeScope.
+    review: two explorers that wrote none of it: "auth-review" reads services/gateway and
+    services/accounts against the criteria on passwords, tokens and logout; "trust-review"
+    reads how flights, bookings and payments take the user of a request. Slept until both
+    ended. auth-review found that logout does not end a cached token (gateway/cache.py line
+    22, sure) and that passwords are salted (no finding). trust-review found that every
+    service reads the X-User header from any caller (bookings/http.py line 14, and the same
+    in flights and payments, sure), so anyone who can reach a service can act as any user.
+    report: I read bookings/http.py line 14 and the gateway: nothing signs or checks the
+    header, so the finding holds; the cached token holds too. finish_subagent status done with
+    the two findings, the trust of X-User first because it lets anyone act as anyone.

@@ -146,8 +146,21 @@ describe('shipped definitions', () => {
     // sub_mission and one not split at all (D32).
     const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
     const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
-    expect(text.match(/^Example \d\./gmu)).toHaveLength(5);
+    expect(text.match(/^Example \d\./gmu)).toHaveLength(6);
     expect(text).toContain('Example 3. Not split at all.');
-    expect(text.split('sub_mission {').length - 1).toBe(1);
+    // One example uses sub_mission once; the large system uses it for a fix and a review.
+    expect(text.split('sub_mission {').length - 1).toBe(3);
+    // The large system: interfaces first, owners, acceptance written by a task that builds
+    // nothing, integration on a background run, failures back to their owners.
+    expect(text).toContain('Example 6. A large system from a specification');
+    for (const step of ['contracts/', 'name: "acceptance"', 'background: true', 'send_message {'])
+      expect(text).toContain(step);
+    // The examples of the pre-orchestrated templates are one system's standard ways of work.
+    for (const id of ['fix-verify', 'explore-build', 'review']) {
+      const template = catalog.latest('TEMPLATE', id);
+      expect(template?.kind === 'TEMPLATE' ? template.playbook?.example : '').toContain(
+        'flight booking system',
+      );
+    }
   });
 });

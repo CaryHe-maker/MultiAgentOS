@@ -75,9 +75,11 @@ export async function hidden(
   // Every line of the verbose output is read, not only its end.
   const ran = shell(repository, `python3 -m unittest -v ${modules.join(' ')}`, 300_000, 1_000_000);
   const each = verdicts(ran.output);
+  const failed = [...each].filter(([, verdict]) => verdict !== 'ok').map(([name]) => name);
   return {
     passed: [...each].filter(([, verdict]) => verdict === 'ok').map(([name]) => name),
-    failed: [...each].filter(([, verdict]) => verdict !== 'ok').map(([name]) => name),
+    // Tests that never ran (their setup failed) are failures too.
+    failed: !ran.ok && failed.length === 0 ? ['(the tests did not run)'] : failed,
     output: ran.output,
   };
 }
@@ -177,6 +179,7 @@ const shop: TaskSpec = {
         '2. `checkout(cart, region, coupon=None, today=None)`：优惠券在批量折扣之后、计税之前减；percent 按 money.percent_of 四舍五入到分；减后的金额不小于 0；未打折的 subtotal 低于 min_subtotal，或 today（缺省为今天）晚于 expires 时抛 CouponError，且这时不卖出任何东西（库存与购物车不变）。Order 增加 coupon（减掉的分，没有券为 0）与 coupon_code（没有券为 None），as_dict() 也要有这两项。',
         '3. 命令行 quote 增加 `--coupons <文件> --coupon <代码>`；代码不存在或券不能用时向 stderr 写原因，退出码 2。',
         '给新功能补上测试，README 写明优惠券的用法。',
+        '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
   ],
@@ -218,6 +221,7 @@ const taskq: TaskSpec = {
         '- 命令行增加全局选项 `--backend NAME`，优先于配置文件里的 [backend] name；配置文件写 name = "sqlite" 也要能用；',
         '- 给 sqlite 后端补上测试，README 写明怎么用。',
         '现有测试都要继续通过：`python3 -m unittest discover -s tests -t .`。',
+        '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
   ],
@@ -262,6 +266,7 @@ const auth: TaskSpec = {
         'auth/ 下个月要上线。上线前请全面检查 auth/ 的安全与正确性问题（README.md 里有这个模块必须遵守的规则），',
         '确认的问题都修掉并补上测试；在 docs/auth-review.md 写检查报告：每个问题写在哪个文件、为什么是问题、怎么修的。',
         '现有测试都要继续通过：`python3 -m unittest discover -s tests -t .`。',
+        '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
   ],
@@ -338,6 +343,7 @@ const sales: TaskSpec = {
         '1. `python3 -m unittest discover -s tests -t .` 有失败（测试是对的，不要改测试）；',
         '2. 太慢：`python3 -m sales report data/export-2026.csv` 处理这 4 万行要十几秒，要求同样的数据 2 秒以内。',
         '请修好这两个问题，并写一份开发文档 docs/report.md：数据格式、从读入到出表的处理流程、各模块和函数的作用、更正行（同一个 order_id 再次出现）的规则。',
+        '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
   ],
@@ -393,7 +399,7 @@ const mdsite: TaskSpec = {
     await writeFile(join(repository, 'README.md'), '# mdsite\n');
     await cp(join(STUDY_FIXTURES, 'mdsite/spec.md'), join(repository, 'docs/spec.md'));
   },
-  steps: [{ run: '按 docs/spec.md 实现 mdsite。' }],
+  steps: [{ run: '按 docs/spec.md 实现 mdsite。请尽可能快并且高质量地完成。' }],
   judge: async (observation) => {
     const { repository } = observation;
     const result = await hidden('mdsite', repository);
@@ -407,4 +413,57 @@ const mdsite: TaskSpec = {
   },
 };
 
-export const SUBMISSION_STUDY_TASKS: readonly TaskSpec[] = [shop, taskq, auth, sales, mdsite];
+// --- healthhub: a distributed system from a specification, large enough for many hands ----------
+
+const healthhub: TaskSpec = {
+  id: 'study.healthhub',
+  mode: 'mission',
+  tags: ['mission', 'study', 'submission-study', 'large', 'build-from-spec'],
+  description:
+    'A distributed personal health system from a specification: six services with their own data over HTTP, events between them, partial failures; judged by hidden end-to-end tests.',
+  fixture: async (repository) => {
+    await mkdir(join(repository, 'docs'), { recursive: true });
+    await writeFile(join(repository, 'README.md'), '# healthhub\n');
+    await cp(join(STUDY_FIXTURES, 'healthhub/spec.md'), join(repository, 'docs/spec.md'));
+  },
+  steps: [
+    {
+      run: '按 docs/spec.md 从零实现分布式个人健康管理系统 healthhub。请尽可能快并且高质量地完成。',
+    },
+  ],
+  judge: async (observation) => {
+    const { repository } = observation;
+    const result = await hidden('healthhub', repository);
+    const readme = await read(repository, 'README.md');
+    const architecture = await read(repository, 'docs/architecture.md');
+    return [
+      hiddenCheck(result),
+      check(
+        'recorded: hidden end-to-end tests passed',
+        'OUTCOME',
+        true,
+        `${String(result.passed.length)}/12: ${result.passed.join(',') || '-'}`,
+      ),
+      theirTests(repository, 30),
+      check('the README tells how to run it', 'OUTCOME', readme.includes('run.sh')),
+      check(
+        'docs/architecture.md describes the services',
+        'OUTCOME',
+        ['gateway', 'identity', 'records', 'ingest', 'analytics', 'notify'].every((name) =>
+          architecture.includes(name),
+        ),
+        `${String(architecture.length)} chars`,
+      ),
+      ...common(observation, 'contracts first, owners per service, acceptance beside the build'),
+    ];
+  },
+};
+
+export const SUBMISSION_STUDY_TASKS: readonly TaskSpec[] = [
+  shop,
+  taskq,
+  auth,
+  sales,
+  mdsite,
+  healthhub,
+];

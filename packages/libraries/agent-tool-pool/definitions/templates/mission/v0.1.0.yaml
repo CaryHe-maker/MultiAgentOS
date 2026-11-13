@@ -159,3 +159,93 @@ nodes:
       reply {text: "Cause: for gzip-encoded uploads, upload/check.py compared the declared size
         with the decompressed bytes. It now compares before decompressing. A new test uploads a
         gzip body; pytest tests/test_upload.py -q passes."}
+
+      Example 6. A large system from a specification, as fast as it can be done well.
+      Goal: "Build the flight booking system of docs/spec.md: five services (gateway, accounts,
+      flights, bookings, payments), each its own process and data, over HTTP; ./run.sh starts
+      them; unit tests and README. Done fast and well."
+      What I see first: many parts that only meet at interfaces. Done one after another this
+      takes hours and outgrows any one context; done at once by owners who agreed the
+      interfaces first, it takes the time of the largest part. So I fix what is shared before
+      anyone builds, give every service an owner, have the acceptance tests written beside the
+      building by someone who builds nothing, and keep the integration and the checks myself.
+      I read docs/spec.md, then write contracts/ myself, because everyone depends on it:
+      contracts/ports.py (ports from the base), contracts/errors.py (the error body and codes),
+      contracts/events.py (booking_created, booking_cancelled, payment_settled: fields and who
+      sends them), contracts/auth.md (how the gateway passes the user on), and a ./run.sh that
+      starts whatever services exist. Nobody else changes contracts/.
+      run_subagents {plan: "Deliver: the system of docs/spec.md, all of it. Checked by: the
+        acceptance tests in tests/e2e (written from the spec, not from the code) pass against
+        ./run.sh start; unit tests pass; data survives a restart; one service down leaves the
+        others working. Interfaces: contracts/ (fixed; ask me to change it, do not change it).
+        Owners: platform (lead) owns services/gateway/ and services/accounts/; inventory (lead)
+        owns services/flights/ and services/bookings/; payments (worker) owns
+        services/payments/; acceptance (worker) owns tests/e2e/. Each service keeps its data in
+        its own folder and talks to the others by HTTP only. Shared files: contracts/ and
+        run.sh, both mine.", tasks: [
+        {name: "platform", agent: "lead", goal: "Build the gateway (routing, token check,
+          passing the user on) and the accounts service (register, login, logout, tokens) of
+          docs/spec.md 2.1 and 2.2, against contracts/. Split them between your workers. Unit
+          tests in each service.", writeScope: ["services/gateway/", "services/accounts/"],
+          acceptance: ["the unit tests of both services pass"]},
+        {name: "inventory", agent: "lead", goal: "Build the flights service (search, seats) and
+          the bookings service (hold, confirm, cancel; the events of contracts/events.py, sent
+          again until acknowledged) of docs/spec.md 2.3 and 2.4.", writeScope:
+          ["services/flights/", "services/bookings/"], acceptance: ["their unit tests pass",
+          "a cancelled booking frees its seat"]},
+        {name: "payments", agent: "worker", goal: "Build the payments service of docs/spec.md
+          2.5: charge a held booking, settle, refund on cancel; idempotent by booking id.",
+          writeScope: ["services/payments/"], acceptance: ["its unit tests pass", "charging the
+          same booking twice charges once"]},
+        {name: "acceptance", agent: "worker", goal: "Write the acceptance tests of docs/spec.md
+          in tests/e2e: they start the system with ./run.sh start on free ports and walk every
+          interface of section 2 and every rule of section 3 (restart, one service down,
+          isolation of users). Write them from the spec only; they fail until the services
+          exist.", writeScope: ["tests/e2e/"], acceptance: ["every interface and rule of the
+          spec has a test", "the tests run"]}]}
+      sleep {until: [{kind: "children"}, {kind: "message"}]}
+      inventory asked by message whether a hold may outlive its flight's departure. The spec
+      says holds expire after 15 minutes, so I answered and slept again:
+      send_message {to: "inventory", kind: "reply", text: "Holds expire 15 minutes after they
+        are made, whatever the departure."}
+      All four came back done. I start the whole system in the background, so it runs while I
+      work: run_command {command: "HH_PORT_BASE=8800 ./run.sh start", background: true}; then
+      run_command {command: "python3 -m unittest discover -s tests/e2e -t ."}: 41 passed, 3
+      failed: a cancelled booking is not refunded, and a token still works after logout. Each
+      failure goes back to the owner who knows the code, not to a new task:
+      send_message {to: "platform", kind: "request", text: "tests/e2e/test_accounts.py
+        test_logout: the token still works after POST /api/logout; the gateway caches tokens
+        for 60 s. End the cached token on logout."}
+      The refund crosses bookings and payments and I do not know which side is wrong, so it
+      goes to fix-verify with the check that shows it:
+      sub_mission {name: "refund", template: "fix-verify", goal: "test_cancel_refunds fails: a
+        cancelled booking stays charged. bookings should send booking_cancelled
+        (contracts/events.py) and payments refund on it; find which side breaks and fix it.",
+        writeScope: ["services/bookings/", "services/payments/"], acceptance:
+        ["test_cancel_refunds passes", "the other acceptance tests still pass"], params:
+        {check: "python3 -m unittest tests.e2e.test_bookings -v", maxRounds: "2"}}
+      While they fix it, the part where a mistake costs most is reviewed by someone who did not
+      write it:
+      sub_mission {name: "security-review", template: "review", goal: "Review services/gateway,
+        services/accounts and how every service learns which user a request is for.", params:
+        {criteria: "one user can never read or change another user's data; passwords are
+        salted hashes; tokens expire and logout ends them; the services trust the user only
+        when the gateway passed it on"}}
+      sleep {until: [{kind: "children"}, {kind: "message"}]}
+      refund came back done (bookings sent the event before saving, so a crash lost it; now it
+      saves first and resends until acknowledged). platform answered done for the logout. The
+      review found that the services accept the user header from any caller: a real hole. It
+      goes to its owner, and I sleep until it is fixed:
+      send_message {to: "platform", kind: "request", text: "The review found that every service
+        trusts the user header from any caller. Have the gateway sign it with the secret of
+        contracts/auth.md, and every service check the signature; tell the other owners what
+        to change."}
+      Then I check everything myself: ./run.sh stop and start (data kept); all acceptance tests
+      (44 passed); all unit tests (63 passed); the acceptance tests again with payments stopped
+      (bookings still work, charges wait and settle once it is back).
+      reply {text: "The flight booking system is built: five services under services/, the
+        shared interfaces in contracts/, ./run.sh to start and stop them. Checked: 44
+        acceptance tests (written from the spec by a task that built nothing) and 63 unit tests
+        pass; data survives a restart; with payments down bookings still work. Found and fixed
+        on the way: refunds lost on cancel, tokens alive after logout, and services trusting
+        the user header from any caller (found by a separate review)."}

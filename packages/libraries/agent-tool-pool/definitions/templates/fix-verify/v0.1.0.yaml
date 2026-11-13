@@ -42,15 +42,24 @@ playbook:
         Finish with the cause, the change, the output of the last check and, when it still fails,
         what was tried and what you think is left.
   example: |-
-    Brief: goal "test_late_fee fails after the change to the grace period"; check
-    "pytest tests/test_fees.py -q"; maxRounds 2; writeScope ["src/fees.py", "tests/"].
-    reproduce: I ran the check: 1 failed, test_late_fee expects 0.0 at day 3 and got 1.5. In
-    src/fees.py late_fee counts days from the due date, but the grace period of 3 days is now
-    inclusive, so day 3 must still be free.
-    fix (round 1): run_subagents with one worker "fixer", writeScope ["src/fees.py"], goal
-    "late_fee in src/fees.py charges on day 3 although the grace period (3 days) now includes
-    day 3; test_late_fee expects 0.0 at day 3. Change the comparison so days within the grace
-    period are free; do not change the rate or the tests.", acceptance ["pytest
-    tests/test_fees.py -q passes"]. Slept until it ended. Check: 12 passed.
-    report: finish_subagent status done; summary "late_fee counted day 3 as late; the grace
-    comparison is now inclusive; pytest tests/test_fees.py -q: 12 passed"; changed src/fees.py.
+    Brief (from the root of a flight booking system): goal "test_cancel_refunds fails: a
+    cancelled booking stays charged. bookings should send booking_cancelled
+    (contracts/events.py) and payments refund on it; find which side breaks and fix it";
+    check "python3 -m unittest tests.e2e.test_bookings -v"; maxRounds 2; writeScope
+    ["services/bookings/", "services/payments/"].
+    reproduce: I ran the check: test_cancel_refunds failed, the charge is still "settled" after
+    the cancel. I read services/bookings/cancel.py: it publishes booking_cancelled to the outbox
+    and then saves the cancel; services/payments/events.py refunds on booking_cancelled. The
+    payments log shows no booking_cancelled at all, so the event is lost on the bookings side:
+    the outbox is written before the cancel commits, and the publisher skips rows of bookings
+    that are not yet cancelled.
+    fix (round 1): run_subagents with one worker "outbox-order", writeScope
+    ["services/bookings/"], goal "In services/bookings/cancel.py the event booking_cancelled is
+    written to the outbox before the cancel is saved, and the publisher skips it. Save the
+    cancel and the outbox row in one transaction, the cancel first; keep the event fields of
+    contracts/events.py; do not change payments.", acceptance ["python3 -m unittest
+    tests.e2e.test_bookings -v passes", "the unit tests of services/bookings pass"]. Slept
+    until it ended. Check: 9 passed.
+    report: finish_subagent status done; summary "bookings wrote booking_cancelled before the
+    cancel was saved and the publisher skipped it; both are now saved in one transaction,
+    cancel first; tests.e2e.test_bookings: 9 passed"; changed services/bookings/cancel.py.
