@@ -141,7 +141,7 @@ export const ControlJobRequestSchema = closed(
 );
 export type ControlJobRequest = Static<typeof ControlJobRequestSchema>;
 
-/** What makes a checkpoint (Orchestration 7.2); a Turn's start is one of its own. */
+/** What makes a checkpoint inside a run (Orchestration 7.2); each input of the user is one of its own. */
 export const CHECKPOINT_KINDS = ['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE'] as const;
 
 /**

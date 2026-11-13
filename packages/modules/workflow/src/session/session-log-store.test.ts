@@ -17,7 +17,7 @@ const createInput = (sessionId: string) => ({
 const logKey = (sessionId: string) => `log:${sessionId}`;
 const run = newId('wfr');
 const turn = newId('trn');
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
 const unit = (requestId: string) =>
   ({
     type: 'UNIT_SUBMITTED',
@@ -57,7 +57,7 @@ describe('creating and appending', () => {
     expect(started.seq).toBe(2);
     const lines = persistence.linesOf(logKey(sessionId));
     expect(lines.every((line) => validate(SessionLogRecordSchema, line).ok)).toBe(true);
-    expect(await store.list()).toMatchObject([{ sessionId, turnCount: 0, status: 'ACTIVE' }]);
+    expect(await store.list()).toMatchObject([{ sessionId, inputCount: 0, status: 'ACTIVE' }]);
   });
 
   it('leaves seq unchanged when a write fails', async () => {
@@ -316,10 +316,14 @@ describe('Session list', () => {
     await store.create({ ...createInput(other), repositoryRoot: '/elsewhere' });
     await store.close();
     await store.open(first, digest);
-    await store.recordTurnClosed();
+    await store.recordInputSettled();
     await store.close();
     expect(
-      (await store.list()).map((entry) => [entry.sessionId, entry.turnCount, entry.repositoryRoot]),
+      (await store.list()).map((entry) => [
+        entry.sessionId,
+        entry.inputCount,
+        entry.repositoryRoot,
+      ]),
     ).toEqual([
       [first, 1, root],
       [other, 0, '/elsewhere'],

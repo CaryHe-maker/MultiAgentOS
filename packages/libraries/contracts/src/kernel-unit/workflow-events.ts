@@ -6,10 +6,7 @@ import {
   CompactionUsageSchema,
   PrunedItemSchema,
 } from '../context/compaction.js';
-import {
-  CheckpointRolledBackSchema,
-  WorkspaceRevertedSchema,
-} from '../kernel-control/interaction-events.js';
+import { CheckpointRolledBackSchema } from '../kernel-control/interaction-events.js';
 import { LOCAL_QUESTION_KINDS } from '../kernel-control/human-request.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
 import { runEnd } from '../kernel-control/run-outcome.js';
@@ -23,7 +20,7 @@ import {
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { BudgetViewSchema, TurnUsageSchema } from './budget-state.js';
+import { BudgetViewSchema, InputUsageSchema } from './budget-state.js';
 import { TokenUsageSchema } from '../executor/model-call.js';
 import { UnitOutputSchema } from './unit-io.js';
 
@@ -106,10 +103,9 @@ const humanAnswered = {
   kind: Type.Literal('prompt'),
   inputId: IdSchemas.inputId,
   contentRef: ArtifactRefSchema,
-  turnId: IdSchemas.turnId,
   template: Type.Optional(DefinitionRefSchema),
-  /** The checkpoint taken just before this input (Orchestration 7.2); absent when none was. */
-  checkpointId: Type.Optional(IdSchemas.checkpointId),
+  /** The checkpoint taken just before this input (Orchestration 7.2): the work it opens is its stretch. */
+  checkpointId: IdSchemas.checkpointId,
 };
 const answeredContent = {
   type: Type.Literal('HumanAnswered'),
@@ -124,14 +120,14 @@ export const HumanAnsweredSchema = Type.Union(
       origin: Type.Literal('requested'),
       humanRequestId: IdSchemas.humanRequestId,
     }),
-    /** The answer to a local question: it opens no Turn (M2Design 4.2). */
+    /** The answer to a local question: it opens no stretch of its own (M2Design 4.2). */
     closed({
       ...answeredContent,
       kind: Type.Enum(LOCAL_QUESTION_KINDS),
       origin: Type.Literal('requested'),
       humanRequestId: IdSchemas.humanRequestId,
     }),
-    /** A note slipped in while the run goes on: no request before it, no Turn after (M2Design 4.5). */
+    /** A note slipped in while the run goes on: no request before it, no checkpoint (M2Design 4.5). */
     closed({
       ...answeredContent,
       kind: Type.Literal('steer'),
@@ -142,27 +138,31 @@ export const HumanAnsweredSchema = Type.Union(
 );
 export type HumanAnswered = Static<typeof HumanAnsweredSchema>;
 
-export const TurnClosedSchema = closed(
+/**
+ * The work since an input of the user has come to rest (Orchestration 7.1, D8): the run waits for
+ * the next input, or closes. Named by the input's checkpoint.
+ */
+export const InputSettledSchema = closed(
   {
-    type: Type.Literal('TurnClosed'),
-    turnId: IdSchemas.turnId,
+    type: Type.Literal('InputSettled'),
+    checkpointId: IdSchemas.checkpointId,
     reason: Type.Enum(['COMPLETED', 'ABORTED', 'TIMEOUT', 'BUDGET', 'RUN_CLOSED']),
-    usage: TurnUsageSchema,
-    /** Absent when the snapshot failed: the Turn went on, and cannot be undone. */
+    usage: InputUsageSchema,
+    /** Absent when a snapshot failed: the work went on, and cannot be undone. */
     startSnapshot: Type.Optional(text(64)),
     endSnapshot: Type.Optional(text(64)),
     changedFileCount: Type.Optional(count()),
   },
-  'kernel.unit.TurnClosed.v1',
+  'kernel.unit.InputSettled.v1',
 );
-export type TurnClosed = Static<typeof TurnClosedSchema>;
+export type InputSettled = Static<typeof InputSettledSchema>;
 
 export const RunClosedSchema = Type.Union([...runEnd('RunClosed')], {
   $id: 'kernel.unit.RunClosed.v1',
 });
 export type RunClosed = Static<typeof RunClosedSchema>;
 
-/** What opening the Session found changed since its last Turn (M2Design 2.3). */
+/** What opening the Session found changed since it was last at rest (M2Design 2.3). */
 export const WorkspaceDivergedSchema = closed(
   { type: Type.Literal('WorkspaceDiverged'), files: Type.Array(text(4096), { minItems: 1 }) },
   'kernel.unit.WorkspaceDiverged.v1',
@@ -305,9 +305,8 @@ export const KernelToWorkflowEventSchema = Type.Union([
   CheckpointTakenSchema,
   UnitReportSchema,
   HumanAnsweredSchema,
-  TurnClosedSchema,
+  InputSettledSchema,
   RunClosedSchema,
-  WorkspaceRevertedSchema,
   CheckpointRolledBackSchema,
   WorkspaceDivergedSchema,
   RunInterruptedSchema,

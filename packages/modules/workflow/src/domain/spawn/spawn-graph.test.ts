@@ -66,14 +66,11 @@ describe('what the tasks of a call look like in the log', () => {
     ).toEqual([]);
   });
 
-  it('counts what a Turn has dispatched from the graph revisions alone', () => {
-    const records = [
-      extended(),
-      extended(),
-      { ...extended(), turnId: 'trn_b' } as SessionLogRecord,
-    ];
-    expect(spawnedIn(records, 'trn_a')).toEqual({ tasks: 4, calls: 2 });
-    expect(spawnedIn(records, 'trn_c')).toEqual({ tasks: 0, calls: 0 });
+  it('counts what the work since an input has dispatched from the graph revisions alone', () => {
+    const records = [extended(), extended(), extended()];
+    const since = records[1]?.seq ?? 0;
+    expect(spawnedIn(records, since)).toEqual({ tasks: 4, calls: 2 });
+    expect(spawnedIn(records, (records[2]?.seq ?? 0) + 1)).toEqual({ tasks: 0, calls: 0 });
   });
 
   it('writes the task as the caller asked, with the share the Kernel granted', () => {

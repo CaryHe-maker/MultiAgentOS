@@ -119,7 +119,7 @@ export interface System {
   /** The built-in template with this id, as `mas run` starts it. */
   templateRef(id: string): DefinitionRef | undefined;
   /**
-   * A template of the repository (`.multiagentos/workflows/<id>.yaml`, the strict mode): read and
+   * A template of the repository (`.multiagentos/workflows/<id>.yaml`, the pre-orchestrated mode, Orchestration D29): read and
    * checked; when it holds, the run may start it like a built-in one. Each problem names its rule
    * and node. Undefined when there is no such file.
    */

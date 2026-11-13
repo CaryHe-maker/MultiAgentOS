@@ -19,7 +19,9 @@ export const SessionIndexLineSchema = closed(
     repositoryRoot: text(4096),
     createdAt: TimestampSchema,
     lastActiveAt: TimestampSchema,
-    turnCount: count(),
+    /** Inputs of the user so far. Lines written before checkpoints replaced Turns say `turnCount`. */
+    inputCount: Type.Optional(count()),
+    turnCount: Type.Optional(count()),
     titleRef: Type.Optional(ArtifactRefSchema),
     fork: Type.Optional(ForkOriginSchema),
     status,
@@ -89,7 +91,11 @@ const snapshotChange = closed({
   change: Type.Enum(['ADDED', 'MODIFIED', 'DELETED']),
 });
 
-/** `snapshot-index.jsonl`; a Turn without TURN_ENDED was left by an exit (M2Design 4.6). */
+/**
+ * `snapshot-index.jsonl`: the checkpoints of a Session and the ways back (M2Design 4.6, Orchestration
+ * 7.4). `TURN_STARTED`, `TURN_ENDED` and `REVERTED` are what Sessions wrote before checkpoints
+ * replaced Turns; they are still read.
+ */
 export const SnapshotIndexLineSchema = Type.Union(
   [
     closed({

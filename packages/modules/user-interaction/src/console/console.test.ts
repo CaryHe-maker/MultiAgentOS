@@ -240,7 +240,7 @@ describe('Console', () => {
     expect(t.printed).toContainEqual({ kind: 'REPLY', agentLabel: 'main', text: '做完了一半' });
     expect(t.printed).toContainEqual({
       kind: 'NOTICE',
-      text: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
+      text: '上下文已满，这次的工作提前结束了；可以用 /new 开始新对话继续。',
     });
   });
 
@@ -378,8 +378,8 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_1', title: 'one', turnCount: 8, here: true, repositoryRoot: '/repo' },
-          { sessionId: 'ses_2', turnCount: 22, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_1', title: 'one', inputCount: 8, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_2', inputCount: 22, here: true, repositoryRoot: '/repo' },
         ],
       },
     } as never);
@@ -388,7 +388,7 @@ describe('Console', () => {
     expect(header?.text).toBe('本仓库最近的对话（/resume <编号> 打开）：');
     expect(list).toMatchObject({ kind: 'LIST' });
     expect(list?.text.split('\n')).toHaveLength(2);
-    expect(list?.text).toContain('1. one（8 轮）');
+    expect(list?.text).toContain('1. one（8 次输入）');
   });
 
   it('resumes a listed Session by its number and exits on a second Ctrl+C in time', async () => {
@@ -398,7 +398,7 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_2', title: 'a', turnCount: 2, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_2', title: 'a', inputCount: 2, here: true, repositoryRoot: '/repo' },
         ],
       },
     } as never);
@@ -424,11 +424,11 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_h', title: 'here', turnCount: 3, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_h', title: 'here', inputCount: 3, here: true, repositoryRoot: '/repo' },
           {
             sessionId: 'ses_o',
             title: 'there',
-            turnCount: 5,
+            inputCount: 5,
             here: false,
             repositoryRoot: '/other',
           },
@@ -440,7 +440,7 @@ describe('Console', () => {
       const t = setup();
       await t.console.handleSystemEvent(list);
       const lists = t.printed.filter((each) => each.kind === 'LIST').map((each) => each.text);
-      expect(lists).toEqual(['  1. here（3 轮）', '  2. there（5 轮，原来在 /other）']);
+      expect(lists).toEqual(['  1. here（3 次输入）', '  2. there（5 次输入，原来在 /other）']);
       const headers = t.printed.filter((each) => each.kind === 'NOTICE').map((each) => each.text);
       expect(headers.at(-1)).toContain('其他文件夹的对话');
     });
@@ -940,7 +940,7 @@ describe('a compaction the user asks for', () => {
     await t.event({
       type: 'ContextCompacted',
       trigger: 'USER',
-      compactedTurns: 2,
+      compactedInputs: 2,
       prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
     expect(t.live()?.activity).toEqual([]);
@@ -992,14 +992,14 @@ describe('a compaction in the history', () => {
     await t.event({
       type: 'ContextCompacted',
       trigger: 'AUTO',
-      compactedTurns: 0,
+      compactedInputs: 0,
       prunedResults: 1,
     } as unknown as KernelToInteractionEvent);
     await t.event({
       type: 'ContextCompacted',
       trigger: 'AUTO',
       summaryRef: testArtifactRef('summary'),
-      compactedTurns: 3,
+      compactedInputs: 3,
       prunedResults: 2,
     } as unknown as KernelToInteractionEvent);
     // A summary that took in entries without a Turn of their own is a compaction all the same.
@@ -1007,13 +1007,13 @@ describe('a compaction in the history', () => {
       type: 'ContextCompacted',
       trigger: 'USER',
       summaryRef: testArtifactRef('summary'),
-      compactedTurns: 0,
+      compactedInputs: 0,
       prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
     const steps = t.printed.filter((entry) => entry.kind === 'STEP').map((entry) => entry.text);
     expect(steps).toEqual([
       '✓ 已修剪 1 个较大的工具结果',
-      '✓ 已压缩较早的对话（3 个 Turn，修剪 2 个工具结果）',
+      '✓ 已压缩较早的对话（3 次输入的内容，修剪 2 个工具结果）',
       '✓ 已压缩较早的对话',
     ]);
     expect(t.printed.some((entry) => entry.kind === 'NOTICE' && entry.text.includes('修剪'))).toBe(

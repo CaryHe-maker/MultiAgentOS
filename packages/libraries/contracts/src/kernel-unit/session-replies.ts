@@ -23,9 +23,8 @@ const SessionCommandResultSchema = Type.Union([
   closed({
     command: Type.Literal('OPEN'),
     outcome: Type.Literal('READY'),
-    lastTurnId: Type.Optional(IdSchemas.turnId),
     /** What the Session list says of it, so that opening it says the same. */
-    turnCount: count(),
+    inputCount: count(),
     titleRef: Type.Optional(ArtifactRefSchema),
   }),
   closed({ command: Type.Literal('CREATE'), outcome: Type.Literal('READY') }),
@@ -34,7 +33,7 @@ const SessionCommandResultSchema = Type.Union([
     command: Type.Literal('FORK'),
     outcome: Type.Literal('READY'),
     inheritedArtifacts: Type.Array(ArtifactRefSchema),
-    fromTurnCount: count(),
+    fromInputCount: count(),
   }),
   closed({ command: Type.Enum(['CLOSE', 'DELETE']), outcome: Type.Literal('DONE') }),
   closed({
@@ -56,7 +55,7 @@ export const SessionListEntrySchema = closed({
   repositoryRoot: text(4096),
   createdAt: TimestampSchema,
   lastActiveAt: TimestampSchema,
-  turnCount: count(),
+  inputCount: count(),
   titleRef: Type.Optional(ArtifactRefSchema),
   fork: Type.Optional(ForkOriginSchema),
   status: Type.Enum(['ACTIVE', 'DELETED']),

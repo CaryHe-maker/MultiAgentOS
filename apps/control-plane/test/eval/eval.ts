@@ -117,7 +117,7 @@ async function run(): Promise<number> {
         checks: [],
         metrics: {
           logWallMs: 0,
-          turns: 0,
+          inputs: 0,
           modelRequests: 0,
           failedModelRequests: 0,
           tokens: { input: 0, output: 0, cacheHit: 0, compactionInput: 0, compactionOutput: 0 },

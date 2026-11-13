@@ -158,7 +158,7 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
             round: 1,
             maxRounds: 1,
             final: false,
-            budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+            budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
           },
         },
         scope: { kind: 'NONE' },

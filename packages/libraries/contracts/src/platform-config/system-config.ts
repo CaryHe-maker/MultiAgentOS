@@ -25,9 +25,9 @@ export const KernelConfigSchema = closed(
     cancelGraceMs: ms(),
     /** How long a pausing run lets its READ Units finish before it cancels them (M2Design 4.4). */
     pauseDrainMs: ms(),
-    /** The longest a Turn of Turn-chat works, not counting a pause or waiting for the user (7.4). */
-    turnTimeoutSeconds: count(1),
-    /** The same for an Orchestration run, which is one Turn. */
+    /** The longest the work of one input of Turn-chat goes on, not counting a pause (7.4). */
+    inputTimeoutSeconds: count(1),
+    /** The same for an Orchestration run, which is the work of its one input. */
     orchestrationTimeoutSeconds: count(1),
     /** The longest a run stays paused before it is interrupted (M2Design 4.3). */
     maxPauseSeconds: count(1),
@@ -124,7 +124,7 @@ export const KernelConfigSchema = closed(
     /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
       runTokenLimit: count(1),
-      turnTokenLimit: count(1),
+      inputTokenLimit: count(1),
       orientBudget: count(1),
       searchBudget: count(1),
     }),

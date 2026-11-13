@@ -33,16 +33,14 @@ const CONFIG = {
 };
 
 let seq = 0;
-const human = (size = 100, turnId = 'trn_aaaaaaaa'): ContextHistoryEntry => ({
+const human = (size = 100): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId,
   category: 'NORMAL',
   kind: 'HUMAN',
   contentRef: ref(size),
 });
 const turn = (size = 200): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId: 'trn_aaaaaaaa',
   category: 'NORMAL',
   kind: 'MODEL_TURN',
   modelId: 'm',
@@ -51,7 +49,6 @@ const turn = (size = 200): ContextHistoryEntry => ({
 });
 const result = (id: string, size: number): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId: 'trn_aaaaaaaa',
   category: 'NORMAL',
   kind: 'TOOL_RESULT',
   toolCallId: id,
@@ -144,7 +141,7 @@ describe('the process of a compaction (Kernel/Core 6a)', () => {
     expect(outcome).toEqual({ kind: 'CHANGED', pruned: 1, summarised: false });
     expect(p.log).toEqual(['source', 'prune 1', 'record PRUNE']);
     expect(p.notified).toEqual([
-      { type: 'ContextCompacted', trigger: 'AUTO', compactedTurns: 0, prunedResults: 1 },
+      { type: 'ContextCompacted', trigger: 'AUTO', compactedInputs: 0, prunedResults: 1 },
     ]);
     expect(p.audits.map((entry) => entry.type)).toEqual(['COMPACTION_STARTED', 'COMPACTION_ENDED']);
   });

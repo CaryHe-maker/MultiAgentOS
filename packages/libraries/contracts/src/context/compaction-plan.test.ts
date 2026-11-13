@@ -12,7 +12,6 @@ const ref = (size: number, digit = 'a'): ArtifactRef => ({
   size,
   mediaType: 'text/plain',
 });
-const TURN = 'trn_aaaaaaaa';
 const CONFIG = {
   keepTokens: 1_000,
   keepHumanBytes: 1_000,
@@ -26,7 +25,6 @@ const seq = () => next++;
 const human = (size: number, over: Partial<ContextHistoryEntry> = {}): ContextHistoryEntry =>
   ({
     seq: seq(),
-    turnId: TURN,
     category: 'NORMAL',
     kind: 'HUMAN',
     contentRef: ref(size),
@@ -34,7 +32,6 @@ const human = (size: number, over: Partial<ContextHistoryEntry> = {}): ContextHi
   }) as ContextHistoryEntry;
 const turn = (size: number): ContextHistoryEntry => ({
   seq: seq(),
-  turnId: TURN,
   category: 'NORMAL',
   kind: 'MODEL_TURN',
   modelId: 'm',
@@ -43,7 +40,6 @@ const turn = (size: number): ContextHistoryEntry => ({
 });
 const result = (id: string, size: number, over: object = {}): ContextHistoryEntry => ({
   seq: seq(),
-  turnId: TURN,
   category: 'NORMAL',
   kind: 'TOOL_RESULT',
   toolCallId: id,

@@ -1,5 +1,5 @@
 /**
- * A template the user keeps in the repository (M2Design 3.8, the strict mode of Phase2Plan 2):
+ * A template the user keeps in the repository (M2Design 3.8, the pre-orchestrated mode of Orchestration D29):
  * `mas run <id>` finds `.multiagentos/workflows/<id>.yaml`, checks it before anything starts and
  * names the rule and node of each problem; a template that holds runs like a built-in one. The
  * whole product runs from the console down to the Executors; only the provider is scripted.

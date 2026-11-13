@@ -44,7 +44,7 @@ import type {
   SubmitUnitRequest,
   SyscallAck,
   SyscallRejected,
-  TurnUsage,
+  InputUsage,
   UnitDefinition,
   UnitReport,
   UnknownEffect,
@@ -330,8 +330,8 @@ export class RunWork {
   readonly #host: RunHost;
   readonly #requests = new RequestLedger();
   readonly #agentRuns = new Map<string, AgentRunRecord>();
-  /** The Turn now open: a checkpoint belongs to it (Orchestration 7.1). */
-  #openTurnId: string | undefined;
+  /** The checkpoint of the input whose work goes on (Orchestration 7.1). */
+  #openInputId: string | undefined;
   /** One checkpoint at a time; another asked for meanwhile is skipped. */
   #checkpointing = false;
   /** The tasks of this run, by id (Orchestration 8.1). */
@@ -357,7 +357,7 @@ export class RunWork {
   readonly #externalAsks = new Map<string, string>();
   /** The failed external reads since the last success or pause: two pause the run (Core 5h). */
   #externalFailures: ExternalReadPaused['attempts'][number][] = [];
-  #turns = 0;
+  #inputs = 0;
   #modelRequests = 0;
   readonly #units = { submitted: 0, ok: 0, rejected: 0, failed: 0 };
 
@@ -444,7 +444,7 @@ export class RunWork {
 
   /**
    * New work is refused while this process is short of memory. The live level decides, so a
-   * Turn after an interrupt is refused with the reason while the pressure lasts and accepted as
+   * new input after an interrupt is refused with the reason while the pressure lasts and accepted as
    * soon as it has fallen; without a live level the message that raised the warning decides.
    */
   #underWarning(): boolean {
@@ -464,10 +464,11 @@ export class RunWork {
     return interrupt === 'MEMORY_PRESSURE' ? 'MEMORY_PRESSURE' : 'RUN_BLOCKED';
   }
 
-  openTurn(turnId: string): void {
-    this.#turns += 1;
-    this.#openTurnId = turnId;
-    this.#deps.ledgers.openTurnLedger(turnId);
+  /** The work of an input opens, named by its checkpoint: it gets its share of the budget. */
+  openInput(checkpointId: string): void {
+    this.#inputs += 1;
+    this.#openInputId = checkpointId;
+    this.#deps.ledgers.openInputLedger(checkpointId);
   }
 
   /** Kernel/Core 5h: two failures in a row of reading outside the workspace pause the run. */
@@ -508,7 +509,7 @@ export class RunWork {
       record.rounds += 1;
   }
 
-  /** The run record of Execution (RunSummary), once the run closed and its last Turn too. */
+  /** The run record of Execution (RunSummary), once the run closed and its last input settled. */
   summary(ids: { readonly sessionId: string }, ending: RunEnding): RunSummary {
     const closedAt = this.#deps.now();
     const delivered = this.#units.ok + this.#units.rejected + this.#units.failed;
@@ -518,7 +519,7 @@ export class RunWork {
       startedAt: this.#startedAt,
       closedAt: closedAt.toISOString(),
       durationMs: Math.max(0, closedAt.getTime() - Date.parse(this.#startedAt)),
-      turns: this.#turns,
+      inputs: this.#inputs,
       agentRuns: [...this.#agentRuns].map(([agentRunId, record]) => ({
         agentRunId,
         agentRef: record.agentRef,
@@ -534,8 +535,9 @@ export class RunWork {
     } as RunSummary;
   }
 
-  closeTurn(turnId: string): TurnUsage {
-    return this.#deps.ledgers.closeTurnLedger(turnId);
+  /** The work of an input settled: what it used, and what is left goes back to the run. */
+  settleInput(checkpointId: string): InputUsage {
+    return this.#deps.ledgers.closeInputLedger(checkpointId);
   }
 
   #refuse(
@@ -756,7 +758,7 @@ export class RunWork {
       return this.#refuse(requestId, request, 'WRITE_SCOPE_CONFLICT');
     const registered = this.#host.registerAgentRun(agentRunId);
     if (!registered.accepted) return this.#refuse(requestId, request, registered.reasonCode);
-    // A funded task spends its own share, every segment of it; every other one spends the Turn's.
+    // A funded task spends its own share, every segment of it; every other one spends the input's.
     const mission: MissionRecord = existing ?? {
       ...(parentId === undefined ? {} : { parent: parentId }),
       depth: parent === undefined ? 0 : parent.depth + 1,
@@ -962,13 +964,13 @@ export class RunWork {
         heldUnits: [],
       });
     const { checkpoint, holdMutating, releaseMutating, heldMutating } = this.#deps;
-    const turnId = this.#openTurnId;
+    const openInput = this.#openInputId;
     if (
       checkpoint === undefined ||
       holdMutating === undefined ||
       releaseMutating === undefined ||
       heldMutating === undefined ||
-      turnId === undefined ||
+      openInput === undefined ||
       this.#checkpointing
     ) {
       skip();
@@ -1345,8 +1347,8 @@ export class RunWork {
     readOnly = false,
     external?: Extract<ExternalResolution, { readonly ok: true }>,
   ): Promise<void> {
-    const { turnId } = this.#host.control();
-    if (turnId === undefined) throw new Error('A Unit starts only in an open Turn');
+    if (this.#host.control().openInput === undefined)
+      throw new Error('A Unit starts only in the work of an input');
     let scope: ExecutionScope;
     try {
       scope =
@@ -1382,7 +1384,6 @@ export class RunWork {
       requestId: request.requestId,
       agentRunId: request.agentRunId,
       unitRunId: request.unitRunId,
-      turnId,
       unit,
       input: external === undefined ? request.input : externalInput(request.input, external),
       scope,
@@ -1409,7 +1410,7 @@ export class RunWork {
     if (record === undefined) return undefined;
     const agent = this.#deps.compactionAgent(record.agentRef);
     if (agent === undefined) return undefined;
-    // A SubAgent pays from its own ledger; a top-level AgentRun from the Turn's.
+    // A SubAgent pays from its own ledger; a top-level AgentRun from the input's.
     return { agent, ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }) };
   }
 
@@ -1738,7 +1739,7 @@ export class RunWork {
     });
   }
 
-  /** The interrupted Turn ended and the run is open again: Workflow answered in time. */
+  /** The interrupted work settled and the run is open again: Workflow answered in time. */
   endInterrupt(): void {
     this.#cancelBackstop?.();
     this.#cancelBackstop = undefined;

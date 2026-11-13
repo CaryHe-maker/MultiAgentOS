@@ -29,10 +29,10 @@ const used = (tokens: number) =>
 /** A run with a Turn that has plenty to lend. */
 function open(): RunLedgers {
   const ledgers = new RunLedgers(
-    { runTokenLimit: mainShare * 40, turnTokenLimit: mainShare * 20 },
+    { runTokenLimit: mainShare * 40, inputTokenLimit: mainShare * 20 },
     main,
   );
-  ledgers.openTurnLedger('trn_1');
+  ledgers.openInputLedger('trn_1');
   return ledgers;
 }
 
@@ -190,7 +190,7 @@ describe('delegation to SubAgents', () => {
     spendOn(ledgers, 'agr_b', 60);
     ledgers.endAgentRun('agr_a');
     // b is still open when the Turn ends.
-    const usage = ledgers.closeTurnLedger('trn_1');
+    const usage = ledgers.closeInputLedger('trn_1');
     expect(usage.inputTokens).toBe(200);
     expect(ledgers.usage().used).toBe(200);
     // What none of them used went back to the run.

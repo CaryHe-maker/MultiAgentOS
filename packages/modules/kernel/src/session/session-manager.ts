@@ -225,7 +225,7 @@ export class SessionManager {
       const entries: SessionList['sessions'][number][] = [];
       for (const entry of refs.filterList(await sessions)) {
         const title = await titleOf(entry);
-        const { sessionId, createdAt, lastActiveAt, turnCount, fork } = entry;
+        const { sessionId, createdAt, lastActiveAt, inputCount, fork } = entry;
         // Kernel's own reference says where the Session was last worked on.
         const root = refs.rootOf(sessionId) ?? entry.repositoryRoot;
         entries.push({
@@ -234,7 +234,7 @@ export class SessionManager {
           here: root === repositoryRoot,
           createdAt,
           lastActiveAt,
-          turnCount,
+          inputCount,
           ...(title === undefined ? {} : { title: title.slice(0, 80) }),
           ...(fork === undefined ? {} : { fork }),
         });

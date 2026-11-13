@@ -352,7 +352,7 @@ describe('listing', () => {
     repositoryRoot: '/repository',
     createdAt: '2026-11-02T00:00:00.000Z',
     lastActiveAt: '2026-11-02T00:00:00.000Z',
-    turnCount: 1,
+    inputCount: 1,
     status: 'ACTIVE',
   });
 

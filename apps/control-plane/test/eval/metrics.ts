@@ -53,7 +53,7 @@ export function metricsOf(
   const callOfRequest = new Map<string, string>();
   const startedAt = new Map<string, number>();
   const intervals: [number, number][] = [];
-  let turns = 0;
+  let inputs = 0;
   let modelRequests = 0;
   let failedModelRequests = 0;
   let input = 0;
@@ -81,8 +81,8 @@ export function metricsOf(
 
   for (const record of log) {
     switch (record['type']) {
-      case 'TURN_STARTED':
-        turns += 1;
+      case 'HUMAN_ANSWERED':
+        if (record['kind'] === 'prompt') inputs += 1;
         break;
       case 'AGENT_RUN_REGISTERED': {
         const ref = record['agentRef'] as { id?: unknown } | undefined;
@@ -152,7 +152,7 @@ export function metricsOf(
         pruned += ((record['items'] as readonly unknown[] | undefined) ?? []).length;
         break;
       case 'HUMAN_REQUESTED':
-        // The request for the next input comes at the end of every Turn; it is not a question.
+        // The request for the next input comes when the work of every input settles; it is not a question.
         if (record['kind'] !== 'prompt') humanRequests += 1;
         break;
       case 'AGENT_WRAP_UP':
@@ -167,7 +167,7 @@ export function metricsOf(
   const last = log.length === 0 ? 0 : millis(log[log.length - 1] ?? {});
   return {
     logWallMs: Math.max(0, last - first),
-    turns,
+    inputs,
     modelRequests,
     failedModelRequests,
     tokens: { input, output, cacheHit, compactionInput, compactionOutput },

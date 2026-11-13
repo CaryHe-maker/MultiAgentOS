@@ -115,7 +115,7 @@ export interface SessionKernelDeps {
   readonly compactionPrompt?: CompactionPrompt;
   /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
   readonly agentShare?: RunWorkDeps['agentShare'];
-  /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
+  /** The per-call budget the run and input limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
   readonly config: KernelConfig;
   /** This process's repository: a realpath. */
@@ -387,7 +387,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     const ledgers = new RunLedgers(
       {
         runTokenLimit: config.budget.runTokenLimit,
-        turnTokenLimit: config.budget.turnTokenLimit,
+        inputTokenLimit: config.budget.inputTokenLimit,
       },
       deps.mainBudget,
     );
@@ -644,7 +644,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         onFatal: fault,
         interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
         timeouts: {
-          turnMs: config.turnTimeoutSeconds * 1000,
+          inputMs: config.inputTimeoutSeconds * 1000,
           orchestrationMs: config.orchestrationTimeoutSeconds * 1000,
           pauseMs: config.maxPauseSeconds * 1000,
         },

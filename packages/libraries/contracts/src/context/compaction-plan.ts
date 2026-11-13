@@ -98,9 +98,9 @@ export interface CompactionRange {
   readonly toSeq: number;
   /** The entries of the range that stay: PINNED ones, and the user messages chosen to stay. */
   readonly keptSeqs: readonly number[];
-  /** How many entries the summary takes the place of, and in how many Turns. */
+  /** How many entries the summary takes the place of, and the work of how many inputs. */
   readonly replacedEntries: number;
-  readonly replacedTurns: number;
+  readonly replacedInputs: number;
 }
 
 export interface CompactionPlan {
@@ -189,9 +189,8 @@ export function planCompaction(
     replacedTokens < config.minReplacedTokens
   )
     return { keepFrom, prunable };
-  const turns = new Set(
-    replaced.flatMap((entry) => (entry.turnId === undefined ? [] : [entry.turnId])),
-  );
+  // The inputs of the user whose work it replaces, in part or whole: each input's own entry counts.
+  const inputs = replaced.filter((entry) => entry.kind === 'HUMAN').length;
   return {
     keepFrom,
     prunable,
@@ -200,7 +199,7 @@ export function planCompaction(
       toSeq,
       keptSeqs: [...kept].sort((a, b) => a - b),
       replacedEntries: replaced.length,
-      replacedTurns: turns.size,
+      replacedInputs: inputs,
     },
   };
 }

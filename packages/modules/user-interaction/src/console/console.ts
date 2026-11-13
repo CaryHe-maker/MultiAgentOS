@@ -1021,7 +1021,7 @@ export class Console {
           this.#notice(text.notNow);
           break;
         }
-        const undone = await this.#deps.gateway.undoTurns(
+        const undone = await this.#deps.gateway.undo(
           {
             requestId: newId('req'),
             sessionId,
@@ -1064,7 +1064,7 @@ export class Console {
         break;
       }
       case '/diff':
-        // `#N` is the N-th line of /checkpoints; a bare number counts Turns back from the last.
+        // `#N` is the N-th line of /checkpoints; a bare number counts checkpoints back from the last.
         if (argument?.startsWith('#') === true)
           await this.#showCheckpointDiff(Number(argument.slice(1)));
         else await this.#showDiff(argument === undefined ? 1 : Number(argument));
@@ -1114,7 +1114,7 @@ export class Console {
       this.#notice(text.notNow);
       return;
     }
-    const diff = await this.#deps.gateway.diffTurns(
+    const diff = await this.#deps.gateway.diff(
       { requestId: newId('req'), sessionId, n },
       this.#context(),
     );
@@ -1161,7 +1161,7 @@ export class Console {
       this.#notice(text.notNow);
       return;
     }
-    const diff = await this.#deps.gateway.diffTurns(
+    const diff = await this.#deps.gateway.diff(
       { requestId: newId('req'), sessionId, checkpoint: seq },
       this.#context(),
     );
@@ -1208,7 +1208,7 @@ export class Console {
                 text.sessionLine(
                   index + 1,
                   terminalText(session.title ?? text.untitled),
-                  session.turnCount,
+                  session.inputCount,
                 ),
               )
               .join('\n'),
@@ -1223,7 +1223,7 @@ export class Console {
                 text.otherFolderSessionLine(
                   here.length + index + 1,
                   terminalText(session.title ?? text.untitled),
-                  session.turnCount,
+                  session.inputCount,
                   terminalText(session.repositoryRoot),
                 ),
               )
@@ -1242,7 +1242,7 @@ export class Console {
       case 'SessionOpened':
         this.#sessionId = envelope.sessionId;
         this.#notice(
-          text.sessionOpened(terminalText(event.title ?? text.untitled), event.turnCount),
+          text.sessionOpened(terminalText(event.title ?? text.untitled), event.inputCount),
         );
         if (event.divergedFiles !== undefined)
           this.#notice(text.diverged(event.divergedFiles.length));
@@ -1362,7 +1362,7 @@ export class Console {
         this.#deps.view.print({
           kind: 'STEP',
           text: text.compacted(
-            event.compactedTurns,
+            event.compactedInputs,
             event.prunedResults,
             event.summaryRef !== undefined,
           ),
@@ -1382,9 +1382,6 @@ export class Console {
             })),
           ),
         });
-        break;
-      case 'WorkspaceReverted':
-        this.#notice(text.undone(event.revertedTurnIds.length));
         break;
       case 'CheckpointRolledBack':
         this.#notice(
@@ -1579,7 +1576,7 @@ export class Console {
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
     // An interrupted conversation stays open: the log is complete, and the next message starts
-    // a new Turn (refused with the reason while memory is still short). Only a one-shot command
+    // a new input (refused with the reason while memory is still short). Only a one-shot command
     // leaves, with code 75, through the exit code of its close reason below.
     if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined)
       this.#continueOnInput = true;

@@ -478,7 +478,7 @@ export class AttemptRequestBuilder {
 
   async #resolved(entry: ContextHistoryEntry): Promise<ResolvedHistoryEntry> {
     const { seq, category } = entry;
-    const base = { seq, category, ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }) };
+    const base = { seq, category };
     switch (entry.kind) {
       case 'HUMAN':
         return { ...base, kind: 'HUMAN', text: await this.#text(entry.contentRef) };

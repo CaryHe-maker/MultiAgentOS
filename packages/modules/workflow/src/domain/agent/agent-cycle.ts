@@ -142,7 +142,6 @@ export type Held =
 export interface AgentState {
   readonly workflowRunId: string;
   readonly sessionId: string;
-  readonly turnId: string;
   readonly agentRunId: string;
   readonly definitions: AgentDefinitions;
   readonly round: number;
@@ -278,7 +277,7 @@ const CORE_REFUSALS: ReadonlySet<string> = new Set([
   'WRITE_SCOPE_DELEGATED',
 ]);
 
-const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
   NO_ACTION:
     'Your message contained no tool call, so nothing in it was shown to anyone or used: text outside a tool call is discarded.',
@@ -335,7 +334,7 @@ function invalidArgumentsText(
 const NOT_EXECUTED = 'Not executed: the arguments do not match the tool parameters';
 const NOT_TAKEN = 'The arguments of the call do not match its parameters';
 
-const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId, turnId: state.turnId });
+const base = (state: AgentState) => ({ workflowRunId: state.workflowRunId });
 
 function feedback(
   state: AgentState,
@@ -479,7 +478,7 @@ function nextRound(
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
-  const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.turn === 'EXHAUSTED';
+  const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.input === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
   // `maxRounds` counts the final round too: the round after `maxRounds - 1` is the final call, so a
   // model never gets more calls than the limit says. One working round is always left.
@@ -527,7 +526,7 @@ function nextRound(
 export function startAgent(
   input: Pick<
     AgentState,
-    'workflowRunId' | 'sessionId' | 'turnId' | 'agentRunId' | 'definitions' | 'orientPackRef'
+    'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'orientPackRef'
   >,
   context: AgentContext,
 ): AgentTransition {
@@ -564,7 +563,7 @@ function wrapUp(state: AgentState, reason: WrapUpReason): AgentState {
 
 function applyBudget(state: AgentState, report: UnitReport): AgentState {
   const next = { ...state, budget: report.budget };
-  const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.turn !== 'NORMAL';
+  const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.input !== 'NORMAL';
   return wrapping ? wrapUp(next, 'BUDGET_WRAP_UP') : next;
 }
 

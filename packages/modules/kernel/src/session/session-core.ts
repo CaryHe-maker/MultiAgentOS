@@ -265,10 +265,10 @@ export class SessionCore {
         return this.#inRun(forward.request, (work) =>
           Promise.resolve(work.updateActivity(forward.request)),
         );
-      case 'undoTurns': {
+      case 'undo': {
         const { request } = forward;
         return this.#inRun(request, (work, actor, run) =>
-          work.once(request.requestId, request, () => actor.undoTurns(run, request.scope)),
+          work.once(request.requestId, request, () => actor.undo(run, request.scope)),
         );
       }
       case 'confirmUndo': {
@@ -279,13 +279,13 @@ export class SessionCore {
           ),
         );
       }
-      case 'diffTurns': {
+      case 'diff': {
         const { requestId, sessionId, n, checkpoint } = forward.request;
         const actor = manager.actor(sessionId);
         if (actor === undefined) return Promise.resolve(refused(requestId, 'SESSION_NOT_FOUND'));
         return actor.call(() =>
           checkpoint === undefined
-            ? actor.diffTurn(requestId, n ?? 1)
+            ? actor.diffLatest(requestId, n ?? 1)
             : actor.diffCheckpoint(requestId, checkpoint),
         );
       }

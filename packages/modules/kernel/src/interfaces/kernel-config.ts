@@ -17,7 +17,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   provider: 'deepseek',
   cancelGraceMs: 5_000,
   pauseDrainMs: 5_000,
-  turnTimeoutSeconds: 1_800,
+  inputTimeoutSeconds: 1_800,
   orchestrationTimeoutSeconds: 14_400,
   maxPauseSeconds: 1_800,
   convergenceMarginMs: 1_000,
@@ -69,7 +69,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   memory: Object.freeze({ sampleIntervalMs: 1_000, warningRatio: 0.75, dangerRatio: 0.9 }),
   budget: Object.freeze({
     runTokenLimit: 24_000_000,
-    turnTokenLimit: 8_000_000,
+    inputTokenLimit: 8_000_000,
     orientBudget: 1_200,
     searchBudget: 1_200,
   }),

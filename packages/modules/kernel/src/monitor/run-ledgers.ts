@@ -2,7 +2,7 @@ import {
   agentMinShare,
   type BudgetState,
   type BudgetView,
-  type TurnUsage,
+  type InputUsage,
 } from '@multiagentos/contracts';
 import type { Settlement, SettlementResult } from '../interfaces/index.js';
 import { Monitor, MonitorInvariantError } from './monitor.js';
@@ -17,7 +17,7 @@ export interface AgentBudget {
 
 export interface RunBudget {
   readonly runTokenLimit: number;
-  readonly turnTokenLimit: number;
+  readonly inputTokenLimit: number;
 }
 
 export const finalReserve = (agent: AgentBudget): number =>
@@ -40,16 +40,16 @@ export function assertBudgetsConsistent(budget: RunBudget, main: AgentBudget): v
     main.finalInputBudget,
     main.finalMaxOutputTokens,
     budget.runTokenLimit,
-    budget.turnTokenLimit,
+    budget.inputTokenLimit,
   ];
   if (values.some((value) => !Number.isSafeInteger(value) || value <= 0))
     throw new MonitorInvariantError('Budget values must be positive safe integers');
   if (!Number.isSafeInteger(minShare(main)))
     throw new MonitorInvariantError('Budget values overflow');
-  if (budget.turnTokenLimit < minShare(main))
-    throw new MonitorInvariantError('turnTokenLimit is below minShare(main)');
-  if (budget.runTokenLimit < budget.turnTokenLimit)
-    throw new MonitorInvariantError('runTokenLimit is below turnTokenLimit');
+  if (budget.inputTokenLimit < minShare(main))
+    throw new MonitorInvariantError('inputTokenLimit is below minShare(main)');
+  if (budget.runTokenLimit < budget.inputTokenLimit)
+    throw new MonitorInvariantError('runTokenLimit is below inputTokenLimit');
 }
 
 /** What ledgers used: the one shape of every sum below. */
@@ -69,13 +69,13 @@ function addUsage(target: Usage, more: Usage): void {
   target.outputTokens += more.outputTokens;
 }
 
-interface TurnLedger {
-  readonly turnId: string;
+interface InputLedger {
+  readonly inputId: string;
   readonly limit: number;
   readonly ledger: Monitor;
   modelRequests: number;
   toolUnits: number;
-  /** What the ledgers of the Turn's SubAgents used, for the Turn's usage. */
+  /** What the ledgers of the input's SubAgents used, for the input's usage. */
   readonly below: Usage;
 }
 
@@ -108,7 +108,7 @@ export type QuotaResult =
   { readonly ok: true } | { readonly ok: false; readonly quota: 'TOOL_UNITS' | 'WALL_CLOCK' };
 
 /**
- * One run's token budget: the run grants each Turn a share and takes back what is left. A share
+ * One run's token budget: the run grants each input a share and takes back what is left. A share
  * too small to work with still opens, in WRAP_UP, because budget never stops a run on its own:
  * Workflow wraps up and ends it (M2Design 7.3).
  */
@@ -118,7 +118,7 @@ export class RunLedgers {
   readonly #toolUnits = new Map<string, number>();
   /**
    * Funded tasks below main, by ledger key (the task, or the AgentRun when it is a task of its
-   * own); main (and any AgentRun without a share) uses the Turn's ledger.
+   * own); main (and any AgentRun without a share) uses the input's ledger.
    */
   readonly #agents = new Map<string, AgentLedger>();
   /** The ledger key each AgentRun spends from. */
@@ -127,8 +127,8 @@ export class RunLedgers {
   readonly #owners = new Map<string, Monitor>();
   readonly #overTime = new Set<string>();
   #remaining: number;
-  #turn: TurnLedger | undefined;
-  /** What the closed Turns used, for the RunSummary. */
+  #input: InputLedger | undefined;
+  /** What the closed inputs used, for the RunSummary. */
   readonly #closed = noUsage();
 
   public constructor(budget: RunBudget, main: AgentBudget) {
@@ -138,52 +138,53 @@ export class RunLedgers {
     this.#remaining = budget.runTokenLimit;
   }
 
-  openTurnLedger(turnId: string): { readonly state: BudgetState } {
-    if (this.#turn !== undefined) throw new MonitorInvariantError('A Turn ledger is already open');
-    const limit = Math.min(this.#budget.turnTokenLimit, this.#remaining);
+  openInputLedger(inputId: string): { readonly state: BudgetState } {
+    if (this.#input !== undefined)
+      throw new MonitorInvariantError('An input ledger is already open');
+    const limit = Math.min(this.#budget.inputTokenLimit, this.#remaining);
     this.#remaining -= limit;
     const ledger = new Monitor({ ...this.#main, tokenLimit: limit }, { allowShortLimit: true });
-    this.#turn = { turnId, limit, ledger, modelRequests: 0, toolUnits: 0, below: noUsage() };
+    this.#input = { inputId, limit, ledger, modelRequests: 0, toolUnits: 0, below: noUsage() };
     return { state: stateOf(ledger, limit, this.#main) };
   }
 
-  #openTurn(): TurnLedger {
-    if (this.#turn === undefined) throw new MonitorInvariantError('No Turn ledger is open');
-    return this.#turn;
+  #openInput(): InputLedger {
+    if (this.#input === undefined) throw new MonitorInvariantError('No input ledger is open');
+    return this.#input;
   }
 
   /** Unsettled reservations count as unknown, and what is left goes back to the run. */
-  closeTurnLedger(turnId: string): TurnUsage {
-    const turn = this.#openTurn();
-    if (turn.turnId !== turnId) throw new MonitorInvariantError('Another Turn ledger is open');
-    // A task still open ends with the Turn: what it did not settle is unknown.
+  closeInputLedger(inputId: string): InputUsage {
+    const input = this.#openInput();
+    if (input.inputId !== inputId) throw new MonitorInvariantError('Another input ledger is open');
+    // A task still open ends with the input: what it did not settle is unknown.
     for (const key of [...this.#agents.keys()]) this.#closeLedger(key);
     this.#keyOf.clear();
     this.#delegations.clear();
     const total = noUsage();
-    addUsage(total, turn.ledger.finalize());
-    addUsage(total, turn.below);
-    this.#remaining += turn.limit - total.used - total.unknown;
+    addUsage(total, input.ledger.finalize());
+    addUsage(total, input.below);
+    this.#remaining += input.limit - total.used - total.unknown;
     addUsage(this.#closed, total);
-    this.#turn = undefined;
+    this.#input = undefined;
     return {
       inputTokens: total.inputTokens,
       outputTokens: total.outputTokens,
       unknownTokens: total.unknown,
-      modelRequests: turn.modelRequests,
-      toolUnits: turn.toolUnits,
+      modelRequests: input.modelRequests,
+      toolUnits: input.toolUnits,
     };
   }
 
-  /** A Turn ledger is open: main's calls are paid from it. */
-  hasOpenTurn(): boolean {
-    return this.#turn !== undefined;
+  /** An input ledger is open: main's calls are paid from it. */
+  hasOpenInput(): boolean {
+    return this.#input !== undefined;
   }
 
   /**
-   * A ledger of its own for a compaction while no Turn is open (`/compact`; Kernel/Monitor 3.4).
+   * A ledger of its own for a compaction while no input is open (`/compact`; Kernel/Monitor 3.4).
    * The share is taken out of the run's balance, which must stay at least `minShare(main)`, and
-   * what is not used goes back when it is closed. It can sit beside a Turn ledger, since a Turn
+   * what is not used goes back when it is closed. It can sit beside an input ledger, since an input
    * may open while the compaction is still going.
    */
   openCompactionLedger(estimatedTokens: number):
@@ -218,7 +219,7 @@ export class RunLedgers {
     };
   }
 
-  /** Reserves in the ledger of `agentRunId`; without it, in the Turn's (main's own). */
+  /** Reserves in the ledger of `agentRunId`; without it, in the input's (main's own). */
   reserve(
     request: {
       readonly estimatedTokens: number;
@@ -227,38 +228,38 @@ export class RunLedgers {
     },
     agentRunId?: string,
   ) {
-    const turn = this.#openTurn();
+    const input = this.#openInput();
     const ledger = this.#ledgerOf(agentRunId);
     const reserved = ledger.reserve(request);
     if (reserved.ok) {
-      turn.modelRequests += 1;
+      input.modelRequests += 1;
       this.#owners.set(reserved.reservationId, ledger);
     }
     return reserved;
   }
 
   settle(reservationId: string, settlement: Settlement): SettlementResult {
-    this.#openTurn();
+    this.#openInput();
     const owner = this.#owners.get(reservationId);
     if (owner === undefined) throw new MonitorInvariantError('Unknown reservation');
     return owner.settle(reservationId, settlement);
   }
 
   #ledgerOf(agentRunId: string | undefined): Monitor {
-    const turn = this.#openTurn();
-    if (agentRunId === undefined) return turn.ledger;
-    return this.#agents.get(this.#keyOf.get(agentRunId) ?? agentRunId)?.ledger ?? turn.ledger;
+    const input = this.#openInput();
+    if (agentRunId === undefined) return input.ledger;
+    return this.#agents.get(this.#keyOf.get(agentRunId) ?? agentRunId)?.ledger ?? input.ledger;
   }
 
-  /** The ledger key a parent's loans are owed to: its task's, or none for the Turn's. */
+  /** The ledger key a parent's loans are owed to: its task's, or none for the input's. */
   #parentKey(agentRunId: string): string | undefined {
     const key = this.#keyOf.get(agentRunId) ?? agentRunId;
     return this.#agents.has(key) ? key : undefined;
   }
 
   #ledgerOfKey(key: string | undefined): Monitor {
-    const turn = this.#openTurn();
-    return key === undefined ? turn.ledger : (this.#agents.get(key)?.ledger ?? turn.ledger);
+    const input = this.#openInput();
+    return key === undefined ? input.ledger : (this.#agents.get(key)?.ledger ?? input.ledger);
   }
 
   /**
@@ -367,38 +368,38 @@ export class RunLedgers {
       if (each === key) this.#keyOf.delete(agentRunId);
     const summary = agent.ledger.finalize();
     this.#ledgerOfKey(agent.parent).settleLoan(agent.share, summary.used + summary.unknown);
-    if (this.#turn !== undefined) addUsage(this.#turn.below, summary);
+    if (this.#input !== undefined) addUsage(this.#input.below, summary);
   }
 
-  /** What the run would hold if the current Turn ended now (Kernel/Monitor 3.1). */
+  /** What the run would hold if the current input ended now (Kernel/Monitor 3.1). */
   #runState(): BudgetState {
     const balance =
-      this.#remaining + (this.#turn === undefined ? 0 : this.#turn.ledger.remaining());
+      this.#remaining + (this.#input === undefined ? 0 : this.#input.ledger.remaining());
     if (balance <= 0) return 'EXHAUSTED';
     return balance < minShare(this.#main) ? 'WRAP_UP' : 'NORMAL';
   }
 
-  /** The state of the Turn's ledger; a share too small to work with opens in WRAP_UP. */
-  #turnState(): BudgetState {
-    const turn = this.#turn;
-    return turn === undefined ? 'NORMAL' : stateOf(turn.ledger, turn.limit, this.#main);
+  /** The state of the input's ledger; a share too small to work with opens in WRAP_UP. */
+  #inputState(): BudgetState {
+    const input = this.#input;
+    return input === undefined ? 'NORMAL' : stateOf(input.ledger, input.limit, this.#main);
   }
 
   /**
    * The three ledgers an AgentRun draws on. An AgentRun of its own (a SubAgent) has its own state;
-   * main spends from the Turn's ledger, so its state is the Turn's.
+   * main spends from the input's ledger, so its state is the input's.
    */
   budgetView(agentRunId?: string): BudgetView {
-    const turn = this.#turnState();
+    const input = this.#inputState();
     const own =
       agentRunId === undefined
         ? undefined
         : this.#agents.get(this.#keyOf.get(agentRunId) ?? agentRunId);
-    const state = own === undefined ? turn : stateOf(own.ledger, own.share, own.agent);
-    return { agentRun: state, turn, run: this.#runState() };
+    const state = own === undefined ? input : stateOf(own.ledger, own.share, own.agent);
+    return { agentRun: state, input, run: this.#runState() };
   }
 
-  /** The run's consumption over its closed Turns; the RunSummary is written after the last one. */
+  /** The run's consumption over its closed inputs; the RunSummary is written after the last one. */
   usage(): {
     readonly limit: number;
     readonly used: number;
@@ -420,8 +421,8 @@ export class RunLedgers {
     const used = this.#toolUnits.get(agentRunId) ?? 0;
     if (used >= maxToolUnits) return { ok: false, quota: 'TOOL_UNITS' };
     this.#toolUnits.set(agentRunId, used + 1);
-    const turn = this.#turn;
-    if (turn !== undefined) turn.toolUnits += 1;
+    const input = this.#input;
+    if (input !== undefined) input.toolUnits += 1;
     return { ok: true };
   }
 

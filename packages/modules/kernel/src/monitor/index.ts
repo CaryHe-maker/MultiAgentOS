@@ -1,4 +1,4 @@
-/** Kernel.Monitor: one ledger per Turn, and the run's budget and quotas over them (Kernel/Monitor). */
+/** Kernel.Monitor: one ledger for the work of each input, and the run's budget and quotas over them (Kernel/Monitor). */
 export {
   createMemorySampler,
   systemLevelOf,

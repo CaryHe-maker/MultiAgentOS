@@ -28,7 +28,7 @@ describe('the self-check tasks', () => {
         expect(record.ok).toBe(true);
         expect(record.provider).toBe('scripted');
         expect(record.metrics.modelRequests).toBeGreaterThan(0);
-        expect(record.metrics.turns).toBeGreaterThan(0);
+        expect(record.metrics.inputs).toBeGreaterThan(0);
       },
       TIMEOUT,
     );
@@ -136,7 +136,7 @@ describe('what the runner records', () => {
 describe('the figures of the log', () => {
   const at = (second: number) => `2026-11-09T10:00:${String(second).padStart(2, '0')}.000Z`;
   const log = [
-    { type: 'TURN_STARTED', at: at(0) },
+    { type: 'HUMAN_ANSWERED', kind: 'prompt', at: at(0) },
     { type: 'AGENT_RUN_REGISTERED', agentRef: { id: 'main' }, at: at(0) },
     {
       type: 'MODEL_TURN',
@@ -258,7 +258,7 @@ describe('reports and regressions', () => {
       elapsedMs: 10_000,
       metrics: {
         logWallMs: 0,
-        turns: 1,
+        inputs: 1,
         modelRequests: requests ?? 4,
         failedModelRequests: 0,
         tokens: { input: 100, output: 10, cacheHit: 50, compactionInput: 0, compactionOutput: 0 },

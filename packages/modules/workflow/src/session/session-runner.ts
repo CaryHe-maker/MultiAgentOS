@@ -267,7 +267,8 @@ export class SessionRunner {
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
   #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
-  #turnId: string | undefined;
+  /** The checkpoint of the input whose work goes on; undefined while waiting for one. */
+  #inputCheckpointId: string | undefined;
   /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
   readonly #agents = new Map<string, ActiveAgent>();
   #orientPackRef: AgentState['orientPackRef'];
@@ -353,21 +354,17 @@ export class SessionRunner {
           command: 'FORK',
           outcome: 'READY',
           inheritedArtifacts: [...forked.inheritedArtifacts],
-          fromTurnCount: forked.fromTurnCount,
+          fromInputCount: forked.fromInputCount,
         });
       } else {
         const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
         const records = await this.#bound(event.repositoryRoot, opened.records);
         this.#adopt(sessionId, event.repositoryRoot, records);
-        const lastTurn = [...opened.records].reverse().find((r) => r.type === 'TURN_STARTED');
         await reply({
           command: 'OPEN',
           outcome: 'READY',
-          turnCount: opened.turnCount,
+          inputCount: opened.inputCount,
           ...(opened.titleRef === undefined ? {} : { titleRef: opened.titleRef }),
-          ...(lastTurn?.type === 'TURN_STARTED' && lastTurn.turnId !== undefined
-            ? { lastTurnId: lastTurn.turnId }
-            : {}),
         });
       }
     } catch (error) {
@@ -400,7 +397,7 @@ export class SessionRunner {
   #reset(): void {
     this.#sessionId = undefined;
     this.#records = [];
-    this.#turnId = undefined;
+    this.#inputCheckpointId = undefined;
     this.#agents.clear();
     this.#clearRun();
   }
@@ -460,7 +457,6 @@ export class SessionRunner {
           {
             type: 'RUN_PAUSED',
             workflowRunId,
-            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
           },
         ]);
         break;
@@ -485,7 +481,6 @@ export class SessionRunner {
           {
             type: 'CHECKPOINT_TAKEN',
             workflowRunId,
-            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
             checkpointId: event.checkpointId,
             outcome: event.outcome,
             ...(event.snapshot === undefined ? {} : { snapshot: event.snapshot }),
@@ -499,24 +494,26 @@ export class SessionRunner {
           {
             type: 'MISSION_TIMER_DUE',
             workflowRunId,
-            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
             missionId: event.missionId,
             timerId: event.timerId,
           },
         ]);
         await this.#advance(workflowRunId);
         break;
-      case 'TurnClosed':
+      case 'InputSettled':
         await this.#append([
           {
-            type: 'TURN_ENDED',
+            type: 'INPUT_SETTLED',
             workflowRunId,
-            turnId: event.turnId,
+            checkpointId: event.checkpointId,
             reason: event.reason,
             usage: event.usage,
+            ...(event.changedFileCount === undefined
+              ? {}
+              : { changedFileCount: event.changedFileCount }),
           },
         ]);
-        await this.#deps.store.recordTurnClosed();
+        await this.#deps.store.recordInputSettled();
         break;
       case 'CompactionSourceQuery':
         await this.#onCompactionQuery(workflowRunId, event);
@@ -548,36 +545,16 @@ export class SessionRunner {
           },
         ]);
         break;
-      case 'WorkspaceReverted':
-        await this.#append([
-          {
-            type: 'WORKSPACE_REVERTED',
-            workflowRunId,
-            revertedTurnIds: event.revertedTurnIds,
-            forced: event.forced,
-            externalFiles: event.externalFiles,
-            ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
-          },
-        ]);
-        // A summary of work that was undone stands for nothing any more (Module/Workflow 8.4).
-        {
-          const reverted = new Set<string>(event.revertedTurnIds);
-          const first = this.#records.find(
-            (record) =>
-              'turnId' in record && record.turnId !== undefined && reverted.has(record.turnId),
-          );
-          const last = this.#records.at(-1);
-          if (first !== undefined && last !== undefined)
-            await this.#append(
-              revokedCompactions(this.#records, workflowRunId, { from: first.seq, to: last.seq }),
-            );
-        }
-        break;
       case 'WorkspaceDiverged': {
-        // Measured against the last Turn, so reopening without one finds the same files again.
+        // Measured against the last input, so reopening without one finds the same files again.
         const said = [...this.#records]
           .reverse()
-          .find((record) => record.type === 'WORKSPACE_DIVERGED' || record.type === 'TURN_STARTED');
+          .find(
+            (record) =>
+              record.type === 'WORKSPACE_DIVERGED' ||
+              record.type === 'TURN_STARTED' ||
+              (record.type === 'HUMAN_ANSWERED' && record.kind === 'prompt'),
+          );
         if (
           said?.type !== 'WORKSPACE_DIVERGED' ||
           canonicalJson(said.files) !== canonicalJson(event.files)
@@ -779,7 +756,6 @@ export class SessionRunner {
       {
         type: 'CHECKPOINT_REQUESTED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         checkpointId,
         kind,
         label: shown,
@@ -871,12 +847,10 @@ export class SessionRunner {
       (mission) => mission.ended === undefined && inRun(mission),
     );
     const cancelled = open.filter((mission) => mission.parentId !== undefined);
-    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
     await this.#append([
       {
         type: 'ROLLED_BACK',
         workflowRunId,
-        ...turn,
         checkpointId: event.checkpointId,
         label: event.label,
         cutSeq: requested.seq,
@@ -898,14 +872,13 @@ export class SessionRunner {
       const root = missions.get(active.missionId)?.parentId === undefined;
       if (root) {
         await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
-        await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
+        await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
       } else {
         // Its work in flight or queued (a model call, a command) is cancelled, as on a stop (5.1).
         await this.#haltAgentRun(workflowRunId, active.state.agentRunId);
         await this.#endAgentRun(workflowRunId, active, 'FAILED');
         await this.#endNode(
           workflowRunId,
-          active.state.turnId,
           active.nodeId,
           'INTERRUPTED',
           resultOf({ status: 'FAILED', notes: [note] }),
@@ -925,7 +898,6 @@ export class SessionRunner {
           {
             type: 'NODE_ENDED',
             workflowRunId,
-            ...turn,
             nodeId: node.nodeId,
             status: 'INTERRUPTED',
             result: resultOf({ status: 'FAILED', notes: [note] }),
@@ -973,13 +945,12 @@ export class SessionRunner {
     if (requested?.type !== 'HUMAN_REQUESTED') throw new Error('an answer names no question');
     const projected = projectGraph(this.#records, workflowRunId);
     const status = projected.view.get(requested.nodeId)?.status;
-    if (status === undefined || isTerminal(status) || this.#turnId === undefined) return;
+    if (status === undefined || isTerminal(status) || this.#inputCheckpointId === undefined) return;
     const asker = this.#askerOf(projected, requested.nodeId);
     await this.#append([
       {
         type: 'HUMAN_ANSWERED',
         workflowRunId,
-        turnId: this.#turnId,
         nodeId: requested.nodeId,
         humanRequestId: requested.humanRequestId,
         kind: event.kind,
@@ -991,7 +962,6 @@ export class SessionRunner {
       {
         type: 'NODE_ENDED',
         workflowRunId,
-        turnId: this.#turnId,
         nodeId: requested.nodeId,
         status: 'SUCCEEDED',
         resultRef: event.contentRef,
@@ -1076,7 +1046,6 @@ export class SessionRunner {
       {
         type: 'SEGMENT_YIELDED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         nodeId: active.nodeId,
         missionId: active.missionId,
         agentRunId: active.state.agentRunId,
@@ -1086,7 +1055,7 @@ export class SessionRunner {
       },
     ]);
     await this.#endAgentRun(workflowRunId, active, 'YIELDED', true, true);
-    await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
     await this.#advance(workflowRunId);
   }
 
@@ -1109,12 +1078,10 @@ export class SessionRunner {
     await this.#extend(workflowRunId, revision, 'STEER', content);
     const node = content.nodes[0];
     if (node === undefined) throw new Error('a steer makes one node');
-    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
     await this.#append([
       {
         type: 'HUMAN_ANSWERED',
         workflowRunId,
-        ...turn,
         nodeId: node.nodeId,
         kind: 'steer',
         origin: 'unrequested',
@@ -1123,13 +1090,13 @@ export class SessionRunner {
         ...(target === undefined ? {} : { attachedAgentRunId: target.agentRunId }),
         ...(target?.redirectedFrom === undefined ? {} : { redirectedFrom: target.redirectedFrom }),
       },
-      { type: 'NODE_ENDED', workflowRunId, ...turn, nodeId: node.nodeId, status: 'SUCCEEDED' },
+      { type: 'NODE_ENDED', workflowRunId, nodeId: node.nodeId, status: 'SUCCEEDED' },
     ]);
   }
 
   /**
-   * Whom a note is for: the AgentRun it names, or main of this Turn. One that has ended hands it to
-   * the AgentRun that started it, and so on up; with nobody left it waits for the next Turn.
+   * Whom a note is for: the AgentRun it names, or main. One that has ended hands it to the
+   * AgentRun that started it, and so on up; with nobody left it waits for the next input.
    */
   #steerTarget(
     requested: string | undefined,
@@ -1161,7 +1128,6 @@ export class SessionRunner {
       {
         type: 'RUN_RESUMED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         ...(event.steer === undefined ? {} : { steerInputId: event.steer.inputId }),
       },
     ]);
@@ -1195,25 +1161,22 @@ export class SessionRunner {
           );
     if (node === undefined) throw new Error('HumanAnswered names no HUMAN node');
     if (view.get(node.nodeId)?.status === 'SUCCEEDED') return;
-    this.#turnId = event.turnId;
+    this.#inputCheckpointId = event.checkpointId;
     await this.#append([
       {
         type: 'HUMAN_ANSWERED',
         workflowRunId,
-        turnId: event.turnId,
         nodeId: node.nodeId,
         kind: 'prompt',
         origin: event.origin,
         inputId: event.inputId,
         contentRef: event.contentRef,
         ...(event.origin === 'requested' ? { humanRequestId: event.humanRequestId } : {}),
-        ...(event.checkpointId === undefined ? {} : { checkpointId: event.checkpointId }),
+        checkpointId: event.checkpointId,
       },
-      { type: 'TURN_STARTED', workflowRunId, turnId: event.turnId, promptNodeId: node.nodeId },
       {
         type: 'NODE_ENDED',
         workflowRunId,
-        turnId: event.turnId,
         nodeId: node.nodeId,
         status: 'SUCCEEDED',
       },
@@ -1282,7 +1245,6 @@ export class SessionRunner {
         {
           type: 'NODE_STARTED',
           workflowRunId,
-          ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
           nodeId: node.nodeId,
           path: record.path,
         },
@@ -1333,7 +1295,6 @@ export class SessionRunner {
       roots.map((mission) => ({
         type: 'MISSION_ENDED' as const,
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: mission.missionId,
         status:
           this.#runFailure === undefined && !lastFailed(mission)
@@ -1464,8 +1425,8 @@ export class SessionRunner {
 
   async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
-    const turnId = this.#turnId;
-    if (turnId === undefined) throw new Error('an AgentRun needs an open Turn');
+    if (this.#inputCheckpointId === undefined)
+      throw new Error('an AgentRun needs the work of an input of the user');
     if (node.agentRef === undefined) throw new Error('an AGENT node names no Agent');
     const nodeId = node.nodeId;
     const agentId = node.agentRef.id;
@@ -1496,7 +1457,6 @@ export class SessionRunner {
       {
         type: 'AGENT_RUN_REGISTERED',
         workflowRunId,
-        turnId,
         agentRunId,
         nodeId,
         agentRef: binding.ref,
@@ -1509,7 +1469,6 @@ export class SessionRunner {
       {
         type: 'REQUEST_CONTEXT',
         workflowRunId,
-        turnId,
         agentRunId,
         modelRef: binding.modelRef,
         thinking: place.effort,
@@ -1549,7 +1508,6 @@ export class SessionRunner {
         // The caller is told why this task did not start; tasks that wait for it are skipped.
         await this.#endNode(
           workflowRunId,
-          turnId,
           nodeId,
           'FAILED',
           resultOf({
@@ -1559,7 +1517,7 @@ export class SessionRunner {
         );
         return this.#advance(workflowRunId);
       }
-      await this.#endNode(workflowRunId, turnId, nodeId, 'FAILED');
+      await this.#endNode(workflowRunId, nodeId, 'FAILED');
       // This process is short of memory (Core 5c): no model is asked. The run closes as
       // interrupted, the user is told so, and the next message opens a new run instead of
       // waiting on one that has nothing left to do.
@@ -1599,7 +1557,6 @@ export class SessionRunner {
       {
         workflowRunId,
         sessionId,
-        turnId,
         agentRunId,
         definitions: binding.definitions,
         ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
@@ -1815,13 +1772,12 @@ export class SessionRunner {
   async #endQuestion(workflowRunId: string, nodeId: string): Promise<void> {
     const { view } = projectGraph(this.#records, workflowRunId);
     const status = view.get(nodeId)?.status;
-    if (this.#turnId === undefined || status === undefined || isTerminal(status)) return;
-    await this.#endNode(workflowRunId, this.#turnId, nodeId, 'INTERRUPTED');
+    if (this.#inputCheckpointId === undefined || status === undefined || isTerminal(status)) return;
+    await this.#endNode(workflowRunId, nodeId, 'INTERRUPTED');
   }
 
   async #endNode(
     workflowRunId: string,
-    turnId: string,
     nodeId: string,
     status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED' | 'YIELDED',
     result?: Record<string, unknown>,
@@ -1831,7 +1787,6 @@ export class SessionRunner {
       {
         type: 'NODE_ENDED',
         workflowRunId,
-        turnId,
         nodeId,
         status,
         ...(result === undefined ? {} : { result }),
@@ -1856,7 +1811,7 @@ export class SessionRunner {
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.mission?.parentId ===
       undefined;
     const continues = sleeping || isRoot;
-    const { agentRunId, turnId, wrapUpReason, round, definitions } = active.state;
+    const { agentRunId, wrapUpReason, round, definitions } = active.state;
     this.#agents.delete(agentRunId);
     this.#rounds.push({
       agentId: active.agentId,
@@ -1868,7 +1823,6 @@ export class SessionRunner {
       {
         type: 'AGENT_RUN_ENDED',
         workflowRunId,
-        turnId,
         agentRunId,
         outcome,
         ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
@@ -2012,7 +1966,6 @@ export class SessionRunner {
         await this.#endAgentRun(workflowRunId, active, 'ENDED');
         await this.#endNode(
           workflowRunId,
-          active.state.turnId,
           active.nodeId,
           'SUCCEEDED',
           { action: 'HANDOFF', toolCallId: ending.source.toolCallId },
@@ -2084,7 +2037,6 @@ export class SessionRunner {
     await this.#endAgentRun(workflowRunId, active, 'ENDED');
     await this.#endNode(
       workflowRunId,
-      active.state.turnId,
       active.nodeId,
       outcome.status === 'BLOCKED' ? 'FAILED' : 'SUCCEEDED',
       resultOf({
@@ -2108,7 +2060,7 @@ export class SessionRunner {
     result: { readonly toolCallId: string; readonly ref: ArtifactRef },
     listed: readonly string[],
   ): Promise<{ readonly referenceId?: string; readonly notes: readonly string[] }> {
-    const { agentRunId, sessionId, turnId } = active.state;
+    const { agentRunId, sessionId } = active.state;
     const checked = checkedItems(this.#records, agentRunId, listed);
     const items = [
       { toolCallId: result.toolCallId, tool: 'finish_subagent', ref: result.ref },
@@ -2141,7 +2093,6 @@ export class SessionRunner {
       {
         type: 'REFERENCES_REGISTERED',
         workflowRunId,
-        turnId,
         referenceId,
         from: { agentRunId, label: active.task?.name ?? active.agentId },
         to: receiver,
@@ -2162,7 +2113,6 @@ export class SessionRunner {
     await this.#endAgentRun(workflowRunId, active, kind);
     await this.#endNode(
       workflowRunId,
-      active.state.turnId,
       active.nodeId,
       // A task that was cut short with the run is INTERRUPTED, whatever it had to report.
       this.#interrupted ? 'INTERRUPTED' : outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
@@ -2207,7 +2157,7 @@ export class SessionRunner {
 
   /**
    * Every AgentRun of an interrupted run has ended (Kernel/Core 5e). Memory pressure closes the
-   * run, which the system then leaves in control; any other reason ends only the Turn: a chat asks
+   * run, which the system then leaves in control; any other reason ends only the work of the input: a chat asks
    * for the next input, an Orchestration run closes as cancelled or timed out.
    */
   async #finishInterrupted(workflowRunId: string): Promise<void> {
@@ -2220,7 +2170,7 @@ export class SessionRunner {
     }
     return this.#close(
       workflowRunId,
-      reason === 'TURN_TIMEOUT' ? 'TIMEOUT' : 'CANCELLED',
+      reason === 'INPUT_TIMEOUT' ? 'TIMEOUT' : 'CANCELLED',
       this.#runResult,
     );
   }
@@ -2291,7 +2241,6 @@ export class SessionRunner {
   async #onEnding(workflowRunId: string, agentRunId: string, ending: AgentEnding): Promise<void> {
     const active = this.#agents.get(agentRunId);
     if (active === undefined) return;
-    const { turnId } = active.state;
     switch (ending.kind) {
       case 'ENDED':
         return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
@@ -2323,7 +2272,6 @@ export class SessionRunner {
         await this.#endAgentRun(workflowRunId, active, ending.kind);
         await this.#endNode(
           workflowRunId,
-          turnId,
           active.nodeId,
           this.#interrupted ? 'INTERRUPTED' : plan.status,
           plan.result,
@@ -2347,13 +2295,13 @@ export class SessionRunner {
         if (this.#interrupted) {
           // The reply could not be published: the run still ends, and the log says why.
           await this.#endAgentRun(workflowRunId, active, ending.kind);
-          await this.#endNode(workflowRunId, turnId, active.nodeId, 'INTERRUPTED');
+          await this.#endNode(workflowRunId, active.nodeId, 'INTERRUPTED');
           return this.#agents.size === 0 ? this.#finishInterrupted(workflowRunId) : undefined;
         }
         // In a chat the run goes on with the next prompt, so the user must hear of it here.
         if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
         await this.#endAgentRun(workflowRunId, active, ending.kind);
-        await this.#endNode(workflowRunId, turnId, active.nodeId, 'FAILED');
+        await this.#endNode(workflowRunId, active.nodeId, 'FAILED');
         this.#runFailure = ending.code;
         return this.#advance(workflowRunId);
     }
@@ -2445,7 +2393,6 @@ export class SessionRunner {
         {
           type: 'PLAN_REGISTERED',
           workflowRunId,
-          ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
           missionId: active.missionId,
           source: {
             modelTurnRequestId: ending.source.modelTurnRequestId,
@@ -2580,7 +2527,6 @@ export class SessionRunner {
         {
           type: 'NODE_RESUMED',
           workflowRunId,
-          ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
           nodeId: node.nodeId,
           call,
         },
@@ -2665,7 +2611,6 @@ export class SessionRunner {
       {
         type: 'JOB_STARTED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: active.missionId,
         jobId: nextJobId(this.#records, active.missionId),
         jobKey: job.jobKey,
@@ -2749,7 +2694,6 @@ export class SessionRunner {
       {
         type: 'JOB_READ',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: active.missionId,
         jobId: job.jobId,
         nextOffset: result.nextOffset,
@@ -2792,7 +2736,6 @@ export class SessionRunner {
       {
         type: 'JOB_ENDED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: job.missionId,
         jobId: job.jobId,
         exit: event.exit,
@@ -2911,7 +2854,6 @@ export class SessionRunner {
       {
         type: 'SEGMENT_YIELDED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         nodeId: active.nodeId,
         missionId: active.missionId,
         agentRunId: active.state.agentRunId,
@@ -2921,7 +2863,7 @@ export class SessionRunner {
       },
     ]);
     await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
-    await this.#endNode(workflowRunId, active.state.turnId, active.nodeId, 'YIELDED');
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
     // Time is the Kernel's: it is asked for the timer it named and for the most it may sleep.
     const timers = args.until.flatMap((condition) =>
       condition.kind === 'timer' ? [condition.seconds] : [],
@@ -2982,7 +2924,7 @@ export class SessionRunner {
     | { readonly kind: 'HANDED'; readonly referenceId: string; readonly notes: readonly string[] }
     | { readonly kind: 'REFUSED'; readonly text: string }
   > {
-    const { agentRunId, sessionId, turnId } = active.state;
+    const { agentRunId, sessionId } = active.state;
     const checked = checkedItems(this.#records, agentRunId, listed);
     if (checked.items.length === 0)
       return {
@@ -3005,7 +2947,6 @@ export class SessionRunner {
       {
         type: 'REFERENCES_REGISTERED',
         workflowRunId,
-        turnId,
         referenceId,
         from: { agentRunId, label: active.task?.name ?? active.agentId },
         // The root of a chat reads as main, as it reads the results of its subtasks.
@@ -3136,7 +3077,6 @@ export class SessionRunner {
       {
         type: 'MISSION_MESSAGE',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         from: me.missionId,
         fromLabel: me.name,
         to: targets.map((each) => each.missionId),
@@ -3293,7 +3233,6 @@ export class SessionRunner {
     }
     // Not started yet: its nodes end without running.
     const projected = projectGraph(this.#records, workflowRunId);
-    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
     await this.#append(
       mission.nodeIds
         .filter(
@@ -3304,7 +3243,6 @@ export class SessionRunner {
         .map((nodeId) => ({
           type: 'NODE_ENDED' as const,
           workflowRunId,
-          ...turn,
           nodeId,
           status: 'INTERRUPTED' as const,
           result: resultOf({ status: 'FAILED', notes: [note] }),
@@ -3336,12 +3274,10 @@ export class SessionRunner {
     active: ActiveAgent,
     halt: NonNullable<ActiveAgent['stopAfterRound']>,
   ): Promise<void> {
-    const { turnId } = active.state;
     if (halt.kind === 'STOP') {
       await this.#endAgentRun(workflowRunId, active, 'FAILED');
       await this.#endNode(
         workflowRunId,
-        turnId,
         active.nodeId,
         'INTERRUPTED',
         resultOf({ status: 'FAILED', notes: [halt.reason, ...changedNote(active.changed)] }),
@@ -3349,7 +3285,7 @@ export class SessionRunner {
       return this.#advance(workflowRunId);
     }
     await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
-    await this.#endNode(workflowRunId, turnId, active.nodeId, 'YIELDED');
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
     const node = projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId);
     if (node !== undefined)
       await this.#continueMission(workflowRunId, node, [{ kind: 'INTERRUPTED' }]);
@@ -3373,7 +3309,6 @@ export class SessionRunner {
       ended.push({
         type: 'MISSION_ENDED',
         workflowRunId,
-        ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
         missionId: mission.missionId,
         status:
           status === 'SUCCEEDED'
@@ -3408,7 +3343,6 @@ export class SessionRunner {
           unanswered.push({
             type: 'MESSAGE_UNANSWERED',
             workflowRunId,
-            ...(this.#turnId === undefined ? {} : { turnId: this.#turnId }),
             missionId: record.from,
             requestToolCallId: record.source.toolCallId,
             fromLabel: missions.get(id)?.name ?? 'a task',
@@ -3694,10 +3628,7 @@ export class SessionRunner {
   ): Promise<void> {
     const missionId = yielded.mission?.id;
     if (missionId === undefined) throw new Error('a segment that slept belongs to no task');
-    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
-    await this.#append([
-      { type: 'MISSION_WOKEN', workflowRunId, ...turn, missionId, causes: [...causes] },
-    ]);
+    await this.#append([{ type: 'MISSION_WOKEN', workflowRunId, missionId, causes: [...causes] }]);
     const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
     await this.#extend(
       workflowRunId,
@@ -3722,13 +3653,11 @@ export class SessionRunner {
     await this.#extend(workflowRunId, revision, 'WAKE', content);
     const node = content.nodes[0];
     if (node === undefined) throw new Error('a continuation makes one node');
-    const turn = this.#turnId === undefined ? {} : { turnId: this.#turnId };
     await this.#append([
-      { type: 'NODE_STARTED', workflowRunId, ...turn, nodeId: node.nodeId, path: node.path },
+      { type: 'NODE_STARTED', workflowRunId, nodeId: node.nodeId, path: node.path },
       {
         type: 'NODE_ENDED',
         workflowRunId,
-        ...turn,
         nodeId: node.nodeId,
         status,
         ...(yielded.mission?.parentId === undefined

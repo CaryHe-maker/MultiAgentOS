@@ -11,7 +11,7 @@ const ref = (digit: string): ArtifactRef => {
   const sha256 = digit.repeat(64);
   return { artifactId: `art_${sha256}`, sha256, size: 1, mediaType: 'text/plain' };
 };
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
 const run = newId('wfr');
 const secondRun = newId('wfr');
 const turn = newId('trn');
@@ -148,10 +148,10 @@ describe('projectMainHistory', () => {
     );
   });
 
-  it('pins the prompt of the current Turn only', () => {
+  it('pins the latest input of the user only', () => {
     expect(
-      entries.filter((entry) => entry.category === 'PINNED').map((entry) => entry.turnId),
-    ).toEqual([secondTurn]);
+      entries.filter((entry) => entry.category === 'PINNED').map((entry) => entry.seq),
+    ).toEqual([conversation.at(-1)?.seq]);
   });
 
   it('uses the preview and never the full output', () => {

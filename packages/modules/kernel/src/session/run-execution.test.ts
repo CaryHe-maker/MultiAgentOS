@@ -125,10 +125,13 @@ function setup(
     now: () => new Date(NOW),
   });
   const ledgers = new RunLedgers(
-    { runTokenLimit: minShare(testAgentBudget) * 4, turnTokenLimit: minShare(testAgentBudget) * 2 },
+    {
+      runTokenLimit: minShare(testAgentBudget) * 4,
+      inputTokenLimit: minShare(testAgentBudget) * 2,
+    },
     testAgentBudget,
   );
-  ledgers.openTurnLedger('trn_1');
+  ledgers.openInputLedger('trn_1');
   const dispatched: ExecutionRequest[] = [];
   const reports: UnitReport[] = [];
   const ended: string[] = [];
@@ -234,7 +237,6 @@ function setup(
       requestId: testId('req', requests),
       agentRunId: testId('agr', agentRun),
       unitRunId: testId('unr', requests),
-      turnId: testId('trn'),
       unit: testUnitDefinition(kind),
       input: input as UnitInput,
       scope,
@@ -450,7 +452,7 @@ describe('resolving references', () => {
       'SESSION',
     );
     const reasoningRef = await run.artifacts.put('secret thoughts', 'text/plain', 'SESSION');
-    const entry = { category: 'NORMAL', turnId: testId('trn') };
+    const entry = { category: 'NORMAL' };
     await run.submit(
       'CONTEXT_ASSEMBLE',
       {
@@ -479,7 +481,7 @@ describe('resolving references', () => {
         status: {
           round: 1,
           maxRounds: 10,
-          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
           final: false,
         },
       },

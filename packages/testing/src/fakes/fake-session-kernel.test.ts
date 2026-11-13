@@ -42,7 +42,7 @@ const lastTurn = (kernel: ReturnType<typeof createFakeSessionKernel>): string =>
     .find((event) => event.event.type === 'HumanAnswered' && event.event.kind === 'prompt');
   if (answer?.event.type !== 'HumanAnswered' || answer.event.kind !== 'prompt')
     throw new Error('no turn');
-  return answer.event.turnId;
+  return answer.event.checkpointId;
 };
 
 describe('fake Session Kernel', () => {
@@ -93,7 +93,7 @@ describe('fake Session Kernel', () => {
       context,
     );
     await kernel.idle();
-    expect(runEvents(kernel).at(-1)).toBe('TurnClosed');
+    expect(runEvents(kernel).at(-1)).toBe('InputSettled');
     expect(uiEvents(kernel).slice(-2)).toEqual(['RunStateChanged', 'HumanRequest']);
     const first = lastTurn(kernel);
     await kernel.interaction.answerHuman(
@@ -154,7 +154,7 @@ describe('fake Session Kernel', () => {
     await kernel.gateway.endAgentRun({ requestId: newId('req'), ...ids, agentRunId }, context);
     expect((await human()).outcome).toBe('ACCEPTED');
     await kernel.idle();
-    expect(await register()).toMatchObject({ reasonCode: 'NO_OPEN_TURN' });
+    expect(await register()).toMatchObject({ reasonCode: 'NO_OPEN_INPUT' });
   });
 
   it('reports each accepted Unit as scripted', async () => {
@@ -203,7 +203,7 @@ describe('fake Session Kernel', () => {
       context,
     );
     await kernel.idle();
-    expect(runEvents(kernel).slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+    expect(runEvents(kernel).slice(-2)).toEqual(['InputSettled', 'RunClosed']);
     expect(uiEvents(kernel).at(-1)).toBe('RunFinished');
   });
 

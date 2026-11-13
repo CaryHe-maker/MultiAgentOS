@@ -16,9 +16,9 @@ import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
  * the same entries and a later call only appends to an earlier one (invariants 7 and 27). main
- * sees every Turn of the Session, across runs; a template node sees the run's goal, the handoff it
+ * sees every input of the Session and its work, across runs; a template node sees the run's goal, the handoff it
  * takes as input and its own steps. Tool results name their preview only; `fullRef` never enters
- * a projection. The category is the one field that may change: a prompt is PINNED while its Turn
+ * a projection. The category is the one field that may change: a prompt is PINNED while its input
  * is the current one.
  */
 const MAIN_AGENT_ID = 'main';
@@ -61,7 +61,8 @@ function interruptedNote(
   const cause = {
     MEMORY_PRESSURE: 'the system ran short of memory',
     USER_ABORT: 'the user stopped it',
-    TURN_TIMEOUT: 'it ran longer than the time allowed for one turn',
+    INPUT_TIMEOUT: 'it ran longer than the time allowed for the work of one message',
+    TURN_TIMEOUT: 'it ran longer than the time allowed for the work of one message',
     PAUSE_TIMEOUT: 'it stayed paused for too long',
   }[reason];
   return `The previous run was interrupted because ${cause}. Work in flight was cancelled; check the workspace before relying on it.`;
@@ -135,7 +136,7 @@ export function projectHistory(
   const mainRuns = new Set<string>();
   /** The AgentRun that runs a node: what a node-level record is read for. */
   const runOfNode = new Map<string, string>();
-  const unitOwners = new Map<string, { toolCallId: string; turnId?: string }>();
+  const unitOwners = new Map<string, { toolCallId: string }>();
   const toolNames = new Map<string, string>();
   const entries: ContextHistoryEntry[] = [];
   /** Notes of the user that wait for the next assembly of the AgentRun they are for. */
@@ -185,10 +186,9 @@ export function projectHistory(
     notes.length = 0;
   };
   let modelId = 'unknown';
-  let currentTurn: string | undefined;
+  /** Where the user's latest input is: what it and the notes after it say stays pinned. */
+  let currentInput: number | undefined;
   let lastNote: string | undefined;
-
-  const turnOf = (turnId: string | undefined) => (turnId === undefined ? {} : { turnId });
 
   // What a way back took back (Orchestration 7.5): an undo from the input it undid, a rewind from
   // the call that made the checkpoint, up to the rollback, nothing is shown; the tasks it
@@ -197,8 +197,10 @@ export function projectHistory(
   const takenBack = new Set(
     records.flatMap((record) => (record.type === 'ROLLED_BACK' ? record.cancelledMissionIds : [])),
   );
+  const undoneBefore = legacyUndone(records);
   for (const record of records) {
     if (rewinds.some((rewind) => record.seq >= rewind.from && record.seq < rewind.to)) continue;
+    if (undoneBefore.has(record.seq)) continue;
     if (
       (record.type === 'MISSION_ENDED' && takenBack.has(record.missionId)) ||
       (record.type === 'MISSION_MESSAGE' && takenBack.has(record.from))
@@ -221,14 +223,10 @@ export function projectHistory(
         if (ownMission === undefined || missionInfo.get(ownMission)?.parentId !== undefined) break;
         entries.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'NOTE',
           text: `The work went back to the checkpoint "${record.label}": what came after it is taken back. ${String(record.files)} file(s) are as they were then, and the subtasks started after it are cancelled. Decide again how to go on.`,
         });
-        break;
-      case 'TURN_STARTED':
-        currentTurn = record.turnId;
         break;
       case 'AGENT_RUN_REGISTERED':
         runOfNode.set(record.nodeId, record.agentRunId);
@@ -245,7 +243,6 @@ export function projectHistory(
             taskShown = true;
             entries.push({
               seq: record.seq,
-              ...turnOf(record.turnId),
               category: 'PINNED',
               kind: 'TASK',
               name: scope.task.name,
@@ -256,7 +253,7 @@ export function projectHistory(
               inputs: [...scope.task.inputs],
             });
             for (const dependency of scope.task.dependencies)
-              entries.push({ ...dependency, seq: record.seq, ...turnOf(record.turnId) });
+              entries.push({ ...dependency, seq: record.seq });
           }
           // A task below the root reads the plan of the work right after its task (D24); a later
           // plan comes to it as a notice.
@@ -269,7 +266,6 @@ export function projectHistory(
             if (plan !== undefined)
               entries.push({
                 seq: record.seq,
-                ...turnOf(record.turnId),
                 category: 'PINNED',
                 kind: 'PLAN',
                 outputRef: plan.source.outputRef,
@@ -286,7 +282,6 @@ export function projectHistory(
             const before = records.slice(0, records.indexOf(record) + 1);
             entries.push({
               seq: record.seq,
-              ...turnOf(record.turnId),
               category: 'PINNED',
               kind: 'NOTE',
               text: clip(
@@ -298,7 +293,6 @@ export function projectHistory(
           if (scope.handoff !== undefined)
             entries.push({
               seq: record.seq,
-              ...turnOf(record.turnId),
               category: 'PINNED',
               kind: 'HANDOFF',
               ...scope.handoff,
@@ -328,7 +322,6 @@ export function projectHistory(
             announced.add(node.mission.id);
             notes.push({
               seq: record.seq,
-              ...turnOf(record.turnId),
               category: 'NORMAL',
               kind: 'NOTE',
               text: clip(
@@ -368,7 +361,6 @@ export function projectHistory(
         ) {
           notes.push({
             seq: record.seq,
-            ...turnOf(record.turnId),
             category: 'NORMAL',
             kind: 'NOTE',
             text: `A sibling task has ended: ${info.name} (${record.status.toLowerCase()}).`,
@@ -383,7 +375,6 @@ export function projectHistory(
           (record.status === 'SUCCEEDED' ? ('DONE' as const) : ('FAILED' as const));
         const result: ContextHistoryEntry = {
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'SUBAGENT_RESULT',
           name: info.name,
@@ -402,7 +393,6 @@ export function projectHistory(
         if (ownMission === undefined || !record.to.includes(ownMission)) break;
         notes.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'MESSAGE',
           from: record.fromLabel,
@@ -420,7 +410,6 @@ export function projectHistory(
         if (record.missionId !== ownMission) break;
         notes.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'NOTE',
           text: `Task ${record.fromLabel} ended without answering your request ${record.requestToolCallId}; no reply will come.`,
@@ -431,7 +420,6 @@ export function projectHistory(
         if (!planShown || ownParentOf() === undefined) break;
         notes.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'PLAN',
           outputRef: record.source.outputRef,
@@ -446,7 +434,6 @@ export function projectHistory(
         if (record.missionId !== ownMission) break;
         notes.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'NOTE',
           text: clip(
@@ -459,7 +446,6 @@ export function projectHistory(
         if (record.missionId !== ownMission) break;
         notes.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'NOTE',
           text: wokenNote(record.causes.map((cause) => cause.kind)),
@@ -468,7 +454,7 @@ export function projectHistory(
       case 'HUMAN_ANSWERED':
         if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
         if (record.kind === 'steer') {
-          // A note is for one AgentRun, or for the next Turn of main when its target had ended.
+          // A note is for one AgentRun, or for main's next input when its target had ended.
           const mine =
             scope.kind === 'NODE'
               ? record.attachedAgentRunId !== undefined && mainRuns.has(record.attachedAgentRunId)
@@ -476,7 +462,6 @@ export function projectHistory(
           if (!mine) break;
           const note: ContextHistoryEntry = {
             seq: record.seq,
-            ...turnOf(record.turnId),
             category: 'NORMAL',
             kind: 'HUMAN',
             contentRef: record.contentRef,
@@ -487,6 +472,7 @@ export function projectHistory(
           else notes.push(note);
           break;
         }
+        if (record.kind === 'prompt') currentInput = record.seq;
         if (record.kind !== 'prompt') {
           // The answer to a question that slept (Orchestration 4.1): the call was answered when
           // the segment ended, so the answer comes to the next segment as what the user said.
@@ -507,14 +493,12 @@ export function projectHistory(
             notes.push(
               {
                 seq: record.seq,
-                ...turnOf(record.turnId),
                 category: 'NORMAL',
                 kind: 'NOTE',
                 text: 'The user answered the question you asked with ask_user; the answer follows.',
               },
               {
                 seq: record.seq,
-                ...turnOf(record.turnId),
                 category: 'NORMAL',
                 kind: 'HUMAN',
                 contentRef: record.contentRef,
@@ -527,7 +511,6 @@ export function projectHistory(
           break;
         entries.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'HUMAN',
           contentRef: record.contentRef,
@@ -540,7 +523,6 @@ export function projectHistory(
           lastNote = runtimeNote(record);
           entries.push({
             seq: record.seq,
-            ...turnOf(record.turnId),
             category: 'NORMAL',
             kind: 'NOTE',
             text: lastNote,
@@ -556,7 +538,6 @@ export function projectHistory(
         if (mainRuns.has(record.agentRunId) && record.inputSource.kind === 'TOOL_CALL') {
           unitOwners.set(record.requestId, {
             toolCallId: record.inputSource.toolCallId,
-            ...turnOf(record.turnId),
           });
         }
         break;
@@ -580,7 +561,6 @@ export function projectHistory(
         const head = lastHead.get(record.agentRunId);
         entries.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'MODEL_TURN',
           modelId,
@@ -605,7 +585,6 @@ export function projectHistory(
         const jobId = jobs.get(record.requestId);
         entries.push({
           seq: record.seq,
-          ...turnOf(owner.turnId),
           category: 'NORMAL',
           kind: 'TOOL_RESULT',
           toolCallId: owner.toolCallId,
@@ -630,7 +609,6 @@ export function projectHistory(
         if (owner === undefined) break;
         entries.push({
           seq: record.seq,
-          ...turnOf(owner.turnId),
           category: 'NORMAL',
           kind: 'TOOL_RESULT',
           toolCallId: owner.toolCallId,
@@ -640,17 +618,9 @@ export function projectHistory(
         break;
       }
       case 'WORKSPACE_REVERTED': {
-        // The log keeps every record; only what the model is shown goes (Module/Workflow 7).
+        // An undo of a log written before checkpoints replaced Turns: what it took back was left
+        // out above; the log keeps every record (Module/Workflow 7).
         const reverted = new Set(record.revertedTurnIds);
-        for (let i = entries.length - 1; i >= 0; i -= 1) {
-          const { turnId } = entries[i] ?? {};
-          if (turnId === undefined || !reverted.has(turnId)) continue;
-          const [gone] = entries.splice(i, 1);
-          // Touched again, it is loaded again.
-          if (gone?.kind === 'PROJECT_INSTRUCTIONS')
-            for (const key of instructions)
-              if (key.startsWith(`${gone.path}\0`)) instructions.delete(key);
-        }
         entries.push({
           seq: record.seq,
           category: 'NORMAL',
@@ -703,7 +673,6 @@ export function projectHistory(
         if (!('ref' in record)) {
           entries.push({
             seq: record.seq,
-            ...turnOf(currentTurn),
             category: 'NORMAL',
             kind: 'NOTE',
             text: `${record.path} exists but was not loaded, because of the limit on such files; read_file can read it.`,
@@ -722,8 +691,6 @@ export function projectHistory(
         instructions.add(`${record.path}\0${record.sha256}`);
         entries.push({
           seq: record.seq,
-          // A nested file goes with its Turn; the root one is read for the whole run.
-          ...(record.agentRunId === undefined ? {} : turnOf(currentTurn)),
           category: 'PINNED',
           kind: 'PROJECT_INSTRUCTIONS',
           path: record.path,
@@ -736,7 +703,6 @@ export function projectHistory(
         if (record.toolCallId !== undefined) answered.add(record.toolCallId);
         entries.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'FEEDBACK',
           text: record.message,
@@ -760,7 +726,6 @@ export function projectHistory(
         if (answer !== undefined) {
           entries.push({
             seq: record.seq,
-            ...turnOf(record.turnId),
             category: 'NORMAL',
             kind: 'HUMAN_ANSWER',
             toolCallId: record.call.toolCallId,
@@ -779,7 +744,6 @@ export function projectHistory(
           results.filter((result) => statuses.includes(result.status)).length;
         entries.push({
           seq: record.seq,
-          ...turnOf(record.turnId),
           category: 'NORMAL',
           kind: 'FEEDBACK',
           text: `${String(results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL', 'BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
@@ -788,7 +752,6 @@ export function projectHistory(
         for (const result of results)
           entries.push({
             seq: record.seq,
-            ...turnOf(record.turnId),
             category: 'NORMAL',
             kind: 'SUBAGENT_RESULT',
             name: result.name,
@@ -818,7 +781,7 @@ export function projectHistory(
   flush();
   const shown = entries.map((entry) =>
     entry.kind === 'HUMAN' &&
-    (scope.kind === 'NODE' || (entry.turnId !== undefined && entry.turnId === currentTurn))
+    (scope.kind === 'NODE' || (currentInput !== undefined && entry.seq >= currentInput))
       ? { ...entry, category: 'PINNED' as const }
       : entry,
   );
@@ -848,4 +811,27 @@ function messageReferences(
         referenceId: handover.referenceId,
         references: handover.items.map(({ toolCallId, tool }) => ({ toolCallId, tool })),
       };
+}
+
+/**
+ * What an undo of a log written before checkpoints replaced Turns took back (Module/Workflow 7):
+ * every record of the Turns it names that came before it. A record that names no Turn belongs to
+ * the one whose start it follows.
+ */
+function legacyUndone(records: readonly SessionLogRecord[]): ReadonlySet<number> {
+  const undone = new Set<number>();
+  const reverts = records.filter(
+    (record): record is Extract<SessionLogRecord, { type: 'WORKSPACE_REVERTED' }> =>
+      record.type === 'WORKSPACE_REVERTED',
+  );
+  if (reverts.length === 0) return undone;
+  let current: string | undefined;
+  for (const record of records) {
+    if (record.type === 'TURN_STARTED') current = record.turnId;
+    const turn = ('turnId' in record ? record.turnId : undefined) ?? current;
+    if (turn === undefined) continue;
+    if (reverts.some((revert) => revert.seq > record.seq && revert.revertedTurnIds.includes(turn)))
+      undone.add(record.seq);
+  }
+  return undone;
 }

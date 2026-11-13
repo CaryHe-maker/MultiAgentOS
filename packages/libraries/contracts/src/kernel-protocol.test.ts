@@ -72,7 +72,7 @@ const readOutput = {
   contentSha256: sha,
   fileSha256: sha,
 };
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 const status = { round: 1, maxRounds: 3, final: false, budget };
 
 describe('references and identifiers', () => {
@@ -597,7 +597,7 @@ describe('Gateway responses and run outcomes', () => {
       startedAt: at,
       closedAt: at,
       durationMs: 0,
-      turns: 1,
+      inputs: 1,
       agentRuns: [
         {
           agentRunId: 'agr_123456',

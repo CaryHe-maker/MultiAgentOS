@@ -105,14 +105,12 @@ export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
 const ResolvedHistoryEntrySchema = Type.Union([
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Enum(['HUMAN', 'NOTE']),
     text: Type.String(),
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('MODEL_TURN'),
     text: Type.Optional(Type.String()),
@@ -121,7 +119,6 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('TOOL_RESULT'),
     toolCallId: ToolCallIdSchema,
@@ -133,7 +130,6 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('PROJECT_INSTRUCTIONS'),
     path: text(512),
@@ -142,7 +138,6 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('FEEDBACK'),
     text: Type.String(),
@@ -151,7 +146,6 @@ const ResolvedHistoryEntrySchema = Type.Union([
   /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
     category: Type.Enum(['PINNED', 'NORMAL']),
     kind: Type.Literal('SUMMARY'),
     text: Type.String(),

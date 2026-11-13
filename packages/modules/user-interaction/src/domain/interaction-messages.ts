@@ -104,7 +104,7 @@ export const InteractionMessages = Object.freeze({
     PIN_FAILED: '代理定义固定失败。',
     WORKFLOW_INTERNAL: '分析流程发生内部错误。',
     KERNEL_INTERNAL: '运行控制发生内部错误。',
-    NO_OPEN_TURN: '当前没有进行中的对话轮次。',
+    NO_OPEN_INPUT: '当前没有进行中的对话轮次。',
     SESSION_COMMAND_UNKNOWN: '未知的会话指令。',
     SESSION_QUERY_UNKNOWN: '未知的会话查询。',
     PROJECT_FILE_FORBIDDEN: '不允许读取该项目文件。',

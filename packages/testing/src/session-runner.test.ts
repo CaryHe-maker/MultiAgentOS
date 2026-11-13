@@ -233,14 +233,13 @@ const types = (records: readonly SessionLogRecord[]) => records.map((record) => 
 const count = (records: readonly SessionLogRecord[], type: string) =>
   records.filter((record) => record.type === type).length;
 
-describe('a chat Turn', () => {
+describe('a chat exchange', () => {
   it('replies, then asks for the next input', async () => {
     const { kernel, runner } = setup([modelReply('reply', { text: 'hi' })]);
     await begin(kernel);
     expect(types(runner.records)).toEqual(
       expect.arrayContaining([
         'HUMAN_ANSWERED',
-        'TURN_STARTED',
         'AGENT_RUN_REGISTERED',
         'MODEL_TURN',
         'AGENT_RUN_ENDED',
@@ -251,7 +250,8 @@ describe('a chat Turn', () => {
       runner.records.filter((r) => r.type === 'NODE_ENDED').map((r) => 'status' in r && r.status),
     ).toEqual(['SUCCEEDED', 'SUCCEEDED']);
     expect(count(runner.records, 'GRAPH_EXTENDED')).toBe(2);
-    expect(count(runner.records, 'TURN_ENDED')).toBe(1);
+    expect(count(runner.records, 'INPUT_SETTLED')).toBe(1);
+    expect(count(runner.records, 'TURN_STARTED') + count(runner.records, 'TURN_ENDED')).toBe(0);
   });
 
   it('keeps seq continuous and writes each record before the matching syscall', async () => {
@@ -353,7 +353,9 @@ describe('a chat Turn', () => {
       context,
     );
     await kernel.idle();
-    expect(count(runner.records, 'TURN_STARTED')).toBe(2);
+    expect(
+      runner.records.filter((r) => r.type === 'HUMAN_ANSWERED' && r.kind === 'prompt'),
+    ).toHaveLength(2);
     expect(count(runner.records, 'AGENT_RUN_REGISTERED')).toBe(2);
     expect(count(runner.records, 'UNIT_SUBMITTED') - count(runner.records, 'UNIT_COMPLETED')).toBe(
       0,
@@ -390,7 +392,7 @@ describe('Sessions', () => {
     await kernel.idle();
     expect(kernel.interactionEvents.at(-1)?.event).toMatchObject({
       type: 'SessionList',
-      sessions: [{ turnCount: 1 }],
+      sessions: [{ inputCount: 1 }],
     });
   });
 });

@@ -28,13 +28,13 @@ import type {
   SteerRunRequest,
   CompactContextRequest,
   ConfirmUndoRequest,
-  DiffTurnsRequest,
+  DiffRequest,
   ListCheckpointsRequest,
   RewindCheckpointRequest,
   CheckpointList,
   ReadArtifactRequest,
-  TurnDiff,
-  UndoTurnsRequest,
+  CheckpointDiff,
+  UndoRequest,
 } from './kernel-control/interaction-requests.js';
 import type { SessionAccepted, SyscallRejected } from './kernel-control/responses.js';
 import type {
@@ -602,18 +602,12 @@ export interface InteractionGatewayPort {
     request: CompactContextRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  undoTurns(
-    request: UndoTurnsRequest,
-    context: BoundaryContext,
-  ): Promise<SyscallAck | SyscallRejected>;
+  undo(request: UndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   confirmUndo(
     request: ConfirmUndoRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  diffTurns(
-    request: DiffTurnsRequest,
-    context: BoundaryContext,
-  ): Promise<TurnDiff | SyscallRejected>;
+  diff(request: DiffRequest, context: BoundaryContext): Promise<CheckpointDiff | SyscallRejected>;
   /** Goes back to a checkpoint of the paused run (Orchestration 7.5). */
   rewindCheckpoint(
     request: RewindCheckpointRequest,

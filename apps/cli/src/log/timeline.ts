@@ -75,14 +75,16 @@ export type EntryView =
       readonly detail?: string;
     });
 
-export interface TurnView {
-  readonly turnId: string;
+/** The work of one input of the user: from what they wrote until the run came to rest. */
+export interface InputView {
+  /** The input's checkpoint; a log written before checkpoints replaced Turns names its Turn. */
+  readonly id: string;
   readonly index: number;
   readonly startedAt: string;
   readonly endedAt?: string;
   readonly endReason?: string;
   readonly usage?: unknown;
-  /** What the user wrote to start the Turn. */
+  /** What the user wrote. */
   readonly user: readonly (string | undefined)[];
   readonly entries: readonly EntryView[];
 }
@@ -92,8 +94,8 @@ export interface SessionTimeline {
   readonly repositoryRoot?: string;
   readonly sandbox?: string;
   readonly records: number;
-  readonly turns: readonly TurnView[];
-  /** Records that belong to no Turn (before the first, or after an exit). */
+  readonly inputs: readonly InputView[];
+  /** Records that belong to no input (before the first). */
   readonly outside: readonly EntryView[];
   readonly totals: {
     readonly modelCalls: number;
@@ -105,7 +107,7 @@ export interface SessionTimeline {
 }
 
 interface MutableTurn {
-  turnId: string;
+  id: string;
   index: number;
   startedAt: string;
   endedAt?: string;
@@ -134,7 +136,6 @@ export async function buildTimeline(
   const submitted = new Map<string, { at: string; toolCallId?: string; agentRunId: string }>();
   const contexts = new Map<string, { tokens: number; budget: number }>();
   const authorizations = new Map<string, { turn: MutableTurn | undefined; index: number }>();
-  const pendingPrompts: (string | undefined)[] = [];
   let current: MutableTurn | undefined;
   let startedAt: string | undefined;
   let repositoryRoot: string | undefined;
@@ -181,21 +182,14 @@ export async function buildTimeline(
         repositoryRoot = record.repositoryRoot;
         sandbox = record.sandbox?.state;
         break;
-      case 'TURN_STARTED': {
-        const turn: MutableTurn = {
-          turnId: record.turnId ?? `turn-${String(turns.length + 1)}`,
-          index: turns.length + 1,
-          startedAt: record.at,
-          user: pendingPrompts.splice(0),
-          entries: [],
-        };
-        turns.push(turn);
-        turnById.set(turn.turnId, turn);
-        current = turn;
+      case 'TURN_STARTED':
+        // A log written before checkpoints replaced Turns: its records name the Turn of the input.
+        if (current !== undefined && record.turnId !== undefined)
+          turnById.set(record.turnId, current);
         break;
-      }
-      case 'TURN_ENDED': {
-        const turn = inTurn;
+      case 'TURN_ENDED':
+      case 'INPUT_SETTLED': {
+        const turn = record.type === 'TURN_ENDED' ? inTurn : current;
         if (turn !== undefined) {
           turn.endedAt = record.at;
           turn.endReason = record.reason;
@@ -205,10 +199,17 @@ export async function buildTimeline(
       }
       case 'HUMAN_ANSWERED': {
         const body = await readText(record.contentRef);
-        const turn = record.turnId === undefined ? undefined : turnById.get(record.turnId);
         if (record.kind === 'prompt') {
-          if (turn === undefined) pendingPrompts.push(body);
-          else turn.user.push(body);
+          // Each input of the user opens its own part of the timeline.
+          const turn: MutableTurn = {
+            id: record.checkpointId ?? record.turnId ?? `input-${String(turns.length + 1)}`,
+            index: turns.length + 1,
+            startedAt: record.at,
+            user: [body],
+            entries: [],
+          };
+          turns.push(turn);
+          current = turn;
         } else {
           place(inTurn, {
             kind: 'HUMAN',
@@ -408,11 +409,20 @@ export async function buildTimeline(
         event(record, inTurn, '撤销一次压缩', record.reason);
         break;
       case 'WORKSPACE_REVERTED':
+        // An undo written before checkpoints replaced Turns.
         event(
           record,
           inTurn,
           '回退工作区',
-          `${String(record.revertedTurnIds.length)} 轮${record.forced ? '，强制' : ''}`,
+          `${String(record.revertedTurnIds.length)} 次输入${record.forced ? '，强制' : ''}`,
+        );
+        break;
+      case 'ROLLED_BACK':
+        event(
+          record,
+          current,
+          record.undo === true ? '撤销' : `回到 checkpoint「${record.label}」`,
+          `还原 ${String(record.files)} 个文件${record.forced === true ? '，强制' : ''}`,
         );
         break;
       case 'WORKSPACE_DIVERGED':
@@ -445,7 +455,7 @@ export async function buildTimeline(
     ...(repositoryRoot === undefined ? {} : { repositoryRoot }),
     ...(sandbox === undefined ? {} : { sandbox }),
     records: records.length,
-    turns,
+    inputs: turns,
     outside,
     totals: { modelCalls, toolCalls, inputTokens, outputTokens, cacheHitTokens },
   };

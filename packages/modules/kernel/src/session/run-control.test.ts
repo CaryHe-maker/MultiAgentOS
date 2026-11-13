@@ -11,7 +11,7 @@ import {
   closeRun,
   endAgentRun,
   initialRunControl,
-  openInitialTurn,
+  openInitialInput,
   pauseReached,
   pauseRun,
   readsProjectFile,
@@ -31,7 +31,7 @@ function accepted<T>(decision: Decision<T>): RunControl {
 const refused = (decision: Decision<unknown>): string | undefined =>
   decision.accepted ? undefined : decision.reasonCode;
 
-const running = (): RunControl => accepted(openInitialTurn(initialRunControl(), 'trn_1'));
+const running = (): RunControl => accepted(openInitialInput(initialRunControl(), 'trn_1'));
 const waiting = (): RunControl => accepted(requestOpenInput(running(), 'hrq_1'));
 const converging = (): RunControl => accepted(beginConvergence(running()));
 const closed = (): RunControl => closeRun(converging());
@@ -39,8 +39,8 @@ const closed = (): RunControl => closeRun(converging());
 describe('the table of Kernel/Interaction 6.5', () => {
   it('admits work only in an open Turn', () => {
     expect(admitWork(running()).accepted).toBe(true);
-    expect(refused(admitWork(initialRunControl()))).toBe('NO_OPEN_TURN');
-    expect(refused(admitWork(waiting()))).toBe('NO_OPEN_TURN');
+    expect(refused(admitWork(initialRunControl()))).toBe('NO_OPEN_INPUT');
+    expect(refused(admitWork(waiting()))).toBe('NO_OPEN_INPUT');
     expect(refused(admitWork(converging()))).toBe('RUN_BLOCKED');
     expect(refused(admitWork(closed()))).toBe('RUN_BLOCKED');
   });
@@ -55,10 +55,10 @@ describe('the table of Kernel/Interaction 6.5', () => {
 
   it('asks for open input only at rest, and closes the Turn', () => {
     const decision = requestOpenInput(running(), 'hrq_1');
-    expect(decision).toMatchObject({ accepted: true, effect: { closedTurnId: 'trn_1' } });
+    expect(decision).toMatchObject({ accepted: true, effect: { settledInputId: 'trn_1' } });
     const control = accepted(decision);
     expect(control).toMatchObject({ phase: 'AWAITING_INPUT', humanRequestId: 'hrq_1' });
-    expect(control.turnId).toBeUndefined();
+    expect(control.openInput).toBeUndefined();
     expect(refused(requestOpenInput(accepted(registerAgentRun(running(), 'a')), 'h'))).toBe(
       'AGENT_RUN_ACTIVE',
     );
@@ -74,10 +74,10 @@ describe('the table of Kernel/Interaction 6.5', () => {
     });
   });
 
-  it('opens a Turn only on the pending request', () => {
+  it('opens the work of an input only on the pending request', () => {
     expect(accepted(answerOpenInput(waiting(), 'hrq_1', 'trn_2'))).toMatchObject({
       phase: 'RUNNING',
-      turnId: 'trn_2',
+      openInput: 'trn_2',
     });
     expect(refused(answerOpenInput(waiting(), 'hrq_x', 't'))).toBe('HUMAN_REQUEST_NOT_PENDING');
     expect(refused(answerOpenInput(running(), 'hrq_1', 't'))).toBe('HUMAN_REQUEST_NOT_PENDING');
@@ -91,7 +91,7 @@ describe('the table of Kernel/Interaction 6.5', () => {
   });
 
   it('closes an open Turn when the run converges, once', () => {
-    expect(beginConvergence(running())).toMatchObject({ effect: { closedTurnId: 'trn_1' } });
+    expect(beginConvergence(running())).toMatchObject({ effect: { settledInputId: 'trn_1' } });
     expect(beginConvergence(waiting())).toMatchObject({ effect: {} });
     expect(beginConvergence(converging())).toEqual({ accepted: true, control: converging() });
     expect(accepted(beginConvergence(waiting())).humanRequestId).toBeUndefined();
@@ -108,7 +108,7 @@ describe('invariants 4 and 18', () => {
       case 'end':
         return keep(endAgentRun(control, 'agr_1'));
       case 'start':
-        return control.turnId === undefined ? control : attemptStarted(control, 'una_1');
+        return control.openInput === undefined ? control : attemptStarted(control, 'una_1');
       case 'finish':
         return attemptEnded(control, 'una_1');
       case 'ask':
@@ -131,7 +131,7 @@ describe('invariants 4 and 18', () => {
             if (control.phase === 'AWAITING_INPUT') {
               expect(control.activeAgentRuns.size).toBe(0);
               expect(control.inFlightAttempts.size).toBe(0);
-              expect(control.turnId).toBeUndefined();
+              expect(control.openInput).toBeUndefined();
             }
           }
         },
@@ -189,7 +189,7 @@ describe('run control of Kernel/Core 5e', () => {
     expect(accepted(beginInterrupt(waiting(), 'MEMORY_PRESSURE')).phase).toBe('INTERRUPTING');
     expect(refused(beginInterrupt(converging(), 'MEMORY_PRESSURE'))).toBe('REQUEST_CONFLICT');
     // Asked again, nothing changes and nothing is done twice.
-    expect(beginInterrupt(interrupted, 'TURN_TIMEOUT')).toMatchObject({
+    expect(beginInterrupt(interrupted, 'INPUT_TIMEOUT')).toMatchObject({
       accepted: true,
       effect: { firstTime: false },
       control: { interrupt: 'USER_ABORT' },
@@ -210,13 +210,13 @@ describe('run control of Kernel/Core 5e', () => {
       requestOpenInput(accepted(beginInterrupt(running(), reason)), 'hrq_1');
     expect(asked('USER_ABORT')).toMatchObject({
       accepted: true,
-      effect: { closedTurnId: 'trn_1', turnEnd: 'ABORTED' },
+      effect: { settledInputId: 'trn_1', inputEnd: 'ABORTED' },
       control: { phase: 'AWAITING_INPUT' },
     });
-    expect(asked('TURN_TIMEOUT')).toMatchObject({ effect: { turnEnd: 'TIMEOUT' } });
-    expect(asked('PAUSE_TIMEOUT')).toMatchObject({ effect: { turnEnd: 'ABORTED' } });
+    expect(asked('INPUT_TIMEOUT')).toMatchObject({ effect: { inputEnd: 'TIMEOUT' } });
+    expect(asked('PAUSE_TIMEOUT')).toMatchObject({ effect: { inputEnd: 'ABORTED' } });
     expect(requestOpenInput(running(), 'hrq_1')).toMatchObject({
-      effect: { turnEnd: 'COMPLETED' },
+      effect: { inputEnd: 'COMPLETED' },
     });
     const control = accepted(asked('USER_ABORT'));
     expect(control.interrupt).toBeUndefined();
@@ -243,7 +243,7 @@ describe('run control of Kernel/Core 5e', () => {
       'REQUEST_CONFLICT',
     );
     expect(refused(requestLocalQuestion(waiting(), 'hrq_q', question('agr_1')))).toBe(
-      'NO_OPEN_TURN',
+      'NO_OPEN_INPUT',
     );
     expect(refused(requestLocalQuestion(converging(), 'hrq_q', question('agr_1')))).toBe(
       'RUN_BLOCKED',

@@ -64,7 +64,7 @@ const ROUND_LIMIT_HANDOVER =
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const { round, maxRounds, budget, final, wrapUpReason } = status;
   const lines = [
-    `Status: round ${String(round)} of ${String(maxRounds)}. Budget: turn ${budget.turn}, run ${budget.run}.`,
+    `Status: round ${String(round)} of ${String(maxRounds)}. Budget: this request ${budget.input}, run ${budget.run}.`,
   ];
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
@@ -163,7 +163,6 @@ const baseOf = (entry: ResolvedHistoryEntry) =>
     segment: 'HISTORY',
     seq: entry.seq,
     category: entry.category,
-    ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }),
   }) as const;
 
 function userDraft(entry: ResolvedHistoryEntry): Draft {

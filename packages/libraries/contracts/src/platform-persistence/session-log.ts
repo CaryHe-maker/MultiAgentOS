@@ -17,7 +17,7 @@ import {
   MAX_QUESTION_FIELDS,
 } from '../kernel-control/human-request.js';
 import { CLOSE_REASONS } from '../kernel-control/run-outcome.js';
-import { BudgetViewSchema, TurnUsageSchema } from '../kernel-unit/budget-state.js';
+import { BudgetViewSchema, InputUsageSchema } from '../kernel-unit/budget-state.js';
 import { JobExitSchema } from '../kernel-execution/supervisor-requests.js';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas, ReferenceIdSchema, ToolCallIdSchema } from '../platform-common/ids.js';
@@ -147,6 +147,7 @@ const base = {
   at: TimestampSchema,
 };
 const inRun = { ...base, workflowRunId: IdSchemas.workflowRunId };
+/** Records written before checkpoints replaced Turns name their Turn; new ones do not (D8). */
 const inTurn = { ...inRun, turnId: Type.Optional(IdSchemas.turnId) };
 const record = <T extends string, C extends TProperties, P extends TProperties>(
   type: T,
@@ -215,6 +216,7 @@ export const SessionLogRecordSchema = Type.Union(
     record('WORKFLOW_RUN_ENDED', inRun, {
       closeReason: Type.Enum([...CLOSE_REASONS, 'PROCESS_EXITED', 'FORKED']),
     }),
+    /** Written before checkpoints replaced Turns (D8); still read. */
     record('TURN_STARTED', inTurn, {
       promptNodeId: IdSchemas.nodeId,
       template: Type.Optional(DefinitionRefSchema),
@@ -228,7 +230,24 @@ export const SessionLogRecordSchema = Type.Union(
         'RUN_CLOSED',
         'PROCESS_EXITED',
       ]),
-      usage: Type.Optional(TurnUsageSchema),
+      usage: Type.Optional(InputUsageSchema),
+    }),
+    /**
+     * The work since an input of the user came to rest (Orchestration 7.1, D8): what `TURN_ENDED`
+     * said, named by the input's checkpoint.
+     */
+    record('INPUT_SETTLED', inRun, {
+      checkpointId: IdSchemas.checkpointId,
+      reason: Type.Enum([
+        'COMPLETED',
+        'ABORTED',
+        'TIMEOUT',
+        'BUDGET',
+        'RUN_CLOSED',
+        'PROCESS_EXITED',
+      ]),
+      usage: Type.Optional(InputUsageSchema),
+      changedFileCount: Type.Optional(count()),
     }),
     record('GRAPH_EXTENDED', inTurn, {
       revision: count(1),
@@ -545,7 +564,8 @@ export const SessionLogRecordSchema = Type.Union(
     }),
     /** The next model call of this AgentRun is its last, and why (M2Design 7.3). */
     /** The run was interrupted from outside the conversation (Module/Workflow 9.2a). */
-    record('RUN_INTERRUPTED', inRun, { reason: Type.Enum(INTERRUPT_REASONS) }),
+    // TURN_TIMEOUT: what INPUT_TIMEOUT was called before checkpoints replaced Turns.
+    record('RUN_INTERRUPTED', inRun, { reason: Type.Enum([...INTERRUPT_REASONS, 'TURN_TIMEOUT']) }),
     /** The user paused the run, and resumed it, perhaps with a note (M2Design 4.3, 4.5). */
     record('RUN_PAUSED', inTurn, {}),
     record('RUN_RESUMED', inTurn, { steerInputId: Type.Optional(IdSchemas.inputId) }),
@@ -587,10 +607,10 @@ export const SessionLogRecordSchema = Type.Union(
       summaryInput: CompactionSummaryInputSchema,
       usage: CompactionUsageSchema,
     }),
-    /** The Turns the summary covered were undone: it stands in for nothing any more. */
+    /** What the summary covered was taken back: it stands in for nothing any more. */
     record('CONTEXT_COMPACTION_REVOKED', inRun, {
       compactionId: IdSchemas.compactionId,
-      reason: Type.Literal('TURN_REVERTED'),
+      reason: Type.Enum(['ROLLED_BACK', 'TURN_REVERTED']),
     }),
     record('AGENT_WRAP_UP', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -611,7 +631,8 @@ export const SessionLogRecordSchema = Type.Union(
     record('LOG_TAIL_REPAIRED', base, { truncatedBytes: count(1) }),
     record('STALE_UNITS_SETTLED', base, {
       requestIds: Type.Array(IdSchemas.requestId),
-      turnIds: Type.Array(IdSchemas.turnId),
+      /** Of logs written before checkpoints replaced Turns. */
+      turnIds: Type.Optional(Type.Array(IdSchemas.turnId)),
       workflowRunIds: Type.Array(IdSchemas.workflowRunId),
     }),
   ],

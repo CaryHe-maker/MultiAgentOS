@@ -20,7 +20,7 @@ export const MessagePublishInputSchema = Type.Union(
         modelOutputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
         toolCallId: ToolCallIdSchema,
       }),
-      /** Set when the reply came from a final call: the Turn ended early and the user is told. */
+      /** Set when the reply came from a final call: the work ended early and the user is told. */
       wrapUpReason: Type.Optional(WrapUpReasonSchema),
     }),
     closed({

@@ -497,8 +497,8 @@ describe('a refusal', () => {
       { status: 'REJECTED', reasonCode: 'USER_DECLINED' },
     ]);
     expect(kernel.run().control).toMatchObject({ phase: 'RUNNING' });
-    expect(kernel.run().control.turnId).toBeDefined();
-    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('TurnClosed');
+    expect(kernel.run().control.openInput).toBeDefined();
+    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('InputSettled');
     expect(
       kernel.interactionTypes().filter((type) => type === 'AuthorizationRequest'),
     ).toHaveLength(1);
@@ -746,7 +746,7 @@ describe('convergence', () => {
     await kernel.finish();
     await kernel.settled();
     expect(kernel.reports()).toEqual([]);
-    expect(types().slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+    expect(types().slice(-2)).toEqual(['InputSettled', 'RunClosed']);
   });
 
   it('writes a RunSummary that counts every accepted Unit once', async () => {
@@ -765,7 +765,7 @@ describe('convergence', () => {
     const [summary] = kernel.summaries;
     expect(summary).toMatchObject({
       closeReason: 'CANCELLED',
-      turns: 1,
+      inputs: 1,
       units: { submitted: 2, ok: 1, rejected: 0, failed: 0, notDelivered: 1 },
       agentRuns: [{ agentRunId: kernel.agentRunId, rounds: 0, finalCallUsed: false }],
     });
@@ -1263,7 +1263,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ledgers: new RunLedgers(
       {
         runTokenLimit: minShare(testAgentBudget) * 40,
-        turnTokenLimit: minShare(testAgentBudget) * 20,
+        inputTokenLimit: minShare(testAgentBudget) * 20,
       },
       testAgentBudget,
     ),
@@ -1288,7 +1288,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
               ledgers: new RunLedgers(
                 {
                   runTokenLimit: minShare(testAgentBudget) * 40,
-                  turnTokenLimit: minShare(testAgentBudget) * 20,
+                  inputTokenLimit: minShare(testAgentBudget) * 20,
                 },
                 testAgentBudget,
               ),
@@ -2026,7 +2026,7 @@ describe('run control of Kernel/Core 5e', () => {
     expect(await prompt(kernel)).toMatchObject({ accepted: true });
     await kernel.settled();
     expect(kernel.run().control.phase).toBe('AWAITING_INPUT');
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'ABORTED' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'ABORTED' });
     expect(eventsOf(kernel, 'RunClosed')).toEqual([]);
   });
 
@@ -2060,7 +2060,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('interrupts a paused run when the pause lasts too long', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -2074,7 +2074,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('forgets the pause limit once the run is continued', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -2086,7 +2086,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('times a Turn out, without counting a pause', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A model call is out, so the run is working: the clock runs.
@@ -2108,7 +2108,7 @@ describe('run control of Kernel/Core 5e', () => {
     kernel.advance(6_000);
     rest?.due();
     await kernel.settled();
-    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'TURN_TIMEOUT' });
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'INPUT_TIMEOUT' });
     // Execution answers what it was running with INTERRUPTED; here the stand-in does it.
     for (const { unitAttemptId } of kernel.execution.started)
       await kernel.actor.call(() =>
@@ -2117,12 +2117,12 @@ describe('run control of Kernel/Core 5e', () => {
     await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
     await prompt(kernel);
     await kernel.settled();
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'TIMEOUT' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'TIMEOUT' });
   });
 
   it('does not count the time the whole run waits for the user', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A question to the user is open and nothing runs.

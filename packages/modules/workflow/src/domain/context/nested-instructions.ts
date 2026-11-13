@@ -16,7 +16,7 @@ const outputField = (output: unknown, field: string): unknown =>
  * What this projection must read before its next assembly (Module/Workflow 8.2): every
  * `AGENTS.md` its `read_file` calls passed in this run and it has not loaded in this run,
  * outermost first as they were reported, and any it loaded that an approved write changed since.
- * A load in a reverted Turn does not count.
+ * A load in what an undo or a rewind took back does not count.
  */
 export function instructionsToLoad(
   records: readonly SessionLogRecord[],

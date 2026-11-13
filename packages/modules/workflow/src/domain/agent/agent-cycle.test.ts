@@ -90,14 +90,13 @@ const start = (overrides: Partial<AgentDefinitions> = {}) =>
     {
       workflowRunId: newId('wfr'),
       sessionId: newId('ses'),
-      turnId: newId('trn'),
       agentRunId: 'agr_01ABCDEFGH',
       definitions: { ...definitions, ...overrides },
     },
     context,
   );
 
-const NORMAL: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const NORMAL: BudgetView = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 function report(
   state: AgentState,
   requestId: string,
@@ -187,7 +186,6 @@ describe('startup', () => {
       {
         workflowRunId: newId('wfr'),
         sessionId: newId('ses'),
-        turnId: newId('trn'),
         agentRunId: newId('agr'),
         definitions,
         orientPackRef: packRef,
@@ -487,7 +485,7 @@ describe('tools', () => {
 describe('wrap-up', () => {
   it('turns the next round into the final call when a ledger is low', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low));
     expect(next.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
     expect(next.records).toContainEqual(
@@ -510,7 +508,7 @@ describe('wrap-up', () => {
 
   it('ends degraded when the final call does not reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -522,7 +520,7 @@ describe('wrap-up', () => {
 
   it('still lets the final call reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -700,7 +698,7 @@ describe('model failures', () => {
 describe('the final call', () => {
   it('refuses an end tool that is not allowed in it', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
@@ -710,7 +708,7 @@ describe('the final call', () => {
 
   it('keeps the finishing call it refused, so that what it said is not lost', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
@@ -737,7 +735,7 @@ describe('every tool call gets an answer', () => {
     );
   const atFinal = () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
     return reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,

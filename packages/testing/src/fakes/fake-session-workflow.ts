@@ -89,7 +89,7 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
           repositoryRoot: event.repositoryRoot,
           createdAt: at,
           lastActiveAt: at,
-          turnCount: 0,
+          inputCount: 0,
           status: 'ACTIVE',
         });
       }
@@ -97,12 +97,12 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
         sessionId,
         event.commandId,
         event.command === 'FORK'
-          ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromTurnCount: 0 }
+          ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromInputCount: 0 }
           : event.command === 'OPEN'
             ? {
                 command: 'OPEN',
                 outcome: 'READY',
-                turnCount: sessions.get(sessionId)?.turnCount ?? 0,
+                inputCount: sessions.get(sessionId)?.inputCount ?? 0,
               }
             : { command: 'CREATE', outcome: 'READY' },
       );

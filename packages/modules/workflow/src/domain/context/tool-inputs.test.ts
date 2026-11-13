@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fileBaselines, relativeToRoot, toolInputOf } from './tool-inputs.js';
 
 const base = { at: '2026-11-04T00:00:00.000Z', workflowRunId: newId('wfr'), turnId: newId('trn') };
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
 const agentRunId = newId('agr');
 let seq = 0;
 const line = <T extends object>(fields: T) => {

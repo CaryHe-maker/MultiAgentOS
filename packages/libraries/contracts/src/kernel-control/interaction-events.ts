@@ -181,21 +181,6 @@ export const UndoCancelledSchema = closed(
 );
 export type UndoCancelled = Static<typeof UndoCancelledSchema>;
 
-/** Sent to both UserInteraction and Workflow, which replaces those Turns in its projection. */
-export const WorkspaceRevertedSchema = closed(
-  {
-    type: Type.Literal('WorkspaceReverted'),
-    revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
-    forced: Type.Boolean(),
-    /** The external changes that were overwritten. */
-    externalFiles: Type.Array(text(4096)),
-    /** Taken before a forced undo. */
-    backupSnapshot: Type.Optional(text(64)),
-  },
-  'kernel.control.WorkspaceReverted.v1',
-);
-export type WorkspaceReverted = Static<typeof WorkspaceRevertedSchema>;
-
 /**
  * The workspace is back at a checkpoint (Orchestration 7.5): `files` were put back, and what they
  * held before is in `backupSnapshot`.
@@ -239,7 +224,8 @@ export const RunStateChangedSchema = Type.Union(
     closed({
       ...stateChanged,
       state: Type.Enum(['RUNNING', 'CONVERGING', 'PAUSING', 'PAUSED', 'INTERRUPTING']),
-      turnId: Type.Optional(IdSchemas.turnId),
+      /** The checkpoint of the input whose work this is. */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
     }),
   ],
   { $id: 'kernel.control.RunStateChanged.v1' },
@@ -318,8 +304,8 @@ export const ContextCompactedSchema = closed(
     type: Type.Literal('ContextCompacted'),
     trigger: Type.Enum(COMPACTION_TRIGGERS),
     summaryRef: Type.Optional(ArtifactRefSchema),
-    /** Turns the summary replaced, partly replaced ones included; 0 when only results were cut. */
-    compactedTurns: count(),
+    /** Inputs of the user whose work the summary replaced, in part or whole; 0 when only results were cut. */
+    compactedInputs: count(),
     prunedResults: count(),
   },
   'kernel.control.ContextCompacted.v1',
@@ -367,7 +353,6 @@ export const KernelToInteractionEventSchema = Type.Union([
   RunFinishedSchema,
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,
-  WorkspaceRevertedSchema,
   CheckpointRolledBackSchema,
   ContextCompactedSchema,
   CompactionFailedSchema,

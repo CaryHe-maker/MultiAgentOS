@@ -80,7 +80,7 @@ const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
     round: 1,
     maxRounds: 5,
     final: false,
-    budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+    budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
   },
 };
 

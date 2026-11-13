@@ -79,7 +79,7 @@ export const ResumeRunRequestSchema = closed(
 );
 export type ResumeRunRequest = Static<typeof ResumeRunRequestSchema>;
 
-/** Only while the run is RUNNING; `targetAgentRunId` is the Turn's main when absent. */
+/** Only while the run is RUNNING; `targetAgentRunId` is main when absent. */
 export const SteerRunRequestSchema = closed(
   { ...inRun, input: UserInputSchema, targetAgentRunId: Type.Optional(IdSchemas.agentRunId) },
   'kernel.control.SteerRunRequest.v1',
@@ -100,12 +100,15 @@ export const ReadArtifactRequestSchema = closed(
 );
 export type ReadArtifactRequest = Static<typeof ReadArtifactRequestSchema>;
 
-/** Only while the run awaits input, otherwise UNDO_NOT_AVAILABLE (Kernel/Core 5a.5). */
-export const UndoTurnsRequestSchema = closed(
+/**
+ * `/undo`: back before the latest checkpoint, or the first (`ALL`), taking it back too. Only while
+ * the run awaits input, otherwise UNDO_NOT_AVAILABLE (Kernel/Core 5a.5, Orchestration 7.5).
+ */
+export const UndoRequestSchema = closed(
   { ...inRun, scope: Type.Enum(['LAST', 'ALL']) },
-  'kernel.control.UndoTurnsRequest.v1',
+  'kernel.control.UndoRequest.v1',
 );
-export type UndoTurnsRequest = Static<typeof UndoTurnsRequestSchema>;
+export type UndoRequest = Static<typeof UndoRequestSchema>;
 
 /**
  * Goes back to a checkpoint inside the run (Orchestration 7.5): only while the run is paused. The
@@ -124,18 +127,20 @@ export const ConfirmUndoRequestSchema = closed(
 );
 export type ConfirmUndoRequest = Static<typeof ConfirmUndoRequestSchema>;
 
-/** `n` counts back through the Turns not reverted yet; 1 when absent. */
-export const DiffTurnsRequestSchema = closed(
+/**
+ * What a checkpoint's stretch changed (Orchestration 7.5): the `checkpoint`-th of `listCheckpoints`,
+ * or the `n`-th latest (1 when both are absent).
+ */
+export const DiffRequestSchema = closed(
   {
     requestId: IdSchemas.requestId,
     sessionId: IdSchemas.sessionId,
     n: Type.Optional(count(1)),
-    /** The checkpoint of `listCheckpoints` whose stretch to show, instead of a Turn (Orchestration 7.5). */
     checkpoint: Type.Optional(count(1)),
   },
-  'kernel.control.DiffTurnsRequest.v1',
+  'kernel.control.DiffRequest.v1',
 );
-export type DiffTurnsRequest = Static<typeof DiffTurnsRequestSchema>;
+export type DiffRequest = Static<typeof DiffRequestSchema>;
 
 export const FILE_CHANGES = ['ADDED', 'MODIFIED', 'DELETED'] as const;
 
@@ -147,7 +152,8 @@ export const ListCheckpointsRequestSchema = closed(
 export type ListCheckpointsRequest = Static<typeof ListCheckpointsRequestSchema>;
 
 /**
- * One line of `/checkpoints`: a Turn's start (`TURN`, numbered `turnSeq`) or a checkpoint inside
+ * One line of `/checkpoints`: an input of the user (`INPUT`) or a checkpoint inside a run, with what
+ * its stretch changed (Orchestration 7.4).
  * it; `changedFiles` is how many files its stretch changed, when that is known.
  */
 export const CheckpointListSchema = closed(
@@ -169,13 +175,13 @@ export const CheckpointListSchema = closed(
 export type CheckpointList = Static<typeof CheckpointListSchema>;
 
 /** `diffRef` is a unified diff; excluded files are not in it. */
-export const TurnDiffSchema = closed(
+export const CheckpointDiffSchema = closed(
   {
     requestId: IdSchemas.requestId,
     outcome: Type.Literal('ACCEPTED'),
     files: Type.Array(closed({ path: text(4096), change: Type.Enum(FILE_CHANGES) })),
     diffRef: ArtifactRefSchema,
   },
-  'kernel.control.TurnDiff.v1',
+  'kernel.control.CheckpointDiff.v1',
 );
-export type TurnDiff = Static<typeof TurnDiffSchema>;
+export type CheckpointDiff = Static<typeof CheckpointDiffSchema>;

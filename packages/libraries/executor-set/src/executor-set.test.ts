@@ -34,7 +34,7 @@ const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment =>
 const status = {
   round: 2,
   maxRounds: 10,
-  budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+  budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
   final: false,
 } as const;
 const call = { toolCallId: 'call_1', toolName: 'read_file', arguments: { path: 'a' } };

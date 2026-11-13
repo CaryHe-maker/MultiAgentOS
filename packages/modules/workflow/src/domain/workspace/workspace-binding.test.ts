@@ -93,7 +93,7 @@ function logOf(ops: readonly Op[]): SessionLogRecord[] {
           requestId,
           status: 'OK',
           output: { path: each.path, fileSha256: each.digit.repeat(64) },
-          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
         },
       );
     } else {
@@ -269,7 +269,7 @@ describe('nested project instructions across a change of folder', () => {
         requestId: `req_${'9'.padStart(32, '0')}`,
         status: 'OK',
         output: { nestedInstructions: passing },
-        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       },
     ].map((record, index) => ({ ...record, seq: index + 1 }) as unknown as SessionLogRecord);
     return instructionsToLoad(records, main, run, mainRun, limit);

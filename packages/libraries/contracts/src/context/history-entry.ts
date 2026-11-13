@@ -10,7 +10,6 @@ import { Sha256Schema, closed, count, text } from '../platform-common/schema-hel
 const entry = {
   /** `seq` of the log record the entry comes from. */
   seq: count(1),
-  turnId: Type.Optional(IdSchemas.turnId),
   category: Type.Enum(['PINNED', 'NORMAL']),
 };
 

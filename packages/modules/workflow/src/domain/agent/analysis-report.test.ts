@@ -12,7 +12,7 @@ const output = (path: string, totalLines: number) => ({
   contentSha256: 'b'.repeat(64),
   fileSha256: 'c'.repeat(64),
 });
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 const pair = (requestId: string, unit: string, result: object): object[] => [
   { type: 'UNIT_SUBMITTED', workflowRunId: run, requestId, unitRef: { id: unit, digest } },
   { type: 'UNIT_COMPLETED', workflowRunId: run, requestId, status: 'OK', budget, output: result },

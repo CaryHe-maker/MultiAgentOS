@@ -313,7 +313,7 @@ describe('L2: the provider says the context is too long', () => {
 const awaitingInput = (chat: Chat) =>
   until(() => chat.lives.at(-1)?.status.includes('等待输入') === true, 'the end of the Turn');
 const turnsEnded = async (dataDir: string) =>
-  (await logOf(dataDir)).filter((r) => r.type === 'TURN_ENDED').length;
+  (await logOf(dataDir)).filter((r) => r.type === 'INPUT_SETTLED').length;
 const afterTurns = (dataDir: string, count: number) =>
   waitFor(async () => (await turnsEnded(dataDir)) >= count);
 

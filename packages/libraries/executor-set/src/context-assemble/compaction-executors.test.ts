@@ -104,7 +104,7 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     status: {
       round: 5,
       maxRounds: 80,
-      budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       final: false,
     },
     compaction,

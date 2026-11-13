@@ -25,7 +25,7 @@ export type MasCommand =
       readonly repo?: string;
       /** A number from the list, a Session id or the start of one; absent means the latest. */
       readonly session?: string;
-      readonly turn?: number;
+      readonly input?: number;
       readonly full: boolean;
       readonly json: boolean;
       readonly list: boolean;
@@ -48,7 +48,7 @@ interface CommonOptions {
 
 interface LogOptions {
   readonly repo?: string;
-  readonly turn?: number;
+  readonly input?: number;
   readonly full: boolean;
   readonly json: boolean;
   readonly list: boolean;
@@ -98,7 +98,7 @@ export async function parseCli(
     .command('log')
     .description(CLI_MESSAGES.log)
     .option('--repo <path>', CLI_MESSAGES.repository)
-    .option('--turn <n>', CLI_MESSAGES.logTurn, positiveInteger)
+    .option('--input <n>', CLI_MESSAGES.logInput, positiveInteger)
     .option('--full', CLI_MESSAGES.logFull, false)
     .option('--json', CLI_MESSAGES.logJson, false)
     .option('--list', CLI_MESSAGES.logList, false)
@@ -111,7 +111,7 @@ export async function parseCli(
         list: options.list,
         ...repoOf(options),
         ...(session === undefined ? {} : { session }),
-        ...(options.turn === undefined ? {} : { turn: options.turn }),
+        ...(options.input === undefined ? {} : { input: options.input }),
       };
     });
   try {

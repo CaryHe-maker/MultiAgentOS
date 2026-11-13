@@ -97,7 +97,7 @@ export interface RunCompactorDeps {
   readonly agentOf: (target: CompactionTarget) =>
     | {
         readonly agent: PinnedAgent;
-        /** Set when this AgentRun pays from its own ledger (a SubAgent); otherwise the run or Turn pays. */
+        /** Set when this AgentRun pays from its own ledger (a SubAgent); otherwise the run or the input's work pays. */
         readonly agentRunId?: string;
       }
     | undefined;
@@ -425,9 +425,9 @@ export class RunCompactor implements Compacting {
       scheduler.release(grantId);
       this.#grants.delete(grantId);
     };
-    // The target's own ledger pays: an AgentRun's, the open Turn's for main, else a ledger of its
+    // The target's own ledger pays: an AgentRun's, the open input's for main, else a ledger of its
     // own taken from the run (Kernel/Monitor 3.4).
-    if (agentRunId !== undefined || ledgers.hasOpenTurn()) {
+    if (agentRunId !== undefined || ledgers.hasOpenInput()) {
       const reserved = ledgers.reserve(
         { estimatedTokens, final: false, cacheHitWeight },
         agentRunId,
@@ -534,7 +534,7 @@ export class RunCompactor implements Compacting {
         round: 1,
         maxRounds: 1,
         final: false,
-        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       },
       compaction: {
         mode: request.mode,

@@ -31,7 +31,7 @@ describe('Ink console colours', () => {
     const { store, ui } = setup();
     store.print({ kind: 'USER', text: '问题' });
     store.print({ kind: 'NOTICE', text: '已允许。' });
-    store.print({ kind: 'LIST', text: '  1. 你好（2 轮）' });
+    store.print({ kind: 'LIST', text: '  1. 你好（2 次输入）' });
     store.print({ kind: 'REPLY', agentLabel: 'main', text: '回答' });
     await tick();
     const frame = ui.lastFrame() ?? '';
@@ -42,7 +42,7 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[38;2;126;231;135m> 问题');
     expect(frame).toContain('\u001b[38;2;249;241;165m已允许。');
     // What may be picked from is quiet: grey, below the notice that introduces it.
-    expect(frame).toContain('\u001b[90m  1. 你好（2 轮）');
+    expect(frame).toContain('\u001b[90m  1. 你好（2 次输入）');
     expect(frame).toContain('\u001b[38;2;121;192;255mmain: 回答');
   });
 

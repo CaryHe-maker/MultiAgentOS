@@ -4107,10 +4107,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -4168,10 +4164,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -4291,10 +4283,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -4398,7 +4386,7 @@
                       "PIN_FAILED",
                       "WORKFLOW_INTERNAL",
                       "KERNEL_INTERNAL",
-                      "NO_OPEN_TURN",
+                      "NO_OPEN_INPUT",
                       "SESSION_COMMAND_UNKNOWN",
                       "SESSION_QUERY_UNKNOWN",
                       "PROJECT_FILE_FORBIDDEN",
@@ -4507,10 +4495,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -4570,10 +4554,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -4611,10 +4591,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -4684,10 +4660,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -4784,10 +4756,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -4907,10 +4875,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -4982,10 +4946,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -5055,10 +5015,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -5169,10 +5125,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -5232,10 +5184,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -5279,7 +5227,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -5291,7 +5239,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -5410,10 +5358,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -5471,10 +5415,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -5594,10 +5534,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -5701,7 +5637,7 @@
                 "PIN_FAILED",
                 "WORKFLOW_INTERNAL",
                 "KERNEL_INTERNAL",
-                "NO_OPEN_TURN",
+                "NO_OPEN_INPUT",
                 "SESSION_COMMAND_UNKNOWN",
                 "SESSION_QUERY_UNKNOWN",
                 "PROJECT_FILE_FORBIDDEN",
@@ -5810,10 +5746,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -5873,10 +5805,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -5914,10 +5842,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -5987,10 +5911,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -6087,10 +6007,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -6210,10 +6126,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -6285,10 +6197,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -6358,10 +6266,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -6472,10 +6376,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "category": {
               "enum": [
                 "PINNED",
@@ -6534,10 +6434,6 @@
             "seq": {
               "type": "integer",
               "minimum": 1
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "category": {
               "enum": [
@@ -10011,6 +9907,82 @@
       "additionalProperties": false,
       "$id": "kernel.control.AuthorizationResolved.v1"
     },
+    "kernel.control.CheckpointDiff.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "outcome",
+        "files",
+        "diffRef"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "outcome": {
+          "type": "string",
+          "const": "ACCEPTED"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "change"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "change": {
+                "enum": [
+                  "ADDED",
+                  "MODIFIED",
+                  "DELETED"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "diffRef": {
+          "type": "object",
+          "required": [
+            "artifactId",
+            "sha256",
+            "size",
+            "mediaType"
+          ],
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "pattern": "^art_[a-f0-9]{64}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "$id": "platform.common.ArtifactRef.v1"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.CheckpointDiff.v1"
+    },
     "kernel.control.CheckpointList.v1": {
       "type": "object",
       "required": [
@@ -10234,7 +10206,7 @@
       "required": [
         "type",
         "trigger",
-        "compactedTurns",
+        "compactedInputs",
         "prunedResults"
       ],
       "properties": {
@@ -10279,7 +10251,7 @@
           "additionalProperties": false,
           "$id": "platform.common.ArtifactRef.v1"
         },
-        "compactedTurns": {
+        "compactedInputs": {
           "type": "integer",
           "minimum": 0
         },
@@ -10310,7 +10282,7 @@
       "additionalProperties": false,
       "$id": "kernel.control.DeleteSessionRequest.v1"
     },
-    "kernel.control.DiffTurnsRequest.v1": {
+    "kernel.control.DiffRequest.v1": {
       "type": "object",
       "required": [
         "requestId",
@@ -10335,7 +10307,7 @@
         }
       },
       "additionalProperties": false,
-      "$id": "kernel.control.DiffTurnsRequest.v1"
+      "$id": "kernel.control.DiffRequest.v1"
     },
     "kernel.control.ExternalReadPaused.v1": {
       "type": "object",
@@ -11080,10 +11052,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -11141,10 +11109,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -11264,10 +11228,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -11371,7 +11331,7 @@
                               "PIN_FAILED",
                               "WORKFLOW_INTERNAL",
                               "KERNEL_INTERNAL",
-                              "NO_OPEN_TURN",
+                              "NO_OPEN_INPUT",
                               "SESSION_COMMAND_UNKNOWN",
                               "SESSION_QUERY_UNKNOWN",
                               "PROJECT_FILE_FORBIDDEN",
@@ -11480,10 +11440,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -11543,10 +11499,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -11584,10 +11536,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -11657,10 +11605,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -11757,10 +11701,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -11880,10 +11820,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -11955,10 +11891,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -12028,10 +11960,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -12142,10 +12070,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -12204,10 +12128,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -12538,10 +12458,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -12599,10 +12515,6 @@
                                   "seq": {
                                     "type": "integer",
                                     "minimum": 1
-                                  },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                                   },
                                   "category": {
                                     "enum": [
@@ -12722,10 +12634,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -12829,7 +12737,7 @@
                                       "PIN_FAILED",
                                       "WORKFLOW_INTERNAL",
                                       "KERNEL_INTERNAL",
-                                      "NO_OPEN_TURN",
+                                      "NO_OPEN_INPUT",
                                       "SESSION_COMMAND_UNKNOWN",
                                       "SESSION_QUERY_UNKNOWN",
                                       "PROJECT_FILE_FORBIDDEN",
@@ -12938,10 +12846,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13001,10 +12905,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13042,10 +12942,6 @@
                                   "seq": {
                                     "type": "integer",
                                     "minimum": 1
-                                  },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                                   },
                                   "category": {
                                     "enum": [
@@ -13115,10 +13011,6 @@
                                   "seq": {
                                     "type": "integer",
                                     "minimum": 1
-                                  },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                                   },
                                   "category": {
                                     "enum": [
@@ -13215,10 +13107,6 @@
                                   "seq": {
                                     "type": "integer",
                                     "minimum": 1
-                                  },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                                   },
                                   "category": {
                                     "enum": [
@@ -13338,10 +13226,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13413,10 +13297,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13486,10 +13366,6 @@
                                   "seq": {
                                     "type": "integer",
                                     "minimum": 1
-                                  },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                                   },
                                   "category": {
                                     "enum": [
@@ -13600,10 +13476,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13663,10 +13535,6 @@
                                     "type": "integer",
                                     "minimum": 1
                                   },
-                                  "turnId": {
-                                    "type": "string",
-                                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                                  },
                                   "category": {
                                     "enum": [
                                       "PINNED",
@@ -13710,7 +13578,7 @@
                               "type": "object",
                               "required": [
                                 "agentRun",
-                                "turn",
+                                "input",
                                 "run"
                               ],
                               "properties": {
@@ -13722,7 +13590,7 @@
                                   ],
                                   "$id": "kernel.unit.BudgetState.v1"
                                 },
-                                "turn": {
+                                "input": {
                                   "enum": [
                                     "NORMAL",
                                     "WRAP_UP",
@@ -14495,7 +14363,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",
@@ -14942,7 +14810,7 @@
                       "required": [
                         "command",
                         "outcome",
-                        "turnCount"
+                        "inputCount"
                       ],
                       "properties": {
                         "command": {
@@ -14953,11 +14821,7 @@
                           "type": "string",
                           "const": "READY"
                         },
-                        "lastTurnId": {
-                          "type": "string",
-                          "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                        },
-                        "turnCount": {
+                        "inputCount": {
                           "type": "integer",
                           "minimum": 0
                         },
@@ -15018,7 +14882,7 @@
                         "command",
                         "outcome",
                         "inheritedArtifacts",
-                        "fromTurnCount"
+                        "fromInputCount"
                       ],
                       "properties": {
                         "command": {
@@ -15062,7 +14926,7 @@
                             "$id": "platform.common.ArtifactRef.v1"
                           }
                         },
-                        "fromTurnCount": {
+                        "fromInputCount": {
                           "type": "integer",
                           "minimum": 0
                         }
@@ -15185,7 +15049,7 @@
                       "repositoryRoot",
                       "createdAt",
                       "lastActiveAt",
-                      "turnCount",
+                      "inputCount",
                       "status"
                     ],
                     "properties": {
@@ -15206,7 +15070,7 @@
                         "type": "string",
                         "format": "date-time"
                       },
-                      "turnCount": {
+                      "inputCount": {
                         "type": "integer",
                         "minimum": 0
                       },
@@ -15243,13 +15107,16 @@
                       "fork": {
                         "type": "object",
                         "required": [
-                          "fromSessionId",
-                          "fromTurnCount"
+                          "fromSessionId"
                         ],
                         "properties": {
                           "fromSessionId": {
                             "type": "string",
                             "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "fromInputCount": {
+                            "type": "integer",
+                            "minimum": 0
                           },
                           "fromTurnCount": {
                             "type": "integer",
@@ -16088,7 +15955,7 @@
             },
             "requestType": {
               "type": "string",
-              "const": "undoTurns"
+              "const": "undo"
             },
             "request": {
               "type": "object",
@@ -16119,7 +15986,7 @@
                 }
               },
               "additionalProperties": false,
-              "$id": "kernel.control.UndoTurnsRequest.v1"
+              "$id": "kernel.control.UndoRequest.v1"
             }
           },
           "additionalProperties": false
@@ -16193,7 +16060,7 @@
             },
             "requestType": {
               "type": "string",
-              "const": "diffTurns"
+              "const": "diff"
             },
             "request": {
               "type": "object",
@@ -16220,7 +16087,7 @@
                 }
               },
               "additionalProperties": false,
-              "$id": "kernel.control.DiffTurnsRequest.v1"
+              "$id": "kernel.control.DiffRequest.v1"
             }
           },
           "additionalProperties": false
@@ -17301,9 +17168,9 @@
                         "INTERRUPTING"
                       ]
                     },
-                    "turnId": {
+                    "checkpointId": {
                       "type": "string",
-                      "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                      "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     }
                   },
                   "additionalProperties": false
@@ -18109,7 +17976,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",
@@ -18378,7 +18245,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",
@@ -18905,47 +18772,6 @@
               "type": "object",
               "required": [
                 "type",
-                "revertedTurnIds",
-                "forced",
-                "externalFiles"
-              ],
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "WorkspaceReverted"
-                },
-                "revertedTurnIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "minItems": 1
-                },
-                "forced": {
-                  "type": "boolean"
-                },
-                "externalFiles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                  }
-                },
-                "backupSnapshot": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64
-                }
-              },
-              "additionalProperties": false,
-              "$id": "kernel.control.WorkspaceReverted.v1"
-            },
-            {
-              "type": "object",
-              "required": [
-                "type",
                 "checkpointId",
                 "label",
                 "files"
@@ -19000,7 +18826,7 @@
               "required": [
                 "type",
                 "trigger",
-                "compactedTurns",
+                "compactedInputs",
                 "prunedResults"
               ],
               "properties": {
@@ -19045,7 +18871,7 @@
                   "additionalProperties": false,
                   "$id": "platform.common.ArtifactRef.v1"
                 },
-                "compactedTurns": {
+                "compactedInputs": {
                   "type": "integer",
                   "minimum": 0
                 },
@@ -19722,7 +19548,7 @@
             "PIN_FAILED",
             "WORKFLOW_INTERNAL",
             "KERNEL_INTERNAL",
-            "NO_OPEN_TURN",
+            "NO_OPEN_INPUT",
             "SESSION_COMMAND_UNKNOWN",
             "SESSION_QUERY_UNKNOWN",
             "PROJECT_FILE_FORBIDDEN",
@@ -20316,7 +20142,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -20585,7 +20411,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -21074,9 +20900,9 @@
                 "INTERRUPTING"
               ]
             },
-            "turnId": {
+            "checkpointId": {
               "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
           },
           "additionalProperties": false
@@ -21094,7 +20920,7 @@
             "startedAt",
             "closedAt",
             "durationMs",
-            "turns",
+            "inputs",
             "agentRuns",
             "units",
             "model",
@@ -21123,7 +20949,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "turns": {
+            "inputs": {
               "type": "integer",
               "minimum": 0
             },
@@ -21409,7 +21235,7 @@
             "startedAt",
             "closedAt",
             "durationMs",
-            "turns",
+            "inputs",
             "agentRuns",
             "units",
             "model",
@@ -21439,7 +21265,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "turns": {
+            "inputs": {
               "type": "integer",
               "minimum": 0
             },
@@ -21760,7 +21586,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -21854,7 +21680,7 @@
             "startedAt",
             "closedAt",
             "durationMs",
-            "turns",
+            "inputs",
             "agentRuns",
             "units",
             "model",
@@ -21884,7 +21710,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "turns": {
+            "inputs": {
               "type": "integer",
               "minimum": 0
             },
@@ -22541,7 +22367,7 @@
                 "INVALID_INPUT",
                 "QUESTION_NOT_PENDING",
                 "INVALID_ARTIFACT_REF",
-                "NO_OPEN_TURN",
+                "NO_OPEN_INPUT",
                 "SESSION_COMMAND_UNKNOWN",
                 "SESSION_QUERY_UNKNOWN",
                 "PROJECT_FILE_FORBIDDEN",
@@ -22649,82 +22475,6 @@
       ],
       "$id": "kernel.control.SyscallRejected.v1"
     },
-    "kernel.control.TurnDiff.v1": {
-      "type": "object",
-      "required": [
-        "requestId",
-        "outcome",
-        "files",
-        "diffRef"
-      ],
-      "properties": {
-        "requestId": {
-          "type": "string",
-          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "outcome": {
-          "type": "string",
-          "const": "ACCEPTED"
-        },
-        "files": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "path",
-              "change"
-            ],
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 4096
-              },
-              "change": {
-                "enum": [
-                  "ADDED",
-                  "MODIFIED",
-                  "DELETED"
-                ]
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "diffRef": {
-          "type": "object",
-          "required": [
-            "artifactId",
-            "sha256",
-            "size",
-            "mediaType"
-          ],
-          "properties": {
-            "artifactId": {
-              "type": "string",
-              "pattern": "^art_[a-f0-9]{64}$"
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "size": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "mediaType": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          "additionalProperties": false,
-          "$id": "platform.common.ArtifactRef.v1"
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.control.TurnDiff.v1"
-    },
     "kernel.control.UndoCancelled.v1": {
       "type": "object",
       "required": [
@@ -22799,7 +22549,7 @@
       "additionalProperties": false,
       "$id": "kernel.control.UndoConfirmationRequested.v1"
     },
-    "kernel.control.UndoTurnsRequest.v1": {
+    "kernel.control.UndoRequest.v1": {
       "type": "object",
       "required": [
         "requestId",
@@ -22828,7 +22578,7 @@
         }
       },
       "additionalProperties": false,
-      "$id": "kernel.control.UndoTurnsRequest.v1"
+      "$id": "kernel.control.UndoRequest.v1"
     },
     "kernel.control.UnknownEffect.v1": {
       "anyOf": [
@@ -22904,47 +22654,6 @@
         }
       ],
       "$id": "kernel.control.UnknownEffect.v1"
-    },
-    "kernel.control.WorkspaceReverted.v1": {
-      "type": "object",
-      "required": [
-        "type",
-        "revertedTurnIds",
-        "forced",
-        "externalFiles"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "WorkspaceReverted"
-        },
-        "revertedTurnIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-          },
-          "minItems": 1
-        },
-        "forced": {
-          "type": "boolean"
-        },
-        "externalFiles": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096
-          }
-        },
-        "backupSnapshot": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.control.WorkspaceReverted.v1"
     },
     "kernel.execution.AssembleExecutorInput.v1": {
       "type": "object",
@@ -23159,10 +22868,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -23193,10 +22898,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -23313,10 +23014,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -23390,7 +23087,7 @@
                       "PIN_FAILED",
                       "WORKFLOW_INTERNAL",
                       "KERNEL_INTERNAL",
-                      "NO_OPEN_TURN",
+                      "NO_OPEN_INPUT",
                       "SESSION_COMMAND_UNKNOWN",
                       "SESSION_QUERY_UNKNOWN",
                       "PROJECT_FILE_FORBIDDEN",
@@ -23460,10 +23157,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -23501,10 +23194,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -23538,10 +23227,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -23583,7 +23268,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -23595,7 +23280,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -27775,10 +27460,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -27809,10 +27490,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -27929,10 +27606,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -28006,7 +27679,7 @@
                               "PIN_FAILED",
                               "WORKFLOW_INTERNAL",
                               "KERNEL_INTERNAL",
-                              "NO_OPEN_TURN",
+                              "NO_OPEN_INPUT",
                               "SESSION_COMMAND_UNKNOWN",
                               "SESSION_QUERY_UNKNOWN",
                               "PROJECT_FILE_FORBIDDEN",
@@ -28076,10 +27749,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -28117,10 +27786,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -28154,10 +27819,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -28199,7 +27860,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -28211,7 +27872,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -33108,7 +32769,7 @@
               "required": [
                 "type",
                 "repositoryRoot",
-                "turnCount"
+                "inputCount"
               ],
               "properties": {
                 "type": {
@@ -33125,20 +32786,23 @@
                   "minLength": 1,
                   "maxLength": 80
                 },
-                "turnCount": {
+                "inputCount": {
                   "type": "integer",
                   "minimum": 0
                 },
                 "fork": {
                   "type": "object",
                   "required": [
-                    "fromSessionId",
-                    "fromTurnCount"
+                    "fromSessionId"
                   ],
                   "properties": {
                     "fromSessionId": {
                       "type": "string",
                       "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "fromInputCount": {
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "fromTurnCount": {
                       "type": "integer",
@@ -33260,7 +32924,7 @@
                       "here",
                       "createdAt",
                       "lastActiveAt",
-                      "turnCount"
+                      "inputCount"
                     ],
                     "properties": {
                       "sessionId": {
@@ -33288,20 +32952,23 @@
                         "type": "string",
                         "format": "date-time"
                       },
-                      "turnCount": {
+                      "inputCount": {
                         "type": "integer",
                         "minimum": 0
                       },
                       "fork": {
                         "type": "object",
                         "required": [
-                          "fromSessionId",
-                          "fromTurnCount"
+                          "fromSessionId"
                         ],
                         "properties": {
                           "fromSessionId": {
                             "type": "string",
                             "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "fromInputCount": {
+                            "type": "integer",
+                            "minimum": 0
                           },
                           "fromTurnCount": {
                             "type": "integer",
@@ -33601,7 +33268,7 @@
       "type": "object",
       "required": [
         "agentRun",
-        "turn",
+        "input",
         "run"
       ],
       "properties": {
@@ -33613,7 +33280,7 @@
           ],
           "$id": "kernel.unit.BudgetState.v1"
         },
-        "turn": {
+        "input": {
           "enum": [
             "NORMAL",
             "WRAP_UP",
@@ -33816,7 +33483,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -34281,7 +33948,7 @@
             "kind",
             "inputId",
             "contentRef",
-            "turnId",
+            "checkpointId",
             "origin"
           ],
           "properties": {
@@ -34327,10 +33994,6 @@
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
             },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
             "template": {
               "type": "object",
               "required": [
@@ -34369,7 +34032,7 @@
             "kind",
             "inputId",
             "contentRef",
-            "turnId",
+            "checkpointId",
             "origin",
             "humanRequestId"
           ],
@@ -34415,10 +34078,6 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
-            },
-            "turnId": {
-              "type": "string",
-              "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "template": {
               "type": "object",
@@ -34608,13 +34267,125 @@
           "enum": [
             "MEMORY_PRESSURE",
             "USER_ABORT",
-            "TURN_TIMEOUT",
+            "INPUT_TIMEOUT",
             "PAUSE_TIMEOUT"
           ]
         }
       },
       "additionalProperties": false,
       "$id": "kernel.unit.HumanCancelled.v1"
+    },
+    "kernel.unit.InputSettled.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "checkpointId",
+        "reason",
+        "usage"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "InputSettled"
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "reason": {
+          "enum": [
+            "COMPLETED",
+            "ABORTED",
+            "TIMEOUT",
+            "BUDGET",
+            "RUN_CLOSED"
+          ]
+        },
+        "usage": {
+          "type": "object",
+          "required": [
+            "inputTokens",
+            "outputTokens",
+            "unknownTokens",
+            "modelRequests",
+            "toolUnits"
+          ],
+          "properties": {
+            "inputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknownTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "modelRequests": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUnits": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "$id": "kernel.unit.InputUsage.v1"
+        },
+        "startSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "endSnapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "changedFileCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.InputSettled.v1"
+    },
+    "kernel.unit.InputUsage.v1": {
+      "type": "object",
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "unknownTokens",
+        "modelRequests",
+        "toolUnits"
+      ],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknownTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modelRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toolUnits": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.InputUsage.v1"
     },
     "kernel.unit.JobControlContent.v1": {
       "type": "object",
@@ -35372,10 +35143,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -35433,10 +35200,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -35556,10 +35319,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -35663,7 +35422,7 @@
                       "PIN_FAILED",
                       "WORKFLOW_INTERNAL",
                       "KERNEL_INTERNAL",
-                      "NO_OPEN_TURN",
+                      "NO_OPEN_INPUT",
                       "SESSION_COMMAND_UNKNOWN",
                       "SESSION_QUERY_UNKNOWN",
                       "PROJECT_FILE_FORBIDDEN",
@@ -35772,10 +35531,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -35835,10 +35590,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -35876,10 +35627,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -35949,10 +35696,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -36049,10 +35792,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -36172,10 +35911,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -36247,10 +35982,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -36320,10 +36051,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -36434,10 +36161,6 @@
                     "type": "integer",
                     "minimum": 1
                   },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
                   "category": {
                     "enum": [
                       "PINNED",
@@ -36496,10 +36219,6 @@
                   "seq": {
                     "type": "integer",
                     "minimum": 1
-                  },
-                  "turnId": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                   },
                   "category": {
                     "enum": [
@@ -36625,7 +36344,7 @@
               "required": [
                 "command",
                 "outcome",
-                "turnCount"
+                "inputCount"
               ],
               "properties": {
                 "command": {
@@ -36636,11 +36355,7 @@
                   "type": "string",
                   "const": "READY"
                 },
-                "lastTurnId": {
-                  "type": "string",
-                  "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                },
-                "turnCount": {
+                "inputCount": {
                   "type": "integer",
                   "minimum": 0
                 },
@@ -36701,7 +36416,7 @@
                 "command",
                 "outcome",
                 "inheritedArtifacts",
-                "fromTurnCount"
+                "fromInputCount"
               ],
               "properties": {
                 "command": {
@@ -36745,7 +36460,7 @@
                     "$id": "platform.common.ArtifactRef.v1"
                   }
                 },
-                "fromTurnCount": {
+                "fromInputCount": {
                   "type": "integer",
                   "minimum": 0
                 }
@@ -36849,7 +36564,7 @@
               "repositoryRoot",
               "createdAt",
               "lastActiveAt",
-              "turnCount",
+              "inputCount",
               "status"
             ],
             "properties": {
@@ -36870,7 +36585,7 @@
                 "type": "string",
                 "format": "date-time"
               },
-              "turnCount": {
+              "inputCount": {
                 "type": "integer",
                 "minimum": 0
               },
@@ -36907,13 +36622,16 @@
               "fork": {
                 "type": "object",
                 "required": [
-                  "fromSessionId",
-                  "fromTurnCount"
+                  "fromSessionId"
                 ],
                 "properties": {
                   "fromSessionId": {
                     "type": "string",
                     "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  },
+                  "fromInputCount": {
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "fromTurnCount": {
                     "type": "integer",
@@ -37772,7 +37490,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -38041,7 +37759,7 @@
                     "PIN_FAILED",
                     "WORKFLOW_INTERNAL",
                     "KERNEL_INTERNAL",
-                    "NO_OPEN_TURN",
+                    "NO_OPEN_INPUT",
                     "SESSION_COMMAND_UNKNOWN",
                     "SESSION_QUERY_UNKNOWN",
                     "PROJECT_FILE_FORBIDDEN",
@@ -38505,7 +38223,7 @@
           "enum": [
             "MEMORY_PRESSURE",
             "USER_ABORT",
-            "TURN_TIMEOUT",
+            "INPUT_TIMEOUT",
             "PAUSE_TIMEOUT"
           ]
         }
@@ -38936,10 +38654,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -38997,10 +38711,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -39120,10 +38830,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -39227,7 +38933,7 @@
                               "PIN_FAILED",
                               "WORKFLOW_INTERNAL",
                               "KERNEL_INTERNAL",
-                              "NO_OPEN_TURN",
+                              "NO_OPEN_INPUT",
                               "SESSION_COMMAND_UNKNOWN",
                               "SESSION_QUERY_UNKNOWN",
                               "PROJECT_FILE_FORBIDDEN",
@@ -39336,10 +39042,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -39399,10 +39101,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -39440,10 +39138,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -39513,10 +39207,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -39613,10 +39303,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -39736,10 +39422,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -39811,10 +39493,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -39884,10 +39562,6 @@
                           "seq": {
                             "type": "integer",
                             "minimum": 1
-                          },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                           },
                           "category": {
                             "enum": [
@@ -39998,10 +39672,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -40061,10 +39731,6 @@
                             "type": "integer",
                             "minimum": 1
                           },
-                          "turnId": {
-                            "type": "string",
-                            "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                          },
                           "category": {
                             "enum": [
                               "PINNED",
@@ -40108,7 +39774,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -40120,7 +39786,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -40867,118 +40533,6 @@
       "additionalProperties": false,
       "$id": "kernel.unit.ToolResultsPruned.v1"
     },
-    "kernel.unit.TurnClosed.v1": {
-      "type": "object",
-      "required": [
-        "type",
-        "turnId",
-        "reason",
-        "usage"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "TurnClosed"
-        },
-        "turnId": {
-          "type": "string",
-          "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-        },
-        "reason": {
-          "enum": [
-            "COMPLETED",
-            "ABORTED",
-            "TIMEOUT",
-            "BUDGET",
-            "RUN_CLOSED"
-          ]
-        },
-        "usage": {
-          "type": "object",
-          "required": [
-            "inputTokens",
-            "outputTokens",
-            "unknownTokens",
-            "modelRequests",
-            "toolUnits"
-          ],
-          "properties": {
-            "inputTokens": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "outputTokens": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "unknownTokens": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "modelRequests": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "toolUnits": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "additionalProperties": false,
-          "$id": "kernel.unit.TurnUsage.v1"
-        },
-        "startSnapshot": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "endSnapshot": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "changedFileCount": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.unit.TurnClosed.v1"
-    },
-    "kernel.unit.TurnUsage.v1": {
-      "type": "object",
-      "required": [
-        "inputTokens",
-        "outputTokens",
-        "unknownTokens",
-        "modelRequests",
-        "toolUnits"
-      ],
-      "properties": {
-        "inputTokens": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "outputTokens": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "unknownTokens": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "modelRequests": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "toolUnits": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.unit.TurnUsage.v1"
-    },
     "kernel.unit.UnitInput.v1": {
       "anyOf": [
         {
@@ -41133,10 +40687,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -41194,10 +40744,6 @@
                       "seq": {
                         "type": "integer",
                         "minimum": 1
-                      },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                       },
                       "category": {
                         "enum": [
@@ -41317,10 +40863,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -41424,7 +40966,7 @@
                           "PIN_FAILED",
                           "WORKFLOW_INTERNAL",
                           "KERNEL_INTERNAL",
-                          "NO_OPEN_TURN",
+                          "NO_OPEN_INPUT",
                           "SESSION_COMMAND_UNKNOWN",
                           "SESSION_QUERY_UNKNOWN",
                           "PROJECT_FILE_FORBIDDEN",
@@ -41533,10 +41075,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -41596,10 +41134,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -41637,10 +41171,6 @@
                       "seq": {
                         "type": "integer",
                         "minimum": 1
-                      },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                       },
                       "category": {
                         "enum": [
@@ -41710,10 +41240,6 @@
                       "seq": {
                         "type": "integer",
                         "minimum": 1
-                      },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                       },
                       "category": {
                         "enum": [
@@ -41810,10 +41336,6 @@
                       "seq": {
                         "type": "integer",
                         "minimum": 1
-                      },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                       },
                       "category": {
                         "enum": [
@@ -41933,10 +41455,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -42008,10 +41526,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -42081,10 +41595,6 @@
                       "seq": {
                         "type": "integer",
                         "minimum": 1
-                      },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                       },
                       "category": {
                         "enum": [
@@ -42195,10 +41705,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -42258,10 +41764,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "turnId": {
-                        "type": "string",
-                        "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      },
                       "category": {
                         "enum": [
                           "PINNED",
@@ -42305,7 +41807,7 @@
                   "type": "object",
                   "required": [
                     "agentRun",
-                    "turn",
+                    "input",
                     "run"
                   ],
                   "properties": {
@@ -42317,7 +41819,7 @@
                       ],
                       "$id": "kernel.unit.BudgetState.v1"
                     },
-                    "turn": {
+                    "input": {
                       "enum": [
                         "NORMAL",
                         "WRAP_UP",
@@ -43746,7 +43248,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -43758,7 +43260,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -44804,7 +44306,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -44816,7 +44318,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -44971,7 +44473,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -44983,7 +44485,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -45107,7 +44609,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -45119,7 +44621,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -45249,7 +44751,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -45261,7 +44763,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -45727,7 +45229,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -45739,7 +45241,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -46785,7 +46287,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -46797,7 +46299,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -46952,7 +46454,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -46964,7 +46466,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -47088,7 +46590,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -47100,7 +46602,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -47230,7 +46732,7 @@
                       "type": "object",
                       "required": [
                         "agentRun",
-                        "turn",
+                        "input",
                         "run"
                       ],
                       "properties": {
@@ -47242,7 +46744,7 @@
                           ],
                           "$id": "kernel.unit.BudgetState.v1"
                         },
-                        "turn": {
+                        "input": {
                           "enum": [
                             "NORMAL",
                             "WRAP_UP",
@@ -47291,7 +46793,7 @@
                     "kind",
                     "inputId",
                     "contentRef",
-                    "turnId",
+                    "checkpointId",
                     "origin"
                   ],
                   "properties": {
@@ -47337,10 +46839,6 @@
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "turnId": {
-                      "type": "string",
-                      "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                    },
                     "template": {
                       "type": "object",
                       "required": [
@@ -47379,7 +46877,7 @@
                     "kind",
                     "inputId",
                     "contentRef",
-                    "turnId",
+                    "checkpointId",
                     "origin",
                     "humanRequestId"
                   ],
@@ -47425,10 +46923,6 @@
                       },
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
-                    },
-                    "turnId": {
-                      "type": "string",
-                      "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
                     "template": {
                       "type": "object",
@@ -47597,18 +47091,18 @@
               "type": "object",
               "required": [
                 "type",
-                "turnId",
+                "checkpointId",
                 "reason",
                 "usage"
               ],
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "TurnClosed"
+                  "const": "InputSettled"
                 },
-                "turnId": {
+                "checkpointId": {
                   "type": "string",
-                  "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                 },
                 "reason": {
                   "enum": [
@@ -47651,7 +47145,7 @@
                     }
                   },
                   "additionalProperties": false,
-                  "$id": "kernel.unit.TurnUsage.v1"
+                  "$id": "kernel.unit.InputUsage.v1"
                 },
                 "startSnapshot": {
                   "type": "string",
@@ -47669,7 +47163,7 @@
                 }
               },
               "additionalProperties": false,
-              "$id": "kernel.unit.TurnClosed.v1"
+              "$id": "kernel.unit.InputSettled.v1"
             },
             {
               "anyOf": [
@@ -48182,7 +47676,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",
@@ -48451,7 +47945,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",
@@ -48904,47 +48398,6 @@
               "type": "object",
               "required": [
                 "type",
-                "revertedTurnIds",
-                "forced",
-                "externalFiles"
-              ],
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "WorkspaceReverted"
-                },
-                "revertedTurnIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "minItems": 1
-                },
-                "forced": {
-                  "type": "boolean"
-                },
-                "externalFiles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                  }
-                },
-                "backupSnapshot": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64
-                }
-              },
-              "additionalProperties": false,
-              "$id": "kernel.control.WorkspaceReverted.v1"
-            },
-            {
-              "type": "object",
-              "required": [
-                "type",
                 "checkpointId",
                 "label",
                 "files"
@@ -49033,7 +48486,7 @@
                   "enum": [
                     "MEMORY_PRESSURE",
                     "USER_ABORT",
-                    "TURN_TIMEOUT",
+                    "INPUT_TIMEOUT",
                     "PAUSE_TIMEOUT"
                   ]
                 }
@@ -49142,7 +48595,7 @@
                   "enum": [
                     "MEMORY_PRESSURE",
                     "USER_ABORT",
-                    "TURN_TIMEOUT",
+                    "INPUT_TIMEOUT",
                     "PAUSE_TIMEOUT"
                   ]
                 }
@@ -49960,7 +49413,7 @@
         "PIN_FAILED",
         "WORKFLOW_INTERNAL",
         "KERNEL_INTERNAL",
-        "NO_OPEN_TURN",
+        "NO_OPEN_INPUT",
         "SESSION_COMMAND_UNKNOWN",
         "SESSION_QUERY_UNKNOWN",
         "PROJECT_FILE_FORBIDDEN",
@@ -50041,7 +49494,7 @@
         "provider",
         "cancelGraceMs",
         "pauseDrainMs",
-        "turnTimeoutSeconds",
+        "inputTimeoutSeconds",
         "orchestrationTimeoutSeconds",
         "maxPauseSeconds",
         "convergenceMarginMs",
@@ -50082,7 +49535,7 @@
           "type": "integer",
           "minimum": 1
         },
-        "turnTimeoutSeconds": {
+        "inputTimeoutSeconds": {
           "type": "integer",
           "minimum": 1
         },
@@ -50418,7 +49871,7 @@
           "type": "object",
           "required": [
             "runTokenLimit",
-            "turnTokenLimit",
+            "inputTokenLimit",
             "orientBudget",
             "searchBudget"
           ],
@@ -50427,7 +49880,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnTokenLimit": {
+            "inputTokenLimit": {
               "type": "integer",
               "minimum": 1
             },
@@ -50927,7 +50380,7 @@
             "provider",
             "cancelGraceMs",
             "pauseDrainMs",
-            "turnTimeoutSeconds",
+            "inputTimeoutSeconds",
             "orchestrationTimeoutSeconds",
             "maxPauseSeconds",
             "convergenceMarginMs",
@@ -50968,7 +50421,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "turnTimeoutSeconds": {
+            "inputTimeoutSeconds": {
               "type": "integer",
               "minimum": 1
             },
@@ -51304,7 +50757,7 @@
               "type": "object",
               "required": [
                 "runTokenLimit",
-                "turnTokenLimit",
+                "inputTokenLimit",
                 "orientBudget",
                 "searchBudget"
               ],
@@ -51313,7 +50766,7 @@
                   "type": "integer",
                   "minimum": 1
                 },
-                "turnTokenLimit": {
+                "inputTokenLimit": {
                   "type": "integer",
                   "minimum": 1
                 },
@@ -52096,7 +51549,6 @@
         "repositoryRoot",
         "createdAt",
         "lastActiveAt",
-        "turnCount",
         "status"
       ],
       "properties": {
@@ -52116,6 +51568,10 @@
         "lastActiveAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "inputCount": {
+          "type": "integer",
+          "minimum": 0
         },
         "turnCount": {
           "type": "integer",
@@ -52154,13 +51610,16 @@
         "fork": {
           "type": "object",
           "required": [
-            "fromSessionId",
-            "fromTurnCount"
+            "fromSessionId"
           ],
           "properties": {
             "fromSessionId": {
               "type": "string",
               "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "fromInputCount": {
+              "type": "integer",
+              "minimum": 0
             },
             "fromTurnCount": {
               "type": "integer",
@@ -52551,7 +52010,89 @@
                 }
               },
               "additionalProperties": false,
-              "$id": "kernel.unit.TurnUsage.v1"
+              "$id": "kernel.unit.InputUsage.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
+            "checkpointId",
+            "reason"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "INPUT_SETTLED"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "reason": {
+              "enum": [
+                "COMPLETED",
+                "ABORTED",
+                "TIMEOUT",
+                "BUDGET",
+                "RUN_CLOSED",
+                "PROCESS_EXITED"
+              ]
+            },
+            "usage": {
+              "type": "object",
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "unknownTokens",
+                "modelRequests",
+                "toolUnits"
+              ],
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknownTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "modelRequests": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "toolUnits": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.InputUsage.v1"
+            },
+            "changedFileCount": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false
@@ -54862,7 +54403,7 @@
                 "PIN_FAILED",
                 "WORKFLOW_INTERNAL",
                 "KERNEL_INTERNAL",
-                "NO_OPEN_TURN",
+                "NO_OPEN_INPUT",
                 "SESSION_COMMAND_UNKNOWN",
                 "SESSION_QUERY_UNKNOWN",
                 "PROJECT_FILE_FORBIDDEN",
@@ -54976,7 +54517,7 @@
               "type": "object",
               "required": [
                 "agentRun",
-                "turn",
+                "input",
                 "run"
               ],
               "properties": {
@@ -54988,7 +54529,7 @@
                   ],
                   "$id": "kernel.unit.BudgetState.v1"
                 },
-                "turn": {
+                "input": {
                   "enum": [
                     "NORMAL",
                     "WRAP_UP",
@@ -55293,7 +54834,7 @@
                 "PIN_FAILED",
                 "WORKFLOW_INTERNAL",
                 "KERNEL_INTERNAL",
-                "NO_OPEN_TURN",
+                "NO_OPEN_INPUT",
                 "SESSION_COMMAND_UNKNOWN",
                 "SESSION_QUERY_UNKNOWN",
                 "PROJECT_FILE_FORBIDDEN",
@@ -55929,8 +55470,9 @@
               "enum": [
                 "MEMORY_PRESSURE",
                 "USER_ABORT",
-                "TURN_TIMEOUT",
-                "PAUSE_TIMEOUT"
+                "INPUT_TIMEOUT",
+                "PAUSE_TIMEOUT",
+                "TURN_TIMEOUT"
               ]
             }
           },
@@ -56533,8 +56075,10 @@
               "pattern": "^cmp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "reason": {
-              "type": "string",
-              "const": "TURN_REVERTED"
+              "enum": [
+                "ROLLED_BACK",
+                "TURN_REVERTED"
+              ]
             }
           },
           "additionalProperties": false
@@ -56727,7 +56271,6 @@
             "at",
             "type",
             "requestIds",
-            "turnIds",
             "workflowRunIds"
           ],
           "properties": {
@@ -57644,7 +57187,7 @@
                             "PIN_FAILED",
                             "WORKFLOW_INTERNAL",
                             "KERNEL_INTERNAL",
-                            "NO_OPEN_TURN",
+                            "NO_OPEN_INPUT",
                             "SESSION_COMMAND_UNKNOWN",
                             "SESSION_QUERY_UNKNOWN",
                             "PROJECT_FILE_FORBIDDEN",

@@ -45,7 +45,7 @@ describe('mas log', () => {
       '2',
       '--repo',
       '/work',
-      '--turn',
+      '--input',
       '3',
       '--full',
       '--json',
@@ -56,7 +56,7 @@ describe('mas log', () => {
         kind: 'LOG',
         repo: '/work',
         session: '2',
-        turn: 3,
+        input: 3,
         full: true,
         json: true,
         list: false,
@@ -74,9 +74,9 @@ describe('mas log', () => {
 
   it('refuses a Turn that is not a positive whole number', async () => {
     for (const turn of ['0', '-1', 'x', '1.5', '1000000']) {
-      const { result, written } = await parse('log', '--turn', turn);
+      const { result, written } = await parse('log', '--input', turn);
       expect(result, turn).toEqual({ ok: false, exitCode: EXIT_CODE_USAGE });
-      expect(written).toContain('--turn 要给一个正整数');
+      expect(written).toContain('--input 要给一个正整数');
     }
   });
 });

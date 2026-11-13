@@ -364,7 +364,7 @@ describe('abort', () => {
     expect(
       ofType(runner.records, 'NODE_ENDED').find((record) => record.status === 'INTERRUPTED'),
     ).toBeDefined();
-    expect(ofType(runner.records, 'TURN_ENDED')).toMatchObject([{ reason: 'ABORTED' }]);
+    expect(ofType(runner.records, 'INPUT_SETTLED')).toMatchObject([{ reason: 'ABORTED' }]);
     // The run stays open for the next message, which asks for open input again.
     expect(ofType(runner.records, 'WORKFLOW_RUN_ENDED')).toEqual([]);
     const next = ofType(runner.records, 'HUMAN_REQUESTED').at(-1);
@@ -379,7 +379,9 @@ describe('abort', () => {
       context,
     );
     await kernel.idle();
-    expect(ofType(runner.records, 'TURN_STARTED')).toHaveLength(2);
+    expect(
+      runner.records.filter((r) => r.type === 'HUMAN_ANSWERED' && r.kind === 'prompt'),
+    ).toHaveLength(2);
     expect(ofType(runner.records, 'AGENT_RUN_ENDED').at(-1)).toMatchObject({ outcome: 'CLOSED' });
   });
 });

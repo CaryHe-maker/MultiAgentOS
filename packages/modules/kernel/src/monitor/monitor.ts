@@ -54,7 +54,7 @@ export class Monitor implements MonitorDuties {
   #state: BudgetState = 'NORMAL';
   #finalized = false;
 
-  /** `allowShortLimit`: a Turn's share may be smaller than the reserves; it opens wrapped up. */
+  /** `allowShortLimit`: the share of an input's work may be smaller than the reserves; it opens wrapped up. */
   constructor(config: LedgerConfig, options: { readonly allowShortLimit?: boolean } = {}) {
     this.#config = config;
     this.#finalReserve = config.finalInputBudget + config.finalMaxOutputTokens;

@@ -85,7 +85,7 @@ export interface TaskSpec {
 export interface RunMetrics {
   /** From the first record of the log to the last. */
   readonly logWallMs: number;
-  readonly turns: number;
+  readonly inputs: number;
   readonly modelRequests: number;
   readonly failedModelRequests: number;
   readonly tokens: {

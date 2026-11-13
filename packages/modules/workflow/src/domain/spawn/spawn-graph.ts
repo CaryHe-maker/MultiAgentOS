@@ -12,7 +12,7 @@ import type { ProjectedGraph } from '../graph/session-graph.js';
 /**
  * What the tasks of a `run_subagents` call look like in the graph and in the log (M2Design 3.1,
  * 3.6): who dispatched a task, what a task is given, what the caller learns when it is woken, and
- * how much a Turn has dispatched. All of it a pure function of the log.
+ * how much the work of an input has dispatched. All of it a pure function of the log.
  */
 
 /** The `DELEGATE` edge that led to a task: its caller's node, and the delegation. */
@@ -203,14 +203,17 @@ export function spawnNodeOf(
   };
 }
 
-/** What a Turn has dispatched so far: the limits of `run_subagents` count it (M2Design 3.6). */
+/**
+ * What the work since the user's latest input has dispatched so far (from the record at
+ * `sinceSeq` on): the limits of `run_subagents` count it (M2Design 3.6).
+ */
 export function spawnedIn(
   records: readonly SessionLogRecord[],
-  turnId: string | undefined,
+  sinceSeq: number,
 ): { readonly tasks: number; readonly calls: number } {
   const spawns = records.filter(
     (record): record is RecordOf<'GRAPH_EXTENDED'> =>
-      record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN' && record.turnId === turnId,
+      record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN' && record.seq >= sinceSeq,
   );
   return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
 }

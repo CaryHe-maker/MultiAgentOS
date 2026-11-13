@@ -34,7 +34,7 @@ const entry = (sessionId: string): SessionListEntry => ({
   repositoryRoot: root,
   createdAt: '2026-10-31T00:00:00.000Z',
   lastActiveAt: '2026-10-31T00:00:00.000Z',
-  turnCount: 0,
+  inputCount: 0,
   status: 'ACTIVE',
 });
 

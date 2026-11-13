@@ -44,7 +44,6 @@ export interface AttemptSpec {
   readonly requestId: string;
   readonly agentRunId: string;
   readonly unitRunId: string;
-  readonly turnId: string;
   readonly unit: UnitDefinition;
   readonly input: UnitInput;
   readonly scope: ExecutionScope;
@@ -285,7 +284,7 @@ export class RunAttempts {
 
   /**
    * What the provider counted for this Agent's last request, next to the estimate of it. By Agent:
-   * main is a new AgentRun each Turn, with the same history. A SubAgent has a history of its own.
+   * main is a new AgentRun for each input, with the same history. A SubAgent has a history of its own.
    */
   calibrationOf(agentId: string): TokenCalibration | undefined {
     return this.#calibrations.get(agentId);

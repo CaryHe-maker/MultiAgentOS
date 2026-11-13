@@ -9,7 +9,7 @@ import {
 
 /**
  * A template the user keeps in the repository (`.multiagentos/workflows/<id>.yaml`, M2Design 3.8,
- * the strict mode of Phase2Plan 2): read, checked and turned into a definition the run compiles.
+ * the pre-orchestrated mode of Orchestration D29): read, checked and turned into a definition the run compiles.
  * The file is repository material: it names built-in Agents only and carries no permission; the
  * Kernel narrows whatever its steps ask. Every problem names its rule and, when it has one, its node.
  */

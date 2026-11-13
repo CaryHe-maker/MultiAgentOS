@@ -9,9 +9,14 @@ export const SESSION_FAILURE_CODES = [
   'SESSION_STORAGE_FAILED',
 ] as const;
 
+/**
+ * Where a fork came from, and how far that Session had got. Lines written before checkpoints
+ * replaced Turns say `fromTurnCount`.
+ */
 export const ForkOriginSchema = closed({
   fromSessionId: IdSchemas.sessionId,
-  fromTurnCount: count(),
+  fromInputCount: Type.Optional(count()),
+  fromTurnCount: Type.Optional(count()),
 });
 export type ForkOrigin = Static<typeof ForkOriginSchema>;
 
@@ -19,9 +24,9 @@ export const SessionOpenedSchema = closed({
   type: Type.Literal('SessionOpened'),
   repositoryRoot: text(4096),
   title: Type.Optional(text(80)),
-  turnCount: count(),
+  inputCount: count(),
   fork: Type.Optional(ForkOriginSchema),
-  /** What changed in the workspace since the Session's last Turn (M2Design 2.3). */
+  /** What changed in the workspace since the Session was last at rest (M2Design 2.3). */
   divergedFiles: Type.Optional(Type.Array(text(4096))),
 });
 export type SessionOpened = Static<typeof SessionOpenedSchema>;
@@ -63,7 +68,7 @@ export const SessionListSchema = closed({
       title: Type.Optional(text(80)),
       createdAt: TimestampSchema,
       lastActiveAt: TimestampSchema,
-      turnCount: count(),
+      inputCount: count(),
       fork: Type.Optional(ForkOriginSchema),
     }),
     { maxItems: 1000 },

@@ -334,7 +334,7 @@ describe('B2: more than the caller can lend', () => {
           ...config,
           kernel: {
             ...config.kernel,
-            budget: { ...config.kernel.budget, turnTokenLimit: 3_000_000 },
+            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000 },
           },
         }),
       });

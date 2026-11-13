@@ -89,23 +89,23 @@ const DEGRADED: Readonly<Record<string, string>> = {
   UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
   MEMORY_PRESSURE: '系统内存紧张，运行被中断，没能完成回复。',
   USER_ABORT: '已中止，没能完成回复。文件改动保留在工作区，需要撤销时用 /undo。',
-  TURN_TIMEOUT: '这一轮用时太长，被中断了，没能完成回复。文件改动保留在工作区。',
+  INPUT_TIMEOUT: '这次输入的工作用时太长，被中断了，没能完成回复。文件改动保留在工作区。',
   PAUSE_TIMEOUT: '暂停太久，运行被中断了，没能完成回复。文件改动保留在工作区。',
 };
 
-/** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
+/** The reply above is complete as far as it goes, but the work stopped before the task did. */
 const EARLY_END: Readonly<Record<string, string>> = {
-  BUDGET_WRAP_UP: '额度接近用完，这一轮提前结束了。',
-  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这一轮提前结束了。',
-  WALL_CLOCK_LIMIT: '运行时间到了上限，这一轮提前结束了。',
+  BUDGET_WRAP_UP: '额度接近用完，这次的工作提前结束了。',
+  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这次的工作提前结束了。',
+  WALL_CLOCK_LIMIT: '运行时间到了上限，这次的工作提前结束了。',
   ROUND_LIMIT:
-    '轮次到了上限，这一轮提前结束了；上面的回复写明了已完成与未完成的部分，可以据此决定下一条提示词。',
-  MEMORY_LIMIT: '系统内存紧张，这一轮提前结束了。',
-  NO_PROGRESS: '连续几轮没有进展，这一轮提前结束了。',
-  REPEATED_INTENT: '同一个调用重复太多次，这一轮提前结束了。',
-  CONSECUTIVE_ERRORS: '工具连续出错，这一轮提前结束了。',
-  CONTEXT_LIMIT: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
-  REGENERATION_LIMIT: '模型的回复连续不合要求，这一轮提前结束了。',
+    '轮次到了上限，这次的工作提前结束了；上面的回复写明了已完成与未完成的部分，可以据此决定下一条提示词。',
+  MEMORY_LIMIT: '系统内存紧张，这次的工作提前结束了。',
+  NO_PROGRESS: '连续几轮没有进展，这次的工作提前结束了。',
+  REPEATED_INTENT: '同一个调用重复太多次，这次的工作提前结束了。',
+  CONSECUTIVE_ERRORS: '工具连续出错，这次的工作提前结束了。',
+  CONTEXT_LIMIT: '上下文已满，这次的工作提前结束了；可以用 /new 开始新对话继续。',
+  REGENERATION_LIMIT: '模型的回复连续不合要求，这次的工作提前结束了。',
 };
 
 const RUN_STATE: Readonly<Record<string, string>> = {
@@ -125,14 +125,14 @@ export const ConsoleText = Object.freeze({
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
   noSessions: '还没有对话。',
   otherFolderSessions: '其他文件夹的对话（打开时会改在当前文件夹里继续，要先确认）：',
-  otherFolderSessionLine: (index: number, title: string, turns: number, folder: string) =>
-    `  ${String(index)}. ${title}（${String(turns)} 轮，原来在 ${folder}）`,
+  otherFolderSessionLine: (index: number, title: string, inputs: number, folder: string) =>
+    `  ${String(index)}. ${title}（${String(inputs)} 次输入，原来在 ${folder}）`,
   confirmOtherFolder: (folder: string, index: number) =>
     `这个对话原来在 ${folder}。在这里打开它：\n  · 原来文件夹的撤销记录和快照不再可用，从现在起重新建立；\n  · 它的项目指令（AGENTS.md）以这个文件夹的为准，会重新读取并重新问你是否信任；\n  · 模型会被告知文件夹换了，对话里以前提到的文件可能不存在或已不同。\n确认请再输入一次 /resume ${String(index)}。`,
-  sessionLine: (index: number, title: string, turns: number) =>
-    `  ${String(index)}. ${title}（${String(turns)} 轮）`,
+  sessionLine: (index: number, title: string, inputs: number) =>
+    `  ${String(index)}. ${title}（${String(inputs)} 次输入）`,
   untitled: '（无标题）',
-  sessionOpened: (title: string, turns: number) => `已打开：${title}（${String(turns)} 轮）`,
+  sessionOpened: (title: string, inputs: number) => `已打开：${title}（${String(inputs)} 次输入）`,
   sessionFailed: {
     SESSION_LOCKED: '这个对话正被另一个进程打开。',
     SESSION_LOG_CORRUPT: '这个对话的记录已损坏，无法打开。',
@@ -182,11 +182,11 @@ export const ConsoleText = Object.freeze({
     FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
   },
   /** One step line in the history, like a tool call: it happened here, and that is all it says. */
-  compacted: (turns: number, pruned: number, summarised: boolean) =>
+  compacted: (inputs: number, pruned: number, summarised: boolean) =>
     !summarised
       ? `✓ 已修剪 ${String(pruned)} 个较大的工具结果`
-      : turns > 0
-        ? `✓ 已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）`
+      : inputs > 0
+        ? `✓ 已压缩较早的对话（${String(inputs)} 次输入的内容，修剪 ${String(pruned)} 个工具结果）`
         : '✓ 已压缩较早的对话',
   compactionFailed: {
     NOTHING_TO_COMPACT: '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',

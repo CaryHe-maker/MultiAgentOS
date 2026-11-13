@@ -28,7 +28,8 @@ const summary = {
   startedAt: TimestampSchema,
   closedAt: TimestampSchema,
   durationMs: count(),
-  turns: count(),
+  /** Inputs of the user the run worked on. */
+  inputs: count(),
   agentRuns: Type.Array(
     closed({
       agentRunId: IdSchemas.agentRunId,
