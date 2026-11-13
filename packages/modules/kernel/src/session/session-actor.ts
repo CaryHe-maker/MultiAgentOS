@@ -16,7 +16,6 @@ import {
   type CheckpointList,
   type UndoCancelled,
   type UserInput,
-  type WorkspaceReverted,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
 import {
@@ -47,7 +46,7 @@ import type { AttemptFault } from './run-attempts.js';
 import { WallClocks } from './wall-clocks.js';
 import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
-import type { UndoPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
+import type { RollBackPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
 
 /**
  * One Session's Inbox and serial loop (Kernel/Interaction 5.2). The actor owns ordering, the
@@ -59,15 +58,15 @@ export interface SessionDuties {
   /** Absent when writes are off (`readonly`, or no git): nothing is captured or undone. */
   readonly snapshots?: Pick<
     WorkspaceSnapshots,
-    | 'turnStarted'
-    | 'turnEnded'
+    | 'checkpoint'
+    | 'settle'
     | 'planUndo'
-    | 'applyUndo'
-    | 'diffTurn'
+    | 'planRewind'
+    | 'applyRollBack'
+    | 'diffLatest'
     | 'divergedFiles'
     | 'listCheckpoints'
     | 'diffCheckpoint'
-    | 'rewindTo'
   >;
   /** The name of a Session, read from the artifact its list entry refers to. */
   titleOf?(ref: ArtifactRef): Promise<string | undefined>;
@@ -177,7 +176,7 @@ export class SessionActor {
   #run: Run | undefined;
   #closeAfterRun: 'SWITCHED' | 'SHUTDOWN' | undefined;
   /** An undo waiting for the user because of external changes; it has no timer (M2Design 4.6). */
-  #pendingUndo: { readonly undoId: string; readonly plan: UndoPlan } | undefined;
+  #pendingUndo: { readonly undoId: string; readonly plan: RollBackPlan } | undefined;
 
   public constructor(deps: SessionActorDeps) {
     this.#deps = deps;
@@ -734,8 +733,14 @@ export class SessionActor {
     template?: DefinitionRef,
   ): Promise<void> {
     const turnId = this.#deps.newTurnId?.() ?? newId('trn');
-    // The actor holds every message meanwhile, so no Unit runs before the start is captured.
-    await this.#deps.duties.snapshots?.turnStarted(turnId);
+    // Every input of the user is a checkpoint (Orchestration 7.2): an undo goes back to it. The
+    // actor holds every message meanwhile, so no Unit runs before it is captured.
+    const checkpointId = newId('ckp');
+    const captured = await this.#deps.duties.snapshots?.checkpoint(
+      checkpointId,
+      'INPUT',
+      'user input',
+    );
     const opened =
       origin.origin === 'initial'
         ? openInitialTurn(run.control, turnId)
@@ -758,13 +763,14 @@ export class SessionActor {
       contentRef,
       turnId,
       ...(template === undefined ? {} : { template }),
+      ...(captured === undefined ? {} : { checkpointId }),
       ...origin,
     });
   }
 
   async #closeTurn(run: Run, turnId: string, reason: TurnEnd | 'RUN_CLOSED'): Promise<void> {
     run.turnClock.end('turn');
-    const captured = await this.#deps.duties.snapshots?.turnEnded(turnId);
+    const captured = await this.#deps.duties.snapshots?.settle();
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'TurnClosed',
       turnId,
@@ -882,7 +888,7 @@ export class SessionActor {
     });
   }
 
-  #confirmUndoOf(run: Run, plan: UndoPlan): void {
+  #confirmUndoOf(run: Run, plan: RollBackPlan): void {
     const undoId = newId('und');
     this.#pendingUndo = { undoId, plan };
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
@@ -892,7 +898,10 @@ export class SessionActor {
     });
   }
 
-  /** Kernel/Core 5a.5. Only while the run waits for input: nothing else can be writing then. */
+  /**
+   * `/undo` (Kernel/Core 5a.5): back to the latest checkpoint, taking it back too (Orchestration
+   * 7.5). Only while the run waits for input: nothing else can be writing then.
+   */
   async undoTurns(run: Run, scope: 'LAST' | 'ALL'): Promise<UndoDecision> {
     const { snapshots } = this.#deps.duties;
     if (snapshots === undefined || run.control.phase !== 'AWAITING_INPUT')
@@ -905,7 +914,7 @@ export class SessionActor {
     if (planned.kind === 'NOT_UNDOABLE')
       return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
     if (planned.plan.external.length > 0) this.#confirmUndoOf(run, planned.plan);
-    else await this.#applyUndo(run, planned.plan, false, scope);
+    else await this.#rollBack(run, planned.plan, false, scope);
     return { accepted: true };
   }
 
@@ -919,32 +928,41 @@ export class SessionActor {
       return { accepted: true };
     }
     this.#pendingUndo = undefined;
-    await this.#applyUndo(run, pending.plan, true);
+    await this.#rollBack(run, pending.plan, true);
     return { accepted: true };
   }
 
-  async #applyUndo(
+  /** The one way back, for an undo and a rewind (Orchestration 7.5, D8). */
+  async #rollBack(
     run: Run,
-    plan: UndoPlan,
+    plan: RollBackPlan,
     forced: boolean,
-    scope: 'LAST' | 'ALL' = plan.turnIds.length > 1 ? 'ALL' : 'LAST',
-  ): Promise<void> {
+    scope: 'LAST' | 'ALL' = 'LAST',
+  ): Promise<boolean> {
     const { snapshots } = this.#deps.duties;
-    if (snapshots === undefined) return;
-    const applied = await snapshots.applyUndo(plan, forced).catch(() => ({ ok: false }) as const);
+    if (snapshots === undefined) return false;
+    const applied = await snapshots
+      .applyRollBack(plan, forced)
+      .catch(() => ({ ok: false }) as const);
     const { outbox } = this.#deps;
     if (applied.ok) {
-      const reverted: WorkspaceReverted = {
-        type: 'WorkspaceReverted',
-        revertedTurnIds: [...plan.turnIds],
-        forced,
-        externalFiles: plan.external.map((file) => file.path),
+      const event = {
+        type: 'CheckpointRolledBack' as const,
+        checkpointId: plan.checkpointId,
+        label: plan.label,
+        files: [...applied.files],
         ...(applied.backupSnapshot === undefined ? {} : { backupSnapshot: applied.backupSnapshot }),
+        ...(plan.inclusive ? { undo: true } : {}),
+        ...(forced ? { forced: true } : {}),
+        ...(plan.external.length === 0
+          ? {}
+          : { externalFiles: plan.external.map((file) => file.path) }),
       };
-      outbox.runToInteraction(this.#sessionId, run.workflowRunId, reverted);
-      outbox.runToWorkflow(this.#sessionId, run.workflowRunId, reverted);
-      return;
+      outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
+      outbox.runToWorkflow(this.#sessionId, run.workflowRunId, event);
+      return true;
     }
+    if (!plan.inclusive) return false;
     // Something outside this system changed a file after the plan: ask again what it found now.
     const again = await snapshots.planUndo(scope);
     if (again.kind === 'PLAN' && again.plan.external.length > 0)
@@ -955,29 +973,22 @@ export class SessionActor {
         undoId: newId('und'),
         reason: 'FILE_CHANGED',
       });
+    return false;
   }
 
   /**
-   * Goes back to a checkpoint of the run (Orchestration 7.5). Only while it is paused: nothing is
-   * executing then, so nothing writes while the files are put back. Workflow takes the work after
-   * the cut back; the run stays paused until the user continues.
+   * `/rewind #N` (Orchestration 7.5): back to a checkpoint, which stays. Only while the run is
+   * paused: nothing is executing then, so nothing writes while the files are put back. Workflow
+   * takes the work after the cut back; the run stays paused until the user continues.
    */
   async rewindCheckpoint(run: Run, seq: number): Promise<UndoDecision> {
     const { snapshots } = this.#deps.duties;
     if (snapshots === undefined || run.control.phase !== 'PAUSED')
       return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
-    const done = await snapshots.rewindTo(seq);
-    if (done === undefined) return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
-    const event = {
-      type: 'CheckpointRolledBack' as const,
-      checkpointId: done.checkpointId,
-      label: done.label,
-      files: [...done.files],
-      backupSnapshot: done.backupSnapshot,
-    };
-    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
-    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, event);
-    return { accepted: true };
+    const planned = await snapshots.planRewind(seq);
+    if (planned.kind !== 'PLAN') return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
+    const done = await this.#rollBack(run, planned.plan, false);
+    return done ? { accepted: true } : { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
   }
 
   /** The checkpoints of the Session (Orchestration 7.4); any time, looking changes nothing. */
@@ -995,7 +1006,6 @@ export class SessionActor {
     return {
       requestId,
       outcome: 'ACCEPTED',
-      turnId: found.turnId,
       files: found.files.map((file) => ({ ...file })),
       diffRef: await duties.storeDiff(found.diff),
     };
@@ -1004,13 +1014,12 @@ export class SessionActor {
   /** Any time: looking changes nothing (M2Design 4.6). */
   async diffTurn(requestId: string, n: number): Promise<TurnDiff | SyscallRejected> {
     const { duties } = this.#deps;
-    const found = await duties.snapshots?.diffTurn(n);
+    const found = await duties.snapshots?.diffLatest(n);
     if (found === undefined || duties.storeDiff === undefined)
       return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'NOTHING_TO_UNDO' };
     return {
       requestId,
       outcome: 'ACCEPTED',
-      turnId: found.turnId,
       files: found.files.map((file) => ({ ...file })),
       diffRef: await duties.storeDiff(found.diff),
     };

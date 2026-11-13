@@ -12,6 +12,7 @@ import {
   type SessionLogRecord,
   type UnitInput,
 } from '@multiagentos/contracts';
+import { isRolledBack, rolledBackRanges } from './rolled-back.js';
 import type { ToolInput } from '../agent/agent-cycle.js';
 import { parseReferenceName } from '@multiagentos/contracts';
 import { resolveReference } from '../handover/handover.js';
@@ -46,7 +47,11 @@ export function fileBaselines(records: readonly SessionLogRecord[]): Map<string,
       if (known !== undefined) baselines.set(known.path, { kind: 'SHA', sha256: known.sha256 });
       else if (record.reasonCode === 'NOT_FOUND' && path !== undefined)
         baselines.set(path, { kind: 'ABSENT' });
-    } else if (record.type === 'WORKSPACE_REVERTED' || record.type === 'WORKSPACE_BOUND')
+    } else if (
+      record.type === 'WORKSPACE_REVERTED' ||
+      record.type === 'ROLLED_BACK' ||
+      record.type === 'WORKSPACE_BOUND'
+    )
       baselines.clear();
     else if (record.type === 'WORKSPACE_DIVERGED')
       for (const file of record.files) baselines.delete(file);
@@ -67,6 +72,7 @@ function fullOutputOf(
     return ref === undefined ? undefined : { fullRef: ref };
   }
   const reverted = new Set<string>();
+  const rolledBack = rolledBackRanges(records);
   const callers = new Set<string>();
   const main = new Set<string>();
   for (const record of records) {
@@ -91,7 +97,8 @@ function fullOutputOf(
       record.inputSource.kind === 'TOOL_CALL' &&
       record.inputSource.toolCallId === toolCallId &&
       callers.has(record.agentRunId) &&
-      (record.turnId === undefined || !reverted.has(record.turnId))
+      (record.turnId === undefined || !reverted.has(record.turnId)) &&
+      !isRolledBack(record.seq, rolledBack)
     )
       ({ requestId } = record);
   if (requestId === undefined) return undefined;

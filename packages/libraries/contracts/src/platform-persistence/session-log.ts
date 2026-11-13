@@ -272,6 +272,8 @@ export const SessionLogRecordSchema = Type.Union(
       attachedAgentRunId: Type.Optional(IdSchemas.agentRunId),
       /** A steer whose target had ended went to its parent; this is the target it was meant for. */
       redirectedFrom: Type.Optional(IdSchemas.agentRunId),
+      /** The checkpoint taken just before this input (Orchestration 7.2): an undo goes back to it. */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
     }),
     record('AGENT_RUN_REGISTERED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
@@ -387,6 +389,11 @@ export const SessionLogRecordSchema = Type.Union(
       fromSeq: count(1),
       cancelledMissionIds: Type.Array(IdSchemas.missionScopeId),
       files: count(),
+      /** An undo: the input that opened the checkpoint is taken back with what followed it. */
+      undo: Type.Optional(Type.Boolean()),
+      forced: Type.Optional(Type.Boolean()),
+      externalFiles: Type.Optional(Type.Array(text(4096))),
+      backupSnapshot: Type.Optional(text(64)),
     }),
     record('CHECKPOINT_TAKEN', inTurn, {
       checkpointId: IdSchemas.checkpointId,

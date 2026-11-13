@@ -10035,8 +10035,6 @@
               "seq",
               "kind",
               "label",
-              "turnId",
-              "turnSeq",
               "at"
             ],
             "properties": {
@@ -10046,7 +10044,7 @@
               },
               "kind": {
                 "enum": [
-                  "TURN",
+                  "INPUT",
                   "ROOT_SPAWN",
                   "HUMAN_ANSWER",
                   "TEMPLATE"
@@ -10056,14 +10054,6 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
-              },
-              "turnId": {
-                "type": "string",
-                "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-              },
-              "turnSeq": {
-                "type": "integer",
-                "minimum": 1
               },
               "at": {
                 "type": "string",
@@ -10115,6 +10105,20 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "undo": {
+          "type": "boolean"
+        },
+        "forced": {
+          "type": "boolean"
+        },
+        "externalFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
         }
       },
       "additionalProperties": false,
@@ -18972,6 +18976,20 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 64
+                },
+                "undo": {
+                  "type": "boolean"
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "externalFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
                 }
               },
               "additionalProperties": false,
@@ -22636,7 +22654,6 @@
       "required": [
         "requestId",
         "outcome",
-        "turnId",
         "files",
         "diffRef"
       ],
@@ -22648,10 +22665,6 @@
         "outcome": {
           "type": "string",
           "const": "ACCEPTED"
-        },
-        "turnId": {
-          "type": "string",
-          "pattern": "^trn_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
         },
         "files": {
           "type": "array",
@@ -34338,6 +34351,10 @@
               "additionalProperties": false,
               "$id": "catalog.DefinitionRef.v1"
             },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
             "origin": {
               "type": "string",
               "const": "initial"
@@ -34422,6 +34439,10 @@
               },
               "additionalProperties": false,
               "$id": "catalog.DefinitionRef.v1"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             },
             "origin": {
               "type": "string",
@@ -47340,6 +47361,10 @@
                       "additionalProperties": false,
                       "$id": "catalog.DefinitionRef.v1"
                     },
+                    "checkpointId": {
+                      "type": "string",
+                      "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
                     "origin": {
                       "type": "string",
                       "const": "initial"
@@ -47424,6 +47449,10 @@
                       },
                       "additionalProperties": false,
                       "$id": "catalog.DefinitionRef.v1"
+                    },
+                    "checkpointId": {
+                      "type": "string",
+                      "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
                     },
                     "origin": {
                       "type": "string",
@@ -48946,6 +48975,20 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 64
+                },
+                "undo": {
+                  "type": "boolean"
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "externalFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
                 }
               },
               "additionalProperties": false,
@@ -53364,6 +53407,10 @@
             "redirectedFrom": {
               "type": "string",
               "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
             }
           },
           "additionalProperties": false
@@ -54149,6 +54196,25 @@
             "files": {
               "type": "integer",
               "minimum": 0
+            },
+            "undo": {
+              "type": "boolean"
+            },
+            "forced": {
+              "type": "boolean"
+            },
+            "externalFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "backupSnapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
             }
           },
           "additionalProperties": false
@@ -56859,7 +56925,6 @@
           "required": [
             "kind",
             "checkpointId",
-            "turnId",
             "ckpKind",
             "label",
             "at"
@@ -56879,6 +56944,7 @@
             },
             "ckpKind": {
               "enum": [
+                "INPUT",
                 "ROOT_SPAWN",
                 "HUMAN_ANSWER",
                 "TEMPLATE"
@@ -56888,6 +56954,29 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            },
+            "snapshot": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "at"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "SETTLED"
             },
             "snapshot": {
               "type": "string",
@@ -56916,6 +57005,12 @@
             "checkpointId": {
               "type": "string",
               "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "inclusive": {
+              "type": "boolean"
+            },
+            "forced": {
+              "type": "boolean"
             },
             "backupSnapshot": {
               "type": "string",

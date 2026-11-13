@@ -341,12 +341,12 @@ describe('checkpoints (Orchestration 7.4, 7.5)', () => {
       await turnEnded(chat);
       await chat.console.submit('/checkpoints');
       await until(
-        () => chat.printed('NOTICE').some((n) => n.includes('#2  第 2 轮开始')),
+        () => chat.printed('NOTICE').some((n) => n.includes('#2  第 2 次输入')),
         'the list of checkpoints',
       );
-      const list = chat.printed('NOTICE').find((n) => n.includes('#1  第 1 轮开始')) ?? '';
-      expect(list).toContain('#1  第 1 轮开始（之后改动 1 个文件）');
-      expect(list).toContain('#2  第 2 轮开始（之后改动 1 个文件）');
+      const list = chat.printed('NOTICE').find((n) => n.includes('#1  第 1 次输入')) ?? '';
+      expect(list).toContain('#1  第 1 次输入（之后改动 1 个文件）');
+      expect(list).toContain('#2  第 2 次输入（之后改动 1 个文件）');
       await chat.console.submit('/diff #2');
       await until(() => chat.printed('NOTICE').some((n) => n.includes('+bee')), 'the diff of #2');
       expect(chat.printed('NOTICE').some((n) => n.includes('+bee') && n.includes('a.txt'))).toBe(
@@ -379,7 +379,7 @@ describe('H5: undo and diff', () => {
       await turnEnded(chat);
 
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('two\n');
       expect(pendingUndo(chat)).toBe(false);
 
@@ -387,7 +387,7 @@ describe('H5: undo and diff', () => {
 
       await chat.console.submit('/undo');
       await until(
-        () => chat.printed('NOTICE').filter((n) => n.includes('已回退 1')).length === 2,
+        () => chat.printed('NOTICE').filter((n) => n.includes('已撤销')).length === 2,
         'the second undo',
       );
       expect(await readFile(file, 'utf8')).toBe('one\n');
@@ -403,9 +403,7 @@ describe('H5: undo and diff', () => {
       expect(seen).toContain('The user undid');
       expect(seen).not.toContain('first request zebra');
       const [sessionId = ''] = await sessionsIn(place.dataDir);
-      expect(await logOf(place.dataDir, sessionId)).toContain(
-        'first request zebra'.length > 0 ? 'WORKSPACE_REVERTED' : '',
-      );
+      expect(await logOf(place.dataDir, sessionId)).toContain('"undo":true');
     },
     TIMEOUT,
   );
@@ -423,7 +421,7 @@ describe('H5: undo and diff', () => {
       await chat.say('again');
       await turnEnded(chat);
       await chat.console.submit('/undo all');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 2')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
     },
     TIMEOUT,
@@ -452,7 +450,7 @@ describe('H8 and H10: changes from outside', () => {
       await chat.console.submit('/undo');
       await until(() => pendingUndo(chat), 'the second confirmation');
       await chat.console.submit('y');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
       // H10: not in the range of the undo, so it stays.
       expect(await readFile(join(place.repository, 'other.txt'), 'utf8')).toBe('other by hand\n');
@@ -512,7 +510,7 @@ describe('S4: forks', () => {
       // The fork's undo covers its own Turns only.
       await turnEnded(chat);
       await chat.console.submit('/undo all');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('two\n');
       await writeFile(file, 'fork again\n');
 
@@ -604,7 +602,7 @@ describe('L8: read_output', () => {
       await turnEnded(chat);
 
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       provider.add(tool('read_output', { toolCallId: listId }), reply('gone'));
       await chat.say('read it again');
       expect(contents(lastRequest(provider)).join('\n')).toContain('no tool call with this id');
@@ -744,7 +742,7 @@ describe('H5: an Orchestration run that has ended', () => {
       await until(() => chat.console.sessionId === sessionId, 'the Session');
       await turnEnded(chat);
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
     },
     TIMEOUT,

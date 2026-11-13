@@ -345,7 +345,7 @@ describe('L7: undoing a Turn that a summary covers', () => {
 
       await awaitingInput(chat);
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       await waitFor(async () =>
         (await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTION_REVOKED'),
       );

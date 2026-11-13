@@ -190,10 +190,9 @@ export interface RunWorkDeps {
   readonly resumeExecutions: () => Promise<void>;
   /** An interrupt cancels everything that exists now; each attempt answers INTERRUPTED(ABORTED). */
   readonly abortExecutions: () => void;
-  /** A checkpoint's snapshot, in the open Turn (Orchestration 7.1); absent: none can be taken. */
+  /** A checkpoint's snapshot (Orchestration 7.1); absent: none can be taken. */
   readonly checkpoint?: (
     checkpointId: string,
-    turnId: string,
     kind: TakeCheckpointRequest['kind'],
     label: string,
   ) => Promise<string | undefined>;
@@ -988,7 +987,7 @@ export class RunWork {
             return;
           }
           const held = heldMutating();
-          const snapshot = await checkpoint(checkpointId, turnId, kind, label);
+          const snapshot = await checkpoint(checkpointId, kind, label);
           this.#host.toWorkflowEvent({
             type: 'CheckpointTaken',
             checkpointId,

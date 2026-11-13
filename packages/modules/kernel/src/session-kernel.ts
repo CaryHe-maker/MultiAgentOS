@@ -481,8 +481,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       ...(snapshots === undefined
         ? {}
         : {
-            checkpoint: (checkpointId, turnId, kind, label) =>
-              snapshots.checkpoint(checkpointId, turnId, kind, label),
+            checkpoint: (checkpointId, kind, label) =>
+              snapshots.checkpoint(checkpointId, kind, label),
             holdMutating: (clear) => {
               execution.holdMutating(clear);
             },

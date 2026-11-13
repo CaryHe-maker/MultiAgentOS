@@ -33,6 +33,7 @@ export function instructionsToLoad(
   const skipped = new Set<string>();
   const wanted = new Set<string>();
   let turnId: string | undefined;
+  const loadedAt = new Map<string, number>();
 
   for (const record of records)
     switch (record.type) {
@@ -61,6 +62,7 @@ export function instructionsToLoad(
         }
         loadedEver.set(record.path, turnId);
         if (record.workflowRunId === workflowRunId) loadedThisRun.set(record.path, turnId);
+        loadedAt.set(record.path, record.seq);
         wanted.delete(record.path);
         break;
       }
@@ -70,6 +72,14 @@ export function instructionsToLoad(
         loadedEver.clear();
         skipped.clear();
         wanted.clear();
+        break;
+      case 'ROLLED_BACK':
+        // Loaded in what was taken back: it is loaded again when wanted (Orchestration 7.5).
+        for (const loaded of [loadedThisRun, loadedEver])
+          for (const path of [...loaded.keys()]) {
+            const at = loadedAt.get(path);
+            if (at !== undefined && at >= record.fromSeq && at < record.seq) loaded.delete(path);
+          }
         break;
       case 'WORKSPACE_REVERTED':
         for (const loaded of [loadedThisRun, loadedEver])

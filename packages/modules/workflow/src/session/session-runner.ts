@@ -560,7 +560,18 @@ export class SessionRunner {
           },
         ]);
         // A summary of work that was undone stands for nothing any more (Module/Workflow 8.4).
-        await this.#append(revokedCompactions(this.#records, workflowRunId, event.revertedTurnIds));
+        {
+          const reverted = new Set<string>(event.revertedTurnIds);
+          const first = this.#records.find(
+            (record) =>
+              'turnId' in record && record.turnId !== undefined && reverted.has(record.turnId),
+          );
+          const last = this.#records.at(-1);
+          if (first !== undefined && last !== undefined)
+            await this.#append(
+              revokedCompactions(this.#records, workflowRunId, { from: first.seq, to: last.seq }),
+            );
+        }
         break;
       case 'WorkspaceDiverged': {
         // Measured against the last Turn, so reopening without one finds the same files again.
@@ -785,6 +796,48 @@ export class SessionRunner {
   }
 
   /**
+   * `/undo` (Orchestration 7.5, D8): the workspace went back to the checkpoint of an input, which is
+   * taken back with everything after it. The run waits for input, so nothing is at work: the record
+   * of the way back is all there is to write. A Session written before input checkpoints existed
+   * names the input by its Turn.
+   */
+  async #onUndone(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
+  ): Promise<void> {
+    const suffix = event.checkpointId.slice(event.checkpointId.indexOf('_') + 1);
+    const input = this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
+        record.type === 'HUMAN_ANSWERED' &&
+        record.kind === 'prompt' &&
+        (record.checkpointId === event.checkpointId ||
+          (record.checkpointId === undefined && record.turnId === `trn_${suffix}`)),
+    );
+    if (input === undefined) return;
+    await this.#append([
+      {
+        type: 'ROLLED_BACK',
+        workflowRunId,
+        checkpointId: event.checkpointId,
+        label: event.label,
+        cutSeq: input.seq,
+        fromSeq: input.seq,
+        cancelledMissionIds: [],
+        files: event.files.length,
+        undo: true,
+        ...(event.forced === true ? { forced: true } : {}),
+        ...(event.externalFiles === undefined ? {} : { externalFiles: event.externalFiles }),
+        ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+      },
+    ]);
+    const rolled = this.#records.at(-1);
+    if (rolled !== undefined)
+      await this.#append(
+        revokedCompactions(this.#records, workflowRunId, { from: input.seq, to: rolled.seq }),
+      );
+  }
+
+  /**
    * The workspace went back to a checkpoint (Orchestration 7.5). The work after its cut is taken
    * back: every task below the root that is still open ends as taken back, and the root starts a
    * new segment that reads, in place of what came after, that it is back before its split. The
@@ -795,6 +848,7 @@ export class SessionRunner {
     workflowRunId: string,
     event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
   ): Promise<void> {
+    if (event.undo === true) return this.#onUndone(workflowRunId, event);
     const requested = this.#records.find(
       (record): record is Extract<SessionLogRecord, { type: 'CHECKPOINT_REQUESTED' }> =>
         record.type === 'CHECKPOINT_REQUESTED' && record.checkpointId === event.checkpointId,
@@ -829,8 +883,15 @@ export class SessionRunner {
         fromSeq,
         cancelledMissionIds: cancelled.map((mission) => mission.missionId),
         files: event.files.length,
+        ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
       },
     ]);
+    const rolled = this.#records.at(-1);
+    // A summary of work that was taken back stands for nothing any more (Module/Workflow 8.4).
+    if (rolled !== undefined)
+      await this.#append(
+        revokedCompactions(this.#records, workflowRunId, { from: fromSeq, to: rolled.seq }),
+      );
     const note = `taken back: the run went back to the checkpoint "${event.label}"`;
     // Every segment at work ends; the root's continues below, the others end with their task.
     for (const active of [...this.#agents.values()]) {
@@ -1146,6 +1207,7 @@ export class SessionRunner {
         inputId: event.inputId,
         contentRef: event.contentRef,
         ...(event.origin === 'requested' ? { humanRequestId: event.humanRequestId } : {}),
+        ...(event.checkpointId === undefined ? {} : { checkpointId: event.checkpointId }),
       },
       { type: 'TURN_STARTED', workflowRunId, turnId: event.turnId, promptNodeId: node.nodeId },
       {

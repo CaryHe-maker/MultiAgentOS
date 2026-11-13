@@ -270,7 +270,7 @@ describe('undoing across a change of folder', () => {
       expect(await exists(join(place.b, 'new-in-b.txt'))).toBe(true);
       await chatB.console.submit('/undo all');
       await until(
-        () => chatB.printed('NOTICE').some((notice) => notice.includes('已回退 1')),
+        () => chatB.printed('NOTICE').some((notice) => notice.includes('已撤销')),
         'the undo',
       );
       expect(await exists(join(place.b, 'new-in-b.txt'))).toBe(false);
@@ -322,7 +322,7 @@ describe('undoing across a change of folder', () => {
       await turnEnded(chatA);
       await chatA.console.submit('/undo');
       await until(
-        () => chatA.printed('NOTICE').some((notice) => notice.includes('已回退 1')),
+        () => chatA.printed('NOTICE').some((notice) => notice.includes('已撤销')),
         'the undo',
       );
       await chatA.close();

@@ -194,14 +194,14 @@ export const ConsoleText = Object.freeze({
     SUMMARY_FAILED: '摘要没有生成，没有压缩。',
     NOT_RECORDED: '压缩没能记录，没有压缩。',
   } as const,
-  undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
+  undone: (files: number) => `已撤销上一次输入以来的工作，还原了 ${String(files)} 个文件。`,
   noDiff: '没有可以显示的改动。',
   noCheckpoints: '还没有 checkpoint。',
   rewindNeedsPause: '回到 checkpoint 只能在运行暂停时进行：先按 Ctrl+C 暂停。',
   noRewind: '没有这个可以回到的 checkpoint（只能回到本次运行中途的切面，用 /checkpoints 查看）。',
   rewound: (label: string, files: number): string =>
     `已回到 checkpoint「${label}」：还原了 ${String(files)} 个文件，之后的工作已撤回，被覆盖的内容存在兜底快照里。用 /continue 继续。`,
-  turnCheckpoint: (turnSeq: number): string => `第 ${String(turnSeq)} 轮开始`,
+  inputCheckpoint: (n: number): string => `第 ${String(n)} 次输入`,
   checkpointLine: (seq: number, label: string, changedFiles: number | undefined): string =>
     `#${String(seq)}  ${label}${changedFiles === undefined ? '' : `（之后改动 ${String(changedFiles)} 个文件）`}`,
   diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,

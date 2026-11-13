@@ -108,6 +108,8 @@ const humanAnswered = {
   contentRef: ArtifactRefSchema,
   turnId: IdSchemas.turnId,
   template: Type.Optional(DefinitionRefSchema),
+  /** The checkpoint taken just before this input (Orchestration 7.2); absent when none was. */
+  checkpointId: Type.Optional(IdSchemas.checkpointId),
 };
 const answeredContent = {
   type: Type.Literal('HumanAnswered'),

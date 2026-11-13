@@ -207,6 +207,14 @@ export const CheckpointRolledBackSchema = closed(
     label: text(200),
     files: Type.Array(text(4096)),
     backupSnapshot: Type.Optional(text(64)),
+    /**
+     * An undo (`/undo`): the checkpoint itself is taken back too, so the work from it on, the input
+     * that opened it included, is undone. Absent, a rewind: the work goes on from the checkpoint.
+     */
+    undo: Type.Optional(Type.Boolean()),
+    /** Files changed outside the system that the user chose to overwrite. */
+    forced: Type.Optional(Type.Boolean()),
+    externalFiles: Type.Optional(Type.Array(text(4096))),
   },
   'kernel.control.CheckpointRolledBack.v1',
 );

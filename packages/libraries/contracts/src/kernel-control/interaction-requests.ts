@@ -157,10 +157,8 @@ export const CheckpointListSchema = closed(
     items: Type.Array(
       closed({
         seq: count(1),
-        kind: Type.Enum(['TURN', 'ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+        kind: Type.Enum(['INPUT', 'ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
         label: text(200),
-        turnId: IdSchemas.turnId,
-        turnSeq: count(1),
         at: TimestampSchema,
         changedFiles: Type.Optional(count()),
       }),
@@ -175,7 +173,6 @@ export const TurnDiffSchema = closed(
   {
     requestId: IdSchemas.requestId,
     outcome: Type.Literal('ACCEPTED'),
-    turnId: IdSchemas.turnId,
     files: Type.Array(closed({ path: text(4096), change: Type.Enum(FILE_CHANGES) })),
     diffRef: ArtifactRefSchema,
   },

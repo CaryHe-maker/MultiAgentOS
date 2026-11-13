@@ -117,22 +117,38 @@ export const SnapshotIndexLineSchema = Type.Union(
       at: TimestampSchema,
     }),
     /**
-     * A checkpoint inside a Turn (Orchestration 7.1): a snapshot taken while mutating work was
-     * held, at a point of the run that is worth coming back to. A Turn's own start is one as well.
+     * A checkpoint (Orchestration 7.1): a snapshot taken at a still point worth coming back to:
+     * each input of the user (`INPUT`, what a Turn's start was), or a cut inside a run, taken while
+     * its mutating work was held. Older lines name the Turn they were taken in.
      */
     closed({
       kind: Type.Literal('CHECKPOINT'),
       checkpointId: IdSchemas.checkpointId,
-      turnId: IdSchemas.turnId,
-      ckpKind: Type.Enum(['ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+      turnId: Type.Optional(IdSchemas.turnId),
+      ckpKind: Type.Enum(['INPUT', 'ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
       label: text(200),
       snapshot: Type.Optional(text(64)),
       at: TimestampSchema,
     }),
-    /** The workspace went back to a checkpoint of the open Turn; later checkpoints are gone. */
+    /**
+     * The workspace when the run went still (waiting for the user, or ended): where the stretch of
+     * the latest checkpoint ends, and what an undo compares the files with.
+     */
+    closed({
+      kind: Type.Literal('SETTLED'),
+      snapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
+    /**
+     * The workspace went back to a checkpoint; later checkpoints are gone. `inclusive` (an undo)
+     * takes the checkpoint itself back too: the files are as they were when it was taken, and the
+     * work from it on is undone. `forced` overwrote files changed outside the system.
+     */
     closed({
       kind: Type.Literal('ROLLED_BACK_TO'),
       checkpointId: IdSchemas.checkpointId,
+      inclusive: Type.Optional(Type.Boolean()),
+      forced: Type.Optional(Type.Boolean()),
       backupSnapshot: Type.Optional(text(64)),
       at: TimestampSchema,
     }),

@@ -71,6 +71,23 @@ describe('fileBaselines', () => {
         line({ type: 'WORKSPACE_REVERTED', revertedTurnIds: [base.turnId] }),
       ]).size,
     ).toBe(0);
+    // An undo or a rewind is a rollback now (Orchestration 7.5, D8): the same.
+    const first = read('a.ts');
+    expect(
+      fileBaselines([
+        first,
+        line({
+          type: 'ROLLED_BACK',
+          checkpointId: 'ckp_01ABCDEFGHJKMNPQRSTVWXYZ00',
+          label: 'user input',
+          cutSeq: first.seq,
+          fromSeq: first.seq,
+          cancelledMissionIds: [],
+          files: 1,
+          undo: true,
+        }),
+      ]).size,
+    ).toBe(0);
     const diverged = fileBaselines([
       read('a.ts'),
       read('b.ts'),

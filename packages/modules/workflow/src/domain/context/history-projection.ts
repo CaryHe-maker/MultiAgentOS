@@ -10,6 +10,7 @@ import { registeredOf } from '../handover/handover.js';
 import { outcomeOf } from '../spawn/task-results.js';
 import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
 import { jobEndedNotice, jobOfRequest } from '../graph/mission-jobs.js';
+import { rolledBackRanges } from './rolled-back.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
 /**
@@ -189,11 +190,10 @@ export function projectHistory(
 
   const turnOf = (turnId: string | undefined) => (turnId === undefined ? {} : { turnId });
 
-  // What a rewind took back (Orchestration 7.5): from the call that made the checkpoint up to the
-  // rewind, nothing is shown; the tasks it cancelled hand nothing over afterwards.
-  const rewinds = records.flatMap((record) =>
-    record.type === 'ROLLED_BACK' ? [{ from: record.fromSeq, to: record.seq }] : [],
-  );
+  // What a way back took back (Orchestration 7.5): an undo from the input it undid, a rewind from
+  // the call that made the checkpoint, up to the rollback, nothing is shown; the tasks it
+  // cancelled hand nothing over afterwards.
+  const rewinds = rolledBackRanges(records);
   const takenBack = new Set(
     records.flatMap((record) => (record.type === 'ROLLED_BACK' ? record.cancelledMissionIds : [])),
   );
@@ -206,6 +206,18 @@ export function projectHistory(
       continue;
     switch (record.type) {
       case 'ROLLED_BACK':
+        if (record.undo === true) {
+          // An undo is the user's, in a chat: main is told what it no longer sees.
+          if (ownMission !== undefined && missionInfo.get(ownMission)?.parentId !== undefined)
+            break;
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: 'The user undid the last exchange: its messages and steps are gone from this history, and the files it changed are back as they were.',
+          });
+          break;
+        }
         if (ownMission === undefined || missionInfo.get(ownMission)?.parentId !== undefined) break;
         entries.push({
           seq: record.seq,

@@ -1141,12 +1141,13 @@ export class Console {
       this.#notice(text.noCheckpoints);
       return;
     }
+    let inputs = 0;
     this.#notice(
       listed.items
         .map((item) =>
           text.checkpointLine(
             item.seq,
-            item.kind === 'TURN' ? text.turnCheckpoint(item.turnSeq) : terminalText(item.label),
+            item.kind === 'INPUT' ? text.inputCheckpoint((inputs += 1)) : terminalText(item.label),
             item.changedFiles,
           ),
         )
@@ -1386,7 +1387,11 @@ export class Console {
         this.#notice(text.undone(event.revertedTurnIds.length));
         break;
       case 'CheckpointRolledBack':
-        this.#notice(text.rewound(terminalText(event.label), event.files.length));
+        this.#notice(
+          event.undo === true
+            ? text.undone(event.files.length)
+            : text.rewound(terminalText(event.label), event.files.length),
+        );
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(
