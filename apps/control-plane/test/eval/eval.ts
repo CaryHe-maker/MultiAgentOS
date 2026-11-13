@@ -2,13 +2,16 @@
  * The command line of the evaluation system (docs/M2/Evaluation.md 8):
  *
  *   tsx apps/control-plane/test/eval/eval.ts run [--tasks id|tag:x|all ...] [--runs N] --out <file>
- *       [--yes --budget N] [--model deepseek-flash]
+ *       [--yes --budget N [--per-run N]] [--model deepseek-flash]
  *   tsx apps/control-plane/test/eval/eval.ts report <file>
  *   tsx apps/control-plane/test/eval/eval.ts compare <base> <candidate> [--fail-on-regression]
  *
  * Scripted tasks run offline. A task without a scripted provider runs on the real model: it
  * needs `--yes` and `--budget` (the most requests the whole invocation may send) and a key in
  * `DEEPSEEK_API_KEY` or in the file named by `MAO_ENV_FILE`, which is never written down.
+ * `--per-run N` starts a run only while N requests are left, so no run is cut short by the
+ * budget and spent for nothing; the runs not started are named, and a later invocation with the
+ * same records file starts them (runs already recorded are skipped).
  */
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -25,7 +28,7 @@ import { ALL_TASKS, select } from './tasks/index.js';
 
 const argv = process.argv.slice(2);
 const command = argv[0];
-const flagsWithValue = new Set(['--tasks', '--runs', '--out', '--budget', '--model']);
+const flagsWithValue = new Set(['--tasks', '--runs', '--out', '--budget', '--per-run', '--model']);
 const values = (name: string): string[] => {
   const found: string[] = [];
   argv.forEach((arg, index) => {
@@ -90,11 +93,24 @@ async function run(): Promise<number> {
         return `${record.taskId}|${String(record.run)}|${record.version.commit}|${record.version.definitions}`;
       }),
   );
+  const reserve = Number(values('--per-run')[0] ?? '0');
   let failed = 0;
-  for (const task of tasks)
-    for (let number = 1; number <= runs; number += 1) {
+  const notStarted: string[] = [];
+  // Round by round: the first run of every task before the second of any, so a budget that ends
+  // early leaves every task with runs rather than some tasks with none.
+  for (let number = 1; number <= runs; number += 1)
+    for (const task of tasks) {
       if (done.has(`${task.id}|${String(number)}|${version.commit}|${version.definitions}`))
         continue;
+      if (
+        task.scripted === undefined &&
+        budget !== undefined &&
+        reserve > 0 &&
+        budget.remaining < reserve
+      ) {
+        notStarted.push(`${task.id} #${String(number)}`);
+        continue;
+      }
       const record = await runTask(task, number, {
         version,
         model,
@@ -139,6 +155,10 @@ async function run(): Promise<number> {
       if (!record.ok) failed += 1;
       process.stdout.write(`${task.id} #${String(number)} ${record.ok ? 'ok' : 'FAILED'}\n`);
     }
+  if (notStarted.length > 0)
+    process.stdout.write(
+      `not started, fewer than ${String(reserve)} requests left: ${notStarted.join(', ')}\n`,
+    );
   return failed === 0 ? 0 : 1;
 }
 

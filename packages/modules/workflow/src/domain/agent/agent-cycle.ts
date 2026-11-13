@@ -1238,6 +1238,9 @@ function completion(state: AgentState, report: OutcomeReport): NewLogRecord {
           output: report.output,
           ...(report.outputRef === undefined ? {} : { outputRef: report.outputRef }),
           ...(report.fullRef === undefined ? {} : { fullRef: report.fullRef }),
+          ...(report.changedFiles === undefined || report.changedFiles.length === 0
+            ? {}
+            : { changedFiles: report.changedFiles.slice(0, 1000) }),
         }
       : { reasonCode: report.reasonCode }),
   };

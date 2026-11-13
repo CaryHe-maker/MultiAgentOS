@@ -97,6 +97,8 @@ export default tseslint.config(
     files: [
       'apps/control-plane/test/eval/tasks/orchestration.ts',
       'apps/control-plane/test/eval/tasks/orchestration-hard.ts',
+      'apps/control-plane/test/eval/tasks/submission-study.ts',
+      'apps/control-plane/test/eval/submission-study.test.ts',
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/chat-exit.test.ts',
       'apps/control-plane/test/system/kill-anywhere.test.ts',

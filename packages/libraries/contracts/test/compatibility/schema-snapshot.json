@@ -55551,6 +55551,15 @@
               },
               "additionalProperties": false,
               "$id": "kernel.unit.BudgetView.v1"
+            },
+            "changedFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "maxItems": 1000
             }
           },
           "additionalProperties": false

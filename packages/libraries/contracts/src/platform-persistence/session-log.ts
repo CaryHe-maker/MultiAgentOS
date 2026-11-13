@@ -521,6 +521,8 @@ export const SessionLogRecordSchema = Type.Union(
       outputRef: Type.Optional(ArtifactRefSchema),
       fullRef: Type.Optional(ArtifactRefSchema),
       budget: BudgetViewSchema,
+      /** The files a write or a command changed (who changed what, for evaluation and review). */
+      changedFiles: Type.Optional(Type.Array(text(1024), { maxItems: 1000 })),
     }),
     record('UNIT_INTERRUPTED', inTurn, { requestId: IdSchemas.requestId, reason: text(200) }),
     record('MODEL_TURN', inTurn, {

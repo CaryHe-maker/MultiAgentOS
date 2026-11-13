@@ -9,6 +9,7 @@ import { SUBAGENT_TASKS } from './subagents.js';
 import { SELFCHECK_TASKS } from './selfcheck.js';
 import { ORCHESTRATION_TASKS } from './orchestration.js';
 import { ORCHESTRATION_HARD_TASKS } from './orchestration-hard.js';
+import { SUBMISSION_STUDY_TASKS } from './submission-study.js';
 
 export const ALL_TASKS: readonly TaskSpec[] = [
   ...SELFCHECK_TASKS,
@@ -17,6 +18,7 @@ export const ALL_TASKS: readonly TaskSpec[] = [
   ...EXTERNAL_TASKS,
   ...ORCHESTRATION_TASKS,
   ...ORCHESTRATION_HARD_TASKS,
+  ...SUBMISSION_STUDY_TASKS,
 ];
 
 /** `selfcheck.answer`, or a tag as `tag:safety`, or `all`. */
