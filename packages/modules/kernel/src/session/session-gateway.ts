@@ -37,6 +37,7 @@ import {
   StartSessionRequestSchema,
   SubmitUnitRequestSchema,
   UndoRequestSchema,
+  RecoverRunRequestSchema,
   UpdateActivityRequestSchema,
   newId,
   validate,
@@ -157,6 +158,7 @@ const ROUTES: Readonly<Record<RequestType, Route>> = {
     blocked: true,
   },
   undo: { caller: 'user-interaction', schema: UndoRequestSchema, needs: 'RUN' },
+  recoverRun: { caller: 'user-interaction', schema: RecoverRunRequestSchema, needs: 'RUN' },
   confirmUndo: { caller: 'user-interaction', schema: ConfirmUndoRequestSchema, needs: 'RUN' },
   diff: { caller: 'user-interaction', schema: DiffRequestSchema, needs: 'SESSION' },
   listCheckpoints: {
@@ -350,6 +352,7 @@ export class SessionGateway {
     compactContext: this.#port('user-interaction', 'compactContext'),
     readArtifact: this.#port('user-interaction', 'readArtifact'),
     undo: this.#port('user-interaction', 'undo'),
+    recoverRun: this.#port('user-interaction', 'recoverRun'),
     confirmUndo: this.#port('user-interaction', 'confirmUndo'),
     diff: this.#port('user-interaction', 'diff'),
     listCheckpoints: this.#port('user-interaction', 'listCheckpoints'),

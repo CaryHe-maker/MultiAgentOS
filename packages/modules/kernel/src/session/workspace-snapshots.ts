@@ -572,6 +572,12 @@ export class WorkspaceSnapshots {
     }
   }
 
+  /** A rewind to the checkpoint named `checkpointId` (Orchestration 7.6: a run that goes on). */
+  async planRewindTo(checkpointId: string): Promise<RollBackPlanResult> {
+    const at = this.#points.findIndex((point) => point.checkpointId === checkpointId);
+    return at < 0 ? { kind: 'NOTHING_TO_UNDO' } : this.planRewind(at + 1);
+  }
+
   async #restoreEntry(path: string, entry: Entry | undefined): Promise<void> {
     if (entry === undefined) {
       await this.#deps.files.remove(path);

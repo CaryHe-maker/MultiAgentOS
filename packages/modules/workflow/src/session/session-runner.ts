@@ -73,6 +73,7 @@ import {
   runningJobs,
 } from '../domain/graph/mission-jobs.js';
 import { revokedCompactions } from '../domain/context/compaction-revocation.js';
+import { interruptedRunOf } from './interrupted-run.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
@@ -360,11 +361,14 @@ export class SessionRunner {
         const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
         const records = await this.#bound(event.repositoryRoot, opened.records);
         this.#adopt(sessionId, event.repositoryRoot, records);
+        // A long task the last process left can go on, if the user says so (Orchestration 7.6).
+        const interrupted = interruptedRunOf(records);
         await reply({
           command: 'OPEN',
           outcome: 'READY',
           inputCount: opened.inputCount,
           ...(opened.titleRef === undefined ? {} : { titleRef: opened.titleRef }),
+          ...(interrupted === undefined ? {} : { interrupted }),
         });
       }
     } catch (error) {
@@ -675,6 +679,27 @@ export class SessionRunner {
     event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
   ): Promise<void> {
     this.#mode = event.mode;
+    if (event.mode === 'ORCHESTRATION' && event.resumed !== undefined) {
+      // The run the last process left goes on (Orchestration 7.6): its graph is in the log already.
+      const { checkpointId, files, backupSnapshot } = event.resumed;
+      this.#inputCheckpointId = checkpointId;
+      await this.#append([
+        {
+          type: 'WORKFLOW_RUN_RESUMED',
+          workflowRunId,
+          templateRef: event.templateRef,
+          checkpointId,
+          preset: event.preset,
+        },
+      ]);
+      await this.#rewind(workflowRunId, {
+        checkpointId,
+        files,
+        ...(backupSnapshot === undefined ? {} : { backupSnapshot }),
+        resumed: true,
+      });
+      return;
+    }
     await this.#append([
       {
         type: 'WORKFLOW_RUN_STARTED',
@@ -829,6 +854,29 @@ export class SessionRunner {
     event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
   ): Promise<void> {
     if (event.undo === true) return this.#onUndone(workflowRunId, event);
+    await this.#rewind(workflowRunId, {
+      checkpointId: event.checkpointId,
+      files: event.files.length,
+      ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+      resumed: false,
+    });
+  }
+
+  /**
+   * The work goes back to a checkpoint: after `/rewind` in this process, or when a run the last
+   * process left goes on (`resumed`, Orchestration 7.6), where the Kernel is new and holds nothing of
+   * the run yet, so there is nothing in it to stop, close or open again.
+   */
+  async #rewind(
+    workflowRunId: string,
+    event: {
+      readonly checkpointId: string;
+      readonly files: number;
+      readonly backupSnapshot?: string;
+      readonly resumed: boolean;
+    },
+  ): Promise<void> {
+    const { resumed } = event;
     // Where the cut is: a checkpoint inside the run, or the input the work started from.
     const requested = this.#records.find(
       (record): record is Extract<SessionLogRecord, { type: 'CHECKPOINT_REQUESTED' }> =>
@@ -869,11 +917,12 @@ export class SessionRunner {
         type: 'ROLLED_BACK',
         workflowRunId,
         checkpointId: event.checkpointId,
-        label: event.label,
+        label: requested?.label ?? 'user input',
         cutSeq,
         fromSeq,
         cancelledMissionIds: [...goneIds],
-        files: event.files.length,
+        files: event.files,
+        ...(resumed ? { resumed: true } : {}),
         ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
       },
     ]);
@@ -883,6 +932,24 @@ export class SessionRunner {
       await this.#append(
         revokedCompactions(this.#records, workflowRunId, { from: fromSeq, to: rolled.seq }),
       );
+    if (!resumed) await this.#releaseInKernel(workflowRunId, before, gone, goneIds, fromSeq);
+    await this.#pauseAtCut(workflowRunId, fromSeq, resumed ? 'RESUMED' : 'ROLLED_BACK');
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * After a rewind in this process, the Kernel lets go of what came after the cut: the segments at
+   * work stop, the tasks started after it are closed and their shares go back, every background
+   * command stops, and a task that ended after the cut is opened again.
+   */
+  async #releaseInKernel(
+    workflowRunId: string,
+    before: ReadonlyMap<string, MissionView>,
+    gone: readonly MissionView[],
+    goneIds: ReadonlySet<string>,
+    fromSeq: number,
+  ): Promise<void> {
+    const rolled = this.#records.at(-1);
     // Every segment at work stops now. One of a task that was there at the cut goes to sleep (its
     // task goes on); one of a task started after it ends with its task.
     for (const active of [...this.#agents.values()]) {
@@ -922,15 +989,14 @@ export class SessionRunner {
     await this.#stopJobsOf(workflowRunId, [...before.keys()]);
     // A task that ended after the cut is open again in the Kernel, with its share and roots.
     const cutGraph = projectGraph(this.#records, workflowRunId);
+    const atCut = projectMissions(this.#records);
     for (const mission of atCut.values()) {
       if (mission.parentId === undefined || mission.ended !== undefined) continue;
-      if (!inRun(cutGraph.nodes, mission)) continue;
+      if (!mission.nodeIds.some((nodeId) => cutGraph.nodes.has(nodeId))) continue;
       if (before.get(mission.missionId)?.ended === undefined) continue;
       const first = cutGraph.nodes.get(mission.nodeIds[0] ?? '');
       await this.#restoreMission(workflowRunId, mission.missionId, first?.spawn?.tokens);
     }
-    await this.#pauseAtCut(workflowRunId, fromSeq);
-    await this.#advance(workflowRunId);
   }
 
   /**
@@ -939,7 +1005,11 @@ export class SessionRunner {
    * then is asked again and its task sleeps until the answer; every other task below the root is
    * paused until its parent lets it go on; the root starts a new segment that reads it.
    */
-  async #pauseAtCut(workflowRunId: string, fromSeq: number): Promise<void> {
+  async #pauseAtCut(
+    workflowRunId: string,
+    fromSeq: number,
+    cause: 'ROLLED_BACK' | 'RESUMED',
+  ): Promise<void> {
     const graph = projectGraph(this.#records, workflowRunId);
     const missions = projectMissions(this.#records);
     const before = this.#records.filter((record) => record.seq < fromSeq);
@@ -1011,7 +1081,7 @@ export class SessionRunner {
     if (rootNode !== undefined && !rootSleeps) {
       const refreshed = projectGraph(this.#records, workflowRunId).nodes.get(rootNode.nodeId);
       if (refreshed !== undefined)
-        await this.#continueMission(workflowRunId, refreshed, [{ kind: 'ROLLED_BACK' }]);
+        await this.#continueMission(workflowRunId, refreshed, [{ kind: cause }]);
     }
   }
 

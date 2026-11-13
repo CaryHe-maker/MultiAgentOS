@@ -40,6 +40,7 @@ import {
   ReadArtifactRequestSchema,
   ShutdownRequestSchema,
   UndoRequestSchema,
+  RecoverRunRequestSchema,
 } from './interaction-requests.js';
 import {
   DeleteSessionRequestSchema,
@@ -103,6 +104,7 @@ export const GatewayForwardSchema = Type.Union(
     forward('user-interaction', 'compactContext', CompactContextRequestSchema),
     forward('user-interaction', 'readArtifact', ReadArtifactRequestSchema),
     forward('user-interaction', 'undo', UndoRequestSchema),
+    forward('user-interaction', 'recoverRun', RecoverRunRequestSchema),
     forward('user-interaction', 'confirmUndo', ConfirmUndoRequestSchema),
     forward('user-interaction', 'diff', DiffRequestSchema),
     forward('user-interaction', 'listCheckpoints', ListCheckpointsRequestSchema),

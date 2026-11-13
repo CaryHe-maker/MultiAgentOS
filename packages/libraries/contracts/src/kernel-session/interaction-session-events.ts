@@ -26,6 +26,8 @@ export const SessionOpenedSchema = closed({
   title: Type.Optional(text(80)),
   inputCount: count(),
   fork: Type.Optional(ForkOriginSchema),
+  /** A long task the last process left in the middle: `/recover` goes on from this checkpoint. */
+  interruptedRun: Type.Optional(closed({ label: text(200) })),
   /** What changed in the workspace since the Session was last at rest (M2Design 2.3). */
   divergedFiles: Type.Optional(Type.Array(text(4096))),
 });

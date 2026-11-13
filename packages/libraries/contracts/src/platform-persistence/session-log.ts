@@ -218,6 +218,12 @@ export const SessionLogRecordSchema = Type.Union(
       preset: Type.Enum(['standard', 'readonly']),
       initialInput: Type.Boolean(),
     }),
+    /** A run the last process left goes on in this process, from a checkpoint (Orchestration 7.6). */
+    record('WORKFLOW_RUN_RESUMED', inRun, {
+      templateRef: DefinitionRefSchema,
+      checkpointId: IdSchemas.checkpointId,
+      preset: Type.Enum(['standard', 'readonly']),
+    }),
     record('WORKFLOW_RUN_ENDED', inRun, {
       closeReason: Type.Enum([...CLOSE_REASONS, 'PROCESS_EXITED', 'FORKED']),
     }),
@@ -417,6 +423,8 @@ export const SessionLogRecordSchema = Type.Union(
       files: count(),
       /** An undo: the input that opened the checkpoint is taken back with what followed it. */
       undo: Type.Optional(Type.Boolean()),
+      /** The process had stopped: the run went on from the checkpoint in a new one (7.6). */
+      resumed: Type.Optional(Type.Boolean()),
       forced: Type.Optional(Type.Boolean()),
       externalFiles: Type.Optional(Type.Array(text(4096))),
       backupSnapshot: Type.Optional(text(64)),

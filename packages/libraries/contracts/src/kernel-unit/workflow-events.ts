@@ -37,6 +37,17 @@ export const RunStartSchema = Type.Union(
       ...runStart,
       mode: Type.Literal('ORCHESTRATION'),
       templateRef: DefinitionRefSchema,
+      /**
+       * A long task the last process left goes on (Orchestration 7.6): this run is that run again,
+       * under its id, and starts from `checkpointId`, whose files are back. The run is paused.
+       */
+      resumed: Type.Optional(
+        closed({
+          checkpointId: IdSchemas.checkpointId,
+          files: count(),
+          backupSnapshot: Type.Optional(text(64)),
+        }),
+      ),
     }),
   ],
   { $id: 'kernel.unit.RunStart.v1' },

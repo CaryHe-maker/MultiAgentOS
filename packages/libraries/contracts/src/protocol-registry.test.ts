@@ -155,6 +155,7 @@ const EXPECTED = {
     'UndoCancelled',
     'UndoConfirmationRequested',
     'UndoRequest',
+    'RecoverRunRequest',
     'ActivityEvent',
     'AdmissionProjection',
     'AnswerAuthorizationRequest',

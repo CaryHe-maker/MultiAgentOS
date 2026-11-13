@@ -211,6 +211,7 @@ describe('undo', () => {
     settle: () => Promise.resolve({}),
     planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf([]) } as const),
     planRewind: () => Promise.resolve({ kind: 'NOTHING_TO_UNDO' } as const),
+    planRewindTo: () => Promise.resolve({ kind: 'NOTHING_TO_UNDO' } as const),
     applyRollBack: () => Promise.resolve({ ok: true, files: ['a.txt'] } as const),
     diffLatest: () => Promise.resolve(undefined),
     divergedFiles: () => Promise.resolve([]),

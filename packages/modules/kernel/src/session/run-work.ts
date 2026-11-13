@@ -466,6 +466,16 @@ export class RunWork {
     return interrupt === 'MEMORY_PRESSURE' ? 'MEMORY_PRESSURE' : 'RUN_BLOCKED';
   }
 
+  /** A run that goes on after the process stopped spent this much before (Orchestration 7.6). */
+  chargeEarlier(tokens: number): void {
+    this.#deps.ledgers.chargeEarlier(tokens);
+  }
+
+  /** Whether the work of an input was ever opened in this run. */
+  hadInput(): boolean {
+    return this.#inputs > 0;
+  }
+
   /** The work of an input opens, named by its checkpoint: it gets its share of the budget. */
   openInput(checkpointId: string): void {
     this.#inputs += 1;

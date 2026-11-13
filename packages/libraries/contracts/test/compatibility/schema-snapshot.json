@@ -14928,6 +14928,56 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "interrupted": {
+                          "type": "object",
+                          "required": [
+                            "workflowRunId",
+                            "templateRef",
+                            "checkpointId",
+                            "label",
+                            "spentTokens"
+                          ],
+                          "properties": {
+                            "workflowRunId": {
+                              "type": "string",
+                              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                            },
+                            "templateRef": {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "version"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                                  "maxLength": 64
+                                },
+                                "version": {
+                                  "type": "string",
+                                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "$id": "catalog.DefinitionRef.v1"
+                            },
+                            "checkpointId": {
+                              "type": "string",
+                              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "spentTokens": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
+                        },
                         "titleRef": {
                           "type": "object",
                           "required": [
@@ -16090,6 +16140,49 @@
               },
               "additionalProperties": false,
               "$id": "kernel.control.UndoRequest.v1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "caller",
+            "requestType",
+            "request"
+          ],
+          "properties": {
+            "caller": {
+              "type": "string",
+              "const": "user-interaction"
+            },
+            "requestType": {
+              "type": "string",
+              "const": "recoverRun"
+            },
+            "request": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "sessionId",
+                "workflowRunId"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "workflowRunId": {
+                  "type": "string",
+                  "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.RecoverRunRequest.v1"
             }
           },
           "additionalProperties": false
@@ -19512,6 +19605,30 @@
       },
       "additionalProperties": false,
       "$id": "kernel.control.ReadArtifactRequest.v1"
+    },
+    "kernel.control.RecoverRunRequest.v1": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "sessionId",
+        "workflowRunId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.RecoverRunRequest.v1"
     },
     "kernel.control.ResumeRunRequest.v1": {
       "type": "object",
@@ -32914,6 +33031,20 @@
                   },
                   "additionalProperties": false
                 },
+                "interruptedRun": {
+                  "type": "object",
+                  "required": [
+                    "label"
+                  ],
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "divergedFiles": {
                   "type": "array",
                   "items": {
@@ -36491,6 +36622,56 @@
                   "type": "integer",
                   "minimum": 0
                 },
+                "interrupted": {
+                  "type": "object",
+                  "required": [
+                    "workflowRunId",
+                    "templateRef",
+                    "checkpointId",
+                    "label",
+                    "spentTokens"
+                  ],
+                  "properties": {
+                    "workflowRunId": {
+                      "type": "string",
+                      "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "templateRef": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                          "maxLength": 64
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "$id": "catalog.DefinitionRef.v1"
+                    },
+                    "checkpointId": {
+                      "type": "string",
+                      "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "spentTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "titleRef": {
                   "type": "object",
                   "required": [
@@ -38552,6 +38733,29 @@
               },
               "additionalProperties": false,
               "$id": "catalog.DefinitionRef.v1"
+            },
+            "resumed": {
+              "type": "object",
+              "required": [
+                "checkpointId",
+                "files"
+              ],
+              "properties": {
+                "checkpointId": {
+                  "type": "string",
+                  "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "files": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "backupSnapshot": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -45161,6 +45365,29 @@
                       },
                       "additionalProperties": false,
                       "$id": "catalog.DefinitionRef.v1"
+                    },
+                    "resumed": {
+                      "type": "object",
+                      "required": [
+                        "checkpointId",
+                        "files"
+                      ],
+                      "properties": {
+                        "checkpointId": {
+                          "type": "string",
+                          "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                        },
+                        "files": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "backupSnapshot": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false
@@ -52012,6 +52239,67 @@
             "at",
             "workflowRunId",
             "type",
+            "templateRef",
+            "checkpointId",
+            "preset"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "type": {
+              "type": "string",
+              "const": "WORKFLOW_RUN_RESUMED"
+            },
+            "templateRef": {
+              "type": "object",
+              "required": [
+                "id",
+                "version"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "catalog.DefinitionRef.v1"
+            },
+            "checkpointId": {
+              "type": "string",
+              "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "preset": {
+              "enum": [
+                "standard",
+                "readonly"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "at",
+            "workflowRunId",
+            "type",
             "closeReason"
           ],
           "properties": {
@@ -53923,6 +54211,9 @@
               "minimum": 0
             },
             "undo": {
+              "type": "boolean"
+            },
+            "resumed": {
               "type": "boolean"
             },
             "forced": {

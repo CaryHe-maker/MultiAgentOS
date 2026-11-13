@@ -159,6 +159,7 @@ const COMMANDS: ReadonlySet<string> = new Set([
   '/diff',
   '/checkpoints',
   '/rewind',
+  '/recover',
   '/output',
 ]);
 
@@ -1010,6 +1011,21 @@ export class Console {
           );
         break;
       }
+      case '/recover': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (sessionId === undefined || workflowRunId === undefined || argument !== undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const recovered = await this.#deps.gateway.recoverRun(
+          { requestId: newId('req'), sessionId, workflowRunId },
+          this.#context(),
+        );
+        if (recovered.outcome === 'REJECTED') this.#notice(describeReason(recovered.reasonCode));
+        else this.#notice(text.recovered);
+        break;
+      }
       case '/undo': {
         const sessionId = this.#sessionId;
         const workflowRunId = this.#workflowRunId;
@@ -1246,6 +1262,8 @@ export class Console {
         );
         if (event.divergedFiles !== undefined)
           this.#notice(text.diverged(event.divergedFiles.length));
+        if (event.interruptedRun !== undefined)
+          this.#notice(text.interruptedRun(terminalText(event.interruptedRun.label)));
         break;
       case 'SessionFailed':
         if (this.#sessionId === envelope.sessionId) {

@@ -138,6 +138,14 @@ export class RunLedgers {
     this.#remaining = budget.runTokenLimit;
   }
 
+  /**
+   * What a run that goes on after the process stopped had spent (Orchestration 7.6): it is gone
+   * from the budget before anything opens, so the run has what it had left.
+   */
+  chargeEarlier(tokens: number): void {
+    this.#remaining = Math.max(0, this.#remaining - Math.max(0, tokens));
+  }
+
   openInputLedger(inputId: string): { readonly state: BudgetState } {
     if (this.#input !== undefined)
       throw new MonitorInvariantError('An input ledger is already open');

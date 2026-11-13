@@ -120,6 +120,13 @@ export const RewindCheckpointRequestSchema = closed(
 );
 export type RewindCheckpointRequest = Static<typeof RewindCheckpointRequestSchema>;
 
+/**
+ * `/recover` (Orchestration 7.6): the long task the last process left goes on from its latest
+ * checkpoint. Only while the Session's fresh conversation waits for its first input.
+ */
+export const RecoverRunRequestSchema = closed({ ...inRun }, 'kernel.control.RecoverRunRequest.v1');
+export type RecoverRunRequest = Static<typeof RecoverRunRequestSchema>;
+
 /** The answer to UndoConfirmationRequested, which is not an authorization question. */
 export const ConfirmUndoRequestSchema = closed(
   { ...inRun, undoId: IdSchemas.undoId, decision: Type.Enum(['FORCE', 'CANCEL']) },

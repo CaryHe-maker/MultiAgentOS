@@ -226,9 +226,13 @@ export function projectHistory(
           category: 'NORMAL',
           kind: 'NOTE',
           text:
-            missionInfo.get(ownMission)?.parentId === undefined
-              ? `The work went back to the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. The subtasks started after it are gone. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
-              : `The work went back to the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. You were paused there until your parent let you go on (its message is below): continue from where you were.`,
+            record.resumed === true
+              ? missionInfo.get(ownMission)?.parentId === undefined
+                ? `The process stopped in the middle of this work, and it goes on now from the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. Background commands that ran then were stopped; run them again if they are still needed. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
+                : `The process stopped in the middle of this work, and it goes on now from the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. Background commands that ran then were stopped. You were paused there until your parent let you go on (its message is below): continue from where you were.`
+              : missionInfo.get(ownMission)?.parentId === undefined
+                ? `The work went back to the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. The subtasks started after it are gone. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
+                : `The work went back to the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. You were paused there until your parent let you go on (its message is below): continue from where you were.`,
         });
         break;
       case 'AGENT_RUN_REGISTERED':

@@ -1,3 +1,4 @@
+import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { Type, type Static } from 'typebox';
 import {
   ForkOriginSchema,
@@ -25,6 +26,20 @@ const SessionCommandResultSchema = Type.Union([
     outcome: Type.Literal('READY'),
     /** What the Session list says of it, so that opening it says the same. */
     inputCount: count(),
+    /**
+     * A long task the last process left in the middle (Orchestration 7.6): it can go on from its
+     * latest checkpoint, if the user says so.
+     */
+    interrupted: Type.Optional(
+      closed({
+        workflowRunId: IdSchemas.workflowRunId,
+        templateRef: DefinitionRefSchema,
+        checkpointId: IdSchemas.checkpointId,
+        label: text(200),
+        /** Tokens the run spent before: its budget is what is left. */
+        spentTokens: count(),
+      }),
+    ),
     titleRef: Type.Optional(ArtifactRefSchema),
   }),
   closed({ command: Type.Literal('CREATE'), outcome: Type.Literal('READY') }),

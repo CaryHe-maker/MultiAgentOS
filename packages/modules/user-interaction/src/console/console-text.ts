@@ -205,6 +205,9 @@ export const ConsoleText = Object.freeze({
   checkpointLine: (seq: number, label: string, changedFiles: number | undefined): string =>
     `#${String(seq)}  ${label}${changedFiles === undefined ? '' : `（之后改动 ${String(changedFiles)} 个文件）`}`,
   diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
+  interruptedRun: (label: string) =>
+    `上次的长任务在中途中断了（进程退出）。输入 /recover 从 checkpoint「${label}」续跑：文件还原到那时，子任务停在那时等负责人处理，授权会重新询问；直接输入其他内容则不续跑，文件保持现在的样子。`,
+  recovered: '正在续跑上次中断的长任务，运行已暂停；用 /continue 开始。',
   forkDraft: '下一条消息会开始一个分出的新对话，它带着到目前为止的全部内容。',
   granted: '已允许。',
   declined: '已拒绝。',
@@ -260,6 +263,7 @@ export const ConsoleText = Object.freeze({
     '/diff [N]         查看倒数第 N 轮改动了什么；/diff #N 查看第 N 个 checkpoint 之后的改动',
     '/checkpoints      列出本对话的 checkpoint（每轮的开始与运行中途的切面）',
     '/rewind #N        暂停时回到第 N 个 checkpoint（运行中途的切面）',
+    '/recover          续跑上次进程退出时中断的长任务（打开对话后、输入任何内容之前）',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
     '/think [N]        列出思考内容；带编号则显示第 N 段思考的全文',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',

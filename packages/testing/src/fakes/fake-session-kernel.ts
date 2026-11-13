@@ -568,6 +568,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
 
   const interaction: InteractionGatewayPort = {
     undo: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    recoverRun: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     compactContext: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     confirmUndo: (request) => Promise.resolve(rejected(request.requestId, 'UNDO_UNKNOWN')),
     diff: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),

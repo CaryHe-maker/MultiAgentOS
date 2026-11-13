@@ -279,6 +279,12 @@ export class SessionCore {
           work.once(request.requestId, request, () => actor.undo(run, request.scope)),
         );
       }
+      case 'recoverRun': {
+        const { request } = forward;
+        return this.#inRun(request, (work, actor, run) =>
+          work.once(request.requestId, request, () => actor.recoverRun(run)),
+        );
+      }
       case 'confirmUndo': {
         const { request } = forward;
         return this.#inRun(request, (work, actor, run) =>

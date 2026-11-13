@@ -100,6 +100,7 @@ export default tseslint.config(
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/chat-exit.test.ts',
       'apps/control-plane/test/system/kill-anywhere.test.ts',
+      'apps/control-plane/test/system/resume-run.test.ts',
     ],
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdk] }],

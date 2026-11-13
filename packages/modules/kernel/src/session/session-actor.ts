@@ -62,6 +62,7 @@ export interface SessionDuties {
     | 'settle'
     | 'planUndo'
     | 'planRewind'
+    | 'planRewindTo'
     | 'applyRollBack'
     | 'diffLatest'
     | 'divergedFiles'
@@ -175,6 +176,18 @@ export class SessionActor {
   readonly #pending = new Map<string, Pending>();
   #run: Run | undefined;
   #closeAfterRun: 'SWITCHED' | 'SHUTDOWN' | undefined;
+  /** A long task the last process left (Orchestration 7.6), as the Session's log says it. */
+  #interrupted:
+    | {
+        readonly workflowRunId: string;
+        readonly templateRef: DefinitionRef;
+        readonly checkpointId: string;
+        readonly label: string;
+        readonly spentTokens: number;
+      }
+    | undefined;
+  /** `/recover` closes the fresh conversation; the long task goes on once it has. */
+  #recoverAfterRun = false;
   /** An undo waiting for the user because of external changes; it has no timer (M2Design 4.6). */
   #pendingUndo: { readonly undoId: string; readonly plan: RollBackPlan } | undefined;
 
@@ -565,11 +578,18 @@ export class SessionActor {
           result.command === 'OPEN' && result.titleRef !== undefined
             ? await duties.titleOf?.(result.titleRef)
             : undefined;
+        this.#interrupted =
+          result.command === 'OPEN' && result.interrupted !== undefined
+            ? { ...result.interrupted }
+            : undefined;
         outbox.sessionToInteraction(sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
           inputCount: result.command === 'OPEN' ? result.inputCount : 0,
           ...(title === undefined ? {} : { title }),
+          ...(this.#interrupted === undefined
+            ? {}
+            : { interruptedRun: { label: this.#interrupted.label } }),
           ...(diverged.length === 0 ? {} : { divergedFiles: [...diverged] }),
         });
         const run = this.#startRun({ mode: 'CHAT' }, false);
@@ -652,8 +672,8 @@ export class SessionActor {
     return run;
   }
 
-  #newRun(mode: Run['mode']): Run {
-    const workflowRunId = newId('wfr');
+  #newRun(mode: Run['mode'], resumedId?: string): Run {
+    const workflowRunId = resumedId ?? newId('wfr');
     const { outbox, duties } = this.#deps;
     const sessionId = this.#sessionId;
     const host: RunHost = {
@@ -1077,6 +1097,68 @@ export class SessionActor {
     } as unknown as RunFinished);
     if (closing.closeReason === 'INTERRUPTED') this.#deps.onInterrupted?.();
     if (this.#closeAfterRun !== undefined) this.#closeSession(this.#closeAfterRun);
+    else if (this.#recoverAfterRun) await this.#startResumedRun();
+  }
+
+  /**
+   * `/recover` (Orchestration 7.6): only while the Session's fresh conversation waits for its first
+   * input, and only once. The conversation closes, then the long task goes on.
+   */
+  async recoverRun(run: Run): Promise<Decision> {
+    if (this.#interrupted === undefined || this.#recoverAfterRun)
+      return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    if (run.mode !== 'CHAT' || run.control.phase !== 'AWAITING_INPUT' || run.work.hadInput())
+      return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    this.#recoverAfterRun = true;
+    await this.closeRun(run, { closeReason: 'ENDED_BY_USER' });
+    return { accepted: true, control: run.control };
+  }
+
+  /**
+   * The run the last process left goes on under its id (Orchestration 7.6): the files go back to
+   * its latest checkpoint, its budget is what it had not spent, the authorizations start empty, and
+   * it is paused until the user continues. Workflow puts its tasks as they were at the checkpoint.
+   */
+  async #startResumedRun(): Promise<void> {
+    const interrupted = this.#interrupted;
+    this.#recoverAfterRun = false;
+    this.#interrupted = undefined;
+    if (interrupted === undefined) return;
+    const { snapshots } = this.#deps.duties;
+    let files = 0;
+    let backupSnapshot: string | undefined;
+    const planned = await snapshots?.planRewindTo(interrupted.checkpointId);
+    if (planned?.kind === 'PLAN') {
+      const applied = await snapshots?.applyRollBack(planned.plan, false);
+      if (applied?.ok === true) {
+        files = applied.files.length;
+        backupSnapshot = applied.backupSnapshot;
+      }
+    }
+    const run = this.#newRun('ORCHESTRATION', interrupted.workflowRunId);
+    this.#run = run;
+    this.#deps.admission(run.workflowRunId, 'RUNNING');
+    run.work.chargeEarlier(interrupted.spentTokens);
+    const opened = openInitialInput(run.control, interrupted.checkpointId);
+    if (!opened.accepted) throw new Error(`the resumed run cannot open: ${opened.reasonCode}`);
+    run.control = opened.control;
+    run.work.openInput(interrupted.checkpointId);
+    const { orchestrationMs } = this.#timeouts();
+    run.inputClock.register('input', orchestrationMs);
+    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+      type: 'RunStart',
+      preset: this.#deps.preset ?? 'standard',
+      initialInput: false,
+      mode: 'ORCHESTRATION',
+      templateRef: interrupted.templateRef,
+      resumed: {
+        checkpointId: interrupted.checkpointId,
+        files,
+        ...(backupSnapshot === undefined ? {} : { backupSnapshot }),
+      },
+    });
+    this.#state(run, 'RUNNING');
+    this.pauseRun(run);
   }
 
   async #close(reason: 'SWITCHED' | 'SHUTDOWN'): Promise<void> {

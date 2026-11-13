@@ -35,6 +35,7 @@ import type {
   ReadArtifactRequest,
   CheckpointDiff,
   UndoRequest,
+  RecoverRunRequest,
 } from './kernel-control/interaction-requests.js';
 import type { SessionAccepted, SyscallRejected } from './kernel-control/responses.js';
 import type {
@@ -615,6 +616,11 @@ export interface InteractionGatewayPort {
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   undo(request: UndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  /** `/recover`: the long task the last process left goes on (Orchestration 7.6). */
+  recoverRun(
+    request: RecoverRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
   confirmUndo(
     request: ConfirmUndoRequest,
     context: BoundaryContext,
