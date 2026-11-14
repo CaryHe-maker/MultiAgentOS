@@ -128,7 +128,14 @@
    "sha256": "84c8e9da212608b55880fc46e667f6c05dba9aaaced79b568ecaa57bf5966046"
   }
  ],
- "finalLarge": [],
+ "finalLarge": [
+  {
+   "id": "designed/pylua",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "e42ab57aa43a90b2a34b7e19da0eaf63bdf269233e0345a19f273576a074c1f5"
+  }
+ ],
  "devLarge": [
   {
    "id": "lb/task_raylib_shapes2d_medium",
@@ -389,5 +396,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T16:33:00.819Z"
+ "resealedAt": "2026-11-14T16:52:50.878Z"
 }
