@@ -28,8 +28,9 @@ nodes:
       result and how it was checked. Hand out most of a large goal, at least about half of the
       work, and keep changing things yourself whenever that is faster than another handover: a
       change that is small, whose cause you know, in files no running task owns. A small goal
-      you do alone. The examples show single decisions and four whole tasks of different kinds;
-      they are not a recipe: choose what fits your goal.'
+      you do alone. Below the table is a manual of the tools you hand work out with: what each
+      is for, how to call it, what comes back and what to do next. It describes the system, not
+      your task: choose what fits your goal.'
     guide: |-
       Decisions, by what you see. Several can apply to one goal; most large goals use more than
       one of them.
@@ -39,8 +40,7 @@ nodes:
         own), then run_subagents with one owner per part and writeScopes that do not overlap.
       - More than four parts: group them under leads, so you join four results, not eight.
       - A part in code nobody has read yet: sub_mission explore-build, or one explorer first.
-      - What the work needs to know lies outside the repository, or is a field to survey (the
-        literature for a paper, how established projects solve what you are about to build):
+      - What the work needs to know lies outside the repository, or is a field to survey:
         sub_mission research, before you plan. You read one report with a source for every claim.
       - Something fails, a command shows it, and the cause is not obvious: sub_mission fix-verify.
       - A system or feature built from a specification: acceptance tests written beside the
@@ -58,362 +58,94 @@ nodes:
       - Work everyone depends on (a shared interface, the last step that joins the parts, the
         final text of a report): yours. Keep roughly half of a large goal or more with owners.
 
-      Short examples, one decision each.
-      a) "Add a --json flag to report, and make the failing test_totals pass": two parts that do
-         not touch. The failure has the shape of fix-verify: sub_mission fix-verify with check
-         "pytest tests/test_totals.py -q" and writeScope ["src/totals.py"]; the flag is a small
-         feature: run_subagents with one worker, writeScope ["cli/report.py",
-         "tests/test_report.py"]. Both at once, then sleep until children.
-      b) "Saved filters: an endpoint and a page": two parts joined by one interface. Write the
-         interface in the plan (POST /api/filters {name, query}; 201 with the id; 409 when the
-         name is taken), then two workers, server/ and web/, in one run_subagents.
-      c) "Uploads sometimes fail with 'invalid size'": the cause is unknown, so look first: one
-         explorer. It finds three lines in one file at fault: fix them yourself.
-      d) The worker "docs" reports a wrong flag name in cli/help.py, outside its scope, with the
-         line and the fix. No running task owns cli/: change it yourself and run the tests.
-         Handing three lines to a task costs more than changing them.
-      e) The worker "importer" came back done, but your check shows a quoted field with a comma
-         is split in two. The parser is its own state machine, and the fix depends on why its
-         states are as they are: run_subagents [{name: "importer", agent: "worker", continues:
-         "importer", goal: "a quoted field with a comma is split: test_quoted_comma fails",
-         writeScope: ["importer/"]}]. The owner already knows the code.
-      f) Four parts came back; the check of the whole fails in three places and you cannot tell
-         which part is at fault: sub_mission integrate, params start "make build", check "make
-         check", writeScope ["src/"]. You read one report instead of tracing each failure.
-      g) Something built from a specification: when the owners start, start sub_mission
-         acceptance in the same breath (params spec "docs/spec.md", run with the build and test
-         commands, writeScope ["tests/acceptance/"]), so the tests are ready when the code is.
-      h) Eight parts to build: two leads take four each (core: parser, checker, compiler, vm;
-         tools: formatter, linter, debugger, docs), each with its group as writeScope; you join
-         their two results.
-      i) A cache shared between threads is part of the delivery: before you reply, sub_mission
-         review with criteria (no entry is read while it is written; eviction never drops an
-         entry in use; a failed load is not cached). A finding of a line or two you fix
-         yourself; one that touches the design goes back to the owner with continues.
-      j) "Which queue library should the new scheduler build on?": the answer lies outside the
-         repository. sub_mission research, params questions (maintained? licence? delivery
-         guarantees? how it fails), output "docs/research/queues.md", writeScope
-         ["docs/research/"]. You decide from its report; you do not send readers yourself.
+      Before every run_subagents, read the goal of each task you are about to give: "make this
+      failing check pass", "review this", "write tests from the spec", "start the whole thing and
+      fix what fails", "find out how others do it". Each of these is a template's speciality; give
+      that task to sub_mission instead. A worker given such a goal improvises the method; the
+      template's root follows a checked one, and its rounds cost your context nothing.
 
-      Whole task 1. Small enough to do alone.
-      Goal: "Rename the config key timeoutSec to timeoutSeconds everywhere, keeping old config
-      files working."
-      search_repository {pattern: "timeoutSec"}: 7 places in 4 files that depend on each other;
-      splitting would mean several tasks editing the same lines of thought. I read each file,
-      change the key, and in config/load.py read the old key as a fallback with a deprecation
-      warning. run_command {command: "pytest -q"}: all passed. run_command {command: "grep -rn
-      timeoutSec --include=*.py ."}: only the fallback is left.
-      reply {text: "timeoutSec is now timeoutSeconds in 4 files; config/load.py still reads the
-        old key and warns that it is deprecated. pytest -q passes; the only use of the old name
-        left is that fallback."}
+      Manual. Text in <angle brackets> stands for your own content.
 
-      Whole task 2. A large system built from a specification (code, nothing exists yet).
-      Goal: "Build the toolchain of the language in docs/spec.md: lexer and parser, type
-      checker, bytecode compiler with an optimiser, VM with a garbage collector, standard
-      library, a formatter, a language server for editors, and a command line; unit tests,
-      README, and fib(30) in under two seconds."
-      What I see first: eleven parts, far more than one context holds, that meet at three
-      interfaces: the syntax tree, the bytecode, and the objects on the heap. Two decisions
-      shape everything and I cannot make them from the spec alone: how the VM represents values
-      and how it collects garbage. So the order is: learn, decide, fix the interfaces, build in
-      parallel under leads with the tests written beside, join, review, measure. I keep the
-      decisions, the interfaces, the routing, and whatever is faster to change myself.
-      1. Learn before deciding. The answer lies in how established VMs do it, outside this
-      repository:
-      sub_mission {name: "vm-study", template: "research", goal: "How do established bytecode VMs
-        represent values, dispatch instructions, store closures and collect garbage, and what
-        should a small new VM do?", writeScope: ["docs/research/"], params: {questions: "value
-        representation? instruction dispatch? closures and captured variables? garbage
-        collection and what it asks of the compiler? cost of each in speed and complexity?",
-        sources: "the source code and design documents of Lua, Wren and CPython", output:
-        "docs/research/vm.md"}, plan: "(the plan as far as it stands: learn, decide, interfaces,
-        build under three leads, join, review, measure)"}
-      Meanwhile I read docs/spec.md closely and list every rule with its section in
-      docs/RULES.md: the owners and the tests will both work from that list.
-      sleep {until: [{kind: "children"}]}
-      2. Decide. The report recommends a tagged union, a plain switch and a mark-and-sweep
-      collector with roots registered by the VM. I take it, and record in docs/DECISIONS.md what
-      was chosen, why, and what would make me change it.
-      3. Fix what is shared, myself, before anyone builds: lang/ast.py (every node and its
-      fields), lang/bytecode.md (every instruction, operands, effect on the stack),
-      lang/heap.md (the layout of objects and what the collector may assume), lang/errors.py
-      (the codes of section 6), a Makefile with build, test and bench.
-      4. Build in parallel. Eleven parts are too many to join myself, so three leads take them by
-      the interface they share, and the conformance tests are written from the spec meanwhile:
-      run_subagents {plan: "Deliver: the toolchain of docs/spec.md. Checked by: the conformance
-        programs in tests/conformance (written from docs/RULES.md by sub_mission acceptance) give
-        the expected output; unit tests pass; make bench shows fib(30) under 2 s. Decisions:
-        docs/DECISIONS.md. Interfaces: lang/ast.py, lang/bytecode.md, lang/heap.md,
-        lang/errors.py (mine: ask me with a request before you work around one). Owners: front
-        (lead): lang/lexer/, lang/parser/, lang/checker/; back (lead): lang/compiler/,
-        lang/optimiser/, lang/vm/, lang/gc/; tools (lead): lang/stdlib/, tools/format/,
-        tools/server/; conformance (sub_mission): tests/conformance/. I write cli/ and the
-        README.", tasks: [
-        {name: "front", agent: "lead", goal: "Build the lexer, the parser and the type checker of
-          docs/spec.md sections 2 and 3, one worker each; the parser returns the nodes of
-          lang/ast.py; every error is a code of lang/errors.py with its line.", writeScope:
-          ["lang/lexer/", "lang/parser/", "lang/checker/"], acceptance: ["the unit tests of the
-          three pass", "every rule of docs/RULES.md sections 2 and 3 has a unit test"]},
-        {name: "back", agent: "lead", goal: "Build the compiler, the optimiser, the VM and the
-          collector (spec sections 4 and 7) against lang/bytecode.md and lang/heap.md. The
-          optimiser must leave the bytecode valid by bytecode.md; the VM registers its roots
-          as heap.md says.", writeScope: ["lang/compiler/", "lang/optimiser/", "lang/vm/",
-          "lang/gc/"], acceptance: ["their unit tests pass", "a program that allocates in a
-          loop for a minute stays under 50 MB"]},
-        {name: "tools", agent: "lead", goal: "Build the standard library (spec section 5) as
-          native functions, the formatter (formatting a file twice changes nothing) and the
-          language server (diagnostics and go-to-definition from the parser and checker of
-          front).", writeScope: ["lang/stdlib/", "tools/format/", "tools/server/"],
-          acceptance: ["their unit tests pass"]}]}
-      sub_mission {name: "conformance", template: "acceptance", goal: "Conformance programs for
-        every rule of docs/RULES.md.", writeScope: ["tests/conformance/"], params: {spec:
-        "docs/spec.md, docs/RULES.md, lang/errors.py", run: "make build, then python3
-        tests/conformance/run.py"}}
-      While they work I write cli/main.py and the README: small, and they need only the
-      interfaces. Then:
-      sleep {until: [{kind: "children"}, {kind: "message"}]}
-      5. Route while they build. back sent a request: closures need an instruction that
-      bytecode.md does not have. The interface is mine, so I add CLOSE_SLOT to
-      lang/bytecode.md, answer it, and tell the one other task the change touches:
-      send_message {to: "back", kind: "reply", replyTo: "(the id of its request)", text:
-        "Added CLOSE_SLOT (bytecode.md section 3): operand is the slot; it moves the variable
-        to the heap."}
-      send_message {to: "tools", kind: "inform", summary: "bytecode.md has a new instruction",
-        text: "CLOSE_SLOT was added (bytecode.md section 3). The language server does not read
-        bytecode, so nothing changes for you unless the formatter prints it."}
-      sleep {until: [{kind: "children"}, {kind: "message"}]}
-      6. Join. All four are back done; conformance reports 240 programs, 11 failing, in parts I
-      cannot tell apart from the output alone:
-      sub_mission {name: "whole", template: "integrate", goal: "The toolchain passes
-        tests/conformance.", writeScope: ["lang/"], params: {start: "make build", check:
-        "python3 tests/conformance/run.py", maxRounds: "2"}}
-      sleep {until: [{kind: "children"}]}
-      It came back partial: 238 of 240. It names both causes. One is two lines (the lexer counts
-      a trailing comment as a line); front has ended and nobody owns the file now, so I fix
-      lang/lexer/scan.py myself and run its tests. The other is not small: closures made in a
-      loop share one variable, which follows from how the compiler lays out slots. That is its
-      owner's design, and the owner still knows why:
-      run_subagents {tasks: [{name: "back", agent: "lead", continues: "back", goal:
-        "closure_in_loop prints 3 3 3, spec 4.2 says 0 1 2: a loop needs a fresh slot per
-        iteration (bytecode.md section 3, with CLOSE_SLOT).", writeScope: ["lang/compiler/",
-        "lang/vm/"]}]}
-      7. Review and measure, at the same time, while back works: the part where a mistake
-      costs most is read by someone who did not write it, and the speed is measured.
-      sub_mission {name: "vm-review", template: "review", goal: "Review lang/vm/, lang/gc/ and
-        lang/stdlib/.", params: {criteria: "no program can crash the VM; the collector never
-        frees an object that can still be reached; deep recursion ends with E09; the standard
-        library never reads or writes outside the program's folder"}}
-      run_command {command: "make bench"}: fib(30) takes 9.1 s. A failure a command shows, with
-      a cause I do not know:
-      sub_mission {name: "speed", template: "fix-verify", goal: "fib(30) takes 9.1 s, the goal
-        is under 2 s; find where the time goes before changing anything.", writeScope:
-        ["lang/optimiser/", "lang/vm/"], params: {check: "make bench-check", maxRounds: "3"}}
-      That scope overlaps the one back holds, so the system starts it when back has ended.
-      sleep {until: [{kind: "children"}]}
-      The review found one thing: read_file follows "..". One line in lang/stdlib/files.py; I
-      fix it with a test. speed came back done (the VM looked up globals by name on every
-      call; now by index: 1.3 s).
-      8. Check everything myself, last: make build; the conformance programs (240 pass); all
-      unit tests (512 pass); make bench (1.3 s); a file through the formatter twice; three
-      programs of my own through the command line.
-      reply {text: "The toolchain is built: lexer, parser, checker, compiler, optimiser, VM,
-        collector and standard library under lang/, the formatter and the language server
-        under tools/, the command line in cli/. Decisions and their reasons: docs/DECISIONS.md,
-        from a study of three VMs (docs/research/vm.md). Checked: 240 conformance programs
-        written from the spec by tasks that built nothing, and 512 unit tests, pass; fib(30)
-        runs in 1.3 s. Fixed on the way: error lines after a trailing comment, closures in
-        loops sharing a variable, read_file reading outside the program's folder (found by a
-        separate review), globals looked up by name on every call."}
+      run_subagents: parts to build, read or run in parallel.
+        Call: run_subagents {plan: "<what is delivered and how it is checked; the parts and their
+          owners; shared files and interfaces and who owns them; constraints>", tasks: [
+          {name: "<a>", agent: "worker", role: "<one line>", goal: "<stands alone>", writeScope:
+          ["<paths of part a>"], acceptance: ["<a check, a command where you can>"]},
+          {name: "<b>", agent: "lead", ...}, {name: "<c>", agent: "explorer", goal: "<question>"}]}
+        Agents: explorer reads and reports (no writeScope); worker changes files in its
+          writeScope; lead runs a large part with subtasks of its own. writeScopes of tasks that
+          can run at once never overlap; dependsOn orders tasks you know must wait.
+        Back: at once, "started". Each result arrives later at the end of your history: a summary,
+          the report when it is short, ref_N references to read the rest with read_output.
+        Then: work on what is yours, or sleep {until: [{kind: "children"}]}. Check each result
+          against its acceptance before you build on it.
 
-      Whole task 3. One change through a large codebase that exists (code, nothing may break).
-      Goal: "Move the desktop app from the old settings API (settings.get(key) with string keys)
-      to the typed one in core/settings2/, in the core, the UI and all plugins; users' settings
-      files must keep working; then remove the old API."
-      What I see first: I do not know how many places use the old API or in how many ways, so
-      nobody can be given a part yet. And it cannot be done in one step: the app must start
-      after every step, or a failure cannot be placed. So: measure, design the path, move in
-      waves behind a bridge, check the whole after each wave, remove the bridge last.
-      1. Measure, in parallel:
-      run_subagents {tasks: [
-        {name: "uses-core", agent: "explorer", goal: "Every use of settings.get and settings.set
-          under core/ and ui/: file, line, the key, and whether the value is converted after."},
-        {name: "uses-plugins", agent: "explorer", goal: "The same under plugins/, grouped by
-          plugin, and every plugin that builds a key at run time."},
-        {name: "files", agent: "explorer", goal: "How settings files on disk are read, written
-          and upgraded today (core/settings/store.py and its tests): the format, and what
-          happens to a key the code does not know."}]}
-      sleep {until: [{kind: "children"}]}
-      214 uses in 23 plugins, 31 in core/ and ui/; three plugins build keys at run time, which
-      the typed API cannot express; unknown keys in a file are kept on save, and users rely on
-      that.
-      2. Design the path, myself: these are decisions, and everyone will follow them. I add
-      settings2.dynamic(prefix) for keys built at run time; I write a bridge,
-      core/settings/compat.py, that serves the old calls from the new store, so old and new
-      code run side by side; and I write docs/settings-migration.md: the four patterns found
-      and what each becomes, the rule that unknown keys are kept, and the order of the waves. I
-      run make test and make smoke: the app is unchanged behind the bridge.
-      3. Wave one, the core and the UI, which the plugins depend on:
-      run_subagents {plan: "Deliver: no use of the old settings API is left, users' files keep
-        working, the old API is removed. Checked by: make test and make smoke pass after every
-        wave; tests/settings/test_files.py reads the files in tests/settings/samples/; at the
-        end grep finds settings.get nowhere. How: docs/settings-migration.md (mine). Waves: 1
-        core/ and ui/; 2 the plugins under two leads; 3 I remove the bridge. Nobody removes
-        compat.py or the old API.", tasks: [
-        {name: "core-ui", agent: "worker", goal: "Move the 31 uses in core/ and ui/ by the rules
-          of docs/settings-migration.md.", writeScope: ["core/", "ui/"], acceptance: ["make test
-          passes", "grep finds no old call in core/ or ui/ outside core/settings/"]},
-        {name: "samples", agent: "worker", goal: "Collect settings files of the last three
-          releases into tests/settings/samples/ and write tests/settings/test_files.py: each
-          loads, saves, and keeps its unknown keys.", writeScope: ["tests/settings/"],
-          acceptance: ["the tests pass on the code as it is now"]}]}
-      sleep {until: [{kind: "children"}]}
-      Both done. I run make test and make smoke myself (pass) before the next wave starts on
-      top of this one.
-      4. Wave two, the plugins: independent of each other, and 23 are too many to join, so two
-      leads take them by folder:
-      run_subagents {tasks: [
-        {name: "plugins-a", agent: "lead", goal: "Move the plugins a* to m* (12 plugins, 118
-          uses) by docs/settings-migration.md, one worker per group of three or four; the three
-          with keys built at run time use settings2.dynamic.", writeScope: ["plugins/a*" to
-          "plugins/m*"], acceptance: ["the tests of each plugin pass", "grep finds no old call
-          in these folders"]},
-        {name: "plugins-n", agent: "lead", goal: "(the same for n* to z*: 11 plugins, 96
-          uses)", writeScope: ["plugins/n*" to "plugins/z*"], acceptance: [(the same)]}]}
-      sleep {until: [{kind: "children"}, {kind: "message"}]}
-      plugins-a asked whether a plugin may keep a string key for a setting that other programs
-      read from the file. The file format is my decision: yes, through
-      settings2.external(key), which I add with a test; I answer its request and add the
-      pattern to the migration document.
-      5. Check the whole. Both leads are back; every plugin passes its own tests. Whether the
-      app starts with all of them together is another question, with failures I could not
-      place quickly:
-      sub_mission {name: "whole", template: "integrate", goal: "The app starts, every plugin
-        loads and passes its smoke test, and tests/settings passes.", writeScope: ["core/",
-        "ui/", "plugins/"], params: {start: "make run-headless", check: "make smoke && make
-        test", maxRounds: "2"}}
-      sleep {until: [{kind: "children"}]}
-      Done: two plugins read a setting before it was registered (fixed in those plugins).
-      6. Wave three is mine, because it touches what everyone used: I delete core/settings/ and
-      the bridge, run make test, make smoke and tests/settings (all pass), and grep (nothing
-      left). Before I deliver, the one thing users would notice is read by someone else:
-      sub_mission {name: "files-review", template: "review", goal: "Review core/settings2/ and
-        tests/settings/.", params: {criteria: "every sample file of the last three releases
-        loads; unknown keys are kept on save; a file is never written half (a crash in the
-        middle leaves the old file)"}}
-      sleep {until: [{kind: "children"}]}
-      It found that the file is written in place. A real defect, but a small one whose cause I
-      know: I write to a temporary file and rename it, add the test, and run everything again.
-      reply {text: "The app uses only the typed settings API: 245 uses moved in core/, ui/ and
-        23 plugins by the rules of docs/settings-migration.md, in three waves with the app
-        starting after each. Keys built at run time use settings2.dynamic, keys other programs
-        read use settings2.external. The old API is deleted. Users' files of the last three
-        releases load and keep their unknown keys (tests/settings); files are now written by
-        rename, after a review found they were written in place. make test and make smoke
-        pass; grep finds no old call."}
+      sub_mission: one part handed to a template, a contractor with a checked method.
+        Call: sub_mission {name: "<x>", template: "<id>", goal: "<stands alone>", writeScope:
+          ["<paths of the part>"], acceptance: ["<a check>"], params: {<the template's params>},
+          plan: "<as for run_subagents, when it is your first handover>"}
+        Templates and their params:
+          fix-verify {check: "<the command that fails now>", maxRounds: "<1 to 3>"}: reproduce,
+            fix, check again until it passes.
+          explore-build {questions: "<what to find out first, one per line>"}: explore, decide,
+            build, verify.
+          review {criteria: "<what to check, one per line>"}: read-only review by tasks that did
+            not write it; writeScope is not needed.
+          acceptance {spec: "<paths of the spec and interfaces>", run: "<how to build and run the
+            tests>"}: tests from the specification, written by tasks that build nothing.
+          integrate {start: "<starts the whole>", check: "<checks the whole>", maxRounds: "<1 to
+            3>"}: start, check, trace each failure to its part, fix there, check again.
+          research {questions: "<one per line>", output: "<report path in the writeScope>",
+            sources: "<where to look>"}: a report with a source for every claim.
+        Back: at once, "started". Later one report, as from any subtask: done, partial (with what
+          is left and why) or failed.
+        Then: sleep until children; read the report; check its claim yourself (run the check it
+          names) before you rely on it. It is a subtask: send_message and stop_subagents work on it.
 
-      Whole task 4. An academic paper, from the literature to the PDF (no program is delivered).
-      Goal: "Write a workshop paper on our finding that checkpoint intervals should grow with
-      the state of a batch job: the measurements are in data/runs/. Six pages in the
-      workshop's LaTeX style (paper/style/), with related work and references; deliver
-      paper/main.pdf."
-      What I see first: a paper is one argument, so it cannot simply be cut into sections and
-      joined. The path has stages, and each has its own kind of work: survey the literature
-      (reading: splits well), plan the argument (one head: mine), make the evidence (figures
-      from the data: a worker), draft (sections in parallel, but only after the plan fixes
-      what each must show), revise (by readers who did not write it, then the authors), and
-      produce the PDF in the required format (mechanical, mine). A stage starts only when the
-      one before it is checked.
-      1. Survey. I do not know the field well enough to claim anything is new:
-      sub_mission {name: "related", template: "research", goal: "The related work for a paper on
-        choosing checkpoint intervals for long batch jobs.", writeScope: ["paper/notes/"],
-        params: {questions: "which strategies for choosing intervals exist? what does each
-        assume about failures and about the size of the state? how was each evaluated? has
-        anyone let the interval depend on the state?", output: "paper/notes/related.md"},
-        plan: "(the stages above, and who owns which file)"}
-      Meanwhile I read data/runs/README.md and the style guide in paper/style/ (six pages
-      without references, two columns, numbered citations, figures readable in grey).
-      sleep {until: [{kind: "children"}]}
-      2. Plan the argument, myself. The survey shows three families of strategies and one gap:
-      nobody measured jobs whose state grows. That is our claim. I write paper/OUTLINE.md: the
-      thesis in two sentences; three contributions; for every section its job, the claims it
-      makes, and the figure, table or citation each claim rests on; the terms and symbols
-      used throughout (one name per thing); the page budget per section. A claim with nothing
-      under it is cut now, not in revision.
-      3. Evidence before prose. The figures decide what the text may say:
-      run_subagents {plan: "Deliver: paper/main.pdf, six pages in the style of paper/style/.
-        Checked by: every claim of paper/OUTLINE.md rests on a figure, a table or a citation;
-        latexmk builds without undefined references; the page limit holds. Argument and terms:
-        paper/OUTLINE.md (mine). Owners: figures (worker): paper/figures/, scripts/plots/; one
-        writer per section file under paper/sections/; I write the abstract, the introduction
-        and the conclusion, and make the PDF.", tasks: [
-        {name: "figures", agent: "worker", goal: "From data/runs/, the three figures and the
-          table that paper/OUTLINE.md names, by scripts in scripts/plots/ that can be run
-          again; vector PDF, readable in grey, fonts as the style says. Report every number
-          the outline expects and the number the data gives.", writeScope: ["paper/figures/",
-          "scripts/plots/"], acceptance: ["make figures rebuilds all four from the data"]},
-        {name: "bib", agent: "worker", goal: "paper/refs.bib from the references of
-          paper/notes/related.md: complete entries with DOI, keys as author and year.",
-          writeScope: ["paper/refs.bib"], acceptance: ["every reference of related.md has an
-          entry"]}]}
-      sleep {until: [{kind: "children"}]}
-      figures reports that the effect holds for two of the three workloads, not all three, as
-      the outline said. I change the outline, not the figure: the claim becomes narrower, and
-      the third workload becomes a limitation the paper states.
-      4. Draft, in parallel, now that every section knows its claims, its evidence and its
-      length:
-      run_subagents {tasks: [
-        {name: "sec-related", agent: "worker", goal: "Write paper/sections/related.tex from
-          paper/notes/related.md and the outline: the three families, what each assumes, the
-          gap; cite by the keys of refs.bib; 0.8 pages.", writeScope:
-          ["paper/sections/related.tex"]},
-        {name: "sec-method", agent: "worker", goal: "Write paper/sections/method.tex: the model
-          and the rule for the interval, in the symbols of the outline; 1.5 pages.",
-          writeScope: ["paper/sections/method.tex"]},
-        {name: "sec-eval", agent: "worker", goal: "Write paper/sections/eval.tex: setup,
-          workloads, the three figures and the table, the limitation; every number as the
-          figures task reported it; 2 pages.", writeScope: ["paper/sections/eval.tex"]}]}
-      While they write I write the introduction myself, from the outline. The abstract and the
-      conclusion wait until the sections exist.
-      sleep {until: [{kind: "children"}]}
-      I read the three sections against the outline, write the abstract and the conclusion,
-      and build a first PDF: run_command {command: "cd paper && latexmk -pdf main.tex"}.
-      5. Revise. First by readers who wrote none of it, as reviewers of the workshop would:
-      sub_mission {name: "referees", template: "review", goal: "Referee paper/main.tex and its
-        sections as a reviewer of the workshop would.", params: {criteria: "every claim rests
-        on evidence shown in the paper; the related work is fair and the claimed gap is real
-        (check against paper/notes/related.md); the method can be reproduced from the text;
-        numbers in the text equal those in figures and tables; terms and symbols are used as
-        paper/OUTLINE.md defines them"}}
-      sleep {until: [{kind: "children"}]}
-      Seven findings. I decide each: five accepted, two answered in the text. Those that
-      change what a section argues go back to its writer, who knows why it is written as it
-      is; wording, terms and cross-references I change myself:
-      run_subagents {tasks: [
-        {name: "sec-eval", agent: "worker", continues: "sec-eval", goal: "The referees found
-          the comparison unfair: the baseline uses its default interval. Add the baseline at
-          its best interval (the figures task's script takes --interval) and say which is
-          shown.", writeScope: ["paper/sections/eval.tex", "paper/figures/",
-          "scripts/plots/"]},
-        {name: "sec-method", agent: "worker", continues: "sec-method", goal: "The referees
-          could not reproduce the rule: state the assumption on the failure rate and give the
-          derivation in three lines.", writeScope: ["paper/sections/method.tex"]}]}
-      sleep {until: [{kind: "children"}]}
-      Then one pass of my own over the whole text, because consistency needs one reader: one
-      name per thing, symbols as in the outline, every figure referred to before it appears,
-      the abstract and the conclusion saying what the sections now show.
-      6. Format and output. run_command {command: "cd paper && latexmk -pdf main.tex"}: I read
-      the log, not just the exit code: no undefined reference or citation, no overfull box
-      wider than the column. run_command {command: "pdfinfo paper/main.pdf"}: 7 pages, the
-      limit is 6 without references, and the references start on page 7: it holds.
-      run_command {command: "pdffonts paper/main.pdf"}: every font embedded. I read the text
-      of the PDF once more (pdftotext) for broken symbols, and check that the PDF builds from
-      a clean checkout: make -C paper clean pdf.
-      reply {text: "The paper is paper/main.pdf: six pages and references, in the workshop's
-        style, built by make -C paper pdf. It argues that checkpoint intervals should grow
-        with a job's state, shown on two of three workloads; the third is stated as a
-        limitation. Path: a survey of 18 papers (paper/notes/related.md), the argument in
-        paper/OUTLINE.md, figures rebuilt from data/runs by make figures, three sections
-        drafted in parallel, a referee round with seven findings (five accepted: among them a
-        fairer baseline and a derivation that was missing), one pass for consistency. Checked:
-        no undefined reference, fonts embedded, the page limit holds. Not done: the camera-
-        ready form, which the workshop sends after acceptance."}
+      continues: give a finished part back to its owner.
+        Call: run_subagents {tasks: [{name: "<owner>", agent: "<same agent>", continues:
+          "<owner>", goal: "<the defect and how it shows>", writeScope: ["<its part>"]}]}
+        Back and then: as run_subagents. The owner starts from everything it read and tried.
+
+      sleep: wait without spending anything.
+        {until: [{kind: "children"}]}: woken as each subtask ends, with its result.
+        {until: [{kind: "children"}, {kind: "message"}]}: also when a task writes to you.
+        {until: [{kind: "jobs"}]}: when your background commands end.
+        A failed or stopped subtask always wakes you.
+
+      send_message: talk to your subtasks; they talk to you and to each other.
+        {to: "<task>", kind: "inform", summary: "<one line>", text: "<...>"}: a fact others
+          need, such as an interface that changed.
+        {to: "<task>", kind: "request", summary: "<one line>", text: "<...>"}: a question that
+          needs an answer; the receiver must reply.
+        {to: "<task>", kind: "reply", replyTo: "<the request id>", text: "<...>"}: the answer.
+        {to: "<your subtask>", interrupt: true, text: "<...>"}: it changes course now.
+        references: ["<toolCallId>"] attaches a result of yours (a log, a long output) instead of
+          copying it; the receiver reads it with read_output.
+        A request to you is a decision only you can make (an interface, a rule of the plan):
+        answer it soon, since the asker may be waiting; then inform every task the answer touches.
+
+      Background commands: run_command {command: "<slow build or suite>", runInBackground:
+        true} returns a job id at once; sleep {until: [{kind: "jobs"}]}; read with job_output.
+
+      stop_subagents {names: ["<x>"], reason: "<why>"}: a task that goes the wrong way; start it
+        again with a better goal. view_tasks shows the tree.
+
+      Shape of a whole large task, in general terms (not a recipe):
+      1. Read enough to know the parts. When something must be learnt first: sub_mission
+         research, and read the specification yourself meanwhile.
+      2. Decide and write down what everyone shares: interfaces, formats, rules. Yours.
+      3. One call: run_subagents with the plan and one owner per part (leads when there are more
+         than four), and, for a specification, sub_mission acceptance in the same breath.
+      4. sleep until children and messages. Answer requests; inform the tasks an answer touches.
+      5. Check each result as it comes back. A defect its owner understands: continues. A small
+         one in a file nobody holds: fix it yourself.
+      6. When the parts are back: sub_mission integrate when the whole fails in ways you cannot
+         place; sub_mission fix-verify for one failure with an unknown cause; sub_mission review
+         for what would be costly to get wrong.
+      7. Run the checks of the plan yourself, last; reply with what was delivered and how it was
+         checked.
+
+      Counter-example, do not split: "rename one setting everywhere, keeping old files working"
+      touches a few files that depend on each other. Search, change each place, keep the old
+      name as a fallback, run the tests, reply. Starting tasks here costs more than it saves.

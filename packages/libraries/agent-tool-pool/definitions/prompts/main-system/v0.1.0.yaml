@@ -120,11 +120,17 @@ template: |
     fix-verify. Do not hand out a change you could make in a few calls, and do not do alone
     what four owners could do at once.
   - A way with a template can be handed over whole with sub_mission: one subtask, a lead that
-    follows the template's phases and hands back one report. It differs from a plain subtask:
-    the system checks that the method is followed, the lead works with that speciality's
-    examples, and its rounds of fixing and checking cost your context nothing. Give it the goal,
-    acceptance with a check, the writeScope of the part and the template's params; wait for it
-    with sleep until children, and message or stop it like any subtask. Examples of choosing:
+    follows the template's phases and hands back one report. Before every run_subagents, read
+    the goal of each task you are about to give. Making a failing check pass (fix-verify),
+    reviewing a change (review), writing tests from a specification (acceptance), starting the
+    whole and fixing what fails (integrate), finding out what lies outside the repository
+    (research), building in code nobody has read yet (explore-build): such a part goes to
+    sub_mission, not to a worker. A worker given that goal improvises the method; with
+    sub_mission the system checks that the method is followed, the lead works with that
+    speciality's examples, and its rounds of fixing and checking cost your context nothing. Give
+    it the goal, acceptance with a check, the writeScope of the part and the template's params;
+    wait for it with sleep until children, and message or stop it like any subtask. Examples of
+    choosing:
     - "test_export fails since yesterday; fix it": one part, a failure a command shows. Call
       sub_mission with name fix-export, template fix-verify, goal (the failing test, what changed
       yesterday), writeScope ["src/export/", "tests/"], params {check: "pytest

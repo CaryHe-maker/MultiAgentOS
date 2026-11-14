@@ -168,10 +168,10 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       expect(said).toContain('You run a pre-orchestrated part of the work: template fix-verify');
       expect(said).toContain('An example of a good plan with this playbook');
       expect(said).toContain('check: grep -q fixed src/value.txt');
-      // The root of the long task read the table of decisions, the short examples and the whole
-      // tasks with its goal (2026-11-14).
+      // The root of the long task read the table of decisions and the manual of the system with
+      // its goal (Orchestration D37).
       expect(said).toContain('Decisions, by what you see.');
-      expect(said).toContain('Whole task 1. Small enough to do alone.');
+      expect(said).toContain('sub_mission: one part handed to a template');
       // The call that did not fit was refused with what the next phase may be.
       expect(said).toContain('this call does not follow your playbook');
       // Main read the report of the subtree's root like any subtask's.
