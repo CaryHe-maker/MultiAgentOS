@@ -270,6 +270,12 @@
    "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
    "sha256": "932ab8c5b0dc27254b3f576ded1a864969149ba4f287e2e41b0b0d4edd54a0f2",
    "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "designed/survey-gnn-recsys",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "c8640e8e39dfe24464dbf90bcfae0f1333701cdee3647449f422bce75cd3bdc8"
   }
  ],
  "largeRules": {
@@ -375,5 +381,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T14:55:45.914Z"
+ "resealedAt": "2026-11-14T15:07:18.952Z"
 }
