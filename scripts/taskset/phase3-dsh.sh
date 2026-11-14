@@ -10,6 +10,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 META=${META:-$HOME/benchmeta}
 OUT=${OUT:-$HOME/bench/p3dsh}
 CAP_LARGE=9000
+EFREE=${EFREE:-/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe}
 [ -n "${DEEPSEEK_API_KEY:-}" ] || [ -f "${MAO_ENV_FILE:-}" ] || { echo "set DEEPSEEK_API_KEY or MAO_ENV_FILE"; exit 1; }
 export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v24.19.0-linux-x64/bin:$PATH"
 export PYTHONPATH=$HERE
@@ -34,6 +35,12 @@ for id in "$@"; do
     echo "skip $id: already started $(cat "$marker")"
     continue
   fi
+  # On this machine the WSL and Docker disks live on E:, and a full E: crashed WSL; stop before a
+  # task starts (it stays unmarked) when E: runs low.
+  if [ -x "$EFREE" ]; then
+    free=$("$EFREE" -NoProfile -Command "[math]::Floor((Get-PSDrive E).Free/1GB)" < /dev/null | tr -d '\r')
+    [ "${free:-0}" -ge 20 ] || { echo "stop before $id: E: has ${free} GB free"; exit 2; }
+  fi
   date -Iseconds > "$marker"
   log="$OUT/logs/${id//\//__}.log"
   echo "start $id $(date +%H:%M:%S)"
@@ -42,17 +49,21 @@ for id in "$@"; do
       [ "${id%%/*}" = tb2 ] && dir=$META/tb2/$name || dir=$META/sbp/v2/tasks/$name
       cap=$(awk '/^\[agent\]/{a=1;next} /^\[/{a=0} a && /timeout_sec/{gsub(/[^0-9.]/,"",$0); print int($0); exit}' "$dir/task.toml")
       node "$HERE/agentrun.mjs" dsh "$dir" "$OUT/results" --label p3dsh --cap "${cap:-900}" < /dev/null >> "$OUT/small.jsonl" 2> "$log"
+      image=$(tail -1 "$OUT/small.jsonl" | sed -n 's/.*"image":"\([^"]*\)".*/\1/p')
+      [ -n "$image" ] && docker rmi "$image" > /dev/null 2>&1
       ;;
     lb/*)
       (cd "$META/lb" && uv run loopsbench run -p "$META/lb-data/tasks" -t "$name" \
         --agent-import-path lb_dsh_agent:DshAgent --global-agent-timeout-sec $CAP_LARGE \
         --n-attempts 1 --n-concurrent 1 --output-path "$OUT/results" --run-id "p3dsh-$name" \
-        --no-livestream) < /dev/null > "$log" 2>&1
+        --no-livestream --cleanup) < /dev/null > "$log" 2>&1
       ;;
     deepswe/*)
       pier run -p "$META/deepswe/tasks/$name" --agent-import-path pier_dsh_agent:DshAgent \
         --ak cap_sec=$CAP_LARGE --n-concurrent 1 --n-attempts 1 --jobs-dir "$OUT/results" \
         --job-name "p3dsh-$name" -y -q < /dev/null > "$log" 2>&1
+      image=$(sed -n 's/^docker_image = "\([^"]*\)"/\1/p' "$META/deepswe/tasks/$name/task.toml" | head -1)
+      [ -n "$image" ] && docker rmi "$image" > /dev/null 2>&1
       ;;
     *) echo "unknown source: $id" ;;
   esac
