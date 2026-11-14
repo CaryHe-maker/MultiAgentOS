@@ -1,0 +1,1025 @@
+{
+ "python": "3.12.16",
+ "cases": [
+  {
+   "name": "expr000",
+   "expr": "M(R.search('abc', 'xxabcxx'))",
+   "expected": "((2, 5), (), {}, None, None)"
+  },
+  {
+   "name": "expr001",
+   "expr": "M(R.match('abc', 'xxabc'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr002",
+   "expr": "M(R.fullmatch('a.c', 'abc'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr003",
+   "expr": "M(R.fullmatch('a.c', 'a\\nc'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr004",
+   "expr": "M(R.fullmatch('a.c', 'a\\nc', R.S))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr005",
+   "expr": "M(R.search('^b', 'a\\nb'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr006",
+   "expr": "M(R.search('^b', 'a\\nb', R.M))",
+   "expected": "((2, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr007",
+   "expr": "M(R.search('a$', 'a\\n'))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr008",
+   "expr": "M(R.search('a\\\\Z', 'a\\n'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr009",
+   "expr": "M(R.search('\\\\Aa', 'ba'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr010",
+   "expr": "R.findall('$', 'a\\nb\\n')",
+   "expected": "['', '']"
+  },
+  {
+   "name": "expr011",
+   "expr": "R.findall('^', 'a\\nb\\n', R.M)",
+   "expected": "['', '', '']"
+  },
+  {
+   "name": "expr012",
+   "expr": "R.findall('$', 'a\\nb\\n', R.M)",
+   "expected": "['', '', '']"
+  },
+  {
+   "name": "expr013",
+   "expr": "M(R.search('\\\\bcat\\\\b', 'concat cat'))",
+   "expected": "((7, 10), (), {}, None, None)"
+  },
+  {
+   "name": "expr014",
+   "expr": "R.findall('\\\\B..', 'abc def')",
+   "expected": "['bc', 'ef']"
+  },
+  {
+   "name": "expr015",
+   "expr": "M(R.search('x*', 'aaa'))",
+   "expected": "((0, 0), (), {}, None, None)"
+  },
+  {
+   "name": "expr016",
+   "expr": "M(R.match('', 'abc'))",
+   "expected": "((0, 0), (), {}, None, None)"
+  },
+  {
+   "name": "expr017",
+   "expr": "M(R.search('\\\\x41\\\\u00e9\\\\U0001F600', 'A\\u00e9\\U0001F600'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr018",
+   "expr": "M(R.search('\\\\t\\\\n\\\\r\\\\f\\\\v\\\\a', '\\t\\n\\r\\f\\v\\a'))",
+   "expected": "((0, 6), (), {}, None, None)"
+  },
+  {
+   "name": "expr019",
+   "expr": "M(R.search('\\\\101\\\\0', 'A\\x00'))",
+   "expected": "((0, 2), (), {}, None, None)"
+  },
+  {
+   "name": "expr020",
+   "expr": "M(R.search('\\\\N{LATIN SMALL LETTER E WITH ACUTE}', 'caf\\u00e9'))",
+   "expected": "((3, 4), (), {}, None, None)"
+  },
+  {
+   "name": "expr021",
+   "expr": "M(R.search('\\\\.\\\\*\\\\+\\\\?\\\\(\\\\)\\\\[\\\\]\\\\{\\\\}\\\\|\\\\^\\\\$\\\\\\\\', '.*+?()[]{}|^$\\\\'))",
+   "expected": "((0, 14), (), {}, None, None)"
+  },
+  {
+   "name": "expr022",
+   "expr": "R.escape('a.b*c d-\u00e9\\n')",
+   "expected": "'a\\\\.b\\\\*c\\\\ d\\\\-\u00e9\\\\\\n'"
+  },
+  {
+   "name": "expr023",
+   "expr": "R.escape('_09azAZ')",
+   "expected": "'_09azAZ'"
+  },
+  {
+   "name": "expr024",
+   "expr": "R.findall('[a-c]', 'abcd')",
+   "expected": "['a', 'b', 'c']"
+  },
+  {
+   "name": "expr025",
+   "expr": "R.findall('[^a-c]', 'abcd')",
+   "expected": "['d']"
+  },
+  {
+   "name": "expr026",
+   "expr": "R.findall('[]a]', ']a]')",
+   "expected": "[']', 'a', ']']"
+  },
+  {
+   "name": "expr027",
+   "expr": "R.findall('[a\\\\]]', 'a]b')",
+   "expected": "['a', ']']"
+  },
+  {
+   "name": "expr028",
+   "expr": "R.findall('[-a]', '-ab')",
+   "expected": "['-', 'a']"
+  },
+  {
+   "name": "expr029",
+   "expr": "R.findall('[a-]', '-ab')",
+   "expected": "['-', 'a']"
+  },
+  {
+   "name": "expr030",
+   "expr": "R.findall('[\\\\d.]', '1.2x')",
+   "expected": "['1', '.', '2']"
+  },
+  {
+   "name": "expr031",
+   "expr": "R.findall('[^\\\\W\\\\d]', 'a1_b2')",
+   "expected": "['a', '_', 'b']"
+  },
+  {
+   "name": "expr032",
+   "expr": "R.findall('\\\\d+', '12 \\u0663\\u0664 ab')",
+   "expected": "['12', '\u0663\u0664']"
+  },
+  {
+   "name": "expr033",
+   "expr": "R.findall('\\\\d+', '12 \\u0663\\u0664 ab', R.A)",
+   "expected": "['12']"
+  },
+  {
+   "name": "expr034",
+   "expr": "R.findall('\\\\w+', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe')",
+   "expected": "['The', 'year', '1999', 'and', '2024', 'emails', 'ann', 'x', 'com', 'Bob', 'B', 'y', 'org', 'tel', '64', '21', '555', '0199', 'caf\u00e9', '\u00c9T\u00c9', 'stra\u00dfe']"
+  },
+  {
+   "name": "expr035",
+   "expr": "R.findall('\\\\w+', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe', R.A)",
+   "expected": "['The', 'year', '1999', 'and', '2024', 'emails', 'ann', 'x', 'com', 'Bob', 'B', 'y', 'org', 'tel', '64', '21', '555', '0199', 'caf', 'T', 'stra', 'e']"
+  },
+  {
+   "name": "expr036",
+   "expr": "R.findall('\\\\s', 'a\\tb\\u00a0c\\u2003d')",
+   "expected": "['\\t', '\\xa0', '\\u2003']"
+  },
+  {
+   "name": "expr037",
+   "expr": "R.findall('\\\\S+', ' a b\\n')",
+   "expected": "['a', 'b']"
+  },
+  {
+   "name": "expr038",
+   "expr": "R.findall('[\\\\s\\\\S]', 'ab')",
+   "expected": "['a', 'b']"
+  },
+  {
+   "name": "expr039",
+   "expr": "R.findall('[a-z]', 'ABC', R.I)",
+   "expected": "['A', 'B', 'C']"
+  },
+  {
+   "name": "expr040",
+   "expr": "R.findall('[^a-z]', 'aBc1', R.I)",
+   "expected": "['1']"
+  },
+  {
+   "name": "expr041",
+   "expr": "R.findall('[\\\\u00e0-\\\\u00ff]', 'caf\\u00e9 na\\u00efve')",
+   "expected": "['\u00e9', '\u00ef']"
+  },
+  {
+   "name": "expr042",
+   "expr": "R.findall('[\\\\x00-\\\\x1f]', 'a\\x01b\\x1f')",
+   "expected": "['\\x01', '\\x1f']"
+  },
+  {
+   "name": "expr043",
+   "expr": "R.findall('a*', 'baaac')",
+   "expected": "['', 'aaa', '', '']"
+  },
+  {
+   "name": "expr044",
+   "expr": "R.findall('a+', 'baaac aa')",
+   "expected": "['aaa', 'aa']"
+  },
+  {
+   "name": "expr045",
+   "expr": "R.findall('a?', 'aba')",
+   "expected": "['a', '', 'a', '']"
+  },
+  {
+   "name": "expr046",
+   "expr": "R.findall('a{2}', 'aaaaa')",
+   "expected": "['aa', 'aa']"
+  },
+  {
+   "name": "expr047",
+   "expr": "R.findall('a{2,}', 'a aa aaa')",
+   "expected": "['aa', 'aaa']"
+  },
+  {
+   "name": "expr048",
+   "expr": "R.findall('a{,2}', 'aaa')",
+   "expected": "['aa', 'a', '']"
+  },
+  {
+   "name": "expr049",
+   "expr": "R.findall('a{1,2}', 'aaaaa')",
+   "expected": "['aa', 'aa', 'a']"
+  },
+  {
+   "name": "expr050",
+   "expr": "R.findall('a{2,3}?', 'aaaa')",
+   "expected": "['aa', 'aa']"
+  },
+  {
+   "name": "expr051",
+   "expr": "R.findall('a*?b', 'aab ab')",
+   "expected": "['aab', 'ab']"
+  },
+  {
+   "name": "expr052",
+   "expr": "M(R.search('<.*>', '<a><b>'))",
+   "expected": "((0, 6), (), {}, None, None)"
+  },
+  {
+   "name": "expr053",
+   "expr": "M(R.search('<.*?>', '<a><b>'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr054",
+   "expr": "M(R.search('a{3', 'a{3'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr055",
+   "expr": "M(R.search('x{2,1}', 'xx'))",
+   "expected": "error"
+  },
+  {
+   "name": "expr056",
+   "expr": "M(R.search('a++a', 'aaa'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr057",
+   "expr": "M(R.search('a*+b', 'aaab'))",
+   "expected": "((0, 4), (), {}, None, None)"
+  },
+  {
+   "name": "expr058",
+   "expr": "M(R.search('(?:ab)?+a', 'aba'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr059",
+   "expr": "M(R.search('a{1,3}+a', 'aaaa'))",
+   "expected": "((0, 4), (), {}, None, None)"
+  },
+  {
+   "name": "expr060",
+   "expr": "M(R.fullmatch('(a|ab)(c|bcd)(d*)', 'abcd'))",
+   "expected": "((0, 4), ('a', 'bcd', ''), {}, 3, None)"
+  },
+  {
+   "name": "expr061",
+   "expr": "M(R.search('(a)(b)?(c)', 'ac'))",
+   "expected": "((0, 2), ('a', None, 'c'), {}, 3, None)"
+  },
+  {
+   "name": "expr062",
+   "expr": "M(R.search('(a)|(b)', 'b'))",
+   "expected": "((0, 1), (None, 'b'), {}, 2, None)"
+  },
+  {
+   "name": "expr063",
+   "expr": "M(R.search('((a)(b))', 'ab'))",
+   "expected": "((0, 2), ('ab', 'a', 'b'), {}, 1, None)"
+  },
+  {
+   "name": "expr064",
+   "expr": "M(R.search('(?:a)(b)', 'ab'))",
+   "expected": "((0, 2), ('b',), {}, 1, None)"
+  },
+  {
+   "name": "expr065",
+   "expr": "M(R.search('(?P<x>a)(?P<y>b)?', 'a'))",
+   "expected": "((0, 1), ('a', None), {'x': 'a', 'y': None}, 1, 'x')"
+  },
+  {
+   "name": "expr066",
+   "expr": "M(R.search('(a)*', 'aaa'))",
+   "expected": "((0, 3), ('a',), {}, 1, None)"
+  },
+  {
+   "name": "expr067",
+   "expr": "M(R.search('(a|b)*', 'abba'))",
+   "expected": "((0, 4), ('a',), {}, 1, None)"
+  },
+  {
+   "name": "expr068",
+   "expr": "M(R.search('(a*)*', 'b'))",
+   "expected": "((0, 0), ('',), {}, 1, None)"
+  },
+  {
+   "name": "expr069",
+   "expr": "M(R.search('(a*)+', 'b'))",
+   "expected": "((0, 0), ('',), {}, 1, None)"
+  },
+  {
+   "name": "expr070",
+   "expr": "M(R.search('(a|)+', 'aa'))",
+   "expected": "((0, 2), ('',), {}, 1, None)"
+  },
+  {
+   "name": "expr071",
+   "expr": "R.compile('(a)(?P<n>b)(?:c)').groups",
+   "expected": "2"
+  },
+  {
+   "name": "expr072",
+   "expr": "R.compile('(a)(?P<n>b)(?P<m>c)').groupindex",
+   "expected": "mappingproxy({'n': 2, 'm': 3})"
+  },
+  {
+   "name": "expr073",
+   "expr": "R.compile('x', R.I | R.M).flags",
+   "expected": "42"
+  },
+  {
+   "name": "expr074",
+   "expr": "R.compile('x').flags",
+   "expected": "32"
+  },
+  {
+   "name": "expr075",
+   "expr": "R.compile(b'x').flags",
+   "expected": "0"
+  },
+  {
+   "name": "expr076",
+   "expr": "R.compile('(?i)x').pattern",
+   "expected": "'(?i)x'"
+  },
+  {
+   "name": "expr077",
+   "expr": "M(R.search('(\\\\w)\\\\1', 'abccd'))",
+   "expected": "((2, 4), ('c',), {}, 1, None)"
+  },
+  {
+   "name": "expr078",
+   "expr": "M(R.search('(?P<q>[\\'\"]).*?(?P=q)', 'say \"hi\" \\'yo\\''))",
+   "expected": "((4, 8), ('\"',), {'q': '\"'}, 1, 'q')"
+  },
+  {
+   "name": "expr079",
+   "expr": "M(R.search('(a)\\\\1', 'aA', R.I))",
+   "expected": "((0, 2), ('a',), {}, 1, None)"
+  },
+  {
+   "name": "expr080",
+   "expr": "M(R.search('(a)?b\\\\1', 'b'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr081",
+   "expr": "M(R.search('(\\\\d+)-\\\\1', '12-12 3-4'))",
+   "expected": "((0, 5), ('12',), {}, 1, None)"
+  },
+  {
+   "name": "expr082",
+   "expr": "M(R.search('\\\\1(a)', 'aa'))",
+   "expected": "error"
+  },
+  {
+   "name": "expr083",
+   "expr": "R.findall('\\\\w+(?=,)', 'a, b, c')",
+   "expected": "['a', 'b']"
+  },
+  {
+   "name": "expr084",
+   "expr": "R.findall('\\\\w+(?!,)\\\\b', 'a, b, c')",
+   "expected": "['c']"
+  },
+  {
+   "name": "expr085",
+   "expr": "R.findall('(?<=\\\\$)\\\\d+', '$10 20 $30')",
+   "expected": "['10', '30']"
+  },
+  {
+   "name": "expr086",
+   "expr": "R.findall('(?<!\\\\$)\\\\b\\\\d+', '$10 20 $30')",
+   "expected": "['20']"
+  },
+  {
+   "name": "expr087",
+   "expr": "M(R.search('(?<=ab|cd)x', 'cdx'))",
+   "expected": "((2, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr088",
+   "expr": "M(R.search('(?<=a.c)d', 'abcd'))",
+   "expected": "((3, 4), (), {}, None, None)"
+  },
+  {
+   "name": "expr089",
+   "expr": "M(R.search('(?<=a+)b', 'aab'))",
+   "expected": "error"
+  },
+  {
+   "name": "expr090",
+   "expr": "M(R.search('(?>a+)a', 'aaa'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr091",
+   "expr": "M(R.search('(?>ab|a)c', 'ac'))",
+   "expected": "((0, 2), (), {}, None, None)"
+  },
+  {
+   "name": "expr092",
+   "expr": "M(R.search('(<)?\\\\w+(?(1)>|$)', '<abc>'))",
+   "expected": "((0, 5), ('<',), {}, 1, None)"
+  },
+  {
+   "name": "expr093",
+   "expr": "M(R.search('(<)?\\\\w+(?(1)>|$)', 'abc'))",
+   "expected": "((0, 3), (None,), {}, None, None)"
+  },
+  {
+   "name": "expr094",
+   "expr": "M(R.search('(?P<o>\\\\()?x(?(o)\\\\))', '(x)'))",
+   "expected": "((0, 3), ('(',), {'o': '('}, 1, 'o')"
+  },
+  {
+   "name": "expr095",
+   "expr": "M(R.search('(a)?(?(1)b|c)', 'c'))",
+   "expected": "((0, 1), (None,), {}, None, None)"
+  },
+  {
+   "name": "expr096",
+   "expr": "M(R.search('(?=(\\\\w+))\\\\w', 'abc'))",
+   "expected": "((0, 1), ('abc',), {}, 1, None)"
+  },
+  {
+   "name": "expr097",
+   "expr": "R.findall('(?i)abc', 'ABC aBc')",
+   "expected": "['ABC', 'aBc']"
+  },
+  {
+   "name": "expr098",
+   "expr": "R.findall('(?i:a)b', 'Ab AB ab')",
+   "expected": "['Ab', 'ab']"
+  },
+  {
+   "name": "expr099",
+   "expr": "R.findall('(?i)a(?-i:b)', 'AB Ab ab')",
+   "expected": "['Ab', 'ab']"
+  },
+  {
+   "name": "expr100",
+   "expr": "M(R.search('(?s:.)', '\\n'))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr101",
+   "expr": "M(R.search('(?m)^b', 'a\\nb'))",
+   "expected": "((2, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr102",
+   "expr": "R.findall('(?a)\\\\w+', 'caf\\u00e9')",
+   "expected": "['caf']"
+  },
+  {
+   "name": "expr103",
+   "expr": "M(R.search('a b # comment\\n c', 'abc', R.X))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr104",
+   "expr": "M(R.search('a\\\\ b [ ] c', 'a b  c', R.X))",
+   "expected": "None"
+  },
+  {
+   "name": "expr105",
+   "expr": "M(R.search('(?x) a [#] b', 'a#b'))",
+   "expected": "((0, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr106",
+   "expr": "M(R.search('\\u00df', 'SS', R.I))",
+   "expected": "None"
+  },
+  {
+   "name": "expr107",
+   "expr": "M(R.search('\\u0131', 'I', R.I))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr108",
+   "expr": "M(R.search('k', '\\u212a', R.I))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr109",
+   "expr": "M(R.search('[k]', '\\u212a', R.I))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr110",
+   "expr": "M(R.search('\\u00e9', '\\u00c9', R.I))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr111",
+   "expr": "M(R.search('st', '\\ufb06', R.I))",
+   "expected": "None"
+  },
+  {
+   "name": "expr112",
+   "expr": "M(R.search('(?#comment)a', 'a'))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr113",
+   "expr": "R.findall('(a)(b)', 'abab')",
+   "expected": "[('a', 'b'), ('a', 'b')]"
+  },
+  {
+   "name": "expr114",
+   "expr": "R.findall('(a)b', 'abab')",
+   "expected": "['a', 'a']"
+  },
+  {
+   "name": "expr115",
+   "expr": "R.findall('(a)|b', 'ab')",
+   "expected": "['a', '']"
+  },
+  {
+   "name": "expr116",
+   "expr": "R.findall('', 'abc')",
+   "expected": "['', '', '', '']"
+  },
+  {
+   "name": "expr117",
+   "expr": "R.findall('\\\\b', 'ab cd')",
+   "expected": "['', '', '', '']"
+  },
+  {
+   "name": "expr118",
+   "expr": "[M(m) for m in R.finditer('\\\\d+', 'a1b22c333')]",
+   "expected": "[((1, 2), (), {}, None, None), ((3, 5), (), {}, None, None), ((6, 9), (), {}, None, None)]"
+  },
+  {
+   "name": "expr119",
+   "expr": "[M(m) for m in R.finditer('x*', 'axb')]",
+   "expected": "[((0, 0), (), {}, None, None), ((1, 2), (), {}, None, None), ((2, 2), (), {}, None, None), ((3, 3), (), {}, None, None)]"
+  },
+  {
+   "name": "expr120",
+   "expr": "R.split(',', 'a,b,,c')",
+   "expected": "['a', 'b', '', 'c']"
+  },
+  {
+   "name": "expr121",
+   "expr": "R.split('(,)', 'a,b')",
+   "expected": "['a', ',', 'b']"
+  },
+  {
+   "name": "expr122",
+   "expr": "R.split(',', 'a,b,c', maxsplit=1)",
+   "expected": "['a', 'b,c']"
+  },
+  {
+   "name": "expr123",
+   "expr": "R.split('x*', 'axbc')",
+   "expected": "['', 'a', '', 'b', 'c', '']"
+  },
+  {
+   "name": "expr124",
+   "expr": "R.split('\\\\b', 'ab cd')",
+   "expected": "['', 'ab', ' ', 'cd', '']"
+  },
+  {
+   "name": "expr125",
+   "expr": "R.split('(?=b)', 'abab')",
+   "expected": "['a', 'ba', 'b']"
+  },
+  {
+   "name": "expr126",
+   "expr": "R.split('(a)|b', 'xaybz')",
+   "expected": "['x', 'a', 'y', None, 'z']"
+  },
+  {
+   "name": "expr127",
+   "expr": "R.split('', 'abc')",
+   "expected": "['', 'a', 'b', 'c', '']"
+  },
+  {
+   "name": "expr128",
+   "expr": "R.sub('a', 'b', 'aaa')",
+   "expected": "'bbb'"
+  },
+  {
+   "name": "expr129",
+   "expr": "R.sub('a', 'b', 'aaa', count=2)",
+   "expected": "'bba'"
+  },
+  {
+   "name": "expr130",
+   "expr": "R.subn('a', 'b', 'aaa')",
+   "expected": "('bbb', 3)"
+  },
+  {
+   "name": "expr131",
+   "expr": "R.sub('(\\\\w+) (\\\\w+)', '\\\\2 \\\\1', 'hello world x y')",
+   "expected": "'world hello y x'"
+  },
+  {
+   "name": "expr132",
+   "expr": "R.sub('(?P<w>\\\\w+)', '<\\\\g<w>|\\\\g<1>|\\\\g<0>>', 'ab cd')",
+   "expected": "'<ab|ab|ab> <cd|cd|cd>'"
+  },
+  {
+   "name": "expr133",
+   "expr": "R.sub('x*', '-', 'abc')",
+   "expected": "'-a-b-c-'"
+  },
+  {
+   "name": "expr134",
+   "expr": "R.sub('', '-', 'abc')",
+   "expected": "'-a-b-c-'"
+  },
+  {
+   "name": "expr135",
+   "expr": "R.sub('a|', '-', 'bab')",
+   "expected": "'-b--b-'"
+  },
+  {
+   "name": "expr136",
+   "expr": "R.sub('(a)|b', '[\\\\1]', 'ab')",
+   "expected": "'[a][]'"
+  },
+  {
+   "name": "expr137",
+   "expr": "R.sub('\\\\d', lambda m: str(int(m.group()) * 2), 'a1b5')",
+   "expected": "'a2b10'"
+  },
+  {
+   "name": "expr138",
+   "expr": "R.sub('a', '\\\\n\\\\t\\\\\\\\', 'a')",
+   "expected": "'\\n\\t\\\\'"
+  },
+  {
+   "name": "expr139",
+   "expr": "R.sub('a', lambda m: '\\\\1', 'a')",
+   "expected": "'\\\\1'"
+  },
+  {
+   "name": "expr140",
+   "expr": "R.sub('(a)', '\\\\g<1>0', 'a')",
+   "expected": "'a0'"
+  },
+  {
+   "name": "expr141",
+   "expr": "R.sub('a', 'b', 'AaA', flags=R.I)",
+   "expected": "'bbb'"
+  },
+  {
+   "name": "expr142",
+   "expr": "R.sub('^', '>', 'a\\nb', flags=R.M)",
+   "expected": "'>a\\n>b'"
+  },
+  {
+   "name": "expr143",
+   "expr": "R.subn('(?m)$', '!', 'a\\nb\\n')",
+   "expected": "('a!\\nb!\\n!', 3)"
+  },
+  {
+   "name": "expr144",
+   "expr": "R.sub('(\\\\d)', '\\\\2', '1')",
+   "expected": "error"
+  },
+  {
+   "name": "expr145",
+   "expr": "R.sub('a', '\\\\g<x>', 'a')",
+   "expected": "IndexError"
+  },
+  {
+   "name": "expr146",
+   "expr": "R.sub('a', '\\\\q', 'a')",
+   "expected": "error"
+  },
+  {
+   "name": "expr147",
+   "expr": "(lambda m: (m.group(), m.group(1), m.group(1, 2), m.group('n'), m[0], m['n'], m.start(2), m.end('n'), m.span(1)))(R.search('(a)(?P<n>b)', 'xab'))",
+   "expected": "('ab', 'a', ('a', 'b'), 'b', 'ab', 'b', 2, 3, (1, 2))"
+  },
+  {
+   "name": "expr148",
+   "expr": "(lambda m: (m.groups(), m.groups('-'), m.groupdict(), m.groupdict(0), m.lastindex, m.lastgroup, m.start(2), m.span(2)))(R.search('(a)(?P<n>b)?', 'a'))",
+   "expected": "(('a', None), ('a', '-'), {'n': None}, {'n': 0}, 1, None, -1, (-1, -1))"
+  },
+  {
+   "name": "expr149",
+   "expr": "(lambda m: (m.expand('\\\\2-\\\\1-\\\\g<n>'), m.string, m.pos, m.endpos, m.re.pattern))(R.search('(a)(?P<n>b)', 'xab'))",
+   "expected": "('b-a-b', 'xab', 0, 3, '(a)(?P<n>b)')"
+  },
+  {
+   "name": "expr150",
+   "expr": "(lambda m: (m.lastindex, m.lastgroup))(R.search('(?P<o>(?P<i>a))', 'a'))",
+   "expected": "(1, 'o')"
+  },
+  {
+   "name": "expr151",
+   "expr": "(lambda m: (m.lastindex, m.lastgroup))(R.search('(a)(b)', 'ab'))",
+   "expected": "(2, None)"
+  },
+  {
+   "name": "expr152",
+   "expr": "(lambda m: m.group(3))(R.search('(a)', 'a'))",
+   "expected": "IndexError"
+  },
+  {
+   "name": "expr153",
+   "expr": "(lambda m: m.group('zz'))(R.search('(a)', 'a'))",
+   "expected": "IndexError"
+  },
+  {
+   "name": "expr154",
+   "expr": "M(R.compile('a').search('aba', 1))",
+   "expected": "((2, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr155",
+   "expr": "M(R.compile('^a').search('ba', 1))",
+   "expected": "None"
+  },
+  {
+   "name": "expr156",
+   "expr": "M(R.compile('a$').search('ab', 0, 1))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr157",
+   "expr": "M(R.compile('\\\\bb').search('ab', 1))",
+   "expected": "None"
+  },
+  {
+   "name": "expr158",
+   "expr": "R.compile('\\\\w').findall('abcd', 1, 3)",
+   "expected": "['b', 'c']"
+  },
+  {
+   "name": "expr159",
+   "expr": "M(R.compile('b').match('ab', 1))",
+   "expected": "((1, 2), (), {}, None, None)"
+  },
+  {
+   "name": "expr160",
+   "expr": "M(R.compile('ab').fullmatch('xabx', 1, 3))",
+   "expected": "((1, 3), (), {}, None, None)"
+  },
+  {
+   "name": "expr161",
+   "expr": "R.compile('a').sub('b', 'aaa', 1)",
+   "expected": "'baa'"
+  },
+  {
+   "name": "expr162",
+   "expr": "R.compile(',').split('a,b,c', 1)",
+   "expected": "['a', 'b,c']"
+  },
+  {
+   "name": "expr163",
+   "expr": "[M(m) for m in R.compile('\\\\w').finditer('abc', 1)]",
+   "expected": "[((1, 2), (), {}, None, None), ((2, 3), (), {}, None, None)]"
+  },
+  {
+   "name": "expr164",
+   "expr": "M(R.compile('a').search('a', -5, 99))",
+   "expected": "((0, 1), (), {}, None, None)"
+  },
+  {
+   "name": "expr165",
+   "expr": "M(R.search(b'\\\\w+', b'ab cd'))",
+   "expected": "((0, 2), (), {}, None, None)"
+  },
+  {
+   "name": "expr166",
+   "expr": "R.findall(b'[a-c]', b'abcd')",
+   "expected": "[b'a', b'b', b'c']"
+  },
+  {
+   "name": "expr167",
+   "expr": "R.sub(b'a', b'b', b'aa')",
+   "expected": "b'bb'"
+  },
+  {
+   "name": "expr168",
+   "expr": "R.split(b',', b'a,b')",
+   "expected": "[b'a', b'b']"
+  },
+  {
+   "name": "expr169",
+   "expr": "M(R.search(b'(?i)\\\\xe9', b'\\\\xc9'.decode('unicode_escape').encode('latin-1')))",
+   "expected": "None"
+  },
+  {
+   "name": "expr170",
+   "expr": "R.compile('(')",
+   "expected": "error"
+  },
+  {
+   "name": "expr171",
+   "expr": "R.compile(')')",
+   "expected": "error"
+  },
+  {
+   "name": "expr172",
+   "expr": "R.compile('[a')",
+   "expected": "error"
+  },
+  {
+   "name": "expr173",
+   "expr": "R.compile('a**')",
+   "expected": "error"
+  },
+  {
+   "name": "expr174",
+   "expr": "R.compile('?')",
+   "expected": "error"
+  },
+  {
+   "name": "expr175",
+   "expr": "R.compile('(?P<1>a)')",
+   "expected": "error"
+  },
+  {
+   "name": "expr176",
+   "expr": "R.compile('(?P<a>x)(?P<a>y)')",
+   "expected": "error"
+  },
+  {
+   "name": "expr177",
+   "expr": "R.compile('\\\\1')",
+   "expected": "error"
+  },
+  {
+   "name": "expr178",
+   "expr": "R.compile('(?<=a*)b')",
+   "expected": "error"
+  },
+  {
+   "name": "expr179",
+   "expr": "R.compile('[z-a]')",
+   "expected": "error"
+  },
+  {
+   "name": "expr180",
+   "expr": "R.compile('a{2,1}')",
+   "expected": "error"
+  },
+  {
+   "name": "expr181",
+   "expr": "R.compile('(?Q)')",
+   "expected": "error"
+  },
+  {
+   "name": "expr182",
+   "expr": "R.compile('\\\\')",
+   "expected": "error"
+  },
+  {
+   "name": "expr183",
+   "expr": "R.search('a', b'a')",
+   "expected": "TypeError"
+  },
+  {
+   "name": "expr184",
+   "expr": "R.search(b'a', 'a')",
+   "expected": "TypeError"
+  },
+  {
+   "name": "expr185",
+   "expr": "R.compile('(?i')",
+   "expected": "error"
+  },
+  {
+   "name": "expr186",
+   "expr": "E(lambda: R.compile('ab(c'))",
+   "expected": "('ab(c', 2)"
+  },
+  {
+   "name": "expr187",
+   "expr": "E(lambda: R.compile('x[a'))",
+   "expected": "('x[a', 1)"
+  },
+  {
+   "name": "expr188",
+   "expr": "E(lambda: R.compile('a)b'))",
+   "expected": "('a)b', 1)"
+  },
+  {
+   "name": "expr189",
+   "expr": "issubclass(R.error, Exception)",
+   "expected": "True"
+  },
+  {
+   "name": "expr190",
+   "expr": "R.findall('[\\\\w.]+@\\\\w+\\\\.(?:com|org)', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe')",
+   "expected": "['ann@x.com', 'Bob.B@y.org']"
+  },
+  {
+   "name": "expr191",
+   "expr": "R.findall('\\\\b\\\\d{4}\\\\b', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe')",
+   "expected": "['1999', '2024', '0199']"
+  },
+  {
+   "name": "expr192",
+   "expr": "R.findall('\\\\+?\\\\d[\\\\d -]{7,}\\\\d', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe')",
+   "expected": "['+64-21-555 0199']"
+  },
+  {
+   "name": "expr193",
+   "expr": "R.sub('(?<=\\\\d)(?=(?:\\\\d{3})+(?!\\\\d))', ',', '1234567 89 12345')",
+   "expected": "'1,234,567 89 12,345'"
+  },
+  {
+   "name": "expr194",
+   "expr": "R.split('[;,.!]\\\\s*', 'The year 1999 and 2024; emails: ann@x.com, Bob.B@y.org! tel +64-21-555 0199. caf\u00e9 \u00c9T\u00c9 stra\u00dfe')",
+   "expected": "['The year 1999 and 2024', 'emails: ann@x', 'com', 'Bob', 'B@y', 'org', 'tel +64-21-555 0199', 'caf\u00e9 \u00c9T\u00c9 stra\u00dfe']"
+  },
+  {
+   "name": "expr195",
+   "expr": "[M(m) for m in R.finditer('(?P<k>\\\\w+)=(?P<v>[^&]*)', 'a=1&bb=&c=x y')]",
+   "expected": "[((0, 3), ('a', '1'), {'k': 'a', 'v': '1'}, 2, 'v'), ((4, 7), ('bb', ''), {'k': 'bb', 'v': ''}, 2, 'v'), ((8, 13), ('c', 'x y'), {'k': 'c', 'v': 'x y'}, 2, 'v')]"
+  },
+  {
+   "name": "expr196",
+   "expr": "R.findall('(\\\\d+)\\\\.(\\\\d+)\\\\.(\\\\d+)', 'v1.2.3 and 10.20.30')",
+   "expected": "[('1', '2', '3'), ('10', '20', '30')]"
+  },
+  {
+   "name": "expr197",
+   "expr": "R.sub('\\\\s+', ' ', '  lots   of\\t\\twhite \\n space ').strip()",
+   "expected": "'lots of white space'"
+  },
+  {
+   "name": "expr198",
+   "expr": "M(R.fullmatch('(?:(?:25[0-5]|2[0-4]\\\\d|1?\\\\d?\\\\d)\\\\.){3}(?:25[0-5]|2[0-4]\\\\d|1?\\\\d?\\\\d)', '192.168.0.255'))",
+   "expected": "((0, 13), (), {}, None, None)"
+  },
+  {
+   "name": "expr199",
+   "expr": "M(R.fullmatch('(?:(?:25[0-5]|2[0-4]\\\\d|1?\\\\d?\\\\d)\\\\.){3}(?:25[0-5]|2[0-4]\\\\d|1?\\\\d?\\\\d)', '256.1.1.1'))",
+   "expected": "None"
+  },
+  {
+   "name": "expr200",
+   "expr": "R.findall('\"(?:[^\"\\\\\\\\]|\\\\\\\\.)*\"', 'say \"a\\\\\\\"b\" and \"c\"')",
+   "expected": "['\"a\\\\\"b\"', '\"c\"']"
+  },
+  {
+   "name": "expr201",
+   "expr": "R.sub('(?i)(?P<w>hello)', lambda m: m.group('w').upper(), 'Hello hello HELLO')",
+   "expected": "'HELLO HELLO HELLO'"
+  },
+  {
+   "name": "expr202",
+   "expr": "R.findall('(?m)^(\\\\w+):\\\\s*(.*)$', 'name: x\\nage:  3\\nbad line\\nk:')",
+   "expected": "[('name', 'x'), ('age', '3'), ('k', '')]"
+  },
+  {
+   "name": "expr203",
+   "expr": "R.findall('(?<![\\\\w.])\\\\d+(?:\\\\.\\\\d+)?(?![\\\\w.])', '3.14 x2 10 7.5.1 .5')",
+   "expected": "['3.14', '10']"
+  }
+ ]
+}

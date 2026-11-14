@@ -318,6 +318,18 @@
    "role": "dev",
    "sha256": "b90c89e46ff123534a6f174b259055a29d94740a3033bd04e8cf81c094c37b3e",
    "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "designed/pyregex",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "0f9d3ac15e6e6223d8a1c9a994057b2879cd2984e372626ba6e3fedfcfc7c912"
+  },
+  {
+   "id": "designed/survey-kg-embedding",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "1dfea66380276fcccdf8d3024f4b205d02d13d9d7f9c86f042e38cb7231558fb"
   }
  ],
  "largeRules": {
@@ -423,5 +435,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T21:41:19.158Z"
+ "resealedAt": "2026-11-14T21:52:25.352Z"
 }
