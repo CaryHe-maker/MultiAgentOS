@@ -79,10 +79,19 @@ if (musl && (!existsSync(nodeDir) || (system === 'dsh' ? !existsSync(dshDir) : !
     `musl image: ${nodeDir}, and ${system === 'dsh' ? dshDir : 'MAO_DIR_MUSL'}, are needed`,
   );
 const instruction = readFileSync(join(taskDir, 'instruction.md'), 'utf8');
+// `allow_internet = false` in task.toml: the container sits on an internal network where only the
+// usage proxy (and through it the model API) is reachable, so no code can be downloaded.
+const offline = /^\s*allow_internet\s*=\s*false/m.test(toml);
+if (offline && system === 'mas')
+  throw new Error(
+    'offline tasks need mas to reach the model through the usage proxy; not wired yet',
+  );
 
 // ---- the shared proxy ---------------------------------------------------------------------------
 mkdirSync(USAGE_DIR, { recursive: true });
 sh(['network', 'inspect', 'benchnet']).status === 0 || sh(['network', 'create', 'benchnet']);
+sh(['network', 'inspect', 'benchint']).status === 0 ||
+  sh(['network', 'create', '--internal', 'benchint']);
 if (!sh(['ps', '-q', '-f', 'name=^benchproxy$']).stdout.trim()) {
   sh(['rm', '-f', 'benchproxy']);
   const r = sh([
@@ -108,6 +117,8 @@ if (!sh(['ps', '-q', '-f', 'name=^benchproxy$']).stdout.trim()) {
   if (r.status !== 0 && !/already in use/.test(r.stderr))
     throw new Error('proxy failed: ' + r.stderr.slice(-300));
 }
+// the proxy also joins the internal network (an error just means it is there already)
+sh(['network', 'connect', 'benchint', 'benchproxy']);
 
 // ---- the run ------------------------------------------------------------------------------------
 const runId = `${label}-${system}-${taskName.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 40)}-${Date.now() % 1e7}`;
@@ -129,7 +140,7 @@ const started = sh([
   '--name',
   cname,
   '--network',
-  'benchnet',
+  offline ? 'benchint' : 'benchnet',
   `--cpus=${cpus}`,
   `--memory=${mem}m`,
   ...mounts,
@@ -148,6 +159,7 @@ const result = {
   image,
   cap,
   musl,
+  offline,
   at: new Date().toISOString(),
 };
 try {

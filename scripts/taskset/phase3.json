@@ -128,26 +128,7 @@
    "sha256": "84c8e9da212608b55880fc46e667f6c05dba9aaaced79b568ecaa57bf5966046"
   }
  ],
- "finalLarge": [
-  {
-   "id": "designed/survey-fl-privacy",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "abedea962e61d622d0f6e081ab7dfe61218e0be33a47410ccb69ef680c857445"
-  },
-  {
-   "id": "designed/pygit",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "cc3c06975eecd48133b1ee79f25d92fda730ace70e8ee6669f152b65edb94604"
-  },
-  {
-   "id": "designed/mdhtml",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "6fd1bc1f8c47a48eb83909566af7d9f0584df988a420ca099d9243bda98b432c"
-  }
- ],
+ "finalLarge": [],
  "devLarge": [
   {
    "id": "lb/task_raylib_shapes2d_medium",
@@ -276,6 +257,33 @@
    "source": "designed",
    "role": "dev",
    "sha256": "c8640e8e39dfe24464dbf90bcfae0f1333701cdee3647449f422bce75cd3bdc8"
+  },
+  {
+   "id": "designed/pyawk",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "d94ceaf677bd4cbcdd555c718476f3f17c6a537d9b637d04ca8ed258639de4a7"
+  },
+  {
+   "id": "designed/pygit",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "cc3c06975eecd48133b1ee79f25d92fda730ace70e8ee6669f152b65edb94604",
+   "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "designed/mdhtml",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "6fd1bc1f8c47a48eb83909566af7d9f0584df988a420ca099d9243bda98b432c",
+   "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "designed/survey-fl-privacy",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "abedea962e61d622d0f6e081ab7dfe61218e0be33a47410ccb69ef680c857445",
+   "reason": "dsh finished in under 25 minutes"
   }
  ],
  "largeRules": {
@@ -381,5 +389,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T15:07:18.952Z"
+ "resealedAt": "2026-11-14T16:33:00.819Z"
 }
