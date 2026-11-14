@@ -90,10 +90,11 @@
   {
    "id": "sbp/instance_gravitational__teleport-1b08e7d0dbe68fe530a0f08ad408ec198b7c53fc-vee9b09fb20c43af7e520f57e9239bbcf46b7113d",
    "source": "swe-bench-pro",
-   "role": "picked",
+   "role": "voided",
    "bucket": "repo:teleport",
    "difficulty": "medium",
-   "sha256": "1e7570dba18e6ddd0ad061f6a6b05e34325017577cfa75b9c94e76b16dd9c8cb"
+   "sha256": "1e7570dba18e6ddd0ad061f6a6b05e34325017577cfa75b9c94e76b16dd9c8cb",
+   "reason": "Alpine image: dsh cannot run (glibc Node; node-pty crash under musl); replaced by reserve openlibrary-0d13e6b4 (Cary, 2026-11-15)"
   },
   {
    "id": "sbp/instance_internetarchive__openlibrary-431442c92887a3aece3f8aa771dd029738a80eb1-v76304ecdb3a5954fcf13feb710e8c40fcf24b73c",
@@ -122,10 +123,11 @@
   {
    "id": "sbp/instance_internetarchive__openlibrary-0d13e6b4bf80bced6c0946b969b9a1b6963f6bce-v76304ecdb3a5954fcf13feb710e8c40fcf24b73c",
    "source": "swe-bench-pro",
-   "role": "reserve",
+   "role": "picked",
    "bucket": "repo:openlibrary",
    "difficulty": "medium",
-   "sha256": "84c8e9da212608b55880fc46e667f6c05dba9aaaced79b568ecaa57bf5966046"
+   "sha256": "84c8e9da212608b55880fc46e667f6c05dba9aaaced79b568ecaa57bf5966046",
+   "replaces": "teleport-1b08e7d0"
   }
  ],
  "finalLarge": [
@@ -134,12 +136,6 @@
    "source": "designed",
    "role": "picked",
    "sha256": "e42ab57aa43a90b2a34b7e19da0eaf63bdf269233e0345a19f273576a074c1f5"
-  },
-  {
-   "id": "designed/textutils",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "b90c89e46ff123534a6f174b259055a29d94740a3033bd04e8cf81c094c37b3e"
   },
   {
    "id": "designed/survey-av-fusion",
@@ -309,6 +305,13 @@
    "source": "designed",
    "role": "dev",
    "sha256": "53c78090dbd365abe12539fc1ff250016b62a529abd84928a4bf1a801a05ed6d"
+  },
+  {
+   "id": "designed/textutils",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "b90c89e46ff123534a6f174b259055a29d94740a3033bd04e8cf81c094c37b3e",
+   "reason": "dsh finished in under 25 minutes"
   }
  ],
  "largeRules": {
@@ -414,5 +417,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T17:20:05.123Z"
+ "resealedAt": "2026-11-14T21:36:40.435Z"
 }
