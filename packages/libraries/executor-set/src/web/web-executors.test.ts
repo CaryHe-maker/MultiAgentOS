@@ -11,6 +11,7 @@ import {
   type WebConfig,
   type WebOptions,
 } from './web-executors.js';
+import { WebFailure } from './providers.js';
 
 const NONE = { kind: 'NONE' } as const;
 const PUBLIC = '93.184.216.34';
@@ -364,6 +365,23 @@ describe('web_fetch: the address checks (before anyone is asked)', () => {
       resolve: () => Promise.resolve([]),
     }).execute({ url: 'https://nowhere.example/' }, environmentFor('WEB_FETCH', NONE));
     expect(outcome).toMatchObject({ outcome: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' });
+  });
+
+  it('reports a lookup that cannot be made as a page not available now', async () => {
+    // What systemResolve throws without a network (EAI_AGAIN): the model hears it as a tool result.
+    const outcome = await createWebFetchExecutor({
+      fetch: unreachable.fetch,
+      resolve: () =>
+        Promise.reject(
+          new WebFailure({ kind: 'FAILED', code: 'PAGE_UNAVAILABLE', retryable: true }),
+        ),
+    }).execute({ url: 'https://offline.example/' }, environmentFor('WEB_FETCH', NONE));
+    expect(outcome).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PAGE_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(unreachable.calls).toHaveLength(0);
   });
 
   it('does not send an address that holds a credential', async () => {
