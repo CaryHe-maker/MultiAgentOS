@@ -365,7 +365,8 @@
   "loopsbench": "phase-1 final half; 6-30 units; 1500-6000 changed lines in the gold patches; timeout >= 3600 s; repository not in the small final set; one per category",
   "deepswe": "reference solution >= 834 changed lines (top quarter) and >= 5 files; repository not in the small final set; one per language",
   "replacement": "a picked task that dsh finishes in under 25 minutes is replaced by the next reserve of the same source, in order",
-  "v2": "v1 picks all ran under 25 minutes with dsh; v2 = two LoopsBench tasks chosen by hand (os_labs_asm_kernel, compiler_cmm_mips) + two tasks designed in this project; each must also take dsh at least 25 minutes in its one control run"
+  "v2": "v1 picks all ran under 25 minutes with dsh; v2 = two LoopsBench tasks chosen by hand (os_labs_asm_kernel, compiler_cmm_mips) + two tasks designed in this project; each must also take dsh at least 25 minutes in its one control run",
+  "threshold": "single-agent (dsh) time of at least 20 minutes; relaxed from 25 by Cary on 2026-11-15"
  },
  "finalLargeV1": [
   {

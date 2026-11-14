@@ -42,7 +42,7 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 | 组 | 小任务 | 大任务 |
 |---|---|---|
 | **开发集**（调参只用它） | 10 个，类似 phase 1 的小任务 | 4 个 |
-| **最终集**（发布指标） | 10 个，类似 phase 1 的小任务 | 4 个，要求单个 Agent 至少运行 25 分钟以上 |
+| **最终集**（发布指标） | 10 个，类似 phase 1 的小任务 | 4 个以上，要求单个 Agent 至少运行 20 分钟以上 |
 
 - **开发集与最终集不得高度相似**：不同的仓库、领域与题型；每个最终集任务写下与开发集的差别，选题时逐对检查。
 - 小任务：开发集可以从 phase 1 的任务池（开发集 36 题、旧最终集 30 题）里选；最终集选 phase 1 没有用过的新题。phase 1 的旧最终集已经用过三次（mas 两次、dsh 一次，加上 I3 的 Mission 一次），不再作为最终集。
@@ -61,8 +61,8 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 ### 3.3 封存与 `dsh` 对照（2026-11-15 定）
 
 1. 先按第 3.1 节的规则选好两组最终集，记下题目清单、抽样种子与每题内容的哈希，**封存**（`scripts/taskset/phase3.json`）。封存之后只看合计数字，不看题目细节，不据此改动任何东西。
-2. 封存后由 `dsh`（中性提示）把最终集的每题跑一次。它同时是计时（检验大任务"单个 Agent 至少 25 分钟"）与最终集的 `dsh` 对照，之后不再重跑。`dsh` 委派优先提示一组不跑。
-3. 大任务中 `dsh` 不到 25 分钟就结束的，按封存时写下的候选顺序换成下一道，替补题同样由 `dsh` 跑一次；原题的记录保留并在证据中写明。不按 `dsh` 的成败或用时之外的结果挑题。
+2. 封存后由 `dsh`（中性提示）把最终集的每题跑一次。它同时是计时（检验大任务"单个 Agent 至少 20 分钟"）与最终集的 `dsh` 对照，之后不再重跑。`dsh` 委派优先提示一组不跑。
+3. 大任务中 `dsh` 不到 20 分钟就结束的，按封存时写下的候选顺序换成下一道，替补题同样由 `dsh` 跑一次；原题的记录保留并在证据中写明。不按 `dsh` 的成败或用时之外的结果挑题。
 4. 运行条件冻结：同一模型（`deepseek-flash`）、同一 `dsh` 版本、同一容器与判分；单题上限两边相同（大任务 2.5 小时，小任务沿用题目的设置）；费用用同一张价格表折算。两边不在同一时间运行，用时含时段差异，证据中写明各自的运行日期。
 5. 本项目在优化完成后才跑最终集（第一次），至多两次。
 6. 运行方式（`scripts/taskset/phase3-dsh.sh`）：每题开跑前写下标记，有标记的题不再运行，崩溃也不自动重跑，只报告。小任务用 `agentrun.mjs`；LoopsBench 用官方 harness（`microsoft/loopsbench` f44331c，题包 c47e13a）加 `lb_dsh_agent.py`，DeepSWE 用 Pier 加 `pier_dsh_agent.py`，判分都是官方的。两个适配器把 Node 与 `dsh` 拷进题目容器，在其中运行 `dsh --profile headless`；模型请求都经 `usage-proxy.mjs` 计 token，与小任务同一口径（LoopsBench 经 Docker 网关在运行期的白名单内访问，Pier 经它的出网代理访问 `host.docker.internal` 的 80 端口）。适配器先在不属于任何一组的题上做过 5 分钟的冒烟检查。
@@ -70,7 +70,7 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 ### 3.4 设计题（2026-11-15，Cary 定的原则）
 
 1. **用 DeepSeek 跑过的题都保留**，放进开发集或最终集，不丢弃，以免浪费 token。
-2. 大任务改为本项目设计：最终集 3 道、开发集 3 道，按大学课程设计或毕业设计的角度选题；两组各有一道非编程的大任务（严格注明引用与参考文献的综述论文）。至少这 6 道设计题由 `dsh` 单独运行超过 25 分钟。
+2. 大任务改为本项目设计：最终集 3 道、开发集 3 道，按大学课程设计或毕业设计的角度选题；两组各有一道非编程的大任务（严格注明引用与参考文献的综述论文）。至少这 6 道设计题由 `dsh` 单独运行超过 20 分钟。
 3. 当天把开发集与最终集的题都定下，并都用 DeepSeek 跑过一次。
 
 **做法**：每道题是 Harbor 格式（`scripts/taskset/designed/<名>/`：`instruction.md` 规格、`environment/`、`tests/` 隐藏测试、`solution/` oracle），用 `agentrun.mjs` 运行，`dsh` 与本项目同一判分。判分按隐藏测试的通过比例给分。编程题的期望输出尽量取自真实的参考实现（`lua5.4`、`jq`、`gawk --posix`、GNU 工具、`sqlite3`、`re`、`cmark`、`git`），在任务镜像里事先生成；oracle 是调用参考实现的包装，按设计只不通过"禁止外部程序"一项，空实现为 0 分。论文题按结构检查与参考文献核对（DOI 经 Crossref、arXiv 编号经 arXiv 接口，题目、第一作者、年份都要对上）各占一半。
@@ -99,7 +99,7 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 | pyarchive（tar/gzip/zip 与 DEFLATE） | **最终** | 运行中 | | 离线 |
 | survey-med-seg（更长的综述） | 开发 | 未运行 | | 50000 字、120 条以上文献 |
 
-**最终集的大任务（Cary 2026-11-15 定）**：pylua、survey-av-fusion、sqlengine、minidb、pyarchive，共 5 道。sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一起放进最终集，开发集里不留数据库题；pyarchive 不论结果都进最终集。这三道不满足"单个 Agent 至少 25 分钟"（sqlengine 23.3、minidb 23.1 分钟），这条要求对它们例外。开发集的大任务：pyawk 与 survey-med-seg，其余为保留的额外题。
+**最终集的大任务（Cary 2026-11-15 定）**：pylua、survey-av-fusion、sqlengine、minidb、pyarchive，共 5 道。sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一起放进最终集，开发集里不留数据库题；pyarchive 不论结果都进最终集。门槛（Cary 2026-11-15 定）由 25 分钟统一放宽为 **20 分钟**：用 `dsh` 单独运行至少 20 分钟。按这条，设计题中满足的有 pylua、survey-av-fusion、pyawk、sqlengine、minipy、minidb、textutils、pyregex（20.0 分钟）共 8 道；pyarchive 不论结果都在最终集。开发集的大任务：pyawk 与 survey-med-seg，其余为保留的额外题。
 
 第一轮的课设规模的题 `dsh` 都在 25 分钟内满分完成；加大广度并离线之后，用时才超过 25 分钟，得分也开始低于满分。LoopsBench 与 DeepSWE 的大题（共 8 道）`dsh` 都在 8–21 分钟内结束，作为开发集的额外题保留。小任务最终集里的 teleport-1b08e7d0 是 Alpine 镜像，`dsh` 无法运行（glibc 的 Node；改用 musl 版后 node-pty 崩溃），两次作废，由替补 openlibrary-0d13e6b4 顶上（Cary 定）。
 
