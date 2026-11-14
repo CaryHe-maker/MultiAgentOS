@@ -96,6 +96,8 @@ export interface ExecutionConfig {
   readonly cancelGraceMs: number;
   readonly pauseDrainMs: number;
   readonly convergenceMarginMs: number;
+  /** The share of a call's input its reservation counts (M2Design 7.3, rule 7); 1 when absent. */
+  readonly reserveShare?: number;
 }
 
 export type RequestRefusal = 'INVALID_INPUT' | 'LIMIT_EXCEEDED' | ArtifactRefusal;
@@ -183,13 +185,19 @@ const RESERVED_INPUT_SHARE = 1.05;
 
 /**
  * Room for the estimate to be low, up to the input limit: the ledger keeps exactly a limit's worth
- * for the next call and the final one, and those reservations must always succeed.
+ * for the next call and the final one, and those reservations must always succeed. The input is
+ * counted at `reserveShare`, as the ledgers count the limits (M2Design 7.3, rule 7).
  */
 export const reservedTokens = (
   inputTokens: number,
   inputLimit: number,
   maxOutputTokens: number,
-): number => Math.min(Math.ceil(inputTokens * RESERVED_INPUT_SHARE), inputLimit) + maxOutputTokens;
+  reserveShare = 1,
+): number =>
+  Math.min(
+    Math.ceil(inputTokens * RESERVED_INPUT_SHARE * reserveShare),
+    Math.ceil(inputLimit * reserveShare),
+  ) + maxOutputTokens;
 
 function inputOf<T>(schema: Schema, value: unknown): T {
   const input = validate<T>(schema, value);
@@ -678,7 +686,12 @@ ${shown}`,
     const inputTokens = calibratedTokens(inputEstimate, identity.calibration);
     if (inputTokens + maxOutputTokens > contextWindowTokens)
       throw new RequestBuildError('LIMIT_EXCEEDED');
-    const estimatedTokens = reservedTokens(inputTokens, contextPack.tokenBudget, maxOutputTokens);
+    const estimatedTokens = reservedTokens(
+      inputTokens,
+      contextPack.tokenBudget,
+      maxOutputTokens,
+      this.#deps.config.reserveShare,
+    );
     const { final } = input;
     const finalMode = identity.retry === true && final ? 'FORCED' : input.finalMode;
     return {

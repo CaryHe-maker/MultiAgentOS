@@ -71,6 +71,7 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   budget: Object.freeze({
     runTokenLimit: 24_000_000,
     inputTokenLimit: 8_000_000,
+    reserveShare: 0.3,
     orientBudget: 1_200,
     searchBudget: 1_200,
   }),

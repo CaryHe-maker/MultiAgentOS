@@ -362,6 +362,8 @@ export class RunWork {
   #memoryWarning = false;
   /** Ends the Kernel's wait for Workflow to close an interrupted run (Kernel/Core 5e). */
   #cancelBackstop: (() => void) | undefined;
+  /** The cancels of the wake timers still armed: they end with the run (Orchestration 8.5). */
+  readonly #wakeTimers = new Set<() => void>();
   /** The path each external read of this run asked for, until its report is counted. */
   readonly #externalAsks = new Map<string, string>();
   /** How often the input's budget was added to, and whether the user refused to (rule 6). */
@@ -915,13 +917,14 @@ export class RunWork {
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);
       if (roots.length !== task.writeRoots.length) return refuse('INVALID_INPUT');
       if (!writeRootsWithin(roots, parentRoots)) return refuse('CAPABILITY_NOT_SUBSET');
-      // A task opens with the least its Agent can work with and is topped up as it needs more
-      // (M2Design 7.3, rule 5), so nothing is reserved that is not used. What the caller asked
-      // for bounds how far it may be topped up for its own calls: between four times the least
-      // and twice the default.
-      const least = minShare(share.budget);
+      // A task opens with the least its Agent can work with, as the ledgers count it (rule 7),
+      // and is topped up as it needs more, in pieces of that size (M2Design 7.3, rule 5), so
+      // nothing is reserved that is not used. What the caller asked for bounds how far it may be
+      // topped up for its own calls: between four times the least by the Agent's declared limits
+      // and twice the default; beyond it the task wraps up.
+      const least = this.#deps.ledgers.leastShare(share.budget);
       const asked = task.tokens ?? share.defaultShare;
-      const ceiling = Math.max(4 * least, Math.min(2 * share.defaultShare, asked));
+      const ceiling = Math.max(4 * minShare(share.budget), Math.min(2 * share.defaultShare, asked));
       tasks.push({
         name: task.name,
         roots,
@@ -982,8 +985,9 @@ export class RunWork {
 
   /**
    * A timer that wakes a sleeping task (Orchestration 8.5): when it is due, and the run still
-   * works, Workflow hears `WakeDue`. It ends with the run; Workflow decides whether it still
-   * matters, so a timer is never cancelled.
+   * works, Workflow hears `WakeDue`. Workflow decides whether it still matters, so it is not
+   * cancelled while the run works; it ends with the run, or the process would wait for it after
+   * the run closed (a sleep of an hour kept `mas run` alive for that hour, 2026-11-14).
    */
   scheduleWake(request: ScheduleWakeRequest): Response {
     const { requestId } = request;
@@ -993,13 +997,15 @@ export class RunWork {
     if (!admitted.accepted) return this.#refuse(requestId, request, admitted.reasonCode);
     const { missionId, timerId } = request;
     const epoch = this.#host.runEpoch();
-    this.#deps.schedule(request.seconds * 1000, () => {
+    const cancel = this.#deps.schedule(request.seconds * 1000, () => {
+      this.#wakeTimers.delete(cancel);
       this.#host.enqueue(() => {
         const { phase } = this.#host.control();
         if (phase === 'CONVERGING' || phase === 'CLOSED' || epoch !== this.#host.runEpoch()) return;
         this.#host.toWorkflowEvent({ type: 'WakeDue', missionId, timerId });
       });
     });
+    this.#wakeTimers.add(cancel);
     return this.#accept(requestId, request);
   }
 
@@ -1987,6 +1993,8 @@ export class RunWork {
         this.#refuse(file.request.requestId, file.request, 'RUN_BLOCKED') as SyscallRejected,
       );
     this.#clocks.stop();
+    for (const cancel of this.#wakeTimers) cancel();
+    this.#wakeTimers.clear();
     this.#deps.cancelExecutions(this.#host.runEpoch());
   }
 

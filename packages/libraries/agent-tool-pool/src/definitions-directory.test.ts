@@ -116,6 +116,40 @@ describe('shipped definitions', () => {
       ],
     });
   });
+  it('let every Agent that starts tasks start every Agent it may name (2026-11-14)', async () => {
+    // A task can do no more than its parent (Kernel: CAPABILITY_NOT_SUBSET), so an Agent offered
+    // to a spawner but beyond its capabilities can never be started: a lead could not start the
+    // explorers of the reviewer's and the researcher's playbooks.
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const definitions = catalog.list();
+    const agents = definitions.flatMap((each) => (each.kind === 'AGENT' ? [each] : []));
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    const spawnable = agents.filter((agent) => agent.spawnable !== undefined);
+    const missing = (parent: string, child: string): string[] => {
+      const has = new Set(byId.get(parent)?.capabilities ?? []);
+      return (byId.get(child)?.capabilities ?? []).filter((capability) => !has.has(capability));
+    };
+    const gaps: string[] = [];
+    for (const spawner of agents.filter((agent) => agent.actions.spawn !== undefined))
+      for (const child of spawnable) {
+        const lacking = missing(spawner.id, child.id);
+        if (lacking.length > 0) gaps.push(`${spawner.id} -> ${child.id}: ${lacking.join(', ')}`);
+      }
+    // A specialist is a lead that starts the Agents of its playbook's phases.
+    for (const template of definitions) {
+      if (template.kind !== 'TEMPLATE' || template.playbook === undefined) continue;
+      for (const phase of template.playbook.phases) {
+        if (phase.tasks === undefined) continue;
+        const lacking = missing('lead', phase.tasks.agent);
+        if (lacking.length > 0)
+          gaps.push(`${template.id}/${phase.name} -> ${phase.tasks.agent}: ${lacking.join(', ')}`);
+      }
+    }
+    expect(gaps).toEqual([]);
+  });
+
   it('give main and lead the handbook of ways to split work (Phase2Plan 2)', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),

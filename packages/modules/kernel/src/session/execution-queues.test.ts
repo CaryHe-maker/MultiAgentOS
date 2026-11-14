@@ -259,6 +259,31 @@ describe('commands side by side, by what they may write (M2Design 7.1, 2026-11-1
     expect(queues.startable(four)).toEqual([inner]);
   });
 
+  it('runs a task and the subtask working in what it lent side by side (Orchestration 8.2)', () => {
+    // The real case (findex, 2026-11-14): a tester may write tests/ and lent tests/test_query.py
+    // to its subtask, which its own commands see read-only; the two tasks' tests ran one after
+    // the other for minutes.
+    const queues = new AttemptQueues();
+    const tester: QueueEntry = {
+      ...exec('tester', ['tests']),
+      readOnly: ['tests/test_query.py'],
+    };
+    const writer = exec('writer', ['tests/test_query.py']);
+    const other = exec('other', ['tests/support.py']);
+    for (const each of [tester, writer, other]) queues.add(each);
+    // What the tester may still write (tests/support.py) it shares with `other`, not with `writer`.
+    expect(queues.startable(four)).toEqual([tester, writer]);
+  });
+
+  it('takes the repository root for every path, less what was lent', () => {
+    const queues = new AttemptQueues();
+    const root: QueueEntry = { ...exec('root', ['.']), readOnly: ['findex/query.py'] };
+    const lent = exec('worker', ['findex/query.py']);
+    const notLent = exec('stranger', ['findex/cli.py']);
+    for (const each of [root, lent, notLent]) queues.add(each);
+    expect(queues.startable(four)).toEqual([root, lent]);
+  });
+
   it('runs a command whose roots are not known alone, as every command ran before', () => {
     const queues = new AttemptQueues();
     const unknown = exec('a');

@@ -30,17 +30,43 @@ export interface QueueEntry {
    * side; one without known roots (no sandbox) runs alone, as every command did before.
    */
   readonly roots?: readonly string[];
+  /**
+   * For an EXEC: what lies inside its roots but is mounted read-only for it, such as what its task
+   * lent to a subtask (Orchestration 8.2) or a protected file. It cannot write there.
+   */
+  readonly readOnly?: readonly string[];
 }
 
-/** One root lies in the other, or they are the same: two commands could change the same file. */
-const meet = (a: readonly string[], b: readonly string[]): boolean =>
-  a.some((left) =>
-    b.some((right) => {
-      const x = normalRoot(left);
-      const y = normalRoot(right);
-      return x === y || y.startsWith(`${x}/`) || x.startsWith(`${y}/`);
-    }),
+/** `path` is `root` or lies under it; `.` is the repository root and holds every path. */
+const within = (path: string, root: string): boolean => {
+  const x = normalRoot(path);
+  const y = normalRoot(root);
+  return y === '.' || x === y || x.startsWith(`${y}/`);
+};
+
+/**
+ * Two commands could change the same file: a root of one lies in a root of the other, and not in
+ * what the outer one may only read. A task's command and its subtask's meet nowhere when the
+ * subtask works in what the task lent it, which the task's commands see read-only.
+ */
+const meet = (a: WriteArea, b: WriteArea): boolean =>
+  a.roots.some((left) =>
+    b.roots.some(
+      (right) =>
+        (within(right, left) && !a.readOnly.some((each) => within(right, each))) ||
+        (within(left, right) && !b.readOnly.some((each) => within(left, each))),
+    ),
   );
+
+interface WriteArea {
+  readonly roots: readonly string[];
+  readonly readOnly: readonly string[];
+}
+
+const areaOf = (entry: QueueEntry, roots: readonly string[]): WriteArea => ({
+  roots,
+  readOnly: entry.readOnly ?? [],
+});
 
 /** A root with forward slashes and no slash at its end. */
 const normalRoot = (root: string): string =>
@@ -171,7 +197,7 @@ export class AttemptQueues<E extends QueueEntry> {
       (other) =>
         other.state !== 'RUNNING' ||
         other.cls !== 'EXEC' ||
-        (other.roots !== undefined && !meet(other.roots, mine)),
+        (other.roots !== undefined && !meet(areaOf(other, other.roots), areaOf(entry, mine))),
     );
   }
 

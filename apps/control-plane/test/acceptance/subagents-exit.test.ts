@@ -341,7 +341,8 @@ describe('B2: more than the caller can lend', () => {
           ...config,
           kernel: {
             ...config.kernel,
-            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000 },
+            // Counted at whole input limits (rule 10), so four workers do not fit even at least.
+            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000, reserveShare: 1 },
           },
         }),
       });
@@ -358,6 +359,7 @@ describe('B2: more than the caller can lend', () => {
 
 describe('more budget for the work of an input (M2Design 7.3, rule 6)', () => {
   // The least an input may open with: main is within one call of its line after its first call.
+  // Counted at whole input limits (rule 10), which these cases are written for.
   const LEAST_OF_MAIN = 2_832_000;
   const short =
     (extension?: { mode: 'ask' | 'extend' | 'stop'; max: number }) =>
@@ -368,6 +370,7 @@ describe('more budget for the work of an input (M2Design 7.3, rule 6)', () => {
         budget: {
           ...config.kernel.budget,
           inputTokenLimit: LEAST_OF_MAIN,
+          reserveShare: 1,
           ...(extension === undefined ? {} : { extension }),
         },
       },

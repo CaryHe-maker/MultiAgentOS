@@ -50817,6 +50817,11 @@
               },
               "additionalProperties": false
             },
+            "reserveShare": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
             "orientBudget": {
               "type": "integer",
               "minimum": 1
@@ -51730,6 +51735,11 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "reserveShare": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
                 },
                 "orientBudget": {
                   "type": "integer",

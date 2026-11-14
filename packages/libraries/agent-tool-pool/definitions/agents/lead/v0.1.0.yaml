@@ -33,6 +33,10 @@ unitRefs:
     version: v0.1.0
   - id: git-inspect
     version: v0.1.0
+  - id: web-search
+    version: v0.1.0
+  - id: web-fetch
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -92,6 +96,8 @@ capabilities:
   - repo.read
   - workspace.write
   - command.exec
+  - web.search
+  - web.fetch
   - agent.spawn
 limits:
   maxRounds: 40

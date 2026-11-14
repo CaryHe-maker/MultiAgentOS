@@ -18,7 +18,27 @@ export interface AgentBudget {
 export interface RunBudget {
   readonly runTokenLimit: number;
   readonly inputTokenLimit: number;
+  /**
+   * The share of a call's input the ledgers count it at (M2Design 7.3, rule 7): most of a call's
+   * input is the cached prefix of the one before, which costs a fiftieth, so counting every call at
+   * its whole input limit kept tokens back that were never spent. 1 (the whole input) when absent.
+   */
+  readonly reserveShare?: number;
 }
+
+/**
+ * An Agent's budget as the ledgers count it: its input limits at `reserveShare` of their size, its
+ * output limits whole (output is never cached). Its requests keep the limits as declared.
+ */
+export const ledgerBudget = (agent: AgentBudget, reserveShare = 1): AgentBudget =>
+  reserveShare >= 1
+    ? agent
+    : {
+        perCallInputLimit: Math.ceil(agent.perCallInputLimit * reserveShare),
+        maxOutputTokens: agent.maxOutputTokens,
+        finalInputBudget: Math.ceil(agent.finalInputBudget * reserveShare),
+        finalMaxOutputTokens: agent.finalMaxOutputTokens,
+      };
 
 export const finalReserve = (agent: AgentBudget): number =>
   agent.finalInputBudget + agent.finalMaxOutputTokens;
@@ -124,6 +144,7 @@ export type QuotaResult =
  */
 export class RunLedgers {
   readonly #budget: RunBudget;
+  /** main's budget as the ledgers count it (`ledgerBudget`). */
   readonly #main: AgentBudget;
   readonly #toolUnits = new Map<string, number>();
   /**
@@ -146,7 +167,7 @@ export class RunLedgers {
   public constructor(budget: RunBudget, main: AgentBudget) {
     assertBudgetsConsistent(budget, main);
     this.#budget = budget;
-    this.#main = main;
+    this.#main = ledgerBudget(main, budget.reserveShare);
     this.#remaining = budget.runTokenLimit;
   }
 
@@ -423,6 +444,11 @@ export class RunLedgers {
     return this.#ledgerOf(parentAgentRunId).delegable();
   }
 
+  /** The least a task of this Agent opens with: its least share as the ledgers count it. */
+  leastShare(agent: AgentBudget): number {
+    return minShare(ledgerBudget(agent, this.#budget.reserveShare));
+  }
+
   /**
    * A task registers its first segment: its share becomes its own ledger (M2Design 7.3, rule 3),
    * kept under `ledgerKey` (the task) for its later segments; without one, under the AgentRun.
@@ -444,19 +470,20 @@ export class RunLedgers {
     if (this.#agents.has(key) || this.#keyOf.has(request.agentRunId))
       throw new MonitorInvariantError('The AgentRun has a ledger');
     delegation.claimed.add(request.taskName);
-    const ledger = new Monitor({ ...request.agent, tokenLimit: share }, { allowShortLimit: true });
+    const agent = ledgerBudget(request.agent, this.#budget.reserveShare);
+    const ledger = new Monitor({ ...agent, tokenLimit: share }, { allowShortLimit: true });
     this.#keyOf.set(request.agentRunId, key);
     this.#agents.set(key, {
       key,
       parent: delegation.parent,
-      agent: request.agent,
+      agent,
       share,
       initial: share,
       ceiling: delegation.ceilings.get(request.taskName) ?? share,
       own: share,
       ledger,
     });
-    return { state: stateOf(ledger, share, request.agent) };
+    return { state: stateOf(ledger, share, agent) };
   }
 
   /**
@@ -492,15 +519,16 @@ export class RunLedgers {
     const parent = this.#ledgerOfKey(request.parentKey);
     const share = Math.max(0, Math.min(request.tokens, parent.delegable()));
     parent.lend(share);
+    const agent = ledgerBudget(request.agent, this.#budget.reserveShare);
     this.#agents.set(request.key, {
       key: request.key,
       parent: request.parentKey,
-      agent: request.agent,
+      agent,
       share,
       initial: share,
       ceiling: Math.max(share, request.ceiling ?? 0),
       own: share,
-      ledger: new Monitor({ ...request.agent, tokenLimit: share }, { allowShortLimit: true }),
+      ledger: new Monitor({ ...agent, tokenLimit: share }, { allowShortLimit: true }),
     });
   }
 

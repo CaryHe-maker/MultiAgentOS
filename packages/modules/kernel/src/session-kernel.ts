@@ -171,6 +171,7 @@ const executionConfigOf = (config: KernelConfig): ExecutionConfig => ({
   maxReportBytes: config.maxReportBytes,
   maxSnapshotFiles: config.maxSnapshotFiles,
   orientBudget: config.budget.orientBudget,
+  ...(config.budget.reserveShare === undefined ? {} : { reserveShare: config.budget.reserveShare }),
   searchBudget: config.budget.searchBudget,
   cancelGraceMs: config.cancelGraceMs,
   pauseDrainMs: config.pauseDrainMs,
@@ -388,6 +389,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       {
         runTokenLimit: config.budget.runTokenLimit,
         inputTokenLimit: config.budget.inputTokenLimit,
+        ...(config.budget.reserveShare === undefined
+          ? {}
+          : { reserveShare: config.budget.reserveShare }),
       },
       deps.mainBudget,
     );

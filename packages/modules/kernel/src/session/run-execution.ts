@@ -251,7 +251,11 @@ export class RunExecution {
       state: 'QUEUED',
       // What a command may write decides which others it may run beside (M2Design 7.1).
       ...(spec.scope.kind === 'SANDBOX' && spec.scope.backend === 'BWRAP'
-        ? { roots: [...spec.scope.profile.writableRoots] }
+        ? {
+            roots: [...spec.scope.profile.writableRoots],
+            // What it lent or what is protected it only reads (Orchestration 8.2).
+            readOnly: [...spec.scope.profile.protectedExisting],
+          }
         : {}),
     };
     this.#byId.set(unitAttemptId, attempt);

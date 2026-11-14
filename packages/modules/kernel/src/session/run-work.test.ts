@@ -710,6 +710,30 @@ describe('project instructions', () => {
 });
 
 describe('convergence', () => {
+  it('ends the wake timers with the run, so none keeps the process alive after it', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    const wake = (seconds: number) =>
+      kernel.actor.call(() =>
+        kernel.run().work.scheduleWake({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          missionId: 'msc_01M7SLEEPER00000000000000',
+          timerId: `sleep-${String(seconds)}`,
+          seconds,
+        }),
+      );
+    await wake(3600);
+    await wake(600);
+    const armed = (ms: number) => kernel.timers.some((timer) => timer.delayMs === ms);
+    expect(armed(3_600_000) && armed(600_000)).toBe(true);
+    await kernel.actor.call(() =>
+      kernel.actor.closeRun(kernel.run(), { closeReason: 'CANCELLED' }),
+    );
+    await kernel.settled();
+    expect(armed(3_600_000) || armed(600_000)).toBe(false);
+  });
+
   it('cancels the question, and the suspended Unit ends with the run', async () => {
     const kernel = await setup();
     await kernel.register();

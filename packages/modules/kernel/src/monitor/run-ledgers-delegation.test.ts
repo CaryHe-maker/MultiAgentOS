@@ -570,3 +570,76 @@ describe('the ledger of a task that sleeps (Orchestration 8.3)', () => {
     });
   });
 });
+
+describe('counting a call at what it costs, not at its whole input (M2Design 7.3, rule 10)', () => {
+  const worker: AgentBudget = {
+    perCallInputLimit: 256_000,
+    maxOutputTokens: 32_000,
+    finalInputBudget: 256_000,
+    finalMaxOutputTokens: 32_000,
+  };
+  const ledgersAt = (reserveShare?: number) =>
+    new RunLedgers(
+      {
+        runTokenLimit: 24_000_000,
+        inputTokenLimit: 8_000_000,
+        ...(reserveShare === undefined ? {} : { reserveShare }),
+      },
+      {
+        ...worker,
+        perCallInputLimit: 880_000,
+        finalInputBudget: 880_000,
+        maxOutputTokens: 64_000,
+        finalMaxOutputTokens: 64_000,
+      },
+    );
+
+  it('opens a task with its least share at the input share, outputs whole', () => {
+    // Inputs at 0.3: final 76_800 + 32_000, a call 76_800 + 32_000; least = final + two calls.
+    expect(ledgersAt(0.3).leastShare(worker)).toBe(3 * (76_800 + 32_000));
+    expect(ledgersAt().leastShare(worker)).toBe(minShare(worker));
+    expect(minShare(worker)).toBe(864_000);
+  });
+
+  it('lends many more tasks from the same input, and a task works on its small first share', () => {
+    // The real case (findex, 2026-11-14): a tester could not start three test writers at once.
+    const small = ledgersAt(0.3);
+    small.openInputLedger('trn_1');
+    const share = small.leastShare(worker);
+    const tasks = Array.from({ length: 12 }, (_, index) => ({
+      name: `t${String(index)}`,
+      tokens: share,
+    }));
+    expect(
+      small.reserveDelegation({
+        delegationId: 'dlg_1',
+        parentAgentRunId: 'agr_main',
+        shares: tasks,
+      }),
+    ).toEqual({ ok: true });
+    small.registerAgentRun({
+      agentRunId: 'agr_t0',
+      delegationId: 'dlg_1',
+      taskName: 't0',
+      agent: worker,
+    });
+    // A call of 60k input and its output, counted at 0.3, fits the first share without a top-up.
+    const reserved = small.reserve(
+      { estimatedTokens: Math.ceil(60_000 * 0.3) + 32_000, final: false },
+      'agr_t0',
+    );
+    expect(reserved.ok).toBe(true);
+    expect(small.budgetView('agr_t0').agentRun).toBe('NORMAL');
+    // Counted at whole limits, the same twelve do not fit.
+    const whole = ledgersAt();
+    whole.openInputLedger('trn_1');
+    const big = whole.leastShare(worker);
+    expect(
+      whole.reserveDelegation({
+        delegationId: 'dlg_1',
+        parentAgentRunId: 'agr_main',
+        shares: tasks.map((task) => ({ ...task, tokens: big })),
+      }).ok,
+    ).toBe(false);
+  });
+});

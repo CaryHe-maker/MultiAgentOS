@@ -87,12 +87,14 @@ describe('the repository catalog', () => {
     ]);
   });
 
-  it('gives the web tools to main and explorer, and not to worker', async () => {
+  it('gives the web tools to main, lead and explorer, and not to worker', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
+    // A lead carries a whole long part of the work, research included, and starts explorers.
     for (const [id, web] of [
       ['main', true],
+      ['lead', true],
       ['explorer', true],
       ['worker', false],
     ] as const) {
