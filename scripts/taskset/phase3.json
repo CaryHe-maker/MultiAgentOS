@@ -130,26 +130,6 @@
  ],
  "finalLarge": [
   {
-   "id": "lb/task_os_labs_asm_kernel",
-   "source": "loopsbench",
-   "role": "picked",
-   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
-   "sha256": "65655c330475f5ee973647d6cf97fede46465f3ff44af55000637283521f0341"
-  },
-  {
-   "id": "lb/task_compiler_cmm_mips",
-   "source": "loopsbench",
-   "role": "picked",
-   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
-   "sha256": "932ab8c5b0dc27254b3f576ded1a864969149ba4f287e2e41b0b0d4edd54a0f2"
-  },
-  {
-   "id": "designed/minidb",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "9c4aac3550b960c9840b831696b22465076910065e99090105fd4c498c6f692a"
-  },
-  {
    "id": "designed/survey-fl-privacy",
    "source": "designed",
    "role": "picked",
@@ -249,6 +229,35 @@
    "goldLines": 843,
    "sha256": "50cf365d47b8b9cc313b7a87f9c2d933743d7065b1b3b59d42c0d2b7e568abd8",
    "from": "finalLargeV1"
+  },
+  {
+   "id": "designed/coursereg",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "4dfc60b667806da7dd9fdcbaf102932099375361005e18fdb6ffca81e291f93c"
+  },
+  {
+   "id": "designed/minidb",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "9c4aac3550b960c9840b831696b22465076910065e99090105fd4c498c6f692a",
+   "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "lb/task_os_labs_asm_kernel",
+   "source": "loopsbench",
+   "role": "dev",
+   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
+   "sha256": "65655c330475f5ee973647d6cf97fede46465f3ff44af55000637283521f0341",
+   "reason": "dsh finished in under 25 minutes"
+  },
+  {
+   "id": "lb/task_compiler_cmm_mips",
+   "source": "loopsbench",
+   "role": "dev",
+   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
+   "sha256": "932ab8c5b0dc27254b3f576ded1a864969149ba4f287e2e41b0b0d4edd54a0f2",
+   "reason": "dsh finished in under 25 minutes"
   }
  ],
  "largeRules": {
@@ -354,5 +363,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T14:29:02.166Z"
+ "resealedAt": "2026-11-14T14:47:31.399Z"
 }

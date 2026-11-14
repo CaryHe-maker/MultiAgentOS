@@ -62,9 +62,29 @@ if (!sealed.finalLargeV1) {
     sha256: hashDir(join(META, 'lb-data/tasks', name)),
   }));
 }
-for (const [id, dir] of designed) {
+// `--designed id=dir` adds a designed task to the final set, `--designed dev:id=dir` to the
+// development set; `--to-dev id` moves a final task that dsh finished in under 25 minutes to the
+// development set (Cary, 2026-11-15: every task run with DeepSeek is kept).
+for (const [key, dir] of designed) {
+  const dev = key.startsWith('dev:');
+  const id = dev ? key.slice(4) : key;
   sealed.finalLarge = sealed.finalLarge.filter((t) => t.id !== id);
-  sealed.finalLarge.push({ id, source: 'designed', role: 'picked', sha256: hashDir(dir) });
+  sealed.devLarge = sealed.devLarge.filter((t) => t.id !== id);
+  (dev ? sealed.devLarge : sealed.finalLarge).push({
+    id,
+    source: 'designed',
+    role: dev ? 'dev' : 'picked',
+    sha256: hashDir(dir),
+  });
+}
+const toDev = process.argv.indexOf('--to-dev');
+if (toDev >= 0) {
+  for (const id of process.argv.slice(toDev + 1).filter((a) => !a.startsWith('--'))) {
+    const t = sealed.finalLarge.find((x) => x.id === id);
+    if (!t) continue;
+    sealed.finalLarge = sealed.finalLarge.filter((x) => x.id !== id);
+    sealed.devLarge.push({ ...t, role: 'dev', reason: 'dsh finished in under 25 minutes' });
+  }
 }
 sealed.largeRules.v2 =
   'v1 picks all ran under 25 minutes with dsh; v2 = two LoopsBench tasks chosen by hand (os_labs_asm_kernel, compiler_cmm_mips) + two tasks designed in this project; each must also take dsh at least 25 minutes in its one control run';
