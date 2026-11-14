@@ -47,7 +47,7 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 - **开发集与最终集不得高度相似**：不同的仓库、领域与题型；每个最终集任务写下与开发集的差别，选题时逐对检查。
 - 小任务：开发集可以从 phase 1 的任务池（开发集 36 题、旧最终集 30 题）里选；最终集选 phase 1 没有用过的新题。phase 1 的旧最终集已经用过三次（mas 两次、dsh 一次，加上 I3 的 Mission 一次），不再作为最终集。
 - 大任务：开发集可以用已经调过参的 `study.findex`、`study.healthhub` 与 study 系列；最终集的 4 个大任务由 Cary 写规格（形状分散：从规格做起的最多 1 个，其余如在已有代码库上分批迁移、跨模块的功能加修复、调研后实现、带长时间测试的项目），Claude 做 fixture、隐藏测试与参考解，离线验证判分有效（参考解通过、原始仓库不通过）。最终集的实现细节不用于调提示词。
-- 大任务最终集（2026-11-15 定）：LoopsBench 2 道、DeepSWE 2 道；不设"大但不该拆"的任务（系统有任务间通信，拆开后可以等待协调）。单个 Agent 至少运行 25 分钟。DeepSeek 在这些集上的每题用时没有公开数字，按规模估计选题（开发单元数、参考解的大小、公开的 token 量），再用 `dsh` 的实际运行检验（第 3.3 节）。
+- 大任务最终集（2026-11-15 定，**已被第 3.4 节取代**：这些题 `dsh` 都在 25 分钟内做完）：LoopsBench 2 道、DeepSWE 2 道；不设"大但不该拆"的任务（系统有任务间通信，拆开后可以等待协调）。单个 Agent 至少运行 25 分钟。DeepSeek 在这些集上的每题用时没有公开数字，按规模估计选题（开发单元数、参考解的大小、公开的 token 量），再用 `dsh` 的实际运行检验（第 3.3 节）。
 - 小任务最终集：Terminal-Bench 2.0 中 phase 1 没用过的题 6 道（中等或较难、类别各不相同）、SWE-bench Pro 4 道（仓库不在 phase 1 用过的仓库中，尽量覆盖 Go、Python、TypeScript、JavaScript），不放合成的并行题（由本项目设计，对照 harness 天然吃亏）。用固定种子抽样，再按相似度规则剔除。
 
 ### 3.2 运行规则
@@ -66,6 +66,35 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 4. 运行条件冻结：同一模型（`deepseek-flash`）、同一 `dsh` 版本、同一容器与判分；单题上限两边相同（大任务 2.5 小时，小任务沿用题目的设置）；费用用同一张价格表折算。两边不在同一时间运行，用时含时段差异，证据中写明各自的运行日期。
 5. 本项目在优化完成后才跑最终集（第一次），至多两次。
 6. 运行方式（`scripts/taskset/phase3-dsh.sh`）：每题开跑前写下标记，有标记的题不再运行，崩溃也不自动重跑，只报告。小任务用 `agentrun.mjs`；LoopsBench 用官方 harness（`microsoft/loopsbench` f44331c，题包 c47e13a）加 `lb_dsh_agent.py`，DeepSWE 用 Pier 加 `pier_dsh_agent.py`，判分都是官方的。两个适配器把 Node 与 `dsh` 拷进题目容器，在其中运行 `dsh --profile headless`；模型请求都经 `usage-proxy.mjs` 计 token，与小任务同一口径（LoopsBench 经 Docker 网关在运行期的白名单内访问，Pier 经它的出网代理访问 `host.docker.internal` 的 80 端口）。适配器先在不属于任何一组的题上做过 5 分钟的冒烟检查。
+
+### 3.4 设计题（2026-11-15，Cary 定的原则）
+
+1. **用 DeepSeek 跑过的题都保留**，放进开发集或最终集，不丢弃，以免浪费 token。
+2. 大任务改为本项目设计：最终集 3 道、开发集 3 道，按大学课程设计或毕业设计的角度选题；两组各有一道非编程的大任务（严格注明引用与参考文献的综述论文）。至少这 6 道设计题由 `dsh` 单独运行超过 25 分钟。
+3. 当天把开发集与最终集的题都定下，并都用 DeepSeek 跑过一次。
+
+**做法**：每道题是 Harbor 格式（`scripts/taskset/designed/<名>/`：`instruction.md` 规格、`environment/`、`tests/` 隐藏测试、`solution/` oracle），用 `agentrun.mjs` 运行，`dsh` 与本项目同一判分。判分按隐藏测试的通过比例给分。编程题的期望输出尽量取自真实的参考实现（`lua5.4`、`jq`、`gawk --posix`、GNU 工具、`sqlite3`、`re`、`cmark`、`git`），在任务镜像里事先生成；oracle 是调用参考实现的包装，按设计只不通过"禁止外部程序"一项，空实现为 0 分。论文题按结构检查与参考文献核对（DOI 经 Crossref、arXiv 编号经 arXiv 接口，题目、第一作者、年份都要对上）各占一半。
+
+**离线**：`dsh` 在 mdhtml 上移植了现成的 commonmark.py（记录里写明"Our port from commonmark.py"），静态检查查不出。此后编程题在 `task.toml` 写 `allow_internet = false`，`agentrun.mjs` 把容器放进 internal 网络 `benchint`，只能访问记录代理（以及经它的模型接口）。mas 走代理的接法还没做，离线题暂不能跑 mas（RP3-EV 的待办）。
+
+**结果**（`dsh` 各一次；用时为 Agent 运行时间，得分为隐藏测试通过比例）：
+
+| 题 | 组 | 用时（分钟） | 得分 | 说明 |
+|---|---|---|---|---|
+| coursereg（选课系统后端） | 开发（额外） | 11.2 | 1.0 | 第一轮，联网 |
+| survey-gnn-recsys（综述） | 开发（额外） | 12.0 | 1.0 | 第一轮 |
+| pygit（git 核心） | 开发（额外） | 14.9 | 1.0 | 第一轮，联网 |
+| mdhtml（CommonMark） | 开发（额外） | 15.3 | 1.0 | 移植了 commonmark.py |
+| survey-fl-privacy（综述） | 开发（额外） | 16.1 | 1.0 | 第一轮 |
+| minidb（小型数据库） | 开发（额外） | 23.1 | 1.0 | 第一轮，联网 |
+| textutils（GNU 文本工具集） | 开发（额外） | 22.3 | 0.970 | 离线 |
+| sqlengine（SQLite 兼容引擎） | 开发（额外） | 23.3 | 0.875 | 离线 |
+| **pyawk**（POSIX awk） | 开发 | 27.5 | 0.986 | 离线 |
+| **pylua**（Lua 5.4 解释器） | 最终 | 30.6 | 0.782 | 离线 |
+| **survey-av-fusion**（长篇综述） | 最终 | 28.7 | 0.996 | 30000 字、80 条以上文献、文献注释 |
+| pyjq、pyregex、survey-kg-embedding | 最终、开发、开发 | 运行中 | | |
+
+第一轮的课设规模的题 `dsh` 都在 25 分钟内满分完成；加大广度并离线之后，用时才超过 25 分钟，得分也开始低于满分。LoopsBench 与 DeepSWE 的大题（共 8 道）`dsh` 都在 8–21 分钟内结束，作为开发集的额外题保留。小任务最终集里的 teleport-1b08e7d0 是 Alpine 镜像，`dsh` 无法运行（glibc 的 Node；改用 musl 版后 node-pty 崩溃），两次作废，由替补 openlibrary-0d13e6b4 顶上（Cary 定）。
 
 ## 4. 任务列表
 
