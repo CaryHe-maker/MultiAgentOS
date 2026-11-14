@@ -465,6 +465,50 @@ const healthhub: TaskSpec = {
   },
 };
 
+// --- findex: a search engine from a specification, as large as healthhub, in one process --------
+
+const findex: TaskSpec = {
+  id: 'study.findex',
+  mode: 'mission',
+  tags: ['mission', 'study', 'submission-study', 'large', 'build-from-spec'],
+  description:
+    'A local full-text search tool from a specification: analysis, segments and a manifest on disk, a query language, BM25, snippets, concurrent writers; judged by hidden tests of its command line.',
+  fixture: async (repository) => {
+    await mkdir(join(repository, 'docs'), { recursive: true });
+    await writeFile(join(repository, 'README.md'), '# findex\n');
+    await cp(join(STUDY_FIXTURES, 'findex/spec.md'), join(repository, 'docs/spec.md'));
+  },
+  steps: [
+    {
+      run: '按 docs/spec.md 从零实现本地全文检索工具 findex。请尽可能快并且高质量地完成。',
+    },
+  ],
+  judge: async (observation) => {
+    const { repository } = observation;
+    const result = await hidden('findex', repository);
+    const readme = await read(repository, 'README.md');
+    const design = await read(repository, 'docs/design.md');
+    return [
+      hiddenCheck(result),
+      check(
+        'recorded: hidden tests passed',
+        'OUTCOME',
+        true,
+        `${String(result.passed.length)}/15: ${result.passed.join(',') || '-'}`,
+      ),
+      theirTests(repository, 25),
+      check('the README tells how to search', 'OUTCOME', readme.includes('search')),
+      check(
+        'docs/design.md describes segments, the manifest and scoring',
+        'OUTCOME',
+        ['manifest', 'BM25'].every((word) => design.includes(word)),
+        `${String(design.length)} chars`,
+      ),
+      ...common(observation, 'interfaces first, owners per part, specialists where they fit'),
+    ];
+  },
+};
+
 export const SUBMISSION_STUDY_TASKS: readonly TaskSpec[] = [
   shop,
   taskq,
@@ -472,4 +516,5 @@ export const SUBMISSION_STUDY_TASKS: readonly TaskSpec[] = [
   sales,
   mdsite,
   healthhub,
+  findex,
 ];

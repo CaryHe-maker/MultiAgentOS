@@ -116,7 +116,7 @@ describe('mas run "<goal>": a long task of the template mission (Orchestration 1
       expect(ran.output).toContain('delivered: the plan is in PLAN.md');
       // The goal reached main with the template's own guidance.
       expect(seen(provider)).toContain('write a plan');
-      expect(seen(provider)).toContain('You own this goal from start to delivery');
+      expect(seen(provider)).toContain('You lead a team on this goal, from start to delivery');
     },
     TIMEOUT,
   );

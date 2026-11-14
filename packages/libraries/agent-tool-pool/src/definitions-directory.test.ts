@@ -164,6 +164,19 @@ describe('shipped definitions', () => {
     expect(text).not.toContain('sub_mission');
     expect(text).toContain('Shape of a whole large task, in general terms (not a recipe):');
     expect(text).toContain('Counter-example, do not split:');
+    // Two whole examples show hands working at once (D40): one built from a specification, one
+    // change through a codebase that exists, each with specialists and messages between tasks.
+    expect(text).toContain('Whole example 1. Built from a specification');
+    expect(text).toContain('Whole example 2. One change through a large codebase');
+    for (const step of [
+      'agent: "tester"',
+      'agent: "integrator"',
+      'agent: "fixer"',
+      'kind: "inform"',
+    ])
+      expect(text).toContain(step);
+    // The goal tells the root what the system is for and how it is judged.
+    expect(JSON.stringify(mission?.nodes)).toContain('judged by how soon the goal is delivered');
     // The manual carries placeholders, not the content of solved tasks.
     for (const word of ['Whole task', 'toolchain', 'latexmk', 'HH_', 'run.sh', 'flight'])
       expect(text).not.toContain(word);
