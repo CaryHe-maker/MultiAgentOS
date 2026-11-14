@@ -86,13 +86,20 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 | pygit（git 核心） | 开发（额外） | 14.9 | 1.0 | 第一轮，联网 |
 | mdhtml（CommonMark） | 开发（额外） | 15.3 | 1.0 | 移植了 commonmark.py |
 | survey-fl-privacy（综述） | 开发（额外） | 16.1 | 1.0 | 第一轮 |
-| minidb（小型数据库） | 开发（额外） | 23.1 | 1.0 | 第一轮，联网 |
+| minidb（小型数据库） | **最终** | 23.1 | 1.0 | 第一轮，联网；与 sqlengine 相似，同放最终集 |
 | textutils（GNU 文本工具集） | 开发（额外） | 22.3 | 0.970 | 离线 |
-| sqlengine（SQLite 兼容引擎） | 开发（额外） | 23.3 | 0.875 | 离线 |
+| sqlengine（SQLite 兼容引擎） | **最终** | 23.3 | 0.875 | 离线 |
 | **pyawk**（POSIX awk） | 开发 | 27.5 | 0.986 | 离线 |
 | **pylua**（Lua 5.4 解释器） | 最终 | 30.6 | 0.782 | 离线 |
 | **survey-av-fusion**（长篇综述） | 最终 | 28.7 | 0.996 | 30000 字、80 条以上文献、文献注释 |
-| pyjq、pyregex、survey-kg-embedding | 最终、开发、开发 | 运行中 | | |
+| pyjq（jq 1.7） | 开发（额外） | 17.4 | 0.819 | 离线 |
+| pyregex（与 re 兼容的正则引擎） | 开发（额外） | 20.0 | 0.966 | 离线 |
+| survey-kg-embedding（长篇综述） | 开发（额外） | 18.3 | 1.0 | 要求与 survey-av-fusion 相同 |
+| minipy（Python 子集解释器） | 开发（额外） | 23.2 | 0.932 | 离线 |
+| pyarchive（tar/gzip/zip 与 DEFLATE） | **最终** | 运行中 | | 离线 |
+| survey-med-seg（更长的综述） | 开发 | 未运行 | | 50000 字、120 条以上文献 |
+
+**最终集的大任务（Cary 2026-11-15 定）**：pylua、survey-av-fusion、sqlengine、minidb、pyarchive，共 5 道。sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一起放进最终集，开发集里不留数据库题；pyarchive 不论结果都进最终集。这三道不满足"单个 Agent 至少 25 分钟"（sqlengine 23.3、minidb 23.1 分钟），这条要求对它们例外。开发集的大任务：pyawk 与 survey-med-seg，其余为保留的额外题。
 
 第一轮的课设规模的题 `dsh` 都在 25 分钟内满分完成；加大广度并离线之后，用时才超过 25 分钟，得分也开始低于满分。LoopsBench 与 DeepSWE 的大题（共 8 道）`dsh` 都在 8–21 分钟内结束，作为开发集的额外题保留。小任务最终集里的 teleport-1b08e7d0 是 Alpine 镜像，`dsh` 无法运行（glibc 的 Node；改用 musl 版后 node-pty 崩溃），两次作废，由替补 openlibrary-0d13e6b4 顶上（Cary 定）。
 

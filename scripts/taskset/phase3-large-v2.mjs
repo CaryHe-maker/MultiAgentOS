@@ -86,6 +86,21 @@ if (toDev >= 0) {
     sealed.devLarge.push({ ...t, role: 'dev', reason: 'dsh finished in under 25 minutes' });
   }
 }
+// `--to-final id...` moves development tasks into the final set (Cary, 2026-11-15: sqlengine, minidb and
+// pyarchive, so the final set has four or more large tasks; the 25-minute rule does not hold for them).
+const toFinal = process.argv.indexOf('--to-final');
+if (toFinal >= 0) {
+  for (const id of process.argv.slice(toFinal + 1).filter((a) => !a.startsWith('--'))) {
+    const t = sealed.devLarge.find((x) => x.id === id);
+    if (!t) continue;
+    sealed.devLarge = sealed.devLarge.filter((x) => x.id !== id);
+    sealed.finalLarge.push({
+      ...t,
+      role: 'picked',
+      reason: 'moved to the final set by Cary, 2026-11-15',
+    });
+  }
+}
 sealed.largeRules.v2 =
   'v1 picks all ran under 25 minutes with dsh; v2 = two LoopsBench tasks chosen by hand (os_labs_asm_kernel, compiler_cmm_mips) + two tasks designed in this project; each must also take dsh at least 25 minutes in its one control run';
 sealed.resealedAt = new Date().toISOString();
