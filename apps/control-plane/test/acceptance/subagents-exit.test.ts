@@ -317,26 +317,21 @@ describe('dependencies and results', () => {
 
 describe('B2: more than the caller can lend', () => {
   it(
-    'starts nothing, and tells the caller what it can lend',
+    'starts nothing when even the smallest shares do not fit, and tells the caller what it can lend',
     async () => {
       const place = await roots();
+      // Shares that are too large are cut to fit (each at least its Agent's smallest), so only
+      // more tasks than fit at their smallest are refused: four workers here.
       const provider = scriptedAgents({
         main: [
           spawn(
-            {
-              name: 'one',
+            ...['a', 'b', 'c', 'd'].map((scope, index) => ({
+              name: `w${String(index)}`,
               agent: 'worker',
               goal: 'x',
-              writeScope: ['a'],
+              writeScope: [scope],
               budget: { tokens: 1_200_000 },
-            },
-            {
-              name: 'two',
-              agent: 'worker',
-              goal: 'y',
-              writeScope: ['b'],
-              budget: { tokens: 1_200_000 },
-            },
+            })),
           ),
           reply('by myself'),
         ],
@@ -354,6 +349,7 @@ describe('B2: more than the caller can lend', () => {
       expect(provider.requests).toHaveLength(2);
       const answer = textOf(provider.requests[1]?.messages.filter((m) => m.role === 'tool').at(-1));
       expect(answer).toMatch(/BUDGET_INSUFFICIENT: at most \d+ tokens can be lent/u);
+      expect(answer).toMatch(/these 4 task\(s\) need at least \d+ even at their smallest/u);
       expect(chat.printed('REPLY')).toContain('by myself');
     },
     TIMEOUT,
