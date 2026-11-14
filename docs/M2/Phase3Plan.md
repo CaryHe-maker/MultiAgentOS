@@ -96,8 +96,8 @@ phase 2 结束时的证据（[experiments](experiments.md) I2、I3）：
 | pyregex（与 re 兼容的正则引擎） | 开发（额外） | 20.0 | 0.966 | 离线 |
 | survey-kg-embedding（长篇综述） | 开发（额外） | 18.3 | 1.0 | 要求与 survey-av-fusion 相同 |
 | minipy（Python 子集解释器） | 开发（额外） | 23.2 | 0.932 | 离线 |
-| pyarchive（tar/gzip/zip 与 DEFLATE） | **最终** | 运行中 | | 离线 |
-| survey-med-seg（更长的综述） | 开发 | 未运行 | | 50000 字、120 条以上文献 |
+| pyarchive（tar/gzip/zip 与 DEFLATE） | **最终** | 20.9 | 1.0 | 离线 |
+| survey-med-seg（更长的综述） | 开发 | 22.2 | 1.0 | 50000 字、120 条以上文献 |
 
 **最终集的大任务（Cary 2026-11-15 定）**：pylua、survey-av-fusion、sqlengine、minidb、pyarchive，共 5 道。sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一起放进最终集，开发集里不留数据库题；pyarchive 不论结果都进最终集。门槛（Cary 2026-11-15 定）由 25 分钟统一放宽为 **20 分钟**：用 `dsh` 单独运行至少 20 分钟。按这条，设计题中满足的有 pylua、survey-av-fusion、pyawk、sqlengine、minipy、minidb、textutils、pyregex（20.0 分钟）共 8 道；pyarchive 不论结果都在最终集。开发集的大任务：pyawk 与 survey-med-seg，其余为保留的额外题。
 
