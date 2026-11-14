@@ -37,7 +37,6 @@ unitRefs:
     version: v0.1.0
   - id: model-call
     version: v0.1.0
-startUnitRefs: []
 actions:
   end:
     - toolRef:
@@ -46,6 +45,30 @@ actions:
       then: FINISH_SUBAGENT
       allowedInFinal: true
   onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v0.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v0.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v0.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v0.1.0
   todos:
     toolRef:
       id: update-todos
@@ -55,7 +78,7 @@ actions:
       id: ask-user
       version: v0.1.0
 spawnable:
-  defaultShare: 600000
+  defaultShare: 1200000
 capabilities:
   - repo.read
   - workspace.write
@@ -66,7 +89,7 @@ limits:
   maxToolUnits: 120
   maxWallClockMs: 1200000
 budget:
-  perCallInputLimit: 100000
+  perCallInputLimit: 256000
   maxOutputTokens: 32000
-  finalInputBudget: 100000
+  finalInputBudget: 256000
   finalMaxOutputTokens: 32000

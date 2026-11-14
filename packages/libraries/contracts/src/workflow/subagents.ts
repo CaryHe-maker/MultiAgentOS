@@ -30,23 +30,55 @@ const referencesField = () => Type.Optional(Type.Array(Type.String()));
 /** Text without a length limit: what a model writes is kept, and cut only where it is read. */
 const longText = () => Type.String({ minLength: 1 });
 
+/**
+ * The Agents a task may run as. Besides explorer, worker and lead, each specialist is a lead that
+ * follows the playbook of one pre-orchestrated template (Orchestration 3.9, D39): the template
+ * that names it as its `agent`.
+ */
+export const SPECIALIST_AGENTS = [
+  'fixer',
+  'reviewer',
+  'tester',
+  'integrator',
+  'researcher',
+] as const;
+export type SpecialistAgent = (typeof SPECIALIST_AGENTS)[number];
+
 export const SubagentTaskSchema = closed({
   name: NameSchema,
-  agent: Type.Enum(['explorer', 'worker']),
+  agent: Type.Enum(['explorer', 'worker', 'lead', ...SPECIALIST_AGENTS]),
   goal: text(4000),
+  /** One line on what this task is responsible for, which the tree shows (Orchestration 3.7). */
+  role: Type.Optional(text(80)),
   dependsOn: Type.Optional(Type.Array(NameSchema, { maxItems: 11 })),
   writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+  /** The write permission lent with the scope includes commands unless this is false (D17). */
+  commands: Type.Optional(Type.Boolean()),
   inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
   acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
   effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
   /** Only the token share is the caller's to ask for; the other limits are the Agent's own. */
   budget: Type.Optional(closed({ tokens: count(1) })),
+  /**
+   * The name of a task of the caller's that has ended (Orchestration 5.3, 2026-11-14): this task
+   * takes it up again with all of its history, as the same Agent, and reads the goal as what it is
+   * asked now. Work goes back to the task that knows the code, at the price of a cached prefix.
+   */
+  continues: Type.Optional(NameSchema),
 });
 export type SubagentTask = Static<typeof SubagentTaskSchema>;
 
 /** Parameters of `run_subagents`. The number of tasks is limited by configuration, not here. */
 export const RunSubagentsArgsSchema = closed(
-  { tasks: Type.Array(SubagentTaskSchema, { minItems: 1, maxItems: 12 }) },
+  {
+    tasks: Type.Array(SubagentTaskSchema, { minItems: 1, maxItems: 12 }),
+    /**
+     * The plan of the work (Orchestration 5.3, D24): what is delivered, the approach, how it is
+     * split, who owns which part and which interface, the constraints. The root task writes it
+     * before its first subtasks; every task below sees it. A later one replaces it.
+     */
+    plan: Type.Optional(text(8000)),
+  },
   'workflow.RunSubagentsArgs.v1',
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;

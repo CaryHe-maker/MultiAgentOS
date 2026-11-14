@@ -34,7 +34,7 @@
 
 1. `schemaName + major` 唯一确定语义；未知 major 必须拒绝。
 2. M1 的全部 Schema 为 major 0，已删除。发布版只有 major 1 一套契约。
-3. M2 运行时只产生 major 1 的版本；内置模板 `analyze` 同样使用 major 1。
+3. M2 运行时只产生 major 1 的版本。
 4. major 1 的 Schema 在 M2 发布前按本目录原地修改，发布时冻结。冻结后的规则同 M1Interface 第 1.2 节。
 5. 所有边界数据先经过运行时 Schema 校验；对象一律 `additionalProperties: false`。
 

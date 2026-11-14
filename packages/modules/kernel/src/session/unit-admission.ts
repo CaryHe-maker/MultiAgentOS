@@ -27,15 +27,11 @@ export type Admission =
       readonly countsAsTool: boolean;
     };
 
-/** The kinds this stage cannot run. */
-const UNSUPPORTED_KINDS: ReadonlySet<ExecutionKind> = new Set(['TEST']);
-
 /** Model work and the Units that end an Agent stay available after the quota (Kernel/Monitor 3). */
 const UNCOUNTED_KINDS: ReadonlySet<ExecutionKind> = new Set([
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'MESSAGE_PUBLISH',
-  'REPORT_PUBLISH',
 ]);
 
 /** The checks of `submitUnit`, in order (Kernel/Interaction 7). Idempotency is done before this. */
@@ -56,8 +52,6 @@ export function admitUnit(
       candidate.digest === request.unitRef.digest,
   );
   if (unit === undefined) return { accepted: false, reasonCode: 'FORBIDDEN' };
-  if (UNSUPPORTED_KINDS.has(unit.executionKind))
-    return { accepted: false, reasonCode: 'UNSUPPORTED_CAPABILITY' };
   if (!context.inputIsValid(unit, request.input))
     return { accepted: false, reasonCode: 'INVALID_INPUT' };
 

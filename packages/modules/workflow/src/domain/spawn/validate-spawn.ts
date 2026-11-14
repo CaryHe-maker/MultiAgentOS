@@ -50,7 +50,7 @@ export interface SpawnContext {
   readonly agents: ReadonlyMap<string, SpawnAgentFacts>;
   /** What the caller may write, normalized. */
   readonly callerRoots: readonly string[];
-  /** What this Turn spawned before this call. */
+  /** What the work of this input spawned before this call. */
   readonly spawned: { readonly tasks: number; readonly calls: number };
   /** An artifact the caller can read itself, so it may hand it over. */
   readonly readable: (artifactId: string) => boolean;

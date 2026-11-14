@@ -4,6 +4,9 @@ import type {
   CancelRunExecutionsRequest,
   ExecutionFact,
   ExecutionRequest,
+  JobControlRequest,
+  JobControlResult,
+  JobEndedFact,
   FabricPort,
   InteractionGatewayPort,
   InteractionInboxEvent,
@@ -29,6 +32,14 @@ export const SCHEMA_IDS = {
   reserveDelegation: 'kernel.unit.ReserveDelegationRequest.v1',
   releaseDelegation: 'kernel.unit.ReleaseDelegationRequest.v1',
   retainArtifacts: 'kernel.unit.RetainArtifactsRequest.v1',
+  scheduleWake: 'kernel.unit.ScheduleWakeRequest.v1',
+  controlJob: 'kernel.unit.ControlJobRequest.v1',
+  haltAgentRun: 'kernel.unit.HaltAgentRunRequest.v1',
+  restoreMission: 'kernel.unit.RestoreMissionRequest.v1',
+  closeMission: 'kernel.unit.CloseMissionRequest.v1',
+  withdrawQuestion: 'kernel.unit.WithdrawQuestionRequest.v1',
+  withdrawOpenInput: 'kernel.unit.WithdrawOpenInputRequest.v1',
+  takeCheckpoint: 'kernel.unit.TakeCheckpointRequest.v1',
   reportCompactionSource: 'kernel.unit.ReportCompactionSourceRequest.v1',
   ackCompaction: 'kernel.unit.AckCompactionRequest.v1',
   submitUnit: 'kernel.unit.SubmitUnitRequest.v1',
@@ -44,9 +55,12 @@ export const SCHEMA_IDS = {
   listSessions: 'kernel.control.ListSessionsRequest.v1',
   deleteSession: 'kernel.control.DeleteSessionRequest.v1',
   answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v1',
-  undoTurns: 'kernel.control.UndoTurnsRequest.v1',
+  undo: 'kernel.control.UndoRequest.v1',
+  recoverRun: 'kernel.control.RecoverRunRequest.v1',
   confirmUndo: 'kernel.control.ConfirmUndoRequest.v1',
-  diffTurns: 'kernel.control.DiffTurnsRequest.v1',
+  diff: 'kernel.control.DiffRequest.v1',
+  listCheckpoints: 'kernel.control.ListCheckpointsRequest.v1',
+  rewindCheckpoint: 'kernel.control.RewindCheckpointRequest.v1',
   updateActivity: 'kernel.unit.UpdateActivityRequest.v1',
   answerHuman: 'kernel.control.AnswerHumanRequest.v1',
   pauseRun: 'kernel.control.PauseRunRequest.v1',
@@ -64,6 +78,8 @@ export const SCHEMA_IDS = {
   cancelExecution: 'kernel.execution.CancelExecutionRequest.v1',
   supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
   executionFact: 'kernel.execution.ExecutionFact.v1',
+  jobControl: 'kernel.execution.JobControlRequest.v1',
+  jobEnded: 'kernel.execution.JobEndedFact.v1',
   modelProgress: 'kernel.execution.ModelProgress.v1',
   modelStream: 'kernel.control.ModelStream.v1',
   workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
@@ -80,6 +96,14 @@ export const WORKFLOW_SYSCALLS = [
   'reserveDelegation',
   'releaseDelegation',
   'retainArtifacts',
+  'scheduleWake',
+  'controlJob',
+  'haltAgentRun',
+  'restoreMission',
+  'closeMission',
+  'withdrawQuestion',
+  'withdrawOpenInput',
+  'takeCheckpoint',
   'reportCompactionSource',
   'ackCompaction',
   'submitUnit',
@@ -105,9 +129,12 @@ export const INTERACTION_SYSCALLS = [
   'steerRun',
   'compactContext',
   'readArtifact',
-  'undoTurns',
+  'undo',
+  'recoverRun',
   'confirmUndo',
-  'diffTurns',
+  'diff',
+  'listCheckpoints',
+  'rewindCheckpoint',
   'shutdown',
 ] as const satisfies readonly (keyof InteractionGatewayPort)[];
 
@@ -279,6 +306,7 @@ export interface SupervisorPort {
   execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
   cancelExecution(request: CancelExecutionRequest): Promise<void>;
+  controlJob(request: JobControlRequest): Promise<JobControlResult>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
@@ -295,6 +323,7 @@ export function createSupervisorPort(
     cancelRun: (request) => fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf({})),
     cancelExecution: (request) =>
       fabric.request(SCHEMA_IDS.cancelExecution, request, contextOf({})),
+    controlJob: (request) => fabric.request(SCHEMA_IDS.jobControl, request, contextOf({})),
     shutdown: (request) => fabric.request(SCHEMA_IDS.supervisorShutdown, request, contextOf({})),
   };
 }
@@ -307,6 +336,17 @@ export function createExecutionFactSink(
   return {
     report: (fact) =>
       fabric.send('kernel-core.execution-facts', SCHEMA_IDS.executionFact, fact, contextOf(fact)),
+  };
+}
+
+/** For the Supervisor: tells the Kernel core that a background command ended (Orchestration 6.4). */
+export function createJobFactSink(
+  fabric: FabricPort,
+  contextOf: (fact: JobEndedFact) => BoundaryContext,
+): { report(fact: JobEndedFact): Promise<void> } {
+  return {
+    report: (fact) =>
+      fabric.send('kernel-core.job-facts', SCHEMA_IDS.jobEnded, fact, contextOf(fact)),
   };
 }
 

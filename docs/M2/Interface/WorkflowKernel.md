@@ -112,7 +112,7 @@ type CloseRunRequest =
   | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'BUDGET' | 'CANCELLED' | 'TIMEOUT'; resultRef?: ArtifactRef };
 ```
 
-- `CloseRunRequest.resultRef`：运行发布的结果。`analyze` 为 AnalysisReport；其他 Orchestration 运行为 `output: true` 节点的结果或确定性运行报告
+- `CloseRunRequest.resultRef`：运行发布的结果：Mission 运行中 `output: true` 节点的回复
   （M2Design 第 7.3 节"必有报告"）；Turn-chat 的运行没有结果，回复经 `message-publish` 逐条发布。
 - `outcome = 'BUDGET'` 时，Orchestration 必须带 `resultRef`（必有报告）；Turn-chat 不带。
 - `RunFailure` 沿用 M1Interface 第 5.4 节。
@@ -143,7 +143,7 @@ interface ReadProjectFileRequest {
   requestId: string;
   sessionId: string;
   workflowRunId: string;
-  path: 'AGENTS.md' | `${string}/AGENTS.md` | `.multiagentos/workflows/${string}.yaml`;   // 白名单，Schema 以正则约束；子目录的 AGENTS.md 也可以
+  path: 'AGENTS.md' | `${string}/AGENTS.md`;   // 白名单，Schema 以正则约束；子目录的 AGENTS.md 也可以
 }
 
 type ProjectFileContent =
@@ -270,7 +270,7 @@ interface HumanCancelled { type: 'HumanCancelled'; humanRequestId: string; nodeI
 interface RunStart {
   type: 'RunStart';
   mode: 'CHAT' | 'ORCHESTRATION';
-  templateRef?: DefinitionRef;       // ORCHESTRATION 时必填（analyze 或使用者模板）；CHAT 是代码中的生长规则，不得有
+  templateRef?: DefinitionRef;       // ORCHESTRATION 时必填（mission）；CHAT 是代码中的生长规则，不得有
   preset: 'standard' | 'readonly';
   initialInput: boolean;             // true：Kernel 随后以 HumanAnswered(origin: 'initial') 交来第一条输入（startSession、startRun）；
                                      // false：没有初始输入，由 Workflow 请求开放输入（openSession，包括额度结束后的继续）
@@ -446,7 +446,6 @@ type ContextHistoryEntry = EntryBase & (
   | { kind: 'MODEL_TURN'; modelId: string; outputRef: ArtifactRef; reasoningRef?: ArtifactRef; replayable: boolean }
   | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
   | { kind: 'FEEDBACK'; text: string; toolCallId?: string }   // 没有执行的工具调用的回答，≤1000
-  | { kind: 'HANDOFF'; outputRef: ArtifactRef; toolCallId: string }   // 前驱节点的交接，PINNED；正文在该次模型输出中
   | { kind: 'PROJECT_INSTRUCTIONS'; path: string; ref: ArtifactRef; trusted: boolean }   // AGENTS.md，PINNED，追加在读取它的位置（M2Design 第 9.5 节）
   | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
 );
@@ -455,7 +454,6 @@ interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL
 
 interface ContextAssembleInput {
   final: boolean;                                  // 必须等于 status.final
-  orientPackRef?: ArtifactRef;
   history: ContextHistoryEntry[];
   status: { round: number; maxRounds: number; budget: BudgetView; final: boolean; wrapUpReason?: WrapUpReason };
 }
@@ -475,7 +473,7 @@ type WrapUpReason =                                // 下一次模型调用为�
 |---|---|
 | 运行内请求 | `sessionId`、`workflowRunId` 必须与 `BoundaryContext` 中的一致 |
 | `SubmitUnitRequest` | `requestId` 的 body 等于 `path` 的 SHA-256 前 32 位；`path` 以 `unitRunId` 对应的 UnitRun 路径开头 |
-| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md`、匹配 `^\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\.yaml$`，或以 `/AGENTS.md` 结尾、不以 `/` 开头、不含 `..` 段与空段、≤512 字符的相对路径；是否在排除规则内由 Kernel 检查 |
+| `ReadProjectFileRequest.path` | 只能是 `AGENTS.md`，或以 `/AGENTS.md` 结尾、不以 `/` 开头、不含 `..` 段与空段、≤512 字符的相对路径；是否在排除规则内由 Kernel 检查 |
 | `CloseRunRequest` | `outcome = 'FAILED'` 时必须有 `failure` 且不得有 `resultRef` |
 | `ReportSessionCommandRequest.result` | `command` 与事件中的命令一致；`FAILED` 时必须有 `failure` |
 | `RunStart` | `mode = 'ORCHESTRATION'` 时必须有 `templateRef`；`mode = 'CHAT'` 时不得有 |

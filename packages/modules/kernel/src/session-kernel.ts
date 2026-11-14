@@ -20,6 +20,7 @@ import {
   type BoundaryContext,
   type CloseReason,
   type ExecutionFact,
+  type JobEndedFact,
   type FabricPort,
   type GatewayForward,
   type HealthStatus,
@@ -114,7 +115,7 @@ export interface SessionKernelDeps {
   readonly compactionPrompt?: CompactionPrompt;
   /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
   readonly agentShare?: RunWorkDeps['agentShare'];
-  /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
+  /** The per-call budget the run and input limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
   readonly config: KernelConfig;
   /** This process's repository: a realpath. */
@@ -167,9 +168,7 @@ const executionConfigOf = (config: KernelConfig): ExecutionConfig => ({
   executionLimits: config.executionLimits,
   retryBackoffBaseMs: config.retryBackoffBaseMs,
   retryAfterMaxMs: config.retryAfterMaxMs,
-  maxReportBytes: config.maxReportBytes,
-  maxSnapshotFiles: config.maxSnapshotFiles,
-  orientBudget: config.budget.orientBudget,
+  ...(config.budget.reserveShare === undefined ? {} : { reserveShare: config.budget.reserveShare }),
   searchBudget: config.budget.searchBudget,
   cancelGraceMs: config.cancelGraceMs,
   pauseDrainMs: config.pauseDrainMs,
@@ -307,6 +306,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     host: RunHost,
     artifacts: SessionArtifacts,
     audit: (entry: object) => void,
+    snapshots?: WorkspaceSnapshots,
   ): RunWork => {
     const holder: { work?: RunWork } = {};
     const execution = new RunExecution({
@@ -385,7 +385,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     const ledgers = new RunLedgers(
       {
         runTokenLimit: config.budget.runTokenLimit,
-        turnTokenLimit: config.budget.turnTokenLimit,
+        inputTokenLimit: config.budget.inputTokenLimit,
+        ...(config.budget.reserveShare === undefined
+          ? {}
+          : { reserveShare: config.budget.reserveShare }),
       },
       deps.mainBudget,
     );
@@ -437,6 +440,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       pinAgent: deps.pinAgent,
       compactionAgent: deps.compactionAgent,
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
+      ...(config.budget.extension === undefined
+        ? {}
+        : { budgetExtension: config.budget.extension }),
       inputIsValid,
       preset: deps.preset,
       web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },
@@ -451,6 +457,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               analyze: deps.commands.analyze,
               sandbox: deps.commands.sandbox,
               unavailablePolicy: config.sandbox.unavailable,
+              approval: config.command.approval,
               ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
               homeReadOnly: toolchains(),
               homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),
@@ -472,6 +479,23 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         execution.pause(drained);
       },
       resumeExecutions: () => execution.resume(),
+      abortAgentRunExecutions: (agentRunId) => {
+        execution.abortAgentRun(agentRunId);
+      },
+      // Checkpoints (Orchestration 7.3): the barrier is the run's, the snapshot the Session's.
+      ...(snapshots === undefined
+        ? {}
+        : {
+            checkpoint: (checkpointId, kind, label) =>
+              snapshots.checkpoint(checkpointId, kind, label),
+            holdMutating: (clear) => {
+              execution.holdMutating(clear);
+            },
+            releaseMutating: () => {
+              execution.releaseMutating();
+            },
+            heldMutating: () => execution.heldMutating(),
+          }),
       abortExecutions: () => {
         execution.abort();
       },
@@ -605,7 +629,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               return undefined;
             }
           },
-          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
+          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit, snapshots),
           writeRunSummary: async (summary) => {
             try {
               const checked = assertValid(RunSummarySchema, summary);
@@ -625,7 +649,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         onFatal: fault,
         interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
         timeouts: {
-          turnMs: config.turnTimeoutSeconds * 1000,
+          inputMs: config.inputTimeoutSeconds * 1000,
           orchestrationMs: config.orchestrationTimeoutSeconds * 1000,
           pauseMs: config.maxPauseSeconds * 1000,
         },
@@ -643,6 +667,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const core = new SessionCore({
     manager,
     artifactsOf: (sessionId) => sessionArtifacts.get(sessionId),
+    controlJob: (request) => supervisor.controlJob(request),
   });
 
   const memoryEvents = persistence.appendLog<object>('kernel-core', {
@@ -765,6 +790,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         // A fact of a Session that already closed has nothing left to settle.
         if (actor === undefined || execution === undefined) return;
         await actor.call(() => execution.handleFact(fact));
+      });
+      // A background command ended (Orchestration 6.4): the run's Workflow decides whose it was.
+      fabric.subscribe<JobEndedFact>('kernel-core.job-facts', async (envelope) => {
+        if (envelope.producer !== 'supervisor')
+          throw new Error('Kernel core job fact has an invalid producer');
+        const fact = envelope.payload;
+        const actor = manager.actor(fact.sessionId);
+        if (actor === undefined) return;
+        await actor.call(() => actor.run(fact.workflowRunId)?.work.jobEnded(fact));
       });
       started = true;
     },

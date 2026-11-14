@@ -30,9 +30,8 @@ export function createListExecutor(cache: FileDigestCache): Executor<'REPOSITORY
         )
           return rejected('NOT_FOUND');
         const built = await buildFileSet(scope, { signal: environment.signal, cache });
-        if (!built.ok) return rejected('LIMIT_EXCEEDED');
         const listing = renderListing(
-          built.set.files.map((file) => file.path),
+          built.files.map((file) => file.path),
           input,
           previewLimitsOf(environment),
         );

@@ -44,7 +44,6 @@ export interface AttemptSpec {
   readonly requestId: string;
   readonly agentRunId: string;
   readonly unitRunId: string;
-  readonly turnId: string;
   readonly unit: UnitDefinition;
   readonly input: UnitInput;
   readonly scope: ExecutionScope;
@@ -139,6 +138,29 @@ export type AttemptAudit =
       readonly command: string;
       readonly workdir: string;
     }
+  /** The user was asked to allow a capability for a Unit (M2Design 5.2): what was asked, for whom. */
+  | {
+      readonly type: 'AUTHORIZATION_ASKED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly capability: string;
+    }
+  /** The budget of the work of an input was added to (M2Design 7.3, rule 6): how much, by whom. */
+  | {
+      readonly type: 'BUDGET_EXTENDED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly tokens: number;
+      readonly by: 'USER' | 'CONFIGURED';
+    }
+  /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
+  | {
+      readonly type: 'COMMAND_AUTO_APPROVED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly command: string;
+      readonly workdir: string;
+    }
   /** A read outside the workspace was let through: what was asked, and the folder that allowed it. */
   | {
       readonly type: 'EXTERNAL_READ';
@@ -198,7 +220,7 @@ interface Attempt {
 }
 
 /** Built-in Units finish in Execution without an execution instance. */
-const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
+const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['MESSAGE_PUBLISH']);
 const isViolation = (code: ReasonCode | undefined): code is ViolationCode =>
   code === 'SCOPE_MISSING' || code === 'PATH_ESCAPE' || code === 'GUARD_FAILURE';
 
@@ -285,7 +307,7 @@ export class RunAttempts {
 
   /**
    * What the provider counted for this Agent's last request, next to the estimate of it. By Agent:
-   * main is a new AgentRun each Turn, with the same history. A SubAgent has a history of its own.
+   * main is a new AgentRun for each input, with the same history. A SubAgent has a history of its own.
    */
   calibrationOf(agentId: string): TokenCalibration | undefined {
     return this.#calibrations.get(agentId);

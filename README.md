@@ -20,8 +20,8 @@ export DEEPSEEK_API_KEY=<你的 key>
 # 3. 进入对话；--repo 是要处理的仓库，缺省为当前目录
 node apps/control-plane/dist/bin.js --repo /home/me/projects/my-app
 
-# 或者运行内置模板 analyze，问题放在最后
-node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app analyze "登录失败时错误信息是在哪里生成的？"
+# 或者把一个目标作为长任务一直做到完成，结束后退出
+node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app "给登录失败加上清楚的错误信息，并补上测试"
 ```
 
 第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。

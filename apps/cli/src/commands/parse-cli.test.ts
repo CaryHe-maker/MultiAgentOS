@@ -10,10 +10,10 @@ async function parse(...argv: string[]) {
 describe('the options of each command', () => {
   // The program once took `--repo` and `--readonly` from anywhere on the line, so after a
   // subcommand they were dropped and `mas run --repo X` ran on the working directory.
-  it('reach `mas run`, before or after the template', async () => {
+  it('reach `mas run`, before or after the goal', async () => {
     for (const argv of [
-      ['run', '--repo', '/x', '--readonly', 'analyze', 'goal'],
-      ['run', 'analyze', 'goal', '--repo', '/x', '--readonly'],
+      ['run', '--repo', '/x', '--readonly', 'goal'],
+      ['run', 'goal', '--repo', '/x', '--readonly'],
     ]) {
       const { result } = await parse(...argv);
       expect(result, argv.join(' ')).toEqual({
@@ -22,7 +22,6 @@ describe('the options of each command', () => {
           kind: 'RUN',
           repo: '/x',
           readonly: true,
-          template: 'analyze',
           goal: 'goal',
         },
       });
@@ -45,7 +44,7 @@ describe('mas log', () => {
       '2',
       '--repo',
       '/work',
-      '--turn',
+      '--input',
       '3',
       '--full',
       '--json',
@@ -56,7 +55,7 @@ describe('mas log', () => {
         kind: 'LOG',
         repo: '/work',
         session: '2',
-        turn: 3,
+        input: 3,
         full: true,
         json: true,
         list: false,
@@ -74,9 +73,9 @@ describe('mas log', () => {
 
   it('refuses a Turn that is not a positive whole number', async () => {
     for (const turn of ['0', '-1', 'x', '1.5', '1000000']) {
-      const { result, written } = await parse('log', '--turn', turn);
+      const { result, written } = await parse('log', '--input', turn);
       expect(result, turn).toEqual({ ok: false, exitCode: EXIT_CODE_USAGE });
-      expect(written).toContain('--turn 要给一个正整数');
+      expect(written).toContain('--input 要给一个正整数');
     }
   });
 });

@@ -11,7 +11,11 @@ modelDescription: >-
   repository root) instead of cd. The command runs in a sandbox without network and cannot read
   secrets (.env, keys) or write outside the repository; .git, .multiagentos and AGENTS.md are
   read-only. Set network to true only when the command really needs the internet; the user is
-  asked every time. timeoutMs defaults to 120000 and is at most 600000. A non-zero exit code is a
+  asked every time. timeoutMs defaults to 120000 and is at most 600000; a command still running
+  at timeoutMs moves to the background instead of being stopped (promoteOnTimeout false stops it).
+  runInBackground starts a long command (a server, a long build or test run) and answers at once
+  with its job id: it runs on while you work or sleep, you are told when it ends, job_output reads
+  what it printed, job_kill stops it, and it is stopped when your task ends. A non-zero exit code is a
   normal result, not an error: read the output. A long output is cut in the middle; read_output
   reads the rest by this call's id. Do not chain unrelated commands, and do not use a command to
   read or edit files when read_file and edit_file do it.

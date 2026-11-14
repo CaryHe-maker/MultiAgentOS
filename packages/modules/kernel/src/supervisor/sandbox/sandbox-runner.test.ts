@@ -10,7 +10,12 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { approvalDigestOf, type SandboxProfile, type SandboxScope } from '@multiagentos/contracts';
+import {
+  approvalDigestOf,
+  type DetachedExit,
+  type SandboxProfile,
+  type SandboxScope,
+} from '@multiagentos/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSandboxRunner } from './sandbox-runner.js';
 
@@ -69,7 +74,8 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
       maxOutputBytes: 1_000_000,
       signal: new AbortController().signal,
     });
-    if (result.kind !== 'RAN') throw new Error(`refused: ${result.reason}`);
+    if (result.kind !== 'RAN')
+      throw new Error(`refused: ${result.kind === 'REFUSED' ? result.reason : result.kind}`);
     return result;
   };
 
@@ -202,6 +208,24 @@ describe.skipIf(!bwrapWorks)('SandboxRunner with bwrap', () => {
       signal: new AbortController().signal,
     });
     expect(result).toEqual({ kind: 'REFUSED', reason: 'WORKDIR_INVALID' });
+  });
+
+  it('runs a command when a write root does not exist yet, and still refuses one that leaves', async () => {
+    const ran = await runner().run({
+      ...scopeFor('echo ran', { writableRoots: ['docs/new-report.md'] }),
+      timeoutMs: 5_000,
+      maxOutputBytes: 1000,
+      signal: new AbortController().signal,
+    });
+    expect(ran.kind).toBe('RAN');
+    spawnSync('ln', ['-s', outside, join(repo, 'away')]);
+    const refused = await runner().run({
+      ...scopeFor('echo no', { writableRoots: ['away/new.md'] }),
+      timeoutMs: 5_000,
+      maxOutputBytes: 1000,
+      signal: new AbortController().signal,
+    });
+    expect(refused).toEqual({ kind: 'REFUSED', reason: 'WORKDIR_INVALID' });
   });
 
   it('ends a command at its timeout and reports it with what it printed', async () => {
@@ -370,5 +394,70 @@ print('allocated')
     });
     expect(result).toMatchObject({ kind: 'RAN', truncated: true });
     expect(result.kind === 'RAN' && result.output.length).toBe(1_000);
+  });
+
+  /** Runs a command that detaches and collects what it prints after, until it ends. */
+  const detached = async (
+    command: string,
+    detach: { immediately: boolean; promoteOnTimeout: boolean },
+    timeoutMs = 10_000,
+  ) => {
+    const { scope } = scopeFor(command);
+    const controller = new AbortController();
+    const result = await runner().run({
+      scope,
+      command,
+      timeoutMs,
+      maxOutputBytes: 10_000,
+      signal: controller.signal,
+      detach,
+    });
+    if (result.kind !== 'DETACHED' || result.process === undefined)
+      throw new Error(`did not detach: ${result.kind}`);
+    const { process: job } = result;
+    let after = '';
+    job.onOutput((chunk) => {
+      after += chunk.toString('utf8');
+    });
+    const exit = new Promise<DetachedExit>((resolve) => {
+      job.onExit(resolve);
+    });
+    return { result, job, exit, after: () => after, controller };
+  };
+
+  it('detaches a background command at once and hands over what it prints and how it ends', async () => {
+    const run = await detached('sleep 0.3; echo later; exit 3', {
+      immediately: true,
+      promoteOnTimeout: false,
+    });
+    expect(run.result).toMatchObject({ kind: 'DETACHED', promoted: false, output: '' });
+    // The execution's signal no longer reaches it.
+    run.controller.abort();
+    expect(await run.exit).toEqual({
+      exitCode: 3,
+      signal: null,
+      stopped: false,
+      unconfirmed: false,
+    });
+    expect(run.after()).toContain('later');
+  });
+
+  it('moves a command to the background at its timeout instead of stopping it', async () => {
+    const run = await detached(
+      'echo before; sleep 0.6; echo after',
+      { immediately: false, promoteOnTimeout: true },
+      200,
+    );
+    expect(run.result).toMatchObject({ kind: 'DETACHED', promoted: true });
+    expect(run.result.output).toContain('before');
+    expect(await run.exit).toMatchObject({ exitCode: 0, stopped: false });
+    expect(run.after()).toContain('after');
+  });
+
+  it('stops a detached command on request, and says it was stopped', async () => {
+    const run = await detached('echo up; sleep 30', { immediately: true, promoteOnTimeout: false });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    run.job.stop();
+    expect(await run.exit).toMatchObject({ stopped: true, unconfirmed: false });
   });
 });

@@ -1,6 +1,9 @@
 import {
   MEDIA_TYPES,
+  countSandboxDenials,
   type CommandOutput,
+  type ExecutorOutcome,
+  type SandboxRunResult,
   type Executor,
   type ExecutorEnvironment,
 } from '@multiagentos/contracts';
@@ -42,9 +45,18 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
           timeoutMs: input.timeoutMs,
           maxOutputBytes: fullOutputLimit(environment),
           signal: environment.signal,
+          ...(input.background === true || input.promoteOnTimeout === true
+            ? {
+                detach: {
+                  immediately: input.background === true,
+                  promoteOnTimeout: input.promoteOnTimeout === true,
+                },
+              }
+            : {}),
         });
         if (result.kind === 'REFUSED')
           return rejected(result.reason === 'WORKDIR_INVALID' ? 'OUT_OF_SCOPE' : result.reason);
+        if (result.kind === 'DETACHED') return detachedResult(result, input.timeoutMs, limits);
 
         const base: CommandOutput = {
           exitCode: result.exitCode,
@@ -80,6 +92,34 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
         });
       }),
   };
+}
+
+/**
+ * A command that runs on as a job (Orchestration 6.1): what it printed so far, and its key. The
+ * caller learns the job's name from Workflow, which owns the numbering.
+ */
+function detachedResult(
+  result: Extract<SandboxRunResult, { kind: 'DETACHED' }>,
+  timeoutMs: number,
+  limits: { maxBytes: number; maxLines: number },
+): ExecutorOutcome {
+  if (result.jobKey === undefined) return rejected('SANDBOX_UNAVAILABLE');
+  const output: CommandOutput = {
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    backend: result.backend,
+    sandboxDenials: countSandboxDenials(result.output),
+    job: { jobKey: result.jobKey, promoted: result.promoted },
+  };
+  const head = result.promoted
+    ? `still running after ${String(Math.round(timeoutMs / 1000))} s: moved to the background\n`
+    : 'started in the background\n';
+  const preview = retainBytes(result.output, Math.max(1, limits.maxBytes - 512), 'TAIL').tail;
+  return completed({
+    output,
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: head + preview },
+  });
 }
 
 const fullOutputLimit = (environment: ExecutorEnvironment): number =>

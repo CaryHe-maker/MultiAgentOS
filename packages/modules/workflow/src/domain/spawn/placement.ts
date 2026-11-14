@@ -12,7 +12,7 @@ export interface Placement {
   readonly writeRoots: readonly string[];
   /** Of a SubAgent: who started it, under which delegation, for which task. */
   readonly link?: {
-    readonly parentAgentRunId: string;
+    readonly parentAgentRunId?: string;
     readonly delegationId: string;
     readonly taskName: string;
   };
@@ -26,7 +26,7 @@ export function placementOf(
     readonly effort: ThinkingEffort;
     readonly writeRoots: readonly string[];
   },
-  dispatch?: { readonly parentAgentRunId: string; readonly delegationId: string },
+  dispatch?: { readonly parentAgentRunId?: string; readonly delegationId: string },
 ): Placement {
   const { spawn } = node;
   if (spawn === undefined || dispatch === undefined)

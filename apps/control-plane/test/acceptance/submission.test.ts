@@ -1,0 +1,306 @@
+/**
+ * A part of a long task handed to a pre-orchestrated template (Orchestration 3.9, D39): main starts
+ * a fixer with run_subagents; the specialist, a lead, reads the fix-verify playbook with its task,
+ * follows its phases (a call that does not fit is refused), and hands back one report, which main
+ * reads like the result of any subtask. The whole product runs; only the provider is scripted.
+ */
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { probeSandbox } from '@multiagentos/kernel';
+import type { Console, ConsoleView } from '@multiagentos/user-interaction';
+import { afterEach, expect, it, describe } from 'vitest';
+import { composeSystem } from '../../src/bootstrap/compose-system.js';
+import { defaultSystemConfig } from '../../src/config/system-config.js';
+import { scriptedAgents, textOf, tool, type ScriptedChat } from './chat-driver.js';
+
+const TIMEOUT = 120_000;
+const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
+const bwrapWorks = (await probeSandbox(tmpdir())).available;
+const real = bwrapWorks ? describe : describe.skip;
+
+const directories: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+
+async function missionOn(goal: string, provider: ScriptedChat, files: Record<string, string>) {
+  const root = await mkdtemp(join(tmpdir(), 'mas-submission-'));
+  directories.push(root);
+  const repository = join(root, 'repo');
+  const dataDir = join(root, 'data');
+  for (const [name, content] of Object.entries({ 'README.md': 'demo\n', ...files })) {
+    await mkdir(dirname(join(repository, name)), { recursive: true });
+    await writeFile(join(repository, name), content);
+  }
+  const notices: string[] = [];
+  const attached: { console?: Console } = {};
+  let asked: string | undefined;
+  const view: ConsoleView = {
+    print: (record) => void notices.push(`${record.kind}: ${record.text}`),
+    update: (live) => {
+      const question = live.pending?.kind === 'AUTHORIZATION' ? live.pending.text : undefined;
+      if (question !== undefined && question !== asked)
+        queueMicrotask(() => void attached.console?.submit('y'));
+      asked = question;
+    },
+    restoreInput: () => undefined,
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = provider.fetch;
+  try {
+    const system = await composeSystem({
+      config: { ...defaultSystemConfig(), dataDir },
+      repositoryRoot: await realpath(repository),
+      preset: 'standard',
+      view,
+      credentials: { apiKeyFor: () => OFFLINE_KEY },
+      log: () => undefined,
+    });
+    await system.start();
+    const template = system.templateRef('mission');
+    if (template === undefined) throw new Error('no template mission');
+    // A pre-orchestrated template does not run on its own.
+    expect(system.templateRef('fix-verify')).toBeUndefined();
+    const code = await system.run(async (console) => {
+      attached.console = console;
+      const exit = await console.run(template, goal);
+      await console.shutdown('RUN_FINISHED');
+      return exit;
+    });
+    return { code, notices, dataDir, repository };
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+async function logOf(dataDir: string): Promise<Record<string, unknown>[]> {
+  const [id] = await readdir(join(dataDir, 'sessions'));
+  const text = await readFile(
+    join(dataDir, 'sessions', id ?? '', 'workflow', 'log.v1.jsonl'),
+    'utf8',
+  );
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+const check = 'grep -q fixed src/value.txt';
+
+real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
+  it(
+    'runs the playbook under a root of its own, refuses what does not fit it, and reports back',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'fix-value',
+                  agent: 'fixer',
+                  goal: 'src/value.txt must say fixed; the check fails now',
+                  writeScope: ['src'],
+                  acceptance: [`${check} succeeds`],
+                },
+              ],
+              plan: 'One part: make the value check pass, handed to a fixer.',
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'the value is fixed by the specialist' }),
+          ],
+          lead: [
+            // reproduce
+            tool('run_command', { command: check }),
+            // Not the playbook: explorers are no phase of fix-verify.
+            tool('run_subagents', {
+              tasks: [{ name: 'look', agent: 'explorer', goal: 'look at src' }],
+            }),
+            // fix, as the playbook says
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'fixer',
+                  agent: 'worker',
+                  goal: 'write fixed into src/value.txt',
+                  writeScope: ['src'],
+                  acceptance: [`${check} succeeds`],
+                  // Not taken: a task that inherits thinks as hard as the root it comes from.
+                  effort: 'low',
+                },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('run_command', { command: check }),
+            tool('finish_subagent', {
+              summary: 'src/value.txt says fixed; the check passes',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [{ command: check, exitCode: 0 }],
+              acceptance: [{ index: 0, verdict: 'met' }],
+            }),
+          ],
+        },
+        {
+          fixer: [
+            tool('read_file', { path: 'src/value.txt' }),
+            tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+            tool('finish_subagent', {
+              summary: 'wrote fixed',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [],
+              acceptance: [{ index: 0, verdict: 'met' }],
+            }),
+          ],
+        },
+      );
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken\n',
+      });
+      expect(run.code).toBe(0);
+      expect(run.notices.join('\n')).toContain('the value is fixed by the specialist');
+      expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      const said = provider.requests
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      // The specialist read its playbook and its example with its task.
+      expect(said).toContain('You run a pre-orchestrated part of the work: template fix-verify');
+      expect(said).toContain('An example of a good plan with this playbook');
+      // What the playbook needs comes from the goal and acceptance main wrote (D39).
+      expect(said).toContain('What you need from your task, in its goal and acceptance');
+      expect(said).toContain(`${check} succeeds`);
+      // The root of the long task read the table of decisions and the manual of the system with
+      // its goal (Orchestration D37).
+      expect(said).toContain('Decisions, by what you see.');
+      expect(said).toContain('fixer: something fails and a command shows it');
+      // The call that did not fit was refused with what the next phase may be.
+      expect(said).toContain('this call does not follow your playbook');
+      // Main read the report of the subtree's root like any subtask's.
+      expect(said).toContain('Result of task fix-value');
+      // On the tree: the specialist below main, its fixer below it.
+      const log = await logOf(run.dataDir);
+      const spawned = log
+        .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+        .flatMap((record) => record['nodes'] as Record<string, unknown>[]);
+      const root = spawned.find((node) => node['name'] === 'fix-value');
+      const fixer = spawned.find((node) => node['name'] === 'fixer');
+      expect((root?.['spawn'] as Record<string, unknown>)['specialist']).toBeDefined();
+      expect((fixer?.['mission'] as Record<string, unknown>)['parentId']).toBe(
+        (root?.['mission'] as Record<string, unknown>)['id'],
+      );
+      // The fix phase of fix-verify says `context: inherit` (D35): the fixer runs as the Agent of
+      // the specialist and starts with its context.
+      expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
+        missionId: (root?.['mission'] as Record<string, unknown>)['id'],
+        as: 'worker',
+      });
+      expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
+      // The provider keeps a cache per effort: the fixer runs with the effort of the root.
+      const registered = log.filter((record) => record['type'] === 'AGENT_RUN_REGISTERED');
+      const effortOf = (node: Record<string, unknown> | undefined) =>
+        registered.find((record) => record['nodeId'] === node?.['nodeId'])?.['effort'];
+      expect(effortOf(fixer)).toBe(effortOf(root));
+      expect(effortOf(fixer)).not.toBe('low');
+      const isFixer = (request: (typeof provider.requests)[number]) =>
+        request.messages.some((message) =>
+          textOf(message).includes('you are a different task: "fixer"'),
+        );
+      const first = provider.requests.find(isFixer);
+      // The request of the root that made the call: the last one of the lead before the fixer's.
+      const before = provider.requests
+        .slice(0, provider.requests.indexOf(first as (typeof provider.requests)[number]))
+        .filter(
+          (request) =>
+            textOf(request.messages.find((message) => message.role === 'user')).includes(
+              'Your task (fix-value,',
+            ) &&
+            // Not the root's next request, which already has its own answer to the call.
+            !request.messages.some((message) =>
+              textOf(message).includes('Started 1 subtask(s): fixer'),
+            ),
+        )
+        .at(-1);
+      expect(first).toBeDefined();
+      expect(before).toBeDefined();
+      // The same prompt and the same tools, and every message the root sent is the start of what
+      // the fixer sends: the provider's cache of the root's context serves the fixer.
+      expect(JSON.stringify(first?.tools)).toBe(JSON.stringify(before?.tools));
+      const sent = before?.messages ?? [];
+      // The root's last message there is its status line, which every request ends with anew.
+      const stable = sent.slice(0, -1);
+      expect(first?.messages.slice(0, stable.length)).toEqual(stable);
+      // Then the root's turn with the call, and the fixer's task as the answer to that call.
+      const told = first?.messages.map((message) => textOf(message)).join('\n') ?? '';
+      expect(told).toContain('From here on you are a different task: "fixer", a worker');
+      expect(told).toContain('You may write only: src');
+      expect(told).toContain('Your goal: write fixed into src/value.txt');
+      expect(told).not.toContain('Your task (fixer,');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'starts the tasks of a phase fresh when inherited contexts are turned off',
+    async () => {
+      const provider = scriptedAgents({
+        main: [
+          tool('run_subagents', {
+            tasks: [
+              {
+                name: 'fix-value',
+                agent: 'fixer',
+                goal: 'src/value.txt must say fixed; the check fails now',
+                writeScope: ['src'],
+                acceptance: [`${check} succeeds`],
+              },
+            ],
+            plan: 'One part: make the value check pass, handed to a fixer.',
+          }),
+          tool('sleep', { until: [{ kind: 'children' }] }),
+          tool('reply', { text: 'fixed' }),
+        ],
+        lead: [
+          tool('run_command', { command: check }),
+          tool('run_subagents', {
+            tasks: [{ name: 'fixer', agent: 'worker', goal: 'write fixed', writeScope: ['src'] }],
+          }),
+          tool('sleep', { until: [{ kind: 'children' }] }),
+          tool('finish_subagent', {
+            summary: 'fixed',
+            status: 'done',
+            changedFiles: ['src/value.txt'],
+            validation: [],
+          }),
+        ],
+        worker: [
+          tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+          tool('finish_subagent', {
+            summary: 'wrote fixed',
+            status: 'done',
+            changedFiles: ['src/value.txt'],
+            validation: [],
+          }),
+        ],
+      });
+      process.env['MAO_INHERIT_CONTEXT'] = 'off';
+      try {
+        const run = await missionOn('make the value check pass', provider, {
+          'src/value.txt': 'broken\n',
+        });
+        expect(run.code).toBe(0);
+        const said = provider.requests
+          .flatMap((request) => request.messages.map((message) => textOf(message)))
+          .join('\n');
+        expect(said).toContain('Your task (fixer,');
+        expect(said).not.toContain('you are a different task');
+      } finally {
+        delete process.env['MAO_INHERIT_CONTEXT'];
+      }
+    },
+    TIMEOUT,
+  );
+});

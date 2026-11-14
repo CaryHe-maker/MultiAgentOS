@@ -4,6 +4,8 @@ import {
   ReplyArgsSchema,
   RepositoryListInputSchema,
   RunSubagentsArgsSchema,
+  SendMessageArgsSchema,
+  SleepArgsSchema,
   UpdateTodosArgsSchema,
   WorkerResultSchema,
   newId,
@@ -19,7 +21,6 @@ import { FileSessionStore } from '@multiagentos/persistence';
 import {
   SessionLogStore,
   SessionRunner,
-  callResultsOf,
   type AgentDefinitions,
   type AgentUnit,
 } from '@multiagentos/workflow';
@@ -58,6 +59,8 @@ const main: AgentDefinitions = {
   ],
   onDegraded: 'PUBLISH_NOTICE',
   spawnTool: { toolName: 'run_subagents', parameters: RunSubagentsArgsSchema },
+  sleepTool: { toolName: 'sleep', parameters: SleepArgsSchema },
+  messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
   todoTool: { toolName: 'update_todos', parameters: UpdateTodosArgsSchema },
 };
 const explorer: AgentDefinitions = {
@@ -73,6 +76,8 @@ const explorer: AgentDefinitions = {
     },
   ],
   onDegraded: 'RETURN_PARTIAL',
+  sleepTool: { toolName: 'sleep', parameters: SleepArgsSchema },
+  messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
 };
 const worker: AgentDefinitions = {
   ...common,
@@ -254,34 +259,36 @@ const begin = async (kernel: ReturnType<typeof createFakeSessionKernel>) => {
   );
   await kernel.idle();
 };
+/** main waits for every task it started: the call returns at once, so it sleeps (D14). */
+const sleepForChildren = () =>
+  model({ toolName: 'sleep', args: { until: [{ kind: 'children', mode: 'all' }] } });
+
 /**
- * What each call that came back told its caller: the outcomes of the nodes on its RESUME edges. It
- * also checks the invariant of a waiting node: between its call going out and coming back the
- * caller's AgentRun submits no Unit.
+ * What the tasks of each `run_subagents` call came to, call by call, in the order they were
+ * written: the result each recorded when its task ended (Orchestration 3.2, 4.3).
  */
 const resumedCalls = (records: readonly SessionLogRecord[]) =>
-  ofType(records, 'NODE_RESUMED').map((resumed) => {
-    const from = records.findIndex(
-      (record) =>
-        record.type === 'GRAPH_EXTENDED' &&
-        record.edges.some(
-          (edge) =>
-            edge.kind === 'DELEGATE' &&
-            edge.from === resumed.nodeId &&
-            edge.call?.toolCallId === resumed.call.toolCallId,
-        ),
+  ofType(records, 'GRAPH_EXTENDED')
+    .filter((record) => record.source === 'SPAWN')
+    .map((spawn) =>
+      spawn.nodes.map((node) => {
+        const missionId = node.mission?.id;
+        const lastNode =
+          ofType(records, 'GRAPH_EXTENDED')
+            .flatMap((record) => record.nodes)
+            .filter((each) => each.mission?.id === missionId)
+            .at(-1)?.nodeId ?? node.nodeId;
+        const ended = ofType(records, 'NODE_ENDED').find((record) => record.nodeId === lastNode);
+        const result = ended?.result as { status?: string; notes?: string[] } | undefined;
+        expect(
+          ofType(records, 'MISSION_ENDED').some((record) => record.missionId === missionId),
+        ).toBe(true);
+        return { name: node.name, status: result?.status, notes: result?.notes ?? [] };
+      }),
     );
-    const to = records.findIndex((record) => record === resumed);
-    const callerRun = ofType(records, 'AGENT_RUN_REGISTERED').find(
-      (record) => record.nodeId === resumed.nodeId,
-    )?.agentRunId;
-    expect(
-      records
-        .slice(from, to)
-        .filter((record) => record.type === 'UNIT_SUBMITTED' && record.agentRunId === callerRun),
-    ).toEqual([]);
-    return callResultsOf(records, resumed.workflowRunId, resumed.nodeId, resumed.call.toolCallId);
-  });
+/** Answers that say something was not taken: the answer that a call started or slept is not one. */
+const refusals = (records: readonly SessionLogRecord[]) =>
+  ofType(records, 'FEEDBACK').filter((record) => !['STARTED', 'ASLEEP'].includes(record.code));
 const ofType = <T extends SessionLogRecord['type']>(
   records: readonly SessionLogRecord[],
   type: T,
@@ -303,6 +310,7 @@ describe('run_subagents', () => {
             ],
           },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'done' } }),
       ],
       explorer: [
@@ -316,7 +324,13 @@ describe('run_subagents', () => {
     const main = registered.find((record) => record.agentRef.id === 'main');
     const children = registered.filter((record) => record.agentRef.id === 'explorer');
     expect(children).toHaveLength(2);
-    expect(children.every((child) => child.parentAgentRunId === main?.agentRunId)).toBe(true);
+    // Both are tasks below main's task, whether main still ran or slept when they started.
+    expect(children.every((child) => child.missionId !== undefined)).toBe(true);
+    const spawned = ofType(records, 'GRAPH_EXTENDED').find((record) => record.source === 'SPAWN');
+    expect(spawned?.nodes.map((node) => node.mission?.parentId)).toEqual([
+      main?.missionId,
+      main?.missionId,
+    ]);
     // The second task started only after the first had ended.
     const firstEnd = records.findIndex(
       (record) =>
@@ -333,9 +347,17 @@ describe('run_subagents', () => {
       ['survey', 'DONE'],
       ['check', 'DONE'],
     ]);
+    // main spawned and slept, then a new segment of its task replied.
+    const mainRuns = new Set(
+      registered.filter((record) => record.agentRef.id === 'main').map((r) => r.agentRunId),
+    );
+    expect(mainRuns.size).toBe(2);
     expect(
-      ofType(records, 'MODEL_TURN').filter((turn) => turn.agentRunId === main?.agentRunId),
-    ).toHaveLength(2);
+      ofType(records, 'MODEL_TURN').filter((turn) => mainRuns.has(turn.agentRunId)),
+    ).toHaveLength(3);
+    expect(ofType(records, 'MISSION_WOKEN').map((record) => record.causes[0]?.kind)).toEqual([
+      'CHILDREN',
+    ]);
     expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
     // The task that waits sees its own task and the result of the one before it, not the prompt.
     const history = (request: SubmitUnitRequest | undefined) =>
@@ -402,6 +424,7 @@ describe('run_subagents', () => {
             ],
           },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'done' } }),
       ],
       worker: [
@@ -441,6 +464,7 @@ describe('run_subagents', () => {
             tasks: [{ name: 'look', agent: 'explorer', goal: 'x', acceptance: ['a', 'b'] }],
           },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: [
@@ -475,6 +499,7 @@ describe('the length of a result', () => {
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: [
@@ -486,7 +511,7 @@ describe('the length of a result', () => {
     });
     await begin(kernel);
     const { records } = runner;
-    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(refusals(records)).toEqual([]);
     expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
   });
 
@@ -497,13 +522,14 @@ describe('the length of a result', () => {
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: [model({ toolName: 'finish_subagent', args: { summary: 'found it' } })],
     });
     await begin(kernel);
     const { records } = runner;
-    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(refusals(records)).toEqual([]);
     expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
   });
 });
@@ -516,6 +542,7 @@ describe('the tool results a task lists', () => {
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: [
@@ -527,7 +554,7 @@ describe('the tool results a task lists', () => {
     });
     await begin(kernel);
     const { records } = runner;
-    expect(ofType(records, 'FEEDBACK')).toEqual([]);
+    expect(refusals(records)).toEqual([]);
     const [joined] = resumedCalls(records);
     expect(joined?.[0]?.status).toBe('DONE');
     expect(joined?.[0]?.notes).toHaveLength(1);
@@ -550,7 +577,13 @@ describe('the tool results a task lists', () => {
         args: { tasks: [{ name, agent: 'explorer', goal: 'x' }] },
       });
     const { kernel, runner } = setup({
-      main: [call('first'), call('second'), model({ toolName: 'reply', args: { text: 'ok' } })],
+      main: [
+        call('first'),
+        sleepForChildren(),
+        call('second'),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
       explorer: [
         model({ toolName: 'finish_subagent', args: explorerResult }),
         model({ toolName: 'finish_subagent', args: explorerResult }),
@@ -574,6 +607,7 @@ describe('a last result that does not follow the form', () => {
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: Array.from({ length: 12 }, () => bad),
@@ -607,6 +641,7 @@ describe('a plan before the work', () => {
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
         }),
+        sleepForChildren(),
         model({ toolName: 'reply', args: { text: 'ok' } }),
       ],
       explorer: [model({ toolName: 'finish_subagent', args: explorerResult })],
@@ -634,5 +669,78 @@ describe('a plan before the work', () => {
     expect(ofType(runner.records, 'AGENT_WRAP_UP').map((record) => record.reason)).toEqual([
       'NO_PROGRESS',
     ]);
+  });
+});
+
+describe('messages and waking (Orchestration 4, 5)', () => {
+  const sleepOn = (...until: object[]) => model({ toolName: 'sleep', args: { until } });
+  const send = (to: string, text: string) =>
+    model({ toolName: 'send_message', args: { to, text } });
+
+  it('routes a message to a sibling, wakes it, and the sender is told', async () => {
+    const { kernel, runner, assembled } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              { name: 'ui', agent: 'explorer', goal: 'wait for the API' },
+              { name: 'api', agent: 'explorer', goal: 'decide the API' },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        sleepOn({ kind: 'message' }),
+        send('ui', 'GET /keys'),
+        model({ toolName: 'finish_subagent', args: { summary: 'api decided' } }),
+        model({ toolName: 'finish_subagent', args: { summary: 'ui done' } }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'MISSION_MESSAGE')).toHaveLength(1);
+    expect(ofType(records, 'MISSION_WOKEN').map((each) => each.causes.map((c) => c.kind))).toEqual(
+      expect.arrayContaining([['MESSAGE'], ['CHILDREN']]),
+    );
+    expect(refusals(records)).toEqual(
+      ofType(records, 'FEEDBACK').filter((record) => record.code === 'SENT'),
+    );
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
+    const histories = assembled.map(
+      (request) => (request.input as { history: { kind: string }[] }).history,
+    );
+    expect(histories.some((history) => history.some((entry) => entry.kind === 'MESSAGE'))).toBe(
+      true,
+    );
+  });
+
+  it('wakes the highest sleeping task when every task only waits', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'waiter', agent: 'explorer', goal: 'wait' }] },
+        }),
+        sleepForChildren(),
+        send('waiter', 'go'),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'unblocked' } }),
+      ],
+      explorer: [
+        sleepOn({ kind: 'message' }),
+        model({ toolName: 'finish_subagent', args: { summary: 'went' } }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'MISSION_WOKEN').map((each) => each.causes[0]?.kind)).toEqual([
+      'STALLED',
+      'MESSAGE',
+      'CHILDREN',
+    ]);
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
   });
 });

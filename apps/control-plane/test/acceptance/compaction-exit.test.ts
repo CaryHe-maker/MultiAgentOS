@@ -22,6 +22,9 @@ import {
   until,
 } from './chat-driver.js';
 
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
+
 const TIMEOUT = 60_000;
 const directories: string[] = [];
 const open: Chat[] = [];
@@ -110,7 +113,14 @@ const logOf = async (dataDir: string): Promise<Record<string, unknown>[]> =>
   (await readFile(join(await sessionDirectory(dataDir), 'workflow', 'log.v1.jsonl'), 'utf8'))
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    // The log is read while the system writes it: a line that is not whole yet is not there yet.
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
 const auditOf = async (dataDir: string) =>
   readFile(join(await sessionDirectory(dataDir), 'kernel-core', 'audit.jsonl'), 'utf8');
 const waitFor = async (condition: () => Promise<boolean>): Promise<void> => {
@@ -310,7 +320,7 @@ describe('L2: the provider says the context is too long', () => {
 const awaitingInput = (chat: Chat) =>
   until(() => chat.lives.at(-1)?.status.includes('等待输入') === true, 'the end of the Turn');
 const turnsEnded = async (dataDir: string) =>
-  (await logOf(dataDir)).filter((r) => r.type === 'TURN_ENDED').length;
+  (await logOf(dataDir)).filter((r) => r.type === 'INPUT_SETTLED').length;
 const afterTurns = (dataDir: string, count: number) =>
   waitFor(async () => (await turnsEnded(dataDir)) >= count);
 
@@ -342,7 +352,7 @@ describe('L7: undoing a Turn that a summary covers', () => {
 
       await awaitingInput(chat);
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       await waitFor(async () =>
         (await logOf(dataDir)).some((r) => r.type === 'CONTEXT_COMPACTION_REVOKED'),
       );
@@ -787,6 +797,7 @@ describe('L12: a SubAgent compacts its own context', () => {
           tool('run_subagents', {
             tasks: [{ name: 'look', agent: 'explorer', goal: 'read the three files' }],
           }),
+          waitForTasks(),
           reply('the explorer is done'),
         ],
         explorer: [

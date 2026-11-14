@@ -140,7 +140,7 @@ export async function runLogCommand(command: LogCommand, io: LogCommandIo): Prom
           sessionId: line.sessionId,
           createdAt: line.createdAt,
           lastActiveAt: line.lastActiveAt,
-          turnCount: line.turnCount,
+          inputCount: line.inputCount ?? line.turnCount ?? 0,
           ...(title === undefined ? {} : { title }),
         });
       }
@@ -155,16 +155,16 @@ export async function runLogCommand(command: LogCommand, io: LogCommandIo): Prom
     }
     const timeline = await buildTimeline(await readRecords(io.dataDir, chosen.sessionId), read);
     const shown =
-      command.turn === undefined
+      command.input === undefined
         ? timeline
         : {
             ...timeline,
-            turns: timeline.turns.filter((turn) => turn.index === command.turn),
+            inputs: timeline.inputs.filter((input) => input.index === command.input),
             outside: [],
           };
-    if (command.turn !== undefined && shown.turns.length === 0) {
+    if (command.input !== undefined && shown.inputs.length === 0) {
       io.writeError(
-        `这个对话没有第 ${String(command.turn)} 轮（共 ${String(timeline.turns.length)} 轮）。\n`,
+        `这个对话没有第 ${String(command.input)} 次输入（共 ${String(timeline.inputs.length)} 次）。\n`,
       );
       return EXIT_CODE_LOG_FAILED;
     }

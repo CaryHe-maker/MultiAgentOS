@@ -65,7 +65,7 @@ interface OpenSessionRequest {
 
 interface StartRunRequest {          // mas run <模板> "<目标>"，总是新建 Session
   requestId: string;
-  template: DefinitionRef;           // 目前只接受内置模板 analyze；使用者模板的开放见 M2ReleasePlan phase 2
+  template: DefinitionRef;           // `mas run` 总是内置模板 mission
   goal: UserInput;
 }
 
@@ -277,7 +277,7 @@ interface MessagePublished {         // message-publish 完成时发出
   wrapUpReason?: WrapUpReason;      // 回复来自提前收尾的 final-call 时带上；界面在回复后提示
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
-  kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
+  kind: 'REPLY' | 'DEGRADED_REPLY';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
 }
 
 interface RunStateChanged {
@@ -408,7 +408,6 @@ interface CompactionFailed {
 | `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在或已删除 |
 | `WORKSPACE_CHANGE_NOT_CONFIRMED` | `SyscallRejected`（`openSession`） | Session 最后在别的文件夹工作过，请求没有带 `confirmWorkspaceChange: true` |
 | `SESSION_IN_USE` | `SyscallRejected`（`deleteSession`、对当前 Session 的 `openSession`） | 不能删除当前打开的 Session；当前 Session 的运行尚未结束时不能在其中开启新的运行 |
-| `TEMPLATE_UNSUPPORTED` | `SyscallRejected`（`startRun`） | 目前只接受 `analyze` |
 | `QUESTION_NOT_PENDING` | `SyscallRejected`（`answerAuthorization`） | 沿用 M1 |
 | `HUMAN_REQUEST_NOT_PENDING` | `SyscallRejected`（`answerHuman`） | 请求不存在或已答复 |
 | `ARTIFACT_EXPIRED` | `SyscallRejected`（`readArtifact`） | 正文已按保留期回收 |

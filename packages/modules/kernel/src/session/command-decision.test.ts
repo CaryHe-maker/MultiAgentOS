@@ -450,3 +450,74 @@ describe('a line of the read-only list', () => {
     });
   });
 });
+
+describe('automatic approval (kernel.command.approval: auto, M2Design 5.2)', () => {
+  const auto = (text: string, over: Partial<CommandDemand> = {}) =>
+    command(text, { approval: 'auto', repoReadGranted: true, ...over });
+  const mayWrite: AuthorizationEntry[] = [
+    { scope: 'RUN', effect: 'ALLOW', capability: 'workspace.write', resourceKey: '.' },
+  ];
+
+  it('lets a command in the sandbox without the network through, once the run may write', () => {
+    expect(decideUnit(demand(auto('npm test')), mainCeiling, mayWrite)).toMatchObject({
+      kind: 'ALLOW',
+      capability: 'command.exec',
+      auto: true,
+    });
+  });
+
+  it('asks the two questions of a run first: reading the repository, then writing in it', () => {
+    expect(
+      decideUnit(demand(auto('npm test', { repoReadGranted: false })), mainCeiling, mayWrite),
+    ).toMatchObject({ kind: 'ASK', capability: 'repo.read' });
+    expect(decideUnit(demand(auto('npm test')), mainCeiling, [])).toMatchObject({
+      kind: 'ASK',
+      capability: 'workspace.write',
+      resourceKey: '.',
+      critical: false,
+    });
+  });
+
+  it('still asks for each command the boundary does not hold', () => {
+    const asked = (cmd: CommandDemand) => decideUnit(demand(cmd), mainCeiling, mayWrite);
+    expect(asked(auto('curl x', { network: true }))).toMatchObject({
+      kind: 'ASK',
+      capability: 'command.exec',
+      critical: true,
+    });
+    expect(
+      asked(auto('git push', { analysis: analysis('git push', { critical: 'git push' }) })),
+    ).toMatchObject({ kind: 'ASK', critical: true });
+    expect(
+      asked(
+        auto('sh -c "$(cat x)"', {
+          analysis: analysis('sh -c "$(cat x)"', { unreusable: ['COMMAND_SUBSTITUTION'] }),
+        }),
+      ),
+    ).toMatchObject({ kind: 'ASK', critical: true });
+    expect(
+      asked(auto('npm test', { sandbox: 'UNAVAILABLE', unavailablePolicy: 'ask-unisolated' })),
+    ).toMatchObject({ kind: 'ASK', critical: true });
+  });
+
+  it('keeps a refusal: a command the user refused stays refused', () => {
+    const refused: AuthorizationEntry[] = [
+      ...mayWrite,
+      { scope: 'RUN', effect: 'DENY', capability: 'command.exec', agentRunId: 'run-1' },
+    ];
+    expect(decideUnit(demand(auto('npm test')), mainCeiling, refused)).toMatchObject({
+      kind: 'REFUSE',
+      reasonCode: 'USER_DECLINED',
+    });
+  });
+
+  it('asks as before when the approval is ask', () => {
+    expect(
+      decideUnit(
+        demand(command('npm test', { approval: 'ask', repoReadGranted: true })),
+        mainCeiling,
+        mayWrite,
+      ),
+    ).toMatchObject({ kind: 'ASK', capability: 'command.exec' });
+  });
+});

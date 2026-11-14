@@ -221,7 +221,7 @@ SESSION_CLOSE（原因：SWITCHED、SHUTDOWN）
 
 - **受理**（第 5.1 节）：在第 2 步之后检查尝试所属的 Turn 处于开启状态，否则 `NO_OPEN_TURN`；第 5 步的 `UNSUPPORTED_CAPABILITY` 改为依据 Unit 定义的能力判断。
 - **权限**（第 5.2 节）：按 [Core](Core.md) 的两步判定。
-- **执行**（第 5.3 节）：增加内建 Unit `MESSAGE_PUBLISH`，与 `REPORT_PUBLISH` 一样由 Execution 直接完成；产物引用的归属检查改为"属于本 Session"。
+- **执行**（第 5.3 节）：内建 Unit `MESSAGE_PUBLISH` 由 Execution 直接完成（M1 的 `REPORT_PUBLISH` 已删除）；产物引用的归属检查改为"属于本 Session"。
 - **结果检查**（第 5.4 节）：UnitReport 带 `unitRunId` 与 `BudgetView`；工具 Unit 的结果分为预览（`outputRef`）与截断时的完整输出（`fullRef`），由 Execution 登记保留类别。
 - **`read_output`**：Workflow 填入的 `fullRef` 在派发前由 Execution 检查归属与过期（Execution 第 5a 节）；过期时以 `REJECTED(ARTIFACT_EXPIRED)` 交付，不派发。
 - **压缩检查点**：受理 `context-assemble` 之后、派发之前，Core 按 [Core](Core.md) 第 6a 节检查是否需要压缩；需要时这次尝试保持在途但不派发，

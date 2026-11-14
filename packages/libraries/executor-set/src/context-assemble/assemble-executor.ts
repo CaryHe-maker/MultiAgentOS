@@ -64,7 +64,7 @@ const ROUND_LIMIT_HANDOVER =
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const { round, maxRounds, budget, final, wrapUpReason } = status;
   const lines = [
-    `Status: round ${String(round)} of ${String(maxRounds)}. Budget: turn ${budget.turn}, run ${budget.run}.`,
+    `Status: round ${String(round)} of ${String(maxRounds)}. Budget: this request ${budget.input}, run ${budget.run}.`,
   ];
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
@@ -163,7 +163,6 @@ const baseOf = (entry: ResolvedHistoryEntry) =>
     segment: 'HISTORY',
     seq: entry.seq,
     category: entry.category,
-    ...(entry.turnId === undefined ? {} : { turnId: entry.turnId }),
   }) as const;
 
 function userDraft(entry: ResolvedHistoryEntry): Draft {
@@ -256,13 +255,6 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       reason: 'tools of this call',
       toolSpecs: input.toolSpecs,
     },
-    ...(input.orientPack?.items ?? []).map((item) => ({
-      segment: 'ORIENT' as const,
-      role: 'user' as const,
-      content: item.content,
-      reason: item.reason,
-      provenance: item.provenance,
-    })),
   ];
   // A summary request in prefix form ends with its instruction where a call ends with its status.
   const asking = input.compaction?.mode === 'PREFIX';
@@ -310,7 +302,6 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     tokenBudget: input.tokenBudget,
     createdAt: environment.now().toISOString(),
     operation: 'ASSEMBLE',
-    ...(input.orientPack === undefined ? {} : { snapshotId: input.orientPack.snapshotId }),
     prefixSha256,
     projectionDigest,
     headDigest: prefixSha256,

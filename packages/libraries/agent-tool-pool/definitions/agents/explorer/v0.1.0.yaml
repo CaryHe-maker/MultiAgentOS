@@ -34,7 +34,6 @@ unitRefs:
     version: v0.1.0
   - id: model-call
     version: v0.1.0
-startUnitRefs: []
 actions:
   end:
     - toolRef:
@@ -43,8 +42,20 @@ actions:
       then: FINISH_SUBAGENT
       allowedInFinal: true
   onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v0.1.0
 spawnable:
-  defaultShare: 300000
+  defaultShare: 600000
 capabilities:
   - repo.read
   - web.search
@@ -55,7 +66,7 @@ limits:
   maxToolUnits: 60
   maxWallClockMs: 600000
 budget:
-  perCallInputLimit: 60000
+  perCallInputLimit: 128000
   maxOutputTokens: 16000
-  finalInputBudget: 60000
+  finalInputBudget: 128000
   finalMaxOutputTokens: 16000

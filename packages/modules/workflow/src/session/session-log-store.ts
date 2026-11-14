@@ -39,15 +39,15 @@ export interface OpenedSession {
   readonly records: readonly SessionLogRecord[];
   /** Recorded digest and the current one differ, so rebuilt context is no longer exact. */
   readonly definitionsChanged: boolean;
-  /** What the Session list says of it: the Turns it has, and the reference of its name. */
-  readonly turnCount: number;
+  /** What the Session list says of it: the inputs of the user it has, and the reference of its name. */
+  readonly inputCount: number;
   readonly titleRef?: NonNullable<SessionIndexLine['titleRef']>;
 }
 
 export interface ForkedSession {
   readonly records: readonly SessionLogRecord[];
   readonly inheritedArtifacts: readonly ArtifactRef[];
-  readonly fromTurnCount: number;
+  readonly fromInputCount: number;
 }
 
 /** Every artifact reference anywhere in the records, each once. */
@@ -126,7 +126,7 @@ export class SessionLogStore {
         repositoryRoot: input.repositoryRoot,
         createdAt: at,
         lastActiveAt: at,
-        turnCount: 0,
+        inputCount: 0,
         status: 'ACTIVE',
       }),
     );
@@ -166,7 +166,7 @@ export class SessionLogStore {
         fromSeq: records.length,
       }),
     );
-    const fromTurnCount = records.filter((r) => r.type === 'TURN_STARTED').length;
+    const fromInputCount = inputsIn(records);
     const at = this.#now().toISOString();
     await this.#storage(() =>
       this.#index.append({
@@ -174,15 +174,15 @@ export class SessionLogStore {
         repositoryRoot: input.repositoryRoot,
         createdAt: at,
         lastActiveAt: at,
-        turnCount: fromTurnCount,
-        fork: { fromSessionId: input.fromSessionId, fromTurnCount },
+        inputCount: fromInputCount,
+        fork: { fromSessionId: input.fromSessionId, fromInputCount },
         status: 'ACTIVE',
       }),
     );
     return {
       records: [...records, ...appended],
       inheritedArtifacts: artifactRefsIn(records),
-      fromTurnCount,
+      fromInputCount,
     };
   }
 
@@ -201,7 +201,7 @@ export class SessionLogStore {
       const started = records[0];
       const listed = (await this.#latest()).get(sessionId);
       return {
-        turnCount: listed?.turnCount ?? 0,
+        inputCount: listed === undefined ? 0 : inputCountOf(listed),
         ...(listed?.titleRef === undefined ? {} : { titleRef: listed.titleRef }),
         records: [...records, ...appended],
         definitionsChanged:
@@ -292,11 +292,13 @@ export class SessionLogStore {
     );
   }
 
-  recordTurnClosed(): Promise<void> {
+  /** The work of one more input of the user came to rest: the list counts it. */
+  recordInputSettled(): Promise<void> {
     if (this.#sessionId === undefined) throw new Error('no Session is open');
-    return this.#updateIndex(this.#sessionId, (line) => ({
+    // An older line counted Turns: from now on it counts inputs, which are the same thing.
+    return this.#updateIndex(this.#sessionId, ({ turnCount, ...line }) => ({
       ...line,
-      turnCount: line.turnCount + 1,
+      inputCount: inputCountOf({ ...line, ...(turnCount === undefined ? {} : { turnCount }) }) + 1,
       lastActiveAt: this.#now().toISOString(),
     }));
   }
@@ -340,10 +342,21 @@ export class SessionLogStore {
         repositoryRoot: line.repositoryRoot,
         createdAt: line.createdAt,
         lastActiveAt: line.lastActiveAt,
-        turnCount: line.turnCount,
+        inputCount: inputCountOf(line),
         status: line.status,
         ...(line.titleRef === undefined ? {} : { titleRef: line.titleRef }),
         ...(line.fork === undefined ? {} : { fork: line.fork }),
       }));
   }
+}
+
+/** How many inputs of the user a list line counts; older lines counted Turns, the same thing. */
+function inputCountOf(line: Pick<SessionIndexLine, 'inputCount' | 'turnCount'>): number {
+  return line.inputCount ?? line.turnCount ?? 0;
+}
+
+/** The inputs of the user in a log: each opened a Turn in older logs, a checkpoint in newer ones. */
+function inputsIn(records: readonly SessionLogRecord[]): number {
+  return records.filter((record) => record.type === 'HUMAN_ANSWERED' && record.kind === 'prompt')
+    .length;
 }

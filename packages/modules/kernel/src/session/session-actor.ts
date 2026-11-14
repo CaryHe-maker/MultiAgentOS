@@ -12,23 +12,24 @@ import {
   type RequestHumanRequest,
   type RunSummary,
   type SyscallRejected,
-  type TurnDiff,
+  type CheckpointDiff,
+  type CheckpointList,
   type UndoCancelled,
   type UserInput,
-  type WorkspaceReverted,
 } from '@multiagentos/contracts';
 import { Inbox } from '@multiagentos/fabric';
 import {
   answerOpenInput,
   attemptEnded,
   answerLocalQuestion,
+  withdrawLocalQuestion,
   attemptStarted,
   beginConvergence,
   beginInterrupt,
   closeRun,
   endAgentRun,
   initialRunControl,
-  openInitialTurn,
+  openInitialInput,
   pauseReached,
   pauseRun,
   registerAgentRun,
@@ -37,7 +38,7 @@ import {
   resumeRun,
   steerRun,
   admitWork,
-  type TurnEnd,
+  type InputEnd,
   type Decision,
   type RunControl,
 } from './run-control.js';
@@ -46,11 +47,11 @@ import type { AttemptFault } from './run-attempts.js';
 import { WallClocks } from './wall-clocks.js';
 import type { RunHost, RunWork } from './run-work.js';
 import type { KernelOutbox } from './session-outbox.js';
-import type { UndoPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
+import type { RollBackPlan, WorkspaceSnapshots } from './workspace-snapshots.js';
 
 /**
  * One Session's Inbox and serial loop (Kernel/Interaction 5.2). The actor owns ordering, the
- * Session lifecycle, runs and Turns; everything about attempts, artifacts and ledgers is asked of
+ * Session lifecycle, runs and the work of each input; everything about attempts, artifacts and ledgers is asked of
  * `SessionDuties`, so these rules do not depend on how a Unit is executed.
  */
 export interface SessionDuties {
@@ -58,7 +59,16 @@ export interface SessionDuties {
   /** Absent when writes are off (`readonly`, or no git): nothing is captured or undone. */
   readonly snapshots?: Pick<
     WorkspaceSnapshots,
-    'turnStarted' | 'turnEnded' | 'planUndo' | 'applyUndo' | 'diffTurn' | 'divergedFiles'
+    | 'checkpoint'
+    | 'settle'
+    | 'planUndo'
+    | 'planRewind'
+    | 'planRewindTo'
+    | 'applyRollBack'
+    | 'diffLatest'
+    | 'divergedFiles'
+    | 'listCheckpoints'
+    | 'diffCheckpoint'
   >;
   /** The name of a Session, read from the artifact its list entry refers to. */
   titleOf?(ref: ArtifactRef): Promise<string | undefined>;
@@ -103,7 +113,7 @@ export interface SessionActorDeps {
   readonly outbox: KernelOutbox;
   readonly duties: SessionDuties;
   readonly preset?: 'standard' | 'readonly';
-  readonly newTurnId?: () => string;
+  readonly newCheckpointId?: () => string;
   /** The actor is finished: Session management takes it out. */
   readonly onClosed: (sessionId: string) => void;
   readonly onFatal: (error: unknown) => void;
@@ -111,9 +121,9 @@ export interface SessionActorDeps {
   readonly onInterrupted?: () => void;
   /** How long Workflow has to close an interrupted run before the Kernel does. */
   readonly interruptBackstopMs?: number;
-  /** The Turn and pause limits of Kernel/Core 5e; the defaults are those of M2Design 7.4. */
+  /** The input and pause limits of Kernel/Core 5e; the defaults are those of M2Design 7.4. */
   readonly timeouts?: {
-    readonly turnMs: number;
+    readonly inputMs: number;
     readonly orchestrationMs: number;
     readonly pauseMs: number;
   };
@@ -134,21 +144,21 @@ type Message =
   | { readonly kind: 'COMMAND_REPORT'; readonly report: ReportSessionCommandRequest }
   | { readonly kind: 'CALL'; readonly work: () => Promise<unknown> };
 
-const DEFAULT_TIMEOUTS = { turnMs: 1_800_000, orchestrationMs: 3_600_000, pauseMs: 1_800_000 };
+const DEFAULT_TIMEOUTS = { inputMs: 1_800_000, orchestrationMs: 3_600_000, pauseMs: 1_800_000 };
 
 interface Run {
   readonly workflowRunId: string;
   readonly work: RunWork;
   readonly mode: 'CHAT' | 'ORCHESTRATION';
-  /** The Turn's working time: it stops while paused and while all work waits for the user. */
-  readonly turnClock: WallClocks;
+  /** The working time of an input: it stops while paused and while all work waits for the user. */
+  readonly inputClock: WallClocks;
   /** Ends the wait for a pause to run out. */
   pauseTimer?: () => void;
   control: RunControl;
   runEpoch: number;
   closing?: RunClosing;
-  /** The Turn that ends once the run has drained, just before RunClosed. */
-  closingTurn?: string;
+  /** The input whose work settles once the run has drained, just before RunClosed. */
+  closingInput?: string;
   fault?: AttemptFault;
 }
 
@@ -167,8 +177,20 @@ export class SessionActor {
   readonly #pending = new Map<string, Pending>();
   #run: Run | undefined;
   #closeAfterRun: 'SWITCHED' | 'SHUTDOWN' | undefined;
+  /** A long task the last process left (Orchestration 7.6), as the Session's log says it. */
+  #interrupted:
+    | {
+        readonly workflowRunId: string;
+        readonly templateRef: DefinitionRef;
+        readonly checkpointId: string;
+        readonly label: string;
+        readonly spentTokens: number;
+      }
+    | undefined;
+  /** `/recover` closes the fresh conversation; the long task goes on once it has. */
+  #recoverAfterRun = false;
   /** An undo waiting for the user because of external changes; it has no timer (M2Design 4.6). */
-  #pendingUndo: { readonly undoId: string; readonly plan: UndoPlan } | undefined;
+  #pendingUndo: { readonly undoId: string; readonly plan: RollBackPlan } | undefined;
 
   public constructor(deps: SessionActorDeps) {
     this.#deps = deps;
@@ -215,7 +237,7 @@ export class SessionActor {
   }
 
   /**
-   * The one entry of every interrupt (Kernel/Core 5e): the user's abort, the Turn timeout, the
+   * The one entry of every interrupt (Kernel/Core 5e): the user's abort, the input's time limit, the
    * pause limit and memory pressure. Workflow is told first, so that it stops asking for models;
    * then what waits for the user is cancelled and what runs is cancelled with it. The run stays
    * open for the one reply that says what happened.
@@ -231,7 +253,7 @@ export class SessionActor {
     outbox.runToInteraction(sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
       state: 'INTERRUPTING',
-      ...(run.control.turnId === undefined ? {} : { turnId: run.control.turnId }),
+      ...(run.control.openInput === undefined ? {} : { checkpointId: run.control.openInput }),
     });
     for (const [humanRequestId, question] of run.control.questions) {
       outbox.runToWorkflow(sessionId, run.workflowRunId, {
@@ -333,7 +355,7 @@ export class SessionActor {
     return decision;
   }
 
-  /** `steerRun`: a note slipped into a run that goes on; it opens no Turn. */
+  /** `steerRun`: a note slipped into a run that goes on; it opens no work of its own. */
   async steerRun(run: Run, input: UserInput, targetAgentRunId?: string): Promise<Decision> {
     const decision = steerRun(run.control);
     if (!decision.accepted) return decision;
@@ -358,14 +380,15 @@ export class SessionActor {
     const { nodeId } = request;
     const decision = this.#apply(
       run,
-      requestLocalQuestion(run.control, request.humanRequestId, {
-        agentRunId: request.attachedAgentRunId,
-        nodeId,
-        kind: request.kind,
-      }),
+      requestLocalQuestion(
+        run.control,
+        request.humanRequestId,
+        { agentRunId: request.attachedAgentRunId, nodeId, kind: request.kind },
+        request.askedAgain === true,
+      ),
     );
     if (!decision.accepted) return decision;
-    run.work.showAwaitingAnswer(request.attachedAgentRunId);
+    if (request.askedAgain !== true) run.work.showAwaitingAnswer(request.attachedAgentRunId);
     const event: HumanRequest = {
       type: 'HumanRequest',
       humanRequestId: request.humanRequestId,
@@ -377,6 +400,60 @@ export class SessionActor {
     };
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
     return decision;
+  }
+
+  /**
+   * A chat's main is woken by a background command while it waits for the user (Orchestration 4.4,
+   * D12): the open input is taken back (the user's draft stays in the input box) and the work of
+   * the run goes on without an input of the user, named by a checkpoint taken first, so an undo
+   * takes this work back as it takes back the work of an input.
+   */
+  async withdrawOpenInput(
+    run: Run,
+    humanRequestId: string,
+    checkpointId: string,
+  ): Promise<Decision> {
+    if (run.control.phase !== 'AWAITING_INPUT' || run.control.humanRequestId !== humanRequestId)
+      return { accepted: false, reasonCode: 'HUMAN_REQUEST_NOT_PENDING' };
+    this.#cancelUndo(run, 'NEW_INPUT');
+    await this.#deps.duties.snapshots?.checkpoint(
+      checkpointId,
+      'INPUT',
+      'after a background command ended',
+    );
+    const opened = answerOpenInput(run.control, humanRequestId, checkpointId);
+    if (!opened.accepted) return opened;
+    run.control = opened.control;
+    run.work.openInput(checkpointId);
+    const { inputMs } = this.#timeouts();
+    run.inputClock.register('input', inputMs);
+    const { outbox } = this.#deps;
+    outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'HumanResolved',
+      humanRequestId,
+      resolution: 'WITHDRAWN',
+    });
+    outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'RunStateChanged',
+      state: 'RUNNING',
+      checkpointId,
+    });
+    return { accepted: true, control: run.control };
+  }
+
+  /**
+   * A local question nobody waits for any more (Orchestration 5.1, 7.5) is taken back, and the user
+   * is told it is gone. Accepted when it is no longer pending.
+   */
+  withdrawQuestion(run: Run, humanRequestId: string): Decision {
+    if (!run.control.questions.has(humanRequestId)) return { accepted: true, control: run.control };
+    run.control = withdrawLocalQuestion(run.control, humanRequestId);
+    this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
+      type: 'HumanResolved',
+      humanRequestId,
+      resolution: 'CANCELLED',
+    });
+    return { accepted: true, control: run.control };
   }
 
   /** The answer to a local question: delivered, in a paused run too, where Execution holds the rest. */
@@ -419,23 +496,23 @@ export class SessionActor {
     };
   }
 
-  /** What the interface is told of a run state, with the Turn it belongs to. */
+  /** What the interface is told of a run state, with the input it belongs to. */
   #state(run: Run, state: 'RUNNING' | 'PAUSING' | 'PAUSED'): void {
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
       state,
-      ...(run.control.turnId === undefined ? {} : { turnId: run.control.turnId }),
+      ...(run.control.openInput === undefined ? {} : { checkpointId: run.control.openInput }),
     });
   }
 
-  /** The pause limit and the Turn clock end with the run, or with the interrupt that ends the Turn. */
+  /** The pause limit and the input's clock end with the run, or with the interrupt that settles the input. */
   #stopTimers(run: Run): void {
     run.pauseTimer?.();
     delete run.pauseTimer;
-    run.turnClock.stop();
+    run.inputClock.stop();
   }
 
-  /** Called at the end of every message: the Turn's clock runs only while the system works. */
+  /** Called at the end of every message: the input's clock runs only while the system works. */
   #reconcileTurnClock(run: Run): void {
     const { phase, questions } = run.control;
     const idle =
@@ -443,7 +520,7 @@ export class SessionActor {
       phase === 'PAUSED' ||
       run.work.awaitsUser(questions.size) ||
       phase === 'INTERRUPTING';
-    run.turnClock.reconcile(() => idle);
+    run.inputClock.reconcile(() => idle);
   }
 
   close(reason: 'SWITCHED' | 'SHUTDOWN'): void {
@@ -556,11 +633,18 @@ export class SessionActor {
           result.command === 'OPEN' && result.titleRef !== undefined
             ? await duties.titleOf?.(result.titleRef)
             : undefined;
+        this.#interrupted =
+          result.command === 'OPEN' && result.interrupted !== undefined
+            ? { ...result.interrupted }
+            : undefined;
         outbox.sessionToInteraction(sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
-          turnCount: result.command === 'OPEN' ? result.turnCount : 0,
+          inputCount: result.command === 'OPEN' ? result.inputCount : 0,
           ...(title === undefined ? {} : { title }),
+          ...(this.#interrupted === undefined
+            ? {}
+            : { interruptedRun: { label: this.#interrupted.label } }),
           ...(diverged.length === 0 ? {} : { divergedFiles: [...diverged] }),
         });
         const run = this.#startRun({ mode: 'CHAT' }, false);
@@ -586,11 +670,11 @@ export class SessionActor {
         outbox.sessionToInteraction(sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
-          turnCount: result.fromTurnCount,
-          fork: { fromSessionId, fromTurnCount: result.fromTurnCount },
+          inputCount: result.fromInputCount,
+          fork: { fromSessionId, fromInputCount: result.fromInputCount },
         });
         const run = this.#startRun({ mode: 'CHAT' }, true);
-        await this.#openTurn(run, start.input.inputId, contentRef, { origin: 'initial' });
+        await this.#openInput(run, start.input.inputId, contentRef, { origin: 'initial' });
       });
       return;
     }
@@ -603,7 +687,7 @@ export class SessionActor {
       outbox.sessionToInteraction(sessionId, {
         type: 'SessionOpened',
         repositoryRoot,
-        turnCount: 0,
+        inputCount: 0,
       });
       const run = this.#startRun(
         start.template === undefined
@@ -611,7 +695,7 @@ export class SessionActor {
           : { mode: 'ORCHESTRATION', templateRef: start.template },
         true,
       );
-      await this.#openTurn(run, start.input.inputId, contentRef, { origin: 'initial' });
+      await this.#openInput(run, start.input.inputId, contentRef, { origin: 'initial' });
     });
   }
 
@@ -643,8 +727,8 @@ export class SessionActor {
     return run;
   }
 
-  #newRun(mode: Run['mode']): Run {
-    const workflowRunId = newId('wfr');
+  #newRun(mode: Run['mode'], resumedId?: string): Run {
+    const workflowRunId = resumedId ?? newId('wfr');
     const { outbox, duties } = this.#deps;
     const sessionId = this.#sessionId;
     const host: RunHost = {
@@ -653,7 +737,8 @@ export class SessionActor {
       closeReason: () => run.closing?.closeReason,
       runEpoch: () => run.runEpoch,
       registerAgentRun: (agentRunId) => this.registerAgentRun(run, agentRunId),
-      endAgentRun: (agentRunId) => this.endAgentRun(run, agentRunId),
+      endAgentRun: (agentRunId, keepsQuestions) =>
+        this.endAgentRun(run, agentRunId, keepsQuestions),
       attemptStarted: (unitAttemptId) => {
         this.attemptStarted(run, unitAttemptId);
       },
@@ -692,7 +777,7 @@ export class SessionActor {
       workflowRunId,
       work: duties.openRunWork(host),
       mode,
-      turnClock: new WallClocks({
+      inputClock: new WallClocks({
         now: () => (this.#deps.now ?? Date.now)(),
         schedule: (delayMs, due) => this.#schedule(delayMs, due),
         due: () => {
@@ -700,7 +785,7 @@ export class SessionActor {
             {
               kind: 'CALL',
               work: () => {
-                if (run.turnClock.takeExpired().length > 0) this.interrupt(run, 'TURN_TIMEOUT');
+                if (run.inputClock.takeExpired().length > 0) this.interrupt(run, 'INPUT_TIMEOUT');
                 return Promise.resolve();
               },
             },
@@ -714,7 +799,7 @@ export class SessionActor {
     return run;
   }
 
-  async #openTurn(
+  async #openInput(
     run: Run,
     inputId: string,
     contentRef: ArtifactRef,
@@ -723,43 +808,50 @@ export class SessionActor {
       | { readonly origin: 'requested'; readonly humanRequestId: string },
     template?: DefinitionRef,
   ): Promise<void> {
-    const turnId = this.#deps.newTurnId?.() ?? newId('trn');
-    // The actor holds every message meanwhile, so no Unit runs before the start is captured.
-    await this.#deps.duties.snapshots?.turnStarted(turnId);
+    // Every input of the user is a checkpoint (Orchestration 7.2): an undo goes back to it, and the
+    // work it opens is named by it. The actor holds every message meanwhile, so no Unit runs
+    // before it is captured; a failed capture is a checkpoint without a way back.
+    const checkpointId = this.#deps.newCheckpointId?.() ?? newId('ckp');
+    await this.#deps.duties.snapshots?.checkpoint(checkpointId, 'INPUT', 'user input');
     const opened =
       origin.origin === 'initial'
-        ? openInitialTurn(run.control, turnId)
-        : answerOpenInput(run.control, origin.humanRequestId, turnId);
-    if (!opened.accepted) throw new Error(`a Turn cannot open: ${opened.reasonCode}`);
+        ? openInitialInput(run.control, checkpointId)
+        : answerOpenInput(run.control, origin.humanRequestId, checkpointId);
+    if (!opened.accepted) throw new Error(`the work of an input cannot open: ${opened.reasonCode}`);
     run.control = opened.control;
-    run.work.openTurn(turnId);
-    const { turnMs, orchestrationMs } = this.#timeouts();
-    run.turnClock.register('turn', run.mode === 'CHAT' ? turnMs : orchestrationMs);
+    run.work.openInput(checkpointId);
+    const { inputMs, orchestrationMs } = this.#timeouts();
+    run.inputClock.register('input', run.mode === 'CHAT' ? inputMs : orchestrationMs);
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
       state: 'RUNNING',
-      turnId,
+      checkpointId,
     });
     outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'HumanAnswered',
       kind: 'prompt',
       inputId,
       contentRef,
-      turnId,
+      checkpointId,
       ...(template === undefined ? {} : { template }),
       ...origin,
     });
   }
 
-  async #closeTurn(run: Run, turnId: string, reason: TurnEnd | 'RUN_CLOSED'): Promise<void> {
-    run.turnClock.end('turn');
-    const captured = await this.#deps.duties.snapshots?.turnEnded(turnId);
+  /** The work of an input came to rest (Orchestration 7.1): its stretch ends, its usage is said. */
+  async #settleInput(
+    run: Run,
+    checkpointId: string,
+    reason: InputEnd | 'RUN_CLOSED',
+  ): Promise<void> {
+    run.inputClock.end('input');
+    const captured = await this.#deps.duties.snapshots?.settle();
     this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
-      type: 'TurnClosed',
-      turnId,
+      type: 'InputSettled',
+      checkpointId,
       reason,
-      usage: run.work.closeTurn(turnId),
+      usage: run.work.settleInput(checkpointId),
       ...captured,
     });
   }
@@ -777,8 +869,8 @@ export class SessionActor {
     return this.#apply(run, registerAgentRun(run.control, agentRunId));
   }
 
-  endAgentRun(run: Run, agentRunId: string): Decision {
-    return this.#apply(run, endAgentRun(run.control, agentRunId));
+  endAgentRun(run: Run, agentRunId: string, keepsQuestions = false): Decision {
+    return this.#apply(run, endAgentRun(run.control, agentRunId, keepsQuestions));
   }
 
   attemptStarted(run: Run, unitAttemptId: string): void {
@@ -799,15 +891,15 @@ export class SessionActor {
   async requestOpenInput(
     run: Run,
     humanRequestId: string,
-  ): Promise<Decision<{ readonly closedTurnId?: string; readonly turnEnd: TurnEnd }>> {
+  ): Promise<Decision<{ readonly settledInputId?: string; readonly inputEnd: InputEnd }>> {
     const interrupted = run.control.phase === 'INTERRUPTING';
     const decision = this.#apply(run, requestOpenInput(run.control, humanRequestId));
     if (!decision.accepted) return decision;
-    // An interrupted Turn ends here, and the run is open again for the next input (Core 5e).
+    // The interrupted work of an input settles here, and the run is open again for the next input (Core 5e).
     if (interrupted) run.work.endInterrupt();
-    const closed = decision.effect?.closedTurnId;
+    const closed = decision.effect?.settledInputId;
     if (closed !== undefined)
-      await this.#closeTurn(run, closed, decision.effect?.turnEnd ?? 'COMPLETED');
+      await this.#settleInput(run, closed, decision.effect?.inputEnd ?? 'COMPLETED');
     const { outbox } = this.#deps;
     outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
@@ -822,7 +914,7 @@ export class SessionActor {
   }
 
   /**
-   * The answer to a human request: open input opens the next Turn, the answer to a local question
+   * The answer to a human request: open input opens the work of the next input, the answer to a local question
    * goes to the AgentRun that asked. Which one it is, the request says (M2Design 4.2).
    */
   async answerHuman(
@@ -851,7 +943,7 @@ export class SessionActor {
       humanRequestId,
       resolution: 'ANSWERED',
     });
-    await this.#openTurn(
+    await this.#openInput(
       run,
       input.inputId,
       contentRef,
@@ -872,7 +964,7 @@ export class SessionActor {
     });
   }
 
-  #confirmUndoOf(run: Run, plan: UndoPlan): void {
+  #confirmUndoOf(run: Run, plan: RollBackPlan): void {
     const undoId = newId('und');
     this.#pendingUndo = { undoId, plan };
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
@@ -882,8 +974,11 @@ export class SessionActor {
     });
   }
 
-  /** Kernel/Core 5a.5. Only while the run waits for input: nothing else can be writing then. */
-  async undoTurns(run: Run, scope: 'LAST' | 'ALL'): Promise<UndoDecision> {
+  /**
+   * `/undo` (Kernel/Core 5a.5): back to the latest checkpoint, taking it back too (Orchestration
+   * 7.5). Only while the run waits for input: nothing else can be writing then.
+   */
+  async undo(run: Run, scope: 'LAST' | 'ALL'): Promise<UndoDecision> {
     const { snapshots } = this.#deps.duties;
     if (snapshots === undefined || run.control.phase !== 'AWAITING_INPUT')
       return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
@@ -895,7 +990,7 @@ export class SessionActor {
     if (planned.kind === 'NOT_UNDOABLE')
       return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
     if (planned.plan.external.length > 0) this.#confirmUndoOf(run, planned.plan);
-    else await this.#applyUndo(run, planned.plan, false, scope);
+    else await this.#rollBack(run, planned.plan, false, scope);
     return { accepted: true };
   }
 
@@ -909,32 +1004,41 @@ export class SessionActor {
       return { accepted: true };
     }
     this.#pendingUndo = undefined;
-    await this.#applyUndo(run, pending.plan, true);
+    await this.#rollBack(run, pending.plan, true);
     return { accepted: true };
   }
 
-  async #applyUndo(
+  /** The one way back, for an undo and a rewind (Orchestration 7.5, D8). */
+  async #rollBack(
     run: Run,
-    plan: UndoPlan,
+    plan: RollBackPlan,
     forced: boolean,
-    scope: 'LAST' | 'ALL' = plan.turnIds.length > 1 ? 'ALL' : 'LAST',
-  ): Promise<void> {
+    scope: 'LAST' | 'ALL' = 'LAST',
+  ): Promise<boolean> {
     const { snapshots } = this.#deps.duties;
-    if (snapshots === undefined) return;
-    const applied = await snapshots.applyUndo(plan, forced).catch(() => ({ ok: false }) as const);
+    if (snapshots === undefined) return false;
+    const applied = await snapshots
+      .applyRollBack(plan, forced)
+      .catch(() => ({ ok: false }) as const);
     const { outbox } = this.#deps;
     if (applied.ok) {
-      const reverted: WorkspaceReverted = {
-        type: 'WorkspaceReverted',
-        revertedTurnIds: [...plan.turnIds],
-        forced,
-        externalFiles: plan.external.map((file) => file.path),
+      const event = {
+        type: 'CheckpointRolledBack' as const,
+        checkpointId: plan.checkpointId,
+        label: plan.label,
+        files: [...applied.files],
         ...(applied.backupSnapshot === undefined ? {} : { backupSnapshot: applied.backupSnapshot }),
+        ...(plan.inclusive ? { undo: true } : {}),
+        ...(forced ? { forced: true } : {}),
+        ...(plan.external.length === 0
+          ? {}
+          : { externalFiles: plan.external.map((file) => file.path) }),
       };
-      outbox.runToInteraction(this.#sessionId, run.workflowRunId, reverted);
-      outbox.runToWorkflow(this.#sessionId, run.workflowRunId, reverted);
-      return;
+      outbox.runToInteraction(this.#sessionId, run.workflowRunId, event);
+      outbox.runToWorkflow(this.#sessionId, run.workflowRunId, event);
+      return true;
     }
+    if (!plan.inclusive) return false;
     // Something outside this system changed a file after the plan: ask again what it found now.
     const again = await snapshots.planUndo(scope);
     if (again.kind === 'PLAN' && again.plan.external.length > 0)
@@ -945,18 +1049,53 @@ export class SessionActor {
         undoId: newId('und'),
         reason: 'FILE_CHANGED',
       });
+    return false;
   }
 
-  /** Any time: looking changes nothing (M2Design 4.6). */
-  async diffTurn(requestId: string, n: number): Promise<TurnDiff | SyscallRejected> {
+  /**
+   * `/rewind #N` (Orchestration 7.5): back to a checkpoint, which stays. Only while the run is
+   * paused: nothing is executing then, so nothing writes while the files are put back. Workflow
+   * takes the work after the cut back; the run stays paused until the user continues.
+   */
+  async rewindCheckpoint(run: Run, seq: number): Promise<UndoDecision> {
+    const { snapshots } = this.#deps.duties;
+    if (snapshots === undefined || run.control.phase !== 'PAUSED')
+      return { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+    const planned = await snapshots.planRewind(seq);
+    if (planned.kind !== 'PLAN') return { accepted: false, reasonCode: 'NOTHING_TO_UNDO' };
+    const done = await this.#rollBack(run, planned.plan, false);
+    return done ? { accepted: true } : { accepted: false, reasonCode: 'UNDO_NOT_AVAILABLE' };
+  }
+
+  /** The checkpoints of the Session (Orchestration 7.4); any time, looking changes nothing. */
+  async listCheckpoints(requestId: string): Promise<CheckpointList> {
+    const items = (await this.#deps.duties.snapshots?.listCheckpoints()) ?? [];
+    return { requestId, outcome: 'ACCEPTED', items: items.map((item) => ({ ...item })) };
+  }
+
+  /** What one checkpoint's stretch changed (Orchestration 7.5). */
+  async diffCheckpoint(requestId: string, seq: number): Promise<CheckpointDiff | SyscallRejected> {
     const { duties } = this.#deps;
-    const found = await duties.snapshots?.diffTurn(n);
+    const found = await duties.snapshots?.diffCheckpoint(seq);
     if (found === undefined || duties.storeDiff === undefined)
       return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'NOTHING_TO_UNDO' };
     return {
       requestId,
       outcome: 'ACCEPTED',
-      turnId: found.turnId,
+      files: found.files.map((file) => ({ ...file })),
+      diffRef: await duties.storeDiff(found.diff),
+    };
+  }
+
+  /** Any time: looking changes nothing (M2Design 4.6). */
+  async diffLatest(requestId: string, n: number): Promise<CheckpointDiff | SyscallRejected> {
+    const { duties } = this.#deps;
+    const found = await duties.snapshots?.diffLatest(n);
+    if (found === undefined || duties.storeDiff === undefined)
+      return { requestId, outcome: 'REJECTED', issuer: 'CORE', reasonCode: 'NOTHING_TO_UNDO' };
+    return {
+      requestId,
+      outcome: 'ACCEPTED',
       files: found.files.map((file) => ({ ...file })),
       diffRef: await duties.storeDiff(found.diff),
     };
@@ -972,8 +1111,8 @@ export class SessionActor {
     run.runEpoch += 1;
     this.#stopTimers(run);
     this.#deps.admission(run.workflowRunId, 'CONVERGING', closing.closeReason);
-    const closed = decision.effect?.closedTurnId;
-    if (closed !== undefined) run.closingTurn = closed;
+    const closed = decision.effect?.settledInputId;
+    if (closed !== undefined) run.closingInput = closed;
     this.#deps.outbox.runToInteraction(this.#sessionId, run.workflowRunId, {
       type: 'RunStateChanged',
       state: 'CONVERGING',
@@ -989,7 +1128,8 @@ export class SessionActor {
     run.control = closeRun(run.control);
     this.#deps.admission(run.workflowRunId, 'CLOSED', closing.closeReason);
     run.work.finishClosing();
-    if (run.closingTurn !== undefined) await this.#closeTurn(run, run.closingTurn, 'RUN_CLOSED');
+    if (run.closingInput !== undefined)
+      await this.#settleInput(run, run.closingInput, 'RUN_CLOSED');
     const unknownEffects = run.work.unknownEffects();
     const summary = await this.#deps.duties.writeRunSummary(
       run.work.summary({ sessionId: this.#sessionId }, { unknownEffects, ...closing }),
@@ -1012,6 +1152,68 @@ export class SessionActor {
     } as unknown as RunFinished);
     if (closing.closeReason === 'INTERRUPTED') this.#deps.onInterrupted?.();
     if (this.#closeAfterRun !== undefined) this.#closeSession(this.#closeAfterRun);
+    else if (this.#recoverAfterRun) await this.#startResumedRun();
+  }
+
+  /**
+   * `/recover` (Orchestration 7.6): only while the Session's fresh conversation waits for its first
+   * input, and only once. The conversation closes, then the long task goes on.
+   */
+  async recoverRun(run: Run): Promise<Decision> {
+    if (this.#interrupted === undefined || this.#recoverAfterRun)
+      return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    if (run.mode !== 'CHAT' || run.control.phase !== 'AWAITING_INPUT' || run.work.hadInput())
+      return { accepted: false, reasonCode: 'REQUEST_CONFLICT' };
+    this.#recoverAfterRun = true;
+    await this.closeRun(run, { closeReason: 'ENDED_BY_USER' });
+    return { accepted: true, control: run.control };
+  }
+
+  /**
+   * The run the last process left goes on under its id (Orchestration 7.6): the files go back to
+   * its latest checkpoint, its budget is what it had not spent, the authorizations start empty, and
+   * it is paused until the user continues. Workflow puts its tasks as they were at the checkpoint.
+   */
+  async #startResumedRun(): Promise<void> {
+    const interrupted = this.#interrupted;
+    this.#recoverAfterRun = false;
+    this.#interrupted = undefined;
+    if (interrupted === undefined) return;
+    const { snapshots } = this.#deps.duties;
+    let files = 0;
+    let backupSnapshot: string | undefined;
+    const planned = await snapshots?.planRewindTo(interrupted.checkpointId);
+    if (planned?.kind === 'PLAN') {
+      const applied = await snapshots?.applyRollBack(planned.plan, false);
+      if (applied?.ok === true) {
+        files = applied.files.length;
+        backupSnapshot = applied.backupSnapshot;
+      }
+    }
+    const run = this.#newRun('ORCHESTRATION', interrupted.workflowRunId);
+    this.#run = run;
+    this.#deps.admission(run.workflowRunId, 'RUNNING');
+    run.work.chargeEarlier(interrupted.spentTokens);
+    const opened = openInitialInput(run.control, interrupted.checkpointId);
+    if (!opened.accepted) throw new Error(`the resumed run cannot open: ${opened.reasonCode}`);
+    run.control = opened.control;
+    run.work.openInput(interrupted.checkpointId);
+    const { orchestrationMs } = this.#timeouts();
+    run.inputClock.register('input', orchestrationMs);
+    this.#deps.outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
+      type: 'RunStart',
+      preset: this.#deps.preset ?? 'standard',
+      initialInput: false,
+      mode: 'ORCHESTRATION',
+      templateRef: interrupted.templateRef,
+      resumed: {
+        checkpointId: interrupted.checkpointId,
+        files,
+        ...(backupSnapshot === undefined ? {} : { backupSnapshot }),
+      },
+    });
+    this.#state(run, 'RUNNING');
+    this.pauseRun(run);
   }
 
   async #close(reason: 'SWITCHED' | 'SHUTDOWN'): Promise<void> {

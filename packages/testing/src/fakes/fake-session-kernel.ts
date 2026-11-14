@@ -33,7 +33,7 @@ import {
 /**
  * Kernel stand-in at the port level for Workflow and UserInteraction work on major 1. It follows
  * the external behaviour of Interface/WorkflowKernel and Interface/InteractionKernel: Sessions,
- * Turns, HUMAN requests and the run, Session and system event sequences. It has no Lease, ledger,
+ * the work of inputs, HUMAN requests and the run, Session and system event sequences. It has no Lease, ledger,
  * attempt or Fabric, so never use it to judge Kernel behaviour. Every event is validated against
  * its Schema before it is delivered.
  */
@@ -89,13 +89,13 @@ interface Run {
   readonly workflowRunId: string;
   readonly activeAgentRuns: Set<string>;
   pendingUnits: number;
-  turnId: string | undefined;
+  inputCheckpointId: string | undefined;
   pendingHuman: string | undefined;
   /** Local questions waiting for an answer (M2Design 4.2), by request, with the kind. */
   readonly questions: Map<string, 'ask' | 'confirm' | 'review'>;
   /** Paused (Kernel/Core 5e): every Unit that comes back is INTERRUPTED(PAUSED). */
   paused: boolean;
-  /** Interrupted: Units come back INTERRUPTED(ABORTED), and the Turn ends ABORTED. */
+  /** Interrupted: Units come back INTERRUPTED(ABORTED), and the input's work ends ABORTED. */
   interrupt: 'USER_ABORT' | undefined;
   closed: boolean;
   workflowSeq: number;
@@ -249,7 +249,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       workflowRunId: newId('wfr'),
       activeAgentRuns: new Set(),
       pendingUnits: 0,
-      turnId: undefined,
+      inputCheckpointId: undefined,
       pendingHuman: undefined,
       questions: new Map(),
       paused: false,
@@ -273,18 +273,20 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     origin: { origin: 'initial' } | { origin: 'requested'; humanRequestId: string },
     template?: DefinitionRef,
   ) => {
-    current.turnId = newId('trn');
+    current.inputCheckpointId = newId('ckp');
     await runToInteraction(current, {
       type: 'RunStateChanged',
       state: 'RUNNING',
-      ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+      ...(current.inputCheckpointId === undefined
+        ? {}
+        : { checkpointId: current.inputCheckpointId }),
     });
     await runToWorkflow(current, {
       type: 'HumanAnswered',
       kind: 'prompt',
       inputId: input.inputId,
       contentRef: store(input.text),
-      turnId: current.turnId,
+      checkpointId: current.inputCheckpointId,
       ...(template === undefined ? {} : { template }),
       ...origin,
     });
@@ -304,18 +306,18 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   };
 
   const closeTurn = async (current: Run) => {
-    if (current.turnId === undefined) return;
-    const turnId = current.turnId;
-    current.turnId = undefined;
+    if (current.inputCheckpointId === undefined) return;
+    const checkpointId = current.inputCheckpointId;
+    current.inputCheckpointId = undefined;
     await runToWorkflow(current, {
-      type: 'TurnClosed',
-      turnId,
+      type: 'InputSettled',
+      checkpointId,
       reason: current.interrupt === undefined ? 'COMPLETED' : 'ABORTED',
       usage: { inputTokens: 0, outputTokens: 0, unknownTokens: 0, modelRequests: 0, toolUnits: 0 },
     });
   };
 
-  const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+  const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
   const deliverReport = async (current: Run, request: SubmitUnitRequest, index: number) => {
     const scripted = options.units?.(request, index) ?? { reject: 'INVALID_INPUT' as const };
     const common = {
@@ -392,21 +394,35 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     },
     releaseDelegation: (request) => Promise.resolve(ack(request.requestId)),
     retainArtifacts: (request) => Promise.resolve(ack(request.requestId)),
+    scheduleWake: (request) => Promise.resolve(ack(request.requestId)),
+    haltAgentRun: (request) => Promise.resolve(ack(request.requestId)),
+    restoreMission: (request) => Promise.resolve(ack(request.requestId)),
+    closeMission: (request) => Promise.resolve(ack(request.requestId)),
+    withdrawQuestion: (request) => Promise.resolve(ack(request.requestId)),
+    withdrawOpenInput: (request) =>
+      Promise.resolve(rejected(request.requestId, 'HUMAN_REQUEST_NOT_PENDING')),
+    takeCheckpoint: (request) => Promise.resolve(ack(request.requestId)),
+    controlJob: (request) =>
+      Promise.resolve({
+        requestId: request.requestId,
+        outcome: 'ACCEPTED' as const,
+        result: { found: false as const },
+      }),
     // The fake never starts a compaction; a test that needs one replaces these.
     reportCompactionSource: (request) =>
       Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),
     ackCompaction: (request) => Promise.resolve(rejected(request.requestId, 'COMPACTION_UNKNOWN')),
     registerAgentRun: (request) => {
       const current = inRun(request.workflowRunId);
-      if (current?.turnId === undefined)
-        return Promise.resolve(rejected(request.requestId, 'NO_OPEN_TURN'));
+      if (current?.inputCheckpointId === undefined)
+        return Promise.resolve(rejected(request.requestId, 'NO_OPEN_INPUT'));
       current.activeAgentRuns.add(request.agentRunId);
       return Promise.resolve(ack(request.requestId));
     },
     submitUnit: (request) => {
       const current = inRun(request.workflowRunId);
-      if (current?.turnId === undefined)
-        return Promise.resolve(rejected(request.requestId, 'NO_OPEN_TURN'));
+      if (current?.inputCheckpointId === undefined)
+        return Promise.resolve(rejected(request.requestId, 'NO_OPEN_INPUT'));
       current.pendingUnits += 1;
       const index = unitIndex;
       unitIndex += 1;
@@ -447,7 +463,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       if (current === undefined)
         return Promise.resolve(rejected(request.requestId, 'RUN_NOT_FOUND'));
       if (request.kind !== 'prompt') {
-        // A local question blocks only the AgentRun that asked, and ends no Turn.
+        // A local question blocks only the AgentRun that asked, and settles no input.
         if (!current.activeAgentRuns.has(request.attachedAgentRunId))
           return Promise.resolve(rejected(request.requestId, 'AGENT_RUN_NOT_FOUND'));
         current.questions.set(request.humanRequestId, request.kind);
@@ -516,13 +532,13 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
           sessions: request.sessions
             .filter((entry) => entry.status === 'ACTIVE')
             .map(
-              ({ sessionId, repositoryRoot: root, createdAt, lastActiveAt, turnCount, fork }) => ({
+              ({ sessionId, repositoryRoot: root, createdAt, lastActiveAt, inputCount, fork }) => ({
                 sessionId,
                 repositoryRoot: root,
                 here: root === repositoryRoot,
                 createdAt,
                 lastActiveAt,
-                turnCount,
+                inputCount,
                 ...(fork === undefined ? {} : { fork }),
               }),
             ),
@@ -541,7 +557,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     known.add(sessionId);
     beginSession(requestId, 'CREATE', sessionId, async () => {
       const current = startRun(sessionId);
-      await sessionEvent(sessionId, { type: 'SessionOpened', repositoryRoot, turnCount: 0 });
+      await sessionEvent(sessionId, { type: 'SessionOpened', repositoryRoot, inputCount: 0 });
       await runToWorkflow(current, {
         type: 'RunStart',
         preset: 'standard',
@@ -554,19 +570,21 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
   };
 
   const interaction: InteractionGatewayPort = {
-    undoTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    undo: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    recoverRun: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     compactContext: (request) => Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT')),
     confirmUndo: (request) => Promise.resolve(rejected(request.requestId, 'UNDO_UNKNOWN')),
-    diffTurns: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    diff: (request) => Promise.resolve(rejected(request.requestId, 'NOTHING_TO_UNDO')),
+    rewindCheckpoint: (request) =>
+      Promise.resolve(rejected(request.requestId, 'UNDO_NOT_AVAILABLE')),
+    listCheckpoints: (request) =>
+      Promise.resolve({ requestId: request.requestId, outcome: 'ACCEPTED' as const, items: [] }),
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),
-    startRun: (request) => {
-      if (request.template.id !== 'analyze')
-        return Promise.resolve(rejected(request.requestId, 'TEMPLATE_UNSUPPORTED'));
-      return startNew(request.requestId, request.goal, {
+    startRun: (request) =>
+      startNew(request.requestId, request.goal, {
         mode: 'ORCHESTRATION',
         templateRef: request.template,
-      });
-    },
+      }),
     openSession: (request) => {
       if (!known.has(request.sessionId))
         return Promise.resolve(rejected(request.requestId, 'SESSION_NOT_FOUND'));
@@ -575,7 +593,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
         await sessionEvent(request.sessionId, {
           type: 'SessionOpened',
           repositoryRoot,
-          turnCount: 0,
+          inputCount: 0,
         });
         await runToWorkflow(current, {
           type: 'RunStart',
@@ -618,14 +636,16 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     answerAuthorization: (request) => Promise.resolve(ack(request.requestId)),
     pauseRun: (request) => {
       const current = inRun(request.workflowRunId);
-      if (current === undefined || current.paused || current.turnId === undefined)
+      if (current === undefined || current.paused || current.inputCheckpointId === undefined)
         return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
       current.paused = true;
       later(async () => {
         await runToInteraction(current, {
           type: 'RunStateChanged',
           state: 'PAUSED',
-          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+          ...(current.inputCheckpointId === undefined
+            ? {}
+            : { checkpointId: current.inputCheckpointId }),
         });
         await runToWorkflow(current, { type: 'RunPaused' });
       });
@@ -640,7 +660,9 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
         await runToInteraction(current, {
           type: 'RunStateChanged',
           state: 'RUNNING',
-          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+          ...(current.inputCheckpointId === undefined
+            ? {}
+            : { checkpointId: current.inputCheckpointId }),
         });
         await runToWorkflow(current, {
           type: 'RunResumed',
@@ -661,7 +683,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     },
     steerRun: (request) => {
       const current = inRun(request.workflowRunId);
-      if (current === undefined || current.paused || current.turnId === undefined)
+      if (current === undefined || current.paused || current.inputCheckpointId === undefined)
         return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
       later(() =>
         runToWorkflow(current, {
@@ -678,7 +700,11 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     },
     interruptRun: (request) => {
       const current = inRun(request.workflowRunId);
-      if (current === undefined || current.turnId === undefined || current.interrupt !== undefined)
+      if (
+        current === undefined ||
+        current.inputCheckpointId === undefined ||
+        current.interrupt !== undefined
+      )
         return Promise.resolve(rejected(request.requestId, 'REQUEST_CONFLICT'));
       current.interrupt = 'USER_ABORT';
       current.paused = false;
@@ -687,7 +713,9 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
         await runToInteraction(current, {
           type: 'RunStateChanged',
           state: 'INTERRUPTING',
-          ...(current.turnId === undefined ? {} : { turnId: current.turnId }),
+          ...(current.inputCheckpointId === undefined
+            ? {}
+            : { checkpointId: current.inputCheckpointId }),
         });
         for (const humanRequestId of current.questions.keys()) {
           await runToInteraction(current, {

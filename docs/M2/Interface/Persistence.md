@@ -89,7 +89,6 @@ interface LogRecordBase {
 | `RUN_PAUSED` | 无附加字段 |
 | `RUN_RESUMED` | `steerInputId?`（继续时附加了说明；说明本身是 `HUMAN_ANSWERED(kind: steer)`） |
 | `RUN_INTERRUPTED` | `reason`（`MEMORY_PRESSURE`、`USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`） |
-| `LOOP_EXHAUSTED` | 条件边的有界循环用尽时记录（使用者模板，M2ReleasePlan phase 2） |
 
 - M2Design 第 10.2 节的 `UNIT_COMPLETED` 带结构化输出与 ArtifactRef。`UNIT_SUBMITTED` 不复制工具参数，只指向 `MODEL_TURN` 中的工具调用；
   工具调用的参数正文由 `model-call` 的输出产物保存。这样先写日志、再提交（第 10.3 节写入规则第 1、2 条）不需要额外的产物写入。
@@ -101,27 +100,24 @@ interface LogRecordBase {
 ```ts
 interface GraphNodeRecord {
   nodeId: string;
-  path: string;                 // <workflowRunId>/<revision>/<名称>#<迭代号>
+  path: string;                 // <workflowRunId>/<revision>/<名称>
   name: string;                 // ≤64
   kind: 'AGENT' | 'HUMAN';
   trigger: 'all_success' | 'all_done';
-  iteration: number;
-  loopId?: string;              // 所属循环；不在循环中时省略
   agentRef?: DefinitionRef;     // AGENT 必填
   goal?: string;                // ≤4000
-  inputFrom?: 'HANDOFF';
   output?: boolean;
 }
 
 interface GraphEdgeRecord {
   from: string;                 // nodeId
   to: string;                   // nodeId
-  kind: 'DEPENDS' | 'CONDITIONAL';
-  when?: EdgeCondition;         // Definitions 第 4 节；CONDITIONAL 时必填
+  kind: 'DEPENDS' | 'DELEGATE' | 'RESUME' | 'CONTINUES';
+  call?: EdgeCall;              // DELEGATE、RESUME：调用号与委派号
 }
 ```
 
-`NODE_ENDED` 另带 `result?`：条件边读取的结构化结果（如 planner 的 `action`），写入日志后重放时不需要读取产物。
+`NODE_ENDED` 另带 `result?`：子任务这一段结束时的状态、说明与带结果的调用号，写入日志后重放时不需要读取产物；`skipReason` 只有 `DEPENDENCY_FAILED`。节点的 `spawn.specialist` 记专家所按的模板与纲领（Orchestration D39）。
 
 ## 3. Session 列表
 

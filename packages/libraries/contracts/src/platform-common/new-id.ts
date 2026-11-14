@@ -18,6 +18,7 @@ export function ulid(now: number = Date.now()): string {
 export type IdPrefix =
   | 'wfr'
   | 'cmp'
+  | 'ckp'
   | 'agr'
   | 'req'
   | 'una'
@@ -44,6 +45,6 @@ export function newId(prefix: IdPrefix): string {
  * An ID derived from a readable path: `<prefix>_` and the first 32 hexadecimal digits of the
  * path's SHA-256, so replaying a log gives the same ID (Interface 3).
  */
-export function pathDerivedId(prefix: 'nod' | 'unr' | 'req', path: string): string {
+export function pathDerivedId(prefix: 'nod' | 'unr' | 'req' | 'msc', path: string): string {
   return `${prefix}_${createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 32)}`;
 }

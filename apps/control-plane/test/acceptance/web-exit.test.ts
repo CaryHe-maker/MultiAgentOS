@@ -25,6 +25,9 @@ import {
   type ScriptedChat,
 } from './chat-driver.js';
 
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
+
 const TIMEOUT = 60_000;
 const KEY = 'sk-acceptance-offline-key-0000';
 
@@ -434,6 +437,7 @@ describe('A (web): what is asked, and what is not', () => {
         {
           main: [
             tool('run_subagents', { tasks: [task('first'), task('second')] }),
+            waitForTasks(),
             reply('both read it'),
           ],
         },

@@ -48,11 +48,6 @@ export interface ExecutorContractFixture {
   readonly expectations?: readonly ExecutorExpectation[];
 }
 
-const PACK_OPERATION = {
-  REPOSITORY_ORIENT: 'ORIENT',
-  CONTEXT_ASSEMBLE: 'ASSEMBLE',
-} as const;
-
 /** Calls the Executor of `kind`; the caller pairs the kind with an input of that kind. */
 function run(
   registry: ExecutorRegistry,
@@ -134,20 +129,18 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
   }
   expect(validate(ContextPackSchema, content)).toMatchObject({ ok: true });
   const pack = content as ContextPack;
-  expect(pack.operation).toBe(PACK_OPERATION[kind]);
+  expect(pack.operation).toBe('ASSEMBLE');
   expect(pack.tokenCount).toBeLessThanOrEqual(pack.tokenBudget);
-  if (pack.operation === 'ASSEMBLE') {
-    const assembled = output as ContextAssembleOutput;
-    expect(pack).toMatchObject({
-      contextPackId: assembled.contextPackId,
-      prefixSha256: assembled.prefixSha256,
-      tokenCount: assembled.tokenCount,
-      tokenBudget: assembled.tokenBudget,
-      projectionDigest: assembled.projectionDigest,
-      headDigest: assembled.headDigest,
-      elidedEntries: assembled.elidedEntries,
-    });
-  } else expect(pack.snapshotId).toBe((output as { snapshotId: string }).snapshotId);
+  const assembled = output as ContextAssembleOutput;
+  expect(pack).toMatchObject({
+    contextPackId: assembled.contextPackId,
+    prefixSha256: assembled.prefixSha256,
+    tokenCount: assembled.tokenCount,
+    tokenBudget: assembled.tokenBudget,
+    projectionDigest: assembled.projectionDigest,
+    headDigest: assembled.headDigest,
+    elidedEntries: assembled.elidedEntries,
+  });
 }
 
 /**
@@ -288,22 +281,6 @@ export function repositoryGuardExpectations(
       input: { query: '   ', mode: 'TEXT', maxItems: 20, tokenBudget: 4_000 },
       environment: environment('REPOSITORY_SEARCH', scope),
       expected: rejected('INVALID_QUERY'),
-    },
-    {
-      name: 'rejects a repository with more files than maxFiles',
-      kind: 'REPOSITORY_ORIENT',
-      input: { objective: 'Explain the fixture.', tokenBudget: 4_000 },
-      environment: {
-        ...environment('REPOSITORY_ORIENT', scope),
-        limits: {
-          deadline: '2099-01-01T00:00:00.000Z',
-          maxOutputBytes: 1_048_576,
-          preview: { maxBytes: 262_144, maxLines: 2_000 },
-          maxFullOutputBytes: 1_048_576,
-          maxFiles: 1,
-        },
-      },
-      expected: rejected('LIMIT_EXCEEDED'),
     },
   ];
 }

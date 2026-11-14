@@ -68,12 +68,15 @@ export function completionResponse(
   );
 }
 
-export type ScriptedAgent = 'main' | 'explorer' | 'worker' | 'planner' | 'code-viewer' | 'unknown';
+export type ScriptedAgent =
+  'main' | 'lead' | 'explorer' | 'worker' | 'planner' | 'code-viewer' | 'unknown';
 
 /** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
 export function agentOfTools(names: ReadonlySet<string>): ScriptedAgent {
+  // A lead returns a result like any task and may start tasks of its own (Orchestration 9.4).
+  if (names.has('finish_subagent'))
+    return names.has('run_subagents') ? 'lead' : names.has('write_file') ? 'worker' : 'explorer';
   if (names.has('run_subagents')) return 'main';
-  if (names.has('finish_subagent')) return names.has('write_file') ? 'worker' : 'explorer';
   if (names.has('handoff_to_code_viewer')) return 'planner';
   if (names.has('finish_analysis')) return 'code-viewer';
   return 'unknown';

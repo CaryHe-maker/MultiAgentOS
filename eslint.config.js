@@ -29,14 +29,7 @@ const componentInternals = {
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/dist/**',
-      '**/coverage/**',
-      '**/node_modules/**',
-      '**/.multiagentos/**',
-      // Repositories under analysis in the acceptance tasks, not code of this project.
-      'apps/control-plane/test/system/analyze-template/repos/**',
-    ],
+    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/.multiagentos/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -93,10 +86,16 @@ export default tseslint.config(
   })),
   {
     // The exit matrix and the killed process of S1 must spawn a real child; product code may not.
+    // The judges of the evaluation run an acceptance command the model never saw.
     files: [
+      'apps/control-plane/test/eval/tasks/orchestration.ts',
+      'apps/control-plane/test/eval/tasks/orchestration-hard.ts',
+      'apps/control-plane/test/eval/tasks/submission-study.ts',
+      'apps/control-plane/test/eval/submission-study.test.ts',
       'apps/control-plane/test/process-entry.test.ts',
       'apps/control-plane/test/acceptance/chat-exit.test.ts',
       'apps/control-plane/test/system/kill-anywhere.test.ts',
+      'apps/control-plane/test/system/resume-run.test.ts',
     ],
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdk] }],

@@ -1,10 +1,10 @@
 /**
  * Test-only child-process entry for the exit paths of the composition root. It runs the real
- * composition, SystemControl and process guards on a copy of the `bookshelf` fixture; only the
- * provider's HTTP API is scripted, and one mode replaces an Executor's verdict.
+ * composition, SystemControl and process guards on a small repository; only the provider's HTTP
+ * API is scripted, and one mode replaces an Executor's verdict.
  */
 import { join } from 'node:path';
-import { realpath } from 'node:fs/promises';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { parseCli, runCommand } from '@multiagentos/cli';
 import type { ExecutorRegistry } from '@multiagentos/contracts';
@@ -14,9 +14,8 @@ import { composeSystem, type System } from '../src/bootstrap/compose-system.js';
 import { createDeferredFaultReporter } from '../src/bootstrap/deferred-fault-reporter.js';
 import { installProcessGuards } from '../src/bootstrap/process-guards.js';
 import { defaultSystemConfig } from '../src/config/system-config.js';
-import { answeringTerminal, prepareRepository } from './system/analyze-template/harness.js';
-import { scriptedProvider } from './system/analyze-template/scripted-provider.js';
-import { TASKS } from './system/analyze-template/tasks.js';
+import { reply, scriptedChat, tool } from './acceptance/chat-driver.js';
+import { answeringTerminal } from './support/answering-terminal.js';
 
 const mode = process.argv[2] ?? 'normal';
 const dataDir = process.env['ENTRY_DATA_DIR'] ?? join(tmpdir(), 'multiagentos-entry');
@@ -25,7 +24,7 @@ const subprocess = createSubprocessRunner();
 const faults = createDeferredFaultReporter(() => undefined);
 const removeGuards = installProcessGuards({ killSubprocesses: () => subprocess.killAll() });
 
-/** Modes that run `mas run analyze` to its end; the others run a command of their own. */
+/** Modes that run `mas run "<goal>"` to its end; the others run a command of their own. */
 const RUNS = new Set(['normal', 'failed', 'violation']);
 
 function pending(): Promise<number> {
@@ -87,11 +86,11 @@ function executors(): ExecutorRegistry {
   };
 }
 
-/** The F1 script; `failed` answers every model request with an authentication error. */
+/** main reads the README and replies; `failed` answers every request with an authentication error. */
 function provider(): typeof globalThis.fetch {
-  const task = TASKS.find((each) => each.id === 'F1');
-  if (task === undefined) throw new Error('the F1 task is missing');
-  if (mode !== 'failed') return scriptedProvider(task.script).fetch;
+  if (mode !== 'failed')
+    return scriptedChat(tool('read_file', { path: 'README.md' }), reply('the fixture is read'))
+      .fetch;
   return () =>
     Promise.resolve(
       new Response(JSON.stringify({ error: { message: 'invalid key' } }), { status: 401 }),
@@ -99,7 +98,8 @@ function provider(): typeof globalThis.fetch {
 }
 
 try {
-  await prepareRepository('bookshelf', repository);
+  await mkdir(repository, { recursive: true });
+  await writeFile(join(repository, 'README.md'), '# process fixture\n');
   globalThis.fetch = provider();
   const terminal = answeringTerminal();
   const system = await composeSystem({
@@ -117,11 +117,11 @@ try {
   await system.start();
   process.stdout.write('READY\n');
   if (RUNS.has(mode)) {
-    const parsed = await parseCli(['run', 'analyze', 'process fixture'], () => undefined);
+    const parsed = await parseCli(['run', 'read the README'], () => undefined);
     if (!parsed.ok || parsed.command.kind === 'LOG')
       throw new Error('the fixture command line is invalid');
     const { command: running } = parsed;
-    const template = system.templateRef('analyze');
+    const template = system.templateRef('mission');
     process.exitCode = await system.run((console) =>
       runCommand(running, console, terminal, template),
     );

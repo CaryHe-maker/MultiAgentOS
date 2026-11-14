@@ -4,6 +4,7 @@ import type {
   SessionLogRecord,
   SubagentTask,
 } from '@multiagentos/contracts';
+import { renderPlaybook } from './playbook.js';
 import { registeredOf } from '../handover/handover.js';
 import { outcomeOf, type TaskOutcome } from './task-results.js';
 import type { TaskScope } from '../context/history-projection.js';
@@ -12,7 +13,7 @@ import type { ProjectedGraph } from '../graph/session-graph.js';
 /**
  * What the tasks of a `run_subagents` call look like in the graph and in the log (M2Design 3.1,
  * 3.6): who dispatched a task, what a task is given, what the caller learns when it is woken, and
- * how much a Turn has dispatched. All of it a pure function of the log.
+ * how much the work of an input has dispatched. All of it a pure function of the log.
  */
 
 /** The `DELEGATE` edge that led to a task: its caller's node, and the delegation. */
@@ -149,6 +150,8 @@ export function taskScopeOf(
   node: GraphNodeRecord,
   spawn: NonNullable<GraphNodeRecord['spawn']>,
 ): TaskScope {
+  const continued = continuedOf(records, workflowRunId, graph, spawn);
+  const inherited = inheritedOf(records, workflowRunId, graph, node, spawn);
   const dependencies = graph.graph.edges
     .filter((edge) => edge.to === node.nodeId && edge.kind === 'DEPENDS')
     .flatMap((edge) => {
@@ -181,6 +184,53 @@ export function taskScopeOf(
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
+    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
+    ...(continued === undefined ? {} : { continued }),
+    ...(inherited === undefined ? {} : { inherited }),
+  };
+}
+
+/**
+ * What a task that inherits starts with (Orchestration 3.9, D35): the view of the task that
+ * started it, up to the call, and the call it answers. The view is that task's own, so the prefix
+ * is the one it sent and the provider's cache holds it.
+ */
+function inheritedOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  node: GraphNodeRecord,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['inherited'] {
+  const { inherits } = spawn;
+  if (inherits === undefined) return undefined;
+  const from = [...graph.nodes.values()].find(
+    (each) => each.mission?.id === inherits.missionId && each.spawn !== undefined,
+  );
+  const started = records.find(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodes.some((each) => each.nodeId === node.nodeId),
+  );
+  const edge = started?.edges.find(
+    (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
+  );
+  if (from?.spawn === undefined || started === undefined || edge?.call === undefined)
+    return undefined;
+  const before = records.filter((record) => record.seq < started.seq);
+  return {
+    cut: started.seq,
+    toolCallId: edge.call.toolCallId,
+    as: inherits.as,
+    siblings: started.nodes.filter((each) => each.nodeId !== node.nodeId).map((each) => each.name),
+    from: {
+      kind: 'NODE',
+      workflowRunId,
+      agentRunId: inherits.agentRunId,
+      missionId: inherits.missionId,
+      task: taskScopeOf(before, workflowRunId, graph, from, from.spawn),
+    },
   };
 }
 
@@ -189,8 +239,12 @@ export function spawnNodeOf(
   task: SubagentTask & { readonly writeRoots: readonly string[] },
   share: { readonly tokens: number; readonly clamped?: 'MIN' | 'MAX' } | undefined,
 ): NonNullable<GraphNodeRecord['spawn']> {
+  // A task always has a line of what it does: the caller's, or the start of its goal.
+  const role = (task.role ?? task.goal.split(/\r?\n/u)[0] ?? task.name).slice(0, 80);
   return {
     writeScope: [...task.writeRoots],
+    role,
+    ...(task.commands === false ? { commands: false } : {}),
     acceptance: [...(task.acceptance ?? [])],
     inputs: [...(task.inputs ?? [])],
     ...(task.effort === undefined ? {} : { effort: task.effort }),
@@ -199,14 +253,48 @@ export function spawnNodeOf(
   };
 }
 
-/** What a Turn has dispatched so far: the limits of `run_subagents` count it (M2Design 3.6). */
-export function spawnedIn(
+/**
+ * The tasks a continued task takes up (`continues`), the latest first, and the task scope of the
+ * earliest, whose header its history begins with: so the prefix of its context is the one the
+ * earlier task sent, and the provider's cache still has it.
+ */
+function continuedOf(
   records: readonly SessionLogRecord[],
-  turnId: string | undefined,
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['continued'] {
+  const missions: string[] = [];
+  let first: GraphNodeRecord | undefined;
+  let next = spawn.continues?.missionId;
+  while (next !== undefined && !missions.includes(next)) {
+    const missionId = next;
+    const node = [...graph.nodes.values()].find(
+      (each) => each.mission?.id === missionId && each.spawn !== undefined,
+    );
+    if (node?.spawn === undefined) break;
+    missions.push(missionId);
+    first = node;
+    next = node.spawn.continues?.missionId;
+  }
+  if (first?.spawn === undefined) return undefined;
+  // The earliest task continues nothing, so its scope has no `continued` of its own.
+  return { missions, first: taskScopeOf(records, workflowRunId, graph, first, first.spawn) };
+}
+
+/**
+ * What a task has dispatched so far: the limits of `run_subagents` count it per task, so a lead
+ * below the root has limits of its own (Orchestration 9.3).
+ */
+export function spawnedBy(
+  records: readonly SessionLogRecord[],
+  missionId: string,
 ): { readonly tasks: number; readonly calls: number } {
   const spawns = records.filter(
     (record): record is RecordOf<'GRAPH_EXTENDED'> =>
-      record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN' && record.turnId === turnId,
+      record.type === 'GRAPH_EXTENDED' &&
+      record.source === 'SPAWN' &&
+      record.nodes.some((node) => node.mission?.parentId === missionId),
   );
   return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
 }

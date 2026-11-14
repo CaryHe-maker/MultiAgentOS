@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: job-output
+version: v0.1.0
+description: Control tool that reads what a background command of the task printed.
+purpose: CONTROL
+modelName: job_output
+modelDescription: >-
+  Read what one of your background commands (job_1, job_2, ...) printed since you last read it,
+  up to 32 KB at a time, with its state at the end (running, exited(n), stopped). fromStart reads
+  again from the oldest output still kept. It does not wait: to wait for a command to end, call
+  sleep with jobs.
+parametersContract:
+  kind: contract
+  id: workflow.JobOutputArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

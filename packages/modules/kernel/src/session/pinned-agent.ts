@@ -73,11 +73,32 @@ export function pinnedAgentOf(
   // `ask_user` needs no capability: any Agent that declares it offers it (M2Design 3.4).
   const ask =
     agent.actions.askUser === undefined ? undefined : toolOf(agent.actions.askUser.toolRef);
+  // The task tools (Orchestration 4, 5, 3.7); stopping children needs `agent.spawn`, and the job
+  // tools need commands (Orchestration 6.2).
+  const { sleep, message, viewTasks, stop, jobOutput, jobList, jobKill } = agent.actions;
+  const declared = (
+    action: { readonly toolRef: { readonly id: string; readonly version: string } } | undefined,
+    needs?: ProtectedCapability,
+  ): ToolDefinition[] => {
+    if (action === undefined || (needs !== undefined && !requested.includes(needs))) return [];
+    const tool = toolOf(action.toolRef);
+    return tool === undefined ? [] : [tool];
+  };
+  const taskTools = [
+    ...declared(sleep),
+    ...declared(message),
+    ...declared(viewTasks),
+    ...declared(stop, 'agent.spawn'),
+    ...declared(jobOutput, 'command.exec'),
+    ...declared(jobList, 'command.exec'),
+    ...declared(jobKill, 'command.exec'),
+  ];
   const ordinary = [
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
     ...(spawn === undefined ? [] : [spawn]),
     ...(ask === undefined ? [] : [ask]),
+    ...taskTools,
     ...ends.map((end) => end.tool),
   ].map(specOf);
   const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
@@ -201,7 +222,13 @@ export function pinAgentFrom(
     if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
     if (set.value.agent.digest !== agentRef.digest)
       return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
-    const agent = pinnedAgentOf(set.value, effort, registry, request.requestedCapabilities);
+    // The tools are offered by `offeredCapabilities` when given; the ceiling stays the requested.
+    const agent = pinnedAgentOf(
+      set.value,
+      effort,
+      registry,
+      request.offeredCapabilities ?? request.requestedCapabilities,
+    );
     return Promise.resolve(
       agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
     );

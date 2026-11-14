@@ -10,18 +10,26 @@ import type {
   ExecutorRegistry,
   FabricPort,
   HealthStatus,
+  JobControlRequest,
+  JobControlResult,
   LifecyclePort,
   ProviderCredentials,
   ModuleId,
   SupervisorShutdownRequest,
 } from '@multiagentos/contracts';
 import { newId } from '@multiagentos/contracts';
-import { createExecutionFactSink, createModelProgressSink, SCHEMA_IDS } from '@multiagentos/fabric';
+import {
+  createExecutionFactSink,
+  createJobFactSink,
+  createModelProgressSink,
+  SCHEMA_IDS,
+} from '@multiagentos/fabric';
 import type { KernelConfig } from '@multiagentos/contracts';
 
 import { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 import { ExecutionRunner } from './execution-runner.js';
+import { JobTable } from './job-table.js';
 
 export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 export { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
@@ -49,6 +57,8 @@ export interface SupervisorDeps {
   /** Runs commands in `bwrap`; the default is made from the data directory and the user's home. */
   readonly sandbox?: TrackedSandboxRunner;
   readonly now?: () => Date;
+  /** The longest a background command runs (Orchestration 6.1); default an hour. */
+  readonly jobMaxMs?: number;
 }
 
 export interface SupervisorModule extends LifecyclePort {
@@ -90,7 +100,19 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     deps.fabric,
     (message) => correlations.get(message.workflowRunId) ?? newId('cor'),
   );
+  const jobFacts = createJobFactSink(deps.fabric, (fact) => ({
+    correlationId: correlations.get(fact.workflowRunId) ?? newId('cor'),
+    tenantId: 'local',
+    projectId: 'local',
+    sessionId: fact.sessionId,
+    workflowRunId: fact.workflowRunId,
+  }));
+  const jobs = new JobTable({
+    report: (fact) => jobFacts.report(fact),
+    jobMaxMs: deps.jobMaxMs ?? 3_600_000,
+  });
   const runner = new ExecutionRunner({
+    jobs,
     progress,
     executors: deps.executors,
     credentials: deps.credentials,
@@ -175,6 +197,18 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       runner.cancelExecution(envelope.payload);
       return Promise.resolve();
     });
+    if (!registered.has(SCHEMA_IDS.jobControl)) {
+      deps.fabric.register<JobControlRequest, JobControlResult>(
+        SCHEMA_IDS.jobControl,
+        (envelope) => {
+          if (envelope.producer !== 'kernel-core')
+            throw new Error('Supervisor request has an invalid producer');
+          requireReady();
+          return Promise.resolve(jobs.control(envelope.payload));
+        },
+      );
+      registered.add(SCHEMA_IDS.jobControl);
+    }
     serve<SupervisorShutdownRequest>(SCHEMA_IDS.supervisorShutdown, () => {
       ready = false;
       // Let Fabric complete this request before ModuleHost stops Fabric itself.

@@ -28,10 +28,10 @@ export function assertStartupChecks(
   const { budget } = config;
   const main = agents.find((set) => set.agent.id === 'main');
   if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
-  if (budget.turnTokenLimit < minShare(main.agent.budget))
-    throw new ConfigError(`kernel.budget.turnTokenLimit must be at least minShare(main)`);
-  if (budget.runTokenLimit < budget.turnTokenLimit)
-    throw new ConfigError('kernel.budget.runTokenLimit must be at least turnTokenLimit');
+  if (budget.inputTokenLimit < minShare(main.agent.budget))
+    throw new ConfigError(`kernel.budget.inputTokenLimit must be at least minShare(main)`);
+  if (budget.runTokenLimit < budget.inputTokenLimit)
+    throw new ConfigError('kernel.budget.runTokenLimit must be at least inputTokenLimit');
 
   const providers = new Set<string>();
   for (const set of agents) {
@@ -82,20 +82,13 @@ function assertAgent(
     .flatMap((end) =>
       tools.filter((tool) => tool.id === end.toolRef.id && tool.version === end.toolRef.version),
     );
-  const orients = units.some(
-    (unit) =>
-      unit.executionKind === 'REPOSITORY_ORIENT' &&
-      agent.startUnitRefs.some((ref) => ref.id === unit.id),
-  );
   const fixed = (toolSpecs: readonly ModelToolSpec[]): number =>
     estimatePackTokens({
       items: [
         { role: 'system', content: prompt.template },
         { role: 'system', content: '', toolSpecs },
       ],
-    }) +
-    estimateItemTokens({ role: 'user', content: '\u0001'.repeat(STATUS_MAX_BYTES) }) +
-    (orients ? config.budget.orientBudget : 0);
+    }) + estimateItemTokens({ role: 'user', content: '\u0001'.repeat(STATUS_MAX_BYTES) });
   const normal = fixed(tools.map(specOf));
   const final = fixed(finalTools.map(specOf));
   if (normal >= perCallInputLimit)

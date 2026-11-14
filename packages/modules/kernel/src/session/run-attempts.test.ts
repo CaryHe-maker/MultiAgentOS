@@ -35,10 +35,10 @@ function setup(
   options: { capacity?: boolean; full?: boolean; deliverable?: boolean; lease?: boolean } = {},
 ) {
   const ledger = new RunLedgers(
-    { runTokenLimit: minShare(main) * 4, turnTokenLimit: minShare(main) * 2 },
+    { runTokenLimit: minShare(main) * 4, inputTokenLimit: minShare(main) * 2 },
     main,
   );
-  ledger.openTurnLedger('trn_1');
+  ledger.openInputLedger('trn_1');
   const grants = new Set<string>();
   let next = 0;
   const scheduler: SchedulerDuties = {
@@ -84,7 +84,6 @@ function setup(
       requestId: testId('req', 1),
       agentRunId: testId('agr', 1),
       unitRunId: testId('unr', 1),
-      turnId: 'trn_1',
       unit: unit(kind),
       input: {},
       scope: { kind: 'NONE' },
@@ -113,7 +112,7 @@ describe('result checks', () => {
     expect(reports[0]).toMatchObject({
       status: 'OK',
       unitRunId: testId('unr', 1),
-      budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
     });
     expect(ended).toEqual([id]);
   });

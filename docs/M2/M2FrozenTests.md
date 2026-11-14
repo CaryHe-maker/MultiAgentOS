@@ -93,7 +93,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 ### 清点中的缺口
 
-- **I17（模板不携带权限）**：目前没有使用者模板，没有对象可以测试；与使用者模板同时在 phase 2 补上，补之前清点里标为"待做"，不算通过。
+- **I17（模板不携带权限）**：v1.38 起没有使用者模板，内置模板也没有权限字段（能力只来自 Agent 定义），这一条由 Schema 保证，没有运行时对象可以测试。
 - 有些条目的测试只有一两个，覆盖的是主路径；它们是底线的最低限度，不是穷尽。phase 1、2 新增的功能按第 2 节第 3 条补充。
 
 ## 4. 被攻陷的模型
@@ -138,10 +138,9 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 ## 7. 内置模板的系统测试
 
-`system/analyze-template/`：`mas run analyze` 的完整路径（命令行解析、组合根、Kernel、Workflow、控制台、ExecutorSet），provider 是脚本。它是 Turn-chat 之外唯一经过真实组合根的内置模板，预置工作流到来时，同类的测试加在这里。含：
+`acceptance/mission-run.test.ts`：`mas run "<目标>"` 的完整路径（命令行解析、组合根、Kernel、Workflow、控制台、ExecutorSet），provider 是脚本。
 
-- 固定任务 F1–F5 的离线运行：报告的每个结论都有读过的来源，仓库没有变化，退出码与结束原因正确；
-- 安全陷阱：密钥、仓库外路径、超大文件、二进制、非 UTF-8 编码、仓库内容里的指令。
+**换载体（2026-11-14，M2Design v1.38）**：`system/analyze-template/` 随 `analyze` 删除。冻结文件中原来经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽：`acceptance/write-undo-exit.test.ts` 的 "can be undone from the Session it leaves behind"、`acceptance/chat-exit.test.ts` 的 S5 与 `process-entry.test.ts` 的退出路径（子进程入口 `process-entry.ts` 改为 `mas run "<目标>"`，模型读一个文件后回复）。F1–F5 与安全陷阱由评测体系的任务覆盖。
 
 ## 8. phase 发布检查
 

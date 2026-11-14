@@ -497,8 +497,8 @@ describe('a refusal', () => {
       { status: 'REJECTED', reasonCode: 'USER_DECLINED' },
     ]);
     expect(kernel.run().control).toMatchObject({ phase: 'RUNNING' });
-    expect(kernel.run().control.turnId).toBeDefined();
-    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('TurnClosed');
+    expect(kernel.run().control.openInput).toBeDefined();
+    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('InputSettled');
     expect(
       kernel.interactionTypes().filter((type) => type === 'AuthorizationRequest'),
     ).toHaveLength(1);
@@ -710,6 +710,30 @@ describe('project instructions', () => {
 });
 
 describe('convergence', () => {
+  it('ends the wake timers with the run, so none keeps the process alive after it', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    const wake = (seconds: number) =>
+      kernel.actor.call(() =>
+        kernel.run().work.scheduleWake({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          missionId: 'msc_01M7SLEEPER00000000000000',
+          timerId: `sleep-${String(seconds)}`,
+          seconds,
+        }),
+      );
+    await wake(3600);
+    await wake(600);
+    const armed = (ms: number) => kernel.timers.some((timer) => timer.delayMs === ms);
+    expect(armed(3_600_000) && armed(600_000)).toBe(true);
+    await kernel.actor.call(() =>
+      kernel.actor.closeRun(kernel.run(), { closeReason: 'CANCELLED' }),
+    );
+    await kernel.settled();
+    expect(armed(3_600_000) || armed(600_000)).toBe(false);
+  });
+
   it('cancels the question, and the suspended Unit ends with the run', async () => {
     const kernel = await setup();
     await kernel.register();
@@ -746,7 +770,7 @@ describe('convergence', () => {
     await kernel.finish();
     await kernel.settled();
     expect(kernel.reports()).toEqual([]);
-    expect(types().slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+    expect(types().slice(-2)).toEqual(['InputSettled', 'RunClosed']);
   });
 
   it('writes a RunSummary that counts every accepted Unit once', async () => {
@@ -765,7 +789,7 @@ describe('convergence', () => {
     const [summary] = kernel.summaries;
     expect(summary).toMatchObject({
       closeReason: 'CANCELLED',
-      turns: 1,
+      inputs: 1,
       units: { submitted: 2, ok: 1, rejected: 0, failed: 0, notDelivered: 1 },
       agentRuns: [{ agentRunId: kernel.agentRunId, rounds: 0, finalCallUsed: false }],
     });
@@ -1263,7 +1287,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ledgers: new RunLedgers(
       {
         runTokenLimit: minShare(testAgentBudget) * 40,
-        turnTokenLimit: minShare(testAgentBudget) * 20,
+        inputTokenLimit: minShare(testAgentBudget) * 20,
       },
       testAgentBudget,
     ),
@@ -1288,7 +1312,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
               ledgers: new RunLedgers(
                 {
                   runTokenLimit: minShare(testAgentBudget) * 40,
-                  turnTokenLimit: minShare(testAgentBudget) * 20,
+                  inputTokenLimit: minShare(testAgentBudget) * 20,
                 },
                 testAgentBudget,
               ),
@@ -1353,41 +1377,45 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
   const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
 
-  it('reserves the shares of the tasks and says what each got, kept within the Agent limits (B2 in part)', async () => {
+  it('opens every task with the least its Agent can work with, whatever was asked (B2 in part)', async () => {
     const kernel = await open();
+    const least = minShare(childBudget);
     const response = await reserve(kernel, [
       { name: 'a', agent: 'worker', roots: ['src/a'] },
       { name: 'b', agent: 'worker', roots: ['src/b'], tokens: 1 },
       { name: 'c', agent: 'explorer', tokens: 10_000_000 },
     ]);
+    // A task is topped up as it needs more (M2Design 7.3, rule 5), so nothing is reserved that
+    // is not used; what was asked only bounds how far.
     expect(response).toMatchObject({
       outcome: 'ACCEPTED',
       shares: [
-        { name: 'a', tokens: defaultShare },
-        { name: 'b', tokens: minShare(childBudget), clamped: 'MIN' },
-        { name: 'c', tokens: 2 * defaultShare, clamped: 'MAX' },
+        { name: 'a', tokens: least },
+        { name: 'b', tokens: least, clamped: 'MIN' },
+        { name: 'c', tokens: least },
       ],
     });
     expect(delegationIdOf(response)).toMatch(/^dlg_/u);
   });
 
-  it('refuses all of it when the shares are more than the parent can lend, and says how much it can (B2)', async () => {
+  it('refuses all of it only when even the smallest shares do not fit, and says what it can lend (B2)', async () => {
     const kernel = await open();
-    const response = await reserve(kernel, [{ name: 'a', agent: 'explorer', tokens: 1 }]);
-    expect(response).toMatchObject({ outcome: 'ACCEPTED' });
-    // Far more than the Turn holds.
-    const refused = await reserve(
-      kernel,
-      Array.from({ length: 12 }, (_, index) => ({
-        name: `t${String(index)}`,
-        agent: 'explorer',
-        tokens: 2 * defaultShare,
-      })),
-    );
+    const least = minShare(childBudget);
+    // Far more tasks than the Turn can fund at their smallest.
+    const many = Array.from({ length: 4000 }, (_, index) => ({
+      name: `t${String(index)}`,
+      agent: 'explorer',
+    }));
+    const refused = await reserve(kernel, many);
     expect(refused).toMatchObject({
       outcome: 'REJECTED',
       reasonCode: 'BUDGET_INSUFFICIENT',
       delegable: expect.any(Number) as number,
+      least: many.length * least,
+    });
+    // Nothing was taken: a call that fits is still accepted.
+    expect(await reserve(kernel, [{ name: 'a', agent: 'explorer' }])).toMatchObject({
+      outcome: 'ACCEPTED',
     });
   });
 
@@ -1526,6 +1554,33 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ).toBe('ACCEPTED');
   });
 
+  it('lets the parent write what it has not lent while its children hold their roots (D17)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+    );
+    await registerChild(kernel, {
+      id: newId('agr'),
+      agent: 'worker',
+      delegationId: dlg,
+      taskName: 'a',
+      roots: ['src/a'],
+    });
+    // Inside what it lent: refused without asking.
+    await kernel.submit(fileWrite, { path: 'src/a/x.ts', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports().at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'WRITE_SCOPE_DELEGATED',
+    });
+    // Outside it: the write goes on to the usual question.
+    const before = kernel.reports().length;
+    await kernel.submit(fileWrite, { path: 'docs/notes.md', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports()).toHaveLength(before);
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+  });
+
   it('refuses the parent a write while its children hold the roots, and lets it write again after (P6)', async () => {
     const kernel = await open();
     const dlg = delegationIdOf(
@@ -1592,6 +1647,268 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
         ),
       ),
     ).toBe('DELEGATION_NOT_FOUND');
+  });
+
+  describe('MissionScopes (Orchestration 8.1, 8.2)', () => {
+    const leadAgent = testPinnedAgent({
+      id: 'lead',
+      capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      units: [fileRead, fileWrite, publish],
+      budget: childBudget,
+    });
+    agents['lead'] = leadAgent;
+    const segment = (
+      kernel: Kernel,
+      over: {
+        id: string;
+        agent: string;
+        missionId: string;
+        parentMissionId?: string;
+        delegationId?: string;
+        taskName?: string;
+        roots?: string[];
+        capabilities?: RegisterAgentRunRequest['requestedCapabilities'];
+      },
+    ) =>
+      kernel.actor.call(() =>
+        kernel.run().work.registerAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId: over.id,
+          nodeId: pathDerivedId('nod', over.id),
+          agentRef: ref(over.agent),
+          effort: 'high',
+          workspaceViewId: 'main',
+          requestedCapabilities:
+            over.capabilities ??
+            (over.agent === 'explorer' ? ['repo.read'] : ['repo.read', 'workspace.write']),
+          writeRoots: over.roots ?? [],
+          display: { label: over.id },
+          ...(over.delegationId === undefined
+            ? {}
+            : { delegationId: over.delegationId, taskName: over.taskName ?? '' }),
+          mission: {
+            missionId: over.missionId,
+            ...(over.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: over.parentMissionId }),
+          },
+        }),
+      );
+    const end = (kernel: Kernel, agentRunId: string, missionContinues = false) =>
+      kernel.actor.call(() =>
+        kernel.run().work.endAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId,
+          ...(missionContinues ? { missionContinues } : {}),
+        }),
+      );
+    // The root registered by `open` is a task of its own: its id is the AgentRun's.
+    const rootOf = (kernel: Kernel) => kernel.agentRunId;
+    const mission = () => pathDerivedId('msc', newId('ses'));
+
+    it('registers the later segments of a task that slept, one at a time, until it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = {
+        agent: 'worker',
+        missionId: task,
+        parentMissionId: rootOf(kernel),
+        roots: ['src/a'],
+      };
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: first, delegationId: dlg, taskName: 'a' })),
+      ).toBe('ACCEPTED');
+      // A second segment while the first runs is refused.
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_BUSY');
+      await end(kernel, first, true);
+      const second = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: second }))).toBe('ACCEPTED');
+      // It may not claim a share again, nor name another parent.
+      expect(
+        reasonOf(
+          await segment(kernel, { ...base, id: newId('agr'), delegationId: dlg, taskName: 'a' }),
+        ),
+      ).toBe('MISSION_BUSY');
+      await end(kernel, second, true);
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), parentMissionId: mission() })),
+      ).toBe('INVALID_INPUT');
+      const third = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: third }))).toBe('ACCEPTED');
+      await end(kernel, third);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_CLOSED');
+    });
+
+    it('lets a later segment only narrow what the first one could do', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = { agent: 'worker', missionId: task, parentMissionId: rootOf(kernel) };
+      await segment(kernel, {
+        ...base,
+        id: first,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src/a'],
+      });
+      await end(kernel, first, true);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src'] }))).toBe(
+        'CAPABILITY_NOT_SUBSET',
+      );
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src/a/inner'] })),
+      ).toBe('ACCEPTED');
+    });
+
+    it('keeps the write roots of a sleeping task held, and frees them when it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [
+          { name: 'a', agent: 'worker', roots: ['src'] },
+          { name: 'b', agent: 'worker', roots: ['src/b'] },
+        ]),
+      );
+      const parent = rootOf(kernel);
+      const taskA = mission();
+      const a = newId('agr');
+      await segment(kernel, {
+        id: a,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src'],
+      });
+      await end(kernel, a, true);
+      const b = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'b',
+        roots: ['src/b'],
+      };
+      // `a` sleeps, yet its roots are still its own.
+      expect(reasonOf(await segment(kernel, b))).toBe('WRITE_SCOPE_CONFLICT');
+      // `a` wakes and ends for good: its roots are free.
+      const wake = newId('agr');
+      await segment(kernel, {
+        id: wake,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        roots: ['src'],
+      });
+      await end(kernel, wake);
+      expect(reasonOf(await segment(kernel, { ...b, id: newId('agr') }))).toBe('ACCEPTED');
+    });
+
+    it('starts a task whose caller already went to sleep, but not one whose parent task ended', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      await segment(kernel, {
+        id: lead,
+        agent: 'lead',
+        missionId: leadMission,
+        parentMissionId: rootOf(kernel),
+        delegationId: dlg,
+        taskName: 'lead',
+        roots: ['src'],
+        capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      });
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'w', agent: 'worker', roots: ['src/w'] }], lead),
+      );
+      // The lead's segment goes to sleep before its worker starts.
+      await end(kernel, lead, true);
+      const worker = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'w',
+        roots: ['src/w'],
+      };
+      expect(reasonOf(await segment(kernel, worker))).toBe('ACCEPTED');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...worker,
+            id: newId('agr'),
+            missionId: mission(),
+            parentMissionId: mission(),
+          }),
+        ),
+      ).toBe('MISSION_NOT_FOUND');
+    });
+
+    it('lets a task below the root spawn, and none at the deepest level (Orchestration 3.6)', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            id: lead,
+            agent: 'lead',
+            missionId: leadMission,
+            parentMissionId: rootOf(kernel),
+            delegationId: dlg,
+            taskName: 'lead',
+            roots: ['src'],
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'deep', agent: 'lead', roots: ['src/deep'] }], lead),
+      );
+      const deep = {
+        id: newId('agr'),
+        agent: 'lead',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'deep',
+        roots: ['src/deep'],
+      };
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('CAPABILITY_NOT_SUBSET');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            id: newId('agr'),
+            capabilities: ['repo.read', 'workspace.write'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+    });
   });
 
   it('accepts the references of a handover to keep, and answers a repeat as the same request (Core 5g)', async () => {
@@ -1737,7 +2054,7 @@ describe('run control of Kernel/Core 5e', () => {
     expect(await prompt(kernel)).toMatchObject({ accepted: true });
     await kernel.settled();
     expect(kernel.run().control.phase).toBe('AWAITING_INPUT');
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'ABORTED' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'ABORTED' });
     expect(eventsOf(kernel, 'RunClosed')).toEqual([]);
   });
 
@@ -1771,7 +2088,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('interrupts a paused run when the pause lasts too long', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -1785,7 +2102,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('forgets the pause limit once the run is continued', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -1797,7 +2114,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('times a Turn out, without counting a pause', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A model call is out, so the run is working: the clock runs.
@@ -1819,7 +2136,7 @@ describe('run control of Kernel/Core 5e', () => {
     kernel.advance(6_000);
     rest?.due();
     await kernel.settled();
-    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'TURN_TIMEOUT' });
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'INPUT_TIMEOUT' });
     // Execution answers what it was running with INTERRUPTED; here the stand-in does it.
     for (const { unitAttemptId } of kernel.execution.started)
       await kernel.actor.call(() =>
@@ -1828,12 +2145,12 @@ describe('run control of Kernel/Core 5e', () => {
     await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
     await prompt(kernel);
     await kernel.settled();
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'TIMEOUT' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'TIMEOUT' });
   });
 
   it('does not count the time the whole run waits for the user', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A question to the user is open and nothing runs.
@@ -2089,6 +2406,14 @@ describe('reading outside the workspace (Kernel/Core 5h)', () => {
     expect(paused(kernel)).toMatchObject([
       { attempts: [{ reason: 'FAILED' }, { reason: 'UNAVAILABLE' }] },
     ]);
+  });
+
+  it('does not pause for a relative path, which names a file of the repository and no guess at the machine', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: 'TASK.md' });
+    await kernel.submit(readUnit, { path: 'notes' });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
   });
 
   it('starts the count from zero once the run is continued', async () => {

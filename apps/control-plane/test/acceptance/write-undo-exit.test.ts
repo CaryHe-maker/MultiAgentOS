@@ -330,6 +330,33 @@ describe('A: nested AGENTS.md', () => {
   );
 });
 
+describe('checkpoints (Orchestration 7.4, 7.5)', () => {
+  it(
+    'lists the start of every Turn with what changed after it, and shows the stretch of one',
+    async () => {
+      const place = await roots();
+      const { chat, provider } = await afterOneWrite(place);
+      provider.add(tool('write_file', { path: 'b.txt', content: 'bee\n' }), reply('added b'));
+      await chat.say('add b');
+      await turnEnded(chat);
+      await chat.console.submit('/checkpoints');
+      await until(
+        () => chat.printed('NOTICE').some((n) => n.includes('#2  第 2 次输入')),
+        'the list of checkpoints',
+      );
+      const list = chat.printed('NOTICE').find((n) => n.includes('#1  第 1 次输入')) ?? '';
+      expect(list).toContain('#1  第 1 次输入（之后改动 1 个文件）');
+      expect(list).toContain('#2  第 2 次输入（之后改动 1 个文件）');
+      await chat.console.submit('/diff #2');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('+bee')), 'the diff of #2');
+      expect(chat.printed('NOTICE').some((n) => n.includes('+bee') && n.includes('a.txt'))).toBe(
+        false,
+      );
+    },
+    TIMEOUT,
+  );
+});
+
 describe('H5: undo and diff', () => {
   it(
     'goes back without asking, one Turn at a time, and all at once',
@@ -352,7 +379,7 @@ describe('H5: undo and diff', () => {
       await turnEnded(chat);
 
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('two\n');
       expect(pendingUndo(chat)).toBe(false);
 
@@ -360,7 +387,7 @@ describe('H5: undo and diff', () => {
 
       await chat.console.submit('/undo');
       await until(
-        () => chat.printed('NOTICE').filter((n) => n.includes('已回退 1')).length === 2,
+        () => chat.printed('NOTICE').filter((n) => n.includes('已撤销')).length === 2,
         'the second undo',
       );
       expect(await readFile(file, 'utf8')).toBe('one\n');
@@ -376,9 +403,7 @@ describe('H5: undo and diff', () => {
       expect(seen).toContain('The user undid');
       expect(seen).not.toContain('first request zebra');
       const [sessionId = ''] = await sessionsIn(place.dataDir);
-      expect(await logOf(place.dataDir, sessionId)).toContain(
-        'first request zebra'.length > 0 ? 'WORKSPACE_REVERTED' : '',
-      );
+      expect(await logOf(place.dataDir, sessionId)).toContain('"undo":true');
     },
     TIMEOUT,
   );
@@ -396,7 +421,7 @@ describe('H5: undo and diff', () => {
       await chat.say('again');
       await turnEnded(chat);
       await chat.console.submit('/undo all');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 2')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
     },
     TIMEOUT,
@@ -425,7 +450,7 @@ describe('H8 and H10: changes from outside', () => {
       await chat.console.submit('/undo');
       await until(() => pendingUndo(chat), 'the second confirmation');
       await chat.console.submit('y');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
       // H10: not in the range of the undo, so it stays.
       expect(await readFile(join(place.repository, 'other.txt'), 'utf8')).toBe('other by hand\n');
@@ -485,7 +510,7 @@ describe('S4: forks', () => {
       // The fork's undo covers its own Turns only.
       await turnEnded(chat);
       await chat.console.submit('/undo all');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('two\n');
       await writeFile(file, 'fork again\n');
 
@@ -577,7 +602,7 @@ describe('L8: read_output', () => {
       await turnEnded(chat);
 
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       provider.add(tool('read_output', { toolCallId: listId }), reply('gone'));
       await chat.say('read it again');
       expect(contents(lastRequest(provider)).join('\n')).toContain('no tool call with this id');
@@ -692,21 +717,16 @@ describe('H5: an Orchestration run that has ended', () => {
     async () => {
       const place = await roots({ 'a.txt': 'one\n' });
       const file = join(place.repository, 'a.txt');
-      const handoff = scriptedChat(
-        tool('handoff_to_code_viewer', { task: 'look', focusAreas: [], openQuestions: [] }),
-      );
-      const provider = scriptedChat(
-        {
-          // No Agent of the analyze template writes yet , so the change comes from here.
-          response: async () => {
-            await writeFile(file, 'two\n');
-            return handoff.fetch('https://api.invalid', { body: '{}' });
-          },
+      const answer = scriptedChat(tool('reply', { text: 'done' }));
+      const provider = scriptedChat({
+        // The change comes from outside the run, while it works: the run leaves a Session behind.
+        response: async () => {
+          await writeFile(file, 'two\n');
+          return answer.fetch('https://api.invalid', { body: '{}' });
         },
-        tool('finish_analysis', { summary: 'done', conclusions: [], unconfirmed: [] }),
-      );
+      });
       const first = await chatOn(place, provider);
-      await first.console.run({ id: 'analyze', version: 'v0.1.0' }, 'look around');
+      await first.console.run({ id: 'mission', version: 'v0.1.0' }, 'look around');
       await first.close();
       expect(await readFile(file, 'utf8')).toBe('two\n');
 
@@ -717,7 +737,7 @@ describe('H5: an Orchestration run that has ended', () => {
       await until(() => chat.console.sessionId === sessionId, 'the Session');
       await turnEnded(chat);
       await chat.console.submit('/undo');
-      await until(() => chat.printed('NOTICE').some((n) => n.includes('已回退 1')), 'the undo');
+      await until(() => chat.printed('NOTICE').some((n) => n.includes('已撤销')), 'the undo');
       expect(await readFile(file, 'utf8')).toBe('one\n');
     },
     TIMEOUT,

@@ -124,6 +124,7 @@ export function createFakeSupervisor(
       if (pending === undefined || pending.runEpoch !== request.runEpoch) return;
       await end(request.executionId, { outcome: 'TERMINATED' }, request.reason);
     },
+    controlJob: () => Promise.resolve({ found: false as const }),
     shutdown: (request) => {
       shutdowns.push(request);
       return Promise.resolve();

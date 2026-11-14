@@ -80,7 +80,7 @@ const assembleInput: ExecutorInputByKind['CONTEXT_ASSEMBLE'] = {
     round: 1,
     maxRounds: 5,
     final: false,
-    budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+    budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
   },
 };
 
@@ -137,7 +137,6 @@ function registryUnderTest(): ExecutorRegistry {
 }
 
 const INPUTS: ExecutorInputByKind = {
-  REPOSITORY_ORIENT: { objective: 'Explain the fixture.', tokenBudget: 4_000 },
   REPOSITORY_SEARCH: { query: 'add', mode: 'AUTO', maxItems: 20, tokenBudget: 4_000 },
   REPOSITORY_LIST: { depth: 2 },
   FILE_READ: { path: 'src/math.ts' },

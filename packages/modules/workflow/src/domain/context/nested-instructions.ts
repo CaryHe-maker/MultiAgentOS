@@ -16,7 +16,7 @@ const outputField = (output: unknown, field: string): unknown =>
  * What this projection must read before its next assembly (Module/Workflow 8.2): every
  * `AGENTS.md` its `read_file` calls passed in this run and it has not loaded in this run,
  * outermost first as they were reported, and any it loaded that an approved write changed since.
- * A load in a reverted Turn does not count.
+ * A load in what an undo or a rewind took back does not count.
  */
 export function instructionsToLoad(
   records: readonly SessionLogRecord[],
@@ -33,6 +33,7 @@ export function instructionsToLoad(
   const skipped = new Set<string>();
   const wanted = new Set<string>();
   let turnId: string | undefined;
+  const loadedAt = new Map<string, number>();
 
   for (const record of records)
     switch (record.type) {
@@ -61,6 +62,7 @@ export function instructionsToLoad(
         }
         loadedEver.set(record.path, turnId);
         if (record.workflowRunId === workflowRunId) loadedThisRun.set(record.path, turnId);
+        loadedAt.set(record.path, record.seq);
         wanted.delete(record.path);
         break;
       }
@@ -70,6 +72,14 @@ export function instructionsToLoad(
         loadedEver.clear();
         skipped.clear();
         wanted.clear();
+        break;
+      case 'ROLLED_BACK':
+        // Loaded in what was taken back: it is loaded again when wanted (Orchestration 7.5).
+        for (const loaded of [loadedThisRun, loadedEver])
+          for (const path of [...loaded.keys()]) {
+            const at = loadedAt.get(path);
+            if (at !== undefined && at >= record.fromSeq && at < record.seq) loaded.delete(path);
+          }
         break;
       case 'WORKSPACE_REVERTED':
         for (const loaded of [loadedThisRun, loadedEver])

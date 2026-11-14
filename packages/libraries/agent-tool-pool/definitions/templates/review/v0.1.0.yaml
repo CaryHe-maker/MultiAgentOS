@@ -1,0 +1,65 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: review
+version: v0.1.0
+description: 'Pre-orchestrated: an independent, read-only review of changes against criteria.'
+agent: reviewer
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: an independent read-only review of changes against criteria
+  params:
+    - name: criteria
+      description: what the review checks (one per line), for example correctness, tests, style
+      required: true
+  phases:
+    - name: review
+      tasks:
+        agent: explorer
+        min: 1
+        max: 2
+      instructions: >-
+        Start 1 or 2 explorers that did not write the changes. Each goal names the files or the
+        change to review and the criteria, and asks for each finding with its file, line, why it
+        is wrong and how sure the reviewer is. Sleep until they have ended.
+    - name: report
+      instructions: >-
+        Check the findings you doubt by reading the code yourself, drop the ones that do not hold,
+        and finish with the findings by importance. You change no file.
+  example: |-
+    Example 1. Brief (from the root of a small language toolchain): goal "review lang/vm/ and
+    lang/stdlib/ before release"; criteria "no program can crash the VM: every failure is a
+    reported error of docs/spec.md section 6; deep recursion ends with E09, not with a crash
+    of the host; the standard library never reads or writes outside the folder the program
+    was given"; no writeScope.
+    review: two explorers that wrote none of it: "vm-review" reads lang/vm against the
+    criteria on errors and recursion; "stdlib-review" reads lang/stdlib against the rule on
+    files. Slept until both ended. vm-review found that CALL checks the depth for functions
+    of the program but not for native ones, so a sort with a recursive callback overflows the
+    stack of the host (vm/call.py line 61, sure). stdlib-review found that read_file joins
+    the path without resolving "..", so "../../notes.txt" is read (stdlib/files.py line 18,
+    sure), and that write_file does resolve it (no finding).
+    report: I read vm/call.py line 61 and stdlib/files.py line 18: both hold. finish_subagent
+    status done with the two findings, the path first because it reads outside the folder.
+
+    Example 2. Brief: goal "review the new rate limiter in api/limit/ before it ships";
+    criteria "limits hold under concurrent requests; a client cannot reset its limit by
+    changing a header; the limiter never blocks a request on a slow store".
+    review: one explorer that did not write it reads api/limit/ against the three criteria.
+    It found that the counter is read and written in two steps (api/limit/store.py line 41,
+    sure), so two requests at once both pass.
+    report: I read line 41 and the store: there is no atomic increment; the finding holds.
+    finish_subagent status done with the race first, with file and line.
+
+    Example 3. Brief: goal "review the migration scripts of this release"; criteria "every
+    migration can be rolled back; none locks a large table for long; data is never lost".
+    review: two explorers: one reads the up and down scripts for rollback and data loss, one
+    looks for statements that lock tables (ALTER on large tables, missing CONCURRENTLY).
+    report: three findings; I dropped one after reading it (the table is small), kept two:
+    0042 drops a column its down script cannot restore, and 0043 builds an index without
+    CONCURRENTLY on the orders table.

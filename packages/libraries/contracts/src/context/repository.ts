@@ -1,27 +1,12 @@
 import { Type, type Static } from 'typebox';
-import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import {
   LINE_RANGE_ERROR,
   closed,
-  count,
   isLineRange,
   lineRange,
   text,
 } from '../platform-common/schema-helpers.js';
-
-export const RepositoryOrientOutputSchema = closed(
-  {
-    snapshotId: IdSchemas.snapshotId,
-    fileCount: count(),
-    totalBytes: count(),
-    summary: text(4000, 0),
-    tokenCount: count(),
-    truncated: Type.Boolean(),
-  },
-  'context.RepositoryOrientOutput.v1',
-);
-export type RepositoryOrientOutput = Static<typeof RepositoryOrientOutputSchema>;
 
 export const SEARCH_MODES = ['AUTO', 'TEXT', 'PATH', 'SYMBOL'] as const;
 export type SearchMode = (typeof SEARCH_MODES)[number];
@@ -60,10 +45,3 @@ export const RepositorySearchOutputSchema = closed(
   'context.RepositorySearchOutput.v1',
 );
 export type RepositorySearchOutput = Static<typeof RepositorySearchOutputSchema>;
-
-/** Names the goal by reference; Execution resolves it into `OrientExecutorInput`. */
-export const RepositoryOrientInputSchema = closed(
-  { objectiveRef: ArtifactRefSchema },
-  'context.RepositoryOrientInput.v1',
-);
-export type RepositoryOrientInput = Static<typeof RepositoryOrientInputSchema>;

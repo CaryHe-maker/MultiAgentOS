@@ -25,9 +25,9 @@ export const KernelConfigSchema = closed(
     cancelGraceMs: ms(),
     /** How long a pausing run lets its READ Units finish before it cancels them (M2Design 4.4). */
     pauseDrainMs: ms(),
-    /** The longest a Turn of Turn-chat works, not counting a pause or waiting for the user (7.4). */
-    turnTimeoutSeconds: count(1),
-    /** The same for an Orchestration run, which is one Turn. */
+    /** The longest the work of one input of Turn-chat goes on, not counting a pause (7.4). */
+    inputTimeoutSeconds: count(1),
+    /** The same for an Orchestration run, which is the work of its one input. */
     orchestrationTimeoutSeconds: count(1),
     /** The longest a run stays paused before it is interrupted (M2Design 4.3). */
     maxPauseSeconds: count(1),
@@ -39,7 +39,6 @@ export const KernelConfigSchema = closed(
     /** Appended to the default exclusion rules; it can never remove one of them. */
     repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
-    maxReportBytes: count(1),
     /** The sandbox of commands (Interface/KernelSupervisor 9). */
     sandbox: closed({
       unavailable: Type.Enum(['deny', 'ask-unisolated']),
@@ -61,6 +60,13 @@ export const KernelConfigSchema = closed(
        * stand for their read-only subcommands.
        */
       readOnlyCommands: Type.Array(text(100)),
+      /**
+       * How a command that no list names is let through (M2Design 5.2, 2026-11-14): `auto` runs it
+       * without a question when it is in the sandbox, without the network, and parses reliably,
+       * once the run may write and read the repository; `ask` asks for each as before. A command
+       * with the network, of the critical list, or that cannot be parsed reliably is always asked.
+       */
+      approval: Type.Enum(['ask', 'auto']),
     }),
     /** The web tools (Kernel/Core 5f, ExecutorSet 5d); the key is the model provider's, not here. */
     web: closed({
@@ -124,12 +130,30 @@ export const KernelConfigSchema = closed(
     /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
       runTokenLimit: count(1),
-      turnTokenLimit: count(1),
-      orientBudget: count(1),
+      inputTokenLimit: count(1),
+      /**
+       * What happens when the work of an input is about to run out of `inputTokenLimit` while the
+       * run still has tokens (M2Design 7.3, rule 6): `ask` the user (y adds half of
+       * `inputTokenLimit`, n lets the work wrap up), `extend` without asking, or `stop` (wrap up,
+       * as before). At most `max` times for one input. `ask`, 4 times, when absent; a run nobody
+       * watches (an evaluation, a script) sets `stop` or `extend`.
+       */
+      extension: Type.Optional(
+        closed({
+          mode: Type.Enum(['ask', 'extend', 'stop']),
+          max: count(),
+        }),
+      ),
+      /**
+       * The share of a call's input the ledgers count it at (M2Design 7.3, rule 7): the reserves,
+       * the least share a task opens with and the reservation of every call take the input limits
+       * at this share, since most of a call's input is the cached prefix of the one before. 0.3
+       * when absent; 1 counts every call at its whole input limit, as before.
+       */
+      reserveShare: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1 })),
       searchBudget: count(1),
     }),
     executionLimits: closed({
-      REPOSITORY_ORIENT: ToolLimitSchema,
       REPOSITORY_SEARCH: ToolLimitSchema,
       REPOSITORY_LIST: ToolLimitSchema,
       FILE_READ: ToolLimitSchema,

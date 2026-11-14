@@ -24,6 +24,7 @@ export type {
   EndTool,
 } from './domain/agent/agent-cycle.js';
 export { projectHistory } from './domain/context/history-projection.js';
+export { compileTemplate } from './domain/graph/session-graph.js';
 export { callResultsOf } from './domain/spawn/spawn-graph.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { settleStaleRecords } from './session/settle-stale.js';
@@ -65,6 +66,13 @@ export interface WorkflowDeps {
     readonly reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED';
   };
   readonly now?: () => Date;
+  /**
+   * Whether the repository lies in a git work tree, as the composition root found it: when it does
+   * not, git_inspect is not offered, since every call of it could only fail.
+   */
+  readonly git?: boolean;
+  /** False turns off `context: inherit` of playbook phases (D35), for comparing the two. */
+  readonly inheritContext?: boolean;
 }
 
 /** The composition root serves the runner's three handlers at `inbox.workflow`. */
@@ -94,8 +102,10 @@ export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
     runtime: () => ({
       sandbox: SANDBOX_TEXT[deps.sandbox?.state ?? 'UNAVAILABLE'],
       currentDate: now().toISOString().slice(0, 10),
+      ...(deps.git === undefined ? {} : { git: deps.git }),
     }),
     now,
+    ...(deps.inheritContext === undefined ? {} : { inheritContext: deps.inheritContext }),
   });
   let running = false;
   return {

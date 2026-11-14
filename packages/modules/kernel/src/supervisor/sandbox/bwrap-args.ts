@@ -94,7 +94,8 @@ export function buildBwrapArgs(input: BwrapInput): string[] {
   args.push('--ro-bind', repo, repo);
   for (const root of profile.writableRoots) {
     const absolute = join(repo, root);
-    args.push('--bind', absolute, absolute);
+    // Not there yet: nothing to bind (the runner checked where it would be).
+    if (input.exists(absolute)) args.push('--bind', absolute, absolute);
   }
   for (const path of profile.protectedExisting) {
     const absolute = join(repo, path);

@@ -21,6 +21,9 @@ import {
   type ScriptedChat,
 } from '../acceptance/chat-driver.js';
 
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
+
 const TIMEOUT = 60_000;
 const directories: string[] = [];
 const open: Chat[] = [];
@@ -106,6 +109,7 @@ describe('a compromised model, made to act by what it read', () => {
           tool('run_subagents', {
             tasks: [{ name: 'look', agent: 'explorer', goal: 'find the auth code' }],
           }),
+          waitForTasks(),
           reply('done'),
         ],
         explorer: [

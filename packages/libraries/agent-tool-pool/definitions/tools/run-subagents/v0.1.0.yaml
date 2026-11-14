@@ -2,20 +2,54 @@ schemaVersion: v1
 kind: TOOL
 id: run-subagents
 version: v0.1.0
-description: Control tool that starts SubAgent tasks and returns their joined results.
+description: Control tool that starts SubAgent tasks that run while the caller goes on.
 purpose: CONTROL
 modelName: run_subagents
 modelDescription: >-
-  Start up to 8 subtasks that run in parallel, and get all their results back when every one has
-  finished. Each task has a unique name, an agent (explorer reads and reports, worker changes
-  files), a goal that stands on its own (the agent does not see your conversation), and optional
-  dependsOn (names of other tasks of this call; a task starts after them and receives their
-  results), acceptance (what its result must show), inputs (artifacts you hand over), effort and
-  budget (a token share). An explorer thinks at none or low, a worker at low, high or max; an
-  effort the agent does not allow is set to the nearest one it does, and the task still runs. Each result you get back is the summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a longer report, and the tool results the task handed over, are read with read_output by the reference ref_N/toolCallId shown with the result. A worker must have writeScope: the repository paths it may change, which must lie
-  within what you may write and must not overlap the scope of a worker that can run at the same
-  time. An explorer has no writeScope. While the tasks run you cannot write or run commands.
-  Call it on its own.
+  Start up to 8 subtasks that run in parallel. The call returns at once; the tasks run while you
+  go on, and their results come to you as they finish. To wait for them, call sleep with until
+  children: you are woken as each one ends, so you can use its result while the others work. A
+  task that must wait for another belongs in dependsOn rather than started at once. plan is the
+  plan of the whole work (what is delivered and how it is checked, the approach, the split, who
+  owns which part and which shared file or interface, the constraints): the root task of a long
+  task must give it with its first call, and every task below sees it, so goals need not repeat
+  it; a later plan replaces it. You cannot finish (reply or finish) while a task you started
+  still runs. Each task has a unique name, an agent, a goal that stands on its own (the agent
+  does not see your conversation), and optional dependsOn (names of other tasks of
+  this call; a task starts after them and receives their results), acceptance (what its result
+  must show), inputs (artifacts you hand over), effort and budget (a token share). An explorer
+  thinks at none or low, a worker or lead at low, high or max; an effort the agent does not allow
+  is set to the nearest one it does, and the task still runs. Each result you get back is the
+  summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a
+  longer report, and the tool results the task handed over, are read with read_output by the
+  reference ref_N/toolCallId shown with the result. A worker, lead or specialist must have
+  writeScope (a reviewer's is what it reviews, held still while it reads): the
+  repository paths it may change, which must lie within what you may write and must not overlap
+  the scope of another task that can run at the same time. An explorer has no writeScope. The
+  scope you give a task is lent to it: until it ends only it writes there, you write elsewhere,
+  and your commands see it read-only. commands false lends the scope without commands. role is
+  one line of what the task is responsible for (frontend, backend storage), which every task of
+  the work sees. continues gives work back to a task of yours that has ended: name it, use the
+  same agent, and the new task goes on from all of that task's history (the code it read, what it
+  tried) with your goal as what it is asked now; it costs far less than a new task that reads
+  everything again, so send a defect in a finished part back to its owner this way rather than
+  fixing it yourself. Tasks talk to each other with send_message. It may come with ordinary tool
+  calls in the same reply: the tasks start once those calls are back.
+  The agents: explorer reads and reports; worker changes files in its writeScope; lead runs a
+  large part with subtasks of its own. Specialists, for the root task only, each a lead that
+  works by a method the system checks and hands back one report: fixer (something fails and a
+  command shows it: it reproduces, finds the cause, fixes and runs the check again until it
+  passes; put the command in acceptance); reviewer (an important change read against criteria
+  by someone who did not write it, changing nothing; put the criteria in acceptance and
+  what it reviews in writeScope); tester
+  (acceptance tests written from a specification by tasks that build nothing, run against the
+  build, each failure traced to its rule; name the spec in the goal and how to run the tests in
+  acceptance); integrator (starts the whole system, runs its checks, traces each failure to its
+  part and fixes it there; put the start and check commands in acceptance); researcher
+  (knowledge from outside the repository, such as the web, other projects or the literature,
+  returned as a report with a source for every claim; the questions in the goal, the report's
+  path in writeScope). A specialist's rounds of fixing and checking happen inside it, so they
+  cost your context nothing.
 parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs

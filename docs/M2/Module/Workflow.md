@@ -14,7 +14,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | M1 | M2 | 依据 |
 |---|---|---|
 | 一条运行记录（`WorkflowRunRecord`），按 id 整体覆盖 | 以 Session 为单位的只追加会话日志；状态是日志的投影 | M2Design 第 10 节 |
-| 固定两步：planner 交接给 code-viewer | TaskGraph：AGENT 与 HUMAN 节点、GraphRevision、就绪即推进；M1 的两步成为内置模板 `analyze` | M2Design 第 3 节 |
+| 固定两步：planner 交接给 code-viewer | TaskGraph：AGENT 与 HUMAN 节点、GraphRevision、就绪即推进；M1 的两步已删除（M2Design v1.38） | M2Design 第 3 节 |
 | 一次输入、一次报告 | `chat` 生长规则：每条用户消息一个 Turn，main 以 `reply` 回复 | M2Design 第 2.2、3.8 节 |
 | 上下文只在一次运行内，组装时每次按固定顺序裁剪 | 由会话日志投影，跨 Turn、跨 WorkflowRun；只在末尾追加，不按调用裁剪；工具结果使用产生时固定的预览 | M2Design 第 9 节 |
 | — | `read_output` 的编号翻译：按 `toolCallId` 在发起者的范围内找到完整输出的引用（不含被回退的 Turn） | M2Design 第 8.2 节 |
@@ -29,7 +29,7 @@ Workflow 是业务推进与验收的权威：维护 TaskGraph、会话日志与 
 | 无业务熔断 | 重复意图、连续出错由 Workflow 判断 | M2Design 第 3.4 节 |
 | 运行超时由 Kernel 收敛 | Turn 超时按中止处理，结束由 Workflow 以 `closeRun(TIMEOUT)` 报告 | M2Design 第 2.3 节 |
 
-模型返回的解释、Validation、`failurePolicy`、Round 与 final-call、来源核验与报告（`analyze`）的规则沿用 M1，
+模型返回的解释、Validation、`failurePolicy`、Round 与 final-call、的规则沿用 M1（M1 的来源核验与报告随 `analyze` 删除），
 见归档的 [M1 Workflow](../../History/M1/Module/Workflow.md) 第 5–10 节；本文只写变化。
 
 ## 3. 职责
@@ -88,11 +88,8 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
   为 `false` 时（打开 Session、额度结束后继续），根节点按 `requested` 处理：重新发起上一个进程中未答复的人类请求，没有时请求新的开放输入。
 - **`chat`**：初始图为 `HUMAN(prompt) → main`。每当 main 节点结束（不论成败），追加 `GRAPH_EXTENDED(source: CHAT_GROWTH)`：
   新的 `HUMAN(prompt, requested)`（触发规则 `all_done`，依赖刚结束的 main）与依赖它的新 main 节点。
-- **`analyze`**：模板 `plan → view`（Interface/Definitions 第 4 节）；根节点 `HUMAN(prompt, initial)` 由编译加入。
-  `plan → view` 是条件边（`action = HANDOFF`，M2Design 第 3.8 节）：交接时 `view` 以交接内容为输入；`plan` 以 `finish` 结束时，`view` 记为 `SKIPPED(NOT_TAKEN)`，
-  `plan` 的报告即运行结果。planner 节点的结构化结果为 `{ action: 'HANDOFF' | 'FINISH', ... }`。
-- 校验函数 `validateExtension` 检查：节点名唯一、依赖存在、无环、只引用内置 Agent、条件边只出现在内置模板中，以及 `run_subagents` 的各项规则；使用者模板的编译与并行 main 节点的 `writeScope` 检查随 M2ReleasePlan phase 2。
-- 条件边的求值（M2Design 第 3.3 节的 `edgeState`）已实现，供 `analyze` 使用。
+- **`mission`**：模板 `deliver`，以 main 为负责人（Interface/Definitions 第 4 节）；根节点 `HUMAN(prompt, initial)` 由编译加入。
+- 模板在目录加载时检查（AgentToolPool 第 4 节），编译时再检查依赖存在与根任务的步骤成一条线（`GraphValidationError`）；`run_subagents` 的扩展由派生规则校验。没有条件边、循环与使用者模板（M2Design v1.38）。
 
 ### 6.2 推进
 
@@ -117,10 +114,10 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 沿用 M1 Workflow 第 5–8 节，变化如下：
 
 1. **登记**：AGENT 节点就绪时 `registerAgentRun`（带 `nodeId`、`effort`、`display.label`）；`effort` 取 Agent 定义的 `defaultEffort`。
-2. **启动 Unit**：main 没有启动 Unit，运行开启时不碰仓库；`analyze` 的 code-viewer 提交 `repository-orient`（M2Design 第 3.9 节）。
+2. **启动 Unit**：没有 Agent 有启动 Unit，运行开启时不碰仓库（M2Design 第 3.9 节）。
    **项目指令**：本运行第一个读取仓库的工具成功后，在下一次组装之前以 `readProjectFile` 读取 `AGENTS.md`，追加 `PROJECT_FILE_LOADED`；条目排在这一轮的工具结果之后，工具结果与它的调用不被隔开。
    一个文件在投影里只有一个位置：同一路径再次加载且内容不同时，新的取代旧的；遇到 `WORKSPACE_BOUND` 时所有项目指令条目（根目录和子目录的）与已加载的记录一并清掉，投影里追加一条给模型的说明（旧文件夹的文件、路径和项目指令可能不再适用，新文件夹的项目指令会重新读取，此前的改动不能回退），新运行在新文件夹里按上面的办法重新读取。读后才能改的基准与待加载的子目录指令同样只算 `WORKSPACE_BOUND` 之后的。
-3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；`finish` 与 `handoff-to-code-viewer` 只在 `analyze` 中出现；`update_todos` 见第 9 条。
+3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；子任务为 `finish_subagent`；`update_todos` 见第 9 条。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；
    为 EXHAUSTED 时不再发起模型调用，按 M1 的规则结束该 AgentRun（main 为降级回复，见第 9.1 节）。
    `QUOTA_EXHAUSTED` 同样进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT`。这是固定规则，不经过 Unit 的 `failurePolicy`；
@@ -242,7 +239,6 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 | AgentRun | 历史（M2Design 第 9.1 节） |
 |---|---|
 | main（`chat`） | 本 Session 全部 Turn，跨 WorkflowRun：每个 Turn 的人类输入、main 的步骤；中断与修复以说明性记录出现；之前 Orchestration 运行的结果以"运行结果 + 引用"出现 |
-| `analyze` 的 planner、code-viewer | 与 M1 相同 |
 
 投影是日志的纯函数：同一个日志前缀得到逐字节相同的 `context-assemble` 输入（不变量 7）。
 
@@ -308,17 +304,16 @@ reply(text) 合法 → 追加 MODEL_TURN
 - `message-publish` 的 UnitReport 中 `budget.run` 为 WRAP_UP 或 EXHAUSTED 时（按 Turn 结束时的余额判定，Kernel/Monitor 第 3.1 节），
   本 Turn 的回复发布后不再请求开放输入，而是 `closeRun(BUDGET)`（M2Design 第 7.3 节）；用户确认继续后，Kernel 在同一 Session 中开启新的运行。
 
-### 9.2 `analyze` 的报告
+### 9.2 Mission 的结果
 
-与 M1 Workflow 第 10 节相同：来源核验、AnalysisReport 或降级报告、`report-publish`。结束时 `closeRun(COMPLETED, resultRef = reportRef)`；
-因额度结束时为 `closeRun(BUDGET, resultRef = 降级报告)`。
+`output: true` 节点（`mission` 的 `deliver`）以 `reply` 结束时，它发布的回复即运行结果：`closeRun(COMPLETED, resultRef = 回复)`；它以降级通知结束而原因不是额度时，`mas run` 报告失败；因额度结束时为 `closeRun(BUDGET)`。M1 的 `analyze` 报告已删除（M2Design v1.38）。
 
 ### 9.2a 中断后的收敛
 
 Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInterrupted(reason)` 后，Workflow 不再调用模型，也不再提交任何 Unit：
 
 1. 在途与排队的 Unit 已由 Kernel 取消。它们的结果之后到达时，Workflow 不再等待：关闭用的 Unit 取代了全部待处理的请求，迟到的报告被忽略；
-2. 每个 ACTIVE 的 AgentRun 以确定性结果结束（`endAgentRun`，没有 final-call）：main 发布 `DEGRADED_REPLY`（`reason = INTERRUPTED(<原因>)`，不经过额度检查），`analyze` 发布降级报告；
+2. 每个 ACTIVE 的 AgentRun 以确定性结果结束（`endAgentRun`，没有 final-call）：main 发布 `DEGRADED_REPLY`（`reason = INTERRUPTED(<原因>)`，不经过额度检查）；
 3. 追加 `RUN_INTERRUPTED(reason)`、`NODE_ENDED(FAILED)`，然后 `closeRun(INTERRUPTED)`；Turn-chat 不再请求下一个开放输入；
 4. 重新打开该 Session 时按 Session 的恢复规则：对话照常延续，`RUN_INTERRUPTED` 以说明性记录出现在投影中，让 main 知道上一轮因何停止。
 
@@ -351,7 +346,7 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
 | 7：节点状态、就绪集合、模型上下文都是日志的纯函数 | 属性测试：对任意日志前缀重放，就绪集合与 `context-assemble` 输入与运行时一致（包括压缩与撤销压缩的记录）；投影不引用任何 `fullRef` |
-| 25：就绪集合只依赖日志中的结构化记录 | 属性测试：条件边只读前驱的结构化结果（`analyze` 的 `action`）；对任意日志前缀重放，就绪与跳过的集合与运行时一致；循环展开的部分随使用者模板（M2ReleasePlan phase 2） |
+| 25：就绪集合只依赖日志中的结构化记录 | 属性测试：对任意日志前缀重放，就绪与跳过的集合与运行时一致 |
 | 27：两次压缩之间只在末尾追加 | 属性测试：同一对象相邻两次组装的输入，前一次是后一次的前缀；运行时上下文变化只产生新的末尾条目 |
 | 30：模型只以 `toolCallId` 引用完整输出 | 单元测试：编号翻译覆盖 main 跨 WorkflowRun、已被压缩取代、Fork 继承、被 `/undo` 回退的 Turn（找不到）、SubAgent 读父 AgentRun 的编号（找不到）、编号重复取最近、未截断的调用、未截断而被修剪的调用；`FEEDBACK` 与投影中不出现 `fullRef` |
 | `update_todos` | 单元测试：参数校验；与普通工具同一次返回时先处理且不触发 `CONTROL_MIXED`；`TODOS_UPDATED` 不含正文；只调用它的轮计入无进展检测 |
@@ -359,4 +354,4 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | 13：每次用户输入都对应一个 HUMAN 节点 | 单元测试：初始提示、后续消息都形成 HUMAN 节点 |
 | 15：日志中只有引用，没有正文 | 单元测试：扫描日志记录，不出现用户输入、回复与工具参数的正文 |
 | 6：每个 AgentRun 都能完成收尾 | 场景测试：额度触顶、工具次数触顶、连续出错都进入 final-call，final-call 失败时得到降级回复 |
-| `analyze` 回归 | `analyze` 运行 F1–F5，成功率与来源完整性不低于 M1 基线（M2ReleasePlan 第 6 节） |
+| F1–F5 | 改用 Turn-chat 或 Mission 运行，作为评测体系中的普通任务记录（M2Design v1.38） |

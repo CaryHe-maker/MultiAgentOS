@@ -50,7 +50,6 @@ unitRefs:
     version: v0.1.0
   - id: message-publish
     version: v0.1.0
-startUnitRefs: []
 actions:
   end:
     - toolRef:
@@ -59,6 +58,34 @@ actions:
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v0.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v0.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v0.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v0.1.0
+  stop:
+    toolRef:
+      id: stop-subagents
+      version: v0.1.0
   todos:
     toolRef:
       id: update-todos

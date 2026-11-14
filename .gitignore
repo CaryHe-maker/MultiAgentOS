@@ -28,3 +28,6 @@ opencode.json
 *.log
 *.tmp
 *.bak
+
+# Python fixtures of the evaluation tasks, when run by hand.
+__pycache__/

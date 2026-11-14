@@ -4,7 +4,7 @@
  * a result quotes) is cleaned of control characters first: it goes to a terminal, and an escape
  * sequence in it could rewrite the screen.
  */
-import type { EntryView, SessionTimeline, TurnView } from './timeline.js';
+import type { EntryView, InputView, SessionTimeline } from './timeline.js';
 
 export interface RenderOptions {
   readonly sessionId?: string;
@@ -16,7 +16,7 @@ export interface SessionListItem {
   readonly sessionId: string;
   readonly createdAt: string;
   readonly lastActiveAt: string;
-  readonly turnCount: number;
+  readonly inputCount: number;
   readonly title?: string;
 }
 
@@ -163,12 +163,12 @@ function renderEntry(entry: EntryView, options: RenderOptions): string {
   }
 }
 
-function renderTurn(turn: TurnView, options: RenderOptions): string {
+function renderInput(turn: InputView, options: RenderOptions): string {
   const span =
     turn.endedAt === undefined
       ? '（没有结束记录）'
       : `→ ${clock(turn.endedAt)}（${duration(Math.max(0, Date.parse(turn.endedAt) - Date.parse(turn.startedAt)))}）· 结束：${turn.endReason ?? '未知'}`;
-  const lines = [`━━ 第 ${String(turn.index)} 轮  ${clock(turn.startedAt)} ${span}`];
+  const lines = [`━━ 第 ${String(turn.index)} 次输入  ${clock(turn.startedAt)} ${span}`];
   for (const text of turn.user)
     lines.push(text === undefined ? '你：（内容已过期或缺失）' : `你：${clip(text, options.full)}`);
   for (const entry of turn.entries) lines.push(renderEntry(entry, options));
@@ -184,15 +184,15 @@ export function renderTimeline(timeline: SessionTimeline, options: RenderOptions
       ...(timeline.startedAt === undefined ? [] : [`开始：${dateTime(timeline.startedAt)}`]),
       ...(timeline.sandbox === undefined ? [] : [`沙盒：${timeline.sandbox}`]),
     ].join('   '),
-    `${String(timeline.turns.length)} 轮 · ${String(totals.modelCalls)} 次模型调用 · ${String(totals.toolCalls)} 次工具调用 · 输入 ${number(totals.inputTokens)}（命中 ${number(totals.cacheHitTokens)}）· 输出 ${number(totals.outputTokens)}`,
+    `${String(timeline.inputs.length)} 次输入 · ${String(totals.modelCalls)} 次模型调用 · ${String(totals.toolCalls)} 次工具调用 · 输入 ${number(totals.inputTokens)}（命中 ${number(totals.cacheHitTokens)}）· 输出 ${number(totals.outputTokens)}`,
   ].filter((line) => line.length > 0);
   const body = [
-    ...timeline.turns.map((turn) => renderTurn(turn, options)),
+    ...timeline.inputs.map((turn) => renderInput(turn, options)),
     ...(timeline.outside.length === 0
       ? []
       : [
           [
-            '━━ 不属于任何一轮',
+            '━━ 不属于任何一次输入',
             ...timeline.outside.map((entry) => renderEntry(entry, options)),
           ].join('\n'),
         ]),
@@ -206,7 +206,7 @@ export function renderSessionList(items: readonly SessionListItem[]): string {
     '本仓库的对话（mas log <编号> 查看）：',
     ...items.map(
       (item, index) =>
-        `  ${String(index + 1)}. ${dateTime(item.lastActiveAt)}  ${String(item.turnCount)} 轮  ${
+        `  ${String(index + 1)}. ${dateTime(item.lastActiveAt)}  ${String(item.inputCount)} 次输入  ${
           item.title === undefined ? '（无标题）' : (clip(item.title, false).split('\n')[0] ?? '')
         }  ${item.sessionId}`,
     ),

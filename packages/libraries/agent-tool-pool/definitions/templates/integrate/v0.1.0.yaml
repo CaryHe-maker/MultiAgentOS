@@ -1,0 +1,90 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: integrate
+version: v0.1.0
+description:
+  'Pre-orchestrated: start the whole system, run its checks, trace each failure to its part,
+  fix it there, and check the whole again.'
+agent: integrator
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary:
+    start the whole system, run its checks, trace each failure to the part it comes from, fix it
+    there, and check the whole again until it passes
+  params:
+    - name: start
+      description: the command that starts the whole system, for example "docker compose up -d"
+      required: true
+    - name: check
+      description: the command that checks the whole, usually the acceptance tests
+      required: true
+  phases:
+    - name: run
+      instructions: >-
+        Start the system in the background with the start param (runInBackground) and wait
+        until it answers, then run the check. Read every failure and the log lines of the
+        services it touches, and trace it to the part (the folder) it comes from. Group the
+        failures by part. Do not start a worker before you know where each failure belongs.
+    - name: fix
+      tasks:
+        agent: worker
+        min: 1
+        max: 4
+        context: inherit
+      repeat: 3
+      instructions: >-
+        Start one worker for each part that has failures, with that part as its writeScope
+        (inside yours). Its goal names each failure (the test, the output, the log line), the
+        cause you traced, what must not change (the shared interfaces), and its acceptance: these
+        tests pass and the part's own unit tests still pass. Sleep until they have all ended;
+        start the system again and run the whole check. While rounds and failures are left, the
+        next round starts from what this one learned; never repeat a fix that did not work.
+    - name: report
+      instructions: >-
+        Finish with the output of the last whole check, each failure that was fixed with its
+        cause and part, and what is left with the cause you think it has.
+  example: |-
+    Example 1. Brief (from the root of a small language toolchain): goal "make the toolchain
+    pass its conformance tests"; start "make build"; check "python3 tests/conformance/run.py"; writeScope ["lang/"].
+    run: ran the start (it builds the toolchain; nothing stays running) and the check: 108 of
+    112 pass. closure_in_loop: I dumped the bytecode with the command line: the compiler emits
+    one slot for the loop variable where lang/bytecode.md says a fresh slot per iteration
+    (lang/compiler/). overflow_add: the bytecode is right, the VM's ADD wraps where the spec
+    says error E07 (lang/vm/). Two error tests: the lexer's token already carries the wrong
+    line (lang/lexer/).
+    fix (round 1): three workers: "compiler-fix" writeScope ["lang/compiler/"] (a fresh slot
+    per iteration as bytecode.md says; closure_in_loop passes; the compiler's unit tests
+    pass), "vm-fix" writeScope ["lang/vm/"] (ADD, SUB and MUL raise E07 on overflow) and
+    "lexer-fix" writeScope ["lang/lexer/"] (a trailing comment does not count a line twice).
+    Slept until all ended; built again; the check: 112 of 112 pass.
+    report: finish_subagent status done with the last check (112 passed) and the three causes
+    with their parts.
+
+    Example 2. Brief: goal "the web app and the API must work together: the e2e suite fails
+    after the API moved to /v2"; start "docker compose up -d"; check "npm run e2e"; writeScope
+    ["web/", "api/"].
+    run: 12 of 30 fail, all with 404 on /api/v1/...: the web client still calls v1 (web/src/
+    api.ts). One cause, one part.
+    fix (round 1): one worker "web-v2" writeScope ["web/"]: move every call in web/src/api.ts
+    to /v2, keep the names of the functions. Slept until it ended; the check: 29 of 30 pass;
+    test_upload fails with 413: the API's body limit is lower in v2 (api/server.ts).
+    fix (round 2): one worker "api-limit" writeScope ["api/"]: the v2 body limit back to 10 MB
+    as in v1. The check: 30 of 30 pass.
+    report: finish_subagent status done: the client called v1, and v2 had a lower body limit.
+
+    Example 3. Brief: goal "the nightly pipeline must run end to end again"; start
+    "make services"; check "make pipeline-test"; writeScope ["pipeline/"].
+    run: the check fails at the second stage: the loader writes dates as text, the aggregator
+    expects timestamps (pipeline/load/ writes, pipeline/aggregate/ reads; the interface in
+    pipeline/SCHEMA.md says timestamps). The part is the loader.
+    fix (round 1): one worker "load-dates" writeScope ["pipeline/load/"] to write timestamps as
+    SCHEMA.md says. The check still fails, now at the third stage, on an empty partition the
+    aggregator never handled. No round is left.
+    report: finish_subagent status partial: the loader is fixed; the aggregator fails on an
+    empty partition (pipeline/aggregate/run.py), which needs its own fix.

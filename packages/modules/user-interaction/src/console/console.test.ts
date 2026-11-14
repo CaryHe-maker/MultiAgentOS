@@ -117,6 +117,25 @@ describe('Console', () => {
     expect(t.live()?.queued).toEqual([]);
   });
 
+  it('takes a line that starts with a path for a message, and one that starts with a command for a command', async () => {
+    const t = setup();
+    await t.console.submit('/app/registry.py 里有一张表，请加两个处理函数');
+    expect(t.named('startSession')).toHaveLength(1);
+    expect(t.named('startSession')[0]?.request).toMatchObject({
+      prompt: { text: '/app/registry.py 里有一张表，请加两个处理函数' },
+    });
+
+    const sentence = setup();
+    await sentence.console.submit('/app has 3 scripts, run them in order');
+    expect(sentence.named('startSession')[0]?.request).toMatchObject({
+      prompt: { text: '/app has 3 scripts, run them in order' },
+    });
+
+    const other = setup();
+    await other.console.submit('/nonsense');
+    expect(other.named('startSession')).toHaveLength(0);
+  });
+
   it('answers an open HumanRequest with the next line', async () => {
     const t = setup();
     await t.console.submit('hi');
@@ -221,7 +240,7 @@ describe('Console', () => {
     expect(t.printed).toContainEqual({ kind: 'REPLY', agentLabel: 'main', text: '做完了一半' });
     expect(t.printed).toContainEqual({
       kind: 'NOTICE',
-      text: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
+      text: '上下文已满，这次的工作提前结束了；可以用 /new 开始新对话继续。',
     });
   });
 
@@ -328,6 +347,49 @@ describe('Console', () => {
     });
   });
 
+  it('keeps every live task in the tree by its task, a sleeping one too, until it ends', async () => {
+    const t = setup({ clock: { ms: 60_000 } });
+    await t.console.submit('hi');
+    const at = (ms: number) => new Date(ms).toISOString();
+    const activity = (
+      agentRunId: string,
+      label: string,
+      phase: 'THINKING' | 'SLEEPING' | 'ENDED',
+      ms: number,
+      missionId: string,
+      parentMissionId?: string,
+    ) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId,
+        missionId,
+        ...(parentMissionId === undefined ? {} : { parentMissionId }),
+        label,
+        phase,
+        at: at(ms),
+      });
+    const tree = () => t.live()?.activity.map((line) => [line.branch, line.label, line.phase]);
+    await activity('arn_main1', 'main', 'THINKING', 0, 'msc_root');
+    await activity('arn_lead1', 'lead api', 'THINKING', 1000, 'msc_api', 'msc_root');
+    await activity('arn_w1', 'worker store', 'THINKING', 2000, 'msc_store', 'msc_api');
+    // main sleeps: its line stays, and the tree below it stays whole.
+    await activity('arn_main1', 'main', 'SLEEPING', 3000, 'msc_root');
+    // The lead sleeps too, while its worker works.
+    await activity('arn_lead1', 'lead api', 'SLEEPING', 4000, 'msc_api', 'msc_root');
+    expect(tree()).toEqual([
+      ['', 'main', '休眠中'],
+      ['  └─ ', 'lead api', '休眠中'],
+      ['     └─ ', 'worker store', '思考中'],
+    ]);
+    // The worker ends; the lead wakes in a new segment, on the same line of the tree.
+    await activity('arn_w1', 'worker store', 'ENDED', 5000, 'msc_store', 'msc_api');
+    await activity('arn_lead2', 'lead api', 'THINKING', 5500, 'msc_api', 'msc_root');
+    expect(tree()).toEqual([
+      ['', 'main', '休眠中'],
+      ['  └─ ', 'lead api', '思考中'],
+    ]);
+  });
+
   it('gives queued messages back when the run ends and offers to continue after BUDGET', async () => {
     const t = setup();
     await t.console.submit('hi');
@@ -342,7 +404,7 @@ describe('Console', () => {
 
   it('resolves `mas run` with the exit code of its outcome', async () => {
     const t = setup();
-    const exit = t.console.run({ id: 'analyze', version: 'v0.1.0' }, '分析');
+    const exit = t.console.run({ id: 'mission', version: 'v0.1.0' }, '完成');
     await Promise.resolve();
     await t.event({ type: 'RunFinished', closeReason: 'VIOLATION' } as KernelToInteractionEvent);
     await expect(exit).resolves.toBe(3);
@@ -359,8 +421,8 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_1', title: 'one', turnCount: 8, here: true, repositoryRoot: '/repo' },
-          { sessionId: 'ses_2', turnCount: 22, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_1', title: 'one', inputCount: 8, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_2', inputCount: 22, here: true, repositoryRoot: '/repo' },
         ],
       },
     } as never);
@@ -369,7 +431,7 @@ describe('Console', () => {
     expect(header?.text).toBe('本仓库最近的对话（/resume <编号> 打开）：');
     expect(list).toMatchObject({ kind: 'LIST' });
     expect(list?.text.split('\n')).toHaveLength(2);
-    expect(list?.text).toContain('1. one（8 轮）');
+    expect(list?.text).toContain('1. one（8 次输入）');
   });
 
   it('resumes a listed Session by its number and exits on a second Ctrl+C in time', async () => {
@@ -379,7 +441,7 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_2', title: 'a', turnCount: 2, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_2', title: 'a', inputCount: 2, here: true, repositoryRoot: '/repo' },
         ],
       },
     } as never);
@@ -405,11 +467,11 @@ describe('Console', () => {
       event: {
         type: 'SessionList',
         sessions: [
-          { sessionId: 'ses_h', title: 'here', turnCount: 3, here: true, repositoryRoot: '/repo' },
+          { sessionId: 'ses_h', title: 'here', inputCount: 3, here: true, repositoryRoot: '/repo' },
           {
             sessionId: 'ses_o',
             title: 'there',
-            turnCount: 5,
+            inputCount: 5,
             here: false,
             repositoryRoot: '/other',
           },
@@ -421,7 +483,7 @@ describe('Console', () => {
       const t = setup();
       await t.console.handleSystemEvent(list);
       const lists = t.printed.filter((each) => each.kind === 'LIST').map((each) => each.text);
-      expect(lists).toEqual(['  1. here（3 轮）', '  2. there（5 轮，原来在 /other）']);
+      expect(lists).toEqual(['  1. here（3 次输入）', '  2. there（5 次输入，原来在 /other）']);
       const headers = t.printed.filter((each) => each.kind === 'NOTICE').map((each) => each.text);
       expect(headers.at(-1)).toContain('其他文件夹的对话');
     });
@@ -921,7 +983,7 @@ describe('a compaction the user asks for', () => {
     await t.event({
       type: 'ContextCompacted',
       trigger: 'USER',
-      compactedTurns: 2,
+      compactedInputs: 2,
       prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
     expect(t.live()?.activity).toEqual([]);
@@ -973,14 +1035,14 @@ describe('a compaction in the history', () => {
     await t.event({
       type: 'ContextCompacted',
       trigger: 'AUTO',
-      compactedTurns: 0,
+      compactedInputs: 0,
       prunedResults: 1,
     } as unknown as KernelToInteractionEvent);
     await t.event({
       type: 'ContextCompacted',
       trigger: 'AUTO',
       summaryRef: testArtifactRef('summary'),
-      compactedTurns: 3,
+      compactedInputs: 3,
       prunedResults: 2,
     } as unknown as KernelToInteractionEvent);
     // A summary that took in entries without a Turn of their own is a compaction all the same.
@@ -988,13 +1050,13 @@ describe('a compaction in the history', () => {
       type: 'ContextCompacted',
       trigger: 'USER',
       summaryRef: testArtifactRef('summary'),
-      compactedTurns: 0,
+      compactedInputs: 0,
       prunedResults: 0,
     } as unknown as KernelToInteractionEvent);
     const steps = t.printed.filter((entry) => entry.kind === 'STEP').map((entry) => entry.text);
     expect(steps).toEqual([
       '✓ 已修剪 1 个较大的工具结果',
-      '✓ 已压缩较早的对话（3 个 Turn，修剪 2 个工具结果）',
+      '✓ 已压缩较早的对话（3 次输入的内容，修剪 2 个工具结果）',
       '✓ 已压缩较早的对话',
     ]);
     expect(t.printed.some((entry) => entry.kind === 'NOTICE' && entry.text.includes('修剪'))).toBe(

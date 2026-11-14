@@ -1,9 +1,6 @@
 import {
-  AnalysisReportSchema,
   EXIT_CODE_MEMORY_PRESSURE,
   newId,
-  validate,
-  type AnalysisReport,
   type ArtifactRef,
   type BoundaryContext,
   type CloseReason,
@@ -17,7 +14,6 @@ import {
   type ShutdownSource,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
-import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
 import { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './input-limit.js';
 import type {
@@ -141,22 +137,58 @@ interface TimelineEntry {
 /** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
 const COMPACTION_LINE = 'compaction';
 
+const COMMANDS: ReadonlySet<string> = new Set([
+  '/help',
+  '/exit',
+  '/timeline',
+  '/think',
+  '/continue',
+  '/steer',
+  '/status',
+  '/sessions',
+  '/fork',
+  '/new',
+  '/resume',
+  '/delete',
+  '/undo',
+  '/compact',
+  '/diff',
+  '/checkpoints',
+  '/rewind',
+  '/recover',
+  '/output',
+]);
+
+/** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */
+function isCommandLine(input: string): boolean {
+  const [first = ''] = input.split(/\s+/u);
+  return COMMANDS.has(first) || (input.trim() === first && !first.slice(1).includes('/'));
+}
+
 /** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
-  T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
+  T extends {
+    readonly agentRunId: string;
+    readonly parentAgentRunId?: string | undefined;
+    readonly missionId?: string | undefined;
+    readonly parentMissionId?: string | undefined;
+  },
 >(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
-  const known = new Set(items.map((item) => item.agentRunId));
+  // A line is a task when it says which one, else its AgentRun; its parent likewise.
+  const idOf = (item: T) => item.missionId ?? item.agentRunId;
+  const parentOf = (item: T) =>
+    item.missionId !== undefined ? item.parentMissionId : item.parentAgentRunId;
+  const known = new Set(items.map(idOf));
   const ordered: { item: T; depth: number; branch: string }[] = [];
   const visit = (parent: string | undefined, depth: number, indent: string): void => {
-    const siblings = items.filter((item) =>
-      parent === undefined
-        ? item.parentAgentRunId === undefined || !known.has(item.parentAgentRunId)
-        : item.parentAgentRunId === parent,
-    );
+    const siblings = items.filter((item) => {
+      const above = parentOf(item);
+      return parent === undefined ? above === undefined || !known.has(above) : above === parent;
+    });
     for (const [index, item] of siblings.entries()) {
       const last = index === siblings.length - 1;
       ordered.push({ item, depth, branch: depth === 0 ? '' : `${indent}${last ? '└─ ' : '├─ '}` });
-      visit(item.agentRunId, depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+      visit(idOf(item), depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
     }
   };
   visit(undefined, 0, '');
@@ -502,7 +534,9 @@ export class Console {
       await this.#answer(pending, input);
       return;
     }
-    if (input.startsWith('/')) {
+    // A line that starts with a path ("/app/main.ts is broken", "/app has three scripts") is a
+    // message; only a known command, or a lone unknown word (a typo to point out), is a command.
+    if (input.startsWith('/') && isCommandLine(input)) {
       await this.#command(input);
       return;
     }
@@ -981,6 +1015,21 @@ export class Console {
           );
         break;
       }
+      case '/recover': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (sessionId === undefined || workflowRunId === undefined || argument !== undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const recovered = await this.#deps.gateway.recoverRun(
+          { requestId: newId('req'), sessionId, workflowRunId },
+          this.#context(),
+        );
+        if (recovered.outcome === 'REJECTED') this.#notice(describeReason(recovered.reasonCode));
+        else this.#notice(text.recovered);
+        break;
+      }
       case '/undo': {
         const sessionId = this.#sessionId;
         const workflowRunId = this.#workflowRunId;
@@ -992,7 +1041,7 @@ export class Console {
           this.#notice(text.notNow);
           break;
         }
-        const undone = await this.#deps.gateway.undoTurns(
+        const undone = await this.#deps.gateway.undo(
           {
             requestId: newId('req'),
             sessionId,
@@ -1035,8 +1084,38 @@ export class Console {
         break;
       }
       case '/diff':
-        await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        // `#N` is the N-th line of /checkpoints; a bare number counts checkpoints back from the last.
+        if (argument?.startsWith('#') === true)
+          await this.#showCheckpointDiff(Number(argument.slice(1)));
+        else await this.#showDiff(argument === undefined ? 1 : Number(argument));
         break;
+      case '/checkpoints':
+        await this.#showCheckpoints();
+        break;
+      case '/rewind': {
+        // Back to the N-th line of /checkpoints, while the run is paused (Orchestration 7.5).
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        const seq = Number(argument?.replace(/^#/u, ''));
+        if (
+          sessionId === undefined ||
+          workflowRunId === undefined ||
+          !Number.isSafeInteger(seq) ||
+          seq < 1
+        ) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const rewound = await this.#deps.gateway.rewindCheckpoint(
+          { requestId: newId('req'), sessionId, workflowRunId, checkpoint: seq },
+          this.#context(),
+        );
+        if (rewound.outcome === 'REJECTED')
+          this.#notice(
+            rewound.reasonCode === 'UNDO_NOT_AVAILABLE' ? text.rewindNeedsPause : text.noRewind,
+          );
+        break;
+      }
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
         if (ref === undefined) this.#notice(text.notNow);
@@ -1055,8 +1134,55 @@ export class Console {
       this.#notice(text.notNow);
       return;
     }
-    const diff = await this.#deps.gateway.diffTurns(
+    const diff = await this.#deps.gateway.diff(
       { requestId: newId('req'), sessionId, n },
+      this.#context(),
+    );
+    if (diff.outcome === 'REJECTED') {
+      this.#notice(text.noDiff);
+      return;
+    }
+    const body = await this.#read(diff.diffRef);
+    this.#notice(diff.files.length === 0 ? text.noDiff : terminalText(body ?? ''));
+  }
+
+  /** The checkpoints of the Session, numbered for `/diff #N` (Orchestration 7.4). */
+  async #showCheckpoints(): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const listed = await this.#deps.gateway.listCheckpoints(
+      { requestId: newId('req'), sessionId },
+      this.#context(),
+    );
+    if (listed.outcome === 'REJECTED' || listed.items.length === 0) {
+      this.#notice(text.noCheckpoints);
+      return;
+    }
+    let inputs = 0;
+    this.#notice(
+      listed.items
+        .map((item) =>
+          text.checkpointLine(
+            item.seq,
+            item.kind === 'INPUT' ? text.inputCheckpoint((inputs += 1)) : terminalText(item.label),
+            item.changedFiles,
+          ),
+        )
+        .join('\n'),
+    );
+  }
+
+  async #showCheckpointDiff(seq: number): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined || !Number.isSafeInteger(seq) || seq < 1) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const diff = await this.#deps.gateway.diff(
+      { requestId: newId('req'), sessionId, checkpoint: seq },
       this.#context(),
     );
     if (diff.outcome === 'REJECTED') {
@@ -1102,7 +1228,7 @@ export class Console {
                 text.sessionLine(
                   index + 1,
                   terminalText(session.title ?? text.untitled),
-                  session.turnCount,
+                  session.inputCount,
                 ),
               )
               .join('\n'),
@@ -1117,7 +1243,7 @@ export class Console {
                 text.otherFolderSessionLine(
                   here.length + index + 1,
                   terminalText(session.title ?? text.untitled),
-                  session.turnCount,
+                  session.inputCount,
                   terminalText(session.repositoryRoot),
                 ),
               )
@@ -1136,10 +1262,12 @@ export class Console {
       case 'SessionOpened':
         this.#sessionId = envelope.sessionId;
         this.#notice(
-          text.sessionOpened(terminalText(event.title ?? text.untitled), event.turnCount),
+          text.sessionOpened(terminalText(event.title ?? text.untitled), event.inputCount),
         );
         if (event.divergedFiles !== undefined)
           this.#notice(text.diverged(event.divergedFiles.length));
+        if (event.interruptedRun !== undefined)
+          this.#notice(text.interruptedRun(terminalText(event.interruptedRun.label)));
         break;
       case 'SessionFailed':
         if (this.#sessionId === envelope.sessionId) {
@@ -1208,6 +1336,7 @@ export class Console {
         break;
       }
       case 'HumanResolved': {
+        if (event.resolution === 'WITHDRAWN') this.#notice(text.followUp);
         if (this.#openRequest === event.humanRequestId) this.#openRequest = undefined;
         const index = this.#pending.findIndex(
           (item) => item.kind === 'QUESTION' && item.humanRequestId === event.humanRequestId,
@@ -1256,7 +1385,7 @@ export class Console {
         this.#deps.view.print({
           kind: 'STEP',
           text: text.compacted(
-            event.compactedTurns,
+            event.compactedInputs,
             event.prunedResults,
             event.summaryRef !== undefined,
           ),
@@ -1277,8 +1406,12 @@ export class Console {
           ),
         });
         break;
-      case 'WorkspaceReverted':
-        this.#notice(text.undone(event.revertedTurnIds.length));
+      case 'CheckpointRolledBack':
+        this.#notice(
+          event.undo === true
+            ? text.undone(event.files.length)
+            : text.rewound(terminalText(event.label), event.files.length),
+        );
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(
@@ -1313,12 +1446,23 @@ export class Console {
             label: terminalText(event.label),
             from: event.at,
           });
-        if (event.phase === 'ENDED' && entry !== undefined) entry.to = event.at;
+        // A segment ends when its task sleeps, as when it ends.
+        if ((event.phase === 'ENDED' || event.phase === 'SLEEPING') && entry !== undefined)
+          entry.to = event.at;
+        // A task woken again: its new segment takes the place of the line it slept on.
+        if (event.missionId !== undefined)
+          for (const [agentRunId, line] of this.#activity)
+            if (line.missionId === event.missionId && agentRunId !== event.agentRunId)
+              this.#activity.delete(agentRunId);
         this.#activity.set(event.agentRunId, {
           agentRunId: event.agentRunId,
           ...(event.parentAgentRunId === undefined
             ? {}
             : { parentAgentRunId: event.parentAgentRunId }),
+          ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+          ...(event.parentMissionId === undefined
+            ? {}
+            : { parentMissionId: event.parentMissionId }),
           label: terminalText(event.label),
           phase: text.phase[event.phase],
           // Waiting for the user is not work that is taking long: no seconds are counted for it.
@@ -1356,7 +1500,7 @@ export class Console {
           });
         break;
       case 'RunFinished':
-        await this.#runFinished(event);
+        this.#runFinished(event);
         break;
     }
     this.#refresh();
@@ -1382,6 +1526,8 @@ export class Console {
       return text.webSearch(event.queries.map(terminalText), terminalText(event.provider));
     if (event.capability === 'web.fetch')
       return text.webFetch(terminalText(event.host), terminalText(event.url));
+    if (event.capability === 'budget.extend')
+      return text.budgetExtend(event.used, event.limit, event.add, event.tasks);
     if (event.capability === 'external.read')
       return text.externalRead(
         terminalText(event.root),
@@ -1423,11 +1569,7 @@ export class Console {
       });
   }
 
-  async #published(
-    kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT',
-    agentLabel: string,
-    ref: ArtifactRef,
-  ) {
+  async #published(kind: 'REPLY' | 'DEGRADED_REPLY', agentLabel: string, ref: ArtifactRef) {
     const body = await this.#read(ref);
     if (kind === 'DEGRADED_REPLY') {
       let reason: string | undefined;
@@ -1445,28 +1587,16 @@ export class Console {
     this.#deps.view.print({ kind: 'REPLY', agentLabel, text: terminalText(body ?? '') });
   }
 
-  async #runFinished(event: RunFinished): Promise<void> {
+  #runFinished(event: RunFinished): void {
     this.#runState = 'CLOSED';
     this.#aborting = false;
     this.#activity.clear();
     this.#openRequest = undefined;
     this.#pending.splice(0);
-    if (event.resultRef !== undefined) {
-      const body = await this.#read(event.resultRef);
-      let report: AnalysisReport | undefined;
-      try {
-        const parsed = validate<AnalysisReport>(AnalysisReportSchema, JSON.parse(body ?? 'null'));
-        report = parsed.ok ? parsed.value : undefined;
-      } catch {
-        report = undefined;
-      }
-      if (report !== undefined)
-        this.#deps.view.print({ kind: 'REPORT', text: renderReport(report) });
-    }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
     // An interrupted conversation stays open: the log is complete, and the next message starts
-    // a new Turn (refused with the reason while memory is still short). Only a one-shot command
+    // a new input (refused with the reason while memory is still short). Only a one-shot command
     // leaves, with code 75, through the exit code of its close reason below.
     if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined)
       this.#continueOnInput = true;

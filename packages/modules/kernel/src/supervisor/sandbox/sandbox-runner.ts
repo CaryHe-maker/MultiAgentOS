@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -14,6 +15,8 @@ import { dirname, join, posix } from 'node:path';
 import {
   StopUnconfirmedError,
   approvalDigestOf,
+  type DetachedExit,
+  type DetachedProcess,
   buildSandboxEnvironment,
   countSandboxDenials,
   type SandboxRefusal,
@@ -132,6 +135,25 @@ const isDirectory = (path: string): boolean => {
   }
 };
 
+/** True when the path is there, a dangling link included. */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A write root that does not exist yet: its nearest existing parent is a real directory inside. */
+function missingInside(root: string, relative: string): boolean {
+  let parent = posix.dirname(relative);
+  while (parent !== '.' && parent !== '/' && !present(posix.join(root, parent)))
+    parent = posix.dirname(parent);
+  const absolute = parent === '.' ? root : posix.join(root, parent);
+  return insideRepository(root, parent) === absolute && isDirectory(absolute);
+}
+
 /** Why a workdir or write root cannot be used: it must be a real directory inside the repository. */
 function insideRepository(root: string, relative: string): string | undefined {
   const absolute = relative === '' || relative === '.' ? root : posix.join(root, relative);
@@ -164,6 +186,12 @@ function checkBeforeStart(scope: SandboxScope, command: string): SandboxRefusal 
   if (workdir === undefined || !isDirectory(workdir)) return 'WORKDIR_INVALID';
   for (const writable of profile.writableRoots) {
     const absolute = writable === '.' ? root : posix.join(root, writable);
+    // A write root the task has not created yet is not bound (a command cannot write it, the
+    // write tools can); the nearest part of it that exists must be a real directory inside.
+    if (!present(absolute)) {
+      if (!missingInside(root, writable)) return 'WORKDIR_INVALID';
+      continue;
+    }
     // A write root that is a link would let the bind land somewhere else.
     if (insideRepository(root, writable) !== absolute) return 'WORKDIR_INVALID';
   }
@@ -261,8 +289,19 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       let settled = false;
       const timers: NodeJS.Timeout[] = [];
 
+      // Once detached, what it prints goes to the job table instead (Orchestration 6.1).
+      let detached:
+        { output?: (chunk: Buffer) => void; exit?: (exit: DetachedExit) => void } | undefined;
+      let pendingExit: DetachedExit | undefined;
+      /** What it printed between the hand-over and the listener. */
+      const early: Buffer[] = [];
       const capture = (chunk: Buffer) => {
         started = true;
+        if (detached !== undefined) {
+          if (detached.output === undefined) early.push(chunk);
+          else detached.output(chunk);
+          return;
+        }
         const room = options.maxOutputBytes - size;
         if (chunk.byteLength > room) {
           truncated = true;
@@ -299,6 +338,45 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         live.delete(child);
         finish();
       };
+      const ended = (exit: DetachedExit) => {
+        if (detached === undefined) return;
+        for (const timer of timers) clearTimeout(timer);
+        gitConfig?.remove();
+        live.delete(child);
+        if (detached.exit === undefined) pendingExit = exit;
+        else detached.exit(exit);
+      };
+      /**
+       * Hands the running command over (Orchestration 6.1): the execution ends with what it
+       * printed so far, and the process runs on, no longer tied to the execution's signal.
+       */
+      const detach = (promoted: boolean) => {
+        if (settled || exited || detached !== undefined) return;
+        settled = true;
+        for (const timer of timers.splice(0)) clearTimeout(timer);
+        signal.removeEventListener('abort', stop);
+        detached = {};
+        const handle: DetachedProcess = {
+          onOutput: (listener) => {
+            if (detached === undefined) return;
+            detached.output = listener;
+            for (const chunk of early.splice(0)) listener(chunk);
+          },
+          onExit: (listener) => {
+            if (detached === undefined) return;
+            detached.exit = listener;
+            if (pendingExit !== undefined) listener(pendingExit);
+          },
+          stop: () => stop(),
+        };
+        resolve({
+          kind: 'DETACHED',
+          output: output(),
+          backend: scope.backend,
+          promoted,
+          process: handle,
+        });
+      };
       const output = () => Buffer.concat(chunks).toString('utf8');
 
       /** SIGTERM to the command's own group, SIGKILL to the outer group, then wait for the exit. */
@@ -315,6 +393,10 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
             timers.push(
               setTimeout(() => {
                 if (exited) return;
+                if (detached !== undefined) {
+                  ended({ exitCode: null, signal: null, stopped: true, unconfirmed: true });
+                  return;
+                }
                 settle(() => reject(new StopUnconfirmedError(child.pid)));
               }, deps.killGraceMs),
             );
@@ -325,6 +407,10 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       signal.addEventListener('abort', stop, { once: true });
       timers.push(
         setTimeout(() => {
+          if (options.detach?.promoteOnTimeout === true) {
+            detach(true);
+            return;
+          }
           timedOut = true;
           stop();
         }, options.timeoutMs),
@@ -332,10 +418,18 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
 
       child.on('error', () => {
         exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode: null, signal: null, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
         settle(() => resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' }));
       });
       child.on('close', (exitCode, exitSignal) => {
         exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode, signal: exitSignal, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
         settle(() => {
           const text = output();
           // bwrap itself failing to set up its namespaces says so before the command prints.
@@ -361,6 +455,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
           });
         });
       });
+      if (options.detach?.immediately === true) detach(false);
     });
 
   return {

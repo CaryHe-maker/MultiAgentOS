@@ -1,6 +1,8 @@
 import {
   ReplyArgsSchema,
   RepositoryListInputSchema,
+  SendMessageArgsSchema,
+  UpdateTodosArgsSchema,
   newId,
   validate,
   SubmitUnitRequestSchema,
@@ -11,6 +13,7 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import {
+  answerDelegatedCall,
   closeAgent,
   receiveAgentReport,
   resumeAfterPause,
@@ -47,7 +50,6 @@ const unit = (id: string, failurePolicy: AgentUnit['failurePolicy'] = {}): Agent
 const definitions: AgentDefinitions = {
   label: 'main',
   limits: { maxRounds: 4, maxToolCallsPerRound: 2 },
-  orient: unit('repository-orient'),
   contextAssemble: unit('context-assemble'),
   modelCall: unit('model-call', { PROVIDER_ERROR: 'RETURN_TO_MODEL', PROVIDER_AUTH: 'FATAL' }),
   publish: unit('message-publish'),
@@ -66,7 +68,12 @@ const definitions: AgentDefinitions = {
       allowedInFinal: true,
       action: 'PUBLISH_REPLY',
     },
-    { toolName: 'handoff', parameters: ReplyArgsSchema, allowedInFinal: false, action: 'HANDOFF' },
+    {
+      toolName: 'submit',
+      parameters: ReplyArgsSchema,
+      allowedInFinal: false,
+      action: 'FINISH_SUBAGENT',
+    },
   ],
   onDegraded: 'PUBLISH_NOTICE',
 };
@@ -82,7 +89,6 @@ const config: AgentConfig = {
   regenerationLimit: 3,
 };
 const context: AgentContext = {
-  objectiveRef: ref('9'),
   assembleInput: (status, final) => ({ final, history: [], status }),
 };
 const start = (overrides: Partial<AgentDefinitions> = {}) =>
@@ -90,14 +96,13 @@ const start = (overrides: Partial<AgentDefinitions> = {}) =>
     {
       workflowRunId: newId('wfr'),
       sessionId: newId('ses'),
-      turnId: newId('trn'),
       agentRunId: 'agr_01ABCDEFGH',
       definitions: { ...definitions, ...overrides },
     },
     context,
   );
 
-const NORMAL: BudgetView = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' };
+const NORMAL: BudgetView = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 function report(
   state: AgentState,
   requestId: string,
@@ -162,11 +167,10 @@ const modelOutput = (
   ref: modelRef,
 });
 
-/** Runs orient and context, leaving the cycle waiting for the model. */
+/** Runs the context assembly, leaving the cycle waiting for the model. */
 function atModel(overrides: Partial<AgentDefinitions> = {}): AgentTransition {
   const started = start(overrides);
-  const assembled = receive(started, report(started.state, only(started), assembledOutput));
-  return receive(assembled, report(assembled.state, only(assembled), assembledOutput));
+  return receive(started, report(started.state, only(started), assembledOutput));
 }
 const replied = (
   from: AgentTransition,
@@ -181,20 +185,8 @@ function expectDegraded(from: AgentTransition, reason: string): void {
 }
 
 describe('startup', () => {
-  it('orients first, once per run', () => {
-    expect(unitId(start())).toEqual(['repository-orient']);
-    const again = startAgent(
-      {
-        workflowRunId: newId('wfr'),
-        sessionId: newId('ses'),
-        turnId: newId('trn'),
-        agentRunId: newId('agr'),
-        definitions,
-        orientPackRef: packRef,
-      },
-      context,
-    );
-    expect(unitId(again)).toEqual(['context-assemble']);
+  it('assembles the context first', () => {
+    expect(unitId(start())).toEqual(['context-assemble']);
   });
 
   it('writes the log before it submits, with IDs derived from the path', () => {
@@ -202,19 +194,13 @@ describe('startup', () => {
     expect(types(started)).toEqual(['UNIT_SUBMITTED']);
     const request = started.submissions[0];
     expect(validate(SubmitUnitRequestSchema, request).ok).toBe(true);
-    expect(request?.path).toBe('agr_01ABCDEFGH/round-0/1#1');
-  });
-
-  it('goes on without the overview when orient fails', () => {
-    const started = start();
-    const next = receive(started, report(started.state, only(started), { fail: 'PROVIDER_ERROR' }));
-    expect(unitId(next)).toEqual(['context-assemble']);
+    expect(request?.path).toBe('agr_01ABCDEFGH/round-1/1#1');
   });
 });
 
 describe('ending', () => {
   it('says only which declared tool ended it, whatever the tool is', () => {
-    for (const toolName of ['reply', 'handoff']) {
+    for (const toolName of ['reply', 'submit']) {
       const done = replied(atModel(), [call(toolName, { text: 'hi' })]);
       expect(done.ending).toMatchObject({
         kind: 'ENDED',
@@ -310,7 +296,7 @@ describe('ending', () => {
   it('closes with the last Unit and logs it by its source', () => {
     const done = replied(atModel(), [call('reply', { text: 'hi' })]);
     if (done.ending?.kind !== 'ENDED') throw new Error('not ended');
-    const input = { goalRef: ref('9'), report: { summary: 'secret summary' } };
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: 'main', reason: 'secret summary' } as const;
     const closing = closeAgent(done.state, input, done.ending.source);
     expect(unitId(closing)).toEqual(['message-publish']);
     expect(closing.submissions[0]?.input).toEqual(input);
@@ -325,7 +311,8 @@ describe('ending', () => {
 
   it('fails when the closing Unit fails', () => {
     const done = replied(atModel(), [call('reply', { text: 'hi' })]);
-    const closing = closeAgent(done.state, { goalRef: ref('9'), report: {} }, undefined);
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: 'main', reason: 'r' } as const;
+    const closing = closeAgent(done.state, input, undefined);
     const closed = receive(closing, report(closing.state, only(closing), { fail: 'INTERNAL' }));
     expect(closed.ending).toEqual({ kind: 'FAILED', code: 'INTERNAL' });
   });
@@ -485,9 +472,22 @@ describe('tools', () => {
 });
 
 describe('wrap-up', () => {
+  it("does not wrap a task up for the ledger of the input: that one is the root's own", () => {
+    // The root lent what it could, so the input's ledger is low; this task's share is untouched.
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const lent = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, lent));
+    expect(next.state.final).not.toBe(true);
+    expect(next.state.wrapUpReason).toBeUndefined();
+    // The run's ledger is everybody's: when it is low, the task wraps up.
+    const short = { ...NORMAL, run: 'WRAP_UP' } as const;
+    const last = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, short));
+    expect(last.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
+  });
+
   it('turns the next round into the final call when a ledger is low', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low));
     expect(next.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
     expect(next.records).toContainEqual(
@@ -510,7 +510,7 @@ describe('wrap-up', () => {
 
   it('ends degraded when the final call does not reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -522,7 +522,7 @@ describe('wrap-up', () => {
 
   it('still lets the final call reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -551,8 +551,7 @@ describe('wrap-up', () => {
   });
 
   it('takes a size the provider refused the same way as one it never saw', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const final = receive(
       assembling,
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
@@ -566,8 +565,7 @@ describe('wrap-up', () => {
   });
 
   it('wraps up a context over the limit, and degrades when the final call is too', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const final = receive(
       assembling,
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
@@ -641,6 +639,22 @@ describe('wrap-up', () => {
     expect(current.state).toMatchObject({ final: true, wrapUpReason: 'CONSECUTIVE_ERRORS' });
   });
 
+  it('counts the failures of one batch of calls once', () => {
+    const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 3 } };
+    const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 99 };
+    const calls = ['a', 'b', 'c'].map((path) => call('list_files', { path }, `call_${path}`));
+    let current = replied(atModel(roomy), calls);
+    for (const submission of current.submissions) {
+      current = receive(
+        current,
+        report(current.state, submission.requestId, { reject: 'NOT_FOUND' }),
+        strict,
+      );
+    }
+    expect(current.state.wrapUpReason).toBeUndefined();
+    expect(current.state.consecutiveErrors).toBe(1);
+  });
+
   it('stops a repeated intent at the limit', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
     const strict = {
@@ -700,22 +714,22 @@ describe('model failures', () => {
 describe('the final call', () => {
   it('refuses an end tool that is not allowed in it', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    expectDegraded(replied(final, [call('handoff', { text: 'brief' })]), 'FINAL_CALL_INVALID');
+    expectDegraded(replied(final, [call('submit', { text: 'brief' })]), 'FINAL_CALL_INVALID');
   });
 
   it('keeps the finishing call it refused, so that what it said is not lost', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    const refused = replied(final, [call('handoff', { text: 'brief' })]);
+    const refused = replied(final, [call('submit', { text: 'brief' })]);
     expect(refused.ending).toMatchObject({
       kind: 'DEGRADED',
       reason: 'FINAL_CALL_INVALID',
@@ -737,7 +751,7 @@ describe('every tool call gets an answer', () => {
     );
   const atFinal = () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, turn: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     return reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
@@ -751,7 +765,7 @@ describe('every tool call gets an answer', () => {
   });
 
   it('when the final call misuses an end tool', () => {
-    const done = replied(atFinal(), [call('handoff', { text: 'x' }, 'late')]);
+    const done = replied(atFinal(), [call('submit', { text: 'x' }, 'late')]);
     expect(answered(done)).toEqual(['late']);
   });
 
@@ -775,8 +789,7 @@ describe('every tool call gets an answer', () => {
 
 describe('what the log keeps of an assembly', () => {
   it('records the digests, and not the history it can rebuild', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const secret = 'history that must not repeat';
     const withHistory: AgentContext = {
       ...context,
@@ -936,5 +949,104 @@ describe('a pause or an abort cancels what is in flight (M2Design 4.4, 4.5)', ()
       records: [],
       submissions: [],
     });
+  });
+});
+
+describe('a request read before and not answered (Orchestration 5.3)', () => {
+  const owing: AgentContext = {
+    ...context,
+    owedReplies: (_agentRunId, answered) =>
+      answered.has('call_req') ? undefined : 'Not executed: you still have not answered call_req.',
+  };
+  const withTools = {
+    limits: { maxRounds: 20, maxToolCallsPerRound: 4 },
+    messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+    todoTool: { toolName: 'update_todos', parameters: UpdateTodosArgsSchema },
+  };
+  const answer = (from: AgentTransition, calls: readonly ModelToolCall[], ctx = owing) =>
+    receiveAgentReport(from.state, report(from.state, only(from), modelOutput(calls)), ctx, config);
+  const again = (from: AgentTransition) =>
+    receiveAgentReport(from.state, report(from.state, only(from), assembledOutput), owing, config);
+
+  it('refuses every call of the reply, and counts it apart from the regenerations', () => {
+    let current = atModel(withTools);
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      current = answer(current, [call('list_files', { path: 'a' }, `read_${String(attempt)}`)]);
+      const refusal = current.records.find(
+        (record) => record.type === 'FEEDBACK' && record.code === 'REPLY_OWED',
+      );
+      expect(refusal).toMatchObject({ toolCallId: `read_${String(attempt)}` });
+      expect(refusal?.type === 'FEEDBACK' ? refusal.message : '').toContain(
+        `refused ${String(attempt)} time`,
+      );
+      expect(unitId(current)).toEqual(['context-assemble']);
+      current = again(current);
+    }
+    expect(current.state).toMatchObject({ replyRefusals: 4, regenerations: 0 });
+    expect(current.state.wrapUpReason).toBeUndefined();
+  });
+
+  it('refuses a round of only todos as well', () => {
+    const todos = answer(atModel(withTools), [
+      call('update_todos', { todos: [{ content: 'read', status: 'in_progress' }] }, 'todo_1'),
+    ]);
+    expect(types(todos)).not.toContain('TODOS_UPDATED');
+    expect(todos.records).toContainEqual(
+      expect.objectContaining({ code: 'REPLY_OWED', toolCallId: 'todo_1' }),
+    );
+  });
+
+  it('takes a reply that answers it, with the other calls of the reply', () => {
+    const answered = answer(atModel(withTools), [
+      call('send_message', { to: 'api', kind: 'reply', replyTo: 'call_req', text: 'Got it.' }, 'm'),
+      call('list_files', { path: 'a' }, 'read'),
+    ]);
+    expect(answered.controls).toMatchObject([{ kind: 'MESSAGE', source: { toolCallId: 'm' } }]);
+    expect(unitId(answered)).toEqual(['repository-list']);
+    expect(answered.state.replyRefusals).toBe(0);
+  });
+
+  it('does not refuse the last call, which must be alone', () => {
+    const short = { ...withTools, limits: { maxRounds: 2, maxToolCallsPerRound: 4 } };
+    const refused = answer(atModel(short), [call('list_files', { path: 'a' }, 'read')]);
+    expect(refused.state.final).toBe(true);
+    const last = answer(again(refused), [call('reply', { text: 'done' }, 'end')]);
+    expect(last.ending).toMatchObject({ kind: 'ENDED', source: { toolCallId: 'end' } });
+  });
+});
+
+describe('a round of several calls is judged whichever comes back last (Orchestration 5.3)', () => {
+  const withMessage = {
+    limits: { maxRounds: 20, maxToolCallsPerRound: 4 },
+    messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+  };
+  const refusedLast = (failRead: boolean) => {
+    const round = replied(atModel(withMessage), [
+      call('list_files', { path: 'a' }, 'read'),
+      call('send_message', { to: 'api', text: 'hello' }, 'msg'),
+    ]);
+    const [read] = round.submissions;
+    if (read === undefined) throw new Error('a read expected');
+    const back = receive(
+      round,
+      report(round.state, read.requestId, failRead ? { reject: 'NOT_FOUND' } : { ok: {} }),
+    );
+    expect(back.submissions).toEqual([]);
+    // The runner refuses the message after the read has come back.
+    return answerDelegatedCall(
+      back.state,
+      'msg',
+      { refused: true, spawn: false, records: [] },
+      context,
+      config,
+    );
+  };
+
+  it('counts a round whose read failed and whose message was refused as no progress', () => {
+    expect(refusedLast(true).state.noProgress).toBe(1);
+  });
+
+  it('counts a round with a read that worked as progress, though its message was refused', () => {
+    expect(refusedLast(false).state.noProgress).toBe(0);
   });
 });

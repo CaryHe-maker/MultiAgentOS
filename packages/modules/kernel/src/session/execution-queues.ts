@@ -6,7 +6,8 @@
  *    together; WRITE, EXEC and MODEL are barriers: one starts only when everything before it has
  *    ended, and nothing after it starts before it has ended.
  *  - Between AgentRuns the queues run side by side, under global limits: attempts executing at
- *    once, EXEC executing at once, WEB (the search and the fetch of the web) executing at once in
+ *    once, EXEC executing at once (2026-11-14: several, as long as the roots they may write do not
+ *    meet; a command whose roots are not known runs alone), WEB (the web) executing at once in
  *    a pool of its own, and, with `serial`, one attempt at all. A WEB attempt waits for the
  *    network, not for a machine: it takes no place of the attempts, so a slow site cannot hold a
  *    model call back, and it is no barrier either.
@@ -24,7 +25,52 @@ export interface QueueEntry {
   readonly agentRunId: string;
   readonly cls: ConcurrencyClass;
   state: QueueState;
+  /**
+   * For an EXEC: the roots its sandbox may write. Commands whose roots do not meet run side by
+   * side; one without known roots (no sandbox) runs alone, as every command did before.
+   */
+  readonly roots?: readonly string[];
+  /**
+   * For an EXEC: what lies inside its roots but is mounted read-only for it, such as what its task
+   * lent to a subtask (Orchestration 8.2) or a protected file. It cannot write there.
+   */
+  readonly readOnly?: readonly string[];
 }
+
+/** `path` is `root` or lies under it; `.` is the repository root and holds every path. */
+const within = (path: string, root: string): boolean => {
+  const x = normalRoot(path);
+  const y = normalRoot(root);
+  return y === '.' || x === y || x.startsWith(`${y}/`);
+};
+
+/**
+ * Two commands could change the same file: a root of one lies in a root of the other, and not in
+ * what the outer one may only read. A task's command and its subtask's meet nowhere when the
+ * subtask works in what the task lent it, which the task's commands see read-only.
+ */
+const meet = (a: WriteArea, b: WriteArea): boolean =>
+  a.roots.some((left) =>
+    b.roots.some(
+      (right) =>
+        (within(right, left) && !a.readOnly.some((each) => within(right, each))) ||
+        (within(left, right) && !b.readOnly.some((each) => within(left, each))),
+    ),
+  );
+
+interface WriteArea {
+  readonly roots: readonly string[];
+  readonly readOnly: readonly string[];
+}
+
+const areaOf = (entry: QueueEntry, roots: readonly string[]): WriteArea => ({
+  roots,
+  readOnly: entry.readOnly ?? [],
+});
+
+/** A root with forward slashes and no slash at its end. */
+const normalRoot = (root: string): string =>
+  root.split(String.fromCharCode(92)).join('/').replace(/\/+$/u, '');
 
 export interface QueueLimits {
   readonly maxAttempts: number;
@@ -45,11 +91,14 @@ export class AttemptQueues<E extends QueueEntry> {
     this.#queues.set(entry.agentRunId, queue);
   }
 
-  /** Marks what may start now as RUNNING and returns it, oldest first. */
-  startable(limits: QueueLimits): E[] {
+  /**
+   * Marks what may start now as RUNNING and returns it, oldest first. An entry `allowed` refuses
+   * stays queued and blocks what stands behind it, like a barrier that has not started.
+   */
+  startable(limits: QueueLimits, allowed: (entry: E) => boolean = () => true): E[] {
     const started: E[] = [];
     for (;;) {
-      const next = this.#oldestEligible(limits);
+      const next = this.#oldestEligible(limits, allowed);
       if (next === undefined) return started;
       next.state = 'RUNNING';
       started.push(next);
@@ -78,17 +127,26 @@ export class AttemptQueues<E extends QueueEntry> {
   }
 
   /** What has not started, removed: the run is converging. */
-  drainQueued(): E[] {
+  /** Takes out what waits to run: of every AgentRun, or of one. */
+  drainQueued(agentRunId?: string): E[] {
     const queued: E[] = [];
-    for (const queue of this.#queues.values())
+    for (const [owner, queue] of this.#queues) {
+      if (agentRunId !== undefined && owner !== agentRunId) continue;
       for (const entry of [...queue])
         if (entry.state === 'QUEUED') {
           queued.push(entry);
           queue.splice(queue.indexOf(entry), 1);
         }
-    for (const [agentRunId, queue] of this.#queues)
-      if (queue.length === 0) this.#queues.delete(agentRunId);
+    }
+    for (const [owner, queue] of this.#queues) if (queue.length === 0) this.#queues.delete(owner);
     return queued;
+  }
+
+  /** What waits to start, oldest first. */
+  waitingQueued(): E[] {
+    return this.#all()
+      .filter((entry) => entry.state === 'QUEUED')
+      .sort((a, b) => a.seq - b.seq);
   }
 
   running(): E[] {
@@ -129,7 +187,18 @@ export class AttemptQueues<E extends QueueEntry> {
     if (limits.serial) return running + web < 1;
     if (entry.cls === 'WEB') return web < limits.maxWeb;
     if (running >= limits.maxAttempts) return false;
-    return !(entry.cls === 'EXEC' && exec >= limits.maxExec);
+    if (entry.cls !== 'EXEC') return true;
+    if (exec >= limits.maxExec) return false;
+    if (exec === 0) return true;
+    // Commands run side by side only where they cannot write the same files.
+    const mine = entry.roots;
+    if (mine === undefined) return false;
+    return this.#all().every(
+      (other) =>
+        other.state !== 'RUNNING' ||
+        other.cls !== 'EXEC' ||
+        (other.roots !== undefined && !meet(areaOf(other, other.roots), areaOf(entry, mine))),
+    );
   }
 
   /** Reads and the web go side by side; everything else is a barrier. */
@@ -137,7 +206,7 @@ export class AttemptQueues<E extends QueueEntry> {
     return limits.serial || (entry.cls !== 'READ' && entry.cls !== 'WEB');
   }
 
-  #oldestEligible(limits: QueueLimits): E | undefined {
+  #oldestEligible(limits: QueueLimits, allowed: (entry: E) => boolean): E | undefined {
     let best: E | undefined;
     for (const queue of this.#queues.values()) {
       for (let index = 0; index < queue.length; index += 1) {
@@ -148,6 +217,7 @@ export class AttemptQueues<E extends QueueEntry> {
           if (this.#isBarrier(entry, limits)) break;
           continue;
         }
+        if (!allowed(entry)) break;
         const before = queue.slice(0, index);
         const free = this.#isBarrier(entry, limits)
           ? before.length === 0

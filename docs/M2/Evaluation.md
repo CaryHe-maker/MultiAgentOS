@@ -37,7 +37,7 @@ M2 之后的工作大多是调提示词、加工具、设计工作流。每次�
 
 | 字段 | 内容 |
 |---|---|
-| `id`、`mode`、`tags`、`description` | 稳定的编号（不同版本的记录靠它对应）；目前 `mode` 只有 `chat`；标签用于选取与汇总 |
+| `id`、`mode`、`tags`、`description` | 稳定的编号（不同版本的记录靠它对应）；`mode` 是 `chat`（交互控制台）或 `mission`（`mas run` 一个模板，没有对话，步骤为 `run`）；标签用于选取与汇总 |
 | `fixture` | 把任务的文件放进一个空仓库 |
 | `steps` | 用户做什么：`say`（发消息并等回复）、`submit`（发一行，如 `/compact`，立即返回）、`awaitInput`、`waitFor` |
 | `answer` | 授权询问怎么回答，缺省全部允许 |
@@ -99,7 +99,13 @@ M2 之后的工作大多是调提示词、加工具、设计工作流。每次�
 - 需要的 fixture 在 `fixture` 里生成，不依赖外部状态；
 - 先用脚本化 provider 证明判分能判出通过与失败，再换真实模型运行。
 
-Turn-chat 的任务集在 phase 1 开头建立，并在改动任何提示词之前录下基线；预置工作流的任务集在 phase 2 开头同样处理。
+Turn-chat 的任务集在 phase 1 开头建立，并在改动任何提示词之前录下基线 1，优化达标后录基线 2；预置工作流的任务集在 phase 2 同样处理（M2ReleasePlan 第 3a 节）。
+
+## 7a. 编排任务集与对照实验
+
+- `tasks/orchestration.ts`、`tasks/orchestration-hard.ts`（`tag:orchestration`，难任务另有 `tag:hard`）：后台命令、超时转后台、读取与停止作业、子任务里的后台命令、并行子任务与休眠汇合、兄弟消息、停止与中断子任务，以及 `mission` 模式的大任务（小项目、键值存储、技术报告、分章综述、跨模块修复）。判分只看文件、模型没见过的验收命令（隐藏测试）与会话日志。
+- 设置 `EVAL_ARCHIVE=<目录>` 时，每次运行的 Session（含日志）与结束时的仓库留档，供复查失败。
+- 与 DeepSeek Harness 的大任务对照实验（M2Design 第 13 节 X 组）的设计见 [Phase2Plan](Phase2Plan.md) 第 4 节；`dsh` 与关闭派生的本项目作为对照组的驱动待加入（RP2-EV-2）。
 
 ## 8. 命令
 
@@ -115,6 +121,18 @@ pnpm run eval compare records/before.jsonl records/after.jsonl --fail-on-regress
 ```
 
 已经记录过的运行（同一任务、同一次、同一版本）会被跳过，所以中断后可以重新运行。运行是顺序的：真实模型的评测占内存与请求额度，不并行。
+
+**看着它跑**（2026-11-14）：`run` 在进程里驱动产品，没有界面。mission 任务也可以由人用 `mas run` 带界面运行，事后按同样的评分记下：
+
+```bash
+# 准备与评测时相同的仓库和一个只给这次运行用的数据目录，并打印运行与评分的命令
+pnpm run eval prepare --tasks study.healthhub --repo ~/hh --data ~/hh-data
+# 按打印出的命令运行：MULTIAGENTOS_CONFIG 指向数据目录，结束后退出码写进 ~/hh-data.exit
+# 评分：同一个评分函数（在仓库的副本上做，隐藏测试不留在仓库里），指标取自会话日志，追加与 run 相同的记录
+EVAL_ARCHIVE=~/eval-records/study3-archive pnpm run eval judge --tasks study.healthhub --repo ~/hh --data ~/hh-data --exit "$(cat ~/hh-data.exit)" --out ~/eval-records/study3.jsonl
+```
+
+两种方式的差别只有两处：授权询问由人回答，而不是一律同意；记录里 `provider` 为 `real`，请求预算不由评测控制（`mas` 自己的额度照常）。`judge` 要求数据目录里只有这一次运行的会话。
 
 ## 9. 规矩
 

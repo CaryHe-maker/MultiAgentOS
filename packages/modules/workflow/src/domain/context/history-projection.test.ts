@@ -11,7 +11,7 @@ const ref = (digit: string): ArtifactRef => {
   const sha256 = digit.repeat(64);
   return { artifactId: `art_${sha256}`, sha256, size: 1, mediaType: 'text/plain' };
 };
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
 const run = newId('wfr');
 const secondRun = newId('wfr');
 const turn = newId('trn');
@@ -148,10 +148,10 @@ describe('projectMainHistory', () => {
     );
   });
 
-  it('pins the prompt of the current Turn only', () => {
+  it('pins the latest input of the user only', () => {
     expect(
-      entries.filter((entry) => entry.category === 'PINNED').map((entry) => entry.turnId),
-    ).toEqual([secondTurn]);
+      entries.filter((entry) => entry.category === 'PINNED').map((entry) => entry.seq),
+    ).toEqual([conversation.at(-1)?.seq]);
   });
 
   it('uses the preview and never the full output', () => {
@@ -177,6 +177,28 @@ describe('projectMainHistory', () => {
     const changed = stamped([...conversation, context('2026-11-01')]);
     const notes = projectMainHistory(changed).filter((entry) => entry.kind === 'NOTE');
     expect(notes).toHaveLength(2);
+  });
+
+  it('says when the folder is no git repository, and that git_inspect is not offered', () => {
+    const noGit = stamped([
+      ...conversation,
+      {
+        ...context('2026-11-01'),
+        runtimeContext: {
+          workingDirectory: '/repo',
+          sandbox: 'none',
+          currentDate: '2026-11-01',
+          git: false,
+        },
+      },
+    ]);
+    const said = projectMainHistory(noGit).flatMap((entry) =>
+      entry.kind === 'NOTE' ? [entry.text] : [],
+    );
+    expect(said.at(-1)).toContain(
+      'Git: this folder is not a git repository, so git history cannot be read (git_inspect is not offered).',
+    );
+    expect(said.join(' ').match(/Git: /gu)).toHaveLength(1);
   });
 
   it('leaves out other agents and failed attempts', () => {
@@ -241,18 +263,14 @@ describe('project instructions', () => {
 });
 
 describe('a template node', () => {
-  const handoff = { outputRef: ref('7'), toolCallId: 'call_9' };
-
-  it('sees the goal, its handoff and its own steps only', () => {
+  it('sees the goal and its own steps only', () => {
     const entries = projectHistory(conversation, {
       kind: 'NODE',
       workflowRunId: run,
       agentRunId: viewerRun,
-      handoff,
     });
-    expect(entries.map((entry) => entry.kind)).toEqual(['HUMAN', 'HANDOFF']);
+    expect(entries.map((entry) => entry.kind)).toEqual(['HUMAN']);
     expect(entries.every((entry) => entry.category === 'PINNED')).toBe(true);
-    expect(entries[1]).toMatchObject(handoff);
   });
 
   it('does not see the steps of another Agent', () => {

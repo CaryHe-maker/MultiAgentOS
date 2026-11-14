@@ -69,7 +69,7 @@ describe('mas log', () => {
       const { dataDir, repository } = await conversation();
       const shown = await view(dataDir, repository);
       expect(shown.code).toBe(0);
-      expect(shown.out).toContain('第 1 轮');
+      expect(shown.out).toContain('第 1 次输入');
       expect(shown.out).toContain('你：read a.txt and tell me what is in it');
       expect(shown.out).toContain('调用：read_file {"path":"a.txt"}');
       expect(shown.out).toContain('工具 read_file  OK');
@@ -110,13 +110,13 @@ describe('mas log', () => {
       await chat.close();
       const listed = await view(dataDir, repository, { list: true });
       expect(listed.out).toContain('1. ');
-      expect(listed.out).toContain('1 轮');
+      expect(listed.out).toContain('1 次输入');
       const sessionId = /(ses_\S+)/u.exec(listed.out)?.[1];
       expect(sessionId).toBeDefined();
       for (const session of ['1', sessionId ?? '', (sessionId ?? '').slice(0, 10)]) {
         const shown = await view(dataDir, repository, { session });
         expect(shown.code, session).toBe(0);
-        expect(shown.out).toContain('第 1 轮');
+        expect(shown.out).toContain('第 1 次输入');
       }
       const missing = await view(dataDir, repository, { session: '9' });
       expect(missing.code).toBe(1);
@@ -130,15 +130,18 @@ describe('mas log', () => {
     async () => {
       const { dataDir, repository } = await conversation();
       const json = await view(dataDir, repository, { json: true });
-      const parsed = JSON.parse(json.out) as { sessionId: string; turns: { entries: unknown[] }[] };
+      const parsed = JSON.parse(json.out) as {
+        sessionId: string;
+        inputs: { entries: unknown[] }[];
+      };
       expect(parsed.sessionId).toMatch(/^ses_/u);
-      expect(parsed.turns).toHaveLength(1);
-      expect(parsed.turns[0]?.entries.length).toBeGreaterThan(1);
+      expect(parsed.inputs).toHaveLength(1);
+      expect(parsed.inputs[0]?.entries.length).toBeGreaterThan(1);
 
-      expect((await view(dataDir, repository, { turn: 1 })).code).toBe(0);
-      const none = await view(dataDir, repository, { turn: 2 });
+      expect((await view(dataDir, repository, { input: 1 })).code).toBe(0);
+      const none = await view(dataDir, repository, { input: 2 });
       expect(none.code).toBe(1);
-      expect(none.err).toContain('没有第 2 轮');
+      expect(none.err).toContain('没有第 2 次输入');
     },
     TIMEOUT,
   );

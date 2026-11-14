@@ -43,6 +43,8 @@ export interface CommandDemand {
   readonly unavailablePolicy: 'deny' | 'ask-unisolated';
   /** The user has allowed `repo.read` in this run: a Lease is held. */
   readonly repoReadGranted?: boolean;
+  /** `kernel.command.approval`; absent is `ask`. */
+  readonly approval?: 'ask' | 'auto';
 }
 
 export type Capability = ProtectedCapability;
@@ -154,6 +156,8 @@ export type UnitDecision =
       readonly resourceKey: string;
       /** A command of the read-only list: it runs in a sandbox that cannot write (Core 5b). */
       readonly readOnly?: true;
+      /** A command let through by `kernel.command.approval: auto`, without a question (5.2). */
+      readonly auto?: true;
     }
   | {
       readonly kind: 'REFUSE';
@@ -372,6 +376,30 @@ function decideCommand(
   }
   if (decided === 'ALLOW' || (!perAttempt && commandsCovered(entries, command, workdir)))
     return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir };
+  // ④c automatic approval (M2Design 5.2, 2026-11-14): the boundary is the sandbox without the
+  // network, not the name of a command. Such a command reaches only the repository, where it reads
+  // what read_file reads and writes inside the writable roots of its AgentRun, as write_file does;
+  // so it needs the same two answers, repo.read and workspace.write, once a run, and no question
+  // of its own. What the boundary does not hold is asked for each time: the network, a critical
+  // command, an unisolated run, a line that cannot be parsed reliably.
+  if (command.approval === 'auto' && !perAttempt && command.sandbox === 'AVAILABLE') {
+    if (command.repoReadGranted !== true && command.analysis.readsRepository !== false)
+      return {
+        kind: 'ASK',
+        capability: 'repo.read',
+        resourceKey: REPOSITORY_ROOT_PATH,
+        critical: false,
+      };
+    const unwritten = ceiling.writeRoots.find((root) => !granted(entries, 'workspace.write', root));
+    if (unwritten !== undefined)
+      return {
+        kind: 'ASK',
+        capability: 'workspace.write',
+        resourceKey: unwritten,
+        critical: false,
+      };
+    return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir, auto: true };
+  }
   // ⑤
   return {
     kind: 'ASK',

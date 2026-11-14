@@ -16,6 +16,10 @@ export const RunCommandArgsSchema = closed(
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS })),
     /** Needs `command.network`, which is asked every time and only main has. */
     network: Type.Optional(Type.Boolean()),
+    /** Starts it and answers at once; it runs on as a job of the task (Orchestration 6.1). */
+    runInBackground: Type.Optional(Type.Boolean()),
+    /** At `timeoutMs` the command moves to the background instead of being stopped; default true. */
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
   },
   'executor.RunCommandArgs.v1',
 );
@@ -28,6 +32,8 @@ export const CommandInputSchema = closed(
     workdir: Type.String({ maxLength: 1024 }),
     timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }),
     network: Type.Boolean(),
+    background: Type.Optional(Type.Boolean()),
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
   },
   'executor.CommandInput.v1',
 );
@@ -35,7 +41,12 @@ export type CommandInput = Static<typeof CommandInputSchema>;
 
 /** What the Executor gets once Core has decided the rest (workdir, network) into the scope. */
 export const CommandExecutorInputSchema = closed(
-  { command: text(8000), timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }) },
+  {
+    command: text(8000),
+    timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }),
+    background: Type.Optional(Type.Boolean()),
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
+  },
   'kernel.execution.CommandExecutorInput.v1',
 );
 export type CommandExecutorInput = Static<typeof CommandExecutorInputSchema>;
@@ -50,6 +61,11 @@ export const CommandOutputSchema = closed(
     sandboxDenials: count(),
     /** Present when the preview left something out. */
     retention: Type.Optional(RetentionNoticeSchema),
+    /**
+     * Present when the command runs on as a job (Orchestration 6.1): started in the background, or
+     * moved there at its timeout. The exit fields are then null and false.
+     */
+    job: Type.Optional(closed({ jobKey: text(64), promoted: Type.Boolean() })),
   },
   'executor.CommandOutput.v1',
 );

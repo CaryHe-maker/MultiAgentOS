@@ -11,7 +11,6 @@ import {
   nodePath,
   readyNodes,
   settleSkips,
-  validateExtension,
   wakeableNodes,
   withWaiting,
   type EdgeCall,
@@ -24,6 +23,8 @@ import {
   type SkippedNode,
   type Wake,
 } from './graph.js';
+import { childMissionId, templateMissionId } from './mission-tree.js';
+import { isRolledBack, rewoundRanges } from '../context/rolled-back.js';
 
 /**
  * The TaskGraph as the session log records it (M2Design 3.2, 3.8): building revisions for `chat`
@@ -40,27 +41,28 @@ interface NodeSpec {
   readonly trigger?: GraphNodeRecord['trigger'];
   readonly agentRef?: DefinitionRef;
   readonly goal?: string;
-  readonly inputFrom?: 'HANDOFF';
+  readonly guide?: string;
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
   readonly ask?: GraphNodeRecord['ask'];
+  readonly mission?: GraphNodeRecord['mission'];
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
-  const path = nodePath(workflowRunId, revision, spec.name, 1);
+  const path = nodePath(workflowRunId, revision, spec.name);
   return {
     nodeId: nodeIdOf(path),
     path,
     name: spec.name,
     kind: spec.kind,
     trigger: spec.trigger ?? 'all_success',
-    iteration: 1,
     ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
-    ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
+    ...(spec.guide === undefined ? {} : { guide: spec.guide }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
     ...(spec.ask === undefined ? {} : { ask: spec.ask }),
+    ...(spec.mission === undefined ? {} : { mission: spec.mission }),
   };
 }
 
@@ -70,10 +72,22 @@ const depends = (from: GraphNodeRecord, to: GraphNodeRecord): GraphEdgeRecord =>
   kind: 'DEPENDS',
 });
 
-/** `HUMAN(prompt) -> main`, the first revision of a Turn-chat run. */
-export function initialChatRevision(workflowRunId: string, mainRef: DefinitionRef): GraphRevision {
+/**
+ * `HUMAN(prompt) -> main`, the first revision of a Turn-chat run. Every main is a step of the one
+ * root task of the chat (Orchestration 3.5), whose id the Session gives.
+ */
+export function initialChatRevision(
+  workflowRunId: string,
+  mainRef: DefinitionRef,
+  rootMission: string,
+): GraphRevision {
   const prompt = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
-  const main = nodeOf(workflowRunId, 1, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  const main = nodeOf(workflowRunId, 1, {
+    name: 'main',
+    kind: 'AGENT',
+    agentRef: mainRef,
+    mission: { id: rootMission },
+  });
   return { nodes: [prompt, main], edges: [depends(prompt, main)] };
 }
 
@@ -86,13 +100,19 @@ export function chatGrowthRevision(
   revision: number,
   endedMainNodeId: string,
   mainRef: DefinitionRef,
+  rootMission: string,
 ): GraphRevision {
   const prompt = nodeOf(workflowRunId, revision, {
     name: 'prompt',
     kind: 'HUMAN',
     trigger: 'all_done',
   });
-  const main = nodeOf(workflowRunId, revision, { name: 'main', kind: 'AGENT', agentRef: mainRef });
+  const main = nodeOf(workflowRunId, revision, {
+    name: 'main',
+    kind: 'AGENT',
+    agentRef: mainRef,
+    mission: { id: rootMission },
+  });
   return {
     nodes: [prompt, main],
     edges: [{ from: endedMainNodeId, to: prompt.nodeId, kind: 'DEPENDS' }, depends(prompt, main)],
@@ -108,10 +128,11 @@ export interface SpawnTaskSpec {
   readonly spawn: NonNullable<GraphNodeRecord['spawn']>;
 }
 
-/** The AgentRun that dispatches the tasks of a call, and waits for them. */
+/** The segment that dispatches the tasks of a call, and the task it is a segment of. */
 export interface Caller {
   readonly nodeId: string;
   readonly call: EdgeCall;
+  readonly missionId: string;
 }
 
 /**
@@ -132,6 +153,10 @@ export function spawnRevision(
       agentRef: task.agentRef,
       goal: task.goal,
       spawn: task.spawn,
+      mission: {
+        id: childMissionId(caller.missionId, caller.call.toolCallId, task.name),
+        parentId: caller.missionId,
+      },
     }),
   );
   const byName = new Map(nodes.map((node) => [node.name, node]));
@@ -142,11 +167,36 @@ export function spawnRevision(
       return from === undefined || to === undefined ? [] : [depends(from, to)];
     }),
   );
-  const calls = nodes.flatMap((node): GraphEdgeRecord[] => [
-    { from: caller.nodeId, to: node.nodeId, kind: 'DELEGATE', call: caller.call },
-    { from: node.nodeId, to: caller.nodeId, kind: 'RESUME', call: caller.call },
-  ]);
+  // The caller does not wait on an edge: it goes on, or sleeps until its tasks end (D14).
+  const calls = nodes.map((node): GraphEdgeRecord => ({
+    from: caller.nodeId,
+    to: node.nodeId,
+    kind: 'DELEGATE',
+    call: caller.call,
+  }));
   return { nodes, edges: [...dependencies, ...calls] };
+}
+
+/**
+ * The segment that takes over a task that slept (Orchestration 4.3): the same task, Agent and
+ * goal, joined to the segment it follows by a `CONTINUES` edge. It is ready the moment it is added.
+ */
+export function continuationRevision(
+  workflowRunId: string,
+  revision: number,
+  yielded: GraphNodeRecord,
+): GraphRevision {
+  const node = nodeOf(workflowRunId, revision, {
+    name: yielded.name,
+    kind: 'AGENT',
+    ...(yielded.agentRef === undefined ? {} : { agentRef: yielded.agentRef }),
+    ...(yielded.goal === undefined ? {} : { goal: yielded.goal }),
+    ...(yielded.mission === undefined ? {} : { mission: yielded.mission }),
+  });
+  return {
+    nodes: [node],
+    edges: [{ from: yielded.nodeId, to: node.nodeId, kind: 'CONTINUES' }],
+  };
 }
 
 /**
@@ -184,9 +234,11 @@ export function steerRevision(workflowRunId: string, revision: number): GraphRev
 export function compileTemplate(
   workflowRunId: string,
   template: TemplateDefinition,
+  rootMission: string,
 ): { readonly revision: GraphRevision; readonly errors: readonly GraphValidationError[] } {
   const root = nodeOf(workflowRunId, 1, { name: 'prompt', kind: 'HUMAN' });
   const byName = new Map<string, GraphNodeRecord>();
+  const owners = ownerSteps(template);
   for (const node of template.nodes) {
     byName.set(
       node.name,
@@ -195,8 +247,11 @@ export function compileTemplate(
             name: node.name,
             kind: 'AGENT',
             agentRef: node.agent,
+            mission: owners.has(node.name)
+              ? { id: rootMission }
+              : { id: templateMissionId(rootMission, node.name), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
-            ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
+            ...(node.guide === undefined ? {} : { guide: node.guide }),
             ...(node.output === undefined ? {} : { output: node.output }),
           })
         : nodeOf(workflowRunId, 1, { name: node.name, kind: 'HUMAN' }),
@@ -210,35 +265,63 @@ export function compileTemplate(
     const dependencies = node.kind === 'AGENT' ? (node.dependsOn ?? []) : [];
     if (dependencies.length === 0) edges.push(depends(root, target));
     for (const dependency of dependencies) {
-      const name = typeof dependency === 'string' ? dependency : dependency.node;
-      const source = byName.get(name);
-      if (source === undefined) {
-        errors.push({ code: 'UNKNOWN_DEPENDENCY', node: node.name });
-      } else if (typeof dependency === 'string') {
-        edges.push(depends(source, target));
-      } else {
-        const { field, equals, in: anyOf } = dependency.when;
-        edges.push({
-          from: source.nodeId,
-          to: target.nodeId,
-          kind: 'CONDITIONAL',
-          when: {
-            field,
-            ...(equals === undefined ? {} : { equals }),
-            ...(anyOf === undefined ? {} : { in: [...anyOf] }),
-          },
-        });
-      }
+      const source = byName.get(dependency);
+      if (source === undefined) errors.push({ code: 'UNKNOWN_DEPENDENCY', node: node.name });
+      else edges.push(depends(source, target));
     }
   }
+  errors.push(...ownerOrderErrors(template, owners));
   return { revision: { nodes: [root, ...byName.values()], edges }, errors };
 }
 
-const toGraphEdge = ({ from, to, kind, when, call }: GraphEdgeRecord): GraphEdge => ({
+/**
+ * The steps of a template's root task (Orchestration 3.5): the nodes marked `role: owner` when the
+ * template names its owner; otherwise its first AGENT node alone. Every other AGENT node is a task
+ * below the root.
+ */
+export function ownerSteps(template: TemplateDefinition): ReadonlySet<string> {
+  const agents = template.nodes.filter((node) => node.kind === 'AGENT');
+  if (template.owner === undefined) return new Set(agents.slice(0, 1).map((node) => node.name));
+  return new Set(
+    agents.filter((node) => node.kind === 'AGENT' && node.role === 'owner').map((n) => n.name),
+  );
+}
+
+/**
+ * The steps of the root task must follow one another: any two of them are joined by a path of
+ * dependencies, so the root never has two segments that could run at once (Orchestration 3.5).
+ */
+function ownerOrderErrors(
+  template: TemplateDefinition,
+  owners: ReadonlySet<string>,
+): GraphValidationError[] {
+  const before = new Map<string, readonly string[]>();
+  for (const node of template.nodes)
+    if (node.kind === 'AGENT') before.set(node.name, node.dependsOn ?? []);
+  const ancestors = (name: string): Set<string> => {
+    const seen = new Set<string>();
+    const stack = [...(before.get(name) ?? [])];
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      stack.push(...(before.get(next) ?? []));
+    }
+    return seen;
+  };
+  const steps = [...owners];
+  const errors: GraphValidationError[] = [];
+  if (template.owner !== undefined && steps.length === 0) errors.push({ code: 'OWNER_NOT_LINEAR' });
+  for (const [index, left] of steps.entries())
+    for (const right of steps.slice(index + 1))
+      if (!ancestors(left).has(right) && !ancestors(right).has(left))
+        errors.push({ code: 'OWNER_NOT_LINEAR', node: right });
+  return errors;
+}
+
+const toGraphEdge = ({ from, to, kind, call }: GraphEdgeRecord): GraphEdge => ({
   from,
   to,
   kind,
-  ...(when === undefined ? {} : { when }),
   ...(call === undefined ? {} : { call }),
 });
 
@@ -247,28 +330,8 @@ const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
   name: node.name,
   kind: node.kind,
   trigger: node.trigger,
-  iteration: node.iteration,
-  ...(node.loopId === undefined ? {} : { loopId: node.loopId }),
+  ...(node.mission === undefined ? {} : { missionId: node.mission.id }),
 });
-
-/** The rules of an extension; the same function checks every extension (Module/Workflow 6.1). */
-export function validateRevision(
-  current: Graph,
-  revision: GraphRevision,
-  rules: { readonly builtInAgents: ReadonlySet<string>; readonly allowConditions: boolean },
-): readonly GraphValidationError[] {
-  return validateExtension(
-    current,
-    {
-      nodes: revision.nodes.map((node) => ({
-        node: toGraphNode(node),
-        ...(node.agentRef === undefined ? {} : { agentId: node.agentRef.id }),
-      })),
-      edges: revision.edges.map(toGraphEdge),
-    },
-    rules,
-  );
-}
 
 export interface ProjectedGraph {
   readonly graph: Graph;
@@ -286,8 +349,15 @@ export function projectGraph(
   const edges: GraphEdgeRecord[] = [];
   const view = new Map<string, NodeRecord>();
   let lastRevision = 0;
+  // What a rewind took back did not happen: the graph is the one at the cut (Orchestration 7.5).
+  const rewound = rewoundRanges(records);
   for (const record of records) {
     if (!('workflowRunId' in record) || record.workflowRunId !== workflowRunId) continue;
+    if (isRolledBack(record.seq, rewound)) {
+      // Revisions are numbered on: a later one must not reuse a number taken back.
+      if (record.type === 'GRAPH_EXTENDED') lastRevision = record.revision;
+      continue;
+    }
     if (record.type === 'GRAPH_EXTENDED') {
       lastRevision = record.revision;
       for (const node of record.nodes) nodes.set(node.nodeId, node);
@@ -304,7 +374,6 @@ export function projectGraph(
       view.set(record.nodeId, {
         status: record.status,
         ...(record.skipReason === undefined ? {} : { skipReason: record.skipReason }),
-        ...(record.result === undefined ? {} : { result: record.result }),
       });
     }
   }
@@ -338,12 +407,13 @@ export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
   return graph.nodes.find(
     (node) =>
       isTerminal(view.get(node.nodeId)?.status ?? 'PENDING') &&
+      // A main that went to sleep is not done: the segment that takes over it is.
+      view.get(node.nodeId)?.status !== 'YIELDED' &&
+      // Only a step of the root task grows a chat; a segment of a task below never does.
+      nodes.get(node.nodeId)?.mission?.parentId === undefined &&
       nodes.get(node.nodeId)?.kind === 'AGENT' &&
       // Nothing follows it by dependency: a call that leads on to tasks is no next step.
-      !graph.edges.some(
-        (edge) =>
-          edge.from === node.nodeId && (edge.kind === 'DEPENDS' || edge.kind === 'CONDITIONAL'),
-      ) &&
+      !graph.edges.some((edge) => edge.from === node.nodeId && edge.kind === 'DEPENDS') &&
       // A task answers to its caller; only what no call started can be a main.
       !graph.edges.some((edge) => edge.to === node.nodeId && edge.kind === 'DELEGATE'),
   )?.nodeId;

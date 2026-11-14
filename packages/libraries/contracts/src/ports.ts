@@ -28,10 +28,14 @@ import type {
   SteerRunRequest,
   CompactContextRequest,
   ConfirmUndoRequest,
-  DiffTurnsRequest,
+  DiffRequest,
+  ListCheckpointsRequest,
+  RewindCheckpointRequest,
+  CheckpointList,
   ReadArtifactRequest,
-  TurnDiff,
-  UndoTurnsRequest,
+  CheckpointDiff,
+  UndoRequest,
+  RecoverRunRequest,
 } from './kernel-control/interaction-requests.js';
 import type { SessionAccepted, SyscallRejected } from './kernel-control/responses.js';
 import type {
@@ -54,6 +58,15 @@ import type {
   RegisterAgentRunRequest,
   ReleaseDelegationRequest,
   RetainArtifactsRequest,
+  ScheduleWakeRequest,
+  ControlJobRequest,
+  HaltAgentRunRequest,
+  RestoreMissionRequest,
+  CloseMissionRequest,
+  WithdrawQuestionRequest,
+  WithdrawOpenInputRequest,
+  TakeCheckpointRequest,
+  JobControlContent,
   ReportCompactionSourceRequest,
   AckCompactionRequest,
   ReserveDelegationRequest,
@@ -71,12 +84,13 @@ import type { RequestState } from './kernel-execution/execution-fact.js';
 import type {
   ExecutionRequest,
   ExecutionScope,
-  OrientExecutorInput,
   SearchExecutorInput,
 } from './kernel-execution/execution-request.js';
 import type {
   CancelExecutionRequest,
   CancelRunExecutionsRequest,
+  JobControlRequest,
+  JobControlResult,
   SupervisorShutdownRequest,
 } from './kernel-execution/supervisor-requests.js';
 import type { KernelToWorkflowEvent } from './kernel-unit/workflow-events.js';
@@ -108,11 +122,12 @@ export interface SupervisorPort {
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
   /** Cancels one execution; its fact says why (PAUSED or ABORTED). */
   cancelExecution(request: CancelExecutionRequest): Promise<void>;
+  /** Reads or stops a background command (Orchestration 6.2). */
+  controlJob(request: JobControlRequest): Promise<JobControlResult>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
 export interface ExecutorInputByKind {
-  readonly REPOSITORY_ORIENT: OrientExecutorInput;
   readonly REPOSITORY_SEARCH: SearchExecutorInput;
   readonly REPOSITORY_LIST: RepositoryListInput;
   readonly FILE_READ: FileReadInput;
@@ -204,7 +219,39 @@ export type SandboxRunResult =
       readonly denials: number;
       readonly backend: SandboxBackend;
     }
+  /**
+   * The command runs on as a job (Orchestration 6.1): it was asked to detach, at once or at its
+   * timeout. `output` is what it printed until then. The runner hands `process` over; the
+   * Supervisor's job table keeps it and fills in `jobKey` before the Executor sees the result.
+   */
+  | {
+      readonly kind: 'DETACHED';
+      readonly output: string;
+      readonly backend: SandboxBackend;
+      readonly promoted: boolean;
+      readonly process?: DetachedProcess;
+      readonly jobKey?: string;
+    }
   | { readonly kind: 'REFUSED'; readonly reason: SandboxRefusal };
+
+/** How a detached command ended. */
+export interface DetachedExit {
+  readonly exitCode: number | null;
+  readonly signal: string | null;
+  /** Stopped on request (`job_kill`, the end of its task or of the run) or at its longest time. */
+  readonly stopped: boolean;
+  /** It was asked to stop and did not confirm it: a fault, like STOP_UNCONFIRMED. */
+  readonly unconfirmed: boolean;
+}
+
+/** A command that runs on after its execution ended; only the Supervisor's job table holds one. */
+export interface DetachedProcess {
+  /** Everything it prints from now on; set once, right after the hand-over. */
+  onOutput(listener: (chunk: Buffer) => void): void;
+  onExit(listener: (exit: DetachedExit) => void): void;
+  /** SIGTERM, then SIGKILL; the exit says whether it was confirmed. Safe to repeat. */
+  stop(): void;
+}
 
 /**
  * Runs one command in the sandbox of its scope. Only the Executor of COMMAND gets a working one.
@@ -218,6 +265,11 @@ export interface SandboxRunner {
     readonly timeoutMs: number;
     readonly maxOutputBytes: number;
     readonly signal: AbortSignal;
+    /**
+     * Detach instead of waiting (Orchestration 6.1): 0 right after it starts; at `timeoutMs` when
+     * `promoteOnTimeout`, instead of stopping it. Only a runner that has a job table honours it.
+     */
+    readonly detach?: { readonly immediately: boolean; readonly promoteOnTimeout: boolean };
   }): Promise<SandboxRunResult>;
 }
 
@@ -331,6 +383,8 @@ export const FABRIC_ADDRESSES = [
   'gateway.admission',
   'gateway.session',
   'kernel-core.execution-facts',
+  // The end of background commands (Orchestration 6.4).
+  'kernel-core.job-facts',
   // The side channel of streaming model calls (docs/M2/Phase1Console.md 4): lossy by design.
   'kernel-core.model-progress',
   'inbox.user-interaction-stream',
@@ -427,6 +481,46 @@ export interface WorkflowGatewayPort {
     request: ReleaseDelegationRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
+  /** Wakes a sleeping task after some seconds, within the run (Orchestration 8.5). */
+  scheduleWake(
+    request: ScheduleWakeRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Asks for a checkpoint; `CheckpointTaken` answers it (Orchestration 7.3). */
+  takeCheckpoint(
+    request: TakeCheckpointRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Cancels the queued and running work of one AgentRun (Orchestration 5.1, 5.2). */
+  haltAgentRun(
+    request: HaltAgentRunRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Opens again a task that ended after a rewind's cut (Orchestration 7.5). */
+  restoreMission(
+    request: RestoreMissionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Closes a sleeping task that will not wake (Orchestration 5.1, 7.5). */
+  closeMission(
+    request: CloseMissionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Takes back a local question nobody waits for any more (Orchestration 5.1, 7.5). */
+  withdrawQuestion(
+    request: WithdrawQuestionRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** A chat's main is woken by a background command while it waited for the user (4.4). */
+  withdrawOpenInput(
+    request: WithdrawOpenInputRequest,
+    context: BoundaryContext,
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** Reads or stops a background command of a task (Orchestration 6.2). */
+  controlJob(
+    request: ControlJobRequest,
+    context: BoundaryContext,
+  ): Promise<JobControlContent | SyscallRejected>;
   /** Keeps the results of a handover for the whole Session (Kernel/Core 5g). */
   retainArtifacts(
     request: RetainArtifactsRequest,
@@ -531,18 +625,27 @@ export interface InteractionGatewayPort {
     request: CompactContextRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  undoTurns(
-    request: UndoTurnsRequest,
+  undo(request: UndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  /** `/recover`: the long task the last process left goes on (Orchestration 7.6). */
+  recoverRun(
+    request: RecoverRunRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
   confirmUndo(
     request: ConfirmUndoRequest,
     context: BoundaryContext,
   ): Promise<SyscallAck | SyscallRejected>;
-  diffTurns(
-    request: DiffTurnsRequest,
+  diff(request: DiffRequest, context: BoundaryContext): Promise<CheckpointDiff | SyscallRejected>;
+  /** Goes back to a checkpoint of the paused run (Orchestration 7.5). */
+  rewindCheckpoint(
+    request: RewindCheckpointRequest,
     context: BoundaryContext,
-  ): Promise<TurnDiff | SyscallRejected>;
+  ): Promise<SyscallAck | SyscallRejected>;
+  /** The checkpoints of the Session (Orchestration 7.4); looking changes nothing. */
+  listCheckpoints(
+    request: ListCheckpointsRequest,
+    context: BoundaryContext,
+  ): Promise<CheckpointList | SyscallRejected>;
   shutdown(
     request: ShutdownRequest,
     context: BoundaryContext,

@@ -1,15 +1,8 @@
 import type { SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import {
-  edgeState,
-  readyNodes,
-  settleSkips,
-  validateExtension,
-  wakeableNodes,
-  withWaiting,
-} from './graph.js';
+import { edgeState, readyNodes, settleSkips, wakeableNodes, withWaiting } from './graph.js';
 import type { Graph, GraphEdge, GraphNode, NodeRecord, NodeView } from './graph.js';
-import { chatGrowthPoint, projectGraph, spawnRevision } from './session-graph.js';
+import { advanceGraph, chatGrowthPoint, projectGraph, spawnRevision } from './session-graph.js';
 
 const call = { toolCallId: 'call_1', delegationId: 'dlg_1' };
 const node = (name: string, extra: Partial<GraphNode> = {}): GraphNode => ({
@@ -17,7 +10,6 @@ const node = (name: string, extra: Partial<GraphNode> = {}): GraphNode => ({
   name,
   kind: 'AGENT',
   trigger: 'all_success',
-  iteration: 1,
   ...extra,
 });
 const edge = (from: string, to: string, kind: GraphEdge['kind'], withCall = false): GraphEdge => ({
@@ -57,32 +49,9 @@ describe('a call in the task graph (M2Design 3.1, 3.3)', () => {
     ]);
   });
 
-  it('does not let a RESUME edge hold back the caller, or make a cycle', () => {
+  it('does not let a RESUME edge hold back the caller', () => {
     // main depends on nothing that comes back, and the returning edges are no part of readiness.
     expect(names(readyNodes(graph, view({})))).toEqual(['main']);
-    const rules = { builtInAgents: new Set(['explorer']), allowConditions: false };
-    const proposed = { node: node('a'), agentId: 'explorer' };
-    expect(
-      validateExtension(
-        { nodes: [node('main')], edges: [] },
-        {
-          nodes: [proposed],
-          edges: [edge('main', 'a', 'DELEGATE', true), edge('a', 'main', 'RESUME', true)],
-        },
-        rules,
-      ),
-    ).toEqual([]);
-    // A forward edge back to the caller is a cycle; only RESUME may point back.
-    expect(
-      validateExtension(
-        { nodes: [node('main')], edges: [] },
-        {
-          nodes: [proposed],
-          edges: [edge('main', 'a', 'DELEGATE', true), edge('a', 'main', 'DEPENDS')],
-        },
-        rules,
-      ),
-    ).toEqual([{ code: 'CYCLE' }]);
   });
 
   it('marks a running node WAITING while a call has not come back, and RUNNING again after', () => {
@@ -154,34 +123,42 @@ describe('a call in the log', () => {
     spawn: { writeScope: [], acceptance: [], inputs: [], tokens: 1000 },
   });
 
-  it('builds the revision of a call with DELEGATE and RESUME edges in the written order', () => {
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [
-      spec('one'),
-      spec('two', ['one']),
-    ]);
+  it('builds the revision of a call with DELEGATE edges only, in the written order (D14)', () => {
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one'), spec('two', ['one'])],
+    );
     expect(revision.nodes.map((n) => n.name)).toEqual(['one', 'two']);
     const kinds = revision.edges.map((e) => e.kind);
     expect(kinds.filter((k) => k === 'DEPENDS')).toHaveLength(1);
     expect(kinds.filter((k) => k === 'DELEGATE')).toHaveLength(2);
-    expect(revision.edges.filter((e) => e.kind === 'RESUME').map((e) => e.to)).toEqual([
-      'nod_main',
-      'nod_main',
-    ]);
+    // The caller does not wait on an edge: no RESUME, so its node never becomes WAITING.
+    expect(kinds).not.toContain('RESUME');
     expect(
       revision.edges.every((e) => e.kind === 'DEPENDS' || e.call?.toolCallId === 'call_1'),
     ).toBe(true);
+    expect(revision.nodes.map((n) => n.mission?.parentId)).toEqual([
+      'msc_rootmission',
+      'msc_rootmission',
+    ]);
   });
 
-  it('projects WAITING from the edges and the records, and RUNNING after NODE_RESUMED', () => {
+  it('keeps the caller RUNNING after it dispatched: it goes on while its tasks run', () => {
     seq = 0;
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [spec('one')]);
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one')],
+    );
     const mainNode = {
       nodeId: 'nod_main',
-      path: 'wfr_a/1/main#1',
+      path: 'wfr_a/1/main',
       name: 'main',
       kind: 'AGENT' as const,
       trigger: 'all_success' as const,
-      iteration: 1,
     };
     const log = [
       record({
@@ -191,7 +168,7 @@ describe('a call in the log', () => {
         nodes: [mainNode],
         edges: [],
       }),
-      record({ type: 'NODE_STARTED', nodeId: 'nod_main', path: 'wfr_a/1/main#1' }),
+      record({ type: 'NODE_STARTED', nodeId: 'nod_main', path: 'wfr_a/1/main' }),
       record({
         type: 'GRAPH_EXTENDED',
         revision: 2,
@@ -200,21 +177,29 @@ describe('a call in the log', () => {
         edges: revision.edges,
       }),
     ];
-    expect(projectGraph(log, 'wfr_a').view.get('nod_main')?.status).toBe('WAITING');
-    const resumed = [...log, record({ type: 'NODE_RESUMED', nodeId: 'nod_main', call })];
-    expect(projectGraph(resumed, 'wfr_a').view.get('nod_main')?.status).toBe('RUNNING');
+    const projected = projectGraph(log, 'wfr_a');
+    expect(projected.view.get('nod_main')?.status).toBe('RUNNING');
+    // The task is ready while its caller runs.
+    const [one] = revision.nodes;
+    expect(advanceGraph(projected.graph, projected.view).ready.map((n) => n.nodeId)).toEqual([
+      one?.nodeId,
+    ]);
   });
 
   it('does not take a task, or a main that dispatched, for the next step of a chat', () => {
     seq = 0;
-    const revision = spawnRevision('wfr_a', 2, { nodeId: 'nod_main', call }, [spec('one')]);
+    const revision = spawnRevision(
+      'wfr_a',
+      2,
+      { nodeId: 'nod_main', call, missionId: 'msc_rootmission' },
+      [spec('one')],
+    );
     const mainNode = {
       nodeId: 'nod_main',
-      path: 'wfr_a/1/main#1',
+      path: 'wfr_a/1/main',
       name: 'main',
       kind: 'AGENT' as const,
       trigger: 'all_success' as const,
-      iteration: 1,
     };
     const log = [
       record({

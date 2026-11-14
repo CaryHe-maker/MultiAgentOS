@@ -1,10 +1,10 @@
 import { newId, type SessionLogRecord } from '@multiagentos/contracts';
 import { testArtifactRef } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
-import { fileBaselines, toolInputOf } from './tool-inputs.js';
+import { fileBaselines, relativeToRoot, toolInputOf } from './tool-inputs.js';
 
 const base = { at: '2026-11-04T00:00:00.000Z', workflowRunId: newId('wfr'), turnId: newId('trn') };
-const budget = { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' } as const;
+const budget = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' } as const;
 const agentRunId = newId('agr');
 let seq = 0;
 const line = <T extends object>(fields: T) => {
@@ -69,6 +69,23 @@ describe('fileBaselines', () => {
       fileBaselines([
         read('a.ts'),
         line({ type: 'WORKSPACE_REVERTED', revertedTurnIds: [base.turnId] }),
+      ]).size,
+    ).toBe(0);
+    // An undo or a rewind is a rollback now (Orchestration 7.5, D8): the same.
+    const first = read('a.ts');
+    expect(
+      fileBaselines([
+        first,
+        line({
+          type: 'ROLLED_BACK',
+          checkpointId: 'ckp_01ABCDEFGHJKMNPQRSTVWXYZ00',
+          label: 'user input',
+          cutSeq: first.seq,
+          fromSeq: first.seq,
+          cancelledMissionIds: [],
+          files: 1,
+          undo: true,
+        }),
       ]).size,
     ).toBe(0);
     const diverged = fileBaselines([
@@ -265,6 +282,74 @@ describe('toolInputOf', () => {
       expect(toolInputOf('OUTPUT_READ', { toolCallId: 'call_1' }, log, other)).toMatchObject({
         ok: false,
       });
+    });
+
+    it('reads a message by its id, for a task it was sent to and no other (Orchestration 5.3)', () => {
+      const outputRef = testArtifactRef();
+      const sent = [
+        line({
+          type: 'MISSION_MESSAGE',
+          from: 'msn_api',
+          fromLabel: 'api',
+          to: ['msn_ui', 'msn_db'],
+          source: { modelTurnRequestId: newId('req'), outputRef, toolCallId: 'call_msg' },
+        }),
+      ];
+      const task = (missionId: string) =>
+        ({
+          kind: 'NODE',
+          workflowRunId: base.workflowRunId,
+          agentRunId: newId('agr'),
+          missionId,
+        }) as const;
+      for (const reader of ['msn_ui', 'msn_db'])
+        expect(toolInputOf('OUTPUT_READ', { toolCallId: 'call_msg' }, sent, task(reader))).toEqual({
+          ok: true,
+          input: { toolCallId: 'call_msg', fullRef: outputRef },
+          workflowFields: { fullRef: outputRef },
+        });
+      expect(
+        toolInputOf('OUTPUT_READ', { toolCallId: 'call_msg' }, sent, task('msn_other')),
+      ).toMatchObject({ ok: false, message: expect.stringContaining('no tool call') as string });
+    });
+  });
+});
+
+describe('relativeToRoot', () => {
+  it('makes a full path under the repository root relative, for every path argument', () => {
+    expect(relativeToRoot('FILE_READ', { path: '/app/src/a.ts' }, '/app')).toEqual({
+      path: 'src/a.ts',
+    });
+    expect(relativeToRoot('FILE_WRITE', { path: '/app/out.txt', content: 'x' }, '/app/')).toEqual({
+      path: 'out.txt',
+      content: 'x',
+    });
+    expect(relativeToRoot('REPOSITORY_LIST', { path: '/app' }, '/app')).toEqual({ path: '.' });
+    expect(relativeToRoot('COMMAND', { command: 'ls', workdir: '/app/sub//x/..' }, '/app')).toEqual(
+      {
+        command: 'ls',
+        workdir: 'sub',
+      },
+    );
+  });
+
+  it('leaves what is not under the root, relative paths and other tools as they are', () => {
+    const outside = { path: '/etc/passwd' };
+    expect(relativeToRoot('FILE_READ', outside, '/app')).toBe(outside);
+    expect(relativeToRoot('FILE_READ', { path: '/application/a.ts' }, '/app')).toEqual({
+      path: '/application/a.ts',
+    });
+    expect(relativeToRoot('FILE_READ', { path: '../x' }, '/app')).toEqual({ path: '../x' });
+    expect(relativeToRoot('WEB_FETCH', { path: '/app/a' }, '/app')).toEqual({ path: '/app/a' });
+    expect(relativeToRoot('FILE_READ', { path: '/app/a' }, '')).toEqual({ path: '/app/a' });
+  });
+
+  it('is what toolInputOf hands on', () => {
+    const input = toolInputOf('FILE_READ', { path: '/app/a.ts' }, [], { kind: 'MAIN' }, '/app');
+    expect(input).toMatchObject({
+      ok: true,
+      input: { path: 'a.ts' },
+      workflowFields: { path: 'a.ts' },
     });
   });
 });

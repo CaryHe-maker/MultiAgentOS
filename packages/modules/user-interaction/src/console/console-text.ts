@@ -89,23 +89,23 @@ const DEGRADED: Readonly<Record<string, string>> = {
   UNIT_TIMEOUT: '模型调用超时，没能完成回复。',
   MEMORY_PRESSURE: '系统内存紧张，运行被中断，没能完成回复。',
   USER_ABORT: '已中止，没能完成回复。文件改动保留在工作区，需要撤销时用 /undo。',
-  TURN_TIMEOUT: '这一轮用时太长，被中断了，没能完成回复。文件改动保留在工作区。',
+  INPUT_TIMEOUT: '这次输入的工作用时太长，被中断了，没能完成回复。文件改动保留在工作区。',
   PAUSE_TIMEOUT: '暂停太久，运行被中断了，没能完成回复。文件改动保留在工作区。',
 };
 
-/** The reply above is complete as far as it goes, but the Turn stopped before the task did. */
+/** The reply above is complete as far as it goes, but the work stopped before the task did. */
 const EARLY_END: Readonly<Record<string, string>> = {
-  BUDGET_WRAP_UP: '额度接近用完，这一轮提前结束了。',
-  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这一轮提前结束了。',
-  WALL_CLOCK_LIMIT: '运行时间到了上限，这一轮提前结束了。',
+  BUDGET_WRAP_UP: '额度接近用完，这次的工作提前结束了。',
+  TOOL_UNIT_LIMIT: '工具调用次数到了上限，这次的工作提前结束了。',
+  WALL_CLOCK_LIMIT: '运行时间到了上限，这次的工作提前结束了。',
   ROUND_LIMIT:
-    '轮次到了上限，这一轮提前结束了；上面的回复写明了已完成与未完成的部分，可以据此决定下一条提示词。',
-  MEMORY_LIMIT: '系统内存紧张，这一轮提前结束了。',
-  NO_PROGRESS: '连续几轮没有进展，这一轮提前结束了。',
-  REPEATED_INTENT: '同一个调用重复太多次，这一轮提前结束了。',
-  CONSECUTIVE_ERRORS: '工具连续出错，这一轮提前结束了。',
-  CONTEXT_LIMIT: '上下文已满，这一轮提前结束了；可以用 /new 开始新对话继续。',
-  REGENERATION_LIMIT: '模型的回复连续不合要求，这一轮提前结束了。',
+    '轮次到了上限，这次的工作提前结束了；上面的回复写明了已完成与未完成的部分，可以据此决定下一条提示词。',
+  MEMORY_LIMIT: '系统内存紧张，这次的工作提前结束了。',
+  NO_PROGRESS: '连续几轮没有进展，这次的工作提前结束了。',
+  REPEATED_INTENT: '同一个调用重复太多次，这次的工作提前结束了。',
+  CONSECUTIVE_ERRORS: '工具连续出错，这次的工作提前结束了。',
+  CONTEXT_LIMIT: '上下文已满，这次的工作提前结束了；可以用 /new 开始新对话继续。',
+  REGENERATION_LIMIT: '模型的回复连续不合要求，这次的工作提前结束了。',
 };
 
 const RUN_STATE: Readonly<Record<string, string>> = {
@@ -125,14 +125,14 @@ export const ConsoleText = Object.freeze({
   recentSessions: '本仓库最近的对话（/resume <编号> 打开）：',
   noSessions: '还没有对话。',
   otherFolderSessions: '其他文件夹的对话（打开时会改在当前文件夹里继续，要先确认）：',
-  otherFolderSessionLine: (index: number, title: string, turns: number, folder: string) =>
-    `  ${String(index)}. ${title}（${String(turns)} 轮，原来在 ${folder}）`,
+  otherFolderSessionLine: (index: number, title: string, inputs: number, folder: string) =>
+    `  ${String(index)}. ${title}（${String(inputs)} 次输入，原来在 ${folder}）`,
   confirmOtherFolder: (folder: string, index: number) =>
     `这个对话原来在 ${folder}。在这里打开它：\n  · 原来文件夹的撤销记录和快照不再可用，从现在起重新建立；\n  · 它的项目指令（AGENTS.md）以这个文件夹的为准，会重新读取并重新问你是否信任；\n  · 模型会被告知文件夹换了，对话里以前提到的文件可能不存在或已不同。\n确认请再输入一次 /resume ${String(index)}。`,
-  sessionLine: (index: number, title: string, turns: number) =>
-    `  ${String(index)}. ${title}（${String(turns)} 轮）`,
+  sessionLine: (index: number, title: string, inputs: number) =>
+    `  ${String(index)}. ${title}（${String(inputs)} 次输入）`,
   untitled: '（无标题）',
-  sessionOpened: (title: string, turns: number) => `已打开：${title}（${String(turns)} 轮）`,
+  sessionOpened: (title: string, inputs: number) => `已打开：${title}（${String(inputs)} 次输入）`,
   sessionFailed: {
     SESSION_LOCKED: '这个对话正被另一个进程打开。',
     SESSION_LOG_CORRUPT: '这个对话的记录已损坏，无法打开。',
@@ -148,6 +148,12 @@ export const ConsoleText = Object.freeze({
     `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}。
 搜索词：${queries.join(' | ')}
 [y 本次运行内允许 / f 这个文件夹以后都允许 / n 拒绝]`,
+  budgetExtend: (used: number, limit: number, add: number, tasks: number) =>
+    `这次任务的额度快用完了：已用约 ${String(Math.round(used / 10_000))} 万，上限 ${String(Math.round(limit / 10_000))} 万${
+      tasks > 0 ? `，还有 ${String(tasks)} 个子任务在进行` : ''
+    }。
+要再增加 ${String(Math.round(add / 10_000))} 万额度继续吗？不增加的话，任务会收尾并交付已完成的部分。
+[y 增加 / n 不增加，收尾]`,
   webFetch: (host: string, url: string) =>
     `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}
@@ -182,11 +188,11 @@ export const ConsoleText = Object.freeze({
     FILE_CHANGED: '回退中途文件又被改动，已恢复，没有回退。',
   },
   /** One step line in the history, like a tool call: it happened here, and that is all it says. */
-  compacted: (turns: number, pruned: number, summarised: boolean) =>
+  compacted: (inputs: number, pruned: number, summarised: boolean) =>
     !summarised
       ? `✓ 已修剪 ${String(pruned)} 个较大的工具结果`
-      : turns > 0
-        ? `✓ 已压缩较早的对话（${String(turns)} 个 Turn，修剪 ${String(pruned)} 个工具结果）`
+      : inputs > 0
+        ? `✓ 已压缩较早的对话（${String(inputs)} 次输入的内容，修剪 ${String(pruned)} 个工具结果）`
         : '✓ 已压缩较早的对话',
   compactionFailed: {
     NOTHING_TO_COMPACT: '无法压缩：抱歉，目前的上下文记录仍较短，无法有效压缩',
@@ -194,9 +200,20 @@ export const ConsoleText = Object.freeze({
     SUMMARY_FAILED: '摘要没有生成，没有压缩。',
     NOT_RECORDED: '压缩没能记录，没有压缩。',
   } as const,
-  undone: (turns: number) => `已回退 ${String(turns)} 轮的文件改动。`,
+  undone: (files: number) => `已撤销上一次输入以来的工作，还原了 ${String(files)} 个文件。`,
   noDiff: '没有可以显示的改动。',
+  noCheckpoints: '还没有 checkpoint。',
+  rewindNeedsPause: '回到 checkpoint 只能在运行暂停时进行：先按 Ctrl+C 暂停。',
+  noRewind: '没有这个可以回到的 checkpoint（只能回到本次运行中途的切面，用 /checkpoints 查看）。',
+  rewound: (label: string, files: number): string =>
+    `已回到 checkpoint「${label}」：还原了 ${String(files)} 个文件，之后的工作已撤回，被覆盖的内容存在兜底快照里。用 /continue 继续。`,
+  inputCheckpoint: (n: number): string => `第 ${String(n)} 次输入`,
+  checkpointLine: (seq: number, label: string, changedFiles: number | undefined): string =>
+    `#${String(seq)}  ${label}${changedFiles === undefined ? '' : `（之后改动 ${String(changedFiles)} 个文件）`}`,
   diverged: (files: number) => `自上次以来，工作区有 ${String(files)} 个文件被改动过。`,
+  interruptedRun: (label: string) =>
+    `上次的长任务在中途中断了（进程退出）。输入 /recover 从 checkpoint「${label}」续跑：文件还原到那时，子任务停在那时等负责人处理，授权会重新询问；直接输入其他内容则不续跑，文件保持现在的样子。`,
+  recovered: '正在续跑上次中断的长任务，运行已暂停；用 /continue 开始。',
   forkDraft: '下一条消息会开始一个分出的新对话，它带着到目前为止的全部内容。',
   granted: '已允许。',
   declined: '已拒绝。',
@@ -215,6 +232,7 @@ export const ConsoleText = Object.freeze({
   ambiguousTask: (name: string) => `@${name} 对应不止一个任务，请写得更具体。`,
   aborting: '正在中止；已完成的结果和文件改动都保留。',
   questionCancelled: '问题已取消。',
+  followUp: '后台命令结束，main 继续（后台任务结束后的跟进；输入框里的内容保留）。',
   question: {
     from: (agent: string) => `${agent} 想问你：`,
     review: '请审阅下面的内容：',
@@ -249,7 +267,10 @@ export const ConsoleText = Object.freeze({
     '/output <编号>    查看被截断的工具输出',
     '/undo [all]       回退最近一轮（或全部）的文件改动',
     '/compact          压缩较早的对话，腾出上下文空间',
-    '/diff [N]         查看倒数第 N 轮改动了什么',
+    '/diff [N]         查看倒数第 N 轮改动了什么；/diff #N 查看第 N 个 checkpoint 之后的改动',
+    '/checkpoints      列出本对话的 checkpoint（每轮的开始与运行中途的切面）',
+    '/rewind #N        暂停时回到第 N 个 checkpoint（运行中途的切面）',
+    '/recover          续跑上次进程退出时中断的长任务（打开对话后、输入任何内容之前）',
     '/timeline         本次运行中每个 AgentRun 的起止时间',
     '/think [N]        列出思考内容；带编号则显示第 N 段思考的全文',
     '/continue [@任务] [说明]  暂停后继续，可附加一句说明',
@@ -325,6 +346,7 @@ export const ConsoleText = Object.freeze({
     PAUSED: '已暂停',
     COMPACTING: '正在压缩上下文',
     WRAPPING_UP: '收尾',
+    SLEEPING: '休眠中',
     ENDED: '结束',
   } satisfies Record<ActivityEvent['phase'], string>,
   runState: RUN_STATE,

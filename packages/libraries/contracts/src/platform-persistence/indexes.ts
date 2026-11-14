@@ -19,7 +19,9 @@ export const SessionIndexLineSchema = closed(
     repositoryRoot: text(4096),
     createdAt: TimestampSchema,
     lastActiveAt: TimestampSchema,
-    turnCount: count(),
+    /** Inputs of the user so far. Lines written before checkpoints replaced Turns say `turnCount`. */
+    inputCount: Type.Optional(count()),
+    turnCount: Type.Optional(count()),
     titleRef: Type.Optional(ArtifactRefSchema),
     fork: Type.Optional(ForkOriginSchema),
     status,
@@ -89,7 +91,11 @@ const snapshotChange = closed({
   change: Type.Enum(['ADDED', 'MODIFIED', 'DELETED']),
 });
 
-/** `snapshot-index.jsonl`; a Turn without TURN_ENDED was left by an exit (M2Design 4.6). */
+/**
+ * `snapshot-index.jsonl`: the checkpoints of a Session and the ways back (M2Design 4.6, Orchestration
+ * 7.4). `TURN_STARTED`, `TURN_ENDED` and `REVERTED` are what Sessions wrote before checkpoints
+ * replaced Turns; they are still read.
+ */
 export const SnapshotIndexLineSchema = Type.Union(
   [
     closed({
@@ -114,6 +120,42 @@ export const SnapshotIndexLineSchema = Type.Union(
     closed({
       kind: Type.Literal('EPOCH'),
       repositoryRoot: text(4096),
+      at: TimestampSchema,
+    }),
+    /**
+     * A checkpoint (Orchestration 7.1): a snapshot taken at a still point worth coming back to:
+     * each input of the user (`INPUT`, what a Turn's start was), or a cut inside a run, taken while
+     * its mutating work was held. Older lines name the Turn they were taken in.
+     */
+    closed({
+      kind: Type.Literal('CHECKPOINT'),
+      checkpointId: IdSchemas.checkpointId,
+      turnId: Type.Optional(IdSchemas.turnId),
+      ckpKind: Type.Enum(['INPUT', 'ROOT_SPAWN', 'HUMAN_ANSWER', 'TEMPLATE']),
+      label: text(200),
+      snapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
+    /**
+     * The workspace when the run went still (waiting for the user, or ended): where the stretch of
+     * the latest checkpoint ends, and what an undo compares the files with.
+     */
+    closed({
+      kind: Type.Literal('SETTLED'),
+      snapshot: Type.Optional(text(64)),
+      at: TimestampSchema,
+    }),
+    /**
+     * The workspace went back to a checkpoint; later checkpoints are gone. `inclusive` (an undo)
+     * takes the checkpoint itself back too: the files are as they were when it was taken, and the
+     * work from it on is undone. `forced` overwrote files changed outside the system.
+     */
+    closed({
+      kind: Type.Literal('ROLLED_BACK_TO'),
+      checkpointId: IdSchemas.checkpointId,
+      inclusive: Type.Optional(Type.Boolean()),
+      forced: Type.Optional(Type.Boolean()),
+      backupSnapshot: Type.Optional(text(64)),
       at: TimestampSchema,
     }),
     closed({

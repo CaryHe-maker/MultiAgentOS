@@ -13,7 +13,6 @@ export type MasCommand =
       readonly kind: 'RUN';
       readonly repo?: string;
       readonly readonly: boolean;
-      readonly template: string;
       readonly goal: string;
     }
   | {
@@ -22,13 +21,13 @@ export type MasCommand =
       readonly repo?: string;
       /** A number from the list, a Session id or the start of one; absent means the latest. */
       readonly session?: string;
-      readonly turn?: number;
+      readonly input?: number;
       readonly full: boolean;
       readonly json: boolean;
       readonly list: boolean;
     };
 
-/** The commands that run a conversation or a template, as opposed to reading a log. */
+/** The commands that run a conversation or a goal, as opposed to reading a log. */
 export type RunningCommand = Exclude<MasCommand, { readonly kind: 'LOG' }>;
 
 export type CliParseResult =
@@ -45,7 +44,7 @@ interface CommonOptions {
 
 interface LogOptions {
   readonly repo?: string;
-  readonly turn?: number;
+  readonly input?: number;
   readonly full: boolean;
   readonly json: boolean;
   readonly list: boolean;
@@ -84,16 +83,16 @@ export async function parseCli(
     .description(CLI_MESSAGES.run)
     .option('--repo <path>', CLI_MESSAGES.repository)
     .option('--readonly', CLI_MESSAGES.readonly, false)
-    .argument('<template>', CLI_MESSAGES.template)
     .argument('<goal>', CLI_MESSAGES.goal)
-    .action((template: string, goal: string, options: CommonOptions) => {
-      command = { kind: 'RUN', template, goal, readonly: options.readonly, ...repoOf(options) };
+    .action((goal: string, options: CommonOptions) => {
+      // `mas run "<goal>"` is a long task of the built-in template mission (Orchestration 10.1).
+      command = { kind: 'RUN', goal, readonly: options.readonly, ...repoOf(options) };
     });
   program
     .command('log')
     .description(CLI_MESSAGES.log)
     .option('--repo <path>', CLI_MESSAGES.repository)
-    .option('--turn <n>', CLI_MESSAGES.logTurn, positiveInteger)
+    .option('--input <n>', CLI_MESSAGES.logInput, positiveInteger)
     .option('--full', CLI_MESSAGES.logFull, false)
     .option('--json', CLI_MESSAGES.logJson, false)
     .option('--list', CLI_MESSAGES.logList, false)
@@ -106,7 +105,7 @@ export async function parseCli(
         list: options.list,
         ...repoOf(options),
         ...(session === undefined ? {} : { session }),
-        ...(options.turn === undefined ? {} : { turn: options.turn }),
+        ...(options.input === undefined ? {} : { input: options.input }),
       };
     });
   try {

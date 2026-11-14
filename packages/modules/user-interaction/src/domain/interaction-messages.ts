@@ -1,65 +1,8 @@
-import type { ReasonCode, ReportEndReason } from '@multiagentos/contracts';
-
-/** Keyed by the model-output reasons Workflow reports; unknown reasons use the generic text. */
-const INVALID_OUTPUT_REASONS: Readonly<Record<string, string>> = {
-  NO_ACTION: '模型没有返回可执行的动作。',
-  OUTPUT_TRUNCATED: '模型输出被截断，没有返回可执行的动作。',
-  CONTROL_MIXED: '模型把结束或交接动作与其他调用混合返回。',
-  CONTROL_NOT_ALLOWED: '模型返回了当前代理或当前阶段不允许的控制动作。',
-  CONTROL_ARGUMENTS_INVALID: '模型返回的控制动作参数不符合要求。',
-};
+import type { ReasonCode } from '@multiagentos/contracts';
 
 /** User text is independent of exception messages and failure.detail. */
 export const InteractionMessages = Object.freeze({
-  degraded: '降级报告',
-  degradedReason: {
-    ROUND_LIMIT: '已达到本次分析的轮次上限，未形成可发布的分析结论。',
-    BUDGET_WRAP_UP: '本次分析已进入额度收尾阶段，收尾调用未形成可发布的分析结论。',
-    BUDGET_EXHAUSTED: '本次分析的额度已不足以继续调用模型，未形成可发布的分析结论。',
-    TOOL_UNIT_LIMIT: '本次分析已用完工具调用次数，收尾调用未形成可发布的分析结论。',
-    WALL_CLOCK_LIMIT: '本次分析已用完时间额度，收尾调用未形成可发布的分析结论。',
-    REPEATED_INTENT: '本次分析反复发起相同的调用，收尾调用未形成可发布的分析结论。',
-    CONSECUTIVE_ERRORS: '本次分析的工具调用连续出错，收尾调用未形成可发布的分析结论。',
-    CONTEXT_LIMIT: '本次分析的上下文已超出模型窗口，未形成可发布的分析结论。',
-    NO_PROGRESS: '本次分析连续多轮未取得新的有效结果，收尾调用未形成可发布的分析结论。',
-    REGENERATION_LIMIT: '模型输出连续未满足要求，收尾调用未形成可发布的分析结论。',
-    MEMORY_LIMIT: '系统内存紧张，本次分析提前收尾，未形成可发布的分析结论。',
-    FINAL_CALL_INVALID: '收尾调用没有返回合法的结束结果，未形成可发布的分析结论。',
-  } satisfies Record<ReportEndReason, string>,
-  lastFailure: (reason: string) => `最后一次操作失败：${reason}`,
-  lastInvalidOutput: (reason: string) => `最后一次模型输出不合格：${reason}`,
-  lastNoFinish: '最后一次收尾调用没有返回合法的结束结果。',
-  invalidOutput: INVALID_OUTPUT_REASONS,
-  emptyFiles: (count: number) => `本次另成功读取了 ${count} 个空文件，未列入行范围来源。`,
   genericReason: '请求未能完成，请检查运行配置。',
-  reportTitle: '分析报告',
-  answerTitle: '回答',
-  conclusionsTitle: '结论',
-  unconfirmedTitle: '未查证的问题',
-  sourceLabel: '来源：',
-  source: (path: string, start: number, end: number) =>
-    start === end ? `${path} 第 ${start} 行` : `${path} 第 ${start}–${end} 行`,
-  wrapUpLine: (reason: string) => `收尾原因：${reason}`,
-  /** Why an item is not a conclusion: the model said so, or the source check refused it. */
-  unconfirmedReason: {
-    NO_SOURCE: '模型没有给出来源，系统未采纳为结论',
-    SOURCE_NOT_READ: '引用的代码没有被实际读取，系统未采纳为结论',
-    MODEL_UNCONFIRMED: '模型提出、但没有查证',
-  },
-  wrapUp: {
-    ROUND_LIMIT: '已达到轮次上限。',
-    BUDGET_WRAP_UP: '已进入额度收尾阶段。',
-    BUDGET_EXHAUSTED: '模型调用额度已不足。',
-    TOOL_UNIT_LIMIT: '已用完工具调用次数。',
-    WALL_CLOCK_LIMIT: '已用完时间额度。',
-    REPEATED_INTENT: '反复发起相同的调用。',
-    CONSECUTIVE_ERRORS: '工具调用连续出错。',
-    CONTEXT_LIMIT: '上下文已超出模型窗口。',
-    NO_PROGRESS: '连续多轮没有有效进展。',
-    REGENERATION_LIMIT: '模型输出连续未满足要求。',
-    MEMORY_LIMIT: '系统内存紧张。',
-    FINAL_CALL_INVALID: '收尾调用没有返回合法的结束结果。',
-  } satisfies Record<ReportEndReason, string>,
   reason: {
     INVALID_REQUEST: '请求格式不符合系统协议。',
     CALLER_FORBIDDEN: '调用方无权发起请求。',
@@ -104,7 +47,7 @@ export const InteractionMessages = Object.freeze({
     PIN_FAILED: '代理定义固定失败。',
     WORKFLOW_INTERNAL: '分析流程发生内部错误。',
     KERNEL_INTERNAL: '运行控制发生内部错误。',
-    NO_OPEN_TURN: '当前没有进行中的对话轮次。',
+    NO_OPEN_INPUT: '当前没有进行中的对话轮次。',
     SESSION_COMMAND_UNKNOWN: '未知的会话指令。',
     SESSION_QUERY_UNKNOWN: '未知的会话查询。',
     PROJECT_FILE_FORBIDDEN: '不允许读取该项目文件。',
@@ -112,7 +55,6 @@ export const InteractionMessages = Object.freeze({
     SESSION_NOT_FOUND: '找不到对应会话。',
     SESSION_IN_USE: '会话正在被另一个进程使用。',
     WORKSPACE_CHANGE_NOT_CONFIRMED: '这个对话来自另一个文件夹，要在这里打开它需要先确认。',
-    TEMPLATE_UNSUPPORTED: '不支持该模板。',
     HUMAN_REQUEST_NOT_PENDING: '该询问已失效。',
     CONTEXT_OVERFLOW: '上下文超出了模型窗口。',
     QUOTA_EXHAUSTED: '已用完工具调用次数或时间额度。',
@@ -141,6 +83,9 @@ export const InteractionMessages = Object.freeze({
     PAGE_UNAVAILABLE: '页面无法获取（不存在、需要登录或网站拒绝）。',
     MEMORY_PRESSURE: '系统内存紧张，暂不接受新的任务。',
     WRITE_SCOPE_CONFLICT: '这个子任务要写的范围正被另一个任务占用，没有启动。',
+    MISSION_BUSY: '这个任务已经有一段在运行。',
+    MISSION_CLOSED: '这个任务已经结束，不能再继续。',
+    MISSION_NOT_FOUND: '找不到它所属的上级任务，或上级任务已经结束。',
     WRITE_SCOPE_DELEGATED: '已经交给子任务去写的范围，在它们结束之前不能再写。',
     BUDGET_INSUFFICIENT: '额度不够同时派生这些子任务。',
     DELEGATION_NOT_FOUND: '这次派生已经失效。',

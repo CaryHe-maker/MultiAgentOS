@@ -6,10 +6,9 @@ import {
   sha256Hex,
   type AssembleContextPack,
   type ContextPack,
-  type OrientContextPack,
 } from '@multiagentos/contracts';
 
-type AnyItem = OrientContextPack['items'][number] | AssembleContextPack['items'][number];
+type AnyItem = AssembleContextPack['items'][number];
 
 /** A ContextItem before the fields derived from its content and its place in the pack. */
 export type ItemDraft<Item extends AnyItem = AnyItem> = Item extends unknown
@@ -51,25 +50,4 @@ export function packArtifact(pack: ContextPack): {
   text: string;
 } {
   return { mediaType: MEDIA_TYPES.contextPack, text: canonicalJson(pack) };
-}
-
-/**
- * Greedy fit used by orient: keeps the drafts in order while they fit the budget and
- * skips the ones that do not, so a large item never hides smaller ones after it.
- */
-export function fitToBudget<Draft extends ItemDraft>(
-  drafts: readonly Draft[],
-  tokenBudget: number,
-): { kept: Draft[]; dropped: number } {
-  const kept: Draft[] = [];
-  let used = 0;
-  let dropped = 0;
-  for (const draft of drafts) {
-    const tokens = draftTokens(draft);
-    if (used + tokens <= tokenBudget) {
-      kept.push(draft);
-      used += tokens;
-    } else dropped += 1;
-  }
-  return { kept, dropped };
 }

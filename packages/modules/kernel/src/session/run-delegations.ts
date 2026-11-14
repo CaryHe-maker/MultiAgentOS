@@ -81,6 +81,12 @@ export class RunDelegations {
     if (id !== undefined) this.#delegations.get(id)?.live.delete(agentRunId);
   }
 
+  /** A task that ended is open again after a rewind: its roots are lent again (Orchestration 7.5). */
+  reopen(agentRunId: string): void {
+    const id = this.#delegationOf.get(agentRunId);
+    if (id !== undefined) this.#delegations.get(id)?.live.add(agentRunId);
+  }
+
   /** The tasks that never registered are given up; true when this was the first time. */
   release(id: string): boolean {
     const delegation = this.#delegations.get(id);
@@ -95,6 +101,23 @@ export class RunDelegations {
     // Not released, and none runs: it is open until the tasks that have not registered are given
     // up, or all of them have registered.
     return [...delegation.tasks.values()].some((task) => task.claimedBy === undefined);
+  }
+
+  /**
+   * The roots `parent` has lent and not got back (Orchestration 8.2, D17): those of tasks that
+   * run, and of tasks that may still register. Only the borrower writes them until they return.
+   */
+  delegatedRoots(parent: string): string[] {
+    const roots: string[] = [];
+    for (const delegation of this.#delegations.values()) {
+      if (delegation.parent !== parent) continue;
+      for (const task of delegation.tasks.values()) {
+        const held =
+          task.claimedBy === undefined ? !delegation.released : delegation.live.has(task.claimedBy);
+        if (held) roots.push(...task.roots);
+      }
+    }
+    return roots;
   }
 
   /** A parent with children that run, or tasks that may still register, holds no write roots. */

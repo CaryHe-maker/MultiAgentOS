@@ -1,0 +1,81 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: fix-verify
+version: v0.1.0
+description: 'Pre-orchestrated: find the cause of a failure, fix it, and check until it passes.'
+agent: fixer
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary: find the cause of a failure, fix it, and run a check until it passes
+  params:
+    - name: check
+      description: the command that shows the failure now and must pass when it is fixed
+      required: true
+  phases:
+    - name: reproduce
+      instructions: >-
+        Run the check yourself first and read what fails; read the code it points to. Do not
+        start a worker before you know what the failure is.
+    - name: fix
+      tasks:
+        agent: worker
+        min: 1
+        max: 1
+        context: inherit
+      repeat: 3
+      instructions: >-
+        Start one worker with your writeScope (or the part of it the fix needs). Its goal names
+        the failure (the failing test, the error and where), the cause you found or suspect, what
+        must not change, and its acceptance: the check passes. Sleep until it ends, then run the
+        check yourself. If it still fails and rounds are left, start the next fix with what this
+        round learned (what was tried, the new output); never repeat a fix that did not work.
+    - name: report
+      instructions: >-
+        Finish with the cause, the change, the output of the last check and, when it still fails,
+        what was tried and what you think is left.
+  example: |-
+    Example 1. Brief (from the root of a small language toolchain): goal "closure_in_loop
+    fails: three closures made in a loop all print 3 where docs/spec.md 4.2 says 0 1 2; find
+    whether the compiler or the VM is at fault and fix it"; check "python3
+    tests/conformance/run.py func/closure_in_loop"; writeScope ["lang/compiler/",
+    "lang/vm/"].
+    reproduce: I ran the check: it prints 3 3 3. I dumped the bytecode of the program: one
+    CAPTURE of slot 1 before the loop, where lang/bytecode.md section 3 says the body of a
+    loop opens a fresh slot per iteration (OPEN_SLOT). The VM runs what it is given
+    correctly, so the fault is in lang/compiler/loops.py, which never emits OPEN_SLOT.
+    fix (round 1): run_subagents with one worker "loop-slot", writeScope ["lang/compiler/"],
+    goal "lang/compiler/loops.py compiles a for loop with one slot for the loop variable, so
+    closures made in the body share it. Emit OPEN_SLOT at the top of the body and copy the
+    variable into it, as lang/bytecode.md section 3 says; do not change the VM or the
+    bytecode format.", acceptance ["python3 tests/conformance/run.py func/closure_in_loop
+    passes", "the unit tests of lang/compiler pass"]. Slept until it ended. Check: passed.
+    report: finish_subagent status done; summary "the compiler gave a loop one slot for its
+    variable, so closures shared it; it now opens a slot per iteration as bytecode.md says;
+    closure_in_loop passes"; changed lang/compiler/loops.py.
+
+    Example 2. Brief: goal "parse_date returns the wrong day for dates before 1970 since the
+    switch to the new time library"; check "pytest tests/test_dates.py -q";
+    writeScope ["src/dates.py", "tests/test_dates.py"].
+    reproduce: the check fails in test_before_epoch: 1969-12-31 comes back as 1970-01-01. In
+    src/dates.py parse_date divides a negative number of seconds with // and then takes the
+    remainder of the absolute value, so negative days round toward zero.
+    fix (round 1): one worker "epoch-floor" with the cause and "keep the output for every date
+    after 1970 as it is". Check: passed.
+    report: finish_subagent status done: negative timestamps were rounded toward zero; fixed
+    in src/dates.py; tests/test_dates.py passes.
+
+    Example 3. Brief: goal "the build of the web app fails since the upgrade of the bundler";
+    check "npm run build"; writeScope ["web/"].
+    reproduce: the build stops at "Cannot use import statement outside a module" in
+    web/scripts/icons.js, which the new bundler loads as CommonJS.
+    fix (round 1): a worker renames it to icons.mjs and updates the import; the build now
+    stops at a missing export in web/src/theme.ts. Round 2: a worker exports the theme as the
+    error asks, with what round 1 learned; the build passes.
+    report: finish_subagent status done with both causes, both changes and the last build
+    output.

@@ -4,7 +4,7 @@
  * the console down to the Executors, with only the provider's HTTP API scripted per Agent; what
  * the model would see is read from the requests the provider received.
  */
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from '@multiagentos/contracts';
@@ -21,6 +21,9 @@ import {
   type ChatOptions,
   type ScriptedChat,
 } from './chat-driver.js';
+
+/** run_subagents returns at once: main sleeps until its tasks end (D14). */
+const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
 
 const TIMEOUT = 90_000;
 const bwrapWorks = (await probeSandbox(tmpdir())).available;
@@ -51,12 +54,24 @@ async function roots(files: Readonly<Record<string, string>> = {}): Promise<Plac
   return { dataDir, repository };
 }
 
+/** Some cases count the questions about commands: commands are asked one by one here. */
+const asking = (config: SystemConfig): SystemConfig => ({
+  ...config,
+  kernel: { ...config.kernel, command: { ...config.kernel.command, approval: 'ask' } },
+});
+
 async function chatOn(
   place: Place,
   provider: ScriptedChat,
   options: Partial<ChatOptions> = {},
 ): Promise<Chat> {
-  const chat = await openChat({ ...place, provider, ...options });
+  const own = options.configure ?? ((each: SystemConfig) => each);
+  const chat = await openChat({
+    ...place,
+    provider,
+    ...options,
+    configure: (config) => asking(own(config)),
+  });
   open.push(chat);
   return chat;
 }
@@ -100,6 +115,7 @@ describe('P2: two workers with separate scopes', () => {
               { name: 'fix-api', agent: 'worker', goal: 'write api/new.txt', writeScope: ['api'] },
               { name: 'fix-ui', agent: 'worker', goal: 'write ui/new.txt', writeScope: ['ui'] },
             ),
+            waitForTasks(),
             reply('both done'),
           ],
         },
@@ -153,6 +169,10 @@ describe('P2: two workers with separate scopes', () => {
               { name: 'fix-api', agent: 'worker', goal: 'change the api', writeScope: ['api'] },
               { name: 'fix-ui', agent: 'worker', goal: 'change the ui', writeScope: ['ui'] },
             ),
+            waitForTasks(),
+            // A blocked task wakes its parent at once (D28); the other may still run, so wait again
+            // (refused, and answered, when it has already ended).
+            waitForTasks(),
             reply('done'),
           ],
         },
@@ -194,6 +214,7 @@ describe('the tools of each Agent', () => {
             { name: 'look', agent: 'explorer', goal: 'find auth' },
             { name: 'change', agent: 'worker', goal: 'edit', writeScope: ['src'] },
           ),
+          waitForTasks(),
           reply('ok'),
         ],
         explorer: [finish('found auth in src/auth.ts')],
@@ -257,6 +278,7 @@ describe('dependencies and results', () => {
               },
               { name: 'survey', agent: 'explorer', goal: 'find the auth code' },
             ),
+            waitForTasks(),
             reply('done'),
           ],
           explorer: [finish('auth lives in src/auth.ts, nothing else')],
@@ -295,26 +317,21 @@ describe('dependencies and results', () => {
 
 describe('B2: more than the caller can lend', () => {
   it(
-    'starts nothing, and tells the caller what it can lend',
+    'starts nothing when even the smallest shares do not fit, and tells the caller what it can lend',
     async () => {
       const place = await roots();
+      // Shares that are too large are cut to fit (each at least its Agent's smallest), so only
+      // more tasks than fit at their smallest are refused: four workers here.
       const provider = scriptedAgents({
         main: [
           spawn(
-            {
-              name: 'one',
+            ...['a', 'b', 'c', 'd'].map((scope, index) => ({
+              name: `w${String(index)}`,
               agent: 'worker',
               goal: 'x',
-              writeScope: ['a'],
+              writeScope: [scope],
               budget: { tokens: 1_200_000 },
-            },
-            {
-              name: 'two',
-              agent: 'worker',
-              goal: 'y',
-              writeScope: ['b'],
-              budget: { tokens: 1_200_000 },
-            },
+            })),
           ),
           reply('by myself'),
         ],
@@ -324,7 +341,8 @@ describe('B2: more than the caller can lend', () => {
           ...config,
           kernel: {
             ...config.kernel,
-            budget: { ...config.kernel.budget, turnTokenLimit: 3_000_000 },
+            // Counted at whole input limits (rule 10), so four workers do not fit even at least.
+            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000, reserveShare: 1 },
           },
         }),
       });
@@ -332,7 +350,113 @@ describe('B2: more than the caller can lend', () => {
       expect(provider.requests).toHaveLength(2);
       const answer = textOf(provider.requests[1]?.messages.filter((m) => m.role === 'tool').at(-1));
       expect(answer).toMatch(/BUDGET_INSUFFICIENT: at most \d+ tokens can be lent/u);
+      expect(answer).toMatch(/these 4 task\(s\) need at least \d+ even at their smallest/u);
       expect(chat.printed('REPLY')).toContain('by myself');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('more budget for the work of an input (M2Design 7.3, rule 6)', () => {
+  // The least an input may open with: main is within one call of its line after its first call.
+  // Counted at whole input limits (rule 10), which these cases are written for.
+  const LEAST_OF_MAIN = 2_832_000;
+  const short =
+    (extension?: { mode: 'ask' | 'extend' | 'stop'; max: number }) =>
+    (config: SystemConfig): SystemConfig => ({
+      ...config,
+      kernel: {
+        ...config.kernel,
+        budget: {
+          ...config.kernel.budget,
+          inputTokenLimit: LEAST_OF_MAIN,
+          reserveShare: 1,
+          ...(extension === undefined ? {} : { extension }),
+        },
+      },
+    });
+  const script = () =>
+    scriptedAgents({
+      // Three rounds that each do something new, or the run ends for want of progress.
+      main: [
+        tool('list_files', { depth: 1 }),
+        tool('read_file', { path: 'a.txt' }),
+        tool('list_files', { depth: 2 }),
+        reply('done'),
+      ],
+    });
+  const aboutBudget = (chat: Chat) =>
+    chat.questions.filter((question) => question.includes('额度快用完了'));
+  const audit = async (place: Place) => {
+    const [id] = await readdir(join(place.dataDir, 'sessions'));
+    return readFile(
+      join(place.dataDir, 'sessions', id ?? '', 'kernel-core', 'audit.jsonl'),
+      'utf8',
+    );
+  };
+
+  it(
+    'asks the user before the root would wrap up, and with a yes the work goes on unaware of it',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, { configure: short() });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(aboutBudget(chat).length).toBeGreaterThanOrEqual(1);
+      expect(aboutBudget(chat)[0]).toContain('[y 增加 / n 不增加，收尾]');
+      // The model was never told: every request it got says its budget is fine.
+      for (const request of provider.requests)
+        expect(textOf(request.messages.at(-1))).toContain(
+          'Budget: this request NORMAL, run NORMAL',
+        );
+      expect(seen(provider)).not.toContain('WRAP_UP');
+      const lines = await audit(place);
+      expect(lines).toContain('"capability":"budget.extend"');
+      expect(lines).toContain('"type":"BUDGET_EXTENDED"');
+      expect(lines).toContain('"by":"USER"');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'adds nothing with a no, and does not ask again',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, {
+        configure: short(),
+        answer: (question) => (question.includes('额度快用完了') ? 'n' : 'y'),
+      });
+      await chat.say('go');
+      expect(aboutBudget(chat)).toHaveLength(1);
+      expect(await audit(place)).not.toContain('BUDGET_EXTENDED');
+      // Nothing was added, and the work goes on with what it has (here that is enough to reply;
+      // when it is not, the ledger wraps the work up, as it always did).
+      expect(chat.printed('REPLY')).toContain('done');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'adds without asking, or not at all, as the configuration says',
+    async () => {
+      const first = await roots();
+      const extended = script();
+      const chat = await chatOn(first, extended, { configure: short({ mode: 'extend', max: 4 }) });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(aboutBudget(chat)).toHaveLength(0);
+      expect(await audit(first)).toContain('"by":"CONFIGURED"');
+      expect(seen(extended)).not.toContain('WRAP_UP');
+
+      const second = await roots();
+      const stopped = script();
+      const other = await chatOn(second, stopped, { configure: short({ mode: 'stop', max: 0 }) });
+      await other.say('go');
+      expect(aboutBudget(other)).toHaveLength(0);
+      expect(await audit(second)).not.toContain('BUDGET_EXTENDED');
+      expect(other.printed('REPLY')).toContain('done');
     },
     TIMEOUT,
   );
@@ -344,7 +468,11 @@ describe('what the user sees', () => {
     async () => {
       const place = await roots({ 'src/auth.ts': 'x\n' });
       const provider = scriptedAgents({
-        main: [spawn({ name: 'survey', agent: 'explorer', goal: 'look' }), reply('done')],
+        main: [
+          spawn({ name: 'survey', agent: 'explorer', goal: 'look' }),
+          waitForTasks(),
+          reply('done'),
+        ],
         explorer: [finish('looked')],
       });
       const chat = await chatOn(place, provider);
@@ -353,7 +481,8 @@ describe('what the user sees', () => {
         live.activity.filter((line) => line.label.startsWith('explorer survey')),
       );
       expect(branches.length).toBeGreaterThan(0);
-      expect(branches.every((line) => line.branch?.endsWith('└─ ') === true)).toBe(true);
+      // Under the caller while the caller runs; once it sleeps, its task stands on its own line.
+      expect(branches.some((line) => line.branch?.endsWith('└─ ') === true)).toBe(true);
       await doneReplies(chat, 1);
       await chat.console.submit('/timeline');
       const timeline = chat.printed('NOTICE').at(-1) ?? '';
@@ -373,6 +502,7 @@ real('what a command changed (M2Design 7.1)', () => {
         {
           main: [
             spawn({ name: 'make', agent: 'worker', goal: 'make a file', writeScope: ['out'] }),
+            waitForTasks(),
             reply('done'),
           ],
         },
@@ -412,6 +542,7 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
               { name: 'left', agent: 'worker', goal: 'say hi', writeScope: ['a'] },
               { name: 'right', agent: 'worker', goal: 'say hi', writeScope: ['b'] },
             ),
+            waitForTasks(),
             reply('done'),
           ],
         },

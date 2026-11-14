@@ -34,7 +34,7 @@ const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment =>
 const status = {
   round: 2,
   maxRounds: 10,
-  budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+  budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
   final: false,
 } as const;
 const call = { toolCallId: 'call_1', toolName: 'read_file', arguments: { path: 'a' } };
@@ -306,11 +306,22 @@ describe('model-call', () => {
   });
   async function run(
     reply: () => Response,
-    over: { final?: boolean; finalMode?: 'AUTO' | 'FORCED' } = {},
+    over: {
+      final?: boolean;
+      finalMode?: 'AUTO' | 'FORCED';
+      replayKeep?: number;
+      history?: ResolvedHistoryEntry[];
+    } = {},
   ) {
     const bodies: Record<string, unknown>[] = [];
-    const pack = await packOf(assembleInput({ toolSpecs: [...tools] }));
+    const pack = await packOf(
+      assembleInput({
+        toolSpecs: [...tools],
+        ...(over.history === undefined ? {} : { history: over.history }),
+      }),
+    );
     const executor = createModelCallExecutor({
+      ...(over.replayKeep === undefined ? {} : { replayKeep: over.replayKeep }),
       fetch: (_url, init) => {
         bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
         return Promise.resolve(reply());
@@ -340,6 +351,45 @@ describe('model-call', () => {
     });
     if (outcome.outcome === 'COMPLETED')
       expect(outcome.result.artifact.text).not.toContain('new thought');
+  });
+
+  it('replays the thinking of only the latest steps when a window is set', async () => {
+    const turn = (seq: number, id: string, thought: string): ResolvedHistoryEntry => ({
+      ...entry(seq),
+      kind: 'MODEL_TURN',
+      text: `step ${String(seq)}`,
+      toolCalls: [{ ...call, toolCallId: id }],
+      reasoningContent: thought,
+    });
+    const result = (seq: number, id: string): ResolvedHistoryEntry => ({
+      ...entry(seq),
+      kind: 'TOOL_RESULT',
+      toolCallId: id,
+      toolName: 'read_file',
+      status: 'REJECTED',
+      reasonCode: 'USER_DECLINED',
+    });
+    const history = [
+      { ...entry(1, 'PINNED'), kind: 'HUMAN' as const, text: 'go' },
+      turn(2, 'call_a', 'first thought'),
+      result(3, 'call_a'),
+      turn(4, 'call_b', 'second thought'),
+      result(5, 'call_b'),
+      turn(6, 'call_c', 'third thought'),
+      result(7, 'call_c'),
+    ];
+    const thoughts = async (replayKeep?: number) => {
+      const { body } = await run(() => answer(toolCall('read_file', '{}')), {
+        history,
+        ...(replayKeep === undefined ? {} : { replayKeep }),
+      });
+      return (body['messages'] as { role: string; reasoning_content?: string }[])
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.reasoning_content);
+    };
+    expect(await thoughts()).toEqual(['first thought', 'second thought', 'third thought']);
+    expect(await thoughts(2)).toEqual(['', 'second thought', 'third thought']);
+    expect(await thoughts(0)).toEqual(['', '', '']);
   });
 
   it('leaves a final call free first, and forces the tool with thinking off on the retry', async () => {

@@ -82,7 +82,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     ledgers: new RunLedgers(
       {
         runTokenLimit: minShare(testAgentBudget) * 4,
-        turnTokenLimit: minShare(testAgentBudget) * 2,
+        inputTokenLimit: minShare(testAgentBudget) * 2,
       },
       testAgentBudget,
     ),

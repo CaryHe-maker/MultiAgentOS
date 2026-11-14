@@ -3,7 +3,7 @@
 ## 1. 目的与范围
 
 本目录定义 M2 的设计、计划、各组件机制、跨模块接口与验收要求。
-M2 的范围与设计以 [M2Design](M2Design.md)（已冻结，当前 v1.34）为准；本目录其余文档在它的基础上展开，
+M2 的范围与设计以 [M2Design](M2Design.md)（已冻结，当前 v1.35）为准；本目录其余文档在它的基础上展开，
 可以细化，不得与它矛盾。需要改变设计时，先在 M2Design 中发布新版本，再修改组件文档。
 
 当前的计划是 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3，从现在到发布）；已实现部分的现状是 [M2Baseline](M2Baseline.md)。
@@ -24,7 +24,10 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [Phase1Console](Phase1Console.md) | phase 1 控制台与流式输出：问题记录、流式的记录与删除规则、任务顺序 |
 | [WorkspaceSessionReference](WorkspaceSessionReference.md) | 开源项目（OpenCode、DeepSeek Harness）的 Workspace 与 Session 绑定做法，供 phase 1 的授权与工作区使用；只是参考，没有决定 |
 | [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、phase 发布检查 |
+| [Phase1TaskSet](Phase1TaskSet.md) | phase 1 的任务集设计：测什么、三层划分、对照 harness、筛选流程、调研进展 |
 | [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
+| [Orchestration](Orchestration.md) | phase 2 编排架构草案：MissionTree、后台命令、休眠与唤醒、跨任务消息、checkpoint 取代 Turn；待评审，评审后由 M2Design 新版本吸收 |
+| [Phase2Plan](Phase2Plan.md) | phase 2 总纲：多 Agent 并行执行底座 + 可选的编排范式；与 DeepSeek Super-agent 的比较；证明相比 DeepSeek Harness 有原生优势的对照实验设计 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |
 | [M2Security](M2Security.md) | 威胁模型、沙盒与授权的分层防护、C5 拦截矩阵 |
 | `Interface/` | 字段级接口，按通讯边界拆分；发布版只有 major 1 一套 Schema |
@@ -58,12 +61,14 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 
 | 文档 | 状态 |
 |---|---|
-| [M2Design](M2Design.md) | v1.34 定稿 |
+| [M2Design](M2Design.md) | v1.35 定稿 |
 | [M2ReleasePlan](M2ReleasePlan.md)、[M2Baseline](M2Baseline.md)、[M2Decisions](M2Decisions.md)、[M2FrozenTests](M2FrozenTests.md)、[Evaluation](Evaluation.md) | 新（phase 0），待评审 |
 | [M2TechStack](M2TechStack.md) | 实测已填 |
+| [Orchestration](Orchestration.md) | 草稿（phase 2 文档门），待评审 |
+| [Phase2Plan](Phase2Plan.md) | 已定（2026-11-12，Cary 决定）；对照实验的阈值与预算待定 |
 | [M2Security](M2Security.md) | 已实现部分已评审；phase 1–3 的对抗用例与审计后更新 |
 | [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md)、[KernelSupervisor](Interface/KernelSupervisor.md) | 已实现 |
-| Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；Workflow 的使用者模板与预置工作流部分为设计（phase 2） |
+| Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；使用者模板与 `analyze` 已删除，预编排模板作为专家 Agent（Orchestration D39、D46） |
 | Kernel：[Interaction](Kernel/Interaction.md)、[Core](Kernel/Core.md)、[Gateway](Kernel/Gateway.md)、[Execution](Kernel/Execution.md)、[Monitor](Kernel/Monitor.md)、[Supervisor](Kernel/Supervisor.md) | 已实现 |
 | Library：[AgentToolPool](Library/AgentToolPool.md)、[ExecutorSet](Library/ExecutorSet.md)、[SharedContracts](Library/SharedContracts.md) | 已实现；Agent 与 Prompt 模板库部分为设计（phase 2） |
 | Infrastructure：[Persistence](Infrastructure/Persistence.md)、[ArtifactStore](Infrastructure/ArtifactStore.md)、[ModuleHost](Infrastructure/ModuleHost.md)、[Fabric](Infrastructure/Fabric.md) | 已实现 |

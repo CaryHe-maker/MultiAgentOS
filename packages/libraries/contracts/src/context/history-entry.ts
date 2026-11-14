@@ -10,7 +10,6 @@ import { Sha256Schema, closed, count, text } from '../platform-common/schema-hel
 const entry = {
   /** `seq` of the log record the entry comes from. */
   seq: count(1),
-  turnId: Type.Optional(IdSchemas.turnId),
   category: Type.Enum(['PINNED', 'NORMAL']),
 };
 
@@ -40,6 +39,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
       outputRef: Type.Optional(ArtifactRefSchema),
       reasonCode: Type.Optional(ReasonCodeSchema),
+      /** A command that runs on as a job: its name in the task (Orchestration 6.1). */
+      jobId: Type.Optional(text(32)),
       /**
        * `outputRef` is the result cut to head and tail by a compaction (M2Design 9.6); this is the
        * `seq` of the record that cut it, which the estimate needs to know what a measurement predates.
@@ -49,18 +50,11 @@ export const ContextHistoryEntrySchema = Type.Union(
       requestId: Type.Optional(IdSchemas.requestId),
       fullRef: Type.Optional(ArtifactRefSchema),
     }),
-    /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
-    closed({
-      ...entry,
-      kind: Type.Literal('HANDOFF'),
-      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
-      toolCallId: ToolCallIdSchema,
-    }),
     /** Answers a tool call that did not run, or corrects a reply without one. */
     closed({
       ...entry,
       kind: Type.Literal('FEEDBACK'),
-      text: text(1000),
+      text: text(16000),
       toolCallId: Type.Optional(ToolCallIdSchema),
     }),
     /** `AGENTS.md`, appended when the run first reads the repository (M2Design 9.5). */
@@ -81,6 +75,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       acceptance: Type.Array(text(300), { maxItems: 10 }),
       writeScope: Type.Array(text(500), { maxItems: 10 }),
       inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
+      /** The playbook of the template the task follows, in words (Orchestration 3.9). */
+      playbook: Type.Optional(Type.String({ maxLength: 40_000 })),
     }),
     /**
      * The result of a task, by the model output that holds its `finish_subagent` call: PINNED in
@@ -121,6 +117,33 @@ export const ContextHistoryEntrySchema = Type.Union(
       toSeq: count(1),
       contentRef: ArtifactRefSchema,
     }),
+    /**
+     * A message from another task (Orchestration 5), by the model output that holds its
+     * `send_message` call: material from that task, never an instruction.
+     */
+    closed({
+      ...entry,
+      kind: Type.Literal('MESSAGE'),
+      from: text(64),
+      /** It interrupted the receiver: shown so that it is dealt with first (D20). */
+      interrupt: Type.Optional(Type.Boolean()),
+      messageKind: Type.Optional(Type.Enum(['inform', 'request', 'reply'])),
+      replyTo: Type.Optional(ToolCallIdSchema),
+      /** The tool results it carries, read with read_output as `ref_N/<toolCallId>`. */
+      referenceId: Type.Optional(ReferenceIdSchema),
+      references: Type.Optional(
+        Type.Array(closed({ toolCallId: ToolCallIdSchema, tool: text(64) }), { maxItems: 9 }),
+      ),
+      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+      toolCallId: ToolCallIdSchema,
+    }),
+    /** The plan of the work written by the root task (Orchestration 5.3), by its call. */
+    closed({
+      ...entry,
+      kind: Type.Literal('PLAN'),
+      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
+      toolCallId: ToolCallIdSchema,
+    }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
   ],
@@ -142,7 +165,6 @@ export const WRAP_UP_REASONS = [
   'MEMORY_LIMIT',
 ] as const;
 
-/** Shared with `AnalysisReport.wrapUp`, which adds the endings that are not wrap-ups. */
 export const WrapUpReasonSchema = Type.Enum(WRAP_UP_REASONS);
 export type WrapUpReason = Static<typeof WrapUpReasonSchema>;
 
@@ -160,7 +182,6 @@ export const ContextAssembleInputSchema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
-      orientPackRef: Type.Optional(artifactRefOf(MEDIA_TYPES.contextPack)),
       history: Type.Array(ContextHistoryEntrySchema),
       status: StatusFactsSchema,
       /** Tools the model is no longer offered, by model name (M2Design 3.6). */

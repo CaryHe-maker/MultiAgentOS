@@ -37,7 +37,6 @@ const tool = {
 };
 const config: ExecutionConfig = {
   executionLimits: {
-    REPOSITORY_ORIENT: tool,
     REPOSITORY_SEARCH: tool,
     REPOSITORY_LIST: tool,
     FILE_READ: tool,
@@ -54,9 +53,6 @@ const config: ExecutionConfig = {
   },
   retryBackoffBaseMs: 100,
   retryAfterMaxMs: 5000,
-  maxReportBytes: 1000,
-  maxSnapshotFiles: 100,
-  orientBudget: 100,
   searchBudget: 100,
   cancelGraceMs: 10,
   pauseDrainMs: 50,
@@ -85,6 +81,8 @@ function setup(
     /** Call slots; the test can change them. */
     slots?: { free: number };
     protectedPaths?: { snapshot: () => Promise<ReadonlySet<string>> };
+    /** An assembly past the trigger waits for this compaction before it is delivered. */
+    compaction?: () => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   } = {},
 ) {
   const bodies = new Map<string, Uint8Array>();
@@ -125,10 +123,13 @@ function setup(
     now: () => new Date(NOW),
   });
   const ledgers = new RunLedgers(
-    { runTokenLimit: minShare(testAgentBudget) * 4, turnTokenLimit: minShare(testAgentBudget) * 2 },
+    {
+      runTokenLimit: minShare(testAgentBudget) * 4,
+      inputTokenLimit: minShare(testAgentBudget) * 2,
+    },
     testAgentBudget,
   );
-  ledgers.openTurnLedger('trn_1');
+  ledgers.openInputLedger('trn_1');
   const dispatched: ExecutionRequest[] = [];
   const reports: UnitReport[] = [];
   const ended: string[] = [];
@@ -168,6 +169,12 @@ function setup(
             snapshot: options.protectedPaths.snapshot,
             quarantine: () => Promise.resolve([]),
           },
+        }),
+    ...(options.compaction === undefined
+      ? {}
+      : {
+          compactionDue: () => true,
+          afterAssemble: options.compaction,
         }),
     retrying: (activity) => retries.push(activity),
     released: (bytes) => releasedBytes.push(bytes),
@@ -234,7 +241,6 @@ function setup(
       requestId: testId('req', requests),
       agentRunId: testId('agr', agentRun),
       unitRunId: testId('unr', requests),
-      turnId: testId('trn'),
       unit: testUnitDefinition(kind),
       input: input as UnitInput,
       scope,
@@ -406,31 +412,6 @@ describe('results', () => {
 });
 
 describe('resolving references', () => {
-  it('turns objectiveRef into the objective', async () => {
-    const run = setup();
-    const objectiveRef = await run.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'why?',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.last().input).toMatchObject({ objective: 'why?' });
-  });
-
-  it('refuses an objective of another Session before anything runs', async () => {
-    const run = setup();
-    const other = setup();
-    const objectiveRef = await other.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'theirs',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.dispatched).toEqual([]);
-    expect(run.reports[0]).toMatchObject({
-      status: 'REJECTED',
-      reasonCode: 'INVALID_ARTIFACT_REF',
-    });
-  });
-
   it('assembles history from artifacts, and tells the model what a refusal means', async () => {
     const run = setup();
     const contentRef = await run.artifacts.storeUserInput({
@@ -450,7 +431,7 @@ describe('resolving references', () => {
       'SESSION',
     );
     const reasoningRef = await run.artifacts.put('secret thoughts', 'text/plain', 'SESSION');
-    const entry = { category: 'NORMAL', turnId: testId('trn') };
+    const entry = { category: 'NORMAL' };
     await run.submit(
       'CONTEXT_ASSEMBLE',
       {
@@ -479,7 +460,7 @@ describe('resolving references', () => {
         status: {
           round: 1,
           maxRounds: 10,
-          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
           final: false,
         },
       },
@@ -845,6 +826,82 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
       ),
     ).toBe(true);
     // The runEpoch did not move, so nothing was left to judge unconfirmed.
+    expect(run.faults).toEqual([]);
+  });
+
+  it('cancels the attempts of one AgentRun only, its queued ones too (Orchestration 5.1)', async () => {
+    const run = setup();
+    const contextPackRef = await modelPack(run);
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, 1);
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', { path: 'b.ts' }, repository, 2);
+    expect(run.dispatched).toHaveLength(2);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // The model call of AgentRun 1 is cancelled, its queued read answers at once, and the read of
+    // AgentRun 2 goes on untouched.
+    expect(run.cancelledExecutions).toEqual([
+      { executionId: run.dispatched[0]?.executionId, reason: 'ABORTED' },
+    ]);
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED']);
+    await run.execution.handleFact(run.factFor(run.dispatched[1] as never, run.fileResult()));
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED', 'OK']);
+  });
+
+  it('interrupts an assembly held for its compaction at once, not as a stop it cannot confirm', async () => {
+    // The real case (2026-11-14): a worker's assembly came out past the trigger and waited for a
+    // compaction; its parent interrupted it meanwhile. The assembly's execution had already ended,
+    // so no fact of a stop would ever come.
+    let compactionDone: (verdict: 'PROCEED') => void = () => undefined;
+    const run = setup({
+      compaction: () =>
+        new Promise((resolve) => {
+          compactionDone = resolve;
+        }),
+    });
+    await run.submit(
+      'CONTEXT_ASSEMBLE',
+      {
+        final: false,
+        history: [],
+        status: {
+          round: 2,
+          maxRounds: 10,
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+          final: false,
+        },
+      },
+      { kind: 'NONE' },
+    );
+    await run.execution.handleFact(
+      run.factFor(run.last(), {
+        outcome: 'COMPLETED',
+        result: {
+          output: {
+            contextPackId: testId('ctx'),
+            tokenCount: 95_000,
+            tokenBudget: 100_000,
+            prefixSha256: 'a'.repeat(64),
+            projectionDigest: 'b'.repeat(64),
+            headDigest: 'c'.repeat(64),
+            elidedEntries: [],
+          },
+          artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+        },
+      }),
+    );
+    expect(run.reports).toEqual([]);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // Every grace the abort set runs out; the run must not be judged unconfirmed for it.
+    for (const timer of [...run.timers]) if (!timer.cancelled) timer.due();
+    expect(run.faults).toEqual([]);
+    expect(run.execution.unknownEffects()).toEqual([]);
+    expect(run.reports).toEqual([
+      expect.objectContaining({ status: 'INTERRUPTED', interruptedBy: 'ABORTED' }),
+    ]);
+    // The compaction that ends later answers nothing more.
+    compactionDone('PROCEED');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(run.reports).toHaveLength(1);
     expect(run.faults).toEqual([]);
   });
 

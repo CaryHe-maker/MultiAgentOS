@@ -17,7 +17,7 @@ import {
   type ExecutionConfig,
 } from './attempt-request.js';
 import type { Fingerprints } from './change-scan.js';
-import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
+import { publishMessage, type BuiltInResult } from './built-in-units.js';
 import {
   AttemptQueues,
   type ConcurrencyClass,
@@ -166,7 +166,6 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
     case 'FILE_WRITE':
     case 'FILE_EDIT':
     case 'MESSAGE_PUBLISH':
-    case 'REPORT_PUBLISH':
       return 'WRITE';
     case 'COMMAND':
       return spec.scope.kind === 'SANDBOX' &&
@@ -179,6 +178,9 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   }
 }
 
+/** What a checkpoint holds: what may change the workspace (Orchestration 7.3). */
+const mutating = (cls: ConcurrencyClass): boolean => cls === 'WRITE' || cls === 'EXEC';
+
 /** What a Unit attempt completes with; CONTEXT_PRUNE is Kernel's own and answers the compaction. */
 type Completed = Exclude<
   Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
@@ -186,12 +188,10 @@ type Completed = Exclude<
 >;
 type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
-/** The overview is a structure with its own token budget, not a preview of an output. */
+/** Model work has no preview limits: its output is not cut for the model. */
 const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
   const { executionKind } = fact;
-  return executionKind === 'MODEL' ||
-    executionKind === 'CONTEXT_ASSEMBLE' ||
-    executionKind === 'REPOSITORY_ORIENT'
+  return executionKind === 'MODEL' || executionKind === 'CONTEXT_ASSEMBLE'
     ? undefined
     : config.executionLimits[executionKind];
 };
@@ -206,6 +206,11 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
+  /**
+   * Assemblies whose execution has ended and that wait for a compaction before they are delivered
+   * (Kernel/Core 6a): nothing executes for them any more, so a stop has nothing to confirm.
+   */
+  readonly #heldForCompaction = new Set<string>();
   readonly #internal = new Map<string, (fact: ExecutionFact) => void>();
   readonly #effects: UnknownEffect[] = [];
   #seq = 0;
@@ -214,6 +219,8 @@ export class RunExecution {
   #cancelFallback: (() => void) | undefined;
   /** While paused or pausing nothing new starts (Kernel/Execution 4e). */
   #held = false;
+  /** Set while a checkpoint holds mutating work (Orchestration 7.3). */
+  #mutatingHeld: (() => void) | undefined;
   #onDrained: (() => void) | undefined;
   readonly #drainTimers = new Set<() => void>();
 
@@ -239,6 +246,14 @@ export class RunExecution {
       agentRunId: spec.agentRunId,
       cls: concurrencyClassOf(spec),
       state: 'QUEUED',
+      // What a command may write decides which others it may run beside (M2Design 7.1).
+      ...(spec.scope.kind === 'SANDBOX' && spec.scope.backend === 'BWRAP'
+        ? {
+            roots: [...spec.scope.profile.writableRoots],
+            // What it lent or what is protected it only reads (Orchestration 8.2).
+            readOnly: [...spec.scope.profile.protectedExisting],
+          }
+        : {}),
     };
     this.#byId.set(unitAttemptId, attempt);
     this.#queues.add(attempt);
@@ -279,7 +294,12 @@ export class RunExecution {
     try {
       do {
         this.#again = false;
-        const started = this.#held ? [] : this.#queues.startable(this.#deps.limits);
+        const started = this.#held
+          ? []
+          : this.#queues.startable(
+              this.#deps.limits,
+              (attempt) => this.#mutatingHeld === undefined || !mutating(attempt.cls),
+            );
         await Promise.all(started.map((attempt) => this.#run(attempt)));
       } while (this.#again);
     } finally {
@@ -334,14 +354,11 @@ export class RunExecution {
 
   async #run(attempt: Attempt): Promise<void> {
     const { unit, input } = attempt.spec;
-    const { artifacts, config } = this.#deps;
-    if (unit.executionKind === 'MESSAGE_PUBLISH' || unit.executionKind === 'REPORT_PUBLISH') {
+    const { artifacts } = this.#deps;
+    if (unit.executionKind === 'MESSAGE_PUBLISH') {
       let result: BuiltInResult;
       try {
-        result =
-          unit.executionKind === 'MESSAGE_PUBLISH'
-            ? await publishMessage(input, artifacts)
-            : await publishReport(input, artifacts, config.maxReportBytes);
+        result = await publishMessage(input, artifacts);
       } catch {
         result = { outcome: 'FAILED', reasonCode: 'INTERNAL' };
       }
@@ -621,12 +638,13 @@ export class RunExecution {
     fact: ExecutionFact,
     info: AssemblyInfo,
   ): Promise<void> {
+    this.#heldForCompaction.add(attempt.unitAttemptId);
     // A compaction that breaks must not break the call it was to make room for.
     const verdict =
       (await this.#deps.afterAssemble?.(info).catch(() => 'PROCEED' as const)) ?? 'PROCEED';
     this.#deps.enqueue(async () => {
-      // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
-      if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;
+      // Its AgentRun was interrupted meanwhile: the attempt was answered by that, not by this.
+      if (!this.#heldForCompaction.delete(attempt.unitAttemptId)) return;
       if (verdict === 'PROCEED') await this.#settle(attempt, fact);
       else
         await this.#finish(attempt, {
@@ -880,7 +898,43 @@ export class RunExecution {
   }
 
   /** The pause is complete once nothing is executing; Core then moves from PAUSING to PAUSED. */
+  /**
+   * The barrier of a checkpoint (Orchestration 7.3): new writes and foreground commands stay
+   * queued; `clear` is called once none is executing any more. Reads, the web and model calls go
+   * on. A command that runs in the background has detached and is not waited for.
+   */
+  holdMutating(clear: () => void): void {
+    this.#mutatingHeld = clear;
+    this.#checkMutatingClear();
+  }
+
+  /** The mutating attempts that wait behind the barrier now: what the snapshot did not see run. */
+  heldMutating(): string[] {
+    return this.#queues
+      .waitingQueued()
+      .filter((attempt) => mutating(attempt.cls))
+      .map((attempt) => attempt.spec.requestId);
+  }
+
+  releaseMutating(): void {
+    this.#mutatingHeld = undefined;
+    void this.#pump();
+  }
+
+  #checkMutatingClear(): void {
+    const clear = this.#mutatingHeld;
+    if (clear === undefined) return;
+    const busy = [...this.#queues.running(), ...this.#queues.waiting()].some((attempt) =>
+      mutating(attempt.cls),
+    );
+    if (busy) return;
+    // Called once; the barrier stays until it is released.
+    this.#mutatingHeld = () => undefined;
+    clear();
+  }
+
   #checkDrained(): void {
+    this.#checkMutatingClear();
     if (this.#onDrained === undefined || this.#queues.running().length > 0) return;
     const notify = this.#onDrained;
     this.#onDrained = undefined;
@@ -967,6 +1021,61 @@ export class RunExecution {
       });
     });
     // The pump looks again: what ended queues no more behind it.
+    void this.#pump();
+  }
+
+  /**
+   * Cancels the attempts of one AgentRun (Orchestration 5.1, 5.2): queued ones answer at once, sent
+   * ones get the stop of M2Design 4.7 and answer INTERRUPTED(ABORTED) when their fact comes. The
+   * rest of the run is untouched.
+   */
+  abortAgentRun(agentRunId: string): void {
+    for (const attempt of this.#queues.drainQueued(agentRunId)) {
+      attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+      void this.#over(attempt);
+    }
+    const sent: Attempt[] = [];
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.spec.agentRunId !== agentRunId) continue;
+      // An assembly held for a compaction has nothing executing: it answers now. The compaction
+      // goes on for the context; what it ends with is no answer to this attempt any more.
+      if (this.#heldForCompaction.delete(attempt.unitAttemptId)) {
+        void this.#finish(attempt, {
+          executionId: attempt.executionId ?? '',
+          outcome: 'INTERRUPTED',
+          interruptedBy: 'ABORTED',
+        });
+        continue;
+      }
+      // A write always finishes: cancelling it could leave half a file (as a pause does).
+      if (attempt.cls === 'WRITE' && attempt.executionId !== undefined) continue;
+      if (attempt.executionId !== undefined) {
+        sent.push(attempt);
+        this.#cancelSent(attempt, 'ABORTED');
+        continue;
+      }
+      if (attempt.state === 'WAITING') {
+        attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        void this.#over(attempt);
+        this.#queues.release(attempt);
+      } else attempt.cancelReason = 'ABORTED';
+    }
+    if (sent.length > 0) {
+      const { config, enqueue, schedule } = this.#deps;
+      schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
+        enqueue(() => {
+          for (const attempt of sent) {
+            if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+              continue;
+            this.#noteStop(attempt, attempt.executionId);
+            void this.#finish(attempt, {
+              executionId: attempt.executionId,
+              outcome: 'STOP_UNCONFIRMED',
+            });
+          }
+        });
+      });
+    }
     void this.#pump();
   }
 

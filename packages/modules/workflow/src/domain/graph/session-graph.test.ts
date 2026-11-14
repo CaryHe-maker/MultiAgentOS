@@ -8,14 +8,13 @@ import {
   compileTemplate,
   initialChatRevision,
   projectGraph,
-  validateRevision,
   type GraphRevision,
 } from './session-graph.js';
 
 const run = newId('wfr');
 const main = { id: 'main', version: 'v1.0.0' };
+const ROOT = 'msc_rootmission';
 const at = '2026-10-31T00:00:00.000Z';
-const rules = { builtInAgents: new Set(['main', 'planner', 'code-viewer']), allowConditions: true };
 
 type Spread<T> = T extends unknown ? Omit<T, 'seq' | 'at' | 'workflowRunId'> : never;
 function logOf(entries: readonly Spread<SessionLogRecord>[]): SessionLogRecord[] {
@@ -34,45 +33,36 @@ const extended = (revision: number, content: GraphRevision): Spread<SessionLogRe
 const ended = (
   nodeId: string,
   status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED',
-  result?: Record<string, unknown>,
-): Spread<SessionLogRecord> => ({
-  type: 'NODE_ENDED',
-  nodeId,
-  status,
-  ...(result === undefined ? {} : { result }),
-});
+): Spread<SessionLogRecord> => ({ type: 'NODE_ENDED', nodeId, status });
 const names = (nodes: readonly { name: string }[]): string[] => nodes.map((node) => node.name);
 
-const analyze: TemplateDefinition = {
+const pipeline: TemplateDefinition = {
   schemaVersion: 'v1',
   kind: 'TEMPLATE',
-  id: 'analyze',
+  id: 'pipeline',
   version: 'v1.0.0',
   digest: 'a'.repeat(64),
-  description: 'analyze',
-  origin: 'BUILTIN',
+  description: 'pipeline',
   nodes: [
-    { name: 'plan', kind: 'AGENT', agent: { id: 'planner', version: 'v1.1.0' } },
+    { name: 'explore', kind: 'AGENT', agent: { id: 'explorer', version: 'v0.1.0' } },
     {
-      name: 'view',
+      name: 'build',
       kind: 'AGENT',
-      agent: { id: 'code-viewer', version: 'v1.1.0' },
-      dependsOn: [{ node: 'plan', when: { field: 'action', equals: 'HANDOFF' } }],
-      inputFrom: 'HANDOFF',
+      agent: { id: 'worker', version: 'v0.1.0' },
+      dependsOn: ['explore'],
       output: true,
     },
   ],
 };
 
 describe('chat', () => {
-  const first = initialChatRevision(run, main);
+  const first = initialChatRevision(run, main, ROOT);
   const [firstPrompt, firstMain] = first.nodes;
   if (firstPrompt === undefined || firstMain === undefined) throw new Error('no nodes');
 
   it('derives the same IDs on replay and valid paths', () => {
-    expect(initialChatRevision(run, main)).toEqual(first);
-    expect(firstPrompt.path).toBe(`${run}/1/prompt#1`);
-    expect(validateRevision({ nodes: [], edges: [] }, first, rules)).toEqual([]);
+    expect(initialChatRevision(run, main, ROOT)).toEqual(first);
+    expect(firstPrompt.path).toBe(`${run}/1/prompt`);
   });
 
   it('starts main once the prompt is answered', () => {
@@ -95,8 +85,7 @@ describe('chat', () => {
         run,
       );
       expect(chatGrowthPoint(before)).toBe(firstMain.nodeId);
-      const growth = chatGrowthRevision(run, 2, firstMain.nodeId, main);
-      expect(validateRevision(before.graph, growth, rules)).toEqual([]);
+      const growth = chatGrowthRevision(run, 2, firstMain.nodeId, main, ROOT);
       const after = projectGraph(
         logOf([
           extended(1, first),
@@ -134,61 +123,40 @@ describe('chat', () => {
   });
 });
 
-describe('analyze', () => {
-  const { revision, errors } = compileTemplate(run, analyze);
-  const [prompt, plan, view] = revision.nodes;
-  if (prompt === undefined || plan === undefined || view === undefined) throw new Error('no nodes');
+describe('a template', () => {
+  const { revision, errors } = compileTemplate(run, pipeline, ROOT);
+  const [prompt, explore, build] = revision.nodes;
+  if (prompt === undefined || explore === undefined || build === undefined)
+    throw new Error('no nodes');
 
-  it('adds the root prompt and a conditional plan -> view edge', () => {
+  it('adds the root prompt and an edge for each dependency', () => {
     expect(errors).toEqual([]);
-    expect(names(revision.nodes)).toEqual(['prompt', 'plan', 'view']);
+    expect(names(revision.nodes)).toEqual(['prompt', 'explore', 'build']);
     expect(revision.edges).toEqual([
-      { from: prompt.nodeId, to: plan.nodeId, kind: 'DEPENDS' },
-      {
-        from: plan.nodeId,
-        to: view.nodeId,
-        kind: 'CONDITIONAL',
-        when: { field: 'action', equals: 'HANDOFF' },
-      },
+      { from: prompt.nodeId, to: explore.nodeId, kind: 'DEPENDS' },
+      { from: explore.nodeId, to: build.nodeId, kind: 'DEPENDS' },
     ]);
-    expect(view).toMatchObject({ inputFrom: 'HANDOFF', output: true });
-    expect(validateRevision({ nodes: [], edges: [] }, revision, rules)).toEqual([]);
+    expect(build).toMatchObject({ output: true });
   });
 
-  it('runs view on a handoff', () => {
+  it('runs a step once the one it depends on succeeded', () => {
     const projected = projectGraph(
       logOf([
         extended(1, revision),
         ended(prompt.nodeId, 'SUCCEEDED'),
-        ended(plan.nodeId, 'SUCCEEDED', { action: 'HANDOFF' }),
+        ended(explore.nodeId, 'SUCCEEDED'),
       ]),
       run,
     );
-    expect(names(advanceGraph(projected.graph, projected.view).ready)).toEqual(['view']);
+    expect(names(advanceGraph(projected.graph, projected.view).ready)).toEqual(['build']);
   });
 
-  it('skips view when plan finishes by itself', () => {
+  it('skips a step as failed when the one it depends on fails', () => {
     const projected = projectGraph(
       logOf([
         extended(1, revision),
         ended(prompt.nodeId, 'SUCCEEDED'),
-        ended(plan.nodeId, 'SUCCEEDED', { action: 'FINISH' }),
-      ]),
-      run,
-    );
-    const advance = advanceGraph(projected.graph, projected.view);
-    expect(advance.ready).toEqual([]);
-    expect(advance.skipped.map((entry) => [entry.node.name, entry.reason])).toEqual([
-      ['view', 'NOT_TAKEN'],
-    ]);
-  });
-
-  it('skips view as failed when plan fails', () => {
-    const projected = projectGraph(
-      logOf([
-        extended(1, revision),
-        ended(prompt.nodeId, 'SUCCEEDED'),
-        ended(plan.nodeId, 'FAILED'),
+        ended(explore.nodeId, 'FAILED'),
       ]),
       run,
     );
@@ -199,18 +167,18 @@ describe('analyze', () => {
 
   it('reports a dependency on a node that does not exist', () => {
     const broken: TemplateDefinition = {
-      ...analyze,
+      ...pipeline,
       nodes: [
         {
-          name: 'view',
+          name: 'build',
           kind: 'AGENT',
-          agent: analyze.nodes[0]?.kind === 'AGENT' ? analyze.nodes[0].agent : main,
+          agent: { id: 'worker', version: 'v0.1.0' },
           dependsOn: ['missing'],
         },
       ],
     };
-    expect(compileTemplate(run, broken).errors).toEqual([
-      { code: 'UNKNOWN_DEPENDENCY', node: 'view' },
+    expect(compileTemplate(run, broken, ROOT).errors).toEqual([
+      { code: 'UNKNOWN_DEPENDENCY', node: 'build' },
     ]);
   });
 });
@@ -222,13 +190,13 @@ describe('replay', () => {
         fc.array(fc.constantFrom('SUCCEEDED', 'FAILED', 'INTERRUPTED'), { maxLength: 6 }),
         (outcomes) => {
           const entries: Spread<SessionLogRecord>[] = [];
-          let current = initialChatRevision(run, main);
+          let current = initialChatRevision(run, main, ROOT);
           entries.push(extended(1, current));
           outcomes.forEach((status, index) => {
             const [prompt, agent] = current.nodes;
             if (prompt === undefined || agent === undefined) throw new Error('no nodes');
             entries.push(ended(prompt.nodeId, 'SUCCEEDED'), ended(agent.nodeId, status));
-            current = chatGrowthRevision(run, index + 2, agent.nodeId, main);
+            current = chatGrowthRevision(run, index + 2, agent.nodeId, main, ROOT);
             entries.push(extended(index + 2, current));
           });
           const log = logOf(entries);

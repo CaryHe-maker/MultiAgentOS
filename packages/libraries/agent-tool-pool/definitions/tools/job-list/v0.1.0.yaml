@@ -1,0 +1,17 @@
+schemaVersion: v1
+kind: TOOL
+id: job-list
+version: v0.1.0
+description: Control tool that lists the background commands of the task.
+purpose: CONTROL
+modelName: job_list
+modelDescription: >-
+  List your background commands: each with its id, the command and its state.
+parametersContract:
+  kind: contract
+  id: workflow.JobListArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

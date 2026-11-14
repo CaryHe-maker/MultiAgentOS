@@ -9,7 +9,7 @@ import {
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { testRunWork } from '../test-support/run-work.js';
-import type { UndoPlan } from './workspace-snapshots.js';
+import type { RollBackPlan } from './workspace-snapshots.js';
 import { SessionActor, type SessionDuties, type SessionStart } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
 
@@ -85,7 +85,7 @@ function setup(options: { summaryFails?: boolean; snapshots?: SessionDuties['sna
       commandId: event.commandId,
       result:
         event.command === 'OPEN'
-          ? { command: 'OPEN', outcome: 'READY', turnCount: 0 }
+          ? { command: 'OPEN', outcome: 'READY', inputCount: 0 }
           : event.command === 'CREATE'
             ? { command: 'CREATE', outcome: 'READY' }
             : { command: 'CLOSE', outcome: 'DONE' },
@@ -146,7 +146,7 @@ describe('new Session', () => {
 
   it('starts a template run', async () => {
     const { begin, toWorkflow } = setup();
-    const template = { id: 'analyze', version: 'v1.0.0' };
+    const template = { id: 'mission', version: 'v1.0.0' };
     await begin({ kind: 'NEW', requestId: newId('req'), input: input(), template });
     expect(toWorkflow[1]?.event).toMatchObject({ mode: 'ORCHESTRATION', templateRef: template });
   });
@@ -174,7 +174,7 @@ describe('opening a Session', () => {
     await begin({ kind: 'OPEN', requestId: newId('req') });
     expect(workflowTypes(toWorkflow)).toEqual(['OPEN', 'RunStart']);
     expect(toWorkflow[1]?.event).toMatchObject({ initialInput: false });
-    expect(currentRun().control.turnId).toBeUndefined();
+    expect(currentRun().control.openInput).toBeUndefined();
   });
 
   it('keeps nothing of a Session that could not open', async () => {
@@ -197,21 +197,26 @@ describe('opening a Session', () => {
 });
 
 describe('undo', () => {
-  const turnId = newId('trn');
-  const planOf = (external: UndoPlan['external']): UndoPlan => ({
-    turnIds: [turnId],
+  const planOf = (external: RollBackPlan['external']): RollBackPlan => ({
+    checkpointId: 'ckp_01ABCDEFGHJKMNPQRSTVWXYZ00',
+    label: 'user input',
+    inclusive: true,
     files: [{ path: 'a.txt' }],
     currentTree: 't'.repeat(40),
     external,
   });
   const edited = [{ path: 'a.txt', change: 'MODIFIED' }] as const;
   const snapshots = (overrides: Partial<NonNullable<SessionDuties['snapshots']>> = {}) => ({
-    turnStarted: () => Promise.resolve(),
-    turnEnded: () => Promise.resolve({}),
+    checkpoint: () => Promise.resolve('t'.repeat(40)),
+    settle: () => Promise.resolve({}),
     planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf([]) } as const),
-    applyUndo: () => Promise.resolve({ ok: true } as const),
-    diffTurn: () => Promise.resolve(undefined),
+    planRewind: () => Promise.resolve({ kind: 'NOTHING_TO_UNDO' } as const),
+    planRewindTo: () => Promise.resolve({ kind: 'NOTHING_TO_UNDO' } as const),
+    applyRollBack: () => Promise.resolve({ ok: true, files: ['a.txt'] } as const),
+    diffLatest: () => Promise.resolve(undefined),
     divergedFiles: () => Promise.resolve([]),
+    listCheckpoints: () => Promise.resolve([]),
+    diffCheckpoint: () => Promise.resolve(undefined),
     ...overrides,
   });
   const awaiting = async (kernel: ReturnType<typeof setup>) => {
@@ -228,7 +233,7 @@ describe('undo', () => {
     const kernel = setup({ snapshots: snapshots() });
     await kernel.begin();
     const run = kernel.currentRun();
-    expect(await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'))).toEqual({
+    expect(await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'))).toEqual({
       accepted: false,
       reasonCode: 'UNDO_NOT_AVAILABLE',
     });
@@ -237,10 +242,16 @@ describe('undo', () => {
   it('without external changes goes straight on, and tells both sides', async () => {
     const kernel = setup({ snapshots: snapshots() });
     const run = await awaiting(kernel);
-    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'));
     await kernel.settled();
-    expect(events(kernel, 'WorkspaceReverted')).toMatchObject([{ forced: false }]);
-    expect(kernel.toWorkflow.at(-1)?.event).toMatchObject({ type: 'WorkspaceReverted' });
+    expect(events(kernel, 'CheckpointRolledBack')).toMatchObject([
+      { undo: true, files: ['a.txt'] },
+    ]);
+    expect(events(kernel, 'CheckpointRolledBack')[0]).not.toHaveProperty('forced');
+    expect(kernel.toWorkflow.at(-1)?.event).toMatchObject({
+      type: 'CheckpointRolledBack',
+      undo: true,
+    });
     expect(events(kernel, 'UndoConfirmationRequested')).toEqual([]);
   });
 
@@ -249,21 +260,21 @@ describe('undo', () => {
     const kernel = setup({
       snapshots: snapshots({
         planUndo: () => Promise.resolve({ kind: 'PLAN', plan: planOf(edited) }),
-        applyUndo: (_plan, forced) => {
+        applyRollBack: (_plan, forced) => {
           applied.push(forced);
           return Promise.resolve(
-            applied.length === 1 ? ({ ok: false } as const) : ({ ok: true } as const),
+            applied.length === 1 ? ({ ok: false } as const) : ({ ok: true, files: [] } as const),
           );
         },
       }),
     });
     const run = await awaiting(kernel);
-    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'));
     await kernel.settled();
     const [first] = events(kernel, 'UndoConfirmationRequested') as { undoId: string }[];
     await kernel.actor.call(() => kernel.actor.confirmUndo(run, first?.undoId ?? '', 'FORCE'));
     await kernel.settled();
-    expect(events(kernel, 'WorkspaceReverted')).toEqual([]);
+    expect(events(kernel, 'CheckpointRolledBack')).toEqual([]);
     const asked = events(kernel, 'UndoConfirmationRequested') as { undoId: string }[];
     expect(asked).toHaveLength(2);
     expect(asked[1]?.undoId).not.toBe(first?.undoId);
@@ -274,18 +285,18 @@ describe('undo', () => {
     ).toEqual({ accepted: false, reasonCode: 'UNDO_UNKNOWN' });
     await kernel.actor.call(() => kernel.actor.confirmUndo(run, asked[1]?.undoId ?? '', 'FORCE'));
     await kernel.settled();
-    expect(events(kernel, 'WorkspaceReverted')).toMatchObject([{ forced: true }]);
+    expect(events(kernel, 'CheckpointRolledBack')).toMatchObject([{ forced: true }]);
     expect(applied).toEqual([true, true]);
   });
 
   it('says so when the failed undo has nothing left to ask about', async () => {
     const kernel = setup({
       snapshots: snapshots({
-        applyUndo: () => Promise.reject(new Error('a link on the way')),
+        applyRollBack: () => Promise.reject(new Error('a link on the way')),
       }),
     });
     const run = await awaiting(kernel);
-    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'));
     await kernel.settled();
     expect(events(kernel, 'UndoCancelled')).toMatchObject([{ reason: 'FILE_CHANGED' }]);
     expect(kernel.faults).toEqual([]);
@@ -298,7 +309,7 @@ describe('undo', () => {
       }),
     });
     const run = await awaiting(kernel);
-    await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'));
+    await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'));
     await kernel.actor.call(() => kernel.actor.answerOpenInput(run, 'hrq_01ABCDEFGH', input()));
     await kernel.settled();
     expect(events(kernel, 'UndoCancelled')).toMatchObject([{ reason: 'NEW_INPUT' }]);
@@ -307,7 +318,7 @@ describe('undo', () => {
   it('without snapshots there is nothing to undo with', async () => {
     const kernel = setup();
     const run = await awaiting(kernel);
-    expect(await kernel.actor.call(() => kernel.actor.undoTurns(run, 'LAST'))).toEqual({
+    expect(await kernel.actor.call(() => kernel.actor.undo(run, 'LAST'))).toEqual({
       accepted: false,
       reasonCode: 'UNDO_NOT_AVAILABLE',
     });
@@ -321,7 +332,7 @@ describe('Turns', () => {
     const run = currentRun();
     await actor.call(() => actor.requestOpenInput(run, 'hrq_01ABCDEFGH'));
     await settled();
-    expect(workflowTypes(toWorkflow).at(-1)).toBe('TurnClosed');
+    expect(workflowTypes(toWorkflow).at(-1)).toBe('InputSettled');
     expect(interactionTypes(toInteraction).slice(-2)).toEqual(['RunStateChanged', 'HumanRequest']);
     expect(run.control.phase).toBe('AWAITING_INPUT');
 
@@ -351,7 +362,7 @@ describe('closing a run', () => {
     const run = currentRun();
     await actor.call(() => actor.closeRun(run, { closeReason: 'COMPLETED', resultRef: ref }));
     await settled();
-    expect(workflowTypes(toWorkflow).slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+    expect(workflowTypes(toWorkflow).slice(-2)).toEqual(['InputSettled', 'RunClosed']);
     expect(toWorkflow.at(-2)?.event).toMatchObject({ reason: 'RUN_CLOSED' });
     expect(toInteraction.at(-1)?.event).toMatchObject({
       type: 'RunFinished',

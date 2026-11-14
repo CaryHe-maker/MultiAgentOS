@@ -121,12 +121,12 @@ function sampleLog(): SessionLogRecord[] {
 }
 
 describe('buildTimeline', () => {
-  it('puts the user message, the model call, the tool and the authorization into their Turn', async () => {
+  it('puts the user message, the model call, the tool and the authorization into the part of their input', async () => {
     const timeline = await buildTimeline(sampleLog(), readText);
     expect(timeline.repositoryRoot).toBe('/work/repo');
     expect(timeline.sandbox).toBe('ISOLATED');
-    expect(timeline.turns).toHaveLength(1);
-    const [turn] = timeline.turns;
+    expect(timeline.inputs).toHaveLength(1);
+    const [turn] = timeline.inputs;
     expect(turn?.user).toEqual(['read a.txt']);
     expect(turn?.endReason).toBe('COMPLETED');
     const kinds = turn?.entries.map((entry) => entry.kind);
@@ -175,7 +175,7 @@ describe('buildTimeline', () => {
   it('says so when a body expired instead of failing', async () => {
     const empty: ReadText = () => Promise.resolve(undefined);
     const timeline = await buildTimeline(sampleLog(), empty);
-    const [turn] = timeline.turns;
+    const [turn] = timeline.inputs;
     expect(turn?.user).toEqual([undefined]);
     const model = turn?.entries[0];
     if (model?.kind !== 'MODEL') throw new Error('expected a model entry');
@@ -195,8 +195,8 @@ describe('renderTimeline', () => {
     });
     expect(text).toContain('对话 ses_1');
     expect(text).toContain('仓库：/work/repo');
-    expect(text).toContain('1 轮 · 1 次模型调用 · 1 次工具调用');
-    expect(text).toContain('第 1 轮');
+    expect(text).toContain('1 次输入 · 1 次模型调用 · 1 次工具调用');
+    expect(text).toContain('第 1 次输入');
     expect(text).toContain('你：read a.txt');
     expect(text).toContain('模型 main  3.0s  输入 1,200（命中 900） 输出 80');
     expect(text).toContain('思考：I should read the file first.');
@@ -239,13 +239,13 @@ describe('renderSessionList', () => {
         sessionId: 'ses_a',
         createdAt: at(0),
         lastActiveAt: at(5),
-        turnCount: 3,
+        inputCount: 3,
         title: 'Fix the bug',
       },
-      { sessionId: 'ses_b', createdAt: at(0), lastActiveAt: at(1), turnCount: 1 },
+      { sessionId: 'ses_b', createdAt: at(0), lastActiveAt: at(1), inputCount: 1 },
     ]);
     expect(text).toContain('1. ');
-    expect(text).toContain('3 轮  Fix the bug  ses_a');
+    expect(text).toContain('3 次输入  Fix the bug  ses_a');
     expect(text).toContain('（无标题）  ses_b');
   });
 });

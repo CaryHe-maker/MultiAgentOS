@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
   DefinitionCatalog,
@@ -320,6 +321,9 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       definitionVersions: builtin.definitionVersions,
       config: config.workflow,
       now,
+      git: inGitWorkTree(options.repositoryRoot),
+      // For comparing runs with and without inherited contexts (Orchestration 3.9, D35).
+      ...(process.env['MAO_INHERIT_CONTEXT'] === 'off' ? { inheritContext: false } : {}),
     });
     serveWorkflowInbox(workflowFabric, workflow.runner);
 
@@ -391,7 +395,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       console,
       templateRef: (id) => {
         const template = builtin.templates.get(id);
-        return template === undefined ? undefined : { id, version: template.version };
+        // A pre-orchestrated template runs as a specialist of a long task, never by itself (D39).
+        return template === undefined || template.playbook !== undefined
+          ? undefined
+          : { id, version: template.version };
       },
       whenStopped: () => supervisor.whenStopped(),
       run: (command) => control.run(() => command(console)),
@@ -408,5 +415,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       // The original composition error is more useful than a cleanup failure.
     }
     throw error;
+  }
+}
+
+/**
+ * Whether a folder lies in a git work tree: a `.git` (a folder, or the file of a worktree) in it
+ * or in a folder above it. Only what the model is offered depends on it (git_inspect).
+ */
+export function inGitWorkTree(folder: string): boolean {
+  for (let current = folder; ; current = dirname(current)) {
+    if (existsSync(join(current, '.git'))) return true;
+    if (dirname(current) === current) return false;
   }
 }

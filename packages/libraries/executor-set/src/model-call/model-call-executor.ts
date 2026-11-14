@@ -28,6 +28,13 @@ export const MAX_TOOL_CALLS = 32;
 export interface ModelCallExecutorOptions {
   /** The HTTP client handed to the provider SDK; tests pass a fake, production uses `fetch`. */
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * How many of the latest assistant steps replay their thinking; the thinking of earlier steps is
+   * sent empty (the API takes that, and the earlier steps' calls and results stay). Absent: all.
+   * A sliding window changes the text of messages already sent, so it breaks the provider's prompt
+   * cache from the first changed message on (docs/M2/experiments.md, E13).
+   */
+  readonly replayKeep?: number;
 }
 
 /** Seconds or an HTTP date; anything else means no hint (ExecutorSet 7). */
@@ -121,13 +128,23 @@ function reasoningOf(result: GenerateResult): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
-/** What each assistant message replays, in message order (ExecutorSet 6.3). */
-const replayOf = (pack: AssembleContextPack): readonly (string | undefined)[] =>
-  pack.items.flatMap((item) =>
+/**
+ * What each assistant message replays, in message order (ExecutorSet 6.3). With `keep`, only the
+ * last `keep` assistant messages replay their thinking and the earlier ones send it empty. The
+ * start of the request stays the same from one request to the next except for the message that
+ * just fell out of the window, so the provider's prompt cache still covers almost all of it.
+ */
+const replayOf = (pack: AssembleContextPack, keep?: number): readonly (string | undefined)[] => {
+  const all = pack.items.flatMap((item) =>
     item.role === 'assistant'
       ? ['reasoningContent' in item ? item.reasoningContent : undefined]
       : [],
   );
+  if (keep === undefined) return all;
+  return all.map((reasoning, at) =>
+    reasoning !== undefined && at < all.length - keep ? '' : reasoning,
+  );
+};
 
 /**
  * MODEL (ExecutorSet 7): one provider request for one ASSEMBLE pack, without SDK retries, aborted
@@ -138,11 +155,18 @@ const replayOf = (pack: AssembleContextPack): readonly (string | undefined)[] =>
  */
 export function createModelCallExecutor(options: ModelCallExecutorOptions = {}): Executor<'MODEL'> {
   const inner = options.fetch ?? globalThis.fetch;
+  // Experiments (docs/M2/experiments.md) set the window through MAS_REPLAY_KEEP.
+  const fromEnv = Number(process.env['MAS_REPLAY_KEEP'] ?? '');
+  const keep =
+    options.replayKeep ??
+    (process.env['MAS_REPLAY_KEEP'] !== undefined && Number.isInteger(fromEnv) && fromEnv >= 0
+      ? fromEnv
+      : undefined);
   return {
     executionKind: 'MODEL',
     execute: async (input, environment) => {
       try {
-        return await callModel(input, environment, inner);
+        return await callModel(input, environment, inner, keep);
       } catch {
         return failureOf('INTERNAL', false, 'UNKNOWN');
       }
@@ -154,6 +178,7 @@ async function callModel(
   input: ModelExecutorInput,
   environment: ExecutorEnvironment,
   inner: typeof globalThis.fetch,
+  replayKeep: number | undefined,
 ): Promise<ExecutorOutcome> {
   const base = environment.scope;
   if (base.kind !== 'MODEL') return violation('SCOPE_MISSING');
@@ -179,7 +204,7 @@ async function callModel(
     responded: false,
   };
   const pack = input.contextPack;
-  const replay = forced ? [] : replayOf(pack);
+  const replay = forced ? [] : replayOf(pack, replayKeep);
   // The person watching (if any) is told the thinking from the network side, and the end once.
   const tell = (event: ModelProgressEvent): void => {
     try {

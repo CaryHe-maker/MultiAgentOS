@@ -43,7 +43,12 @@ async function contextPacks(
       'utf8',
     ).catch(() => '');
     for (const line of text.split('\n').filter(Boolean)) {
-      const each = JSON.parse(line) as { artifactId: string };
+      const each = JSON.parse(line) as {
+        artifactId: string;
+        mediaType?: string;
+        releasedAt?: string;
+        size?: number;
+      };
       last.set(each.artifactId, each);
     }
   }

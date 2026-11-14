@@ -5,6 +5,7 @@ import {
   type HandoverParty,
   type SessionLogRecord,
 } from '@multiagentos/contracts';
+import { isRolledBack, rolledBackRanges } from '../context/rolled-back.js';
 import type { ProjectionScope } from '../context/history-projection.js';
 
 /**
@@ -40,11 +41,18 @@ export function registeredOf(
 
 /** Who a reader is, by the scope its context is projected in. */
 export const partyOf = (scope: ProjectionScope): HandoverParty =>
-  scope.kind === 'MAIN' ? { kind: 'MAIN' } : { kind: 'AGENT_RUN', agentRunId: scope.agentRunId };
+  scope.kind === 'MAIN'
+    ? { kind: 'MAIN' }
+    : scope.missionId !== undefined
+      ? { kind: 'MISSION', missionId: scope.missionId }
+      : { kind: 'AGENT_RUN', agentRunId: scope.agentRunId };
 
-const sameParty = (left: HandoverParty, right: HandoverParty): boolean =>
-  left.kind === right.kind &&
-  (left.kind === 'MAIN' || (right.kind === 'AGENT_RUN' && left.agentRunId === right.agentRunId));
+const sameParty = (left: HandoverParty, right: HandoverParty): boolean => {
+  if (left.kind === 'MAIN') return right.kind === 'MAIN';
+  if (left.kind === 'AGENT_RUN')
+    return right.kind === 'AGENT_RUN' && left.agentRunId === right.agentRunId;
+  return right.kind === 'MISSION' && left.missionId === right.missionId;
+};
 
 /**
  * The artifact a reference names, for the reader it was handed to and for no other; undefined
@@ -77,6 +85,7 @@ export function checkedItems(
   for (const record of records)
     if (record.type === 'WORKSPACE_REVERTED')
       for (const turnId of record.revertedTurnIds) reverted.add(turnId);
+  const rolledBack = rolledBackRanges(records);
   const toolNames = new Map<string, string>();
   for (const record of records)
     if (record.type === 'MODEL_TURN' && record.agentRunId === agentRunId)
@@ -93,7 +102,8 @@ export function checkedItems(
           record.agentRunId === agentRunId &&
           record.inputSource.kind === 'TOOL_CALL' &&
           record.inputSource.toolCallId === id &&
-          (record.turnId === undefined || !reverted.has(record.turnId)),
+          (record.turnId === undefined || !reverted.has(record.turnId)) &&
+          !isRolledBack(record.seq, rolledBack),
       );
     const completed =
       submitted?.type === 'UNIT_SUBMITTED'

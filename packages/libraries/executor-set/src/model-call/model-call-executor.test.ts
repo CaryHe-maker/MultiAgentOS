@@ -20,9 +20,9 @@ const TOOLS = [
     purpose: 'UNIT' as const,
   },
   {
-    name: 'finish_analysis',
+    name: 'reply',
     description: 'Finish.',
-    parameters: { type: 'object', properties: { summary: { type: 'string' } } },
+    parameters: { type: 'object', properties: { text: { type: 'string' } } },
     purpose: 'CONTROL' as const,
   },
 ];
@@ -54,7 +54,7 @@ async function packOf(final: boolean): Promise<AssembleContextPack> {
         round: 2,
         maxRounds: 5,
         final,
-        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       },
     },
     environmentFor('CONTEXT_ASSEMBLE', { kind: 'NONE' }),
@@ -182,19 +182,19 @@ describe('MODEL (ExecutorSet 7)', () => {
     const forced = await call(() => chatCompletion([]), { final: true, finalMode: 'FORCED' });
     expect(forced.recorded.body?.['tool_choice']).toEqual({
       type: 'function',
-      function: { name: 'finish_analysis' },
+      function: { name: 'reply' },
     });
     expect(forced.recorded.body?.['thinking']).toEqual({ type: 'disabled' });
   });
 
   it('completes a final call that answers with exactly one end tool', async () => {
     const { outcome } = await call(
-      () => chatCompletion([{ id: 'c', name: 'finish_analysis', arguments: '{"summary":"s"}' }]),
+      () => chatCompletion([{ id: 'c', name: 'reply', arguments: '{"text":"s"}' }]),
       { final: true },
     );
     expect(outcome).toMatchObject({
       outcome: 'COMPLETED',
-      result: { output: { toolCalls: [{ toolName: 'finish_analysis' }] } },
+      result: { output: { toolCalls: [{ toolName: 'reply' }] } },
     });
   });
 
@@ -202,12 +202,12 @@ describe('MODEL (ExecutorSet 7)', () => {
   it.each([
     ['another tool', [{ id: 'c', name: 'read_file', arguments: '{"path":"a"}' }]],
     ['no tool call', []],
-    ['arguments that are not JSON', [{ id: 'c', name: 'finish_analysis', arguments: '{"summ' }]],
+    ['arguments that are not JSON', [{ id: 'c', name: 'reply', arguments: '{"te' }]],
     [
       'a second call',
       [
-        { id: 'c', name: 'finish_analysis', arguments: '{"summary":"s"}' },
-        { id: 'd', name: 'finish_analysis', arguments: '{"summary":"s"}' },
+        { id: 'c', name: 'reply', arguments: '{"text":"s"}' },
+        { id: 'd', name: 'reply', arguments: '{"text":"s"}' },
       ],
     ],
   ])(
@@ -226,7 +226,7 @@ describe('MODEL (ExecutorSet 7)', () => {
 
   it('leaves an ordinary call with any tool to Workflow', async () => {
     const { outcome } = await call(() =>
-      chatCompletion([{ id: 'c', name: 'finish_analysis', arguments: '{"summ' }]),
+      chatCompletion([{ id: 'c', name: 'reply', arguments: '{"te' }]),
     );
     expect(outcome).toMatchObject({ outcome: 'COMPLETED' });
   });
@@ -598,7 +598,7 @@ describe('MODEL tells that the answer for the user has begun', () => {
           round: 1,
           maxRounds: 5,
           final: false,
-          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
         },
       },
       environmentFor('CONTEXT_ASSEMBLE', { kind: 'NONE' }),

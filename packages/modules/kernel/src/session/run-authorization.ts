@@ -278,6 +278,38 @@ export class RunAuthorization {
     };
   }
 
+  /**
+   * More tokens for the work of this input (M2Design 7.3, rule 6): one question at a time,
+   * whoever is short; nothing is remembered, since the next shortage is a new question.
+   */
+  askBudget(
+    wants: { readonly used: number; readonly limit: number; readonly add: number },
+    tasks: number,
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const key = `budget.extend\u0000`;
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'budget.extend', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'budget.extend',
+        used: wants.used,
+        limit: wants.limit,
+        add: wants.add,
+        tasks,
+      },
+    };
+  }
+
   /** `web.fetch`: once for each host; AgentRuns that reach for the same new host share the question. */
   askWebFetch(url: string, host: string, waiter: string, agentRunId: string): AccessCheck {
     const key = resourceKey('web.fetch', host);
@@ -463,6 +495,8 @@ export class RunAuthorization {
       if (scope === 'DENY' && question.key !== undefined) this.#distrusted.add(question.key);
       return settled;
     }
+    // Not an access to remember: the run takes the answer and acts on it.
+    if (question.capability === 'budget.extend') return settled;
     this.#remember(question, question.capability, scope);
     return settled;
   }

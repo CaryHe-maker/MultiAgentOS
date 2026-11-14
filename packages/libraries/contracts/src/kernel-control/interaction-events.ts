@@ -92,6 +92,19 @@ export const AuthorizationRequestSchema = Type.Union(
       host: text(253),
     }),
     /**
+     * The work of this input is about to run out of its token budget (M2Design 7.3, rule 6):
+     * ALLOW adds `add` tokens to it, DENY lets it wrap up with what it has. The Kernel asks, never
+     * the model. `tasks` is how many tasks are at work below the root.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('budget.extend'),
+      used: count(),
+      limit: count(1),
+      add: count(1),
+      tasks: count(),
+    }),
+    /**
      * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
      * what an answer allows; `path` is what was asked for.
      */
@@ -149,7 +162,8 @@ export const HumanResolvedSchema = closed(
   {
     type: Type.Literal('HumanResolved'),
     humanRequestId: IdSchemas.humanRequestId,
-    resolution: Type.Enum(['ANSWERED', 'CANCELLED']),
+    /** `WITHDRAWN`: open input taken back because the work goes on without the user (4.4). */
+    resolution: Type.Enum(['ANSWERED', 'CANCELLED', 'WITHDRAWN']),
   },
   'kernel.control.HumanResolved.v1',
 );
@@ -181,27 +195,36 @@ export const UndoCancelledSchema = closed(
 );
 export type UndoCancelled = Static<typeof UndoCancelledSchema>;
 
-/** Sent to both UserInteraction and Workflow, which replaces those Turns in its projection. */
-export const WorkspaceRevertedSchema = closed(
+/**
+ * The workspace is back at a checkpoint (Orchestration 7.5): `files` were put back, and what they
+ * held before is in `backupSnapshot`.
+ */
+export const CheckpointRolledBackSchema = closed(
   {
-    type: Type.Literal('WorkspaceReverted'),
-    revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
-    forced: Type.Boolean(),
-    /** The external changes that were overwritten. */
-    externalFiles: Type.Array(text(4096)),
-    /** Taken before a forced undo. */
+    type: Type.Literal('CheckpointRolledBack'),
+    checkpointId: IdSchemas.checkpointId,
+    label: text(200),
+    files: Type.Array(text(4096)),
     backupSnapshot: Type.Optional(text(64)),
+    /**
+     * An undo (`/undo`): the checkpoint itself is taken back too, so the work from it on, the input
+     * that opened it included, is undone. Absent, a rewind: the work goes on from the checkpoint.
+     */
+    undo: Type.Optional(Type.Boolean()),
+    /** Files changed outside the system that the user chose to overwrite. */
+    forced: Type.Optional(Type.Boolean()),
+    externalFiles: Type.Optional(Type.Array(text(4096))),
   },
-  'kernel.control.WorkspaceReverted.v1',
+  'kernel.control.CheckpointRolledBack.v1',
 );
-export type WorkspaceReverted = Static<typeof WorkspaceRevertedSchema>;
+export type CheckpointRolledBack = Static<typeof CheckpointRolledBackSchema>;
 
 export const MessagePublishedSchema = closed(
   {
     type: Type.Literal('MessagePublished'),
     messageRef: ArtifactRefSchema,
     agentLabel: text(80),
-    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY']),
     wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.control.MessagePublished.v1',
@@ -215,7 +238,8 @@ export const RunStateChangedSchema = Type.Union(
     closed({
       ...stateChanged,
       state: Type.Enum(['RUNNING', 'CONVERGING', 'PAUSING', 'PAUSED', 'INTERRUPTING']),
-      turnId: Type.Optional(IdSchemas.turnId),
+      /** The checkpoint of the input whose work this is. */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
     }),
   ],
   { $id: 'kernel.control.RunStateChanged.v1' },
@@ -238,6 +262,11 @@ export const ACTIVITY_PHASES = [
   /** Its context is being compacted: nothing of this AgentRun runs until it is done. */
   'COMPACTING',
   'WRAPPING_UP',
+  /**
+   * The segment ended and its task sleeps until something wakes it (Orchestration 4): the task is
+   * still there, and the activity area keeps its line until the task ends.
+   */
+  'SLEEPING',
   'ENDED',
 ] as const;
 const activity = {
@@ -245,6 +274,12 @@ const activity = {
   agentRunId: IdSchemas.agentRunId,
   /** Of a SubAgent: the AgentRun that started it, so the interface can draw the tree. */
   parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+  /**
+   * The task the AgentRun is a segment of, and its parent task (Orchestration 3.2): the activity
+   * area draws the tree of tasks, which stays whole while a task sleeps between segments.
+   */
+  missionId: Type.Optional(IdSchemas.missionScopeId),
+  parentMissionId: Type.Optional(IdSchemas.missionScopeId),
   label: text(80),
   unit: Type.Optional(
     closed({
@@ -294,8 +329,8 @@ export const ContextCompactedSchema = closed(
     type: Type.Literal('ContextCompacted'),
     trigger: Type.Enum(COMPACTION_TRIGGERS),
     summaryRef: Type.Optional(ArtifactRefSchema),
-    /** Turns the summary replaced, partly replaced ones included; 0 when only results were cut. */
-    compactedTurns: count(),
+    /** Inputs of the user whose work the summary replaced, in part or whole; 0 when only results were cut. */
+    compactedInputs: count(),
     prunedResults: count(),
   },
   'kernel.control.ContextCompacted.v1',
@@ -343,7 +378,7 @@ export const KernelToInteractionEventSchema = Type.Union([
   RunFinishedSchema,
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,
-  WorkspaceRevertedSchema,
+  CheckpointRolledBackSchema,
   ContextCompactedSchema,
   CompactionFailedSchema,
   ExternalReadPausedSchema,

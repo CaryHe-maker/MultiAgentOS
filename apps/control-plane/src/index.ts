@@ -7,7 +7,6 @@
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  CLI_MESSAGES,
   createTerminal,
   parseCli,
   runCommand,
@@ -132,11 +131,8 @@ export async function main(argv: readonly string[]): Promise<number> {
       return EXIT_CODE_SYSTEM_FAULT;
     }
 
-    const template = command.kind === 'RUN' ? system.templateRef(command.template) : undefined;
-    if (command.kind === 'RUN' && template === undefined) {
-      write(`${CLI_MESSAGES.unknownTemplate(command.template)}\n`);
-      return 64;
-    }
+    // `mas run "<goal>"` is a long task of the built-in template mission (Orchestration 10.1).
+    const template = command.kind === 'RUN' ? system.templateRef('mission') : undefined;
 
     // The composition-time reporter buffers faults until the real panic entry exists.
     faults.bind((fault) => system.reportFault(fault));

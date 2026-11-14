@@ -178,12 +178,7 @@ describe('file set and snapshot', () => {
   };
 
   async function snapshot(root: string, cache = new FileDigestCache()) {
-    const built = await buildFileSet(await scopeOf(root), {
-      signal: new AbortController().signal,
-      cache,
-    });
-    if (!built.ok) throw new Error('limit');
-    return built.set;
+    return buildFileSet(await scopeOf(root), { signal: new AbortController().signal, cache });
   }
 
   it('gives the same snapshot for the same content in different places', async () => {
@@ -235,17 +230,6 @@ describe('file set and snapshot', () => {
     ]);
   });
 
-  it('stops at maxFiles', async () => {
-    const root = await emptyDirectory('snap');
-    await writeTree(root, files);
-    const built = await buildFileSet(await scopeOf(root), {
-      signal: new AbortController().signal,
-      maxFiles: 2,
-      cache: new FileDigestCache(),
-    });
-    expect(built.ok).toBe(false);
-  });
-
   it('applies exclusions appended by Core', async () => {
     const root = await emptyDirectory('snap');
     await writeTree(root, files);
@@ -253,9 +237,6 @@ describe('file set and snapshot', () => {
       signal: new AbortController().signal,
       cache: new FileDigestCache(),
     });
-    expect(built.ok && built.set.files.map((file) => file.path)).toEqual([
-      '.hidden/b.ts',
-      'README.md',
-    ]);
+    expect(built.files.map((file) => file.path)).toEqual(['.hidden/b.ts', 'README.md']);
   });
 });

@@ -21,7 +21,6 @@ import * as modelStream from './kernel-control/model-stream.js';
 import * as executionRequest from './kernel-execution/execution-request.js';
 import * as supervisorRequests from './kernel-execution/supervisor-requests.js';
 import * as budgetState from './kernel-unit/budget-state.js';
-import * as reportPublish from './kernel-unit/report-publish.js';
 import * as unitIo from './kernel-unit/unit-io.js';
 import * as workflowEvents from './kernel-unit/workflow-events.js';
 import * as workflowSyscalls from './kernel-unit/workflow-syscalls.js';
@@ -45,6 +44,7 @@ import * as locks from './platform-persistence/locks.js';
 import * as sessionLog from './platform-persistence/session-log.js';
 import * as reply from './workflow/reply.js';
 import * as askUser from './workflow/ask-user.js';
+import * as missionTools from './workflow/mission-tools.js';
 import * as subagents from './workflow/subagents.js';
 import * as commonSchemas from './platform-common/common-schemas.js';
 import * as systemConfig from './platform-config/system-config.js';
@@ -56,8 +56,6 @@ import * as fabricRefs from './platform-fabric/fabric-refs.js';
 import * as persistenceRefs from './platform-persistence/persistence-refs.js';
 import * as restoreRefs from './restore/restore-refs.js';
 import * as reviewRefs from './review/review-refs.js';
-import * as handoff from './workflow/handoff.js';
-import * as report from './workflow/report.js';
 import { Type } from 'typebox';
 
 /** Protocol families, their owner and whether this release implements them. */
@@ -193,13 +191,10 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   modelCall,
   contextPack,
   repository,
-  handoff,
-  report,
   definitionSchemas,
   catalogSchemas,
   runOutcome,
   responses,
-  reportPublish,
   unitIo,
   workflowSyscalls,
   workflowEvents,
@@ -240,6 +235,7 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   reply,
   subagents,
   askUser,
+  missionTools,
 ];
 
 const hasSchemaId = (value: unknown): value is TSchema =>

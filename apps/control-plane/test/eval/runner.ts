@@ -3,7 +3,7 @@
  * drives it the way the task says, reads the Session log, and judges. A task with a scripted
  * provider runs offline; one without runs against the real model and spends the request budget.
  */
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -16,6 +16,10 @@ import {
   type ChatRequest,
   type ScriptedChat,
 } from '../acceptance/chat-driver.js';
+import { parseCli, runCommand } from '@multiagentos/cli';
+import { composeSystem } from '../../src/bootstrap/compose-system.js';
+import { defaultSystemConfig } from '../../src/config/system-config.js';
+import { answeringTerminal } from '../support/answering-terminal.js';
 import { metricsOf } from './metrics.js';
 import type { Check, ChatStep, Observation, RunRecord, TaskSpec } from './spec.js';
 
@@ -75,6 +79,8 @@ async function drive(
         await chat.console.submit(typed(step.submit));
       } else if ('awaitInput' in step) {
         await until(awaiting, 'the run to wait for input', timeoutMs);
+      } else if ('run' in step) {
+        throw new Error('a run step belongs to a mission task');
       } else {
         await until(
           () =>
@@ -91,6 +97,90 @@ async function drive(
   } catch (error) {
     return error instanceof Error ? error.message : 'unknown error';
   }
+}
+
+interface MissionRun {
+  readonly error?: string;
+  readonly exitCode?: number;
+  readonly printed: (kind: string) => readonly string[];
+  readonly questions: readonly string[];
+}
+
+/**
+ * Mission mode: `mas run "<goal>"` as the CLI starts it, every question of authorization answered
+ * yes, waited for until the run ends or `timeoutMs` passes.
+ */
+async function runMission(
+  spec: TaskSpec,
+  provider: ScriptedChat,
+  env: RunnerEnv,
+  places: { readonly dataDir: string; readonly repository: string },
+  timeoutMs: number,
+  scripted: boolean,
+): Promise<MissionRun> {
+  const step = spec.steps.find((each): each is Extract<ChatStep, { run: string }> => 'run' in each);
+  if (step === undefined) throw new Error(`mission task ${spec.id} has no run step`);
+  const terminal = answeringTerminal();
+  const lines = () => terminal.written.join('').split('\n');
+  const printed = (kind: string) =>
+    lines()
+      .filter((line) => line.startsWith(`${kind}: `))
+      .map((line) => line.slice(kind.length + 2));
+  const questions = () => printed('QUESTION');
+  const original = globalThis.fetch;
+  globalThis.fetch = provider.fetch;
+  let system: Awaited<ReturnType<typeof composeSystem>>;
+  let command: Parameters<typeof runCommand>[0];
+  try {
+    const parsed = await parseCli(
+      ['run', '--repo', places.repository, step.run],
+      (text) => void terminal.written.push(text),
+    );
+    if (!parsed.ok || parsed.command.kind !== 'RUN') throw new Error('the CLI refused the run');
+    command = parsed.command;
+    system = await composeSystem({
+      config: (spec.setup?.configure ?? ((each) => each))(
+        ((base) => ({
+          ...base,
+          dataDir: places.dataDir,
+          // Nobody watches an evaluation, and its runs must spend alike to be compared: the work
+          // of an input wraps up at its budget instead of asking for more (M2Design 7.3, rule 6).
+          kernel: {
+            ...base.kernel,
+            budget: { ...base.kernel.budget, extension: { mode: 'stop' as const, max: 0 } },
+          },
+        }))(defaultSystemConfig()),
+      ),
+      repositoryRoot: await realpath(places.repository),
+      preset: spec.setup?.preset ?? 'standard',
+      view: terminal.view,
+      credentials: scripted
+        ? { apiKeyFor: () => 'sk-acceptance-offline-key-0000' }
+        : { apiKeyFor: () => env.apiKey },
+      log: (line) => void terminal.written.push(line),
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+  await system.start();
+  const template = system.templateRef('mission');
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<'TIMEOUT'>((resolve) => {
+    timer = setTimeout(() => resolve('TIMEOUT'), timeoutMs);
+  });
+  const finished = system.run((console) => runCommand(command, console, terminal, template));
+  const outcome = await Promise.race([finished, timedOut]);
+  clearTimeout(timer);
+  if (outcome === 'TIMEOUT') {
+    await system.shutdown().catch(() => undefined);
+    await finished.catch(() => undefined);
+    return {
+      error: `the run did not end within ${String(timeoutMs / 60_000)} minutes`,
+      printed,
+      questions: questions(),
+    };
+  }
+  return { exitCode: outcome, printed, questions: questions() };
 }
 
 async function readLog(dataDir: string): Promise<Record<string, unknown>[]> {
@@ -118,6 +208,24 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
   let error: string | undefined;
   try {
     await spec.fixture(repository);
+    if (spec.mode === 'mission') {
+      const ran = await runMission(
+        spec,
+        provider,
+        env,
+        { dataDir, repository },
+        env.stepTimeoutMs ?? (scripted === undefined ? 2_400_000 : 60_000),
+        scripted !== undefined,
+      );
+      return await recordOf(spec, run, env, started, scripted !== undefined, provider, {
+        repository,
+        dataDir,
+        printed: ran.printed,
+        questions: ran.questions,
+        ...(ran.error === undefined ? {} : { error: ran.error }),
+        ...(ran.exitCode === undefined ? {} : { exitCode: ran.exitCode }),
+      });
+    }
     chat = await openChat({
       dataDir,
       repository,
@@ -132,59 +240,180 @@ export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Prom
       env.stepTimeoutMs ?? (scripted === undefined ? 300_000 : 15_000),
       `${repository}-other`,
     );
-    const log = await readLog(dataDir);
     const opened = chat;
-    const observation: Observation = {
+    return await recordOf(spec, run, env, started, scripted !== undefined, provider, {
       repository,
       dataDir,
       printed: (kind) => opened.printed(kind as 'REPLY'),
       questions: opened.questions,
-      requests: provider.requests.map((request) => ({
-        messages: request.messages.map((message) => textOf(message)),
-        tools: (request.tools ?? []).map((tool) => tool.function.name),
-      })),
-      log,
       ...(error === undefined ? {} : { error }),
-    };
-    let checks: readonly Check[];
-    try {
-      checks = await spec.judge(observation);
-    } catch (judged) {
-      checks = [
-        {
-          name: 'the judge ran',
-          angle: 'OUTCOME',
-          ok: false,
-          detail: judged instanceof Error ? judged.message : 'unknown error',
-        },
-      ];
-    }
-    const metrics = metricsOf(log, {
-      ...(env.model.pricing === undefined ? {} : { model: { pricing: env.model.pricing } }),
-      authorizationQuestions: opened.questions.length,
     });
-    return {
-      schema: 1,
-      taskId: spec.id,
-      mode: spec.mode,
-      tags: spec.tags,
-      run,
-      at: new Date(started).toISOString(),
-      version: env.version,
-      model: env.model.id,
-      provider: scripted === undefined ? 'real' : 'scripted',
-      ok: error === undefined && checks.every((check) => check.ok),
-      checks,
-      metrics,
-      elapsedMs: Date.now() - started,
-      ...(error === undefined ? {} : { error }),
-    };
   } finally {
     await chat?.close().catch(() => undefined);
+    await archiveRun(spec.id, run, started, { dataDir, repository });
     await rm(dataDir, { recursive: true, force: true });
     await rm(repository, { recursive: true, force: true });
     await rm(`${repository}-other`, { recursive: true, force: true });
   }
+}
+
+/**
+ * Kept for the person who reads a run (`EVAL_ARCHIVE`): the Session (its log), what the log points
+ * to, and the repository as left. study-report.ts reads the shape of the run from it.
+ */
+export async function archiveRun(
+  taskId: string,
+  run: number,
+  started: number,
+  places: { readonly dataDir: string; readonly repository: string },
+): Promise<string | undefined> {
+  const archive = process.env['EVAL_ARCHIVE'];
+  if (archive === undefined || archive === '') return undefined;
+  const into = join(archive, `${taskId}-r${String(run)}-${String(started)}`);
+  await cp(join(places.dataDir, 'sessions'), join(into, 'sessions'), { recursive: true }).catch(
+    () => undefined,
+  );
+  // What the log points to: model outputs (messages, plans, tool arguments) and tool results.
+  await cp(join(places.dataDir, 'artifacts'), join(into, 'artifacts'), { recursive: true }).catch(
+    () => undefined,
+  );
+  await cp(places.repository, join(into, 'repository'), { recursive: true }).catch(() => undefined);
+  return into;
+}
+
+/** The Kernel's audit of the one Session in a data directory (questions, commands let through). */
+async function kernelAudit(dataDir: string): Promise<Record<string, unknown>[]> {
+  const [id] = await readdir(join(dataDir, 'sessions')).catch(() => [] as string[]);
+  if (id === undefined) return [];
+  const text = await readFile(
+    join(dataDir, 'sessions', id, 'kernel-core', 'audit.jsonl'),
+    'utf8',
+  ).catch(() => '');
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/** The replies main delivered, by the publishing Units that succeeded: what a console printed. */
+function publishedReplies(log: readonly Record<string, unknown>[]): readonly string[] {
+  const publishing = new Set(
+    log
+      .filter(
+        (record) =>
+          record['type'] === 'UNIT_SUBMITTED' &&
+          (record['unitRef'] as { readonly id?: string } | undefined)?.id === 'message-publish',
+      )
+      .map((record) => String(record['requestId'])),
+  );
+  return log
+    .filter(
+      (record) =>
+        record['type'] === 'UNIT_COMPLETED' &&
+        record['status'] === 'OK' &&
+        publishing.has(String(record['requestId'])),
+    )
+    .map((record) => `(reply ${String(record['requestId'])})`);
+}
+
+/**
+ * Judges a run that a person started with `mas run` and watched (`eval.ts prepare`, then
+ * `eval.ts judge`): the same judge and measures as a run of the evaluation, from the data directory
+ * of that run and its repository. The repository is judged on a copy, since a judge may copy its
+ * hidden tests into what it judges; the run's own time comes from its log.
+ */
+export async function judgeRun(
+  spec: TaskSpec,
+  run: number,
+  env: RunnerEnv,
+  places: { readonly dataDir: string; readonly repository: string },
+  exitCode: number,
+): Promise<RunRecord> {
+  const sessions = await readdir(join(places.dataDir, 'sessions')).catch(() => [] as string[]);
+  if (sessions.length !== 1)
+    throw new Error(
+      `${places.dataDir} holds ${String(sessions.length)} Sessions; give the run a data directory of its own`,
+    );
+  const log = await readLog(places.dataDir);
+  if (log.length === 0) throw new Error(`the Session in ${places.dataDir} has no log`);
+  const times = log.map((record) => Date.parse(String(record['at']))).filter(Number.isFinite);
+  const started = times[0] ?? Date.now();
+  const ended = times.at(-1) ?? started;
+  const copy = await mkdtemp(join(tmpdir(), 'mas-judge-repo-'));
+  try {
+    await cp(places.repository, copy, { recursive: true });
+    const replies = publishedReplies(log);
+    // The questions to the user are in the Kernel's audit, not in Workflow's log.
+    const questions = (await kernelAudit(places.dataDir))
+      .filter((entry) => entry['type'] === 'AUTHORIZATION_ASKED')
+      .map((entry) => String(entry['capability']));
+    const watched: ScriptedChat = { requests: [], add: () => undefined, fetch: realFetch };
+    const record = await recordOf(spec, run, env, started, false, watched, {
+      repository: copy,
+      dataDir: places.dataDir,
+      printed: (kind) => (kind === 'REPLY' ? replies : []),
+      questions,
+      exitCode,
+    });
+    return { ...record, elapsedMs: ended - started };
+  } finally {
+    await rm(copy, { recursive: true, force: true });
+  }
+}
+
+/** Reads the log, judges and measures: the same for every mode. */
+async function recordOf(
+  spec: TaskSpec,
+  run: number,
+  env: RunnerEnv,
+  started: number,
+  scripted: boolean,
+  provider: ScriptedChat,
+  seen: Omit<Observation, 'log' | 'requests'>,
+): Promise<RunRecord> {
+  const log = await readLog(seen.dataDir);
+  const observation: Observation = {
+    ...seen,
+    requests: provider.requests.map((request) => ({
+      messages: request.messages.map((message) => textOf(message)),
+      tools: (request.tools ?? []).map((tool) => tool.function.name),
+    })),
+    log,
+  };
+  let checks: readonly Check[];
+  try {
+    checks = await spec.judge(observation);
+  } catch (judged) {
+    checks = [
+      {
+        name: 'the judge ran',
+        angle: 'OUTCOME',
+        ok: false,
+        detail: judged instanceof Error ? judged.message : 'unknown error',
+      },
+    ];
+  }
+  const metrics = metricsOf(log, {
+    ...(env.model.pricing === undefined ? {} : { model: { pricing: env.model.pricing } }),
+    authorizationQuestions: seen.questions.length,
+  });
+  const { error } = seen;
+  return {
+    schema: 1,
+    taskId: spec.id,
+    mode: spec.mode,
+    tags: spec.tags,
+    run,
+    at: new Date(started).toISOString(),
+    version: env.version,
+    model: env.model.id,
+    provider: scripted ? 'scripted' : 'real',
+    ok: error === undefined && checks.every((check) => check.ok),
+    checks,
+    metrics,
+    elapsedMs: Date.now() - started,
+    ...(error === undefined ? {} : { error }),
+  };
 }
 
 /** A digest of the commit and of every definition file, so that two records say what they ran. */

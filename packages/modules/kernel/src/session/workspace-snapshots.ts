@@ -15,7 +15,7 @@ import type {
 export const MAX_UNTRACKED_SNAPSHOT_BYTES = MAX_WORKSPACE_FILE_BYTES;
 /** The actor holds every message during a capture, so a stuck git must not hold it for ever. */
 const GIT_TIMEOUT_MS = 300_000;
-/** Enough for the snapshots of the Turns at hand; a tree can always be read again. */
+/** Enough for the snapshots at hand; a tree can always be read again. */
 const MAX_CACHED_TREES = 8;
 const INDEX_FILE = 'capture-index';
 /** A snapshot holds the bytes on disk, whatever the repository's .gitattributes would make of them. */
@@ -31,16 +31,34 @@ interface Entry {
 
 export type FileChange = 'ADDED' | 'MODIFIED' | 'DELETED';
 
-interface Turn {
-  readonly turnId: string;
-  readonly startSnapshot?: string;
-  endSnapshot?: string;
-  ended: boolean;
-  changedFiles: readonly { readonly path: string; readonly change: FileChange }[];
-  reverted: boolean;
+export type CheckpointKind = 'INPUT' | 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE';
+
+/** One line of the list of checkpoints (Orchestration 7.4). */
+export interface CheckpointPoint {
+  readonly seq: number;
+  readonly kind: CheckpointKind;
+  readonly label: string;
+  readonly at: string;
+  readonly changedFiles?: number;
 }
 
-export interface TurnSnapshots {
+/**
+ * A point the workspace can go back to (Orchestration 7.1): each input of the user, and each cut
+ * inside a run. Its stretch runs to the next point, or to where the run went still (`end`).
+ */
+interface Point {
+  readonly checkpointId: string;
+  readonly kind: CheckpointKind;
+  readonly label: string;
+  readonly snapshot?: string;
+  readonly at: string;
+  /** The Turn an older index line named; only to read what it reverted. */
+  readonly turnId?: string;
+  end?: string;
+}
+
+/** What the stretch since the latest input left behind, when the run went still. */
+export interface SettledSnapshots {
   readonly startSnapshot?: string;
   readonly endSnapshot?: string;
   readonly changedFileCount?: number;
@@ -48,12 +66,16 @@ export interface TurnSnapshots {
 
 interface PlannedFile {
   readonly path: string;
-  /** Absent when the file did not exist before the first Turn that changed it. */
+  /** Absent when the file did not exist at the checkpoint. */
   readonly target?: Entry;
 }
 
-export interface UndoPlan {
-  readonly turnIds: readonly string[];
+/** A way back to a checkpoint, found before anything is written (Kernel/Execution 6c). */
+export interface RollBackPlan {
+  readonly checkpointId: string;
+  readonly label: string;
+  /** An undo: the checkpoint itself is taken back, and the work from it on. */
+  readonly inclusive: boolean;
   readonly files: readonly PlannedFile[];
   /** The workspace as the plan saw it; a file differing from it at write time stops the undo. */
   readonly currentTree: string;
@@ -63,16 +85,16 @@ export interface UndoPlan {
   }[];
 }
 
-export type UndoPlanResult =
-  | { readonly kind: 'PLAN'; readonly plan: UndoPlan }
+export type RollBackPlanResult =
+  | { readonly kind: 'PLAN'; readonly plan: RollBackPlan }
   | { readonly kind: 'NOTHING_TO_UNDO' }
   | { readonly kind: 'NOT_UNDOABLE' };
 
-export type UndoApplied =
-  { readonly ok: true; readonly backupSnapshot?: string } | { readonly ok: false };
+export type RollBackApplied =
+  | { readonly ok: true; readonly files: readonly string[]; readonly backupSnapshot?: string }
+  | { readonly ok: false };
 
-export interface TurnDiffResult {
-  readonly turnId: string;
+export interface StretchDiff {
   readonly files: readonly { readonly path: string; readonly change: FileChange }[];
   readonly diff: string;
 }
@@ -88,7 +110,7 @@ export interface WorkspaceSnapshotsDeps {
   /** Everything a snapshot leaves out. */
   readonly rules: readonly string[];
   readonly now: () => Date;
-  /** Says that a Turn has no way back; the work itself goes on. */
+  /** Says that a checkpoint has no way back; the work itself goes on. */
   readonly diagnostic?: (line: string) => void;
 }
 
@@ -118,51 +140,115 @@ function changesBetween(
   return changes.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
+/** The id of the input checkpoint an older index line's Turn stands for. */
+export const inputCheckpointOf = (turnId: string): string =>
+  `ckp_${turnId.slice(turnId.indexOf('_') + 1)}`;
+
 /**
  * The shadow git repository of one Session (Kernel/Execution 6b, 6c). It needs nothing of the
  * analysed repository, not even that it is one, and only ever runs at a still point: the actor
- * holds every message until a capture is done.
+ * holds every message until a capture is done. Its points are checkpoints only; an undo and a
+ * rewind are the same way back (Orchestration 7.5, D8).
  */
 export class WorkspaceSnapshots {
   readonly #deps: WorkspaceSnapshotsDeps;
-  readonly #turns: Turn[] = [];
+  readonly #points: Point[] = [];
   readonly #trees = new Map<string, ReadonlyMap<string, Entry>>();
+  /** The snapshot a rollback left, where no point marks it: the workspace as the system put it. */
+  #restored: string | undefined;
   #ready = false;
 
   public constructor(deps: WorkspaceSnapshotsDeps) {
     this.#deps = deps;
   }
 
-  /** The last line of a Turn wins; this works after a restart, without the Workflow log. */
+  /**
+   * Reads the index; this works after a restart, without the Workflow log. Older indexes speak
+   * of Turns: a Turn's start is an input checkpoint, its end settles it, a revert takes it back.
+   */
   async load(): Promise<void> {
     await this.#deps.index.repairTail();
     for await (const line of this.#deps.index.readAll()) {
-      // The Session was opened in another folder: what came before has no way back from here.
-      if (line.kind === 'EPOCH') this.#turns.length = 0;
-      else if (line.kind === 'TURN_STARTED')
-        this.#turns.push({
-          turnId: line.turnId,
-          ...(line.startSnapshot === undefined ? {} : { startSnapshot: line.startSnapshot }),
-          ended: false,
-          changedFiles: [],
-          reverted: false,
-        });
-      else if (line.kind === 'TURN_ENDED') {
-        const turn = this.#turns.find((each) => each.turnId === line.turnId);
-        if (turn === undefined) continue;
-        turn.ended = true;
-        turn.changedFiles = line.changedFiles;
-        if (line.endSnapshot !== undefined) turn.endSnapshot = line.endSnapshot;
-      } else
-        for (const turn of this.#turns)
-          if (line.revertedTurnIds.includes(turn.turnId)) turn.reverted = true;
+      switch (line.kind) {
+        // The Session was opened in another folder: what came before has no way back from here.
+        case 'EPOCH':
+          this.#points.length = 0;
+          this.#restored = undefined;
+          break;
+        case 'TURN_STARTED':
+          this.#add({
+            checkpointId: inputCheckpointOf(line.turnId),
+            kind: 'INPUT',
+            label: 'user input',
+            ...(line.startSnapshot === undefined ? {} : { snapshot: line.startSnapshot }),
+            at: line.at,
+            turnId: line.turnId,
+          });
+          break;
+        case 'TURN_ENDED':
+          this.#settle(line.endSnapshot);
+          break;
+        case 'SETTLED':
+          this.#settle(line.snapshot);
+          break;
+        case 'CHECKPOINT':
+          this.#add({
+            checkpointId: line.checkpointId,
+            kind: line.ckpKind,
+            label: line.label,
+            ...(line.snapshot === undefined ? {} : { snapshot: line.snapshot }),
+            at: line.at,
+            ...(line.turnId === undefined ? {} : { turnId: line.turnId }),
+          });
+          break;
+        case 'ROLLED_BACK_TO':
+          this.#rolledBack(line.checkpointId, line.inclusive === true);
+          break;
+        case 'REVERTED': {
+          const first = this.#points.find(
+            (point) =>
+              point.kind === 'INPUT' &&
+              point.turnId !== undefined &&
+              line.revertedTurnIds.includes(point.turnId),
+          );
+          if (first !== undefined) this.#rolledBack(first.checkpointId, true);
+          break;
+        }
+      }
     }
   }
 
+  #add(point: Point): void {
+    this.#points.push(point);
+    this.#restored = undefined;
+  }
+
+  #settle(snapshot: string | undefined): void {
+    const last = this.#points.at(-1);
+    if (last === undefined) return;
+    if (snapshot === undefined) delete last.end;
+    else last.end = snapshot;
+    this.#restored = undefined;
+  }
+
+  /** The points after the one gone back to are gone; an undo takes that one too. */
+  #rolledBack(checkpointId: string, inclusive: boolean): void {
+    const at = this.#points.findIndex((point) => point.checkpointId === checkpointId);
+    if (at < 0) return;
+    const target = this.#points[at];
+    this.#points.splice(inclusive ? at : at + 1);
+    if (!inclusive) {
+      const kept = this.#points.at(-1);
+      if (kept !== undefined) delete kept.end;
+    }
+    // The workspace is where the target was taken; after an undo, nothing else marks that.
+    this.#restored = target?.snapshot;
+  }
+
   /**
-   * The Session is opened in another folder (M2Design 2.3). The Turns so far were taken of the
-   * old one: they stay in the index and the repository, and none of them can be undone or diffed
-   * from now on. The first snapshot of the new folder starts a chain of its own.
+   * The Session is opened in another folder (M2Design 2.3). The checkpoints so far were taken of
+   * the old one: they stay in the index and the repository, and none of them can be gone back to
+   * or diffed from now on. The first snapshot of the new folder starts a chain of its own.
    */
   async startEpoch(): Promise<void> {
     await this.#deps.index.append({
@@ -170,7 +256,8 @@ export class WorkspaceSnapshots {
       repositoryRoot: this.#deps.repositoryRoot,
       at: this.#deps.now().toISOString(),
     });
-    this.#turns.length = 0;
+    this.#points.length = 0;
+    this.#restored = undefined;
   }
 
   async #git(
@@ -233,7 +320,7 @@ export class WorkspaceSnapshots {
     return entries;
   }
 
-  /** Anything going wrong is the one failure callers know: this Turn has no way back. */
+  /** Anything going wrong is the one failure callers know: this point has no way back. */
   async #capture(): Promise<string> {
     try {
       return await this.#captureTree();
@@ -272,142 +359,223 @@ export class WorkspaceSnapshots {
     return (await this.#git(['write-tree'])).trim();
   }
 
+  /** The workspace as the system last knew it. */
   #latestSnapshot(): string | undefined {
-    for (let i = this.#turns.length - 1; i >= 0; i -= 1) {
-      const turn = this.#turns[i];
-      const tree = turn?.endSnapshot ?? turn?.startSnapshot;
+    if (this.#restored !== undefined) return this.#restored;
+    for (let i = this.#points.length - 1; i >= 0; i -= 1) {
+      const point = this.#points[i];
+      const tree = point?.end ?? point?.snapshot;
       if (tree !== undefined) return tree;
     }
     return undefined;
   }
 
-  /** A failed capture leaves the Turn running, and not undoable (Kernel/Execution 6b). */
-  async turnStarted(turnId: string): Promise<void> {
-    const startSnapshot = await this.#capture().catch(() => undefined);
-    if (startSnapshot === undefined)
-      this.#deps.diagnostic?.(`Turn ${turnId}: no snapshot, so it cannot be undone.\n`);
-    const turn: Turn = {
-      turnId,
-      ...(startSnapshot === undefined ? {} : { startSnapshot }),
-      ended: false,
-      changedFiles: [],
-      reverted: false,
-    };
+  /**
+   * A checkpoint (Orchestration 7.1): a snapshot taken at a still point, or while the run holds
+   * its mutating work. A failed capture is only a checkpoint with no way back; the run goes on.
+   */
+  async checkpoint(
+    checkpointId: string,
+    kind: CheckpointKind,
+    label: string,
+  ): Promise<string | undefined> {
+    const snapshot = await this.#capture().catch(() => undefined);
+    if (snapshot === undefined)
+      this.#deps.diagnostic?.(`Checkpoint ${checkpointId}: no snapshot, so no way back to it.\n`);
+    const at = this.#deps.now().toISOString();
     await this.#deps.index.append({
-      kind: 'TURN_STARTED',
-      turnId,
-      turnSeq: this.#turns.length + 1,
-      viewId: 'main',
-      ...(startSnapshot === undefined ? {} : { startSnapshot }),
-      at: this.#deps.now().toISOString(),
+      kind: 'CHECKPOINT',
+      checkpointId,
+      ckpKind: kind,
+      label,
+      ...(snapshot === undefined ? {} : { snapshot }),
+      at,
     });
-    this.#turns.push(turn);
+    this.#add({ checkpointId, kind, label, ...(snapshot === undefined ? {} : { snapshot }), at });
+    return snapshot;
   }
 
-  async turnEnded(turnId: string): Promise<TurnSnapshots> {
-    const turn = this.#turns.find((each) => each.turnId === turnId);
-    if (turn === undefined) return {};
-    let endSnapshot = await this.#capture().catch(() => undefined);
-    let changedFiles: Turn['changedFiles'] = [];
-    if (turn.startSnapshot !== undefined && endSnapshot !== undefined)
+  /**
+   * The run went still (it waits for the user, or ended): the stretch of the latest checkpoint
+   * ends here. What changed since the latest input is said back.
+   */
+  async settle(): Promise<SettledSnapshots> {
+    if (this.#points.length === 0) return {};
+    let end = await this.#capture().catch(() => undefined);
+    const input = [...this.#points].reverse().find((point) => point.kind === 'INPUT');
+    let changedFileCount: number | undefined;
+    if (input?.snapshot !== undefined && end !== undefined)
       try {
-        changedFiles = changesBetween(
-          await this.#entries(turn.startSnapshot),
-          await this.#entries(endSnapshot),
-        );
+        changedFileCount = changesBetween(
+          await this.#entries(input.snapshot),
+          await this.#entries(end),
+        ).length;
       } catch (error) {
         if (!(error instanceof SnapshotFailed)) throw error;
-        endSnapshot = undefined;
+        end = undefined;
       }
-    if (endSnapshot === undefined) this.#deps.diagnostic?.(`Turn ${turnId}: no end snapshot.\n`);
+    if (end === undefined) this.#deps.diagnostic?.('The run went still: no snapshot.\n');
     await this.#deps.index.append({
-      kind: 'TURN_ENDED',
-      turnId,
-      ...(endSnapshot === undefined ? {} : { endSnapshot }),
-      changedFiles: [...changedFiles],
+      kind: 'SETTLED',
+      ...(end === undefined ? {} : { snapshot: end }),
       at: this.#deps.now().toISOString(),
     });
-    turn.ended = true;
-    turn.changedFiles = changedFiles;
-    if (endSnapshot !== undefined) turn.endSnapshot = endSnapshot;
+    this.#settle(end);
     return {
-      ...(turn.startSnapshot === undefined ? {} : { startSnapshot: turn.startSnapshot }),
-      ...(endSnapshot === undefined ? {} : { endSnapshot }),
-      ...(endSnapshot === undefined ? {} : { changedFileCount: changedFiles.length }),
+      ...(input?.snapshot === undefined ? {} : { startSnapshot: input.snapshot }),
+      ...(end === undefined ? {} : { endSnapshot: end }),
+      ...(changedFileCount === undefined ? {} : { changedFileCount }),
     };
   }
 
-  /** What a Turn changed, and what it left behind (or the next start, after an exit). */
-  async #effectsOf(turn: Turn): Promise<{
-    readonly changed: readonly string[];
-    readonly after?: string;
-  }> {
-    if (turn.ended && turn.endSnapshot !== undefined)
-      return { changed: turn.changedFiles.map((c) => c.path), after: turn.endSnapshot };
-    const next = this.#turns[this.#turns.indexOf(turn) + 1]?.startSnapshot;
-    if (turn.startSnapshot === undefined || next === undefined) return { changed: [] };
-    const changes = changesBetween(
-      await this.#entries(turn.startSnapshot),
-      await this.#entries(next),
-    );
-    return { changed: changes.map((c) => c.path), after: next };
+  /** Where the stretch of the point at `index` starts and ends; each end needs its snapshot. */
+  #stretch(index: number): { readonly from?: string; readonly to?: string } {
+    const point = this.#points[index];
+    const next = this.#points[index + 1];
+    const to = next === undefined ? point?.end : next.snapshot;
+    return {
+      ...(point?.snapshot === undefined ? {} : { from: point.snapshot }),
+      ...(to === undefined ? {} : { to }),
+    };
   }
 
-  /** Kernel/Execution 6c, steps 1 and 2. */
-  async planUndo(scope: 'LAST' | 'ALL'): Promise<UndoPlanResult> {
-    const open = this.#turns.filter((turn) => !turn.reverted);
-    if (open.length === 0) return { kind: 'NOTHING_TO_UNDO' };
-    const chosen = scope === 'ALL' ? open : open.slice(-1);
-    if (chosen.some((turn) => turn.startSnapshot === undefined)) return { kind: 'NOT_UNDOABLE' };
+  async listCheckpoints(): Promise<readonly CheckpointPoint[]> {
+    const listed: CheckpointPoint[] = [];
+    for (const [index, point] of this.#points.entries()) {
+      const { from, to } = this.#stretch(index);
+      let changedFiles: number | undefined;
+      if (from !== undefined && to !== undefined)
+        try {
+          changedFiles = changesBetween(await this.#entries(from), await this.#entries(to)).length;
+        } catch (error) {
+          if (!(error instanceof SnapshotFailed)) throw error;
+        }
+      listed.push({
+        seq: index + 1,
+        kind: point.kind,
+        label: point.label,
+        at: point.at,
+        ...(changedFiles === undefined ? {} : { changedFiles }),
+      });
+    }
+    return listed;
+  }
+
+  /** What the stretch of the `seq`-th point changed; undefined without both of its snapshots. */
+  async diffCheckpoint(seq: number): Promise<StretchDiff | undefined> {
+    if (seq < 1) return undefined;
+    const { from, to } = this.#stretch(seq - 1);
+    if (from === undefined || to === undefined) return undefined;
     try {
-      return { kind: 'PLAN', plan: await this.#plan(chosen) };
+      const files = changesBetween(await this.#entries(from), await this.#entries(to));
+      const diff = await this.#git([
+        'diff-tree',
+        '-p',
+        '-r',
+        '--no-renames',
+        '--no-color',
+        '--no-ext-diff',
+        from,
+        to,
+      ]);
+      return { files, diff };
+    } catch (error) {
+      if (error instanceof SnapshotFailed) return undefined;
+      throw error;
+    }
+  }
+
+  /** The stretch of the n-th latest point (`/diff n`); in a chat, the n-th latest exchange. */
+  async diffLatest(n: number): Promise<StretchDiff | undefined> {
+    return this.diffCheckpoint(this.#points.length - n + 1);
+  }
+
+  /**
+   * An undo (Kernel/Execution 6c, steps 1 and 2): back to the latest checkpoint, or the first,
+   * taking it back too. It compares the files with what the system left and names those changed
+   * outside it, so the user decides before they are overwritten.
+   */
+  async planUndo(scope: 'LAST' | 'ALL'): Promise<RollBackPlanResult> {
+    const target = scope === 'ALL' ? this.#points[0] : this.#points.at(-1);
+    if (target === undefined) return { kind: 'NOTHING_TO_UNDO' };
+    if (target.snapshot === undefined) return { kind: 'NOT_UNDOABLE' };
+    try {
+      const currentTree = await this.#capture();
+      const current = await this.#entries(currentTree);
+      const start = await this.#entries(target.snapshot);
+      const left = this.#points.at(-1)?.end;
+      // Nothing says what the system left (it stopped before the run went still): every change
+      // since the checkpoint may be the system's or not.
+      const expected = left === undefined ? undefined : await this.#entries(left);
+      const touched = changesBetween(start, expected ?? current).map((change) => change.path);
+      const external: { path: string; change: FileChange | 'UNKNOWN' }[] = [];
+      for (const path of touched) {
+        const now = current.get(path);
+        const wanted = expected?.get(path);
+        if (expected === undefined) external.push({ path, change: 'UNKNOWN' });
+        else if (!sameEntry(now, wanted))
+          external.push({
+            path,
+            change: now === undefined ? 'DELETED' : wanted === undefined ? 'ADDED' : 'MODIFIED',
+          });
+      }
+      return {
+        kind: 'PLAN',
+        plan: {
+          checkpointId: target.checkpointId,
+          label: target.label,
+          inclusive: true,
+          files: touched.map((path) => {
+            const entry = start.get(path);
+            return { path, ...(entry === undefined ? {} : { target: entry }) };
+          }),
+          currentTree,
+          external,
+        },
+      };
     } catch (error) {
       if (error instanceof SnapshotFailed) return { kind: 'NOT_UNDOABLE' };
       throw error;
     }
   }
 
-  async #plan(chosen: readonly Turn[]): Promise<UndoPlan> {
-    const currentTree = await this.#capture();
-    const current = await this.#entries(currentTree);
-    const targets = new Map<string, Entry | undefined>();
-    const expected = new Map<string, Entry | undefined>();
-    const unknown = new Set<string>();
-    for (const turn of chosen) {
-      if (turn.startSnapshot === undefined) throw new SnapshotFailed('no start');
-      const start = await this.#entries(turn.startSnapshot);
-      const { changed, after } = await this.#effectsOf(turn);
-      const lastWithoutEnd = after === undefined;
-      // The last Turn left no end and nothing follows: all it could have changed is external.
-      const touched = lastWithoutEnd
-        ? changesBetween(start, current).map((change) => change.path)
-        : changed;
-      const left = after === undefined ? undefined : await this.#entries(after);
-      for (const path of touched) {
-        if (!targets.has(path)) targets.set(path, start.get(path));
-        expected.set(path, left?.get(path));
-        if (lastWithoutEnd) unknown.add(path);
-      }
+  /**
+   * A rewind (Orchestration 7.5): back to the `seq`-th point, which stays, so the work goes on
+   * from it. Every file that changed since its snapshot is put back; what the workspace held
+   * before is kept as a backup snapshot, so a change made outside is never lost.
+   */
+  async planRewind(seq: number): Promise<RollBackPlanResult> {
+    const target = seq < 1 ? undefined : this.#points[seq - 1];
+    if (target === undefined) return { kind: 'NOTHING_TO_UNDO' };
+    if (target.snapshot === undefined) return { kind: 'NOT_UNDOABLE' };
+    try {
+      const currentTree = await this.#capture();
+      const start = await this.#entries(target.snapshot);
+      const changes = changesBetween(start, await this.#entries(currentTree));
+      return {
+        kind: 'PLAN',
+        plan: {
+          checkpointId: target.checkpointId,
+          label: target.label,
+          inclusive: false,
+          files: changes.map(({ path }) => {
+            const entry = start.get(path);
+            return { path, ...(entry === undefined ? {} : { target: entry }) };
+          }),
+          currentTree,
+          external: [],
+        },
+      };
+    } catch (error) {
+      if (error instanceof SnapshotFailed) return { kind: 'NOT_UNDOABLE' };
+      throw error;
     }
-    const external: { path: string; change: FileChange | 'UNKNOWN' }[] = [];
-    for (const [path, wanted] of expected) {
-      const now = current.get(path);
-      if (unknown.has(path)) external.push({ path, change: 'UNKNOWN' });
-      else if (!sameEntry(now, wanted))
-        external.push({
-          path,
-          change: now === undefined ? 'DELETED' : wanted === undefined ? 'ADDED' : 'MODIFIED',
-        });
-    }
-    return {
-      turnIds: chosen.map((turn) => turn.turnId),
-      files: [...targets].map(([path, target]) => ({
-        path,
-        ...(target === undefined ? {} : { target }),
-      })),
-      currentTree,
-      external,
-    };
+  }
+
+  /** A rewind to the checkpoint named `checkpointId` (Orchestration 7.6: a run that goes on). */
+  async planRewindTo(checkpointId: string): Promise<RollBackPlanResult> {
+    const at = this.#points.findIndex((point) => point.checkpointId === checkpointId);
+    return at < 0 ? { kind: 'NOTHING_TO_UNDO' } : this.planRewind(at + 1);
   }
 
   async #restoreEntry(path: string, entry: Entry | undefined): Promise<void> {
@@ -422,60 +590,46 @@ export class WorkspaceSnapshots {
     await this.#deps.files.write(path, Buffer.from(body, 'base64'), entry.mode === '100755');
   }
 
-  /** Kernel/Execution 6c, steps 3 to 5. A forced undo keeps what it overwrites. */
-  async applyUndo(plan: UndoPlan, forced: boolean): Promise<UndoApplied> {
-    const before = forced ? await this.#capture() : plan.currentTree;
-    const base = await this.#entries(before);
-    const written: string[] = [];
-    for (const file of plan.files) {
-      const content = await this.#deps.files.read(file.path).catch(() => undefined);
-      const found = content === undefined ? undefined : blobId(content);
-      if (found !== base.get(file.path)?.sha) {
-        for (const path of written) await this.#restoreEntry(path, base.get(path));
-        return { ok: false };
-      }
-      await this.#restoreEntry(file.path, file.target);
-      written.push(file.path);
-    }
-    await this.#deps.index.append({
-      kind: 'REVERTED',
-      revertedTurnIds: [...plan.turnIds],
-      forced,
-      ...(forced ? { backupSnapshot: before } : {}),
-      at: this.#deps.now().toISOString(),
-    });
-    for (const turn of this.#turns) if (plan.turnIds.includes(turn.turnId)) turn.reverted = true;
-    return { ok: true, ...(forced ? { backupSnapshot: before } : {}) };
-  }
-
-  /** The n-th latest Turn not reverted; undefined when there is none, or it has no snapshots. */
-  async diffTurn(n: number): Promise<TurnDiffResult | undefined> {
-    const open = this.#turns.filter((turn) => !turn.reverted);
-    const turn = open[open.length - n];
-    if (turn?.startSnapshot === undefined) return undefined;
-    const end = turn.endSnapshot;
-    if (end === undefined) return undefined;
+  /**
+   * Kernel/Execution 6c, steps 3 to 5, for an undo and a rewind alike. A file that changed since
+   * the plan stops it, and what was written is put back. Forced, or a rewind, it first keeps what
+   * it overwrites in a backup snapshot.
+   */
+  async applyRollBack(plan: RollBackPlan, forced: boolean): Promise<RollBackApplied> {
+    const backup = forced || !plan.inclusive;
     try {
-      const diff = await this.#git([
-        'diff-tree',
-        '-p',
-        '-r',
-        '--no-renames',
-        '--no-color',
-        '--no-ext-diff',
-        turn.startSnapshot,
-        end,
-      ]);
-      return { turnId: turn.turnId, files: turn.changedFiles, diff };
+      const before = backup ? await this.#capture() : plan.currentTree;
+      const base = await this.#entries(before);
+      const written: string[] = [];
+      for (const file of plan.files) {
+        const content = await this.#deps.files.read(file.path).catch(() => undefined);
+        const found = content === undefined ? undefined : blobId(content);
+        if (found !== base.get(file.path)?.sha) {
+          for (const path of written) await this.#restoreEntry(path, base.get(path));
+          return { ok: false };
+        }
+        await this.#restoreEntry(file.path, file.target);
+        written.push(file.path);
+      }
+      await this.#deps.index.append({
+        kind: 'ROLLED_BACK_TO',
+        checkpointId: plan.checkpointId,
+        ...(plan.inclusive ? { inclusive: true } : {}),
+        ...(forced ? { forced: true } : {}),
+        ...(backup ? { backupSnapshot: before } : {}),
+        at: this.#deps.now().toISOString(),
+      });
+      this.#rolledBack(plan.checkpointId, plan.inclusive);
+      return { ok: true, files: written, ...(backup ? { backupSnapshot: before } : {}) };
     } catch (error) {
-      if (error instanceof SnapshotFailed) return undefined;
+      if (error instanceof SnapshotFailed) return { ok: false };
       throw error;
     }
   }
 
-  /** What changed since the last Turn this Session left (M2Design 2.3); empty when unknowable. */
+  /** What changed since this Session last went still (M2Design 2.3); empty when unknowable. */
   async divergedFiles(): Promise<readonly string[]> {
-    const baseline = this.#baseline();
+    const baseline = this.#latestSnapshot();
     if (baseline === undefined) return [];
     try {
       const now = await this.#capture();
@@ -485,17 +639,5 @@ export class WorkspaceSnapshots {
       if (error instanceof SnapshotFailed) return [];
       throw error;
     }
-  }
-
-  /** After an undo the workspace is where the oldest reverted Turn of the tail started. */
-  #baseline(): string | undefined {
-    let baseline: string | undefined;
-    for (let i = this.#turns.length - 1; i >= 0; i -= 1) {
-      const turn = this.#turns[i];
-      if (turn === undefined) break;
-      if (!turn.reverted) return baseline ?? turn.endSnapshot ?? turn.startSnapshot;
-      baseline = turn.startSnapshot;
-    }
-    return baseline;
   }
 }

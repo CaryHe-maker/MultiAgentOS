@@ -176,7 +176,7 @@ describe('S: Sessions', () => {
       await writeFile(config, JSON.stringify({ dataDir: place.dataDir }));
       const child = spawn(
         process.execPath,
-        ['--import', 'tsx', bin, 'run', '--repo', place.repository, 'analyze', 'X'],
+        ['--import', 'tsx', bin, 'run', '--repo', place.repository, 'X'],
         { env: { ...process.env, MULTIAGENTOS_CONFIG: config }, stdio: ['ignore', 'pipe', 'pipe'] },
       );
       let stderr = '';
@@ -482,7 +482,7 @@ describe('S: opening a Session says what the list says of it', () => {
       await resumeFirst(chat);
       const openedLine = () => chat.printed('NOTICE').find((text) => text.startsWith('已打开：'));
       await until(() => openedLine() !== undefined, 'the opened notice');
-      expect(openedLine()).toBe('已打开：name of this conversation（2 轮）');
+      expect(openedLine()).toBe('已打开：name of this conversation（2 次输入）');
     },
     TIMEOUT,
   );

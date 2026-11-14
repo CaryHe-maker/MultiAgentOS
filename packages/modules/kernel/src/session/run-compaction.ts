@@ -150,7 +150,7 @@ export class CompactionProcess {
         this.#ports.notify({
           type: 'ContextCompacted',
           trigger,
-          compactedTurns: 0,
+          compactedInputs: 0,
           prunedResults: result.pruned,
         });
       return;
@@ -277,7 +277,7 @@ export class CompactionProcess {
         type: 'ContextCompacted',
         trigger,
         summaryRef: outcome.summaryRef,
-        compactedTurns: range.replacedTurns,
+        compactedInputs: range.replacedInputs,
         prunedResults: pruned,
       });
       return { kind: 'CHANGED', pruned, summarised: true };
