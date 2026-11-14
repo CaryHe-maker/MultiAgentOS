@@ -15,7 +15,7 @@ modelDescription: >-
   that sent it). Answer a request you receive in the reply that reads it, even if only to say you
   got it: one left unanswered is reminded in the next round, and a reply after that without the
   answer is refused. An answer can go with ordinary tool calls, but not with a call that must be
-  alone (finishing, sleeping, starting tasks, asking the user): send that in your next reply.
+  alone (finishing, sleeping, asking the user): send that in your next reply.
   summary is what the receiver reads first; text is the content, and it may be long: a text over
   8000 characters or 200 lines needs a summary, and the receiver is shown the summary and the
   beginning and reads all of it with read_output by the message's id. references hands over

@@ -555,6 +555,59 @@ real('stopping and interrupting cancel the work in flight (Orchestration 5.1, 5.
   );
 });
 
+real('run_subagents beside ordinary calls (Orchestration 7.3, D41)', () => {
+  it(
+    'runs the ordinary calls of the reply first, then starts the tasks, which see what they did',
+    async () => {
+      const place = await roots({ 'work/.keep': '' });
+      const provider = scriptedAgents(
+        {
+          main: [
+            {
+              calls: [
+                { name: 'write_file', arguments: { path: 'notes.txt', content: 'the plan\n' } },
+                {
+                  name: 'run_subagents',
+                  arguments: {
+                    tasks: [
+                      {
+                        name: 'reader',
+                        agent: 'worker',
+                        goal: 'read notes.txt',
+                        writeScope: ['work'],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            sleepFor(children()),
+            reply('the reader saw it'),
+          ],
+        },
+        {
+          reader: [
+            tool('read_file', { path: 'notes.txt' }),
+            tool('finish_subagent', {
+              summary: 'read it',
+              status: 'done',
+              changedFiles: [],
+              validation: [],
+            }),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('write the plan and have it read');
+      expect(chat.printed('REPLY')).toContain('the reader saw it');
+      // Neither call was refused, and the task read the file the same reply wrote.
+      expect(seen(provider)).not.toContain('must be the only tool call');
+      expect(seenBy(provider, 'reader')).toContain('the plan');
+    },
+    TIMEOUT,
+  );
+});
+
 describe('requests, replies and attachments between tasks (Orchestration 5.3, D25)', () => {
   /** A call made when it is answered, from what the provider has received by then. */
   const later = (make: () => { name: string; arguments: unknown }) => ({

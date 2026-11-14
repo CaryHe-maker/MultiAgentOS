@@ -87,7 +87,7 @@ actions:
       id: run-subagents
       version: v0.1.0
 spawnable:
-  defaultShare: 1200000
+  defaultShare: 2400000
 capabilities:
   - repo.read
   - workspace.write
@@ -99,7 +99,7 @@ limits:
   maxToolUnits: 160
   maxWallClockMs: 3600000
 budget:
-  perCallInputLimit: 100000
+  perCallInputLimit: 256000
   maxOutputTokens: 32000
-  finalInputBudget: 100000
+  finalInputBudget: 256000
   finalMaxOutputTokens: 32000

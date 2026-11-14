@@ -79,7 +79,7 @@ actions:
       id: ask-user
       version: v0.1.0
 spawnable:
-  defaultShare: 600000
+  defaultShare: 1200000
 capabilities:
   - repo.read
   - workspace.write
@@ -90,7 +90,7 @@ limits:
   maxToolUnits: 120
   maxWallClockMs: 1200000
 budget:
-  perCallInputLimit: 100000
+  perCallInputLimit: 256000
   maxOutputTokens: 32000
-  finalInputBudget: 100000
+  finalInputBudget: 256000
   finalMaxOutputTokens: 32000

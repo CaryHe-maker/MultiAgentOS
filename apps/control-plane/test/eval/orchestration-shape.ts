@@ -67,6 +67,12 @@ export interface TaskStats {
   /** What the runner sent back or answered it with, by code (FEEDBACK). */
   readonly feedback: Readonly<Record<string, number>>;
   readonly changedFiles: number;
+  /**
+   * Its context compactions (Phase2Plan 4.7): tool results pruned and histories summarised, and the
+   * largest input of one of its model calls, so a run shows whether the trigger fits the limits.
+   */
+  readonly compactions: { readonly pruned: number; readonly summarised: number };
+  readonly peakInputTokens: number;
 }
 
 export interface RunShape {
@@ -105,7 +111,11 @@ export function shapeOf(log: readonly Row[]): RunShape {
   const useOfCall = new Map<string, { run: string; index: number }>();
   const sentBack = new Map<string, Record<string, number>>();
   const feedback = new Map<string, Record<string, number>>();
-  const usage = new Map<string, { requests: number; input: number; output: number }>();
+  const usage = new Map<
+    string,
+    { requests: number; input: number; output: number; peak: number }
+  >();
+  const compacted = new Map<string, { pruned: number; summarised: number }>();
   const agentOfRun = new Map<string, string>();
   let rootMissionId: string | undefined;
 
@@ -165,13 +175,14 @@ export function shapeOf(log: readonly Row[]): RunShape {
         break;
       case 'MODEL_TURN': {
         const run = text(record['agentRunId']);
-        const spent = usage.get(run) ?? { requests: 0, input: 0, output: 0 };
+        const spent = usage.get(run) ?? { requests: 0, input: 0, output: 0, peak: 0 };
         const counted = record['usage'] as
           { inputTokens?: number; outputTokens?: number } | undefined;
         usage.set(run, {
           requests: spent.requests + 1,
           input: spent.input + (counted?.inputTokens ?? 0),
           output: spent.output + (counted?.outputTokens ?? 0),
+          peak: Math.max(spent.peak, counted?.inputTokens ?? 0),
         });
         const list = uses.get(run) ?? [];
         for (const call of (record['toolCalls'] as Row[] | undefined) ?? []) {
@@ -197,6 +208,19 @@ export function shapeOf(log: readonly Row[]): RunShape {
           status: text(record['status']),
           changed: ((record['changedFiles'] as unknown[] | undefined) ?? []).map(text),
         };
+        break;
+      }
+      case 'TOOL_RESULTS_PRUNED':
+      case 'CONTEXT_COMPACTED': {
+        const target = record['target'] as { kind?: string; agentRunId?: string } | undefined;
+        // main's context is the root task's; any other is the task of the AgentRun named.
+        const missionId =
+          target?.kind === 'MAIN' ? rootMissionId : missionOfRun.get(text(target?.agentRunId));
+        if (missionId === undefined) break;
+        const counts = compacted.get(missionId) ?? { pruned: 0, summarised: 0 };
+        if (record['type'] === 'TOOL_RESULTS_PRUNED') counts.pruned += 1;
+        else counts.summarised += 1;
+        compacted.set(missionId, counts);
         break;
       }
       case 'FEEDBACK': {
@@ -279,7 +303,9 @@ export function shapeOf(log: readonly Row[]): RunShape {
       if (use.status !== undefined && use.status !== 'OK')
         notOk[`${use.tool}:${use.status}`] = (notOk[`${use.tool}:${use.status}`] ?? 0) + 1;
     }
-    const spent = runs.map((run) => usage.get(run) ?? { requests: 0, input: 0, output: 0 });
+    const spent = runs.map(
+      (run) => usage.get(run) ?? { requests: 0, input: 0, output: 0, peak: 0 },
+    );
     const mission = missions.get(missionId);
     const parent = mission?.parentId === undefined ? undefined : missions.get(mission.parentId);
     const inside = templateAbove(missionId);
@@ -304,6 +330,8 @@ export function shapeOf(log: readonly Row[]): RunShape {
       notOk,
       feedback: feedback.get(missionId) ?? {},
       changedFiles: new Set(writes(own).flatMap((use) => use.changed)).size,
+      compactions: compacted.get(missionId) ?? { pruned: 0, summarised: 0 },
+      peakInputTokens: Math.max(0, ...spent.map((each) => each.peak)),
     };
   };
   const tasks = [

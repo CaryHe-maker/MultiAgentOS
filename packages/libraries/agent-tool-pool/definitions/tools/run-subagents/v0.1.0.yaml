@@ -33,7 +33,8 @@ modelDescription: >-
   same agent, and the new task goes on from all of that task's history (the code it read, what it
   tried) with your goal as what it is asked now; it costs far less than a new task that reads
   everything again, so send a defect in a finished part back to its owner this way rather than
-  fixing it yourself. Tasks talk to each other with send_message. Call it on its own.
+  fixing it yourself. Tasks talk to each other with send_message. It may come with ordinary tool
+  calls in the same reply: the tasks start once those calls are back.
   The agents: explorer reads and reports; worker changes files in its writeScope; lead runs a
   large part with subtasks of its own. Specialists, for the root task only, each a lead that
   works by a method the system checks and hands back one report: fixer (something fails and a

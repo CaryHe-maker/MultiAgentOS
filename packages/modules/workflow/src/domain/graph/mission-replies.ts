@@ -109,7 +109,7 @@ const LISTED = 8;
 
 /** What may go with the answers, and what may not: a call that must be alone waits a reply. */
 const WITH_OTHERS =
-  'The answers can go with ordinary tool calls; a call that must be alone (finishing, sleeping, starting tasks, asking the user, stopping tasks) goes in your next reply, after the answers.';
+  'The answers can go with ordinary tool calls; a call that must be alone (finishing, sleeping, asking the user, stopping tasks) goes in your next reply, after the answers.';
 
 /** The requests named, the first few of them when there are many. */
 function listOf(owed: readonly OwedReply[]): string {

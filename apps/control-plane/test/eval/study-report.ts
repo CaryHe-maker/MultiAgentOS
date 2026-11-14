@@ -112,12 +112,12 @@ async function main(): Promise<void> {
   for (const { record, shape } of rows) {
     out.push(`### ${record.taskId} #${String(record.run)}`, '');
     out.push(
-      '| task | Agent | parent | in subMission | status | segments | requests | tokens in/out | tools | not OK | feedback | files changed |',
+      '| task | Agent | parent | in subMission | status | segments | requests | tokens in/out | peak input | compactions (pruned/summarised) | tools | not OK | feedback | files changed |',
     );
-    out.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+    out.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
     for (const task of shape.tasks ?? [])
       out.push(
-        `| ${task.name}${task.template === undefined ? '' : ` (${task.template})`} | ${task.agent} | ${task.parent ?? '-'} | ${task.inside ?? '-'} | ${task.status ?? '-'} | ${String(task.segments)} | ${String(task.modelRequests)} | ${String(task.inputTokens)}/${String(task.outputTokens)} | ${counts(task.tools)} | ${counts(task.notOk)} | ${counts(task.feedback)} | ${String(task.changedFiles)} |`,
+        `| ${task.name}${task.template === undefined ? '' : ` (${task.template})`} | ${task.agent} | ${task.parent ?? '-'} | ${task.inside ?? '-'} | ${task.status ?? '-'} | ${String(task.segments)} | ${String(task.modelRequests)} | ${String(task.inputTokens)}/${String(task.outputTokens)} | ${String(task.peakInputTokens ?? 0)} | ${String(task.compactions?.pruned ?? 0)}/${String(task.compactions?.summarised ?? 0)} | ${counts(task.tools)} | ${counts(task.notOk)} | ${counts(task.feedback)} | ${String(task.changedFiles)} |`,
       );
     out.push('');
   }

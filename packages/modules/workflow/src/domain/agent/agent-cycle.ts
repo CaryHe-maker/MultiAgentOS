@@ -313,7 +313,7 @@ const FEEDBACK = {
     'Your message contained no tool call, so nothing in it was shown to anyone or used: text outside a tool call is discarded.',
   OUTPUT_TRUNCATED: 'Your reply was cut off before a complete tool call. Send a shorter one.',
   CONTROL_MIXED:
-    'Not executed: a call that must be alone (finishing, starting tasks, asking the user, sleeping, stopping tasks) came with other calls; none of them ran.',
+    'Not executed: a call that must be alone (finishing, asking the user, sleeping, stopping tasks) came with other calls; none of them ran.',
   CONTROL_NOT_ALLOWED: 'That control tool is not available at this point.',
   CONTROL_ARGUMENTS_INVALID: 'The arguments of the finishing call do not match its parameters.',
   UNKNOWN_TOOL: 'Not executed: no such tool is available to you.',
@@ -893,12 +893,15 @@ function soleControlOf(
         allowedInFinal: tool.allowedInFinal,
         ending: (source) => ({ kind: 'ENDED', tool, arguments: call.arguments, source }),
       };
+    // run_subagents may come with ordinary calls; the runner starts its tasks once they are back,
+    // so the checkpoint before them is a cut after what they did (Orchestration 7.3, D41).
     if (spawn !== undefined && call.toolName === spawn.toolName)
       return {
         call,
         parameters: spawn.parameters,
         allowedInFinal: false,
         ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
+        inline: true,
       };
     const ask = state.definitions.askTool;
     if (ask !== undefined && call.toolName === ask.toolName)
@@ -1032,8 +1035,8 @@ function actOn(
   config: AgentConfig,
   records: NewLogRecord[],
 ): AgentTransition {
-  // A call that ends the round, starts tasks or waits must be alone; one that is answered at once
-  // (a message, the task tree, a job) may come with ordinary tool calls (Orchestration 5.3).
+  // A call that ends the round or waits must be alone; one that is answered without ending it (a
+  // message, the task tree, a job, starting tasks) may come with ordinary tool calls (5.3, D41).
   const controls = calls.flatMap((call) => soleControlOf(state, [call]) ?? []);
   const sole =
     controls.find((control) => control.inline !== true) ??

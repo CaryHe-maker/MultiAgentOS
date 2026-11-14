@@ -323,6 +323,11 @@ export class SessionRunner {
   #runFailure: string | undefined;
   /** Delegations given back once all their tasks ended (Orchestration 8.2). */
   readonly #released = new Set<string>();
+  /**
+   * `run_subagents` calls that came with ordinary tool calls (D41), by AgentRun: they start once
+   * those calls are back, so the checkpoint before the tasks is taken after what the calls did.
+   */
+  readonly #waitingSpawns = new Map<string, AgentEnding[]>();
 
   public constructor(deps: SessionRunnerDeps) {
     this.#deps = deps;
@@ -1909,6 +1914,7 @@ export class SessionRunner {
               : 'Not asleep: your parent interrupted you; its message follows.',
           ),
         ]);
+      this.#waitingSpawns.delete(agentRunId);
       return this.#halt(workflowRunId, halted, halted.stopAfterRound);
     }
     const sessionId = this.#sessionIdOrThrow();
@@ -1930,9 +1936,39 @@ export class SessionRunner {
       await this.#showControl(workflowRunId, agentRunId, control);
     if (transition.ending !== undefined)
       await this.#onEnding(workflowRunId, agentRunId, transition.ending);
-    // Control calls that came with the round's Units: each is answered, one after another.
-    for (const control of transition.controls ?? [])
+    // Control calls that came with the round's Units: each is answered, one after another. A
+    // run_subagents waits for the Units: its checkpoint is a cut after them (Orchestration 7.3, D41).
+    for (const control of transition.controls ?? []) {
+      if (control.kind === 'SPAWN' && this.#roundBusy(agentRunId)) {
+        this.#waitingSpawns.set(agentRunId, [
+          ...(this.#waitingSpawns.get(agentRunId) ?? []),
+          control,
+        ]);
+        continue;
+      }
       await this.#onEnding(workflowRunId, agentRunId, control);
+    }
+    await this.#startWaitingSpawns(workflowRunId, agentRunId);
+  }
+
+  /** The AgentRun still waits for a Unit of its round, or for a write held behind another. */
+  #roundBusy(agentRunId: string): boolean {
+    const state = this.#agents.get(agentRunId)?.state;
+    if (state === undefined) return false;
+    return (
+      [...state.pending.values()].some((pending) => pending.role !== 'DELEGATED') ||
+      state.held.length > 0 ||
+      state.deferred.length > 0
+    );
+  }
+
+  /** The run_subagents calls of a round whose ordinary calls are all back start now (D41). */
+  async #startWaitingSpawns(workflowRunId: string, agentRunId: string): Promise<void> {
+    const waiting = this.#waitingSpawns.get(agentRunId);
+    if (waiting === undefined || this.#roundBusy(agentRunId)) return;
+    this.#waitingSpawns.delete(agentRunId);
+    if (!this.#agents.has(agentRunId)) return;
+    for (const control of waiting) await this.#onEnding(workflowRunId, agentRunId, control);
   }
 
   /** Only for the interface: a line for a control call (send_message, sleep, run_subagents, ...). */
