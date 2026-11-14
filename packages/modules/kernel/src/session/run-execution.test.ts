@@ -85,6 +85,8 @@ function setup(
     /** Call slots; the test can change them. */
     slots?: { free: number };
     protectedPaths?: { snapshot: () => Promise<ReadonlySet<string>> };
+    /** An assembly past the trigger waits for this compaction before it is delivered. */
+    compaction?: () => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   } = {},
 ) {
   const bodies = new Map<string, Uint8Array>();
@@ -171,6 +173,12 @@ function setup(
             snapshot: options.protectedPaths.snapshot,
             quarantine: () => Promise.resolve([]),
           },
+        }),
+    ...(options.compaction === undefined
+      ? {}
+      : {
+          compactionDue: () => true,
+          afterAssemble: options.compaction,
         }),
     retrying: (activity) => retries.push(activity),
     released: (bytes) => releasedBytes.push(bytes),
@@ -866,6 +874,64 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
     expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED']);
     await run.execution.handleFact(run.factFor(run.dispatched[1] as never, run.fileResult()));
     expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED', 'OK']);
+  });
+
+  it('interrupts an assembly held for its compaction at once, not as a stop it cannot confirm', async () => {
+    // The real case (2026-11-14): a worker's assembly came out past the trigger and waited for a
+    // compaction; its parent interrupted it meanwhile. The assembly's execution had already ended,
+    // so no fact of a stop would ever come.
+    let compactionDone: (verdict: 'PROCEED') => void = () => undefined;
+    const run = setup({
+      compaction: () =>
+        new Promise((resolve) => {
+          compactionDone = resolve;
+        }),
+    });
+    await run.submit(
+      'CONTEXT_ASSEMBLE',
+      {
+        final: false,
+        history: [],
+        status: {
+          round: 2,
+          maxRounds: 10,
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+          final: false,
+        },
+      },
+      { kind: 'NONE' },
+    );
+    await run.execution.handleFact(
+      run.factFor(run.last(), {
+        outcome: 'COMPLETED',
+        result: {
+          output: {
+            contextPackId: testId('ctx'),
+            tokenCount: 95_000,
+            tokenBudget: 100_000,
+            prefixSha256: 'a'.repeat(64),
+            projectionDigest: 'b'.repeat(64),
+            headDigest: 'c'.repeat(64),
+            elidedEntries: [],
+          },
+          artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+        },
+      }),
+    );
+    expect(run.reports).toEqual([]);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // Every grace the abort set runs out; the run must not be judged unconfirmed for it.
+    for (const timer of [...run.timers]) if (!timer.cancelled) timer.due();
+    expect(run.faults).toEqual([]);
+    expect(run.execution.unknownEffects()).toEqual([]);
+    expect(run.reports).toEqual([
+      expect.objectContaining({ status: 'INTERRUPTED', interruptedBy: 'ABORTED' }),
+    ]);
+    // The compaction that ends later answers nothing more.
+    compactionDone('PROCEED');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(run.reports).toHaveLength(1);
+    expect(run.faults).toEqual([]);
   });
 
   it('judges a run that does not stop unconfirmed after the grace', async () => {

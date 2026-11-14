@@ -280,8 +280,10 @@ export function scriptedAgents(
       const task =
         [...byTask.keys()].find((name) => all.includes(`you are a different task: "${name}"`)) ??
         [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
-      const key = task ?? agent;
-      const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
+      // A summary of a task's history carries the task's name too: it still goes to the summaries.
+      const own = agent === 'summary' ? undefined : task;
+      const key = own ?? agent;
+      const turn = (own === undefined ? queues.get(agent) : byTask.get(own))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
       // A call the Kernel cancels (a pause, an abort) stops waiting, like a real request would.
       // Like a real fetch, a signal that is already aborted rejects at once.

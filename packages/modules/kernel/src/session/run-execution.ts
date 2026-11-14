@@ -209,6 +209,11 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
+  /**
+   * Assemblies whose execution has ended and that wait for a compaction before they are delivered
+   * (Kernel/Core 6a): nothing executes for them any more, so a stop has nothing to confirm.
+   */
+  readonly #heldForCompaction = new Set<string>();
   readonly #internal = new Map<string, (fact: ExecutionFact) => void>();
   readonly #effects: UnknownEffect[] = [];
   #seq = 0;
@@ -635,12 +640,13 @@ export class RunExecution {
     fact: ExecutionFact,
     info: AssemblyInfo,
   ): Promise<void> {
+    this.#heldForCompaction.add(attempt.unitAttemptId);
     // A compaction that breaks must not break the call it was to make room for.
     const verdict =
       (await this.#deps.afterAssemble?.(info).catch(() => 'PROCEED' as const)) ?? 'PROCEED';
     this.#deps.enqueue(async () => {
-      // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
-      if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;
+      // Its AgentRun was interrupted meanwhile: the attempt was answered by that, not by this.
+      if (!this.#heldForCompaction.delete(attempt.unitAttemptId)) return;
       if (verdict === 'PROCEED') await this.#settle(attempt, fact);
       else
         await this.#finish(attempt, {
@@ -1033,6 +1039,16 @@ export class RunExecution {
     const sent: Attempt[] = [];
     for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
       if (attempt.spec.agentRunId !== agentRunId) continue;
+      // An assembly held for a compaction has nothing executing: it answers now. The compaction
+      // goes on for the context; what it ends with is no answer to this attempt any more.
+      if (this.#heldForCompaction.delete(attempt.unitAttemptId)) {
+        void this.#finish(attempt, {
+          executionId: attempt.executionId ?? '',
+          outcome: 'INTERRUPTED',
+          interruptedBy: 'ABORTED',
+        });
+        continue;
+      }
       // A write always finishes: cancelling it could leave half a file (as a pause does).
       if (attempt.cls === 'WRITE' && attempt.executionId !== undefined) continue;
       if (attempt.executionId !== undefined) {
