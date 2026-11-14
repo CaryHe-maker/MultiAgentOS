@@ -113,7 +113,14 @@ const logOf = async (dataDir: string): Promise<Record<string, unknown>[]> =>
   (await readFile(join(await sessionDirectory(dataDir), 'workflow', 'log.v1.jsonl'), 'utf8'))
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    // The log is read while the system writes it: a line that is not whole yet is not there yet.
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
 const auditOf = async (dataDir: string) =>
   readFile(join(await sessionDirectory(dataDir), 'kernel-core', 'audit.jsonl'), 'utf8');
 const waitFor = async (condition: () => Promise<boolean>): Promise<void> => {
