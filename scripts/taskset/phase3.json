@@ -143,12 +143,6 @@
    "source": "designed",
    "role": "picked",
    "sha256": "1d2acf408c7dbaa04190499db688e0652b9a53d64e6f187b8573da938ba7056a"
-  },
-  {
-   "id": "designed/minipy",
-   "source": "designed",
-   "role": "picked",
-   "sha256": "7f2ac53ff91193a2879c41d46321d313d16ecb166c3dd00196be06701f0e5fb8"
   }
  ],
  "devLarge": [
@@ -356,6 +350,13 @@
    "source": "deepswe",
    "role": "dev",
    "reason": "dsh smoke run (5-minute cap) of the Pier adapter; kept because DeepSeek ran it"
+  },
+  {
+   "id": "designed/minipy",
+   "source": "designed",
+   "role": "dev",
+   "sha256": "7f2ac53ff91193a2879c41d46321d313d16ecb166c3dd00196be06701f0e5fb8",
+   "reason": "dsh finished in under 25 minutes"
   }
  ],
  "largeRules": {
@@ -461,6 +462,6 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T22:24:10.355Z",
+ "resealedAt": "2026-11-14T22:29:21.056Z",
  "keptRule": "Every task run with DeepSeek stays in the development or final set (Cary, 2026-11-15)"
 }
