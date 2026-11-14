@@ -28,6 +28,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
 | [Orchestration](Orchestration.md) | phase 2 编排架构草案：MissionTree、后台命令、休眠与唤醒、跨任务消息、checkpoint 取代 Turn；待评审，评审后由 M2Design 新版本吸收 |
 | [Phase2Plan](Phase2Plan.md) | phase 2 总纲：多 Agent 并行执行底座 + 可选的编排范式；与 DeepSeek Super-agent 的比较；证明相比 DeepSeek Harness 有原生优势的对照实验设计 |
+| [Phase3Plan](Phase3Plan.md) | phase 3 总纲：保留 Turn-chat 与 Mission、新增 general 模式；开发集与最终集各 10 小 4 大，最终集至多两次、实验不重复、不设阈值；任务列表与顺序 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |
 | [M2Security](M2Security.md) | 威胁模型、沙盒与授权的分层防护、C5 拦截矩阵 |
 | `Interface/` | 字段级接口，按通讯边界拆分；发布版只有 major 1 一套 Schema |
@@ -66,6 +67,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [M2TechStack](M2TechStack.md) | 实测已填 |
 | [Orchestration](Orchestration.md) | 草稿（phase 2 文档门），待评审 |
 | [Phase2Plan](Phase2Plan.md) | 已定（2026-11-12，Cary 决定）；对照实验的阈值与预算待定 |
+| [Phase3Plan](Phase3Plan.md) | 已定（2026-11-15，Cary 决定）；大任务最终集的规格待 Cary 写 |
 | [M2Security](M2Security.md) | 已实现部分已评审；phase 1–3 的对抗用例与审计后更新 |
 | [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md)、[KernelSupervisor](Interface/KernelSupervisor.md) | 已实现 |
 | Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；使用者模板与 `analyze` 已删除，预编排模板作为专家 Agent（Orchestration D39、D46） |

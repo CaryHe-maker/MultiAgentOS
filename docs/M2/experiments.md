@@ -501,3 +501,39 @@ adaptive-rejection-sampler 两边都失败，不是 mas 独有。
 - **局限**：每个版本只跑 1 次；findex 与 `mission` 的完整例子 1（按规格从零构建、tester 与 build 同时派出）形状几乎相同，且 D41–D45 是在它上面调出来的，所以它只是开发集，结果只说明机制改动有效、没有回归，不说明泛化，也不能用于与 `dsh` 的对照（X 组）。
 
 **随后**：phase 3 考虑让 `sleep`（以及 `ask_user`、`stop_subagents`）可以与普通调用同在一次回复中、由系统先执行其他调用再休眠（同 D41 对 `run_subagents` 的处理）；X 组改用由 Cary 出题、未经调参的留出任务。
+
+### I3：用 Mission 跑 phase 1 的最终集（2026-11-14）
+
+**目的**：phase 1 的最终集（30 题，Terminal-Bench 类与 SWE 类的小任务和合成的并行题）原本用 Turn-chat 跑。把 mas 换成 Mission（`mas run "<题目>"`）再跑一次，与 final1（mas Turn-chat）、final2（`dsh` 全权限）对比，看 Mission 在小任务上是否更好，以及它会不会把简单任务搞复杂。
+
+**参数**：
+
+| 项 | 值 |
+|---|---|
+| 系统 | `04f8bf0`（phase 3 起点）加 `bench.ts` 的 Mission 模式（`MAS_MODE=mission`，未提交时的改动） |
+| 运行 | `scripts/taskset/agentrun.mjs`，与 final1、final2 相同的 30 题、容器与单题上限 900 秒，同时 4 题；标签 `final3m`；授权由程序代答，Agent 的提问答"没有人可以回答" |
+| 模型 | `deepseek-flash`；费用按"费用口径"一节的价格折算（三组用同一算法） |
+| 原始数据 | WSL 的 `~/bench/results/results.jsonl`（标签 `final3m`）与 `~/bench/results/final3m-mas-*`（会话日志、请求剖面、判分输出） |
+
+**结果**：
+
+| | 通过 | 费用 | 智能体用时合计 | 模型请求 |
+|---|---|---|---|---|
+| final1：mas Turn-chat | 30/30 | $0.361 | 3948 秒 | 505 |
+| final2：`dsh` | 29/30 | $0.248 | 3311 秒 | 434 |
+| final3m：mas Mission | 28/30 | $0.478 | 6380 秒 | 539 |
+| 三者都通过的 28 题 | — | Turn-chat $0.302、`dsh` $0.223、Mission $0.407 | — | — |
+
+- 失败的两题：`configure-git-webserver`（写了 `docker-compose.yml`，而任务容器里没有 docker，判分时网页连不上；`dsh` 也失败）、`query-optimize`（查询 1.15 秒，要求不超过参考解 0.77 秒的 1.05 倍；Turn-chat 通过）。
+- 只有 2 题派了子任务，而且是最贵的两题：`qutebrowser`（lead 与 2 个 explorer，$0.065，Turn-chat $0.010）、`tune-mjcf`（2 个 worker，$0.081，Turn-chat $0.035）。两题都是改一处代码的任务。去掉这两题，其余 28 题 Mission $0.332、Turn-chat $0.316，只多约 5%。
+- 3 题（`vuls`、`teleport`、`tune-mjcf`）在 900 秒时被截停、没有交付回复，但改动已经完成，隐藏测试通过。时间花在范围很大的验证命令上：`vuls` 的 root 跑了 `go build ./... && go test ./contrib/... ./models/...`，满 10 分钟被取消（Turn-chat 的这一题共 210 秒）；`teleport` 一次 `go build` 加 `go vet` 约 5 分钟。
+- `wide-read` 等合成并行题的"同时运行的执行单元"到 8 个，是同一个 Agent 一次回复里的并行工具调用，Turn-chat 也一样。
+
+**发现**：
+
+- 这批题以改一个仓库的小任务为主，Mission 的拆分用不上，只剩开销：比 Turn-chat 少过 2 题、费用多 32%、用时多 62%。"这批题更偏向 Mission"的设想不成立。
+- Mission 的说明本身没有让普通任务明显变贵（不派任务时约 +5%）；问题是两次不该派的派发，和"最后跑一遍检查"带来的大范围验证命令。
+- 每题只跑一次，两题的通过差距在噪声内（一题看运行时间，另一题 `dsh` 也失败）。
+- 这是旧最终集的第四次使用（mas 两次、`dsh` 一次），结果不用于调参；phase 3 起它不再作为最终集。
+
+**随后**：Phase3Plan 第 2 节（新增 general 模式：平时对话，长任务时进入 Mission，交付后回到对话）与 RP3-ME-3（"不该拆"的判断与验证命令的范围）。

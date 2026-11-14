@@ -1,0 +1,264 @@
+{
+ "salt": "mao-phase3-final-v1",
+ "sealedAt": "2026-11-14T12:01:03.062Z",
+ "rules": "docs/M2/Phase3Plan.md section 3",
+ "devSmall": [
+  "sbp/instance_qutebrowser__qutebrowser-36ade4bba504eb96f05d32ceab9972df7eb17bcc-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+  "tb2/tune-mjcf",
+  "sbp/instance_future-architect__vuls-7e91f5ef7e5712b1a3d7d5066ad6607e9debc21c",
+  "tb2/configure-git-webserver",
+  "tb2/gcode-to-text",
+  "tb2/raman-fitting",
+  "tb2/polyglot-c-py",
+  "tb2/chess-best-move",
+  "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+  "parallel/dev/research-then-implement-s1-n6"
+ ],
+ "finalSmall": [
+  {
+   "id": "tb2/custom-memory-heap-crash",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "debugging",
+   "difficulty": "medium",
+   "sha256": "8bfc3dc0539910aea2f793b86a07042e1b4c2cd05ec5f147bc42bec4f50b2992"
+  },
+  {
+   "id": "tb2/financial-document-processor",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "data-processing",
+   "difficulty": "medium",
+   "sha256": "455fb917df4859716921c742811824fec667b020d2f8e48c5db0a305f1d05607"
+  },
+  {
+   "id": "tb2/constraints-scheduling",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "personal-assistant",
+   "difficulty": "medium",
+   "sha256": "a3e381dea81ba95bf815b0e6f0913b4ec32ec96440c9baa2c4417873c7583780"
+  },
+  {
+   "id": "tb2/filter-js-from-html",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "security",
+   "difficulty": "medium",
+   "sha256": "83c883b37177c4b82a41990199d5d9638e066e359d77ece1f38d073c6ad55a4f"
+  },
+  {
+   "id": "tb2/llm-inference-batching-scheduler",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "machine-learning",
+   "difficulty": "hard",
+   "sha256": "622888c9b94dc33badaf1e57b2089b690758c7f1474b8f25fdd0515725165ec9"
+  },
+  {
+   "id": "tb2/mailman",
+   "source": "terminal-bench-2.0",
+   "role": "picked",
+   "bucket": "system-administration",
+   "difficulty": "medium",
+   "sha256": "96036b4bee22f097eb68e854b1fca5102515ddc5036900d9db32b21a95695f9d"
+  },
+  {
+   "id": "tb2/protein-assembly",
+   "source": "terminal-bench-2.0",
+   "role": "reserve",
+   "bucket": "scientific-computing",
+   "difficulty": "hard",
+   "sha256": "02526276f04f345e3b39f9a4cb89d3770764a337d3458168c58d496fafa77a4b"
+  },
+  {
+   "id": "tb2/path-tracing",
+   "source": "terminal-bench-2.0",
+   "role": "reserve",
+   "bucket": "software-engineering",
+   "difficulty": "hard",
+   "sha256": "da37e84fbcad2133a1440eddab53c49e47da6cdf2a87cfc7d2b3310e03186f2a"
+  },
+  {
+   "id": "sbp/instance_navidrome__navidrome-87d4db7638b37eeb754b217440ab7a372f669205",
+   "source": "swe-bench-pro",
+   "role": "picked",
+   "bucket": "repo:navidrome",
+   "difficulty": "medium",
+   "sha256": "267f7c444f6276926399d18d19185f8f8a881deb3757ee9227d0c72f4d52359f"
+  },
+  {
+   "id": "sbp/instance_gravitational__teleport-1b08e7d0dbe68fe530a0f08ad408ec198b7c53fc-vee9b09fb20c43af7e520f57e9239bbcf46b7113d",
+   "source": "swe-bench-pro",
+   "role": "picked",
+   "bucket": "repo:teleport",
+   "difficulty": "medium",
+   "sha256": "1e7570dba18e6ddd0ad061f6a6b05e34325017577cfa75b9c94e76b16dd9c8cb"
+  },
+  {
+   "id": "sbp/instance_internetarchive__openlibrary-431442c92887a3aece3f8aa771dd029738a80eb1-v76304ecdb3a5954fcf13feb710e8c40fcf24b73c",
+   "source": "swe-bench-pro",
+   "role": "picked",
+   "bucket": "repo:openlibrary",
+   "difficulty": "medium",
+   "sha256": "ad5f1a7897df62f03461656f019d6663edaae2c911fe228d120bec573835064b"
+  },
+  {
+   "id": "sbp/instance_navidrome__navidrome-8d56ec898e776e7e53e352cb9b25677975787ffc",
+   "source": "swe-bench-pro",
+   "role": "picked",
+   "bucket": "repo:navidrome",
+   "difficulty": "medium",
+   "sha256": "10ecd9a9c4664c4120f94fbd2b1e50a100b0ce85d8cd1c54c53ff63bf828441c"
+  },
+  {
+   "id": "sbp/instance_gravitational__teleport-73cc189b0e9636d418c4470ecce0d9af5dae2f02-vee9b09fb20c43af7e520f57e9239bbcf46b7113d",
+   "source": "swe-bench-pro",
+   "role": "reserve",
+   "bucket": "repo:teleport",
+   "difficulty": "medium",
+   "sha256": "e0c332c531f7cd9edbcda3bcd3dc7a86abb1694c076b1dc536cf4311ad97dc93"
+  },
+  {
+   "id": "sbp/instance_internetarchive__openlibrary-0d13e6b4bf80bced6c0946b969b9a1b6963f6bce-v76304ecdb3a5954fcf13feb710e8c40fcf24b73c",
+   "source": "swe-bench-pro",
+   "role": "reserve",
+   "bucket": "repo:openlibrary",
+   "difficulty": "medium",
+   "sha256": "84c8e9da212608b55880fc46e667f6c05dba9aaaced79b568ecaa57bf5966046"
+  }
+ ],
+ "finalLarge": [
+  {
+   "id": "lb/task_compiler_sysy_rust",
+   "source": "loopsbench",
+   "role": "picked",
+   "bucket": "programming-languages",
+   "repo": "compiler_sysy_rust",
+   "units": 6,
+   "goldLines": 1731,
+   "sha256": "a672cf9f48abbc595ea80480b6ff0e09aa359fcb70a3ed565fe4c92bb2d968a7"
+  },
+  {
+   "id": "lb/task_cs61b_extra_java_bundle",
+   "source": "loopsbench",
+   "role": "picked",
+   "bucket": "algorithms",
+   "repo": "cs61b_extra_java_bundle",
+   "units": 22,
+   "goldLines": 1848,
+   "sha256": "194a39d08f5df5393819c026a771f213a64fbdf54f73657fb768eaac84c448e6"
+  },
+  {
+   "id": "lb/task_java_ds_coursework",
+   "source": "loopsbench",
+   "role": "reserve1",
+   "bucket": "algorithms",
+   "repo": "java_ds_coursework",
+   "units": 17,
+   "goldLines": 3342,
+   "sha256": "3125326ca4d9f2dc8931824671795d8a2e075e13aaff1dc0f183b3f8631502d8"
+  },
+  {
+   "id": "lb/task_compiler_rustlike_rv32",
+   "source": "loopsbench",
+   "role": "reserve2",
+   "bucket": "programming-languages",
+   "repo": "compiler_rustlike_rv32",
+   "units": 6,
+   "goldLines": 1542,
+   "sha256": "fc016748e0f9a4e4b95cb4afbe885b9ef1a3568904445cfed39f35c634a40b9a"
+  },
+  {
+   "id": "lb/task_x86_os_four_labs",
+   "source": "loopsbench",
+   "role": "reserve3",
+   "bucket": "systems",
+   "repo": "x86_os_four_labs",
+   "units": 9,
+   "goldLines": 1921,
+   "sha256": "287fedd889c82dafbd9a0eea30848a261370edd53d48e6fc419b346e64f617ab"
+  },
+  {
+   "id": "deepswe/arcane-drift-detection-baselines",
+   "source": "deepswe",
+   "role": "picked",
+   "bucket": "go",
+   "repo": "arcane",
+   "goldLines": 1083,
+   "sha256": "1d8f5326a5fa2a0b037ed4658d3bf30f8d72f2f878847e916960a7faf6c6cf8b"
+  },
+  {
+   "id": "deepswe/bandit-interprocedural-taint-checks",
+   "source": "deepswe",
+   "role": "picked",
+   "bucket": "python",
+   "repo": "bandit",
+   "goldLines": 843,
+   "sha256": "50cf365d47b8b9cc313b7a87f9c2d933743d7065b1b3b59d42c0d2b7e568abd8"
+  },
+  {
+   "id": "deepswe/ytt-jsonpath-query-api",
+   "source": "deepswe",
+   "role": "reserve1",
+   "bucket": "go",
+   "repo": "ytt",
+   "goldLines": 1185,
+   "sha256": "a97b25b0313fe016b36b641d31a8ad0d370615b422fc1f8a4c5747a0afda35f5"
+  },
+  {
+   "id": "deepswe/cliffy-config-file-parsing",
+   "source": "deepswe",
+   "role": "reserve2",
+   "bucket": "typescript",
+   "repo": "cliffy",
+   "goldLines": 865,
+   "sha256": "90494608072b443fbb7a08faa6c74ed12f244faec9a088bd383abe497bfe8f87"
+  },
+  {
+   "id": "deepswe/sqlite-utils-safe-import-checkpoints",
+   "source": "deepswe",
+   "role": "reserve3",
+   "bucket": "python",
+   "repo": "sqlite-utils",
+   "goldLines": 857,
+   "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
+  }
+ ],
+ "devLarge": [
+  {
+   "id": "lb/task_raylib_shapes2d_medium",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "graphics-and-games",
+   "repo": "raylib_shapes2d_medium",
+   "units": 10,
+   "goldLines": 4478,
+   "sha256": "7dbefd7dde2f8e91a4857a8265a4f71989c6c948c61d88808060c1c152f7039c"
+  },
+  {
+   "id": "deepswe/quill-shared-toolbar-focus",
+   "source": "deepswe",
+   "role": "dev",
+   "bucket": "typescript",
+   "repo": "quill",
+   "goldLines": 882,
+   "sha256": "ccda404d02e16f461a520e25de74cf239d80cbd9ade8ff5758eae8586b3e83b5"
+  },
+  {
+   "id": "study.findex",
+   "source": "study",
+   "role": "dev"
+  },
+  {
+   "id": "study.taskq",
+   "source": "study",
+   "role": "dev"
+  }
+ ],
+ "largeRules": {
+  "loopsbench": "phase-1 final half; 6-30 units; 1500-6000 changed lines in the gold patches; timeout >= 3600 s; repository not in the small final set; one per category",
+  "deepswe": "reference solution >= 834 changed lines (top quarter) and >= 5 files; repository not in the small final set; one per language",
+  "replacement": "a picked task that dsh finishes in under 25 minutes is replaced by the next reserve of the same source, in order"
+ }
+}
