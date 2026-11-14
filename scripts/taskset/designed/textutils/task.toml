@@ -1,0 +1,27 @@
+schema_version = "1.1"
+artifacts = []
+
+[task]
+name = "mao-designed/textutils"
+description = "Implement GNU-compatible grep, sed, sort and 13 more text tools in pure Python; Linux systems course project."
+keywords = ["cli", "gnu", "text-processing", "from-scratch"]
+
+[metadata]
+difficulty = "hard"
+category = "software-engineering"
+tags = ["designed", "phase3"]
+
+[verifier]
+timeout_sec = 1800.0
+
+[agent]
+timeout_sec = 9000.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = false
+mcp_servers = []

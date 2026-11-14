@@ -134,6 +134,12 @@
    "source": "designed",
    "role": "picked",
    "sha256": "e42ab57aa43a90b2a34b7e19da0eaf63bdf269233e0345a19f273576a074c1f5"
+  },
+  {
+   "id": "designed/textutils",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "b90c89e46ff123534a6f174b259055a29d94740a3033bd04e8cf81c094c37b3e"
   }
  ],
  "devLarge": [
@@ -402,5 +408,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T16:56:56.364Z"
+ "resealedAt": "2026-11-14T16:59:52.632Z"
 }
