@@ -142,6 +142,12 @@
    "source": "designed",
    "role": "picked",
    "sha256": "1d2acf408c7dbaa04190499db688e0652b9a53d64e6f187b8573da938ba7056a"
+  },
+  {
+   "id": "designed/pyjq",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "fb0d808aa50acd9bf13f11c05b271f13f17817f569d24f10224b7aae84da2b79"
   }
  ],
  "devLarge": [
@@ -417,5 +423,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T21:36:40.435Z"
+ "resealedAt": "2026-11-14T21:41:19.158Z"
 }
