@@ -142,6 +142,12 @@
    "role": "picked",
    "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
    "sha256": "932ab8c5b0dc27254b3f576ded1a864969149ba4f287e2e41b0b0d4edd54a0f2"
+  },
+  {
+   "id": "designed/minidb",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "9c4aac3550b960c9840b831696b22465076910065e99090105fd4c498c6f692a"
   }
  ],
  "devLarge": [
@@ -342,5 +348,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T13:55:48.957Z"
+ "resealedAt": "2026-11-14T14:12:19.015Z"
 }

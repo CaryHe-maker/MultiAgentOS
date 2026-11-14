@@ -114,7 +114,15 @@ const runId = `${label}-${system}-${taskName.replace(/[^A-Za-z0-9_.-]/g, '-').sl
 const cname = `ar-${runId}`.slice(0, 60);
 const mounts = ['-v', `${nodeDir}:/opt/node:ro`];
 if (system === 'dsh') mounts.push('-v', `${dshDir}:/opt/dsh:ro`);
-if (system === 'mas') mounts.push('-v', `${maoDir}:/mao2:ro`);
+// The designed tasks' hidden tests and reference solutions live in the repository that mas runs from;
+// an empty tmpfs hides them from the agent.
+if (system === 'mas')
+  mounts.push(
+    '-v',
+    `${maoDir}:/mao2:ro`,
+    '--mount',
+    'type=tmpfs,destination=/mao2/scripts/taskset/designed',
+  );
 const started = sh([
   'run',
   '-d',

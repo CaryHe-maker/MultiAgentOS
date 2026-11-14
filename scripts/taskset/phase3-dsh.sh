@@ -3,8 +3,9 @@
 # runs once with dsh in its official harness. A task with a `started` marker is never run again, also
 # after a crash; a crash is reported, not retried.
 #   phase3-dsh.sh <id>...        e.g. tb2/mailman lb/task_x deepswe/y sbp/instance_z
-# Small tasks (tb2, sbp) use agentrun.mjs with the task's own agent timeout; large tasks use the
-# LoopsBench harness or Pier with a 2.5-hour cap. Results go under $OUT (default ~/bench/p3dsh).
+# Small tasks (tb2, sbp) and the designed large tasks use agentrun.mjs with the task's own agent
+# timeout (2.5 hours for the designed ones); LoopsBench and DeepSWE tasks use their harness with a
+# 2.5-hour cap. Results go under $OUT (default ~/bench/p3dsh).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 META=${META:-$HOME/benchmeta}
@@ -45,8 +46,12 @@ for id in "$@"; do
   log="$OUT/logs/${id//\//__}.log"
   echo "start $id $(date +%H:%M:%S)"
   case $id in
-    tb2/* | sbp/*)
-      [ "${id%%/*}" = tb2 ] && dir=$META/tb2/$name || dir=$META/sbp/v2/tasks/$name
+    tb2/* | sbp/* | designed/*)
+      case ${id%%/*} in
+        tb2) dir=$META/tb2/$name ;;
+        sbp) dir=$META/sbp/v2/tasks/$name ;;
+        designed) dir=$HERE/designed/$name ;;
+      esac
       cap=$(awk '/^\[agent\]/{a=1;next} /^\[/{a=0} a && /timeout_sec/{gsub(/[^0-9.]/,"",$0); print int($0); exit}' "$dir/task.toml")
       node "$HERE/agentrun.mjs" dsh "$dir" "$OUT/results" --label p3dsh --cap "${cap:-900}" < /dev/null >> "$OUT/small.jsonl" 2> "$log"
       image=$(tail -1 "$OUT/small.jsonl" | sed -n 's/.*"image":"\([^"]*\)".*/\1/p')
