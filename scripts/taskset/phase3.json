@@ -130,6 +130,123 @@
  ],
  "finalLarge": [
   {
+   "id": "lb/task_os_labs_asm_kernel",
+   "source": "loopsbench",
+   "role": "picked",
+   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
+   "sha256": "65655c330475f5ee973647d6cf97fede46465f3ff44af55000637283521f0341"
+  },
+  {
+   "id": "lb/task_compiler_cmm_mips",
+   "source": "loopsbench",
+   "role": "picked",
+   "chosenBy": "Cary, 2026-11-15, after reading the contents; phase-1 final half, not used before",
+   "sha256": "932ab8c5b0dc27254b3f576ded1a864969149ba4f287e2e41b0b0d4edd54a0f2"
+  }
+ ],
+ "devLarge": [
+  {
+   "id": "lb/task_raylib_shapes2d_medium",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "graphics-and-games",
+   "repo": "raylib_shapes2d_medium",
+   "units": 10,
+   "goldLines": 4478,
+   "sha256": "7dbefd7dde2f8e91a4857a8265a4f71989c6c948c61d88808060c1c152f7039c"
+  },
+  {
+   "id": "deepswe/quill-shared-toolbar-focus",
+   "source": "deepswe",
+   "role": "dev",
+   "bucket": "typescript",
+   "repo": "quill",
+   "goldLines": 882,
+   "sha256": "ccda404d02e16f461a520e25de74cf239d80cbd9ade8ff5758eae8586b3e83b5"
+  },
+  {
+   "id": "study.findex",
+   "source": "study",
+   "role": "dev"
+  },
+  {
+   "id": "study.taskq",
+   "source": "study",
+   "role": "dev"
+  },
+  {
+   "id": "lb/task_compiler_sysy_rust",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "programming-languages",
+   "repo": "compiler_sysy_rust",
+   "units": 6,
+   "goldLines": 1731,
+   "sha256": "a672cf9f48abbc595ea80480b6ff0e09aa359fcb70a3ed565fe4c92bb2d968a7",
+   "from": "finalLargeV1"
+  },
+  {
+   "id": "lb/task_cs61b_extra_java_bundle",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "algorithms",
+   "repo": "cs61b_extra_java_bundle",
+   "units": 22,
+   "goldLines": 1848,
+   "sha256": "194a39d08f5df5393819c026a771f213a64fbdf54f73657fb768eaac84c448e6",
+   "from": "finalLargeV1"
+  },
+  {
+   "id": "lb/task_java_ds_coursework",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "algorithms",
+   "repo": "java_ds_coursework",
+   "units": 17,
+   "goldLines": 3342,
+   "sha256": "3125326ca4d9f2dc8931824671795d8a2e075e13aaff1dc0f183b3f8631502d8",
+   "from": "finalLargeV1"
+  },
+  {
+   "id": "lb/task_compiler_rustlike_rv32",
+   "source": "loopsbench",
+   "role": "dev",
+   "bucket": "programming-languages",
+   "repo": "compiler_rustlike_rv32",
+   "units": 6,
+   "goldLines": 1542,
+   "sha256": "fc016748e0f9a4e4b95cb4afbe885b9ef1a3568904445cfed39f35c634a40b9a",
+   "from": "finalLargeV1"
+  },
+  {
+   "id": "deepswe/arcane-drift-detection-baselines",
+   "source": "deepswe",
+   "role": "dev",
+   "bucket": "go",
+   "repo": "arcane",
+   "goldLines": 1083,
+   "sha256": "1d8f5326a5fa2a0b037ed4658d3bf30f8d72f2f878847e916960a7faf6c6cf8b",
+   "from": "finalLargeV1"
+  },
+  {
+   "id": "deepswe/bandit-interprocedural-taint-checks",
+   "source": "deepswe",
+   "role": "dev",
+   "bucket": "python",
+   "repo": "bandit",
+   "goldLines": 843,
+   "sha256": "50cf365d47b8b9cc313b7a87f9c2d933743d7065b1b3b59d42c0d2b7e568abd8",
+   "from": "finalLargeV1"
+  }
+ ],
+ "largeRules": {
+  "loopsbench": "phase-1 final half; 6-30 units; 1500-6000 changed lines in the gold patches; timeout >= 3600 s; repository not in the small final set; one per category",
+  "deepswe": "reference solution >= 834 changed lines (top quarter) and >= 5 files; repository not in the small final set; one per language",
+  "replacement": "a picked task that dsh finishes in under 25 minutes is replaced by the next reserve of the same source, in order",
+  "v2": "v1 picks all ran under 25 minutes with dsh; v2 = two LoopsBench tasks chosen by hand (os_labs_asm_kernel, compiler_cmm_mips) + two tasks designed in this project; each must also take dsh at least 25 minutes in its one control run"
+ },
+ "finalLargeV1": [
+  {
    "id": "lb/task_compiler_sysy_rust",
    "source": "loopsbench",
    "role": "picked",
@@ -225,40 +342,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "devLarge": [
-  {
-   "id": "lb/task_raylib_shapes2d_medium",
-   "source": "loopsbench",
-   "role": "dev",
-   "bucket": "graphics-and-games",
-   "repo": "raylib_shapes2d_medium",
-   "units": 10,
-   "goldLines": 4478,
-   "sha256": "7dbefd7dde2f8e91a4857a8265a4f71989c6c948c61d88808060c1c152f7039c"
-  },
-  {
-   "id": "deepswe/quill-shared-toolbar-focus",
-   "source": "deepswe",
-   "role": "dev",
-   "bucket": "typescript",
-   "repo": "quill",
-   "goldLines": 882,
-   "sha256": "ccda404d02e16f461a520e25de74cf239d80cbd9ade8ff5758eae8586b3e83b5"
-  },
-  {
-   "id": "study.findex",
-   "source": "study",
-   "role": "dev"
-  },
-  {
-   "id": "study.taskq",
-   "source": "study",
-   "role": "dev"
-  }
- ],
- "largeRules": {
-  "loopsbench": "phase-1 final half; 6-30 units; 1500-6000 changed lines in the gold patches; timeout >= 3600 s; repository not in the small final set; one per category",
-  "deepswe": "reference solution >= 834 changed lines (top quarter) and >= 5 files; repository not in the small final set; one per language",
-  "replacement": "a picked task that dsh finishes in under 25 minutes is replaced by the next reserve of the same source, in order"
- }
+ "resealedAt": "2026-11-14T13:55:48.957Z"
 }

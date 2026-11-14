@@ -59,6 +59,25 @@ if (!image) {
 }
 const workdir =
   sh(['image', 'inspect', '-f', '{{.Config.WorkingDir}}', image]).stdout.trim() || '/app';
+// Alpine images (musl) cannot run the glibc Node: they get the musl build of Node and of each
+// system's dependencies, installed from the same lockfile (`npm ci --libc=musl`).
+const musl =
+  sh([
+    'run',
+    '--rm',
+    '--entrypoint',
+    'sh',
+    image,
+    '-c',
+    'ls /lib/ld-musl-* 2>/dev/null',
+  ]).stdout.trim() !== '';
+const nodeDir = musl ? `${NODE_DIR}-musl` : NODE_DIR;
+const dshDir = musl ? `${DSH_DIR}-musl` : DSH_DIR;
+const maoDir = musl ? process.env.MAO_DIR_MUSL : MAO_DIR;
+if (musl && (!existsSync(nodeDir) || (system === 'dsh' ? !existsSync(dshDir) : !maoDir)))
+  throw new Error(
+    `musl image: ${nodeDir}, and ${system === 'dsh' ? dshDir : 'MAO_DIR_MUSL'}, are needed`,
+  );
 const instruction = readFileSync(join(taskDir, 'instruction.md'), 'utf8');
 
 // ---- the shared proxy ---------------------------------------------------------------------------
@@ -93,9 +112,9 @@ if (!sh(['ps', '-q', '-f', 'name=^benchproxy$']).stdout.trim()) {
 // ---- the run ------------------------------------------------------------------------------------
 const runId = `${label}-${system}-${taskName.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 40)}-${Date.now() % 1e7}`;
 const cname = `ar-${runId}`.slice(0, 60);
-const mounts = ['-v', `${NODE_DIR}:/opt/node:ro`];
-if (system === 'dsh') mounts.push('-v', `${DSH_DIR}:/opt/dsh:ro`);
-if (system === 'mas') mounts.push('-v', `${MAO_DIR}:/mao2:ro`);
+const mounts = ['-v', `${nodeDir}:/opt/node:ro`];
+if (system === 'dsh') mounts.push('-v', `${dshDir}:/opt/dsh:ro`);
+if (system === 'mas') mounts.push('-v', `${maoDir}:/mao2:ro`);
 const started = sh([
   'run',
   '-d',
@@ -113,7 +132,16 @@ const started = sh([
 if (started.status !== 0) throw new Error('start failed: ' + started.stderr.slice(-300));
 const runDir = join(outDir, runId);
 mkdirSync(runDir, { recursive: true });
-const result = { system, task: taskName, label, runId, image, cap, at: new Date().toISOString() };
+const result = {
+  system,
+  task: taskName,
+  label,
+  runId,
+  image,
+  cap,
+  musl,
+  at: new Date().toISOString(),
+};
 try {
   sh(['exec', cname, 'mkdir', '-p', '/logs/verifier', '/logs/agent', '/instr', '/out']);
   // mas makes a session read-only when git is missing (undo works on git), so both systems get the
