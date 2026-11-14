@@ -82,43 +82,46 @@ const instruction = readFileSync(join(taskDir, 'instruction.md'), 'utf8');
 // `allow_internet = false` in task.toml: the container sits on an internal network where only the
 // usage proxy (and through it the model API) is reachable, so no code can be downloaded.
 const offline = /^\s*allow_internet\s*=\s*false/m.test(toml);
-if (offline && system === 'mas')
-  throw new Error(
-    'offline tasks need mas to reach the model through the usage proxy; not wired yet',
-  );
 
-// ---- the shared proxy ---------------------------------------------------------------------------
+// ---- the shared proxies -------------------------------------------------------------------------
+// `benchproxy` forwards dsh's Anthropic-style requests; `benchproxy-oai` forwards mas's OpenAI-style
+// chat completions (offline tasks only; mas counts its own tokens). Both also join the internal network.
 mkdirSync(USAGE_DIR, { recursive: true });
 sh(['network', 'inspect', 'benchnet']).status === 0 || sh(['network', 'create', 'benchnet']);
 sh(['network', 'inspect', 'benchint']).status === 0 ||
   sh(['network', 'create', '--internal', 'benchint']);
-if (!sh(['ps', '-q', '-f', 'name=^benchproxy$']).stdout.trim()) {
-  sh(['rm', '-f', 'benchproxy']);
-  const r = sh([
-    'run',
-    '-d',
-    '--name',
-    'benchproxy',
-    '--network',
-    'benchnet',
-    '-v',
-    `${NODE_DIR}:/opt/node:ro`,
-    '-v',
-    `${hereDir}:/lab:ro`,
-    '-v',
-    `${USAGE_DIR}:/usage`,
-    'python:3.12-slim',
-    '/opt/node/bin/node',
-    '/lab/usage-proxy.mjs',
-    '8099',
-    '/usage',
-  ]);
-  // Several runs may start at once; the one that lost the race finds the proxy already there.
-  if (r.status !== 0 && !/already in use/.test(r.stderr))
-    throw new Error('proxy failed: ' + r.stderr.slice(-300));
+function proxy(name, port, target) {
+  if (!sh(['ps', '-q', '-f', `name=^${name}$`]).stdout.trim()) {
+    sh(['rm', '-f', name]);
+    const r = sh([
+      'run',
+      '-d',
+      '--name',
+      name,
+      '--network',
+      'benchnet',
+      '-v',
+      `${NODE_DIR}:/opt/node:ro`,
+      '-v',
+      `${hereDir}:/lab:ro`,
+      '-v',
+      `${USAGE_DIR}:/usage`,
+      'python:3.12-slim',
+      '/opt/node/bin/node',
+      '/lab/usage-proxy.mjs',
+      String(port),
+      '/usage',
+      ...(target ? [target] : []),
+    ]);
+    // Several runs may start at once; the one that lost the race finds the proxy already there.
+    if (r.status !== 0 && !/already in use/.test(r.stderr))
+      throw new Error('proxy failed: ' + r.stderr.slice(-300));
+  }
+  // an error just means it is on the internal network already
+  sh(['network', 'connect', 'benchint', name]);
 }
-// the proxy also joins the internal network (an error just means it is there already)
-sh(['network', 'connect', 'benchint', 'benchproxy']);
+proxy('benchproxy', 8099);
+if (offline && system === 'mas') proxy('benchproxy-oai', 8098, 'https://api.deepseek.com');
 
 // ---- the run ------------------------------------------------------------------------------------
 const runId = `${label}-${system}-${taskName.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 40)}-${Date.now() % 1e7}`;
@@ -214,6 +217,7 @@ try {
         ...Object.keys(process.env)
           .filter((n) => n.startsWith('MAS_'))
           .flatMap((n) => ['-e', n]),
+        ...(offline ? ['-e', `MAS_API_BASE=http://benchproxy-oai:8098/r/${runId}`] : []),
         cname,
         '/opt/node/bin/node',
         '/mao2/node_modules/tsx/dist/cli.mjs',

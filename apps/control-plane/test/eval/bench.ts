@@ -234,6 +234,11 @@ async function main(): Promise<void> {
     Object.entries(process.env).filter(([name]) => name.startsWith('MAS_')),
   );
 
+  // `MAS_API_BASE`: offline tasks reach the model only through the usage proxy of
+  // scripts/taskset/agentrun.mjs. Only chat completions are rewritten; web tools keep their host,
+  // which an offline container cannot reach, the same condition dsh has there.
+  const apiBase = process.env['MAS_API_BASE']?.replace(/\/$/u, '');
+  const MODEL_URL = 'https://api.deepseek.com/chat/completions';
   let remaining = budgetLimit;
   const requests: ChatRequest[] = [];
   const provider: ScriptedChat = {
@@ -243,6 +248,9 @@ async function main(): Promise<void> {
       if (remaining <= 0) throw new Error('the request budget is spent');
       remaining -= 1;
       requests.push(JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (apiBase !== undefined && url === MODEL_URL)
+        return realFetch(`${apiBase}/chat/completions`, init);
       return realFetch(input, init);
     },
   };
