@@ -12,7 +12,8 @@
   "tb2/polyglot-c-py",
   "tb2/chess-best-move",
   "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
-  "parallel/dev/research-then-implement-s1-n6"
+  "parallel/dev/research-then-implement-s1-n6",
+  "sbp/instance_gravitational__teleport-1b08e7d0dbe68fe530a0f08ad408ec198b7c53fc-vee9b09fb20c43af7e520f57e9239bbcf46b7113d"
  ],
  "finalSmall": [
   {
@@ -343,6 +344,18 @@
    "source": "designed",
    "role": "dev",
    "sha256": "6a1d6d2df56e00058a541df0c64b62020b90099e39e634a5f273df6982416950"
+  },
+  {
+   "id": "lb/task_ligra_graph_evolution",
+   "source": "loopsbench",
+   "role": "dev",
+   "reason": "dsh smoke run (5-minute cap) of the LoopsBench adapter; kept because DeepSeek ran it"
+  },
+  {
+   "id": "deepswe/anko-default-function-arguments",
+   "source": "deepswe",
+   "role": "dev",
+   "reason": "dsh smoke run (5-minute cap) of the Pier adapter; kept because DeepSeek ran it"
   }
  ],
  "largeRules": {
@@ -448,5 +461,6 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T22:24:10.355Z"
+ "resealedAt": "2026-11-14T22:24:10.355Z",
+ "keptRule": "Every task run with DeepSeek stays in the development or final set (Cary, 2026-11-15)"
 }
