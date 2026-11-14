@@ -140,6 +140,12 @@
    "source": "designed",
    "role": "picked",
    "sha256": "b90c89e46ff123534a6f174b259055a29d94740a3033bd04e8cf81c094c37b3e"
+  },
+  {
+   "id": "designed/survey-av-fusion",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "b0fb9264b6dc7f1969e10d8c0ced5f39e7d5191717dde8e19ebb727ea27036e8"
   }
  ],
  "devLarge": [
@@ -408,5 +414,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T16:59:52.632Z"
+ "resealedAt": "2026-11-14T17:19:50.269Z"
 }
