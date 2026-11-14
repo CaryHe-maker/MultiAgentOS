@@ -134,6 +134,12 @@
    "source": "designed",
    "role": "picked",
    "sha256": "abedea962e61d622d0f6e081ab7dfe61218e0be33a47410ccb69ef680c857445"
+  },
+  {
+   "id": "designed/pygit",
+   "source": "designed",
+   "role": "picked",
+   "sha256": "cc3c06975eecd48133b1ee79f25d92fda730ace70e8ee6669f152b65edb94604"
   }
  ],
  "devLarge": [
@@ -363,5 +369,5 @@
    "sha256": "e27ce6ce711870b5753fd0cd789387aee4bb17b7b50351e11a5b175b569ff7f7"
   }
  ],
- "resealedAt": "2026-11-14T14:47:31.399Z"
+ "resealedAt": "2026-11-14T14:52:46.865Z"
 }
