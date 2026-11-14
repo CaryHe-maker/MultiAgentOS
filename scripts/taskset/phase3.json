@@ -3,17 +3,61 @@
  "sealedAt": "2026-11-14T12:01:03.062Z",
  "rules": "docs/M2/Phase3Plan.md section 3",
  "devSmall": [
-  "sbp/instance_qutebrowser__qutebrowser-36ade4bba504eb96f05d32ceab9972df7eb17bcc-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
-  "tb2/tune-mjcf",
-  "sbp/instance_future-architect__vuls-7e91f5ef7e5712b1a3d7d5066ad6607e9debc21c",
-  "tb2/configure-git-webserver",
-  "tb2/gcode-to-text",
-  "tb2/raman-fitting",
-  "tb2/polyglot-c-py",
-  "tb2/chess-best-move",
-  "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
-  "parallel/dev/research-then-implement-s1-n6",
-  "sbp/instance_gravitational__teleport-1b08e7d0dbe68fe530a0f08ad408ec198b7c53fc-vee9b09fb20c43af7e520f57e9239bbcf46b7113d"
+  {
+   "id": "sbp/instance_qutebrowser__qutebrowser-36ade4bba504eb96f05d32ceab9972df7eb17bcc-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+   "role": "dev",
+   "sha256": "7b24617c834a5bff69c660c63f30891ad410ba2aeb39851400a3dd85ce6a2a0a"
+  },
+  {
+   "id": "tb2/tune-mjcf",
+   "role": "dev",
+   "sha256": "adcc3f7487405f2fd7656dbe3d88d6127def2be8169825c7c6510f320dbc2fe5"
+  },
+  {
+   "id": "sbp/instance_future-architect__vuls-7e91f5ef7e5712b1a3d7d5066ad6607e9debc21c",
+   "role": "dev",
+   "sha256": "6df8d504473078bfce20ebda94da458b3499a72653e9a728cb5f551ddafc7c4e"
+  },
+  {
+   "id": "tb2/configure-git-webserver",
+   "role": "dev",
+   "sha256": "8d05a4f70bb642a32439389cce8d95e9bcf145ed7e645fba3e28478976e3116c"
+  },
+  {
+   "id": "tb2/gcode-to-text",
+   "role": "dev",
+   "sha256": "ff424385075ca61ad8e77a67ffbf535cd9d595237e11f9775518f80b61bfa77e"
+  },
+  {
+   "id": "tb2/raman-fitting",
+   "role": "dev",
+   "sha256": "e44c9adaf148b0145ad01fc5aa1cf9a288370f32267d75b63aa07e9c05c2420c"
+  },
+  {
+   "id": "tb2/polyglot-c-py",
+   "role": "dev",
+   "sha256": "23bdf1c3d02a617b2c5e7287519a1d4f7a342cce2cd112b6dee979c5f6d781f4"
+  },
+  {
+   "id": "tb2/chess-best-move",
+   "role": "dev",
+   "sha256": "d2537d4ef979b79575329f9c8682867a9f58ae2273d5864fbe46783c91b99684"
+  },
+  {
+   "id": "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+   "role": "dev",
+   "sha256": "a93d2bbe8bc35f1a682eb593f18fb0a4a0748a1e9a017e3548342a6a0b26b3cb"
+  },
+  {
+   "id": "parallel/dev/research-then-implement-s1-n6",
+   "role": "dev",
+   "sha256": "4601b4998cf5eaf611e39f30a63edb90d68da595248b5b12c1d4a7b7a8e5d919"
+  },
+  {
+   "id": "sbp/instance_gravitational__teleport-1b08e7d0dbe68fe530a0f08ad408ec198b7c53fc-vee9b09fb20c43af7e520f57e9239bbcf46b7113d",
+   "role": "dev",
+   "sha256": "1e7570dba18e6ddd0ad061f6a6b05e34325017577cfa75b9c94e76b16dd9c8cb"
+  }
  ],
  "finalSmall": [
   {
@@ -189,12 +233,14 @@
   {
    "id": "study.findex",
    "source": "study",
-   "role": "dev"
+   "role": "dev",
+   "sha256": "8260794dd24e077abb1df3a580de53f8bd065bc4cb3ac3f3537494d4280e6108"
   },
   {
    "id": "study.taskq",
    "source": "study",
-   "role": "dev"
+   "role": "dev",
+   "sha256": "3907820837f715e5baafe32be5fa522cba7b7095b5fecd713ef7c2dab3ec9a16"
   },
   {
    "id": "lb/task_compiler_sysy_rust",
@@ -345,13 +391,15 @@
    "id": "lb/task_ligra_graph_evolution",
    "source": "loopsbench",
    "role": "dev",
-   "reason": "dsh smoke run (5-minute cap) of the LoopsBench adapter; kept because DeepSeek ran it"
+   "reason": "dsh smoke run (5-minute cap) of the LoopsBench adapter; kept because DeepSeek ran it",
+   "sha256": "c9bfeaaa2dda43b849b27999822b9a282790c5a417b1baea104d483ea7da24d8"
   },
   {
    "id": "deepswe/anko-default-function-arguments",
    "source": "deepswe",
    "role": "dev",
-   "reason": "dsh smoke run (5-minute cap) of the Pier adapter; kept because DeepSeek ran it"
+   "reason": "dsh smoke run (5-minute cap) of the Pier adapter; kept because DeepSeek ran it",
+   "sha256": "76a967bbefdfb8a1e65736fb0d3bf3176a701d686b74a964ad4c7f9cdd484f01"
   },
   {
    "id": "designed/minipy",
@@ -472,5 +520,16 @@
   }
  ],
  "resealedAt": "2026-11-14T22:45:07.154Z",
- "keptRule": "Every task run with DeepSeek stays in the development or final set (Cary, 2026-11-15)"
+ "keptRule": "Every task run with DeepSeek stays in the development or final set (Cary, 2026-11-15)",
+ "frozen": {
+  "at": "2026-11-14T23:14:23.159Z",
+  "by": "Cary, 2026-11-15",
+  "note": "final and development sets fixed; every task has had one dsh control run; see docs/M2/Phase3TaskSet.md",
+  "counts": {
+   "finalSmall": 10,
+   "finalLarge": 5,
+   "devSmall": 11,
+   "devLarge": 26
+  }
+ }
 }
