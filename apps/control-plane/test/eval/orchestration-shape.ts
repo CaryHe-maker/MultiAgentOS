@@ -1,16 +1,14 @@
 /**
- * How a mission run organised its work, read from the Session log alone (Orchestration 3.9, D31):
- * what root started (tasks, subMissions), what it did itself, and for every subMission whether its
- * root kept to the playbook. The submission study (Phase2Plan 7) records it for every run, and
+ * How a mission run organised its work, read from the Session log alone (Orchestration 3.9, D39):
+ * what root started (tasks, specialists), what it did itself, and for every specialist whether it
+ * kept to its playbook. The submission study (Phase2Plan 7) records it for every run, and
  * reads it again from the archived logs, so a change of a measure needs no new run.
  *
  * What a playbook allows its root, beyond what the runner already enforces (the Agents, numbers
  * and order of its tasks, and not finishing as done before the phases ran):
- * - fix-verify: run the check before the first fix and after the last one; change no file itself
- *   (the worker fixes); at most `maxRounds` fixes.
- * - explore-build: change files only in "decide" (between the explorers and the builders) and in
- *   "verify" (after the builders, small fixes); run a check in "verify".
- * - review: change no file.
+ * - fix-verify (fixer): run the check before the first fix and after the last one; change no file
+ *   itself (the worker fixes).
+ * - review (reviewer): change no file.
  */
 
 type Row = Readonly<Record<string, unknown>>;
@@ -75,8 +73,7 @@ export interface RunShape {
   readonly rootMissionId?: string;
   /** Every task, root first, then in the order they were started. */
   readonly tasks: readonly TaskStats[];
-  /** Calls of `sub_mission` by root, accepted or not. */
-  readonly subMissionCalls: number;
+  /** The specialists started (Orchestration D39), with how each kept to its playbook. */
   readonly subMissions: readonly SubMissionShape[];
   /** Calls of `run_subagents` by root. */
   readonly runSubagentsCalls: number;
@@ -257,7 +254,7 @@ export function shapeOf(log: readonly Row[]): RunShape {
         ownWrites: ownWrites.length,
         ownChangedFiles: [...new Set(ownWrites.flatMap((use) => use.changed))],
         ownCommands: own.filter((use) => use.tool === 'run_command').length,
-        violations: violationsOf(template, params, own, children, endedAt),
+        violations: violationsOf(template, own, children, endedAt),
       };
     });
 
@@ -330,7 +327,6 @@ export function shapeOf(log: readonly Row[]): RunShape {
   return {
     ...(rootMissionId === undefined ? {} : { rootMissionId }),
     tasks,
-    subMissionCalls: rootUses.filter((use) => use.tool === 'sub_mission').length,
     subMissions,
     runSubagentsCalls: rootUses.filter((use) => use.tool === 'run_subagents').length,
     tasksByAgent,
@@ -342,7 +338,6 @@ export function shapeOf(log: readonly Row[]): RunShape {
 
 function violationsOf(
   template: string,
-  params: Readonly<Record<string, string>>,
   own: readonly ToolUse[],
   children: readonly Mission[],
   endedAt: ReadonlyMap<string, { seq: number; status: string }>,
@@ -366,25 +361,8 @@ function violationsOf(
       if (commandsIn(0, first) === 0) found.push('did not run the check before the first fix');
       if (children.length > 0 && commandsIn(last, end) === 0)
         found.push('did not run the check after the last fix');
-      const rounds = Number(params['maxRounds'] ?? '3');
-      if (children.length > (Number.isFinite(rounds) ? rounds : 3))
-        found.push(`more fixes (${String(children.length)}) than maxRounds`);
       const wrote = writesIn(0, end);
       if (wrote > 0) found.push(`changed files itself (${String(wrote)} calls)`);
-      break;
-    }
-    case 'explore-build': {
-      const explorers = children.filter((each) => each.agent === 'explorer');
-      const workers = children.filter((each) => each.agent === 'worker');
-      const building = workers[0]?.startedSeq ?? end;
-      const built = workers.length === 0 ? end : ends(workers);
-      const before = writesIn(0, explorers[0]?.startedSeq ?? building);
-      if (before > 0) found.push(`changed files before exploring (${String(before)} calls)`);
-      const during = writesIn(building, built);
-      if (during > 0)
-        found.push(`changed files while the builders worked (${String(during)} calls)`);
-      if (workers.length === 0) found.push('no builder was started');
-      else if (commandsIn(built, end) === 0) found.push('did not run a check after the build');
       break;
     }
     case 'review': {

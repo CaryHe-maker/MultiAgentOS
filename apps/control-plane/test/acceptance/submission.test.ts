@@ -1,6 +1,6 @@
 /**
- * A part of a long task handed to a pre-orchestrated template (Orchestration 3.9, D31): main calls
- * `sub_mission` with `fix-verify`; the subtree's root, a lead, reads the playbook with its task,
+ * A part of a long task handed to a pre-orchestrated template (Orchestration 3.9, D39): main starts
+ * a fixer with run_subagents; the specialist, a lead, reads the fix-verify playbook with its task,
  * follows its phases (a call that does not fit is refused), and hands back one report, which main
  * reads like the result of any subtask. The whole product runs; only the provider is scripted.
  */
@@ -97,14 +97,17 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       const provider = scriptedAgents(
         {
           main: [
-            tool('sub_mission', {
-              name: 'fix-value',
-              template: 'fix-verify',
-              goal: 'src/value.txt must say fixed; the check fails now',
-              writeScope: ['src'],
-              acceptance: [`${check} succeeds`],
-              params: { check, maxRounds: '2' },
-              plan: 'One part: make the value check pass, handed to fix-verify.',
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'fix-value',
+                  agent: 'fixer',
+                  goal: 'src/value.txt must say fixed; the check fails now',
+                  writeScope: ['src'],
+                  acceptance: [`${check} succeeds`],
+                },
+              ],
+              plan: 'One part: make the value check pass, handed to a fixer.',
             }),
             tool('sleep', { until: [{ kind: 'children' }] }),
             tool('reply', { text: 'the value is fixed by the subMission' }),
@@ -167,11 +170,13 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       // The root of the subMission read its playbook and its example with its task.
       expect(said).toContain('You run a pre-orchestrated part of the work: template fix-verify');
       expect(said).toContain('An example of a good plan with this playbook');
-      expect(said).toContain('check: grep -q fixed src/value.txt');
+      // What the playbook needs comes from the goal and acceptance main wrote (D39).
+      expect(said).toContain('What you need from your task, in its goal and acceptance');
+      expect(said).toContain(`${check} succeeds`);
       // The root of the long task read the table of decisions and the manual of the system with
       // its goal (Orchestration D37).
       expect(said).toContain('Decisions, by what you see.');
-      expect(said).toContain('sub_mission: one part handed to a template');
+      expect(said).toContain('fixer: something fails and a command shows it');
       // The call that did not fit was refused with what the next phase may be.
       expect(said).toContain('this call does not follow your playbook');
       // Main read the report of the subtree's root like any subtask's.
@@ -243,13 +248,17 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
     async () => {
       const provider = scriptedAgents({
         main: [
-          tool('sub_mission', {
-            name: 'fix-value',
-            template: 'fix-verify',
-            goal: 'src/value.txt must say fixed; the check fails now',
-            writeScope: ['src'],
-            params: { check },
-            plan: 'One part: make the value check pass, handed to fix-verify.',
+          tool('run_subagents', {
+            tasks: [
+              {
+                name: 'fix-value',
+                agent: 'fixer',
+                goal: 'src/value.txt must say fixed; the check fails now',
+                writeScope: ['src'],
+                acceptance: [`${check} succeeds`],
+              },
+            ],
+            plan: 'One part: make the value check pass, handed to a fixer.',
           }),
           tool('sleep', { until: [{ kind: 'children' }] }),
           tool('reply', { text: 'fixed' }),

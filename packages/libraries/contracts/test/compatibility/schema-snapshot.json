@@ -321,35 +321,6 @@
               },
               "additionalProperties": false
             },
-            "subMission": {
-              "type": "object",
-              "required": [
-                "toolRef"
-              ],
-              "properties": {
-                "toolRef": {
-                  "type": "object",
-                  "required": [
-                    "id",
-                    "version"
-                  ],
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                      "maxLength": 64
-                    },
-                    "version": {
-                      "type": "string",
-                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "catalog.DefinitionRef.v1"
-                }
-              },
-              "additionalProperties": false
-            },
             "sleep": {
               "type": "object",
               "required": [
@@ -1521,35 +1492,6 @@
                   "additionalProperties": false
                 },
                 "spawn": {
-                  "type": "object",
-                  "required": [
-                    "toolRef"
-                  ],
-                  "properties": {
-                    "toolRef": {
-                      "type": "object",
-                      "required": [
-                        "id",
-                        "version"
-                      ],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                          "maxLength": 64
-                        },
-                        "version": {
-                          "type": "string",
-                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "catalog.DefinitionRef.v1"
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                "subMission": {
                   "type": "object",
                   "required": [
                     "toolRef"
@@ -3428,6 +3370,10 @@
             }
           },
           "additionalProperties": false
+        },
+        "agent": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$"
         }
       },
       "additionalProperties": false,
@@ -58816,7 +58762,12 @@
                 "enum": [
                   "explorer",
                   "worker",
-                  "lead"
+                  "lead",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
                 ]
               },
               "goal": {
@@ -59155,127 +59106,6 @@
       },
       "additionalProperties": false,
       "$id": "workflow.StopSubagentsArgs.v1"
-    },
-    "workflow.SubMissionArgs.v1": {
-      "type": "object",
-      "required": [
-        "name",
-        "template",
-        "goal"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_-]{0,39}$"
-        },
-        "template": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-        },
-        "goal": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
-        },
-        "role": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "writeScope": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "maxItems": 10
-        },
-        "commands": {
-          "type": "boolean"
-        },
-        "inputs": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "artifactId",
-              "sha256",
-              "size",
-              "mediaType"
-            ],
-            "properties": {
-              "artifactId": {
-                "type": "string",
-                "pattern": "^art_[a-f0-9]{64}$"
-              },
-              "sha256": {
-                "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
-              },
-              "size": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "mediaType": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              }
-            },
-            "additionalProperties": false,
-            "$id": "platform.common.ArtifactRef.v1"
-          },
-          "maxItems": 10
-        },
-        "acceptance": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          },
-          "maxItems": 10
-        },
-        "params": {
-          "type": "object",
-          "patternProperties": {
-            "^.*$": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2000
-            }
-          }
-        },
-        "effort": {
-          "enum": [
-            "none",
-            "low",
-            "high",
-            "max"
-          ]
-        },
-        "budget": {
-          "type": "object",
-          "required": [
-            "tokens"
-          ],
-          "properties": {
-            "tokens": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "additionalProperties": false
-        },
-        "plan": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 8000
-        }
-      },
-      "additionalProperties": false,
-      "$id": "workflow.SubMissionArgs.v1"
     },
     "workflow.UpdateTodosArgs.v1": {
       "type": "object",

@@ -9,7 +9,7 @@ type Submission = NonNullable<SpawnNode['submission']>;
  * task. Pure, so the same log always gives the same text.
  */
 export function renderPlaybook(submission: Submission): string {
-  const { template, playbook, params } = submission;
+  const { template, playbook } = submission;
   const phaseLine = (phase: PlaybookPhase, index: number): string => {
     const tasks =
       phase.tasks === undefined
@@ -30,12 +30,15 @@ export function renderPlaybook(submission: Submission): string {
         : '';
     return `${String(index + 1)}. ${phase.name} (${tasks}${repeat}${optional}${inherit}): ${phase.instructions}`;
   };
-  const given = Object.entries(params);
+  // The caller writes what the playbook needs into the goal and acceptance (D39); the root finds it there.
   return [
     `You run a pre-orchestrated part of the work: template ${template.id} (${playbook.summary}). Follow its playbook. The system checks every run_subagents call of yours against it: a call must be the next phase that has tasks, with tasks of that Agent and in that number, and only after the tasks of your earlier calls have ended.`,
-    ...(given.length === 0
+    ...(playbook.params.length === 0
       ? []
-      : ['Parameters you were given:', ...given.map(([name, value]) => `- ${name}: ${value}`)]),
+      : [
+          'What you need from your task, in its goal and acceptance (when one is not there, work it out from the repository; when it cannot be found, finish blocked and say what is missing):',
+          ...playbook.params.map((param) => `- ${param.name}: ${param.description}`),
+        ]),
     'Phases, in order:',
     ...playbook.phases.map(phaseLine),
     'You decide what each task does: write its goal so it stands on its own, give a worker its writeScope inside yours, and use what the earlier phases returned. You cannot change the phases. You finish with finish_subagent: status done only after every phase that is not optional has run; if the playbook cannot get the work done, finish with partial or blocked and say why, and your caller decides what to do.',

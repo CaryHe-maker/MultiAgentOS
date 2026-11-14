@@ -70,11 +70,6 @@ export function pinnedAgentOf(
     agent.actions.spawn === undefined || !requested.includes('agent.spawn')
       ? undefined
       : toolOf(agent.actions.spawn.toolRef);
-  // `sub_mission` goes with `run_subagents` (Orchestration 3.9).
-  const subMission =
-    spawn === undefined || agent.actions.subMission === undefined
-      ? undefined
-      : toolOf(agent.actions.subMission.toolRef);
   // `ask_user` needs no capability: any Agent that declares it offers it (M2Design 3.4).
   const ask =
     agent.actions.askUser === undefined ? undefined : toolOf(agent.actions.askUser.toolRef);
@@ -102,7 +97,6 @@ export function pinnedAgentOf(
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
     ...(spawn === undefined ? [] : [spawn]),
-    ...(subMission === undefined ? [] : [subMission]),
     ...(ask === undefined ? [] : [ask]),
     ...taskTools,
     ...ends.map((end) => end.tool),

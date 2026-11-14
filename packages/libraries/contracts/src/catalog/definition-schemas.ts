@@ -220,10 +220,6 @@ export const AgentDefinitionSchema = Type.Object(
         spawn: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
-        /** The `sub_mission` tool: a part of the work handed to a pre-orchestrated template (3.9). */
-        subMission: Type.Optional(
-          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
-        ),
         /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
         sleep: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
@@ -555,6 +551,11 @@ export const PlaybookSchema = Type.Object(
   {
     /** One line for the caller: what the template is for and when to use it. */
     summary: TextSchema(400),
+    /**
+     * What the root needs to find in the goal and acceptance its caller wrote (D39), such as the
+     * command that shows a failure. The caller passes no fields of its own; the root reads these
+     * with its task and works out the rest.
+     */
     params: Type.Array(
       Type.Object(
         {
@@ -616,9 +617,15 @@ export const TemplateDefinitionSchema = Type.Object(
     nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
     /**
      * A pre-orchestrated template (Orchestration 3.9): what the root of a subMission started with
-     * it follows. Such a template runs through `sub_mission`; its one node is that root.
+     * it follows. Its one node is that root.
      */
     playbook: Type.Optional(PlaybookSchema),
+    /**
+     * The specialist Agent a caller names in `run_subagents` to hand a part of the work to this
+     * template (Orchestration D39), for example `fixer`; one of the workflow's specialist Agents.
+     * A template has one exactly when it has a playbook.
+     */
+    agent: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' })),
   },
   { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
 );

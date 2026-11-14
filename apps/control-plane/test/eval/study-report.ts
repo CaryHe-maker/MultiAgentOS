@@ -5,8 +5,8 @@
  *
  * From the records alone it reads the shape each run recorded; with the archive (EVAL_ARCHIVE of
  * the runs) it reads the shape again from every Session log, so a measure changed after the runs
- * needs no new run. It prints how often root chose sub_mission, per task and overall, and how many
- * subMissions kept to their playbook, with every violation.
+ * needs no new run. It prints how often root started a specialist (fixer, reviewer, ...), per task
+ * and overall, and how many specialists kept to their playbook, with every violation.
  */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,7 +19,6 @@ const archive = argv.includes('--archive') ? argv[argv.indexOf('--archive') + 1]
 if (recordsFile === undefined) throw new Error('study-report.ts <records.jsonl> [--archive <dir>]');
 
 interface Recorded {
-  readonly subMissionCalls: number;
   readonly subMissions: readonly {
     readonly template: string;
     readonly status?: string;
@@ -88,12 +87,12 @@ async function main(): Promise<void> {
     whole === 0 ? '-' : `${String(Math.round((100 * part) / whole))}%`;
   out.push('## Runs', '');
   out.push(
-    '| task | run | ok | sub_mission calls | subMissions (template: kept?) | run_subagents | tasks by Agent | root writes | requests | source |',
+    '| task | run | ok | specialists | specialists (template: kept?) | run_subagents | tasks by Agent | root writes | requests | source |',
   );
   out.push('|---|---|---|---|---|---|---|---|---|---|');
   for (const { record, shape, source } of rows)
     out.push(
-      `| ${record.taskId} | ${String(record.run)} | ${record.ok ? 'yes' : 'no'} | ${String(shape.subMissionCalls)} | ${
+      `| ${record.taskId} | ${String(record.run)} | ${record.ok ? 'yes' : 'no'} | ${String(shape.subMissions.length)} | ${
         shape.subMissions
           .map((each) => `${each.template}: ${each.violations.length === 0 ? 'kept' : 'broke'}`)
           .join(', ') || '-'
@@ -134,7 +133,7 @@ async function main(): Promise<void> {
     }
   for (const [agent, tools] of byAgent) out.push(`- ${agent}: ${counts(tools)}`);
 
-  out.push('', '## Use of sub_mission by task', '');
+  out.push('', '## Use of specialists by task', '');
   out.push('| task | runs | runs that used it | subMissions | kept to the playbook | passed |');
   out.push('|---|---|---|---|---|---|');
   const tasks = [...new Set(rows.map((row) => row.record.taskId))];

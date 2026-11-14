@@ -76,12 +76,12 @@ withPython('the judges of the submission study', () => {
     );
   }
 
-  it('never names sub_mission, templates, subtasks or splitting in a goal', () => {
+  it('never names a specialist, templates, subtasks or splitting in a goal', () => {
     for (const task of SUBMISSION_STUDY_TASKS)
       for (const step of task.steps)
         if ('run' in step)
           expect(step.run).not.toMatch(
-            /sub_mission|subMission|模板|子任务|拆|并行|分给|worker|explorer/iu,
+            /fixer|reviewer|tester|integrator|researcher|subMission|模板|子任务|拆|并行|分给|worker|explorer/iu,
           );
   });
 });

@@ -99,10 +99,6 @@ actions:
     toolRef:
       id: run-subagents
       version: v0.1.0
-  subMission:
-    toolRef:
-      id: sub-mission
-      version: v0.1.0
 capabilities:
   - repo.read
   - workspace.write

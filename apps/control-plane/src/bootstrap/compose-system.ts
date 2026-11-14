@@ -412,7 +412,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       console,
       templateRef: (id) => {
         const template = builtin.templates.get(id);
-        // A pre-orchestrated template runs as a part of a long task, through sub_mission (3.9).
+        // A pre-orchestrated template runs as a specialist of a long task, never by itself (D39).
         return template === undefined || template.playbook !== undefined
           ? undefined
           : { id, version: template.version };

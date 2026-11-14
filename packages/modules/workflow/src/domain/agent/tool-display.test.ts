@@ -41,9 +41,6 @@ describe('what the line of a tool call shows', () => {
     expect(controlSummaryOf('SPAWN', { tasks: [{ name: 'api' }, { name: 'ui' }] })).toBe(
       '2 tasks: api, ui',
     );
-    expect(controlSummaryOf('SUB_MISSION', { template: 'review', name: 'sec' })).toBe(
-      'review: sec',
-    );
     expect(
       controlSummaryOf('SLEEP', {
         until: [{ kind: 'children' }, { kind: 'message' }],

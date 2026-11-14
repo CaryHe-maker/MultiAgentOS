@@ -43,7 +43,6 @@ describe('shipped definitions', () => {
       'PROMPT:worker-system@v0.1.0',
       'TEMPLATE:acceptance@v0.1.0',
       'TEMPLATE:analyze@v0.1.0',
-      'TEMPLATE:explore-build@v0.1.0',
       'TEMPLATE:fix-verify@v0.1.0',
       'TEMPLATE:integrate@v0.1.0',
       'TEMPLATE:mission@v0.1.0',
@@ -72,7 +71,6 @@ describe('shipped definitions', () => {
       'TOOL:send-message@v0.1.0',
       'TOOL:sleep@v0.1.0',
       'TOOL:stop-subagents@v0.1.0',
-      'TOOL:sub-mission@v0.1.0',
       'TOOL:update-todos@v0.1.0',
       'TOOL:view-tasks@v0.1.0',
       'TOOL:web-fetch@v0.1.0',
@@ -150,10 +148,8 @@ describe('shipped definitions', () => {
     const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
     const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
     expect(text).toContain('Decisions, by what you see.');
-    expect(text).toContain('Before every run_subagents, read the goal of each task');
     for (const entry of [
       'run_subagents: parts to build',
-      'sub_mission: one part handed to a template',
       'continues: give a finished part back',
       'sleep: wait without spending anything.',
       'send_message: talk to your subtasks',
@@ -161,17 +157,11 @@ describe('shipped definitions', () => {
       'stop_subagents {names:',
     ])
       expect(text).toContain(entry);
-    // Every template is in the manual with its params, and a general shape of a large task and
-    // a counter-example where splitting does not pay are there too.
-    for (const template of [
-      'fix-verify {check:',
-      'explore-build {questions:',
-      'review {criteria:',
-      'acceptance {spec:',
-      'integrate {start:',
-      'research {questions:',
-    ])
-      expect(text).toContain(template);
+    // Every specialist is in the manual with what to write for it (Orchestration D39), and a
+    // general shape of a large task and a counter-example where splitting does not pay are there.
+    for (const specialist of ['fixer:', 'reviewer:', 'tester:', 'integrator:', 'researcher:'])
+      expect(text).toContain(`\n    ${specialist} `);
+    expect(text).not.toContain('sub_mission');
     expect(text).toContain('Shape of a whole large task, in general terms (not a recipe):');
     expect(text).toContain('Counter-example, do not split:');
     // The manual carries placeholders, not the content of solved tasks.
@@ -179,14 +169,7 @@ describe('shipped definitions', () => {
       expect(text).not.toContain(word);
     // Every pre-orchestrated template carries several examples of its speciality for its root, the
     // first from a small language toolchain.
-    for (const id of [
-      'fix-verify',
-      'explore-build',
-      'review',
-      'acceptance',
-      'integrate',
-      'research',
-    ]) {
+    for (const id of ['fix-verify', 'review', 'acceptance', 'integrate', 'research']) {
       const template = catalog.latest('TEMPLATE', id);
       const example = template?.kind === 'TEMPLATE' ? (template.playbook?.example ?? '') : '';
       expect(example).toContain('small language toolchain');

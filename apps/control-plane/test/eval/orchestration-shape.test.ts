@@ -4,7 +4,7 @@ import { shapeOf } from './orchestration-shape.js';
 let seq = 0;
 const at = <T extends Record<string, unknown>>(record: T) => ({ seq: (seq += 1), ...record });
 
-/** main starts a fix-verify subMission and a worker; the sub-root runs the check, then a fixer. */
+/** main starts a fixer and a worker in one call; the fixer runs the check, then a worker that fixes. */
 function log(options: { readonly subRootWrites: boolean; readonly checkFirst: boolean }) {
   seq = 0;
   const call = (run: string, tool: string, id: string) =>
@@ -31,8 +31,7 @@ function log(options: { readonly subRootWrites: boolean; readonly checkFirst: bo
     }),
     call('run_main', 'read_file', 'c1'),
     ...unit('c1'),
-    call('run_main', 'sub_mission', 'c2'),
-    call('run_main', 'run_subagents', 'c3'),
+    call('run_main', 'run_subagents', 'c2'),
     at({
       type: 'GRAPH_EXTENDED',
       source: 'SPAWN',
@@ -44,7 +43,7 @@ function log(options: { readonly subRootWrites: boolean; readonly checkFirst: bo
           spawn: {
             submission: {
               template: { id: 'fix-verify' },
-              params: { check: 'make test', maxRounds: '1' },
+              params: {},
             },
           },
         },
@@ -89,10 +88,9 @@ function log(options: { readonly subRootWrites: boolean; readonly checkFirst: bo
 }
 
 describe('the shape of a mission run', () => {
-  it('counts what root started and did, and a subMission that kept to its playbook', () => {
+  it('counts what root started and did, and a specialist that kept to its playbook', () => {
     const shape = shapeOf(log({ subRootWrites: false, checkFirst: true }));
     expect(shape.rootMissionId).toBe('m_root');
-    expect(shape.subMissionCalls).toBe(1);
     expect(shape.runSubagentsCalls).toBe(1);
     expect(shape.tasksByAgent).toEqual({ lead: 1, worker: 2 });
     expect(shape.rootWrites).toBe(1);
@@ -108,8 +106,8 @@ describe('the shape of a mission run', () => {
     expect(shape.tasks[0]).toEqual(
       expect.objectContaining({
         segments: 1,
-        modelRequests: 4,
-        tools: { read_file: 1, sub_mission: 1, run_subagents: 1, write_file: 1 },
+        modelRequests: 3,
+        tools: { read_file: 1, run_subagents: 1, write_file: 1 },
         changedFiles: 1,
       }),
     );

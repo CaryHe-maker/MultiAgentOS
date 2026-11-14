@@ -5,6 +5,7 @@ version: v0.1.0
 description: 'Pre-orchestrated: acceptance tests written from the specification by tasks that build
   nothing, and run against the system.'
 origin: BUILTIN
+agent: tester
 nodes:
   - name: root
     kind: AGENT

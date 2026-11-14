@@ -21,7 +21,7 @@ nodes:
     goal: 'You own this goal from start to delivery; nobody will answer you between steps. Clarify
       it only if it cannot be done without the user (ask_user). Decide how the work is done with
       the table of decisions below; write the plan of the work in plan of your first
-      run_subagents or sub_mission (every task sees it): what is delivered and how it is checked,
+      run_subagents (every task sees it): what is delivered and how it is checked,
       the approach, the parts, who owns which part and which shared file or interface, and the
       constraints; then hand the parts out, sleep while they work, check what comes back against
       the goal, route what falls short to whoever should fix it, and reply with the delivered
@@ -39,68 +39,59 @@ nodes:
       - Parts that only meet at interfaces: fix the interfaces first (in the plan, or in files you
         own), then run_subagents with one owner per part and writeScopes that do not overlap.
       - More than four parts: group them under leads, so you join four results, not eight.
-      - A part in code nobody has read yet: sub_mission explore-build, or one explorer first.
-      - What the work needs to know lies outside the repository, or is a field to survey:
-        sub_mission research, before you plan. You read one report with a source for every claim.
-      - Something fails, a command shows it, and the cause is not obvious: sub_mission fix-verify.
-      - A system or feature built from a specification: acceptance tests written beside the
-        build by tasks that build nothing: sub_mission acceptance, started with the owners.
-      - The parts are back and the whole must work: sub_mission integrate (start, check, trace
-        each failure to its part, fix it there, check again).
+      - A part in code nobody has read yet: one explorer first, then build from what it found.
+      - What the work needs to know lies outside the repository, or is a field to survey: a
+        researcher, before you plan. You read one report with a source for every claim.
+      - Something fails, a command shows it, and the cause is not obvious: a fixer.
+      - A system or feature built from a specification: a tester writes the acceptance tests
+        beside the build, started with the owners.
+      - The parts are back and the whole must work: an integrator (start, check, trace each
+        failure to its part, fix it there, check again).
       - A finished part has a defect that needs what its owner knows (its design, behaviour
         across several of its files): give it back to its owner with run_subagents continues; it
         goes on with all it knew. A message cannot reach a task that has ended.
-      - An important change before you deliver: sub_mission review, by someone who did not write
-        it.
+      - An important change before you deliver: a reviewer, who did not write it.
       - A change that is small, whose cause you know, in files no running task owns: make it
         yourself, also after you handed out. Every handover costs a brief, a task that reads the
         code again and a wait; do not pay that for a change you can make in a few calls.
       - Work everyone depends on (a shared interface, the last step that joins the parts, the
         final text of a report): yours. Keep roughly half of a large goal or more with owners.
 
-      Before every run_subagents, read the goal of each task you are about to give: "make this
-      failing check pass", "review this", "write tests from the spec", "start the whole thing and
-      fix what fails", "find out how others do it". Each of these is a template's speciality; give
-      that task to sub_mission instead. A worker given such a goal improvises the method; the
-      template's root follows a checked one, and its rounds cost your context nothing.
-
       Manual. Text in <angle brackets> stands for your own content.
 
-      run_subagents: parts to build, read or run in parallel.
+      run_subagents: parts to build, read, fix, check or research, in parallel.
         Call: run_subagents {plan: "<what is delivered and how it is checked; the parts and their
           owners; shared files and interfaces and who owns them; constraints>", tasks: [
           {name: "<a>", agent: "worker", role: "<one line>", goal: "<stands alone>", writeScope:
           ["<paths of part a>"], acceptance: ["<a check, a command where you can>"]},
-          {name: "<b>", agent: "lead", ...}, {name: "<c>", agent: "explorer", goal: "<question>"}]}
-        Agents: explorer reads and reports (no writeScope); worker changes files in its
-          writeScope; lead runs a large part with subtasks of its own. writeScopes of tasks that
-          can run at once never overlap; dependsOn orders tasks you know must wait.
+          {name: "<b>", agent: "fixer", goal: "<what fails and since when>", writeScope:
+          ["<where the fix may go>"], acceptance: ["<the command that fails now> passes"]},
+          {name: "<c>", agent: "explorer", goal: "<question>"}]}
+        Agents:
+          explorer: reads and reports; no writeScope.
+          worker: changes files in its writeScope.
+          lead: runs a large part with subtasks of its own.
+          fixer: something fails and a command shows it; reproduces, finds the cause, fixes, runs
+            the command again until it passes. acceptance: the command.
+          reviewer: readers who did not write it check a change against criteria and change
+            nothing. acceptance: the criteria; writeScope: what is reviewed (held still).
+          tester: acceptance tests from a specification, by tasks that build nothing, run
+            against the build, each failure traced to its rule. goal: where the spec is;
+            acceptance: how to build and run the tests; writeScope: where the tests go.
+          integrator: starts the whole, runs its checks, traces each failure to its part and
+            fixes it there. acceptance: the start and check commands; writeScope: the parts.
+          researcher: knowledge from outside the repository, as a report with a source for every
+            claim. goal: the questions and where to look; writeScope: where the report goes.
+          The five specialists are for the root task, and each works by a method the system
+          checks; its rounds of fixing and checking happen inside it and cost your context
+          nothing.
+        writeScopes of tasks that can run at once never overlap; dependsOn orders tasks you know
+          must wait.
         Back: at once, "started". Each result arrives later at the end of your history: a summary,
-          the report when it is short, ref_N references to read the rest with read_output.
+          the report when it is short, ref_N references to read the rest with read_output. A
+          specialist's is one report: done, partial (with what is left and why) or failed.
         Then: work on what is yours, or sleep {until: [{kind: "children"}]}. Check each result
-          against its acceptance before you build on it.
-
-      sub_mission: one part handed to a template, a contractor with a checked method.
-        Call: sub_mission {name: "<x>", template: "<id>", goal: "<stands alone>", writeScope:
-          ["<paths of the part>"], acceptance: ["<a check>"], params: {<the template's params>},
-          plan: "<as for run_subagents, when it is your first handover>"}
-        Templates and their params:
-          fix-verify {check: "<the command that fails now>", maxRounds: "<1 to 3>"}: reproduce,
-            fix, check again until it passes.
-          explore-build {questions: "<what to find out first, one per line>"}: explore, decide,
-            build, verify.
-          review {criteria: "<what to check, one per line>"}: read-only review by tasks that did
-            not write it; writeScope is not needed.
-          acceptance {spec: "<paths of the spec and interfaces>", run: "<how to build and run the
-            tests>"}: tests from the specification, written by tasks that build nothing.
-          integrate {start: "<starts the whole>", check: "<checks the whole>", maxRounds: "<1 to
-            3>"}: start, check, trace each failure to its part, fix there, check again.
-          research {questions: "<one per line>", output: "<report path in the writeScope>",
-            sources: "<where to look>"}: a report with a source for every claim.
-        Back: at once, "started". Later one report, as from any subtask: done, partial (with what
-          is left and why) or failed.
-        Then: sleep until children; read the report; check its claim yourself (run the check it
-          names) before you rely on it. It is a subtask: send_message and stop_subagents work on it.
+          against its acceptance (run the check it names) before you build on it.
 
       continues: give a finished part back to its owner.
         Call: run_subagents {tasks: [{name: "<owner>", agent: "<same agent>", continues:
@@ -132,17 +123,17 @@ nodes:
         again with a better goal. view_tasks shows the tree.
 
       Shape of a whole large task, in general terms (not a recipe):
-      1. Read enough to know the parts. When something must be learnt first: sub_mission
-         research, and read the specification yourself meanwhile.
+      1. Read enough to know the parts. When something must be learnt first: a researcher, and
+         read the specification yourself meanwhile.
       2. Decide and write down what everyone shares: interfaces, formats, rules. Yours.
-      3. One call: run_subagents with the plan and one owner per part (leads when there are more
-         than four), and, for a specification, sub_mission acceptance in the same breath.
+      3. One call: run_subagents with the plan, one owner per part (leads when there are more
+         than four) and, for a specification, a tester in the same call.
       4. sleep until children and messages. Answer requests; inform the tasks an answer touches.
       5. Check each result as it comes back. A defect its owner understands: continues. A small
          one in a file nobody holds: fix it yourself.
-      6. When the parts are back: sub_mission integrate when the whole fails in ways you cannot
-         place; sub_mission fix-verify for one failure with an unknown cause; sub_mission review
-         for what would be costly to get wrong.
+      6. When the parts are back: an integrator when the whole fails in ways you cannot place; a
+         fixer for one failure with an unknown cause; a reviewer for what would be costly to get
+         wrong.
       7. Run the checks of the plan yourself, last; reply with what was delivered and how it was
          checked.
 

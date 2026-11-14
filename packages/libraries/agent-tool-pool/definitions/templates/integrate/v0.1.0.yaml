@@ -6,6 +6,7 @@ description:
   'Pre-orchestrated: start the whole system, run its checks, trace each failure to its part,
   fix it there, and check the whole again.'
 origin: BUILTIN
+agent: integrator
 nodes:
   - name: root
     kind: AGENT
@@ -24,9 +25,6 @@ playbook:
     - name: check
       description: the command that checks the whole, usually the acceptance tests
       required: true
-    - name: maxRounds
-      description: how many fix rounds at most (1 to 3); 2 when absent
-      required: false
   phases:
     - name: run
       instructions: >-
@@ -54,8 +52,7 @@ playbook:
         cause and part, and what is left with the cause you think it has.
   example: |-
     Example 1. Brief (from the root of a small language toolchain): goal "make the toolchain
-    pass its conformance tests"; start "make build"; check "python3 tests/conformance/run.py";
-    maxRounds 2; writeScope ["lang/"].
+    pass its conformance tests"; start "make build"; check "python3 tests/conformance/run.py"; writeScope ["lang/"].
     run: ran the start (it builds the toolchain; nothing stays running) and the check: 108 of
     112 pass. closure_in_loop: I dumped the bytecode with the command line: the compiler emits
     one slot for the loop variable where lang/bytecode.md says a fresh slot per iteration
@@ -83,7 +80,7 @@ playbook:
     report: finish_subagent status done: the client called v1, and v2 had a lower body limit.
 
     Example 3. Brief: goal "the nightly pipeline must run end to end again"; start
-    "make services"; check "make pipeline-test"; maxRounds 1; writeScope ["pipeline/"].
+    "make services"; check "make pipeline-test"; writeScope ["pipeline/"].
     run: the check fails at the second stage: the loader writes dates as text, the aggregator
     expects timestamps (pipeline/load/ writes, pipeline/aggregate/ reads; the interface in
     pipeline/SCHEMA.md says timestamps). The part is the loader.

@@ -28,7 +28,6 @@ import {
   type WakeCondition,
   type RunSubagentsArgs,
   type SpawnNode,
-  type SubMissionArgs,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
   type ProtectedCapability,
@@ -191,11 +190,20 @@ const JOB_READ_BYTES = 12_000;
 /** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
 const MAX_MISSION_DEPTH = 2;
 /**
- * What the root of a subMission asks for: more than any Agent's largest share, so the Kernel
- * grants the largest (twice the default of a lead). A caller's own figure is not taken: a root
- * sized for one Agent cannot lend to the tasks its playbook requires.
+ * What a specialist asks for: more than any Agent's largest share, so the Kernel grants the
+ * largest (twice the default of a lead). A caller's own figure is not taken: a specialist sized
+ * for one Agent cannot lend to the tasks its playbook requires.
  */
-const SUB_MISSION_ASK = 1_000_000_000;
+const SPECIALIST_ASK = 1_000_000_000;
+
+/** The playbook a task follows when it is a specialist, as the field of its spawn (D39). */
+const specialistOf = (
+  specialists: ReadonlyMap<string, NonNullable<SpawnNode['submission']>>,
+  name: string,
+): { submission?: NonNullable<SpawnNode['submission']> } => {
+  const submission = specialists.get(name);
+  return submission === undefined ? {} : { submission };
+};
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
@@ -288,6 +296,8 @@ function changedNote(changed: readonly string[]): string[] {
 export class SessionRunner {
   readonly #deps: SessionRunnerDeps;
   readonly #spawnable: ReadonlyMap<string, SpawnAgentFacts>;
+  /** The pre-orchestrated templates by the specialist Agent that reaches each (Orchestration D39). */
+  readonly #specialists: ReadonlyMap<string, TemplateDefinition>;
   #sessionId: string | undefined;
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
@@ -329,6 +339,13 @@ export class SessionRunner {
             allowedEfforts: agent.allowedEfforts,
           },
         ]),
+    );
+    this.#specialists = new Map(
+      [...deps.templates.values()].flatMap((template) =>
+        template.agent === undefined || template.playbook === undefined
+          ? []
+          : [[template.agent, template] as const],
+      ),
     );
   }
 
@@ -2649,10 +2666,8 @@ export class SessionRunner {
     workflowRunId: string,
     active: ActiveAgent,
     ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
-    submission?: NonNullable<SpawnNode['submission']>,
   ): Promise<void> {
     const { toolCallId } = ending.source;
-    if (ending.submission === true) return this.#onSubMission(workflowRunId, active, ending);
     const refuse = (text: string, withdraw = false): Promise<void> =>
       this.#apply(
         workflowRunId,
@@ -2669,10 +2684,57 @@ export class SessionRunner {
           this.#deps.config,
         ),
       );
+    const requested = ending.arguments as RunSubagentsArgs;
+    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
+    // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
+    // names it (Orchestration 3.9, D39). Only the root task starts one: the specialist and its
+    // tasks take the two levels below it.
+    const specialists = new Map<string, NonNullable<SpawnNode['submission']>>();
+    const tasks: RunSubagentsArgs['tasks'][number][] = [];
+    for (const task of requested.tasks) {
+      const template = this.#specialists.get(task.agent);
+      if (template?.playbook === undefined) {
+        tasks.push(task);
+        continue;
+      }
+      if (!isRoot)
+        return this.#answerControl(
+          workflowRunId,
+          active,
+          toolCallId,
+          true,
+          'SPECIALIST_REFUSED',
+          `Not started: only the root task starts a ${task.agent}; start explorers or workers yourself.`,
+        );
+      if (task.continues !== undefined)
+        return this.#answerControl(
+          workflowRunId,
+          active,
+          toolCallId,
+          true,
+          'SPECIALIST_REFUSED',
+          `Not started: a ${task.agent} is not continued; start a new one, or give the defect to a worker with continues.`,
+        );
+      specialists.set(task.name, {
+        template: { id: template.id, version: template.version },
+        // A copy of it as it is now: the log keeps what the specialist was given.
+        playbook: structuredClone(template.playbook) as NonNullable<
+          SpawnNode['submission']
+        >['playbook'],
+        params: {},
+      });
+      tasks.push({
+        ...task,
+        agent: 'lead',
+        role: task.role ?? `${task.agent}: ${template.playbook.summary}`.slice(0, 80),
+        // A specialist pays for its whole subtree, which its caller cannot size: it asks for the
+        // most a lead may get (the Kernel clamps it), never for less.
+        budget: { tokens: SPECIALIST_ASK },
+      });
+    }
+    const args: RunSubagentsArgs = { ...requested, tasks };
     // The root task writes the plan of the work before its first subtasks (D24). Refused here, it
     // does not count as a wrong call of run_subagents: nothing was wrong with the tasks.
-    const args = ending.arguments as RunSubagentsArgs;
-    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
     const planned = this.#records.some(
       (record) =>
         record.type === 'PLAN_REGISTERED' &&
@@ -2793,88 +2855,9 @@ export class SessionRunner {
       toolCallId,
       checked.plan.tasks,
       lent.reserved,
-      submission,
+      specialists,
       continued,
       inherit,
-    );
-  }
-
-  /**
-   * `sub_mission` (Orchestration 3.9, D31): one task, the root of a pre-orchestrated template, a
-   * `lead` that follows the template's playbook. The template must exist and be one, and its
-   * parameters must be the ones it declares. Only a root task hands work over like this: the
-   * template's root and its tasks take the two levels below it.
-   */
-  async #onSubMission(
-    workflowRunId: string,
-    active: ActiveAgent,
-    ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
-  ): Promise<void> {
-    const { toolCallId } = ending.source;
-    const args = ending.arguments as SubMissionArgs;
-    const back = (text: string) =>
-      this.#answerControl(workflowRunId, active, toolCallId, true, 'SUB_MISSION_REFUSED', text);
-    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
-    if (!isRoot)
-      return back(
-        'Not started: only the root task hands a part of the work to a template; use run_subagents.',
-      );
-    const template = this.#deps.templates.get(args.template);
-    const playbook = template?.playbook;
-    if (template === undefined || playbook === undefined) {
-      const known = [...this.#deps.templates.values()]
-        .filter((each) => each.playbook !== undefined)
-        .map((each) => `${each.id} (${each.playbook?.summary ?? ''})`);
-      return back(
-        `Not started: there is no pre-orchestrated template ${args.template}. Known: ${known.join('; ') || 'none'}.`,
-      );
-    }
-    const given = args.params ?? {};
-    const declared = new Set(playbook.params.map((param) => param.name));
-    const unknown = Object.keys(given).filter((name) => !declared.has(name));
-    const missing = playbook.params
-      .filter((param) => param.required && given[param.name] === undefined)
-      .map((param) => `${param.name} (${param.description})`);
-    if (unknown.length > 0 || missing.length > 0)
-      return back(
-        `Not started: ${[
-          ...(missing.length === 0 ? [] : [`missing params: ${missing.join('; ')}`]),
-          ...(unknown.length === 0
-            ? []
-            : [`params ${args.template} does not take: ${unknown.join(', ')}`]),
-        ].join('; ')}.`,
-      );
-    const task: RunSubagentsArgs['tasks'][number] = {
-      name: args.name,
-      agent: 'lead',
-      goal: args.goal,
-      role: args.role ?? `${args.template}: ${playbook.summary}`.slice(0, 80),
-      ...(args.writeScope === undefined ? {} : { writeScope: args.writeScope }),
-      ...(args.commands === undefined ? {} : { commands: args.commands }),
-      ...(args.inputs === undefined ? {} : { inputs: args.inputs }),
-      ...(args.acceptance === undefined ? {} : { acceptance: args.acceptance }),
-      ...(args.effort === undefined ? {} : { effort: args.effort }),
-      // The root of a subMission pays for its whole subtree, which its caller cannot size: it
-      // asks for the most a lead may get (the Kernel clamps it), never for less.
-      budget: { tokens: SUB_MISSION_ASK },
-    };
-    await this.#onSpawn(
-      workflowRunId,
-      active,
-      {
-        kind: 'SPAWN',
-        arguments: {
-          tasks: [task],
-          ...(args.plan === undefined ? {} : { plan: args.plan }),
-        } satisfies RunSubagentsArgs,
-        source: ending.source,
-      },
-      {
-        template: { id: template.id, version: template.version },
-        // A copy of it as it is now: the log keeps what the root was given.
-        playbook: structuredClone(playbook) as NonNullable<SpawnNode['submission']>['playbook'],
-        params: { ...given },
-      },
     );
   }
 
@@ -2929,7 +2912,8 @@ export class SessionRunner {
     toolCallId: string,
     tasks: SpawnPlan['tasks'],
     reserved: DelegationReserved,
-    submission?: NonNullable<SpawnNode['submission']>,
+    /** The specialists among the tasks, by task name, with the playbook each follows (D39). */
+    specialists: ReadonlyMap<string, NonNullable<SpawnNode['submission']>> = new Map(),
     /** The ended task each continuing task takes up, by task name. */
     continued: ReadonlyMap<string, string> = new Map(),
     /** The tasks start with the caller's context (a phase with `context: inherit`, D35). */
@@ -2962,7 +2946,7 @@ export class SessionRunner {
                   as: inherit.as,
                 },
               }),
-          ...(submission === undefined ? {} : { submission }),
+          ...specialistOf(specialists, task.name),
           ...(continued.get(task.name) === undefined
             ? {}
             : { continues: { missionId: continued.get(task.name) ?? '' } }),

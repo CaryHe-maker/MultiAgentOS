@@ -2,9 +2,9 @@
  * The submission study (Phase2Plan 7, Orchestration 3.9): large mission tasks whose work has, in
  * part, the shape of a pre-orchestrated template (a failure to fix, an unknown codebase to explore
  * before building, changes to review), and one whose work has none. The goals never name
- * sub_mission, templates, subtasks or splitting: what the root chooses is what is measured. Each
- * run records its shape (orchestration-shape.ts): whether root used sub_mission, and whether every
- * subMission root kept to its playbook. Outcomes are judged by tests the model never saw.
+ * specialists, templates, subtasks or splitting: what the root chooses is what is measured. Each
+ * run records its shape (orchestration-shape.ts): which specialists root started (Orchestration
+ * D39), and whether every one kept to its playbook. Outcomes are judged by tests the model never saw.
  *
  * The repositories, the hidden tests and a reference solution of each task are under
  * fixtures/study/; submission-study.test.ts checks offline that the hidden tests fail on the
@@ -119,7 +119,6 @@ function common(observation: Observation, expected: string): Check[] {
       true,
       JSON.stringify({
         expected,
-        subMissionCalls: shape.subMissionCalls,
         subMissions: shape.subMissions.map((each) => ({
           template: each.template,
           status: each.status,
@@ -187,7 +186,7 @@ const shop: TaskSpec = {
         '2. `checkout(cart, region, coupon=None, today=None)`：优惠券在批量折扣之后、计税之前减；percent 按 money.percent_of 四舍五入到分；减后的金额不小于 0；未打折的 subtotal 低于 min_subtotal，或 today（缺省为今天）晚于 expires 时抛 CouponError，且这时不卖出任何东西（库存与购物车不变）。Order 增加 coupon（减掉的分，没有券为 0）与 coupon_code（没有券为 None），as_dict() 也要有这两项。',
         '3. 命令行 quote 增加 `--coupons <文件> --coupon <代码>`；代码不存在或券不能用时向 stderr 写原因，退出码 2。',
         '给新功能补上测试，README 写明优惠券的用法。',
-        ...named('修好失败的测试这一部分，请用 sub_mission 交给 fix-verify 模板。'),
+        ...named('修好失败的测试这一部分，请交给 fixer。'),
         '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
@@ -208,7 +207,7 @@ const shop: TaskSpec = {
       theirTests(repository, 17),
       check('the given tests were not changed', 'OUTCOME', changed.length === 0, changed.join(',')),
       check('the README tells about coupons', 'OUTCOME', readme.includes('--coupon')),
-      ...common(observation, 'fix-verify for the failures, a worker for the coupons'),
+      ...common(observation, 'a fixer for the failures, a worker for the coupons'),
     ];
   },
 };
@@ -230,7 +229,7 @@ const taskq: TaskSpec = {
         '- 命令行增加全局选项 `--backend NAME`，优先于配置文件里的 [backend] name；配置文件写 name = "sqlite" 也要能用；',
         '- 给 sqlite 后端补上测试，README 写明怎么用。',
         '现有测试都要继续通过：`python3 -m unittest discover -s tests -t .`。',
-        ...named('sqlite 后端这一部分，请用 sub_mission 交给 explore-build 模板。'),
+        ...named('sqlite 后端要与现有后端一致：先请 tester 按现有后端的约定写验收测试，再实现。'),
         '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
@@ -254,7 +253,7 @@ const taskq: TaskSpec = {
         'OUTCOME',
         /sqlite/iu.test(readme) && readme.includes('--backend'),
       ),
-      ...common(observation, 'explore-build for the backend'),
+      ...common(observation, 'an explorer, then a worker and a tester for the backend'),
     ];
   },
 };
@@ -300,7 +299,7 @@ const auth: TaskSpec = {
         named.length >= 4,
         `names ${named.join(',')}`,
       ),
-      ...common(observation, 'review, then fixes'),
+      ...common(observation, 'a reviewer, then fixes'),
     ];
   },
 };
@@ -388,10 +387,7 @@ const sales: TaskSpec = {
         document.length >= 800 && document.includes('order_id') && /dedupe|更正/u.test(document),
         `${String(document.length)} chars`,
       ),
-      ...common(
-        observation,
-        'fix-verify for the failures and the speed, a worker for the document',
-      ),
+      ...common(observation, 'a fixer for the failures and the speed, a worker for the document'),
     ];
   },
 };

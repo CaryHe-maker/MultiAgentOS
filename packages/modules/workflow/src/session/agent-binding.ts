@@ -101,18 +101,6 @@ export function agentBindingOf(
             ),
           },
         }),
-    ...(agent.actions.subMission === undefined ||
-    agent.actions.spawn === undefined ||
-    !requestedCapabilities.includes('agent.spawn')
-      ? {}
-      : {
-          subMissionTool: {
-            toolName: toolOf(agent.actions.subMission.toolRef).modelName,
-            parameters: registry.resolveContract(
-              toolOf(agent.actions.subMission.toolRef).parametersContract,
-            ),
-          },
-        }),
     ...(agent.actions.askUser === undefined
       ? {}
       : {

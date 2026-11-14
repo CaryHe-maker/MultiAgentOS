@@ -4,6 +4,7 @@ id: review
 version: v0.1.0
 description: 'Pre-orchestrated: an independent, read-only review of changes against criteria.'
 origin: BUILTIN
+agent: reviewer
 nodes:
   - name: root
     kind: AGENT

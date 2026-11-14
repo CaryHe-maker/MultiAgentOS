@@ -122,7 +122,6 @@ const EXPECTED = {
     'HandoffBrief',
     'ReplyArgs',
     'RunSubagentsArgs',
-    'SubMissionArgs',
     'AskUserArgs',
     'SleepArgs',
     'SendMessageArgs',

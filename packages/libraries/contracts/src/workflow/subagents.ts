@@ -30,9 +30,23 @@ const referencesField = () => Type.Optional(Type.Array(Type.String()));
 /** Text without a length limit: what a model writes is kept, and cut only where it is read. */
 const longText = () => Type.String({ minLength: 1 });
 
+/**
+ * The Agents a task may run as. Besides explorer, worker and lead, each specialist is a lead that
+ * follows the playbook of one pre-orchestrated template (Orchestration 3.9, D39): the template
+ * that names it as its `agent`.
+ */
+export const SPECIALIST_AGENTS = [
+  'fixer',
+  'reviewer',
+  'tester',
+  'integrator',
+  'researcher',
+] as const;
+export type SpecialistAgent = (typeof SPECIALIST_AGENTS)[number];
+
 export const SubagentTaskSchema = closed({
   name: NameSchema,
-  agent: Type.Enum(['explorer', 'worker', 'lead']),
+  agent: Type.Enum(['explorer', 'worker', 'lead', ...SPECIALIST_AGENTS]),
   goal: text(4000),
   /** One line on what this task is responsible for, which the tree shows (Orchestration 3.7). */
   role: Type.Optional(text(80)),
@@ -68,31 +82,6 @@ export const RunSubagentsArgsSchema = closed(
   'workflow.RunSubagentsArgs.v1',
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
-
-/**
- * Parameters of `sub_mission` (Orchestration 3.9, D31): one part of the work handed to a
- * pre-orchestrated template. Its root, an Agent, follows the template's playbook and hands back a
- * report like any subtask. `params` are the ones the template declares.
- */
-export const SubMissionArgsSchema = closed(
-  {
-    name: NameSchema,
-    template: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,63}$' }),
-    goal: text(4000),
-    role: Type.Optional(text(80)),
-    writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-    commands: Type.Optional(Type.Boolean()),
-    inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
-    acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
-    params: Type.Optional(Type.Record(Type.String({ maxLength: 40 }), text(2000))),
-    effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
-    budget: Type.Optional(closed({ tokens: count(1) })),
-    /** The plan of the work, as with run_subagents: the root task writes it before its first. */
-    plan: Type.Optional(text(8000)),
-  },
-  'workflow.SubMissionArgs.v1',
-);
-export type SubMissionArgs = Static<typeof SubMissionArgsSchema>;
 
 export const AcceptanceAnswerSchema = closed({
   index: count(0),

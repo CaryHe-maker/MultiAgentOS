@@ -9,6 +9,7 @@ import {
   COMMAND_KINDS,
   EXTERNAL_READ_KINDS,
   REPOSITORY_KINDS,
+  SPECIALIST_AGENTS,
   WRITE_KINDS,
   agentMinShare,
   canonicalJson,
@@ -569,7 +570,6 @@ function checkAgent(
     ...[
       body.actions.todos,
       body.actions.spawn,
-      body.actions.subMission,
       body.actions.askUser,
       body.actions.sleep,
       body.actions.message,
@@ -679,17 +679,6 @@ function checkSpawn(
     )
       report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
   }
-  if (body.actions.subMission !== undefined) {
-    if (body.actions.spawn === undefined)
-      report(origin, 'AGENT_INVALID', 'actions.subMission needs actions.spawn');
-    const tool = get('TOOL', body.actions.subMission.toolRef);
-    if (
-      tool !== undefined &&
-      (tool.purpose !== 'CONTROL' ||
-        contractOf(tool.parametersContract) !== 'workflow.SubMissionArgs.v1')
-    )
-      report(origin, 'AGENT_INVALID', 'the subMission tool must be CONTROL with SubMissionArgs');
-  }
   const finishes = body.actions.end.some((end) => end.then === 'FINISH_SUBAGENT');
   if (finishes !== (body.spawnable !== undefined))
     report(origin, 'AGENT_INVALID', 'spawnable and the FINISH_SUBAGENT end go together');
@@ -716,6 +705,11 @@ function checkTemplate(
   const nodes = new Map(body.nodes.map((node) => [node.name, node]));
   if (nodes.size !== body.nodes.length)
     report(origin, 'TEMPLATE_INVALID', 'node names must be unique');
+  // A pre-orchestrated template is reached by the specialist Agent it names (Orchestration D39).
+  if ((body.playbook === undefined) !== (body.agent === undefined))
+    report(origin, 'TEMPLATE_INVALID', 'a playbook and its specialist agent go together');
+  if (body.agent !== undefined && !(SPECIALIST_AGENTS as readonly string[]).includes(body.agent))
+    report(origin, 'TEMPLATE_INVALID', `${body.agent} is not a specialist Agent`);
   // The owner of a template is one Agent, whose steps are the nodes marked owner; its last step
   // is the output (Orchestration 3.5).
   const { owner } = body;
@@ -858,7 +852,6 @@ export class DefinitionCatalog {
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
-      ...(agent.actions.subMission === undefined ? [] : [agent.actions.subMission.toolRef]),
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
       ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
       ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),

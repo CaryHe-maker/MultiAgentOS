@@ -4,6 +4,7 @@ id: fix-verify
 version: v0.1.0
 description: 'Pre-orchestrated: find the cause of a failure, fix it, and check until it passes.'
 origin: BUILTIN
+agent: fixer
 nodes:
   - name: root
     kind: AGENT
@@ -17,9 +18,6 @@ playbook:
     - name: check
       description: the command that shows the failure now and must pass when it is fixed
       required: true
-    - name: maxRounds
-      description: how many fix rounds at most (1 to 3); 3 when absent
-      required: false
   phases:
     - name: reproduce
       instructions: >-
@@ -46,7 +44,7 @@ playbook:
     Example 1. Brief (from the root of a small language toolchain): goal "closure_in_loop
     fails: three closures made in a loop all print 3 where docs/spec.md 4.2 says 0 1 2; find
     whether the compiler or the VM is at fault and fix it"; check "python3
-    tests/conformance/run.py func/closure_in_loop"; maxRounds 2; writeScope ["lang/compiler/",
+    tests/conformance/run.py func/closure_in_loop"; writeScope ["lang/compiler/",
     "lang/vm/"].
     reproduce: I ran the check: it prints 3 3 3. I dumped the bytecode of the program: one
     CAPTURE of slot 1 before the loop, where lang/bytecode.md section 3 says the body of a
@@ -63,7 +61,7 @@ playbook:
     closure_in_loop passes"; changed lang/compiler/loops.py.
 
     Example 2. Brief: goal "parse_date returns the wrong day for dates before 1970 since the
-    switch to the new time library"; check "pytest tests/test_dates.py -q"; maxRounds 2;
+    switch to the new time library"; check "pytest tests/test_dates.py -q";
     writeScope ["src/dates.py", "tests/test_dates.py"].
     reproduce: the check fails in test_before_epoch: 1969-12-31 comes back as 1970-01-01. In
     src/dates.py parse_date divides a negative number of seconds with // and then takes the
@@ -74,7 +72,7 @@ playbook:
     in src/dates.py; tests/test_dates.py passes.
 
     Example 3. Brief: goal "the build of the web app fails since the upgrade of the bundler";
-    check "npm run build"; maxRounds 3; writeScope ["web/"].
+    check "npm run build"; writeScope ["web/"].
     reproduce: the build stops at "Cannot use import statement outside a module" in
     web/scripts/icons.js, which the new bundler loads as CommonJS.
     fix (round 1): a worker renames it to icons.mjs and updates the import; the build now

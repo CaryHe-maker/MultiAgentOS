@@ -85,8 +85,10 @@ describe('the tools a task is offered (Orchestration 4, 5, 6.2)', () => {
       const chat = await chatOn(place, provider);
       await chat.say('hi');
       const tools = toolsOfMain(provider);
-      for (const name of ['sleep', 'send_message', 'view_tasks', 'stop_subagents', 'sub_mission'])
+      for (const name of ['sleep', 'send_message', 'view_tasks', 'stop_subagents'])
         expect(tools).toContain(name);
+      // A pre-orchestrated template is a specialist of run_subagents, not a tool of its own (D39).
+      expect(tools).not.toContain('sub_mission');
       // The job tools go with commands (Orchestration 6.2): offered where commands can run
       // isolated, and not offered at all where the sandbox is not available.
       for (const name of ['job_output', 'job_list', 'job_kill', 'run_command'])

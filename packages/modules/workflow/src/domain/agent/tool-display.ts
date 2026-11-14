@@ -43,7 +43,7 @@ const listed = (items: unknown, key: string): string[] =>
  * says first, what a sleep waits for, which tasks are started or stopped.
  */
 export function controlSummaryOf(
-  kind: 'MESSAGE' | 'VIEW_TASKS' | 'SPAWN' | 'SUB_MISSION' | 'SLEEP' | 'STOP' | 'JOB',
+  kind: 'MESSAGE' | 'VIEW_TASKS' | 'SPAWN' | 'SLEEP' | 'STOP' | 'JOB',
   args: unknown,
 ): string {
   switch (kind) {
@@ -67,8 +67,6 @@ export function controlSummaryOf(
         `${String(names.length)} task${names.length === 1 ? '' : 's'}: ${names.join(', ')}`,
       );
     }
-    case 'SUB_MISSION':
-      return oneLine(`${field(args, 'template') ?? '?'}: ${field(args, 'name') ?? '?'}`);
     case 'SLEEP': {
       const until = (args as { until?: unknown } | null)?.until;
       const kinds = listed(until, 'kind');
@@ -104,9 +102,7 @@ export function controlLineOf(
     case 'VIEW_TASKS':
       return line(definitions.viewTasksTool, '');
     case 'SPAWN':
-      return ending.submission === true
-        ? line(definitions.subMissionTool, controlSummaryOf('SUB_MISSION', ending.arguments))
-        : line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments));
+      return line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments));
     case 'SLEEP':
       return line(definitions.sleepTool, controlSummaryOf('SLEEP', ending.arguments));
     case 'STOP':

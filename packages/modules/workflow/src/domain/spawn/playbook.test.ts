@@ -21,7 +21,7 @@ const playbook: Playbook = {
 const submission = {
   template: { id: 'demo', version: 'v0.1.0' },
   playbook,
-  params: { check: 'make test' },
+  params: {},
 };
 const root = 'msc_root';
 let seq = 0;
@@ -114,10 +114,12 @@ describe('the playbook of a subMission (Orchestration 3.9)', () => {
     expect(playbookUnfinished(logOf([['worker'], ['explorer']]), root, submission)).toEqual([]);
   });
 
-  it('is read by its root in words, with its parameters and its example', () => {
+  it('is read by its root in words, with what it needs from its task and its example', () => {
     const text = renderPlaybook(submission);
     expect(text).toContain('template demo (explore, build, check)');
-    expect(text).toContain('- check: make test');
+    // The caller gives no fields of its own: the root looks for these in its goal and acceptance.
+    expect(text).toContain('What you need from your task, in its goal and acceptance');
+    expect(text).toContain('- check: the check');
     expect(text).toContain(
       '2. build (one run_subagents call of 1 worker task(s); it may run up to 2 times in all)',
     );
