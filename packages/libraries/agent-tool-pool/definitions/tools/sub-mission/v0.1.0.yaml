@@ -20,7 +20,10 @@ modelDescription: >-
   not write it; params criteria), acceptance (tests of a whole system or feature written from its
   specification by tasks that build nothing, run against it, failures traced to their parts;
   params spec, run), integrate (start the whole system, run its checks, trace each failure to its
-  part, fix it there and check again; params start, check, maxRounds). Give it a name, the
+  part, fix it there and check again; params start, check, maxRounds), research (knowledge the
+  work needs before it starts, from the web or the repository: the literature for a paper, how
+  established projects solve what you are about to build; it hands back a written report with a
+  source for every claim; params questions, output, sources). Give it a name, the
   template, a goal that stands on its own (it does not see your conversation; it sees the plan),
   acceptance criteria with a check where you can, a writeScope (lent to the whole part, as with
   run_subagents), and the params the template asks for. It returns at once; sleep with until

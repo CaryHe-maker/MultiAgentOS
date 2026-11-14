@@ -19,7 +19,7 @@ playbook:
     there, and check the whole again until it passes
   params:
     - name: start
-      description: the command that starts the whole system, for example "./run.sh start"
+      description: the command that starts the whole system, for example "docker compose up -d"
       required: true
     - name: check
       description: the command that checks the whole, usually the acceptance tests
@@ -39,6 +39,7 @@ playbook:
         agent: worker
         min: 1
         max: 4
+        context: inherit
       repeat: 3
       instructions: >-
         Start one worker for each part that has failures, with that part as its writeScope
@@ -52,20 +53,21 @@ playbook:
         Finish with the output of the last whole check, each failure that was fixed with its
         cause and part, and what is left with the cause you think it has.
   example: |-
-    Example 1. Brief (from the root of a flight booking system): goal "make the whole system
-    pass its acceptance tests"; start "HH_PORT_BASE=8800 ./run.sh start"; check "python3 -m
-    unittest discover -s tests/e2e -t ."; maxRounds 2; writeScope ["services/"].
-    run: started the system in the background and waited for GET /health on the gateway. The
-    check: 41 of 44 pass. test_logout: the gateway log shows the token served from its cache
-    after logout (services/gateway/). test_cancel_refunds: bookings logs "cancelled" but the
-    payments log never shows booking_cancelled (services/bookings/, the outbox).
-    test_payments_down: bookings waits 30 s on payments (services/bookings/, no timeout).
-    fix (round 1): two workers: "gateway-fix" writeScope ["services/gateway/"] (end the cached
-    token on logout; test_logout passes; gateway unit tests pass) and "bookings-fix" writeScope
-    ["services/bookings/"] (save the cancel and the outbox row in one transaction; a 2 s
-    timeout on calls to payments; test_cancel_refunds and test_payments_down pass). Slept until
-    both ended; restarted the system; the check: 44 of 44 pass.
-    report: finish_subagent status done with the last check (44 passed) and the three causes
+    Example 1. Brief (from the root of a small language toolchain): goal "make the toolchain
+    pass its conformance tests"; start "make build"; check "python3 tests/conformance/run.py";
+    maxRounds 2; writeScope ["lang/"].
+    run: ran the start (it builds the toolchain; nothing stays running) and the check: 108 of
+    112 pass. closure_in_loop: I dumped the bytecode with the command line: the compiler emits
+    one slot for the loop variable where lang/bytecode.md says a fresh slot per iteration
+    (lang/compiler/). overflow_add: the bytecode is right, the VM's ADD wraps where the spec
+    says error E07 (lang/vm/). Two error tests: the lexer's token already carries the wrong
+    line (lang/lexer/).
+    fix (round 1): three workers: "compiler-fix" writeScope ["lang/compiler/"] (a fresh slot
+    per iteration as bytecode.md says; closure_in_loop passes; the compiler's unit tests
+    pass), "vm-fix" writeScope ["lang/vm/"] (ADD, SUB and MUL raise E07 on overflow) and
+    "lexer-fix" writeScope ["lang/lexer/"] (a trailing comment does not count a line twice).
+    Slept until all ended; built again; the check: 112 of 112 pass.
+    report: finish_subagent status done with the last check (112 passed) and the three causes
     with their parts.
 
     Example 2. Brief: goal "the web app and the API must work together: the e2e suite fails

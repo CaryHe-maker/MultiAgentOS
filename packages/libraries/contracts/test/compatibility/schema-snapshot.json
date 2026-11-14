@@ -3288,7 +3288,7 @@
                   "guide": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 30000
+                    "maxLength": 60000
                   }
                 },
                 "additionalProperties": false
@@ -3399,6 +3399,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 8
+                      },
+                      "context": {
+                        "type": "string",
+                        "const": "inherit"
                       }
                     },
                     "additionalProperties": false
@@ -10658,6 +10662,22 @@
                   "additionalProperties": false
                 },
                 "requestedCapabilities": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "repo.read",
+                      "workspace.write",
+                      "command.exec",
+                      "command.network",
+                      "web.search",
+                      "web.fetch",
+                      "external.read",
+                      "agent.spawn"
+                    ]
+                  },
+                  "uniqueItems": true
+                },
+                "offeredCapabilities": {
                   "type": "array",
                   "items": {
                     "enum": [
@@ -23030,6 +23050,10 @@
               "const": "BUDGET_INSUFFICIENT"
             },
             "delegable": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "least": {
               "type": "integer",
               "minimum": 0
             }
@@ -35621,6 +35645,22 @@
           "additionalProperties": false
         },
         "requestedCapabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "repo.read",
+              "workspace.write",
+              "command.exec",
+              "command.network",
+              "web.search",
+              "web.fetch",
+              "external.read",
+              "agent.spawn"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "offeredCapabilities": {
           "type": "array",
           "items": {
             "enum": [
@@ -53254,6 +53294,29 @@
                         },
                         "additionalProperties": false
                       },
+                      "inherits": {
+                        "type": "object",
+                        "required": [
+                          "missionId",
+                          "agentRunId",
+                          "as"
+                        ],
+                        "properties": {
+                          "missionId": {
+                            "type": "string",
+                            "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "agentRunId": {
+                            "type": "string",
+                            "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                          },
+                          "as": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "additionalProperties": false
+                      },
                       "submission": {
                         "type": "object",
                         "required": [
@@ -53365,6 +53428,10 @@
                                           "type": "integer",
                                           "minimum": 1,
                                           "maximum": 8
+                                        },
+                                        "context": {
+                                          "type": "string",
+                                          "const": "inherit"
                                         }
                                       },
                                       "additionalProperties": false

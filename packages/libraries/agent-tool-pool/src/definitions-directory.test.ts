@@ -47,6 +47,7 @@ describe('shipped definitions', () => {
       'TEMPLATE:fix-verify@v0.1.0',
       'TEMPLATE:integrate@v0.1.0',
       'TEMPLATE:mission@v0.1.0',
+      'TEMPLATE:research@v0.1.0',
       'TEMPLATE:review@v0.1.0',
       'TOOL:ask-user@v0.1.0',
       'TOOL:edit-file@v0.1.0',
@@ -151,25 +152,55 @@ describe('shipped definitions', () => {
     expect(text).toContain('Decisions, by what you see.');
     expect(text.match(/^[a-j]\) /gmu)).toHaveLength(10);
     expect(text).toContain('Whole task 1. Small enough to do alone.');
-    expect(text).toContain('Whole task 2. A large system from a specification');
+    // Three large tasks of different kinds, one of them without code, so that the root does not
+    // copy the shape of one example (2026-11-14).
+    expect(text).toContain('Whole task 2. A large system built from a specification');
+    expect(text).toContain('Whole task 3. One change through a large codebase that exists');
+    expect(text).toContain('Whole task 4. An academic paper, from the literature to the PDF');
+    // The paper goes the whole way: survey, plan, evidence, drafts, revision, format, PDF.
+    for (const stage of [
+      '1. Survey.',
+      '2. Plan the argument',
+      '3. Evidence before prose',
+      '4. Draft',
+      '5. Revise',
+      '6. Format and output',
+      'latexmk -pdf',
+      'paper/main.pdf',
+    ])
+      expect(text).toContain(stage);
     expect(text).not.toContain('most of them do not use');
-    // The large system hands acceptance, integration and review to their templates, and gives a
-    // defect back to its owner with continues; it never messages a task that has ended.
-    expect(text.split('sub_mission {').length - 1).toBe(3);
+    // Between them the whole tasks use every template, give a defect back to its owner with
+    // continues, and show the root changing things itself (D33).
     for (const step of [
-      'contracts/',
       'template: "acceptance"',
       'template: "integrate"',
       'template: "review"',
-      'continues: "platform"',
+      'template: "research"',
+      'template: "fix-verify"',
+      'continues: "back"',
+      'continues: "sec-eval"',
+      'lang/lexer/scan.py myself',
+      'I write the introduction myself, from the outline',
     ])
       expect(text).toContain(step);
+    // No example is taken from a task of the evaluation set.
+    for (const word of ['HH_', 'run.sh', 'services/', 'logout', 'flight'])
+      expect(text).not.toContain(word);
     // Every pre-orchestrated template carries several examples of its speciality, the first from
-    // the same flight booking system.
-    for (const id of ['fix-verify', 'explore-build', 'review', 'acceptance', 'integrate']) {
+    // the language toolchain of the second whole task.
+    for (const id of [
+      'fix-verify',
+      'explore-build',
+      'review',
+      'acceptance',
+      'integrate',
+      'research',
+    ]) {
       const template = catalog.latest('TEMPLATE', id);
       const example = template?.kind === 'TEMPLATE' ? (template.playbook?.example ?? '') : '';
-      expect(example).toContain('flight booking system');
+      expect(example).toContain('small language toolchain');
+      expect(example).not.toContain('HH_');
       expect(example.match(/^Example \d\./gmu)?.length).toBeGreaterThanOrEqual(3);
     }
   });

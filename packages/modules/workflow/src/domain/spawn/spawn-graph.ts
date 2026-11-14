@@ -151,6 +151,7 @@ export function taskScopeOf(
   spawn: NonNullable<GraphNodeRecord['spawn']>,
 ): TaskScope {
   const continued = continuedOf(records, workflowRunId, graph, spawn);
+  const inherited = inheritedOf(records, workflowRunId, graph, node, spawn);
   const dependencies = graph.graph.edges
     .filter((edge) => edge.to === node.nodeId && edge.kind === 'DEPENDS')
     .flatMap((edge) => {
@@ -185,6 +186,51 @@ export function taskScopeOf(
     dependencies,
     ...(spawn.submission === undefined ? {} : { playbook: renderPlaybook(spawn.submission) }),
     ...(continued === undefined ? {} : { continued }),
+    ...(inherited === undefined ? {} : { inherited }),
+  };
+}
+
+/**
+ * What a task that inherits starts with (Orchestration 3.9, D35): the view of the task that
+ * started it, up to the call, and the call it answers. The view is that task's own, so the prefix
+ * is the one it sent and the provider's cache holds it.
+ */
+function inheritedOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  node: GraphNodeRecord,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['inherited'] {
+  const { inherits } = spawn;
+  if (inherits === undefined) return undefined;
+  const from = [...graph.nodes.values()].find(
+    (each) => each.mission?.id === inherits.missionId && each.spawn !== undefined,
+  );
+  const started = records.find(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodes.some((each) => each.nodeId === node.nodeId),
+  );
+  const edge = started?.edges.find(
+    (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
+  );
+  if (from?.spawn === undefined || started === undefined || edge?.call === undefined)
+    return undefined;
+  const before = records.filter((record) => record.seq < started.seq);
+  return {
+    cut: started.seq,
+    toolCallId: edge.call.toolCallId,
+    as: inherits.as,
+    siblings: started.nodes.filter((each) => each.nodeId !== node.nodeId).map((each) => each.name),
+    from: {
+      kind: 'NODE',
+      workflowRunId,
+      agentRunId: inherits.agentRunId,
+      missionId: inherits.missionId,
+      task: taskScopeOf(before, workflowRunId, graph, from, from.spawn),
+    },
   };
 }
 

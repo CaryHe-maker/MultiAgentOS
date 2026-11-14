@@ -533,6 +533,12 @@ export const PlaybookPhaseSchema = Type.Object(
           agent: Type.Enum(['explorer', 'worker']),
           min: Type.Integer({ minimum: 1, maximum: 8 }),
           max: Type.Integer({ minimum: 1, maximum: 8 }),
+          /**
+           * `inherit`: the tasks of this phase start with the whole context of the root of the
+           * subMission as it stood at the call, so they read nothing again (Orchestration 3.9,
+           * D35). Set by the template, never chosen by the model.
+           */
+          context: Type.Optional(Type.Literal('inherit')),
         },
         { additionalProperties: false },
       ),
@@ -584,7 +590,7 @@ export const TemplateNodeSchema = Type.Union([
        * What the Agent of this step reads with its goal (D32): worked examples of how to use the
        * system well, written as the behaviour wanted.
        */
-      guide: Type.Optional(TextSchema(30_000)),
+      guide: Type.Optional(TextSchema(60_000)),
     },
     { additionalProperties: false },
   ),

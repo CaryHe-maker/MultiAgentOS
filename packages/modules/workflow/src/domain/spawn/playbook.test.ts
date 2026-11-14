@@ -1,6 +1,6 @@
 import type { Playbook, SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { playbookRefusal, playbookUnfinished, renderPlaybook } from './playbook.js';
+import { phaseOfCall, playbookRefusal, playbookUnfinished, renderPlaybook } from './playbook.js';
 
 const playbook: Playbook = {
   summary: 'explore, build, check',
@@ -122,5 +122,46 @@ describe('the playbook of a subMission (Orchestration 3.9)', () => {
       '2. build (one run_subagents call of 1 worker task(s); it may run up to 2 times in all)',
     );
     expect(text).toContain('An example of a good plan with this playbook:\nan example');
+  });
+
+  it('says which phase a call belongs to, and tells a task that inherits by the Agent its phase names (D35)', () => {
+    const inheriting = {
+      ...submission,
+      playbook: {
+        ...playbook,
+        phases: playbook.phases.map((phase) =>
+          phase.name === 'build' && phase.tasks !== undefined
+            ? { ...phase, tasks: { ...phase.tasks, context: 'inherit' as const } }
+            : phase,
+        ),
+      },
+    };
+    expect(phaseOfCall(logOf([]), root, inheriting, tasks('worker'))?.tasks?.context).toBe(
+      'inherit',
+    );
+    expect(phaseOfCall(logOf([]), root, inheriting, tasks('explorer'))?.name).toBe('explore');
+    expect(renderPlaybook(inheriting)).toContain(
+      'each task starts with everything you have read and done so far',
+    );
+    expect(renderPlaybook(submission)).not.toContain('each task starts with everything');
+    // A task that inherits runs as the Agent of its caller (a lead); the phase is still counted
+    // by the Agent the phase names, so the next phase is the one after it.
+    const log = logOf([['lead']]).map((record) =>
+      record.type === 'GRAPH_EXTENDED'
+        ? {
+            ...record,
+            nodes: record.nodes.map((node) =>
+              node.agentRef?.id === 'lead'
+                ? {
+                    ...node,
+                    spawn: { inherits: { missionId: root, agentRunId: 'agr_1', as: 'worker' } },
+                  }
+                : node,
+            ),
+          }
+        : record,
+    ) as SessionLogRecord[];
+    expect(playbookRefusal(log, root, inheriting, tasks('explorer'))).toBeUndefined();
+    expect(playbookUnfinished(log, root, inheriting)).toEqual(['review']);
   });
 });

@@ -80,7 +80,7 @@ import {
 } from '../domain/graph/mission-jobs.js';
 import { owedReplies, replyRefusal } from '../domain/graph/mission-replies.js';
 import { revokedCompactions } from '../domain/context/compaction-revocation.js';
-import { playbookRefusal, playbookUnfinished } from '../domain/spawn/playbook.js';
+import { phaseOfCall, playbookRefusal, playbookUnfinished } from '../domain/spawn/playbook.js';
 import { interruptedRunOf } from './interrupted-run.js';
 import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
@@ -166,6 +166,11 @@ export interface SessionRunnerDeps {
   readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
   readonly now?: () => Date;
   readonly newAgentRunId?: () => string;
+  /**
+   * False turns off `context: inherit` of playbook phases (D35): their tasks start fresh, as
+   * before. For comparing the two; inherit when absent.
+   */
+  readonly inheritContext?: boolean;
 }
 
 const MAIN = 'main';
@@ -185,6 +190,12 @@ const MAX_OPEN_REQUESTS = 3;
 const JOB_READ_BYTES = 12_000;
 /** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
 const MAX_MISSION_DEPTH = 2;
+/**
+ * What the root of a subMission asks for: more than any Agent's largest share, so the Kernel
+ * grants the largest (twice the default of a lead). A caller's own figure is not taken: a root
+ * sized for one Agent cannot lend to the tasks its playbook requires.
+ */
+const SUB_MISSION_ASK = 1_000_000_000;
 
 type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
@@ -1660,7 +1671,29 @@ export class SessionRunner {
     const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
     // A later segment of a spawned task works within what its first segment was given.
     const taskNode = this.#taskNodeOf(workflowRunId, node);
-    const binding = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
+    // A task that inherits is asked with the very prompt and tools of the task it comes from, or
+    // the provider's cache of that context is lost (D35); what it may not do is refused instead.
+    const from =
+      taskNode?.spawn?.inherits === undefined
+        ? undefined
+        : [...graph.nodes.values()].find(
+            (each) =>
+              each.mission?.id === taskNode.spawn?.inherits?.missionId && each.spawn !== undefined,
+          );
+    const own = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
+    const lent = this.#bindingAt(agentId, Math.max(0, depth - 1), from?.spawn?.commands !== false);
+    // It asks for no more than the Agent its phase names may do: the Kernel grants a task only
+    // what its caller lent, and the tools beyond that are refused when called.
+    const named = this.#deps.agents.get(taskNode?.spawn?.inherits?.as ?? '');
+    const binding: AgentBinding =
+      from === undefined
+        ? own
+        : {
+            ...lent,
+            requestedCapabilities: lent.requestedCapabilities.filter(
+              (capability) => named?.requestedCapabilities.includes(capability) ?? true,
+            ),
+          };
     const place = placementOf(
       taskNode ?? node,
       {
@@ -1675,6 +1708,16 @@ export class SessionRunner {
         : this.#dispatchOf(graph, node),
     );
     const link = spawn === undefined ? undefined : place.link;
+    // A task that inherits thinks as hard as the task it comes from: the provider keeps a cache
+    // per effort, so another effort would pay for the whole inherited context again (D35).
+    const inheritedFrom = taskNode?.spawn?.inherits?.agentRunId;
+    const effort =
+      (from === undefined
+        ? undefined
+        : this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+              record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === inheritedFrom,
+          )?.effort) ?? place.effort;
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -1682,7 +1725,7 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort: place.effort,
+        effort: effort,
         ...(link?.parentAgentRunId === undefined
           ? {}
           : { parentAgentRunId: link.parentAgentRunId }),
@@ -1693,7 +1736,7 @@ export class SessionRunner {
         workflowRunId,
         agentRunId,
         modelRef: binding.modelRef,
-        thinking: place.effort,
+        thinking: effort,
         toolsDigest: binding.toolsDigest,
         runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
       },
@@ -1706,10 +1749,11 @@ export class SessionRunner {
         agentRunId,
         nodeId,
         agentRef: binding.ref,
-        effort: place.effort,
+        effort: effort,
         workspaceViewId: 'main',
         display: { label: place.label },
         requestedCapabilities: [...binding.requestedCapabilities],
+        ...(from === undefined ? {} : { offeredCapabilities: [...lent.requestedCapabilities] }),
         writeRoots: [...place.writeRoots],
         ...(link === undefined ? {} : { delegationId: link.delegationId, taskName: link.taskName }),
         ...(node.mission === undefined
@@ -2651,11 +2695,24 @@ export class SessionRunner {
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
         ({} as GraphNodeRecord),
     );
+    if (ownTask?.spawn?.inherits !== undefined)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'NOT_A_LEAD',
+        'Not started: you are a subtask, not the task whose context you were given. You start no subtasks: do your goal yourself and finish with your finishing call.',
+      );
     const followed = ownTask?.spawn?.submission;
+    let inherit: { readonly as: string } | undefined;
     if (followed !== undefined) {
       const off = playbookRefusal(this.#records, active.missionId, followed, args.tasks);
       if (off !== undefined)
         return this.#answerControl(workflowRunId, active, toolCallId, true, 'PLAYBOOK', off);
+      const phase = phaseOfCall(this.#records, active.missionId, followed, args.tasks);
+      if (phase?.tasks?.context === 'inherit' && this.#deps.inheritContext !== false)
+        inherit = { as: phase.tasks.agent };
     }
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const checked = validateSpawn(args, {
@@ -2695,7 +2752,19 @@ export class SessionRunner {
     }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
-    if (lent.kind === 'REFUSED') return refuse(lent.text);
+    // A refusal for the budget says nothing against the tasks: it is not counted as a wrong
+    // call, or two of them would take run_subagents away from a root that must follow a playbook.
+    if (lent.kind === 'REFUSED')
+      return lent.budget
+        ? this.#answerControl(
+            workflowRunId,
+            active,
+            toolCallId,
+            true,
+            'BUDGET_INSUFFICIENT',
+            lent.text,
+          )
+        : refuse(lent.text);
     if (isRoot && args.plan !== undefined)
       await this.#append([
         {
@@ -2726,6 +2795,7 @@ export class SessionRunner {
       lent.reserved,
       submission,
       continued,
+      inherit,
     );
   }
 
@@ -2784,7 +2854,9 @@ export class SessionRunner {
       ...(args.inputs === undefined ? {} : { inputs: args.inputs }),
       ...(args.acceptance === undefined ? {} : { acceptance: args.acceptance }),
       ...(args.effort === undefined ? {} : { effort: args.effort }),
-      ...(args.budget === undefined ? {} : { budget: args.budget }),
+      // The root of a subMission pays for its whole subtree, which its caller cannot size: it
+      // asks for the most a lead may get (the Kernel clamps it), never for less.
+      budget: { tokens: SUB_MISSION_ASK },
     };
     await this.#onSpawn(
       workflowRunId,
@@ -2813,7 +2885,7 @@ export class SessionRunner {
     tasks: SpawnPlan['tasks'],
   ): Promise<
     | { readonly kind: 'GRANTED'; readonly reserved: DelegationReserved }
-    | { readonly kind: 'REFUSED'; readonly text: string }
+    | { readonly kind: 'REFUSED'; readonly text: string; readonly budget: boolean }
     | { readonly kind: 'BLOCKED' }
   > {
     const sessionId = this.#sessionIdOrThrow();
@@ -2837,9 +2909,13 @@ export class SessionRunner {
     if (reserved.reasonCode === 'RUN_BLOCKED') return { kind: 'BLOCKED' };
     const text =
       reserved.reasonCode === 'BUDGET_INSUFFICIENT'
-        ? `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total. Start fewer or smaller tasks, or do the work yourself.`
+        ? `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total${
+            reserved.least === undefined
+              ? ''
+              : `, and these ${String(tasks.length)} task(s) need at least ${String(reserved.least)} even at their smallest (a task never gets less than its Agent's smallest share, whatever budget you write)`
+          }. Nothing was started. Start fewer tasks in this call and the rest when these have ended, or do the work yourself; writing smaller budgets does not help.`
         : `${reserved.reasonCode}: the system refused to start these tasks. Nothing was started.`;
-    return { kind: 'REFUSED', text };
+    return { kind: 'REFUSED', text, budget: reserved.reasonCode === 'BUDGET_INSUFFICIENT' };
   }
 
   /**
@@ -2856,6 +2932,8 @@ export class SessionRunner {
     submission?: NonNullable<SpawnNode['submission']>,
     /** The ended task each continuing task takes up, by task name. */
     continued: ReadonlyMap<string, string> = new Map(),
+    /** The tasks start with the caller's context (a phase with `context: inherit`, D35). */
+    inherit?: { readonly as: string },
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -2869,11 +2947,21 @@ export class SessionRunner {
       { nodeId: active.nodeId, call, missionId },
       tasks.map((task) => ({
         name: task.name,
-        agentRef: this.#refOf(task.agent),
+        // A task that inherits runs as the caller's Agent: same prompt, same tools, same cache.
+        agentRef: this.#refOf(inherit === undefined ? task.agent : active.agentId),
         goal: task.goal,
         dependsOn: task.dependsOn ?? [],
         spawn: {
           ...spawnNodeOf(task, shares.get(task.name)),
+          ...(inherit === undefined
+            ? {}
+            : {
+                inherits: {
+                  missionId,
+                  agentRunId: active.state.agentRunId,
+                  as: inherit.as,
+                },
+              }),
           ...(submission === undefined ? {} : { submission }),
           ...(continued.get(task.name) === undefined
             ? {}

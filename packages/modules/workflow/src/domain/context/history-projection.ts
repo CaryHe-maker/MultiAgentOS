@@ -48,6 +48,22 @@ export interface TaskScope {
     readonly missions: readonly string[];
     readonly first: Omit<TaskScope, 'continued'>;
   };
+  /**
+   * The task starts with the context of the task that started it (a phase with `context:
+   * inherit`, Orchestration 3.9, D35): that task's view up to the call, then its own task as the
+   * answer to the call.
+   */
+  readonly inherited?: {
+    /** The record that started this task: the view it inherits ends before it. */
+    readonly cut: number;
+    /** The call that started it, which its task answers. */
+    readonly toolCallId: string;
+    /** The Agent the phase names: what the task is, whatever Agent runs it. */
+    readonly as: string;
+    /** The tasks started by the same call. */
+    readonly siblings: readonly string[];
+    readonly from: Extract<ProjectionScope, { kind: 'NODE' }>;
+  };
 }
 
 /**
@@ -160,11 +176,112 @@ function continuedText(task: TaskScope): string {
   return lines.join('\n');
 }
 
+/** What a task that inherits a context is told, as the answer to the call that started it. */
+function inheritedText(task: TaskScope): string {
+  const inherited = task.inherited;
+  const lines = [
+    `From here on you are a different task: "${task.name}", a ${inherited?.as ?? 'worker'} that the task above started with this call. Everything above is what that task had read and done up to the call. You have it so that you need not read it again; it is not your work to continue.`,
+    'What changes for you:',
+    '- You do NOT follow the playbook or the phases above, and you do not finish that task. You do only the goal below.',
+    '- You start no subtasks: run_subagents and stop_subagents are refused. You do the work yourself.',
+    inherited?.as === 'explorer' || task.writeScope.length === 0
+      ? '- You change no file: you read, search and report.'
+      : `- You may write only: ${task.writeScope.join(', ')}. Everything else is read-only for you.`,
+    ...(inherited === undefined || inherited.siblings.length === 0
+      ? []
+      : [
+          `- Started with you by the same call, each with its own goal: ${inherited.siblings.join(', ')}. Their parts are not yours.`,
+        ]),
+    `Your goal: ${task.goal}`,
+  ];
+  if (task.acceptance.length > 0)
+    lines.push('Acceptance:', ...task.acceptance.map((each, index) => `${String(index)}. ${each}`));
+  lines.push(
+    'When it is done, finish with your finishing call: your result goes to the task that started you.',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * The view of a task that inherits (D35): the view of the task that started it as it stood at
+ * the call, the task itself as the answer to that call, then its own work. What it did before a
+ * compaction of its own is folded by its own compaction records, over the whole.
+ */
+function projectInherited(
+  records: readonly SessionLogRecord[],
+  scope: Extract<ProjectionScope, { kind: 'NODE' }>,
+  task: TaskScope,
+  inherited: NonNullable<TaskScope['inherited']>,
+  options: ProjectionOptions,
+): readonly ContextHistoryEntry[] {
+  const before = records.filter((record) => record.seq < inherited.cut);
+  // No reminder of that task's unanswered requests: they are not this task's to answer.
+  const above = projectOwn(before, inherited.from, { ...options, final: true });
+  // The calls of the turn that started this task: each needs its answer, or the history stops.
+  const turn = [...before]
+    .reverse()
+    .find(
+      (record): record is Extract<SessionLogRecord, { type: 'MODEL_TURN' }> =>
+        record.type === 'MODEL_TURN' &&
+        record.toolCalls.some((call) => call.toolCallId === inherited.toolCallId),
+    );
+  const answered = new Set(
+    above.entries.flatMap((entry) =>
+      (entry.kind === 'FEEDBACK' ||
+        entry.kind === 'TOOL_RESULT' ||
+        entry.kind === 'HUMAN_ANSWER') &&
+      entry.toolCallId !== undefined
+        ? [entry.toolCallId]
+        : [],
+    ),
+  );
+  const open = (turn?.toolCalls ?? [])
+    .map((call) => call.toolCallId)
+    .filter((id) => !answered.has(id));
+  const told: ContextHistoryEntry[] = open.map((toolCallId) => ({
+    seq: inherited.cut,
+    category: toolCallId === inherited.toolCallId ? ('PINNED' as const) : ('NORMAL' as const),
+    kind: 'FEEDBACK' as const,
+    toolCallId,
+    text:
+      toolCallId === inherited.toolCallId
+        ? inheritedText(task)
+        : 'This call belongs to the task above; its result is not yours.',
+  }));
+  const plain = Object.fromEntries(
+    Object.entries(task).filter(([key]) => key !== 'inherited'),
+  ) as unknown as TaskScope;
+  const own = projectOwn(records, { ...scope, task: plain }, options);
+  return applyCompactions(
+    [
+      ...applyCompactions(above.entries, above.compaction),
+      ...told,
+      // Its task is told by the answer above, and it knows the plan from the context it has.
+      ...own.entries.filter(
+        (entry) => entry.seq >= inherited.cut && entry.kind !== 'TASK' && entry.kind !== 'PLAN',
+      ),
+    ],
+    own.compaction,
+  );
+}
+
 export function projectHistory(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
   options: ProjectionOptions = {},
 ): readonly ContextHistoryEntry[] {
+  const inherited = scope.kind === 'NODE' ? scope.task?.inherited : undefined;
+  if (scope.kind === 'NODE' && scope.task !== undefined && inherited !== undefined)
+    return projectInherited(records, scope, scope.task, inherited, options);
+  const own = projectOwn(records, scope, options);
+  return applyCompactions(own.entries, own.compaction);
+}
+
+function projectOwn(
+  records: readonly SessionLogRecord[],
+  scope: ProjectionScope,
+  options: ProjectionOptions = {},
+): { readonly entries: ContextHistoryEntry[]; readonly compaction: CompactionRecords } {
   const mainRuns = new Set<string>();
   /** The AgentRuns of the ended tasks a continued task takes up. */
   const pastRuns = new Set<string>();
@@ -892,7 +1009,7 @@ export function projectHistory(
       ? { ...entry, category: 'PINNED' as const }
       : entry,
   );
-  return applyCompactions(shown, compaction);
+  return { entries: shown, compaction };
 }
 
 /** The plan of the work as it stood: the last one the run registered (Orchestration 5.3). */

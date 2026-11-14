@@ -24,7 +24,11 @@ export function renderPlaybook(submission: Submission): string {
         ? ''
         : `; it may run up to ${String(phase.repeat)} times in all`;
     const optional = phase.optional === true ? '; optional' : '';
-    return `${String(index + 1)}. ${phase.name} (${tasks}${repeat}${optional}): ${phase.instructions}`;
+    const inherit =
+      phase.tasks?.context === 'inherit'
+        ? '; each task starts with everything you have read and done so far, so its goal says only what it must do, not what you already know'
+        : '';
+    return `${String(index + 1)}. ${phase.name} (${tasks}${repeat}${optional}${inherit}): ${phase.instructions}`;
   };
   const given = Object.entries(params);
   return [
@@ -60,7 +64,8 @@ function callsOf(
       if (node === undefined) continue;
       const key = edge.call.toolCallId;
       const call = calls.get(key) ?? {
-        agent: node.agentRef?.id ?? 'unknown',
+        // A task that inherits runs as its caller's Agent; the phase is told by the one it names.
+        agent: node.spawn?.inherits?.as ?? node.agentRef?.id ?? 'unknown',
         count: 0,
         missionIds: [],
       };
@@ -168,6 +173,27 @@ export function playbookRefusal(
   return allowed.length === 0
     ? 'Not started: every phase of your playbook that has tasks has run. Finish with finish_subagent.'
     : `Not started: this call does not follow your playbook. The next phase may be: ${allowed.join('; or ')}. A call has tasks of one Agent only.`;
+}
+
+/**
+ * The phase a call that follows the playbook belongs to: what the phase says of its tasks (their
+ * context) holds for the tasks of the call.
+ */
+export function phaseOfCall(
+  records: readonly SessionLogRecord[],
+  missionId: string,
+  submission: Submission,
+  tasks: readonly { readonly agent: string }[],
+): PlaybookPhase | undefined {
+  const { playbook } = submission;
+  const agents = new Set(tasks.map((task) => task.agent));
+  const call = {
+    agent: agents.size === 1 ? (tasks[0]?.agent ?? '') : 'mixed',
+    count: tasks.length,
+  };
+  const { at, used } = placeCalls(playbook, callsOf(records, missionId));
+  const next = nextPhase(playbook, at, used, call);
+  return next === undefined ? undefined : playbook.phases[next];
 }
 
 /** The phases with tasks that are not optional and have not run yet: done needs none left. */

@@ -890,7 +890,13 @@ export class RunWork {
     if (names.size !== request.tasks.length) return refuse('INVALID_INPUT');
     const parentRoots = writableRoots(parent.ceiling);
     const context = { sessionId: request.sessionId, workflowRunId: request.workflowRunId };
-    const tasks: { name: string; roots: string[]; tokens: number; clamped?: 'MIN' | 'MAX' }[] = [];
+    const tasks: {
+      name: string;
+      roots: string[];
+      tokens: number;
+      least: number;
+      clamped?: 'MIN' | 'MAX';
+    }[] = [];
     for (const task of request.tasks) {
       const share = this.#deps.agentShare(task.agentRef, context);
       if (!share.ok) return refuse(share.reasonCode);
@@ -907,12 +913,30 @@ export class RunWork {
         name: task.name,
         roots,
         tokens,
+        least,
         ...(tokens > asked
           ? { clamped: 'MIN' as const }
           : tokens < asked
             ? { clamped: 'MAX' as const }
             : {}),
       });
+    }
+    // More than the parent can lend, but each task can do with less: the shares shrink to fit,
+    // each keeping at least its Agent's smallest share, rather than the whole call being refused
+    // (a caller cannot know these numbers, and a refusal it cannot act on stops its work).
+    const delegable = this.#deps.ledgers.delegable(parentAgentRunId);
+    const total = tasks.reduce((sum, task) => sum + task.tokens, 0);
+    const leastTotal = tasks.reduce((sum, task) => sum + task.least, 0);
+    if (total > delegable && leastTotal <= delegable) {
+      const spare = delegable - leastTotal;
+      const above = total - leastTotal;
+      for (const task of tasks) {
+        const fitted = task.least + Math.floor(((task.tokens - task.least) * spare) / above);
+        if (fitted < task.tokens) {
+          task.tokens = fitted;
+          task.clamped = 'MAX';
+        }
+      }
     }
     const delegationId = this.#deps.newDelegationId?.() ?? newId('dlg');
     const result = this.#deps.ledgers.reserveDelegation({
@@ -927,6 +951,7 @@ export class RunWork {
         issuer: 'CORE',
         reasonCode: 'BUDGET_INSUFFICIENT',
         delegable: result.delegable,
+        least: leastTotal,
       };
       this.#requests.remember(requestId, request, response);
       return response;

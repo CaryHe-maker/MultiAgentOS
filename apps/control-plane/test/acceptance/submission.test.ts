@@ -125,6 +125,8 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
                   goal: 'write fixed into src/value.txt',
                   writeScope: ['src'],
                   acceptance: [`${check} succeeds`],
+                  // Not taken: a task that inherits thinks as hard as the root it comes from.
+                  effort: 'low',
                 },
               ],
             }),
@@ -185,6 +187,110 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       expect((fixer?.['mission'] as Record<string, unknown>)['parentId']).toBe(
         (root?.['mission'] as Record<string, unknown>)['id'],
       );
+      // The fix phase of fix-verify says `context: inherit` (D35): the fixer runs as the Agent of
+      // the root of the subMission and starts with that root's context.
+      expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
+        missionId: (root?.['mission'] as Record<string, unknown>)['id'],
+        as: 'worker',
+      });
+      expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
+      // The provider keeps a cache per effort: the fixer runs with the effort of the root.
+      const registered = log.filter((record) => record['type'] === 'AGENT_RUN_REGISTERED');
+      const effortOf = (node: Record<string, unknown> | undefined) =>
+        registered.find((record) => record['nodeId'] === node?.['nodeId'])?.['effort'];
+      expect(effortOf(fixer)).toBe(effortOf(root));
+      expect(effortOf(fixer)).not.toBe('low');
+      const isFixer = (request: (typeof provider.requests)[number]) =>
+        request.messages.some((message) =>
+          textOf(message).includes('you are a different task: "fixer"'),
+        );
+      const first = provider.requests.find(isFixer);
+      // The request of the root that made the call: the last one of the lead before the fixer's.
+      const before = provider.requests
+        .slice(0, provider.requests.indexOf(first as (typeof provider.requests)[number]))
+        .filter(
+          (request) =>
+            textOf(request.messages.find((message) => message.role === 'user')).includes(
+              'Your task (fix-value,',
+            ) &&
+            // Not the root's next request, which already has its own answer to the call.
+            !request.messages.some((message) =>
+              textOf(message).includes('Started 1 subtask(s): fixer'),
+            ),
+        )
+        .at(-1);
+      expect(first).toBeDefined();
+      expect(before).toBeDefined();
+      // The same prompt and the same tools, and every message the root sent is the start of what
+      // the fixer sends: the provider's cache of the root's context serves the fixer.
+      expect(JSON.stringify(first?.tools)).toBe(JSON.stringify(before?.tools));
+      const sent = before?.messages ?? [];
+      // The root's last message there is its status line, which every request ends with anew.
+      const stable = sent.slice(0, -1);
+      expect(first?.messages.slice(0, stable.length)).toEqual(stable);
+      // Then the root's turn with the call, and the fixer's task as the answer to that call.
+      const told = first?.messages.map((message) => textOf(message)).join('\n') ?? '';
+      expect(told).toContain('From here on you are a different task: "fixer", a worker');
+      expect(told).toContain('You may write only: src');
+      expect(told).toContain('Your goal: write fixed into src/value.txt');
+      expect(told).not.toContain('Your task (fixer,');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'starts the tasks of a phase fresh when inherited contexts are turned off',
+    async () => {
+      const provider = scriptedAgents({
+        main: [
+          tool('sub_mission', {
+            name: 'fix-value',
+            template: 'fix-verify',
+            goal: 'src/value.txt must say fixed; the check fails now',
+            writeScope: ['src'],
+            params: { check },
+            plan: 'One part: make the value check pass, handed to fix-verify.',
+          }),
+          tool('sleep', { until: [{ kind: 'children' }] }),
+          tool('reply', { text: 'fixed' }),
+        ],
+        lead: [
+          tool('run_command', { command: check }),
+          tool('run_subagents', {
+            tasks: [{ name: 'fixer', agent: 'worker', goal: 'write fixed', writeScope: ['src'] }],
+          }),
+          tool('sleep', { until: [{ kind: 'children' }] }),
+          tool('finish_subagent', {
+            summary: 'fixed',
+            status: 'done',
+            changedFiles: ['src/value.txt'],
+            validation: [],
+          }),
+        ],
+        worker: [
+          tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+          tool('finish_subagent', {
+            summary: 'wrote fixed',
+            status: 'done',
+            changedFiles: ['src/value.txt'],
+            validation: [],
+          }),
+        ],
+      });
+      process.env['MAO_INHERIT_CONTEXT'] = 'off';
+      try {
+        const run = await missionOn('make the value check pass', provider, {
+          'src/value.txt': 'broken\n',
+        });
+        expect(run.code).toBe(0);
+        const said = provider.requests
+          .flatMap((request) => request.messages.map((message) => textOf(message)))
+          .join('\n');
+        expect(said).toContain('Your task (fixer,');
+        expect(said).not.toContain('you are a different task');
+      } finally {
+        delete process.env['MAO_INHERIT_CONTEXT'];
+      }
     },
     TIMEOUT,
   );

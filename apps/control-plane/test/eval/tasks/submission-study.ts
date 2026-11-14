@@ -49,6 +49,14 @@ export function shell(
   }
 }
 
+/**
+ * A line that names the template for a part of the work, only when `MAO_STUDY_NAMED=1`: the arm
+ * of the study where the choice is given, so that what a template does can be compared between
+ * two builds of the system on the same shape of work (for example with and without inherited
+ * contexts, D35). Without it the goals never name a template.
+ */
+const named = (line: string): string[] => (process.env['MAO_STUDY_NAMED'] === '1' ? [line] : []);
+
 const ranOf = (output: string): number => Number(/Ran (\d+) test/u.exec(output)?.[1] ?? '0');
 
 /** `python3 -m unittest -v`: how each test ended, by its name. */
@@ -179,6 +187,7 @@ const shop: TaskSpec = {
         '2. `checkout(cart, region, coupon=None, today=None)`：优惠券在批量折扣之后、计税之前减；percent 按 money.percent_of 四舍五入到分；减后的金额不小于 0；未打折的 subtotal 低于 min_subtotal，或 today（缺省为今天）晚于 expires 时抛 CouponError，且这时不卖出任何东西（库存与购物车不变）。Order 增加 coupon（减掉的分，没有券为 0）与 coupon_code（没有券为 None），as_dict() 也要有这两项。',
         '3. 命令行 quote 增加 `--coupons <文件> --coupon <代码>`；代码不存在或券不能用时向 stderr 写原因，退出码 2。',
         '给新功能补上测试，README 写明优惠券的用法。',
+        ...named('修好失败的测试这一部分，请用 sub_mission 交给 fix-verify 模板。'),
         '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },
@@ -221,6 +230,7 @@ const taskq: TaskSpec = {
         '- 命令行增加全局选项 `--backend NAME`，优先于配置文件里的 [backend] name；配置文件写 name = "sqlite" 也要能用；',
         '- 给 sqlite 后端补上测试，README 写明怎么用。',
         '现有测试都要继续通过：`python3 -m unittest discover -s tests -t .`。',
+        ...named('sqlite 后端这一部分，请用 sub_mission 交给 explore-build 模板。'),
         '请尽可能快并且高质量地完成。',
       ].join('\n'),
     },

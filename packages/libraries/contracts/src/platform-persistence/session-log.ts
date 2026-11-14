@@ -53,6 +53,18 @@ export const SpawnNodeSchema = closed({
   /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
   continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
+   * A task of a phase with `context: inherit` (Orchestration 3.9, D35): the task whose context it
+   * starts with, the AgentRun of that task that made the call, and the Agent the phase names
+   * (the task itself runs as the Agent of the task it comes from, so the provider's cache holds).
+   */
+  inherits: Type.Optional(
+    closed({
+      missionId: IdSchemas.missionScopeId,
+      agentRunId: IdSchemas.agentRunId,
+      as: Type.String({ maxLength: 64 }),
+    }),
+  ),
+  /**
    * The root of a subMission (Orchestration 3.9): the template it follows, with its playbook as it
    * was when the work was handed over, and the parameters given; the log alone says what it must do.
    */

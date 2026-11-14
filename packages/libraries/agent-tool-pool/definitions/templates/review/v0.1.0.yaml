@@ -32,21 +32,20 @@ playbook:
         Check the findings you doubt by reading the code yourself, drop the ones that do not hold,
         and finish with the findings by importance. You change no file.
   example: |-
-    Example 1. Brief (from the root of a flight booking system): goal "review services/gateway,
-    services/accounts and how every service learns which user a request is for"; criteria
-    "one user can never read or change another user's data; passwords are salted hashes;
-    tokens expire and logout ends them; the services trust the user only when the gateway
-    passed it on"; no writeScope.
-    review: two explorers that wrote none of it: "auth-review" reads services/gateway and
-    services/accounts against the criteria on passwords, tokens and logout; "trust-review"
-    reads how flights, bookings and payments take the user of a request. Slept until both
-    ended. auth-review found that logout does not end a cached token (gateway/cache.py line
-    22, sure) and that passwords are salted (no finding). trust-review found that every
-    service reads the X-User header from any caller (bookings/http.py line 14, and the same
-    in flights and payments, sure), so anyone who can reach a service can act as any user.
-    report: I read bookings/http.py line 14 and the gateway: nothing signs or checks the
-    header, so the finding holds; the cached token holds too. finish_subagent status done with
-    the two findings, the trust of X-User first because it lets anyone act as anyone.
+    Example 1. Brief (from the root of a small language toolchain): goal "review lang/vm/ and
+    lang/stdlib/ before release"; criteria "no program can crash the VM: every failure is a
+    reported error of docs/spec.md section 6; deep recursion ends with E09, not with a crash
+    of the host; the standard library never reads or writes outside the folder the program
+    was given"; no writeScope.
+    review: two explorers that wrote none of it: "vm-review" reads lang/vm against the
+    criteria on errors and recursion; "stdlib-review" reads lang/stdlib against the rule on
+    files. Slept until both ended. vm-review found that CALL checks the depth for functions
+    of the program but not for native ones, so a sort with a recursive callback overflows the
+    stack of the host (vm/call.py line 61, sure). stdlib-review found that read_file joins
+    the path without resolving "..", so "../../notes.txt" is read (stdlib/files.py line 18,
+    sure), and that write_file does resolve it (no finding).
+    report: I read vm/call.py line 61 and stdlib/files.py line 18: both hold. finish_subagent
+    status done with the two findings, the path first because it reads outside the folder.
 
     Example 2. Brief: goal "review the new rate limiter in api/limit/ before it ships";
     criteria "limits hold under concurrent requests; a client cannot reset its limit by

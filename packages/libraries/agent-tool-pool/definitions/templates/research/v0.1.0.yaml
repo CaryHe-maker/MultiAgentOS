@@ -1,0 +1,127 @@
+schemaVersion: v1
+kind: TEMPLATE
+id: research
+version: v0.1.0
+description:
+  'Pre-orchestrated: study questions from sources outside or inside the repository and hand back
+  a written report in which every claim has its source.'
+origin: BUILTIN
+nodes:
+  - name: root
+    kind: AGENT
+    agent:
+      id: lead
+      version: v0.1.0
+    output: true
+playbook:
+  summary:
+    study questions before the work starts (the literature for a paper, how established projects
+    solve a problem we are about to build) and hand back a written report in which every claim
+    has its source
+  params:
+    - name: questions
+      description: what the report must answer (one per line)
+      required: true
+    - name: output
+      description: the path of the report, inside the writeScope, for example "docs/research/vm.md"
+      required: true
+    - name: sources
+      description:
+        where to look (the web, named sites or projects, folders of this repository); the web and
+        the repository when absent
+      required: false
+  phases:
+    - name: scope
+      instructions: >-
+        Turn the questions into a list every reader answers in the same form, and write it to
+        QUESTIONS.md beside the output. Say what counts as a source: the paper itself, the
+        official documentation, the source code, a measurement with its method; not a summary of
+        a summary. Split the reading into 2 to 4 parts that do not overlap: one reader per
+        candidate, per project, or per group of questions.
+    - name: read
+      tasks:
+        agent: explorer
+        min: 2
+        max: 4
+      instructions: >-
+        Start 2 to 4 explorers, one per part. Each goal names its part and QUESTIONS.md, and asks
+        for facts only: every fact with the address it comes from (a URL, or a file and line),
+        numbers and names exactly as the source gives them, the date of the source, and a plain
+        "not found" for what it could not find. No opinions and no recommendation: that is
+        yours. Sleep until they have all ended.
+    - name: check
+      tasks:
+        agent: explorer
+        min: 1
+        max: 2
+      repeat: 2
+      optional: true
+      instructions: >-
+        Only when the readers contradict each other, a number that matters has no primary
+        source, numbers were measured in ways that cannot be compared, or a question has no
+        answer: start 1 or 2 explorers on exactly those points, each goal naming the two claims
+        and what would settle them. When nothing is open, pass this phase over.
+    - name: write
+      instructions: >-
+        Write the report yourself at the output path: the answer to each question; a table when
+        things are compared; where the sources disagree and which you follow and why; what is
+        not known; your recommendation when the questions ask for one, marked as yours; and the
+        list of sources by number. Every claim carries the number of its source. A report is
+        written by one hand: do not hand the writing out.
+    - name: report
+      instructions: >-
+        Finish with the path of the report, its answers in a few lines, and what stays open. You
+        change nothing but the report and QUESTIONS.md.
+  example: |-
+    Example 1. Brief (from the root of a small language toolchain): goal "before we build the
+    VM: how do established bytecode VMs represent values and dispatch instructions, and what
+    should ours do?"; questions "how are values represented (tagged union, NaN boxing,
+    pointers)? how is the instruction loop dispatched? how are closures and their captured
+    variables stored? what does each choice cost in speed and in complexity?"; sources "the
+    source code and design documents of Lua, Wren and CPython"; output "docs/research/vm.md";
+    writeScope ["docs/research/"].
+    scope: wrote docs/research/QUESTIONS.md: the four questions, each to be answered per VM with
+    the file and line of the source code that shows it. Sources: the code itself and documents
+    of the authors. Three parts: Lua, Wren, CPython.
+    read: three explorers, "read-lua", "read-wren", "read-cpython", each with its VM and
+    QUESTIONS.md. Slept until all ended: Wren boxes values in NaNs (wren_value.h), Lua uses a
+    tagged union (lobject.h), CPython uses pointers to objects; all three keep captured
+    variables in a cell that is closed when the frame ends; read-lua and read-wren give
+    different numbers for the speed of a switch against computed gotos.
+    check: one explorer "dispatch-numbers": the two numbers come from different compilers and
+    years; it found the measurement in the Lua mailing list that compares both on one machine.
+    write: wrote docs/research/vm.md: a table of the three VMs by question, the disagreement on
+    dispatch and which measurement I follow, and my recommendation (a tagged union and a plain
+    switch first: the simplest that works, with the layout that lets NaN boxing replace it
+    later), each claim with its source.
+    report: finish_subagent status done with the path, the recommendation in three lines, and
+    what stays open (no numbers for our own instruction set yet).
+
+    Example 2. Brief: goal "the related work for our paper on restarting long batch jobs from
+    checkpoints"; questions "which strategies for choosing checkpoint intervals exist? what
+    does each assume about failures? how were they evaluated, on what workloads? what has
+    nobody measured?"; output "paper/notes/related.md"; writeScope ["paper/notes/"].
+    scope: QUESTIONS.md asks for each paper: the strategy, its assumptions, the evaluation, the
+    result in the authors' numbers, and the full reference with DOI. A source is the paper
+    itself, not a blog about it. Three parts: fixed and analytic intervals; adaptive
+    intervals; systems that checkpoint incrementally.
+    read: three explorers, one per part. Slept until all ended: 19 papers with references; two
+    explorers cite the same result with different years.
+    check: one explorer settled the year from the DOI and found that one "paper" is a
+    preprint that was later published under another title.
+    write: paper/notes/related.md: the strategies in three families, a table of assumptions and
+    evaluations, the gap (nobody measured jobs whose state grows while they run), and 18
+    references with DOI, ready for the bibliography.
+    report: finish_subagent status done with the path, the three families, the gap.
+
+    Example 3. Brief: goal "choose a library for PDF text extraction for the import feature";
+    questions "which libraries are maintained? licence? how do they handle scanned pages and
+    tables? speed on large files? known problems?"; sources "the web, and how import/ reads
+    files today"; output "docs/research/pdf.md"; writeScope ["docs/research/"].
+    scope: QUESTIONS.md with the five questions per library; four parts: three candidate
+    libraries, and what import/ needs (from the repository).
+    read: four explorers. Slept until all ended; every question has an answer with a source.
+    write: nothing was open, so no check. docs/research/pdf.md: the table, the needs of
+    import/ with files and lines, my recommendation and the one risk it carries (its licence
+    changes with the next major version, source 7).
+    report: finish_subagent status done with the path, the recommendation, the risk.

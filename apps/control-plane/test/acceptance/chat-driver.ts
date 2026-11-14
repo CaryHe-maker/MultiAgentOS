@@ -274,7 +274,12 @@ export function scriptedAgents(
       const agent = asksSummary && queues.has('summary') ? 'summary' : agentOfRequest(request);
       // A task is known by the first user message that carries its name.
       const first = textOf(request.messages.find((message) => message.role === 'user'));
-      const task = [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
+      // A task that inherits a context (D35) is told who it is by the answer to the call that
+      // started it, after the history of the task it comes from.
+      const all = request.messages.map((message) => textOf(message)).join('\n');
+      const task =
+        [...byTask.keys()].find((name) => all.includes(`you are a different task: "${name}"`)) ??
+        [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
       const key = task ?? agent;
       const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);

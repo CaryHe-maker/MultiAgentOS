@@ -30,6 +30,7 @@ playbook:
         agent: worker
         min: 1
         max: 1
+        context: inherit
       repeat: 3
       instructions: >-
         Start one worker with your writeScope (or the part of it the fix needs). Its goal names
@@ -42,27 +43,24 @@ playbook:
         Finish with the cause, the change, the output of the last check and, when it still fails,
         what was tried and what you think is left.
   example: |-
-    Example 1. Brief (from the root of a flight booking system): goal "test_cancel_refunds fails: a
-    cancelled booking stays charged. bookings should send booking_cancelled
-    (contracts/events.py) and payments refund on it; find which side breaks and fix it";
-    check "python3 -m unittest tests.e2e.test_bookings -v"; maxRounds 2; writeScope
-    ["services/bookings/", "services/payments/"].
-    reproduce: I ran the check: test_cancel_refunds failed, the charge is still "settled" after
-    the cancel. I read services/bookings/cancel.py: it publishes booking_cancelled to the outbox
-    and then saves the cancel; services/payments/events.py refunds on booking_cancelled. The
-    payments log shows no booking_cancelled at all, so the event is lost on the bookings side:
-    the outbox is written before the cancel commits, and the publisher skips rows of bookings
-    that are not yet cancelled.
-    fix (round 1): run_subagents with one worker "outbox-order", writeScope
-    ["services/bookings/"], goal "In services/bookings/cancel.py the event booking_cancelled is
-    written to the outbox before the cancel is saved, and the publisher skips it. Save the
-    cancel and the outbox row in one transaction, the cancel first; keep the event fields of
-    contracts/events.py; do not change payments.", acceptance ["python3 -m unittest
-    tests.e2e.test_bookings -v passes", "the unit tests of services/bookings pass"]. Slept
-    until it ended. Check: 9 passed.
-    report: finish_subagent status done; summary "bookings wrote booking_cancelled before the
-    cancel was saved and the publisher skipped it; both are now saved in one transaction,
-    cancel first; tests.e2e.test_bookings: 9 passed"; changed services/bookings/cancel.py.
+    Example 1. Brief (from the root of a small language toolchain): goal "closure_in_loop
+    fails: three closures made in a loop all print 3 where docs/spec.md 4.2 says 0 1 2; find
+    whether the compiler or the VM is at fault and fix it"; check "python3
+    tests/conformance/run.py func/closure_in_loop"; maxRounds 2; writeScope ["lang/compiler/",
+    "lang/vm/"].
+    reproduce: I ran the check: it prints 3 3 3. I dumped the bytecode of the program: one
+    CAPTURE of slot 1 before the loop, where lang/bytecode.md section 3 says the body of a
+    loop opens a fresh slot per iteration (OPEN_SLOT). The VM runs what it is given
+    correctly, so the fault is in lang/compiler/loops.py, which never emits OPEN_SLOT.
+    fix (round 1): run_subagents with one worker "loop-slot", writeScope ["lang/compiler/"],
+    goal "lang/compiler/loops.py compiles a for loop with one slot for the loop variable, so
+    closures made in the body share it. Emit OPEN_SLOT at the top of the body and copy the
+    variable into it, as lang/bytecode.md section 3 says; do not change the VM or the
+    bytecode format.", acceptance ["python3 tests/conformance/run.py func/closure_in_loop
+    passes", "the unit tests of lang/compiler pass"]. Slept until it ended. Check: passed.
+    report: finish_subagent status done; summary "the compiler gave a loop one slot for its
+    variable, so closures shared it; it now opens a slot per iteration as bytecode.md says;
+    closure_in_loop passes"; changed lang/compiler/loops.py.
 
     Example 2. Brief: goal "parse_date returns the wrong day for dates before 1970 since the
     switch to the new time library"; check "pytest tests/test_dates.py -q"; maxRounds 2;

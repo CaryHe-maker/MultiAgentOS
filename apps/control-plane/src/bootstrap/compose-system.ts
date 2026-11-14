@@ -339,6 +339,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       config: config.workflow,
       now,
       git: inGitWorkTree(options.repositoryRoot),
+      // For comparing runs with and without inherited contexts (Orchestration 3.9, D35).
+      ...(process.env['MAO_INHERIT_CONTEXT'] === 'off' ? { inheritContext: false } : {}),
     });
     serveWorkflowInbox(workflowFabric, workflow.runner);
 

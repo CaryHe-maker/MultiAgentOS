@@ -31,6 +31,15 @@ export const RegisterAgentRunRequestSchema = closed(
     display: closed({ label: text(80) }),
     /** May only narrow the ceiling, or registration is CAPABILITY_NOT_SUBSET (Kernel/Core 5a.1). */
     requestedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
+    /**
+     * The capabilities the tools are offered by, when they are more than the AgentRun may use: a
+     * task that inherits the context of its caller is offered the caller's tools, so the request
+     * has the prefix the provider cached, and a call beyond its own ceiling is refused
+     * (Orchestration 3.9, D35). The requested ones when absent.
+     */
+    offeredCapabilities: Type.Optional(
+      Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
+    ),
     /** Relative to the repository root; main has `['.']`, and none without `workspace.write`. */
     writeRoots: Type.Array(text(1024)),
     /**

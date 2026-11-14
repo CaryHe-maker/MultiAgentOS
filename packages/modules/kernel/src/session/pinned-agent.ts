@@ -228,7 +228,13 @@ export function pinAgentFrom(
     if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
     if (set.value.agent.digest !== agentRef.digest)
       return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
-    const agent = pinnedAgentOf(set.value, effort, registry, request.requestedCapabilities);
+    // The tools are offered by `offeredCapabilities` when given; the ceiling stays the requested.
+    const agent = pinnedAgentOf(
+      set.value,
+      effort,
+      registry,
+      request.offeredCapabilities ?? request.requestedCapabilities,
+    );
     return Promise.resolve(
       agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
     );

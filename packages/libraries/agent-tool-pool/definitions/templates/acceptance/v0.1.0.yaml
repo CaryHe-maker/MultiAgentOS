@@ -20,9 +20,8 @@ playbook:
       description: where the specification and the fixed interfaces are (paths, one per line)
       required: true
     - name: run
-      description:
-        how the tests start the system and run, for example "./run.sh start" then "python3 -m
-        unittest discover -s tests/e2e"
+      description: how the tests build or start what they test and how they run, for example "make
+        build" then "python3 tests/conformance/run.py"
       required: true
   phases:
     - name: map
@@ -36,6 +35,7 @@ playbook:
         agent: worker
         min: 1
         max: 3
+        context: inherit
       instructions: >-
         Start 1 to 3 workers, each with one part of the list and its own file or folder of your
         scope. Each goal says: write the tests from the specification and the interfaces only,
@@ -53,22 +53,22 @@ playbook:
         failure with its rule, the part it points to and the output that shows it. You change
         nothing outside your tests.
   example: |-
-    Example 1. Brief (from the root of a flight booking system): goal "acceptance tests for
-    docs/spec.md"; spec "docs/spec.md, contracts/"; run "HH_PORT_BASE=8800 ./run.sh start, then
-    python3 -m unittest discover -s tests/e2e -t ."; writeScope ["tests/e2e/"].
-    map: I read docs/spec.md and contracts/: 18 interfaces (section 2) and 7 rules (section 3:
-    restart keeps data, one service down leaves the others working, users are isolated, ...).
-    Wrote tests/e2e/CASES.md with the 25 items in three parts: accounts and gateway; flights and
-    bookings; the rules of section 3.
-    write: three workers, "e2e-accounts" (tests/e2e/test_accounts.py), "e2e-bookings"
-    (tests/e2e/test_bookings.py), "e2e-rules" (tests/e2e/test_rules.py), each with its part of
-    CASES.md and the run param. Slept until all ended.
-    run: 44 tests, 41 pass. test_logout fails (token still accepted after logout: gateway),
-    test_cancel_refunds fails (charge stays settled: bookings or payments, the payments log has
-    no booking_cancelled), test_payments_down fails (bookings hangs 30 s: bookings' HTTP client
-    has no timeout).
-    report: finish_subagent status done with the 44 tests, the rules they cover, and the three
-    failures with the part each points to and its output.
+    Example 1. Brief (from the root of a small language toolchain): goal "conformance tests
+    for the language of docs/spec.md"; spec "docs/spec.md, lang/ast.py, lang/bytecode.md"; run
+    "make build, then python3 tests/conformance/run.py"; writeScope ["tests/conformance/"].
+    map: I read docs/spec.md and the two interface files: 31 rules of the language (sections 2
+    to 5: scoping, closures, integer overflow, string escapes, ...) and 9 error cases (section
+    6, each with its code and line). Wrote tests/conformance/CASES.md with the 40 items in
+    three parts: expressions and types; functions and closures; errors.
+    write: three workers, "conf-expr" (tests/conformance/expr/), "conf-func"
+    (tests/conformance/func/), "conf-errors" (tests/conformance/errors/), each with its part
+    of CASES.md and the run param. Slept until all ended.
+    run: 112 programs, 109 give the expected output. closure_in_loop prints 3 3 3 where the
+    spec says 0 1 2 (the compiler: the bytecode it emits has one slot for the loop variable);
+    two error cases report the line after the one at fault (the lexer: the token already
+    carries the wrong line after a trailing comment).
+    report: finish_subagent status done with the 112 programs, the rules they cover, and the
+    three failures with the part each points to and its output.
 
     Example 2. Brief: goal "acceptance tests for the CSV import of docs/import.md before we
     rewrite the parser"; spec "docs/import.md"; run "python3 -m pytest tests/acceptance -q";

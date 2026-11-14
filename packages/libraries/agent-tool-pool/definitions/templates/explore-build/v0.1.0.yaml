@@ -37,6 +37,7 @@ playbook:
         agent: worker
         min: 1
         max: 4
+        context: inherit
       instructions: >-
         Start 1 to 4 workers with writeScopes that do not overlap, each with the part of the
         approach it builds and acceptance criteria with a check. Sleep until they have all ended.
@@ -45,27 +46,26 @@ playbook:
         Read what changed, run the checks of the whole part yourself, and fix small things; then
         finish with what was found, the approach, what was built and how it was checked.
   example: |-
-    Example 1. Brief (from the root of a flight booking system): goal "add seat selection: a booking holds
-    a chosen seat, the seat map shows which seats are free"; questions "how does flights store
-    seats and their state today? how does bookings hold and release a seat, and in which
-    events? what does the gateway route under /api/flights?"; writeScope ["services/flights/",
-    "services/bookings/", "services/gateway/routes.py"].
-    explore: run_subagents with two explorers: "flights-look" (how services/flights stores
-    seats and their state, and its HTTP routes) and "bookings-look" (how services/bookings
-    holds and releases seats, which events it sends, and how the gateway routes to both).
-    Slept until both ended: seats live in flights' seats table with a state column; bookings
-    calls POST /seats/hold with a count, not a seat; the gateway routes /api/flights/* to
-    flights as it is.
-    decide: a hold names a seat (POST /seats/hold {seat}), flights refuses a taken seat with
-    409, and GET /flights/<id>/seatmap lists every seat and its state; wrote the interface to
-    services/flights/SEATS.md, which both builders follow.
-    build: two workers: "seatmap" writeScope ["services/flights/"] (the seat map route and the
-    hold by seat, from SEATS.md, tests in services/flights/tests) and "choose" writeScope
-    ["services/bookings/", "services/gateway/routes.py"] (a booking takes a seat and holds it,
-    409 passed on to the user, the route of the seat map).
-    verify: I read both changes against SEATS.md, ran the unit tests of flights and bookings
-    and the acceptance tests (all passed), and fixed one route name myself; finish_subagent
-    status done with what was found, the interface, what was built and the checks.
+    Example 1. Brief (from the root of a small language toolchain): goal "add string
+    interpolation: in "total: {n + 1}" the expression inside the braces is evaluated";
+    questions "how does the lexer read a string literal today? which node of lang/ast.py holds
+    a string? how does the compiler emit joining two strings, and what turns a value into
+    text?"; writeScope ["lang/lexer/", "lang/parser/", "lang/compiler/", "lang/ast.py"].
+    explore: run_subagents with two explorers: "front-look" (how lang/lexer reads strings and
+    escapes, and what lang/parser builds from them) and "back-look" (how lang/compiler emits
+    strings and joins them, and what the VM offers to turn a value into text). Slept until
+    both ended: the lexer returns one STRING token with escapes resolved; the parser makes a
+    Str node; the compiler has CONCAT; the VM has TO_TEXT, used by print only.
+    decide: the lexer splits such a string into STRING parts and the tokens between the
+    braces; the parser builds a new node Interp(parts); the compiler emits each part, TO_TEXT
+    after an expression, then CONCAT. I added Interp to lang/ast.py myself, because both
+    builders depend on it.
+    build: two workers: "interp-front" writeScope ["lang/lexer/", "lang/parser/"] (the split
+    and the Interp node; a brace that is never closed is error E11; unit tests) and
+    "interp-back" writeScope ["lang/compiler/"] (emit Interp as decided; unit tests).
+    verify: I read both changes against lang/ast.py, ran the unit tests and the conformance
+    tests (all passed), and fixed the escape "{{" myself; finish_subagent status done with
+    what was found, the node, what was built and the checks.
 
     Example 2. Brief: goal "add a --since flag to the export command"; questions "where does
     export read its rows? is there already a date filter anywhere?"; writeScope ["cli/",
