@@ -4,7 +4,7 @@
  * the console down to the Executors, with only the provider's HTTP API scripted per Agent; what
  * the model would see is read from the requests the provider received.
  */
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from '@multiagentos/contracts';
@@ -351,6 +351,109 @@ describe('B2: more than the caller can lend', () => {
       expect(answer).toMatch(/BUDGET_INSUFFICIENT: at most \d+ tokens can be lent/u);
       expect(answer).toMatch(/these 4 task\(s\) need at least \d+ even at their smallest/u);
       expect(chat.printed('REPLY')).toContain('by myself');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('more budget for the work of an input (M2Design 7.3, rule 6)', () => {
+  // The least an input may open with: main is within one call of its line after its first call.
+  const LEAST_OF_MAIN = 2_832_000;
+  const short =
+    (extension?: { mode: 'ask' | 'extend' | 'stop'; max: number }) =>
+    (config: SystemConfig): SystemConfig => ({
+      ...config,
+      kernel: {
+        ...config.kernel,
+        budget: {
+          ...config.kernel.budget,
+          inputTokenLimit: LEAST_OF_MAIN,
+          ...(extension === undefined ? {} : { extension }),
+        },
+      },
+    });
+  const script = () =>
+    scriptedAgents({
+      // Three rounds that each do something new, or the run ends for want of progress.
+      main: [
+        tool('list_files', { depth: 1 }),
+        tool('read_file', { path: 'a.txt' }),
+        tool('list_files', { depth: 2 }),
+        reply('done'),
+      ],
+    });
+  const aboutBudget = (chat: Chat) =>
+    chat.questions.filter((question) => question.includes('额度快用完了'));
+  const audit = async (place: Place) => {
+    const [id] = await readdir(join(place.dataDir, 'sessions'));
+    return readFile(
+      join(place.dataDir, 'sessions', id ?? '', 'kernel-core', 'audit.jsonl'),
+      'utf8',
+    );
+  };
+
+  it(
+    'asks the user before the root would wrap up, and with a yes the work goes on unaware of it',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, { configure: short() });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(aboutBudget(chat).length).toBeGreaterThanOrEqual(1);
+      expect(aboutBudget(chat)[0]).toContain('[y 增加 / n 不增加，收尾]');
+      // The model was never told: every request it got says its budget is fine.
+      for (const request of provider.requests)
+        expect(textOf(request.messages.at(-1))).toContain(
+          'Budget: this request NORMAL, run NORMAL',
+        );
+      expect(seen(provider)).not.toContain('WRAP_UP');
+      const lines = await audit(place);
+      expect(lines).toContain('"capability":"budget.extend"');
+      expect(lines).toContain('"type":"BUDGET_EXTENDED"');
+      expect(lines).toContain('"by":"USER"');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'adds nothing with a no, and does not ask again',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, {
+        configure: short(),
+        answer: (question) => (question.includes('额度快用完了') ? 'n' : 'y'),
+      });
+      await chat.say('go');
+      expect(aboutBudget(chat)).toHaveLength(1);
+      expect(await audit(place)).not.toContain('BUDGET_EXTENDED');
+      // Nothing was added, and the work goes on with what it has (here that is enough to reply;
+      // when it is not, the ledger wraps the work up, as it always did).
+      expect(chat.printed('REPLY')).toContain('done');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'adds without asking, or not at all, as the configuration says',
+    async () => {
+      const first = await roots();
+      const extended = script();
+      const chat = await chatOn(first, extended, { configure: short({ mode: 'extend', max: 4 }) });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(aboutBudget(chat)).toHaveLength(0);
+      expect(await audit(first)).toContain('"by":"CONFIGURED"');
+      expect(seen(extended)).not.toContain('WRAP_UP');
+
+      const second = await roots();
+      const stopped = script();
+      const other = await chatOn(second, stopped, { configure: short({ mode: 'stop', max: 0 }) });
+      await other.say('go');
+      expect(aboutBudget(other)).toHaveLength(0);
+      expect(await audit(second)).not.toContain('BUDGET_EXTENDED');
+      expect(other.printed('REPLY')).toContain('done');
     },
     TIMEOUT,
   );

@@ -92,6 +92,19 @@ export const AuthorizationRequestSchema = Type.Union(
       host: text(253),
     }),
     /**
+     * The work of this input is about to run out of its token budget (M2Design 7.3, rule 6):
+     * ALLOW adds `add` tokens to it, DENY lets it wrap up with what it has. The Kernel asks, never
+     * the model. `tasks` is how many tasks are at work below the root.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('budget.extend'),
+      used: count(),
+      limit: count(1),
+      add: count(1),
+      tasks: count(),
+    }),
+    /**
      * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
      * what an answer allows; `path` is what was asked for.
      */

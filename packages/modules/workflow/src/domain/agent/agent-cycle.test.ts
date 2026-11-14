@@ -486,9 +486,22 @@ describe('tools', () => {
 });
 
 describe('wrap-up', () => {
+  it("does not wrap a task up for the ledger of the input: that one is the root's own", () => {
+    // The root lent what it could, so the input's ledger is low; this task's share is untouched.
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const lent = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, lent));
+    expect(next.state.final).not.toBe(true);
+    expect(next.state.wrapUpReason).toBeUndefined();
+    // The run's ledger is everybody's: when it is low, the task wraps up.
+    const short = { ...NORMAL, run: 'WRAP_UP' } as const;
+    const last = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, short));
+    expect(last.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
+  });
+
   it('turns the next round into the final call when a ledger is low', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const next = receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low));
     expect(next.state).toMatchObject({ final: true, wrapUpReason: 'BUDGET_WRAP_UP' });
     expect(next.records).toContainEqual(
@@ -511,7 +524,7 @@ describe('wrap-up', () => {
 
   it('ends degraded when the final call does not reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -523,7 +536,7 @@ describe('wrap-up', () => {
 
   it('still lets the final call reply', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const context_ = receive(
       tools,
       report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low),
@@ -717,7 +730,7 @@ describe('model failures', () => {
 describe('the final call', () => {
   it('refuses an end tool that is not allowed in it', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
@@ -727,7 +740,7 @@ describe('the final call', () => {
 
   it('keeps the finishing call it refused, so that what it said is not lost', () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     const final = reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
@@ -754,7 +767,7 @@ describe('every tool call gets an answer', () => {
     );
   const atFinal = () => {
     const tools = replied(atModel(), [call('list_files', {})]);
-    const low = { ...NORMAL, input: 'WRAP_UP' } as const;
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
     return reassemble(
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,

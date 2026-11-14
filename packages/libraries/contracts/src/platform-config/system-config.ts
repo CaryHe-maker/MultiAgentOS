@@ -132,6 +132,19 @@ export const KernelConfigSchema = closed(
     budget: closed({
       runTokenLimit: count(1),
       inputTokenLimit: count(1),
+      /**
+       * What happens when the work of an input is about to run out of `inputTokenLimit` while the
+       * run still has tokens (M2Design 7.3, rule 6): `ask` the user (y adds half of
+       * `inputTokenLimit`, n lets the work wrap up), `extend` without asking, or `stop` (wrap up,
+       * as before). At most `max` times for one input. `ask`, 4 times, when absent; a run nobody
+       * watches (an evaluation, a script) sets `stop` or `extend`.
+       */
+      extension: Type.Optional(
+        closed({
+          mode: Type.Enum(['ask', 'extend', 'stop']),
+          max: count(),
+        }),
+      ),
       orientBudget: count(1),
       searchBudget: count(1),
     }),

@@ -517,7 +517,9 @@ function nextRound(
   context: AgentContext,
   records: readonly NewLogRecord[] = [],
 ): AgentTransition {
-  const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.input === 'EXHAUSTED';
+  // Its own ledger and the run's decide (M2Design 7.3): the input's ledger is the root's own,
+  // and what the root lent to this task is no longer in it.
+  const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.run === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
   // `maxRounds` counts the final round too: the round after `maxRounds - 1` is the final call, so a
   // model never gets more calls than the limit says. One working round is always left.
@@ -607,7 +609,10 @@ function wrapUp(state: AgentState, reason: WrapUpReason): AgentState {
 
 function applyBudget(state: AgentState, report: UnitReport): AgentState {
   const next = { ...state, budget: report.budget };
-  const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.input !== 'NORMAL';
+  // A task wraps up for its own ledger or for the run's, never for the input's: that one is
+  // the root's own, low as soon as the root has lent what it could, while the tasks it lent to
+  // have their shares untouched (main's own ledger is the input's, so main still follows it).
+  const wrapping = report.budget.agentRun !== 'NORMAL' || report.budget.run !== 'NORMAL';
   return wrapping ? wrapUp(next, 'BUDGET_WRAP_UP') : next;
 }
 

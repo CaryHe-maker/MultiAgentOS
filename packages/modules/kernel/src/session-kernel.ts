@@ -439,6 +439,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       pinAgent: deps.pinAgent,
       compactionAgent: deps.compactionAgent,
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
+      ...(config.budget.extension === undefined
+        ? {}
+        : { budgetExtension: config.budget.extension }),
       inputIsValid,
       preset: deps.preset,
       web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },

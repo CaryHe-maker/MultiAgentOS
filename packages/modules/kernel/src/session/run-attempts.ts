@@ -145,6 +145,14 @@ export type AttemptAudit =
       readonly agentRunId: string;
       readonly capability: string;
     }
+  /** The budget of the work of an input was added to (M2Design 7.3, rule 6): how much, by whom. */
+  | {
+      readonly type: 'BUDGET_EXTENDED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly tokens: number;
+      readonly by: 'USER' | 'CONFIGURED';
+    }
   /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
   | {
       readonly type: 'COMMAND_AUTO_APPROVED';

@@ -219,6 +219,11 @@ export interface RunWorkDeps {
   readonly memoryLevel?: () => MemoryLevel | undefined;
   /** The deepest level of the MissionTree; 2 means three levels (Orchestration 3.6). */
   readonly maxMissionDepth?: number;
+  /**
+   * What to do when the work of an input is about to run out of its budget while the run has
+   * tokens left (M2Design 7.3, rule 6); `ask`, 4 times, when absent.
+   */
+  readonly budgetExtension?: { readonly mode: 'ask' | 'extend' | 'stop'; readonly max: number };
 }
 
 type Response = SyscallAck | SyscallRejected;
@@ -359,6 +364,11 @@ export class RunWork {
   #cancelBackstop: (() => void) | undefined;
   /** The path each external read of this run asked for, until its report is counted. */
   readonly #externalAsks = new Map<string, string>();
+  /** How often the input's budget was added to, and whether the user refused to (rule 6). */
+  #budgetExtensions = 0;
+  #budgetDeclined = false;
+  /** What the open question about the budget would add. */
+  #budgetOffer = 0;
   /** The failed external reads since the last success or pause: two pause the run (Core 5h). */
   #externalFailures: ExternalReadPaused['attempts'][number][] = [];
   #inputs = 0;
@@ -895,6 +905,7 @@ export class RunWork {
       roots: string[];
       tokens: number;
       least: number;
+      ceiling: number;
       clamped?: 'MIN' | 'MAX';
     }[] = [];
     for (const task of request.tasks) {
@@ -904,45 +915,28 @@ export class RunWork {
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);
       if (roots.length !== task.writeRoots.length) return refuse('INVALID_INPUT');
       if (!writeRootsWithin(roots, parentRoots)) return refuse('CAPABILITY_NOT_SUBSET');
-      // Between the least the Agent can work with and twice what it gets by default.
+      // A task opens with the least its Agent can work with and is topped up as it needs more
+      // (M2Design 7.3, rule 5), so nothing is reserved that is not used. What the caller asked
+      // for bounds how far it may be topped up for its own calls: between four times the least
+      // and twice the default.
       const least = minShare(share.budget);
-      const most = 2 * share.defaultShare;
       const asked = task.tokens ?? share.defaultShare;
-      const tokens = Math.min(most, Math.max(least, asked));
+      const ceiling = Math.max(4 * least, Math.min(2 * share.defaultShare, asked));
       tasks.push({
         name: task.name,
         roots,
-        tokens,
+        tokens: least,
         least,
-        ...(tokens > asked
-          ? { clamped: 'MIN' as const }
-          : tokens < asked
-            ? { clamped: 'MAX' as const }
-            : {}),
+        ceiling,
+        ...(asked < least ? { clamped: 'MIN' as const } : {}),
       });
     }
-    // More than the parent can lend, but each task can do with less: the shares shrink to fit,
-    // each keeping at least its Agent's smallest share, rather than the whole call being refused
-    // (a caller cannot know these numbers, and a refusal it cannot act on stops its work).
-    const delegable = this.#deps.ledgers.delegable(parentAgentRunId);
-    const total = tasks.reduce((sum, task) => sum + task.tokens, 0);
     const leastTotal = tasks.reduce((sum, task) => sum + task.least, 0);
-    if (total > delegable && leastTotal <= delegable) {
-      const spare = delegable - leastTotal;
-      const above = total - leastTotal;
-      for (const task of tasks) {
-        const fitted = task.least + Math.floor(((task.tokens - task.least) * spare) / above);
-        if (fitted < task.tokens) {
-          task.tokens = fitted;
-          task.clamped = 'MAX';
-        }
-      }
-    }
     const delegationId = this.#deps.newDelegationId?.() ?? newId('dlg');
     const result = this.#deps.ledgers.reserveDelegation({
       delegationId,
       parentAgentRunId,
-      shares: tasks.map((task) => ({ name: task.name, tokens: task.tokens })),
+      shares: tasks.map(({ name, tokens, ceiling }) => ({ name, tokens, ceiling })),
     });
     if (!result.ok) {
       const response: SyscallRejected = {
@@ -1270,7 +1264,56 @@ export class RunWork {
         command: request.input.command,
         workdir: request.input.workdir,
       });
+    if (unit.executionKind === 'MODEL' && this.#budgetShort(waiting)) return;
     await this.#startAttempt(request, unit, record, readOnly, external?.ok ? external : undefined);
+  }
+
+  /**
+   * Before a call of the model: when the work of the input is about to run out of its budget and
+   * the run still has tokens, more is added, by the configuration or by the user's answer
+   * (M2Design 7.3, rule 6). The model is not part of it and is not told: with more, its ledgers
+   * are simply in NORMAL. True when the call waits for the user's answer.
+   */
+  #budgetShort(waiting: WaitingUnit): boolean {
+    const { requestId, agentRunId } = waiting.request;
+    const policy = this.#deps.budgetExtension ?? { mode: 'ask' as const, max: 4 };
+    if (policy.mode === 'stop' || this.#budgetDeclined || this.#budgetExtensions >= policy.max)
+      return false;
+    const wants = this.#deps.ledgers.inputWants(agentRunId);
+    if (wants === undefined) return false;
+    if (policy.mode === 'extend') {
+      this.#extendBudget(wants.add, requestId, agentRunId, 'CONFIGURED');
+      return false;
+    }
+    const tasks = [...this.#missions.values()].filter(
+      (mission) => mission.parent !== undefined && !mission.closed,
+    ).length;
+    const check = this.#authorization.askBudget(wants, tasks, requestId, agentRunId);
+    if (check.requested !== undefined) {
+      this.#budgetOffer = wants.add;
+      this.#host.toInteraction(check.requested);
+      this.#deps.audit({
+        type: 'AUTHORIZATION_ASKED',
+        requestId,
+        agentRunId,
+        capability: 'budget.extend',
+      });
+    }
+    this.#waiting.set(requestId, waiting);
+    this.#activity.awaitingAuthorization(agentRunId);
+    return true;
+  }
+
+  #extendBudget(
+    tokens: number,
+    requestId: string,
+    agentRunId: string,
+    by: 'USER' | 'CONFIGURED',
+  ): void {
+    const added = this.#deps.ledgers.extendInput(tokens);
+    if (added === 0) return;
+    this.#budgetExtensions += 1;
+    this.#deps.audit({ type: 'BUDGET_EXTENDED', requestId, agentRunId, tokens: added, by });
   }
 
   #resolveExternal(path: string | undefined): Promise<ExternalResolution> {
@@ -1709,6 +1752,19 @@ export class RunWork {
     const settled = this.#authorization.answer(request.questionId, request.answer.scope);
     if (settled === undefined) return this.#refuse(requestId, request, 'QUESTION_NOT_PENDING');
     this.#host.toInteraction(settled.resolved);
+    // More budget (rule 6): yes adds what was offered; no is not asked again for this input.
+    if (settled.capability === 'budget.extend') {
+      const first = settled.waiters[0];
+      const waiter = first === undefined ? undefined : this.#waiting.get(first);
+      if (settled.resolution !== 'GRANTED') this.#budgetDeclined = true;
+      else if (waiter !== undefined)
+        this.#extendBudget(
+          this.#budgetOffer,
+          first ?? requestId,
+          waiter.request.agentRunId,
+          'USER',
+        );
+    }
     // "This folder from now on" is kept by Session management; the run has it too, for now.
     if (request.answer.scope === 'FOLDER') await this.#deps.trustWebSearch();
     await this.#release(settled);

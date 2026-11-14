@@ -148,6 +148,12 @@ export const ConsoleText = Object.freeze({
     `允许 Agent 联网搜索吗？搜索词会发送至 ${provider}。
 搜索词：${queries.join(' | ')}
 [y 本次运行内允许 / f 这个文件夹以后都允许 / n 拒绝]`,
+  budgetExtend: (used: number, limit: number, add: number, tasks: number) =>
+    `这次任务的额度快用完了：已用约 ${String(Math.round(used / 10_000))} 万，上限 ${String(Math.round(limit / 10_000))} 万${
+      tasks > 0 ? `，还有 ${String(tasks)} 个子任务在进行` : ''
+    }。
+要再增加 ${String(Math.round(add / 10_000))} 万额度继续吗？不增加的话，任务会收尾并交付已完成的部分。
+[y 增加 / n 不增加，收尾]`,
   webFetch: (host: string, url: string) =>
     `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}

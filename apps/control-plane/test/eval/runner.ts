@@ -145,10 +145,18 @@ async function runMission(
     if (!parsed.ok || parsed.command.kind !== 'RUN') throw new Error('the CLI refused the run');
     command = parsed.command;
     system = await composeSystem({
-      config: (spec.setup?.configure ?? ((each) => each))({
-        ...defaultSystemConfig(),
-        dataDir: places.dataDir,
-      }),
+      config: (spec.setup?.configure ?? ((each) => each))(
+        ((base) => ({
+          ...base,
+          dataDir: places.dataDir,
+          // Nobody watches an evaluation, and its runs must spend alike to be compared: the work
+          // of an input wraps up at its budget instead of asking for more (M2Design 7.3, rule 6).
+          kernel: {
+            ...base.kernel,
+            budget: { ...base.kernel.budget, extension: { mode: 'stop' as const, max: 0 } },
+          },
+        }))(defaultSystemConfig()),
+      ),
       repositoryRoot: await realpath(places.repository),
       preset: spec.setup?.preset ?? 'standard',
       view: terminal.view,

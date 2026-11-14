@@ -71,7 +71,8 @@ function addUsage(target: Usage, more: Usage): void {
 
 interface InputLedger {
   readonly inputId: string;
-  readonly limit: number;
+  /** What the input was given: what it opened with and what the user added since (rule 6). */
+  limit: number;
   readonly ledger: Monitor;
   modelRequests: number;
   toolUnits: number;
@@ -87,7 +88,14 @@ interface AgentLedger {
   readonly key: string;
   readonly parent: string | undefined;
   readonly agent: AgentBudget;
-  readonly share: number;
+  /** What the task holds of its parent's ledger now: what it opened with and every top-up. */
+  share: number;
+  /** What it opened with: the size of one top-up. */
+  readonly initial: number;
+  /** The most it may be given for its own calls, top-ups included (rule 5). */
+  readonly ceiling: number;
+  /** What it was given so far for its own calls; what it took to lend on is not counted. */
+  own: number;
   readonly ledger: Monitor;
 }
 
@@ -96,6 +104,8 @@ interface Delegation {
   readonly parent: string | undefined;
   /** The share of each task by name; claimed when the task registers. */
   readonly shares: Map<string, number>;
+  /** The most each task may be given for its own calls, by name. */
+  readonly ceilings: Map<string, number>;
   readonly claimed: Set<string>;
   released: boolean;
 }
@@ -126,6 +136,8 @@ export class RunLedgers {
   readonly #delegations = new Map<string, Delegation>();
   readonly #owners = new Map<string, Monitor>();
   readonly #overTime = new Set<string>();
+  /** The tasks a top-up fell short for because the input's ledger had no more to lend (rule 6). */
+  readonly #starved = new Set<string>();
   #remaining: number;
   #input: InputLedger | undefined;
   /** What the closed inputs used, for the RunSummary. */
@@ -238,6 +250,13 @@ export class RunLedgers {
   ) {
     const input = this.#openInput();
     const ledger = this.#ledgerOf(agentRunId);
+    // A task that would come to its WRAP_UP line with this call is topped up first (rule 5): it
+    // never learns of it, its state simply stays NORMAL.
+    if (!request.final) {
+      const key = this.#fundedKey(agentRunId);
+      const short = ledger.shortBy(request.estimatedTokens);
+      if (key !== undefined && short > 0) this.#topUp(key, short, 'OWN');
+    }
     const reserved = ledger.reserve(request);
     if (reserved.ok) {
       input.modelRequests += 1;
@@ -250,7 +269,55 @@ export class RunLedgers {
     this.#openInput();
     const owner = this.#owners.get(reservationId);
     if (owner === undefined) throw new MonitorInvariantError('Unknown reservation');
-    return owner.settle(reservationId, settlement);
+    const settled = owner.settle(reservationId, settlement);
+    if (settled.budgetState === 'NORMAL') return settled;
+    // The call cost more than was estimated and brought a task to its line: topped up as above.
+    const funded = [...this.#agents.values()].find((each) => each.ledger === owner);
+    if (funded === undefined) return settled;
+    this.#topUp(funded.key, owner.shortBy(0), 'OWN');
+    return { ...settled, budgetState: owner.budgetState() };
+  }
+
+  /** The key of the ledger an AgentRun spends from when it is a funded task's, else undefined. */
+  #fundedKey(agentRunId: string | undefined): string | undefined {
+    if (agentRunId === undefined) return undefined;
+    const key = this.#keyOf.get(agentRunId) ?? agentRunId;
+    return this.#agents.has(key) ? key : undefined;
+  }
+
+  /**
+   * Gives a funded task more from the ledger above it (M2Design 7.3, rule 5): a task opens with
+   * the least its Agent can work with, and gets more as it needs it, so nothing is reserved that
+   * is not used, and a task is not wrapped up while its parent still has tokens to lend.
+   *
+   * `OWN`: for its own calls, in pieces of what it opened with, up to its ceiling (a task that
+   * runs in circles must still come to an end). `LEND`: to lend on to its own tasks, exactly what
+   * they need; their own ceilings bound it. When the ledger above cannot lend enough, it is topped
+   * up from the one above it in the same way, up to the input's ledger. Returns whether the need
+   * is covered.
+   */
+  #topUp(key: string, need: number, purpose: 'OWN' | 'LEND'): boolean {
+    const agent = this.#agents.get(key);
+    if (agent === undefined || need <= 0) return need <= 0;
+    let amount = need;
+    if (purpose === 'OWN') {
+      const room = agent.ceiling - agent.own;
+      amount = Math.min(room, Math.max(need, agent.initial));
+      if (amount <= 0) return false;
+    }
+    const above = this.#ledgerOfKey(agent.parent);
+    if (above.delegable() < amount && agent.parent !== undefined)
+      this.#topUp(agent.parent, above.lendShort(amount), 'LEND');
+    // Not enough above, up to the input's ledger: the task is short for want of the input's
+    // tokens, which only the user can add to (rule 6).
+    if (above.delegable() < amount) this.#starved.add(key);
+    amount = Math.min(amount, above.delegable());
+    if (amount <= 0) return false;
+    above.lend(amount);
+    agent.ledger.extend(amount);
+    agent.share += amount;
+    if (purpose === 'OWN') agent.own += amount;
+    return amount >= need;
   }
 
   #ledgerOf(agentRunId: string | undefined): Monitor {
@@ -277,7 +344,12 @@ export class RunLedgers {
   reserveDelegation(request: {
     readonly delegationId: string;
     readonly parentAgentRunId: string;
-    readonly shares: readonly { readonly name: string; readonly tokens: number }[];
+    readonly shares: readonly {
+      readonly name: string;
+      readonly tokens: number;
+      /** The most the task may be given for its own calls; its share when absent. */
+      readonly ceiling?: number;
+    }[];
   }): DelegationResult {
     const parent = this.#ledgerOf(request.parentAgentRunId);
     if (this.#delegations.has(request.delegationId))
@@ -285,6 +357,10 @@ export class RunLedgers {
     const total = request.shares.reduce((sum, share) => sum + share.tokens, 0);
     if (request.shares.some((share) => !Number.isSafeInteger(share.tokens) || share.tokens <= 0))
       throw new MonitorInvariantError('A share must be a positive integer');
+    // A task that lends more than it has gets it from the ledger above (rule 5).
+    const lender = this.#parentKey(request.parentAgentRunId);
+    if (total > parent.delegable() && lender !== undefined)
+      this.#topUp(lender, parent.lendShort(total), 'LEND');
     if (total > parent.delegable())
       return { ok: false, reasonCode: 'BUDGET_INSUFFICIENT', delegable: parent.delegable() };
     parent.lend(total);
@@ -292,10 +368,54 @@ export class RunLedgers {
       delegationId: request.delegationId,
       parent: this.#parentKey(request.parentAgentRunId),
       shares: new Map(request.shares.map((share) => [share.name, share.tokens])),
+      ceilings: new Map(
+        request.shares.map((share) => [share.name, Math.max(share.tokens, share.ceiling ?? 0)]),
+      ),
       claimed: new Set(),
       released: false,
     });
     return { ok: true };
+  }
+
+  /**
+   * Whether the work of the input is about to run out while the run still has tokens (M2Design
+   * 7.3, rule 6), as seen from the AgentRun about to call the model: the root is within one call
+   * of its WRAP_UP line, or a top-up of this task fell short because the input's ledger had no
+   * more to lend. What could be added is half of what an input opens with, or what the run has
+   * left when that is less. Undefined when nothing is wanted or nothing can be added.
+   */
+  inputWants(
+    agentRunId?: string,
+  ): { readonly used: number; readonly limit: number; readonly add: number } | undefined {
+    const input = this.#input;
+    if (input === undefined || this.#remaining <= 0) return undefined;
+    const key = this.#fundedKey(agentRunId);
+    const wanted =
+      key === undefined
+        ? input.ledger.shortBy(wrapUpMargin(this.#main)) > 0
+        : this.#starved.has(key);
+    if (!wanted) return undefined;
+    const held = [...this.#agents.values()].reduce(
+      (sum, agent) => sum + Math.max(0, agent.ledger.remaining()),
+      0,
+    );
+    return {
+      used: Math.max(0, input.limit - Math.max(0, input.ledger.remaining()) - held),
+      limit: input.limit,
+      add: Math.min(this.#remaining, Math.ceil(this.#budget.inputTokenLimit / 2)),
+    };
+  }
+
+  /** The user (or the configuration) adds to the input's ledger out of what the run has left. */
+  extendInput(tokens: number): number {
+    const input = this.#openInput();
+    const amount = Math.max(0, Math.min(tokens, this.#remaining));
+    if (amount === 0) return 0;
+    this.#remaining -= amount;
+    input.limit += amount;
+    input.ledger.extend(amount);
+    this.#starved.clear();
+    return amount;
   }
 
   /** The balance a parent could delegate now: the number a refusal tells (M2Design 3.6). */
@@ -331,6 +451,9 @@ export class RunLedgers {
       parent: delegation.parent,
       agent: request.agent,
       share,
+      initial: share,
+      ceiling: delegation.ceilings.get(request.taskName) ?? share,
+      own: share,
       ledger,
     });
     return { state: stateOf(ledger, share, request.agent) };
@@ -362,6 +485,8 @@ export class RunLedgers {
     readonly tokens: number;
     /** The budget of the task's Agent; its limits judge the share, as at the first segment. */
     readonly agent: AgentBudget;
+    /** The most the task may be given for its own calls; its share when absent. */
+    readonly ceiling?: number;
   }): void {
     if (this.#agents.has(request.key)) return;
     const parent = this.#ledgerOfKey(request.parentKey);
@@ -372,6 +497,9 @@ export class RunLedgers {
       parent: request.parentKey,
       agent: request.agent,
       share,
+      initial: share,
+      ceiling: Math.max(share, request.ceiling ?? 0),
+      own: share,
       ledger: new Monitor({ ...request.agent, tokenLimit: share }, { allowShortLimit: true }),
     });
   }
@@ -402,6 +530,7 @@ export class RunLedgers {
     const agent = this.#agents.get(key);
     if (agent === undefined) return;
     this.#agents.delete(key);
+    this.#starved.delete(key);
     for (const [agentRunId, each] of [...this.#keyOf])
       if (each === key) this.#keyOf.delete(agentRunId);
     const summary = agent.ledger.finalize();
@@ -411,8 +540,14 @@ export class RunLedgers {
 
   /** What the run would hold if the current input ended now (Kernel/Monitor 3.1). */
   #runState(): BudgetState {
+    // What the tasks hold of the input's ledger and have not spent is still there: a run whose
+    // root lent most of its tokens is not short of them.
+    const held = [...this.#agents.values()].reduce(
+      (sum, agent) => sum + Math.max(0, agent.ledger.remaining()),
+      0,
+    );
     const balance =
-      this.#remaining + (this.#input === undefined ? 0 : this.#input.ledger.remaining());
+      this.#remaining + (this.#input === undefined ? 0 : this.#input.ledger.remaining()) + held;
     if (balance <= 0) return 'EXHAUSTED';
     return balance < minShare(this.#main) ? 'WRAP_UP' : 'NORMAL';
   }

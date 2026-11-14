@@ -1353,58 +1353,45 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
   const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
 
-  it('reserves the shares of the tasks and says what each got, kept within the Agent limits (B2 in part)', async () => {
+  it('opens every task with the least its Agent can work with, whatever was asked (B2 in part)', async () => {
     const kernel = await open();
+    const least = minShare(childBudget);
     const response = await reserve(kernel, [
       { name: 'a', agent: 'worker', roots: ['src/a'] },
       { name: 'b', agent: 'worker', roots: ['src/b'], tokens: 1 },
       { name: 'c', agent: 'explorer', tokens: 10_000_000 },
     ]);
+    // A task is topped up as it needs more (M2Design 7.3, rule 5), so nothing is reserved that
+    // is not used; what was asked only bounds how far.
     expect(response).toMatchObject({
       outcome: 'ACCEPTED',
       shares: [
-        { name: 'a', tokens: defaultShare },
-        { name: 'b', tokens: minShare(childBudget), clamped: 'MIN' },
-        { name: 'c', tokens: 2 * defaultShare, clamped: 'MAX' },
+        { name: 'a', tokens: least },
+        { name: 'b', tokens: least, clamped: 'MIN' },
+        { name: 'c', tokens: least },
       ],
     });
     expect(delegationIdOf(response)).toMatch(/^dlg_/u);
   });
 
-  it('shrinks the shares to what the parent can lend, and refuses all of it only when even the smallest shares do not fit (B2)', async () => {
+  it('refuses all of it only when even the smallest shares do not fit, and says what it can lend (B2)', async () => {
     const kernel = await open();
-    const response = await reserve(kernel, [{ name: 'a', agent: 'explorer', tokens: 1 }]);
-    expect(response).toMatchObject({ outcome: 'ACCEPTED' });
-    // More than the Turn holds at the size asked for, but each task can do with less: every share
-    // is cut to fit, none below the least its Agent can work with.
-    const fitted = await reserve(
-      kernel,
-      Array.from({ length: 12 }, (_, index) => ({
-        name: `t${String(index)}`,
-        agent: 'explorer',
-        tokens: 2 * defaultShare,
-      })),
-    );
-    expect(fitted).toMatchObject({ outcome: 'ACCEPTED' });
-    const shares = (fitted as { shares: { tokens: number; clamped?: string }[] }).shares;
-    expect(shares).toHaveLength(12);
-    const least = (response as { shares: { tokens: number }[] }).shares[0]?.tokens ?? 0;
-    for (const share of shares) {
-      expect(share.clamped).toBe('MAX');
-      expect(share.tokens).toBeLessThan(2 * defaultShare);
-      expect(share.tokens).toBeGreaterThanOrEqual(least);
-    }
-    // Nothing is left to lend: not even the smallest shares fit, and the caller is told both
-    // what can be lent and the least these tasks need.
-    const refused = await reserve(
-      kernel,
-      Array.from({ length: 3 }, (_, index) => ({ name: `u${String(index)}`, agent: 'explorer' })),
-    );
+    const least = minShare(childBudget);
+    // Far more tasks than the Turn can fund at their smallest.
+    const many = Array.from({ length: 4000 }, (_, index) => ({
+      name: `t${String(index)}`,
+      agent: 'explorer',
+    }));
+    const refused = await reserve(kernel, many);
     expect(refused).toMatchObject({
       outcome: 'REJECTED',
       reasonCode: 'BUDGET_INSUFFICIENT',
       delegable: expect.any(Number) as number,
-      least: 3 * least,
+      least: many.length * least,
+    });
+    // Nothing was taken: a call that fits is still accepted.
+    expect(await reserve(kernel, [{ name: 'a', agent: 'explorer' }])).toMatchObject({
+      outcome: 'ACCEPTED',
     });
   });
 
