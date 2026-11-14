@@ -97,10 +97,19 @@ async function sessionLog(dataDir: string): Promise<Record<string, unknown>[]> {
     join(dataDir, 'sessions', id ?? '', 'workflow', 'log.v1.jsonl'),
     'utf8',
   );
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return (
+    text
+      .split('\n')
+      .filter(Boolean)
+      // The log is read while the system writes it: a line that is not whole yet is not there yet.
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as Record<string, unknown>];
+        } catch {
+          return [];
+        }
+      })
+  );
 }
 
 real('ask_user in a long task is a sleep (Orchestration 4.1)', () => {

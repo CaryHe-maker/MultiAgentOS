@@ -47,10 +47,19 @@ async function logOf(dataDir: string): Promise<Record<string, unknown>[]> {
     join(dataDir, 'sessions', id, 'workflow', 'log.v1.jsonl'),
     'utf8',
   ).catch(() => '');
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return (
+    text
+      .split('\n')
+      .filter(Boolean)
+      // The log is read while the system writes it: a line that is not whole yet is not there yet.
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as Record<string, unknown>];
+        } catch {
+          return [];
+        }
+      })
+  );
 }
 
 /** Runs the long task in a child and kills it once the worker has written and the root sleeps. */
